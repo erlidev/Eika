@@ -1,0 +1,284 @@
+# Eika Implementation Plan
+
+Eika is a Docker-native agentic coding harness. It ports the core of the
+[Pi coding agent](https://github.com/badlogic/pi-mono) (agent loop, tools,
+session trees, context files) to Go and adds sandboxed workspaces, parallel
+subagents, built-in web search, and a web UI. It is built so that agents can
+modify Eika itself.
+
+This document is the source of truth for scope and architecture. Update it
+when decisions change. Phase status is tracked in the checklist at the end.
+
+## 1. Decisions
+
+| Area | Decision |
+|---|---|
+| Backend | Go 1.26, stdlib `net/http` router, `log/slog`, official `openai-go` SDK |
+| Frontend | Vite, React 19, TypeScript (strict), Tailwind v4, shadcn/ui |
+| Providers | OpenAI-compatible only at launch, behind a `provider.Provider` interface |
+| Docker | Harness mounts `/var/run/docker.sock`; sandboxes are sibling containers |
+| Persistence | PostgreSQL (`pgx`), embedded SQL migrations; no ORM |
+| Extensibility | Source-level modularity plus rebuild; no runtime plugin loader |
+| Sandbox image | One default `eika-sandbox` image; per-workspace override by image or Dockerfile |
+| Search | SearXNG container plus first-party connectors (Wikipedia, arXiv, ...) |
+| Auth | Single user, one bearer token set at deploy time |
+| Compaction | Deferred; the session model must support it later |
+| Skills / templates | Deferred; AGENTS.md is in scope |
+
+## 2. Core principle: every agent action runs in a sandbox
+
+The harness process never reads, writes, or executes anything on behalf of
+an agent outside a workspace container. All tools that touch files or run
+commands do so through an `Executor` interface whose only production
+implementation talks to a sandbox. Search and LLM calls run in the harness
+because they are network calls, not filesystem or process actions.
+
+## 3. Domain model
+
+```
+Project        A git repository known to Eika. Backed by a bare repo in the
+               harness "hub" volume and optionally a remote (GitHub etc.) or a
+               host directory.
+Workspace      A sandbox container + volume holding a clone of a Project on a
+               branch. Sessions run inside a workspace. Has a lifecycle:
+               creating -> running -> stopped -> archived.
+Session        A tree of entries (user, assistant, tool call, tool result,
+               system events) inside one workspace. Has a head pointer.
+Agent run      One execution of the agent loop on a session from its head.
+Subagent       A child agent run in its own Workspace (cloned from the parent's
+               workspace at its current commit, on a child branch), with its
+               own Session. Reports back to the parent as a tool result.
+```
+
+### Git flow
+
+- The harness serves git over HTTP on the internal Docker network
+  (`/git/<project>.git`, Smart HTTP via `git http-backend`). Every workspace
+  clones from and pushes to the hub. The hub is the single point of exchange
+  between workspaces, subagents, and the user.
+- **Remote projects** (e.g. GitHub): the hub mirrors the remote. The UI offers
+  "push branch to remote" and "open PR" style actions. Credentials stay in the
+  harness; sandboxes never hold remote credentials.
+- **Local projects**: a host directory is bind-mounted into the workspace at
+  `/workspace`. The agent commits there directly. No hub involvement unless
+  the user forks a subagent, in which case the hub is used for the child.
+- **Subagents**: parent commits its work-in-progress to a `wip` commit on its
+  branch and pushes to the hub; child workspace clones at that commit on
+  `<parent-branch>/<subagent-name>`. When the child finishes it pushes; the
+  parent gets a summary plus the branch name and may fetch and merge.
+
+### Session trees
+
+Entries form a tree (`parent_id`), like Pi. Eika leans into what a sandbox
+enables:
+
+- **Branch in place**: move the head to any entry and continue.
+- **Fork with workspace**: fork from an entry into a new workspace cloned at
+  the commit recorded for that entry. This gives a true "what if" branch where
+  the filesystem also rewinds. Each assistant turn records the workspace's
+  HEAD commit so this is possible.
+
+### Working with the user (ergonomics)
+
+- **Steering and follow-up** message queues as in Pi, exposed in the UI.
+- **`ask_user` tool**: the agent can pose a structured question (options or
+  free text). The UI renders it as a form; the run pauses until answered.
+- **Shared sandbox**: the user has a terminal and file editor into the same
+  container the agent works in. Edits by either side are visible to both.
+- **Review surface**: every workspace shows a live diff against its base
+  commit with commit, push, and "hand to a subagent" actions.
+- **Notifications**: subagent completion, questions, and errors surface as
+  events in the UI event stream.
+
+## 4. Repository layout
+
+```
+Eika/
+  AGENTS.md                  Entry point for agents working on Eika
+  docs/
+    PLAN.md                  This file
+    STYLE_GUIDE.md           Coding and documentation rules (Go, TS, docs)
+    ARCHITECTURE.md          How the pieces fit; written in phase 1, kept current
+    EXTENDING.md             How to add a tool, provider, search source, UI panel
+    api/                     Event protocol and HTTP API reference
+  cmd/
+    eika/                    Harness server binary
+    eikad/                   Sandbox daemon binary (static, runs inside sandboxes)
+  internal/
+    agent/                   Agent loop (Pi port): turns, queues, tool dispatch
+    provider/                Provider interface; provider/openai implementation
+    tool/                    Tool interface, registry, built-in tools
+    executor/                Executor interface; executor/sandbox (eikad client),
+                             executor/local (tests only)
+    session/                 Session tree model and persistence
+    workspace/               Workspace lifecycle, Docker client, volumes, git hub
+    subagent/                Spawning and reporting
+    search/                  Source interface; search/searxng, wikipedia, arxiv, fetch
+    contextfile/             AGENTS.md discovery and assembly
+    server/                  HTTP API, WebSocket event stream, auth
+    store/                   Postgres access and migrations
+    config/                  Config loading (YAML + env)
+    event/                   Shared event types emitted by the loop and UI
+  sandbox/
+    Dockerfile               eika-sandbox image
+  web/                       Frontend (Vite + React)
+  deploy/
+    docker-compose.yml       eika, postgres, searxng
+    searxng/settings.yml
+  Makefile
+```
+
+`internal/` packages depend inward: `server -> agent -> tool -> executor`;
+nothing under `tool` imports `workspace`. Dependency direction is enforced by
+review and by `go vet`-style checks in CI where practical.
+
+## 5. Key interfaces
+
+```go
+// provider
+type Provider interface {
+    Stream(ctx context.Context, req Request) (<-chan Event, error)
+}
+
+// tool
+type Tool interface {
+    Name() string
+    Description() string
+    Schema() json.RawMessage           // JSON Schema for parameters
+    Call(ctx context.Context, c CallContext, args json.RawMessage) (Result, error)
+}
+
+// executor: the only way tools touch a workspace
+type Executor interface {
+    Exec(ctx context.Context, spec ExecSpec) (ExecResult, error)   // streams output
+    ReadFile(ctx context.Context, path string, opts ReadOpts) ([]byte, error)
+    WriteFile(ctx context.Context, path string, data []byte) error
+    Stat(ctx context.Context, path string) (FileInfo, error)
+    List(ctx context.Context, path string) ([]FileInfo, error)
+}
+
+// search
+type Source interface {
+    Name() string
+    Search(ctx context.Context, q Query) ([]Result, error)
+}
+```
+
+Adding a tool, provider, or search source means: create a package, implement
+the interface, register it in one registry file, add tests, document it in
+`docs/EXTENDING.md`. That is the whole malleability story.
+
+## 6. Sandbox daemon (`eikad`)
+
+A small static Go binary baked into `eika-sandbox` and also injected into
+custom images via a read-only volume mount, so any image works. It listens on
+the Docker network and provides: exec with streaming stdout/stderr and exit
+codes, PTY sessions for the web terminal, file read/write/stat/list, and a
+file-change watcher for the editor. The harness authenticates with a
+per-workspace token passed as an environment variable at container start.
+
+## 7. Event protocol
+
+One WebSocket per UI client, subscribed to topics (`workspace:<id>`,
+`session:<id>`, `global`). Events are the same types the agent loop emits
+internally (`internal/event`): `turn.start`, `message.delta`, `tool.call`,
+`tool.output`, `tool.result`, `turn.end`, `run.error`, `question.asked`,
+`subagent.started`, `subagent.finished`, `workspace.state`. Documented in
+`docs/api/events.md` and mirrored as TypeScript types in `web/src/api/`.
+
+## 8. Phases
+
+Each phase ends with: tests green, docs updated, `make check` clean. Phases
+are sized so one Opus subagent can own one phase (or one half of a large
+phase) in a single focused effort. Where phases are independent they run in
+parallel.
+
+### Phase 0: Foundations
+- Go module, `web/` scaffold, `Makefile` (`build`, `test`, `lint`, `check`, `dev`).
+- CI-style checks: `go vet`, `staticcheck`, `gofmt`, `tsc`, `eslint`, `prettier`.
+- `docker-compose.yml` skeleton with eika, postgres, searxng.
+- `docs/ARCHITECTURE.md` initial version.
+
+### Phase 1: Agent core (Pi port)
+- `provider`: interface + OpenAI implementation (Chat Completions, streaming,
+  tool calls, usage). Model registry from config.
+- `tool`: interface, registry, built-ins `read`, `write`, `edit`, `bash`,
+  `grep`, `find`, `ls` with Pi's semantics (offset/limit reads, old/new
+  string edits, output truncation).
+- `executor/local` for tests only.
+- `agent`: loop with streaming, tool dispatch, steering and follow-up queues,
+  abort, error recovery. In-memory session for now.
+- `contextfile`: AGENTS.md discovery (project, parents, global).
+- Table-driven tests with a fake provider.
+
+### Phase 2: Sandboxes and workspaces
+- `cmd/eikad` and `sandbox/Dockerfile`.
+- `executor/sandbox` client.
+- `workspace`: Docker client wrapper, create/start/stop/destroy, volumes,
+  custom image and Dockerfile builds, injection of `eikad` for custom images.
+- Git hub: bare repos, Smart HTTP endpoint, remote mirroring, local bind mode.
+- Integration tests gated behind a `docker` build tag.
+
+### Phase 3: Persistence and sessions
+- Postgres schema and migrations: projects, workspaces, sessions, entries,
+  runs, subagents, settings.
+- `session`: tree model, head management, fork, fork-with-workspace.
+- `store`: query layer, transactional writes for entries.
+
+### Phase 4: Server and event stream
+- HTTP API for projects, workspaces, sessions, runs, questions, settings.
+- WebSocket event stream with topics and replay from an entry id.
+- Bearer token auth.
+- API docs in `docs/api/`.
+
+### Phase 5: Web UI (core)
+- App shell, workspace list and creation, session view with streaming
+  messages, tool call rendering (collapsible, per-tool renderers), queues,
+  `ask_user` forms, session tree navigation, settings.
+
+### Phase 6: Subagents
+- `subagent`: `spawn_agent` tool, child workspace creation via hub, branch
+  naming, concurrency limits, cancellation propagation, result reporting.
+- UI: agent tree panel, jump into a child session.
+
+### Phase 7: Search
+- `search`: interface, aggregator, SearXNG source, Wikipedia, arXiv, `fetch`
+  (HTML to markdown with readability). Tools `web_search` and `web_fetch`.
+- Configurable source list, per-source rate limits, result caching.
+
+### Phase 8: Terminal, editor, diff
+- `eikad` PTY endpoint, xterm.js terminal panel.
+- File tree and Monaco editor with save through `eikad`.
+- Diff view against base commit; commit, push, open-PR-style actions.
+
+### Phase 9: Hardening and docs
+- End-to-end smoke test in compose.
+- Docs pass: `ARCHITECTURE.md`, `EXTENDING.md`, API docs current.
+- Resource limits for sandboxes (CPU, memory, pids), network policy option.
+
+## 9. Testing strategy
+
+- Unit tests everywhere with the standard library; `executor/local` and a
+  fake provider make the agent loop fully testable without Docker or a model.
+- Docker-dependent tests use build tag `docker` and run in CI only when a
+  socket is available.
+- Frontend: Vitest for logic, Playwright smoke test against compose in phase 9.
+
+## 10. Resolved and open questions
+
+- Sandbox network policy defaults to open egress, configurable per workspace.
+- Open: should the hub also mirror local projects so fork-with-workspace
+  works on them? Decide in phase 3.
+
+## 11. Phase checklist
+
+- [ ] Phase 0: Foundations
+- [ ] Phase 1: Agent core
+- [ ] Phase 2: Sandboxes and workspaces
+- [ ] Phase 3: Persistence and sessions
+- [ ] Phase 4: Server and event stream
+- [ ] Phase 5: Web UI core
+- [ ] Phase 6: Subagents
+- [ ] Phase 7: Search
+- [ ] Phase 8: Terminal, editor, diff
+- [ ] Phase 9: Hardening and docs
