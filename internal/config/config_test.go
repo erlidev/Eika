@@ -27,7 +27,8 @@ func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, name := range []string{
 		"EIKA_LISTEN", "EIKA_DATABASE_URL", "EIKA_DOCKER_SOCKET",
-		"EIKA_SEARXNG_URL", "EIKA_SANDBOX_IMAGE", "EIKA_AUTH_TOKEN",
+		"EIKA_SEARXNG_URL", "EIKA_SANDBOX_IMAGE", "EIKA_SANDBOX_NETWORK",
+		"EIKA_EIKAD_BINARY", "EIKA_HUB_ROOT", "EIKA_HUB_URL", "EIKA_AUTH_TOKEN",
 	} {
 		t.Setenv(name, "")
 		if err := os.Unsetenv(name); err != nil {
@@ -145,18 +146,26 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 	t.Setenv("EIKA_DOCKER_SOCKET", "/tmp/docker.sock")
 	t.Setenv("EIKA_SEARXNG_URL", "http://env:8080")
 	t.Setenv("EIKA_SANDBOX_IMAGE", "env-image:2")
+	t.Setenv("EIKA_SANDBOX_NETWORK", "env-net")
+	t.Setenv("EIKA_EIKAD_BINARY", "/tmp/eikad")
+	t.Setenv("EIKA_HUB_ROOT", "/tmp/hub")
+	t.Setenv("EIKA_HUB_URL", "http://env:9090")
 
 	cfg, err := config.Load(path)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	want := config.Config{
-		Listen:       ":9999",
-		DatabaseURL:  "postgres://x@db/eika",
-		DockerSocket: "/tmp/docker.sock",
-		SearxNGURL:   "http://env:8080",
-		SandboxImage: "env-image:2",
-		AuthToken:    "from-env",
+		Listen:         ":9999",
+		DatabaseURL:    "postgres://x@db/eika",
+		DockerSocket:   "/tmp/docker.sock",
+		SearxNGURL:     "http://env:8080",
+		SandboxImage:   "env-image:2",
+		SandboxNetwork: "env-net",
+		EikadBinary:    "/tmp/eikad",
+		HubRoot:        "/tmp/hub",
+		HubURL:         "http://env:9090",
+		AuthToken:      "from-env",
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %v, want %v", cfg, want)
@@ -207,6 +216,10 @@ func TestValidate(t *testing.T) {
 		{"empty docker socket", missing(func(c *config.Config) { c.DockerSocket = "" }), false},
 		{"empty searxng url", missing(func(c *config.Config) { c.SearxNGURL = "" }), false},
 		{"empty sandbox image", missing(func(c *config.Config) { c.SandboxImage = "" }), false},
+		{"empty sandbox network", missing(func(c *config.Config) { c.SandboxNetwork = "" }), true},
+		{"empty eikad binary", missing(func(c *config.Config) { c.EikadBinary = "" }), false},
+		{"empty hub root", missing(func(c *config.Config) { c.HubRoot = "" }), false},
+		{"empty hub url", missing(func(c *config.Config) { c.HubURL = "" }), false},
 		{"empty auth token", missing(func(c *config.Config) { c.AuthToken = "" }), false},
 		{"model without name", withModels(noName), false},
 		{"model without base url", withModels(noBase), false},

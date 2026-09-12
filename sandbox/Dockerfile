@@ -2,9 +2,19 @@
 # from this image, as the non-root user `eika`, with the repository checked out
 # at /workspace.
 #
-# eikad is not baked in yet; the harness mounts it read-only at
-# /usr/local/bin/eikad once phase 2 lands, which is also how custom images are
-# supported.
+# eikad is baked in here, but the harness also copies its own build of the
+# binary into every container before starting it, so a custom image that does
+# not carry eikad works just as well. The build context is the repository root:
+# `docker build -f sandbox/Dockerfile .`, which `make sandbox` does.
+FROM golang:1.26-bookworm AS eikad
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/ cmd/
+COPY internal/ internal/
+# Static, so the binary runs in any sandbox image.
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/eikad ./cmd/eikad
+
 FROM ubuntu:24.04
 
 ARG NODE_VERSION=22.23.1
@@ -58,9 +68,14 @@ RUN usermod -l eika -d /home/eika -m ubuntu && \
     mkdir -p /workspace /home/eika/go && \
     chown -R eika:eika /workspace /home/eika
 
+COPY --from=eikad /out/eikad /usr/local/bin/eikad
+
 USER eika
 WORKDIR /workspace
 ENV GOPATH=/home/eika/go
+EXPOSE 7000
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sleep", "infinity"]
+# The harness overrides this entrypoint with the same command plus its flags;
+# it is spelled out here so the image is usable on its own.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/eikad"]
+CMD ["-listen", ":7000", "-root", "/workspace"]

@@ -43,6 +43,7 @@ make dev           # harness on :8080 and Vite on :5173 against compose services
 ## Status
 
 Phase 0 (foundations) is complete: module layout, configuration, event
-envelope, health endpoints, frontend shell, and the compose stack. The agent
-loop, sandboxes, persistence, and the UI proper land in later phases; see
-`docs/PLAN.md`.
+envelope, health endpoints, frontend shell, and the compose stack. Phase 2
+(sandboxes and workspaces) is complete: the `eikad` sandbox daemon, the
+sandbox executor, workspace containers and volumes, and the git hub. The agent
+loop, persistence, and the UI proper land in later phases; see `docs/PLAN.md`.

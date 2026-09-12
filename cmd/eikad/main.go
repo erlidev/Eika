@@ -1,22 +1,23 @@
 // Command eikad is the sandbox daemon. It runs inside every workspace
 // container and is the only thing the harness talks to when an agent reads a
-// file, writes a file, or runs a command.
+// file, writes a file, runs a command, opens a terminal, or watches for
+// changes.
 //
-// This is a placeholder: it serves /healthz so the harness and the compose
-// stack can already probe it. Exec, PTY, file, and watch endpoints arrive in
-// phase 2.
+// It refuses to start without EIKAD_TOKEN, which the harness generates per
+// workspace, so a sandbox is never reachable without authentication.
 package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/erlidev/eika/internal/eikad"
 	"github.com/erlidev/eika/internal/server"
 )
 
@@ -29,20 +30,25 @@ func main() {
 
 // run serves the daemon until the container stops it.
 func run() error {
-	listen := flag.String("listen", ":9090", "address to listen on")
+	listen := flag.String("listen", ":7000", "address to listen on")
+	root := flag.String("root", "/workspace", "workspace directory every path is confined to")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(log)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		fmt.Fprintln(w, `{"status":"ok"}`)
-	})
+	token := os.Getenv(eikad.TokenEnv)
+	if token == "" {
+		return errors.New(eikad.TokenEnv + " is not set")
+	}
+	d, err := eikad.New(eikad.Options{Root: *root, Token: token}, log)
+	if err != nil {
+		return err
+	}
+	log.Info("sandbox daemon starting", "root", d.Root())
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	return server.Serve(ctx, *listen, mux, log)
+	return server.Serve(ctx, *listen, d.Handler(), log)
 }

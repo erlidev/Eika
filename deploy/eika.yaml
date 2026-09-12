@@ -5,6 +5,13 @@ database_url: "postgres://eika:eika@postgres:5432/eika?sslmode=disable"
 docker_socket: "/var/run/docker.sock"
 searxng_url: "http://searxng:8080"
 sandbox_image: "eika-sandbox:latest"
+# Sandboxes join this network so the harness reaches them by container name.
+# Leave it empty to publish each sandbox's daemon port on 127.0.0.1 instead,
+# which is what a harness running outside compose needs.
+sandbox_network: "eika_default"
+eikad_binary: "/usr/local/share/eika/eikad"
+hub_root: "/var/lib/eika/hub"
+hub_url: "http://eika:8080"
 
 models:
   - name: gpt-5
