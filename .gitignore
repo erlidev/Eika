@@ -1,0 +1,15 @@
+# Build output
+/bin/
+/web/dist/
+/web/node_modules/
+/web/.vite/
+
+# Local configuration and secrets
+/deploy/.env
+*.local.yaml
+
+# Editor and OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -1,0 +1,14 @@
+# Default Eika configuration. Secrets are not set here; supply them through
+# the EIKA_* environment variables documented in deploy/.env.example.
+listen: ":8080"
+database_url: "postgres://eika:eika@postgres:5432/eika?sslmode=disable"
+docker_socket: "/var/run/docker.sock"
+searxng_url: "http://searxng:8080"
+sandbox_image: "eika-sandbox:latest"
+
+models:
+  - name: gpt-5
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    context_window: 400000
+    max_output: 128000

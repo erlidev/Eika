@@ -24,6 +24,8 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Auth | Single user, one bearer token set at deploy time |
 | Compaction | Deferred; the session model must support it later |
 | Skills / templates | Deferred; AGENTS.md is in scope |
+| Config format | YAML via `gopkg.in/yaml.v3`; secrets only through `EIKA_*` env vars |
+| Go tooling | `staticcheck` pinned by a `tool` directive in `go.mod`; `golangci-lint` optional |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -272,7 +274,7 @@ parallel.
 
 ## 11. Phase checklist
 
-- [ ] Phase 0: Foundations
+- [x] Phase 0: Foundations
 - [ ] Phase 1: Agent core
 - [ ] Phase 2: Sandboxes and workspaces
 - [ ] Phase 3: Persistence and sessions

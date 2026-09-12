@@ -1,0 +1,22 @@
+# Used by `make lint` when golangci-lint is installed. CI does not depend on
+# it: go vet and staticcheck run through `go tool` and are always available.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - misspell
+    - revive
+    - unconvert
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
