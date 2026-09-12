@@ -21,17 +21,62 @@ func writeConfig(t *testing.T, body string) string {
 	return path
 }
 
+// clearEnv removes every EIKA_* override for the duration of the test so that
+// the developer's own environment cannot change the result.
+func clearEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{
+		"EIKA_LISTEN", "EIKA_DATABASE_URL", "EIKA_DOCKER_SOCKET",
+		"EIKA_SEARXNG_URL", "EIKA_SANDBOX_IMAGE", "EIKA_AUTH_TOKEN",
+	} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatalf("unset %s: %v", name, err)
+		}
+	}
+}
+
+// valid returns the defaults plus the auth token every deployment must set.
+func valid() config.Config {
+	c := config.Default()
+	c.AuthToken = "token"
+	return c
+}
+
 func TestLoadDefaults(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("EIKA_AUTH_TOKEN", "token")
 	cfg, err := config.Load("")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if !reflect.DeepEqual(cfg, config.Default()) {
+	if !reflect.DeepEqual(cfg, valid()) {
 		t.Errorf("got %v, want the defaults", cfg)
 	}
 }
 
+func TestLoadEmptyFileUsesDefaults(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("EIKA_AUTH_TOKEN", "token")
+	for name, body := range map[string]string{
+		"empty":        "",
+		"comment only": "# nothing set here\n",
+		"whitespace":   "\n\n  \n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := config.Load(writeConfig(t, body))
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if !reflect.DeepEqual(cfg, valid()) {
+				t.Errorf("got %v, want the defaults", cfg)
+			}
+		})
+	}
+}
+
 func TestLoadFile(t *testing.T) {
+	clearEnv(t)
 	path := writeConfig(t, `
 listen: "127.0.0.1:9000"
 database_url: "postgres://u:p@db:5432/eika"
@@ -69,6 +114,8 @@ models:
 }
 
 func TestLoadFileErrors(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("EIKA_AUTH_TOKEN", "token")
 	t.Run("missing file", func(t *testing.T) {
 		_, err := config.Load(filepath.Join(t.TempDir(), "absent.yaml"))
 		if !errors.Is(err, config.ErrNoConfigFile) {
@@ -90,6 +137,7 @@ func TestLoadFileErrors(t *testing.T) {
 }
 
 func TestLoadEnvOverridesFile(t *testing.T) {
+	clearEnv(t)
 	path := writeConfig(t, "listen: \":1\"\nauth_token: \"from-file\"\n")
 	t.Setenv("EIKA_LISTEN", ":9999")
 	t.Setenv("EIKA_AUTH_TOKEN", "from-env")
@@ -124,8 +172,13 @@ func TestValidate(t *testing.T) {
 		MaxOutput:     1,
 	}
 	withModels := func(ms ...config.Model) config.Config {
-		c := config.Default()
+		c := valid()
 		c.Models = ms
+		return c
+	}
+	missing := func(clear func(c *config.Config)) config.Config {
+		c := valid()
+		clear(&c)
 		return c
 	}
 	noName := model
@@ -146,9 +199,15 @@ func TestValidate(t *testing.T) {
 		cfg  config.Config
 		ok   bool
 	}{
-		{"defaults", config.Default(), true},
+		{"defaults plus a token", valid(), true},
 		{"valid models", withModels(model, other), true},
-		{"empty listen", config.Config{}, false},
+		{"zero value", config.Config{}, false},
+		{"empty listen", missing(func(c *config.Config) { c.Listen = "" }), false},
+		{"empty database url", missing(func(c *config.Config) { c.DatabaseURL = "" }), false},
+		{"empty docker socket", missing(func(c *config.Config) { c.DockerSocket = "" }), false},
+		{"empty searxng url", missing(func(c *config.Config) { c.SearxNGURL = "" }), false},
+		{"empty sandbox image", missing(func(c *config.Config) { c.SandboxImage = "" }), false},
+		{"empty auth token", missing(func(c *config.Config) { c.AuthToken = "" }), false},
 		{"model without name", withModels(noName), false},
 		{"model without base url", withModels(noBase), false},
 		{"model without api key env", withModels(noKeyEnv), false},
@@ -170,7 +229,7 @@ func TestValidate(t *testing.T) {
 }
 
 func TestStringRedactsSecrets(t *testing.T) {
-	cfg := config.Default()
+	cfg := valid()
 	cfg.AuthToken = "top-secret-token"
 	cfg.DatabaseURL = "postgres://eika:hunter2@postgres:5432/eika"
 	cfg.Models = []config.Model{{
@@ -197,5 +256,27 @@ func TestStringRedactsSecrets(t *testing.T) {
 func TestStringKeepsEmptyTokenEmpty(t *testing.T) {
 	if got := config.Default().String(); !strings.Contains(got, "auth_token= ") {
 		t.Errorf("String() = %s, want an empty auth_token", got)
+	}
+}
+
+func TestStringRedactsAwkwardDatabasePasswords(t *testing.T) {
+	cases := map[string]string{
+		"at sign in password": "postgres://eika:hun@ter2@postgres:5432/eika",
+		"escaped at sign":     "postgres://eika:hun%40ter2@postgres:5432/eika",
+		"colon in password":   "postgres://eika:a:b:c@postgres:5432/eika",
+		"password only":       "postgres://:hunter2@postgres:5432/eika",
+		"unparseable":         "://%%not a url",
+	}
+	for name, dsn := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := valid()
+			cfg.DatabaseURL = dsn
+			got := cfg.String()
+			for _, secret := range []string{"hunter2", "hun@ter2", "hun%40ter2", "a:b:c", "not a url"} {
+				if strings.Contains(got, secret) {
+					t.Errorf("String() leaked %q from %q: %s", secret, dsn, got)
+				}
+			}
+		})
 	}
 }

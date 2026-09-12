@@ -14,7 +14,7 @@ Two Go binaries, one frontend, and a three-service compose stack.
 | `config` | `internal/config` | YAML file plus `EIKA_*` environment overrides, validation, redacted `String()` |
 | `event` | `internal/event` | The event envelope and the event type name constants |
 | `server` | `internal/server` | Routing, the HTTP listener lifecycle, the health handlers |
-| frontend | `web/` | Vite, React 19, Tailwind v4, shadcn/ui; an app shell that polls the harness |
+| frontend | `web/` | Vite, React 19, Tailwind v4, shadcn/ui; an app shell that fetches harness health once, with a Recheck button |
 
 `eika` serves `GET /healthz` and `GET /api/healthz`, both returning
 `{"status":"ok"}`. `/healthz` is the container health check; `/api/healthz` is
@@ -31,6 +31,11 @@ value. No other package reads the environment. Precedence, lowest first:
 config.Default()  ->  the YAML file named by -config  ->  EIKA_* environment variables
 ```
 
+An empty or comment-only file is valid and means "use the defaults".
+`Validate` rejects an empty `listen`, `database_url`, `docker_socket`,
+`searxng_url`, `sandbox_image`, or `auth_token`, so a deployment cannot come up
+with an unauthenticated API by accident.
+
 The deployed file is `deploy/eika.yaml`; secrets come from the environment
 (`EIKA_AUTH_TOKEN`, and the per-model `api_key_env` variables). Model API keys
 are never stored in configuration: a model declares the *name* of the
@@ -40,22 +45,33 @@ token and the database password so a config can be logged.
 ## Compose topology
 
 ```
-                 host :8080                      host :8888 (debug only)
-                     |                                  |
-             +-------v--------+   internal net   +-------v-------+
-             |     eika       +------------------>    searxng    |
-             |  (harness)     |                  |  JSON format  |
-             +---+--------+---+                  +---------------+
-                 |        |
-   /var/run/     |        | internal net
-   docker.sock <-+        v
-   (sibling containers)  +----------------+
-                         |    postgres    |  volume: eika-postgres
-                         |      16        |
-                         +----------------+
+          127.0.0.1:8080                   127.0.0.1:8888 (debug only)
+                 |                                  |
+         +-------v--------+   internal net   +------v--------+
+         |     eika       +------------------>    searxng    |
+         |  (harness)     |                  |  JSON format  |
+         +---+--------+---+                  +---------------+
+             |        |
+   /var/run/ |        | internal net
+ docker.sock +        v
+ (sibling             +----------------+
+  containers)         |    postgres    |  volume: eika-postgres
+                      |      16        |  127.0.0.1:5432
+                      +----------------+
 
    volume eika-hub -> /var/lib/eika in the harness (bare git repos, phase 2)
 ```
+
+Every published port binds to 127.0.0.1. Eika is single-user and holds
+credentials, so nothing listens on a public interface; put a reverse proxy in
+front of it for remote access.
+
+The harness runs as the non-root user `eika` (uid 1000). It still needs the
+Docker socket, and the socket's group id differs between hosts, so the image
+takes a `DOCKER_GID` build argument (default 999) and adds `eika` to that
+group. Accepted risk: access to the Docker socket is equivalent to root on the
+host. The harness cannot avoid it, because sandboxes are sibling containers
+that it starts itself. Nothing inside a sandbox ever sees the socket.
 
 The harness image is built by the multi-stage `Dockerfile` at the repository
 root: stage one builds the frontend with Node 22, stage two builds both Go
@@ -80,9 +96,14 @@ web/src/
   lib/          pure utilities with tests
 ```
 
+Server state goes through TanStack Query; the client lives in `main.tsx` and
+`api/` owns the wire types and the fetch functions. Streaming and UI state will
+use per-feature Zustand stores from phase 5 on.
+
 In development Vite serves the UI on :5173 and proxies `/api` to the harness on
 :8080. In production the harness serves the built bundle itself, so the same
-relative URLs work in both.
+relative URLs work in both. Any path that is not a file under the web directory
+renders `index.html`, so client-side routes survive a full page load.
 
 ## Package dependency direction
 
@@ -128,7 +149,14 @@ Rules that reviews enforce:
 
 ## Testing
 
-`make check` runs `gofmt` verification, `go vet`, `staticcheck` (pinned through
-a `tool` directive in `go.mod`, so no global install is needed),
-`golangci-lint` when it is installed, `go test ./...`, ESLint, `tsc`, and
-Vitest. Everything runs without Docker and without network access.
+`make check` runs `gofmt` and `goimports` verification, `go vet`,
+`staticcheck`, `golangci-lint` when it is installed, the Go tests, ESLint,
+`tsc`, and Vitest. `goimports` and `staticcheck` are pinned by `tool`
+directives in `go.mod`, so CI needs no global installs.
+
+The Go targets name `./cmd/... ./internal/...` rather than `./...`:
+`web/node_modules` ships Go files of its own (`flatted`), which `./...` would
+otherwise walk into.
+
+After `make web-install`, `make check` runs without Docker and without network
+access.

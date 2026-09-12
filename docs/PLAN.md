@@ -25,7 +25,11 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Compaction | Deferred; the session model must support it later |
 | Skills / templates | Deferred; AGENTS.md is in scope |
 | Config format | YAML via `gopkg.in/yaml.v3`; secrets only through `EIKA_*` env vars |
-| Go tooling | `staticcheck` pinned by a `tool` directive in `go.mod`; `golangci-lint` optional |
+| Go tooling | `staticcheck` and `goimports` pinned by `tool` directives in `go.mod`; `golangci-lint` optional |
+| `EXTENDING.md` examples | One section per extension point exists from phase 0; the copy-pasteable example lands with the phase that creates the interface |
+| `internal/event` in phase 0 | The envelope and type names are the contract the later phases and the frontend agree on, so they are fixed before anything emits events |
+| `internal/server` in phase 0 | `main` must stay thin, and both binaries need one listener lifecycle; phase 4 extends `routes.go` rather than creating the package |
+| Harness process user | Non-root `eika`, added to the host's docker group via a `DOCKER_GID` build arg. Socket access is root-equivalent and accepted: sandboxes are sibling containers |
 
 ## 2. Core principle: every agent action runs in a sandbox
 

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"strings"
 
@@ -73,7 +75,9 @@ func Load(path string) (Config, error) {
 		}
 		dec := yaml.NewDecoder(bytes.NewReader(data))
 		dec.KnownFields(true)
-		if err := dec.Decode(&cfg); err != nil {
+		// An empty or comment-only file decodes to io.EOF; that means the
+		// deployment is happy with the defaults.
+		if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 			return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 		}
 	}
@@ -111,8 +115,17 @@ func (c Config) Validate() error {
 	if c.DatabaseURL == "" {
 		return errors.New("validate config: database_url is empty")
 	}
+	if c.DockerSocket == "" {
+		return errors.New("validate config: docker_socket is empty")
+	}
+	if c.SearxNGURL == "" {
+		return errors.New("validate config: searxng_url is empty")
+	}
 	if c.SandboxImage == "" {
 		return errors.New("validate config: sandbox_image is empty")
+	}
+	if c.AuthToken == "" {
+		return errors.New("validate config: auth_token is empty")
 	}
 	seen := make(map[string]bool, len(c.Models))
 	for i, m := range c.Models {
@@ -173,19 +186,16 @@ func redact(secret string) string {
 	return redacted
 }
 
-// redactURL hides the password of a scheme://user:password@host URL.
+// redactURL hides the password of a connection URL. A URL that does not parse
+// is reported as unparseable rather than printed, because it may still hold a
+// password.
 func redactURL(raw string) string {
-	scheme, rest, ok := strings.Cut(raw, "://")
-	if !ok {
-		return raw
+	if raw == "" {
+		return ""
 	}
-	creds, host, ok := strings.Cut(rest, "@")
-	if !ok {
-		return raw
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "[UNPARSEABLE]"
 	}
-	user, _, ok := strings.Cut(creds, ":")
-	if !ok {
-		return raw
-	}
-	return scheme + "://" + user + ":" + redacted + "@" + host
+	return u.Redacted()
 }

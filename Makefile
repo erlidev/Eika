@@ -6,7 +6,9 @@ SANDBOX_IMAGE ?= eika-sandbox:latest
 # Explicit package list: ./... would walk into web/node_modules, which ships
 # Go files of its own.
 GOPKGS := ./cmd/... ./internal/...
-COMPOSE := docker compose -f deploy/docker-compose.yml
+GODIRS := cmd internal
+ENV_FILE := deploy/.env
+COMPOSE := docker compose -f deploy/docker-compose.yml --env-file $(ENV_FILE)
 
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web sandbox web-install clean
@@ -50,12 +52,17 @@ lint-web: web-install
 ## fmt: format Go and frontend sources in place.
 fmt:
 	$(GO) fmt $(GOPKGS)
+	$(GO) tool goimports -w $(GODIRS)
 	cd $(WEB) && $(NPM) run format
 
 fmt-check:
-	@unformatted=$$(gofmt -l $$($(GO) list -f '{{.Dir}}' $(GOPKGS))); \
+	@unformatted=$$(gofmt -l $(GODIRS)); \
 	if [ -n "$$unformatted" ]; then \
 		echo "gofmt needed:"; echo "$$unformatted"; exit 1; \
+	fi
+	@unsorted=$$($(GO) tool goimports -l $(GODIRS)); \
+	if [ -n "$$unsorted" ]; then \
+		echo "goimports needed:"; echo "$$unsorted"; exit 1; \
 	fi
 	cd $(WEB) && $(NPM) run format:check
 
@@ -66,13 +73,21 @@ typecheck: web-install
 	cd $(WEB) && $(NPM) run typecheck
 
 ## dev: run the harness and the Vite dev server against the compose services.
-dev:
+## Needs deploy/.env; copy deploy/.env.example and fill it in first.
+dev: $(ENV_FILE)
 	$(COMPOSE) up -d postgres searxng
 	$(MAKE) -j2 dev-go dev-web
 
-dev-go:
-	EIKA_DATABASE_URL="postgres://eika:eika@127.0.0.1:5432/eika?sslmode=disable" \
-	EIKA_SEARXNG_URL="http://127.0.0.1:8888" \
+$(ENV_FILE):
+	@echo "$(ENV_FILE) is missing: cp deploy/.env.example $(ENV_FILE) and fill it in"; exit 1
+
+# The harness runs on the host in dev, so it reaches the compose services on
+# their published 127.0.0.1 ports instead of their internal hostnames.
+dev-go: $(ENV_FILE)
+	@set -a; . ./$(ENV_FILE); set +a; \
+	EIKA_AUTH_TOKEN="$${EIKA_AUTH_TOKEN:-dev-token}" \
+	EIKA_DATABASE_URL="postgres://$${POSTGRES_USER:-eika}:$${POSTGRES_PASSWORD}@127.0.0.1:$${POSTGRES_PORT:-5432}/$${POSTGRES_DB:-eika}?sslmode=disable" \
+	EIKA_SEARXNG_URL="http://127.0.0.1:$${SEARXNG_PORT:-8888}" \
 	$(GO) run ./cmd/eika -config deploy/eika.yaml
 
 dev-web: web-install
@@ -82,9 +97,13 @@ dev-web: web-install
 sandbox:
 	docker build -t $(SANDBOX_IMAGE) sandbox
 
-## web-install: install frontend dependencies from the lockfile.
+## web-install: install frontend dependencies when the lockfile is newer than
+## what is on disk.
 web-install:
-	@if [ ! -d $(WEB)/node_modules ]; then cd $(WEB) && $(NPM) ci; fi
+	@if [ ! -f $(WEB)/node_modules/.package-lock.json ] || \
+		[ $(WEB)/package-lock.json -nt $(WEB)/node_modules/.package-lock.json ]; then \
+		cd $(WEB) && $(NPM) ci; \
+	fi
 
 clean:
 	rm -rf $(BIN) $(WEB)/dist

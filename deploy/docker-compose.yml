@@ -5,18 +5,20 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      args:
+        DOCKER_GID: "${DOCKER_GID:-999}"
     image: eika:latest
     restart: unless-stopped
     environment:
       EIKA_LISTEN: ":8080"
-      EIKA_DATABASE_URL: "postgres://${POSTGRES_USER:-eika}:${POSTGRES_PASSWORD:-eika}@postgres:5432/${POSTGRES_DB:-eika}?sslmode=disable"
+      EIKA_DATABASE_URL: "postgres://${POSTGRES_USER:-eika}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-eika}?sslmode=disable"
       EIKA_DOCKER_SOCKET: "/var/run/docker.sock"
       EIKA_SEARXNG_URL: "http://searxng:8080"
       EIKA_SANDBOX_IMAGE: "${EIKA_SANDBOX_IMAGE:-eika-sandbox:latest}"
       EIKA_AUTH_TOKEN: "${EIKA_AUTH_TOKEN:?set EIKA_AUTH_TOKEN in deploy/.env}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     ports:
-      - "${EIKA_PORT:-8080}:8080"
+      - "127.0.0.1:${EIKA_PORT:-8080}:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - eika-hub:/var/lib/eika
@@ -36,10 +38,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: "${POSTGRES_USER:-eika}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-eika}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}"
       POSTGRES_DB: "${POSTGRES_DB:-eika}"
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - eika-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -55,7 +57,7 @@ services:
       SEARXNG_BASE_URL: "http://searxng:8080/"
       SEARXNG_SECRET: "${SEARXNG_SECRET:?set SEARXNG_SECRET in deploy/.env}"
     ports:
-      - "${SEARXNG_PORT:-8888}:8080"
+      - "127.0.0.1:${SEARXNG_PORT:-8888}:8080"
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
 

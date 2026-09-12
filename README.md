@@ -22,10 +22,14 @@ http://localhost:8080/healthz.
 ## Development
 
 ```sh
+cp deploy/.env.example deploy/.env   # make dev needs it: POSTGRES_PASSWORD, SEARXNG_SECRET
 make web-install   # once, installs frontend dependencies
 make check         # fmt, vet, staticcheck, Go tests, eslint, tsc, vitest
 make dev           # harness on :8080 and Vite on :5173 against compose services
 ```
+
+`make check` needs no Docker and no network once `make web-install` has run.
+`make dev` starts the postgres and searxng containers, so it needs both.
 
 ## Documentation
 

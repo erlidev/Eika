@@ -33,7 +33,10 @@ func (s *Server) handleWeb(dir string) http.Handler {
 	files := http.FileServer(http.Dir(dir))
 	index := filepath.Join(dir, "index.html")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := os.Stat(filepath.Join(dir, filepath.Clean(r.URL.Path))); err != nil {
+		// Anything that is not a regular file is a client-side route, not a
+		// static asset. Directories included: the UI never wants a listing.
+		fi, err := os.Stat(filepath.Join(dir, filepath.Clean(r.URL.Path)))
+		if err != nil || fi.IsDir() {
 			http.ServeFile(w, r, index)
 			return
 		}

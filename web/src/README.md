@@ -19,7 +19,10 @@ Rules:
   component instead.
 - `api/` types mirror the Go wire types. When a Go type changes, the TypeScript
   type changes in the same commit.
-- `lib/` holds pure functions only, each with a Vitest test next to it.
+- `lib/` holds pure functions only, each with a Vitest test next to it. Today
+  it holds the shadcn `cn` re-export.
+- Server state goes through TanStack Query; the client is created in
+  `main.tsx`. Streaming and UI state will use per-feature Zustand stores.
 
 Commands (run from `web/`):
 

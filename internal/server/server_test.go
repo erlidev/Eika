@@ -56,9 +56,13 @@ func TestWebDirServesIndexForClientRoutes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<h1>Eika</h1>"), 0o600); err != nil {
 		t.Fatalf("write index: %v", err)
 	}
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0o700); err != nil {
+		t.Fatalf("make assets dir: %v", err)
+	}
 	s := server.New(config.Default(), testLogger(), server.Options{WebDir: dir})
 
-	for _, path := range []string{"/", "/workspaces/42"} {
+	// "/assets" is a real directory: it must render the app, not a listing.
+	for _, path := range []string{"/", "/workspaces/42", "/assets", "/assets/"} {
 		rec := httptest.NewRecorder()
 		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusOK {
