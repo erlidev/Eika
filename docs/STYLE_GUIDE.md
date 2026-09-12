@@ -27,7 +27,7 @@ here in the same change, with a sentence of reasoning.
 
 ### Layout and packages
 
-- Module path `github.com/eika-dev/eika` (change here if it changes).
+- Module path `github.com/erlidev/eika` (change here if it changes).
 - `cmd/<binary>/main.go` is thin: parse flags, load config, wire packages,
   run. All logic lives in `internal/`.
 - Package names are short, lowercase, singular nouns: `tool`, `session`,
