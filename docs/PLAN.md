@@ -30,6 +30,15 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | `internal/event` in phase 0 | The envelope and type names are the contract the later phases and the frontend agree on, so they are fixed before anything emits events |
 | `internal/server` in phase 0 | `main` must stay thin, and both binaries need one listener lifecycle; phase 4 extends `routes.go` rather than creating the package |
 | Harness process user | Non-root `eika`, added to the host's docker group via a `DOCKER_GID` build arg. Socket access is root-equivalent and accepted: sandboxes are sibling containers |
+| OpenAI SDK version | `github.com/openai/openai-go/v3`, pinned at v3.61.0, the latest stable major |
+| Chat Completions, not Responses | Providers are "OpenAI-compatible" endpoints. Every such endpoint implements Chat Completions; few implement the Responses API. The `Provider` interface hides the choice, so a Responses implementation can be added later as another kind |
+| Retries live in the agent loop | The SDK's retries are switched off (`WithMaxRetries(0)`). One place decides, so the scripted fake provider exercises the same retry path as the real one. Retryable means 408, 409, 429, 5xx, or a transport failure |
+| Provider API keys | Resolved from the environment in the provider constructor, the one exception to "packages never read the environment": a key must never enter a `config.Config` value that gets logged or persisted, so configuration carries only the variable's name |
+| Event payload structs | Live in `internal/event`, not in the package that emits them, so that the server and the frontend decode events without importing the agent loop, and one file lists the whole protocol |
+| Built-in tool registry | `internal/tool/builtin/registry.go`, not `internal/tool/registry.go`: the tools import `tool` for the interface, so the registry of them cannot live in `tool` without an import cycle. `internal/tool/registry.go` holds the `Registry` type |
+| Provider kind registry | `provider.NewRegistry` takes each kind's constructor as a parameter, for the same reason: a provider package imports `provider` |
+| Tool registry lifetime | One registry is shared by every session; the executor arrives per call in `tool.CallContext`, so tools stay stateless |
+| Context file locations | Discovery is workspace-relative and reads through the executor. The "global" file is a workspace path, `.config/eika/AGENTS.md` by default, because the harness filesystem is not reachable from a sandbox |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -213,7 +222,8 @@ parallel.
   string edits, output truncation).
 - `executor/local` for tests only.
 - `agent`: loop with streaming, tool dispatch, steering and follow-up queues,
-  abort, error recovery. In-memory session for now.
+  abort, error recovery. In-memory session for now; a `Store` interface that
+  phase 3 implements against PostgreSQL.
 - `contextfile`: AGENTS.md discovery (project, parents, global).
 - Table-driven tests with a fake provider.
 
@@ -279,7 +289,7 @@ parallel.
 ## 11. Phase checklist
 
 - [x] Phase 0: Foundations
-- [ ] Phase 1: Agent core
+- [x] Phase 1: Agent core
 - [ ] Phase 2: Sandboxes and workspaces
 - [ ] Phase 3: Persistence and sessions
 - [ ] Phase 4: Server and event stream

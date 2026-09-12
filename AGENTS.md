@@ -62,7 +62,7 @@ there, test it, document it. Full walkthroughs are in `docs/EXTENDING.md`.
 
 | Adding a...     | Implement                    | Register in                        |
 |-----------------|------------------------------|------------------------------------|
-| tool            | `tool.Tool`                  | `internal/tool/registry.go`        |
+| tool            | `tool.Tool`                  | `internal/tool/builtin/registry.go`|
 | provider        | `provider.Provider`          | `internal/provider/registry.go`    |
 | search source   | `search.Source`              | `internal/search/registry.go`      |
 | API endpoint    | handler in `internal/server` | `internal/server/routes.go`        |

@@ -9,8 +9,9 @@ same commit.
 
 - `http.md` — HTTP routes, one entry per route with request and response
   fields. Lands in phase 4.
-- `events.md` — WebSocket event stream: topics, the envelope, and one entry per
-  event type. Lands in phase 4.
+- `events.md` — the event stream: topics, the envelope, and one entry per event
+  type. The agent run events are documented; the WebSocket transport lands in
+  phase 4.
 
 ## What exists now
 
@@ -34,7 +35,7 @@ The event envelope is already fixed, in `internal/event`:
 | `type` | string | Event type name, e.g. `tool.call`. |
 | `topic` | string | Where it is routed: `global`, `workspace:<id>`, or `session:<id>`. |
 | `time` | RFC 3339 timestamp, UTC | When the event was created. |
-| `payload` | object, optional | Type-specific body, owned by the emitting package. |
+| `payload` | object, optional | Type-specific body; the structs live in `internal/event`. |
 
 The type names are `turn.start`, `message.delta`, `tool.call`, `tool.output`,
 `tool.result`, `turn.end`, `run.error`, `question.asked`, `subagent.started`,
