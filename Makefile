@@ -93,9 +93,10 @@ dev-go: $(ENV_FILE)
 dev-web: web-install
 	cd $(WEB) && $(NPM) run dev
 
-## sandbox: build the default sandbox image.
+## sandbox: build the default sandbox image. The context is the repository
+## root because the image builds eikad from source.
 sandbox:
-	docker build -t $(SANDBOX_IMAGE) sandbox
+	docker build -f sandbox/Dockerfile -t $(SANDBOX_IMAGE) .
 
 ## web-install: install frontend dependencies when the lockfile is newer than
 ## what is on disk.

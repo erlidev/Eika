@@ -24,6 +24,18 @@ type Config struct {
 	SearxNGURL string `yaml:"searxng_url"`
 	// SandboxImage is the image used by workspaces that do not override it.
 	SandboxImage string `yaml:"sandbox_image"`
+	// SandboxNetwork is the Docker network sandbox containers join, which is
+	// how the harness resolves them by container name. Empty publishes each
+	// sandbox's daemon port on 127.0.0.1 instead, which is what a harness
+	// running outside compose needs.
+	SandboxNetwork string `yaml:"sandbox_network"`
+	// EikadBinary is the path to the static eikad binary in the harness
+	// filesystem. It is copied into every sandbox container.
+	EikadBinary string `yaml:"eikad_binary"`
+	// HubRoot is the directory holding the hub's bare git repositories.
+	HubRoot string `yaml:"hub_root"`
+	// HubURL is the harness base URL a sandbox reaches the git hub on.
+	HubURL string `yaml:"hub_url"`
 	// AuthToken is the bearer token required by every API route but /healthz.
 	AuthToken string `yaml:"auth_token"`
 	// Models lists the models the harness may use, in preference order.
@@ -56,6 +68,13 @@ func Default() Config {
 		DockerSocket: "/var/run/docker.sock",
 		SearxNGURL:   "http://searxng:8080",
 		SandboxImage: "eika-sandbox:latest",
+		// Sandboxes get their own network, which the harness joins as well.
+		// They can therefore reach the harness and be reached by it, but not
+		// the database or the search service on the default network.
+		SandboxNetwork: "eika_sandbox",
+		EikadBinary:    "/usr/local/share/eika/eikad",
+		HubRoot:        "/var/lib/eika/hub",
+		HubURL:         "http://eika:8080",
 	}
 }
 
@@ -93,12 +112,16 @@ func Load(path string) (Config, error) {
 // variable cleanly.
 func (c *Config) applyEnv() {
 	overrides := map[string]*string{
-		"EIKA_LISTEN":        &c.Listen,
-		"EIKA_DATABASE_URL":  &c.DatabaseURL,
-		"EIKA_DOCKER_SOCKET": &c.DockerSocket,
-		"EIKA_SEARXNG_URL":   &c.SearxNGURL,
-		"EIKA_SANDBOX_IMAGE": &c.SandboxImage,
-		"EIKA_AUTH_TOKEN":    &c.AuthToken,
+		"EIKA_LISTEN":          &c.Listen,
+		"EIKA_DATABASE_URL":    &c.DatabaseURL,
+		"EIKA_DOCKER_SOCKET":   &c.DockerSocket,
+		"EIKA_SEARXNG_URL":     &c.SearxNGURL,
+		"EIKA_SANDBOX_IMAGE":   &c.SandboxImage,
+		"EIKA_SANDBOX_NETWORK": &c.SandboxNetwork,
+		"EIKA_EIKAD_BINARY":    &c.EikadBinary,
+		"EIKA_HUB_ROOT":        &c.HubRoot,
+		"EIKA_HUB_URL":         &c.HubURL,
+		"EIKA_AUTH_TOKEN":      &c.AuthToken,
 	}
 	for name, field := range overrides {
 		if v, ok := os.LookupEnv(name); ok {
@@ -123,6 +146,17 @@ func (c Config) Validate() error {
 	}
 	if c.SandboxImage == "" {
 		return errors.New("validate config: sandbox_image is empty")
+	}
+	// sandbox_network may be empty: that is the development mode where the
+	// harness reaches sandboxes on published loopback ports.
+	if c.EikadBinary == "" {
+		return errors.New("validate config: eikad_binary is empty")
+	}
+	if c.HubRoot == "" {
+		return errors.New("validate config: hub_root is empty")
+	}
+	if c.HubURL == "" {
+		return errors.New("validate config: hub_url is empty")
 	}
 	if c.AuthToken == "" {
 		return errors.New("validate config: auth_token is empty")
@@ -165,8 +199,9 @@ const redacted = "[REDACTED]"
 // that it is safe to log.
 func (c Config) String() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s auth_token=%s models=[",
-		c.Listen, redactURL(c.DatabaseURL), c.DockerSocket, c.SearxNGURL, c.SandboxImage, redact(c.AuthToken))
+	fmt.Fprintf(&b, "config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s eikad_binary=%s hub_root=%s hub_url=%s auth_token=%s models=[",
+		c.Listen, redactURL(c.DatabaseURL), c.DockerSocket, c.SearxNGURL, c.SandboxImage,
+		c.SandboxNetwork, c.EikadBinary, c.HubRoot, c.HubURL, redact(c.AuthToken))
 	for i, m := range c.Models {
 		if i > 0 {
 			b.WriteByte(' ')

@@ -178,6 +178,50 @@ because it is a network call rather than a filesystem or process action.
 
 Lands in phase 7.
 
+## Using a custom sandbox image
+
+A workspace runs in the image named by `sandbox_image`, but a `workspace.Spec`
+can override it per workspace, either with an image name or with a build
+context. Any image works: the harness copies its own static `eikad` binary into
+the container at `/usr/local/bin/eikad` before starting it and uses that as the
+entrypoint, so an image needs no Eika-specific content at all.
+
+An image must satisfy three things:
+
+- a shell at `/bin/sh`, because `exec` with `shell` and the terminal use it,
+- a writable `/workspace`, which is where the volume or the host directory is
+  mounted,
+- a uid 1000 that owns `/workspace`, because a sandbox never runs as root; an
+  image that uses another user must say so in `Spec.User`,
+- `git`, if workspaces built from it clone from the hub.
+
+A sandbox container drops all Linux capabilities and runs with
+`no-new-privileges`, so an image that needs to install packages at run time
+will not work; install them at build time.
+
+Name an existing image:
+
+```go
+ws, err := host.Create(ctx, workspace.Spec{Image: "node:22-bookworm"})
+```
+
+Or build one from a directory holding a Dockerfile and its context:
+
+```go
+ws, err := host.Create(ctx, workspace.Spec{
+    BuildContext: "/var/lib/eika/images/rust",
+    Dockerfile:   "Dockerfile", // the default
+})
+```
+
+The built image is tagged `eika-ws-<id>:latest`. Start the workspace with
+`host.Start`, then take its executor with `host.Executor(ws)`; every tool call
+goes through that.
+
+To change the default image for every workspace, set `sandbox_image` (or
+`EIKA_SANDBOX_IMAGE`) and, if you want Eika's own image as a base, extend
+`sandbox/Dockerfile` and rebuild it with `make sandbox`.
+
 ## Adding an API endpoint
 
 Write the handler in `internal/server/` and register the route in

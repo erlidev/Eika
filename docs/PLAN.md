@@ -39,6 +39,15 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Provider kind registry | `provider.NewRegistry` takes each kind's constructor as a parameter, for the same reason: a provider package imports `provider` |
 | Tool registry lifetime | One registry is shared by every session; the executor arrives per call in `tool.CallContext`, so tools stay stateless |
 | Context file locations | Discovery is workspace-relative and reads through the executor. The "global" file is a workspace path, `.config/eika/AGENTS.md` by default, because the harness filesystem is not reachable from a sandbox |
+| `eikad` injection | The harness copies its static `eikad` into each created container (`CopyToContainer`) before starting it, rather than bind-mounting it or using a shared volume. A bind mount source is resolved by the Docker daemon on the *host*, and the harness's filesystem is inside a container; a shared volume would need a helper container to populate it. The copy needs neither and works for any image |
+| `eikad` listener | Port 7000, flag-configurable. `cmd/eikad` reuses `server.Serve`, so both binaries share one listener lifecycle |
+| `eikad` dependencies | `github.com/coder/websocket` for `/pty` and `/watch` (context-aware, no global state, the maintained successor to nhooyr.io/websocket) and `github.com/creack/pty` for the terminal (the standard Unix pty wrapper; the standard library has none). The watcher polls with the standard library instead of adding fsnotify |
+| Docker client | `github.com/docker/docker/client`, the official Engine API client. The alternative is hand-rolling the socket protocol, which the style guide's "boring technology" rule rejects |
+| Sandbox network | Sandboxes join their own network, pinned to `eika_sandbox`, which only the harness also joins, so a sandbox cannot reach postgres or searxng. They are addressed by container name. An empty `sandbox_network` publishes each daemon port on `127.0.0.1`, which is how `make dev` and the Docker tests reach a sandbox from outside compose |
+| Sandbox confinement | Docker's init is PID 1, all capabilities are dropped, `no-new-privileges` is set, and the container runs as uid 1000 by default. A custom image must have that uid or set `Spec.User` |
+| Hub access scope | A hub grant covers one project: `Grant(workspaceID, project, token)`, checked against the requested project on every request. A workspace's token is useless on any other project, and a stopped workspace holds no grant |
+| Hub package | `internal/workspace/hub`, not `internal/hub`: the hub exists to serve workspaces and `workspace` is its only importer |
+| Hub credentials | Remote credentials reach `git` through a one-line credential helper reading environment variables, so a token is never written to disk. Inside a workspace the same shape reads `EIKA_HUB_USER` and `EIKA_HUB_TOKEN`, so the hub token never appears in a remote URL or in `.git/config` |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -165,6 +174,7 @@ type Tool interface {
 
 // executor: the only way tools touch a workspace
 type Executor interface {
+    Root() string                                                  // workspace root
     Exec(ctx context.Context, spec ExecSpec) (ExecResult, error)   // streams output
     ReadFile(ctx context.Context, path string, opts ReadOpts) ([]byte, error)
     WriteFile(ctx context.Context, path string, data []byte) error
@@ -185,12 +195,13 @@ the interface, register it in one registry file, add tests, document it in
 
 ## 6. Sandbox daemon (`eikad`)
 
-A small static Go binary baked into `eika-sandbox` and also injected into
-custom images via a read-only volume mount, so any image works. It listens on
-the Docker network and provides: exec with streaming stdout/stderr and exit
+A small static Go binary baked into `eika-sandbox` and copied into every
+container the harness creates, so any image works. It listens on the Docker
+network on port 7000 and provides: exec with streaming stdout/stderr and exit
 codes, PTY sessions for the web terminal, file read/write/stat/list, and a
 file-change watcher for the editor. The harness authenticates with a
-per-workspace token passed as an environment variable at container start.
+per-workspace token passed as `EIKAD_TOKEN` at container start. The API is
+documented in `docs/api/eikad.md`.
 
 ## 7. Event protocol
 
@@ -242,6 +253,12 @@ parallel.
 - `store`: query layer, transactional writes for entries.
 
 ### Phase 4: Server and event stream
+- Wiring left from phase 2, and phase 4 owns it: nothing constructs
+  `hub.Hub` or `workspace.Host` yet, and nothing serves the hub. Phase 4
+  builds both in `cmd/eika` from configuration, mounts `hub.Handler` at
+  `/git`, and reconciles workspaces with `Host.List` on startup. Until then
+  `hub_url` in `deploy/eika.yaml` is inert: it is the address a sandbox will
+  use once the harness serves the hub.
 - HTTP API for projects, workspaces, sessions, runs, questions, settings.
 - WebSocket event stream with topics and replay from an entry id.
 - Bearer token auth.
@@ -290,7 +307,7 @@ parallel.
 
 - [x] Phase 0: Foundations
 - [x] Phase 1: Agent core
-- [ ] Phase 2: Sandboxes and workspaces
+- [x] Phase 2: Sandboxes and workspaces
 - [ ] Phase 3: Persistence and sessions
 - [ ] Phase 4: Server and event stream
 - [ ] Phase 5: Web UI core

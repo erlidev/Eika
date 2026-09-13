@@ -12,6 +12,8 @@ same commit.
 - `events.md` — the event stream: topics, the envelope, and one entry per event
   type. The agent run events are documented; the WebSocket transport lands in
   phase 4.
+- `eikad.md` — the sandbox daemon's API: exec, files, terminal, and the change
+  watcher. The harness is its only client.
 
 ## What exists now
 
@@ -22,7 +24,10 @@ Two unauthenticated health routes, both returning `{"status": "ok"}`:
 | GET | `/healthz` | The harness process is up. Used as the container health check. |
 | GET | `/api/healthz` | The same response under the `/api` prefix the frontend uses. |
 
-`eikad` serves `GET /healthz` with the same body.
+`eikad` serves `GET /healthz` with the same body, plus the sandbox API in
+`eikad.md`. The harness also serves the git hub at `/git/<project>.git`, which
+speaks git's Smart HTTP protocol and authenticates workspaces with HTTP basic
+auth rather than the bearer token.
 
 Every route added from phase 4 on requires `Authorization: Bearer <token>`,
 where the token is the configured `auth_token`. `/healthz` is the only
