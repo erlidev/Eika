@@ -34,10 +34,11 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | `eikad` listener | Port 7000, flag-configurable. `cmd/eikad` reuses `server.Serve`, so both binaries share one listener lifecycle |
 | `eikad` dependencies | `github.com/coder/websocket` for `/pty` and `/watch` (context-aware, no global state, the maintained successor to nhooyr.io/websocket) and `github.com/creack/pty` for the terminal (the standard Unix pty wrapper; the standard library has none). The watcher polls with the standard library instead of adding fsnotify |
 | Docker client | `github.com/docker/docker/client`, the official Engine API client. The alternative is hand-rolling the socket protocol, which the style guide's "boring technology" rule rejects |
-| Sandbox network | Sandboxes join the compose network, pinned to `eika_default`, and are addressed by container name. An empty `sandbox_network` publishes each daemon port on `127.0.0.1`, which is how `make dev` and the Docker tests reach a sandbox from outside compose |
+| Sandbox network | Sandboxes join their own network, pinned to `eika_sandbox`, which only the harness also joins, so a sandbox cannot reach postgres or searxng. They are addressed by container name. An empty `sandbox_network` publishes each daemon port on `127.0.0.1`, which is how `make dev` and the Docker tests reach a sandbox from outside compose |
+| Sandbox confinement | Docker's init is PID 1, all capabilities are dropped, `no-new-privileges` is set, and the container runs as uid 1000 by default. A custom image must have that uid or set `Spec.User` |
+| Hub access scope | A hub grant covers one project: `Grant(workspaceID, project, token)`, checked against the requested project on every request. A workspace's token is useless on any other project, and a stopped workspace holds no grant |
 | Hub package | `internal/workspace/hub`, not `internal/hub`: the hub exists to serve workspaces and `workspace` is its only importer |
 | Hub credentials | Remote credentials reach `git` through a one-line credential helper reading environment variables, so a token is never written to disk. Inside a workspace the same shape reads `EIKA_HUB_USER` and `EIKA_HUB_TOKEN`, so the hub token never appears in a remote URL or in `.git/config` |
-| Sandbox PID 1 | `eikad` is PID 1 in a sandbox and does not reap orphaned grandchildren. A workspace container is disposable, so zombies are cleaned up when it is destroyed rather than by adding an init |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -242,10 +243,12 @@ parallel.
 - `store`: query layer, transactional writes for entries.
 
 ### Phase 4: Server and event stream
-- Wiring left from phase 2: build `hub.Hub` and `workspace.Host` in
-  `cmd/eika` from configuration, mount `hub.Handler` at `/git`, and reconcile
-  workspaces with `Host.List` on startup. Both packages are finished and
-  tested; nothing serves them yet.
+- Wiring left from phase 2, and phase 4 owns it: nothing constructs
+  `hub.Hub` or `workspace.Host` yet, and nothing serves the hub. Phase 4
+  builds both in `cmd/eika` from configuration, mounts `hub.Handler` at
+  `/git`, and reconciles workspaces with `Host.List` on startup. Until then
+  `hub_url` in `deploy/eika.yaml` is inert: it is the address a sandbox will
+  use once the harness serves the hub.
 - HTTP API for projects, workspaces, sessions, runs, questions, settings.
 - WebSocket event stream with topics and replay from an entry id.
 - Bearer token auth.

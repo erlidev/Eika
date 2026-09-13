@@ -52,9 +52,16 @@ type Hub struct {
 	root string
 	log  *slog.Logger
 
-	// mu guards the tokens a workspace uses to reach Handler.
+	// mu guards the grants workspaces use to reach Handler.
 	mu     sync.RWMutex
-	tokens map[string]string
+	grants map[string]grant
+}
+
+// grant is one workspace's access to the hub: a token, and the single project
+// it may use that token on.
+type grant struct {
+	project string
+	token   string
 }
 
 // New builds a Hub whose repositories live under root, creating the directory
@@ -70,7 +77,7 @@ func New(root string, log *slog.Logger) (*Hub, error) {
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return nil, fmt.Errorf("create hub root %s: %w", abs, err)
 	}
-	return &Hub{root: abs, log: log, tokens: make(map[string]string)}, nil
+	return &Hub{root: abs, log: log, grants: make(map[string]grant)}, nil
 }
 
 // Root is the directory holding the bare repositories.
@@ -153,19 +160,24 @@ func (h *Hub) Push(ctx context.Context, project, remoteURL, refspec string, cred
 	return nil
 }
 
-// Grant lets a workspace reach Handler with the given token, replacing any
-// token it held before.
-func (h *Hub) Grant(workspaceID, token string) {
+// Grant lets a workspace reach one project through Handler with the given
+// token, replacing any grant it held before. A workspace never has access to
+// more than the single project it was created for.
+func (h *Hub) Grant(workspaceID, project, token string) error {
+	if !projectName.MatchString(project) {
+		return fmt.Errorf("%w: %q", ErrBadProject, project)
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.tokens[workspaceID] = token
+	h.grants[workspaceID] = grant{project: project, token: token}
+	return nil
 }
 
 // Revoke removes a workspace's access to Handler.
 func (h *Hub) Revoke(workspaceID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	delete(h.tokens, workspaceID)
+	delete(h.grants, workspaceID)
 }
 
 // git runs one git command in dir. When creds is set, git is told to answer

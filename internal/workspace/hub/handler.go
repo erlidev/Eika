@@ -25,7 +25,7 @@ func (h *Hub) Handler() http.Handler {
 			return
 		}
 		user, token, ok := r.BasicAuth()
-		if !ok || !h.authorized(user, token) {
+		if !ok || !h.authenticated(user, token) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="eika"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -33,6 +33,11 @@ func (h *Hub) Handler() http.Handler {
 		project, ok := projectOf(r.URL.Path)
 		if !ok {
 			http.Error(w, "no such project", http.StatusNotFound)
+			return
+		}
+		// A workspace's token works on its own project and nothing else.
+		if !h.permitted(user, project) {
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		path, err := h.Path(project)
@@ -57,12 +62,20 @@ func (h *Hub) Handler() http.Handler {
 	})
 }
 
-// authorized reports whether the workspace holds the token it was granted.
-func (h *Hub) authorized(workspaceID, token string) bool {
+// authenticated reports whether the workspace holds the token it was granted.
+func (h *Hub) authenticated(workspaceID, token string) bool {
 	h.mu.RLock()
-	want, ok := h.tokens[workspaceID]
+	g, ok := h.grants[workspaceID]
 	h.mu.RUnlock()
-	return ok && subtle.ConstantTimeCompare([]byte(want), []byte(token)) == 1
+	return ok && subtle.ConstantTimeCompare([]byte(g.token), []byte(token)) == 1
+}
+
+// permitted reports whether the workspace's grant covers the project.
+func (h *Hub) permitted(workspaceID, project string) bool {
+	h.mu.RLock()
+	g, ok := h.grants[workspaceID]
+	h.mu.RUnlock()
+	return ok && g.project == project
 }
 
 // projectOf extracts the project name from a request path of the shape

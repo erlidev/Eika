@@ -23,6 +23,9 @@ const (
 	// ptyExitTimeout bounds how long the daemon waits to deliver the final
 	// exit message to a client that has stopped reading.
 	ptyExitTimeout = 5 * time.Second
+	// ptyWriteTimeout bounds one output message, so that a client that has
+	// stopped reading cannot keep the terminal alive.
+	ptyWriteTimeout = 30 * time.Second
 )
 
 // handlePTY upgrades to a WebSocket and runs an interactive shell on a
@@ -51,6 +54,10 @@ func (d *Daemon) handlePTY(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.CommandContext(ctx, shellPath(q.Get("shell")))
 	cmd.Dir = dir
 	cmd.Env = append(sanitizedEnv(), "TERM=xterm-256color")
+	// The shell leads the session's process group; cancelling the request
+	// kills the group, so a lingering child cannot keep Wait blocked.
+	cmd.Cancel = func() error { return killGroup(cmd) }
+	cmd.WaitDelay = waitDelay
 	tty, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: size(q.Get("rows"), defaultRows),
 		Cols: size(q.Get("cols"), defaultCols),
@@ -117,13 +124,22 @@ func (d *Daemon) pumpTerminalOutput(ctx context.Context, conn *websocket.Conn, t
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := tty.Read(buf)
-		if n > 0 && !sendPTY(ctx, conn, PTYMessage{Type: PTYOutput, Data: buf[:n]}) {
+		// Each write gets its own deadline: a client that stops reading must
+		// not keep the shell and this goroutine alive indefinitely.
+		if n > 0 && !d.writeTerminalOutput(ctx, conn, buf[:n]) {
 			return
 		}
 		if err != nil {
 			return
 		}
 	}
+}
+
+// writeTerminalOutput sends one output message under its own deadline.
+func (d *Daemon) writeTerminalOutput(ctx context.Context, conn *websocket.Conn, data []byte) bool {
+	writeCtx, cancel := context.WithTimeout(ctx, ptyWriteTimeout)
+	defer cancel()
+	return sendPTY(writeCtx, conn, PTYMessage{Type: PTYOutput, Data: data})
 }
 
 // sendPTY writes one message and reports whether the connection is still

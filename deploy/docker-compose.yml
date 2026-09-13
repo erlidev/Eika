@@ -16,8 +16,10 @@ services:
       EIKA_SEARXNG_URL: "http://searxng:8080"
       EIKA_SANDBOX_IMAGE: "${EIKA_SANDBOX_IMAGE:-eika-sandbox:latest}"
       # Sandboxes join this network, which is how the harness reaches them by
-      # container name and how they reach the git hub at EIKA_HUB_URL.
-      EIKA_SANDBOX_NETWORK: "eika_default"
+      # container name and how they reach the git hub at EIKA_HUB_URL. It
+      # holds only the harness and sandboxes, so a sandbox cannot reach
+      # postgres or searxng.
+      EIKA_SANDBOX_NETWORK: "eika_sandbox"
       EIKA_EIKAD_BINARY: "/usr/local/share/eika/eikad"
       EIKA_HUB_ROOT: "/var/lib/eika/hub"
       EIKA_HUB_URL: "http://eika:8080"
@@ -25,6 +27,9 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     ports:
       - "127.0.0.1:${EIKA_PORT:-8080}:8080"
+    networks:
+      - default
+      - sandbox
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - eika-hub:/var/lib/eika
@@ -71,8 +76,12 @@ volumes:
   eika-postgres:
   eika-hub:
 
-# The name is pinned because sandbox containers are started by the harness
-# rather than by compose, and they join this network by name.
+# The names are pinned because sandbox containers are started by the harness
+# rather than by compose, and they join eika_sandbox by name. Only the harness
+# is on both networks: a sandbox reaches the harness and the internet, never
+# postgres or searxng.
 networks:
   default:
     name: eika_default
+  sandbox:
+    name: eika_sandbox

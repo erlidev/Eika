@@ -115,6 +115,22 @@ func TestExecSendsStdinAndReportsTimeouts(t *testing.T) {
 	}
 }
 
+func TestExecMarksTruncatedOutput(t *testing.T) {
+	c, _ := newClient(t)
+	var stdout, stderr bytes.Buffer
+	if _, err := c.Exec(t.Context(), executor.ExecSpec{
+		Command: "yes eika | head -c 20000000",
+		Shell:   true,
+		Stdout:  &stdout,
+		Stderr:  &stderr,
+	}); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "truncated") {
+		t.Errorf("stderr = %q, want a truncation notice", stderr.String())
+	}
+}
+
 func TestExecReportsACommandThatCannotStart(t *testing.T) {
 	c, _ := newClient(t)
 	if _, err := c.Exec(t.Context(), executor.ExecSpec{Command: "definitely-not-a-command"}); err == nil {

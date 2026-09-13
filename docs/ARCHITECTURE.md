@@ -87,9 +87,15 @@ The daemon confines every path to its root (`/workspace`). A path may be
 relative to the root or absolute inside it; `..` is rejected rather than
 clamped, and the longest existing prefix of a path is resolved through
 symlinks before it is compared to the root, so neither a traversal nor a
-symlink out of the workspace can escape. `EIKAD_TOKEN` is stripped from the
-environment of every command the daemon runs, so an agent cannot read the
-token that protects its own sandbox.
+symlink out of the workspace can escape. The canonical path is what the daemon
+then opens, so the path that was checked is the path that is used.
+`EIKAD_TOKEN` is stripped from the environment of every command the daemon
+runs, so an agent cannot read the token that protects its own sandbox.
+
+A command leads its own process group and a timeout kills the group, so a
+backgrounded grandchild cannot survive the run or keep its output pipes open.
+Output is capped per run; past the cap the daemon reports the run as truncated
+rather than streaming without limit.
 
 The API is documented in `docs/api/eikad.md`. The change watcher polls and
 compares modification times instead of taking an inotify dependency: a
@@ -115,6 +121,17 @@ binary into it at `/usr/local/bin/eikad`, which is also the container's
 entrypoint. `Start` starts the container and waits for `/healthz`. `Stop`
 leaves the volume alone; `Destroy` removes the container, the volume, and the
 image if it was built for that workspace alone.
+
+A sandbox runs arbitrary code, so the container is confined: Docker's own init
+is PID 1 (it reaps what a shell orphans, and eikad runs under it), all Linux
+capabilities are dropped, `no-new-privileges` is set, and the container runs as
+uid 1000 unless the spec names another user. A custom image therefore needs
+that uid to exist, or must set `Spec.User`.
+
+Sandboxes join their own Docker network, `sandbox_network` (`eika_sandbox` in
+compose), which the harness joins as well. Postgres and SearXNG stay on the
+default network, so a sandbox can reach the harness, the hub, and the internet,
+but not the database.
 
 The binary is copied into the created container rather than bind-mounted,
 because a bind mount source is resolved by the Docker daemon on the host, and
@@ -142,14 +159,18 @@ reconciles with what is actually running after a restart.
 `<hub_root>/<project>.git` and serves them at `/git/<project>.git` through
 `git http-backend` over CGI. A workspace authenticates with HTTP basic auth:
 its workspace id as the user and a per-workspace token as the password, which
-`Grant` hands out at creation and `Revoke` withdraws at destruction. A
-workspace can therefore reach the hub and nothing else.
+`Grant` hands out at creation and `Revoke` withdraws at destruction. A grant
+covers exactly one project, so a workspace reaches its own repository and
+nothing else, and `Inspect` only re-grants a workspace whose container is
+running.
 
 `Host.Clone` checks a project out into a running workspace through the
 executor, like any other agent action. Before cloning it configures a git
 credential helper inside the container that answers from `EIKA_HUB_USER` and
 `EIKA_HUB_TOKEN`, so the token never lands in the remote URL, in
-`.git/config`, or in a log. The commit the workspace starts from is returned
+`.git/config`, or in a log. Project and branch names are validated (the branch
+by `git check-ref-format`) and every git invocation passes them as arguments
+rather than through a shell. The commit the workspace starts from is returned
 as its base commit.
 
 Upstream remotes are the harness's business alone: `Mirror` fetches every
@@ -177,8 +198,9 @@ so a token is never written to disk.
    volume eika-hub -> /var/lib/eika in the harness; bare repositories live
                       in /var/lib/eika/hub
 
-   sandbox containers eika-ws-<id> join the same network, eika_default, so
-   the harness reaches them by name and they reach the hub at http://eika:8080
+   sandbox containers eika-ws-<id> join eika_sandbox, which only the harness
+   also joins: the harness reaches them by name and they reach the hub at
+   http://eika:8080, but never postgres or searxng
 ```
 
 Every published port binds to 127.0.0.1. Eika is single-user and holds

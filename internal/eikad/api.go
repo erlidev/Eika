@@ -36,6 +36,9 @@ type ExecFrame struct {
 	ExitCode *int `json:"exit_code,omitempty"`
 	// TimedOut reports that the command was killed by its timeout.
 	TimedOut bool `json:"timed_out,omitempty"`
+	// Truncated reports that the command produced more output than the daemon
+	// streams, and the rest was dropped.
+	Truncated bool `json:"truncated,omitempty"`
 	// Error describes a failure to run the command at all.
 	Error string `json:"error,omitempty"`
 }

@@ -45,10 +45,17 @@ line, flushed as the command produces output.
 | `data` | base64 string | The chunk of output. |
 | `exit_code` | number | Present on the final frame of a command that ran. |
 | `timed_out` | bool | The command was killed by its timeout. |
+| `truncated` | bool | The command produced more than 8 MiB of output; the rest was dropped. |
 | `error` | string | The command could not be started or waited for. No more frames follow. |
 
 The command runs as the daemon's user. `EIKAD_TOKEN` is removed from its
 environment, so a command inside the sandbox cannot read the daemon's token.
+
+A command leads its own process group, and a timeout kills the whole group, so
+a backgrounded grandchild cannot outlive the run or hold the output open.
+Output is capped at 8 MiB per run; past that the daemon stops forwarding and
+sets `truncated` on the final frame. The sandbox client turns that into an
+`[eika: output truncated]` line on the command's stderr.
 
 ## GET /files?path=&max_bytes=
 

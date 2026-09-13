@@ -11,6 +11,14 @@ import (
 // harness can find its containers again after a restart.
 const Label = "eika.workspace"
 
+// ProjectLabel records the hub project a workspace works on, so that a
+// reconciled workspace gets its hub access back with the same scope.
+const ProjectLabel = "eika.project"
+
+// DefaultUser is the user every workspace container runs as unless the spec
+// says otherwise. A sandbox never runs as root.
+const DefaultUser = "1000:1000"
+
 // DaemonPort is the port eikad listens on inside a workspace container.
 const DaemonPort = "7000"
 
@@ -55,6 +63,13 @@ type Spec struct {
 	// Env holds additional KEY=VALUE entries for every process in the
 	// container.
 	Env []string
+	// Project is the hub project the workspace works on. It scopes the
+	// workspace's hub access: it may clone and push that project and no
+	// other. Empty means the workspace gets no hub access.
+	Project string
+	// User is the user the container runs as. Empty means DefaultUser. A
+	// custom image must have that uid, or name its own user here.
+	User string
 	// HostPath bind-mounts a host directory at the workspace root instead of
 	// creating a volume. This is local project mode; the path is resolved by
 	// the Docker daemon, so it is a path on the host, not in the harness.
@@ -79,8 +94,11 @@ type Workspace struct {
 	// Token is the workspace's eikad token.
 	Token string
 	// HubToken is the token the workspace uses to clone from and push to the
-	// hub.
+	// hub, for its project only.
 	HubToken string
+	// Project is the hub project the workspace works on, empty when it works
+	// on none.
+	Project string
 	// Volume is the name of the volume mounted at the workspace root, empty
 	// in local project mode.
 	Volume string

@@ -28,7 +28,9 @@ func (d *Daemon) resolve(path string) (string, error) {
 	if !within(d.root, real) {
 		return "", ErrOutsideRoot
 	}
-	return full, nil
+	// The canonical path is what the caller gets, so that the path that was
+	// checked is the path that is opened.
+	return real, nil
 }
 
 // relativeTo turns a request path into a clean path relative to root.

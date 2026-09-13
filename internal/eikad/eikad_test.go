@@ -232,6 +232,19 @@ func TestPathsAreConfinedToTheRoot(t *testing.T) {
 	if data, err := os.ReadFile(secret); err != nil || string(data) != "secret" {
 		t.Errorf("the secret was overwritten: %q, %v", data, err)
 	}
+
+	// A file created through a symlink inside the root stays inside it: the
+	// daemon opens the canonical path it checked, not the one it was given.
+	if err := os.Symlink(".", filepath.Join(root, "self")); err != nil {
+		t.Fatalf("make symlink: %v", err)
+	}
+	resp := do(t, http.MethodPut, base+"/files?path=self/through-a-link.txt", strings.NewReader("x"))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("write through a link inside the root: status %d", resp.StatusCode)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "through-a-link.txt")); err != nil {
+		t.Errorf("the file did not land in the root: %v", err)
+	}
 }
 
 func TestAbsolutePathsInsideTheRootAreAccepted(t *testing.T) {
@@ -351,6 +364,39 @@ func TestExec(t *testing.T) {
 		})
 		if !last.TimedOut {
 			t.Errorf("final frame = %+v, want timed_out", last)
+		}
+	})
+
+	t.Run("times out even when a child holds the pipes", func(t *testing.T) {
+		done := make(chan eikad.ExecFrame, 1)
+		go func() {
+			_, _, last := execFrames(t, base, eikad.ExecRequest{
+				Command:   "sleep 30 & sleep 30",
+				Shell:     true,
+				TimeoutMS: 1000,
+			})
+			done <- last
+		}()
+		select {
+		case last := <-done:
+			if !last.TimedOut {
+				t.Errorf("final frame = %+v, want timed_out", last)
+			}
+		case <-time.After(15 * time.Second):
+			t.Fatal("the timeout did not end the run: a backgrounded child kept it alive")
+		}
+	})
+
+	t.Run("truncates runaway output", func(t *testing.T) {
+		stdout, _, last := execFrames(t, base, eikad.ExecRequest{
+			Command: "yes eika | head -c 20000000",
+			Shell:   true,
+		})
+		if !last.Truncated {
+			t.Errorf("final frame = %+v, want truncated", last)
+		}
+		if len(stdout) > 9<<20 {
+			t.Errorf("streamed %d bytes, want the daemon's cap", len(stdout))
 		}
 	})
 

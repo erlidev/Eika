@@ -33,6 +33,14 @@ func newHub(t *testing.T) *hub.Hub {
 	return h
 }
 
+// grant gives a workspace access to one project.
+func grant(t *testing.T, h *hub.Hub, workspaceID, project, token string) {
+	t.Helper()
+	if err := h.Grant(workspaceID, project, token); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+}
+
 // git runs a git command in dir and fails the test if it does not succeed.
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
@@ -119,20 +127,72 @@ func TestHandlerRequiresAGrantedToken(t *testing.T) {
 		t.Errorf("wrong token status = %d, want 401", code)
 	}
 
-	h.Grant("ws1", "token")
+	grant(t, h, "ws1", "demo", "token")
 	if code := get("ws1", "token", refs); code != http.StatusOK {
 		t.Errorf("granted status = %d, want 200", code)
 	}
-	if code := get("ws1", "token", "/git/absent.git/info/refs?service=git-upload-pack"); code != http.StatusNotFound {
-		t.Errorf("unknown project status = %d, want 404", code)
+	// A project the grant does not cover is refused before the hub says
+	// whether it exists at all.
+	if code := get("ws1", "token", "/git/absent.git/info/refs?service=git-upload-pack"); code != http.StatusForbidden {
+		t.Errorf("unknown project status = %d, want 403", code)
 	}
 	if code := get("ws1", "token", "/git/../etc.git/info/refs"); code != http.StatusNotFound {
 		t.Errorf("traversal status = %d, want 404", code)
 	}
 
+	// A granted project that has no repository is a 404.
+	grant(t, h, "ws1", "absent", "token")
+	if code := get("ws1", "token", "/git/absent.git/info/refs?service=git-upload-pack"); code != http.StatusNotFound {
+		t.Errorf("missing repository status = %d, want 404", code)
+	}
+	grant(t, h, "ws1", "demo", "token")
+
 	h.Revoke("ws1")
 	if code := get("ws1", "token", refs); code != http.StatusUnauthorized {
 		t.Errorf("revoked status = %d, want 401", code)
+	}
+}
+
+func TestAGrantCoversOneProjectOnly(t *testing.T) {
+	requireGit(t)
+	h := newHub(t)
+	for _, project := range []string{"mine", "yours"} {
+		if _, err := h.Init(t.Context(), project); err != nil {
+			t.Fatalf("init %s: %v", project, err)
+		}
+	}
+	grant(t, h, "ws1", "mine", "token")
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	status := func(project string) int {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+			srv.URL+"/git/"+project+".git/info/refs?service=git-upload-pack", nil)
+		if err != nil {
+			t.Fatalf("build request: %v", err)
+		}
+		req.SetBasicAuth("ws1", "token")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := status("mine"); code != http.StatusOK {
+		t.Errorf("own project status = %d, want 200", code)
+	}
+	if code := status("yours"); code != http.StatusForbidden {
+		t.Errorf("other project status = %d, want 403", code)
+	}
+
+	// Granting again replaces the grant rather than adding to it.
+	grant(t, h, "ws1", "yours", "token")
+	if code := status("mine"); code != http.StatusForbidden {
+		t.Errorf("previous project status = %d, want 403", code)
+	}
+	if err := h.Grant("ws1", "../escape", "token"); !errors.Is(err, hub.ErrBadProject) {
+		t.Errorf("Grant error = %v, want ErrBadProject", err)
 	}
 }
 
@@ -142,7 +202,7 @@ func TestCloneAndPushOverHTTP(t *testing.T) {
 	if _, err := h.Init(t.Context(), "demo"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	h.Grant("ws1", "token")
+	grant(t, h, "ws1", "demo", "token")
 	srv := httptest.NewServer(h.Handler())
 	t.Cleanup(srv.Close)
 

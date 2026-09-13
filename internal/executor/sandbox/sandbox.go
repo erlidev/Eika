@@ -23,6 +23,10 @@ const DefaultRoot = "/workspace"
 // ErrNotFound reports that a path does not exist in the workspace.
 var ErrNotFound = errors.New("file not found")
 
+// truncationNotice is appended to a command's stderr when the daemon dropped
+// output because the command produced more than it streams.
+const truncationNotice = "\n[eika: output truncated]\n"
+
 // Options configures a Client.
 type Options struct {
 	// BaseURL is the daemon's address, for example http://eika-ws-1:7000.
@@ -119,6 +123,11 @@ func readFrames(r io.Reader, stdout, stderr io.Writer) (executor.ExecResult, err
 		case frame.Error != "":
 			return executor.ExecResult{}, fmt.Errorf("exec: %s", frame.Error)
 		case frame.ExitCode != nil:
+			// The daemon drops output past its limit, so the caller is told in
+			// the one place it is reading: the command's own stderr.
+			if frame.Truncated && stderr != nil {
+				fmt.Fprint(stderr, truncationNotice)
+			}
 			return executor.ExecResult{ExitCode: *frame.ExitCode, TimedOut: frame.TimedOut}, nil
 		case frame.Stream == "stdout" && stdout != nil:
 			if _, err := stdout.Write(frame.Data); err != nil {

@@ -68,10 +68,10 @@ func Default() Config {
 		DockerSocket: "/var/run/docker.sock",
 		SearxNGURL:   "http://searxng:8080",
 		SandboxImage: "eika-sandbox:latest",
-		// The compose project is named eika, so its default network is
-		// eika_default and sandboxes join it to reach the harness and be
-		// reached by it.
-		SandboxNetwork: "eika_default",
+		// Sandboxes get their own network, which the harness joins as well.
+		// They can therefore reach the harness and be reached by it, but not
+		// the database or the search service on the default network.
+		SandboxNetwork: "eika_sandbox",
 		EikadBinary:    "/usr/local/share/eika/eikad",
 		HubRoot:        "/var/lib/eika/hub",
 		HubURL:         "http://eika:8080",

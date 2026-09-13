@@ -26,6 +26,11 @@ import (
 	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
+// useInit asks Docker to run its own init as PID 1 in a sandbox, which reaps
+// the processes a shell orphans. It is addressable because the Docker API
+// takes a pointer.
+var useInit = true
+
 // Bounds on the operations Host performs on the Docker daemon.
 const (
 	// readyTimeout is how long Start waits for eikad to answer.
@@ -33,7 +38,7 @@ const (
 	// readyInterval is how often Start polls eikad while it comes up.
 	readyInterval = 200 * time.Millisecond
 	// stopTimeout is how long a container gets to exit before it is killed.
-	stopTimeout = 5
+	stopTimeout = 5 * time.Second
 )
 
 // Environment variables the harness sets in every workspace container so that
@@ -123,13 +128,18 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 		return Workspace{}, err
 	}
 
+	ws.Project = spec.Project
 	ws.Image = orDefault(spec.Image, h.opts.Image)
-	if spec.BuildContext != "" {
+	built := spec.BuildContext != ""
+	if built {
 		ws.Image = builtImageRef(ws.ID)
 		if err := h.buildImage(ctx, spec, ws.Image); err != nil {
 			return Workspace{}, err
 		}
 	}
+	// Everything created from here on is rolled back if creation fails, so a
+	// failed Create leaves nothing behind.
+	rollback := func() { h.discard(ctx, ws, built) }
 
 	mounts := make([]mount.Mount, 0, 2)
 	if spec.HostPath != "" {
@@ -141,11 +151,15 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 			Name:   ws.Volume,
 			Labels: map[string]string{Label: ws.ID},
 		}); err != nil {
+			rollback()
 			return Workspace{}, fmt.Errorf("create volume %s: %w", ws.Volume, err)
 		}
 	}
 
 	labels := map[string]string{Label: ws.ID}
+	if ws.Project != "" {
+		labels[ProjectLabel] = ws.Project
+	}
 	maps.Copy(labels, spec.Labels)
 
 	port := nat.Port(DaemonPort + "/tcp")
@@ -157,12 +171,20 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 			hubUserEnv + "=" + ws.ID,
 			hubTokenEnv + "=" + ws.HubToken,
 		}, spec.Env...),
+		User:         orDefault(spec.User, DefaultUser),
 		WorkingDir:   Root,
 		Labels:       labels,
 		ExposedPorts: nat.PortSet{port: struct{}{}},
 	}
 	hostCfg := &container.HostConfig{
 		Mounts: mounts,
+		// Docker's own init is PID 1 and reaps the orphans a shell leaves
+		// behind; eikad runs under it as an ordinary process.
+		Init: &useInit,
+		// A sandbox runs arbitrary code, so it keeps no capabilities and
+		// cannot gain privileges through a setuid binary.
+		CapDrop:     []string{"ALL"},
+		SecurityOpt: []string{"no-new-privileges"},
 		Resources: container.Resources{
 			NanoCPUs:  int64(spec.Limits.CPUs * 1e9),
 			Memory:    spec.Limits.MemoryBytes,
@@ -180,16 +202,50 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 
 	created, err := h.createContainer(ctx, cfg, hostCfg, netCfg, ContainerName(ws.ID))
 	if err != nil {
+		rollback()
 		return Workspace{}, fmt.Errorf("create container for workspace %s: %w", ws.ID, err)
 	}
 	ws.ContainerID = created.ID
 
 	if err := h.injectDaemon(ctx, ws.ContainerID); err != nil {
+		h.discard(ctx, ws, built)
 		return Workspace{}, err
 	}
-	h.opts.Hub.Grant(ws.ID, ws.HubToken)
+	if ws.Project != "" {
+		if err := h.opts.Hub.Grant(ws.ID, ws.Project, ws.HubToken); err != nil {
+			h.discard(ctx, ws, built)
+			return Workspace{}, err
+		}
+	}
 	h.log.Info("workspace created", "workspace_id", ws.ID, "image", ws.Image)
 	return ws, nil
+}
+
+// discard removes whatever of a workspace already exists. It is the rollback
+// for a failed Create and the body of Destroy, and it ignores what is not
+// there.
+func (h *Host) discard(ctx context.Context, ws Workspace, builtImage bool) {
+	if ws.ContainerID != "" {
+		if err := h.docker.ContainerRemove(ctx, ws.ContainerID, container.RemoveOptions{
+			Force: true,
+		}); err != nil && !cerrdefs.IsNotFound(err) {
+			h.log.Warn("remove container", "workspace_id", ws.ID, "error", err)
+		}
+	}
+	if ws.Volume != "" {
+		if err := h.docker.VolumeRemove(ctx, ws.Volume, true); err != nil && !cerrdefs.IsNotFound(err) {
+			h.log.Warn("remove volume", "workspace_id", ws.ID, "error", err)
+		}
+	}
+	if builtImage {
+		if _, err := h.docker.ImageRemove(ctx, builtImageRef(ws.ID), image.RemoveOptions{
+			Force:         true,
+			PruneChildren: true,
+		}); err != nil && !cerrdefs.IsNotFound(err) {
+			h.log.Warn("remove image", "workspace_id", ws.ID, "error", err)
+		}
+	}
+	h.opts.Hub.Revoke(ws.ID)
 }
 
 // Start starts the workspace's container and waits until its daemon answers,
@@ -213,7 +269,7 @@ func (h *Host) Start(ctx context.Context, ws *Workspace) error {
 
 // Stop stops the workspace's container, leaving its volume in place.
 func (h *Host) Stop(ctx context.Context, ws *Workspace) error {
-	timeout := stopTimeout
+	timeout := int(stopTimeout.Seconds())
 	if err := h.docker.ContainerStop(ctx, ws.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
 		return fmt.Errorf("stop workspace %s: %w", ws.ID, err)
 	}
@@ -246,6 +302,7 @@ func (h *Host) Destroy(ctx context.Context, ws *Workspace) error {
 		}
 	}
 	h.opts.Hub.Revoke(ws.ID)
+	ws.Address = ""
 	ws.State = StateGone
 	h.log.Info("workspace destroyed", "workspace_id", ws.ID)
 	return nil
@@ -290,6 +347,7 @@ func (h *Host) Inspect(ctx context.Context, id string) (Workspace, error) {
 		State:       StateStopped,
 		Token:       envValue(info.Config.Env, eikad.TokenEnv),
 		HubToken:    envValue(info.Config.Env, hubTokenEnv),
+		Project:     info.Config.Labels[ProjectLabel],
 	}
 	if created, err := time.Parse(time.RFC3339Nano, info.Created); err == nil {
 		ws.CreatedAt = created.UTC()
@@ -304,13 +362,21 @@ func (h *Host) Inspect(ctx context.Context, id string) (Workspace, error) {
 			ws.Volume = m.Name
 		}
 	}
+	// Hub access follows the container: only a running workspace holds it, so
+	// a stopped one cannot be used to reach the hub from somewhere else.
 	if info.State != nil && info.State.Running {
 		ws.State = StateRunning
 		if addr, err := h.address(ctx, ws); err == nil {
 			ws.Address = addr
 		}
 	}
-	h.opts.Hub.Grant(ws.ID, ws.HubToken)
+	if ws.State == StateRunning && ws.Project != "" && ws.HubToken != "" {
+		if err := h.opts.Hub.Grant(ws.ID, ws.Project, ws.HubToken); err != nil {
+			return Workspace{}, err
+		}
+	} else {
+		h.opts.Hub.Revoke(ws.ID)
+	}
 	return ws, nil
 }
 

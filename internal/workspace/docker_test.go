@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -181,6 +182,19 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		}
 	})
 
+	t.Run("runs unprivileged under an init", func(t *testing.T) {
+		if got := run(t, ex, "id -u"); got == "0" {
+			t.Error("the sandbox runs as root")
+		}
+		// Docker's init is PID 1, so the orphans a shell leaves are reaped.
+		if got := run(t, ex, "cat /proc/1/comm"); strings.Contains(got, "eikad") {
+			t.Errorf("PID 1 is %q, want docker's init", got)
+		}
+		if got := run(t, ex, "grep CapEff /proc/self/status"); !strings.HasSuffix(got, "0000000000000000") {
+			t.Errorf("effective capabilities = %q, want none", got)
+		}
+	})
+
 	t.Run("writes and reads a file", func(t *testing.T) {
 		if err := ex.WriteFile(t.Context(), "notes/hello.txt", []byte("hei")); err != nil {
 			t.Fatalf("write file: %v", err)
@@ -249,7 +263,7 @@ func TestWorkspaceClonesFromTheHubAndPushesBack(t *testing.T) {
 	// The hub URL is only known once a container can say how it reaches the
 	// host, so the workspace is created against a host without one first.
 	probe := newHost(t, h, "")
-	ws, err := probe.Create(t.Context(), workspace.Spec{})
+	ws, err := probe.Create(t.Context(), workspace.Spec{Project: "demo"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -288,6 +302,81 @@ func TestWorkspaceClonesFromTheHubAndPushesBack(t *testing.T) {
 	}
 	if strings.TrimSpace(string(out)) != "from the workspace" {
 		t.Errorf("hub log = %q, want the workspace's commit", out)
+	}
+
+	hubStatus := func(project string) int {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+			fmt.Sprintf("http://127.0.0.1:%d/git/%s.git/info/refs?service=git-upload-pack", port, project), nil)
+		if err != nil {
+			t.Fatalf("build request: %v", err)
+		}
+		req.SetBasicAuth(ws.ID, ws.HubToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	t.Run("cannot reach another project", func(t *testing.T) {
+		if _, err := h.Init(t.Context(), "other"); err != nil {
+			t.Fatalf("init other: %v", err)
+		}
+		if code := hubStatus("other"); code != http.StatusForbidden {
+			t.Errorf("other project status = %d, want 403", code)
+		}
+	})
+
+	t.Run("rejects a branch name that is a command", func(t *testing.T) {
+		marker := filepath.Join(t.TempDir(), "pwned")
+		_, err := host.Clone(t.Context(), ws, "demo", "main; touch "+marker)
+		if !errors.Is(err, workspace.ErrBadBranch) {
+			t.Errorf("Clone error = %v, want ErrBadBranch", err)
+		}
+		if _, err := os.Stat(marker); err == nil {
+			t.Error("the branch name ran as a command")
+		}
+	})
+
+	t.Run("loses hub access when it stops", func(t *testing.T) {
+		if err := host.Stop(t.Context(), &ws); err != nil {
+			t.Fatalf("stop: %v", err)
+		}
+		if _, err := host.Inspect(t.Context(), ws.ID); err != nil {
+			t.Fatalf("inspect: %v", err)
+		}
+		if code := hubStatus("demo"); code != http.StatusUnauthorized {
+			t.Errorf("stopped workspace status = %d, want 401", code)
+		}
+	})
+}
+
+func TestFailedCreateLeavesNothingBehind(t *testing.T) {
+	requireDocker(t)
+	requireImage(t)
+	h := testHub(t)
+	host, err := workspace.NewHost(workspace.Options{
+		DockerSocket: requireDocker(t),
+		Hub:          h,
+		Image:        sandboxImage,
+		// Injection fails, which is the last step of Create.
+		EikadBinary: filepath.Join(t.TempDir(), "absent"),
+	}, testLogger())
+	if err != nil {
+		t.Fatalf("new host: %v", err)
+	}
+	t.Cleanup(func() { host.Close() })
+
+	id := "rollback" + fmt.Sprint(time.Now().UnixNano())
+	if _, err := host.Create(t.Context(), workspace.Spec{ID: id, Project: "demo"}); err == nil {
+		t.Fatal("Create succeeded without an eikad binary")
+	}
+	if err := exec.Command("docker", "inspect", workspace.ContainerName(id)).Run(); err == nil {
+		t.Error("the container outlived a failed Create")
+	}
+	if err := exec.Command("docker", "volume", "inspect", workspace.VolumeName(id)).Run(); err == nil {
+		t.Error("the volume outlived a failed Create")
 	}
 }
 
