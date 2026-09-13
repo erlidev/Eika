@@ -32,6 +32,12 @@ const finishTimeout = 30 * time.Second
 
 const finishRetryBackoff = 100 * time.Millisecond
 
+// childStopTimeout bounds how long a cancelled child run is waited for. The
+// spawner commits, pushes, and stops the child's workspace as soon as
+// runChild returns, so returning while the agent loop is still writing to
+// that workspace would capture a half-finished tree.
+const childStopTimeout = 60 * time.Second
+
 type queuedMessages struct {
 	steering  []string
 	followUps []string
@@ -299,7 +305,16 @@ func (r *runs) runChild(ctx context.Context, sessionID, text, model string) erro
 	select {
 	case <-active.done:
 	case <-ctx.Done():
-		return ctx.Err()
+		// Cancelling the context ends the loop; it does not end it at once.
+		// The caller waits for the goroutine either way, bounded so that a
+		// wedged run cannot hold the parent forever.
+		timer := time.NewTimer(childStopTimeout)
+		defer timer.Stop()
+		select {
+		case <-active.done:
+		case <-timer.C:
+			return fmt.Errorf("run %s did not stop within %s: %w", row.ID, childStopTimeout, ctx.Err())
+		}
 	}
 	final, err := r.server.deps.Store.Run(context.WithoutCancel(ctx), row.ID)
 	if err != nil {

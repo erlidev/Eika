@@ -251,19 +251,27 @@ func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opts := store.ForkOptions{Title: strings.TrimSpace(req.Title)}
+	var forked store.Workspace
 	if req.WithWorkspace {
-		ws, err := s.forkWorkspace(r.Context(), sess, req.EntryID)
+		forked, err = s.forkWorkspace(r.Context(), sess, req.EntryID)
 		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
-		opts.WorkspaceID = ws.ID
-		s.workspaceState(r.Context(), ws.ID, ws.ProjectID, ws.State)
+		opts.WorkspaceID = forked.ID
 	}
 	fork, err := s.tree.Fork(r.Context(), id, req.EntryID, opts)
 	if err != nil {
+		// The workspace was made for a fork that does not exist, so nothing
+		// is left to own it.
+		if opts.WorkspaceID != "" {
+			s.discardRecorded(r.Context(), forked.ID)
+		}
 		s.fail(w, r, err)
 		return
+	}
+	if opts.WorkspaceID != "" {
+		s.workspaceState(r.Context(), forked.ID, forked.ProjectID, forked.State)
 	}
 	s.log.Info("session forked", "session_id", id, "fork_id", fork.ID, "entry_id", req.EntryID)
 	writeJSON(w, s.log, http.StatusCreated, asSession(fork))

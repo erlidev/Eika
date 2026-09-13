@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
@@ -339,5 +340,97 @@ func TestListAndWaitReportWhatAChildRecorded(t *testing.T) {
 	}
 	if _, err := s.Wait(t.Context(), "s1", []string{"a2"}); !errors.Is(err, subagent.ErrNotChild) {
 		t.Errorf("waiting for another session's child = %v, want ErrNotChild", err)
+	}
+}
+
+// blockingHost is a workspace host that reports when a spawn has reached it
+// and then waits, so that a test can hold several spawns inside the host at
+// once and see how many the limits let in.
+type blockingHost struct {
+	subagent.Workspaces
+	arrived chan struct{}
+	release chan struct{}
+}
+
+func newBlockingHost() *blockingHost {
+	return &blockingHost{arrived: make(chan struct{}, 16), release: make(chan struct{})}
+}
+
+func (h *blockingHost) Inspect(context.Context, string) (workspace.Workspace, error) {
+	h.arrived <- struct{}{}
+	<-h.release
+	return workspace.Workspace{}, errReachedWorkspaces
+}
+
+func TestConcurrentSpawnsDoNotGetPastTheChildLimit(t *testing.T) {
+	const limit = 2
+	const spawns = 6
+	r := newRows()
+	r.session("s1", "ws1")
+	host := newBlockingHost()
+	s := subagent.New(subagent.Options{
+		Store:       r,
+		Workspaces:  host,
+		MaxDepth:    2,
+		MaxChildren: limit,
+		Logger:      testLogger(),
+	})
+	s.Attach(runner{})
+
+	errs := make(chan error, spawns)
+	for i := range spawns {
+		go func() {
+			_, err := s.Spawn(context.Background(), builtin.SpawnRequest{
+				ParentSessionID: "s1", Name: fmt.Sprintf("worker%d", i), Task: "do it",
+			})
+			errs <- err
+		}()
+	}
+
+	// Exactly as many spawns as the limit allows may be inside the host at
+	// once. Checking the limit before the slow work without claiming a slot
+	// would let every one of them through.
+	for range limit {
+		select {
+		case <-host.arrived:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for the spawns the limit allows")
+		}
+	}
+	select {
+	case <-host.arrived:
+		t.Fatal("more spawns reached the workspace host than the limit allows")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(host.release)
+
+	allowed, refused := 0, 0
+	for range spawns {
+		switch err := <-errs; {
+		case errors.Is(err, errReachedWorkspaces):
+			allowed++
+		case errors.Is(err, subagent.ErrTooMany):
+			refused++
+		default:
+			t.Fatalf("Spawn = %v, want it allowed through or refused", err)
+		}
+	}
+	if allowed != limit || refused != spawns-limit {
+		t.Errorf("%d spawns allowed and %d refused, want %d and %d", allowed, refused, limit, spawns-limit)
+	}
+}
+
+func TestNothingSpawnsAfterShutdown(t *testing.T) {
+	r := newRows()
+	r.session("s1", "ws1")
+	s := newSpawner(t, r, 2, 4, true)
+	s.Shutdown(t.Context())
+
+	_, err := s.Spawn(t.Context(), builtin.SpawnRequest{ParentSessionID: "s1", Name: "fix", Task: "do it"})
+	if !errors.Is(err, subagent.ErrStopped) {
+		t.Fatalf("Spawn = %v, want ErrStopped", err)
+	}
+	if len(r.reached) != 0 {
+		t.Errorf("a spawn after shutdown still wrote rows: %v", r.reached)
 	}
 }

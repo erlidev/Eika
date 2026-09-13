@@ -50,6 +50,13 @@ func (c *child) snapshot() builtin.AgentResult {
 	return c.result
 }
 
+// begin records what the child turned out to be once its rows exist.
+func (c *child) begin(result builtin.AgentResult) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.result = result
+}
+
 // update records what became of the child.
 func (c *child) update(f func(r *builtin.AgentResult)) {
 	c.mu.Lock()
@@ -73,8 +80,9 @@ func (c *child) wasAborted() bool {
 }
 
 // start does everything up to and including starting the child's run: it
-// commits and pushes the parent's work, clones a child workspace from the hub
-// at that commit, opens the child's session, and records the subagent.
+// claims the child's slot, commits and pushes the parent's work, clones a
+// child workspace from the hub at that commit, opens the child's session, and
+// records the subagent.
 func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, error) {
 	runner := s.runnerOf()
 	if runner == nil {
@@ -106,17 +114,30 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkLimits(ctx, parent.ID); err != nil {
+	// The child's id exists before its row does, because its branch is named
+	// after it and the branch is what the clone needs.
+	c, runCtx, err := s.reserve(ctx, parent.ID, store.NewID(), req.Name)
+	if err != nil {
 		return nil, err
 	}
+	// Building a child takes a commit, a push, a container, and a clone.
+	// Until its run is going, the reservation is what holds its slot, and
+	// every way out of here releases it.
+	started := false
+	defer func() {
+		if !started {
+			s.release(c)
+		}
+	}()
+	branch := childBranch(parentWS.Branch, suffix, c.id)
 
 	base, err := s.handOver(ctx, parentWS, project, req.Name)
 	if err != nil {
 		return nil, err
 	}
-	branch := childBranch(parentWS.Branch, suffix)
-
-	host, err := s.createChild(ctx, project, branch, base, req.Image)
+	// A child runs the image its parent runs: the model does not choose one,
+	// because nothing validates an image name it made up.
+	host, err := s.createChild(ctx, project, branch, base, parentWS.Image)
 	if err != nil {
 		return nil, err
 	}
@@ -147,6 +168,7 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 		return nil, err
 	}
 	row, err := s.opts.Store.StartSubagent(ctx, store.Subagent{
+		ID:               c.id,
 		ParentSessionID:  parent.ID,
 		ChildSessionID:   sess.ID,
 		ChildWorkspaceID: childWS.ID,
@@ -159,25 +181,15 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 	// The child outlives the tool call that asked for it: a parent that
 	// spawns without waiting keeps working, and an abort is what stops a
 	// child, not the end of the call.
-	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	c := &child{
-		id:              row.ID,
-		parentSessionID: parent.ID,
-		name:            req.Name,
-		cancel:          cancel,
-		done:            make(chan struct{}),
-		result: builtin.AgentResult{
-			ID:          row.ID,
-			SessionID:   sess.ID,
-			WorkspaceID: childWS.ID,
-			Name:        req.Name,
-			Branch:      branch,
-			State:       string(store.RunRunning),
-		},
-	}
-	s.mu.Lock()
-	s.children[c.id] = c
-	s.mu.Unlock()
+	c.begin(builtin.AgentResult{
+		ID:          row.ID,
+		SessionID:   sess.ID,
+		WorkspaceID: childWS.ID,
+		Name:        req.Name,
+		Branch:      branch,
+		State:       string(store.RunRunning),
+	})
+	started = true
 
 	s.emit(ctx, event.TypeSubagentStarted, event.SessionTopic(parent.ID), event.SubagentStarted{
 		SubagentID:       c.id,
@@ -194,6 +206,77 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 
 	go s.run(runCtx, c, runner, req, base, project.Name)
 	return c, nil
+}
+
+// reserve claims one child's slot on a parent session, so that the depth and
+// width limits hold for spawns that arrive at the same time. The counting and
+// the claim happen under one lock; building the child afterwards is slow
+// enough that a check without a claim would let every concurrent spawn
+// through.
+// It returns the reservation and the context the child's run is bound to,
+// which exists from here so that an abort or a shutdown arriving while the
+// child is still being built still stops it.
+func (s *Spawner) reserve(ctx context.Context, parentSessionID, id, name string) (*child, context.Context, error) {
+	depth, err := s.depthOf(ctx, parentSessionID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if depth+1 > s.opts.MaxDepth {
+		return nil, nil, fmt.Errorf("%w: %d levels are allowed", ErrTooDeep, s.opts.MaxDepth)
+	}
+	// Rows are the record of children this harness is no longer running; the
+	// reservations below are the ones no row has caught up with yet.
+	recorded, err := s.recordedChildren(ctx, parentSessionID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopped {
+		return nil, nil, ErrStopped
+	}
+	live := 0
+	for _, c := range s.children {
+		if c.parentSessionID == parentSessionID {
+			live++
+		}
+	}
+	if max(recorded, live) >= s.opts.MaxChildren {
+		return nil, nil, fmt.Errorf("%w: %d at a time are allowed", ErrTooMany, s.opts.MaxChildren)
+	}
+	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	c := &child{
+		id:              id,
+		parentSessionID: parentSessionID,
+		name:            name,
+		cancel:          cancel,
+		done:            make(chan struct{}),
+		result: builtin.AgentResult{
+			ID:    id,
+			Name:  name,
+			State: string(store.RunRunning),
+		},
+	}
+	s.children[id] = c
+	return c, runCtx, nil
+}
+
+// release gives up a reservation whose child never started, which frees the
+// slot and releases whoever is waiting on it.
+func (s *Spawner) release(c *child) {
+	s.forget(c)
+	c.cancel()
+	close(c.done)
+}
+
+// forget drops a child that is over.
+func (s *Spawner) forget(c *child) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if current, ok := s.children[c.id]; ok && current == c {
+		delete(s.children, c.id)
+	}
 }
 
 // run drives the child's session and reports what it did, whatever happened.
@@ -228,9 +311,7 @@ func (s *Spawner) run(ctx context.Context, c *child, runner Runner, req builtin.
 	if err := s.opts.Store.FinishSubagent(reportCtx, c.id, state, string(encoded)); err != nil {
 		s.opts.Logger.Error("record finished subagent", "subagent_id", c.id, "error", err)
 	}
-	s.mu.Lock()
-	delete(s.children, c.id)
-	s.mu.Unlock()
+	s.forget(c)
 
 	s.emit(reportCtx, event.TypeSubagentFinished, event.SessionTopic(c.parentSessionID), event.SubagentFinished{
 		SubagentID:       c.id,
@@ -272,8 +353,9 @@ func (s *Spawner) report(ctx context.Context, result *builtin.AgentResult, base,
 		result.Commit = head
 	}
 	if result.Commit != "" {
-		// A child owns its branch, so its own history is what the hub keeps.
-		if err := s.opts.Workspaces.Push(ctx, host, project, result.Branch, true); err != nil {
+		// The branch is the child's own, tagged with its id, so nothing is
+		// there to overwrite and the push never has to force.
+		if err := s.opts.Workspaces.Push(ctx, host, project, result.Branch); err != nil {
 			result.Error = join(result.Error, err.Error())
 		}
 	}
@@ -287,6 +369,9 @@ func (s *Spawner) report(ctx context.Context, result *builtin.AgentResult, base,
 		result.Error = join(result.Error, err.Error())
 	} else {
 		result.Summary = summaryOf(entries)
+	}
+	if result.Summary == "" {
+		result.Summary = describe(*result)
 	}
 
 	// The container stops but nothing is destroyed: the user opens a finished
@@ -326,7 +411,7 @@ func (s *Spawner) handOver(ctx context.Context, parent store.Workspace, project 
 	}
 	// A local project is pushed as well: the hub mirrors both kinds, so a
 	// child clones the same way whatever its project is.
-	if err := s.opts.Workspaces.Push(ctx, host, project.Name, parent.Branch, false); err != nil {
+	if err := s.opts.Workspaces.Push(ctx, host, project.Name, parent.Branch); err != nil {
 		return "", err
 	}
 	return head, nil
@@ -380,26 +465,6 @@ func (s *Spawner) discardRecorded(ctx context.Context, host workspace.Workspace)
 	}
 }
 
-// checkLimits rejects a child that would make the tree deeper or wider than
-// the configuration allows.
-func (s *Spawner) checkLimits(ctx context.Context, parentSessionID string) error {
-	depth, err := s.depthOf(ctx, parentSessionID)
-	if err != nil {
-		return err
-	}
-	if depth+1 > s.opts.MaxDepth {
-		return fmt.Errorf("%w: %d levels are allowed", ErrTooDeep, s.opts.MaxDepth)
-	}
-	running, err := s.runningChildren(ctx, parentSessionID)
-	if err != nil {
-		return err
-	}
-	if running >= s.opts.MaxChildren {
-		return fmt.Errorf("%w: %d at a time are allowed", ErrTooMany, s.opts.MaxChildren)
-	}
-	return nil
-}
-
 // depthOf reports how many parents a session has above it, following the
 // subagent rows up to the session a user started.
 func (s *Spawner) depthOf(ctx context.Context, sessionID string) (int, error) {
@@ -417,29 +482,20 @@ func (s *Spawner) depthOf(ctx context.Context, sessionID string) (int, error) {
 	return depth, nil
 }
 
-// runningChildren counts the children of a session that have not finished.
-// The rows are the record, and the children this harness is running are the
-// ones a row cannot have caught up with yet.
-func (s *Spawner) runningChildren(ctx context.Context, parentSessionID string) (int, error) {
+// recordedChildren counts the rows of a session's children that are still
+// running, which is what a harness that restarted has left of them.
+func (s *Spawner) recordedChildren(ctx context.Context, parentSessionID string) (int, error) {
 	rows, err := s.opts.Store.Subagents(ctx, parentSessionID)
 	if err != nil {
 		return 0, err
 	}
-	recorded := 0
+	running := 0
 	for _, row := range rows {
 		if row.State == store.RunRunning {
-			recorded++
+			running++
 		}
 	}
-	s.mu.Lock()
-	live := 0
-	for _, c := range s.children {
-		if c.parentSessionID == parentSessionID {
-			live++
-		}
-	}
-	s.mu.Unlock()
-	return max(recorded, live), nil
+	return running, nil
 }
 
 // emit publishes one event, logging an encoding failure rather than failing

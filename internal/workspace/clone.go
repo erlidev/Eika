@@ -109,8 +109,13 @@ func (h *Host) CloneAt(ctx context.Context, ws Workspace, project, branch, commi
 		args = append(args, commit)
 	}
 	if _, err := git(ctx, ex, args...); err != nil {
-		// A repository with no commits has no HEAD to branch from, so the
-		// unborn HEAD is pointed at the branch instead.
+		// A repository with no commits is the one checkout that is allowed to
+		// fail: it has no HEAD to branch from, so the unborn HEAD is pointed
+		// at the branch instead. Anything else, a commit the hub does not
+		// have above all, is the caller's to hear about.
+		if _, empty := git(ctx, ex, "rev-parse", "--verify", "HEAD"); empty == nil || commit != "" {
+			return "", fmt.Errorf("check out %s in workspace %s: %w", branch, ws.ID, err)
+		}
 		if _, err := git(ctx, ex, "symbolic-ref", "HEAD", "refs/heads/"+branch); err != nil {
 			return "", err
 		}
@@ -118,7 +123,7 @@ func (h *Host) CloneAt(ctx context.Context, ws Workspace, project, branch, commi
 	}
 	head, err := git(ctx, ex, "rev-parse", "HEAD")
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	h.log.Info("workspace cloned at commit",
 		"workspace_id", ws.ID, "project", project, "branch", branch, "base_commit", head)
@@ -130,9 +135,10 @@ func (h *Host) CloneAt(ctx context.Context, ws Workspace, project, branch, commi
 // project's workspace pushes the same way: the hub mirrors local projects, so
 // that forks and subagents work alike for both kinds.
 //
-// force overwrites the hub's branch. Only the workspace that owns a branch
-// may ask for it.
-func (h *Host) Push(ctx context.Context, ws Workspace, project, branch string, force bool) error {
+// The push never forces: a branch in the hub belongs to whoever created it,
+// and a push that cannot fast-forward is a divergence the caller has to
+// resolve rather than overwrite.
+func (h *Host) Push(ctx context.Context, ws Workspace, project, branch string) error {
 	ex, err := h.connectHub(ctx, ws, project)
 	if err != nil {
 		return err
@@ -140,11 +146,7 @@ func (h *Host) Push(ctx context.Context, ws Workspace, project, branch string, f
 	if err := CheckBranch(ctx, ex, branch); err != nil {
 		return err
 	}
-	args := []string{"push"}
-	if force {
-		args = append(args, "--force")
-	}
-	if _, err := git(ctx, ex, append(args, hubRemote, "HEAD:refs/heads/"+branch)...); err != nil {
+	if _, err := git(ctx, ex, "push", hubRemote, "HEAD:refs/heads/"+branch); err != nil {
 		return err
 	}
 	h.log.Info("workspace pushed to the hub", "workspace_id", ws.ID, "project", project, "branch", branch)

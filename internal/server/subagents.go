@@ -12,9 +12,12 @@ import (
 )
 
 // maxAgentDepth bounds how far the agents route walks down the tree. The
-// spawner's own depth limit is lower; this one is what keeps a handler
-// finite whatever the rows say.
+// spawner's own depth limit is lower; this one is what keeps a handler finite
+// whatever the rows say.
 const maxAgentDepth = 8
+
+// childrenOnly is the depth that reads one session's own children and stops.
+const childrenOnly = 0
 
 // agentBody is one child agent on the wire, with the children it spawned in
 // turn.
@@ -95,7 +98,7 @@ func (s *Server) handleSessionAgents(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	agents, err := s.agentsOf(r.Context(), id, 0)
+	agents, err := s.agentsOf(r.Context(), id, maxAgentDepth)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -104,8 +107,9 @@ func (s *Server) handleSessionAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 // agentsOf reads the children of one session and, below each of them, the
-// children they spawned in turn.
-func (s *Server) agentsOf(ctx context.Context, sessionID string, depth int) ([]agentBody, error) {
+// children they spawned in turn, until levelsBelow levels have been read.
+// Zero reads the session's own children and stops.
+func (s *Server) agentsOf(ctx context.Context, sessionID string, levelsBelow int) ([]agentBody, error) {
 	rows, err := s.deps.Store.Subagents(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -145,8 +149,8 @@ func (s *Server) agentsOf(ctx context.Context, sessionID string, depth int) ([]a
 				body.Name, body.Branch = ws.Name, ws.Branch
 			}
 		}
-		if depth < maxAgentDepth {
-			if body.Agents, err = s.agentsOf(ctx, row.ChildSessionID, depth+1); err != nil {
+		if levelsBelow > 0 {
+			if body.Agents, err = s.agentsOf(ctx, row.ChildSessionID, levelsBelow-1); err != nil {
 				return nil, err
 			}
 		}
@@ -171,7 +175,7 @@ func (s *Server) handleAbortSubagent(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, conflictf("%v", err))
 		return
 	}
-	agents, err := s.agentsOf(r.Context(), row.ParentSessionID, maxAgentDepth)
+	agents, err := s.agentsOf(r.Context(), row.ParentSessionID, childrenOnly)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -296,8 +300,11 @@ func (s *Server) sourceBranch(ctx context.Context, target store.Workspace, proje
 		// A stopped source cannot push; what it last pushed is what there is.
 		return branch, nil
 	}
-	if err := s.deps.Workspaces.Push(ctx, host, project.Name, branch, false); err != nil {
-		return "", invalidf("push %s from workspace %s: %v", branch, source.ID, err)
+	// The source pushes the branch it is actually on. An explicit branch says
+	// which ref to merge, not what to push: pushing the workspace's HEAD to
+	// somebody else's branch is not what the caller asked for.
+	if err := s.deps.Workspaces.Push(ctx, host, project.Name, source.Branch); err != nil {
+		return "", invalidf("push %s from workspace %s: %v", source.Branch, source.ID, err)
 	}
 	return branch, nil
 }
@@ -331,7 +338,7 @@ func (s *Server) forkWorkspace(ctx context.Context, sess store.Session, entryID 
 	if sourceHost.State != workspace.StateRunning {
 		return store.Workspace{}, conflictf("workspace %s is %s, not running", source.ID, sourceHost.State)
 	}
-	if err := s.deps.Workspaces.Push(ctx, sourceHost, project.Name, source.Branch, false); err != nil {
+	if err := s.deps.Workspaces.Push(ctx, sourceHost, project.Name, source.Branch); err != nil {
 		return store.Workspace{}, err
 	}
 

@@ -178,8 +178,8 @@ the target workspace through its executor.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `source_workspace_id` | string | The workspace whose branch to bring in. Its branch is used unless `branch` overrides it. |
-| `branch` | string | A branch in the hub, named directly. Required when there is no source workspace. |
+| `source_workspace_id` | string | The workspace whose branch to bring in. When it is running it pushes its own branch to the hub first. |
+| `branch` | string | The branch in the hub to merge, which overrides the source's own. Required when there is no source workspace. |
 | `strategy` | `merge` or `rebase` | Empty means `merge`. |
 
 One of `source_workspace_id` and `branch` is required.
@@ -392,10 +392,12 @@ not one of the question's options and the question does not allow free text.
 ## Subagents
 
 A subagent is a child agent run: its own workspace, cloned from its parent's
-at the commit the parent stood on, its own session, and its own branch. The
-`spawn_agent`, `wait_agents`, and `list_agents` tools are how a run makes and
-waits for them; these routes are how the UI watches and stops them. The
-lifecycle is on the stream as `subagent.started` and `subagent.finished`.
+at the commit the parent stood on and running its parent's image, its own
+session, and its own branch, `<parent branch>-<name>-<6 characters of the
+subagent id>`. The `spawn_agent`, `wait_agents`, and `list_agents` tools are
+how a run makes and waits for them; these routes are how the UI watches and
+stops them. The lifecycle is on the stream as `subagent.started` and
+`subagent.finished`.
 
 `subagents.max_depth` and `subagents.max_children` in the configuration bound
 how deep and how wide the tree may grow; the defaults are 2 and 4.

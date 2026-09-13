@@ -535,18 +535,22 @@ The pieces:
   the same way a volume-backed one does; `Host.Push` creates the project's
   repository if it has none and adds the hub as the `eika-hub` remote rather
   than as `origin`, which a local checkout already has.
-- **The child's branch** is `<parent branch>-<name>`, not a path below the
-  parent's branch: git stores either `refs/heads/main` or
-  `refs/heads/main/fix`, never both, and the parent's branch is in the hub by
-  then. The name is checked against a narrow pattern before it reaches git,
-  and `git check-ref-format` checks the branch itself.
+- **The child's branch** is `<parent branch>-<name>-<6 characters of the
+  child's id>`, not a path below the parent's branch: git stores either
+  `refs/heads/main` or `refs/heads/main/fix`, never both, and the parent's
+  branch is in the hub by then. The tag makes the branch the child's own, so
+  two children a parent gave the same name never write over each other and no
+  push has to force. The name is checked against a narrow pattern before it
+  reaches git, and `git check-ref-format` checks the branch itself.
 - **The tools** are `spawn_agent`, `wait_agents`, and `list_agents` in
   `internal/tool/builtin`. They reach the spawner through the `Subagents`
   interface declared there, the same shape `ask_user` uses for its question
   broker, so nothing under `tool` learns what a workspace is. `spawn_agent`
   blocks until the child finishes; `wait: false` returns the child's id at
   once, and `wait_agents` collects them later. A tool call only ever names its
-  own session's children.
+  own session's children, and it cannot name the image its child runs: a child
+  runs its parent's image, because nothing validates an image name a model
+  made up.
 - **The runner.** The spawner drives a child through `subagent.Runner`, which
   the server implements with `runs.runChild`: an ordinary run, bound to the
   context of the parent run that asked for it. So the child's tools, events,
@@ -555,15 +559,25 @@ The pieces:
 - **The limits** are `subagents.max_depth` and `subagents.max_children` in the
   configuration, 2 and 4 by default. Depth is measured by walking `subagents`
   rows up from the spawning session; width counts that session's running
-  children, rows and live goroutines alike.
+  children, rows and live reservations alike. A spawn claims its slot under
+  the lock that counts them before it does any of the slow work, so two
+  `spawn_agent` calls that arrive together cannot both pass a count taken
+  before either had a row.
 - **Cancellation** flows down. Aborting a run aborts its children, and
   aborting a child aborts its own children in turn, because a child works on a
-  branch of a run that has nobody left to report to. An aborted or failed
-  child still commits, pushes, and reports: its workspace is stopped, never
-  destroyed, so the user can start it again and look at what it did.
+  branch of a run that has nobody left to report to. Cancelling ends a child's
+  loop but does not end it at once, so the spawner waits for the loop to stop
+  before it commits the child's tree. An aborted or failed child still
+  commits, pushes, and reports: its workspace is stopped, never destroyed, so
+  the user can start it again and look at what it did. A child started with
+  `wait: false` outlives its parent's run, so `Server.Close` stops the runs
+  and then calls `Spawner.Shutdown`, which aborts every child left and waits
+  for it to record how it ended before the database pool closes.
 - **The result** the parent's model sees is the child's final assistant
   message, its branch, its head commit, and `git diff --stat` from the
-  parent's base commit to that head. The same object is stored as JSON on the
+  parent's base commit to that head. A child that ended without a closing
+  message gets one written for it from its state and its diffstat, so the
+  parent never reads a blank report. The same object is stored as JSON on the
   `subagents` row, served by `GET /api/sessions/{id}/agents`, and carried by
   the `subagent.finished` event.
 - **Taking the work back** is `POST /api/workspaces/{id}/merge`: the source

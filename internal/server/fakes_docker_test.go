@@ -108,6 +108,9 @@ func (h *fakeHost) CloneAt(ctx context.Context, ws workspace.Workspace, project,
 	if err != nil {
 		return "", err
 	}
+	if h.cloneHook != nil {
+		h.cloneHook()
+	}
 	if _, err := git(ctx, dir, "clone", repo, "."); err != nil {
 		return "", err
 	}
@@ -143,7 +146,7 @@ func (h *fakeHost) hubShow(ctx context.Context, project, branch, path string) (s
 
 // Push sends a workspace's branch to the fake hub, creating the project's
 // repository when it has none.
-func (h *fakeHost) Push(ctx context.Context, ws workspace.Workspace, project, branch string, force bool) error {
+func (h *fakeHost) Push(ctx context.Context, ws workspace.Workspace, project, branch string) error {
 	dir, err := h.dirOf(ws.ID)
 	if err != nil {
 		return err
@@ -152,11 +155,7 @@ func (h *fakeHost) Push(ctx context.Context, ws workspace.Workspace, project, br
 	if err != nil {
 		return err
 	}
-	args := []string{"push"}
-	if force {
-		args = append(args, "--force")
-	}
-	_, err = git(ctx, dir, append(args, repo, "HEAD:refs/heads/"+branch)...)
+	_, err = git(ctx, dir, "push", repo, "HEAD:refs/heads/"+branch)
 	return err
 }
 

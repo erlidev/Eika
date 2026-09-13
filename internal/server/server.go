@@ -26,6 +26,10 @@ import (
 // context passed to Run is cancelled.
 const shutdownTimeout = 10 * time.Second
 
+// subagentStopTimeout bounds how long Close waits for the child agents to
+// commit what they have and record how they ended.
+const subagentStopTimeout = 2 * time.Minute
+
 // Workspaces is the part of the workspace host the API uses. It is an
 // interface so that the handler tests run against a workspace backed by a
 // temporary directory instead of a Docker daemon; *workspace.Host is the one
@@ -39,7 +43,7 @@ type Workspaces interface {
 	List(ctx context.Context) ([]workspace.Workspace, error)
 	Clone(ctx context.Context, ws workspace.Workspace, project, branch string) (string, error)
 	CloneAt(ctx context.Context, ws workspace.Workspace, project, branch, commit string) (string, error)
-	Push(ctx context.Context, ws workspace.Workspace, project, branch string, force bool) error
+	Push(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Fetch(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Executor(ws workspace.Workspace) (executor.Executor, error)
 }
@@ -51,6 +55,7 @@ type Subagents interface {
 	List(ctx context.Context, parentSessionID string) ([]builtin.AgentResult, error)
 	Abort(ctx context.Context, id string) error
 	AbortChildren(parentSessionID string)
+	Shutdown(ctx context.Context)
 }
 
 // Hub is the part of the git hub the API uses: creating a project's
@@ -144,10 +149,23 @@ func (s *Server) Run(ctx context.Context) error {
 	return Serve(ctx, s.cfg.Listen, s.mux, s.log)
 }
 
-// Close aborts every run that is still going and returns once they have
-// stopped. Run calls it on shutdown; a caller that serves Handler itself
-// calls it when it is done, before the store it gave the server closes.
-func (s *Server) Close() { s.runs.stopAll() }
+// Close aborts every run and every child agent that is still going and
+// returns once they have stopped. Run calls it on shutdown; a caller that
+// serves Handler itself calls it when it is done, before the store it gave
+// the server closes.
+//
+// The children come after the runs: a child whose parent spawned it without
+// waiting outlives that run, so aborting the runs alone leaves it writing to
+// a database that is about to close.
+func (s *Server) Close() {
+	s.runs.stopAll()
+	if s.deps.Subagents == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), subagentStopTimeout)
+	defer cancel()
+	s.deps.Subagents.Shutdown(ctx)
+}
 
 // Reconcile brings the recorded workspace states in line with the containers
 // the host actually has. The harness calls it on startup: a container may

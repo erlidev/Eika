@@ -18,11 +18,11 @@ import (
 	"github.com/erlidev/eika/internal/workspace"
 )
 
-// name is the shape a subagent name and a branch suffix may have. It is
-// stricter than git's own rules on purpose: the name reaches a branch name, a
-// session title, and an event, so it holds nothing that needs escaping
-// anywhere. Host.CloneAt checks the branch it builds with git itself.
-var name = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$`)
+// namePattern is the shape a subagent name and a branch suffix may have. It
+// is stricter than git's own rules on purpose: the name reaches a branch
+// name, a session title, and an event, so it holds nothing that needs
+// escaping anywhere. Host.CloneAt checks the branch it builds with git itself.
+var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$`)
 
 // Errors the spawner reports to the model that asked for a child.
 var (
@@ -40,6 +40,9 @@ var (
 	// ErrNotChild reports an agent id that is not a child of the session
 	// asking about it.
 	ErrNotChild = errors.New("not a child of this session")
+	// ErrStopped reports a spawn asked for after the harness began shutting
+	// down, when nothing new may start.
+	ErrStopped = errors.New("the harness is shutting down")
 )
 
 // Runner runs the agent loop on a child session and returns when it has
@@ -76,7 +79,7 @@ type Workspaces interface {
 	Destroy(ctx context.Context, ws *workspace.Workspace) error
 	Inspect(ctx context.Context, id string) (workspace.Workspace, error)
 	CloneAt(ctx context.Context, ws workspace.Workspace, project, branch, commit string) (string, error)
-	Push(ctx context.Context, ws workspace.Workspace, project, branch string, force bool) error
+	Push(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Executor(ws workspace.Workspace) (executor.Executor, error)
 }
 
@@ -101,9 +104,14 @@ type Options struct {
 type Spawner struct {
 	opts Options
 
-	// mu guards the runner and the children that are going right now.
+	// mu guards the runner, the shutdown flag, and the children that are
+	// going right now, reservations included. Claiming a child's slot under
+	// the same lock that counts them is what makes the limit true: two
+	// concurrent spawns would otherwise both get past a count taken before
+	// the slow work of creating a sandbox.
 	mu       sync.Mutex
 	runner   Runner
+	stopped  bool
 	children map[string]*child
 }
 
@@ -222,6 +230,31 @@ func (s *Spawner) AbortChildren(parentSessionID string) {
 	}
 }
 
+// Shutdown stops every child and returns once they have all recorded how
+// they ended, which is what a harness does before its database pool closes. A
+// child whose parent's run is long over is still running here, so aborting
+// the runs is not enough. Nothing spawns after it.
+func (s *Spawner) Shutdown(ctx context.Context) {
+	s.mu.Lock()
+	s.stopped = true
+	stopping := make([]*child, 0, len(s.children))
+	for _, c := range s.children {
+		stopping = append(stopping, c)
+	}
+	s.mu.Unlock()
+	for _, c := range stopping {
+		c.abort()
+	}
+	for _, c := range stopping {
+		select {
+		case <-c.done:
+		case <-ctx.Done():
+			s.opts.Logger.Warn("subagent did not stop before shutdown gave up", "subagent_id", c.id)
+			return
+		}
+	}
+}
+
 // await waits for one child, reporting what it became.
 func (s *Spawner) await(ctx context.Context, c *child) (builtin.AgentResult, error) {
 	select {
@@ -291,21 +324,39 @@ func (s *Spawner) runnerOf() Runner {
 
 // checkName rejects a subagent name that cannot safely become a branch name.
 func checkName(candidate string) error {
-	if !name.MatchString(candidate) {
+	if !namePattern.MatchString(candidate) {
 		return fmt.Errorf("%w: %q", ErrBadName, candidate)
 	}
 	return nil
 }
 
-// childBranch is the branch a child works on: its parent's branch and its own
-// name, joined with a dash. It is not a path under the parent's branch, which
-// git cannot store: a repository holds either refs/heads/main or
-// refs/heads/main/<name>, never both.
-func childBranch(parentBranch, suffix string) string {
+// branchTag is how many characters of a subagent's id end its branch name.
+// Six of twenty base32 characters are 30 bits, which is more than enough to
+// keep the children of one parent apart.
+const branchTag = 6
+
+// childBranch is the branch a child works on: its parent's branch, its own
+// name, and a tag from its id, joined with dashes. It is not a path under the
+// parent's branch, which git cannot store: a repository holds either
+// refs/heads/main or refs/heads/main/<name>, never both. The tag is what
+// makes it the child's own: two children a parent gave the same name to would
+// otherwise write over each other in the hub.
+func childBranch(parentBranch, suffix, id string) string {
+	name := suffix + "-" + id[:min(branchTag, len(id))]
 	if parentBranch == "" {
-		return suffix
+		return name
 	}
-	return parentBranch + "-" + suffix
+	return parentBranch + "-" + name
+}
+
+// describe says what a child did when it left no closing message of its own,
+// so that the parent's model has something to act on rather than a blank
+// report.
+func describe(r builtin.AgentResult) string {
+	if r.DiffStat != "" {
+		return "the child ended " + r.State + " without a closing message; it changed:\n" + r.DiffStat
+	}
+	return "the child ended " + r.State + " without a closing message and changed nothing"
 }
 
 // summaryOf returns the child's last assistant message, which is what it

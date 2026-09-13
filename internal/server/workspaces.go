@@ -326,6 +326,23 @@ func (s *Server) discard(ctx context.Context, host workspace.Workspace) {
 	}
 }
 
+// discardRecorded removes a workspace that already has a row, which is what a
+// request that failed after creating one leaves behind. Deleting the row
+// takes the sessions in it with it.
+func (s *Server) discardRecorded(ctx context.Context, id string) {
+	ctx, cancel := teardown(ctx)
+	defer cancel()
+	host, err := s.deps.Workspaces.Inspect(ctx, id)
+	if err == nil {
+		if err := s.deps.Workspaces.Destroy(ctx, &host); err != nil {
+			s.log.Error("discard half-created workspace", "workspace_id", id, "error", err)
+		}
+	}
+	if err := s.deps.Store.DeleteWorkspace(ctx, id); err != nil {
+		s.log.Error("remove half-created workspace row", "workspace_id", id, "error", err)
+	}
+}
+
 // teardown detaches a context from the request that carried it, keeping a
 // bound of its own so that nothing runs forever.
 func teardown(ctx context.Context) (context.Context, context.CancelFunc) {

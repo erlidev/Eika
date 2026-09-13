@@ -507,7 +507,7 @@ func TestWorkspaceHandsWorkToAChildClone(t *testing.T) {
 		t.Fatalf("clone the parent: %v", err)
 	}
 	run(t, parentEx, "echo from the parent > shared.txt && git add -A && git commit -m 'the parent'")
-	if err := host.Push(t.Context(), parent, "demo", "work", false); err != nil {
+	if err := host.Push(t.Context(), parent, "demo", "work"); err != nil {
 		t.Fatalf("push the parent's branch: %v", err)
 	}
 	base := run(t, parentEx, "git rev-parse HEAD")
@@ -543,7 +543,7 @@ func TestWorkspaceHandsWorkToAChildClone(t *testing.T) {
 	}
 
 	run(t, childEx, "echo from the child > notes.txt && git add -A && git commit -m 'the child'")
-	if err := host.Push(t.Context(), child, "demo", "work-worker", true); err != nil {
+	if err := host.Push(t.Context(), child, "demo", "work-worker"); err != nil {
 		t.Fatalf("push the child's branch: %v", err)
 	}
 	if err := host.Fetch(t.Context(), parent, "demo", "work-worker"); err != nil {
@@ -554,9 +554,27 @@ func TestWorkspaceHandsWorkToAChildClone(t *testing.T) {
 		t.Errorf("parent notes.txt = %q, want the child's work merged in", got)
 	}
 
+	t.Run("reports a commit the hub does not have", func(t *testing.T) {
+		// A clone that cannot reach the commit it was asked for must say so.
+		// Reporting it as an empty repository would hand the child a
+		// workspace at the wrong revision and call it a fresh project.
+		late, err := host.Create(t.Context(), workspace.Spec{Project: "demo"})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		t.Cleanup(func() { cleanUp(host, &late) })
+		if err := host.Start(t.Context(), &late); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		head, err := host.CloneAt(t.Context(), late, "demo", "work-late", strings.Repeat("0", 40))
+		if err == nil {
+			t.Fatalf("CloneAt = %q, nil, want an error for a commit the hub has not", head)
+		}
+	})
+
 	t.Run("rejects a branch name that is a command", func(t *testing.T) {
 		marker := filepath.Join(t.TempDir(), "pwned")
-		if err := host.Push(t.Context(), parent, "demo", "work; touch "+marker, false); !errors.Is(err, workspace.ErrBadBranch) {
+		if err := host.Push(t.Context(), parent, "demo", "work; touch "+marker); !errors.Is(err, workspace.ErrBadBranch) {
 			t.Errorf("Push error = %v, want ErrBadBranch", err)
 		}
 		if _, err := os.Stat(marker); err == nil {

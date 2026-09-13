@@ -44,8 +44,6 @@ type SpawnRequest struct {
 	BranchSuffix string `json:"branch_suffix,omitempty"`
 	// Model overrides the model the child runs on.
 	Model string `json:"model,omitempty"`
-	// Image overrides the container image the child's workspace runs.
-	Image string `json:"image,omitempty"`
 }
 
 // AgentResult is what became of one child agent. It is the tool result the
@@ -106,7 +104,6 @@ type spawnAgentArgs struct {
 	Task         string `json:"task"`
 	BranchSuffix string `json:"branch_suffix"`
 	Model        string `json:"model"`
-	Image        string `json:"image"`
 	// Wait blocks until the child finishes. It defaults to true, so a model
 	// that says nothing gets one child at a time and its result.
 	Wait *bool `json:"wait"`
@@ -118,7 +115,8 @@ func (spawnAgentTool) Name() string { return "spawn_agent" }
 // Description tells the model what the tool does.
 func (spawnAgentTool) Description() string {
 	return "Hand a self-contained task to a child agent. " +
-		"The child works in its own sandbox, cloned from this workspace at its current commit, " +
+		"The child works in its own sandbox, on the same image as this one, cloned from this " +
+		"workspace at its current commit, " +
 		"on its own branch, and reports back a summary, its branch, its commit, and a diffstat. " +
 		"Use it for work that can be described once and checked afterwards. " +
 		"Set wait to false to start several children and then call wait_agents."
@@ -133,7 +131,6 @@ func (spawnAgentTool) Schema() json.RawMessage {
     "task": {"type": "string", "description": "The whole task, as the child's first message. It sees none of this conversation."},
     "branch_suffix": {"type": "string", "description": "Override the branch part taken from the name."},
     "model": {"type": "string", "description": "The model the child runs on. Empty uses the default."},
-    "image": {"type": "string", "description": "The container image the child's workspace runs. Empty uses the default."},
     "wait": {"type": "boolean", "description": "Wait for the child to finish. Defaults to true."}
   },
   "required": ["name", "task"],
@@ -159,7 +156,6 @@ func (t spawnAgentTool) Call(ctx context.Context, c tool.CallContext, raw json.R
 		Task:            args.Task,
 		BranchSuffix:    strings.TrimSpace(args.BranchSuffix),
 		Model:           strings.TrimSpace(args.Model),
-		Image:           strings.TrimSpace(args.Image),
 	}
 	if args.Wait != nil && !*args.Wait {
 		result, err := t.agents.Start(ctx, req)

@@ -126,11 +126,26 @@ func TestSpawnAgentWithoutWaitingReturnsTheChildID(t *testing.T) {
 func TestSpawnAgentPassesTheOverridesOn(t *testing.T) {
 	agents := &fakeAgents{result: done()}
 	callTool(t, agentTool(t, "spawn_agent", agents),
-		`{"name": "worker", "task": "do it", "branch_suffix": "fix", "model": "big", "image": "other:latest"}`)
+		`{"name": "worker", "task": "do it", "branch_suffix": "fix", "model": "big"}`)
 
 	req := agents.spawned[0]
-	if req.BranchSuffix != "fix" || req.Model != "big" || req.Image != "other:latest" {
+	if req.BranchSuffix != "fix" || req.Model != "big" {
 		t.Errorf("request = %+v, want the overrides passed through", req)
+	}
+}
+
+// TestSpawnAgentTakesNoImage pins that a model cannot name the image its
+// child runs: nothing validates an image name it made up, so a child runs
+// what its parent runs.
+func TestSpawnAgentTakesNoImage(t *testing.T) {
+	tl := agentTool(t, "spawn_agent", &fakeAgents{result: done()})
+	if strings.Contains(string(tl.Schema()), "image") {
+		t.Errorf("schema = %s, want no image parameter", tl.Schema())
+	}
+	// A model that names one anyway is not obeyed; the argument goes nowhere.
+	res := callTool(t, tl, `{"name": "worker", "task": "do it", "image": "other:latest"}`)
+	if res.IsError || strings.Contains(res.Content, "other:latest") {
+		t.Errorf("result = %+v, want the image ignored", res)
 	}
 }
 

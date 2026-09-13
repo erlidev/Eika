@@ -161,8 +161,13 @@ func TestSpawnAgentRunsAChildAndReportsBack(t *testing.T) {
 			t.Errorf("event %s arrived on topic %q, want the parent session's", e.Type, e.Topic)
 		}
 	}
-	if started.SubagentID == "" || started.Name != "worker" || started.Branch != "main-worker" {
-		t.Errorf("subagent.started = %+v, want the child named on its own branch", started)
+	// The branch carries a tag from the child's id, so two children a parent
+	// named the same do not write over each other in the hub.
+	if started.SubagentID == "" || started.Name != "worker" {
+		t.Errorf("subagent.started = %+v, want the child named", started)
+	}
+	if !strings.HasPrefix(started.Branch, "main-worker-") || started.Branch == "main-worker-" {
+		t.Errorf("subagent.started branch = %q, want main-worker-<tag>", started.Branch)
 	}
 	if started.Task != "write the notes" {
 		t.Errorf("subagent.started task = %q, want the task the parent gave", started.Task)
@@ -179,8 +184,8 @@ func TestSpawnAgentRunsAChildAndReportsBack(t *testing.T) {
 		t.Fatalf("parent run = %+v, want done", state.Run)
 	}
 	child := a.waitAgent(t, sess.ID)
-	if child.State != "done" || child.Branch != "main-worker" || child.Name != "worker" {
-		t.Fatalf("child = %+v, want a finished worker on main-worker", child)
+	if child.State != "done" || child.Branch != started.Branch || child.Name != "worker" {
+		t.Fatalf("child = %+v, want a finished worker on %s", child, started.Branch)
 	}
 	if child.SessionID == sess.ID || child.WorkspaceID == ws.ID {
 		t.Errorf("child = %+v, want a session and a workspace of its own", child)
@@ -197,7 +202,7 @@ func TestSpawnAgentRunsAChildAndReportsBack(t *testing.T) {
 
 	// The work is in the hub, on the child's branch, which is what lets the
 	// parent fetch and merge it.
-	content, err := a.host.hubShow(t.Context(), "demo", "main-worker", "notes.txt")
+	content, err := a.host.hubShow(t.Context(), "demo", child.Branch, "notes.txt")
 	if err != nil {
 		t.Fatalf("read notes.txt from the hub: %v", err)
 	}
@@ -210,7 +215,7 @@ func TestSpawnAgentRunsAChildAndReportsBack(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("tool results = %v, want the one spawn_agent result", results)
 	}
-	for _, want := range []string{"main-worker", child.Result.Commit, "wrote notes.txt", "notes.txt"} {
+	for _, want := range []string{child.Branch, child.Result.Commit, "wrote notes.txt", "notes.txt"} {
 		if !strings.Contains(results[0], want) {
 			t.Errorf("tool result = %q, want %q in it", results[0], want)
 		}
@@ -269,8 +274,15 @@ func TestAbortingAParentRunAbortsItsChildren(t *testing.T) {
 	if final.State != "aborted" {
 		t.Fatalf("child = %+v, want aborted with its parent", final)
 	}
+	// The child's own run was over before the spawner reported on it. A
+	// spawner that gave up waiting when its context ended would commit, push,
+	// and stop the child's workspace while its agent loop was still writing
+	// to it.
+	if childRun := a.runState(t, final.SessionID); childRun.Active {
+		t.Errorf("child run = %+v, want it finished before the child was reported on", childRun)
+	}
 	// An aborted child still commits and pushes: the work is not thrown away.
-	content, err := a.host.hubShow(t.Context(), "demo", "main-worker", "notes.txt")
+	content, err := a.host.hubShow(t.Context(), "demo", final.Branch, "notes.txt")
 	if err != nil {
 		t.Fatalf("read notes.txt from the hub: %v", err)
 	}
@@ -338,7 +350,7 @@ func TestMergeBringsAChildBranchIntoTheParent(t *testing.T) {
 		body := decodeBody[mergeWire](t, request(t, a.Server,
 			"POST", "/api/workspaces/"+parent.ID+"/merge",
 			map[string]any{"source_workspace_id": child.WorkspaceID}), 200)
-		if !body.Merged || body.Branch != "main-worker" || body.Strategy != "merge" {
+		if !body.Merged || body.Branch != child.Branch || body.Strategy != "merge" {
 			t.Fatalf("merge = %+v, want the child's branch merged", body)
 		}
 		if body.Commit == "" || len(body.Conflicts) != 0 {
@@ -461,5 +473,145 @@ func TestForkWithWorkspaceClonesAtTheEntryCommit(t *testing.T) {
 		if rec.Code != 400 {
 			t.Errorf("forking at an entry with no commit = %d, want 400: %s", rec.Code, rec.Body.String())
 		}
+	}
+}
+
+// TestShutdownStopsAChildWhoseParentIsLongDone checks that a detached child
+// is stopped and recorded before the harness lets go of its database.
+func TestShutdownStopsAChildWhoseParentIsLongDone(t *testing.T) {
+	a := newAPI(t)
+	project, dir := a.newProject(t, "demo")
+	initRepo(t, dir)
+	ws := a.newWorkspace(t, project.ID)
+	sess := a.newSession(t, ws.ID)
+
+	// The parent starts a child without waiting, so the two runs go at once
+	// and race for the script; both next steps are the same question, so it
+	// does not matter which gets which. The parent's is answered and it ends;
+	// the child's is not, so only the shutdown stops it.
+	a.script(
+		spawnStep("c1", "worker", "write the notes", false),
+		askStep("c2", "should I carry on?"),
+		askStep("c3", "should I carry on?"),
+		providertest.Text("the parent is done"),
+	)
+	a.postMessage(t, sess.ID, "start a child and carry on", "", 202)
+
+	var child agentWire
+	waitFor(t, "the child to start", func() bool {
+		listed := a.agents(t, sess.ID)
+		if len(listed.Agents) != 1 {
+			return false
+		}
+		child = listed.Agents[0]
+		return true
+	})
+	a.waitQuestion(t, child.SessionID)
+	question := a.waitQuestion(t, sess.ID)
+	if rec := request(t, a.Server, "POST", "/api/questions/"+question.ID+"/answer",
+		map[string]any{"answer": "yes"}); rec.Code != 204 {
+		t.Fatalf("answer = %d: %s", rec.Code, rec.Body.String())
+	}
+	state := a.waitIdle(t, sess.ID)
+	if state.Run == nil || state.Run.State != "done" {
+		t.Fatalf("parent run = %+v, want done while the child runs on", state.Run)
+	}
+
+	a.Server.Close()
+
+	// The row is final by the time Close returns: the store is about to go.
+	stopped := a.agents(t, sess.ID)
+	if len(stopped.Agents) != 1 || stopped.Agents[0].State == "running" {
+		t.Fatalf("children after shutdown = %+v, want the child recorded as stopped", stopped.Agents)
+	}
+	if state := a.runState(t, child.SessionID); state.Active {
+		t.Errorf("child run = %+v, want it finished", state)
+	}
+}
+
+// TestForkWithWorkspaceRollsBackWhenTheForkFails checks that a workspace made
+// for a fork that never happens does not outlive the request.
+func TestForkWithWorkspaceRollsBackWhenTheForkFails(t *testing.T) {
+	a := newAPI(t)
+	project, dir := a.newProject(t, "demo")
+	initRepo(t, dir)
+	ws := a.newWorkspace(t, project.ID)
+	sess := a.newSession(t, ws.ID)
+
+	a.script(
+		providertest.Calls("", providertest.Call("c1", "bash",
+			map[string]any{"command": "echo one > one.txt && git add -A && git commit -m one"})),
+		providertest.Text("committed one.txt"),
+	)
+	a.postMessage(t, sess.ID, "make a commit", "", 202)
+	a.waitIdle(t, sess.ID)
+	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
+	last := path.Entries[len(path.Entries)-1]
+
+	// The session goes away while its fork's workspace is being cloned, which
+	// is what leaves the fork with nothing to belong to.
+	a.host.cloneHook = func() {
+		if rec := request(t, a.Server, "DELETE", "/api/sessions/"+sess.ID, nil); rec.Code != 204 {
+			t.Errorf("delete the session = %d: %s", rec.Code, rec.Body.String())
+		}
+	}
+	rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork",
+		map[string]any{"entry_id": last.ID, "with_workspace": true})
+	if rec.Code < 400 {
+		t.Fatalf("fork = %d, want it to fail once its session is gone: %s", rec.Code, rec.Body.String())
+	}
+
+	// Neither the container nor its row is left behind.
+	live, err := a.host.List(t.Context())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(live) != 1 || live[0].ID != ws.ID {
+		t.Errorf("host holds %+v, want the original workspace alone", live)
+	}
+	workspaces := decodeBody[workspacesWire](t, request(t, a.Server, "GET", "/api/workspaces", nil), 200)
+	if len(workspaces.Workspaces) != 1 || workspaces.Workspaces[0].ID != ws.ID {
+		t.Errorf("workspace rows = %+v, want the original row alone", workspaces.Workspaces)
+	}
+}
+
+// TestMergePushesTheSourcesOwnBranch checks that naming a branch to merge does
+// not send the source workspace's HEAD to that branch instead of its own.
+func TestMergePushesTheSourcesOwnBranch(t *testing.T) {
+	a := newAPI(t)
+	parent, child := spawnChild(t, a, "echo from the child > notes.txt")
+
+	// The child's workspace becomes the target, and the parent, still on
+	// main, the source. The parent has a commit the hub has not seen.
+	if rec := request(t, a.Server, "POST", "/api/workspaces/"+child.WorkspaceID+"/start", nil); rec.Code != 200 {
+		t.Fatalf("start the child workspace = %d: %s", rec.Code, rec.Body.String())
+	}
+	dir, err := a.host.dirOf(parent.ID)
+	if err != nil {
+		t.Fatalf("parent workspace directory: %v", err)
+	}
+	write(t, dir, "later.txt", "after the child\n")
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-m", "a later commit"}} {
+		if _, err := git(t.Context(), dir, args...); err != nil {
+			t.Fatalf("commit in the parent workspace: %v", err)
+		}
+	}
+
+	body := decodeBody[mergeWire](t, request(t, a.Server,
+		"POST", "/api/workspaces/"+child.WorkspaceID+"/merge",
+		map[string]any{"source_workspace_id": parent.ID, "branch": child.Branch}), 200)
+	if !body.Merged || body.Branch != child.Branch {
+		t.Fatalf("merge = %+v, want the named branch merged", body)
+	}
+	// The source pushed the branch it is on, not the branch that was named.
+	if _, err := a.host.hubShow(t.Context(), "demo", "main", "later.txt"); err != nil {
+		t.Errorf("the source's own branch was not pushed: %v", err)
+	}
+	content, err := a.host.hubShow(t.Context(), "demo", child.Branch, "notes.txt")
+	if err != nil {
+		t.Fatalf("read notes.txt from the hub: %v", err)
+	}
+	if strings.TrimSpace(content) != "from the child" {
+		t.Errorf("hub %s notes.txt = %q, want the child's branch untouched", child.Branch, content)
 	}
 }
