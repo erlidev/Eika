@@ -47,6 +47,18 @@ type Config struct {
 	AllowedOrigins []string `yaml:"allowed_origins"`
 	// Models lists the models the harness may use, in preference order.
 	Models []Model `yaml:"models"`
+	// Subagents bounds how deep and how wide the agent tree may grow.
+	Subagents Subagents `yaml:"subagents"`
+}
+
+// Subagents bounds the tree of child agents a run may spawn.
+type Subagents struct {
+	// MaxDepth is how many levels of children a session may have below it.
+	// A top-level session is depth zero, so 2 allows a child and a
+	// grandchild.
+	MaxDepth int `yaml:"max_depth"`
+	// MaxChildren is how many children of one session may run at a time.
+	MaxChildren int `yaml:"max_children"`
 }
 
 // Model describes one OpenAI-compatible model endpoint.
@@ -95,6 +107,7 @@ func Default() Config {
 		EikadBinary:    "/usr/local/share/eika/eikad",
 		HubRoot:        "/var/lib/eika/hub",
 		HubURL:         "http://eika:8080",
+		Subagents:      Subagents{MaxDepth: 2, MaxChildren: 4},
 	}
 }
 
@@ -226,6 +239,12 @@ func (c Config) Validate() error {
 	if c.AuthToken == "" {
 		return errors.New("validate config: auth_token is empty")
 	}
+	if c.Subagents.MaxDepth < 1 {
+		return errors.New("validate config: subagents.max_depth is less than one")
+	}
+	if c.Subagents.MaxChildren < 1 {
+		return errors.New("validate config: subagents.max_children is less than one")
+	}
 	seen := make(map[string]bool, len(c.Models))
 	for i, m := range c.Models {
 		switch {
@@ -277,10 +296,10 @@ const redacted = "[REDACTED]"
 // that it is safe to log.
 func (c Config) String() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s eikad_binary=%s hub_root=%s hub_url=%s auth_token=%s allowed_origins=%s models=[",
+	fmt.Fprintf(&b, "config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s eikad_binary=%s hub_root=%s hub_url=%s auth_token=%s allowed_origins=%s subagents=depth:%d,children:%d models=[",
 		c.Listen, redactURL(c.DatabaseURL), c.DockerSocket, c.SearxNGURL, c.SandboxImage,
 		c.SandboxNetwork, c.EikadBinary, c.HubRoot, c.HubURL, redact(c.AuthToken),
-		strings.Join(c.AllowedOrigins, ","))
+		strings.Join(c.AllowedOrigins, ","), c.Subagents.MaxDepth, c.Subagents.MaxChildren)
 	for i, m := range c.Models {
 		if i > 0 {
 			b.WriteByte(' ')

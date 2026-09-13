@@ -200,6 +200,7 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 		HubURL:         "http://env:9090",
 		AuthToken:      "from-env",
 		AllowedOrigins: []string{"localhost:9999", "127.0.0.1:9999"},
+		Subagents:      config.Subagents{MaxDepth: 2, MaxChildren: 4},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %v, want %v", cfg, want)

@@ -17,7 +17,7 @@ import (
 // askUser returns the registered ask_user tool.
 func askUser(t *testing.T, q *builtin.Questions) tool.Tool {
 	t.Helper()
-	r, err := builtin.Registry(q)
+	r, err := builtin.Registry(q, nil)
 	if err != nil {
 		t.Fatalf("Registry: %v", err)
 	}

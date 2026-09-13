@@ -23,8 +23,17 @@ const (
 // the output of `git remote -v`.
 const workspaceCredentialHelper = `!f() { echo "username=${` + hubUserEnv + `}"; echo "password=${` + hubTokenEnv + `}"; }; f`
 
+// hubRemote is the name of the git remote a workspace reaches the hub on. It
+// is not "origin": a local project's checkout already has an origin of the
+// user's own, and the hub must not displace it.
+const hubRemote = "eika-hub"
+
 // ErrBadBranch reports a branch name git would not accept.
 var ErrBadBranch = errors.New("invalid branch name")
+
+// ErrNoRepository reports that a workspace holds no git repository, which a
+// local project's directory need not.
+var ErrNoRepository = errors.New("workspace holds no git repository")
 
 // Clone checks the project out into a running workspace from the hub and
 // returns the commit the workspace starts from. An empty project repository
@@ -42,7 +51,7 @@ func (h *Host) Clone(ctx context.Context, ws Workspace, project, branch string) 
 	if err != nil {
 		return "", err
 	}
-	if err := checkBranch(ctx, ex, branch); err != nil {
+	if err := CheckBranch(ctx, ex, branch); err != nil {
 		return "", err
 	}
 	if err := h.opts.Hub.Grant(ws.ID, project, ws.HubToken); err != nil {
@@ -52,13 +61,10 @@ func (h *Host) Clone(ctx context.Context, ws Workspace, project, branch string) 
 
 	// Every argument is passed as an argument, never through a shell, so a
 	// project or branch name cannot become a command.
-	setup := [][]string{
-		{"config", "--global", "credential.helper", workspaceCredentialHelper},
-		{"config", "--global", "user.name", gitUserName},
-		{"config", "--global", "user.email", gitUserEmail},
-		{"clone", url, "."},
+	if err := configureGit(ctx, ex); err != nil {
+		return "", err
 	}
-	for _, args := range setup {
+	for _, args := range [][]string{{"clone", url, "."}, {"remote", "add", hubRemote, url}} {
 		if _, err := git(ctx, ex, args...); err != nil {
 			return "", err
 		}
@@ -81,9 +87,137 @@ func (h *Host) Clone(ctx context.Context, ws Workspace, project, branch string) 
 	return head, nil
 }
 
-// checkBranch rejects a branch name git would not accept, so that a name can
+// CloneAt checks the project out into a running workspace from the hub and
+// puts it on branch at commit, which is how a child workspace starts where
+// its parent stood. An empty commit leaves the clone's own HEAD in place.
+//
+// The commit must already be in the hub: push the workspace it came from
+// first.
+func (h *Host) CloneAt(ctx context.Context, ws Workspace, project, branch, commit string) (string, error) {
+	if _, err := h.Clone(ctx, ws, project, ""); err != nil {
+		return "", err
+	}
+	ex, err := h.Executor(ws)
+	if err != nil {
+		return "", err
+	}
+	if err := CheckBranch(ctx, ex, branch); err != nil {
+		return "", err
+	}
+	args := []string{"checkout", "-B", branch}
+	if commit != "" {
+		args = append(args, commit)
+	}
+	if _, err := git(ctx, ex, args...); err != nil {
+		// A repository with no commits has no HEAD to branch from, so the
+		// unborn HEAD is pointed at the branch instead.
+		if _, err := git(ctx, ex, "symbolic-ref", "HEAD", "refs/heads/"+branch); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	head, err := git(ctx, ex, "rev-parse", "HEAD")
+	if err != nil {
+		return "", nil
+	}
+	h.log.Info("workspace cloned at commit",
+		"workspace_id", ws.ID, "project", project, "branch", branch, "base_commit", head)
+	return head, nil
+}
+
+// Push sends a branch from a workspace to the project's repository in the
+// hub, creating that repository if the project has none yet. A local
+// project's workspace pushes the same way: the hub mirrors local projects, so
+// that forks and subagents work alike for both kinds.
+//
+// force overwrites the hub's branch. Only the workspace that owns a branch
+// may ask for it.
+func (h *Host) Push(ctx context.Context, ws Workspace, project, branch string, force bool) error {
+	ex, err := h.connectHub(ctx, ws, project)
+	if err != nil {
+		return err
+	}
+	if err := CheckBranch(ctx, ex, branch); err != nil {
+		return err
+	}
+	args := []string{"push"}
+	if force {
+		args = append(args, "--force")
+	}
+	if _, err := git(ctx, ex, append(args, hubRemote, "HEAD:refs/heads/"+branch)...); err != nil {
+		return err
+	}
+	h.log.Info("workspace pushed to the hub", "workspace_id", ws.ID, "project", project, "branch", branch)
+	return nil
+}
+
+// Fetch brings a branch from the project's repository in the hub into a
+// workspace, where it is then reachable as FETCH_HEAD. It is what a merge
+// between two workspaces starts with.
+func (h *Host) Fetch(ctx context.Context, ws Workspace, project, branch string) error {
+	ex, err := h.connectHub(ctx, ws, project)
+	if err != nil {
+		return err
+	}
+	if err := CheckBranch(ctx, ex, branch); err != nil {
+		return err
+	}
+	if _, err := git(ctx, ex, "fetch", hubRemote, branch); err != nil {
+		return err
+	}
+	return nil
+}
+
+// connectHub makes sure a running workspace can talk to its project in the
+// hub: the repository exists, the workspace holds a grant for it, git knows
+// who it commits as and how to answer the hub's challenge, and the hub is a
+// remote. Every step is idempotent, so any of Clone, Push, and Fetch may be
+// the first one a workspace runs.
+func (h *Host) connectHub(ctx context.Context, ws Workspace, project string) (executor.Executor, error) {
+	if _, err := h.opts.Hub.Init(ctx, project); err != nil {
+		return nil, err
+	}
+	ex, err := h.Executor(ws)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := git(ctx, ex, "rev-parse", "--git-dir"); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrNoRepository, ws.ID)
+	}
+	if err := h.opts.Hub.Grant(ws.ID, project, ws.HubToken); err != nil {
+		return nil, err
+	}
+	if err := configureGit(ctx, ex); err != nil {
+		return nil, err
+	}
+	url := strings.TrimSuffix(h.opts.HubURL, "/") + hub.Prefix + "/" + project + ".git"
+	if _, err := git(ctx, ex, "remote", "set-url", hubRemote, url); err != nil {
+		if _, err := git(ctx, ex, "remote", "add", hubRemote, url); err != nil {
+			return nil, err
+		}
+	}
+	return ex, nil
+}
+
+// configureGit gives a workspace the identity its commits carry and the
+// credential helper the hub's challenge is answered from.
+func configureGit(ctx context.Context, ex executor.Executor) error {
+	settings := [][]string{
+		{"config", "--global", "credential.helper", workspaceCredentialHelper},
+		{"config", "--global", "user.name", gitUserName},
+		{"config", "--global", "user.email", gitUserEmail},
+	}
+	for _, args := range settings {
+		if _, err := git(ctx, ex, args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CheckBranch rejects a branch name git would not accept, so that a name can
 // never be anything but a name. git itself is the authority on the rules.
-func checkBranch(ctx context.Context, ex executor.Executor, branch string) error {
+func CheckBranch(ctx context.Context, ex executor.Executor, branch string) error {
 	if branch == "" {
 		return nil
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/openai"
 	"github.com/erlidev/eika/internal/store"
+	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool/builtin"
 	"github.com/erlidev/eika/internal/workspace"
 	"github.com/erlidev/eika/internal/workspace/hub"
@@ -47,7 +48,19 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	}()
 
 	questions := builtin.NewQuestions()
-	tools, err := builtin.Registry(questions)
+	bus := event.NewBus(log)
+	// The spawner and the server need each other: the tools every run shares
+	// hold spawn_agent, and the spawner drives a child through the run
+	// manager. The spawner is built first and given the runner afterwards.
+	spawner := subagent.New(subagent.Options{
+		Store:       st,
+		Workspaces:  host,
+		Emitter:     bus,
+		MaxDepth:    cfg.Subagents.MaxDepth,
+		MaxChildren: cfg.Subagents.MaxChildren,
+		Logger:      log,
+	})
+	tools, err := builtin.Registry(questions, spawner)
 	if err != nil {
 		return err
 	}
@@ -58,8 +71,9 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Models:     configuredModels{registry: provider.NewRegistry(openai.New), models: cfg.Models},
 		Tools:      tools,
 		Questions:  questions,
-		Bus:        event.NewBus(log),
+		Bus:        bus,
 	}, opts)
+	s.UseSubagents(spawner, spawner.Attach)
 
 	// A container may have stopped or been removed while the harness was
 	// down. Reconciling is how the recorded states catch up; a Docker daemon
@@ -99,7 +113,12 @@ func (m configuredModels) Provider(name string) (provider.Provider, error) {
 }
 
 var (
-	_ Models     = configuredModels{}
-	_ Workspaces = (*workspace.Host)(nil)
-	_ Hub        = (*hub.Hub)(nil)
+	_ Models              = configuredModels{}
+	_ Workspaces          = (*workspace.Host)(nil)
+	_ Hub                 = (*hub.Hub)(nil)
+	_ Subagents           = (*subagent.Spawner)(nil)
+	_ subagent.Runner     = (*Server)(nil)
+	_ builtin.Subagents   = (*subagent.Spawner)(nil)
+	_ subagent.Store      = (*store.Store)(nil)
+	_ subagent.Workspaces = (*workspace.Host)(nil)
 )

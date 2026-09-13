@@ -70,6 +70,19 @@ func (s *Store) Subagent(ctx context.Context, id string) (Subagent, error) {
 	return sub, nil
 }
 
+// SubagentOfSession returns the subagent row a child session belongs to. A
+// session nobody spawned is ErrNotFound, which is how the spawner learns that
+// a session is a root and measures how deep the tree already is.
+func (s *Store) SubagentOfSession(ctx context.Context, childSessionID string) (Subagent, error) {
+	row := s.pool.QueryRow(ctx, `SELECT `+subagentColumns+` FROM subagents WHERE child_session_id = $1`,
+		childSessionID)
+	sub, err := scanSubagent(row)
+	if err != nil {
+		return Subagent{}, wrap("read subagent of session "+childSessionID, err)
+	}
+	return sub, nil
+}
+
 // Subagents returns the children one session spawned, oldest first.
 func (s *Store) Subagents(ctx context.Context, parentSessionID string) ([]Subagent, error) {
 	const q = `SELECT ` + subagentColumns + ` FROM subagents

@@ -1,13 +1,14 @@
 # Architecture
 
-This file describes Eika as it is today, at the end of phase 4. It is updated
+This file describes Eika as it is today, at the end of phase 6. It is updated
 in the same change that moves structure. Planned work lives in `docs/PLAN.md`.
 
 ## What exists now
 
 Two Go binaries, the agent core, the sandbox machinery agents run in, the
 database that outlives them, the HTTP API and event stream that drive all of
-it, one frontend, and a three-service compose stack.
+it, child agents that work in sandboxes of their own, one frontend, and a
+three-service compose stack.
 
 | Piece | Path | Responsibility today |
 |---|---|---|
@@ -18,7 +19,7 @@ it, one frontend, and a three-service compose stack.
 | `server` | `internal/server` | Composition of the process, the JSON API, the WebSocket event stream, bearer auth, and the run manager |
 | `agent` | `internal/agent` | The agent loop: turns, tool dispatch, steering and follow-up queues, retries, events |
 | `provider` | `internal/provider` | The model interface, message and event types, the kind registry, the OpenAI implementation, the scripted fake |
-| `tool` | `internal/tool` | The tool interface, call context, result type, and registry; `tool/builtin` holds the eight built-in tools |
+| `tool` | `internal/tool` | The tool interface, call context, result type, and registry; `tool/builtin` holds the eleven built-in tools |
 | `executor` | `internal/executor` | The interface every agent action goes through, path validation, and `executor/local` for tests |
 | `contextfile` | `internal/contextfile` | AGENTS.md discovery and the system prompt section it becomes |
 | `eikad` | `internal/eikad` | The daemon's handlers, path confinement, and wire types |
@@ -27,6 +28,7 @@ it, one frontend, and a three-service compose stack.
 | `hub` | `internal/workspace/hub` | Bare git repositories and the Smart HTTP endpoint workspaces clone from |
 | `store` | `internal/store` | The PostgreSQL pool, the embedded migrations, and the queries behind every table |
 | `session` | `internal/session` | The session tree: append, head, branch, fork, outline, and the agent store that records a run |
+| `subagent` | `internal/subagent` | Spawning child agents: the hand-over commit, the child workspace and session, the limits, and the result the parent reads |
 | frontend | `web/` | Vite, React 19, Tailwind v4, shadcn/ui; an app shell that fetches harness health once, with a Recheck button |
 
 `eika` serves `GET /healthz` and `GET /api/healthz`, both returning
@@ -285,8 +287,9 @@ The pieces:
   the request or the `default_model` setting names. Assistant entries record
   the workspace HEAD through a commit function that runs `git rev-parse HEAD`
   through the executor and reports no commit when the workspace holds no
-  repository. `agent.Options` in `runs.start` is the hook the later phases
-  register their tools in: subagents in phase 6, search in phase 7. A run ends
+  repository. `agent.Options` in `runs.begin` is the hook the later phases
+  register their tools in: search in phase 7. The subagent tools need no entry
+  there; the spawner reaches the run manager itself (see Subagents). A run ends
   `done`, `error`, or `aborted`, recorded with a retrying `store.FinishRun`
   call on a context that outlives the cancelled one. If its 30-second
   foreground window ends, the run manager continues the exact write in the
@@ -487,6 +490,93 @@ must set those two variables before Eika fetches or pushes that project again.
 A public legacy URL that has none of these credential indicators stays
 unchanged and receives no credential references.
 
+## Subagents
+
+`internal/subagent` gives a running agent child agents. A child is a full run
+of its own: its own workspace cloned from the parent's commit, its own
+session, its own branch, its own event topic, and the same tool registry,
+which includes `spawn_agent` again down to the configured depth.
+
+```
+parent run                spawner              hub              child workspace
+    |                        |                  |                      |
+ spawn_agent --------------> |                  |                      |
+    |          commit dirty tree in the parent workspace               |
+    |                        |-- git add -A; git commit "wip: before   |
+    |                        |   spawning <name>" ------------->       |
+    |                        |-- git push eika-hub <parent branch> --> |
+    |                        |                  |                      |
+    |                        |-- Host.Create + Start ----------------> |
+    |                        |-- CloneAt(project, <parent>-<name>, base commit) -->
+    |                        |                  |                      |
+    |                        |-- rows: workspaces(parent_workspace_id), |
+    |                        |   sessions(parent_session_id), subagents |
+    |                        |-- event subagent.started on session:<parent>
+    |                        |                                         |
+    |                        |-- runs.runChild(child session, task) --> agent loop
+    |                        |          (events on session:<child>)    |
+    |                        |                                         |
+    |                        |<-------------- run ends ----------------|
+    |                        |-- git commit "wip: subagent <name>      |
+    |                        |   finished"; git push --force --------> |
+    |                        |-- git diff --stat <base>..<head>        |
+    |                        |-- Host.Stop (not Destroy)               |
+    |                        |-- FinishSubagent(state, result JSON)    |
+    |                        |-- event subagent.finished on session:<parent>
+    |<-- tool result: summary, branch, commit, diffstat ---|
+```
+
+The pieces:
+
+- **The hand-over commit.** A child clones from the hub, so the parent's
+  uncommitted work has to reach the hub first. The spawner commits the whole
+  tree as `wip: before spawning <name>` and pushes the parent's branch. The
+  hub mirrors local projects too, so a bind-mounted local workspace hands over
+  the same way a volume-backed one does; `Host.Push` creates the project's
+  repository if it has none and adds the hub as the `eika-hub` remote rather
+  than as `origin`, which a local checkout already has.
+- **The child's branch** is `<parent branch>-<name>`, not a path below the
+  parent's branch: git stores either `refs/heads/main` or
+  `refs/heads/main/fix`, never both, and the parent's branch is in the hub by
+  then. The name is checked against a narrow pattern before it reaches git,
+  and `git check-ref-format` checks the branch itself.
+- **The tools** are `spawn_agent`, `wait_agents`, and `list_agents` in
+  `internal/tool/builtin`. They reach the spawner through the `Subagents`
+  interface declared there, the same shape `ask_user` uses for its question
+  broker, so nothing under `tool` learns what a workspace is. `spawn_agent`
+  blocks until the child finishes; `wait: false` returns the child's id at
+  once, and `wait_agents` collects them later. A tool call only ever names its
+  own session's children.
+- **The runner.** The spawner drives a child through `subagent.Runner`, which
+  the server implements with `runs.runChild`: an ordinary run, bound to the
+  context of the parent run that asked for it. So the child's tools, events,
+  entries, and retry behavior are the parent's, and no second agent loop
+  exists.
+- **The limits** are `subagents.max_depth` and `subagents.max_children` in the
+  configuration, 2 and 4 by default. Depth is measured by walking `subagents`
+  rows up from the spawning session; width counts that session's running
+  children, rows and live goroutines alike.
+- **Cancellation** flows down. Aborting a run aborts its children, and
+  aborting a child aborts its own children in turn, because a child works on a
+  branch of a run that has nobody left to report to. An aborted or failed
+  child still commits, pushes, and reports: its workspace is stopped, never
+  destroyed, so the user can start it again and look at what it did.
+- **The result** the parent's model sees is the child's final assistant
+  message, its branch, its head commit, and `git diff --stat` from the
+  parent's base commit to that head. The same object is stored as JSON on the
+  `subagents` row, served by `GET /api/sessions/{id}/agents`, and carried by
+  the `subagent.finished` event.
+- **Taking the work back** is `POST /api/workspaces/{id}/merge`: the source
+  workspace pushes, the target fetches from the hub, and git merges or rebases
+  inside the target workspace through its executor. A conflict is a normal
+  response with the conflicted paths; the tree is left as git made it, for the
+  user or the agent in that workspace to resolve.
+
+Fork-with-workspace uses the same machinery: `POST /api/sessions/{id}/fork`
+with `with_workspace` pushes the current workspace, clones a new one from the
+hub at the commit the fork entry recorded, on `<branch>-fork-<short id>`, and
+points the forked session at it, so the files rewind with the conversation.
+
 ## Compose topology
 
 ```
@@ -576,10 +666,10 @@ have to renegotiate it.
             |
     +-------+---------+---------+---------+----------+
     v                 v         v         v          v
-  agent  <--------  session   store   workspace   (search)
-    |    \              |                  |
-    |     \             v                  v
-    |      +-> contextfile           workspace/hub
+  agent  <--------  session   store   workspace   subagent   (search)
+    |    \              |                  |            |
+    |     \             v                  v            |
+    |      +-> contextfile           workspace/hub  <----+
     |               |
     v               v
   tool   -------> executor
@@ -592,6 +682,8 @@ have to renegotiate it.
         +-----------------------------------+
 
 workspace is imported by server and subagent only. Never by tool.
+subagent also imports session, store, event, and tool/builtin, for the
+Subagents interface the agent tools call it through.
 workspace also imports executor, which is what Host.Executor hands back.
 ```
 

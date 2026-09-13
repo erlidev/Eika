@@ -15,6 +15,7 @@ import (
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
+	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool"
 	"github.com/erlidev/eika/internal/tool/builtin"
 	"github.com/erlidev/eika/internal/workspace"
@@ -37,7 +38,19 @@ type Workspaces interface {
 	Inspect(ctx context.Context, id string) (workspace.Workspace, error)
 	List(ctx context.Context) ([]workspace.Workspace, error)
 	Clone(ctx context.Context, ws workspace.Workspace, project, branch string) (string, error)
+	CloneAt(ctx context.Context, ws workspace.Workspace, project, branch, commit string) (string, error)
+	Push(ctx context.Context, ws workspace.Workspace, project, branch string, force bool) error
+	Fetch(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Executor(ws workspace.Workspace) (executor.Executor, error)
+}
+
+// Subagents is the part of the subagent spawner the API uses: the children of
+// a session, and stopping one or all of them. *subagent.Spawner is the one
+// implementation; UseSubagents gives it to the server once it exists.
+type Subagents interface {
+	List(ctx context.Context, parentSessionID string) ([]builtin.AgentResult, error)
+	Abort(ctx context.Context, id string) error
+	AbortChildren(parentSessionID string)
 }
 
 // Hub is the part of the git hub the API uses: creating a project's
@@ -68,6 +81,9 @@ type Deps struct {
 	Tools      *tool.Registry
 	Questions  *builtin.Questions
 	Bus        *event.Bus
+	// Subagents is set by UseSubagents rather than by the caller: the spawner
+	// needs the run manager this server owns.
+	Subagents Subagents
 }
 
 // Options configures a Server beyond what config.Config carries.
@@ -103,6 +119,15 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	s.runs = newRuns(s)
 	s.routes()
 	return s
+}
+
+// UseSubagents gives the server the spawner that runs child agents, and gives
+// the spawner the run manager it drives them with. The wiring calls it once,
+// before serving: the spawner cannot be built before the server, because the
+// tool registry every run shares holds the spawn_agent tool it backs.
+func (s *Server) UseSubagents(sp Subagents, attach func(subagent.Runner)) {
+	s.deps.Subagents = sp
+	attach(s)
 }
 
 // Handler returns the server's root handler.

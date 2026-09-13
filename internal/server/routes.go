@@ -48,6 +48,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("DELETE /api/workspaces/{id}", s.handleDeleteWorkspace)
 	api.HandleFunc("POST /api/workspaces/{id}/start", s.handleStartWorkspace)
 	api.HandleFunc("POST /api/workspaces/{id}/stop", s.handleStopWorkspace)
+	api.HandleFunc("POST /api/workspaces/{id}/merge", s.handleMergeWorkspace)
 	api.HandleFunc("GET /api/workspaces/{id}/diff", s.handleWorkspaceDiff)
 
 	api.HandleFunc("GET /api/sessions", s.handleListSessions)
@@ -58,6 +59,8 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/sessions/{id}/path", s.handleSessionPath)
 	api.HandleFunc("POST /api/sessions/{id}/head", s.handleSetSessionHead)
 	api.HandleFunc("POST /api/sessions/{id}/fork", s.handleForkSession)
+	api.HandleFunc("GET /api/sessions/{id}/agents", s.handleSessionAgents)
+	api.HandleFunc("POST /api/subagents/{id}/abort", s.handleAbortSubagent)
 
 	api.HandleFunc("POST /api/sessions/{id}/messages", s.handlePostMessage)
 	api.HandleFunc("GET /api/sessions/{id}/run", s.handleSessionRun)

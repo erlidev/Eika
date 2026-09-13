@@ -68,6 +68,16 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Claiming a session for a run | `runs.reserve` puts a placeholder in `bySession` under the same lock the conflict check reads, before the database read and the workspace command that building a run needs. Checking first and registering afterwards let two concurrent requests both start a run on one session |
 | `ask_user` question ids | Questions are brokered by `builtin.Questions` and identified by their own `q-<hex>` ids rather than `store.NewID`: a question is never a row, and `tool` importing `store` would point a dependency the wrong way |
 | Hub mirrors local projects | Yes. A local project keeps its bind mount for the user's own workspace, and its workspaces still push to a hub repository, so fork-with-workspace and subagents work the same way for both kinds. This resolves the phase 3 open question; nothing in the schema depends on it, and phase 6 implements the push |
+| Subagent branch names | `<parent-branch>-<name>`, joined with a dash, not `<parent-branch>/<name>`. The parent's branch is in the hub by the time the child is cloned, and git stores either `refs/heads/main` or `refs/heads/main/fix`, never both, so the path form fails for every child of a branch that exists. Fork-with-workspace uses the same shape, `<branch>-fork-<8 chars of the new id>` |
+| Subagent names | Validated against `^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$` before they reach git. The name becomes a branch, a session title, and an event field, so it holds nothing that needs escaping anywhere; `git check-ref-format` still checks the branch that is built from it |
+| A child run is an ordinary run | The spawner drives a child through `subagent.Runner`, which the server's run manager implements with `runs.runChild`. A child gets the same tools, events, entries, queues, and retry behavior as any other run, bound to the context of the parent run. A second loop for children would be a second way to do the same thing |
+| Spawner and server are built in one cycle | The tool registry every run shares holds `spawn_agent`, so the spawner exists before the server; the spawner drives children through the run manager, which the server owns. `subagent.New` takes no runner and `Spawner.Attach` supplies it once, from `Server.UseSubagents`, before anything serves |
+| Subagent tools reach the spawner through an interface | `builtin.Subagents`, declared in `internal/tool/builtin` where it is consumed, the same shape `ask_user` uses for its question broker. `internal/subagent` implements it and imports `builtin` for the request and result types, so nothing under `tool` learns what a workspace is |
+| A finished child's workspace is stopped, not destroyed | The branch is in the hub, but the container is where the user looks at what the child actually did, and starting it again is a click. This holds for a child that failed or was aborted as well; only a workspace whose creation did not finish is destroyed |
+| An aborted child still reports | Committing, pushing, and recording the result run on a context of their own with a five-minute bound, not the child's cancelled one, so work that was interrupted still lands on a branch the user can read |
+| Hub remote name | A workspace reaches the hub on a remote called `eika-hub`, not `origin`: a local project's bind-mounted checkout already has an origin of the user's own, and the hub must not displace it |
+| A merge conflict is a normal response | `POST /api/workspaces/{id}/merge` answers `200` with `merged: false` and the conflicted paths. The target's tree is left conflicted on purpose, because resolving it is work for the user or the agent in that workspace, not for the harness |
+| Subagent limits live in config | `subagents.max_depth` (2) and `subagents.max_children` (4). Depth is measured by walking `subagents` rows up from the spawning session, width by counting that session's running children. Both are validated as at least one, so a deployment cannot disable subagents by setting zero and getting a silent default |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -331,7 +341,7 @@ parallel.
 - [x] Phase 3: Persistence and sessions
 - [x] Phase 4: Server and event stream
 - [ ] Phase 5: Web UI core
-- [ ] Phase 6: Subagents
+- [x] Phase 6: Subagents (backend; the agent tree panel is UI work)
 - [ ] Phase 7: Search
 - [ ] Phase 8: Terminal, editor, diff
 - [ ] Phase 9: Hardening and docs

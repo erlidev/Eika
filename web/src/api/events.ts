@@ -106,6 +106,33 @@ export type QuestionAsked = {
   allow_free_text: boolean;
 };
 
+/** SubagentStarted is the payload of a subagent.started event: a run spawned a child agent. */
+export type SubagentStarted = {
+  subagent_id: string;
+  parent_session_id: string;
+  child_session_id: string;
+  child_workspace_id: string;
+  name: string;
+  branch: string;
+  base_commit?: string;
+  task: string;
+};
+
+/** SubagentFinished is the payload of a subagent.finished event: a child agent ended. */
+export type SubagentFinished = {
+  subagent_id: string;
+  parent_session_id: string;
+  child_session_id: string;
+  child_workspace_id: string;
+  name: string;
+  branch: string;
+  state: string;
+  commit?: string;
+  summary?: string;
+  diff_stat?: string;
+  error?: string;
+};
+
 /** WorkspaceState is the payload of a workspace.state event. */
 export type WorkspaceState = {
   workspace_id: string;

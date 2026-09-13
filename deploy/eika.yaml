@@ -20,6 +20,13 @@ hub_url: "http://eika:8080"
 # adds the Vite dev server through EIKA_ALLOWED_ORIGINS.
 allowed_origins: []
 
+# How far and how wide the tree of child agents may grow. max_depth counts
+# levels below a session a user started, so 2 allows a child and a grandchild;
+# max_children is how many children of one session run at a time.
+subagents:
+  max_depth: 2
+  max_children: 4
+
 models:
   - name: gpt-5
     base_url: https://api.openai.com/v1

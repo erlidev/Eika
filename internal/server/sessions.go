@@ -47,6 +47,10 @@ type setHeadRequest struct {
 type forkRequest struct {
 	EntryID string `json:"entry_id"`
 	Title   string `json:"title"`
+	// WithWorkspace gives the fork a workspace of its own, cloned from the
+	// hub at the commit the fork entry recorded, so that the files rewind
+	// with the conversation.
+	WithWorkspace bool `json:"with_workspace"`
 }
 
 // sessionsResponse is the body of GET /api/sessions.
@@ -228,8 +232,8 @@ func (s *Server) handleSetSessionHead(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleForkSession copies the branch down to an entry into a session of its
-// own, in the same workspace. Forking into a workspace cloned at the entry's
-// commit is phase 6 work.
+// own. With with_workspace the fork also gets a workspace cloned at the
+// commit that entry recorded, so the files rewind with the conversation.
 func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[forkRequest](r)
 	if err != nil {
@@ -241,11 +245,22 @@ func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if _, err := s.deps.Store.Session(r.Context(), id); err != nil {
+	sess, err := s.deps.Store.Session(r.Context(), id)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	fork, err := s.tree.Fork(r.Context(), id, req.EntryID, store.ForkOptions{Title: strings.TrimSpace(req.Title)})
+	opts := store.ForkOptions{Title: strings.TrimSpace(req.Title)}
+	if req.WithWorkspace {
+		ws, err := s.forkWorkspace(r.Context(), sess, req.EntryID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		opts.WorkspaceID = ws.ID
+		s.workspaceState(r.Context(), ws.ID, ws.ProjectID, ws.State)
+	}
+	fork, err := s.tree.Fork(r.Context(), id, req.EntryID, opts)
 	if err != nil {
 		s.fail(w, r, err)
 		return

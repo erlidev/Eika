@@ -28,7 +28,7 @@ func newWorkspace(t *testing.T) *workspace {
 	if err != nil {
 		t.Fatalf("local.New: %v", err)
 	}
-	r, err := builtin.Registry(nil)
+	r, err := builtin.Registry(nil, nil)
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -98,11 +98,14 @@ func hasBinary(name string) bool {
 }
 
 func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
-	r, err := builtin.Registry(nil)
+	r, err := builtin.Registry(nil, nil)
 	if err != nil {
 		t.Fatalf("Registry: %v", err)
 	}
-	want := []string{"ask_user", "bash", "edit", "find", "grep", "ls", "read", "write"}
+	want := []string{
+		"ask_user", "bash", "edit", "find", "grep", "list_agents", "ls", "read",
+		"spawn_agent", "wait_agents", "write",
+	}
 	got := make([]string, 0, len(want))
 	for _, tl := range r.List() {
 		got = append(got, tl.Name())

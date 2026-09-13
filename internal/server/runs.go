@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -282,19 +283,58 @@ func (s *Server) handleAbortRun(w http.ResponseWriter, r *http.Request) {
 // start begins a run on a session and returns its row. A session that is
 // already running one is a conflict: the message belongs in a queue instead.
 func (r *runs) start(ctx context.Context, sessionID, text, model string) (store.Run, error) {
+	row, _, err := r.begin(ctx, sessionID, text, model, true)
+	return row, err
+}
+
+// runChild runs a child session to the end and reports how it ended. It is
+// what the subagent spawner drives a child with: an ordinary run, except that
+// it is bound to the caller's context, so that a parent whose run is aborted
+// takes its children with it.
+func (r *runs) runChild(ctx context.Context, sessionID, text, model string) error {
+	row, active, err := r.begin(ctx, sessionID, text, model, false)
+	if err != nil {
+		return err
+	}
+	select {
+	case <-active.done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	final, err := r.server.deps.Store.Run(context.WithoutCancel(ctx), row.ID)
+	if err != nil {
+		return err
+	}
+	switch final.State {
+	case store.RunError:
+		return fmt.Errorf("run %s failed: %s", row.ID, final.Error)
+	case store.RunAborted:
+		return fmt.Errorf("run %s was aborted", row.ID)
+	}
+	return nil
+}
+
+// begin builds a run and starts its goroutine. A detached run outlives the
+// request that asked for it and is stopped by an abort alone; a child run is
+// bound to the context of the parent run that spawned it.
+func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach bool) (store.Run, *activeRun, error) {
 	s := r.server
 	sess, err := s.deps.Store.Session(ctx, sessionID)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 
-	// The run is not bound to the request: the client gets its answer as soon
-	// as the run starts and follows the rest on the event stream.
-	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	// A detached run is not bound to the request: the client gets its answer
+	// as soon as the run starts and follows the rest on the event stream.
+	parent := ctx
+	if detach {
+		parent = context.WithoutCancel(ctx)
+	}
+	runCtx, cancel := context.WithCancel(parent)
 	active, err := r.reserve(sessionID, sess.WorkspaceID, cancel)
 	if err != nil {
 		cancel()
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	// Building a run reads the database and runs a command in the workspace.
 	// Until that is done and the loop is running, the reservation is what
@@ -308,24 +348,25 @@ func (r *runs) start(ctx context.Context, sessionID, text, model string) (store.
 
 	ex, err := s.executorFor(ctx, sess.WorkspaceID)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	name, err := s.modelName(ctx, model)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	p, err := s.deps.Models.Provider(name)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	sessionStore := session.NewStore(s.tree, workspaceCommit(ex))
 	loaded, err := sessionStore.Load(ctx, sessionID)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	configured, _ := s.cfg.Model(name)
-	// Everything a later phase adds to a run - subagent tools in phase 6,
-	// search tools in phase 7 - is registered in this Options value.
+	// Everything a later phase adds to a run - search tools in phase 7 - is
+	// registered in this Options value. The subagent tools need no entry: the
+	// spawner reaches this run manager itself.
 	ag := agent.New(p, s.deps.Tools, agent.Options{
 		Model:            name,
 		MaxTokens:        configured.MaxOutput,
@@ -340,7 +381,7 @@ func (r *runs) start(ctx context.Context, sessionID, text, model string) (store.
 
 	row, err := s.deps.Store.StartRun(ctx, sessionID)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	queued := r.takePending(sessionID)
 	for _, message := range queued.steering {
@@ -357,7 +398,7 @@ func (r *runs) start(ctx context.Context, sessionID, text, model string) (store.
 	started = true
 	go r.drive(runCtx, active, loaded, text)
 	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", name)
-	return row, nil
+	return row, active, nil
 }
 
 // reserve claims a session for a run that is about to start. Claiming under
@@ -479,7 +520,7 @@ func (r *runs) abort(ctx context.Context, runID string) (store.Run, error) {
 		}
 		return store.Run{}, conflictf("run %s is already %s", runID, row.State)
 	}
-	active.abort()
+	r.abortRun(active)
 	select {
 	case <-active.done:
 	case <-ctx.Done():
@@ -494,7 +535,7 @@ func (r *runs) stop(ctx context.Context, sessionID string) {
 	if active == nil {
 		return
 	}
-	active.abort()
+	r.abortRun(active)
 	select {
 	case <-active.done:
 	case <-ctx.Done():
@@ -527,10 +568,19 @@ func (r *runs) stopAll() {
 	}
 	r.mu.Unlock()
 	for _, a := range active {
-		a.abort()
+		r.abortRun(a)
 		<-a.done
 	}
 	r.finishes.stop()
+}
+
+// abortRun stops a run and the children it spawned. A child works on a branch
+// of a run that is over and has nobody left to report to, so it stops with it.
+func (r *runs) abortRun(a *activeRun) {
+	a.abort()
+	if r.server.deps.Subagents != nil {
+		r.server.deps.Subagents.AbortChildren(a.sessionID)
+	}
 }
 
 // active returns the run of a session, or nil when it has none.

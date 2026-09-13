@@ -171,6 +171,48 @@ The run called `ask_user` and is blocked until
 | `options` | string array, optional | The answers to choose from. Absent for an open question. |
 | `allow_free_text` | boolean | An answer outside `options` is accepted. |
 
+## Subagent events
+
+Both are published on the **parent** session's topic, `session:<parent id>`,
+so a client watching a session sees the children it spawns without
+subscribing to them. The child's own run events go to `session:<child id>`
+like any other run's.
+
+### `subagent.started`
+
+A run called `spawn_agent`. The child's workspace exists and is cloned from
+the hub at `base_commit`; its run is about to start.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `subagent_id` | string | The `subagents` row. `POST /api/subagents/{id}/abort` takes it. |
+| `parent_session_id` | string | The session that spawned the child. |
+| `child_session_id` | string | The child's session. |
+| `child_workspace_id` | string | The child's workspace. |
+| `name` | string | What the parent called the child. |
+| `branch` | string | The branch the child works on. |
+| `base_commit` | string, optional | The parent commit the child was cloned at. Empty for a project with no commits. |
+| `task` | string | The child's first user message. |
+
+### `subagent.finished`
+
+The child's run ended, its tree is committed, and its branch is in the hub.
+The same fields make up the tool result the parent's model sees.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `subagent_id` | string | The `subagents` row. |
+| `parent_session_id` | string | The session that spawned the child. |
+| `child_session_id` | string | The child's session. |
+| `child_workspace_id` | string | The child's workspace. It is stopped, not destroyed. |
+| `name` | string | What the parent called the child. |
+| `branch` | string | The branch the child pushed to the hub. |
+| `state` | string | `done`, `error`, or `aborted`. |
+| `commit` | string, optional | The child's head commit. Absent when it committed nothing. |
+| `summary` | string, optional | The child's final assistant message. |
+| `diff_stat` | string, optional | `git diff --stat` from the parent's base commit to the child's head. |
+| `error` | string, optional | Why a child that did not finish cleanly stopped. |
+
 ## Workspace events
 
 ### `workspace.state`
@@ -210,8 +252,3 @@ The client read too slowly and lost events. It reaches that client alone.
 | Field | Type | Meaning |
 |---|---|---|
 | `dropped` | number | How many events were lost since the last report. |
-
-## Event types that other phases own
-
-`subagent.started` and `subagent.finished` (phase 6) have their names fixed in
-`internal/event` and get their payloads documented here when they land.

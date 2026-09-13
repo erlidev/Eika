@@ -24,10 +24,13 @@ func testConfig() config.Config {
 	cfg := config.Default()
 	cfg.AuthToken = testToken
 	cfg.Models = []config.Model{{
-		Name:          "test-model",
-		BaseURL:       "http://model.invalid",
-		APIKeyEnv:     "EIKA_TEST_KEY",
-		ContextWindow: 8192,
+		Name:      "test-model",
+		BaseURL:   "http://model.invalid",
+		APIKeyEnv: "EIKA_TEST_KEY",
+		// Wide enough for the whole tool registry: the agent loop refuses a
+		// request whose conservative upper bound does not fit the window, and
+		// the schemas of eleven tools are most of a small one.
+		ContextWindow: 32768,
 		MaxOutput:     1024,
 	}}
 	return cfg

@@ -169,6 +169,38 @@ workspace through its executor.
 `409` when the workspace is not running; `400` when git itself failed, with
 git's message.
 
+### `POST /api/workspaces/{id}/merge`
+
+Brings another workspace's branch into this one, which is how a parent takes
+a subagent's work. The branch travels through the hub: a running source
+workspace pushes first, the target fetches, and git merges or rebases inside
+the target workspace through its executor.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `source_workspace_id` | string | The workspace whose branch to bring in. Its branch is used unless `branch` overrides it. |
+| `branch` | string | A branch in the hub, named directly. Required when there is no source workspace. |
+| `strategy` | `merge` or `rebase` | Empty means `merge`. |
+
+One of `source_workspace_id` and `branch` is required.
+
+`200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `workspace_id` | string | The target workspace. |
+| `branch` | string | The branch that was brought in. |
+| `strategy` | string | `merge` or `rebase`. |
+| `merged` | boolean | False means git stopped on conflicts. |
+| `commit` | string, optional | The target's HEAD after a successful merge. |
+| `conflicts` | string array | The paths git could not resolve. Empty on success. |
+| `message` | string | git's own output. |
+
+A conflict is a `200`, not an error: the target's tree is left conflicted on
+purpose, so the user or the agent working in it resolves it there. `409` when
+the target workspace is not running; `400` when the branch is not in the hub
+or the source belongs to another project.
+
 ### Workspace
 
 | Field | Type | Meaning |
@@ -231,10 +263,23 @@ session's.
 
 ### `POST /api/sessions/{id}/fork`
 
-`{"entry_id": string, "title": string}`. Copies the path from the root down to
-the entry into a session of its own, in the same workspace, sharing no rows.
-`201` with the new `Session`. Forking into a workspace cloned at the entry's
-commit is phase 6.
+| Field | Type | Meaning |
+|---|---|---|
+| `entry_id` | string, required | The entry to fork at. |
+| `title` | string | What to call the fork. |
+| `with_workspace` | boolean | Give the fork a workspace of its own, rewound to the entry's commit. |
+
+Copies the path from the root down to the entry into a session of its own,
+sharing no rows. Without `with_workspace` the fork stays in the same
+workspace, so only the conversation rewinds.
+
+With `with_workspace` the source workspace pushes its branch to the hub, a new
+workspace in the same project is created and cloned from the hub at the
+commit that entry recorded, on branch `<source branch>-fork-<8 chars of the
+new id>`, and the fork points at it. The files rewind with the conversation.
+
+`201` with the new `Session`. `400` when the entry recorded no commit, so
+there is nothing to clone; `409` when the source workspace is not running.
 
 ### Session
 
@@ -343,6 +388,64 @@ not one of the question's options and the question does not allow free text.
 | `options` | string array, optional | The answers to choose from. |
 | `allow_free_text` | boolean | An answer outside the options is accepted. |
 | `asked_at` | time | When the run asked. |
+
+## Subagents
+
+A subagent is a child agent run: its own workspace, cloned from its parent's
+at the commit the parent stood on, its own session, and its own branch. The
+`spawn_agent`, `wait_agents`, and `list_agents` tools are how a run makes and
+waits for them; these routes are how the UI watches and stops them. The
+lifecycle is on the stream as `subagent.started` and `subagent.finished`.
+
+`subagents.max_depth` and `subagents.max_children` in the configuration bound
+how deep and how wide the tree may grow; the defaults are 2 and 4.
+
+### `GET /api/sessions/{id}/agents`
+
+The children this session spawned, and below each of them the children they
+spawned in turn, oldest first.
+
+`200` with `{"session_id": string, "agents": [Agent]}`.
+
+### `POST /api/subagents/{id}/abort`
+
+Stops a running child and waits for it to record how it ended. The child still
+commits and pushes what it left in its tree, so aborted work is not lost, and
+its workspace is stopped rather than destroyed.
+
+`200` with the `Agent`. `409` when the child is already finished; `404` when
+there is no such subagent.
+
+### Agent
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | The subagent id, which the abort route takes. |
+| `parent_session_id` | string | The session that spawned it. |
+| `session_id` | string | The child's session. Open it to watch the child work. |
+| `workspace_id` | string | The child's workspace. |
+| `name` | string | What the parent called it. |
+| `branch` | string | The branch it works on and pushes to the hub. |
+| `state` | string | `running`, `done`, `error`, or `aborted`. |
+| `created_at` | time | When it was spawned. |
+| `finished_at` | time, optional | When it ended. |
+| `result` | `AgentResult`, optional | What it reported. Absent while it is running. |
+| `agents` | `[Agent]` | The children it spawned in turn. Empty for a leaf. |
+
+### AgentResult
+
+The same object the parent's model receives as the `spawn_agent` tool result.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id`, `session_id`, `workspace_id` | string | The child. |
+| `name` | string | What the parent called it. |
+| `branch` | string | The branch it pushed to the hub. |
+| `state` | string | `running`, `done`, `error`, or `aborted`. |
+| `commit` | string, optional | Its head commit after it committed its tree. |
+| `summary` | string, optional | Its final assistant message. |
+| `diff_stat` | string, optional | `git diff --stat` from the parent's base commit to that head. |
+| `error` | string, optional | Why a child that did not finish cleanly stopped. |
 
 ## Settings and models
 

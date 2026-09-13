@@ -475,3 +475,92 @@ func TestWorkspaceFromADockerfileAndAHostPath(t *testing.T) {
 		t.Errorf("image %s outlived Destroy", image)
 	}
 }
+
+// TestWorkspaceHandsWorkToAChildClone is the git half of a subagent spawn
+// against real containers and the real hub: a parent pushes its branch, a
+// child clones the project at that commit on a branch of its own, and the
+// parent fetches the child's branch back.
+func TestWorkspaceHandsWorkToAChildClone(t *testing.T) {
+	requireDocker(t)
+	requireImage(t)
+	h := testHub(t)
+	port := serveHub(t, h)
+
+	// The hub URL is only known once a container can say how it reaches the
+	// host, so the parent is created against a host without one first.
+	probe := newHost(t, h, "")
+	parent, err := probe.Create(t.Context(), workspace.Spec{Project: "demo"})
+	if err != nil {
+		t.Fatalf("create the parent: %v", err)
+	}
+	t.Cleanup(func() { cleanUp(probe, &parent) })
+	if err := probe.Start(t.Context(), &parent); err != nil {
+		t.Fatalf("start the parent: %v", err)
+	}
+	parentEx, err := probe.Executor(parent)
+	if err != nil {
+		t.Fatalf("parent executor: %v", err)
+	}
+	host := newHost(t, h, fmt.Sprintf("http://%s:%d", containerGateway(t, parentEx), port))
+
+	if _, err := host.Clone(t.Context(), parent, "demo", "work"); err != nil {
+		t.Fatalf("clone the parent: %v", err)
+	}
+	run(t, parentEx, "echo from the parent > shared.txt && git add -A && git commit -m 'the parent'")
+	if err := host.Push(t.Context(), parent, "demo", "work", false); err != nil {
+		t.Fatalf("push the parent's branch: %v", err)
+	}
+	base := run(t, parentEx, "git rev-parse HEAD")
+
+	child, err := host.Create(t.Context(), workspace.Spec{Project: "demo"})
+	if err != nil {
+		t.Fatalf("create the child: %v", err)
+	}
+	t.Cleanup(func() { cleanUp(host, &child) })
+	if err := host.Start(t.Context(), &child); err != nil {
+		t.Fatalf("start the child: %v", err)
+	}
+	head, err := host.CloneAt(t.Context(), child, "demo", "work-worker", base)
+	if err != nil {
+		t.Fatalf("clone the child at the parent's commit: %v", err)
+	}
+	if head != base {
+		t.Errorf("child head = %q, want the parent's commit %q", head, base)
+	}
+	childEx, err := host.Executor(child)
+	if err != nil {
+		t.Fatalf("child executor: %v", err)
+	}
+	if got := run(t, childEx, "cat shared.txt"); got != "from the parent" {
+		t.Errorf("child shared.txt = %q, want the parent's content", got)
+	}
+	if got := run(t, childEx, "git rev-parse --abbrev-ref HEAD"); got != "work-worker" {
+		t.Errorf("child branch = %q, want work-worker", got)
+	}
+	// The hub token reaches git through the environment, not the remote URL.
+	if remote := run(t, childEx, "git remote get-url eika-hub"); strings.Contains(remote, child.HubToken) {
+		t.Errorf("the hub remote url carries the token: %q", remote)
+	}
+
+	run(t, childEx, "echo from the child > notes.txt && git add -A && git commit -m 'the child'")
+	if err := host.Push(t.Context(), child, "demo", "work-worker", true); err != nil {
+		t.Fatalf("push the child's branch: %v", err)
+	}
+	if err := host.Fetch(t.Context(), parent, "demo", "work-worker"); err != nil {
+		t.Fatalf("fetch the child's branch: %v", err)
+	}
+	run(t, parentEx, "git merge FETCH_HEAD -m 'take the child in'")
+	if got := run(t, parentEx, "cat notes.txt"); got != "from the child" {
+		t.Errorf("parent notes.txt = %q, want the child's work merged in", got)
+	}
+
+	t.Run("rejects a branch name that is a command", func(t *testing.T) {
+		marker := filepath.Join(t.TempDir(), "pwned")
+		if err := host.Push(t.Context(), parent, "demo", "work; touch "+marker, false); !errors.Is(err, workspace.ErrBadBranch) {
+			t.Errorf("Push error = %v, want ErrBadBranch", err)
+		}
+		if _, err := os.Stat(marker); err == nil {
+			t.Error("the branch name ran as a command")
+		}
+	})
+}

@@ -14,11 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/server"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/store/storetest"
+	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool/builtin"
 )
 
@@ -35,6 +37,7 @@ type api struct {
 	host      *fakeHost
 	hub       *fakeHub
 	questions *builtin.Questions
+	spawner   *subagent.Spawner
 
 	mu       sync.Mutex
 	provider provider.Provider
@@ -48,7 +51,18 @@ func newAPI(t *testing.T) *api {
 	t.Helper()
 	st := storetest.Open(t)
 	a := &api{store: st, host: newFakeHost(t), hub: newFakeHub(), questions: builtin.NewQuestions()}
-	tools, err := builtin.Registry(a.questions)
+	// The bus is built here rather than left to server.New, because the
+	// spawner emits on the same one the stream fans out.
+	bus := event.NewBus(testLogger())
+	a.spawner = subagent.New(subagent.Options{
+		Store:       st,
+		Workspaces:  a.host,
+		Emitter:     bus,
+		MaxDepth:    2,
+		MaxChildren: 4,
+		Logger:      testLogger(),
+	})
+	tools, err := builtin.Registry(a.questions, a.spawner)
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -59,7 +73,9 @@ func newAPI(t *testing.T) *api {
 		Models:     fakeModels{names: []string{"test-model"}, build: a.buildProvider},
 		Tools:      tools,
 		Questions:  a.questions,
+		Bus:        bus,
 	}, server.Options{})
+	a.Server.UseSubagents(a.spawner, a.spawner.Attach)
 	t.Cleanup(a.Server.Close)
 	return a
 }
@@ -656,7 +672,7 @@ func TestSettingsAndModels(t *testing.T) {
 	a := newAPI(t)
 
 	models := decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200)
-	if len(models.Models) != 1 || models.Models[0].Name != "test-model" || models.Models[0].ContextWindow != 8192 {
+	if len(models.Models) != 1 || models.Models[0].Name != "test-model" || models.Models[0].ContextWindow != 32768 {
 		t.Fatalf("models = %+v", models)
 	}
 	if models.Default != "" {

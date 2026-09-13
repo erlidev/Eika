@@ -201,7 +201,7 @@ func newFixture(t *testing.T, steps []providertest.Step, extra ...tool.Tool) *fi
 	if err != nil {
 		t.Fatalf("local.New: %v", err)
 	}
-	r, err := builtin.Registry(nil)
+	r, err := builtin.Registry(nil, nil)
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -798,7 +798,7 @@ func TestAbortPersistsATerminalResultForEveryToolCall(t *testing.T) {
 		cancel()
 		return "stopped"
 	}}
-	registry, err := builtin.Registry(nil)
+	registry, err := builtin.Registry(nil, nil)
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -830,7 +830,7 @@ func TestAbortPersistsATerminalResultForEveryToolCall(t *testing.T) {
 }
 
 func TestCompletedToolResultStoreFailurePersistsATerminalResult(t *testing.T) {
-	registry, err := builtin.Registry(nil)
+	registry, err := builtin.Registry(nil, nil)
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -871,7 +871,7 @@ func TestSteeringStoreFailureRestoresOnlyTheUnstoredMessages(t *testing.T) {
 		a.Steer("retry steering")
 		return "queued"
 	}}
-	registry, err := builtin.Registry(nil)
+	registry, err := builtin.Registry(nil, nil)
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -944,7 +944,7 @@ func TestMalformedToolArgumentsBecomeARecoverableToolResult(t *testing.T) {
 		Arguments: provider.ToolArguments(`{"path":`),
 	}
 	p := providertest.New(providertest.Calls("", call), providertest.Text("recovered"))
-	registry, err := builtin.Registry(nil)
+	registry, err := builtin.Registry(nil, nil)
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -975,7 +975,7 @@ func TestToolsWithoutAWorkspaceFailInsteadOfPanicking(t *testing.T) {
 		providertest.Calls("", providertest.Call("c1", "ls", map[string]any{})),
 		providertest.Text("no workspace then"),
 	})
-	registry, err := builtin.Registry(nil)
+	registry, err := builtin.Registry(nil, nil)
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}

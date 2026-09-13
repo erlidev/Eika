@@ -179,3 +179,45 @@ type RunError struct {
 	Message   string `json:"message"`
 	Retryable bool   `json:"retryable"`
 }
+
+// SubagentStarted is the payload of a subagent.started event: a run spawned a
+// child agent, which works in a workspace and a session of its own. It is
+// emitted on the parent session's topic.
+type SubagentStarted struct {
+	SubagentID       string `json:"subagent_id"`
+	ParentSessionID  string `json:"parent_session_id"`
+	ChildSessionID   string `json:"child_session_id"`
+	ChildWorkspaceID string `json:"child_workspace_id"`
+	// Name is what the parent called the child; it also names its branch.
+	Name string `json:"name"`
+	// Branch is the branch the child works on in its own workspace.
+	Branch string `json:"branch"`
+	// BaseCommit is the parent commit the child's workspace was cloned at.
+	BaseCommit string `json:"base_commit,omitempty"`
+	// Task is the first user message the child was given.
+	Task string `json:"task"`
+}
+
+// SubagentFinished is the payload of a subagent.finished event: a child agent
+// ended, its work is committed and pushed, and the parent has its result. It
+// is emitted on the parent session's topic.
+type SubagentFinished struct {
+	SubagentID       string `json:"subagent_id"`
+	ParentSessionID  string `json:"parent_session_id"`
+	ChildSessionID   string `json:"child_session_id"`
+	ChildWorkspaceID string `json:"child_workspace_id"`
+	Name             string `json:"name"`
+	Branch           string `json:"branch"`
+	// State is how the child ended: done, error, or aborted.
+	State string `json:"state"`
+	// Commit is the child's head commit after it committed what it left in
+	// the tree, empty when it made none.
+	Commit string `json:"commit,omitempty"`
+	// Summary is the child's final assistant message.
+	Summary string `json:"summary,omitempty"`
+	// DiffStat is `git diff --stat` between the parent's base commit and the
+	// child's head.
+	DiffStat string `json:"diff_stat,omitempty"`
+	// Error says why a child that did not finish cleanly stopped.
+	Error string `json:"error,omitempty"`
+}

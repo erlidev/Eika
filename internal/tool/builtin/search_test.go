@@ -73,7 +73,7 @@ func (*failedFallbackFindExecutor) List(context.Context, string) ([]executor.Fil
 
 func callWithExecutor(t *testing.T, name string, args map[string]any, exec executor.Executor) tool.Result {
 	t.Helper()
-	registry, err := builtin.Registry(nil)
+	registry, err := builtin.Registry(nil, nil)
 	if err != nil {
 		t.Fatalf("Registry: %v", err)
 	}
