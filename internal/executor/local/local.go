@@ -10,9 +10,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/erlidev/eika/internal/executor"
 )
+
+// killGrace is how long a killed command may take to release its output
+// pipes before Exec gives up waiting for it.
+const killGrace = 3 * time.Second
 
 // Executor runs commands and file operations in a directory on the harness
 // filesystem. It is the test-only implementation of executor.Executor.
@@ -73,6 +79,18 @@ func (e *Executor) Exec(ctx context.Context, spec executor.ExecSpec) (executor.E
 	cmd.Stdin = spec.Stdin
 	cmd.Stdout = writerOrDiscard(spec.Stdout)
 	cmd.Stderr = writerOrDiscard(spec.Stderr)
+	// The command runs in its own process group and the whole group is
+	// killed, so a shell that backgrounds children cannot outlive the
+	// timeout. WaitDelay bounds the wait for a child that still holds the
+	// output pipes after the kill.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+			return err
+		}
+		return nil
+	}
+	cmd.WaitDelay = killGrace
 
 	err := cmd.Run()
 	res := executor.ExecResult{TimedOut: spec.Timeout > 0 && errors.Is(ctx.Err(), context.DeadlineExceeded)}

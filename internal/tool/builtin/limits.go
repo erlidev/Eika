@@ -47,7 +47,10 @@ type output struct {
 	head  []byte
 	tail  []byte
 	total int
-	// stream receives every chunk as it arrives, for the tool.output events.
+	// streamed counts the bytes already sent to stream, so that a command
+	// that never stops printing cannot flood the event stream.
+	streamed int
+	// stream receives chunks as they arrive, for the tool.output events.
 	stream func(string)
 }
 
@@ -55,9 +58,7 @@ type output struct {
 func (o *output) Write(p []byte) (int, error) {
 	n := len(p)
 	o.total += n
-	if o.stream != nil {
-		o.stream(string(p))
-	}
+	o.forward(p)
 	if room := outputHeadBytes - len(o.head); room > 0 {
 		take := min(room, len(p))
 		o.head = append(o.head, p[:take]...)
@@ -72,13 +73,32 @@ func (o *output) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+// forward sends a chunk to the stream callback until the stream budget is
+// spent, then says once that the rest is not being streamed.
+func (o *output) forward(p []byte) {
+	if o.stream == nil || o.streamed > maxOutputBytes {
+		return
+	}
+	room := maxOutputBytes - o.streamed
+	if len(p) <= room {
+		o.streamed += len(p)
+		o.stream(string(p))
+		return
+	}
+	o.streamed = maxOutputBytes + 1
+	if room > 0 {
+		o.stream(string(p[:room]))
+	}
+	o.stream("\n... output continues; the rest arrives with the result.\n")
+}
+
 // String returns the captured output, with a note in place of the part that
 // was dropped.
 func (o *output) String() string {
-	if len(o.tail) == 0 {
-		return string(o.head)
-	}
 	dropped := o.total - len(o.head) - len(o.tail)
+	if len(o.tail) == 0 || dropped <= 0 {
+		return string(o.head) + string(o.tail)
+	}
 	var b strings.Builder
 	b.Write(o.head)
 	fmt.Fprintf(&b, "\n\n... [%d bytes truncated, showing the first %d and the last %d] ...\n\n", dropped, len(o.head), len(o.tail))

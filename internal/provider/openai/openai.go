@@ -124,6 +124,15 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 		send(provider.Errorf(streamError(err)))
 		return
 	}
+	// A response cut off by the token limit leaves the last tool call's
+	// arguments half-written, so report the stop instead of running it.
+	if stop == "length" {
+		if usage != (provider.Usage{}) && !send(provider.Event{Kind: provider.KindUsage, Usage: usage}) {
+			return
+		}
+		send(provider.Done(stop))
+		return
+	}
 	for i, call := range acc.calls() {
 		if !send(provider.Event{
 			Kind:       provider.KindToolCall,
@@ -242,17 +251,27 @@ func streamError(err error) error {
 	return out
 }
 
-// retryAfter reads the Retry-After header in its seconds form.
+// retryAfter reads the Retry-After header in either of its forms: a number of
+// seconds, or an HTTP date.
 func retryAfter(h http.Header) time.Duration {
 	v := h.Get("Retry-After")
 	if v == "" {
 		return 0
 	}
-	secs, err := strconv.Atoi(v)
-	if err != nil || secs < 0 {
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs < 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+	when, err := http.ParseTime(v)
+	if err != nil {
 		return 0
 	}
-	return time.Duration(secs) * time.Second
+	if d := time.Until(when); d > 0 {
+		return d
+	}
+	return 0
 }
 
 var _ provider.Provider = (*Provider)(nil)

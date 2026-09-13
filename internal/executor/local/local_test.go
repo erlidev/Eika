@@ -197,6 +197,29 @@ func TestExecTimesOut(t *testing.T) {
 	}
 }
 
+func TestExecTimeoutKillsBackgroundChildren(t *testing.T) {
+	e := newExecutor(t)
+	start := time.Now()
+	res, err := e.Exec(context.Background(), executor.ExecSpec{
+		// The backgrounded child keeps the output pipes open, so only
+		// killing the whole process group ends the call.
+		Command: "sleep 30 & sleep 30",
+		Shell:   true,
+		Timeout: time.Second,
+		Stdout:  &bytes.Buffer{},
+	})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if !res.TimedOut {
+		t.Errorf("result = %+v, want TimedOut", res)
+	}
+	if elapsed > 10*time.Second {
+		t.Errorf("Exec took %s, want the process group killed promptly", elapsed)
+	}
+}
+
 func TestExecRejectsDirOutsideRoot(t *testing.T) {
 	e := newExecutor(t)
 	if _, err := e.Exec(context.Background(), executor.ExecSpec{Command: "true", Dir: ".."}); !errors.Is(err, executor.ErrPathOutsideRoot) {

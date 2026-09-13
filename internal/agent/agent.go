@@ -139,10 +139,20 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage string) error {
 // came from, so that an aborted turn can put them back.
 func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []string, origin *queue) error {
 	runID := newRunID()
-	for _, m := range msgs {
-		if err := a.append(ctx, s, provider.UserMessage(m)); err != nil {
-			return err
+	// Undelivered messages are in the conversation, because the model call
+	// needs them, but not yet in the store. A turn that never gets a response
+	// takes them out again, so that the queued copies are not replayed twice.
+	pendingMark := -1
+	var pending []provider.Message
+	addPending := func(m provider.Message) {
+		if pendingMark < 0 {
+			pendingMark = s.Conversation.Len()
 		}
+		s.Conversation.Append(m)
+		pending = append(pending, m)
+	}
+	for _, m := range msgs {
+		addPending(provider.UserMessage(m))
 	}
 	a.emit(ctx, s, event.TypeTurnStart, event.TurnStart{
 		RunID:       runID,
@@ -153,9 +163,14 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 
 	var steered []string
 	var usage event.Usage
-	// restore returns the messages this turn took from a queue but never got
-	// a model response for.
+	// restore undoes everything the turn took but never got a model response
+	// for: the pending messages leave the conversation and the queued copies
+	// go back where they came from.
 	restore := func() {
+		if pendingMark >= 0 {
+			s.Conversation.Truncate(pendingMark)
+		}
+		pending, pendingMark = nil, -1
 		if origin != nil {
 			origin.unshift(msgs)
 		}
@@ -163,14 +178,9 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 	}
 
 	for {
-		if pending := a.steering.drain(); len(pending) > 0 {
-			for _, m := range pending {
-				if err := a.append(ctx, s, provider.UserMessage(m)); err != nil {
-					restore()
-					return err
-				}
-			}
-			steered = append(steered, pending...)
+		for _, m := range a.steering.drain() {
+			addPending(provider.UserMessage(m))
+			steered = append(steered, m)
 		}
 		if err := ctx.Err(); err != nil {
 			restore()
@@ -185,12 +195,18 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 		usage.InputTokens += turnUsage.InputTokens
 		usage.OutputTokens += turnUsage.OutputTokens
 		usage.TotalTokens += turnUsage.TotalTokens
+		// The model has seen the pending messages; they are delivered for
+		// good and can be persisted.
+		for _, m := range pending {
+			if err := a.store(ctx, s, m); err != nil {
+				return err
+			}
+		}
+		pending, pendingMark = nil, -1
+		msgs, steered, origin = nil, nil, nil
 		if err := a.append(ctx, s, reply); err != nil {
-			restore()
 			return err
 		}
-		// The model has seen these messages; they are delivered for good.
-		msgs, steered, origin = nil, nil, nil
 
 		if len(reply.ToolCalls) == 0 {
 			a.emit(ctx, s, event.TypeTurnEnd, event.TurnEnd{RunID: runID, StopReason: stop, Usage: usage})
@@ -198,14 +214,40 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 				"session_id", s.ID, "run_id", runID, "total_tokens", usage.TotalTokens)
 			return nil
 		}
-		for _, call := range reply.ToolCalls {
+		for i, call := range reply.ToolCalls {
+			if err := ctx.Err(); err != nil {
+				err = fmt.Errorf("run turn: %w", err)
+				a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err)
+				return a.fail(ctx, s, runID, err)
+			}
 			result, err := a.callTool(ctx, s, runID, call)
 			if err != nil {
+				a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err)
 				return a.fail(ctx, s, runID, err)
 			}
 			if err := a.append(ctx, s, result); err != nil {
 				return err
 			}
+		}
+	}
+}
+
+// abandonToolCalls answers the calls a failed turn never ran. Every tool call
+// in an assistant message needs a result, or the next request to the model is
+// malformed and the session cannot be resumed.
+func (a *Agent) abandonToolCalls(ctx context.Context, s *Session, runID string, calls []provider.ToolCall, cause error) {
+	for _, c := range calls {
+		content := fmt.Sprintf("the run stopped before this tool call finished: %v", cause)
+		a.emit(ctx, s, event.TypeToolResult, event.ToolResult{
+			RunID:   runID,
+			CallID:  c.ID,
+			Name:    c.Name,
+			Content: content,
+			IsError: true,
+		})
+		if err := a.append(ctx, s, provider.ToolResultMessage(c.ID, content, true)); err != nil {
+			a.opts.Logger.Error("store abandoned tool result",
+				"session_id", s.ID, "run_id", runID, "call_id", c.ID, "error", err)
 		}
 	}
 }
@@ -318,6 +360,9 @@ func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provid
 	if !ok {
 		return tool.Errorf("unknown tool %q", c.Name), nil
 	}
+	if a.opts.Executor == nil {
+		return tool.Errorf("this session has no workspace, so %s cannot run", c.Name), nil
+	}
 	return t.Call(ctx, tool.CallContext{
 		Exec:        a.opts.Executor,
 		Emit:        a.opts.Emitter,
@@ -331,6 +376,11 @@ func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provid
 // append records a message in the conversation and in the store.
 func (a *Agent) append(ctx context.Context, s *Session, m provider.Message) error {
 	s.Conversation.Append(m)
+	return a.store(ctx, s, m)
+}
+
+// store records a message that is already in the conversation.
+func (a *Agent) store(ctx context.Context, s *Session, m provider.Message) error {
 	if a.opts.Store == nil {
 		return nil
 	}

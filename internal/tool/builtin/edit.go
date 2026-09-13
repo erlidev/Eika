@@ -58,6 +58,19 @@ func (editTool) Call(ctx context.Context, c tool.CallContext, raw json.RawMessag
 		return tool.Errorf("edit %s: old_string and new_string are identical", args.Path), nil
 	}
 
+	// The whole file is rewritten, so refuse one that does not fit in a
+	// single read rather than truncating it.
+	info, err := c.Exec.Stat(ctx, args.Path)
+	if err != nil {
+		return tool.Errorf("edit %s: %v", args.Path, err), nil
+	}
+	if info.IsDir {
+		return tool.Errorf("edit %s: path is a directory", args.Path), nil
+	}
+	if info.Size > maxFileBytes {
+		return tool.Errorf("edit %s: file is %d bytes, larger than the %d byte edit limit; change it with bash instead",
+			args.Path, info.Size, maxFileBytes), nil
+	}
 	data, err := c.Exec.ReadFile(ctx, args.Path, executor.ReadOpts{MaxBytes: maxFileBytes})
 	if err != nil {
 		return tool.Errorf("edit %s: %v", args.Path, err), nil

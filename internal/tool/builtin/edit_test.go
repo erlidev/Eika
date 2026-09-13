@@ -28,6 +28,20 @@ func TestEditReplacesUniqueString(t *testing.T) {
 	}
 }
 
+func TestEditRefusesAFileLargerThanOneRead(t *testing.T) {
+	w := newWorkspace(t)
+	content := "marker\n" + strings.Repeat("x", 300*1024)
+	w.write("big.txt", content)
+
+	res := w.call("edit", map[string]any{"path": "big.txt", "old_string": "marker", "new_string": "changed"})
+	if !res.IsError || !strings.Contains(res.Content, "larger than") {
+		t.Fatalf("result = %+v, want a size refusal", res)
+	}
+	if got := w.read("big.txt"); got != content {
+		t.Errorf("the file was rewritten: %d bytes left of %d", len(got), len(content))
+	}
+}
+
 func TestEditErrors(t *testing.T) {
 	w := newWorkspace(t)
 	w.write("a.txt", "same\nsame\nother\n")

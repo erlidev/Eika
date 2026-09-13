@@ -35,6 +35,19 @@ func (c *Conversation) Messages() []provider.Message {
 	return append([]provider.Message(nil), c.messages...)
 }
 
+// Truncate drops every message after the first n. It is how an aborted turn
+// takes back the messages the model never answered.
+func (c *Conversation) Truncate(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if n < 0 {
+		n = 0
+	}
+	if n < len(c.messages) {
+		c.messages = c.messages[:n]
+	}
+}
+
 // Len reports how many messages the conversation holds.
 func (c *Conversation) Len() int {
 	c.mu.RLock()

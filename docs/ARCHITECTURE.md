@@ -80,8 +80,11 @@ The pieces:
 Queues follow Pi. A steering message joins the conversation as soon as the
 running tool finishes, before the next model call. A follow-up message waits
 until the turn ends; `QueueOneAtATime` then starts a turn with one of them and
-`QueueAll` with all of them. Cancelling the context aborts the run and puts
-back any message the run had taken from a queue but never got a response for.
+`QueueAll` with all of them. Cancelling the context aborts the run: a message
+the turn had taken but never got a model response for leaves the conversation
+again and goes back on its queue, so the next run does not replay it. A turn
+that stops part way through a batch of tool calls still answers every call, so
+the session stays valid for the next request.
 
 A retryable provider failure (429, 5xx, or a transport error) is retried with
 exponential backoff, at most `MaxRetries` times, honouring `Retry-After`. The

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/provider"
@@ -157,6 +158,27 @@ func TestStreamAssemblesToolCall(t *testing.T) {
 	}
 }
 
+func TestStreamDropsToolCallsCutOffByTheTokenLimit(t *testing.T) {
+	s := newSSEServer(t, http.StatusOK,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"pa"}}]}}]}`,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}`,
+	)
+	p := newProvider(t, s.URL)
+	events := collect(t, context.Background(), p, provider.Request{
+		Messages: []provider.Message{provider.UserMessage("read a.txt")},
+	})
+
+	for _, e := range events {
+		if e.Kind == provider.KindToolCall {
+			t.Errorf("a truncated tool call was assembled: %+v", e.ToolCall)
+		}
+	}
+	last := events[len(events)-1]
+	if last.Kind != provider.KindDone || last.StopReason != "length" {
+		t.Errorf("last event = %+v, want done/length", last)
+	}
+}
+
 func TestStreamSendsToolsAndModel(t *testing.T) {
 	s := newSSEServer(t, http.StatusOK,
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
@@ -211,6 +233,27 @@ func TestStreamSendsToolsAndModel(t *testing.T) {
 	}
 	if sent.Temperature == nil || *sent.Temperature != 0 {
 		t.Errorf("temperature = %v, want an explicit 0", sent.Temperature)
+	}
+}
+
+func TestStreamReadsRetryAfterAsADate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", time.Now().Add(30*time.Second).UTC().Format(http.TimeFormat))
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"message":"slow down"}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	p := newProvider(t, server.URL)
+	events := collect(t, context.Background(), p, provider.Request{
+		Messages: []provider.Message{provider.UserMessage("hi")},
+	})
+	if len(events) != 1 || events[0].Kind != provider.KindError {
+		t.Fatalf("events = %+v, want one error event", events)
+	}
+	after := provider.RetryAfter(events[0].Err)
+	if after <= 0 || after > 31*time.Second {
+		t.Errorf("RetryAfter = %v, want roughly 30s", after)
 	}
 }
 

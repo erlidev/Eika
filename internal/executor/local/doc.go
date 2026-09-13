@@ -9,5 +9,7 @@
 //
 // The entry point is New, which takes the directory that becomes the workspace
 // root. Every path is resolved with executor.Resolve and re-checked after
-// symlink evaluation, so nothing outside the root is reachable.
+// symlink evaluation, so nothing outside the root is reachable. A command runs
+// in its own process group, so a timeout kills its background children too.
+// That needs Unix process groups, which is all Eika runs on.
 package local

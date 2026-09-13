@@ -441,3 +441,152 @@ func TestRunRejectsASessionWithoutAConversation(t *testing.T) {
 		t.Fatal("Run returned no error")
 	}
 }
+
+// failingTool is a tool whose call fails the way a broken harness would, with
+// an error rather than a failed result.
+type failingTool struct{}
+
+func (failingTool) Name() string        { return "boom" }
+func (failingTool) Description() string { return "a tool that breaks the harness" }
+func (failingTool) Schema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{}}`)
+}
+func (failingTool) Call(context.Context, tool.CallContext, json.RawMessage) (tool.Result, error) {
+	return tool.Result{}, errors.New("the tool broke")
+}
+
+func TestAbortDoesNotDuplicateTheMessageOnTheNextRun(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	f := newFixture(t, []providertest.Step{providertest.Text("answering now")})
+
+	if err := f.agent.Run(ctx, f.session, "count once"); err == nil {
+		t.Fatal("Run returned no error")
+	}
+	if got := f.session.Conversation.Len(); got != 0 {
+		t.Fatalf("conversation holds %d messages after the abort, want 0", got)
+	}
+	if got := len(f.store.Messages("session-1")); got != 0 {
+		t.Fatalf("stored %d messages after the abort, want 0", got)
+	}
+
+	if err := f.agent.Run(context.Background(), f.session, "count once"); err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	seen := 0
+	for _, m := range f.session.Conversation.Messages() {
+		if m.Role == provider.RoleUser && m.Content == "count once" {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Errorf("the user message appears %d times, want 1", seen)
+	}
+}
+
+func TestSteeringIsNotReplayedAfterAnAbort(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var f *fixture
+	poke := callTool{name: "poke", run: func(context.Context) string {
+		f.agent.Steer("also check the tests")
+		cancel()
+		return "poked"
+	}}
+	f = newFixture(t, []providertest.Step{
+		providertest.Calls("", providertest.Call("c1", "poke", map[string]any{})),
+		providertest.Text("never reached"),
+	}, poke)
+
+	if err := f.agent.Run(ctx, f.session, "start"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run error = %v, want context.Canceled", err)
+	}
+	if pending := f.agent.PendingSteering(); len(pending) != 1 || pending[0] != "also check the tests" {
+		t.Fatalf("pending steering = %v, want the message back in the queue", pending)
+	}
+	for _, m := range f.session.Conversation.Messages() {
+		if m.Content == "also check the tests" {
+			t.Error("the undelivered steering message stayed in the conversation")
+		}
+	}
+}
+
+func TestFailedToolCallAnswersEveryCallInTheBatch(t *testing.T) {
+	f := newFixture(t, []providertest.Step{
+		providertest.Calls("",
+			providertest.Call("c1", "boom", map[string]any{}),
+			providertest.Call("c2", "ls", map[string]any{}),
+			providertest.Call("c3", "ls", map[string]any{}),
+		),
+	}, failingTool{})
+
+	if err := f.agent.Run(context.Background(), f.session, "run three tools"); err == nil {
+		t.Fatal("Run returned no error")
+	}
+	msgs := f.session.Conversation.Messages()
+	assistant := msgs[1]
+	results := map[string]provider.Message{}
+	for _, m := range msgs {
+		if m.Role == provider.RoleTool {
+			results[m.ToolCallID] = m
+		}
+	}
+	if len(results) != len(assistant.ToolCalls) {
+		t.Fatalf("%d tool results for %d tool calls", len(results), len(assistant.ToolCalls))
+	}
+	for _, c := range assistant.ToolCalls {
+		if !results[c.ID].IsError {
+			t.Errorf("result for %s = %+v, want a failed result", c.ID, results[c.ID])
+		}
+	}
+}
+
+func TestAbortAnswersTheToolCallsItSkips(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop := callTool{name: "stop", run: func(context.Context) string {
+		cancel()
+		return "stopped"
+	}}
+	f := newFixture(t, []providertest.Step{
+		providertest.Calls("",
+			providertest.Call("c1", "stop", map[string]any{}),
+			providertest.Call("c2", "ls", map[string]any{}),
+		),
+	}, stop)
+
+	if err := f.agent.Run(ctx, f.session, "start"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run error = %v, want context.Canceled", err)
+	}
+	results := 0
+	for _, m := range f.session.Conversation.Messages() {
+		if m.Role == provider.RoleTool {
+			results++
+		}
+	}
+	if results != 2 {
+		t.Errorf("%d tool results for 2 tool calls", results)
+	}
+}
+
+func TestToolsWithoutAWorkspaceFailInsteadOfPanicking(t *testing.T) {
+	f := newFixture(t, []providertest.Step{
+		providertest.Calls("", providertest.Call("c1", "ls", map[string]any{})),
+		providertest.Text("no workspace then"),
+	})
+	registry, err := builtin.Registry()
+	if err != nil {
+		t.Fatalf("builtin.Registry: %v", err)
+	}
+	noWorkspace := agent.New(f.provider, registry, agent.Options{
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RetryBackoff: time.Millisecond,
+	})
+	if err := noWorkspace.Run(context.Background(), f.session, "list files"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	result := f.session.Conversation.Messages()[2]
+	if !result.IsError || !strings.Contains(result.Content, "no workspace") {
+		t.Errorf("tool message = %+v, want a no-workspace error", result)
+	}
+}
