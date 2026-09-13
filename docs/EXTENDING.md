@@ -222,6 +222,43 @@ To change the default image for every workspace, set `sandbox_image` (or
 `EIKA_SANDBOX_IMAGE`) and, if you want Eika's own image as a base, extend
 `sandbox/Dockerfile` and rebuild it with `make sandbox`.
 
+## Adding a migration
+
+Write one file in `internal/store/migrations/`, named `NNNN_what_it_does.sql`
+with the next free number. It is embedded into the binary and applied in file
+name order, in a transaction, the next time `store.Open` runs. Migrations are
+applied once and never edited afterwards: `schema_migrations` records the file
+name without its extension, so changing a file that a database already carries
+changes nothing. Correct a mistake with another migration.
+
+```sql
+-- internal/store/migrations/0002_session_labels.sql
+ALTER TABLE sessions ADD COLUMN label text NOT NULL DEFAULT '';
+
+CREATE INDEX sessions_label_idx ON sessions (label) WHERE label <> '';
+```
+
+Add the column to the domain struct and to the column list its queries share,
+in the same change:
+
+```go
+// internal/store/sessions.go
+
+const sessionColumns = `id, workspace_id, title, head_entry_id, parent_session_id,
+	label, created_at, updated_at`
+```
+
+Then update the schema table in `docs/ARCHITECTURE.md` and cover the new
+behavior in `internal/store` or `internal/session`. Those tests carry the
+`docker` build tag and run against a real PostgreSQL: `storetest.Main` uses
+`EIKA_TEST_DATABASE_URL` when it is set and starts a throwaway `postgres:16`
+container otherwise, and `storetest.Open` hands each test a migrated database
+of its own.
+
+```
+go test -tags docker ./internal/store/... ./internal/session/...
+```
+
 ## Adding an API endpoint
 
 Write the handler in `internal/server/` and register the route in

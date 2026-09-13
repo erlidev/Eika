@@ -48,6 +48,13 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Hub access scope | A hub grant covers one project: `Grant(workspaceID, project, token)`, checked against the requested project on every request. A workspace's token is useless on any other project, and a stopped workspace holds no grant |
 | Hub package | `internal/workspace/hub`, not `internal/hub`: the hub exists to serve workspaces and `workspace` is its only importer |
 | Hub credentials | Remote credentials reach `git` through a one-line credential helper reading environment variables, so a token is never written to disk. Inside a workspace the same shape reads `EIKA_HUB_USER` and `EIKA_HUB_TOKEN`, so the hub token never appears in a remote URL or in `.git/config` |
+| pgx version | `github.com/jackc/pgx/v5`, pinned at v5.11.0, the latest stable major. The pool (`pgxpool`) and the native protocol come with it, so nothing else is needed; adding it upgrades the module graph's `golang.org/x/{mod,sync,telemetry,tools}` entries, which are indirect tool dependencies |
+| Migrations | A 40-line migrator in `internal/store/migrate.go` over an embedded `migrations/NNNN_name.sql` directory, applied in file name order under a PostgreSQL advisory lock, one transaction per file, recorded in `schema_migrations`. golang-migrate would be a dependency for less |
+| Id format | One generator, `store.NewID`: 20 lowercase base32 characters, 96 bits of randomness. Ids are text in every table, generated before the row exists, so the same id names a row, a container, a volume, and a URL |
+| Fork semantics | A fork copies the path from the root to the fork entry into a new session and shares no rows with its parent. Shared ancestry would make either session's deletion or edit reach into the other, and the copy is small: a path is a few dozen rows |
+| Entry representation | One `provider.Message` is one entry; an assistant message that carries tool calls stays one assistant entry whose payload is that message's JSON. It round-trips exactly and adds no branch point the agent loop cannot resume from, because a model that asked for three calls needs all three answered |
+| Entry kinds | The kind vocabulary (`user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`) is fixed now, like the event names in phase 0, so later phases and the frontend agree. Message conversion writes `user`, `assistant`, and `tool_result`; questions, subagent lifecycle, and compaction write `event` |
+| Hub mirrors local projects | Yes. A local project keeps its bind mount for the user's own workspace, and its workspaces still push to a hub repository, so fork-with-workspace and subagents work the same way for both kinds. This resolves the phase 3 open question; nothing in the schema depends on it, and phase 6 implements the push |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -300,15 +307,16 @@ parallel.
 ## 10. Resolved and open questions
 
 - Sandbox network policy defaults to open egress, configurable per workspace.
-- Open: should the hub also mirror local projects so fork-with-workspace
-  works on them? Decide in phase 3.
+- Resolved in phase 3: the hub mirrors local projects as well, so
+  fork-with-workspace and subagents behave the same for both project kinds.
+  See the decision table.
 
 ## 11. Phase checklist
 
 - [x] Phase 0: Foundations
 - [x] Phase 1: Agent core
 - [x] Phase 2: Sandboxes and workspaces
-- [ ] Phase 3: Persistence and sessions
+- [x] Phase 3: Persistence and sessions
 - [ ] Phase 4: Server and event stream
 - [ ] Phase 5: Web UI core
 - [ ] Phase 6: Subagents
