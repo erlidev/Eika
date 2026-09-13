@@ -29,7 +29,7 @@ three-service compose stack.
 | `store` | `internal/store` | The PostgreSQL pool, the embedded migrations, and the queries behind every table |
 | `session` | `internal/session` | The session tree: append, head, branch, fork, outline, and the agent store that records a run |
 | `subagent` | `internal/subagent` | Spawning child agents: the hand-over commit, the child workspace and session, the limits, and the result the parent reads |
-| frontend | `web/` | Vite, React 19, Tailwind v4, shadcn/ui; an app shell that fetches harness health once, with a Recheck button |
+| frontend | `web/` | Vite, React 19, Tailwind v4, shadcn/ui; the three-pane workbench: project tree, streaming session, context panels |
 
 `eika` serves `GET /healthz` and `GET /api/healthz`, both returning
 `{"status":"ok"}`. `/healthz` is the container health check; `/api/healthz` is
@@ -644,20 +644,90 @@ enables the JSON result format, which the harness needs to parse results.
 
 ## Frontend
 
-`web/` is a Vite application. The layout is fixed by the style guide:
+`web/` is a Vite application: React 19, TypeScript in strict mode, Tailwind v4,
+and shadcn/ui on the neutral palette. The layout is fixed by the style guide:
 
 ```
 web/src/
-  app/          routes, layout shell, panel registry
-  features/     one folder per domain feature (empty until phase 5)
+  app/          routes, layout shell, panel registry, command palette, theme
+  features/     one folder per domain feature
   components/   shared components; components/ui is shadcn-managed
   api/          wire types mirroring docs/api/, HTTP client, event stream
   lib/          pure utilities with tests
 ```
 
-Server state goes through TanStack Query; the client lives in `main.tsx` and
-`api/` owns the wire types and the fetch functions. Streaming and UI state will
-use per-feature Zustand stores from phase 5 on.
+### The workbench
+
+The shell is three panes.
+
+```
++------------------------------------------------------------------+
+| Eika          [palette] [theme] [settings]                        |
++-------------+--------------------------------+-------------------+
+| projects    | session                        | Tree | Run        |
+|  workspaces |   transcript                   |                   |
+|   sessions  |   ------------------------     | the panel the tab |
+|             |   run status bar               | strip is built    |
+|             |   composer                     | from panels.tsx   |
++-------------+--------------------------------+-------------------+
+```
+
+`app/Sidebar.tsx` is the only place that composes the project, workspace, and
+session features, which is why it lives in `app/` rather than in one of them.
+`app/Workbench.tsx` holds the two dividers; `components/ResizableSplit` is a
+pointer-events handler over a `role="separator"` element, so a pane is resized
+by dragging or by an arrow key and the width is remembered in localStorage
+through `lib/persisted`. Below 1024px the side panes become drawers.
+
+`app/panels.tsx` is the panel registry. The right pane's tab strip is that
+array filtered by what is open, so phases 6 and 8 add a panel by writing one
+component and one entry. Phase 5 registers the session tree and the run.
+
+### Two kinds of state
+
+Server state is TanStack Query over `api/routes.ts`. Nothing polls: an event
+invalidates what it makes stale. `features/workspaces/useWorkspaceEvents`
+subscribes to `workspace:<id>` and refreshes the workspace a `workspace.state`
+event names; `features/session/useSessionStream` refreshes the run status and
+the outline when a turn ends.
+
+Stream state is a Zustand store per feature. The open session's store
+(`features/session/store.ts`) is a shell around a pure reducer,
+`features/session/transcript.ts`, which folds the event protocol into the rows
+the transcript renders. Two sources feed it: run events keyed by `run_id` are
+the turn in flight, and `session.message` events keyed by `entry_id` are the
+stored conversation a replay delivers. A turn that ends is sealed and its live
+rows are replaced by the entries that follow, so nothing is drawn twice. The
+reducer is pure, so a scripted event sequence from `docs/api/events.md` is the
+whole test.
+
+### One client, one socket
+
+`api/client.ts` is the only place that calls `fetch`. It attaches the bearer
+token, decodes the documented error body into an `ApiError`, and forgets a
+token the harness answers `401` to, which returns the user to the connect
+screen. `api/connection.ts` holds the token and the harness URL in
+localStorage; it is a plain module with listeners rather than a store, because
+`api/` may not depend on a feature.
+
+`api/stream.ts` is the one WebSocket. Subscribers reference-count topics, so
+several components watching one workspace cost one subscription; a reconnect
+backs off and re-sends the union of the live topics. The first connection
+carries its topics in the handshake URL, so a client that never gets to send a
+frame still receives what it asked for. `bus.dropped` reaches every handler,
+whatever the topic, because it reports on the connection.
+
+### Tool call rendering
+
+A tool call is a collapsible card. `features/session/renderers/renderers.tsx`
+maps a tool name to a renderer: `bash` shows the command, its streamed output,
+and its exit code; `edit` shows a unified diff computed by `lib/diff.ts`;
+`read`, `write`, `grep`, `find`, and `ls` show their arguments and their
+result; `ask_user` renders the question form inline and posts the answer. A
+tool with no renderer falls back to formatted JSON, so a new tool is useful
+before anyone writes a renderer for it.
+
+### Development and production
 
 In development Vite serves the UI on :5173 and proxies `/api` to the harness on
 :8080. In production the harness serves the built bundle itself, so the same

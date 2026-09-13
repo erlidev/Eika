@@ -407,8 +407,138 @@ anywhere reaches every client subscribed to its topic. Mirror the type name in
 
 ## Adding a UI panel
 
-Write the component under `web/src/features/<feature>/` and register it in
-`web/src/app/panels.tsx`. Cross-feature imports go through
-`web/src/features/<name>/index.ts` only.
+The right-hand pane of the workbench is a tab strip built from one array. A
+panel is a component plus one entry in `web/src/app/panels.tsx`; nothing else
+in the shell changes.
 
-Lands in phase 5.
+Write the component in the feature that owns its data. A panel receives the
+open session and its workspace, both empty strings when nothing is open:
+
+```tsx
+// web/src/features/workspaces/SandboxPanel.tsx
+/** What the session's sandbox is: its image, its branch, and its state. */
+
+import { useWorkspace } from "@/features/workspaces/queries";
+import { useWorkspaceEvents } from "@/features/workspaces/useWorkspaceEvents";
+
+export type SandboxPanelProps = {
+  workspaceId: string;
+};
+
+export function SandboxPanel({ workspaceId }: SandboxPanelProps) {
+  useWorkspaceEvents(workspaceId);
+  const workspace = useWorkspace(workspaceId);
+  if (workspace.isPending) {
+    return <p className="text-muted-foreground p-3 text-xs">Loading the sandbox…</p>;
+  }
+  if (workspace.isError) {
+    return (
+      <p role="alert" className="text-destructive p-3 text-xs">
+        {workspace.error.message}
+      </p>
+    );
+  }
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-3 p-3 font-mono text-xs">
+      <dt className="text-muted-foreground">state</dt>
+      <dd>{workspace.data.state}</dd>
+      <dt className="text-muted-foreground">branch</dt>
+      <dd className="truncate">{workspace.data.branch}</dd>
+      <dt className="text-muted-foreground">image</dt>
+      <dd className="truncate">{workspace.data.image}</dd>
+    </dl>
+  );
+}
+```
+
+`useWorkspaceEvents` is what keeps it current: nothing in the frontend polls,
+so a panel showing something the harness changes subscribes to the topic that
+reports the change.
+
+Export it from the feature's `index.ts`, because `app/` imports a feature only
+through that file:
+
+```ts
+// web/src/features/workspaces/index.ts
+export { SandboxPanel } from "@/features/workspaces/SandboxPanel";
+```
+
+Register it. `id` is what the layout remembers, so it never changes once it
+ships. `available` hides the tab when its data cannot exist yet:
+
+```tsx
+// web/src/app/panels.tsx
+import { Container } from "lucide-react";
+
+import { SandboxPanel } from "@/features/workspaces";
+
+const sandboxPanel: Panel = {
+  id: "sandbox",
+  title: "Sandbox",
+  icon: Container,
+  available: (context) => context.workspaceId !== "",
+  Component: ({ workspaceId }) => <SandboxPanel workspaceId={workspaceId} />,
+};
+
+export const panels: readonly Panel[] = [sessionTreePanel, runPanel, sandboxPanel];
+```
+
+The tab strip, the keyboard handling, the remembered active tab, and the narrow
+layout all follow from the array. Add a README line to the feature folder and
+you are done.
+
+## Adding a tool renderer
+
+A tool call is drawn as a collapsible card: a header the registry fills with a
+one-line summary, and a body the renderer owns. A tool with no renderer falls
+back to formatted JSON, so writing one is an improvement, never a requirement.
+
+Renderers live in `web/src/features/session/renderers/`. A renderer is a
+`summary` function and a `Body` component over the same `ToolItem`, which
+carries the call's arguments, the output it streamed, and its result:
+
+```tsx
+// web/src/features/session/renderers/renderers.tsx
+import { FieldList, ResultBlock } from "@/features/session/renderers/parts";
+import { detail, stringArg } from "@/features/session/renderers/registry";
+import type { ToolRenderer, ToolRendererProps } from "@/features/session/renderers/registry";
+import { firstLine } from "@/lib/format";
+
+/** webSearchRenderer shows the query and the results it returned. */
+const webSearchRenderer: ToolRenderer = {
+  summary: (call) => firstLine(stringArg(call, "query")),
+  Body: ({ call }: ToolRendererProps) => (
+    <div className="space-y-2">
+      <FieldList
+        fields={[
+          ["query", stringArg(call, "query")],
+          ["source", stringArg(call, "source")],
+          ["results", String(detail(call, "result_count") ?? "")],
+        ]}
+      />
+      <ResultBlock call={call} label="search results" />
+    </div>
+  ),
+};
+```
+
+Read arguments with the helpers in `registry.ts` (`stringArg`, `numberArg`,
+`boolArg`, `args`) rather than reaching into `call.arguments`: a model can send
+anything, including malformed JSON the harness quotes as a string, and the
+helpers answer with an empty value instead of throwing. Read a tool's
+structured result the same way, with `detail(call, "exit_code")`.
+
+Register it under the tool's name, which is the name the Go tool reports:
+
+```ts
+export const toolRenderers: Record<string, ToolRenderer> = {
+  bash: bashRenderer,
+  edit: editRenderer,
+  // ...
+  web_search: webSearchRenderer,
+};
+```
+
+Two rules. The summary is one short line: it is truncated, not wrapped. The
+body must render a call that has not finished, because `tool.call` arrives
+before any output does; `ResultBlock` already says "running…" for you.

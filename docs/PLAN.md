@@ -82,6 +82,17 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | A child runs its parent's image | `spawn_agent` has no `image` parameter. Nothing validates an image name a model invents, and a child that needs different tooling is a workspace the user creates, not one the model names |
 | The hub is never force-pushed | `Host.Push` has no force flag. A branch in the hub belongs to whoever created it, and a push that cannot fast-forward is a divergence for the caller to resolve. Unique child branches are what make this possible |
 | Shutdown stops the children too | `Server.Close` aborts the runs and then calls `Spawner.Shutdown`, which aborts every child and waits for it to record how it ended. A child spawned with `wait: false` outlives its parent's run, so aborting runs alone would leave it writing to a pool that is closing |
+| Frontend shell | A three-pane workbench: project/workspace/session tree, the open session, and a tab strip of context panels. One session at a time, addressed by URL (`/sessions/<id>`), so a reload and a bookmark both work |
+| Panel registry | `web/src/app/panels.tsx` holds one array; the right pane's tab strip is that array filtered by what is open. A phase that adds a panel writes one component and one entry. `id` is what the remembered active tab stores, so it never changes once shipped |
+| Tool renderer registry | `web/src/features/session/renderers/renderers.tsx` maps a tool name to a `summary` line and a `Body` component. An unregistered tool falls back to formatted JSON, so a new tool renders usefully before anyone writes a renderer |
+| Transcript is a pure reducer | `features/session/transcript.ts` folds the event stream into rendered rows and holds no React or network. The Zustand store is a shell around it, so a scripted event sequence from `docs/api/events.md` is the whole test |
+| Live turn against stored entries | Run events are keyed by `run_id`, replayed `session.message` events by `entry_id`. A turn that ends is sealed and its live rows are dropped as soon as the replay delivers the entries, and an entry already held is a no-op. That is how the same content arriving twice draws once |
+| No polling | Server state is TanStack Query and is invalidated by events: `workspace.state` for a container's lifecycle, `turn.end` and `run.error` for the run status and the outline. `refetchOnWindowFocus` is off |
+| One socket, reference-counted topics | `api/stream.ts` multiplexes one WebSocket for the page. A reconnect backs off and re-sends the union of live topics; the first connection carries them in the handshake URL so a client that cannot send a frame still receives events. `bus.dropped` reaches every handler because it reports on the connection, not a topic |
+| Token in localStorage, 401 returns to connect | The bearer token and the harness URL live in `api/connection.ts`, a plain module with listeners rather than a store: `api/` may not depend on a feature, and the HTTP client needs the token. Any `401` forgets it, which both logs out and reports a token the deployment rotated |
+| Resizer without a dependency | `components/ResizableSplit` is a pointer-events handler over a `role="separator"` element with arrow-key support, in about eighty lines. A split-pane library would have to be configured into the same behaviour |
+| Frontend dependencies | `react-router` for URLs, `zustand` for stream state, `react-markdown` with `remark-gfm` and `rehype-highlight` for assistant prose, `cmdk` (through shadcn's command component) for the palette. All pinned exactly, as the existing ones are |
+| Destructive actions confirm in a dialog | `components/ConfirmDialog` wraps shadcn's alert dialog. The browser's `confirm` cannot be styled, cannot say what survives a deletion, and cannot be reached by a test |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -344,7 +355,7 @@ parallel.
 - [x] Phase 2: Sandboxes and workspaces
 - [x] Phase 3: Persistence and sessions
 - [x] Phase 4: Server and event stream
-- [ ] Phase 5: Web UI core
+- [x] Phase 5: Web UI core
 - [x] Phase 6: Subagents (backend; the agent tree panel is UI work)
 - [ ] Phase 7: Search
 - [ ] Phase 8: Terminal, editor, diff
