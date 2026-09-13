@@ -222,6 +222,50 @@ func TestErrNotFound(t *testing.T) {
 	}
 }
 
+func TestSetSessionHeadIsGuarded(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+
+	project := newProject(t, st)
+	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+		ProjectID: project.ID, Name: "w", Branch: "main", State: "running",
+	})
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	entry, err := st.AppendEntry(ctx, sess.ID, store.Entry{
+		Kind: store.KindUser, Payload: json.RawMessage(`{"content":"one"}`),
+	})
+	if err != nil {
+		t.Fatalf("append entry: %v", err)
+	}
+
+	if err := st.SetSessionHead(ctx, sess.ID, ""); err != nil {
+		t.Fatalf("clear head: %v", err)
+	}
+	cleared, err := st.Session(ctx, sess.ID)
+	if err != nil || cleared.HeadEntryID != "" {
+		t.Fatalf("session = %+v, %v; want a cleared head", cleared, err)
+	}
+	if entries, err := st.Entries(ctx, sess.ID); err != nil || len(entries) != 1 {
+		t.Fatalf("Entries = %d, %v; want the entry to survive a cleared head", len(entries), err)
+	}
+	if err := st.SetSessionHead(ctx, sess.ID, entry.ID); err != nil {
+		t.Fatalf("restore head: %v", err)
+	}
+
+	if err := st.SetSessionHead(ctx, store.NewID(), entry.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("set head of a missing session = %v, want ErrNotFound", err)
+	}
+	if err := st.SetSessionHead(ctx, store.NewID(), ""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("clear head of a missing session = %v, want ErrNotFound", err)
+	}
+}
+
 func TestDuplicateProjectNameIsConflict(t *testing.T) {
 	st := storetest.Open(t)
 	project := newProject(t, st)

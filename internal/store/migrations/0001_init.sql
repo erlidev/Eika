@@ -26,6 +26,7 @@ CREATE TABLE workspaces (
 );
 
 CREATE INDEX workspaces_project_idx ON workspaces (project_id);
+CREATE INDEX workspaces_parent_idx ON workspaces (parent_workspace_id);
 
 -- head_entry_id has no foreign key: session_entries references sessions, so a
 -- key in the other direction would be a cycle. SetSessionHead checks that the
@@ -41,6 +42,7 @@ CREATE TABLE sessions (
 );
 
 CREATE INDEX sessions_workspace_idx ON sessions (workspace_id);
+CREATE INDEX sessions_parent_idx ON sessions (parent_session_id);
 
 CREATE TABLE session_entries (
     id         text PRIMARY KEY,
@@ -49,7 +51,7 @@ CREATE TABLE session_entries (
     seq        bigint NOT NULL,
     kind       text NOT NULL CHECK (kind IN ('user', 'assistant', 'tool_call', 'tool_result', 'system', 'event')),
     payload    jsonb NOT NULL,
-    commit     text,
+    commit_sha text,
     created_at timestamptz NOT NULL DEFAULT now(),
     -- The unique constraint is also the (session_id, seq) index a path walk
     -- and an outline order by.
@@ -81,6 +83,8 @@ CREATE TABLE subagents (
 );
 
 CREATE INDEX subagents_parent_idx ON subagents (parent_session_id);
+CREATE INDEX subagents_child_session_idx ON subagents (child_session_id);
+CREATE INDEX subagents_child_workspace_idx ON subagents (child_workspace_id);
 
 CREATE TABLE settings (
     key   text PRIMARY KEY,

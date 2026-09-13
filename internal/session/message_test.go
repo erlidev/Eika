@@ -42,6 +42,13 @@ func TestMessageEntryRoundTrip(t *testing.T) {
 			kind: store.KindAssistant,
 		},
 		{
+			name: "assistant with an argument-less tool call",
+			msg: provider.AssistantMessage("", []provider.ToolCall{
+				{ID: "call_4", Name: "ls"},
+			}),
+			kind: store.KindAssistant,
+		},
+		{
 			name: "tool result",
 			msg:  provider.ToolResultMessage("call_1", "module github.com/erlidev/eika", false),
 			kind: store.KindToolResult,
@@ -97,7 +104,8 @@ func TestMessageEntryRejectsUnknownRole(t *testing.T) {
 }
 
 // sameMessage compares two messages, treating tool call arguments as the JSON
-// they are: the store keeps them as compact JSON, not as the bytes it got.
+// they are: the store keeps the document, not the bytes it got, and a call
+// that arrived without arguments comes back as an empty object.
 func sameMessage(a, b provider.Message) bool {
 	if a.Role != b.Role || a.Content != b.Content || a.ToolCallID != b.ToolCallID || a.IsError != b.IsError {
 		return false
@@ -111,10 +119,10 @@ func sameMessage(a, b provider.Message) bool {
 			return false
 		}
 		var left, right any
-		if err := json.Unmarshal(call.Arguments, &left); err != nil {
+		if err := json.Unmarshal(arguments(call.Arguments), &left); err != nil {
 			return false
 		}
-		if err := json.Unmarshal(other.Arguments, &right); err != nil {
+		if err := json.Unmarshal(arguments(other.Arguments), &right); err != nil {
 			return false
 		}
 		if string(mustJSON(left)) != string(mustJSON(right)) {
@@ -130,4 +138,13 @@ func mustJSON(v any) []byte {
 		panic(err)
 	}
 	return data
+}
+
+// arguments spells a call that carried no arguments as the empty object it is
+// stored as.
+func arguments(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	return raw
 }

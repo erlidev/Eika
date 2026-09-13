@@ -62,10 +62,22 @@ func (s *Store) Session(ctx context.Context, id string) (Session, error) {
 // Sessions returns the sessions of one workspace, oldest first. An empty
 // workspaceID returns every session.
 func (s *Store) Sessions(ctx context.Context, workspaceID string) ([]Session, error) {
-	const q = `SELECT ` + sessionColumns + ` FROM sessions
-		WHERE $1 = '' OR workspace_id = $1
-		ORDER BY created_at, id`
-	rows, err := s.pool.Query(ctx, q, workspaceID)
+	// One query per case: a WHERE that is true for every row when the filter
+	// is empty cannot use the workspace index.
+	const (
+		all = `SELECT ` + sessionColumns + ` FROM sessions ORDER BY created_at, id`
+		one = `SELECT ` + sessionColumns + ` FROM sessions
+			WHERE workspace_id = $1 ORDER BY created_at, id`
+	)
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if workspaceID == "" {
+		rows, err = s.pool.Query(ctx, all)
+	} else {
+		rows, err = s.pool.Query(ctx, one, workspaceID)
+	}
 	if err != nil {
 		return nil, wrap("list sessions", err)
 	}

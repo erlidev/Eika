@@ -47,7 +47,10 @@ type Entry struct {
 	Seq  int64
 	Kind EntryKind
 	// Payload is the entry's content. For an entry that carries a message it
-	// is the provider.Message JSON; internal/session owns the shapes.
+	// is the provider.Message JSON; internal/session owns the shapes. It is
+	// stored as jsonb, which keeps the document and not its spelling: the
+	// bytes that come back are equal as JSON to the bytes that went in, but
+	// key order, whitespace, and number formatting are the database's.
 	Payload json.RawMessage
 	// Commit is the workspace HEAD commit the entry was produced at, empty
 	// when the caller did not record one. Forking with a workspace clones at
@@ -58,7 +61,7 @@ type Entry struct {
 
 // entryColumns is the column list every entry query selects, in the order
 // scanEntry reads them.
-const entryColumns = `id, session_id, parent_id, seq, kind, payload, commit, created_at`
+const entryColumns = `id, session_id, parent_id, seq, kind, payload, commit_sha, created_at`
 
 // AppendEntry appends e to the session's head and moves the head to it, in
 // one transaction. ID, SessionID, ParentID, Seq, and CreatedAt are assigned
@@ -68,19 +71,15 @@ func (s *Store) AppendEntry(ctx context.Context, sessionID string, e Entry) (Ent
 	err := s.tx(ctx, func(q querier) error {
 		head, err := lockSessionHead(ctx, q, sessionID)
 		if err != nil {
-			return wrap("append entry to session "+sessionID, err)
+			return err
 		}
-		out, err = insertEntry(ctx, q, sessionID, head, e)
-		if err != nil {
-			return wrap("append entry to session "+sessionID, err)
+		if out, err = insertEntry(ctx, q, sessionID, head, e); err != nil {
+			return err
 		}
-		if err := setHead(ctx, q, sessionID, out.ID); err != nil {
-			return wrap("append entry to session "+sessionID, err)
-		}
-		return nil
+		return setHead(ctx, q, sessionID, out.ID)
 	})
 	if err != nil {
-		return Entry{}, err
+		return Entry{}, wrap("append entry to session "+sessionID, err)
 	}
 	return out, nil
 }
@@ -90,13 +89,17 @@ func (s *Store) AppendEntry(ctx context.Context, sessionID string, e Entry) (Ent
 // one that was last written. An empty entryID clears the head, so the session
 // starts again from its root.
 func (s *Store) SetSessionHead(ctx context.Context, sessionID, entryID string) error {
-	if entryID != "" {
-		if _, err := s.entryOfSession(ctx, sessionID, entryID); err != nil {
-			return fmt.Errorf("set head of session %s: %w", sessionID, err)
-		}
-	}
-	if err := setHead(ctx, s.pool, sessionID, entryID); err != nil {
+	// The entry check is part of the update, so that no head can be set from
+	// a row that another connection deleted in between.
+	const q = `UPDATE sessions SET head_entry_id = $2, updated_at = now()
+		WHERE id = $1 AND ($2::text IS NULL OR EXISTS (
+			SELECT 1 FROM session_entries WHERE id = $2 AND session_id = $1))`
+	tag, err := s.pool.Exec(ctx, q, sessionID, nullable(entryID))
+	if err != nil {
 		return wrap("set head of session "+sessionID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return wrap("set head of session "+sessionID, pgx.ErrNoRows)
 	}
 	return nil
 }
@@ -154,7 +157,7 @@ func (s *Store) SessionPath(ctx context.Context, sessionID string) ([]Entry, err
 const pathQuery = `WITH RECURSIVE up AS (
 		SELECT ` + entryColumns + ` FROM session_entries WHERE id = $1
 		UNION ALL
-		SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.commit, e.created_at
+		SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.commit_sha, e.created_at
 		FROM session_entries e JOIN up ON e.id = up.parent_id
 	)
 	SELECT ` + entryColumns + ` FROM up ORDER BY seq`
@@ -221,8 +224,13 @@ func (s *Store) ForkSession(ctx context.Context, sessionID, entryID string, opts
 
 // insertEntry writes one entry under parent, giving it the next sequence
 // number of its session.
+//
+// The caller must hold the session row lock that lockSessionHead takes:
+// max(seq) + 1 is only unique while one writer at a time reads it. Two
+// concurrent appends without the lock would pick the same number and one of
+// them would lose the (session_id, seq) uniqueness check.
 func insertEntry(ctx context.Context, q querier, sessionID, parentID string, e Entry) (Entry, error) {
-	const insert = `INSERT INTO session_entries (id, session_id, parent_id, seq, kind, payload, commit)
+	const insert = `INSERT INTO session_entries (id, session_id, parent_id, seq, kind, payload, commit_sha)
 		VALUES ($1, $2, $3,
 			(SELECT coalesce(max(seq), 0) + 1 FROM session_entries WHERE session_id = $2),
 			$4, $5, $6)

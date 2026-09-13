@@ -70,10 +70,22 @@ func (s *Store) Workspace(ctx context.Context, id string) (Workspace, error) {
 // Workspaces returns the workspaces of one project, oldest first. An empty
 // projectID returns every workspace.
 func (s *Store) Workspaces(ctx context.Context, projectID string) ([]Workspace, error) {
-	const q = `SELECT ` + workspaceColumns + ` FROM workspaces
-		WHERE $1 = '' OR project_id = $1
-		ORDER BY created_at, id`
-	rows, err := s.pool.Query(ctx, q, projectID)
+	// One query per case: a WHERE that is true for every row when the filter
+	// is empty cannot use the project index.
+	const (
+		all = `SELECT ` + workspaceColumns + ` FROM workspaces ORDER BY created_at, id`
+		one = `SELECT ` + workspaceColumns + ` FROM workspaces
+			WHERE project_id = $1 ORDER BY created_at, id`
+	)
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if projectID == "" {
+		rows, err = s.pool.Query(ctx, all)
+	} else {
+		rows, err = s.pool.Query(ctx, one, projectID)
+	}
 	if err != nil {
 		return nil, wrap("list workspaces", err)
 	}

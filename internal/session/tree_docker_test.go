@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/erlidev/eika/internal/provider"
@@ -324,6 +326,78 @@ func TestLoadFollowsTheHead(t *testing.T) {
 	}
 	if _, err := st.Load(ctx, store.NewID()); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Load of a missing session = %v, want ErrNotFound", err)
+	}
+}
+
+func TestConcurrentAppendsKeepOneChain(t *testing.T) {
+	tree, sess := newTree(t)
+	ctx := t.Context()
+
+	const writers = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+	for i := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := tree.AppendMessage(ctx, sess.ID, provider.UserMessage(strconv.Itoa(i)), "")
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent append: %v", err)
+		}
+	}
+
+	entries, err := tree.Outline(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Outline: %v", err)
+	}
+	if len(entries) != writers {
+		t.Fatalf("Outline = %d nodes, want %d", len(entries), writers)
+	}
+	// Every append takes the session row lock, so the sequence numbers are
+	// dense and unique and the entries form one chain, whatever order the
+	// writers ran in.
+	path, err := tree.Path(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Path: %v", err)
+	}
+	if len(path) != writers {
+		t.Fatalf("Path = %d entries, want one chain of %d", len(path), writers)
+	}
+	parent := ""
+	for i, e := range path {
+		if e.Seq != int64(i+1) {
+			t.Errorf("entry %d has seq %d, want %d", i, e.Seq, i+1)
+		}
+		if e.ParentID != parent {
+			t.Errorf("entry %d has parent %q, want %q", i, e.ParentID, parent)
+		}
+		parent = e.ID
+	}
+}
+
+func TestArgumentLessToolCallSurvivesTheDatabase(t *testing.T) {
+	tree, sess := newTree(t)
+	ctx := t.Context()
+
+	call := provider.AssistantMessage("", []provider.ToolCall{{ID: "call_1", Name: "ls"}})
+	if _, err := tree.AppendMessage(ctx, sess.ID, call, ""); err != nil {
+		t.Fatalf("append a call without arguments: %v", err)
+	}
+	messages, err := tree.Messages(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	if len(messages) != 1 || len(messages[0].ToolCalls) != 1 {
+		t.Fatalf("Messages = %+v, want the one call", messages)
+	}
+	if got := string(messages[0].ToolCalls[0].Arguments); got != "{}" {
+		t.Errorf("arguments = %q, want an empty object", got)
 	}
 }
 

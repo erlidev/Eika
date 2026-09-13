@@ -120,7 +120,7 @@ a container, and a URL.
 | `projects` | id, name (unique), kind (remote/local), remote_url, host_path, default_branch, created_at | A git repository Eika knows |
 | `workspaces` | id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id, created_at, updated_at | The record of one sandbox container; `state` mirrors `workspace.State` |
 | `sessions` | id, workspace_id, title, head_entry_id, parent_session_id, created_at, updated_at | One session tree and the head a run continues from |
-| `session_entries` | id, session_id, parent_id, seq, kind, payload (jsonb), commit, created_at | One node of a session tree |
+| `session_entries` | id, session_id, parent_id, seq, kind, payload (jsonb), commit_sha, created_at | One node of a session tree |
 | `runs` | id, session_id, state, started_at, finished_at, error | One execution of the agent loop |
 | `subagents` | id, parent_session_id, child_session_id, child_workspace_id, state, result, created_at, finished_at | One child agent and what it reported |
 | `settings` | key (primary), value (jsonb) | What the user changes at runtime |
@@ -128,15 +128,19 @@ a container, and a URL.
 Everything cascades from `projects`: deleting a project deletes its
 workspaces, their sessions, and their entries. `sessions.head_entry_id` has no
 foreign key, because `session_entries` already references `sessions` and a key
-in the other direction would be a cycle; `SetSessionHead` checks that the
-entry belongs to the session instead. `session_entries` is indexed on
-`(session_id, parent_id)` for walking down and on `(session_id, seq)`, which
-is also the uniqueness constraint on the sequence number.
+in the other direction would be a cycle; the guarded `UPDATE` in `SetSessionHead`
+sets a head only when the entry is one of the session's own. Every foreign key
+is indexed, and `session_entries` also has `(session_id, parent_id)` for
+walking down and `(session_id, seq)`, which is the uniqueness constraint on
+the sequence number as well.
 
-Two writes are transactional. `AppendEntry` locks the session row, reads the
+Three writes are transactional. `AppendEntry` locks the session row, reads the
 head, inserts the entry with that head as its parent and the session's next
-sequence number, and moves the head to it. `ForkSession` creates a session and
-copies entries into it.
+sequence number, and moves the head to it; the row lock is what makes
+`max(seq) + 1` unique, so concurrent appends to one session form one chain
+rather than colliding. `ForkSession` creates a session and copies entries into
+it. `migrate` applies every pending migration under a transaction-scoped
+advisory lock, which the database releases however the transaction ends.
 
 `session` is the domain on top: `Tree` appends, reads `Path` from the root to
 the head, moves the head, forks, lists `Children`, and renders an `Outline`

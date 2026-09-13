@@ -23,11 +23,34 @@ func MessageEntry(m provider.Message, commit string) (store.Entry, error) {
 	if err != nil {
 		return store.Entry{}, err
 	}
-	payload, err := json.Marshal(m)
+	payload, err := json.Marshal(withArguments(m))
 	if err != nil {
 		return store.Entry{}, fmt.Errorf("encode %s message: %w", m.Role, err)
 	}
 	return store.Entry{Kind: kind, Payload: payload, Commit: commit}, nil
+}
+
+// withArguments returns m with every tool call's arguments spelled as a JSON
+// document. A model that calls a tool without parameters may send nothing at
+// all, and nothing is not JSON: it would make the whole payload invalid and
+// fail the append.
+func withArguments(m provider.Message) provider.Message {
+	empty := false
+	for _, c := range m.ToolCalls {
+		empty = empty || len(c.Arguments) == 0
+	}
+	if !empty {
+		return m
+	}
+	calls := make([]provider.ToolCall, len(m.ToolCalls))
+	copy(calls, m.ToolCalls)
+	for i := range calls {
+		if len(calls[i].Arguments) == 0 {
+			calls[i].Arguments = json.RawMessage(`{}`)
+		}
+	}
+	m.ToolCalls = calls
+	return m
 }
 
 // Message returns the provider message an entry records. The second result is
