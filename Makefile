@@ -9,9 +9,15 @@ GOPKGS := ./cmd/... ./internal/...
 GODIRS := cmd internal
 ENV_FILE := deploy/.env
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file $(ENV_FILE)
+LOCAL_COMPOSE := EIKA_AUTH_TOKEN="$${EIKA_AUTH_TOKEN:-dev-token}" \
+	POSTGRES_PASSWORD="$${POSTGRES_PASSWORD:-eika-local}" \
+	SEARXNG_SECRET="$${SEARXNG_SECRET:-eika-local}" \
+	DOCKER_GID="$${DOCKER_GID:-$$(stat -c %g /var/run/docker.sock)}" \
+	docker compose --project-name eika-local -f deploy/docker-compose.yml --env-file /dev/null
 
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
-	fmt fmt-check check typecheck dev dev-go dev-web sandbox web-install clean
+	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
+	sandbox web-install clean
 
 all: build
 
@@ -94,6 +100,20 @@ dev-go: $(ENV_FILE)
 
 dev-web: web-install
 	cd $(WEB) && $(NPM) run dev
+
+## local: run the complete stack without creating files in the repository.
+## Set OPENAI_API_KEY in the shell to run agents. The UI uses dev-token.
+local: sandbox
+	$(LOCAL_COMPOSE) up -d --build
+	@echo "Eika is ready at http://localhost:$${EIKA_PORT:-8080} (token: $${EIKA_AUTH_TOKEN:-dev-token})"
+
+## local-down: stop the local stack. Add `-v` manually to delete its data.
+local-down:
+	$(LOCAL_COMPOSE) down
+
+## local-logs: follow logs from the local stack.
+local-logs:
+	$(LOCAL_COMPOSE) logs -f
 
 ## sandbox: build the default sandbox image. The context is the repository
 ## root because the image builds eikad from source.

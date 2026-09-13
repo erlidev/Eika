@@ -10,6 +10,21 @@ runs from one Docker Compose file.
 
 ## Quick start
 
+For a local run that does not create an environment file or build output in
+the repository, use:
+
+```sh
+OPENAI_API_KEY=your-key make local
+```
+
+Open http://localhost:8080 and use `dev-token` as the bearer token. Run
+`make local-logs` to follow the logs and `make local-down` to stop the stack.
+Docker volumes keep the database and hub data. The command does not write
+generated files to the repository. Its containers and volumes use the
+isolated `eika-local` Compose project name.
+
+For a configured deployment, use:
+
 ```sh
 cp deploy/.env.example deploy/.env   # then fill in EIKA_AUTH_TOKEN and SEARXNG_SECRET
 make sandbox                         # build the default workspace image
