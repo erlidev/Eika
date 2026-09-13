@@ -69,6 +69,16 @@ describe("parseEvent", () => {
     expect(payload.kind).toBe("assistant");
   });
 
+  it("accepts a retry reset", () => {
+    const event = parseEvent({
+      type: "message.reset",
+      topic: "session:s1",
+      time: "2026-01-02T03:04:05Z",
+      payload: { run_id: "run-1" },
+    });
+    expect(event.type).toBe("message.reset");
+  });
+
   it("accepts a drop report", () => {
     const event = parseEvent({
       type: "bus.dropped",

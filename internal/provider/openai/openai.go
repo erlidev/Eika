@@ -64,7 +64,7 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request) (<-chan pro
 	go func() {
 		defer close(out)
 		defer stream.Close()
-		relay(ctx, stream, out)
+		relay(ctx, stream, out, req.PreserveThinking)
 	}()
 	return out, nil
 }
@@ -77,7 +77,7 @@ type chunkStream interface {
 }
 
 // relay converts SDK chunks into provider events until the stream ends.
-func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
+func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, preserveThinking bool) {
 	acc := newToolCalls()
 	var usage provider.Usage
 	var stop string
@@ -106,6 +106,15 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 			if choice.Delta.Content != "" && !send(provider.TextDelta(choice.Delta.Content)) {
 				return
 			}
+			if preserveThinking {
+				reasoning := reasoningContent(choice.Delta)
+				if reasoning != "" && !send(provider.Event{
+					Kind:           provider.KindReasoningDelta,
+					ReasoningDelta: reasoning,
+				}) {
+					return
+				}
+			}
 			for _, call := range choice.Delta.ToolCalls {
 				acc.add(call)
 				if !send(provider.Event{
@@ -122,6 +131,10 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 	}
 	if err := stream.Err(); err != nil {
 		send(provider.Errorf(streamError(err)))
+		return
+	}
+	if stop == "" {
+		send(provider.Errorf(errors.New("stream chat completion: stream ended without finish_reason")))
 		return
 	}
 	// A response cut off by the token limit leaves the last tool call's
@@ -150,6 +163,19 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 	send(provider.Done(stop))
 }
 
+// reasoningContent reads the reasoning_content extension used by compatible
+// Chat Completions endpoints. The SDK keeps unknown response fields in the
+// raw JSON, so this does not need a provider-specific SDK type.
+func reasoningContent(delta openai.ChatCompletionChunkChoiceDelta) string {
+	var fields struct {
+		ReasoningContent string `json:"reasoning_content"`
+	}
+	if err := json.Unmarshal([]byte(delta.RawJSON()), &fields); err != nil {
+		return ""
+	}
+	return fields.ReasoningContent
+}
+
 // params builds the SDK request for one provider request.
 func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams, error) {
 	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(req.Messages)+1)
@@ -157,7 +183,7 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 		messages = append(messages, openai.SystemMessage(req.System))
 	}
 	for _, m := range req.Messages {
-		converted, err := message(m)
+		converted, err := message(m, req.PreserveThinking)
 		if err != nil {
 			return openai.ChatCompletionNewParams{}, err
 		}
@@ -186,6 +212,9 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 	if req.ReasoningEffort != "" {
 		params.ReasoningEffort = shared.ReasoningEffort(req.ReasoningEffort)
 	}
+	if req.PreserveThinking {
+		params.SetExtraFields(map[string]any{"preserve_thinking": true})
+	}
 	for _, t := range req.Tools {
 		var schema shared.FunctionParameters
 		if len(t.Schema) > 0 {
@@ -203,7 +232,7 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 }
 
 // message converts one conversation message into its SDK form.
-func message(m provider.Message) (openai.ChatCompletionMessageParamUnion, error) {
+func message(m provider.Message, preserveThinking bool) (openai.ChatCompletionMessageParamUnion, error) {
 	switch m.Role {
 	case provider.RoleUser:
 		return openai.UserMessage(m.Content), nil
@@ -211,6 +240,9 @@ func message(m provider.Message) (openai.ChatCompletionMessageParamUnion, error)
 		return openai.ToolMessage(m.Content, m.ToolCallID), nil
 	case provider.RoleAssistant:
 		msg := openai.ChatCompletionAssistantMessageParam{}
+		if preserveThinking && m.Reasoning != "" {
+			msg.SetExtraFields(map[string]any{"reasoning_content": m.Reasoning})
+		}
 		if m.Content != "" {
 			msg.Content.OfString = param.NewOpt(m.Content)
 		}

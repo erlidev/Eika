@@ -44,8 +44,9 @@ The event envelope is fixed in `internal/event`:
 | `time` | RFC 3339 timestamp, UTC | When the event was created. |
 | `payload` | object, optional | Type-specific body; the structs live in `internal/event`. |
 
-The type names are `turn.start`, `message.delta`, `tool.call`, `tool.output`,
-`tool.result`, `turn.end`, `run.error`, `question.asked`, `subagent.started`,
-`subagent.finished`, `workspace.state`, `session.message`, and `bus.dropped`.
+The type names are `turn.start`, `message.delta`, `message.reset`, `tool.call`,
+`tool.output`, `tool.result`, `turn.end`, `run.error`, `question.asked`,
+`subagent.started`, `subagent.finished`, `workspace.state`, `session.message`,
+and `bus.dropped`.
 `subagent.started` and `subagent.finished` are the only ones nothing emits
 yet; they land in phase 6.

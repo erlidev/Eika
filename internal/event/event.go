@@ -13,6 +13,9 @@ const (
 	TypeTurnStart = "turn.start"
 	// TypeMessageDelta carries an incremental piece of assistant output.
 	TypeMessageDelta = "message.delta"
+	// TypeMessageReset tells clients to discard deltas from a failed model
+	// attempt before a retry starts.
+	TypeMessageReset = "message.reset"
 	// TypeToolCall reports that the assistant asked for a tool call.
 	TypeToolCall = "tool.call"
 	// TypeToolOutput carries incremental output from a running tool.

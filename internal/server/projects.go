@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,24 +16,33 @@ import (
 // defaultBranch is the branch a project uses when the request names none.
 const defaultBranch = "main"
 
+// credentialEnvironment is the accepted name of an environment variable
+// that holds a remote credential. The EIKA_ prefix keeps secret sources
+// explicit and follows the configuration policy.
+var credentialEnvironment = regexp.MustCompile(`^EIKA_[A-Za-z0-9_]+$`)
+
 // projectBody is one project on the wire.
 type projectBody struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Kind          string    `json:"kind"`
-	RemoteURL     string    `json:"remote_url,omitempty"`
-	HostPath      string    `json:"host_path,omitempty"`
-	DefaultBranch string    `json:"default_branch"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID                string    `json:"id"`
+	Name              string    `json:"name"`
+	Kind              string    `json:"kind"`
+	RemoteURL         string    `json:"remote_url,omitempty"`
+	RemoteUsernameEnv string    `json:"remote_username_env,omitempty"`
+	RemotePasswordEnv string    `json:"remote_password_env,omitempty"`
+	HostPath          string    `json:"host_path,omitempty"`
+	DefaultBranch     string    `json:"default_branch"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // createProjectRequest is the body of POST /api/projects.
 type createProjectRequest struct {
-	Name          string `json:"name"`
-	Kind          string `json:"kind"`
-	RemoteURL     string `json:"remote_url"`
-	HostPath      string `json:"host_path"`
-	DefaultBranch string `json:"default_branch"`
+	Name              string `json:"name"`
+	Kind              string `json:"kind"`
+	RemoteURL         string `json:"remote_url"`
+	RemoteUsernameEnv string `json:"remote_username_env"`
+	RemotePasswordEnv string `json:"remote_password_env"`
+	HostPath          string `json:"host_path"`
+	DefaultBranch     string `json:"default_branch"`
 }
 
 // projectsResponse is the body of GET /api/projects.
@@ -76,11 +86,13 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 // records the project.
 func (s *Server) createProject(ctx context.Context, req createProjectRequest) (store.Project, error) {
 	p := store.Project{
-		Name:          strings.TrimSpace(req.Name),
-		Kind:          store.ProjectKind(req.Kind),
-		RemoteURL:     strings.TrimSpace(req.RemoteURL),
-		HostPath:      strings.TrimSpace(req.HostPath),
-		DefaultBranch: strings.TrimSpace(req.DefaultBranch),
+		Name:              strings.TrimSpace(req.Name),
+		Kind:              store.ProjectKind(req.Kind),
+		RemoteURL:         strings.TrimSpace(req.RemoteURL),
+		RemoteUsernameEnv: strings.TrimSpace(req.RemoteUsernameEnv),
+		RemotePasswordEnv: strings.TrimSpace(req.RemotePasswordEnv),
+		HostPath:          strings.TrimSpace(req.HostPath),
+		DefaultBranch:     strings.TrimSpace(req.DefaultBranch),
 	}
 	if p.DefaultBranch == "" {
 		p.DefaultBranch = defaultBranch
@@ -90,7 +102,13 @@ func (s *Server) createProject(ctx context.Context, req createProjectRequest) (s
 		if p.RemoteURL == "" {
 			return store.Project{}, invalidf("remote_url is required for a remote project")
 		}
+		if err := validateRemoteCredentials(p); err != nil {
+			return store.Project{}, err
+		}
 	case store.ProjectLocal:
+		if p.RemoteUsernameEnv != "" || p.RemotePasswordEnv != "" {
+			return store.Project{}, invalidf("remote credential environments are only valid for a remote project")
+		}
 		if p.HostPath == "" {
 			return store.Project{}, invalidf("host_path is required for a local project")
 		}
@@ -107,13 +125,44 @@ func (s *Server) createProject(ctx context.Context, req createProjectRequest) (s
 		return store.Project{}, err
 	}
 	if p.Kind == store.ProjectRemote {
-		if err := s.deps.Hub.Mirror(ctx, p.Name, p.RemoteURL, hub.Credentials{}); err != nil {
+		creds := hub.Credentials{
+			UsernameEnv: p.RemoteUsernameEnv,
+			PasswordEnv: p.RemotePasswordEnv,
+		}
+		if err := s.deps.Hub.Mirror(ctx, p.Name, p.RemoteURL, creds); err != nil {
 			remote, reason := withoutCredentials(p.RemoteURL, err)
 			s.log.Error("mirror remote", "project", p.Name, "remote", remote, "error", reason)
 			return store.Project{}, invalidf("mirror %s: %s", remote, reason)
 		}
 	}
 	return s.deps.Store.CreateProject(ctx, p)
+}
+
+// validateRemoteCredentials rejects credentials in a URL and validates the
+// matched environment references used instead.
+func validateRemoteCredentials(p store.Project) error {
+	u, err := url.Parse(p.RemoteURL)
+	if err != nil {
+		return invalidf("remote_url could not be parsed")
+	}
+	if u.User != nil {
+		return invalidf("remote_url must not contain credentials; use remote credential environments")
+	}
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(p.RemoteURL, "#") {
+		return invalidf("remote_url must not contain a query string or fragment")
+	}
+	if (p.RemoteUsernameEnv == "") != (p.RemotePasswordEnv == "") {
+		return invalidf("remote_username_env and remote_password_env must both be set")
+	}
+	for name, value := range map[string]string{
+		"remote_username_env": p.RemoteUsernameEnv,
+		"remote_password_env": p.RemotePasswordEnv,
+	} {
+		if value != "" && !credentialEnvironment.MatchString(value) {
+			return invalidf("%s must name an EIKA_* environment variable", name)
+		}
+	}
+	return nil
 }
 
 // handleProject returns one project.
@@ -159,30 +208,60 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 // URL it was given, so neither an error body nor a log line may carry it
 // through unchanged.
 func withoutCredentials(raw string, err error) (remote, reason string) {
-	reason = err.Error()
+	if err != nil {
+		reason = err.Error()
+	}
 	u, parseErr := url.Parse(raw)
 	if parseErr != nil {
 		// The URL may still hold a credential, so it is described rather
 		// than printed, and anything quoting it is dropped with it.
 		return "[UNPARSEABLE]", "the remote url could not be parsed"
 	}
-	if u.User == nil {
-		return raw, reason
+	secrets := make([]string, 0, 8)
+	if u.User != nil {
+		secrets = append(secrets, u.User.String(), u.User.Username())
+		if password, ok := u.User.Password(); ok {
+			secrets = append(secrets, password, url.PathEscape(password))
+		}
+		u.User = nil
 	}
-	u.User = nil
+	if u.RawQuery != "" || u.ForceQuery {
+		secrets = append(secrets, u.RawQuery)
+		for _, values := range u.Query() {
+			for _, value := range values {
+				secrets = append(secrets, value, url.QueryEscape(value))
+			}
+		}
+		u.RawQuery = ""
+		u.ForceQuery = false
+	}
+	if u.Fragment != "" || u.RawFragment != "" || strings.Contains(raw, "#") {
+		secrets = append(secrets, u.Fragment, u.RawFragment, url.PathEscape(u.Fragment))
+		u.Fragment = ""
+		u.RawFragment = ""
+	}
 	remote = u.String()
-	return remote, strings.ReplaceAll(reason, raw, remote)
+	reason = strings.ReplaceAll(reason, raw, remote)
+	for _, secret := range secrets {
+		if secret != "" {
+			reason = strings.ReplaceAll(reason, secret, "[REDACTED]")
+		}
+	}
+	return remote, reason
 }
 
 // asProject renders a stored project on the wire.
 func asProject(p store.Project) projectBody {
+	remote, _ := withoutCredentials(p.RemoteURL, nil)
 	return projectBody{
-		ID:            p.ID,
-		Name:          p.Name,
-		Kind:          string(p.Kind),
-		RemoteURL:     p.RemoteURL,
-		HostPath:      p.HostPath,
-		DefaultBranch: p.DefaultBranch,
-		CreatedAt:     p.CreatedAt,
+		ID:                p.ID,
+		Name:              p.Name,
+		Kind:              string(p.Kind),
+		RemoteURL:         remote,
+		RemoteUsernameEnv: p.RemoteUsernameEnv,
+		RemotePasswordEnv: p.RemotePasswordEnv,
+		HostPath:          p.HostPath,
+		DefaultBranch:     p.DefaultBranch,
+		CreatedAt:         p.CreatedAt,
 	}
 }

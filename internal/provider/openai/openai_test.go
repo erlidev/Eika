@@ -125,6 +125,26 @@ func TestStreamText(t *testing.T) {
 	}
 }
 
+func TestStreamRejectsMissingFinishReason(t *testing.T) {
+	s := newSSEServer(t, http.StatusOK,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"partial"}}]}`,
+	)
+	p := newProvider(t, s.URL)
+	events := collect(t, context.Background(), p, provider.Request{
+		Messages: []provider.Message{provider.UserMessage("hi")},
+	})
+	last := events[len(events)-1]
+	if last.Kind != provider.KindError || last.Err == nil || !strings.Contains(last.Err.Error(), "finish_reason") {
+		t.Fatalf("last event = %+v, want a missing finish_reason error", last)
+	}
+	for _, e := range events {
+		if e.Kind == provider.KindDone {
+			t.Errorf("events contain done after a truncated stream: %+v", events)
+			break
+		}
+	}
+}
+
 func TestStreamAssemblesToolCall(t *testing.T) {
 	s := newSSEServer(t, http.StatusOK,
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"pa"}}]}}]}`,
@@ -190,7 +210,7 @@ func TestStreamSendsToolsAndModel(t *testing.T) {
 		Temperature: &temp,
 		Messages: []provider.Message{
 			provider.UserMessage("hi"),
-			provider.AssistantMessage("", []provider.ToolCall{{ID: "c1", Name: "ls", Arguments: json.RawMessage(`{}`)}}),
+			provider.AssistantMessage("", []provider.ToolCall{{ID: "c1", Name: "ls", Arguments: provider.ToolArguments(`{}`)}}),
 			provider.ToolResultMessage("c1", "a.txt", false),
 		},
 		Tools: []provider.ToolDef{{Name: "ls", Description: "list", Schema: json.RawMessage(`{"type":"object"}`)}},
@@ -233,6 +253,98 @@ func TestStreamSendsToolsAndModel(t *testing.T) {
 	}
 	if sent.Temperature == nil || *sent.Temperature != 0 {
 		t.Errorf("temperature = %v, want an explicit 0", sent.Temperature)
+	}
+}
+
+func TestStreamReplaysExactToolArgumentText(t *testing.T) {
+	s := newSSEServer(t, http.StatusOK,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
+	)
+	p := newProvider(t, s.URL)
+	collect(t, context.Background(), p, provider.Request{
+		Messages: []provider.Message{
+			provider.UserMessage("use both"),
+			provider.AssistantMessage("", []provider.ToolCall{
+				{ID: "valid", Name: "accept_string", Arguments: provider.ToolArguments(`"value"`)},
+				{ID: "malformed", Name: "read", Arguments: provider.ToolArguments(`{"path":`)},
+			}),
+			provider.ToolResultMessage("valid", "done", false),
+			provider.ToolResultMessage("malformed", "invalid arguments", true),
+		},
+	})
+
+	var sent struct {
+		Messages []struct {
+			ToolCalls []struct {
+				Function struct {
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(<-s.body, &sent); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	calls := sent.Messages[1].ToolCalls
+	if len(calls) != 2 {
+		t.Fatalf("tool calls = %+v, want two", calls)
+	}
+	if calls[0].Function.Arguments != `"value"` {
+		t.Errorf("valid arguments = %q, want exact JSON string", calls[0].Function.Arguments)
+	}
+	if calls[1].Function.Arguments != `{"path":` {
+		t.Errorf("malformed arguments = %q, want exact model text", calls[1].Function.Arguments)
+	}
+}
+
+func TestStreamPreservesCompatibleChatCompletionsReasoning(t *testing.T) {
+	s := newSSEServer(t, http.StatusOK,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"think "}}]}`,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"carefully","content":"done"},"finish_reason":"stop"}]}`,
+	)
+	p := newProvider(t, s.URL)
+	events := collect(t, context.Background(), p, provider.Request{
+		ReasoningEffort:  "high",
+		PreserveThinking: true,
+		Messages: []provider.Message{
+			provider.UserMessage("first"),
+			provider.AssistantMessageWithReasoning("answer", "prior thought", nil),
+			provider.UserMessage("continue"),
+		},
+	})
+
+	var reasoning, content strings.Builder
+	for _, e := range events {
+		switch e.Kind {
+		case provider.KindReasoningDelta:
+			reasoning.WriteString(e.ReasoningDelta)
+		case provider.KindTextDelta:
+			content.WriteString(e.Text)
+		}
+	}
+	if reasoning.String() != "think carefully" {
+		t.Errorf("reasoning = %q, want preserved reasoning", reasoning.String())
+	}
+	if content.String() != "done" {
+		t.Errorf("content = %q, want done", content.String())
+	}
+
+	var sent struct {
+		ReasoningEffort  string `json:"reasoning_effort"`
+		PreserveThinking bool   `json:"preserve_thinking"`
+		Messages         []struct {
+			Role             string `json:"role"`
+			ReasoningContent string `json:"reasoning_content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(<-s.body, &sent); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if sent.ReasoningEffort != "high" || !sent.PreserveThinking {
+		t.Errorf("reasoning settings = %q, %v; want high, true", sent.ReasoningEffort, sent.PreserveThinking)
+	}
+	if len(sent.Messages) != 3 || sent.Messages[1].Role != "assistant" || sent.Messages[1].ReasoningContent != "prior thought" {
+		t.Errorf("messages = %+v, want replayed assistant reasoning", sent.Messages)
 	}
 }
 

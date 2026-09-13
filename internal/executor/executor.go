@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// ErrNotFound reports that a workspace path does not exist. Executor
+// implementations must wrap this error for missing files and directories.
+var ErrNotFound = fs.ErrNotExist
+
 // Executor runs commands and file operations inside one workspace root.
 type Executor interface {
 	// Root reports the absolute path of the workspace root inside the

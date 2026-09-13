@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 )
 
 // Provider streams one model response for a request. The returned channel is
@@ -29,18 +30,113 @@ const (
 // on Role: ToolCalls belongs to an assistant message, ToolCallID and IsError
 // to a tool result.
 type Message struct {
-	Role       Role       `json:"role"`
-	Content    string     `json:"content,omitempty"`
+	Role    Role   `json:"role"`
+	Content string `json:"content,omitempty"`
+	// Reasoning is model reasoning that a compatible provider requires on a
+	// later request. It is stored only when the provider is configured to
+	// preserve thinking and is not shown as assistant content.
+	Reasoning  string     `json:"reasoning,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 	IsError    bool       `json:"is_error,omitempty"`
 }
 
+// ToolArguments is the exact argument text received from a model. ToolCall
+// adds an explicit marker when malformed text must be safely quoted in JSON.
+type ToolArguments string
+
+// MarshalJSON keeps valid JSON unchanged and safely quotes malformed text.
+func (a ToolArguments) MarshalJSON() ([]byte, error) {
+	raw, _ := a.JSON()
+	return raw, nil
+}
+
+// UnmarshalJSON preserves a valid JSON value exactly. A containing wire type
+// must use DecodeToolArguments with its malformed marker to restore malformed
+// text.
+func (a *ToolArguments) UnmarshalJSON(data []byte) error {
+	decoded, err := DecodeToolArguments(data, false)
+	if err != nil {
+		return err
+	}
+	*a = decoded
+	return nil
+}
+
+// JSON returns a safe JSON representation and whether the exact argument text
+// was malformed. Empty arguments become an empty object.
+func (a ToolArguments) JSON() (json.RawMessage, bool) {
+	raw := json.RawMessage(a)
+	if len(raw) == 0 {
+		raw = json.RawMessage(`{}`)
+	}
+	if json.Valid(raw) {
+		return append(json.RawMessage(nil), raw...), false
+	}
+	quoted, _ := json.Marshal(string(a))
+	return quoted, true
+}
+
+// DecodeToolArguments restores argument text from a safe JSON representation
+// and its explicit malformed marker.
+func DecodeToolArguments(raw json.RawMessage, malformed bool) (ToolArguments, error) {
+	if len(raw) == 0 {
+		raw = json.RawMessage(`{}`)
+	}
+	if malformed {
+		var text string
+		if err := json.Unmarshal(raw, &text); err != nil {
+			return "", fmt.Errorf("decode malformed tool arguments: %w", err)
+		}
+		return ToolArguments(text), nil
+	}
+	if !json.Valid(raw) {
+		return "", fmt.Errorf("decode tool arguments: invalid JSON")
+	}
+	return ToolArguments(append([]byte(nil), raw...)), nil
+}
+
 // ToolCall is a request from the model to run one tool.
 type ToolCall struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"`
+	ID        string        `json:"id"`
+	Name      string        `json:"name"`
+	Arguments ToolArguments `json:"arguments"`
+}
+
+// MarshalJSON safely represents malformed arguments and marks them so a
+// later decode cannot confuse them with a valid top-level JSON string.
+func (c ToolCall) MarshalJSON() ([]byte, error) {
+	arguments, malformed := c.Arguments.JSON()
+	return json.Marshal(struct {
+		ID                 string          `json:"id"`
+		Name               string          `json:"name"`
+		Arguments          json.RawMessage `json:"arguments"`
+		ArgumentsMalformed bool            `json:"arguments_malformed,omitempty"`
+	}{
+		ID:                 c.ID,
+		Name:               c.Name,
+		Arguments:          arguments,
+		ArgumentsMalformed: malformed,
+	})
+}
+
+// UnmarshalJSON restores exact argument text using arguments_malformed.
+func (c *ToolCall) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		ID                 string          `json:"id"`
+		Name               string          `json:"name"`
+		Arguments          json.RawMessage `json:"arguments"`
+		ArgumentsMalformed bool            `json:"arguments_malformed"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	arguments, err := DecodeToolArguments(wire.Arguments, wire.ArgumentsMalformed)
+	if err != nil {
+		return err
+	}
+	*c = ToolCall{ID: wire.ID, Name: wire.Name, Arguments: arguments}
+	return nil
 }
 
 // UserMessage returns a user message carrying text.
@@ -52,6 +148,12 @@ func UserMessage(text string) Message {
 // both.
 func AssistantMessage(text string, calls []ToolCall) Message {
 	return Message{Role: RoleAssistant, Content: text, ToolCalls: calls}
+}
+
+// AssistantMessageWithReasoning returns an assistant message and the private
+// reasoning data a compatible provider needs to continue the conversation.
+func AssistantMessageWithReasoning(text, reasoning string, calls []ToolCall) Message {
+	return Message{Role: RoleAssistant, Content: text, Reasoning: reasoning, ToolCalls: calls}
 }
 
 // ToolResultMessage returns the result of the tool call with the given id.
@@ -82,8 +184,12 @@ type Request struct {
 	// Temperature overrides the model default when it is not nil.
 	Temperature *float64
 	// ReasoningEffort selects how much a reasoning model thinks: one of
-	// "minimal", "low", "medium", "high". Empty leaves it to the model.
+	// "none", "minimal", "low", "medium", "high", "xhigh", or "max".
+	// Empty leaves it to the model.
 	ReasoningEffort string
+	// PreserveThinking asks a compatible Chat Completions endpoint to return
+	// reasoning data and replays that data with later assistant messages.
+	PreserveThinking bool
 }
 
 // Usage reports the tokens one response cost.
@@ -101,6 +207,9 @@ type EventKind string
 const (
 	// KindTextDelta carries the next piece of assistant text.
 	KindTextDelta EventKind = "text_delta"
+	// KindReasoningDelta carries private reasoning that must be preserved for
+	// a later provider request but is not assistant-visible text.
+	KindReasoningDelta EventKind = "reasoning_delta"
 	// KindToolCallDelta carries the next fragment of a tool call's arguments.
 	KindToolCallDelta EventKind = "tool_call_delta"
 	// KindToolCall carries one fully assembled tool call.
@@ -118,6 +227,8 @@ type Event struct {
 	Kind EventKind
 	// Text is the delta of a KindTextDelta event.
 	Text string
+	// ReasoningDelta is the next piece of preserved reasoning.
+	ReasoningDelta string
 	// Index identifies the tool call a KindToolCallDelta event belongs to.
 	Index int
 	// ToolCallID and ToolName identify the tool call a KindToolCallDelta

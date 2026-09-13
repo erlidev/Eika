@@ -80,7 +80,9 @@ on `session:<id>`; workspace lifecycle events on `workspace:<id>`. A
 ## Run events
 
 A turn emits `turn.start`, then `message.delta` for each piece of assistant
-text, then for every tool call `tool.call`, any number of `tool.output`, and
+text. If that model attempt fails and is retried, `message.reset` tells the
+client to discard those deltas before the next attempt starts. The turn then
+emits, for every tool call, `tool.call`, any number of `tool.output`, and
 `tool.result`. A turn that asked for tools calls the model again, so these
 repeat. The turn ends with `turn.end`, or with `run.error` if it failed.
 
@@ -102,6 +104,12 @@ repeat. The turn ends with `turn.end`, or with `run.error` if it failed.
 | `run_id` | string | Identifies the turn. |
 | `text` | string | The next piece of assistant text. Concatenate deltas in arrival order. |
 
+### `message.reset`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `run_id` | string | Identifies the turn whose current text must be discarded. |
+
 ### `tool.call`
 
 | Field | Type | Meaning |
@@ -109,7 +117,8 @@ repeat. The turn ends with `turn.end`, or with `run.error` if it failed.
 | `run_id` | string | Identifies the turn. |
 | `call_id` | string | Identifies the call; ties `tool.output` and `tool.result` to it. |
 | `name` | string | Tool name, for example `bash`. |
-| `arguments` | object | The arguments the model supplied, as the tool's schema defines them. |
+| `arguments` | JSON value | The arguments the model supplied. Malformed text is safely quoted as a string and has the marker below; the tool reports the argument error normally. |
+| `arguments_malformed` | boolean, optional | True when `arguments` is safely quoted malformed text. Absent for valid JSON, including a valid top-level string. |
 
 ### `tool.output`
 

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/erlidev/eika/internal/workspace/hub"
@@ -241,7 +242,12 @@ func TestMirrorFetchesAndPushesARemote(t *testing.T) {
 	git(t, seed, "commit", "-m", "upstream commit")
 	git(t, seed, "push", "origin", "HEAD:refs/heads/main")
 
-	creds := hub.Credentials{Username: "x-access-token", Password: "unused-for-a-local-remote"}
+	t.Setenv("EIKA_TEST_REMOTE_USER", "x-access-token")
+	t.Setenv("EIKA_TEST_REMOTE_PASSWORD", "unused-for-a-local-remote")
+	creds := hub.Credentials{
+		UsernameEnv: "EIKA_TEST_REMOTE_USER",
+		PasswordEnv: "EIKA_TEST_REMOTE_PASSWORD",
+	}
 	if err := h.Mirror(t.Context(), "demo", remote, creds); err != nil {
 		t.Fatalf("mirror: %v", err)
 	}
@@ -260,6 +266,54 @@ func TestMirrorFetchesAndPushesARemote(t *testing.T) {
 	}
 	if got := git(t, remote, "rev-parse", "work"); got == "" {
 		t.Error("the remote did not receive the branch")
+	}
+}
+
+func TestMirrorReadsRemoteCredentialsFromTheEnvironment(t *testing.T) {
+	requireGit(t)
+	h := newHub(t)
+	t.Setenv("EIKA_TEST_REMOTE_USER", "git-user")
+	t.Setenv("EIKA_TEST_REMOTE_PASSWORD", "private-token")
+
+	var authenticated atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok {
+			w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		authenticated.Store(username == "git-user" && password == "private-token")
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	err := h.Mirror(t.Context(), "private", srv.URL+"/repo.git", hub.Credentials{
+		UsernameEnv: "EIKA_TEST_REMOTE_USER",
+		PasswordEnv: "EIKA_TEST_REMOTE_PASSWORD",
+	})
+	if err == nil {
+		t.Fatal("mirror succeeded against a server with no repository")
+	}
+	if !authenticated.Load() {
+		t.Error("git did not receive the credentials from the named environment variables")
+	}
+	if strings.Contains(err.Error(), "private-token") {
+		t.Errorf("mirror error exposed the remote password: %v", err)
+	}
+}
+
+func TestMirrorRejectsAnEmptyCredentialEnvironment(t *testing.T) {
+	requireGit(t)
+	h := newHub(t)
+	t.Setenv("EIKA_TEST_MISSING_USER", "")
+	t.Setenv("EIKA_TEST_MISSING_PASSWORD", "")
+	err := h.Mirror(t.Context(), "private", "https://example.invalid/repo.git", hub.Credentials{
+		UsernameEnv: "EIKA_TEST_MISSING_USER",
+		PasswordEnv: "EIKA_TEST_MISSING_PASSWORD",
+	})
+	if err == nil || !strings.Contains(err.Error(), "EIKA_TEST_MISSING_USER") {
+		t.Errorf("Mirror error = %v, want the missing environment name", err)
 	}
 }
 

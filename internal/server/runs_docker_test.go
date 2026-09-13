@@ -180,6 +180,36 @@ func TestRunAbortStopsTheLoopAndRecordsIt(t *testing.T) {
 	}
 }
 
+func TestAbortKeepsAcceptedMessagesForTheNextRun(t *testing.T) {
+	a := newAPI(t)
+	sess := a.session(t)
+	a.script(askStep("c1", "wait here"))
+
+	run := a.postMessage(t, sess.ID, "first run", "", 202)
+	a.waitQuestion(t, sess.ID)
+	a.postMessage(t, sess.ID, "still do this", "follow_up", 202)
+	decodeBody[runWire](t, request(t, a.Server, "POST", "/api/runs/"+run.ID+"/abort", nil), 200)
+
+	state := a.runState(t, sess.ID)
+	if len(state.PendingFollowUps) != 1 || state.PendingFollowUps[0] != "still do this" {
+		t.Fatalf("pending follow-ups = %v, want the accepted message", state.PendingFollowUps)
+	}
+	p := a.script(providertest.Text("new answer"), providertest.Text("queued answer"))
+	a.postMessage(t, sess.ID, "second run", "", 202)
+	final := a.waitIdle(t, sess.ID)
+	if final.Run == nil || final.Run.State != "done" {
+		t.Fatalf("run = %+v, want done", final.Run)
+	}
+	requests := p.Requests()
+	if len(requests) != 2 {
+		t.Fatalf("model calls = %d, want 2", len(requests))
+	}
+	got := userMessages(requests[1])
+	if got[len(got)-1] != "still do this" {
+		t.Errorf("second turn saw %v, want accepted follow-up last", got)
+	}
+}
+
 func TestRunRejectsBadMessages(t *testing.T) {
 	a := newAPI(t)
 	sess := a.session(t)

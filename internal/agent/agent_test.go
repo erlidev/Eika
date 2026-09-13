@@ -27,6 +27,113 @@ type recorder struct {
 	events []event.Event
 }
 
+// gatedProvider holds its first response open after one delta. It lets a test
+// enqueue a message after the loop's last pre-call queue check.
+type gatedProvider struct {
+	started chan struct{}
+	release chan struct{}
+
+	mu       sync.Mutex
+	calls    int
+	requests []provider.Request
+}
+
+func (p *gatedProvider) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+	p.mu.Lock()
+	p.calls++
+	call := p.calls
+	p.requests = append(p.requests, req)
+	p.mu.Unlock()
+	out := make(chan provider.Event)
+	go func() {
+		defer close(out)
+		if call == 1 {
+			select {
+			case out <- provider.TextDelta("first"):
+			case <-ctx.Done():
+				return
+			}
+			close(p.started)
+			select {
+			case <-p.release:
+			case <-ctx.Done():
+				return
+			}
+		} else {
+			select {
+			case out <- provider.TextDelta("second"):
+			case <-ctx.Done():
+				return
+			}
+		}
+		select {
+		case out <- provider.Done("stop"):
+		case <-ctx.Done():
+		}
+	}()
+	return out, nil
+}
+
+func (p *gatedProvider) Requests() []provider.Request {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]provider.Request(nil), p.requests...)
+}
+
+// checkingStore rejects cancelled writes and verifies that every message is
+// valid persisted JSON before it records it.
+type checkingStore struct {
+	mu       sync.Mutex
+	messages []provider.Message
+}
+
+func (s *checkingStore) Append(ctx context.Context, _ string, m provider.Message) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := json.Marshal(m); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messages = append(s.messages, m)
+	return nil
+}
+
+func (s *checkingStore) Messages() []provider.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]provider.Message(nil), s.messages...)
+}
+
+// failOnceStore rejects one selected append before recording it.
+type failOnceStore struct {
+	mu       sync.Mutex
+	failAt   int
+	attempts int
+	messages []provider.Message
+}
+
+func (s *failOnceStore) Append(ctx context.Context, _ string, m provider.Message) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attempts++
+	if s.attempts == s.failAt {
+		return errors.New("temporary store failure")
+	}
+	s.messages = append(s.messages, m)
+	return nil
+}
+
+func (s *failOnceStore) Messages() []provider.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]provider.Message(nil), s.messages...)
+}
+
 // Emit records one event.
 func (r *recorder) Emit(_ context.Context, e event.Event) {
 	r.mu.Lock()
@@ -144,6 +251,33 @@ func TestRunStreamsATextAnswer(t *testing.T) {
 	want := []string{event.TypeTurnStart, event.TypeMessageDelta, event.TypeTurnEnd}
 	if got := f.events.types(); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("events = %v, want %v", got, want)
+	}
+}
+
+func TestSteeringAcceptedDuringFinalResponseStartsANewTurn(t *testing.T) {
+	p := &gatedProvider{started: make(chan struct{}), release: make(chan struct{})}
+	store := agent.NewMemoryStore()
+	a := agent.New(p, nil, agent.Options{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	s := agent.NewSession("session-1", "workspace-1")
+	done := make(chan error, 1)
+	go func() { done <- a.Run(context.Background(), s, "first question") }()
+	<-p.started
+	if accepted := a.Steer("late steering"); !accepted {
+		t.Fatal("Steer rejected a message while the model response was active")
+	}
+	close(p.release)
+	if err := <-done; err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	requests := p.Requests()
+	if len(requests) != 2 {
+		t.Fatalf("model calls = %d, want 2", len(requests))
+	}
+	if got := requests[1].Messages[len(requests[1].Messages)-1].Content; got != "late steering" {
+		t.Errorf("second call ends with %q, want late steering", got)
+	}
+	if accepted := a.FollowUp("too late"); accepted {
+		t.Error("FollowUp accepted a message after the run closed its queues")
 	}
 }
 
@@ -385,6 +519,94 @@ func TestRetriesRetryableFailures(t *testing.T) {
 	}
 }
 
+func TestRetryResetsTextFromTheFailedAttempt(t *testing.T) {
+	rateLimited := &provider.Error{Op: "stream", StatusCode: 429, Retryable: true, Err: errors.New("slow down")}
+	f := newFixture(t, []providertest.Step{
+		providertest.Stream(provider.TextDelta("discard me"), provider.Errorf(rateLimited)),
+		providertest.Text("keep me"),
+	})
+	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := []string{event.TypeTurnStart, event.TypeMessageDelta, event.TypeMessageReset, event.TypeMessageDelta, event.TypeTurnEnd}
+	if got := f.events.types(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("events = %v, want %v", got, want)
+	}
+	if got := f.session.Conversation.Messages()[1].Content; got != "keep me" {
+		t.Errorf("stored assistant content = %q, want only the successful attempt", got)
+	}
+}
+
+func TestRunRejectsAStreamWithoutACompletionEvent(t *testing.T) {
+	f := newFixture(t, []providertest.Step{providertest.Stream(provider.TextDelta("partial"))})
+	err := f.agent.Run(context.Background(), f.session, "hi")
+	if err == nil || !strings.Contains(err.Error(), "without a completion event") {
+		t.Fatalf("Run error = %v, want missing completion event", err)
+	}
+	if got := len(f.store.Messages("session-1")); got != 0 {
+		t.Errorf("stored messages = %d, want no incomplete response", got)
+	}
+}
+
+func TestRunRejectsACompletionWithoutAStopReason(t *testing.T) {
+	f := newFixture(t, []providertest.Step{
+		providertest.Stream(provider.TextDelta("partial"), provider.Done("")),
+	})
+	err := f.agent.Run(context.Background(), f.session, "hi")
+	if err == nil || !strings.Contains(err.Error(), "no stop reason") {
+		t.Fatalf("Run error = %v, want missing stop reason", err)
+	}
+}
+
+func TestRunRejectsIncompleteStopReasons(t *testing.T) {
+	for _, reason := range []string{"length", "content_filter"} {
+		t.Run(reason, func(t *testing.T) {
+			f := newFixture(t, []providertest.Step{
+				providertest.Stream(provider.TextDelta("partial"), provider.Done(reason)),
+			})
+			err := f.agent.Run(context.Background(), f.session, "hi")
+			if err == nil || !strings.Contains(err.Error(), reason) {
+				t.Fatalf("Run error = %v, want incomplete %s response", err, reason)
+			}
+			if got := f.session.Conversation.Len(); got != 0 {
+				t.Errorf("conversation length = %d, want no incomplete response", got)
+			}
+		})
+	}
+}
+
+func TestContextWindowIsEnforcedBeforeTheProviderCall(t *testing.T) {
+	p := providertest.New(providertest.Text("unreachable"))
+	a := agent.New(p, nil, agent.Options{
+		ContextWindow: 64,
+		MaxTokens:     32,
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	err := a.Run(context.Background(), agent.NewSession("s1", "w1"), "hello")
+	if err == nil || !strings.Contains(err.Error(), "configured window") {
+		t.Fatalf("Run error = %v, want context window error", err)
+	}
+	if p.Calls() != 0 {
+		t.Errorf("provider calls = %d, want no oversized request sent", p.Calls())
+	}
+}
+
+func TestRunForwardsReasoningConfiguration(t *testing.T) {
+	p := providertest.New(providertest.Text("ok"))
+	a := agent.New(p, nil, agent.Options{
+		ReasoningEffort:  "high",
+		PreserveThinking: true,
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err := a.Run(context.Background(), agent.NewSession("s1", "w1"), "hello"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	req := p.Requests()[0]
+	if req.ReasoningEffort != "high" || !req.PreserveThinking {
+		t.Errorf("request reasoning = %q preserve = %t", req.ReasoningEffort, req.PreserveThinking)
+	}
+}
+
 func TestGivesUpAfterTheRetryBudget(t *testing.T) {
 	rateLimited := &provider.Error{Op: "stream", StatusCode: 429, Retryable: true, Err: errors.New("slow down")}
 	f := newFixture(t, []providertest.Step{
@@ -566,6 +788,185 @@ func TestAbortAnswersTheToolCallsItSkips(t *testing.T) {
 	}
 	if results != 2 {
 		t.Errorf("%d tool results for 2 tool calls", results)
+	}
+}
+
+func TestAbortPersistsATerminalResultForEveryToolCall(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop := callTool{name: "stop_and_cancel", run: func(context.Context) string {
+		cancel()
+		return "stopped"
+	}}
+	registry, err := builtin.Registry(nil)
+	if err != nil {
+		t.Fatalf("builtin.Registry: %v", err)
+	}
+	if err := registry.Register(stop); err != nil {
+		t.Fatalf("register stop tool: %v", err)
+	}
+	p := providertest.New(providertest.Calls("",
+		providertest.Call("c1", "stop_and_cancel", map[string]any{}),
+		providertest.Call("c2", "ls", map[string]any{}),
+	))
+	store := &checkingStore{}
+	a := agent.New(p, registry, agent.Options{
+		Executor: newFixture(t, nil).exec,
+		Store:    store,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err := a.Run(ctx, agent.NewSession("s1", "w1"), "start"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run error = %v, want context.Canceled", err)
+	}
+	results := map[string]bool{}
+	for _, message := range store.Messages() {
+		if message.Role == provider.RoleTool {
+			results[message.ToolCallID] = true
+		}
+	}
+	if !results["c1"] || !results["c2"] || len(results) != 2 {
+		t.Errorf("persisted tool results = %v, want c1 and c2", results)
+	}
+}
+
+func TestCompletedToolResultStoreFailurePersistsATerminalResult(t *testing.T) {
+	registry, err := builtin.Registry(nil)
+	if err != nil {
+		t.Fatalf("builtin.Registry: %v", err)
+	}
+	if err := registry.Register(callTool{name: "complete", run: func(context.Context) string {
+		return "completed"
+	}}); err != nil {
+		t.Fatalf("register complete tool: %v", err)
+	}
+	p := providertest.New(providertest.Calls("", providertest.Call("c1", "complete", map[string]any{})))
+	store := &failOnceStore{failAt: 3}
+	a := agent.New(p, registry, agent.Options{
+		Executor: newFixture(t, nil).exec,
+		Store:    store,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	s := agent.NewSession("s1", "w1")
+	if err := a.Run(context.Background(), s, "run it"); err == nil {
+		t.Fatal("Run returned no error")
+	}
+
+	for _, messages := range [][]provider.Message{store.Messages(), s.Conversation.Messages()} {
+		var results []provider.Message
+		for _, message := range messages {
+			if message.Role == provider.RoleTool && message.ToolCallID == "c1" {
+				results = append(results, message)
+			}
+		}
+		if len(results) != 1 || !results[0].IsError || !strings.Contains(results[0].Content, "temporary store failure") {
+			t.Errorf("terminal results = %+v, want one persisted c1 error", results)
+		}
+	}
+}
+
+func TestSteeringStoreFailureRestoresOnlyTheUnstoredMessages(t *testing.T) {
+	var a *agent.Agent
+	queue := callTool{name: "queue_steering", run: func(context.Context) string {
+		a.Steer("stored steering")
+		a.Steer("retry steering")
+		return "queued"
+	}}
+	registry, err := builtin.Registry(nil)
+	if err != nil {
+		t.Fatalf("builtin.Registry: %v", err)
+	}
+	if err := registry.Register(queue); err != nil {
+		t.Fatalf("register queue tool: %v", err)
+	}
+	p := providertest.New(
+		providertest.Calls("", providertest.Call("c1", "queue_steering", map[string]any{})),
+		providertest.Text("uncommitted answer"),
+	)
+	store := &failOnceStore{failAt: 5}
+	a = agent.New(p, registry, agent.Options{
+		Executor: newFixture(t, nil).exec,
+		Store:    store,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	s := agent.NewSession("s1", "w1")
+	if err := a.Run(context.Background(), s, "start"); err == nil {
+		t.Fatal("Run returned no error")
+	}
+	if pending := a.PendingSteering(); len(pending) != 1 || pending[0] != "retry steering" {
+		t.Fatalf("pending steering = %v, want only retry steering", pending)
+	}
+	assertUserMessageCount(t, store.Messages(), "stored steering", 1)
+	assertUserMessageCount(t, store.Messages(), "retry steering", 0)
+	assertUserMessageCount(t, s.Conversation.Messages(), "stored steering", 1)
+	assertUserMessageCount(t, s.Conversation.Messages(), "retry steering", 0)
+}
+
+func TestFollowUpStoreFailureRestoresOnlyTheUnstoredMessages(t *testing.T) {
+	p := providertest.New(providertest.Text("first answer"), providertest.Text("uncommitted answer"))
+	store := &failOnceStore{failAt: 4}
+	a := agent.New(p, nil, agent.Options{
+		Queue:  agent.QueueAll,
+		Store:  store,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	a.FollowUp("stored follow-up")
+	a.FollowUp("retry follow-up")
+	s := agent.NewSession("s1", "w1")
+	if err := a.Run(context.Background(), s, "start"); err == nil {
+		t.Fatal("Run returned no error")
+	}
+	if pending := a.PendingFollowUps(); len(pending) != 1 || pending[0] != "retry follow-up" {
+		t.Fatalf("pending follow-ups = %v, want only retry follow-up", pending)
+	}
+	assertUserMessageCount(t, store.Messages(), "stored follow-up", 1)
+	assertUserMessageCount(t, store.Messages(), "retry follow-up", 0)
+	assertUserMessageCount(t, s.Conversation.Messages(), "stored follow-up", 1)
+	assertUserMessageCount(t, s.Conversation.Messages(), "retry follow-up", 0)
+}
+
+func assertUserMessageCount(t *testing.T, messages []provider.Message, content string, want int) {
+	t.Helper()
+	got := 0
+	for _, message := range messages {
+		if message.Role == provider.RoleUser && message.Content == content {
+			got++
+		}
+	}
+	if got != want {
+		t.Errorf("user message %q count = %d, want %d", content, got, want)
+	}
+}
+
+func TestMalformedToolArgumentsBecomeARecoverableToolResult(t *testing.T) {
+	call := provider.ToolCall{
+		ID:        "c1",
+		Name:      "read",
+		Arguments: provider.ToolArguments(`{"path":`),
+	}
+	p := providertest.New(providertest.Calls("", call), providertest.Text("recovered"))
+	registry, err := builtin.Registry(nil)
+	if err != nil {
+		t.Fatalf("builtin.Registry: %v", err)
+	}
+	fixture := newFixture(t, nil)
+	store := &checkingStore{}
+	a := agent.New(p, registry, agent.Options{
+		Executor: fixture.exec,
+		Store:    store,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err := a.Run(context.Background(), agent.NewSession("s1", "w1"), "read it"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	messages := store.Messages()
+	if len(messages) != 4 {
+		t.Fatalf("stored messages = %d, want user, assistant, tool result, assistant", len(messages))
+	}
+	if !messages[2].IsError || messages[2].ToolCallID != "c1" {
+		t.Errorf("tool result = %+v, want a recoverable c1 error", messages[2])
+	}
+	if messages[3].Content != "recovered" {
+		t.Errorf("final assistant message = %+v", messages[3])
 	}
 }
 

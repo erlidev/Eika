@@ -62,11 +62,25 @@ project also has a host directory its workspaces bind-mount.
 | `name` | string, required | The project name. It is also the hub repository's directory, so it may not contain a slash or `..`. |
 | `kind` | `remote` or `local`, required | Where the code comes from. |
 | `remote_url` | string | Required for `remote`. The upstream the hub mirrors. |
+| `remote_username_env` | string | Optional for `remote`. The `EIKA_*` environment variable that holds the upstream username. Set it with `remote_password_env`. |
+| `remote_password_env` | string | Optional for `remote`. The `EIKA_*` environment variable that holds the upstream password or token. Set it with `remote_username_env`. |
 | `host_path` | string | Required for `local`. An absolute path on the Docker host, bind-mounted at the workspace root. |
 | `default_branch` | string | The branch a workspace uses when it names none. Defaults to `main`. |
 
-`201` with the `Project`. `400` for a missing or malformed field and for a
-remote the hub cannot mirror; `409` when the name is taken.
+`remote_url` must not contain userinfo, a query string, or a fragment. These
+URL parts can expose credentials in stored data, API responses, logs, and Git
+arguments. For a private HTTPS remote, put the username and password or token
+in the harness environment and send only their variable names. Public remotes
+omit both fields.
+
+When Eika upgrades an old project whose remote URL has one of these parts, it
+removes the unsafe part and sets the references to `EIKA_GIT_USERNAME` and
+`EIKA_GIT_PASSWORD`. Set these variables in the harness environment before
+the next fetch or push. Public old URLs without these parts do not change.
+
+`201` with the `Project`. `400` for a missing or malformed field, an incomplete
+credential pair, and a remote the hub cannot mirror; `409` when the name is
+taken.
 
 ### `GET /api/projects/{id}`
 
@@ -86,6 +100,8 @@ it holds the branches the workspaces pushed. `204`.
 | `name` | string | The project name, unique. |
 | `kind` | `remote` or `local` | Where the code comes from. |
 | `remote_url` | string, optional | The upstream, for a remote project. |
+| `remote_username_env` | string, optional | The name of the upstream username variable. This is not the variable's value. |
+| `remote_password_env` | string, optional | The name of the upstream password variable. This is not the variable's value. |
 | `host_path` | string, optional | The bind-mounted directory, for a local project. |
 | `default_branch` | string | The branch new workspaces use. |
 | `created_at` | time | When it was registered. |
@@ -243,6 +259,14 @@ commit is phase 6.
 | `created_at` | time | When it was written. |
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
 
+A provider message can include `reasoning` on an assistant entry when the
+configured endpoint preserves thinking. This value is opaque provider data
+that Eika replays; it is not assistant-visible content. A tool call's
+`arguments` is normally an object. If a model returns malformed JSON, it is a
+string with the exact malformed text, and the tool call has
+`arguments_malformed: true`. The marker is absent for valid JSON, including a
+valid top-level JSON string.
+
 ## Runs, queues, and questions
 
 One session runs at most one agent run at a time. A run outlives the request
@@ -279,6 +303,9 @@ What the session is doing and what is waiting for it.
 | `pending_steering` | string array | Steering messages the run has not delivered yet, oldest first. |
 | `pending_follow_ups` | string array | Follow-up messages waiting for the turn to end. |
 | `questions` | Question array | Questions of this session that a run is blocked on. |
+
+Accepted queue messages remain in these arrays after a run aborts or fails.
+The next run on the session receives them.
 
 ### `POST /api/runs/{id}/abort`
 

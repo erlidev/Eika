@@ -73,14 +73,20 @@ func errorOf(t *testing.T, rec *httptest.ResponseRecorder) (string, string) {
 
 // fakeHub records what the API asked of the git hub.
 type fakeHub struct {
-	mu       sync.Mutex
-	projects []string
-	mirrored map[string]string
-	initErr  error
+	mu          sync.Mutex
+	projects    []string
+	mirrored    map[string]string
+	credentials map[string]hub.Credentials
+	initErr     error
 }
 
 // newFakeHub returns an empty hub.
-func newFakeHub() *fakeHub { return &fakeHub{mirrored: map[string]string{}} }
+func newFakeHub() *fakeHub {
+	return &fakeHub{
+		mirrored:    map[string]string{},
+		credentials: map[string]hub.Credentials{},
+	}
+}
 
 // Init records that a project's repository was asked for. It rejects a name
 // no directory can have, as the real hub does, because that check is what the
@@ -99,10 +105,11 @@ func (h *fakeHub) Init(_ context.Context, project string) (string, error) {
 }
 
 // Mirror records the remote a project mirrors.
-func (h *fakeHub) Mirror(_ context.Context, project, remoteURL string, _ hub.Credentials) error {
+func (h *fakeHub) Mirror(_ context.Context, project, remoteURL string, creds hub.Credentials) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.mirrored[project] = remoteURL
+	h.credentials[project] = creds
 	return nil
 }
 

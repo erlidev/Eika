@@ -2,12 +2,23 @@ package contextfile_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/erlidev/eika/internal/contextfile"
+	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/local"
 )
+
+type statErrorExecutor struct {
+	executor.Executor
+	err error
+}
+
+func (e statErrorExecutor) Stat(context.Context, string) (executor.FileInfo, error) {
+	return executor.FileInfo{}, e.err
+}
 
 // newWorkspace returns an executor over a temporary directory holding files.
 func newWorkspace(t *testing.T, files map[string]string) *local.Executor {
@@ -130,6 +141,18 @@ func TestDiscoverReadsContent(t *testing.T) {
 	}
 	if len(files) != 1 || files[0].Content != "run make check" {
 		t.Errorf("files = %+v", files)
+	}
+}
+
+func TestDiscoverReportsStatFailure(t *testing.T) {
+	want := errors.New("daemon unavailable")
+	e := statErrorExecutor{Executor: newWorkspace(t, nil), err: want}
+	_, err := contextfile.Discover(context.Background(), e, contextfile.Options{})
+	if !errors.Is(err, want) {
+		t.Fatalf("Discover error = %v, want %v", err, want)
+	}
+	if !strings.Contains(err.Error(), "stat context file") {
+		t.Errorf("Discover error = %q, want context", err)
 	}
 }
 

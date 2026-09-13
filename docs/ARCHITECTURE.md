@@ -68,6 +68,12 @@ The pieces:
   channel of `Event` values: text deltas, assembled tool calls, usage, and a
   terminal done or error. `provider/openai` speaks Chat Completions with the
   official SDK; `provider/providertest` replays scripted responses in tests.
+  A model can set `reasoning_effort`. An OpenAI-compatible endpoint can also
+  set `preserve_thinking`; Eika then sends that extension, captures streamed
+  `reasoning_content`, and replays the reasoning with later assistant
+  messages. Preservation is enabled when the setting is absent. An endpoint
+  that rejects the extension must set it to false. It is not an OpenAI API
+  field.
 - **tool** holds the `Tool` interface and a registry. A call receives a
   `CallContext` carrying the executor, the event emitter, and the session and
   run identifiers. `tool/builtin` implements `read`, `write`, `edit`, `bash`,
@@ -93,12 +99,23 @@ until the turn ends; `QueueOneAtATime` then starts a turn with one of them and
 the turn had taken but never got a model response for leaves the conversation
 again and goes back on its queue, so the next run does not replay it. A turn
 that stops part way through a batch of tool calls still answers every call, so
-the session stays valid for the next request.
+the session stays valid for the next request. Queue acceptance closes atomically
+with the loop's final queue check. Messages accepted before an abort or failure
+stay with the session's run manager and transfer to its next run.
 
 A retryable provider failure (429, 5xx, or a transport error) is retried with
 exponential backoff, at most `MaxRetries` times, honouring `Retry-After`. The
 SDK's own retries are switched off so that one place decides. Anything else
-fails the run with a `run.error` event.
+fails the run with a `run.error` event. A retry emits `message.reset`, so a
+client discards text streamed by the failed attempt. A response is complete
+only when it has a terminal stop reason other than `length` or
+`content_filter`.
+
+Each configured model's context window is an active preflight bound. The agent
+uses the serialized system prompt, messages, and tool definitions as a
+conservative token upper bound, adds the requested output tokens, and rejects
+an oversized call before it reaches the provider. Automatic compaction remains
+deferred.
 
 Messages go to a `Store` as they are appended: `agent.MemoryStore` in tests
 and single-process runs, `session.Store` against PostgreSQL everywhere else.
@@ -119,7 +136,7 @@ a container, and a URL.
 | Table | Columns | Holds |
 |---|---|---|
 | `schema_migrations` | version, applied_at | Which embedded migrations this database carries |
-| `projects` | id, name (unique), kind (remote/local), remote_url, host_path, default_branch, created_at | A git repository Eika knows |
+| `projects` | id, name (unique), kind (remote/local), remote_url, remote_username_env, remote_password_env, host_path, default_branch, created_at | A git repository Eika knows and the names of its optional credential variables |
 | `workspaces` | id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id, created_at, updated_at | The record of one sandbox container; `state` mirrors `workspace.State` |
 | `sessions` | id, workspace_id, title, head_entry_id, parent_session_id, created_at, updated_at | One session tree and the head a run continues from |
 | `session_entries` | id, session_id, parent_id, seq, kind, payload (jsonb), commit_sha, created_at | One node of a session tree |
@@ -159,6 +176,14 @@ calls needs all three answered. `user`, `assistant`, and `tool_result`
 entries make up the conversation; `system` and `event` entries (questions,
 subagent lifecycle, compaction later) are shown in the user interface and are
 not sent to the model.
+
+An assistant message can also hold opaque reasoning data for a provider that
+must replay it. Tool arguments keep the model's exact text. Valid arguments
+are stored as their JSON value. Malformed arguments are stored as a JSON
+string with `arguments_malformed: true` and restored before the tool sees
+them. The marker distinguishes malformed text from a valid top-level JSON
+string, so bad model output cannot make an assistant entry impossible to
+write.
 
 Every assistant entry records the workspace HEAD commit the answer was
 produced at, when the caller gives `session.NewStore` a `CommitFunc` that
@@ -227,7 +252,7 @@ configuration, and calls it.
         |                                            per connection
         |  store.FinishRun(done | error | aborted)        |
         v                                                 v
-   runs.forget                                    JSON frames to the client
+   runs.finish                                    JSON frames to the client
 ```
 
 The pieces:
@@ -262,9 +287,13 @@ The pieces:
   through the executor and reports no commit when the workspace holds no
   repository. `agent.Options` in `runs.start` is the hook the later phases
   register their tools in: subagents in phase 6, search in phase 7. A run ends
-  `done`, `error`, or `aborted`, recorded with `store.FinishRun` on a context
-  that outlives the cancelled one. Stopping or deleting a workspace, deleting
-  a session, and shutting the harness down all abort the runs involved first,
+  `done`, `error`, or `aborted`, recorded with a retrying `store.FinishRun`
+  call on a context that outlives the cancelled one. If its 30-second
+  foreground window ends, the run manager continues the exact write in the
+  background and joins that retry on shutdown. Startup reconciliation aborts
+  any run row left `running` by an earlier process. Stopping or deleting
+  a workspace, deleting a session, and shutting the harness down all abort the
+  runs involved first,
   because they reach the workspace through an executor that is about to go
   away.
 - **The bus** is `event.Bus` in `internal/event`, which implements
@@ -309,10 +338,12 @@ deployment that serves the frontend from the harness needs none of them,
 because a same-origin handshake is always accepted.
 
 The deployed file is `deploy/eika.yaml`; secrets come from the environment
-(`EIKA_AUTH_TOKEN`, and the per-model `api_key_env` variables). Model API keys
-are never stored in configuration: a model declares the *name* of the
-environment variable that holds its key. `Config.String()` redacts the auth
-token and the database password so a config can be logged.
+(`EIKA_AUTH_TOKEN`, the per-model `api_key_env` variables, and optional
+`EIKA_*` git credential variables). Model API keys and remote git credentials
+are never stored in configuration or project rows. A model or remote project
+declares the *name* of the environment variable that holds its credential.
+`Config.String()` redacts the auth token and the database password so a config
+can be logged.
 
 ## Sandboxes
 
@@ -414,7 +445,11 @@ network named by `sandbox_network`. With an empty `sandbox_network` the daemon
 port is published on `127.0.0.1` instead, which is what a harness running on
 the host in `make dev` needs. `List` finds containers by label and `Inspect`
 recovers a workspace's tokens from the container's environment, so the harness
-reconciles with what is actually running after a restart.
+reconciles with what is actually running after a restart. Reconciliation marks
+a workspace `gone` only when Docker reports that its container does not exist.
+An inspection or daemon failure stops reconciliation and keeps every recorded
+state, so a temporary Docker failure does not become a destructive state
+change.
 
 ### The git hub
 
@@ -437,9 +472,20 @@ rather than through a shell. The commit the workspace starts from is returned
 as its base commit.
 
 Upstream remotes are the harness's business alone: `Mirror` fetches every
-branch of a remote into the hub and `Push` sends a refspec back. Both pass the
-credentials to git through the environment with a one-line credential helper,
-so a token is never written to disk.
+branch of a remote into the hub and `Push` sends a refspec back. A private
+project stores only the names of matched `EIKA_*` username and password
+variables. The API rejects credentials in `remote_url`. The hub resolves the
+variables for each git command and passes their values through the process
+environment with a one-line credential helper. The values are never stored,
+returned by the API, written to disk, or put in a process argument.
+
+The API also rejects URL query strings and fragments because they can hold
+tokens. Migration `0002_remote_credentials` removes userinfo, query strings,
+and fragments from old remote URLs. An affected remote project receives the
+generic `EIKA_GIT_USERNAME` and `EIKA_GIT_PASSWORD` references. An operator
+must set those two variables before Eika fetches or pushes that project again.
+A public legacy URL that has none of these credential indicators stays
+unchanged and receives no credential references.
 
 ## Compose topology
 

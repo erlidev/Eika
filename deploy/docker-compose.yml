@@ -24,6 +24,10 @@ services:
       EIKA_HUB_ROOT: "/var/lib/eika/hub"
       EIKA_HUB_URL: "http://eika:8080"
       EIKA_AUTH_TOKEN: "${EIKA_AUTH_TOKEN:?set EIKA_AUTH_TOKEN in deploy/.env}"
+      # Optional credentials for private git remotes. Project records name
+      # these variables; they never store their values.
+      EIKA_GIT_USERNAME: "${EIKA_GIT_USERNAME:-}"
+      EIKA_GIT_PASSWORD: "${EIKA_GIT_PASSWORD:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     ports:
       - "127.0.0.1:${EIKA_PORT:-8080}:8080"

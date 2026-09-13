@@ -62,6 +62,19 @@ type Model struct {
 	ContextWindow int `yaml:"context_window"`
 	// MaxOutput is the maximum number of tokens the model may generate.
 	MaxOutput int `yaml:"max_output"`
+	// ReasoningEffort is the Chat Completions reasoning_effort value. Empty
+	// leaves the choice to the model endpoint.
+	ReasoningEffort string `yaml:"reasoning_effort"`
+	// PreserveThinking controls the compatible preserve_thinking extension.
+	// Nil means enabled; an endpoint that rejects the extension must set false.
+	PreserveThinking *bool `yaml:"preserve_thinking"`
+}
+
+// ShouldPreserveThinking returns the effective preserve_thinking value. The
+// extension is enabled when the field is absent and can be explicitly disabled
+// for an incompatible endpoint.
+func (m Model) ShouldPreserveThinking() bool {
+	return m.PreserveThinking == nil || *m.PreserveThinking
 }
 
 // ErrNoConfigFile reports that a named configuration file does not exist.
@@ -228,10 +241,23 @@ func (c Config) Validate() error {
 			return fmt.Errorf("validate config: model %s has a non-positive context_window", m.Name)
 		case m.MaxOutput <= 0:
 			return fmt.Errorf("validate config: model %s has a non-positive max_output", m.Name)
+		case !validReasoningEffort(m.ReasoningEffort):
+			return fmt.Errorf("validate config: model %s has invalid reasoning_effort %q", m.Name, m.ReasoningEffort)
 		}
 		seen[m.Name] = true
 	}
 	return nil
+}
+
+// validReasoningEffort reports whether effort is a known Chat Completions
+// value. The empty value asks the endpoint to use its default.
+func validReasoningEffort(effort string) bool {
+	switch effort {
+	case "", "none", "minimal", "low", "medium", "high", "xhigh", "max":
+		return true
+	default:
+		return false
+	}
 }
 
 // Model returns the configured model with the given name.
@@ -259,8 +285,9 @@ func (c Config) String() string {
 		if i > 0 {
 			b.WriteByte(' ')
 		}
-		fmt.Fprintf(&b, "%s@%s(api_key_env=%s context_window=%d max_output=%d)",
-			m.Name, m.BaseURL, m.APIKeyEnv, m.ContextWindow, m.MaxOutput)
+		fmt.Fprintf(&b, "%s@%s(api_key_env=%s context_window=%d max_output=%d reasoning_effort=%s preserve_thinking=%t)",
+			m.Name, m.BaseURL, m.APIKeyEnv, m.ContextWindow, m.MaxOutput,
+			m.ReasoningEffort, m.ShouldPreserveThinking())
 	}
 	b.WriteString("]}")
 	return b.String()

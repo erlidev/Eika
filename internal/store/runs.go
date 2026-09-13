@@ -62,6 +62,17 @@ func (s *Store) FinishRun(ctx context.Context, id string, state RunState, runErr
 	return nil
 }
 
+// AbortRunningRuns records every run left active by an earlier harness
+// process as aborted. Call it once during startup before new runs can begin.
+func (s *Store) AbortRunningRuns(ctx context.Context) (int64, error) {
+	const q = `UPDATE runs SET state = $1, error = '', finished_at = now() WHERE state = $2`
+	tag, err := s.pool.Exec(ctx, q, RunAborted, RunRunning)
+	if err != nil {
+		return 0, wrap("abort stale runs", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // Run returns one run by id.
 func (s *Store) Run(ctx context.Context, id string) (Run, error) {
 	row := s.pool.QueryRow(ctx, `SELECT `+runColumns+` FROM runs WHERE id = $1`, id)

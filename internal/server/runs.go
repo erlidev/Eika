@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -27,6 +28,78 @@ const (
 // finishTimeout bounds the database write that records how a run ended, which
 // happens after the request that started the run is long gone.
 const finishTimeout = 30 * time.Second
+
+const finishRetryBackoff = 100 * time.Millisecond
+
+type queuedMessages struct {
+	steering  []string
+	followUps []string
+}
+
+// finishRetries owns final run-state writes that outlive their foreground
+// retry window. It cancels and joins every retry before the store closes.
+type finishRetries struct {
+	mu      sync.Mutex
+	stopped bool
+	nextID  uint64
+	cancels map[uint64]context.CancelFunc
+	wg      sync.WaitGroup
+}
+
+func newFinishRetries() *finishRetries {
+	return &finishRetries{cancels: make(map[uint64]context.CancelFunc)}
+}
+
+// run retries in the foreground first. If that context ends, it continues
+// the same idempotent write in an owned background goroutine.
+func (r *finishRetries) run(ctx context.Context, backoff time.Duration, finish func(context.Context) error, complete func(error)) error {
+	err := retryFinish(ctx, backoff, finish)
+	if err == nil {
+		return nil
+	}
+	r.start(backoff, finish, complete)
+	return err
+}
+
+func (r *finishRetries) start(backoff time.Duration, finish func(context.Context) error, complete func(error)) bool {
+	ctx, cancel := context.WithCancel(context.Background())
+	r.mu.Lock()
+	if r.stopped {
+		r.mu.Unlock()
+		cancel()
+		return false
+	}
+	id := r.nextID
+	r.nextID++
+	r.cancels[id] = cancel
+	r.wg.Add(1)
+	r.mu.Unlock()
+
+	go func() {
+		defer r.wg.Done()
+		err := retryFinish(ctx, backoff, finish)
+		if complete != nil {
+			complete(err)
+		}
+		cancel()
+		r.mu.Lock()
+		delete(r.cancels, id)
+		r.mu.Unlock()
+	}()
+	return true
+}
+
+func (r *finishRetries) stop() {
+	r.mu.Lock()
+	if !r.stopped {
+		r.stopped = true
+		for _, cancel := range r.cancels {
+			cancel()
+		}
+	}
+	r.mu.Unlock()
+	r.wg.Wait()
+}
 
 // messageRequest is the body of POST /api/sessions/{id}/messages.
 type messageRequest struct {
@@ -73,6 +146,10 @@ type runs struct {
 	stopped   bool
 	bySession map[string]*activeRun
 	byID      map[string]*activeRun
+	// pending keeps accepted messages from a run that stopped before it
+	// delivered them. The next run on the session receives them.
+	pending  map[string]queuedMessages
+	finishes *finishRetries
 }
 
 // activeRun is one execution of the agent loop, from the moment its session
@@ -99,6 +176,8 @@ func newRuns(s *Server) *runs {
 		server:    s,
 		bySession: make(map[string]*activeRun),
 		byID:      make(map[string]*activeRun),
+		pending:   make(map[string]queuedMessages),
+		finishes:  newFinishRetries(),
 	}
 }
 
@@ -175,6 +254,9 @@ func (s *Server) handleSessionRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.log, http.StatusOK, body)
 		return
 	}
+	queued := s.runs.pendingFor(id)
+	body.PendingSteering = append(body.PendingSteering, queued.steering...)
+	body.PendingFollowUps = append(body.PendingFollowUps, queued.followUps...)
 	previous, err := s.deps.Store.Runs(r.Context(), id)
 	if err != nil {
 		s.fail(w, r, err)
@@ -241,19 +323,31 @@ func (r *runs) start(ctx context.Context, sessionID, text, model string) (store.
 	if err != nil {
 		return store.Run{}, err
 	}
+	configured, _ := s.cfg.Model(name)
 	// Everything a later phase adds to a run - subagent tools in phase 6,
 	// search tools in phase 7 - is registered in this Options value.
 	ag := agent.New(p, s.deps.Tools, agent.Options{
-		Model:    name,
-		Executor: ex,
-		Emitter:  s.deps.Bus,
-		Store:    sessionStore,
-		Logger:   s.log,
+		Model:            name,
+		MaxTokens:        configured.MaxOutput,
+		ContextWindow:    configured.ContextWindow,
+		ReasoningEffort:  configured.ReasoningEffort,
+		PreserveThinking: configured.ShouldPreserveThinking(),
+		Executor:         ex,
+		Emitter:          s.deps.Bus,
+		Store:            sessionStore,
+		Logger:           s.log,
 	})
 
 	row, err := s.deps.Store.StartRun(ctx, sessionID)
 	if err != nil {
 		return store.Run{}, err
+	}
+	queued := r.takePending(sessionID)
+	for _, message := range queued.steering {
+		ag.Steer(message)
+	}
+	for _, message := range queued.followUps {
+		ag.FollowUp(message)
 	}
 	active.begin(row.ID, ag)
 	r.mu.Lock()
@@ -302,7 +396,8 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 	defer close(active.done)
 	defer active.cancel()
 	runID := active.runID()
-	err := active.loop().Run(ctx, loaded, text)
+	loop := active.loop()
+	err := loop.Run(ctx, loaded, text)
 
 	state, message := store.RunDone, ""
 	switch {
@@ -313,10 +408,22 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 	}
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 	defer cancel()
-	if err := r.server.deps.Store.FinishRun(finishCtx, runID, state, message); err != nil {
-		r.server.log.Error("record finished run", "run_id", runID, "error", err)
+	finish := func(ctx context.Context) error {
+		return r.server.deps.Store.FinishRun(ctx, runID, state, message)
 	}
-	r.forget(active)
+	if err := r.finishes.run(finishCtx, finishRetryBackoff, finish, func(err error) {
+		if err != nil {
+			r.server.log.Error("record finished run in background", "run_id", runID, "error", err)
+			return
+		}
+		r.server.log.Info("finished run state recorded in background", "run_id", runID, "state", state)
+	}); err != nil {
+		r.server.log.Warn("record finished run in foreground; continuing in background", "run_id", runID, "error", err)
+	}
+	r.finish(active, queuedMessages{
+		steering:  loop.PendingSteering(),
+		followUps: loop.PendingFollowUps(),
+	})
 	r.server.log.Info("run finished", "run_id", runID, "session_id", active.sessionID, "state", state)
 }
 
@@ -335,12 +442,20 @@ func (r *runs) enqueue(ctx context.Context, sessionID, text, mode string) (store
 		}
 		return store.Run{}, conflictf("session %s has no run in progress to %s", sessionID, mode)
 	}
-	if mode == modeSteer {
-		loop.Steer(text)
-	} else {
-		loop.FollowUp(text)
+	row, err := r.server.deps.Store.Run(ctx, active.runID())
+	if err != nil {
+		return store.Run{}, err
 	}
-	return r.server.deps.Store.Run(ctx, active.runID())
+	accepted := false
+	if mode == modeSteer {
+		accepted = loop.Steer(text)
+	} else {
+		accepted = loop.FollowUp(text)
+	}
+	if !accepted {
+		return store.Run{}, conflictf("session %s has no run in progress to %s", sessionID, mode)
+	}
+	return row, nil
 }
 
 // abort stops a run and waits for its goroutine to finish, so that the row it
@@ -415,6 +530,7 @@ func (r *runs) stopAll() {
 		a.abort()
 		<-a.done
 	}
+	r.finishes.stop()
 }
 
 // active returns the run of a session, or nil when it has none.
@@ -434,6 +550,58 @@ func (r *runs) forget(a *activeRun) {
 	}
 	if id != "" {
 		delete(r.byID, id)
+	}
+}
+
+// finish keeps undelivered accepted messages for the next run and drops the
+// active run under one lock.
+func (r *runs) finish(a *activeRun, queued queuedMessages) {
+	id := a.runID()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(queued.steering) != 0 || len(queued.followUps) != 0 {
+		r.pending[a.sessionID] = queued
+	}
+	if current, ok := r.bySession[a.sessionID]; ok && current == a {
+		delete(r.bySession, a.sessionID)
+	}
+	delete(r.byID, id)
+}
+
+// pendingFor returns accepted messages that wait for the next run.
+func (r *runs) pendingFor(sessionID string) queuedMessages {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	queued := r.pending[sessionID]
+	queued.steering = append([]string(nil), queued.steering...)
+	queued.followUps = append([]string(nil), queued.followUps...)
+	return queued
+}
+
+// takePending transfers accepted messages to a new run.
+func (r *runs) takePending(sessionID string) queuedMessages {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	queued := r.pending[sessionID]
+	delete(r.pending, sessionID)
+	return queued
+}
+
+// retryFinish retries a final run-state write until it succeeds or its
+// bounded context ends. The write is idempotent.
+func retryFinish(ctx context.Context, backoff time.Duration, finish func(context.Context) error) error {
+	var err error
+	for {
+		if err = finish(ctx); err == nil {
+			return nil
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return errors.Join(err, ctx.Err())
+		}
 	}
 }
 

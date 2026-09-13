@@ -46,7 +46,7 @@ func withArguments(m provider.Message) provider.Message {
 	copy(calls, m.ToolCalls)
 	for i := range calls {
 		if len(calls[i].Arguments) == 0 {
-			calls[i].Arguments = json.RawMessage(`{}`)
+			calls[i].Arguments = provider.ToolArguments(`{}`)
 		}
 	}
 	m.ToolCalls = calls

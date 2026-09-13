@@ -3,6 +3,8 @@ package event
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/erlidev/eika/internal/provider"
 )
 
 // Payloads of the events an agent run emits. Each struct is the body of the
@@ -25,13 +27,63 @@ type MessageDelta struct {
 	Text  string `json:"text"`
 }
 
+// MessageReset is the payload of a message.reset event: the current model
+// attempt failed and any text deltas from it must be discarded.
+type MessageReset struct {
+	RunID string `json:"run_id"`
+}
+
 // ToolCall is the payload of a tool.call event: the assistant asked for a tool
 // to run with the given arguments.
 type ToolCall struct {
-	RunID     string          `json:"run_id"`
-	CallID    string          `json:"call_id"`
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"`
+	RunID     string                 `json:"run_id"`
+	CallID    string                 `json:"call_id"`
+	Name      string                 `json:"name"`
+	Arguments provider.ToolArguments `json:"arguments"`
+}
+
+// MarshalJSON marks safely quoted malformed arguments so a decoder cannot
+// confuse them with a valid top-level JSON string.
+func (c ToolCall) MarshalJSON() ([]byte, error) {
+	arguments, malformed := c.Arguments.JSON()
+	return json.Marshal(struct {
+		RunID              string          `json:"run_id"`
+		CallID             string          `json:"call_id"`
+		Name               string          `json:"name"`
+		Arguments          json.RawMessage `json:"arguments"`
+		ArgumentsMalformed bool            `json:"arguments_malformed,omitempty"`
+	}{
+		RunID:              c.RunID,
+		CallID:             c.CallID,
+		Name:               c.Name,
+		Arguments:          arguments,
+		ArgumentsMalformed: malformed,
+	})
+}
+
+// UnmarshalJSON restores exact arguments using arguments_malformed.
+func (c *ToolCall) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		RunID              string          `json:"run_id"`
+		CallID             string          `json:"call_id"`
+		Name               string          `json:"name"`
+		Arguments          json.RawMessage `json:"arguments"`
+		ArgumentsMalformed bool            `json:"arguments_malformed"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	arguments, err := provider.DecodeToolArguments(wire.Arguments, wire.ArgumentsMalformed)
+	if err != nil {
+		return err
+	}
+	*c = ToolCall{
+		RunID:     wire.RunID,
+		CallID:    wire.CallID,
+		Name:      wire.Name,
+		Arguments: arguments,
+	}
+	return nil
 }
 
 // ToolOutput is the payload of a tool.output event: incremental output from a

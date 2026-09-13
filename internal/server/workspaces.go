@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -244,8 +245,10 @@ func (s *Server) destroyWorkspace(ctx context.Context, ws store.Workspace) error
 		if err := s.deps.Workspaces.Destroy(ctx, &host); err != nil {
 			return err
 		}
-	} else {
+	} else if errors.Is(err, workspace.ErrNoWorkspace) {
 		s.log.Warn("workspace container is already gone", "workspace_id", ws.ID, "error", err)
+	} else {
+		return err
 	}
 	if err := s.deps.Store.DeleteWorkspace(ctx, ws.ID); err != nil {
 		return err

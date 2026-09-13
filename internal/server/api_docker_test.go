@@ -166,12 +166,14 @@ func (a *api) waitQuestion(t *testing.T, sessionID string) builtin.Question {
 // with the handlers so that a change to a handler's struct that changes the
 // JSON fails a test instead of passing quietly.
 type projectWire struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Kind          string `json:"kind"`
-	RemoteURL     string `json:"remote_url"`
-	HostPath      string `json:"host_path"`
-	DefaultBranch string `json:"default_branch"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Kind              string `json:"kind"`
+	RemoteURL         string `json:"remote_url"`
+	RemoteUsernameEnv string `json:"remote_username_env"`
+	RemotePasswordEnv string `json:"remote_password_env"`
+	HostPath          string `json:"host_path"`
+	DefaultBranch     string `json:"default_branch"`
 }
 
 type projectsWire struct {
@@ -299,6 +301,39 @@ func TestProjectRoutes(t *testing.T) {
 	}
 }
 
+func TestPrivateRemoteCredentialsUseEnvironmentReferences(t *testing.T) {
+	a := newAPI(t)
+	t.Setenv("EIKA_TEST_GIT_USER", "git-user")
+	t.Setenv("EIKA_TEST_GIT_PASSWORD", "private-token")
+
+	rec := request(t, a.Server, "POST", "/api/projects", map[string]any{
+		"name":                "private",
+		"kind":                "remote",
+		"remote_url":          "https://example.invalid/private.git",
+		"remote_username_env": "EIKA_TEST_GIT_USER",
+		"remote_password_env": "EIKA_TEST_GIT_PASSWORD",
+	})
+	created := decodeBody[projectWire](t, rec, 201)
+	if created.RemoteUsernameEnv != "EIKA_TEST_GIT_USER" || created.RemotePasswordEnv != "EIKA_TEST_GIT_PASSWORD" {
+		t.Errorf("credential environments = %q, %q", created.RemoteUsernameEnv, created.RemotePasswordEnv)
+	}
+	if strings.Contains(rec.Body.String(), "private-token") {
+		t.Errorf("response exposed the resolved secret: %s", rec.Body.String())
+	}
+	creds := a.hub.credentials["private"]
+	if creds.UsernameEnv != "EIKA_TEST_GIT_USER" || creds.PasswordEnv != "EIKA_TEST_GIT_PASSWORD" {
+		t.Errorf("hub credentials = %+v, want the environment references", creds)
+	}
+	stored, err := a.store.Project(t.Context(), created.ID)
+	if err != nil {
+		t.Fatalf("read project: %v", err)
+	}
+	if stored.RemoteURL != "https://example.invalid/private.git" ||
+		stored.RemoteUsernameEnv != "EIKA_TEST_GIT_USER" || stored.RemotePasswordEnv != "EIKA_TEST_GIT_PASSWORD" {
+		t.Errorf("stored project = %+v", stored)
+	}
+}
+
 func TestProjectRoutesRejectBadRequests(t *testing.T) {
 	a := newAPI(t)
 	existing, _ := a.newProject(t, "taken")
@@ -311,6 +346,12 @@ func TestProjectRoutesRejectBadRequests(t *testing.T) {
 	}{
 		{"unknown kind", map[string]any{"name": "x", "kind": "svn"}, 400, "invalid_request"},
 		{"remote without a url", map[string]any{"name": "x", "kind": "remote"}, 400, "invalid_request"},
+		{"remote with url credentials", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://token@example.test/repo.git"}, 400, "invalid_request"},
+		{"remote with a url query", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git?token=private"}, 400, "invalid_request"},
+		{"remote with an empty url query", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git?"}, 400, "invalid_request"},
+		{"remote with a url fragment", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git#private"}, 400, "invalid_request"},
+		{"remote with one credential reference", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git", "remote_password_env": "EIKA_GIT_PASSWORD"}, 400, "invalid_request"},
+		{"remote with an unrestricted environment", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git", "remote_username_env": "USER", "remote_password_env": "PASSWORD"}, 400, "invalid_request"},
 		{"local without a path", map[string]any{"name": "x", "kind": "local"}, 400, "invalid_request"},
 		{"local with a relative path", map[string]any{"name": "x", "kind": "local", "host_path": "rel"}, 400, "invalid_request"},
 		{"a name that is taken", map[string]any{"name": existing.Name, "kind": "local", "host_path": "/tmp"}, 409, "conflict"},
@@ -329,6 +370,59 @@ func TestProjectRoutesRejectBadRequests(t *testing.T) {
 	}
 	if rec := request(t, a.Server, "GET", "/api/projects/nope", nil); rec.Code != 404 {
 		t.Errorf("unknown project = %d, want 404", rec.Code)
+	}
+}
+
+func TestProjectCreationDoesNotReturnURLCredentialData(t *testing.T) {
+	a := newAPI(t)
+	for name, remote := range map[string]string{
+		"userinfo": "https://user:password-secret@example.test/repo.git",
+		"query":    "https://example.test/repo.git?token=query-secret",
+		"fragment": "https://example.test/repo.git#fragment-secret",
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := request(t, a.Server, "POST", "/api/projects", map[string]any{
+				"name": name, "kind": "remote", "remote_url": remote,
+			})
+			if rec.Code != 400 {
+				t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+			}
+			for _, secret := range []string{"password-secret", "query-secret", "fragment-secret"} {
+				if strings.Contains(rec.Body.String(), secret) {
+					t.Errorf("response exposed %q: %s", secret, rec.Body.String())
+				}
+			}
+		})
+	}
+}
+
+func TestProjectRoutesRemoveCredentialDataFromStoredLegacyURLs(t *testing.T) {
+	a := newAPI(t)
+	project, err := a.store.CreateProject(t.Context(), store.Project{
+		Name:              "legacy-private",
+		Kind:              store.ProjectRemote,
+		RemoteURL:         "https://user:password-secret@example.test/repo.git?token=query-secret#fragment-secret",
+		RemoteUsernameEnv: "EIKA_GIT_USERNAME",
+		RemotePasswordEnv: "EIKA_GIT_PASSWORD",
+		DefaultBranch:     "main",
+	})
+	if err != nil {
+		t.Fatalf("create legacy project: %v", err)
+	}
+
+	for _, path := range []string{"/api/projects/" + project.ID, "/api/projects"} {
+		rec := request(t, a.Server, "GET", path, nil)
+		if rec.Code != 200 {
+			t.Fatalf("GET %s status = %d, want 200: %s", path, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "https://example.test/repo.git") {
+			t.Errorf("GET %s did not return the sanitized remote: %s", path, rec.Body.String())
+		}
+		for _, secret := range []string{"password-secret", "query-secret", "fragment-secret"} {
+			if strings.Contains(rec.Body.String(), secret) {
+				t.Errorf("GET %s exposed %q: %s", path, secret, rec.Body.String())
+			}
+		}
 	}
 }
 
@@ -434,6 +528,58 @@ func TestReconcileRecordsWhatTheHostActuallyHas(t *testing.T) {
 	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID, nil), 200)
 	if got.State != "gone" {
 		t.Errorf("state = %q, want gone", got.State)
+	}
+}
+
+func TestReconcileAbortsRunsLeftByAnEarlierProcess(t *testing.T) {
+	a := newAPI(t)
+	sess := a.session(t)
+	run, err := a.store.StartRun(t.Context(), sess.ID)
+	if err != nil {
+		t.Fatalf("start stale run: %v", err)
+	}
+	if err := a.Server.Reconcile(t.Context()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	got, err := a.store.Run(t.Context(), run.ID)
+	if err != nil {
+		t.Fatalf("read run: %v", err)
+	}
+	if got.State != store.RunAborted || got.FinishedAt.IsZero() {
+		t.Errorf("run = %+v, want an aborted run with a finish time", got)
+	}
+}
+
+func TestReconcilePreservesStateWhenInspectFails(t *testing.T) {
+	a := newAPI(t)
+	project, _ := a.newProject(t, "demo")
+	ws := a.newWorkspace(t, project.ID)
+	a.host.inspectErr = fmt.Errorf("docker daemon unavailable")
+
+	if err := a.Server.Reconcile(t.Context()); err == nil {
+		t.Fatal("Reconcile succeeded when inspection failed")
+	}
+	stored, err := a.store.Workspace(t.Context(), ws.ID)
+	if err != nil {
+		t.Fatalf("read workspace: %v", err)
+	}
+	if stored.State != "running" {
+		t.Errorf("state = %q, want running", stored.State)
+	}
+}
+
+func TestDeleteWorkspacePreservesRowWhenInspectFails(t *testing.T) {
+	a := newAPI(t)
+	project, _ := a.newProject(t, "demo")
+	ws := a.newWorkspace(t, project.ID)
+	a.host.inspectErr = fmt.Errorf("docker daemon unavailable")
+
+	rec := request(t, a.Server, "DELETE", "/api/workspaces/"+ws.ID, nil)
+	if rec.Code != 500 {
+		t.Fatalf("status = %d, want 500: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := a.store.Workspace(t.Context(), ws.ID); err != nil {
+		t.Errorf("workspace row was deleted after an inspection failure: %v", err)
 	}
 }
 

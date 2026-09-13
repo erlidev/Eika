@@ -26,6 +26,12 @@ type Project struct {
 	Kind ProjectKind
 	// RemoteURL is the git remote a ProjectRemote mirrors, empty otherwise.
 	RemoteURL string
+	// RemoteUsernameEnv names the environment variable that holds the remote
+	// username. It is empty for a public remote.
+	RemoteUsernameEnv string
+	// RemotePasswordEnv names the environment variable that holds the remote
+	// password or token. It is empty for a public remote.
+	RemotePasswordEnv string
 	// HostPath is the Docker host directory a ProjectLocal lives in, empty
 	// otherwise.
 	HostPath string
@@ -36,7 +42,8 @@ type Project struct {
 
 // projectColumns is the column list every project query selects, in the order
 // scanProject reads them.
-const projectColumns = `id, name, kind, remote_url, host_path, default_branch, created_at`
+const projectColumns = `id, name, kind, remote_url, remote_username_env, remote_password_env,
+	host_path, default_branch, created_at`
 
 // CreateProject inserts p and returns it with the fields the database
 // assigned. An empty ID gets a fresh one; a duplicate name is ErrConflict.
@@ -44,10 +51,12 @@ func (s *Store) CreateProject(ctx context.Context, p Project) (Project, error) {
 	if p.ID == "" {
 		p.ID = NewID()
 	}
-	const q = `INSERT INTO projects (id, name, kind, remote_url, host_path, default_branch)
-		VALUES ($1, $2, $3, $4, $5, $6)
+	const q = `INSERT INTO projects (id, name, kind, remote_url, remote_username_env,
+		remote_password_env, host_path, default_branch)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING ` + projectColumns
-	row := s.pool.QueryRow(ctx, q, p.ID, p.Name, p.Kind, p.RemoteURL, p.HostPath, p.DefaultBranch)
+	row := s.pool.QueryRow(ctx, q, p.ID, p.Name, p.Kind, p.RemoteURL,
+		p.RemoteUsernameEnv, p.RemotePasswordEnv, p.HostPath, p.DefaultBranch)
 	out, err := scanProject(row)
 	if err != nil {
 		return Project{}, wrap("create project "+p.Name, err)
@@ -111,7 +120,8 @@ func (s *Store) DeleteProject(ctx context.Context, id string) error {
 // scanProject reads one project row.
 func scanProject(row pgx.Row) (Project, error) {
 	var p Project
-	if err := row.Scan(&p.ID, &p.Name, &p.Kind, &p.RemoteURL, &p.HostPath, &p.DefaultBranch, &p.CreatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.Kind, &p.RemoteURL, &p.RemoteUsernameEnv,
+		&p.RemotePasswordEnv, &p.HostPath, &p.DefaultBranch, &p.CreatedAt); err != nil {
 		return Project{}, err
 	}
 	p.CreatedAt = p.CreatedAt.UTC()

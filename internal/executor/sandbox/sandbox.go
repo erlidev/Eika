@@ -20,8 +20,9 @@ import (
 // DefaultRoot is where a workspace is mounted inside its sandbox.
 const DefaultRoot = "/workspace"
 
-// ErrNotFound reports that a path does not exist in the workspace.
-var ErrNotFound = errors.New("file not found")
+// ErrNotFound reports that a path does not exist in the workspace. It remains
+// as an alias for callers that used the sandbox-specific name.
+var ErrNotFound = executor.ErrNotFound
 
 // truncationNotice is appended to a command's stderr when the daemon dropped
 // output because the command produced more than it streams.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/store/storetest"
+	"github.com/jackc/pgx/v5"
 )
 
 func TestMain(m *testing.M) {
@@ -44,6 +45,78 @@ func TestOpenMigratesAndIsIdempotent(t *testing.T) {
 			t.Fatalf("%s open, create project: %v", pass, err)
 		}
 		st.Close()
+	}
+}
+
+func TestRemoteCredentialMigrationSanitizesLegacyURLs(t *testing.T) {
+	ctx := t.Context()
+	databaseURL := storetest.URL(t)
+	conn, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	_, err = conn.Exec(ctx, `
+		CREATE TABLE schema_migrations (
+			version text PRIMARY KEY,
+			applied_at timestamptz NOT NULL DEFAULT now()
+		);
+		INSERT INTO schema_migrations (version) VALUES ('0001_init');
+		CREATE TABLE projects (
+			id text PRIMARY KEY,
+			name text NOT NULL UNIQUE,
+			kind text NOT NULL,
+			remote_url text NOT NULL DEFAULT '',
+			host_path text NOT NULL DEFAULT '',
+			default_branch text NOT NULL DEFAULT 'main',
+			created_at timestamptz NOT NULL DEFAULT now()
+		);
+		INSERT INTO projects (id, name, kind, remote_url) VALUES
+			('legacy-userinfo', 'legacy-userinfo', 'remote', 'https://user:private@example.test/userinfo.git'),
+			('legacy-query', 'legacy-query', 'remote', 'https://example.test/query.git?access_token=private'),
+			('legacy-fragment', 'legacy-fragment', 'remote', 'https://example.test/fragment.git#private'),
+			('legacy-public', 'legacy-public', 'remote', 'https://example.test/public.git'),
+			('legacy-escaped', 'legacy-escaped', 'remote', 'https://example.test/repo%3Fversion.git');
+	`)
+	if err != nil {
+		_ = conn.Close(ctx)
+		t.Fatalf("prepare legacy schema: %v", err)
+	}
+	if err := conn.Close(ctx); err != nil {
+		t.Fatalf("close legacy connection: %v", err)
+	}
+
+	st, err := store.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("open migrated store: %v", err)
+	}
+	t.Cleanup(st.Close)
+	cases := []struct {
+		id          string
+		remote      string
+		credentials bool
+	}{
+		{"legacy-userinfo", "https://example.test/userinfo.git", true},
+		{"legacy-query", "https://example.test/query.git", true},
+		{"legacy-fragment", "https://example.test/fragment.git", true},
+		{"legacy-public", "https://example.test/public.git", false},
+		{"legacy-escaped", "https://example.test/repo%3Fversion.git", false},
+	}
+	for _, c := range cases {
+		project, err := st.Project(ctx, c.id)
+		if err != nil {
+			t.Fatalf("read migrated project %s: %v", c.id, err)
+		}
+		if project.RemoteURL != c.remote {
+			t.Errorf("%s remote_url = %q, want %q", c.id, project.RemoteURL, c.remote)
+		}
+		wantUsername, wantPassword := "", ""
+		if c.credentials {
+			wantUsername, wantPassword = "EIKA_GIT_USERNAME", "EIKA_GIT_PASSWORD"
+		}
+		if project.RemoteUsernameEnv != wantUsername || project.RemotePasswordEnv != wantPassword {
+			t.Errorf("%s credential environments = %q, %q, want %q, %q",
+				c.id, project.RemoteUsernameEnv, project.RemotePasswordEnv, wantUsername, wantPassword)
+		}
 	}
 }
 
@@ -179,6 +252,40 @@ func TestRunsSubagentsAndSettings(t *testing.T) {
 	}
 	if all, err := st.Settings(ctx); err != nil || len(all) != 1 {
 		t.Fatalf("Settings = %+v, %v; want one row", all, err)
+	}
+}
+
+func TestAbortRunningRunsClosesRowsFromAnEarlierProcess(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	project := newProject(t, st)
+	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+		ProjectID: project.ID, Name: "work", Branch: "main", State: "running",
+	})
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	run, err := st.StartRun(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	aborted, err := st.AbortRunningRuns(ctx)
+	if err != nil {
+		t.Fatalf("AbortRunningRuns: %v", err)
+	}
+	if aborted != 1 {
+		t.Fatalf("aborted rows = %d, want 1", aborted)
+	}
+	got, err := st.Run(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("read run: %v", err)
+	}
+	if got.State != store.RunAborted || got.FinishedAt.IsZero() {
+		t.Errorf("run = %+v, want an aborted run with a finish time", got)
 	}
 }
 

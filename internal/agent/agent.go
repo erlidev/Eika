@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/erlidev/eika/internal/event"
@@ -19,9 +21,10 @@ import (
 // Default bounds for a run. They are values rather than configuration because
 // only tests have a reason to change them.
 const (
-	defaultMaxRetries   = 3
-	defaultRetryBackoff = 500 * time.Millisecond
-	maxRetryBackoff     = 30 * time.Second
+	defaultMaxRetries    = 3
+	defaultRetryBackoff  = 500 * time.Millisecond
+	maxRetryBackoff      = 30 * time.Second
+	terminalWriteTimeout = 30 * time.Second
 )
 
 // Options configure an Agent. Executor, Emitter, Store, and Logger default to
@@ -31,10 +34,16 @@ type Options struct {
 	Model string
 	// MaxTokens bounds one response. Zero leaves it to the provider.
 	MaxTokens int
+	// ContextWindow bounds the input and requested output of one model call.
+	// Zero disables the preflight bound.
+	ContextWindow int
 	// Temperature overrides the model default when it is not nil.
 	Temperature *float64
 	// ReasoningEffort selects how much a reasoning model thinks.
 	ReasoningEffort string
+	// PreserveThinking keeps compatible Chat Completions reasoning data in
+	// assistant messages and replays it on later model calls.
+	PreserveThinking bool
 	// SystemPrompt is appended after the base prompt and the workspace's
 	// context files.
 	SystemPrompt string
@@ -66,6 +75,12 @@ type Agent struct {
 	opts      Options
 	steering  queue
 	followUps queue
+
+	mu sync.Mutex
+	// accepting is guarded by mu. Closing it in the same critical section
+	// that checks both queues prevents a message from being accepted after
+	// the loop has made its final queue check.
+	accepting bool
 }
 
 // New returns an Agent that calls p and may use the tools in r, which may be
@@ -86,15 +101,31 @@ func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	return &Agent{provider: p, tools: r, opts: opts}
+	return &Agent{provider: p, tools: r, opts: opts, accepting: true}
 }
 
 // Steer queues a message to be delivered as soon as the tool call that is
 // running finishes, before the next model call.
-func (a *Agent) Steer(msg string) { a.steering.push(msg) }
+func (a *Agent) Steer(msg string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.accepting {
+		return false
+	}
+	a.steering.push(msg)
+	return true
+}
 
 // FollowUp queues a message to be delivered after the current turn ends.
-func (a *Agent) FollowUp(msg string) { a.followUps.push(msg) }
+func (a *Agent) FollowUp(msg string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.accepting {
+		return false
+	}
+	a.followUps.push(msg)
+	return true
+}
 
 // PendingSteering returns the steering messages that have not been delivered.
 func (a *Agent) PendingSteering() []string { return a.steering.pending() }
@@ -114,6 +145,10 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage string) error {
 	if err != nil {
 		return fmt.Errorf("run agent: %w", err)
 	}
+	a.mu.Lock()
+	a.accepting = true
+	a.mu.Unlock()
+	defer a.closeQueues()
 
 	msgs, origin := []string{userMessage}, (*queue)(nil)
 	if userMessage == "" {
@@ -123,11 +158,7 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage string) error {
 		if err := a.turn(ctx, s, system, msgs, origin); err != nil {
 			return err
 		}
-		count := 1
-		if a.opts.Queue == QueueAll {
-			count = 0
-		}
-		msgs, origin = a.followUps.take(count), &a.followUps
+		msgs, origin = a.nextQueued()
 		if len(msgs) == 0 {
 			return nil
 		}
@@ -163,33 +194,37 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 
 	var steered []string
 	var usage event.Usage
-	// restore undoes everything the turn took but never got a model response
-	// for: the pending messages leave the conversation and the queued copies
-	// go back where they came from.
-	restore := func() {
+	// restoreFrom keeps the durably stored prefix and takes back the suffix.
+	// Queue messages in the suffix return to the queue they came from.
+	restoreFrom := func(stored int) {
 		if pendingMark >= 0 {
-			s.Conversation.Truncate(pendingMark)
+			s.Conversation.Truncate(pendingMark + stored)
 		}
 		pending, pendingMark = nil, -1
-		if origin != nil {
-			origin.unshift(msgs)
+		originStored := min(stored, len(msgs))
+		if origin != nil && originStored < len(msgs) {
+			origin.unshift(msgs[originStored:])
 		}
-		a.steering.unshift(steered)
+		steeringStored := max(stored-len(msgs), 0)
+		if steeringStored < len(steered) {
+			a.steering.unshift(steered[steeringStored:])
+		}
+		msgs, steered, origin = nil, nil, nil
 	}
 
 	for {
-		for _, m := range a.steering.drain() {
+		for _, m := range a.drainSteering() {
 			addPending(provider.UserMessage(m))
 			steered = append(steered, m)
 		}
 		if err := ctx.Err(); err != nil {
-			restore()
+			restoreFrom(0)
 			return a.fail(ctx, s, runID, fmt.Errorf("run turn: %w", err))
 		}
 
 		reply, turnUsage, stop, err := a.call(ctx, s, runID, system)
 		if err != nil {
-			restore()
+			restoreFrom(0)
 			return a.fail(ctx, s, runID, err)
 		}
 		usage.InputTokens += turnUsage.InputTokens
@@ -197,14 +232,19 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 		usage.TotalTokens += turnUsage.TotalTokens
 		// The model has seen the pending messages; they are delivered for
 		// good and can be persisted.
-		for _, m := range pending {
+		for i, m := range pending {
 			if err := a.store(ctx, s, m); err != nil {
-				return err
+				restoreFrom(i)
+				return a.fail(ctx, s, runID, err)
 			}
 		}
 		pending, pendingMark = nil, -1
 		msgs, steered, origin = nil, nil, nil
-		if err := a.append(ctx, s, reply); err != nil {
+		appendReply := a.append
+		if len(reply.ToolCalls) != 0 {
+			appendReply = a.appendTerminal
+		}
+		if err := appendReply(ctx, s, reply); err != nil {
 			return err
 		}
 
@@ -217,16 +257,17 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 		for i, call := range reply.ToolCalls {
 			if err := ctx.Err(); err != nil {
 				err = fmt.Errorf("run turn: %w", err)
-				a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err)
+				err = errors.Join(err, a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err))
 				return a.fail(ctx, s, runID, err)
 			}
 			result, err := a.callTool(ctx, s, runID, call)
 			if err != nil {
-				a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err)
+				err = errors.Join(err, a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err))
 				return a.fail(ctx, s, runID, err)
 			}
-			if err := a.append(ctx, s, result); err != nil {
-				return err
+			if err := a.appendTerminal(ctx, s, result); err != nil {
+				err = errors.Join(err, a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err))
+				return a.fail(ctx, s, runID, err)
 			}
 		}
 	}
@@ -235,36 +276,45 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 // abandonToolCalls answers the calls a failed turn never ran. Every tool call
 // in an assistant message needs a result, or the next request to the model is
 // malformed and the session cannot be resumed.
-func (a *Agent) abandonToolCalls(ctx context.Context, s *Session, runID string, calls []provider.ToolCall, cause error) {
+func (a *Agent) abandonToolCalls(ctx context.Context, s *Session, runID string, calls []provider.ToolCall, cause error) error {
+	terminalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteTimeout)
+	defer cancel()
+	var joined error
 	for _, c := range calls {
 		content := fmt.Sprintf("the run stopped before this tool call finished: %v", cause)
-		a.emit(ctx, s, event.TypeToolResult, event.ToolResult{
+		a.emit(terminalCtx, s, event.TypeToolResult, event.ToolResult{
 			RunID:   runID,
 			CallID:  c.ID,
 			Name:    c.Name,
 			Content: content,
 			IsError: true,
 		})
-		if err := a.append(ctx, s, provider.ToolResultMessage(c.ID, content, true)); err != nil {
+		if err := a.append(terminalCtx, s, provider.ToolResultMessage(c.ID, content, true)); err != nil {
 			a.opts.Logger.Error("store abandoned tool result",
 				"session_id", s.ID, "run_id", runID, "call_id", c.ID, "error", err)
+			joined = errors.Join(joined, err)
 		}
 	}
+	return joined
 }
 
 // call sends the conversation to the model, streaming the response as
 // message.delta events, and retries a retryable failure with backoff.
 func (a *Agent) call(ctx context.Context, s *Session, runID, system string) (provider.Message, provider.Usage, string, error) {
 	req := provider.Request{
-		Model:           a.opts.Model,
-		System:          system,
-		Messages:        s.Conversation.Messages(),
-		MaxTokens:       a.opts.MaxTokens,
-		Temperature:     a.opts.Temperature,
-		ReasoningEffort: a.opts.ReasoningEffort,
+		Model:            a.opts.Model,
+		System:           system,
+		Messages:         s.Conversation.Messages(),
+		MaxTokens:        a.opts.MaxTokens,
+		Temperature:      a.opts.Temperature,
+		ReasoningEffort:  a.opts.ReasoningEffort,
+		PreserveThinking: a.opts.PreserveThinking,
 	}
 	if a.tools != nil {
 		req.Tools = a.tools.Schemas()
+	}
+	if err := withinContextWindow(req, a.opts.ContextWindow); err != nil {
+		return provider.Message{}, provider.Usage{}, "", err
 	}
 
 	backoff := a.opts.RetryBackoff
@@ -279,6 +329,7 @@ func (a *Agent) call(ctx context.Context, s *Session, runID, system string) (pro
 		if !provider.Retryable(err) || attempt >= a.opts.MaxRetries {
 			return provider.Message{}, provider.Usage{}, "", err
 		}
+		a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
 		wait := min(backoff, maxRetryBackoff)
 		if after := provider.RetryAfter(err); after > wait {
 			wait = min(after, maxRetryBackoff)
@@ -301,25 +352,42 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 		return provider.Message{}, provider.Usage{}, "", fmt.Errorf("call model: %w", err)
 	}
 	var text strings.Builder
+	var reasoning strings.Builder
 	var calls []provider.ToolCall
 	var usage provider.Usage
 	var stop string
+	done := false
 	for e := range events {
+		if done {
+			return provider.Message{}, provider.Usage{}, "", errors.New("call model: provider sent an event after completion")
+		}
 		switch e.Kind {
 		case provider.KindTextDelta:
 			text.WriteString(e.Text)
 			a.emit(ctx, s, event.TypeMessageDelta, event.MessageDelta{RunID: runID, Text: e.Text})
+		case provider.KindReasoningDelta:
+			reasoning.WriteString(e.ReasoningDelta)
 		case provider.KindToolCall:
 			calls = append(calls, e.ToolCall)
 		case provider.KindUsage:
 			usage = e.Usage
 		case provider.KindDone:
 			stop = e.StopReason
+			done = true
 		case provider.KindError:
 			return provider.Message{}, provider.Usage{}, "", fmt.Errorf("call model: %w", e.Err)
 		}
 	}
-	return provider.AssistantMessage(text.String(), calls), usage, stop, nil
+	if !done {
+		return provider.Message{}, provider.Usage{}, "", errors.New("call model: provider stream closed without a completion event")
+	}
+	if stop == "" {
+		return provider.Message{}, provider.Usage{}, "", errors.New("call model: provider completion has no stop reason")
+	}
+	if stop == "length" || stop == "content_filter" {
+		return provider.Message{}, provider.Usage{}, "", fmt.Errorf("call model: incomplete response with stop reason %q", stop)
+	}
+	return provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls), usage, stop, nil
 }
 
 // callTool runs one tool call and reports it as tool.call and tool.result
@@ -370,16 +438,83 @@ func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provid
 		SessionID:   s.ID,
 		RunID:       runID,
 		CallID:      c.ID,
-	}, c.Arguments)
+	}, json.RawMessage(c.Arguments))
+}
+
+// appendTerminal records a terminal tool result on a context that survives a
+// run cancellation. A stored assistant tool call must always have one result.
+func (a *Agent) appendTerminal(ctx context.Context, s *Session, m provider.Message) error {
+	terminalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteTimeout)
+	defer cancel()
+	return a.append(terminalCtx, s, m)
+}
+
+// drainSteering atomically takes the steering accepted before this check.
+func (a *Agent) drainSteering() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.steering.drain()
+}
+
+// nextQueued selects the next user turn. Steering accepted while the final
+// model response streamed becomes a new turn. If both queues are empty, this
+// closes acceptance atomically with the final check.
+func (a *Agent) nextQueued() ([]string, *queue) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if msgs := a.steering.drain(); len(msgs) != 0 {
+		return msgs, &a.steering
+	}
+	count := 1
+	if a.opts.Queue == QueueAll {
+		count = 0
+	}
+	if msgs := a.followUps.take(count); len(msgs) != 0 {
+		return msgs, &a.followUps
+	}
+	a.accepting = false
+	return nil, nil
+}
+
+// closeQueues rejects new messages before Run returns on an error path.
+func (a *Agent) closeQueues() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.accepting = false
+}
+
+// withinContextWindow applies a conservative token upper bound. Chat
+// Completions tokenizers encode UTF-8 bytes into no more tokens than bytes;
+// using the JSON wire size also includes message and tool framing.
+func withinContextWindow(req provider.Request, limit int) error {
+	if limit <= 0 {
+		return nil
+	}
+	data, err := json.Marshal(struct {
+		System   string             `json:"system"`
+		Messages []provider.Message `json:"messages"`
+		Tools    []provider.ToolDef `json:"tools"`
+	}{req.System, req.Messages, req.Tools})
+	if err != nil {
+		return fmt.Errorf("call model: estimate context: %w", err)
+	}
+	estimated := len(data) + req.MaxTokens
+	if estimated > limit {
+		return fmt.Errorf("call model: context upper bound %d exceeds configured window %d", estimated, limit)
+	}
+	return nil
 }
 
 // append records a message in the conversation and in the store.
 func (a *Agent) append(ctx context.Context, s *Session, m provider.Message) error {
+	if err := a.store(ctx, s, m); err != nil {
+		return err
+	}
 	s.Conversation.Append(m)
-	return a.store(ctx, s, m)
+	return nil
 }
 
-// store records a message that is already in the conversation.
+// store durably records one conversation message.
 func (a *Agent) store(ctx context.Context, s *Session, m provider.Message) error {
 	if a.opts.Store == nil {
 		return nil

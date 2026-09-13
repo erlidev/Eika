@@ -7,6 +7,7 @@
 export type EventType =
   | "turn.start"
   | "message.delta"
+  | "message.reset"
   | "tool.call"
   | "tool.output"
   | "tool.result"
@@ -41,12 +42,18 @@ export type MessageDelta = {
   text: string;
 };
 
+/** MessageReset tells the client to discard text from a failed attempt. */
+export type MessageReset = {
+  run_id: string;
+};
+
 /** ToolCall is the payload of a tool.call event. */
 export type ToolCall = {
   run_id: string;
   call_id: string;
   name: string;
   arguments: unknown;
+  arguments_malformed?: boolean;
 };
 
 /** ToolOutput is the payload of a tool.output event. */
@@ -146,6 +153,7 @@ export function sessionTopic(id: string): string {
 const eventTypes: readonly EventType[] = [
   "turn.start",
   "message.delta",
+  "message.reset",
   "tool.call",
   "tool.output",
   "tool.result",

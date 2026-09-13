@@ -128,30 +128,47 @@ func (s *Server) Close() { s.runs.stopAll() }
 // the host actually has. The harness calls it on startup: a container may
 // have been stopped or removed while the harness was down.
 func (s *Server) Reconcile(ctx context.Context) error {
-	if s.deps.Store == nil || s.deps.Workspaces == nil {
+	if s.deps.Store == nil {
 		return nil
 	}
-	live, err := s.deps.Workspaces.List(ctx)
+	aborted, err := s.deps.Store.AbortRunningRuns(ctx)
 	if err != nil {
 		return err
 	}
-	states := make(map[string]workspace.State, len(live))
-	for _, ws := range live {
-		states[ws.ID] = ws.State
+	if aborted != 0 {
+		s.log.Info("stale runs aborted", "count", aborted)
+	}
+	if s.deps.Workspaces == nil {
+		return nil
 	}
 	recorded, err := s.deps.Store.Workspaces(ctx, "")
 	if err != nil {
 		return err
 	}
+	type observedWorkspace struct {
+		state       workspace.State
+		containerID string
+	}
+	observed := make(map[string]observedWorkspace, len(recorded))
 	for _, w := range recorded {
-		state := string(workspace.StateGone)
-		if live, ok := states[w.ID]; ok {
-			state = string(live)
+		host, err := s.deps.Workspaces.Inspect(ctx, w.ID)
+		if err == nil {
+			observed[w.ID] = observedWorkspace{state: host.State, containerID: host.ContainerID}
+			continue
 		}
+		if errors.Is(err, workspace.ErrNoWorkspace) {
+			observed[w.ID] = observedWorkspace{state: workspace.StateGone}
+			continue
+		}
+		return fmt.Errorf("reconcile workspace %s: %w", w.ID, err)
+	}
+	for _, w := range recorded {
+		actual := observed[w.ID]
+		state := string(actual.state)
 		if state == w.State {
 			continue
 		}
-		if err := s.deps.Store.SetWorkspaceState(ctx, w.ID, state, ""); err != nil {
+		if err := s.deps.Store.SetWorkspaceState(ctx, w.ID, state, actual.containerID); err != nil {
 			return err
 		}
 		s.workspaceState(ctx, w.ID, w.ProjectID, state)

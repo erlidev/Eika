@@ -73,6 +73,9 @@ func (grepTool) Call(ctx context.Context, c tool.CallContext, raw json.RawMessag
 		return tool.Errorf("grep: search timed out"), nil
 	}
 	text := strings.TrimRight(out.String(), "\n")
+	if res.ExitCode != 0 && res.ExitCode != 1 {
+		return searchCommandError("grep", res.ExitCode, text), nil
+	}
 	if text == "" {
 		return tool.Text(fmt.Sprintf("no matches for %q in %s", args.Pattern, path)), nil
 	}
@@ -120,6 +123,15 @@ func runSearch(ctx context.Context, c tool.CallContext, command string, args []s
 		Stderr:  out,
 	})
 	return out, res, err
+}
+
+// searchCommandError reports a command failure without mistaking diagnostic
+// output for successful search results.
+func searchCommandError(name string, exitCode int, output string) tool.Result {
+	if output == "" {
+		return tool.Errorf("%s: search command failed with exit code %d", name, exitCode)
+	}
+	return tool.Errorf("%s: search command failed with exit code %d: %s", name, exitCode, output)
 }
 
 // limitLines keeps at most n lines and says how many were dropped.

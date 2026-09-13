@@ -49,7 +49,7 @@ func Call(id, name string, args any) provider.ToolCall {
 	if err != nil {
 		panic(fmt.Sprintf("providertest: encode arguments for %s: %v", name, err))
 	}
-	return provider.ToolCall{ID: id, Name: name, Arguments: raw}
+	return provider.ToolCall{ID: id, Name: name, Arguments: provider.ToolArguments(raw)}
 }
 
 // Fail returns a step whose call fails with err before any event.

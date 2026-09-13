@@ -380,6 +380,36 @@ func TestFailedCreateLeavesNothingBehind(t *testing.T) {
 	}
 }
 
+func TestListReturnsAnInspectionFailure(t *testing.T) {
+	requireDocker(t)
+	requireImage(t)
+	id := "badlist" + fmt.Sprint(time.Now().UnixNano())
+	containerName := "misnamed-" + id
+	create := exec.Command("docker", "create",
+		"--name", containerName,
+		"--label", workspace.Label+"="+id,
+		sandboxImage,
+	)
+	if out, err := create.CombinedOutput(); err != nil {
+		t.Fatalf("create mislabeled container: %v: %s", err, out)
+	}
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "--force", containerName).Run() })
+
+	host, err := workspace.NewHost(workspace.Options{
+		DockerSocket: requireDocker(t),
+		Hub:          testHub(t),
+		Image:        sandboxImage,
+		EikadBinary:  "/not-used",
+	}, testLogger())
+	if err != nil {
+		t.Fatalf("new host: %v", err)
+	}
+	t.Cleanup(func() { _ = host.Close() })
+	if _, err := host.List(t.Context()); err == nil {
+		t.Fatal("List dropped a container that it could not inspect")
+	}
+}
+
 func TestWorkspaceFromADockerfileAndAHostPath(t *testing.T) {
 	requireDocker(t)
 	h := testHub(t)

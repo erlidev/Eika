@@ -54,9 +54,11 @@ func (findTool) Call(ctx context.Context, c tool.CallContext, raw json.RawMessag
 	}
 	path := pathOrDot(args.Path)
 
-	out, res, err := runSearch(ctx, c, "rg", []string{"--files", "--hidden", "--glob", "!.git", "--glob", args.Pattern, path})
+	command := "rg"
+	out, res, err := runSearch(ctx, c, command, []string{"--files", "--hidden", "--glob", "!.git", "--glob", args.Pattern, path})
 	if err != nil || res.ExitCode == 127 {
-		out, res, err = runSearch(ctx, c, "find", findCommandArgs(args.Pattern, path))
+		command = "find"
+		out, res, err = runSearch(ctx, c, command, findCommandArgs(args.Pattern, path))
 		if err != nil {
 			return tool.Errorf("find: %v", err), nil
 		}
@@ -65,6 +67,11 @@ func (findTool) Call(ctx context.Context, c tool.CallContext, raw json.RawMessag
 		return tool.Errorf("find: search timed out"), nil
 	}
 	text := strings.TrimRight(out.String(), "\n")
+	// ripgrep uses exit code 1 for no matches. POSIX find reports no matches
+	// with exit code 0, so any non-zero find result is a command failure.
+	if res.ExitCode != 0 && !(command == "rg" && res.ExitCode == 1) {
+		return searchCommandError("find", res.ExitCode, text), nil
+	}
 	if text == "" {
 		return tool.Text(fmt.Sprintf("no files matching %q under %s", args.Pattern, path)), nil
 	}

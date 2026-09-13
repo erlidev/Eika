@@ -68,9 +68,10 @@ type fakeHost struct {
 	// baseCommit is what Clone reports as the commit a workspace starts from.
 	baseCommit string
 	// createErr, startErr, and cloneErr fail the matching call when set.
-	createErr error
-	startErr  error
-	cloneErr  error
+	createErr  error
+	startErr   error
+	cloneErr   error
+	inspectErr error
 	// cloneHook runs before Clone answers, which is how a test acts in the
 	// middle of a creation the harness has already got a container out of.
 	cloneHook func()
@@ -153,6 +154,9 @@ func (h *fakeHost) Destroy(ctx context.Context, ws *workspace.Workspace) error {
 
 // Inspect returns one workspace.
 func (h *fakeHost) Inspect(_ context.Context, id string) (workspace.Workspace, error) {
+	if h.inspectErr != nil {
+		return workspace.Workspace{}, h.inspectErr
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	found, ok := h.workspaces[id]

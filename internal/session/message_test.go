@@ -23,21 +23,21 @@ func TestMessageEntryRoundTrip(t *testing.T) {
 		},
 		{
 			name: "assistant text",
-			msg:  provider.AssistantMessage("on it", nil),
+			msg:  provider.AssistantMessageWithReasoning("on it", "private analysis", nil),
 			kind: store.KindAssistant,
 		},
 		{
 			name: "assistant with tool calls",
 			msg: provider.AssistantMessage("looking", []provider.ToolCall{
-				{ID: "call_1", Name: "read", Arguments: json.RawMessage(`{"path":"go.mod","limit":20}`)},
-				{ID: "call_2", Name: "bash", Arguments: json.RawMessage(`{"command":"go build ./..."}`)},
+				{ID: "call_1", Name: "read", Arguments: provider.ToolArguments(`{"path":"go.mod","limit":20}`)},
+				{ID: "call_2", Name: "bash", Arguments: provider.ToolArguments(`{"command":"go build ./..."}`)},
 			}),
 			kind: store.KindAssistant,
 		},
 		{
 			name: "assistant with tool calls only",
 			msg: provider.AssistantMessage("", []provider.ToolCall{
-				{ID: "call_3", Name: "ls", Arguments: json.RawMessage(`{}`)},
+				{ID: "call_3", Name: "ls", Arguments: provider.ToolArguments(`{}`)},
 			}),
 			kind: store.KindAssistant,
 		},
@@ -83,6 +83,68 @@ func TestMessageEntryRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMalformedToolArgumentsRoundTrip(t *testing.T) {
+	t.Parallel()
+	want := provider.ToolArguments(`{"path":`)
+	msg := provider.AssistantMessage("", []provider.ToolCall{{
+		ID: "call_1", Name: "read", Arguments: want,
+	}})
+	e, err := session.MessageEntry(msg, "")
+	if err != nil {
+		t.Fatalf("MessageEntry with malformed model arguments: %v", err)
+	}
+	got, ok, err := session.Message(e)
+	if err != nil || !ok {
+		t.Fatalf("Message: %v, ok=%v", err, ok)
+	}
+	if len(got.ToolCalls) != 1 || got.ToolCalls[0].Arguments != want {
+		t.Errorf("arguments = %q, want exact malformed text %q", got.ToolCalls[0].Arguments, want)
+	}
+	var stored struct {
+		ToolCalls []struct {
+			Arguments          json.RawMessage `json:"arguments"`
+			ArgumentsMalformed bool            `json:"arguments_malformed"`
+		} `json:"tool_calls"`
+	}
+	if err := json.Unmarshal(e.Payload, &stored); err != nil {
+		t.Fatalf("decode stored payload: %v", err)
+	}
+	if len(stored.ToolCalls) != 1 || !stored.ToolCalls[0].ArgumentsMalformed {
+		t.Fatalf("stored call = %+v, want the malformed marker", stored.ToolCalls)
+	}
+}
+
+func TestJSONStringToolArgumentsRoundTripExactly(t *testing.T) {
+	t.Parallel()
+	want := provider.ToolArguments(`"value"`)
+	msg := provider.AssistantMessage("", []provider.ToolCall{{
+		ID: "call_1", Name: "accept_string", Arguments: want,
+	}})
+	e, err := session.MessageEntry(msg, "")
+	if err != nil {
+		t.Fatalf("MessageEntry with JSON string arguments: %v", err)
+	}
+	got, ok, err := session.Message(e)
+	if err != nil || !ok {
+		t.Fatalf("Message: %v, ok=%v", err, ok)
+	}
+	if len(got.ToolCalls) != 1 || got.ToolCalls[0].Arguments != want {
+		t.Errorf("arguments = %q, want exact JSON string %q", got.ToolCalls[0].Arguments, want)
+	}
+	var stored struct {
+		ToolCalls []struct {
+			Arguments          json.RawMessage `json:"arguments"`
+			ArgumentsMalformed bool            `json:"arguments_malformed"`
+		} `json:"tool_calls"`
+	}
+	if err := json.Unmarshal(e.Payload, &stored); err != nil {
+		t.Fatalf("decode stored payload: %v", err)
+	}
+	if len(stored.ToolCalls) != 1 || stored.ToolCalls[0].ArgumentsMalformed || string(stored.ToolCalls[0].Arguments) != `"value"` {
+		t.Errorf("stored call = %+v, want an unmarked JSON string", stored.ToolCalls)
+	}
+}
+
 func TestMessageSkipsNonConversationEntries(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []store.EntryKind{store.KindSystem, store.KindEvent} {
@@ -107,7 +169,7 @@ func TestMessageEntryRejectsUnknownRole(t *testing.T) {
 // they are: the store keeps the document, not the bytes it got, and a call
 // that arrived without arguments comes back as an empty object.
 func sameMessage(a, b provider.Message) bool {
-	if a.Role != b.Role || a.Content != b.Content || a.ToolCallID != b.ToolCallID || a.IsError != b.IsError {
+	if a.Role != b.Role || a.Content != b.Content || a.Reasoning != b.Reasoning || a.ToolCallID != b.ToolCallID || a.IsError != b.IsError {
 		return false
 	}
 	if len(a.ToolCalls) != len(b.ToolCalls) {
@@ -142,9 +204,9 @@ func mustJSON(v any) []byte {
 
 // arguments spells a call that carried no arguments as the empty object it is
 // stored as.
-func arguments(raw json.RawMessage) json.RawMessage {
+func arguments(raw provider.ToolArguments) json.RawMessage {
 	if len(raw) == 0 {
 		return json.RawMessage(`{}`)
 	}
-	return raw
+	return json.RawMessage(raw)
 }

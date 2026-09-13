@@ -322,8 +322,7 @@ func (h *Host) List(ctx context.Context) ([]Workspace, error) {
 	for _, s := range summaries {
 		ws, err := h.Inspect(ctx, s.Labels[Label])
 		if err != nil {
-			h.log.Warn("inspect workspace container", "container_id", s.ID, "error", err)
-			continue
+			return nil, fmt.Errorf("inspect listed workspace container %s: %w", s.ID, err)
 		}
 		out = append(out, ws)
 	}

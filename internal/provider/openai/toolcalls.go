@@ -1,7 +1,6 @@
 package openai
 
 import (
-	"encoding/json"
 	"sort"
 	"strings"
 
@@ -62,7 +61,7 @@ func (t *toolCalls) calls() []provider.ToolCall {
 		if args == "" {
 			args = "{}"
 		}
-		out = append(out, provider.ToolCall{ID: call.id, Name: call.name, Arguments: json.RawMessage(args)})
+		out = append(out, provider.ToolCall{ID: call.id, Name: call.name, Arguments: provider.ToolArguments(args)})
 	}
 	return out
 }

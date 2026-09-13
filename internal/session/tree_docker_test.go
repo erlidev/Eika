@@ -4,7 +4,6 @@ package session_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"strconv"
@@ -212,8 +211,8 @@ func TestOutlineDescribesTheWholeTree(t *testing.T) {
 
 	user := appendText(t, tree, sess.ID, provider.UserMessage("fix the build\nplease"), "")
 	calls := appendText(t, tree, sess.ID, provider.AssistantMessage("", []provider.ToolCall{
-		{ID: "call_1", Name: "read", Arguments: json.RawMessage(`{"path":"go.mod"}`)},
-		{ID: "call_2", Name: "bash", Arguments: json.RawMessage(`{"command":"go build"}`)},
+		{ID: "call_1", Name: "read", Arguments: provider.ToolArguments(`{"path":"go.mod"}`)},
+		{ID: "call_2", Name: "bash", Arguments: provider.ToolArguments(`{"command":"go build"}`)},
 	}), "commit-1")
 	appendText(t, tree, sess.ID, provider.ToolResultMessage("call_1", "module eika", false), "")
 	if err := tree.SetHead(ctx, sess.ID, user.ID); err != nil {
@@ -258,8 +257,8 @@ func TestStoreRecordsAndLoadsEveryMessageKind(t *testing.T) {
 	messages := []provider.Message{
 		provider.UserMessage("fix the build"),
 		provider.AssistantMessage("looking", []provider.ToolCall{
-			{ID: "call_1", Name: "read", Arguments: json.RawMessage(`{"path":"go.mod","limit":20}`)},
-			{ID: "call_2", Name: "bash", Arguments: json.RawMessage(`{"command":"go build ./..."}`)},
+			{ID: "call_1", Name: "read", Arguments: provider.ToolArguments(`{"path":"go.mod","limit":20}`)},
+			{ID: "call_2", Name: "bash", Arguments: provider.ToolArguments(`{"command":"go build ./..."}`)},
 		}),
 		provider.ToolResultMessage("call_1", "module github.com/erlidev/eika", false),
 		provider.ToolResultMessage("call_2", "exit status 1", true),
@@ -398,6 +397,30 @@ func TestArgumentLessToolCallSurvivesTheDatabase(t *testing.T) {
 	}
 	if got := string(messages[0].ToolCalls[0].Arguments); got != "{}" {
 		t.Errorf("arguments = %q, want an empty object", got)
+	}
+}
+
+func TestToolArgumentTextSurvivesTheDatabase(t *testing.T) {
+	tree, sess := newTree(t)
+	ctx := t.Context()
+	want := []provider.ToolCall{
+		{ID: "valid", Name: "accept_string", Arguments: provider.ToolArguments(`"value"`)},
+		{ID: "malformed", Name: "read", Arguments: provider.ToolArguments(`{"path":`)},
+	}
+	if _, err := tree.AppendMessage(ctx, sess.ID, provider.AssistantMessage("", want), ""); err != nil {
+		t.Fatalf("append calls: %v", err)
+	}
+	messages, err := tree.Messages(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	if len(messages) != 1 || len(messages[0].ToolCalls) != len(want) {
+		t.Fatalf("Messages = %+v, want both calls", messages)
+	}
+	for i, call := range messages[0].ToolCalls {
+		if call.Arguments != want[i].Arguments {
+			t.Errorf("call %s arguments = %q, want exact text %q", call.ID, call.Arguments, want[i].Arguments)
+		}
 	}
 }
 

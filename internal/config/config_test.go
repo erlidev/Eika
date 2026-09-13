@@ -94,6 +94,8 @@ models:
     api_key_env: OPENAI_API_KEY
     context_window: 400000
     max_output: 128000
+    reasoning_effort: high
+    preserve_thinking: true
 `)
 	cfg, err := config.Load(path)
 	if err != nil {
@@ -109,11 +111,39 @@ models:
 	if !ok {
 		t.Fatal("model gpt-5 not found")
 	}
-	if m.ContextWindow != 400000 || m.MaxOutput != 128000 || m.APIKeyEnv != "OPENAI_API_KEY" {
+	if m.ContextWindow != 400000 || m.MaxOutput != 128000 || m.APIKeyEnv != "OPENAI_API_KEY" || m.ReasoningEffort != "high" || !m.ShouldPreserveThinking() {
 		t.Errorf("model = %+v, want the file values", m)
 	}
 	if _, ok := cfg.Model("absent"); ok {
 		t.Error("Model reported an undeclared model as present")
+	}
+}
+
+func TestPreserveThinkingDefaultsOnAndCanBeDisabled(t *testing.T) {
+	clearEnv(t)
+	base := `
+auth_token: token
+models:
+  - name: compatible
+    base_url: http://model
+    api_key_env: MODEL_KEY
+    context_window: 1000
+    max_output: 100
+`
+	cfg, err := config.Load(writeConfig(t, base))
+	if err != nil {
+		t.Fatalf("load omitted preserve_thinking: %v", err)
+	}
+	if !cfg.Models[0].ShouldPreserveThinking() {
+		t.Error("omitted preserve_thinking is false, want true")
+	}
+
+	cfg, err = config.Load(writeConfig(t, base+"    preserve_thinking: false\n"))
+	if err != nil {
+		t.Fatalf("load explicit false preserve_thinking: %v", err)
+	}
+	if cfg.Models[0].ShouldPreserveThinking() {
+		t.Error("explicit false preserve_thinking is true, want false")
 	}
 }
 
@@ -204,6 +234,8 @@ func TestValidate(t *testing.T) {
 	noWindow.ContextWindow = 0
 	noOutput := model
 	noOutput.MaxOutput = -1
+	badEffort := model
+	badEffort.ReasoningEffort = "extreme"
 	other := model
 	other.Name = "other"
 
@@ -230,6 +262,7 @@ func TestValidate(t *testing.T) {
 		{"model without api key env", withModels(noKeyEnv), false},
 		{"model without context window", withModels(noWindow), false},
 		{"model with negative max output", withModels(noOutput), false},
+		{"model with invalid reasoning effort", withModels(badEffort), false},
 		{"duplicate model", withModels(model, model), false},
 	}
 	for _, c := range cases {

@@ -26,3 +26,9 @@ models:
     api_key_env: OPENAI_API_KEY
     context_window: 400000
     max_output: 128000
+    # Optional Chat Completions reasoning settings. preserve_thinking uses the
+    # compatible preserve_thinking and reasoning_content extension fields. It
+    # defaults to true, but the official OpenAI endpoint does not define this
+    # extension, so this example disables it.
+    # reasoning_effort: medium
+    preserve_thinking: false

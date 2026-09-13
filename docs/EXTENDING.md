@@ -170,6 +170,16 @@ Test a provider against an `httptest` server that serves its wire format, as
 `internal/provider/openai/openai_test.go` does. Test everything that consumes a
 provider with `provider/providertest`, the scripted fake.
 
+`config.Model` also supplies `reasoning_effort` and `preserve_thinking`.
+`reasoning_effort` maps to the standard Chat Completions request field.
+`preserve_thinking` is a compatible-endpoint extension, not an OpenAI API
+field. It is enabled when omitted; set it to false for an endpoint that does
+not accept it. When enabled, the OpenAI-compatible provider reads streamed
+`reasoning_content` into `KindReasoningDelta` events. The agent stores the
+assembled value in `Message.Reasoning`, and the provider sends it back as
+`reasoning_content` on later assistant messages. A new provider can map the
+provider-neutral reasoning value to its own wire format.
+
 ## Adding a search source
 
 Implement `search.Source` in `internal/search/<name>/` and register it in

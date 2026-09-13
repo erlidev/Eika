@@ -2,6 +2,7 @@ package contextfile
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -119,12 +120,18 @@ func readDir(ctx context.Context, exec executor.Executor, dir string) (File, boo
 	return File{}, false, nil
 }
 
-// read returns one file if it exists and has content. A path that cannot be
-// stat'ed is treated as absent, which is the common case; a path that exists
-// but cannot be read is an error worth reporting.
+// read returns one file if it exists and has content. A missing path is
+// skipped. Other stat and read failures are reported because silently omitting
+// workspace instructions can change agent behavior.
 func read(ctx context.Context, exec executor.Executor, p string) (File, bool, error) {
 	info, err := exec.Stat(ctx, p)
-	if err != nil || info.IsDir {
+	if errors.Is(err, executor.ErrNotFound) {
+		return File{}, false, nil
+	}
+	if err != nil {
+		return File{}, false, fmt.Errorf("stat context file %s: %w", p, err)
+	}
+	if info.IsDir {
 		return File{}, false, nil
 	}
 	data, err := exec.ReadFile(ctx, p, executor.ReadOpts{MaxBytes: maxFileBytes})
