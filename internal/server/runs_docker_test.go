@@ -5,7 +5,9 @@ package server_test
 import (
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
@@ -235,3 +237,74 @@ func TestRunRecordsAProviderFailure(t *testing.T) {
 // errNoModel is the failure the scripted provider reports when a test asks
 // for a run that cannot reach a model.
 var errNoModel = errors.New("the model endpoint is unreachable")
+
+func TestOnlyOneOfTwoConcurrentRunsStarts(t *testing.T) {
+	a := newAPI(t)
+	sess := a.session(t)
+	a.script(providertest.Text("one answer"))
+
+	// Building a run reads the database and runs a command in the workspace.
+	// The delay stands in for that: without a claim taken when the check is
+	// made, both requests get through it.
+	a.mu.Lock()
+	a.delay = 150 * time.Millisecond
+	a.mu.Unlock()
+
+	const requests = 4
+	codes := make(chan int, requests)
+	var wg sync.WaitGroup
+	for range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages",
+				map[string]any{"text": "start"})
+			codes <- rec.Code
+		}()
+	}
+	wg.Wait()
+	close(codes)
+
+	accepted, conflicts := 0, 0
+	for code := range codes {
+		switch code {
+		case 202:
+			accepted++
+		case 409:
+			conflicts++
+		default:
+			t.Errorf("status = %d, want 202 or 409", code)
+		}
+	}
+	if accepted != 1 || conflicts != requests-1 {
+		t.Fatalf("%d accepted and %d refused, want 1 and %d", accepted, conflicts, requests-1)
+	}
+
+	a.waitIdle(t, sess.ID)
+	runs, err := a.store.Runs(t.Context(), sess.ID)
+	if err != nil {
+		t.Fatalf("runs: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Errorf("run rows = %d, want 1", len(runs))
+	}
+}
+
+func TestNoRunStartsAfterTheHarnessStops(t *testing.T) {
+	a := newAPI(t)
+	sess := a.session(t)
+	a.script(providertest.Text("never asked for"))
+
+	a.Server.Close()
+	rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages", map[string]any{"text": "hi"})
+	if rec.Code != 409 {
+		t.Fatalf("status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	runs, err := a.store.Runs(t.Context(), sess.ID)
+	if err != nil {
+		t.Fatalf("runs: %v", err)
+	}
+	if len(runs) != 0 {
+		t.Errorf("run rows = %d, want none", len(runs))
+	}
+}

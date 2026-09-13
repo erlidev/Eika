@@ -3,6 +3,7 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,6 +25,21 @@ import (
 func request(t *testing.T, s *server.Server, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	return requestWith(t, s, method, path, body, "Bearer "+testToken)
+}
+
+// requestOn sends one API request on a context of the caller's choosing,
+// which is how a test stands in for a client that gave up.
+func requestOn(t *testing.T, ctx context.Context, s *server.Server, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("encode request body: %v", err)
+	}
+	r := httptest.NewRequestWithContext(ctx, method, path, bytes.NewReader(data))
+	r.Header.Set("Authorization", "Bearer "+testToken)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, r)
+	return rec
 }
 
 // decodeBody decodes a JSON response body into T, failing the test when the
@@ -55,6 +71,9 @@ type fakeHost struct {
 	createErr error
 	startErr  error
 	cloneErr  error
+	// cloneHook runs before Clone answers, which is how a test acts in the
+	// middle of a creation the harness has already got a container out of.
+	cloneHook func()
 }
 
 // fakeWorkspace is one workspace of a fakeHost.
@@ -112,8 +131,13 @@ func (h *fakeHost) Stop(_ context.Context, ws *workspace.Workspace) error {
 	return h.update(ws, workspace.StateStopped)
 }
 
-// Destroy forgets the workspace and removes its directory.
-func (h *fakeHost) Destroy(_ context.Context, ws *workspace.Workspace) error {
+// Destroy forgets the workspace and removes its directory. It honours the
+// context, as a Docker client does, so that a cleanup running on the request
+// that failed would be seen to fail with it.
+func (h *fakeHost) Destroy(ctx context.Context, ws *workspace.Workspace) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	h.mu.Lock()
 	found, ok := h.workspaces[ws.ID]
 	delete(h.workspaces, ws.ID)
@@ -151,6 +175,9 @@ func (h *fakeHost) List(context.Context) ([]workspace.Workspace, error) {
 
 // Clone reports the configured base commit without touching git.
 func (h *fakeHost) Clone(context.Context, workspace.Workspace, string, string) (string, error) {
+	if h.cloneHook != nil {
+		h.cloneHook()
+	}
 	if h.cloneErr != nil {
 		return "", h.cloneErr
 	}

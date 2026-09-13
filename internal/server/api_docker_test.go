@@ -3,6 +3,7 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -37,6 +38,9 @@ type api struct {
 
 	mu       sync.Mutex
 	provider provider.Provider
+	// delay holds up building a run's provider, which is how a test widens
+	// the window two concurrent requests race in.
+	delay time.Duration
 }
 
 // newAPI returns a server wired to a database of this test's own.
@@ -72,11 +76,13 @@ func (a *api) script(steps ...providertest.Step) *providertest.Provider {
 // buildProvider hands the run manager whatever the test scripted last.
 func (a *api) buildProvider(name string) (provider.Provider, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.provider == nil {
+	p, delay := a.provider, a.delay
+	a.mu.Unlock()
+	time.Sleep(delay)
+	if p == nil {
 		return nil, fmt.Errorf("no provider scripted for model %s", name)
 	}
-	return a.provider, nil
+	return p, nil
 }
 
 // newProject creates a local project on a directory the test owns and returns
@@ -559,5 +565,37 @@ func write(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", name, err)
+	}
+}
+
+func TestWorkspaceCreationCleansUpEvenWhenTheRequestIsGone(t *testing.T) {
+	a := newAPI(t)
+	// A remote project, because that is the kind whose workspaces clone from
+	// the hub: a local one is bind-mounted and has nothing to fetch.
+	project := decodeBody[projectWire](t, request(t, a.Server, "POST", "/api/projects", map[string]any{
+		"name": "upstream", "kind": "remote", "remote_url": "https://example.invalid/x.git",
+	}), 201)
+
+	// The client gives up while the workspace is being filled, which is the
+	// most likely reason the creation fails at all. The container the harness
+	// already made is still its own to remove, so the cleanup must not run on
+	// the request's context.
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	a.host.cloneHook = cancel
+	a.host.cloneErr = fmt.Errorf("the hub is unreachable")
+
+	rec := requestOn(t, ctx, a.Server, "POST", "/api/workspaces",
+		map[string]any{"project_id": project.ID, "name": "work"})
+	if rec.Code == 201 {
+		t.Fatalf("the workspace was created despite the clone failing: %s", rec.Body.String())
+	}
+
+	live, err := a.host.List(t.Context())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(live) != 0 {
+		t.Errorf("host holds %d workspaces, want none", len(live))
 	}
 }

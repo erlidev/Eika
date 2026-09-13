@@ -15,6 +15,12 @@ import (
 // gitTimeout bounds one git command the API runs inside a workspace.
 const gitTimeout = 30 * time.Second
 
+// teardownTimeout bounds the work that has to finish even though the request
+// that asked for it is gone: removing a half-created workspace, and stopping
+// the runs in a workspace that is about to go away. Both leave a container,
+// a volume, or a goroutine behind if they are cut short.
+const teardownTimeout = 2 * time.Minute
+
 // workspaceBody is one workspace on the wire.
 type workspaceBody struct {
 	ID                string    `json:"id"`
@@ -181,7 +187,7 @@ func (s *Server) handleStartWorkspace(w http.ResponseWriter, r *http.Request) {
 // handleStopWorkspace stops a workspace's container, keeping its files.
 func (s *Server) handleStopWorkspace(w http.ResponseWriter, r *http.Request) {
 	s.transition(w, r, func(ctx context.Context, host *workspace.Workspace) error {
-		s.runs.stopSessionsOf(ctx, s.deps.Store, host.ID)
+		s.stopRunsIn(ctx, host.ID)
 		return s.deps.Workspaces.Stop(ctx, host)
 	})
 }
@@ -232,7 +238,7 @@ func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 // deletes its rows. A container that is already gone is not an error: the row
 // is what the user asked to be rid of.
 func (s *Server) destroyWorkspace(ctx context.Context, ws store.Workspace) error {
-	s.runs.stopSessionsOf(ctx, s.deps.Store, ws.ID)
+	s.stopRunsIn(ctx, ws.ID)
 	host, err := s.deps.Workspaces.Inspect(ctx, ws.ID)
 	if err == nil {
 		if err := s.deps.Workspaces.Destroy(ctx, &host); err != nil {
@@ -246,6 +252,16 @@ func (s *Server) destroyWorkspace(ctx context.Context, ws store.Workspace) error
 	}
 	s.workspaceState(ctx, ws.ID, ws.ProjectID, string(workspace.StateGone))
 	return nil
+}
+
+// stopRunsIn aborts every run in a workspace before the workspace goes away
+// under it. It detaches from the request for the same reason discard does: a
+// run left going would keep writing through an executor that no longer has a
+// container behind it.
+func (s *Server) stopRunsIn(ctx context.Context, workspaceID string) {
+	ctx, cancel := teardown(ctx)
+	defer cancel()
+	s.runs.stopSessionsOf(ctx, s.deps.Store, workspaceID)
 }
 
 // handleWorkspaceDiff reports what the workspace changed since it was
@@ -295,11 +311,22 @@ func (s *Server) executorFor(ctx context.Context, id string) (executor.Executor,
 	return s.deps.Workspaces.Executor(host)
 }
 
-// discard removes a workspace the harness created but could not finish.
+// discard removes a workspace the harness created but could not finish. It
+// runs on a context of its own: a client that gave up on the request is the
+// most likely reason the creation failed, and a cancelled cleanup would leave
+// the container and its volume behind for good.
 func (s *Server) discard(ctx context.Context, host workspace.Workspace) {
+	ctx, cancel := teardown(ctx)
+	defer cancel()
 	if err := s.deps.Workspaces.Destroy(ctx, &host); err != nil {
 		s.log.Error("discard half-created workspace", "workspace_id", host.ID, "error", err)
 	}
+}
+
+// teardown detaches a context from the request that carried it, keeping a
+// bound of its own so that nothing runs forever.
+func teardown(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), teardownTimeout)
 }
 
 // head reads the workspace's current HEAD commit, reporting none when the

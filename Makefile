@@ -82,10 +82,12 @@ $(ENV_FILE):
 	@echo "$(ENV_FILE) is missing: cp deploy/.env.example $(ENV_FILE) and fill it in"; exit 1
 
 # The harness runs on the host in dev, so it reaches the compose services on
-# their published 127.0.0.1 ports instead of their internal hostnames.
+# their published 127.0.0.1 ports instead of their internal hostnames, and the
+# event stream has to accept the Vite dev server's origin.
 dev-go: $(ENV_FILE)
 	@set -a; . ./$(ENV_FILE); set +a; \
 	EIKA_AUTH_TOKEN="$${EIKA_AUTH_TOKEN:-dev-token}" \
+	EIKA_ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:5173" \
 	EIKA_DATABASE_URL="postgres://$${POSTGRES_USER:-eika}:$${POSTGRES_PASSWORD}@127.0.0.1:$${POSTGRES_PORT:-5432}/$${POSTGRES_DB:-eika}?sslmode=disable" \
 	EIKA_SEARXNG_URL="http://127.0.0.1:$${SEARXNG_PORT:-8888}" \
 	$(GO) run ./cmd/eika -config deploy/eika.yaml

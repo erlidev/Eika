@@ -15,6 +15,10 @@ hub_root: "/var/lib/eika/hub"
 # The address a sandbox uses to reach the git hub, which the harness serves at
 # /git on this address.
 hub_url: "http://eika:8080"
+# Browser origins allowed to open the event stream, on top of the harness's
+# own. A deployment that serves the frontend itself needs none; `make dev`
+# adds the Vite dev server through EIKA_ALLOWED_ORIGINS.
+allowed_origins: []
 
 models:
   - name: gpt-5

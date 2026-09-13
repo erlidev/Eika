@@ -29,6 +29,7 @@ func clearEnv(t *testing.T) {
 		"EIKA_LISTEN", "EIKA_DATABASE_URL", "EIKA_DOCKER_SOCKET",
 		"EIKA_SEARXNG_URL", "EIKA_SANDBOX_IMAGE", "EIKA_SANDBOX_NETWORK",
 		"EIKA_EIKAD_BINARY", "EIKA_HUB_ROOT", "EIKA_HUB_URL", "EIKA_AUTH_TOKEN",
+		"EIKA_ALLOWED_ORIGINS",
 	} {
 		t.Setenv(name, "")
 		if err := os.Unsetenv(name); err != nil {
@@ -37,10 +38,12 @@ func clearEnv(t *testing.T) {
 	}
 }
 
-// valid returns the defaults plus the auth token every deployment must set.
+// valid returns the defaults plus what Load adds to them: the auth token
+// every deployment must set, and the origins derived from the listen address.
 func valid() config.Config {
 	c := config.Default()
 	c.AuthToken = "token"
+	c.AllowedOrigins = []string{"localhost:8080", "127.0.0.1:8080"}
 	return c
 }
 
@@ -166,6 +169,7 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 		HubRoot:        "/tmp/hub",
 		HubURL:         "http://env:9090",
 		AuthToken:      "from-env",
+		AllowedOrigins: []string{"localhost:9999", "127.0.0.1:9999"},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %v, want %v", cfg, want)
@@ -289,6 +293,63 @@ func TestStringRedactsAwkwardDatabasePasswords(t *testing.T) {
 				if strings.Contains(got, secret) {
 					t.Errorf("String() leaked %q from %q: %s", secret, dsn, got)
 				}
+			}
+		})
+	}
+}
+
+func TestAllowedOrigins(t *testing.T) {
+	cases := []struct {
+		name   string
+		listen string
+		file   string
+		env    string
+		want   []string
+	}{
+		{
+			name:   "a listen address with no host is reachable under either loopback name",
+			listen: ":8080",
+			want:   []string{"localhost:8080", "127.0.0.1:8080"},
+		},
+		{
+			name:   "a listen address with a host gives that host",
+			listen: "127.0.0.1:9000",
+			want:   []string{"127.0.0.1:9000"},
+		},
+		{
+			name:   "a configured origin is added to the harness's own",
+			listen: ":8080",
+			file:   "allowed_origins:\n  - \"ui.example\"\n",
+			want:   []string{"localhost:8080", "127.0.0.1:8080", "ui.example"},
+		},
+		{
+			name:   "a whole URL is reduced to its host",
+			listen: ":8080",
+			file:   "allowed_origins:\n  - \"https://ui.example:4443/app\"\n",
+			want:   []string{"localhost:8080", "127.0.0.1:8080", "ui.example:4443"},
+		},
+		{
+			name:   "the environment replaces the file's list",
+			listen: ":8080",
+			file:   "allowed_origins:\n  - \"from-file.example\"\n",
+			env:    "http://localhost:5173, from-env.example ",
+			want:   []string{"localhost:8080", "127.0.0.1:8080", "localhost:5173", "from-env.example"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			clearEnv(t)
+			t.Setenv("EIKA_AUTH_TOKEN", "token")
+			t.Setenv("EIKA_LISTEN", c.listen)
+			if c.env != "" {
+				t.Setenv("EIKA_ALLOWED_ORIGINS", c.env)
+			}
+			cfg, err := config.Load(writeConfig(t, c.file))
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if !reflect.DeepEqual(cfg.AllowedOrigins, c.want) {
+				t.Errorf("allowed_origins = %v, want %v", cfg.AllowedOrigins, c.want)
 			}
 		})
 	}

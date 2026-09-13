@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -38,6 +39,12 @@ type Config struct {
 	HubURL string `yaml:"hub_url"`
 	// AuthToken is the bearer token required by every API route but /healthz.
 	AuthToken string `yaml:"auth_token"`
+	// AllowedOrigins lists the browser origins that may open the event
+	// stream, on top of the harness's own. Each entry is a host pattern
+	// (`localhost:5173`, `*.example.com`); a full URL is accepted and
+	// reduced to its host. Same-origin requests are always allowed, so a
+	// deployment that serves the frontend itself needs none of these.
+	AllowedOrigins []string `yaml:"allowed_origins"`
 	// Models lists the models the harness may use, in preference order.
 	Models []Model `yaml:"models"`
 }
@@ -101,6 +108,13 @@ func Load(path string) (Config, error) {
 		}
 	}
 	cfg.applyEnv()
+	// The harness's own origin is always allowed, whatever else is
+	// configured, so that serving the frontend from the harness needs no
+	// configuration at all.
+	cfg.AllowedOrigins = append(originsOf(cfg.Listen), cfg.AllowedOrigins...)
+	for i, origin := range cfg.AllowedOrigins {
+		cfg.AllowedOrigins[i] = originHost(origin)
+	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -128,6 +142,44 @@ func (c *Config) applyEnv() {
 			*field = v
 		}
 	}
+	// A list does not fit an environment variable cleanly, but this one is
+	// short and a deployment needs it before it has a configuration file.
+	if v, ok := os.LookupEnv("EIKA_ALLOWED_ORIGINS"); ok {
+		c.AllowedOrigins = nil
+		for _, origin := range strings.Split(v, ",") {
+			if origin = strings.TrimSpace(origin); origin != "" {
+				c.AllowedOrigins = append(c.AllowedOrigins, origin)
+			}
+		}
+	}
+}
+
+// originsOf returns the browser origins that reach a harness listening on
+// addr. An address with no host is reachable on loopback under either name.
+func originsOf(addr string) []string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil
+	}
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		return []string{net.JoinHostPort("localhost", port), net.JoinHostPort("127.0.0.1", port)}
+	default:
+		return []string{net.JoinHostPort(host, port)}
+	}
+}
+
+// originHost reduces an origin to the host pattern the event stream matches
+// against, so that a deployment may write either a host or a whole URL.
+func originHost(origin string) string {
+	if !strings.Contains(origin, "://") {
+		return strings.TrimSuffix(origin, "/")
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return origin
+	}
+	return u.Host
 }
 
 // Validate reports whether the configuration is usable.
@@ -199,9 +251,10 @@ const redacted = "[REDACTED]"
 // that it is safe to log.
 func (c Config) String() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s eikad_binary=%s hub_root=%s hub_url=%s auth_token=%s models=[",
+	fmt.Fprintf(&b, "config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s eikad_binary=%s hub_root=%s hub_url=%s auth_token=%s allowed_origins=%s models=[",
 		c.Listen, redactURL(c.DatabaseURL), c.DockerSocket, c.SearxNGURL, c.SandboxImage,
-		c.SandboxNetwork, c.EikadBinary, c.HubRoot, c.HubURL, redact(c.AuthToken))
+		c.SandboxNetwork, c.EikadBinary, c.HubRoot, c.HubURL, redact(c.AuthToken),
+		strings.Join(c.AllowedOrigins, ","))
 	for i, m := range c.Models {
 		if i > 0 {
 			b.WriteByte(' ')

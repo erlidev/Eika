@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -197,5 +199,76 @@ func TestAskUserWithoutABrokerFails(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Errorf("result = %+v, want an error", res)
+	}
+}
+
+func TestARejectedAnswerNeverOutlivesItsRun(t *testing.T) {
+	// A rejected answer used to take the question out of the broker and put
+	// it back. A run ending in that window left a question nothing would ever
+	// remove, and the session reported it as pending for good.
+	for range 200 {
+		q := builtin.NewQuestions()
+		emitter := newCollector()
+		tl := askUser(t, q)
+		ctx, cancel := context.WithCancel(context.Background())
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, _ = tl.Call(ctx, tool.CallContext{Emit: emitter, SessionID: "s1"},
+				json.RawMessage(`{"question":"which?","options":["a","b"]}`))
+		}()
+		payload := emitter.asked(t)
+
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			// Not one of the options, so it is refused either way.
+			_ = q.Answer(payload.QuestionID, "c")
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			cancel()
+		}()
+		close(start)
+		wg.Wait()
+		<-done
+		cancel()
+
+		if pending := q.Pending(); len(pending) != 0 {
+			t.Fatalf("pending = %+v, want none once the run has ended", pending)
+		}
+	}
+}
+
+func TestPendingQuestionsAreOldestFirst(t *testing.T) {
+	q := builtin.NewQuestions()
+	emitter := newCollector()
+	tl := askUser(t, q)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Two runs, each waiting on a question of its own.
+	const asked = 3
+	for i := range asked {
+		go func() {
+			_, _ = tl.Call(ctx, tool.CallContext{Emit: emitter, SessionID: "s1"},
+				json.RawMessage(`{"question":"number `+strconv.Itoa(i)+`?"}`))
+		}()
+		emitter.asked(t)
+	}
+
+	pending := q.Pending()
+	if len(pending) != asked {
+		t.Fatalf("pending = %d, want %d", len(pending), asked)
+	}
+	for i := 1; i < len(pending); i++ {
+		if pending[i].AskedAt.Before(pending[i-1].AskedAt) {
+			t.Errorf("question %d was asked before question %d, so the order is wrong", i, i-1)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 )
@@ -51,22 +52,20 @@ type question struct {
 // Answer delivers the answer to a waiting question. It reports ErrNoQuestion
 // when nothing is waiting and ErrBadAnswer when the question does not accept
 // this answer.
+// A rejected answer must leave the map as it found it: taking the question
+// out and putting it back would resurrect one whose run ended in between, and
+// nothing would ever take it out again.
 func (q *Questions) Answer(id, answer string) error {
 	q.mu.Lock()
+	defer q.mu.Unlock()
 	pending, ok := q.pending[id]
-	if ok {
-		delete(q.pending, id)
-	}
-	q.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("answer question %s: %w", id, ErrNoQuestion)
 	}
 	if err := pending.accepts(answer); err != nil {
-		q.mu.Lock()
-		q.pending[id] = pending
-		q.mu.Unlock()
 		return err
 	}
+	delete(q.pending, id)
 	// The channel is buffered and the question is out of the map, so exactly
 	// one answer is delivered and no answerer ever blocks.
 	pending.answer <- answer
@@ -81,11 +80,7 @@ func (q *Questions) Pending() []Question {
 	for _, p := range q.pending {
 		out = append(out, p.Question)
 	}
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j].AskedAt.Before(out[j-1].AskedAt); j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
+	slices.SortFunc(out, func(a, b Question) int { return a.AskedAt.Compare(b.AskedAt) })
 	return out
 }
 

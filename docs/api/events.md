@@ -48,6 +48,11 @@ the connection with a policy violation, as does an unknown request type.
 Replayed events are written straight to the socket, so a long history is never
 dropped the way a slow subscriber's live events are.
 
+A replay reads the session's path while the stream keeps running, so an entry
+a run writes during the replay can arrive twice: once as the live event that
+produced it and once as a `session.message`. Deduplicate by `entry_id`, and
+treat a `session.message` for an entry you already hold as a no-op.
+
 ## Delivery
 
 One in-process `event.Bus` fans every event out to the connections subscribed

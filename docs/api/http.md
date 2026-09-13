@@ -342,7 +342,13 @@ one.
 ## Event stream
 
 `GET /api/events` upgrades to a WebSocket. The protocol, the subscription
-requests, and the replay are documented in `events.md`.
+requests, and the replay are documented in `events.md`. A replay runs
+alongside the live stream, so an entry written while it is in flight can
+arrive both ways; clients deduplicate by `entry_id`.
+
+The handshake is accepted from the harness's own origin and from any origin
+the deployment lists in `allowed_origins`. Any other `Origin` header is
+refused before the upgrade.
 
 ## Git hub
 

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -107,7 +108,9 @@ func (s *Server) createProject(ctx context.Context, req createProjectRequest) (s
 	}
 	if p.Kind == store.ProjectRemote {
 		if err := s.deps.Hub.Mirror(ctx, p.Name, p.RemoteURL, hub.Credentials{}); err != nil {
-			return store.Project{}, invalidf("mirror %s: %v", p.RemoteURL, err)
+			remote, reason := withoutCredentials(p.RemoteURL, err)
+			s.log.Error("mirror remote", "project", p.Name, "remote", remote, "error", reason)
+			return store.Project{}, invalidf("mirror %s: %s", remote, reason)
 		}
 	}
 	return s.deps.Store.CreateProject(ctx, p)
@@ -149,6 +152,26 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("project deleted", "project_id", id)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// withoutCredentials renders a remote URL and a failure about it with the
+// userinfo removed. A user may paste a token into the URL, and git echoes the
+// URL it was given, so neither an error body nor a log line may carry it
+// through unchanged.
+func withoutCredentials(raw string, err error) (remote, reason string) {
+	reason = err.Error()
+	u, parseErr := url.Parse(raw)
+	if parseErr != nil {
+		// The URL may still hold a credential, so it is described rather
+		// than printed, and anything quoting it is dropped with it.
+		return "[UNPARSEABLE]", "the remote url could not be parsed"
+	}
+	if u.User == nil {
+		return raw, reason
+	}
+	u.User = nil
+	remote = u.String()
+	return remote, strings.ReplaceAll(reason, raw, remote)
 }
 
 // asProject renders a stored project on the wire.

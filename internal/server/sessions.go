@@ -257,7 +257,11 @@ func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
 // handleDeleteSession removes a session and its entries.
 func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	s.runs.stop(r.Context(), id)
+	// The run has to stop before the rows it writes to go away, whether or
+	// not the client is still waiting for the answer.
+	stopCtx, cancel := teardown(r.Context())
+	s.runs.stop(stopCtx, id)
+	cancel()
 	if err := s.deps.Store.DeleteSession(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return

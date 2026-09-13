@@ -70,22 +70,26 @@ type runs struct {
 	server *Server
 
 	mu        sync.Mutex
+	stopped   bool
 	bySession map[string]*activeRun
 	byID      map[string]*activeRun
 }
 
-// activeRun is one execution of the agent loop.
+// activeRun is one execution of the agent loop, from the moment its session
+// is claimed. Building a run takes a database read and a command in the
+// workspace, so the claim exists before the run row and the loop do; runID
+// and loop report empty until they are there.
 type activeRun struct {
-	id          string
 	sessionID   string
 	workspaceID string
-	agent       *agent.Agent
 	cancel      context.CancelFunc
 	done        chan struct{}
 
+	mu    sync.Mutex
+	id    string
+	agent *agent.Agent
 	// aborted separates a run the user stopped from one that failed; both
 	// end with a cancelled context.
-	mu      sync.Mutex
 	aborted bool
 }
 
@@ -151,17 +155,23 @@ func (s *Server) handleSessionRun(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// A run that has only just been claimed has no row and no queues yet, so
+	// it reports as active with nothing in it rather than as no run at all.
 	if active := s.runs.active(id); active != nil {
-		run, err := s.deps.Store.Run(r.Context(), active.id)
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		reply := asRun(run)
 		body.Active = true
-		body.Run = &reply
-		body.PendingSteering = append(body.PendingSteering, active.agent.PendingSteering()...)
-		body.PendingFollowUps = append(body.PendingFollowUps, active.agent.PendingFollowUps()...)
+		if loop := active.loop(); loop != nil {
+			body.PendingSteering = append(body.PendingSteering, loop.PendingSteering()...)
+			body.PendingFollowUps = append(body.PendingFollowUps, loop.PendingFollowUps()...)
+		}
+		if runID := active.runID(); runID != "" {
+			run, err := s.deps.Store.Run(r.Context(), runID)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			reply := asRun(run)
+			body.Run = &reply
+		}
 		writeJSON(w, s.log, http.StatusOK, body)
 		return
 	}
@@ -195,12 +205,24 @@ func (r *runs) start(ctx context.Context, sessionID, text, model string) (store.
 	if err != nil {
 		return store.Run{}, err
 	}
-	r.mu.Lock()
-	_, running := r.bySession[sessionID]
-	r.mu.Unlock()
-	if running {
-		return store.Run{}, conflictf("session %s already has a run in progress", sessionID)
+
+	// The run is not bound to the request: the client gets its answer as soon
+	// as the run starts and follows the rest on the event stream.
+	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	active, err := r.reserve(sessionID, sess.WorkspaceID, cancel)
+	if err != nil {
+		cancel()
+		return store.Run{}, err
 	}
+	// Building a run reads the database and runs a command in the workspace.
+	// Until that is done and the loop is running, the reservation is what
+	// holds the session, and every way out of here releases it.
+	started := false
+	defer func() {
+		if !started {
+			r.abandon(active)
+		}
+	}()
 
 	ex, err := s.executorFor(ctx, sess.WorkspaceID)
 	if err != nil {
@@ -233,32 +255,54 @@ func (r *runs) start(ctx context.Context, sessionID, text, model string) (store.
 	if err != nil {
 		return store.Run{}, err
 	}
-	// The run is not bound to the request: the client gets its answer as soon
-	// as the run starts and follows the rest on the event stream.
-	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	active := &activeRun{
-		id:          row.ID,
-		sessionID:   sessionID,
-		workspaceID: sess.WorkspaceID,
-		agent:       ag,
-		cancel:      cancel,
-		done:        make(chan struct{}),
-	}
+	active.begin(row.ID, ag)
 	r.mu.Lock()
-	r.bySession[sessionID] = active
 	r.byID[row.ID] = active
 	r.mu.Unlock()
 
+	started = true
 	go r.drive(runCtx, active, loaded, text)
 	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", name)
 	return row, nil
+}
+
+// reserve claims a session for a run that is about to start. Claiming under
+// the lock that reads the check is what makes one run per session true:
+// building a run takes long enough that two requests would otherwise both get
+// past a check that only looked at the runs already going.
+func (r *runs) reserve(sessionID, workspaceID string, cancel context.CancelFunc) (*activeRun, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.stopped {
+		return nil, conflictf("the harness is shutting down")
+	}
+	if _, running := r.bySession[sessionID]; running {
+		return nil, conflictf("session %s already has a run in progress", sessionID)
+	}
+	active := &activeRun{
+		sessionID:   sessionID,
+		workspaceID: workspaceID,
+		cancel:      cancel,
+		done:        make(chan struct{}),
+	}
+	r.bySession[sessionID] = active
+	return active, nil
+}
+
+// abandon releases a reservation whose run never began, which frees the
+// session and releases whoever is waiting on it.
+func (r *runs) abandon(active *activeRun) {
+	r.forget(active)
+	active.cancel()
+	close(active.done)
 }
 
 // drive runs the agent loop and records how it ended.
 func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Session, text string) {
 	defer close(active.done)
 	defer active.cancel()
-	err := active.agent.Run(ctx, loaded, text)
+	runID := active.runID()
+	err := active.loop().Run(ctx, loaded, text)
 
 	state, message := store.RunDone, ""
 	switch {
@@ -269,28 +313,34 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 	}
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 	defer cancel()
-	if err := r.server.deps.Store.FinishRun(finishCtx, active.id, state, message); err != nil {
-		r.server.log.Error("record finished run", "run_id", active.id, "error", err)
+	if err := r.server.deps.Store.FinishRun(finishCtx, runID, state, message); err != nil {
+		r.server.log.Error("record finished run", "run_id", runID, "error", err)
 	}
 	r.forget(active)
-	r.server.log.Info("run finished", "run_id", active.id, "session_id", active.sessionID, "state", state)
+	r.server.log.Info("run finished", "run_id", runID, "session_id", active.sessionID, "state", state)
 }
 
-// enqueue delivers a steering or follow-up message to the run in progress.
+// enqueue delivers a steering or follow-up message to the run in progress. A
+// run that is still being built has no queue to take it yet, so it counts as
+// no run: the client retries once the run it started reports itself.
 func (r *runs) enqueue(ctx context.Context, sessionID, text, mode string) (store.Run, error) {
 	active := r.active(sessionID)
-	if active == nil {
+	var loop *agent.Agent
+	if active != nil {
+		loop = active.loop()
+	}
+	if loop == nil {
 		if _, err := r.server.deps.Store.Session(ctx, sessionID); err != nil {
 			return store.Run{}, err
 		}
 		return store.Run{}, conflictf("session %s has no run in progress to %s", sessionID, mode)
 	}
 	if mode == modeSteer {
-		active.agent.Steer(text)
+		loop.Steer(text)
 	} else {
-		active.agent.FollowUp(text)
+		loop.FollowUp(text)
 	}
-	return r.server.deps.Store.Run(ctx, active.id)
+	return r.server.deps.Store.Run(ctx, active.runID())
 }
 
 // abort stops a run and waits for its goroutine to finish, so that the row it
@@ -351,11 +401,13 @@ func (r *runs) stopSessionsOf(ctx context.Context, st *store.Store, workspaceID 
 }
 
 // stopAll aborts every run, which is what a shutting down harness does before
-// its database pool closes.
+// its database pool closes. No run starts after it: the session a late
+// request claims would outlive the pool it writes to.
 func (r *runs) stopAll() {
 	r.mu.Lock()
-	active := make([]*activeRun, 0, len(r.byID))
-	for _, a := range r.byID {
+	r.stopped = true
+	active := make([]*activeRun, 0, len(r.bySession))
+	for _, a := range r.bySession {
 		active = append(active, a)
 	}
 	r.mu.Unlock()
@@ -374,12 +426,37 @@ func (r *runs) active(sessionID string) *activeRun {
 
 // forget drops a finished run.
 func (r *runs) forget(a *activeRun) {
+	id := a.runID()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if current, ok := r.bySession[a.sessionID]; ok && current == a {
 		delete(r.bySession, a.sessionID)
 	}
-	delete(r.byID, a.id)
+	if id != "" {
+		delete(r.byID, id)
+	}
+}
+
+// begin records the run row and the loop on a reservation, which is what
+// turns it into a run the other handlers can report on and steer.
+func (a *activeRun) begin(id string, loop *agent.Agent) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.id, a.agent = id, loop
+}
+
+// runID returns the id of the run's row, empty while it is still being built.
+func (a *activeRun) runID() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.id
+}
+
+// loop returns the agent driving the run, nil while it is still being built.
+func (a *activeRun) loop() *agent.Agent {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.agent
 }
 
 // abort cancels the run and records that the stop was asked for.

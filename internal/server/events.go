@@ -48,11 +48,11 @@ type streamRequest struct {
 // handleEvents serves the event stream: one WebSocket per client, subscribed
 // to the topics it asks for, with replay of the messages it missed.
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	// A same-origin handshake is always accepted; anything else has to be an
+	// origin the deployment named, so that a page on another site cannot open
+	// the stream with a token it tricked the browser into sending.
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// The bearer token is the authentication, and a cross-origin page
-		// cannot read it. Checking the origin as well would break the Vite
-		// dev server, which serves the UI from another port.
-		InsecureSkipVerify: true,
+		OriginPatterns: s.cfg.AllowedOrigins,
 	})
 	if err != nil {
 		s.log.Warn("accept event stream", "error", err)

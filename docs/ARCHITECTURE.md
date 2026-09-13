@@ -300,6 +300,14 @@ accident. `sandbox_network` is the one field that may be empty: that is the
 development mode where sandboxes publish their daemon port on `127.0.0.1`
 instead of being reached by container name.
 
+`allowed_origins` lists the browser origins that may open the event stream,
+on top of the one derived from `listen`, which `Load` always prepends. An
+entry is a host pattern and a whole URL is reduced to its host, so a
+deployment can write either; `EIKA_ALLOWED_ORIGINS` takes a comma-separated
+list, which is what `make dev` uses to let the Vite dev server through. A
+deployment that serves the frontend from the harness needs none of them,
+because a same-origin handshake is always accepted.
+
 The deployed file is `deploy/eika.yaml`; secrets come from the environment
 (`EIKA_AUTH_TOKEN`, and the per-model `api_key_env` variables). Model API keys
 are never stored in configuration: a model declares the *name* of the

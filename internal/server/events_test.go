@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -160,5 +161,46 @@ func TestEventStreamNeedsTheToken(t *testing.T) {
 	if conn, _, err := websocket.Dial(ctx, url, nil); err == nil {
 		_ = conn.CloseNow()
 		t.Fatal("the event stream accepted a connection without a token")
+	}
+}
+
+func TestEventStreamChecksTheOrigin(t *testing.T) {
+	cfg := testConfig()
+	cfg.AllowedOrigins = []string{"app.example"}
+	s := server.New(cfg, testLogger(), server.Deps{}, server.Options{})
+	httpServer := httptest.NewServer(s.Handler())
+	defer httpServer.Close()
+	url := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/events?token=" + testToken
+
+	cases := []struct {
+		name    string
+		origin  string
+		allowed bool
+	}{
+		{"no origin, which is not a browser", "", true},
+		{"an origin the deployment allows", "https://app.example", true},
+		{"the same origin the page was served from", "http://" + strings.TrimPrefix(httpServer.URL, "http://"), true},
+		{"another site", "https://evil.example", false},
+		{"a lookalike of an allowed origin", "https://app.example.evil.test", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			opts := &websocket.DialOptions{HTTPHeader: http.Header{}}
+			if c.origin != "" {
+				opts.HTTPHeader.Set("Origin", c.origin)
+			}
+			conn, _, err := websocket.Dial(ctx, url, opts)
+			if conn != nil {
+				_ = conn.CloseNow()
+			}
+			if c.allowed && err != nil {
+				t.Errorf("dial = %v, want the handshake to succeed", err)
+			}
+			if !c.allowed && err == nil {
+				t.Error("the stream accepted a handshake from another site")
+			}
+		})
 	}
 }
