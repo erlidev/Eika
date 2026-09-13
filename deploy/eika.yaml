@@ -12,8 +12,8 @@ sandbox_image: "eika-sandbox:latest"
 sandbox_network: "eika_sandbox"
 eikad_binary: "/usr/local/share/eika/eikad"
 hub_root: "/var/lib/eika/hub"
-# The address a sandbox uses to reach the git hub. Inert until phase 4 mounts
-# the hub handler on the harness.
+# The address a sandbox uses to reach the git hub, which the harness serves at
+# /git on this address.
 hub_url: "http://eika:8080"
 
 models:

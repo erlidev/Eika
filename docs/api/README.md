@@ -8,10 +8,9 @@ same commit.
 ## Files
 
 - `http.md` — HTTP routes, one entry per route with request and response
-  fields. Lands in phase 4.
-- `events.md` — the event stream: topics, the envelope, and one entry per event
-  type. The agent run events are documented; the WebSocket transport lands in
-  phase 4.
+  fields.
+- `events.md` — the event stream: the WebSocket transport, subscription and
+  replay requests, topics, the envelope, and one entry per event type.
 - `eikad.md` — the sandbox daemon's API: exec, files, terminal, and the change
   watcher. The harness is its only client.
 
@@ -24,16 +23,19 @@ Two unauthenticated health routes, both returning `{"status": "ok"}`:
 | GET | `/healthz` | The harness process is up. Used as the container health check. |
 | GET | `/api/healthz` | The same response under the `/api` prefix the frontend uses. |
 
+Everything else under `/api` is the JSON API in `http.md`: projects,
+workspaces, sessions, runs, questions, settings, models, and the WebSocket
+event stream. All of it requires `Authorization: Bearer <token>`, where the
+token is the configured `auth_token`; `/api/events` also accepts that token as
+a query parameter, because a WebSocket handshake carries no headers a browser
+can set. The health routes are the only permanent exceptions.
+
 `eikad` serves `GET /healthz` with the same body, plus the sandbox API in
 `eikad.md`. The harness also serves the git hub at `/git/<project>.git`, which
 speaks git's Smart HTTP protocol and authenticates workspaces with HTTP basic
 auth rather than the bearer token.
 
-Every route added from phase 4 on requires `Authorization: Bearer <token>`,
-where the token is the configured `auth_token`. `/healthz` is the only
-permanent exception.
-
-The event envelope is already fixed, in `internal/event`:
+The event envelope is fixed in `internal/event`:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -44,4 +46,6 @@ The event envelope is already fixed, in `internal/event`:
 
 The type names are `turn.start`, `message.delta`, `tool.call`, `tool.output`,
 `tool.result`, `turn.end`, `run.error`, `question.asked`, `subagent.started`,
-`subagent.finished`, and `workspace.state`.
+`subagent.finished`, `workspace.state`, `session.message`, and `bus.dropped`.
+`subagent.started` and `subagent.finished` are the only ones nothing emits
+yet; they land in phase 6.

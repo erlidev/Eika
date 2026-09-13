@@ -94,7 +94,7 @@ func newFixture(t *testing.T, steps []providertest.Step, extra ...tool.Tool) *fi
 	if err != nil {
 		t.Fatalf("local.New: %v", err)
 	}
-	r, err := builtin.Registry()
+	r, err := builtin.Registry(nil)
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -574,7 +574,7 @@ func TestToolsWithoutAWorkspaceFailInsteadOfPanicking(t *testing.T) {
 		providertest.Calls("", providertest.Call("c1", "ls", map[string]any{})),
 		providertest.Text("no workspace then"),
 	})
-	registry, err := builtin.Registry()
+	registry, err := builtin.Registry(nil)
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}

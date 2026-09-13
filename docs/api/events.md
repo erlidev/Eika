@@ -5,8 +5,57 @@ Every event Eika streams uses one envelope. `type` decides the shape of
 `internal/event` and the TypeScript mirror in `web/src/api/events.ts`. Change
 all three in the same commit.
 
-The WebSocket transport and topic subscription land in phase 4. Until then the
-agent loop emits these events through an `event.Emitter`.
+## Transport
+
+`GET /api/events` upgrades to a WebSocket. It takes the bearer token as the
+`token` query parameter, because a browser cannot set a header on a handshake;
+it is the one route that does.
+
+```
+ws://<harness>/api/events?token=<auth_token>&topics=global,session:<id>&since=<entry_id>
+```
+
+| Parameter | Meaning |
+|---|---|
+| `token` | The deployment's bearer token. Required. |
+| `topics` | Comma-separated topics to subscribe to at once. Optional; a client may subscribe after connecting instead. |
+| `since` | An entry id. The session that entry belongs to is replayed from the entry after it, before any live event. Optional. |
+
+Every frame the harness sends is one JSON event in the envelope below. Every
+frame a client sends is one JSON request:
+
+### `subscribe`
+
+```json
+{"type": "subscribe", "topics": ["global", "session:s1", "workspace:w1"]}
+```
+
+Replaces the connection's topics with the ones given. At most 64 topics. A
+connection with no topics receives nothing but what it asks to have replayed.
+
+### `session.replay`
+
+```json
+{"type": "session.replay", "session_id": "s1", "since": "e4"}
+```
+
+Sends the session's current path as `session.message` events on this
+connection alone, from the root or from the entry after `since`. It is how a
+client that opens a session late, or moves the head, gets the conversation
+without a second HTTP request. `since` that names no entry on the branch ends
+the connection with a policy violation, as does an unknown request type.
+
+Replayed events are written straight to the socket, so a long history is never
+dropped the way a slow subscriber's live events are.
+
+## Delivery
+
+One in-process `event.Bus` fans every event out to the connections subscribed
+to its topic. Each subscriber has a buffered channel of its own; a client that
+stops reading loses events rather than blocking the run that produced them.
+When it reads again it first gets a `bus.dropped` event saying how many it
+missed, and then the stream continues. A client that sees one re-requests what
+it needs with `session.replay`.
 
 ## Envelope
 
@@ -17,7 +66,11 @@ agent loop emits these events through an `event.Emitter`.
 | `time` | RFC 3339 timestamp, UTC | When the event was created. |
 | `payload` | object, optional | Type-specific body. |
 
-Agent run events are published on `session:<id>`.
+There are three kinds of topic: `global`, `workspace:<id>`, and
+`session:<id>`. Agent run events and question and replay events are published
+on `session:<id>`; workspace lifecycle events on `workspace:<id>`. A
+`bus.dropped` event reaches one connection only and carries the topic
+`global`, whatever that connection subscribed to.
 
 ## Run events
 
@@ -89,8 +142,62 @@ repeat. The turn ends with `turn.end`, or with `run.error` if it failed.
 | `message` | string | What failed. |
 | `retryable` | boolean | The failure was of a retryable kind, so the run exhausted its retry budget. |
 
+### `question.asked`
+
+The run called `ask_user` and is blocked until
+`POST /api/questions/{id}/answer` delivers an answer or the run is aborted.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `run_id` | string | Identifies the turn. |
+| `session_id` | string | The session that is waiting. |
+| `call_id` | string | The `ask_user` call the answer completes. |
+| `question_id` | string | What to POST the answer to. |
+| `question` | string | The question to put to the user. |
+| `options` | string array, optional | The answers to choose from. Absent for an open question. |
+| `allow_free_text` | boolean | An answer outside `options` is accepted. |
+
+## Workspace events
+
+### `workspace.state`
+
+Published on `workspace:<id>` whenever a workspace reaches a new lifecycle
+state, including the reconciliation a harness does at startup.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `workspace_id` | string | The workspace. |
+| `project_id` | string, optional | The project it holds. |
+| `state` | string | `creating`, `running`, `stopped`, or `gone`. |
+
+## Stream events
+
+These two exist only on the stream: nothing in the agent loop emits them.
+
+### `session.message`
+
+One stored entry, sent in reply to a replay. A client renders it exactly as it
+renders a message it watched arrive live.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `session_id` | string | The session replayed. |
+| `entry_id` | string | The entry. Pass the last one you saw as `since` to resume. |
+| `parent_id` | string, optional | The entry it follows. |
+| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, or `event`. |
+| `commit` | string, optional | The workspace HEAD commit the entry was produced at. |
+| `created_at` | time | When the entry was written. |
+| `message` | object | The entry's stored payload: a provider message for the conversation kinds. |
+
+### `bus.dropped`
+
+The client read too slowly and lost events. It reaches that client alone.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `dropped` | number | How many events were lost since the last report. |
+
 ## Event types that other phases own
 
-`question.asked` (phase 4), `subagent.started` and `subagent.finished`
-(phase 6), and `workspace.state` (phase 2) have their names fixed in
+`subagent.started` and `subagent.finished` (phase 6) have their names fixed in
 `internal/event` and get their payloads documented here when they land.

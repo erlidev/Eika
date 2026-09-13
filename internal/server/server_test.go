@@ -21,7 +21,7 @@ func testLogger() *slog.Logger {
 }
 
 func TestHealth(t *testing.T) {
-	s := server.New(config.Default(), testLogger(), server.Options{})
+	s := server.New(config.Default(), testLogger(), server.Deps{}, server.Options{})
 	for _, path := range []string{"/healthz", "/api/healthz"} {
 		t.Run(path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -43,7 +43,7 @@ func TestHealth(t *testing.T) {
 }
 
 func TestUnknownRouteWithoutWebDir(t *testing.T) {
-	s := server.New(config.Default(), testLogger(), server.Options{})
+	s := server.New(config.Default(), testLogger(), server.Deps{}, server.Options{})
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
 	if rec.Code != http.StatusNotFound {
@@ -59,7 +59,7 @@ func TestWebDirServesIndexForClientRoutes(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0o700); err != nil {
 		t.Fatalf("make assets dir: %v", err)
 	}
-	s := server.New(config.Default(), testLogger(), server.Options{WebDir: dir})
+	s := server.New(config.Default(), testLogger(), server.Deps{}, server.Options{WebDir: dir})
 
 	// "/assets" is a real directory: it must render the app, not a listing.
 	for _, path := range []string{"/", "/workspaces/42", "/assets", "/assets/"} {

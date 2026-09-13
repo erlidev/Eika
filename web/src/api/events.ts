@@ -15,7 +15,9 @@ export type EventType =
   | "question.asked"
   | "subagent.started"
   | "subagent.finished"
-  | "workspace.state";
+  | "workspace.state"
+  | "session.message"
+  | "bus.dropped";
 
 /** EikaEvent is the envelope every streamed event uses. */
 export type EikaEvent = {
@@ -86,6 +88,61 @@ export type RunError = {
   retryable: boolean;
 };
 
+/** QuestionAsked is the payload of a question.asked event. */
+export type QuestionAsked = {
+  run_id: string;
+  session_id: string;
+  call_id: string;
+  question_id: string;
+  question: string;
+  options?: string[];
+  allow_free_text: boolean;
+};
+
+/** WorkspaceState is the payload of a workspace.state event. */
+export type WorkspaceState = {
+  workspace_id: string;
+  project_id?: string;
+  state: string;
+};
+
+/** EntryKind is what one session entry holds. */
+export type EntryKind = "user" | "assistant" | "tool_call" | "tool_result" | "system" | "event";
+
+/** SessionMessage is the payload of a session.message event, which a replay sends. */
+export type SessionMessage = {
+  session_id: string;
+  entry_id: string;
+  parent_id?: string;
+  kind: EntryKind;
+  commit?: string;
+  created_at: string;
+  message: unknown;
+};
+
+/** BusDropped is the payload of a bus.dropped event: this client lost events. */
+export type BusDropped = {
+  dropped: number;
+};
+
+/** StreamRequest is a message a client sends on the event stream. */
+export type StreamRequest =
+  | { type: "subscribe"; topics: string[] }
+  | { type: "session.replay"; session_id: string; since?: string };
+
+/** globalTopic is the topic of events that belong to no workspace or session. */
+export const globalTopic = "global";
+
+/** workspaceTopic names the topic carrying one workspace's events. */
+export function workspaceTopic(id: string): string {
+  return `workspace:${id}`;
+}
+
+/** sessionTopic names the topic carrying one session's events. */
+export function sessionTopic(id: string): string {
+  return `session:${id}`;
+}
+
 const eventTypes: readonly EventType[] = [
   "turn.start",
   "message.delta",
@@ -98,6 +155,8 @@ const eventTypes: readonly EventType[] = [
   "subagent.started",
   "subagent.finished",
   "workspace.state",
+  "session.message",
+  "bus.dropped",
 ];
 
 /**

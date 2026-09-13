@@ -40,5 +40,5 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	return server.New(cfg, log, server.Options{WebDir: *webDir}).Run(ctx)
+	return server.Run(ctx, cfg, log, server.Options{WebDir: *webDir})
 }

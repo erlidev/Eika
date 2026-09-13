@@ -261,11 +261,102 @@ go test -tags docker ./internal/store/... ./internal/session/...
 
 ## Adding an API endpoint
 
-Write the handler in `internal/server/` and register the route in
-`internal/server/routes.go`. Every route except `/healthz` requires the bearer
-token. Document the request and response in `docs/api/`.
+One file per resource in `internal/server/`, one registration in
+`internal/server/routes.go`, one entry in `docs/api/http.md`. Everything under
+`/api` is behind the bearer token already, so a handler never checks it.
 
-Routing exists now; auth and the rest of the API land in phase 4.
+A handler reads its input, calls the packages that do the work, and writes one
+of two things: a JSON body with `writeJSON`, or an error with `s.fail`. It
+never writes a status code by hand except `204`.
+
+This example exposes the session label the migration above added.
+
+```go
+// internal/server/labels.go
+package server
+
+import (
+	"net/http"
+	"strings"
+)
+
+// maxLabel bounds a label, because everything the API accepts is small.
+const maxLabel = 64
+
+// labelResponse is the body of GET and PUT /api/sessions/{id}/label.
+type labelResponse struct {
+	SessionID string `json:"session_id"`
+	Label     string `json:"label"`
+}
+
+// setLabelRequest is the body of PUT /api/sessions/{id}/label.
+type setLabelRequest struct {
+	Label string `json:"label"`
+}
+
+// handleSessionLabel returns what the user filed a session under.
+func (s *Server) handleSessionLabel(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.deps.Store.Session(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err) // store.ErrNotFound becomes a 404
+		return
+	}
+	writeJSON(w, s.log, http.StatusOK, labelResponse{SessionID: sess.ID, Label: sess.Label})
+}
+
+// handleSetSessionLabel files a session under a label.
+func (s *Server) handleSetSessionLabel(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[setLabelRequest](r)
+	if err != nil {
+		s.fail(w, r, err) // a malformed body is already a 400
+		return
+	}
+	label := strings.TrimSpace(req.Label)
+	if len(label) > maxLabel {
+		s.fail(w, r, invalidf("a label may be at most %d bytes", maxLabel))
+		return
+	}
+	if err := s.deps.Store.SetSessionLabel(r.Context(), r.PathValue("id"), label); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, s.log, http.StatusOK, labelResponse{SessionID: r.PathValue("id"), Label: label})
+}
+```
+
+Register both in `resourceRoutes`, which holds every route that reads or
+writes the database:
+
+```go
+// internal/server/routes.go, in resourceRoutes
+api.HandleFunc("GET /api/sessions/{id}/label", s.handleSessionLabel)
+api.HandleFunc("PUT /api/sessions/{id}/label", s.handleSetSessionLabel)
+```
+
+Rules that keep the surface one surface:
+
+- Request and response types live next to the handler, with `snake_case` JSON
+  tags, and are named `<thing>Request` and `<thing>Response`.
+- `decodeJSON` bounds the body and rejects unknown fields, so a client and a
+  harness that disagree find out instead of losing a field silently.
+- Failures go through `s.fail`, which produces the one error shape,
+  `{"error":{"code","message"}}`. `invalidf`, `notFoundf`, and `conflictf` are
+  for a handler's own rules; the sentinel errors of `store`, `workspace`,
+  `hub`, and `builtin` map themselves in `statusOf`. Add a new sentinel there
+  rather than mapping it in a handler.
+- A handler that needs a workspace's files gets an executor with
+  `s.executorFor`, which refuses a workspace that is not running. The server
+  reaches a workspace no other way.
+- New dependencies belong in `Deps`, as an interface declared in `server` when
+  a test has to stand in for them.
+
+Tests go in `internal/server/api_docker_test.go` and use the fakes in
+`fakes_docker_test.go`: a real database from `storetest` and a workspace host
+backed by temporary directories.
+
+```
+go test -tags docker ./internal/server/...
+```
 
 ## Adding an event type
 
@@ -280,19 +371,29 @@ the agent loop, and so that one file lists the whole protocol. JSON tags are
 `snake_case`.
 
 ```go
+// internal/event/event.go
+
+// TypeSessionCompacted reports that a session's history was summarised.
+const TypeSessionCompacted = "session.compacted"
+```
+
+```go
 // internal/event/payload.go
 
-// QuestionAsked is the payload of a question.asked event: the run is waiting
-// for the user to answer.
-type QuestionAsked struct {
-	RunID    string   `json:"run_id"`
-	Question string   `json:"question"`
-	Options  []string `json:"options,omitempty"`
+// SessionCompacted is the payload of a session.compacted event: older entries
+// were replaced by a summary, and a client that holds them drops them.
+type SessionCompacted struct {
+	SessionID string `json:"session_id"`
+	// FirstKeptEntryID is the oldest entry that survived.
+	FirstKeptEntryID string `json:"first_kept_entry_id"`
+	Summary          string `json:"summary"`
 }
 ```
 
-Emit it with `event.New(event.TypeQuestionAsked, event.SessionTopic(id), payload)`
-and hand the result to an `event.Emitter`.
+Emit it with `event.New(event.TypeSessionCompacted, event.SessionTopic(id), payload)`
+and hand the result to an `event.Emitter`. The bus is one, so an event emitted
+anywhere reaches every client subscribed to its topic. Mirror the type name in
+`eventTypes` in `web/src/api/events.ts`, or `parseEvent` rejects it.
 
 ## Adding a UI panel
 

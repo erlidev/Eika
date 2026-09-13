@@ -1,25 +1,24 @@
 # Architecture
 
-This file describes Eika as it is today, at the end of phase 3. It is updated
+This file describes Eika as it is today, at the end of phase 4. It is updated
 in the same change that moves structure. Planned work lives in `docs/PLAN.md`.
 
 ## What exists now
 
 Two Go binaries, the agent core, the sandbox machinery agents run in, the
-database that outlives them, one frontend, and a three-service compose stack.
-Nothing wires the agent core, the workspace host, or the database into the
-server yet; that is phase 4.
+database that outlives them, the HTTP API and event stream that drive all of
+it, one frontend, and a three-service compose stack.
 
 | Piece | Path | Responsibility today |
 |---|---|---|
 | `eika` | `cmd/eika` | Loads configuration, serves HTTP, optionally serves the built frontend |
 | `eikad` | `cmd/eikad` | Sandbox daemon: exec, files, terminal, change watcher |
 | `config` | `internal/config` | YAML file plus `EIKA_*` environment overrides, validation, redacted `String()` |
-| `event` | `internal/event` | The event envelope, the type name constants, the run payload structs, and the `Emitter` interface |
-| `server` | `internal/server` | Routing, the HTTP listener lifecycle, the health handlers |
+| `event` | `internal/event` | The event envelope, the type name constants, the payload structs, the `Emitter` interface, and the fan-out `Bus` |
+| `server` | `internal/server` | Composition of the process, the JSON API, the WebSocket event stream, bearer auth, and the run manager |
 | `agent` | `internal/agent` | The agent loop: turns, tool dispatch, steering and follow-up queues, retries, events |
 | `provider` | `internal/provider` | The model interface, message and event types, the kind registry, the OpenAI implementation, the scripted fake |
-| `tool` | `internal/tool` | The tool interface, call context, result type, and registry; `tool/builtin` holds the seven built-in tools |
+| `tool` | `internal/tool` | The tool interface, call context, result type, and registry; `tool/builtin` holds the eight built-in tools |
 | `executor` | `internal/executor` | The interface every agent action goes through, path validation, and `executor/local` for tests |
 | `contextfile` | `internal/contextfile` | AGENTS.md discovery and the system prompt section it becomes |
 | `eikad` | `internal/eikad` | The daemon's handlers, path confinement, and wire types |
@@ -33,8 +32,9 @@ server yet; that is phase 4.
 `eika` serves `GET /healthz` and `GET /api/healthz`, both returning
 `{"status":"ok"}`. `/healthz` is the container health check; `/api/healthz` is
 what the frontend calls, so the same URL works behind the Vite dev proxy and in
-production. With `-web <dir>` the harness also serves the built frontend and
-falls back to `index.html` for unknown paths.
+production. Everything else under `/api` is the JSON API documented in
+`docs/api/http.md`, and `/git/` is the hub. With `-web <dir>` the harness also
+serves the built frontend and falls back to `index.html` for unknown paths.
 
 ## The agent core
 
@@ -72,7 +72,9 @@ The pieces:
   `CallContext` carrying the executor, the event emitter, and the session and
   run identifiers. `tool/builtin` implements `read`, `write`, `edit`, `bash`,
   `grep`, `find`, and `ls` with Pi's semantics, and keeps every output bound in
-  `limits.go`.
+  `limits.go`. `ask_user` is the one tool that blocks on a human rather than on
+  the workspace: it registers a question with the `Questions` broker, emits
+  `question.asked`, and waits for the answer the API delivers.
 - **executor** is the only way a tool reaches files or processes.
   `executor.Resolve` rejects any path that leaves the workspace root; the local
   implementation re-checks after resolving symlinks. `executor/local` carries
@@ -184,6 +186,102 @@ continuations and the head decides which one the next run extends. A fork
 copies the path into a session of its own and shares no rows, so the two
 sessions cannot disturb each other, either one can be deleted, and the fork
 can be pointed at a workspace cloned at its last entry's commit.
+
+## Server, run manager, event bus
+
+`internal/server` is where the process is composed. `server.Run` opens the
+store, builds the hub and the workspace host from the configuration, makes the
+model set and the tool registry, hands them to `server.New` as `Deps`,
+reconciles the recorded workspace states against what the Docker daemon
+actually has, and serves. `cmd/eika` parses two flags, loads the
+configuration, and calls it.
+
+```
+  cmd/eika  ->  server.Run(ctx, cfg, log, opts)
+                    |
+                    +-- store.Open ------------------ postgres
+                    +-- hub.New --------------------- /var/lib/eika/hub
+                    +-- workspace.NewHost ----------- docker socket
+                    +-- provider.NewRegistry(cfg.Models)
+                    +-- builtin.Registry(questions)
+                    +-- event.NewBus
+                    |
+                    v
+               server.New(Deps) -> routes -> Serve
+
+  HTTP                                          WebSocket
+  POST /api/sessions/{id}/messages              GET /api/events
+        |                                             |
+        v                                             v
+   runs.start                                   bus.Subscribe(topics)
+        |  store.StartRun                             ^
+        |  session.NewStore(tree, commitFunc)         |
+        |  agent.New(provider, tools, opts) <-- the hook later phases
+        |                                      register their tools in
+        v
+   goroutine: agent.Run(runCtx, session, text)
+        |                       |
+        |  entries              |  events
+        v                       v
+   session tree (postgres)   event.Bus --fan out--> one buffered channel
+        |                                            per connection
+        |  store.FinishRun(done | error | aborted)        |
+        v                                                 v
+   runs.forget                                    JSON frames to the client
+```
+
+The pieces:
+
+- **Deps** are the harness pieces every request shares: the store, the hub,
+  the workspace host, the model set, the tool registry, the question broker,
+  and the bus. `Workspaces`, `Hub`, and `Models` are interfaces, defined in
+  `server` because that is where they are consumed, so the handler tests run
+  the whole API against a host backed by temporary directories. A zero `Deps`
+  serves the health checks and the event stream alone.
+- **Auth** is one middleware over the whole `/api` subtree, comparing the
+  bearer token in constant time. `/healthz` is public, and `/git/` is mounted
+  outside it because the hub authenticates workspaces itself with
+  per-workspace credentials. The event stream is the one route that also
+  accepts the token as a query parameter, because a browser cannot set a
+  header on a WebSocket handshake.
+- **Errors** have one shape, `{"error":{"code","message"}}`. `statusOf` maps
+  the sentinel errors of the packages the handlers call onto statuses:
+  `store.ErrNotFound`, `workspace.ErrNoWorkspace`, `hub.ErrNoProject`, and
+  `builtin.ErrNoQuestion` are 404; `store.ErrConflict` is 409;
+  `hub.ErrBadProject`, `workspace.ErrBadBranch`, and `builtin.ErrBadAnswer`
+  are 400. Anything unmapped is the harness's own failure: it is logged in
+  full and reported as `internal error`, so a database message never reaches a
+  client.
+- **The run manager** owns one goroutine per active run and at most one run
+  per session. A run is not bound to the request that started it: the client
+  gets the run row as soon as the loop begins and follows the rest on the
+  event stream. The agent is built per run from the workspace's executor, a
+  `session.Store` on the session tree, the bus as its emitter, and the model
+  the request or the `default_model` setting names. Assistant entries record
+  the workspace HEAD through a commit function that runs `git rev-parse HEAD`
+  through the executor and reports no commit when the workspace holds no
+  repository. `agent.Options` in `runs.start` is the hook the later phases
+  register their tools in: subagents in phase 6, search in phase 7. A run ends
+  `done`, `error`, or `aborted`, recorded with `store.FinishRun` on a context
+  that outlives the cancelled one. Stopping or deleting a workspace, deleting
+  a session, and shutting the harness down all abort the runs involved first,
+  because they reach the workspace through an executor that is about to go
+  away.
+- **The bus** is `event.Bus` in `internal/event`, which implements
+  `event.Emitter`. Every subscriber has a buffered channel of its own and a
+  set of topics; `Emit` never blocks, so a client that stops reading loses
+  events instead of stalling the run that produced them. The dropped count is
+  reported to that client alone as a `bus.dropped` event as soon as it reads
+  again. Topics are `global`, `workspace:<id>`, and `session:<id>`.
+- **The event stream** is one WebSocket per client. A reader goroutine handles
+  `subscribe` and `session.replay` requests; the handler's own loop writes the
+  subscription's events. Whichever stops first cancels the other. A replay
+  writes the session's path to the socket directly rather than through the
+  subscription, so a long history cannot be dropped as if the client were
+  slow.
+
+The whole HTTP surface is `routes.go`, one handler file per resource, and
+`docs/api/http.md` documents every route.
 
 ## Configuration
 
@@ -422,15 +520,15 @@ have to renegotiate it.
        |  server  |                             |  eikad  |
        +----+-----+                             +---------+
             |
-    +-------+----------+--------------+
-    v                  v              v
-  agent  <---------  session        (search)
-    |    \               |
-    |     \              v
-    |      +-> contextfile    store
+    +-------+---------+---------+---------+----------+
+    v                 v         v         v          v
+  agent  <--------  session   store   workspace   (search)
+    |    \              |                  |
+    |     \             v                  v
+    |      +-> contextfile           workspace/hub
     |               |
     v               v
-  tool   -------> executor  <------  workspace  ----->  workspace/hub
+  tool   -------> executor
     |                 ^
     v                 |
  provider    executor/sandbox  ----->  eikad (wire types only)
@@ -440,6 +538,7 @@ have to renegotiate it.
         +-----------------------------------+
 
 workspace is imported by server and subagent only. Never by tool.
+workspace also imports executor, which is what Host.Executor hands back.
 ```
 
 Rules that reviews enforce:

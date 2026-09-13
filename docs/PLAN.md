@@ -54,6 +54,14 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Fork semantics | A fork copies the path from the root to the fork entry into a new session and shares no rows with its parent. Shared ancestry would make either session's deletion or edit reach into the other, and the copy is small: a path is a few dozen rows |
 | Entry representation | One `provider.Message` is one entry; an assistant message that carries tool calls stays one assistant entry whose payload is that message's JSON. It round-trips exactly and adds no branch point the agent loop cannot resume from, because a model that asked for three calls needs all three answered |
 | Entry kinds | The kind vocabulary (`user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`) is fixed now, like the event names in phase 0, so later phases and the frontend agree. Message conversion writes `user`, `assistant`, and `tool_result`; questions, subagent lifecycle, and compaction write `event` |
+| Composition lives in `server` | `server.Run` opens the store, builds the hub, the host, the model set, and the tool registry, and serves. A new `internal/app` package would hold one function and force `server` to export its `Deps` wiring anyway; `cmd/eika` stays three flags and a call |
+| Server dependencies | `Workspaces`, `Hub`, and `Models` are interfaces declared in `server`, where they are consumed, so the handler tests run the real API against a host backed by temporary directories. `*store.Store` stays concrete: `session.Tree` takes it, so an interface in `server` alone would buy nothing |
+| Server tests need PostgreSQL | Every handler but the health checks and the event stream reads or writes rows, so the handler, run manager, and replay tests carry the `docker` build tag and use `store/storetest`. Auth, error mapping, bus fan-out, and WebSocket subscription are untagged, because they touch no row |
+| Event fan-out | One in-process `event.Bus` implementing `event.Emitter`, with a buffered channel per subscriber and drop-slowest. A run must never block on a browser; the client is told what it lost with a `bus.dropped` event and re-requests it with `session.replay` |
+| Replay writes to the socket | A replay is written straight to the WebSocket rather than through the subscription, so a session with more entries than the subscriber buffer holds is not silently truncated by the drop policy meant for live events |
+| Event stream authentication | `/api/events` is the one route that also accepts the bearer token as a query parameter, because a browser cannot set a header on a WebSocket handshake. Every other route rejects a query token, so a token never has to appear in an ordinary URL |
+| One run per session | The run manager keys active runs by session and answers a second `run` message with 409. A second concurrent run would append to the same head and interleave two conversations in one branch; steering and follow-up queues are how a user adds to a run in progress |
+| `ask_user` question ids | Questions are brokered by `builtin.Questions` and identified by their own `q-<hex>` ids rather than `store.NewID`: a question is never a row, and `tool` importing `store` would point a dependency the wrong way |
 | Hub mirrors local projects | Yes. A local project keeps its bind mount for the user's own workspace, and its workspaces still push to a hub repository, so fork-with-workspace and subagents work the same way for both kinds. This resolves the phase 3 open question; nothing in the schema depends on it, and phase 6 implements the push |
 
 ## 2. Core principle: every agent action runs in a sandbox
@@ -216,7 +224,9 @@ One WebSocket per UI client, subscribed to topics (`workspace:<id>`,
 `session:<id>`, `global`). Events are the same types the agent loop emits
 internally (`internal/event`): `turn.start`, `message.delta`, `tool.call`,
 `tool.output`, `tool.result`, `turn.end`, `run.error`, `question.asked`,
-`subagent.started`, `subagent.finished`, `workspace.state`. Documented in
+`subagent.started`, `subagent.finished`, `workspace.state`. Two more exist on
+the stream alone: `session.message`, which is what a replay sends, and
+`bus.dropped`, which tells one client it read too slowly. Documented in
 `docs/api/events.md` and mirrored as TypeScript types in `web/src/api/`.
 
 ## 8. Phases
@@ -260,12 +270,9 @@ parallel.
 - `store`: query layer, transactional writes for entries.
 
 ### Phase 4: Server and event stream
-- Wiring left from phase 2, and phase 4 owns it: nothing constructs
-  `hub.Hub` or `workspace.Host` yet, and nothing serves the hub. Phase 4
-  builds both in `cmd/eika` from configuration, mounts `hub.Handler` at
-  `/git`, and reconciles workspaces with `Host.List` on startup. Until then
-  `hub_url` in `deploy/eika.yaml` is inert: it is the address a sandbox will
-  use once the harness serves the hub.
+- Wiring: `server.Run` builds the store, the hub, the workspace host, the
+  model set, and the tool registry from configuration, mounts `hub.Handler`
+  at `/git`, and reconciles workspaces with `Host.List` on startup.
 - HTTP API for projects, workspaces, sessions, runs, questions, settings.
 - WebSocket event stream with topics and replay from an entry id.
 - Bearer token auth.
@@ -317,7 +324,7 @@ parallel.
 - [x] Phase 1: Agent core
 - [x] Phase 2: Sandboxes and workspaces
 - [x] Phase 3: Persistence and sessions
-- [ ] Phase 4: Server and event stream
+- [x] Phase 4: Server and event stream
 - [ ] Phase 5: Web UI core
 - [ ] Phase 6: Subagents
 - [ ] Phase 7: Search

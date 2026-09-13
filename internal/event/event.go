@@ -31,6 +31,11 @@ const (
 	TypeSubagentFinished = "subagent.finished"
 	// TypeWorkspaceState reports a workspace lifecycle transition.
 	TypeWorkspaceState = "workspace.state"
+	// TypeSessionMessage carries one stored session entry, which is how a
+	// client replays the messages it missed.
+	TypeSessionMessage = "session.message"
+	// TypeBusDropped reports that the client fell behind and lost events.
+	TypeBusDropped = "bus.dropped"
 )
 
 // TopicGlobal is the topic for events that belong to no single workspace or

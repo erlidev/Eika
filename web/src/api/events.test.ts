@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { parseEvent, type ToolResult } from "@/api/events";
+import {
+  globalTopic,
+  parseEvent,
+  sessionTopic,
+  workspaceTopic,
+  type BusDropped,
+  type SessionMessage,
+  type ToolResult,
+} from "@/api/events";
 
 // A tool.result event exactly as the harness encodes it.
 const sample = {
@@ -40,4 +48,42 @@ describe("parseEvent", () => {
       expect(() => parseEvent(body)).toThrow();
     });
   }
+
+  it("accepts a replayed session message", () => {
+    const event = parseEvent({
+      type: "session.message",
+      topic: "session:s1",
+      time: "2026-01-02T03:04:05Z",
+      payload: {
+        session_id: "s1",
+        entry_id: "e2",
+        parent_id: "e1",
+        kind: "assistant",
+        commit: "abc123",
+        created_at: "2026-01-02T03:04:05Z",
+        message: { role: "assistant", content: "hi" },
+      },
+    });
+    const payload = event.payload as SessionMessage;
+    expect(payload.entry_id).toBe("e2");
+    expect(payload.kind).toBe("assistant");
+  });
+
+  it("accepts a drop report", () => {
+    const event = parseEvent({
+      type: "bus.dropped",
+      topic: "global",
+      time: "2026-01-02T03:04:05Z",
+      payload: { dropped: 12 },
+    });
+    expect((event.payload as BusDropped).dropped).toBe(12);
+  });
+});
+
+describe("topics", () => {
+  it("names the topics the harness routes on", () => {
+    expect(globalTopic).toBe("global");
+    expect(workspaceTopic("w1")).toBe("workspace:w1");
+    expect(sessionTopic("s1")).toBe("session:s1");
+  });
 });
