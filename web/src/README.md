@@ -5,7 +5,7 @@ are in `docs/STYLE_GUIDE.md` section 3.
 
 ```
 app/          routes, the layout shell, the panel registry
-features/     one folder per domain feature (workspaces, sessions, terminal, editor, search)
+features/     one folder per domain feature (projects, workspaces, sessions, session, settings, connect)
 components/   shared presentational components; components/ui is shadcn-managed
 api/          wire types mirroring docs/api/, the HTTP client, the WebSocket stream
 lib/          pure utilities with tests
@@ -19,18 +19,57 @@ Rules:
   component instead.
 - `api/` types mirror the Go wire types. When a Go type changes, the TypeScript
   type changes in the same commit.
-- `lib/` holds pure functions only, each with a Vitest test next to it. Today
-  it holds the shadcn `cn` re-export.
-- Server state goes through TanStack Query; the client is created in
-  `main.tsx`. Streaming and UI state will use per-feature Zustand stores.
+- `lib/` holds pure functions only, each with a Vitest test next to it.
+- Server state goes through TanStack Query; the client is created in `main.tsx`.
+  Streaming and UI state use per-feature Zustand stores.
 
-Commands (run from `web/`):
+## The shell
+
+`app/Workbench.tsx` is a three-pane workbench: the project tree on the left,
+the open session in the middle, and the registered panels on the right. The
+side panes are resized by `components/ResizableSplit` and their widths are
+remembered by `lib/persisted`. Below 1024px the side panes become drawers, so
+the session keeps a usable width on a phone.
+
+`app/panels.tsx` is the panel registry the right pane's tab strip is built
+from. `app/theme.ts` is the colour scheme: it follows `prefers-color-scheme`
+until the user picks a side. `app/CommandPalette.tsx` is Cmd/Ctrl+K.
+
+## Server state and the stream
+
+There is one HTTP client (`api/client.ts`) and one WebSocket connection
+(`api/stream.ts`). The stream reference-counts topics, reconnects with
+jittered backoff, and re-sends its topics on every reconnect, so a component
+subscribes to `session:<id>` or `workspace:<id>` and nothing else has to be
+arranged. The socket carries no history, so a reconnect only restores the
+subscription: `onReopen` tells a subscriber that events were missed, and the
+session store answers it with a replay from the last entry it holds.
+
+Nothing polls. An event invalidates the queries it makes stale:
+`features/workspaces/useWorkspaceEvents` for a container's lifecycle,
+`features/session/useSessionStream` for a turn that ended.
+
+## Keyboard
+
+| Key            | What it does                         |
+| -------------- | ------------------------------------ |
+| `Enter`        | Sends the composer's message         |
+| `Shift+Enter`  | Newline                              |
+| `Esc`          | Aborts the run in progress           |
+| `Cmd/Ctrl+K`   | Opens the command palette            |
+| `Left`/`Right` | Moves between the right pane's tabs  |
+| `Home`/`End`   | First and last tab of the right pane |
+
+`Esc` belongs to whatever is on top of the session: a dialog, an open select,
+the command palette, or a focused text field keeps it, and only an `Esc` none
+of those wanted aborts the run (`features/session/escape.ts`). The tab strip
+is one tab stop, as the WAI-ARIA tabs pattern asks (`lib/tablist.ts`).
+
+## Commands (run from `web/`)
 
 ```
-npm run dev      Vite dev server on :5173, proxying /api to the harness
-npm run lint     ESLint
+npm run dev        Vite dev server on :5173, proxying /api to the harness
+npm run lint       ESLint
 npm run typecheck  tsc project build
-npm test         Vitest
+npm test           Vitest
 ```
-
-`features/` is empty until phase 5.

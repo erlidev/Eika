@@ -1,47 +1,52 @@
-import { useQuery } from "@tanstack/react-query";
-
-import { fetchHealth } from "@/api/health";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-
 /**
- * App is the application shell. Until the workspace and session views land it
- * shows the harness health so a deployment can be verified end to end.
+ * The application root: the connect screen until a token is stored, and the
+ * workbench once one is. Routing is by session, so a session has a URL that
+ * survives a reload.
  */
-export function App() {
-  const health = useQuery({
-    queryKey: ["health"],
-    queryFn: ({ signal }) => fetchHealth(signal),
-  });
 
-  let message: string;
-  if (health.isPending || health.isFetching) {
-    message = "Checking the harness...";
-  } else if (health.isError) {
-    message = `Harness unreachable: ${health.error.message}`;
-  } else {
-    message = `Harness reports "${health.data.status}".`;
-  }
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { Navigate, Route, Routes, useParams } from "react-router";
+
+import { resetEventStream } from "@/api/stream";
+import { Workbench } from "@/app/Workbench";
+import { ConnectScreen, useConnection } from "@/features/connect";
+import { useSessions } from "@/features/sessions";
+
+export function App() {
+  const connection = useConnection();
+  const client = useQueryClient();
+  const connected = connection.token !== "";
+
+  // A token that changed makes every cached answer and the open socket stale:
+  // the socket carries the old token in its URL and cannot be re-authorised.
+  useEffect(() => {
+    if (connected) return;
+    resetEventStream();
+    client.clear();
+  }, [connected, client]);
+
+  if (!connected) return <ConnectScreen />;
 
   return (
-    <main className="bg-background text-foreground flex min-h-screen items-center justify-center p-6">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-3xl">Eika</CardTitle>
-          <CardDescription>Docker-native agentic coding harness</CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center justify-between gap-4">
-          <p className="text-muted-foreground text-sm">{message}</p>
-          <Button
-            onClick={() => {
-              void health.refetch();
-            }}
-            disabled={health.isFetching}
-          >
-            Recheck
-          </Button>
-        </CardContent>
-      </Card>
-    </main>
+    <Routes>
+      <Route path="/" element={<Workbench />} />
+      <Route path="/sessions/:sessionId" element={<Workbench />} />
+      <Route path="/workspaces/:workspaceId" element={<WorkspaceRoute />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
+}
+
+/**
+ * WorkspaceRoute opens a workspace's newest session. A workspace is not a view
+ * of its own: everything in it is reached through a session.
+ */
+function WorkspaceRoute() {
+  const params = useParams();
+  const sessions = useSessions(params.workspaceId);
+  if (params.workspaceId === undefined) return <Navigate to="/" replace />;
+  if (sessions.isPending) return <Workbench />;
+  const newest = sessions.data?.[0];
+  return newest ? <Navigate to={`/sessions/${newest.id}`} replace /> : <Workbench />;
 }

@@ -17,7 +17,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": { target: apiTarget, changeOrigin: true },
+      // ws: the event stream at /api/events is a WebSocket upgrade, and the
+      // proxy passes one through only when it is told to.
+      "/api": { target: apiTarget, changeOrigin: true, ws: true },
     },
   },
   test: {

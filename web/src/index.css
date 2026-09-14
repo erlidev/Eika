@@ -128,3 +128,71 @@
     @apply font-sans;
   }
 }
+
+/*
+ * Syntax highlighting for fenced code. `rehype-highlight` emits highlight.js
+ * class names but no colours; these are the few token groups that matter,
+ * defined against the neutral palette so they follow the theme.
+ */
+:root {
+  --code-keyword: oklch(0.45 0.16 280);
+  --code-string: oklch(0.48 0.13 150);
+  --code-literal: oklch(0.5 0.15 40);
+  --code-comment: var(--muted-foreground);
+  --code-name: oklch(0.45 0.13 250);
+}
+
+.dark {
+  --code-keyword: oklch(0.78 0.12 300);
+  --code-string: oklch(0.8 0.12 150);
+  --code-literal: oklch(0.82 0.12 60);
+  --code-comment: var(--muted-foreground);
+  --code-name: oklch(0.8 0.1 230);
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-doctag,
+.hljs-meta {
+  color: var(--code-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute {
+  color: var(--code-string);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-variable,
+.hljs-template-variable {
+  color: var(--code-literal);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-type,
+.hljs-attr,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--code-name);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
+}

@@ -159,6 +159,42 @@ export type BusDropped = {
   dropped: number;
 };
 
+/**
+ * EventPayloads maps each event type to the payload it carries. It is the
+ * table in docs/api/events.md, written once so that a consumer narrows a
+ * payload by naming the type rather than by casting.
+ */
+export type EventPayloads = {
+  "turn.start": TurnStart;
+  "message.delta": MessageDelta;
+  "message.reset": MessageReset;
+  "tool.call": ToolCall;
+  "tool.output": ToolOutput;
+  "tool.result": ToolResult;
+  "turn.end": TurnEnd;
+  "run.error": RunError;
+  "question.asked": QuestionAsked;
+  "subagent.started": SubagentStarted;
+  "subagent.finished": SubagentFinished;
+  "workspace.state": WorkspaceState;
+  "session.message": SessionMessage;
+  "bus.dropped": BusDropped;
+};
+
+/**
+ * payloadOf narrows an event's payload to the shape its type promises. It
+ * answers null for a payload that is not an object, which a malformed frame
+ * or a future field-less event can produce.
+ */
+export function payloadOf<K extends keyof EventPayloads>(
+  e: EikaEvent,
+  type: K,
+): EventPayloads[K] | null {
+  if (e.type !== type) return null;
+  if (typeof e.payload !== "object" || e.payload === null) return null;
+  return e.payload as EventPayloads[K];
+}
+
 /** StreamRequest is a message a client sends on the event stream. */
 export type StreamRequest =
   | { type: "subscribe"; topics: string[] }
