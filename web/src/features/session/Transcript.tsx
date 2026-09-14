@@ -1,15 +1,20 @@
 /**
  * The conversation. One renderer per entry kind; tool calls delegate to the
  * per-tool registry through `ToolCard`.
+ *
+ * A turn streams a token at a time, so the list re-renders constantly: every
+ * row is memoised on the item the reducer handed it, which only changes for
+ * the row that changed. Without that, one delta re-parses every markdown
+ * message in the session.
  */
 
-import { TriangleAlert } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { ArrowDown, TriangleAlert } from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { Markdown } from "@/components/Markdown";
+import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/features/session/store";
 import { ToolCard } from "@/features/session/ToolCard";
-import { items } from "@/features/session/transcript";
 import type { TranscriptItem } from "@/features/session/transcript";
 import { cn } from "@/lib/utils";
 
@@ -18,41 +23,117 @@ export type TranscriptProps = {
   empty?: React.ReactNode;
 };
 
-export function Transcript({ empty }: TranscriptProps) {
-  const state = useSessionStore();
-  const rendered = items(state);
-  const questionCalls = new Set(state.questions.map((q) => q.call_id));
-  const bottom = useRef<HTMLDivElement>(null);
+/** bottomSlackPx is how far from the bottom still counts as following along. */
+const bottomSlackPx = 100;
 
-  // Following the stream is the point of the view, so it scrolls itself.
+export function Transcript({ empty }: TranscriptProps) {
+  // Three selectors rather than the whole store: a panel that only wants the
+  // questions should not re-render on every token.
+  const committed = useSessionStore((s) => s.committed);
+  const live = useSessionStore((s) => s.live);
+  const questions = useSessionStore((s) => s.questions);
+
+  const rendered = useMemo(() => [...committed, ...live], [committed, live]);
+  const questionCalls = useMemo(() => new Set(questions.map((q) => q.call_id)), [questions]);
+  const announcement = useAnnouncement(rendered);
+
+  const scroller = useRef<HTMLDivElement>(null);
+  const bottom = useRef<HTMLDivElement>(null);
+  // Following the stream is the point of the view, so it scrolls itself —
+  // but only while the user is at the bottom. Scrolling up to read earlier
+  // output during a run is a deliberate act, and yanking it back is not.
+  const [following, setFollowing] = useState(true);
+
   // A DOM measurement has no render-time equivalent, so this is an effect.
   useEffect(() => {
+    if (!following) return;
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [rendered.length, state.live]);
+  }, [rendered, following]);
 
-  if (rendered.length === 0) {
-    return (
-      <div className="text-muted-foreground flex flex-1 items-center justify-center p-8 text-sm">
-        {empty ?? "No messages yet."}
-      </div>
-    );
-  }
+  const jumpToLatest = () => {
+    setFollowing(true);
+    bottom.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  };
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
-      {rendered.map((item) => (
-        <Item
-          key={item.key}
-          item={item}
-          openTool={item.kind === "tool" && questionCalls.has(item.callId)}
-        />
-      ))}
-      <div ref={bottom} />
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scroller}
+        className="min-h-0 flex-1 overflow-y-auto"
+        onScroll={() => {
+          const el = scroller.current;
+          if (!el) return;
+          setFollowing(el.scrollHeight - el.scrollTop - el.clientHeight <= bottomSlackPx);
+        }}
+      >
+        {rendered.length === 0 ? (
+          <div className="text-muted-foreground flex h-full items-center justify-center p-8 text-sm">
+            {empty ?? "No messages yet."}
+          </div>
+        ) : (
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
+            {rendered.map((item) => (
+              <Item
+                key={item.key}
+                item={item}
+                openTool={item.kind === "tool" && questionCalls.has(item.callId)}
+              />
+            ))}
+            <div ref={bottom} />
+          </div>
+        )}
+      </div>
+      {/*
+        The bubbles are not live regions: a region that grew by a token would
+        read the whole sentence again on every delta. One region reports that
+        the turn started and then reads the reply once it is whole.
+      */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
+      {!following && rendered.length > 0 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
+          <Button
+            size="sm"
+            variant="secondary"
+            className="pointer-events-auto shadow-md"
+            onClick={jumpToLatest}
+          >
+            <ArrowDown aria-hidden className="size-3.5" />
+            Jump to latest
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
-function Item({ item, openTool }: { item: TranscriptItem; openTool: boolean }) {
+/**
+ * useAnnouncement is what a screen reader hears about the turn in flight: a
+ * note when the model starts writing, and the reply itself once it is done.
+ * The transcript a session opens with is not announced — the reader is
+ * reading it, not being told it arrived.
+ */
+function useAnnouncement(rendered: TranscriptItem[]): string {
+  let latest = "";
+  for (let i = rendered.length - 1; i >= 0; i -= 1) {
+    const item = rendered[i];
+    if (item?.kind !== "assistant") continue;
+    latest = item.streaming ? "The assistant is replying." : item.text;
+    break;
+  }
+
+  const [announcement, setAnnouncement] = useState("");
+  const previous = useRef(latest);
+  useEffect(() => {
+    if (latest === previous.current) return;
+    previous.current = latest;
+    setAnnouncement(latest);
+  }, [latest]);
+  return announcement;
+}
+
+const Item = memo(function Item({ item, openTool }: { item: TranscriptItem; openTool: boolean }) {
   switch (item.kind) {
     case "user":
       return (
@@ -68,7 +149,7 @@ function Item({ item, openTool }: { item: TranscriptItem; openTool: boolean }) {
           <Markdown>{item.text}</Markdown>
           {item.streaming && (
             <span
-              aria-label="still writing"
+              aria-hidden
               className="bg-foreground ml-0.5 inline-block h-3.5 w-1.5 animate-pulse align-text-bottom"
             />
           )}
@@ -102,4 +183,4 @@ function Item({ item, openTool }: { item: TranscriptItem; openTool: boolean }) {
         </p>
       );
   }
-}
+});

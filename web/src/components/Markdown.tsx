@@ -15,6 +15,19 @@ export type MarkdownProps = {
   className?: string;
 };
 
+/**
+ * components sends a link somewhere it cannot reach the app. Model output is
+ * untrusted: `noopener` denies it `window.opener`, and `nofollow` keeps a
+ * transcript from endorsing whatever it quoted.
+ */
+const components: Options["components"] = {
+  a: ({ children, ...props }) => (
+    <a {...props} target="_blank" rel="noopener noreferrer nofollow">
+      {children}
+    </a>
+  ),
+};
+
 /** plugins are built once: they hold no per-render state. */
 const remarkPlugins: Options["remarkPlugins"] = [remarkGfm];
 const rehypePlugins: Options["rehypePlugins"] = [
@@ -44,7 +57,11 @@ export function Markdown({ children, className }: MarkdownProps) {
         className,
       )}
     >
-      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
+      <ReactMarkdown
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
+        components={components}
+      >
         {children}
       </ReactMarkdown>
     </div>

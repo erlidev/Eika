@@ -20,6 +20,9 @@ export function AskUserBody({ call }: ToolRendererProps) {
   const dismissQuestion = useSessionStore((s) => s.dismissQuestion);
   const answer = useAnswerQuestion(sessionId);
   const [freeText, setFreeText] = useState("");
+  // The run continues on the first answer the harness accepts, so a second
+  // one is either a 404 or an answer to whatever the run asked next.
+  const [submitted, setSubmitted] = useState(false);
 
   const text = question?.question ?? stringArg(call, "question");
   const options = question?.options ?? [];
@@ -38,14 +41,18 @@ export function AskUserBody({ call }: ToolRendererProps) {
 
   const send = (value: string) => {
     const trimmed = value.trim();
-    if (trimmed === "") return;
+    if (trimmed === "" || submitted) return;
     // The card disappears as soon as the answer is accepted; the run
     // continues and its tool.result clears the question for good.
+    setSubmitted(true);
     answer.mutate(
       { id: question.id, answer: trimmed },
       {
         onSuccess: () => {
           dismissQuestion(question.id);
+        },
+        onError: () => {
+          setSubmitted(false);
         },
       },
     );

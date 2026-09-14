@@ -80,7 +80,7 @@ export type TranscriptState = {
   /** committed holds the stored entries a replay delivered, in path order. */
   committed: TranscriptItem[];
   /** entryIds are the entries already held, which is how a replay dedupes. */
-  entryIds: readonly string[];
+  entryIds: ReadonlySet<string>;
   /** lastEntryId is the newest entry seen; a replay resumes after it. */
   lastEntryId: string;
   /** live holds the turn in flight, which no entry covers yet. */
@@ -96,16 +96,25 @@ export type TranscriptState = {
   /** questions are the `ask_user` calls waiting for an answer. */
   questions: Question[];
   /**
-   * toolDetails keeps what only the live stream carries, by call id: a tool
-   * result's structured details and its duration. A stored entry holds the
-   * text the model saw and nothing else, so a replay would otherwise lose a
-   * command's exit code.
+   * toolResults keeps every `tool.result` by call id. It serves two cases at
+   * once: a result that arrives before its `tool.call` still reaches the card
+   * the call creates, and a stored entry, which holds only the text the model
+   * saw, gets back the exit code and the duration a replay would have lost.
    */
-  toolDetails: Record<string, { details?: unknown; durationMs: number }>;
+  toolResults: Record<string, ToolResultRecord>;
   /** needsReplay is set when the client must ask for a replay to catch up. */
   needsReplay: boolean;
   /** dropped counts the events the connection lost, for the status bar. */
   dropped: number;
+};
+
+/** ToolResultRecord is everything a `tool.result` said about one call. */
+export type ToolResultRecord = {
+  name: string;
+  content: string;
+  isError: boolean;
+  details?: unknown;
+  durationMs: number;
 };
 
 /** newTranscript returns the empty state for one session. */
@@ -113,13 +122,13 @@ export function newTranscript(sessionId: string): TranscriptState {
   return {
     sessionId,
     committed: [],
-    entryIds: [],
+    entryIds: new Set(),
     lastEntryId: "",
     live: [],
     sealedTurns: [],
     activeTurnId: "",
     questions: [],
-    toolDetails: {},
+    toolResults: {},
     needsReplay: false,
     dropped: 0,
   };
@@ -246,6 +255,9 @@ function applyToolCall(state: TranscriptState, e: EikaEvent): TranscriptState {
   if (!p) return state;
   const live = seal(state.live);
   if (findTool(live, p.call_id) >= 0) return { ...state, live };
+  // The two events race: a tool that finishes before its call event is
+  // dispatched would otherwise lose its content and its error flag.
+  const result = state.toolResults[p.call_id];
   return {
     ...state,
     live: [
@@ -258,8 +270,11 @@ function applyToolCall(state: TranscriptState, e: EikaEvent): TranscriptState {
         name: p.name,
         arguments: p.arguments,
         output: "",
-        isError: false,
-        done: false,
+        isError: result?.isError ?? false,
+        done: result !== undefined,
+        ...(result === undefined
+          ? {}
+          : { content: result.content, details: result.details, durationMs: result.durationMs }),
       },
     ],
   };
@@ -282,17 +297,23 @@ function applyToolResult(state: TranscriptState, e: EikaEvent): TranscriptState 
   if (!p) return state;
   // A finished call answers any question it was blocked on.
   const questions = state.questions.filter((q) => q.call_id !== p.call_id);
-  const toolDetails = {
-    ...state.toolDetails,
-    [p.call_id]: { details: p.details, durationMs: p.duration_ms },
+  const toolResults = {
+    ...state.toolResults,
+    [p.call_id]: {
+      name: p.name,
+      content: p.content,
+      isError: p.is_error,
+      details: p.details,
+      durationMs: p.duration_ms,
+    },
   };
   const index = findTool(state.live, p.call_id);
   const item = state.live[index];
-  if (index < 0 || item?.kind !== "tool") return { ...state, questions, toolDetails };
+  if (index < 0 || item?.kind !== "tool") return { ...state, questions, toolResults };
   return {
     ...state,
     questions,
-    toolDetails,
+    toolResults,
     live: replaceAt(state.live, index, {
       ...item,
       name: p.name,
@@ -418,7 +439,7 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
   if (p?.session_id !== state.sessionId) return state;
   // Replay runs alongside the live stream, so the same entry can arrive
   // twice. An entry already held is a no-op.
-  if (state.entryIds.includes(p.entry_id)) return state;
+  if (state.entryIds.has(p.entry_id)) return state;
 
   // The sealed turns' entries are what is arriving, so their live items go.
   const live =
@@ -431,7 +452,7 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
     ...state,
     live,
     sealedTurns,
-    entryIds: [...state.entryIds, p.entry_id],
+    entryIds: new Set(state.entryIds).add(p.entry_id),
     lastEntryId: p.entry_id,
     needsReplay: false,
   };
@@ -444,7 +465,7 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
     const index = findTool(base.committed, callId);
     const item = base.committed[index];
     if (index >= 0 && item?.kind === "tool") {
-      const known = base.toolDetails[callId];
+      const known = base.toolResults[callId];
       return {
         ...base,
         committed: replaceAt(base.committed, index, {

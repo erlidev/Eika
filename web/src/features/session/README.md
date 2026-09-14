@@ -9,11 +9,19 @@ one that holds client state of its own.
 - `SessionView.tsx` is the centre pane. It owns the stream subscription and
   composes the transcript, the run status bar, and the composer.
 - `useSessionStream.ts` folds every event of `session:<id>` into the store and
-  asks for the replay that fills the transcript.
+  asks for the replay that fills the transcript. A turn that ended, events the
+  bus dropped, and a socket that reconnected all ask for the same catch-up:
+  one replay from the last entry the transcript holds.
 - `transcript.ts` is the reducer: a pure function from `(state, event)` to
   state, folding `docs/api/events.md` into renderable items. It knows two
   sources, the live turn keyed by `run_id` and the stored entries keyed by
   `entry_id`, and drops the live items of a turn once its entries arrive.
+- `Transcript.tsx` renders those items. It owns its scroller so it can tell
+  whether the user is still at the bottom — it follows the stream only then,
+  and offers "Jump to latest" otherwise — and every row is memoised on the
+  item the reducer produced, so one delta re-renders one bubble.
+- `escape.ts` decides whether an `Esc` belongs to the run or to the dialog,
+  select, palette, or text field on top of it.
 - `store.ts` is a thin Zustand shell around that reducer. The store owns which
   session is open and nothing else, so the folding rules stay testable alone.
 - `queries.ts` wraps the session, outline, run, message, head, and fork routes.

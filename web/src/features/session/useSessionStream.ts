@@ -47,6 +47,16 @@ export function useSessionStream(sessionId: string | undefined): void {
     replayRequested();
   }, [sessionId, open, replayRequested]);
 
+  // The socket carries no history, so every event published while it was down
+  // is gone. A reconnect asks for the session's path from the last entry the
+  // transcript holds, which is the same catch-up a bus.dropped triggers.
+  useEffect(() => {
+    if (sessionId === undefined) return;
+    return eventStream().onReopen(() => {
+      useSessionStore.getState().replayNeeded();
+    });
+  }, [sessionId]);
+
   // A turn that ended, or events the connection dropped, leave the transcript
   // behind what the harness stored. One replay catches it up.
   useEffect(() => {

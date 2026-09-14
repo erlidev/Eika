@@ -39,8 +39,11 @@ until the user picks a side. `app/CommandPalette.tsx` is Cmd/Ctrl+K.
 
 There is one HTTP client (`api/client.ts`) and one WebSocket connection
 (`api/stream.ts`). The stream reference-counts topics, reconnects with
-backoff, and re-sends its topics on every reconnect, so a component subscribes
-to `session:<id>` or `workspace:<id>` and nothing else has to be arranged.
+jittered backoff, and re-sends its topics on every reconnect, so a component
+subscribes to `session:<id>` or `workspace:<id>` and nothing else has to be
+arranged. The socket carries no history, so a reconnect only restores the
+subscription: `onReopen` tells a subscriber that events were missed, and the
+session store answers it with a replay from the last entry it holds.
 
 Nothing polls. An event invalidates the queries it makes stale:
 `features/workspaces/useWorkspaceEvents` for a container's lifecycle,
@@ -48,12 +51,19 @@ Nothing polls. An event invalidates the queries it makes stale:
 
 ## Keyboard
 
-| Key           | What it does                 |
-| ------------- | ---------------------------- |
-| `Enter`       | Sends the composer's message |
-| `Shift+Enter` | Newline                      |
-| `Esc`         | Aborts the run in progress   |
-| `Cmd/Ctrl+K`  | Opens the command palette    |
+| Key            | What it does                         |
+| -------------- | ------------------------------------ |
+| `Enter`        | Sends the composer's message         |
+| `Shift+Enter`  | Newline                              |
+| `Esc`          | Aborts the run in progress           |
+| `Cmd/Ctrl+K`   | Opens the command palette            |
+| `Left`/`Right` | Moves between the right pane's tabs  |
+| `Home`/`End`   | First and last tab of the right pane |
+
+`Esc` belongs to whatever is on top of the session: a dialog, an open select,
+the command palette, or a focused text field keeps it, and only an `Esc` none
+of those wanted aborts the run (`features/session/escape.ts`). The tab strip
+is one tab stop, as the WAI-ARIA tabs pattern asks (`lib/tablist.ts`).
 
 ## Commands (run from `web/`)
 

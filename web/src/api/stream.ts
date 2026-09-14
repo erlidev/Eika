@@ -23,6 +23,10 @@ export type StreamOptions = {
   open?: (url: string) => WebSocketLike;
   /** delay schedules a reconnect. Defaults to setTimeout. */
   delay?: (fn: () => void, ms: number) => void;
+  /** now reads the clock the stable-connection window is measured against. */
+  now?: () => number;
+  /** jitter returns a number in [0, 1) that spreads the reconnect delay. */
+  jitter?: () => number;
 };
 
 /** WebSocketLike is the part of WebSocket the stream uses. */
@@ -39,6 +43,13 @@ export type WebSocketLike = {
 const backoffMs = [500, 1000, 2000, 5000, 10000] as const;
 
 /**
+ * stableMs is how long a connection must last to count as a success. A socket
+ * that opens and drops again immediately is still the same outage, so its
+ * backoff keeps growing instead of restarting at half a second.
+ */
+const stableMs = 5000;
+
+/**
  * EventStream multiplexes the harness event stream. Create one per page and
  * share it; `subscribe` is the only way in and returns its own unsubscribe.
  */
@@ -51,11 +62,18 @@ export class EventStream {
   private readonly handlers = new Map<string, Set<EventHandler>>();
   private queued: StreamRequest[] = [];
   private readonly statusListeners = new Set<(s: StreamStatus) => void>();
+  private readonly reopenListeners = new Set<() => void>();
+  private everOpened = false;
+  private openedAt = 0;
   private readonly open: (url: string) => WebSocketLike;
+  private readonly now: () => number;
+  private readonly jitter: () => number;
   private readonly delay: (fn: () => void, ms: number) => void;
 
   constructor(options: StreamOptions = {}) {
     this.open = options.open ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
+    this.now = options.now ?? (() => Date.now());
+    this.jitter = options.jitter ?? (() => Math.random());
     this.delay =
       options.delay ??
       ((fn, ms) => {
@@ -66,6 +84,19 @@ export class EventStream {
   /** getStatus reports what the connection is doing. */
   getStatus(): StreamStatus {
     return this.status;
+  }
+
+  /**
+   * onReopen registers a listener called when the connection comes back after
+   * a drop. Live events published while the socket was down are gone, so a
+   * subscriber that keeps state re-reads what it missed: the stream cannot do
+   * that for it, because only the subscriber knows what it already holds.
+   */
+  onReopen(listener: () => void): () => void {
+    this.reopenListeners.add(listener);
+    return () => {
+      this.reopenListeners.delete(listener);
+    };
   }
 
   /** onStatus registers a status listener and returns its unsubscribe. */
@@ -130,6 +161,7 @@ export class EventStream {
   /** close shuts the connection down for good. */
   close(): void {
     this.closed = true;
+    this.reopenListeners.clear();
     this.socket?.close();
     this.socket = null;
     this.setStatus("idle");
@@ -159,12 +191,17 @@ export class EventStream {
     this.socket = socket;
 
     socket.onopen = () => {
-      this.failures = 0;
+      const reopened = this.everOpened;
+      this.everOpened = true;
+      this.openedAt = this.now();
       this.setStatus("open");
       this.sendTopics();
       const queued = this.queued;
       this.queued = [];
       for (const request of queued) socket.send(JSON.stringify(request));
+      if (reopened) {
+        for (const listener of this.reopenListeners) listener();
+      }
     };
     socket.onerror = () => {
       socket.close();
@@ -177,7 +214,11 @@ export class EventStream {
         return;
       }
       this.setStatus("reconnecting");
-      const wait = backoffMs[Math.min(this.failures, backoffMs.length - 1)] ?? 10000;
+      if (this.openedAt !== 0 && this.now() - this.openedAt >= stableMs) this.failures = 0;
+      this.openedAt = 0;
+      const base = backoffMs[Math.min(this.failures, backoffMs.length - 1)] ?? 10000;
+      // A page with several tabs open reconnects them all at once otherwise.
+      const wait = Math.round(base * (0.8 + this.jitter() * 0.4));
       this.failures += 1;
       this.delay(() => {
         this.ensureOpen();

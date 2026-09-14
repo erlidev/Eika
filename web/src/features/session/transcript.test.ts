@@ -127,6 +127,33 @@ describe("applyEvent", () => {
     expect(rendered[2]).toMatchObject({ callId: "c1", content: "AGENTS.md\nweb", done: true });
   });
 
+  it("keeps a result that arrived before the call it belongs to", () => {
+    // The two events race, so a tool that finishes fast can be reported
+    // before its call reaches the client.
+    const state = fold([
+      ev("turn.start", { run_id: "r1", session_id: sessionID, workspace_id: "w1", message: "go" }),
+      ev("tool.result", {
+        run_id: "r1",
+        call_id: "c1",
+        name: "bash",
+        content: "AGENTS.md\nweb",
+        is_error: true,
+        details: { exit_code: 2, timed_out: false },
+        duration_ms: 12,
+      }),
+      ev("tool.call", { run_id: "r1", call_id: "c1", name: "bash", arguments: { command: "ls" } }),
+    ]);
+    const tool = items(state).find((item) => item.kind === "tool");
+    expect(tool).toMatchObject({
+      callId: "c1",
+      content: "AGENTS.md\nweb",
+      isError: true,
+      details: { exit_code: 2, timed_out: false },
+      durationMs: 12,
+      done: true,
+    });
+  });
+
   it("keeps a tool result's exit code across the replay that commits it", () => {
     const replay = [
       ev("session.message", {

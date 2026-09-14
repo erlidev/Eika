@@ -59,7 +59,9 @@ export function Composer({ sessionId, model, disabled = false, disabledReason }:
             setText(e.target.value);
           }}
           onKeyDown={(e) => {
-            if (e.key !== "Enter" || e.shiftKey) return;
+            // An input method ends its composition with Enter. Sending on it
+            // would swallow the word the user was still typing.
+            if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
             e.preventDefault();
             send(active ? "steer" : "run");
           }}

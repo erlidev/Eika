@@ -18,6 +18,8 @@ export type SessionStore = TranscriptState & {
   apply: (e: EikaEvent) => void;
   /** replayRequested records that the replay the state asked for is on its way. */
   replayRequested: () => void;
+  /** replayNeeded asks for a catch-up, for a reconnect that lost live events. */
+  replayNeeded: () => void;
   /** dismissQuestion drops a question the user has just answered. */
   dismissQuestion: (questionId: string) => void;
 };
@@ -32,6 +34,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
   },
   replayRequested: () => {
     set({ needsReplay: false });
+  },
+  replayNeeded: () => {
+    set({ needsReplay: true });
   },
   dismissQuestion: (questionId) => {
     set((state) => ({ questions: state.questions.filter((q) => q.id !== questionId) }));

@@ -8,16 +8,16 @@ import { PanelLeft, PanelRight, Settings, Terminal } from "lucide-react";
 import { useState } from "react";
 import { useParams } from "react-router";
 
-import { useSession } from "@/features/session";
 import { CommandPalette } from "@/app/CommandPalette";
 import { availablePanels } from "@/app/panels";
 import { Sidebar } from "@/app/Sidebar";
 import { ThemeToggle } from "@/app/ThemeToggle";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
-import { SessionView } from "@/features/session";
+import { SessionView, useSession } from "@/features/session";
 import { SettingsDialog } from "@/features/settings";
 import { usePersistedNumber, usePersistedString } from "@/lib/persisted";
+import { nextTabIndex } from "@/lib/tablist";
 import { useNarrow } from "@/lib/useNarrow";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +40,18 @@ export function Workbench() {
   const tabs = availablePanels({ sessionId, workspaceId });
   const panel = tabs.find((tab) => tab.id === activePanel) ?? tabs[0];
 
+  // A tablist is one tab stop: Tab reaches the selected tab and the arrows
+  // move between them, which is what the WAI-ARIA tabs pattern asks for.
+  // Selection follows the focus, so the panel below changes with it.
+  const onTabKeyDown = (e: React.KeyboardEvent, from: number) => {
+    const to = nextTabIndex(from, tabs.length, e.key);
+    const next = to === null ? undefined : tabs[to];
+    if (!next) return;
+    e.preventDefault();
+    setActivePanel(next.id);
+    document.getElementById(`panel-tab-${next.id}`)?.focus();
+  };
+
   const sidebar = (
     <Sidebar
       sessionId={sessionId === "" ? undefined : sessionId}
@@ -55,7 +67,7 @@ export function Workbench() {
         aria-label="Context panels"
         className="flex items-center gap-0.5 border-b px-1 py-1"
       >
-        {tabs.map((tab) => (
+        {tabs.map((tab, index) => (
           <button
             key={tab.id}
             type="button"
@@ -63,12 +75,16 @@ export function Workbench() {
             id={`panel-tab-${tab.id}`}
             aria-selected={panel?.id === tab.id}
             aria-controls={`panel-${tab.id}`}
+            tabIndex={panel?.id === tab.id ? 0 : -1}
             className={cn(
               "hover:bg-accent/50 focus-visible:ring-ring flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs focus-visible:ring-1 focus-visible:outline-none",
               panel?.id === tab.id && "bg-accent font-medium",
             )}
             onClick={() => {
               setActivePanel(tab.id);
+            }}
+            onKeyDown={(e) => {
+              onTabKeyDown(e, index);
             }}
           >
             <tab.icon aria-hidden className="size-3.5" />
