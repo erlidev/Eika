@@ -67,7 +67,7 @@ export function parseApiError(status: number, body: unknown): ApiError {
 
 /** RequestOptions are the parts of a request that vary by route. */
 export type RequestOptions = {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** body is encoded as JSON when present. */
   body?: unknown;
   /** query holds search parameters; entries with no value are left out. */

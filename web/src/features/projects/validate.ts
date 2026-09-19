@@ -15,12 +15,12 @@ export function validate(input: CreateProject): string | null {
     const url = (input.remote_url ?? "").trim();
     if (url === "") return "A remote project needs the URL the hub mirrors.";
     if (/[?#]/.test(url) || url.includes("@")) {
-      return "The URL may not carry userinfo, a query string, or a fragment; name the credential variables instead.";
+      return "The URL may not carry a username, password, query string, or fragment; enter credentials in their own fields.";
     }
-    const user = (input.remote_username_env ?? "").trim();
-    const password = (input.remote_password_env ?? "").trim();
+    const user = (input.remote_username ?? "").trim();
+    const password = (input.remote_password ?? "").trim();
     if ((user === "") !== (password === "")) {
-      return "Set both credential variables, or neither.";
+      return "Enter both the username and the password or token, or neither.";
     }
   }
   if (input.kind === "local" && !(input.host_path ?? "").startsWith("/")) {

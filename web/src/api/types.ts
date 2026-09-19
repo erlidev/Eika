@@ -15,10 +15,10 @@ export type Project = {
   name: string;
   kind: ProjectKind;
   remote_url?: string;
-  /** remote_username_env names the variable holding the upstream username, never its value. */
-  remote_username_env?: string;
-  /** remote_password_env names the variable holding the upstream password, never its value. */
-  remote_password_env?: string;
+  /** remote_username is the user the hub authenticates to the upstream as. */
+  remote_username?: string;
+  /** remote_password_set says a password is stored; the password never leaves the harness. */
+  remote_password_set?: boolean;
   host_path?: string;
   default_branch: string;
   created_at: string;
@@ -32,9 +32,17 @@ export type CreateProject = {
   name: string;
   kind: ProjectKind;
   remote_url?: string;
-  remote_username_env?: string;
-  remote_password_env?: string;
+  remote_username?: string;
+  remote_password?: string;
   host_path?: string;
+  default_branch?: string;
+};
+
+/** UpdateProject is the body of PATCH /api/projects/{id}; an absent field is left alone. */
+export type UpdateProject = {
+  remote_username?: string;
+  /** remote_password replaces the stored one; "" removes the credentials. */
+  remote_password?: string;
   default_branch?: string;
 };
 
@@ -192,15 +200,144 @@ export type PostMessage = {
 /** Settings is the settings table as one object of arbitrary JSON values. */
 export type Settings = Record<string, unknown>;
 
-/** Model is one model the deployment configured. */
+/** SettingsDefaults are the values the harness uses until the settings name one. */
+export type SettingsDefaults = {
+  sandbox_image: string;
+  subagent_max_depth: number;
+  subagent_max_children: number;
+};
+
+/** SettingsState is the body of GET and PUT /api/settings. */
+export type SettingsState = {
+  settings: Settings;
+  defaults: SettingsDefaults;
+};
+
+/** ReasoningEffort is the Chat Completions reasoning_effort value; "" leaves it to the endpoint. */
+export type ReasoningEffort = "" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/** Model is one model the user configured on a provider. */
 export type Model = {
+  id: string;
+  provider_id: string;
+  /** name is what Eika calls the model, unique across providers. */
   name: string;
+  /** model is the identifier the provider's endpoint knows it by. */
+  model: string;
   context_window: number;
   max_output: number;
+  reasoning_effort?: ReasoningEffort;
+  preserve_thinking: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 /** Models is the body of GET /api/models. */
 export type Models = {
   models: Model[];
+  /** default is the model a run uses when it names none; absent when there are no models. */
   default?: string;
+};
+
+/** CreateModel is the body of POST /api/models. */
+export type CreateModel = {
+  provider_id: string;
+  /** name defaults to model. */
+  name?: string;
+  model: string;
+  context_window: number;
+  max_output: number;
+  reasoning_effort?: ReasoningEffort;
+  preserve_thinking?: boolean;
+};
+
+/** UpdateModel is the body of PATCH /api/models/{id}; an absent field is left alone. */
+export type UpdateModel = Partial<Omit<CreateModel, "provider_id">>;
+
+/** TestModel is the body of POST /api/models/test. */
+export type TestModel = {
+  provider_id: string;
+  model: string;
+  reasoning_effort?: ReasoningEffort;
+  preserve_thinking?: boolean;
+};
+
+/** TestModelResult is what one small request to a model came back with. */
+export type TestModelResult = {
+  reply: string;
+  stop_reason: string;
+  latency_ms: number;
+};
+
+/** Provider is one model provider: an endpoint and whether it holds a key. */
+export type Provider = {
+  id: string;
+  name: string;
+  kind: string;
+  base_url: string;
+  api_key_set: boolean;
+  /** api_key_hint is the last characters of a long key. */
+  api_key_hint?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Providers is the body of GET /api/providers. */
+export type Providers = {
+  providers: Provider[];
+  kinds: string[];
+};
+
+/** CreateProvider is the body of POST /api/providers. */
+export type CreateProvider = {
+  name: string;
+  kind?: string;
+  base_url: string;
+  api_key?: string;
+};
+
+/** UpdateProvider is the body of PATCH /api/providers/{id}; an absent field is left alone. */
+export type UpdateProvider = {
+  name?: string;
+  base_url?: string;
+  /** api_key replaces the stored key; "" removes it. */
+  api_key?: string;
+};
+
+/**
+ * ProbeProvider is the body of POST /api/providers/probe: a stored provider,
+ * an endpoint not saved yet, or a stored one with fields the form changed.
+ */
+export type ProbeProvider = {
+  provider_id?: string;
+  kind?: string;
+  base_url?: string;
+  api_key?: string;
+};
+
+/** ModelInfo is one model an endpoint reports; limits are 0 or absent when it does not say. */
+export type ModelInfo = {
+  id: string;
+  context_window?: number;
+  max_output?: number;
+};
+
+/** AuthStatus is the body of GET /api/auth/status. */
+export type AuthStatus = {
+  password_set: boolean;
+};
+
+/** SignIn is a new session: the bearer token and when it expires. */
+export type SignIn = {
+  token: string;
+  expires_at: string;
+};
+
+/** SystemStatus is the body of GET /api/system. */
+export type SystemStatus = {
+  docker: { reachable: boolean; error?: string };
+  sandbox_image: { name: string; present: boolean };
+  providers: number;
+  models: number;
+  projects: number;
 };

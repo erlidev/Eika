@@ -11,13 +11,15 @@ import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { useAbortRun, useRunStatus } from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
-import { useModels } from "@/features/settings";
+import { useModels, useProviders } from "@/features/providers";
 import { formatTokens } from "@/lib/format";
 
 export type RunStatusBarProps = {
@@ -32,6 +34,7 @@ export function RunStatusBar({ sessionId, model, onModelChange }: RunStatusBarPr
   const status = useRunStatus(sessionId);
   const abort = useAbortRun(sessionId);
   const models = useModels();
+  const providers = useProviders();
   const stream = useStreamStatus();
   const usage = useSessionStore((s) => s.usage);
   const dropped = useSessionStore((s) => s.dropped);
@@ -59,11 +62,20 @@ export function RunStatusBar({ sessionId, model, onModelChange }: RunStatusBarPr
           <SelectValue placeholder="default model" />
         </SelectTrigger>
         <SelectContent>
-          {(models.data?.models ?? []).map((entry) => (
-            <SelectItem key={entry.name} value={entry.name} className="text-xs">
-              {entry.name}
-            </SelectItem>
-          ))}
+          {(providers.data?.providers ?? []).map((provider) => {
+            const own = (models.data?.models ?? []).filter((m) => m.provider_id === provider.id);
+            if (own.length === 0) return null;
+            return (
+              <SelectGroup key={provider.id}>
+                <SelectLabel className="text-xs">{provider.name}</SelectLabel>
+                {own.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.name} className="text-xs">
+                    {entry.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            );
+          })}
         </SelectContent>
       </Select>
 

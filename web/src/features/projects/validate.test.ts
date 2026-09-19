@@ -40,10 +40,10 @@ describe("validate", () => {
 
   it("rejects a remote URL that could carry a credential", () => {
     expect(validate({ name: "a", kind: "remote", remote_url: "https://u:p@host/r.git" })).toMatch(
-      /userinfo/,
+      /own fields/,
     );
     expect(validate({ name: "a", kind: "remote", remote_url: "https://host/r.git?x=1" })).toMatch(
-      /userinfo/,
+      /own fields/,
     );
   });
 
@@ -53,9 +53,17 @@ describe("validate", () => {
         name: "a",
         kind: "remote",
         remote_url: "https://host/r.git",
-        remote_username_env: "EIKA_GIT_USERNAME",
+        remote_username: "x-access-token",
       }),
-    ).toMatch(/both credential variables/);
+    ).toMatch(/both the username and the password/);
+    expect(
+      validate({
+        name: "a",
+        kind: "remote",
+        remote_url: "https://host/r.git",
+        remote_password: "t",
+      }),
+    ).toMatch(/both the username and the password/);
   });
 
   it("accepts a whole credential pair", () => {
@@ -64,8 +72,8 @@ describe("validate", () => {
         name: "a",
         kind: "remote",
         remote_url: "https://host/r.git",
-        remote_username_env: "EIKA_GIT_USERNAME",
-        remote_password_env: "EIKA_GIT_PASSWORD",
+        remote_username: "x-access-token",
+        remote_password: "github_pat_123",
       }),
     ).toBeNull();
   });

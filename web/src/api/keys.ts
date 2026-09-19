@@ -17,4 +17,7 @@ export const queryKeys = {
   runStatus: (sessionId: string) => ["session", sessionId, "run"] as const,
   settings: () => ["settings"] as const,
   models: () => ["models"] as const,
+  providers: () => ["providers"] as const,
+  system: () => ["system"] as const,
+  authStatus: () => ["auth", "status"] as const,
 };

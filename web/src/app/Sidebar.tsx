@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Play,
   Plus,
+  Settings2,
   Square,
   Trash2,
 } from "lucide-react";
@@ -20,7 +21,12 @@ import { useNavigate } from "react-router";
 import type { Project, Session, Workspace } from "@/api/types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
-import { CreateProjectDialog, useDeleteProject, useProjects } from "@/features/projects";
+import {
+  CreateProjectDialog,
+  ProjectSettingsDialog,
+  useDeleteProject,
+  useProjects,
+} from "@/features/projects";
 import { useCreateSession, useDeleteSession, useSessions } from "@/features/sessions";
 import {
   CreateWorkspaceDialog,
@@ -135,6 +141,7 @@ function ProjectRow({
 }: ProjectRowProps) {
   const remove = useDeleteProject();
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   return (
     <li>
@@ -149,6 +156,14 @@ function ProjectRow({
           <>
             <IconButton label={`New workspace in ${project.name}`} onClick={onAddWorkspace}>
               <Plus aria-hidden className="size-3" />
+            </IconButton>
+            <IconButton
+              label={`Settings of ${project.name}`}
+              onClick={() => {
+                setEditing(true);
+              }}
+            >
+              <Settings2 aria-hidden className="size-3" />
             </IconButton>
             <IconButton
               label={`Delete ${project.name}`}
@@ -172,6 +187,7 @@ function ProjectRow({
           remove.mutate(project.id);
         }}
       />
+      <ProjectSettingsDialog project={editing ? project : null} onOpenChange={setEditing} />
       {open && (
         <WorkspaceList
           projectId={project.id}

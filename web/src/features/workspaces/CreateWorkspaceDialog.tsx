@@ -97,7 +97,7 @@ export function CreateWorkspaceDialog({ project, onOpenChange }: CreateWorkspace
               id="workspace-image"
               value={image}
               autoComplete="off"
-              placeholder="the deployment's sandbox image"
+              placeholder="the sandbox image from Settings, General"
               onChange={(e) => {
                 setImage(e.target.value);
               }}

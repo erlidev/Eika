@@ -15,7 +15,7 @@ import { ThemeToggle } from "@/app/ThemeToggle";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
 import { SessionView, useSession } from "@/features/session";
-import { SettingsDialog } from "@/features/settings";
+import { SettingsDialog, useSettingsDialog } from "@/features/settings";
 import { usePersistedNumber, usePersistedString } from "@/lib/persisted";
 import { nextTabIndex } from "@/lib/tablist";
 import { useNarrow } from "@/lib/useNarrow";
@@ -33,7 +33,7 @@ export function Workbench() {
   const [sidebarWidth, setSidebarWidth] = usePersistedNumber("eika.pane.sidebar", 260);
   const [panelWidth, setPanelWidth] = usePersistedNumber("eika.pane.panel", 340);
   const [activePanel, setActivePanel] = usePersistedString("eika.panel.active", "tree");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const showSettings = useSettingsDialog((s) => s.show);
   const [drawer, setDrawer] = useState<"sidebar" | "panel" | null>(null);
   const narrow = useNarrow(narrowWidth);
 
@@ -151,7 +151,7 @@ export function Workbench() {
         <span className="ml-auto flex items-center gap-1">
           <CommandPalette
             onOpenSettings={() => {
-              setSettingsOpen(true);
+              showSettings();
             }}
           />
           <ThemeToggle />
@@ -161,7 +161,7 @@ export function Workbench() {
             className="size-7"
             aria-label="Settings"
             onClick={() => {
-              setSettingsOpen(true);
+              showSettings();
             }}
           >
             <Settings aria-hidden className="size-4" />
@@ -203,7 +203,7 @@ export function Workbench() {
         </main>
       )}
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog />
     </div>
   );
 }

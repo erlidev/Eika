@@ -1,12 +1,13 @@
 /**
- * Deployment settings: the model a run uses when none is named, the colour
- * scheme, and the token this browser holds.
+ * The settings: models and providers, the harness-wide choices, the account,
+ * and the colour scheme. Everything but the colour scheme is stored in the
+ * harness. Its open state is `store.ts`, so anything can open it on a tab.
  */
 
 import { useSyncExternalStore } from "react";
 
-import { disconnect, getConnection, subscribeConnection } from "@/api/connection";
-import { Button } from "@/components/ui/button";
+import { getTheme, setTheme, subscribeTheme } from "@/app/theme";
+import type { Theme } from "@/app/theme";
 import {
   Dialog,
   DialogContent,
@@ -22,21 +23,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { getTheme, setTheme, subscribeTheme } from "@/app/theme";
-import type { Theme } from "@/app/theme";
-import {
-  defaultModelKey,
-  defaultModelOf,
-  useModels,
-  useSaveSettings,
-  useSettings,
-} from "@/features/settings/queries";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ModelsPanel } from "@/features/providers";
+import { AccountSettings } from "@/features/settings/AccountSettings";
+import { GeneralSettings } from "@/features/settings/GeneralSettings";
+import { settingKeys, useSaveSettings } from "@/features/settings/queries";
+import { useSettingsDialog } from "@/features/settings/store";
+import type { SettingsTab } from "@/features/settings/store";
 
-export type SettingsDialogProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-};
+const tabs: readonly { value: SettingsTab; label: string }[] = [
+  { value: "models", label: "Models" },
+  { value: "general", label: "General" },
+  { value: "account", label: "Account" },
+  { value: "appearance", label: "Appearance" },
+];
 
 const themeLabels: Record<Theme, string> = {
   light: "Light",
@@ -44,104 +44,80 @@ const themeLabels: Record<Theme, string> = {
   system: "Follow the system",
 };
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const settings = useSettings();
-  const models = useModels();
+export function SettingsDialog() {
+  const open = useSettingsDialog((s) => s.open);
+  const tab = useSettingsDialog((s) => s.tab);
+  const setOpen = useSettingsDialog((s) => s.setOpen);
+  const setTab = useSettingsDialog((s) => s.setTab);
   const save = useSaveSettings();
-  const theme = useSyncExternalStore<Theme>(subscribeTheme, getTheme, () => "system");
-  const connection = useSyncExternalStore(subscribeConnection, getConnection, () => ({
-    baseUrl: "",
-    token: "",
-  }));
-
-  const defaultModel = defaultModelOf(settings.data);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            The model setting is stored in the harness; the theme and the token belong to this
-            browser.
+            Stored in the harness and shared by every browser, except the theme.
           </DialogDescription>
         </DialogHeader>
-
-        <div className="space-y-2">
-          <Label htmlFor="default-model">Default model</Label>
-          <Select
-            value={defaultModel}
-            onValueChange={(value) => {
-              save.mutate({ [defaultModelKey]: value });
-            }}
-          >
-            <SelectTrigger id="default-model" className="w-full">
-              <SelectValue placeholder="the first configured model" />
-            </SelectTrigger>
-            <SelectContent>
-              {(models.data?.models ?? []).map((model) => (
-                <SelectItem key={model.name} value={model.name}>
-                  {model.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-muted-foreground text-xs">
-            Used when a message names no model. Configure the list in the deployment's
-            <code className="mx-1">eika.yaml</code>.
-          </p>
-          {save.isError && (
-            <p role="alert" className="text-destructive text-xs">
-              {save.error.message}
-            </p>
-          )}
-        </div>
-
-        <Separator />
-
-        <div className="space-y-2">
-          <Label htmlFor="theme">Theme</Label>
-          <Select
-            value={theme}
-            onValueChange={(value) => {
-              setTheme(value as Theme);
-            }}
-          >
-            <SelectTrigger id="theme" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(themeLabels) as Theme[]).map((option) => (
-                <SelectItem key={option} value={option}>
-                  {themeLabels[option]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Separator />
-
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium">Connection</h3>
-          <dl className="text-muted-foreground grid grid-cols-[auto_1fr] gap-x-3 font-mono text-xs">
-            <dt>harness</dt>
-            <dd className="truncate">{connection.baseUrl || "this origin"}</dd>
-            <dt>token</dt>
-            <dd>{connection.token === "" ? "none" : "stored in this browser"}</dd>
-          </dl>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              disconnect();
-              onOpenChange(false);
-            }}
-          >
-            Forget the token
-          </Button>
-        </div>
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            setTab(value as SettingsTab);
+          }}
+        >
+          <TabsList>
+            {tabs.map((option) => (
+              <TabsTrigger key={option.value} value={option.value}>
+                {option.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <TabsContent value="models" className="pt-3">
+            <ModelsPanel
+              onDefaultChange={(name) => {
+                save.mutate({ [settingKeys.defaultModel]: name });
+              }}
+            />
+          </TabsContent>
+          <TabsContent value="general" className="pt-3">
+            <GeneralSettings />
+          </TabsContent>
+          <TabsContent value="account" className="pt-3">
+            <AccountSettings />
+          </TabsContent>
+          <TabsContent value="appearance" className="pt-3">
+            <ThemeSelect />
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ThemeSelect() {
+  const theme = useSyncExternalStore<Theme>(subscribeTheme, getTheme, () => "system");
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="theme">Theme</Label>
+      <Select
+        value={theme}
+        onValueChange={(value) => {
+          setTheme(value as Theme);
+        }}
+      >
+        <SelectTrigger id="theme" className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.keys(themeLabels) as Theme[]).map((option) => (
+            <SelectItem key={option} value={option}>
+              {themeLabels[option]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-muted-foreground text-xs">Remembered by this browser only.</p>
+    </div>
   );
 }

@@ -1,17 +1,20 @@
 # connect
 
-The screen that asks for the deployment's bearer token, and React access to
-the token the browser stores.
+Signing in, and React access to the connection the browser stores.
 
-- `ConnectScreen.tsx` stores the token with `api/connection`, then calls one
-  real route to check it. A `401` clears the token again and the screen says
-  so, which is the same path any later `401` takes.
+- `useAuthStatus.ts` asks `GET /api/auth/status` whether the harness has a
+  sign-in password yet. It needs no token, so the app reads it first to
+  choose between the setup wizard and the sign-in screen.
+- `SignInScreen.tsx` exchanges the password for a session token and stores it
+  with `api/connection`. Under "Advanced" it takes the deployment's API token
+  instead, checked on one real route before it is stored, and another harness
+  URL. A `401` anywhere clears the token and returns here.
 - `useConnection.ts` reads `api/connection` through `useSyncExternalStore`,
-  so the app re-renders when the token appears or is forgotten.
+  so the app re-renders when a token appears or is forgotten.
 
 The token itself lives in `api/connection`, not here: `api/` must not depend
-on a feature, and the HTTP client needs the token.
+on a feature, and the HTTP client needs the token. Choosing the first
+password is the setup wizard's first step, in `features/setup`.
 
-Test it: there is no test; the behaviour is one form over
-`api/connection`, which `api/stream.test.ts` exercises indirectly. Check it by
-hand with `make dev` and a wrong token.
+Test it: there is no unit test; check it by hand with `make dev`, a wrong
+password, and a stopped harness.
