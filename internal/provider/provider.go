@@ -13,6 +13,36 @@ type Provider interface {
 	Stream(ctx context.Context, req Request) (<-chan Event, error)
 }
 
+// Lister is implemented by a Provider whose endpoint can say which models it
+// serves. The setup screens use it to offer models to choose from; the models
+// of a provider without it are entered by name.
+type Lister interface {
+	Models(ctx context.Context) ([]ModelInfo, error)
+}
+
+// ModelInfo is one model an endpoint reports that it serves.
+type ModelInfo struct {
+	// ID is the identifier a request names the model by.
+	ID string `json:"id"`
+	// ContextWindow is the total token budget the endpoint reports, zero
+	// when it does not say.
+	ContextWindow int `json:"context_window,omitempty"`
+	// MaxOutput is the most tokens one response may have, zero when the
+	// endpoint does not say.
+	MaxOutput int `json:"max_output,omitempty"`
+}
+
+// ValidReasoningEffort reports whether effort is a value Request accepts for
+// ReasoningEffort. The empty value leaves the choice to the endpoint.
+func ValidReasoningEffort(effort string) bool {
+	switch effort {
+	case "", "none", "minimal", "low", "medium", "high", "xhigh", "max":
+		return true
+	default:
+		return false
+	}
+}
+
 // Role is the author of a conversation message.
 type Role string
 
@@ -171,7 +201,7 @@ type ToolDef struct {
 
 // Request is one call to a model.
 type Request struct {
-	// Model is the model identifier the provider was configured with.
+	// Model is the identifier of the model on the provider's endpoint.
 	Model string
 	// System is the system prompt. An empty system prompt is omitted.
 	System string

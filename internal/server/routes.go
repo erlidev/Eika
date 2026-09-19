@@ -19,6 +19,11 @@ func (s *Server) routes() {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/events", s.handleEvents)
 	if s.deps.Store != nil {
+		// Setup and sign-in are how a browser gets a token, so they are the
+		// routes under /api that need none.
+		s.mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
+		s.mux.HandleFunc("POST /api/auth/setup", s.handleSetup)
+		s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 		s.resourceRoutes(api)
 	}
 	s.mux.Handle("/api/", s.authenticated(api))
@@ -37,9 +42,13 @@ func (s *Server) routes() {
 
 // resourceRoutes registers the routes that read or write the database.
 func (s *Server) resourceRoutes(api *http.ServeMux) {
+	api.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	api.HandleFunc("PUT /api/auth/password", s.handleChangePassword)
+
 	api.HandleFunc("GET /api/projects", s.handleListProjects)
 	api.HandleFunc("POST /api/projects", s.handleCreateProject)
 	api.HandleFunc("GET /api/projects/{id}", s.handleProject)
+	api.HandleFunc("PATCH /api/projects/{id}", s.handleUpdateProject)
 	api.HandleFunc("DELETE /api/projects/{id}", s.handleDeleteProject)
 
 	api.HandleFunc("GET /api/workspaces", s.handleListWorkspaces)
@@ -67,9 +76,21 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /api/runs/{id}/abort", s.handleAbortRun)
 	api.HandleFunc("POST /api/questions/{id}/answer", s.handleAnswerQuestion)
 
+	api.HandleFunc("GET /api/providers", s.handleListProviders)
+	api.HandleFunc("POST /api/providers", s.handleCreateProvider)
+	api.HandleFunc("POST /api/providers/probe", s.handleProbeProvider)
+	api.HandleFunc("PATCH /api/providers/{id}", s.handleUpdateProvider)
+	api.HandleFunc("DELETE /api/providers/{id}", s.handleDeleteProvider)
+
+	api.HandleFunc("GET /api/models", s.handleListModels)
+	api.HandleFunc("POST /api/models", s.handleCreateModel)
+	api.HandleFunc("POST /api/models/test", s.handleTestModel)
+	api.HandleFunc("PATCH /api/models/{id}", s.handleUpdateModel)
+	api.HandleFunc("DELETE /api/models/{id}", s.handleDeleteModel)
+
 	api.HandleFunc("GET /api/settings", s.handleSettings)
 	api.HandleFunc("PUT /api/settings", s.handlePutSettings)
-	api.HandleFunc("GET /api/models", s.handleModels)
+	api.HandleFunc("GET /api/system", s.handleSystem)
 }
 
 // health is the body of a health check response.

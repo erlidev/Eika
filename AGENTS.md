@@ -36,9 +36,10 @@ cmd/eikad     sandbox daemon         internal/tool      tools and registry
 internal/provider  LLM providers     internal/executor  sandbox I/O
 internal/workspace containers, hub   internal/session   session trees
 internal/search    search sources    internal/server    HTTP + WebSocket
-internal/store     Postgres          internal/config    configuration
-web/          frontend               sandbox/           sandbox image
-deploy/       compose, searxng       docs/              documentation
+internal/store     Postgres          internal/config    deployment config
+internal/secret    sealed secrets    web/               frontend
+sandbox/           sandbox image     compose.yaml       the whole stack
+deploy/            entrypoint, searxng  docs/           documentation
 ```
 
 Dependencies point inward. `server` may import `agent`; `agent` may import
@@ -48,6 +49,7 @@ imports `workspace`.
 ## Commands
 
 ```
+make local      build and run the whole stack in Docker, as a deployment does
 make dev        run harness + frontend in watch mode against compose services
 make check      fmt, vet, lint, test (Go and web)
 make test       tests only

@@ -2,13 +2,13 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/openai"
+	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool/builtin"
@@ -26,6 +26,12 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	}
 	defer st.Close()
 
+	// The key that seals credentials lives beside the hub, not in the
+	// database, so a copy of the database alone opens none of them.
+	secrets, err := secret.Load(cfg.SecretKeyFile)
+	if err != nil {
+		return err
+	}
 	repos, err := hub.New(cfg.HubRoot, log)
 	if err != nil {
 		return err
@@ -53,12 +59,11 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	// hold spawn_agent, and the spawner drives a child through the run
 	// manager. The spawner is built first and given the runner afterwards.
 	spawner := subagent.New(subagent.Options{
-		Store:       st,
-		Workspaces:  host,
-		Emitter:     bus,
-		MaxDepth:    cfg.Subagents.MaxDepth,
-		MaxChildren: cfg.Subagents.MaxChildren,
-		Logger:      log,
+		Store:      st,
+		Workspaces: host,
+		Emitter:    bus,
+		Limits:     subagentLimits(st, log),
+		Logger:     log,
 	})
 	tools, err := builtin.Registry(questions, spawner)
 	if err != nil {
@@ -68,7 +73,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Store:      st,
 		Hub:        repos,
 		Workspaces: host,
-		Models:     configuredModels{registry: provider.NewRegistry(openai.New), models: cfg.Models},
+		Providers:  provider.NewRegistry(openai.New),
+		Secrets:    secrets,
 		Tools:      tools,
 		Questions:  questions,
 		Bus:        bus,
@@ -84,36 +90,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	return s.Run(ctx)
 }
 
-// configuredModels is the set of models the configuration declares. It builds
-// a provider per run rather than holding one, so that a model's API key is
-// read when it is used and a run never shares a client with another.
-type configuredModels struct {
-	registry *provider.Registry
-	models   []config.Model
-}
-
-// Names lists the configured model names, in configuration order: the first
-// is the default until the user picks one in the settings.
-func (m configuredModels) Names() []string {
-	out := make([]string, 0, len(m.models))
-	for _, model := range m.models {
-		out = append(out, model.Name)
-	}
-	return out
-}
-
-// Provider builds the provider for one configured model.
-func (m configuredModels) Provider(name string) (provider.Provider, error) {
-	for _, model := range m.models {
-		if model.Name == name {
-			return m.registry.Build("openai", model)
-		}
-	}
-	return nil, fmt.Errorf("build provider: model %s is not configured", name)
-}
-
 var (
-	_ Models              = configuredModels{}
+	_ Providers           = (*provider.Registry)(nil)
 	_ Workspaces          = (*workspace.Host)(nil)
 	_ Hub                 = (*hub.Hub)(nil)
 	_ Subagents           = (*subagent.Spawner)(nil)

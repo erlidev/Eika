@@ -24,11 +24,13 @@ Two unauthenticated health routes, both returning `{"status": "ok"}`:
 | GET | `/api/healthz` | The same response under the `/api` prefix the frontend uses. |
 
 Everything else under `/api` is the JSON API in `http.md`: projects,
-workspaces, sessions, runs, questions, settings, models, and the WebSocket
-event stream. All of it requires `Authorization: Bearer <token>`, where the
-token is the configured `auth_token`; `/api/events` also accepts that token as
+workspaces, sessions, runs, questions, sign-in, providers, models, settings,
+the system check, and the WebSocket event stream. All of it requires
+`Authorization: Bearer <token>`, where the token is a sign-in session's or
+the deployment's optional API token; `/api/events` also accepts the token as
 a query parameter, because a WebSocket handshake carries no headers a browser
-can set. The health routes are the only permanent exceptions.
+can set. The health routes and the three routes that hand out a session are
+the only exceptions.
 
 `eikad` serves `GET /healthz` with the same body, plus the sandbox API in
 `eikad.md`. The harness also serves the git hub at `/git/<project>.git`, which

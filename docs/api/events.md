@@ -12,12 +12,12 @@ all three in the same commit.
 it is the one route that does.
 
 ```
-ws://<harness>/api/events?token=<auth_token>&topics=global,session:<id>&since=<entry_id>
+ws://<harness>/api/events?token=<token>&topics=global,session:<id>&since=<entry_id>
 ```
 
 | Parameter | Meaning |
 |---|---|
-| `token` | The deployment's bearer token. Required. |
+| `token` | A sign-in session's token or the deployment's API token. Required. |
 | `topics` | Comma-separated topics to subscribe to at once. Optional; a client may subscribe after connecting instead. |
 | `since` | An entry id. The session that entry belongs to is replayed from the entry after it, before any live event. Optional. |
 

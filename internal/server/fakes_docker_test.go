@@ -79,6 +79,10 @@ type fakeHost struct {
 	startErr   error
 	cloneErr   error
 	inspectErr error
+	// images are the images HasImage reports present; imageErr fails it,
+	// the way a Docker socket the harness cannot use does.
+	images   map[string]bool
+	imageErr error
 	// cloneHook runs before Clone answers, which is how a test acts in the
 	// middle of a creation the harness has already got a container out of.
 	cloneHook func()
@@ -337,24 +341,34 @@ func (h *fakeHost) update(ws *workspace.Workspace, state workspace.State) error 
 	return nil
 }
 
-// fakeModels hands out scripted providers.
-type fakeModels struct {
-	names []string
-	build func(name string) (provider.Provider, error)
+// HasImage reports the images the test said are there.
+func (h *fakeHost) HasImage(_ context.Context, ref string) (bool, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.imageErr != nil {
+		return false, h.imageErr
+	}
+	return h.images[ref], nil
 }
 
-// Names lists the model names the test configured.
-func (m fakeModels) Names() []string { return m.names }
+// fakeProviders builds whatever provider the test scripted, for any endpoint
+// of the one kind the harness knows.
+type fakeProviders struct {
+	build func(kind string, e provider.Endpoint) (provider.Provider, error)
+}
 
-// Provider returns the scripted provider for a model.
-func (m fakeModels) Provider(name string) (provider.Provider, error) {
-	if m.build == nil {
-		return nil, fmt.Errorf("no provider for model %s", name)
+// Kinds lists the kinds the real registry has.
+func (fakeProviders) Kinds() []string { return []string{"openai"} }
+
+// Build returns the scripted provider.
+func (p fakeProviders) Build(kind string, e provider.Endpoint) (provider.Provider, error) {
+	if p.build == nil {
+		return nil, fmt.Errorf("no provider for kind %s", kind)
 	}
-	return m.build(name)
+	return p.build(kind, e)
 }
 
 var (
 	_ server.Workspaces = (*fakeHost)(nil)
-	_ server.Models     = fakeModels{}
+	_ server.Providers  = fakeProviders{}
 )

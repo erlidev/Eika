@@ -7,13 +7,11 @@ SANDBOX_IMAGE ?= eika-sandbox:latest
 # Go files of its own.
 GOPKGS := ./cmd/... ./internal/...
 GODIRS := cmd internal
-ENV_FILE := deploy/.env
-COMPOSE := docker compose -f deploy/docker-compose.yml --env-file $(ENV_FILE)
-LOCAL_COMPOSE := EIKA_AUTH_TOKEN="$${EIKA_AUTH_TOKEN:-dev-token}" \
-	POSTGRES_PASSWORD="$${POSTGRES_PASSWORD:-eika-local}" \
-	SEARXNG_SECRET="$${SEARXNG_SECRET:-eika-local}" \
-	DOCKER_GID="$${DOCKER_GID:-$$(stat -c %g /var/run/docker.sock)}" \
-	docker compose --project-name eika-local -f deploy/docker-compose.yml --env-file /dev/null
+# DEV holds the state a harness running on the host keeps: the hub and the
+# key that seals credentials. It is ignored by git.
+DEV := .dev
+COMPOSE := docker compose
+DEV_COMPOSE := docker compose -f compose.yaml -f compose.dev.yaml
 
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
@@ -79,41 +77,44 @@ typecheck: web-install
 	cd $(WEB) && $(NPM) run typecheck
 
 ## dev: run the harness and the Vite dev server against the compose services.
-## Needs deploy/.env; copy deploy/.env.example and fill it in first.
-dev: $(ENV_FILE)
-	$(COMPOSE) up -d postgres searxng
+dev:
+	$(DEV_COMPOSE) up -d postgres searxng
 	$(MAKE) -j2 dev-go dev-web
 
-$(ENV_FILE):
-	@echo "$(ENV_FILE) is missing: cp deploy/.env.example $(ENV_FILE) and fill it in"; exit 1
-
 # The harness runs on the host in dev, so it reaches the compose services on
-# their published 127.0.0.1 ports instead of their internal hostnames, and the
-# event stream has to accept the Vite dev server's origin.
-dev-go: $(ENV_FILE)
-	@set -a; . ./$(ENV_FILE); set +a; \
-	EIKA_AUTH_TOKEN="$${EIKA_AUTH_TOKEN:-dev-token}" \
+# their published 127.0.0.1 ports instead of their internal hostnames, keeps
+# its state in $(DEV), publishes each sandbox's daemon on loopback, and lets
+# the Vite dev server's origin open the event stream. A .env in the
+# repository root is read for the optional values, as compose reads it.
+dev-go:
+	@mkdir -p $(DEV)
+	CGO_ENABLED=0 $(GO) build -o $(BIN)/eikad ./cmd/eikad
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
 	EIKA_ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:5173" \
-	EIKA_DATABASE_URL="postgres://$${POSTGRES_USER:-eika}:$${POSTGRES_PASSWORD}@127.0.0.1:$${POSTGRES_PORT:-5432}/$${POSTGRES_DB:-eika}?sslmode=disable" \
+	EIKA_DATABASE_URL="postgres://eika:$${POSTGRES_PASSWORD:-eika}@127.0.0.1:$${POSTGRES_PORT:-5432}/eika?sslmode=disable" \
 	EIKA_SEARXNG_URL="http://127.0.0.1:$${SEARXNG_PORT:-8888}" \
-	$(GO) run ./cmd/eika -config deploy/eika.yaml
+	EIKA_SANDBOX_NETWORK="" \
+	EIKA_EIKAD_BINARY="$(CURDIR)/$(BIN)/eikad" \
+	EIKA_HUB_ROOT="$(CURDIR)/$(DEV)/hub" \
+	EIKA_SECRET_KEY_FILE="$(CURDIR)/$(DEV)/secret.key" \
+	$(GO) run ./cmd/eika
 
 dev-web: web-install
 	cd $(WEB) && $(NPM) run dev
 
-## local: run the complete stack without creating files in the repository.
-## Set OPENAI_API_KEY in the shell to run agents. The UI uses dev-token.
-local: sandbox
-	$(LOCAL_COMPOSE) up -d --build
-	@echo "Eika is ready at http://localhost:$${EIKA_PORT:-8080} (token: $${EIKA_AUTH_TOKEN:-dev-token})"
+## local: build and run the whole stack in Docker, as a deployment does.
+## Open the printed URL and follow the setup.
+local:
+	$(COMPOSE) up -d --build
+	@echo "Eika is starting at http://localhost:$${EIKA_PORT:-8080}; open it to finish the setup."
 
-## local-down: stop the local stack. Add `-v` manually to delete its data.
+## local-down: stop the stack. Add `-v` manually to delete its data.
 local-down:
-	$(LOCAL_COMPOSE) down
+	$(COMPOSE) down
 
-## local-logs: follow logs from the local stack.
+## local-logs: follow logs from the stack.
 local-logs:
-	$(LOCAL_COMPOSE) logs -f
+	$(COMPOSE) logs -f
 
 ## sandbox: build the default sandbox image. The context is the repository
 ## root because the image builds eikad from source.

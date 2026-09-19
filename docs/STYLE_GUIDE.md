@@ -176,16 +176,19 @@ about to change it. Both need the same thing: accurate, current, short.
   Mention dependency additions with a reason.
 - A commit passes `make check`. Do not commit generated files except the
   lockfiles and shadcn components.
-- Never commit secrets, tokens, or `.env` files. `deploy/.env.example`
-  documents every variable.
+- Never commit secrets, tokens, or `.env` files. `.env.example` documents
+  every compose variable.
 
 ## 6. Security
 
 - Agent actions execute only through `executor` implementations backed by
   a sandbox. `executor/local` is `//go:build !prod` and test-only.
-- The harness holds all credentials (LLM keys, git remote tokens). Sandboxes
-  receive a per-workspace `eikad` token and nothing else.
-- All HTTP handlers require the bearer token except `/healthz`.
+- The harness holds all credentials (LLM keys, git remote tokens), sealed
+  with `internal/secret` before they reach the database and never returned
+  by the API. Sandboxes receive a per-workspace `eikad` token and nothing
+  else.
+- All HTTP handlers require a bearer token except the health checks and the
+  sign-in routes that hand one out.
 - Validate and bound every input from an agent or the UI: path traversal in
   file tools, command length, output size, search query length.
 - Never log secrets. Config values named `*_key`, `*_token`, `*_secret` are

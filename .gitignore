@@ -4,8 +4,10 @@
 /web/node_modules/
 /web/.vite/
 
-# Local configuration and secrets
+# Local configuration, secrets, and the state `make dev` keeps
+/.env
 /deploy/.env
+/.dev/
 *.local.yaml
 
 # Editor and OS noise

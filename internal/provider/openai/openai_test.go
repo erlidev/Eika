@@ -3,6 +3,7 @@ package openai_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/openai"
 )
@@ -51,23 +51,20 @@ func newSSEServer(t *testing.T, status int, lines ...string) *sseServer {
 // newProvider builds a provider pointed at the test server.
 func newProvider(t *testing.T, baseURL string) provider.Provider {
 	t.Helper()
-	t.Setenv("EIKA_TEST_KEY", "secret")
-	p, err := openai.New(config.Model{
-		Name:          "test-model",
-		BaseURL:       baseURL,
-		APIKeyEnv:     "EIKA_TEST_KEY",
-		ContextWindow: 1000,
-		MaxOutput:     100,
-	})
+	p, err := openai.New(provider.Endpoint{BaseURL: baseURL, APIKey: "secret"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	return p
 }
 
-// collect drains a provider stream.
+// collect drains a provider stream. A request that names no model gets the
+// one every test server stands in for.
 func collect(t *testing.T, ctx context.Context, p provider.Provider, req provider.Request) []provider.Event {
 	t.Helper()
+	if req.Model == "" {
+		req.Model = "test-model"
+	}
 	ch, err := p.Stream(ctx, req)
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
@@ -79,14 +76,95 @@ func collect(t *testing.T, ctx context.Context, p provider.Provider, req provide
 	return events
 }
 
-func TestNewRequiresAPIKey(t *testing.T) {
-	t.Setenv("EIKA_TEST_MISSING", "")
-	_, err := openai.New(config.Model{Name: "m", BaseURL: "http://x", APIKeyEnv: "EIKA_TEST_MISSING"})
-	if err == nil {
-		t.Fatal("New with an empty key returned no error")
+func TestNewRequiresABaseURL(t *testing.T) {
+	if _, err := openai.New(provider.Endpoint{APIKey: "key"}); err == nil {
+		t.Fatal("New without a base URL returned no error")
 	}
-	if !strings.Contains(err.Error(), "EIKA_TEST_MISSING") {
-		t.Errorf("error = %v, want it to name the variable", err)
+}
+
+func TestStreamRequiresAModel(t *testing.T) {
+	p := newProvider(t, "http://model.invalid")
+	if _, err := p.Stream(context.Background(), provider.Request{}); err == nil {
+		t.Fatal("Stream without a model returned no error")
+	}
+}
+
+func TestStreamSendsTheKeyAndNotTheEnvironmentOne(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "from-the-environment")
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	for _, key := range []string{"from-the-ui", ""} {
+		p, err := openai.New(provider.Endpoint{BaseURL: srv.URL, APIKey: key})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		collect(t, context.Background(), p, provider.Request{Messages: []provider.Message{provider.UserMessage("hi")}})
+		if strings.Contains(got, "from-the-environment") {
+			t.Errorf("key %q: Authorization = %q, want the configured key", key, got)
+		}
+		if key != "" && got != "Bearer "+key {
+			t.Errorf("Authorization = %q, want Bearer %s", got, key)
+		}
+	}
+}
+
+func TestModelsListsWhatTheEndpointServes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"object":"list","data":[
+			{"id":"zeta","object":"model","created":1,"owned_by":"x"},
+			{"id":"router/alpha","object":"model","created":1,"owned_by":"x","context_length":200000,"top_provider":{"max_completion_tokens":64000}},
+			{"id":"served","object":"model","created":1,"owned_by":"x","max_model_len":32768}
+		]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	p, err := openai.New(provider.Endpoint{BaseURL: srv.URL, APIKey: "k"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	models, err := p.(provider.Lister).Models(context.Background())
+	if err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	want := []provider.ModelInfo{
+		{ID: "router/alpha", ContextWindow: 200000, MaxOutput: 64000},
+		{ID: "served", ContextWindow: 32768},
+		{ID: "zeta"},
+	}
+	if len(models) != len(want) {
+		t.Fatalf("models = %+v, want %+v", models, want)
+	}
+	for i := range want {
+		if models[i] != want[i] {
+			t.Errorf("models[%d] = %+v, want %+v", i, models[i], want[i])
+		}
+	}
+}
+
+func TestModelsReportsARefusedKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"error":{"message":"Incorrect API key provided","type":"invalid_request_error"}}`)
+	}))
+	t.Cleanup(srv.Close)
+	p, err := openai.New(provider.Endpoint{BaseURL: srv.URL, APIKey: "wrong"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = p.(provider.Lister).Models(context.Background())
+	var perr *provider.Error
+	if !errors.As(err, &perr) || perr.StatusCode != http.StatusUnauthorized || perr.Retryable {
+		t.Errorf("Models error = %v, want a non-retryable 401", err)
 	}
 }
 
@@ -213,7 +291,8 @@ func TestStreamSendsToolsAndModel(t *testing.T) {
 			provider.AssistantMessage("", []provider.ToolCall{{ID: "c1", Name: "ls", Arguments: provider.ToolArguments(`{}`)}}),
 			provider.ToolResultMessage("c1", "a.txt", false),
 		},
-		Tools: []provider.ToolDef{{Name: "ls", Description: "list", Schema: json.RawMessage(`{"type":"object"}`)}},
+		Tools:     []provider.ToolDef{{Name: "ls", Description: "list", Schema: json.RawMessage(`{"type":"object"}`)}},
+		MaxTokens: 100,
 	})
 
 	var sent struct {
@@ -249,7 +328,7 @@ func TestStreamSendsToolsAndModel(t *testing.T) {
 		t.Errorf("tools = %+v", sent.Tools)
 	}
 	if sent.MaxCompletionTokens != 100 {
-		t.Errorf("max_completion_tokens = %d, want the model default 100", sent.MaxCompletionTokens)
+		t.Errorf("max_completion_tokens = %d, want the requested 100", sent.MaxCompletionTokens)
 	}
 	if sent.Temperature == nil || *sent.Temperature != 0 {
 		t.Errorf("temperature = %v, want an explicit 0", sent.Temperature)

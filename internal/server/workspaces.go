@@ -122,9 +122,13 @@ func (s *Server) createWorkspace(ctx context.Context, req createWorkspaceRequest
 		}
 	}
 
+	image := strings.TrimSpace(req.Image)
+	if image == "" && req.BuildContext == "" {
+		image = s.sandboxImage(ctx)
+	}
 	spec := workspace.Spec{
 		ID:           store.NewID(),
-		Image:        req.Image,
+		Image:        image,
 		BuildContext: req.BuildContext,
 		Dockerfile:   req.Dockerfile,
 		Project:      project.Name,

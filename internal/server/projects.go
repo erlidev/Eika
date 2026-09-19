@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -16,19 +15,19 @@ import (
 // defaultBranch is the branch a project uses when the request names none.
 const defaultBranch = "main"
 
-// credentialEnvironment is the accepted name of an environment variable
-// that holds a remote credential. The EIKA_ prefix keeps secret sources
-// explicit and follows the configuration policy.
-var credentialEnvironment = regexp.MustCompile(`^EIKA_[A-Za-z0-9_]+$`)
+// maxCredential bounds a remote username or password.
+const maxCredential = 4096
 
 // projectBody is one project on the wire.
 type projectBody struct {
-	ID                string    `json:"id"`
-	Name              string    `json:"name"`
-	Kind              string    `json:"kind"`
-	RemoteURL         string    `json:"remote_url,omitempty"`
-	RemoteUsernameEnv string    `json:"remote_username_env,omitempty"`
-	RemotePasswordEnv string    `json:"remote_password_env,omitempty"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Kind           string `json:"kind"`
+	RemoteURL      string `json:"remote_url,omitempty"`
+	RemoteUsername string `json:"remote_username,omitempty"`
+	// RemotePasswordSet says a password is stored. The password itself never
+	// leaves the harness.
+	RemotePasswordSet bool      `json:"remote_password_set,omitempty"`
 	HostPath          string    `json:"host_path,omitempty"`
 	DefaultBranch     string    `json:"default_branch"`
 	CreatedAt         time.Time `json:"created_at"`
@@ -36,13 +35,23 @@ type projectBody struct {
 
 // createProjectRequest is the body of POST /api/projects.
 type createProjectRequest struct {
-	Name              string `json:"name"`
-	Kind              string `json:"kind"`
-	RemoteURL         string `json:"remote_url"`
-	RemoteUsernameEnv string `json:"remote_username_env"`
-	RemotePasswordEnv string `json:"remote_password_env"`
-	HostPath          string `json:"host_path"`
-	DefaultBranch     string `json:"default_branch"`
+	Name           string `json:"name"`
+	Kind           string `json:"kind"`
+	RemoteURL      string `json:"remote_url"`
+	RemoteUsername string `json:"remote_username"`
+	RemotePassword string `json:"remote_password"`
+	HostPath       string `json:"host_path"`
+	DefaultBranch  string `json:"default_branch"`
+}
+
+// updateProjectRequest is the body of PATCH /api/projects/{id}. An absent
+// field is left alone. Where the code comes from does not change.
+type updateProjectRequest struct {
+	RemoteUsername *string `json:"remote_username"`
+	// RemotePassword replaces the stored password; the empty string removes
+	// it along with the username.
+	RemotePassword *string `json:"remote_password"`
+	DefaultBranch  *string `json:"default_branch"`
 }
 
 // projectsResponse is the body of GET /api/projects.
@@ -86,28 +95,33 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 // records the project.
 func (s *Server) createProject(ctx context.Context, req createProjectRequest) (store.Project, error) {
 	p := store.Project{
-		Name:              strings.TrimSpace(req.Name),
-		Kind:              store.ProjectKind(req.Kind),
-		RemoteURL:         strings.TrimSpace(req.RemoteURL),
-		RemoteUsernameEnv: strings.TrimSpace(req.RemoteUsernameEnv),
-		RemotePasswordEnv: strings.TrimSpace(req.RemotePasswordEnv),
-		HostPath:          strings.TrimSpace(req.HostPath),
-		DefaultBranch:     strings.TrimSpace(req.DefaultBranch),
+		Name:          strings.TrimSpace(req.Name),
+		Kind:          store.ProjectKind(req.Kind),
+		RemoteURL:     strings.TrimSpace(req.RemoteURL),
+		HostPath:      strings.TrimSpace(req.HostPath),
+		DefaultBranch: strings.TrimSpace(req.DefaultBranch),
 	}
 	if p.DefaultBranch == "" {
 		p.DefaultBranch = defaultBranch
+	}
+	creds := hub.Credentials{
+		Username: strings.TrimSpace(req.RemoteUsername),
+		Password: strings.TrimSpace(req.RemotePassword),
 	}
 	switch p.Kind {
 	case store.ProjectRemote:
 		if p.RemoteURL == "" {
 			return store.Project{}, invalidf("remote_url is required for a remote project")
 		}
-		if err := validateRemoteCredentials(p); err != nil {
+		if err := validateRemoteURL(p.RemoteURL); err != nil {
+			return store.Project{}, err
+		}
+		if err := validateCredentials(creds); err != nil {
 			return store.Project{}, err
 		}
 	case store.ProjectLocal:
-		if p.RemoteUsernameEnv != "" || p.RemotePasswordEnv != "" {
-			return store.Project{}, invalidf("remote credential environments are only valid for a remote project")
+		if creds != (hub.Credentials{}) {
+			return store.Project{}, invalidf("remote credentials are only valid for a remote project")
 		}
 		if p.HostPath == "" {
 			return store.Project{}, invalidf("host_path is required for a local project")
@@ -125,42 +139,125 @@ func (s *Server) createProject(ctx context.Context, req createProjectRequest) (s
 		return store.Project{}, err
 	}
 	if p.Kind == store.ProjectRemote {
-		creds := hub.Credentials{
-			UsernameEnv: p.RemoteUsernameEnv,
-			PasswordEnv: p.RemotePasswordEnv,
+		if err := s.mirror(ctx, p, creds); err != nil {
+			return store.Project{}, err
 		}
-		if err := s.deps.Hub.Mirror(ctx, p.Name, p.RemoteURL, creds); err != nil {
-			remote, reason := withoutCredentials(p.RemoteURL, err)
-			s.log.Error("mirror remote", "project", p.Name, "remote", remote, "error", reason)
-			return store.Project{}, invalidf("mirror %s: %s", remote, reason)
-		}
+	}
+	var err error
+	p.RemoteUsername = creds.Username
+	if p.RemotePassword, err = s.deps.Secrets.Seal(creds.Password); err != nil {
+		return store.Project{}, err
 	}
 	return s.deps.Store.CreateProject(ctx, p)
 }
 
-// validateRemoteCredentials rejects credentials in a URL and validates the
-// matched environment references used instead.
-func validateRemoteCredentials(p store.Project) error {
-	u, err := url.Parse(p.RemoteURL)
+// handleUpdateProject changes a project's remote credentials or default
+// branch. New credentials are used to fetch from the remote before they are
+// stored, so a wrong token is refused here rather than at the next fetch.
+func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[updateProjectRequest](r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	p, err := s.deps.Store.Project(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if req.DefaultBranch != nil {
+		if p.DefaultBranch = strings.TrimSpace(*req.DefaultBranch); p.DefaultBranch == "" {
+			s.fail(w, r, invalidf("default_branch must not be empty"))
+			return
+		}
+	}
+	if req.RemoteUsername != nil || req.RemotePassword != nil {
+		if p.Kind != store.ProjectRemote {
+			s.fail(w, r, invalidf("remote credentials are only valid for a remote project"))
+			return
+		}
+		creds, err := s.projectCredentials(p)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if req.RemoteUsername != nil {
+			creds.Username = strings.TrimSpace(*req.RemoteUsername)
+		}
+		if req.RemotePassword != nil {
+			creds.Password = strings.TrimSpace(*req.RemotePassword)
+			if creds.Password == "" {
+				creds.Username = ""
+			}
+		}
+		if err := validateCredentials(creds); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if err := s.mirror(r.Context(), p, creds); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		p.RemoteUsername = creds.Username
+		if p.RemotePassword, err = s.deps.Secrets.Seal(creds.Password); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	updated, err := s.deps.Store.UpdateProject(r.Context(), p)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.log.Info("project updated", "project_id", updated.ID)
+	writeJSON(w, s.log, http.StatusOK, asProject(updated))
+}
+
+// mirror fetches a remote project into the hub, reporting a failure without
+// the credentials a URL or git's message could carry.
+func (s *Server) mirror(ctx context.Context, p store.Project, creds hub.Credentials) error {
+	if err := s.deps.Hub.Mirror(ctx, p.Name, p.RemoteURL, creds); err != nil {
+		remote, reason := withoutCredentials(p.RemoteURL, err)
+		reason = scrub(reason, creds.Password)
+		s.log.Error("mirror remote", "project", p.Name, "remote", remote, "error", reason)
+		return invalidf("mirror %s: %s", remote, reason)
+	}
+	return nil
+}
+
+// projectCredentials opens a project's stored remote credentials.
+func (s *Server) projectCredentials(p store.Project) (hub.Credentials, error) {
+	password, err := s.deps.Secrets.Open(p.RemotePassword)
+	if err != nil {
+		s.log.Error("open remote password", "project_id", p.ID, "error", err)
+		return hub.Credentials{}, conflictf("the remote password of project %s cannot be read; enter it again in the project's settings", p.Name)
+	}
+	return hub.Credentials{Username: p.RemoteUsername, Password: password}, nil
+}
+
+// validateRemoteURL rejects credentials and other secret-bearing parts in a
+// remote URL: the username and password have fields of their own.
+func validateRemoteURL(raw string) error {
+	u, err := url.Parse(raw)
 	if err != nil {
 		return invalidf("remote_url could not be parsed")
 	}
 	if u.User != nil {
-		return invalidf("remote_url must not contain credentials; use remote credential environments")
+		return invalidf("remote_url must not contain credentials; use remote_username and remote_password")
 	}
-	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(p.RemoteURL, "#") {
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") {
 		return invalidf("remote_url must not contain a query string or fragment")
 	}
-	if (p.RemoteUsernameEnv == "") != (p.RemotePasswordEnv == "") {
-		return invalidf("remote_username_env and remote_password_env must both be set")
+	return nil
+}
+
+// validateCredentials accepts a public remote's empty pair or a whole one.
+func validateCredentials(creds hub.Credentials) error {
+	if (creds.Username == "") != (creds.Password == "") {
+		return invalidf("remote_username and remote_password must both be set, or neither")
 	}
-	for name, value := range map[string]string{
-		"remote_username_env": p.RemoteUsernameEnv,
-		"remote_password_env": p.RemotePasswordEnv,
-	} {
-		if value != "" && !credentialEnvironment.MatchString(value) {
-			return invalidf("%s must name an EIKA_* environment variable", name)
-		}
+	if len(creds.Username) > maxCredential || len(creds.Password) > maxCredential {
+		return invalidf("remote credentials must be at most %d bytes each", maxCredential)
 	}
 	return nil
 }
@@ -258,8 +355,8 @@ func asProject(p store.Project) projectBody {
 		Name:              p.Name,
 		Kind:              string(p.Kind),
 		RemoteURL:         remote,
-		RemoteUsernameEnv: p.RemoteUsernameEnv,
-		RemotePasswordEnv: p.RemotePasswordEnv,
+		RemoteUsername:    p.RemoteUsername,
+		RemotePasswordSet: len(p.RemotePassword) > 0,
 		HostPath:          p.HostPath,
 		DefaultBranch:     p.DefaultBranch,
 		CreatedAt:         p.CreatedAt,

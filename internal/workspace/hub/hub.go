@@ -38,15 +38,16 @@ var ErrBadProject = errors.New("invalid project name")
 // ErrNoProject reports that a project has no repository in the hub.
 var ErrNoProject = errors.New("project not found")
 
-// Credentials authenticate the harness to a project's upstream remote.
+// Credentials authenticate the harness to a project's upstream remote. The
+// zero value is a public remote.
 type Credentials struct {
-	// UsernameEnv names the environment variable that holds the remote user.
-	// For a token-only remote its value is usually a placeholder such as
-	// "x-access-token".
-	UsernameEnv string
-	// PasswordEnv names the environment variable that holds the token or
-	// password. The value is never written to disk or put in an argument.
-	PasswordEnv string
+	// Username is the remote user. For a token-only remote it is usually a
+	// placeholder such as "x-access-token".
+	Username string
+	// Password is the token or password. It reaches git through the
+	// environment of the one command that needs it and is never written to
+	// disk or put in an argument.
+	Password string
 }
 
 // Hub owns the directory of bare repositories.
@@ -187,11 +188,9 @@ func (h *Hub) Revoke(workspaceID string) {
 // stored credential file.
 func (h *Hub) git(ctx context.Context, dir string, creds *Credentials, args ...string) (string, error) {
 	full := args
-	username, password := "", ""
 	if creds != nil {
-		var err error
-		if username, password, err = resolveCredentials(*creds); err != nil {
-			return "", err
+		if (creds.Username == "") != (creds.Password == "") {
+			return "", errors.New("authenticate to remote: username and password must both be set")
 		}
 		full = append([]string{
 			"-c", "credential.helper=",
@@ -203,8 +202,8 @@ func (h *Hub) git(ctx context.Context, dir string, creds *Credentials, args ...s
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	if creds != nil {
 		cmd.Env = append(cmd.Env,
-			credUserEnv+"="+username,
-			credPasswordEnv+"="+password,
+			credUserEnv+"="+creds.Username,
+			credPasswordEnv+"="+creds.Password,
 		)
 	}
 	var stdout, stderr bytes.Buffer
@@ -214,24 +213,4 @@ func (h *Hub) git(ctx context.Context, dir string, creds *Credentials, args ...s
 		return "", fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimSpace(stdout.String()), nil
-}
-
-// resolveCredentials reads a matched pair of environment references. An
-// empty pair identifies a public remote.
-func resolveCredentials(creds Credentials) (string, string, error) {
-	if creds.UsernameEnv == "" && creds.PasswordEnv == "" {
-		return "", "", nil
-	}
-	if creds.UsernameEnv == "" || creds.PasswordEnv == "" {
-		return "", "", errors.New("resolve remote credentials: username and password environment variables must both be set")
-	}
-	username, ok := os.LookupEnv(creds.UsernameEnv)
-	if !ok || username == "" {
-		return "", "", fmt.Errorf("resolve remote credentials: environment variable %s is empty", creds.UsernameEnv)
-	}
-	password, ok := os.LookupEnv(creds.PasswordEnv)
-	if !ok || password == "" {
-		return "", "", fmt.Errorf("resolve remote credentials: environment variable %s is empty", creds.PasswordEnv)
-	}
-	return username, password, nil
 }

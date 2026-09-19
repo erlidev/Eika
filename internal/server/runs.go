@@ -113,8 +113,8 @@ type messageRequest struct {
 	Text string `json:"text"`
 	// Mode is run, steer, or follow_up. Empty means run.
 	Mode string `json:"mode"`
-	// Model overrides the model this run uses. Empty uses the default from
-	// the settings, or the first configured model.
+	// Model names the model this run uses. Empty uses the default from the
+	// settings, or the first model.
 	Model string `json:"model"`
 }
 
@@ -365,11 +365,7 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 	if err != nil {
 		return store.Run{}, nil, err
 	}
-	name, err := s.modelName(ctx, model)
-	if err != nil {
-		return store.Run{}, nil, err
-	}
-	p, err := s.deps.Models.Provider(name)
+	m, p, err := s.runModel(ctx, model)
 	if err != nil {
 		return store.Run{}, nil, err
 	}
@@ -378,16 +374,15 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 	if err != nil {
 		return store.Run{}, nil, err
 	}
-	configured, _ := s.cfg.Model(name)
 	// Everything a later phase adds to a run - search tools in phase 7 - is
 	// registered in this Options value. The subagent tools need no entry: the
 	// spawner reaches this run manager itself.
 	ag := agent.New(p, s.deps.Tools, agent.Options{
-		Model:            name,
-		MaxTokens:        configured.MaxOutput,
-		ContextWindow:    configured.ContextWindow,
-		ReasoningEffort:  configured.ReasoningEffort,
-		PreserveThinking: configured.ShouldPreserveThinking(),
+		Model:            m.Model,
+		MaxTokens:        m.MaxOutput,
+		ContextWindow:    m.ContextWindow,
+		ReasoningEffort:  m.ReasoningEffort,
+		PreserveThinking: m.PreserveThinking,
 		Executor:         ex,
 		Emitter:          s.deps.Bus,
 		Store:            sessionStore,
@@ -412,7 +407,7 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 
 	started = true
 	go r.drive(runCtx, active, loaded, text)
-	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", name)
+	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", m.Name)
 	return row, active, nil
 }
 
@@ -705,32 +700,6 @@ func (a *activeRun) wasAborted() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.aborted
-}
-
-// modelName resolves which model a run uses: the one the request named, the
-// one the settings default to, or the first configured model.
-func (s *Server) modelName(ctx context.Context, requested string) (string, error) {
-	names := s.deps.Models.Names()
-	if len(names) == 0 {
-		return "", conflictf("no model is configured")
-	}
-	if requested != "" {
-		for _, n := range names {
-			if n == requested {
-				return n, nil
-			}
-		}
-		return "", invalidf("unknown model %q", requested)
-	}
-	if def := s.defaultModel(ctx); def != "" {
-		for _, n := range names {
-			if n == def {
-				return n, nil
-			}
-		}
-		s.log.Warn("configured default model is unknown", "model", def)
-	}
-	return names[0], nil
 }
 
 // workspaceCommit reports the workspace's HEAD commit for the entries a run

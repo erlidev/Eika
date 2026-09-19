@@ -6,34 +6,46 @@ import (
 	"testing"
 	"time"
 
-	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/provider"
 )
 
 func TestRegistryBuild(t *testing.T) {
 	built := 0
-	r := provider.NewRegistry(func(m config.Model) (provider.Provider, error) {
+	r := provider.NewRegistry(func(e provider.Endpoint) (provider.Provider, error) {
 		built++
-		if m.Name == "broken" {
+		if e.BaseURL == "broken" {
 			return nil, errors.New("no key")
 		}
 		return nil, nil
 	})
 
-	if _, err := r.Build("openai", config.Model{Name: "gpt"}); err != nil {
+	if _, err := r.Build("openai", provider.Endpoint{BaseURL: "http://api"}); err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 	if built != 1 {
 		t.Errorf("constructor called %d times, want 1", built)
 	}
-	if _, err := r.Build("openai", config.Model{Name: "broken"}); err == nil {
-		t.Error("Build of a broken model returned no error")
+	if _, err := r.Build("openai", provider.Endpoint{BaseURL: "broken"}); err == nil {
+		t.Error("Build of a broken endpoint returned no error")
 	}
-	if _, err := r.Build("anthropic", config.Model{Name: "claude"}); err == nil {
+	if _, err := r.Build("anthropic", provider.Endpoint{}); err == nil {
 		t.Error("Build of an unknown kind returned no error")
 	}
 	if kinds := r.Kinds(); len(kinds) != 1 || kinds[0] != "openai" {
 		t.Errorf("Kinds = %v, want [openai]", kinds)
+	}
+}
+
+func TestValidReasoningEffort(t *testing.T) {
+	for _, effort := range []string{"", "none", "minimal", "low", "medium", "high", "xhigh", "max"} {
+		if !provider.ValidReasoningEffort(effort) {
+			t.Errorf("ValidReasoningEffort(%q) = false", effort)
+		}
+	}
+	for _, effort := range []string{"HIGH", "extreme", " low"} {
+		if provider.ValidReasoningEffort(effort) {
+			t.Errorf("ValidReasoningEffort(%q) = true", effort)
+		}
 	}
 }
 

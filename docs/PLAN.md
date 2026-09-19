@@ -21,22 +21,22 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Extensibility | Source-level modularity plus rebuild; no runtime plugin loader |
 | Sandbox image | One default `eika-sandbox` image; per-workspace override by image or Dockerfile |
 | Search | SearXNG container plus first-party connectors (Wikipedia, arXiv, ...) |
-| Auth | Single user, one bearer token set at deploy time |
+| Auth | Single user. A password chosen in the guided setup signs a browser in and returns a session token; an optional `EIKA_AUTH_TOKEN` is a fixed API token for scripts |
 | Compaction | Deferred; the session model must support it later |
 | Context-window enforcement | Before each model call, the agent compares a conservative JSON byte/token upper bound, including requested output, with the model's configured window. It fails before the provider call when the request cannot fit; compaction remains deferred |
 | Skills / templates | Deferred; AGENTS.md is in scope |
-| Config format | YAML via `gopkg.in/yaml.v3`; secrets only through `EIKA_*` env vars |
+| Config format | Deployment configuration (addresses, paths, Docker topology) is YAML via `gopkg.in/yaml.v3` plus `EIKA_*` env vars, and its defaults are the compose stack's, so a deployment sets nothing. Everything a user chooses lives in the database and is edited in the web UI |
 | Go tooling | `staticcheck` and `goimports` pinned by `tool` directives in `go.mod`; `golangci-lint` optional |
 | `EXTENDING.md` examples | One section per extension point exists from phase 0; the copy-pasteable example lands with the phase that creates the interface |
 | `internal/event` in phase 0 | The envelope and type names are the contract the later phases and the frontend agree on, so they are fixed before anything emits events |
 | `internal/server` in phase 0 | `main` must stay thin, and both binaries need one listener lifecycle; phase 4 extends `routes.go` rather than creating the package |
-| Harness process user | Non-root `eika`, added to the host's docker group via a `DOCKER_GID` build arg. Socket access is root-equivalent and accepted: sandboxes are sibling containers |
+| Harness process user | Non-root `eika`. The image's entry point starts as root only to add `eika` to the group that owns the mounted Docker socket, whatever its id on this host, then drops to `eika` with `setpriv`. Socket access is root-equivalent and accepted: sandboxes are sibling containers |
 | OpenAI SDK version | `github.com/openai/openai-go/v3`, pinned at v3.61.0, the latest stable major |
 | Chat Completions, not Responses | Providers are "OpenAI-compatible" endpoints. Every such endpoint implements Chat Completions; few implement the Responses API. The `Provider` interface hides the choice, so a Responses implementation can be added later as another kind |
-| Chat Completions reasoning | `reasoning_effort` uses the standard Chat Completions request field. `preserve_thinking` is an extension for compatible endpoints and defaults to true: Eika captures streamed `reasoning_content`, stores it as provider-neutral reasoning data, and replays it on later assistant messages. Set it to false for an endpoint that rejects the extension. The extension is not part of the OpenAI Chat Completions contract |
+| Chat Completions reasoning | `reasoning_effort` uses the standard Chat Completions request field. `preserve_thinking` is a per-model switch for compatible endpoints and is off for a new model, because the official OpenAI API rejects it: when on, Eika captures streamed `reasoning_content`, stores it as provider-neutral reasoning data, and replays it on later assistant messages. The extension is not part of the OpenAI Chat Completions contract |
 | Malformed tool arguments | Keep the model's exact argument text. Valid arguments keep their JSON shape on the API and in storage. Malformed text is safely quoted and carries `arguments_malformed: true`, then is restored before tool decoding. The explicit marker distinguishes malformed text from a valid top-level JSON string. The tool can report a normal argument error and the session remains resumable |
 | Retries live in the agent loop | The SDK's retries are switched off (`WithMaxRetries(0)`). One place decides, so the scripted fake provider exercises the same retry path as the real one. Retryable means 408, 409, 429, 5xx, or a transport failure |
-| Provider API keys | Resolved from the environment in the provider constructor. Credential-owning provider and hub packages are the exceptions to "packages never read the environment": a secret must never enter a value that gets logged or persisted, so configuration carries only the variable's name |
+| Provider API keys | Entered in the UI, sealed with AES-256-GCM by `internal/secret` before they reach a row, and opened by the server only to build a provider for one run, probe, or test. No package reads a key from the environment; the OpenAI provider sets its key and base URL explicitly so the SDK's `OPENAI_*` defaults never apply. The API returns whether a key is stored and the last four characters of a long one, never the key |
 | Event payload structs | Live in `internal/event`, not in the package that emits them, so that the server and the frontend decode events without importing the agent loop, and one file lists the whole protocol |
 | Built-in tool registry | `internal/tool/builtin/registry.go`, not `internal/tool/registry.go`: the tools import `tool` for the interface, so the registry of them cannot live in `tool` without an import cycle. `internal/tool/registry.go` holds the `Registry` type |
 | Provider kind registry | `provider.NewRegistry` takes each kind's constructor as a parameter, for the same reason: a provider package imports `provider` |
@@ -50,7 +50,7 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Sandbox confinement | Docker's init is PID 1, all capabilities are dropped, `no-new-privileges` is set, and the container runs as uid 1000 by default. A custom image must have that uid or set `Spec.User` |
 | Hub access scope | A hub grant covers one project: `Grant(workspaceID, project, token)`, checked against the requested project on every request. A workspace's token is useless on any other project, and a stopped workspace holds no grant |
 | Hub package | `internal/workspace/hub`, not `internal/hub`: the hub exists to serve workspaces and `workspace` is its only importer |
-| Hub credentials | A remote project stores a matched pair of `EIKA_*` environment-variable names, never their values. The API rejects URL userinfo, query strings, and fragments. The credential migration removes these parts from old URLs and assigns `EIKA_GIT_USERNAME` and `EIKA_GIT_PASSWORD` references to affected remote rows. The hub resolves values only for a git command and supplies them through a credential helper and process environment, so a token is not persisted or put in an argument. Inside a workspace the same shape reads `EIKA_HUB_USER` and `EIKA_HUB_TOKEN`, so the hub token never appears in a remote URL or in `.git/config` |
+| Hub credentials | A private remote's username and password or token are entered with the project and sealed like API keys. The API rejects URL userinfo, query strings, and fragments. The hub receives the values only for a git command and supplies them through a credential helper and the process environment, so a token is not written to disk or put in an argument. New credentials are tried with a fetch before they are stored. Migration 0003 drops the earlier environment-variable references, so a private remote from before it gets its credentials entered again. Inside a workspace the same shape reads `EIKA_HUB_USER` and `EIKA_HUB_TOKEN`, so the hub token never appears in a remote URL or in `.git/config` |
 | pgx version | `github.com/jackc/pgx/v5`, pinned at v5.11.0, the latest stable major. The pool (`pgxpool`) and the native protocol come with it, so nothing else is needed; adding it upgrades the module graph's `golang.org/x/{mod,sync,telemetry,tools}` entries, which are indirect tool dependencies |
 | Migrations | A 40-line migrator in `internal/store/migrate.go` over an embedded `migrations/NNNN_name.sql` directory, applied in file name order under a PostgreSQL advisory lock, one transaction per file, recorded in `schema_migrations`. golang-migrate would be a dependency for less |
 | Id format | One generator, `store.NewID`: 20 lowercase base32 characters, 96 bits of randomness. Ids are text in every table, generated before the row exists, so the same id names a row, a container, a volume, and a URL |
@@ -77,7 +77,7 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | An aborted child still reports | Committing, pushing, and recording the result run on a context of their own with a five-minute bound, not the child's cancelled one, so work that was interrupted still lands on a branch the user can read |
 | Hub remote name | A workspace reaches the hub on a remote called `eika-hub`, not `origin`: a local project's bind-mounted checkout already has an origin of the user's own, and the hub must not displace it |
 | A merge conflict is a normal response | `POST /api/workspaces/{id}/merge` answers `200` with `merged: false` and the conflicted paths. The target's tree is left conflicted on purpose, because resolving it is work for the user or the agent in that workspace, not for the harness |
-| Subagent limits live in config | `subagents.max_depth` (2) and `subagents.max_children` (4). Depth is measured by walking `subagents` rows up from the spawning session, width by counting that session's running children. Both are validated as at least one, so a deployment cannot disable subagents by setting zero and getting a silent default |
+| Subagent limits are settings | `subagent_max_depth` (default 2, at most 8) and `subagent_max_children` (default 4, at most 16), read through `subagent.Options.Limits` at every spawn so a change applies to the next child. Depth is measured by walking `subagents` rows up from the spawning session, width by counting that session's running children. Both are validated as at least one, so the user cannot disable subagents by setting zero and getting a silent default |
 | A spawn claims its slot before it builds anything | `Spawner.reserve` puts the child in the live map under the same lock that counts the parent's children, before the commit, push, container, and clone that building one takes. Counting first and recording afterwards let every concurrent `spawn_agent` call past a limit none of them had reached yet |
 | A child runs its parent's image | `spawn_agent` has no `image` parameter. Nothing validates an image name a model invents, and a child that needs different tooling is a workspace the user creates, not one the model names |
 | The hub is never force-pushed | `Host.Push` has no force flag. A branch in the hub belongs to whoever created it, and a push that cannot fast-forward is a divergence for the caller to resolve. Unique child branches are what make this possible |
@@ -92,6 +92,15 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Token in localStorage, 401 returns to connect | The bearer token and the harness URL live in `api/connection.ts`, a plain module with listeners rather than a store: `api/` may not depend on a feature, and the HTTP client needs the token. Any `401` forgets it, which both logs out and reports a token the deployment rotated |
 | Resizer without a dependency | `components/ResizableSplit` is a pointer-events handler over a `role="separator"` element with arrow-key support, in about eighty lines. A split-pane library would have to be configured into the same behaviour |
 | Frontend dependencies | `react-router` for URLs, `zustand` for stream state, `react-markdown` with `remark-gfm` and `rehype-highlight` for assistant prose, `cmdk` (through shadcn's command component) for the palette. All pinned exactly, as the existing ones are |
+| Configuration lives in the UI | Model providers, models, the default model, the sandbox image, the subagent limits, git credentials, and the sign-in password are rows the web UI edits, not files. A fresh stack needs no `.env`: `docker compose up` and a browser is the whole setup |
+| Providers and models are rows | `providers` holds an endpoint (kind, base URL, sealed key); `models` holds what a run needs (the endpoint's identifier, context window, max output, reasoning settings). A model's `name` is unique across providers because a run, a setting, and a `spawn_agent` call name a model alone; the UI suggests `<provider>/<id>` when an id is taken. Renaming the default model keeps it the default; deleting it falls back to the first model |
+| Providers are built per use | `server.Providers` (the kind registry) turns a provider row into a client for one run, probe, or test. Nothing caches a client, so a changed key or endpoint applies to the next run and a key is in memory only while it is used |
+| Model discovery | `provider.Lister` is an optional interface a provider implements when its endpoint can list models. The OpenAI provider reads the context sizes compatible endpoints add to `/models` (OpenRouter, vLLM, Groq). Limits the endpoint does not report come from a family table in the UI and are always editable |
+| Sealing key | 32 random bytes, hex in `secret_key_file` (default `/var/lib/eika/secret.key`, in the hub volume), created on first start with `O_EXCL`. It is apart from the database so a database copy alone opens nothing. Losing it makes stored keys unreadable, which the API reports as "enter the key again" rather than an internal error |
+| Sign-in | PBKDF2-HMAC-SHA256 at 600,000 iterations (the standard library's `crypto/pbkdf2`), one row. Setup is claimable once, while no password exists; the stack publishes on 127.0.0.1 only, so only this machine can claim it. A session token is 32 random bytes stored as its SHA-256, valid 30 days; changing the password ends every session. Attempts are checked one at a time rather than locked out, which bounds guessing without locking the owner out |
+| Guided setup | The UI walks password, provider, models, sandbox check, and first project, resuming at the first thing missing, until the `setup_complete` setting is true. Every step after the password can be skipped |
+| Compose at the repository root | `compose.yaml` is at the root so `docker compose up` works from a clone; `compose.dev.yaml` publishes postgres and searxng on loopback for `make dev`. A `sandbox-image` service builds `eika-sandbox:latest` and exits, and the harness waits for it, so the image exists before the first workspace |
+| Local model servers | The harness container maps `host.docker.internal` to the host gateway, so Ollama or LM Studio on the Docker host is reachable on Linux as on Docker Desktop. A connection failure to a loopback base URL says so |
 | Destructive actions confirm in a dialog | `components/ConfirmDialog` wraps shadcn's alert dialog. The browser's `confirm` cannot be styled, cannot say what survives a deletion, and cannot be reached by a test |
 
 ## 2. Core principle: every agent action runs in a sandbox
@@ -186,13 +195,17 @@ Eika/
     contextfile/             AGENTS.md discovery and assembly
     server/                  HTTP API, WebSocket event stream, auth
     store/                   Postgres access and migrations
-    config/                  Config loading (YAML + env)
+    config/                  Deployment config loading (YAML + env)
+    secret/                  Sealing credentials stored in the database
     event/                   Shared event types emitted by the loop and UI
   sandbox/
     Dockerfile               eika-sandbox image
   web/                       Frontend (Vite + React)
+  compose.yaml               eika, the sandbox image build, postgres, searxng
+  compose.dev.yaml           loopback ports for `make dev`
+  .env.example               the optional compose variables
   deploy/
-    docker-compose.yml       eika, postgres, searxng
+    eika-entrypoint.sh       joins the Docker socket's group, drops to eika
     searxng/settings.yml
   Makefile
 ```
@@ -357,6 +370,7 @@ parallel.
 - [x] Phase 4: Server and event stream
 - [x] Phase 5: Web UI core
 - [x] Phase 6: Subagents (backend; the agent tree panel is UI work)
+- [x] UI configuration: providers, models, sign-in, and the guided setup
 - [ ] Phase 7: Search
 - [ ] Phase 8: Terminal, editor, diff
 - [ ] Phase 9: Hardening and docs

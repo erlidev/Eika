@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 )
 
-// Setting is one persisted configuration value the user can change at
-// runtime, such as the selected model. Deployment configuration stays in
+// Setting is one persisted value the user can change at runtime, such as the
+// default model or the sandbox image. Deployment configuration stays in
 // config.Config; this table holds what the UI writes.
 type Setting struct {
 	Key   string

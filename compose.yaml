@@ -1,0 +1,110 @@
+# The Eika stack. It needs no configuration before the first start:
+#
+#   docker compose up -d
+#
+# then open http://localhost:8080 and follow the guided setup, which sets the
+# sign-in password and connects a model provider. Everything else is set in
+# the web UI too. The few optional variables are documented in .env.example.
+#
+# Every published port binds to 127.0.0.1. Eika is single-user and the sandbox
+# containers it starts are root-equivalent on the host, so nothing listens on
+# a public interface; put a reverse proxy in front of it for remote access.
+name: eika
+
+services:
+  eika:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: eika:latest
+    restart: unless-stopped
+    environment:
+      EIKA_DATABASE_URL: "postgres://eika:${POSTGRES_PASSWORD:-eika}@postgres:5432/eika?sslmode=disable"
+      # Optional fixed API token for scripts. The UI signs in with the
+      # password chosen during setup and does not need one.
+      EIKA_AUTH_TOKEN: "${EIKA_AUTH_TOKEN:-}"
+    ports:
+      - "127.0.0.1:${EIKA_PORT:-8080}:8080"
+    # host.docker.internal is how the harness reaches a model server on the
+    # Docker host, such as Ollama or LM Studio. Docker Desktop provides the
+    # name itself; on Linux this line does.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Sandboxes join the sandbox network, which is how the harness reaches
+    # them by container name and how they reach the git hub. It holds only
+    # the harness and sandboxes, so a sandbox cannot reach postgres or
+    # searxng.
+    networks:
+      - default
+      - sandbox
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The hub's repositories and the key that seals stored credentials.
+      - eika-hub:/var/lib/eika
+    depends_on:
+      postgres:
+        condition: service_healthy
+      searxng:
+        condition: service_started
+      sandbox-image:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Builds the default workspace image the harness starts sandboxes from. It
+  # is not a service: the container exits as soon as it starts, and the
+  # harness waits for that so the image exists before the first workspace.
+  sandbox-image:
+    build:
+      context: .
+      dockerfile: sandbox/Dockerfile
+    image: eika-sandbox:latest
+    entrypoint: ["true"]
+    command: []
+    network_mode: none
+    restart: "no"
+
+  # Postgres is reachable on the internal network only, so its default
+  # password guards nothing another host could reach.
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: eika
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-eika}"
+      POSTGRES_DB: eika
+    volumes:
+      - eika-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eika -d eika"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    environment:
+      SEARXNG_BASE_URL: "http://searxng:8080/"
+      # The instance is internal and serves the harness alone, so a fixed
+      # secret is enough; set SEARXNG_SECRET to replace it.
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-eika-internal-search}"
+    volumes:
+      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml:ro
+
+volumes:
+  eika-postgres:
+  eika-hub:
+
+# The names are pinned because sandbox containers are started by the harness
+# rather than by compose, and they join eika_sandbox by name. Only the harness
+# is on both networks: a sandbox reaches the harness and the internet, never
+# postgres or searxng.
+networks:
+  default:
+    name: eika_default
+  sandbox:
+    name: eika_sandbox

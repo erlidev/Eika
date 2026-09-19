@@ -1,0 +1,13 @@
+# Development override for `make dev`: the harness runs on the host, so it
+# reaches postgres and searxng on these loopback ports instead of their
+# service names. It is never needed to run Eika itself.
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d postgres searxng
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+
+  searxng:
+    ports:
+      - "127.0.0.1:${SEARXNG_PORT:-8888}:8080"

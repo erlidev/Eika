@@ -12,5 +12,7 @@
 // internal/event for the subagent.started and subagent.finished events. The
 // agent tools reach it through the builtin.Subagents interface, so no package
 // under internal/tool has to know what a workspace is. The server injects it
-// and the run manager it drives children with.
+// and the run manager it drives children with. The depth and width limits are
+// read through Options.Limits at every spawn, so the settings can change them
+// while the harness runs.
 package subagent

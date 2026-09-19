@@ -582,3 +582,18 @@ func TestWorkspaceHandsWorkToAChildClone(t *testing.T) {
 		}
 	})
 }
+
+func TestHasImageTellsPresentFromMissing(t *testing.T) {
+	requireImage(t)
+	repos, err := hub.New(t.TempDir(), testLogger())
+	if err != nil {
+		t.Fatalf("hub.New: %v", err)
+	}
+	host := newHost(t, repos, "http://hub.invalid")
+	if ok, err := host.HasImage(t.Context(), sandboxImage); err != nil || !ok {
+		t.Errorf("HasImage(%s) = %v, %v; want present", sandboxImage, ok, err)
+	}
+	if ok, err := host.HasImage(t.Context(), "eika-test-absent-"+strings.ToLower(t.Name())+":never"); err != nil || ok {
+		t.Errorf("HasImage of a missing image = %v, %v; want absent", ok, err)
+	}
+}

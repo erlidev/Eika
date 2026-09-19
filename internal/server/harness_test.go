@@ -19,20 +19,10 @@ import (
 // testToken is the bearer token every test server is configured with.
 const testToken = "test-token"
 
-// testConfig returns a configuration with the test token and one model.
+// testConfig returns a configuration with the test API token.
 func testConfig() config.Config {
 	cfg := config.Default()
 	cfg.AuthToken = testToken
-	cfg.Models = []config.Model{{
-		Name:      "test-model",
-		BaseURL:   "http://model.invalid",
-		APIKeyEnv: "EIKA_TEST_KEY",
-		// Wide enough for the whole tool registry: the agent loop refuses a
-		// request whose conservative upper bound does not fit the window, and
-		// the schemas of eleven tools are most of a small one.
-		ContextWindow: 32768,
-		MaxOutput:     1024,
-	}}
 	return cfg
 }
 
@@ -81,6 +71,9 @@ type fakeHub struct {
 	mirrored    map[string]string
 	credentials map[string]hub.Credentials
 	initErr     error
+	// mirrorErr fails every Mirror when set, the way a remote refusing a
+	// token does.
+	mirrorErr error
 }
 
 // newFakeHub returns an empty hub.
@@ -111,6 +104,9 @@ func (h *fakeHub) Init(_ context.Context, project string) (string, error) {
 func (h *fakeHub) Mirror(_ context.Context, project, remoteURL string, creds hub.Credentials) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.mirrorErr != nil {
+		return h.mirrorErr
+	}
 	h.mirrored[project] = remoteURL
 	h.credentials[project] = creds
 	return nil

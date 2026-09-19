@@ -3,9 +3,10 @@
 //
 // It uses the official openai-go SDK in streaming mode with tool calling, and
 // translates SDK chunks into provider.Event values so that nothing above this
-// package sees an SDK type. Base URL, model name, and the name of the
-// environment variable holding the API key come from config.Model; the key is
-// resolved once in New.
+// package sees an SDK type. The base URL and API key come from a
+// provider.Endpoint the harness builds from the user's provider settings; the
+// model is named per request. Models lists what the endpoint serves, with the
+// context sizes compatible endpoints report, for the setup screens.
 //
 // It sends the standard reasoning_effort field. For compatible endpoints it
 // also sends preserve_thinking and maps streamed and replayed reasoning to

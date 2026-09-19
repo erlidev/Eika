@@ -98,38 +98,37 @@ file answers "how much can a tool return".
 ## Adding a provider
 
 Implement `provider.Provider` in `internal/provider/<name>/` and register it in
-`internal/provider/registry.go`. Models are declared in configuration, not in
-code: a provider reads its model name, base URL, and the *name* of the
-environment variable holding its API key from `config.Model`, and resolves the
-key once in its constructor.
+`internal/provider/registry.go`. Providers and models are not declared in
+code or configuration: the user adds them in the web UI, and each provider
+row names its kind. The server builds a client for one run, probe, or test by
+calling the kind's constructor with a `provider.Endpoint`, the row's base URL
+and its key opened from the database, and drops the client afterwards.
 
 A provider converts a `provider.Request` into a stream of `provider.Event`
 values and never leaks a vendor SDK type upwards. It closes the channel after a
-`KindDone` or `KindError` event and stops when the context is cancelled.
-Retrying is the agent loop's job: classify a failure as a `provider.Error` and
-let the loop decide.
+`KindDone` or `KindError` event and stops when the context is cancelled. The
+request names the model by the endpoint's identifier. Retrying is the agent
+loop's job: classify a failure as a `provider.Error` and let the loop decide.
+
+A provider whose endpoint can list its models also implements
+`provider.Lister`. The setup screens call it to offer models to tick, with
+the context sizes it reports; without it, the user types model identifiers.
 
 ```go
 package echo
 
 import (
 	"context"
-	"fmt"
-	"os"
 
-	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/provider"
 )
 
 // Provider answers with the last user message, for local experiments.
-type Provider struct{ model config.Model }
+type Provider struct{ endpoint provider.Endpoint }
 
-// New returns a Provider for one configured model.
-func New(m config.Model) (provider.Provider, error) {
-	if os.Getenv(m.APIKeyEnv) == "" {
-		return nil, fmt.Errorf("build echo provider for model %s: environment variable %s is empty", m.Name, m.APIKeyEnv)
-	}
-	return &Provider{model: m}, nil
+// New returns a Provider on one endpoint.
+func New(e provider.Endpoint) (provider.Provider, error) {
+	return &Provider{endpoint: e}, nil
 }
 
 // Stream echoes the last message back as one text delta.
@@ -151,6 +150,11 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request) (<-chan pro
 	}()
 	return out, nil
 }
+
+// Models lists the one model this provider serves.
+func (p *Provider) Models(context.Context) ([]provider.ModelInfo, error) {
+	return []provider.ModelInfo{{ID: "echo", ContextWindow: 8192, MaxOutput: 1024}}, nil
+}
 ```
 
 Register it in `internal/provider/registry.go`. Constructors are parameters of
@@ -166,15 +170,20 @@ func NewRegistry(openAI, echo Constructor) *Registry {
 }
 ```
 
+`GET /api/providers` then lists the kind and `POST /api/providers` accepts it.
+The UI's provider form creates OpenAI-compatible providers only, so offering
+the new kind there means giving `web/src/features/providers/presets.ts` a
+preset for it and sending its kind from `ProviderForm.tsx`.
+
 Test a provider against an `httptest` server that serves its wire format, as
 `internal/provider/openai/openai_test.go` does. Test everything that consumes a
 provider with `provider/providertest`, the scripted fake.
 
-`config.Model` also supplies `reasoning_effort` and `preserve_thinking`.
-`reasoning_effort` maps to the standard Chat Completions request field.
-`preserve_thinking` is a compatible-endpoint extension, not an OpenAI API
-field. It is enabled when omitted; set it to false for an endpoint that does
-not accept it. When enabled, the OpenAI-compatible provider reads streamed
+A model row also carries `reasoning_effort` and `preserve_thinking`, which
+the run passes on in `provider.Request`. `reasoning_effort` maps to the
+standard Chat Completions request field. `preserve_thinking` is a
+compatible-endpoint extension, not an OpenAI API field, and is off for a new
+model. When it is on, the OpenAI-compatible provider reads streamed
 `reasoning_content` into `KindReasoningDelta` events. The agent stores the
 assembled value in `Message.Reasoning`, and the provider sends it back as
 `reasoning_content` on later assistant messages. A new provider can map the
@@ -190,8 +199,9 @@ Lands in phase 7.
 
 ## Using a custom sandbox image
 
-A workspace runs in the image named by `sandbox_image`, but a `workspace.Spec`
-can override it per workspace, either with an image name or with a build
+A workspace runs the image the sandbox image setting names (Settings,
+General; `eika-sandbox:latest` by default), but a `workspace.Spec` can
+override it per workspace, either with an image name or with a build
 context. Any image works: the harness copies its own static `eikad` binary into
 the container at `/usr/local/bin/eikad` before starting it and uses that as the
 entrypoint, so an image needs no Eika-specific content at all.
@@ -228,9 +238,9 @@ The built image is tagged `eika-ws-<id>:latest`. Start the workspace with
 `host.Start`, then take its executor with `host.Executor(ws)`; every tool call
 goes through that.
 
-To change the default image for every workspace, set `sandbox_image` (or
-`EIKA_SANDBOX_IMAGE`) and, if you want Eika's own image as a base, extend
-`sandbox/Dockerfile` and rebuild it with `make sandbox`.
+To change the default image for every workspace, set it under Settings,
+General. To use Eika's own image as a base, extend `sandbox/Dockerfile` and
+rebuild it with `docker compose build sandbox-image` or `make sandbox`.
 
 ## Adding a migration
 
@@ -273,7 +283,8 @@ go test -tags docker ./internal/store/... ./internal/session/...
 
 One file per resource in `internal/server/`, one registration in
 `internal/server/routes.go`, one entry in `docs/api/http.md`. Everything under
-`/api` is behind the bearer token already, so a handler never checks it.
+`/api` is behind authentication already, a sign-in session or the API token,
+so a handler never checks it.
 
 A handler reads its input, calls the packages that do the work, and writes one
 of two things: a JSON body with `writeJSON`, or an error with `s.fail`. It
