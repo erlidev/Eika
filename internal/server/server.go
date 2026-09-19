@@ -14,6 +14,8 @@ import (
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/search"
+	"github.com/erlidev/eika/internal/search/fetch"
 	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
@@ -94,6 +96,11 @@ type Deps struct {
 	Tools     *tool.Registry
 	Questions *builtin.Questions
 	Bus       *event.Bus
+	// Search and Pages back web_search and web_fetch, which the tools hold;
+	// the API reports their health and lets the user try a search. Without
+	// them the search routes are not served.
+	Search *search.Engine
+	Pages  *fetch.Reader
 	// Subagents is set by UseSubagents rather than by the caller: the spawner
 	// needs the run manager this server owns.
 	Subagents Subagents

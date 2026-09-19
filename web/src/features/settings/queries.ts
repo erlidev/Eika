@@ -31,9 +31,13 @@ export function useSaveSettings(): UseMutationResult<SettingsState, Error, Setti
     mutationFn: putSettings,
     onSuccess: async (state) => {
       client.setQueryData(queryKeys.settings(), state);
-      // The default model and the sandbox image are reported elsewhere too.
-      await client.invalidateQueries({ queryKey: queryKeys.models() });
-      await client.invalidateQueries({ queryKey: queryKeys.system() });
+      // The default model, the sandbox image, and the search order and
+      // quotas are reported elsewhere too.
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.models() }),
+        client.invalidateQueries({ queryKey: queryKeys.system() }),
+        client.invalidateQueries({ queryKey: queryKeys.searchStatus() }),
+      ]);
     },
   });
 }

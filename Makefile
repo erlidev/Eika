@@ -15,7 +15,7 @@ DEV_COMPOSE := docker compose -f compose.yaml -f compose.dev.yaml
 
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
-	sandbox web-install clean
+	sandbox web-install clean visual visual-update shot
 
 all: build
 
@@ -75,6 +75,20 @@ check: fmt-check lint test-go typecheck test-web
 
 typecheck: web-install
 	cd $(WEB) && $(NPM) run typecheck
+
+## visual: compare every screen with its baseline in web/e2e/__screenshots__.
+## It needs Chromium once: `cd web && npx playwright install chromium`.
+visual: web-install
+	cd $(WEB) && $(NPM) run visual
+
+## visual-update: accept the current rendering as the new baselines.
+visual-update: web-install
+	cd $(WEB) && $(NPM) run visual:update
+
+## shot: screenshot the UI against the mock harness, e.g.
+##   make shot ARGS='-s workbench --step "click Settings"'
+shot: web-install
+	cd $(WEB) && $(NPM) run -s shot -- $(ARGS)
 
 ## dev: run the harness and the Vite dev server against the compose services.
 dev:

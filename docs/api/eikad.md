@@ -118,3 +118,34 @@ reported within about a second of happening.
 
 The first snapshot is taken before the connection is accepted, so no change
 made after the client connects is missed. At most 100 000 files are watched.
+
+## `eikad filter` (command)
+
+Not a route: a one-shot mode of the same binary, run through `POST /exec` as
+`/usr/local/bin/eikad filter`. It runs a web_fetch filter, JavaScript the
+model wrote, inside the sandbox, and never listens or needs `EIKAD_TOKEN`.
+It reads one JSON request from stdin and writes one JSON outcome to stdout;
+it exits 1, with the reason on stderr, only when the request cannot be read.
+
+Request:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `markdown` | string | The page, or the section of it the read selected. |
+| `source` | string | The filter: an expression, or a function body that returns. |
+| `timeout_ms` | number | Bound on the run. Default 2000. |
+| `tokens` | number | Budget the answer is cut to. Default 10 000. |
+
+The filter sees `text`, `lines`, `sections` (`{heading, level, text, index,
+from, to}`), `grep(re, ctx?)`, and `code(lang?)`, read-only, and nothing else:
+no network, no timers, no module loader.
+
+Outcome:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `kind` | string | `ok`, `empty` (ran and selected nothing), or `error`. |
+| `text` | string | The answer cut to the budget for `ok`; the message otherwise. An `empty` message is a map of the page's headings. |
+| `footer` | string | For an `ok` answer that fit, its coordinate space: `[filtered: ~K of ~T tokens · … sections · N lines]`. |
+| `truncated` | bool | The answer was cut to the budget. |
+| `stats` | object | `sections`, `kept_sections`, `lines`, `total_tokens`, `kept_tokens`, `sandbox_ms`. |

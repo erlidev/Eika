@@ -176,10 +176,14 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, invalidf("remote credentials are only valid for a remote project"))
 			return
 		}
-		creds, err := s.projectCredentials(p)
-		if err != nil {
-			s.fail(w, r, err)
-			return
+		// A request with a new password needs nothing stored, which is how a
+		// password sealed under a lost key file is entered again.
+		creds := hub.Credentials{Username: p.RemoteUsername}
+		if req.RemotePassword == nil {
+			if creds, err = s.projectCredentials(p); err != nil {
+				s.fail(w, r, err)
+				return
+			}
 		}
 		if req.RemoteUsername != nil {
 			creds.Username = strings.TrimSpace(*req.RemoteUsername)

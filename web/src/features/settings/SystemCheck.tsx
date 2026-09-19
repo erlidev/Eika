@@ -37,7 +37,7 @@ export function SystemCheck() {
           title="Docker"
           detail={
             system.isError
-              ? system.error.message
+              ? `Could not ask the harness: ${system.error.message} Use Check again to retry.`
               : data?.docker.reachable
                 ? "The harness can start containers."
                 : "The harness cannot use the Docker socket."

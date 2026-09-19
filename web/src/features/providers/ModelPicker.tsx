@@ -10,12 +10,13 @@ import { useState } from "react";
 
 import { probeProvider } from "@/api/routes";
 import type { Model, ModelInfo, Provider } from "@/api/types";
-import { Notice } from "@/components/Notice";
+import { LoadError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { suggestLimits, suggestModelName } from "@/features/providers/limits";
+import { chosenProblem, suggestLimits, suggestModelName } from "@/features/providers/limits";
+import type { ModelChoice } from "@/features/providers/limits";
 import { useCreateModel, useModels, useTestModel } from "@/features/providers/queries";
 import { formatTokens } from "@/lib/format";
 
@@ -27,13 +28,7 @@ export type ModelPickerProps = {
   doneLabel?: string;
 };
 
-/** Choice is one model the user ticked or typed, with the values it will be added with. */
-type Choice = {
-  id: string;
-  name: string;
-  context_window: number;
-  max_output: number;
-};
+type Choice = ModelChoice;
 
 /** filterThreshold is how many models a list has before it offers a search box. */
 const filterThreshold = 8;
@@ -74,9 +69,16 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
     setChosen(chosen.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   };
 
+  const typedId = typed.trim();
+  const typedProblem = onProvider.has(typedId)
+    ? `${typedId} is already added from ${provider.name}.`
+    : chosen.some((c) => c.id === typedId)
+      ? `${typedId} is already in the list to add below.`
+      : null;
+
   const addTyped = () => {
     const id = typed.trim();
-    if (id === "") return;
+    if (id === "" || typedProblem !== null) return;
     pick(
       id,
       available.find((m) => m.id === id),
@@ -222,11 +224,16 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
               setTyped(e.target.value);
             }}
           />
-          <Button type="submit" variant="outline" disabled={typed.trim() === ""}>
+          <Button
+            type="submit"
+            variant="outline"
+            disabled={typedId === "" || typedProblem !== null}
+          >
             <Plus aria-hidden />
             Add
           </Button>
         </form>
+        {typedProblem !== null && <p className="text-muted-foreground text-xs">{typedProblem}</p>}
       </section>
 
       {chosen.length > 0 && (
@@ -254,6 +261,14 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
         </section>
       )}
 
+      {models.isError && (
+        <LoadError
+          what="the models already added, so the names cannot be checked for duplicates yet"
+          error={models.error}
+          retrying={models.isFetching}
+          retry={() => void models.refetch()}
+        />
+      )}
       {problem !== null && chosen.length > 0 && <Notice tone="error">{problem}</Notice>}
       {failure !== "" && <Notice tone="error">{failure}</Notice>}
 
@@ -265,7 +280,7 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
         )}
         <Button
           type="button"
-          disabled={chosen.length === 0 || problem !== null || adding}
+          disabled={chosen.length === 0 || problem !== null || !models.isSuccess || adding}
           onClick={() => void addAll()}
         >
           {adding
@@ -374,32 +389,15 @@ export function NumberField({ id, label, value, onChange }: NumberFieldProps) {
         id={id}
         type="number"
         min={1}
+        step={1}
         inputMode="numeric"
-        value={Number.isFinite(value) && value > 0 ? value : ""}
+        value={Number.isFinite(value) ? value : ""}
         className="font-mono tabular-nums"
         onChange={(e) => {
-          onChange(Number.parseInt(e.target.value, 10));
+          // Not parseInt: "2.5" must stay visible as the mistake it is.
+          onChange(e.target.value === "" ? Number.NaN : Number(e.target.value));
         }}
       />
     </div>
   );
-}
-
-/** chosenProblem says why the chosen models cannot be added as they are. */
-function chosenProblem(chosen: readonly Choice[], existing: readonly Model[]): string | null {
-  const names = new Set(existing.map((m) => m.name));
-  const seen = new Set<string>();
-  for (const c of chosen) {
-    const name = c.name.trim();
-    if (name === "") return `${c.id} needs a name.`;
-    if (names.has(name) || seen.has(name)) return `Two models would be called “${name}”.`;
-    seen.add(name);
-    if (!(c.context_window > 0) || !(c.max_output > 0)) {
-      return `${c.id} needs a context window and a max output.`;
-    }
-    if (c.max_output > c.context_window) {
-      return `${c.id}: the max output cannot be larger than the context window.`;
-    }
-  }
-  return null;
 }

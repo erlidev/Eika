@@ -5,6 +5,11 @@
 //
 // It refuses to start without EIKAD_TOKEN, which the harness generates per
 // workspace, so a sandbox is never reachable without authentication.
+//
+// `eikad filter` is a one-shot subcommand instead: it runs a fetch filter
+// read from stdin and writes the outcome to stdout. The harness runs it
+// through the daemon's own exec, so the model's JavaScript runs inside the
+// sandbox and never in the harness.
 package main
 
 import (
@@ -18,10 +23,18 @@ import (
 	"syscall"
 
 	"github.com/erlidev/eika/internal/eikad"
+	"github.com/erlidev/eika/internal/search/filter"
 	"github.com/erlidev/eika/internal/server"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "filter" {
+		if err := filter.Serve(os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "eikad filter:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "eikad:", err)
 		os.Exit(1)

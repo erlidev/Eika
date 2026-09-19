@@ -525,7 +525,11 @@ models are listed separately.
 ### `PATCH /api/providers/{id}`
 
 `name`, `base_url`, and `api_key`, each optional; an absent field is left
-alone and an empty `api_key` removes the key. `200` with the `Provider`.
+alone and an empty `api_key` removes the key. A stored key belongs to the
+base URL it was entered for: a `base_url` that differs from the stored one,
+without an `api_key`, clears the stored key, so it is never sent to the new
+endpoint. `200` with the `Provider`; `400` for a bad field; `409` when the
+name is taken.
 
 ### `DELETE /api/providers/{id}`
 
@@ -541,7 +545,7 @@ and model list.
 |---|---|---|
 | `provider_id` | string | A stored provider to probe with its stored key. |
 | `kind` | string | Without `provider_id`, the kind of the endpoint. Defaults to `openai`. |
-| `base_url` | string | Overrides or, without `provider_id`, names the endpoint. |
+| `base_url` | string | Overrides or, without `provider_id`, names the endpoint. A stored key is used only with the stored base URL; with another one, the probe carries `api_key` or no key. |
 | `api_key` | string | Overrides or, without `provider_id`, gives the key. |
 
 `200` with `{"models": [ModelInfo]}`, sorted by id. `400` with what the
@@ -635,7 +639,9 @@ A JSON object of the keys to write. Keys the body does not name are left
 alone; JSON `null` stores null, which means "use the default". `200` with the
 same body as `GET`. Keys are 1 to 64 characters. The harness reads and
 validates these keys; any other key is the UI's own and is stored as it
-comes. One invalid value is `400` and writes nothing.
+comes. One invalid value is `400` and writes nothing. The keys are written
+in one transaction, so a write the database refuses is a `500` that also
+writes nothing.
 
 | Key | Value | Meaning |
 |---|---|---|
@@ -644,6 +650,8 @@ comes. One invalid value is `400` and writes nothing.
 | `subagent_max_depth` | number, 1 to 8 | How many levels of children a session may have. |
 | `subagent_max_children` | number, 1 to 16 | How many children of one session may run at a time. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
+| `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
+| `search_limits` | object | Quotas by bucket, `{"exa": {"month": 500}, "marginalia": {"day": 50}}`. Each bucket must exist; `day` and `month` are whole numbers from 1 to 10 000 000, and 0 or an absent field is unlimited. Anything else is `400` naming the bucket and the range. A bucket not named keeps its default. |
 
 ### Defaults
 
@@ -652,6 +660,62 @@ comes. One invalid value is `400` and writes nothing.
 | `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
 | `subagent_max_depth` | number | 2. |
 | `subagent_max_children` | number | 4. |
+| `search_order` | array of strings | Every web provider in its default order: `searxng`, `exa`, `tavily`, `brave`, `marginalia`. |
+| `search_limits` | object | Every quota bucket's default, as `search_limits` takes it: Exa 900 a month, Tavily 1000, Brave 2000, Marginalia 100 a day, SearXNG and GitHub unlimited. |
+
+## Search
+
+The engine behind `web_search` and the health of its backends. The keys are
+sealed like provider keys and never returned: a key is reported as set, and a
+key of 16 characters or more by its last four.
+
+### `GET /api/search/status`
+
+`200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `order` | array of strings | The web provider order in force. |
+| `backends` | array of Backend | Every backend, web providers first, in registration order. |
+| `keys` | array of SearchKey | Every key a backend uses, stored or not. |
+| `cached_searches` | number | Searches the result cache holds. |
+| `cached_pages` | number | Pages the web_fetch cache holds. |
+| `searxng_url` | string | Where the deployment looks for SearXNG. |
+
+Backend:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | The provider or source name. |
+| `web` | boolean | A provider in the web chain; otherwise a source web_search names. |
+| `key`, `key_required`, `key_set` | string, boolean, boolean | The key it is sent, whether it is skipped without it, and whether it is stored. |
+| `bucket` | string | The quota bucket it counts against; absent when it is not tracked. |
+| `state` | string | `ready`, `no API key`, `cooling down 12m`, `daily quota spent`, or `monthly quota spent`. |
+| `usage` | object | `day`, `day_used`, `month`, `month_used`, `cooldown_until`, `fail_streak`. |
+| `limit` | object | `day` and `month`; absent or 0 is unlimited. |
+| `probe` | string | For SearXNG: `up`, `HTTP 403`, `connection refused`, and the like. |
+
+SearchKey: `name`, `set`, `hint` (the last four characters), `updated_at`.
+
+### `PUT /api/search/keys/{name}`
+
+`{"key": string}` stores the key under `name`, one of `exa`, `tavily`,
+`brave`, `github`; an empty key removes it. `200` with `{"keys": [SearchKey]}`.
+An unknown name is `404`, a key over 4096 bytes `400`.
+
+### `POST /api/search`
+
+Runs one search exactly as `web_search` does, spending quota. The body is
+`{"query": string, "source": string, "count": number}`: `source` is `web`
+(the default), `wikipedia`, `arxiv`, `github_code`, `github_repos`, or
+`github_issues`; `count` is 1 to 25, default 10; the query is at most 500
+characters. `200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `text` | string | What the model would read. |
+| `is_error` | boolean | The search failed in a way the model would be told about: an empty query, no provider answering, a source refusing the query. |
+| `details` | object | `source`, `query`, `count`, `providers` (the one that answered), `attempts` (`{provider, error}` skipped on the way), `cached`, `pool`, `results` (`{title, url, description}`), `ms`. These are also web_search's tool details. |
 
 ## System
 

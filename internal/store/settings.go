@@ -27,14 +27,29 @@ func (s *Store) Setting(ctx context.Context, key string) (Setting, error) {
 	return out, nil
 }
 
+// setSettingQuery writes one setting, replacing any value the key has.
+const setSettingQuery = `INSERT INTO settings (key, value) VALUES ($1, $2)
+	ON CONFLICT (key) DO UPDATE SET value = excluded.value`
+
 // SetSetting writes a setting, replacing any value the key already has.
 func (s *Store) SetSetting(ctx context.Context, key string, value json.RawMessage) error {
-	const q = `INSERT INTO settings (key, value) VALUES ($1, $2)
-		ON CONFLICT (key) DO UPDATE SET value = excluded.value`
-	if _, err := s.pool.Exec(ctx, q, key, []byte(value)); err != nil {
+	if _, err := s.pool.Exec(ctx, setSettingQuery, key, []byte(value)); err != nil {
 		return wrap("write setting "+key, err)
 	}
 	return nil
+}
+
+// SetSettings writes several settings in one transaction: either every key
+// takes its new value or, when one write fails, none does.
+func (s *Store) SetSettings(ctx context.Context, values map[string]json.RawMessage) error {
+	return s.tx(ctx, func(q querier) error {
+		for key, value := range values {
+			if _, err := q.Exec(ctx, setSettingQuery, key, []byte(value)); err != nil {
+				return wrap("write setting "+key, err)
+			}
+		}
+		return nil
+	})
 }
 
 // Settings returns every setting, by key.

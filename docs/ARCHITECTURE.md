@@ -1,27 +1,26 @@
 # Architecture
 
-This file describes Eika as it is today, at the end of phase 6 and the move
-of configuration into the web UI. It is updated
+This file describes Eika as it is today, at the end of phase 7, web search. It is updated
 in the same change that moves structure. Planned work lives in `docs/PLAN.md`.
 
 ## What exists now
 
 Two Go binaries, the agent core, the sandbox machinery agents run in, the
 database that outlives them, the HTTP API and event stream that drive all of
-it, child agents that work in sandboxes of their own, one frontend, and a
-three-service compose stack.
+it, child agents that work in sandboxes of their own, web search and page
+reading, one frontend, and a three-service compose stack.
 
 | Piece | Path | Responsibility today |
 |---|---|---|
 | `eika` | `cmd/eika` | Loads configuration, serves HTTP, optionally serves the built frontend |
-| `eikad` | `cmd/eikad` | Sandbox daemon: exec, files, terminal, change watcher |
+| `eikad` | `cmd/eikad` | Sandbox daemon: exec, files, terminal, change watcher; `eikad filter` runs a web_fetch filter |
 | `config` | `internal/config` | Deployment configuration: defaults for the compose stack, an optional YAML file, `EIKA_*` overrides, validation, redacted `String()` |
 | `secret` | `internal/secret` | Seals the credentials the UI stores, API keys and git passwords, with a key kept apart from the database |
 | `event` | `internal/event` | The event envelope, the type name constants, the payload structs, the `Emitter` interface, and the fan-out `Bus` |
 | `server` | `internal/server` | Composition of the process, the JSON API, the WebSocket event stream, sign-in and bearer auth, provider and model management, and the run manager |
 | `agent` | `internal/agent` | The agent loop: turns, tool dispatch, steering and follow-up queues, retries, events |
 | `provider` | `internal/provider` | The model interface, message and event types, the kind registry, the OpenAI implementation, the scripted fake |
-| `tool` | `internal/tool` | The tool interface, call context, result type, and registry; `tool/builtin` holds the eleven built-in tools |
+| `tool` | `internal/tool` | The tool interface, call context, result type, and registry; `tool/builtin` holds the thirteen built-in tools |
 | `executor` | `internal/executor` | The interface every agent action goes through, path validation, and `executor/local` for tests |
 | `contextfile` | `internal/contextfile` | AGENTS.md discovery and the system prompt section it becomes |
 | `eikad` | `internal/eikad` | The daemon's handlers, path confinement, and wire types |
@@ -31,6 +30,8 @@ three-service compose stack.
 | `store` | `internal/store` | The PostgreSQL pool, the embedded migrations, and the queries behind every table |
 | `session` | `internal/session` | The session tree: append, head, branch, fork, outline, and the agent store that records a run |
 | `subagent` | `internal/subagent` | Spawning child agents: the hand-over commit, the child workspace and session, the limits, and the result the parent reads |
+| `search` | `internal/search` | The search engine: the web failover chain, quotas and cooldowns, the result cache, and the backends in `search/web`, `wikipedia`, `arxiv`, and `github` |
+| `fetch` | `internal/search/fetch` | Reading one URL as Markdown: URL planning, GitHub reads, HTML extraction, section selection, and the content budget from `search/page`; `search/filter` is the JavaScript filter eikad runs |
 | frontend | `web/` | Vite, React 19, Tailwind v4, shadcn/ui; the guided setup, the settings, and the three-pane workbench: project tree, streaming session, context panels |
 
 `eika` serves `GET /healthz` and `GET /api/healthz`, both returning
@@ -151,6 +152,8 @@ a container, and a URL.
 | `models` | id, provider_id, name (unique), model, context_window, max_output, reasoning_effort, preserve_thinking, created_at, updated_at | A model a run may use; `name` is Eika's, `model` the endpoint's |
 | `auth_password` | id (always 1), hash, updated_at | The sign-in password as a PBKDF2 hash |
 | `auth_sessions` | token_hash, created_at, expires_at | A signed-in browser, by the SHA-256 of its token |
+| `search_keys` | name (primary), key (sealed), updated_at | The API key of a search provider, or the GitHub token |
+| `search_usage` | name (primary), day, day_used, month, month_used, cooldown_until, fail_streak, updated_at | One search quota bucket's counters and cooldown, so quotas survive a restart |
 
 Everything cascades from `projects`: deleting a project deletes its
 workspaces, their sessions, and their entries. `sessions.head_entry_id` has no
@@ -311,9 +314,9 @@ The pieces:
   settings become the agent's options. Assistant entries record
   the workspace HEAD through a commit function that runs `git rev-parse HEAD`
   through the executor and reports no commit when the workspace holds no
-  repository. `agent.Options` in `runs.begin` is the hook the later phases
-  register their tools in: search in phase 7. The subagent tools need no entry
-  there; the spawner reaches the run manager itself (see Subagents). A run ends
+  repository. Every tool is in the registry all runs share, which holds what
+  the tools reach beyond the workspace: the question broker, the spawner (see
+  Subagents), the search engine, and the page reader (see Search). A run ends
   `done`, `error`, or `aborted`, recorded with a retrying `store.FinishRun`
   call on a context that outlives the cancelled one. If its 30-second
   foreground window ends, the run manager continues the exact write in the
@@ -414,6 +417,10 @@ against its bare repositories.
 `cmd/eikad` is a thin main over `internal/eikad`: it reads `EIKAD_TOKEN` from
 the environment, refuses to start without it, and serves the daemon through
 `server.Serve`, the same listener lifecycle the harness uses.
+`eikad filter` is the one other mode: a one-shot command that reads a
+web_fetch filter request on stdin, runs it with `search/filter`, and writes
+the outcome to stdout. It needs no token, because it is only ever run through
+the daemon's own exec.
 
 The daemon confines every path to its root (`/workspace`). A path may be
 relative to the root or absolute inside it; `..` is rejected rather than
@@ -628,6 +635,72 @@ with `with_workspace` pushes the current workspace, clones a new one from the
 hub at the commit the fork entry recorded, on `<branch>-fork-<short id>`, and
 points the forked session at it, so the files rewind with the conversation.
 
+## Search
+
+`internal/search` is a port of the localsearch Pi extension. The model has
+two tools. `web_search` takes a query, a source, and a count; `web_fetch`
+takes a URL and optionally a section, a filter, and a format.
+
+```
+ web_search --> search.Engine --+-- source "web": the failover chain
+                                |     searxng -> exa -> tavily -> brave -> marginalia
+                                |     (search_order; one provider answers)
+                                +-- wikipedia | arxiv | github_code/repos/issues
+                                |
+                  Tracker: quotas and cooldowns per bucket --> search_usage
+                  Keys: sealed search_keys, opened per request
+
+ web_fetch --> fetch.Reader --> plan the URL --+-- GitHub API / raw host
+                                               +-- text file, fenced
+                                               +-- HTML: container, readability,
+                                                   body --> Markdown
+               cache --> section --> filter (eikad filter, in the sandbox)
+                                 --> or budget: whole, outline, or truncated
+```
+
+- **The failover chain.** A web search asks exactly one provider: the first
+  in `search_order` that has its key, quota left in its bucket, and no
+  cooldown. It stops at the first that answers with results; a transport
+  failure, an HTTP error, a rate limit, or no results records an attempt and
+  moves on. A failure cools the bucket down for 15 minutes, doubling to six
+  hours, or until the server's `Retry-After` or `X-RateLimit-Reset` (capped
+  at a day). An empty `search_order` turns web search off. When
+  SearXNG failed and a fallback answered, the result opens with a `Notice:`
+  line saying so and how to fix it, because the details that record the
+  attempts never reach the model. A search asks for a pool of 30 results and
+  caches it for a day, so the same query with a larger count is free.
+- **Sources** go to their one backend. arXiv is paced one request at a time,
+  three seconds apart, and its pool is cached. The GitHub sources and
+  web_fetch's GitHub reads count against one `github` bucket, which a 403 or
+  429 cools down until GitHub's reset time. GitHub repository search refuses
+  qualifiers that only code or issue search understands.
+- **Keys and settings.** Exa, Tavily, Brave, and GitHub keys are sealed rows
+  in `search_keys`, read per request, so a new key applies to the next
+  search. web_fetch sends the GitHub token only to the GitHub API and, over
+  https, to `githubusercontent.com` and its subdomains. `search_order` and `search_limits` are settings validated against
+  the registered backends. The SearXNG URL is deployment configuration.
+- **Reading a page.** `fetch.Reader` plans the URL before any request (see the
+  PLAN decision on web_fetch reads), dispatches on the content type the server
+  sent, and caches the Markdown for six hours. A section is selected by
+  heading, exact then prefix then substring, with its subsections; a URL
+  fragment selects the same way but falls back to the page. Past 10,000
+  tokens a plain read returns the page outline and a narrowed read is cut on
+  a section boundary with a note of what was left out.
+- **Filters run in the sandbox.** A filter is JavaScript the model wrote. The
+  tool runs `eikad filter` through the run's executor with the page on stdin;
+  eikad runs it in goja with a two-second limit, renders the result, cuts it
+  to the budget, and writes the outcome to stdout. The harness never
+  evaluates model code, and does not link goja.
+- **The address guard.** `fetch.NewClient` refuses to dial a non-public
+  address after DNS resolution, re-checks every redirect's connection, and
+  uses no proxy, so a model cannot point web_fetch at postgres, a sandbox, or
+  a cloud metadata endpoint. Obvious private names are refused before any
+  request with a clear message.
+
+The Search tab of the settings dialog shows every backend's state and usage,
+reorders and disables web providers, stores keys, edits quotas, and tries a
+search through `POST /api/search`.
+
 ## Compose topology
 
 `compose.yaml` at the repository root is the whole deployment, and it needs
@@ -790,7 +863,9 @@ A tool call is a collapsible card. `features/session/renderers/renderers.tsx`
 maps a tool name to a renderer: `bash` shows the command, its streamed output,
 and its exit code; `edit` shows a unified diff computed by `lib/diff.ts`;
 `read`, `write`, `grep`, `find`, and `ls` show their arguments and their
-result; `ask_user` renders the question form inline and posts the answer. A
+result; `ask_user` renders the question form inline and posts the answer;
+`web_search` lists its results as links (web URLs only) from the tool's
+details; `web_fetch` shows the page, how it was narrowed, and its content. A
 tool with no renderer falls back to formatted JSON, so a new tool is useful
 before anyone writes a renderer for it.
 
@@ -803,9 +878,7 @@ renders `index.html`, so client-side routes survive a full page load.
 
 ## Package dependency direction
 
-Dependencies point inward. An arrow means "may import". Packages in
-parentheses do not exist yet; the direction is fixed now so later phases do not
-have to renegotiate it.
+Dependencies point inward. An arrow means "may import".
 
 ```
         cmd/eika                                cmd/eikad
@@ -817,7 +890,7 @@ have to renegotiate it.
             |
     +-------+---------+---------+---------+----------+
     v                 v         v         v          v
-  agent  <--------  session   store   workspace   subagent   (search)
+  agent  <--------  session   store   workspace   subagent    search
     |    \              |                  |            |
     |     \             v                  v            |
     |      +-> contextfile           workspace/hub  <----+
@@ -836,6 +909,9 @@ workspace is imported by server and subagent only. Never by tool.
 subagent also imports session, store, event, and tool/builtin, for the
 Subagents interface the agent tools call it through.
 workspace also imports executor, which is what Host.Executor hands back.
+tool/builtin imports search and search/fetch for web_search and web_fetch;
+search imports nothing from internal/. search/filter (goja) is imported by
+cmd/eikad alone, so the harness binary does not link a JavaScript engine.
 ```
 
 Rules that reviews enforce:

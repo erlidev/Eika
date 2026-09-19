@@ -9,7 +9,7 @@ import { useState } from "react";
 
 import type { Model, Provider } from "@/api/types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Notice } from "@/components/Notice";
+import { LoadError, Notice } from "@/components/Notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,9 +35,11 @@ import { formatTokens } from "@/lib/format";
 export type ModelsPanelProps = {
   /** onDefaultChange makes a model the default; the settings feature owns that write. */
   onDefaultChange: (name: string) => void;
+  /** defaultError is why the last change of the default model failed. */
+  defaultError?: string | undefined;
 };
 
-export function ModelsPanel({ onDefaultChange }: ModelsPanelProps) {
+export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps) {
   const providers = useProviders();
   const models = useModels();
   const [addingProvider, setAddingProvider] = useState(false);
@@ -66,7 +68,26 @@ export function ModelsPanel({ onDefaultChange }: ModelsPanelProps) {
         </Button>
       </div>
 
-      {providers.isError && <Notice tone="error">{providers.error.message}</Notice>}
+      {providers.isPending && <Notice tone="pending">Loading the providers…</Notice>}
+      {providers.isError && (
+        <LoadError
+          what="the providers"
+          error={providers.error}
+          retrying={providers.isFetching}
+          retry={() => void providers.refetch()}
+        />
+      )}
+      {models.isError && (
+        <LoadError
+          what="the models, so none are listed below"
+          error={models.error}
+          retrying={models.isFetching}
+          retry={() => void models.refetch()}
+        />
+      )}
+      {defaultError !== undefined && (
+        <Notice tone="error">Could not change the default model. {defaultError}</Notice>
+      )}
       {providers.isSuccess && list.length === 0 && (
         <div className="rounded-xl border border-dashed p-8 text-center">
           <p className="text-sm font-medium">No providers yet</p>
@@ -82,6 +103,7 @@ export function ModelsPanel({ onDefaultChange }: ModelsPanelProps) {
             key={provider.id}
             provider={provider}
             models={all.filter((m) => m.provider_id === provider.id)}
+            modelsLoaded={models.isSuccess}
             defaultModel={models.data?.default ?? ""}
             onEdit={() => {
               setEditingProvider(provider);
@@ -185,16 +207,21 @@ export function ModelsPanel({ onDefaultChange }: ModelsPanelProps) {
 type ProviderCardProps = {
   provider: Provider;
   models: Model[];
+  /** modelsLoaded is false while the model list is loading or failed, so no list reads as empty. */
+  modelsLoaded: boolean;
   defaultModel: string;
   onEdit: () => void;
   onAddModels: () => void;
   onEditModel: (model: Model) => void;
   onDefaultChange: (name: string) => void;
+  /** defaultError is why the last change of the default model failed. */
+  defaultError?: string | undefined;
 };
 
 function ProviderCard({
   provider,
   models,
+  modelsLoaded,
   defaultModel,
   onEdit,
   onAddModels,
@@ -220,7 +247,9 @@ function ProviderCard({
               : "key stored"
             : preset?.keyRequired === false
               ? "no key needed"
-              : "no key"}
+              : preset?.keyRequired
+                ? "no key: edit the provider to add one"
+                : "no key"}
         </span>
         <span className="flex items-center gap-1">
           <Button size="xs" variant="outline" onClick={onAddModels}>
@@ -247,7 +276,7 @@ function ProviderCard({
           </Button>
         </span>
       </div>
-      {models.length === 0 ? (
+      {!modelsLoaded ? null : models.length === 0 ? (
         <p className="text-muted-foreground px-4 py-3 text-xs">
           No models from this provider yet.{" "}
           <button type="button" className="underline underline-offset-4" onClick={onAddModels}>

@@ -88,6 +88,12 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PATCH /api/models/{id}", s.handleUpdateModel)
 	api.HandleFunc("DELETE /api/models/{id}", s.handleDeleteModel)
 
+	if s.deps.Search != nil {
+		api.HandleFunc("POST /api/search", s.handleSearch)
+		api.HandleFunc("GET /api/search/status", s.handleSearchStatus)
+		api.HandleFunc("PUT /api/search/keys/{name}", s.handlePutSearchKey)
+	}
+
 	api.HandleFunc("GET /api/settings", s.handleSettings)
 	api.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	api.HandleFunc("GET /api/system", s.handleSystem)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,8 @@ import (
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
+	"github.com/erlidev/eika/internal/search"
+	"github.com/erlidev/eika/internal/search/searchtest"
 	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/server"
 	"github.com/erlidev/eika/internal/store"
@@ -40,6 +43,10 @@ type api struct {
 	questions *builtin.Questions
 	spawner   *subagent.Spawner
 	secrets   *secret.Box
+	// searxng and marginalia answer web searches; fetched serves every page
+	// web_fetch reads.
+	searxng, marginalia *searchtest.Searcher
+	fetched             *searchtest.Transport
 	// testProvider is the provider the model every run uses by default
 	// belongs to.
 	testProvider store.Provider
@@ -74,7 +81,22 @@ func newAPI(t *testing.T) *api {
 		},
 		Logger: testLogger(),
 	})
-	tools, err := builtin.Registry(a.questions, a.spawner)
+	a.searxng = searchtest.New(search.Result{Title: "Tokio", URL: "https://tokio.rs/", Description: "An async runtime."})
+	a.marginalia = searchtest.New(search.Result{Title: "Small web", URL: "https://small.example/"})
+	none := searchtest.New()
+	pageClient, fetched := searchtest.Client(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/markdown")
+		_, _ = w.Write([]byte("# Guide\n\nthe timeout is 30s\n"))
+	})
+	a.fetched = fetched
+	engine, pages, err := server.NewSearch(t.Context(), testConfig(), st, secrets, testLogger(), search.Searchers{
+		SearxNG: a.searxng, Exa: none, Tavily: none, Brave: none, Marginalia: a.marginalia,
+		Wikipedia: none, Arxiv: none, GitHubCode: none, GitHubRepos: none, GitHubIssues: none,
+	}, pageClient)
+	if err != nil {
+		t.Fatalf("server.NewSearch: %v", err)
+	}
+	tools, err := builtin.Registry(builtin.Deps{Questions: a.questions, Agents: a.spawner, Search: engine, Pages: pages})
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -87,13 +109,15 @@ func newAPI(t *testing.T) *api {
 		Tools:      tools,
 		Questions:  a.questions,
 		Bus:        bus,
+		Search:     engine,
+		Pages:      pages,
 	}, server.Options{})
 	a.Server.UseSubagents(a.spawner, a.spawner.Attach)
 	t.Cleanup(a.Server.Close)
 
 	// Every run uses test-model unless it names another. Its window is wide
 	// enough for the whole tool registry: the agent loop refuses a request
-	// whose conservative upper bound does not fit, and the schemas of eleven
+	// whose conservative upper bound does not fit, and the schemas of thirteen
 	// tools are most of a small window.
 	key, err := secrets.Seal("test-key")
 	if err != nil {
@@ -427,6 +451,25 @@ func TestPrivateRemoteCredentialsAreSealed(t *testing.T) {
 	a.hub.mirrorErr = nil
 	if creds, _ := a.store.Project(t.Context(), created.ID); string(creds.RemotePassword) == string(stored.RemotePassword) {
 		t.Error("the stored password did not change on the rotation")
+	}
+
+	// A password the harness can no longer open, as after the secret key
+	// file changed, is replaced by entering a new one.
+	unreadable, err := a.store.Project(t.Context(), created.ID)
+	if err != nil {
+		t.Fatalf("read project: %v", err)
+	}
+	unreadable.RemotePassword = []byte("sealed under a key this harness lacks")
+	if _, err := a.store.UpdateProject(t.Context(), unreadable); err != nil {
+		t.Fatalf("corrupt the stored password: %v", err)
+	}
+	if rec := request(t, a.Server, "PATCH", "/api/projects/"+created.ID, map[string]any{"remote_username": "git-user"}); rec.Code != 409 {
+		t.Errorf("username change over an unreadable password = %d, want 409", rec.Code)
+	}
+	decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+created.ID,
+		map[string]any{"remote_password": "re-entered-token"}), 200)
+	if creds := a.hub.credentials["private"]; creds.Username != "git-user" || creds.Password != "re-entered-token" {
+		t.Errorf("hub credentials after re-entry = %+v", creds)
 	}
 
 	// Removing the password makes the remote public again.
@@ -811,6 +854,17 @@ func TestSettingsAndModels(t *testing.T) {
 	after := decodeBody[settingsWire](t, request(t, a.Server, "GET", "/api/settings", nil), 200)
 	if string(after.Settings["theme"]) != `"dark"` {
 		t.Errorf("theme = %s, want the rejected request to have written nothing", after.Settings["theme"])
+	}
+	// A write the database refuses partway through, here a JSON string
+	// PostgreSQL cannot store, leaves every key as it was.
+	if rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{
+		"theme": "light", "a_note": "nul \u0000 byte", "z_note": "fine",
+	}); rec.Code != 500 {
+		t.Errorf("unstorable value = %d, want 500: %s", rec.Code, rec.Body.String())
+	}
+	after = decodeBody[settingsWire](t, request(t, a.Server, "GET", "/api/settings", nil), 200)
+	if string(after.Settings["theme"]) != `"dark"` || after.Settings["z_note"] != nil {
+		t.Errorf("settings = %v, want the failed write to have written nothing", after.Settings)
 	}
 	ok := decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{
 		"sandbox_image": "custom:1", "subagent_max_depth": 3, "subagent_max_children": 8, "setup_complete": true,

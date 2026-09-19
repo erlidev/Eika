@@ -48,12 +48,35 @@ function codeForStatus(status: number): ErrorCode {
 }
 
 /**
+ * internalMessage replaces the harness's bare "internal error", which says
+ * nothing a user can act on.
+ */
+const internalMessage =
+  "The harness hit an unexpected error. Try again; if it keeps failing, the harness log names the cause.";
+
+/** statusMessage describes a failure that came without the documented body. */
+function statusMessage(status: number): string {
+  if (status === 502 || status === 503 || status === 504) {
+    return `The harness did not answer (HTTP ${String(status)}); it may be starting or stopped. Try again in a moment.`;
+  }
+  if (status >= 500) return internalMessage;
+  return `The harness refused the request (HTTP ${String(status)}).`;
+}
+
+/**
+ * unreachableMessage is what a request that never got an answer reports: the
+ * browser could not reach the harness at all.
+ */
+export const unreachableMessage =
+  "The harness could not be reached. Check that it is running and that this browser can reach it, then try again.";
+
+/**
  * parseApiError narrows a failure body to an ApiError. A proxy or a crash can
  * answer with something that is not the documented shape, so the status
  * decides the code whenever the body does not.
  */
 export function parseApiError(status: number, body: unknown): ApiError {
-  const fallback = new ApiError(status, codeForStatus(status), `request failed: ${String(status)}`);
+  const fallback = new ApiError(status, codeForStatus(status), statusMessage(status));
   if (typeof body !== "object" || body === null) return fallback;
   const detail: unknown = (body as Record<string, unknown>).error;
   if (typeof detail !== "object" || detail === null) return fallback;
@@ -62,6 +85,9 @@ export function parseApiError(status: number, body: unknown): ApiError {
   const message = typeof record.message === "string" ? record.message : "";
   if (message === "") return fallback;
   const known = codes.includes(code as ErrorCode) ? (code as ErrorCode) : codeForStatus(status);
+  if (known === "internal" && message === "internal error") {
+    return new ApiError(status, known, internalMessage);
+  }
   return new ApiError(status, known, message);
 }
 
@@ -106,10 +132,14 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (options.body !== undefined) init.body = JSON.stringify(options.body);
   if (options.signal) init.signal = options.signal;
 
-  const response = await fetch(
-    resolveUrl(connection.baseUrl, withQuery(path, options.query)),
-    init,
-  );
+  let response: Response;
+  try {
+    response = await fetch(resolveUrl(connection.baseUrl, withQuery(path, options.query)), init);
+  } catch (error) {
+    // An abort is the caller's own doing and stays one.
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new Error(unreachableMessage, { cause: error });
+  }
   if (response.status === 204 || response.headers.get("Content-Length") === "0") {
     if (response.ok) return undefined as T;
   }

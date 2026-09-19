@@ -14,4 +14,8 @@ The app shows the wizard until the harness has a password and the
 `setup_complete` setting is true. Finishing, or skipping the rest, writes it;
 Settings, General can set it back to run the setup again.
 
-Test it: `npm test -- steps` runs the order and the resume rule.
+A provider or model list that fails to load stops the wizard with a Retry,
+rather than passing for an empty one and starting the setup over.
+
+Test it: `npm test -- setup` runs the order, the resume rule, and the
+wizard's handling of a list that fails to load.

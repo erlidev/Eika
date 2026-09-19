@@ -9,7 +9,10 @@ serves, with the limits and reasoning settings a run uses.
   change invalidates the lists, the system counts, and the settings, which
   name the default model.
 - `ProviderForm.tsx` connects a provider: a preset from `presets.ts` or a
-  typed endpoint, a key, and a connection test before saving.
+  typed endpoint, a key, and a connection test before saving. `form.ts`
+  holds its rules: what it checks, and which key a test or save uses. A
+  stored key goes only to the base URL it was entered for, so changing the
+  URL asks for the key again.
 - `ModelPicker.tsx` lists what the endpoint serves, lets the user tick models
   or type one, suggests limits with `limits.ts`, and adds them.
 - `ModelDialog.tsx` changes one model; `ModelsPanel.tsx` is the whole list,
@@ -18,4 +21,5 @@ serves, with the limits and reasoning settings a run uses.
 The setup wizard (`features/setup`) uses the form and the picker for its
 first provider.
 
-Test it: `npm test -- limits` runs the limit, name, and preset rules.
+Test it: `npm test -- providers` runs the limit, name, preset, and form
+rules.

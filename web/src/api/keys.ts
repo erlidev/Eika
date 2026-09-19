@@ -19,5 +19,6 @@ export const queryKeys = {
   models: () => ["models"] as const,
   providers: () => ["providers"] as const,
   system: () => ["system"] as const,
+  searchStatus: () => ["search", "status"] as const,
   authStatus: () => ["auth", "status"] as const,
 };

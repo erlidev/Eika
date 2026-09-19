@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { suggestLimits, suggestModelName } from "@/features/providers/limits";
+import type { Model } from "@/api/types";
+import { chosenProblem, suggestLimits, suggestModelName } from "@/features/providers/limits";
 import { presetOf, uniqueProviderName } from "@/features/providers/presets";
 
 describe("suggestLimits", () => {
@@ -65,5 +66,28 @@ describe("presets", () => {
   it("numbers a provider name that is taken", () => {
     expect(uniqueProviderName("OpenAI", [])).toBe("OpenAI");
     expect(uniqueProviderName("OpenAI", ["OpenAI", "OpenAI 2"])).toBe("OpenAI 3");
+  });
+});
+
+describe("chosenProblem", () => {
+  const existing = [{ name: "gpt-5" } as Model];
+  const choice = { id: "gpt-5-mini", name: "mini", context_window: 400_000, max_output: 128_000 };
+
+  it("accepts models that can be added", () => {
+    expect(chosenProblem([choice], existing)).toBeNull();
+  });
+
+  it.each([
+    [{ name: " " }, /Give gpt-5-mini a name/],
+    [{ name: "gpt-5" }, /already exists; give gpt-5-mini another name/],
+    [{ context_window: Number.NaN }, /context window as a whole number/],
+    [{ max_output: 2.5 }, /max output as a whole number/],
+    [{ max_output: 500_000 }, /cannot be larger than the context window/],
+  ])("says how to fix %j", (patch, want) => {
+    expect(chosenProblem([{ ...choice, ...patch }], existing)).toMatch(want);
+  });
+
+  it("catches two new models with one name", () => {
+    expect(chosenProblem([choice, { ...choice, id: "other" }], existing)).toMatch(/rename one/);
   });
 });

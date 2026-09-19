@@ -189,13 +189,100 @@ assembled value in `Message.Reasoning`, and the provider sends it back as
 `reasoning_content` on later assistant messages. A new provider can map the
 provider-neutral reasoning value to its own wire format.
 
-## Adding a search source
+## Adding a search backend
 
-Implement `search.Source` in `internal/search/<name>/` and register it in
+A search backend is a web provider in the failover chain (SearXNG, Exa,
+Tavily, Brave, Marginalia) or a source the model names in `web_search`'s
+`source` argument (Wikipedia, arXiv, the GitHub searches). Both implement
+`search.Searcher` in `internal/search/<package>/` and register in
 `internal/search/registry.go`. Search runs in the harness, not in a sandbox,
 because it is a network call rather than a filesystem or process action.
 
-Lands in phase 7.
+A searcher only speaks its backend's wire format. It returns at most
+`q.Limit` results, reduced to `search.Result`, with descriptions passed
+through `search.Clean`. The Engine does everything else: the key, quotas,
+cooldowns, pacing, caching, deduplication, and what the model reads. Build
+requests with `search.Get` or `search.Post` and send them with `search.JSON`
+(or `search.Do` for a body that is not JSON): they identify Eika, apply the
+timeout, bound the body, and turn a failed status into a `*search.HTTPError`
+that carries the header, which is how a `Retry-After` becomes a cooldown.
+Refuse a query you can tell will fail with `search.Errorf`, before spending a
+request.
+
+A keyed web provider, whose key the user enters in the Search tab:
+
+```go
+package web
+
+import (
+	"context"
+	"net/http"
+	"net/url"
+	"strconv"
+
+	"github.com/erlidev/eika/internal/search"
+)
+
+// Kagi searches Kagi's search API. It needs a key.
+type Kagi struct{ client *http.Client }
+
+// NewKagi returns a Kagi provider.
+func NewKagi(client *http.Client) *Kagi { return &Kagi{client: client} }
+
+// Search runs the query on Kagi's search API.
+func (k *Kagi) Search(ctx context.Context, q search.Query) ([]search.Result, error) {
+	params := url.Values{"q": {q.Text}, "limit": {strconv.Itoa(q.Limit)}}
+	req, err := search.Get(ctx, "https://kagi.com/api/v0/search?"+params.Encode())
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bot "+q.Key)
+	var body struct {
+		Data []struct {
+			T       int    `json:"t"`
+			URL     string `json:"url"`
+			Title   string `json:"title"`
+			Snippet string `json:"snippet"`
+		} `json:"data"`
+	}
+	if err := search.JSON(ctx, k.client, req, &body); err != nil {
+		return nil, err
+	}
+	var out []search.Result
+	for _, d := range body.Data {
+		if d.T == 0 { // 0 is a search result; other types are related searches
+			out = append(out, search.Result{Title: d.Title, URL: d.URL, Description: search.Clean(d.Snippet)})
+		}
+	}
+	return out, nil
+}
+```
+
+Register it with one entry in `Registry`, and add its field to
+`search.Searchers`, which the wiring fills in `internal/server/wire.go`
+(`Kagi: web.NewKagi(client)`), because this package cannot import the
+backends that import it:
+
+```go
+{Name: "kagi", Searcher: s.Kagi, Web: true, Key: "kagi", KeyRequired: true, Limit: Limit{Month: 100}},
+```
+
+`Name` is what the settings and the API store, so it never changes once
+shipped. `Web` puts it in the chain; its position in `Registry` is its place
+in the default order, and the user reorders from there. `Key` names the key
+it is sent in `q.Key`; `PUT /api/search/keys/kagi` accepts it from then on,
+and the Search tab lists it (give it a label in
+`web/src/features/search/search.ts`). `Limit` is its default quota, which
+`search_limits` overrides. A source leaves `Web` false and names itself in
+`web_search`'s `source` enum in `internal/tool/builtin/web.go`; `Bucket`
+makes it count against a quota, `Pool` caches a larger pool so a repeated
+query is free, and `Interval` spaces its requests for a backend that asks
+for it, as arXiv does.
+
+Test a backend with `searchtest.Client`, which answers requests in-process
+and records them; `internal/search/web/example_test.go` holds this example
+and its test. `searchtest.New` is a scripted searcher for testing whatever
+consumes one.
 
 ## Using a custom sandbox image
 
@@ -511,23 +598,17 @@ carries the call's arguments, the output it streamed, and its result:
 ```tsx
 // web/src/features/session/renderers/renderers.tsx
 import { FieldList, ResultBlock } from "@/features/session/renderers/parts";
-import { detail, stringArg } from "@/features/session/renderers/registry";
+import { stringArg } from "@/features/session/renderers/registry";
 import type { ToolRenderer, ToolRendererProps } from "@/features/session/renderers/registry";
 import { firstLine } from "@/lib/format";
 
-/** webSearchRenderer shows the query and the results it returned. */
-const webSearchRenderer: ToolRenderer = {
-  summary: (call) => firstLine(stringArg(call, "query")),
+/** countLinesRenderer shows the file the example tool counted, and its count. */
+const countLinesRenderer: ToolRenderer = {
+  summary: (call) => firstLine(stringArg(call, "path")),
   Body: ({ call }: ToolRendererProps) => (
     <div className="space-y-2">
-      <FieldList
-        fields={[
-          ["query", stringArg(call, "query")],
-          ["source", stringArg(call, "source")],
-          ["results", String(detail(call, "result_count") ?? "")],
-        ]}
-      />
-      <ResultBlock call={call} label="search results" />
+      <FieldList fields={[["path", stringArg(call, "path")]]} />
+      <ResultBlock call={call} label="line count" />
     </div>
   ),
 };
@@ -546,9 +627,13 @@ export const toolRenderers: Record<string, ToolRenderer> = {
   bash: bashRenderer,
   edit: editRenderer,
   // ...
-  web_search: webSearchRenderer,
+  count_lines: countLinesRenderer,
 };
 ```
+
+A body with more than a few lines of markup belongs in a file of its own that
+exports only the component, as `WebRenderer.tsx` does for `web_search` and
+`web_fetch`; `renderers.tsx` keeps the summary and names the body.
 
 Two rules. The summary is one short line: it is truncated, not wrapped. The
 body must render a call that has not finished, because `tool.call` arrives

@@ -23,6 +23,10 @@ import type {
   Providers,
   Run,
   RunStatus,
+  SearchKey,
+  SearchOutcome,
+  SearchRequest,
+  SearchStatus,
   Session,
   SessionOutline,
   SessionPath,
@@ -199,6 +203,28 @@ export function getSettings(signal?: AbortSignal): Promise<SettingsState> {
 /** putSettings writes the named keys and leaves the rest alone. */
 export function putSettings(values: Settings): Promise<SettingsState> {
   return request<SettingsState>("/api/settings", { method: "PUT", body: values });
+}
+
+/** getSearchStatus reports every search backend's health, the stored keys, and the caches. */
+export function getSearchStatus(signal?: AbortSignal): Promise<SearchStatus> {
+  return request<SearchStatus>("/api/search/status", { signal });
+}
+
+/** putSearchKey stores a search API key, or removes it when key is empty. */
+export async function putSearchKey(name: string, key: string): Promise<SearchKey[]> {
+  const body = await request<{ keys: SearchKey[] }>(
+    `/api/search/keys/${encodeURIComponent(name)}`,
+    {
+      method: "PUT",
+      body: { key },
+    },
+  );
+  return body.keys;
+}
+
+/** runSearch runs one search as web_search would, spending quota like any other. */
+export function runSearch(input: SearchRequest): Promise<SearchOutcome> {
+  return request<SearchOutcome>("/api/search", { method: "POST", body: input });
 }
 
 /** getSystem reports whether Docker and the sandbox image are ready. */

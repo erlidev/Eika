@@ -259,6 +259,63 @@ func TestProbeListsWhatTheEndpointServes(t *testing.T) {
 	}
 }
 
+func TestAStoredKeyGoesOnlyToItsBaseURL(t *testing.T) {
+	a := newAPI(t)
+	a.use(listingProvider{models: []provider.ModelInfo{{ID: "alpha"}}})
+
+	// A probe at another URL does not carry the stored key there.
+	decodeBody[probeWire](t, request(t, a.Server, "POST", "/api/providers/probe", map[string]any{
+		"provider_id": a.testProvider.ID, "base_url": "https://elsewhere.test/v1",
+	}), 200)
+	if e := a.lastEndpoint(); e.BaseURL != "https://elsewhere.test/v1" || e.APIKey != "" {
+		t.Errorf("endpoint = %+v, want the new URL without the stored key", e)
+	}
+	// The same URL, even spelled with spaces around it, keeps the key.
+	decodeBody[probeWire](t, request(t, a.Server, "POST", "/api/providers/probe", map[string]any{
+		"provider_id": a.testProvider.ID, "base_url": " http://model.invalid ",
+	}), 200)
+	if e := a.lastEndpoint(); e.APIKey != "test-key" {
+		t.Errorf("endpoint key = %q, want the stored key at the stored URL", e.APIKey)
+	}
+	// A key typed in with the new URL is used.
+	decodeBody[probeWire](t, request(t, a.Server, "POST", "/api/providers/probe", map[string]any{
+		"provider_id": a.testProvider.ID, "base_url": "https://elsewhere.test/v1", "api_key": "new-key",
+	}), 200)
+	if e := a.lastEndpoint(); e.APIKey != "new-key" {
+		t.Errorf("endpoint key = %q, want the one typed in", e.APIKey)
+	}
+
+	path := "/api/providers/" + a.testProvider.ID
+	// Saving the same URL, or only a new name, keeps the key.
+	kept := decodeBody[providerWire](t, request(t, a.Server, "PATCH", path,
+		map[string]any{"name": "renamed", "base_url": "http://model.invalid"}), 200)
+	if !kept.APIKeySet {
+		t.Errorf("provider = %+v, want the key kept when the URL did not change", kept)
+	}
+	// A new URL with a new key stores the new key.
+	withKey := decodeBody[providerWire](t, request(t, a.Server, "PATCH", path,
+		map[string]any{"base_url": "https://second.test/v1", "api_key": "sk-second-0123456789"}), 200)
+	if !withKey.APIKeySet || withKey.APIKeyHint != "6789" {
+		t.Errorf("provider = %+v, want the new key", withKey)
+	}
+	// A new URL without a key clears the stored one.
+	cleared := decodeBody[providerWire](t, request(t, a.Server, "PATCH", path,
+		map[string]any{"base_url": "https://third.test/v1"}), 200)
+	if cleared.APIKeySet || cleared.BaseURL != "https://third.test/v1" {
+		t.Errorf("provider = %+v, want the new URL and no key", cleared)
+	}
+	stored, err := a.store.Provider(t.Context(), a.testProvider.ID)
+	if err != nil || len(stored.APIKey) != 0 {
+		t.Errorf("stored key = %q, %v; want none", stored.APIKey, err)
+	}
+	// A model test then goes to the new URL with no key at all.
+	a.script(providertest.Text("ready"))
+	request(t, a.Server, "POST", "/api/models/test", map[string]any{"provider_id": a.testProvider.ID, "model": "m"})
+	if e := a.lastEndpoint(); e.BaseURL != "https://third.test/v1" || e.APIKey != "" {
+		t.Errorf("model test endpoint = %+v, want the new URL without a key", e)
+	}
+}
+
 func TestModelRoutes(t *testing.T) {
 	a := newAPI(t)
 	created := decodeBody[modelWire](t, request(t, a.Server, "POST", "/api/models", map[string]any{

@@ -10,7 +10,7 @@ human changing the codebase. Read it fully before editing.
 2. `docs/STYLE_GUIDE.md` for coding and documentation rules. These are
    mandatory.
 3. `docs/ARCHITECTURE.md` for how the packages fit together.
-4. `docs/EXTENDING.md` when adding a tool, provider, search source, or UI panel.
+4. `docs/EXTENDING.md` when adding a tool, provider, search backend, or UI panel.
 
 ## Rules that are never optional
 
@@ -35,7 +35,7 @@ cmd/eika      harness server         internal/agent     agent loop
 cmd/eikad     sandbox daemon         internal/tool      tools and registry
 internal/provider  LLM providers     internal/executor  sandbox I/O
 internal/workspace containers, hub   internal/session   session trees
-internal/search    search sources    internal/server    HTTP + WebSocket
+internal/search    web search, fetch internal/server    HTTP + WebSocket
 internal/store     Postgres          internal/config    deployment config
 internal/secret    sealed secrets    web/               frontend
 sandbox/           sandbox image     compose.yaml       the whole stack
@@ -55,7 +55,13 @@ make check      fmt, vet, lint, test (Go and web)
 make test       tests only
 make build      build harness, eikad, and frontend
 make sandbox    build the eika-sandbox image
+make visual     compare UI screens with their baselines (web/e2e)
 ```
+
+To see the UI, run `cd web && npm run shot -- --help`: it opens a scenario
+against a mock harness, runs steps like `click Settings`, and saves
+screenshots plus the page's accessibility tree. `web/e2e/README.md` has the
+details. Check UI changes this way before declaring them done.
 
 ## How to add something
 
@@ -66,7 +72,7 @@ there, test it, document it. Full walkthroughs are in `docs/EXTENDING.md`.
 |-----------------|------------------------------|------------------------------------|
 | tool            | `tool.Tool`                  | `internal/tool/builtin/registry.go`|
 | provider        | `provider.Provider`          | `internal/provider/registry.go`    |
-| search source   | `search.Source`              | `internal/search/registry.go`      |
+| search backend  | `search.Searcher`            | `internal/search/registry.go`      |
 | API endpoint    | handler in `internal/server` | `internal/server/routes.go`        |
 | event type      | struct in `internal/event`   | `docs/api/events.md` + `web/src/api/events.ts` |
 | UI panel        | component in `web/src/`      | `web/src/app/panels.tsx`           |

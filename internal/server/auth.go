@@ -122,7 +122,21 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// The route needs no token, so a harness already set up refuses before
+	// it hashes: otherwise anyone could make it derive a hash per request.
+	// Hashing is serialized with sign-in for the same reason.
+	set, err := s.passwordSet(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if set {
+		s.fail(w, r, conflictf("the harness is already set up; sign in instead"))
+		return
+	}
+	s.loginMu.Lock()
 	hash, err := hashPassword(req.Password)
+	s.loginMu.Unlock()
 	if err != nil {
 		s.fail(w, r, err)
 		return

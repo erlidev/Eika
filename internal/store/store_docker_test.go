@@ -251,6 +251,33 @@ func TestRunsSubagentsAndSettings(t *testing.T) {
 	}
 }
 
+func TestSetSettingsWritesAllOrNothing(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+
+	if err := st.SetSettings(ctx, map[string]json.RawMessage{"a": json.RawMessage(`1`), "b": json.RawMessage(`2`)}); err != nil {
+		t.Fatalf("SetSettings: %v", err)
+	}
+	// PostgreSQL refuses a NUL character in jsonb, so this batch fails partway.
+	err := st.SetSettings(ctx, map[string]json.RawMessage{
+		"a": json.RawMessage(`10`), "b": json.RawMessage(`"\u0000"`), "c": json.RawMessage(`30`),
+	})
+	if err == nil {
+		t.Fatal("SetSettings with an unstorable value succeeded, want an error")
+	}
+	all, err := st.Settings(ctx)
+	if err != nil {
+		t.Fatalf("Settings: %v", err)
+	}
+	got := map[string]string{}
+	for _, set := range all {
+		got[set.Key] = string(set.Value)
+	}
+	if len(got) != 2 || got["a"] != "1" || got["b"] != "2" {
+		t.Errorf("settings = %v, want the failed batch to have written nothing", got)
+	}
+}
+
 func TestAbortRunningRunsClosesRowsFromAnEarlierProcess(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()

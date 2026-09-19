@@ -15,7 +15,7 @@ import { connect } from "@/api/connection";
 import { queryKeys } from "@/api/keys";
 import { setupPassword } from "@/api/routes";
 import type { AuthStatus } from "@/api/types";
-import { Notice } from "@/components/Notice";
+import { LoadError, Notice } from "@/components/Notice";
 import { Splash } from "@/components/Splash";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,34 @@ function SignedInSetup() {
   const [providerId, setProviderId] = useState("");
   const [addingProvider, setAddingProvider] = useState(false);
 
+  const finish = () => {
+    // The app leaves the wizard as soon as the settings say it is done.
+    save.mutate({ [settingKeys.setupComplete]: true });
+  };
+
+  // A list that failed to load is not an empty one: carrying on would send
+  // the user to connect a provider they may already have.
+  const loadError = providers.error ?? models.error;
+  if (loadError) {
+    return (
+      <WizardFrame
+        step="provider"
+        onSkip={finish}
+        finishing={save.isPending}
+        problem={save.isError ? save.error.message : undefined}
+      >
+        <LoadError
+          what={`the ${providers.isError ? "providers" : "models"} already configured, so the setup cannot tell which steps are done`}
+          error={loadError}
+          retrying={providers.isFetching || models.isFetching}
+          retry={() => {
+            if (providers.isError) void providers.refetch();
+            if (models.isError) void models.refetch();
+          }}
+        />
+      </WizardFrame>
+    );
+  }
   if (providers.isPending || models.isPending) return <Splash message="Loading the setup…" />;
 
   const providerList = providers.data?.providers ?? [];
@@ -63,10 +91,6 @@ function SignedInSetup() {
     step ??
     firstStep({ passwordSet: true, providers: providerList.length, models: modelList.length });
 
-  const finish = () => {
-    // The app leaves the wizard as soon as the settings say it is done.
-    save.mutate({ [settingKeys.setupComplete]: true });
-  };
   const advance = () => {
     const next = nextStep(current);
     if (next === null) finish();

@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { NumberField } from "@/features/providers/ModelPicker";
-import { useUpdateModel } from "@/features/providers/queries";
+import { useModels, useUpdateModel } from "@/features/providers/queries";
 
 export type ModelDialogProps = {
   /** model is the model being changed; null closes the dialog. */
@@ -72,6 +72,10 @@ export function ModelDialog({ model, onOpenChange }: ModelDialogProps) {
 
 function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
   const update = useUpdateModel();
+  const models = useModels();
+  const takenNames = (models.data?.models ?? [])
+    .filter((m) => m.id !== model.id)
+    .map((m) => m.name);
   const [name, setName] = useState(model.name);
   const [id, setId] = useState(model.model);
   const [window, setWindow] = useState(model.context_window);
@@ -82,13 +86,15 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
   const problem =
     name.trim() === ""
       ? "Give the model a name."
-      : id.trim() === ""
-        ? "The identifier is what the endpoint calls the model; it cannot be empty."
-        : !(window > 0) || !(output > 0)
-          ? "The limits must be positive numbers of tokens."
-          : output > window
-            ? "The max output cannot be larger than the context window."
-            : null;
+      : takenNames.includes(name.trim())
+        ? `Another model is called “${name.trim()}”; choose a different name.`
+        : id.trim() === ""
+          ? "The identifier is what the endpoint calls the model; it cannot be empty."
+          : !Number.isInteger(window) || !(window > 0) || !Number.isInteger(output) || !(output > 0)
+            ? "Enter the limits as whole numbers of tokens, 1 or more."
+            : output > window
+              ? "Lower the max output: it cannot be larger than the context window."
+              : null;
 
   return (
     <form
@@ -189,7 +195,7 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
         <Switch id="model-preserve" checked={preserve} onCheckedChange={setPreserve} />
       </div>
 
-      {problem !== null && <p className="text-muted-foreground text-xs">{problem}</p>}
+      {problem !== null && <p className="text-destructive text-xs">{problem}</p>}
       {update.isError && <Notice tone="error">{update.error.message}</Notice>}
 
       <DialogFooter>

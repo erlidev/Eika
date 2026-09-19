@@ -6,7 +6,7 @@
  * than the model allows, so a conservative guess is the better mistake.
  */
 
-import type { ModelInfo } from "@/api/types";
+import type { Model, ModelInfo } from "@/api/types";
 
 /** Limits are a model's context window and output limit in tokens. */
 export type Limits = { context_window: number; max_output: number };
@@ -70,4 +70,41 @@ export function suggestModelName(
     const candidate = `${scoped}-${String(n)}`;
     if (!taken.includes(candidate)) return candidate;
   }
+}
+
+/** ModelChoice is one model the user ticked or typed, with the values it will be added with. */
+export type ModelChoice = {
+  id: string;
+  name: string;
+  context_window: number;
+  max_output: number;
+};
+
+/** chosenProblem says why the chosen models cannot be added as they are, and how to fix it. */
+export function chosenProblem(
+  chosen: readonly ModelChoice[],
+  existing: readonly Model[],
+): string | null {
+  const names = new Set(existing.map((m) => m.name));
+  const seen = new Set<string>();
+  for (const c of chosen) {
+    const name = c.name.trim();
+    if (name === "") return `Give ${c.id} a name in Eika.`;
+    if (names.has(name)) {
+      return `A model called “${name}” already exists; give ${c.id} another name.`;
+    }
+    if (seen.has(name)) return `Two models would be called “${name}”; rename one of them.`;
+    seen.add(name);
+    if (name.length > 128) return `Shorten the name of ${c.id} to 128 characters or fewer.`;
+    if (!Number.isInteger(c.context_window) || !(c.context_window > 0)) {
+      return `Enter ${c.id}'s context window as a whole number of tokens.`;
+    }
+    if (!Number.isInteger(c.max_output) || !(c.max_output > 0)) {
+      return `Enter ${c.id}'s max output as a whole number of tokens.`;
+    }
+    if (c.max_output > c.context_window) {
+      return `${c.id}: the max output cannot be larger than the context window.`;
+    }
+  }
+  return null;
 }

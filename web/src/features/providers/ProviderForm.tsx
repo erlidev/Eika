@@ -21,6 +21,14 @@ import {
 } from "@/features/providers/presets";
 import type { ProviderPreset } from "@/features/providers/presets";
 import {
+  keyWillBeCleared,
+  probeInput,
+  storedKeyApplies,
+  updateInput,
+  validate,
+} from "@/features/providers/form";
+import type { ProviderField } from "@/features/providers/form";
+import {
   useCreateProvider,
   useProbeProvider,
   useProviders,
@@ -63,38 +71,25 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
     probe.reset();
   };
 
-  const problem = validate({
-    name,
-    baseUrl,
-    apiKey,
-    takenNames,
-    keyRequired: !editing && (preset?.keyRequired ?? false),
-  });
+  const form = { name, baseUrl, apiKey, removeKey };
+  // The endpoint the URL names decides whether a key is needed; a typed URL
+  // that matches no preset may do without one.
+  const keyRequired =
+    presetOf(baseUrl)?.keyRequired ?? (editing ? false : (preset?.keyRequired ?? false));
+  const problem = validate({ ...form, provider, takenNames, keyRequired });
+  const clearing = keyWillBeCleared(provider, form);
+  const keyApplies = storedKeyApplies(provider, form);
+  const problemFor = (field: ProviderField) => (problem?.field === field ? problem.message : null);
 
   const test = () => {
-    probe.mutate({
-      ...(editing ? { provider_id: provider.id } : {}),
-      base_url: baseUrl.trim(),
-      // Editing with the key field blank tests the key that is stored.
-      ...(editing && apiKey === "" && !removeKey ? {} : { api_key: apiKey.trim() }),
-    });
+    probe.mutate(probeInput(provider, form));
   };
 
   const save = (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (problem) return;
     if (editing) {
-      update.mutate(
-        {
-          id: provider.id,
-          input: {
-            name: name.trim(),
-            base_url: baseUrl.trim(),
-            ...(apiKey !== "" ? { api_key: apiKey.trim() } : removeKey ? { api_key: "" } : {}),
-          },
-        },
-        { onSuccess: onSaved },
-      );
+      update.mutate({ id: provider.id, input: updateInput(form) }, { onSuccess: onSaved });
       return;
     }
     create.mutate(
@@ -143,9 +138,18 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
             value={name}
             autoComplete="off"
             placeholder="My provider"
+            maxLength={64}
+            required
+            aria-invalid={name !== "" && problemFor("name") !== null}
+            aria-describedby={problemFor("name") ? "provider-name-problem" : undefined}
             onChange={(e) => {
               setName(e.target.value);
             }}
+          />
+          <FieldProblem
+            id="provider-name-problem"
+            message={problemFor("name")}
+            shown={name !== ""}
           />
         </div>
         <div className="space-y-1.5">
@@ -154,12 +158,21 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
             id="provider-url"
             value={baseUrl}
             autoComplete="off"
+            type="url"
+            required
             placeholder="https://api.example.com/v1"
             className="font-mono"
+            aria-invalid={baseUrl !== "" && problemFor("baseUrl") !== null}
+            aria-describedby={problemFor("baseUrl") ? "provider-url-problem" : undefined}
             onChange={(e) => {
               setBaseUrl(e.target.value);
               probe.reset();
             }}
+          />
+          <FieldProblem
+            id="provider-url-problem"
+            message={problemFor("baseUrl")}
+            shown={baseUrl !== ""}
           />
         </div>
       </div>
@@ -185,12 +198,17 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
           value={apiKey}
           autoComplete="off"
           className="font-mono"
+          required={keyRequired && !keyApplies}
+          aria-invalid={problemFor("apiKey") !== null && clearing}
+          aria-describedby={clearing ? "provider-key-cleared" : undefined}
           placeholder={
-            editing && provider.api_key_set && !removeKey
-              ? `stored key${provider.api_key_hint ? ` ending in ${provider.api_key_hint}` : ""}; leave blank to keep it`
-              : preset?.keyRequired === false
-                ? "not needed for a local server"
-                : "sk-…"
+            keyApplies
+              ? `stored key${provider?.api_key_hint ? ` ending in ${provider.api_key_hint}` : ""}; leave blank to keep it`
+              : clearing
+                ? "enter the key for the new base URL"
+                : keyRequired
+                  ? "sk-…"
+                  : "not needed for a local server"
           }
           onChange={(e) => {
             setApiKey(e.target.value);
@@ -198,9 +216,25 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
             probe.reset();
           }}
         />
+        {clearing && (
+          <Notice tone="info" className="mt-1">
+            <span id="provider-key-cleared">
+              The base URL changed, so saving clears the stored key
+              {provider?.api_key_hint ? ` ending in ${provider.api_key_hint}` : ""}: a key is only
+              ever sent to the URL it was entered for. Enter the key for the new URL
+              {keyRequired ? "" : ", or leave the field empty if that endpoint needs none"}.
+            </span>
+          </Notice>
+        )}
+        {removeKey && (
+          <p className="text-muted-foreground text-xs">
+            Saving removes the stored key. Type a key to keep one instead.
+          </p>
+        )}
+        <FieldProblem id="provider-key-problem" message={problemFor("apiKey")} shown={clearing} />
         <p className="text-muted-foreground text-xs">
           The key is encrypted before it is stored and never shown again.
-          {editing && provider.api_key_set && !removeKey && (
+          {keyApplies && (
             <>
               {" "}
               <button
@@ -241,9 +275,6 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
         </Notice>
       )}
 
-      {problem !== null && (name !== "" || baseUrl !== "") && (
-        <p className="text-muted-foreground text-xs">{problem}</p>
-      )}
       {saveError && <Notice tone="error">{saveError.message}</Notice>}
 
       <div className="flex flex-wrap items-center justify-end gap-2">
@@ -268,27 +299,22 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
   );
 }
 
-type ProviderInput = {
-  name: string;
-  baseUrl: string;
-  apiKey: string;
-  takenNames: readonly string[];
-  keyRequired: boolean;
+type FieldProblemProps = {
+  id: string;
+  message: string | null;
+  /**
+   * shown marks the problem as an error; otherwise it reads as a hint, so a
+   * new form does not open in red over fields nobody has touched yet.
+   */
+  shown: boolean;
 };
 
-/** validate mirrors what the harness refuses, so the save button says why it waits. */
-function validate({
-  name,
-  baseUrl,
-  apiKey,
-  takenNames,
-  keyRequired,
-}: ProviderInput): string | null {
-  if (name.trim() === "") return "Give the provider a name.";
-  if (takenNames.includes(name.trim())) return "Another provider has that name.";
-  if (!/^https?:\/\/[^/\s]+/.test(baseUrl.trim())) {
-    return "The base URL must start with http:// or https://.";
-  }
-  if (keyRequired && apiKey.trim() === "") return "This provider needs an API key.";
-  return null;
+/** FieldProblem is what keeps one field from being used, right below it. */
+function FieldProblem({ id, message, shown }: FieldProblemProps) {
+  if (message === null) return null;
+  return (
+    <p id={id} className={cn("text-xs", shown ? "text-destructive" : "text-muted-foreground")}>
+      {message}
+    </p>
+  );
 }

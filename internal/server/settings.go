@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
 )
@@ -57,6 +58,10 @@ type settingsDefaults struct {
 	SandboxImage        string `json:"sandbox_image"`
 	SubagentMaxDepth    int    `json:"subagent_max_depth"`
 	SubagentMaxChildren int    `json:"subagent_max_children"`
+	// SearchOrder is every web provider in its default order.
+	SearchOrder []string `json:"search_order"`
+	// SearchLimits is every quota bucket's default limit.
+	SearchLimits map[string]search.Limit `json:"search_limits"`
 }
 
 // handleSettings returns every setting.
@@ -66,7 +71,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 // handlePutSettings writes the keys the body carries, leaving the others
 // alone, and returns the whole table as it now stands. The keys the harness
-// reads are checked first, so one bad value writes nothing.
+// reads are checked first, and the keys are written in one
+// transaction, so a bad value or a failed write leaves the table as it was.
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[map[string]json.RawMessage](r)
 	if err != nil {
@@ -79,11 +85,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	for key, value := range req {
-		if err := s.deps.Store.SetSetting(r.Context(), key, value); err != nil {
-			s.fail(w, r, err)
-			return
-		}
+	if err := s.deps.Store.SetSettings(r.Context(), req); err != nil {
+		s.fail(w, r, err)
+		return
 	}
 	s.log.Info("settings written", "keys", len(req))
 	s.writeSettings(w, r, http.StatusOK)
@@ -100,14 +104,17 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 	for _, row := range rows {
 		out[row.Key] = row.Value
 	}
-	writeJSON(w, s.log, status, settingsResponse{
-		Settings: out,
-		Defaults: settingsDefaults{
-			SandboxImage:        s.cfg.SandboxImage,
-			SubagentMaxDepth:    defaultSubagentDepth,
-			SubagentMaxChildren: defaultSubagentChildren,
-		},
-	})
+	defaults := settingsDefaults{
+		SandboxImage:        s.cfg.SandboxImage,
+		SubagentMaxDepth:    defaultSubagentDepth,
+		SubagentMaxChildren: defaultSubagentChildren,
+		SearchOrder:         []string{},
+		SearchLimits:        map[string]search.Limit{},
+	}
+	if s.deps.Search != nil {
+		defaults.SearchOrder, defaults.SearchLimits = s.deps.Search.Web(), s.deps.Search.DefaultLimits()
+	}
+	writeJSON(w, s.log, status, settingsResponse{Settings: out, Defaults: defaults})
 }
 
 // validateSetting rejects a value the harness could not use for one of its
@@ -146,6 +153,14 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		return validateCount(key, value, maxSubagentDepth)
 	case settingSubagentChildren:
 		return validateCount(key, value, maxSubagentChildren)
+	case settingSearchOrder, settingSearchLimits:
+		if s.deps.Search == nil {
+			return nil
+		}
+		if key == settingSearchOrder {
+			return s.validateSearchOrder(value)
+		}
+		return s.validateSearchLimits(value)
 	case settingSetupComplete:
 		var done bool
 		if err := json.Unmarshal(value, &done); err != nil {

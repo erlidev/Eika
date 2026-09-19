@@ -10,6 +10,7 @@ import { EditDiff } from "@/features/session/renderers/EditRenderer";
 import { FieldList, ResultBlock } from "@/features/session/renderers/parts";
 import { boolArg, detail, numberArg, stringArg } from "@/features/session/renderers/registry";
 import type { ToolRenderer, ToolRendererProps } from "@/features/session/renderers/registry";
+import { WebFetchBody, WebSearchBody } from "@/features/session/renderers/WebRenderer";
 import { describeArgument, firstLine } from "@/lib/format";
 
 /** bashRenderer shows the command and its streamed output with an exit code. */
@@ -143,6 +144,27 @@ const askUserRenderer: ToolRenderer = {
   Body: AskUserBody,
 };
 
+/** webSearchRenderer shows the query and the results the model received. */
+const webSearchRenderer: ToolRenderer = {
+  summary: (call) => {
+    const source = stringArg(call, "source");
+    const query = stringArg(call, "query");
+    return source === "" || source === "web" ? query : `${query} in ${source}`;
+  },
+  Body: WebSearchBody,
+};
+
+/** webFetchRenderer shows the page asked for, how it was narrowed, and its content. */
+const webFetchRenderer: ToolRenderer = {
+  summary: (call) => {
+    const url = stringArg(call, "url");
+    const section = stringArg(call, "section");
+    if (section !== "") return `${url} § ${section}`;
+    return stringArg(call, "filter") === "" ? url : `${url} (filtered)`;
+  },
+  Body: WebFetchBody,
+};
+
 /** jsonRenderer is the fallback: the arguments and the result, as they are. */
 const jsonRenderer: ToolRenderer = {
   summary: (call) => firstLine(describeArgument(call.arguments), 80),
@@ -169,6 +191,8 @@ export const toolRenderers: Record<string, ToolRenderer> = {
   find: findRenderer,
   ls: lsRenderer,
   ask_user: askUserRenderer,
+  web_search: webSearchRenderer,
+  web_fetch: webFetchRenderer,
 };
 
 /** rendererFor returns a tool's renderer, or the JSON fallback. */

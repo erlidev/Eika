@@ -374,9 +374,9 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 	if err != nil {
 		return store.Run{}, nil, err
 	}
-	// Everything a later phase adds to a run - search tools in phase 7 - is
-	// registered in this Options value. The subagent tools need no entry: the
-	// spawner reaches this run manager itself.
+	// The tools every run shares hold what they reach beyond the workspace:
+	// the spawner, the search engine, and the page reader. A run adds only
+	// its own executor, which is also where a web_fetch filter runs.
 	ag := agent.New(p, s.deps.Tools, agent.Options{
 		Model:            m.Model,
 		MaxTokens:        m.MaxOutput,

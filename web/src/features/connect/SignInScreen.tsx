@@ -90,7 +90,7 @@ export function SignInScreen({ unreachable }: SignInScreenProps) {
         </div>
 
         {unreachable !== undefined && (
-          <Notice tone="error">The harness could not be reached: {unreachable}</Notice>
+          <Notice tone="error">Eika could not load. {unreachable}</Notice>
         )}
 
         <form className="space-y-4" onSubmit={submit}>

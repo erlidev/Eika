@@ -217,7 +217,9 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.log, http.StatusCreated, s.asProvider(created))
 }
 
-// handleUpdateProvider changes a provider's name, endpoint, or key.
+// handleUpdateProvider changes a provider's name, endpoint, or key. A new
+// base URL without a new key clears the stored key, so that it is never sent
+// to an endpoint it was not entered for.
 func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[updateProviderRequest](r)
 	if err != nil {
@@ -232,8 +234,15 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	if req.Name != nil {
 		p.Name = strings.TrimSpace(*req.Name)
 	}
+	keyCleared := false
 	if req.BaseURL != nil {
-		p.BaseURL = strings.TrimSpace(*req.BaseURL)
+		baseURL := strings.TrimSpace(*req.BaseURL)
+		// A key belongs to the endpoint it was entered for; it is never
+		// sent to another one the user did not give it to.
+		if baseURL != p.BaseURL && req.APIKey == nil && len(p.APIKey) > 0 {
+			p.APIKey, keyCleared = nil, true
+		}
+		p.BaseURL = baseURL
 	}
 	if err := s.validateProvider(p); err != nil {
 		s.fail(w, r, err)
@@ -253,7 +262,7 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.log.Info("provider updated", "provider_id", updated.ID, "key_changed", req.APIKey != nil)
+	s.log.Info("provider updated", "provider_id", updated.ID, "key_changed", req.APIKey != nil, "key_cleared", keyCleared)
 	writeJSON(w, s.log, http.StatusOK, s.asProvider(updated))
 }
 
@@ -307,7 +316,8 @@ func (s *Server) handleProbeProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 // probeTarget merges a probe request with the provider it names, if any, and
-// returns the endpoint to probe with its key in the clear.
+// returns the endpoint to probe with its key in the clear. A stored key is
+// used only with the stored base URL.
 func (s *Server) probeTarget(ctx context.Context, req probeRequest) (store.Provider, string, error) {
 	var (
 		p   store.Provider
@@ -331,7 +341,12 @@ func (s *Server) probeTarget(ctx context.Context, req probeRequest) (store.Provi
 		p.Name = "probe"
 	}
 	if req.BaseURL != nil {
-		p.BaseURL = strings.TrimSpace(*req.BaseURL)
+		baseURL := strings.TrimSpace(*req.BaseURL)
+		// The stored key goes only to the endpoint it was entered for.
+		if req.ProviderID != "" && baseURL != p.BaseURL {
+			key = ""
+		}
+		p.BaseURL = baseURL
 	}
 	if req.APIKey != nil {
 		key = strings.TrimSpace(*req.APIKey)

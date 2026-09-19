@@ -27,7 +27,9 @@ func TestSealOpensToWhatWasSealed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Seal(%q): %v", plain, err)
 		}
-		if bytes.Contains(sealed, []byte(plain)) {
+		// A one-byte plaintext turns up in random ciphertext by chance, so
+		// only a plaintext long enough not to is looked for.
+		if len(plain) >= 8 && bytes.Contains(sealed, []byte(plain)) {
 			t.Errorf("sealed data carries the plaintext %q", plain)
 		}
 		got, err := b.Open(sealed)

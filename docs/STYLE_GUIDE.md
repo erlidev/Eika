@@ -38,7 +38,7 @@ here in the same change, with a sentence of reasoning.
   anywhere; never import `workspace` from `tool`.
 - Interfaces are defined where they are consumed, not where they are
   implemented, unless they are the package's main extension point
-  (`tool.Tool`, `provider.Provider`, `search.Source`, `executor.Executor`).
+  (`tool.Tool`, `provider.Provider`, `search.Searcher`, `executor.Executor`).
 
 ### Code
 
@@ -146,7 +146,8 @@ web/src/
 
 - Vitest for `lib/` and store logic. Component tests only for non-trivial
   interaction logic (queues, tree navigation, forms).
-- Playwright smoke test lives in `web/e2e/` and runs against compose.
+- Visual tests live in `web/e2e/` and run against the mock harness there.
+  A UI change updates or adds a baseline; see `web/e2e/README.md`.
 
 ## 4. Documentation
 

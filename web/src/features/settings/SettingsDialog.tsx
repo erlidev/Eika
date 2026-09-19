@@ -1,6 +1,6 @@
 /**
- * The settings: models and providers, the harness-wide choices, the account,
- * and the colour scheme. Everything but the colour scheme is stored in the
+ * The settings: models and providers, the harness-wide choices, web search,
+ * the account, and the colour scheme. Everything but the colour scheme is stored in the
  * harness. Its open state is `store.ts`, so anything can open it on a tab.
  */
 
@@ -28,12 +28,14 @@ import { ModelsPanel } from "@/features/providers";
 import { AccountSettings } from "@/features/settings/AccountSettings";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
 import { settingKeys, useSaveSettings } from "@/features/settings/queries";
+import { SearchSettings } from "@/features/settings/SearchSettings";
 import { useSettingsDialog } from "@/features/settings/store";
 import type { SettingsTab } from "@/features/settings/store";
 
 const tabs: readonly { value: SettingsTab; label: string }[] = [
   { value: "models", label: "Models" },
   { value: "general", label: "General" },
+  { value: "search", label: "Search" },
   { value: "account", label: "Account" },
   { value: "appearance", label: "Appearance" },
 ];
@@ -78,10 +80,14 @@ export function SettingsDialog() {
               onDefaultChange={(name) => {
                 save.mutate({ [settingKeys.defaultModel]: name });
               }}
+              defaultError={save.isError ? save.error.message : undefined}
             />
           </TabsContent>
           <TabsContent value="general" className="pt-3">
             <GeneralSettings />
+          </TabsContent>
+          <TabsContent value="search" className="pt-3">
+            <SearchSettings />
           </TabsContent>
           <TabsContent value="account" className="pt-3">
             <AccountSettings />

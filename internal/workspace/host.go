@@ -165,7 +165,7 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 	port := nat.Port(DaemonPort + "/tcp")
 	cfg := &container.Config{
 		Image:      ws.Image,
-		Entrypoint: []string{"/usr/local/bin/eikad", "-listen", ":" + DaemonPort, "-root", Root},
+		Entrypoint: []string{eikad.BinaryPath, "-listen", ":" + DaemonPort, "-root", Root},
 		Env: append([]string{
 			eikad.TokenEnv + "=" + ws.Token,
 			hubUserEnv + "=" + ws.ID,
