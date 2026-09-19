@@ -12,6 +12,7 @@ import { useAnswerQuestion } from "@/features/session/queries";
 import { stringArg } from "@/features/session/renderers/registry";
 import type { ToolRendererProps } from "@/features/session/renderers/registry";
 import { useSessionStore } from "@/features/session/store";
+import { failureText } from "@/lib/failure";
 
 /** AskUserBody is the renderer body registered for the `ask_user` tool. */
 export function AskUserBody({ call }: ToolRendererProps) {
@@ -109,7 +110,7 @@ export function AskUserBody({ call }: ToolRendererProps) {
       )}
       {answer.isError && (
         <p className="text-destructive text-xs" role="alert">
-          {answer.error.message}
+          {failureText("send the answer", answer.error)}
         </p>
       )}
     </form>

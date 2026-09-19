@@ -14,6 +14,7 @@ import type {
   Provider,
   Question,
   Run,
+  SearchStatus,
   Session,
   SettingsState,
   SystemStatus,
@@ -48,6 +49,8 @@ export type World = {
   signedIn: boolean;
   settings: SettingsState;
   system: SystemStatus;
+  /** search is GET /api/search/status before settings apply: order and limits come from settings. */
+  search: SearchStatus;
   providers: Provider[];
   providerKinds: string[];
   models: Model[];
@@ -91,10 +94,19 @@ export function emptyWorld(): World {
         sandbox_image: "eika-sandbox:latest",
         subagent_max_depth: 2,
         subagent_max_children: 4,
-        search_order: ["searxng"],
-        search_limits: {},
+        // As the harness documents them in docs/api/http.md.
+        search_order: ["searxng", "exa", "tavily", "brave", "marginalia"],
+        search_limits: {
+          searxng: {},
+          exa: { month: 900 },
+          tavily: { month: 1000 },
+          brave: { month: 2000 },
+          marginalia: { day: 100 },
+          github: {},
+        },
       },
     },
+    search: searchStatus(),
     system: {
       docker: { reachable: true },
       sandbox_image: { name: "eika-sandbox:latest", present: true },
@@ -124,6 +136,54 @@ export function emptyWorld(): World {
   };
 }
 
+/** searchStatus is a deployment with SearXNG up and no search keys stored. */
+function searchStatus(): SearchStatus {
+  const usage = (dayUsed = 0, monthUsed = 0) => ({
+    day: "2026-03-14",
+    day_used: dayUsed,
+    month: "2026-03",
+    month_used: monthUsed,
+  });
+  const web = (name: string, key?: string) => ({
+    name,
+    web: true,
+    ...(key ? { key, key_required: true } : {}),
+    key_set: false,
+    bucket: name,
+    state: "ready",
+    usage: usage(),
+    limit: {},
+  });
+  const source = (name: string, bucket?: string) => ({
+    name,
+    web: false,
+    key_set: false,
+    ...(bucket ? { bucket } : {}),
+    state: "ready",
+    usage: usage(),
+    limit: {},
+  });
+  return {
+    order: [],
+    backends: [
+      { ...web("searxng"), usage: usage(12, 340), probe: "up" },
+      web("exa", "exa"),
+      web("tavily", "tavily"),
+      web("brave", "brave"),
+      { ...web("marginalia"), usage: usage(3, 41) },
+      source("wikipedia"),
+      source("arxiv"),
+      { ...source("github_code", "github"), key: "github", key_required: true },
+      source("github_repos", "github"),
+      source("github_issues", "github"),
+    ],
+    keys: ["exa", "tavily", "brave", "github"].map((name) => ({ name, set: false })),
+    cached_searches: 128,
+    cached_pages: 37,
+    searxng_url: "http://searxng:8080",
+  };
+}
+
 /** WorldBuilder adds rows with consistent ids and timestamps. */
 export class WorldBuilder {
   readonly world: World;
@@ -144,7 +204,7 @@ export class WorldBuilder {
       kind: "openai",
       base_url: "https://api.openai.com/v1",
       api_key_set: true,
-      api_key_hint: "…a1b2",
+      api_key_hint: "a1b2",
       created_at: minutesAgo(600),
       updated_at: minutesAgo(600),
       ...input,

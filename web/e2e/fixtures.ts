@@ -25,7 +25,7 @@ export const test = base.extend<Fixtures>({
   expectShot: async ({}, provide) => {
     await provide(async (eika, name, target) => {
       await eika.settle();
-      const subject = target === undefined ? eika.page : eika.locate(target);
+      const subject = target === undefined ? eika.page : await eika.find(target);
       await expect(subject).toHaveScreenshot(`${name}.png`);
       expect(eika.report()).toEqual({ consoleErrors: [], pageErrors: [], unhandledApi: [] });
     });

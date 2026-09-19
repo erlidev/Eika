@@ -5,7 +5,8 @@ result. No Go server, Postgres, or Docker needed: `harness/mock.ts` answers
 every `/api` route and the `/api/events` WebSocket from an in-memory world,
 and plays scripted agent replies so a sent message streams like a real run.
 
-Chromium is needed once: `npx playwright install chromium`.
+Chromium is needed once: `npx playwright install chromium`. `make visual`
+installs it when it is missing.
 
 ## Look at the UI (`shot`)
 
@@ -41,6 +42,8 @@ Each run starts its own Vite server (about two seconds) and prints JSON:
   add them to `buildRoutes` in `harness/mock.ts`.
 - `--out <dir>` keeps runs apart; `--url http://localhost:5173` reuses a
   running `npm run dev` instead of starting a server.
+- `--fail "GET /api/providers = 500"` makes a route fail from the first
+  request, to see a load error; repeat it for several routes.
 
 ### Steps
 
@@ -49,6 +52,7 @@ One action per `--step`, or one per line in a `--steps <file>`:
 | Step                                           | Does                                                             |
 | ---------------------------------------------- | ---------------------------------------------------------------- |
 | `click <target>` / `hover <target>`            | Click or hover it.                                               |
+| `scroll <target>`                              | Bring it into view, such as the end of a long dialog.            |
 | `fill <target> = <value>`                      | Replace a field's text.                                          |
 | `select <target> = <option>`                   | Pick from a native or Radix select.                              |
 | `press <key>` / `type <text>`                  | Keyboard: `Enter`, `Escape`, `Control+K`; text into the focus.   |
@@ -57,19 +61,40 @@ One action per `--step`, or one per line in a `--steps <file>`:
 | `goto <path>` / `reload`                       | Navigate.                                                        |
 | `theme light\|dark` / `viewport 390x844`       | Change how the page renders.                                     |
 | `emit <event json>`                            | Push an event from docs/api/events.md onto the stream.           |
+| `fail <route> = <failure>` / `heal <route>`    | Make a route fail until healed; see "Failing routes" below.      |
 | `shot <name> [= <target>]` / `fullshot <name>` | Screenshot the viewport, one element, or the full page.          |
 | `aria`                                         | Save the accessibility tree as `page.aria.yml`.                  |
 
 A **target** is what the UI calls something: `Settings`, `New project`,
 `Password`, `30s`. It is tried as a button, link, tab, menu item, option,
 tree item, checkbox, switch, radio, and combobox name, then a field label, a
-placeholder, and exact text. Use a Playwright selector when a name is
+placeholder, and exact text, in that order; while a modal dialog is open,
+labels and text behind it do not count. A target that never appears fails
+after 10 seconds. Use a Playwright selector when a name is
 ambiguous: `role=dialog`, `role=button[name="Delete gpt-5"]`, `text=/rate limit/`,
 `label=Password`, `css=.foo`.
 
 Every step waits for the page to settle (the mock idle, a scripted reply
 finished, fonts loaded, animations done), so no `wait` is needed after one.
 The clock is fixed at `2026-03-14T15:00Z` so relative times never change.
+
+### Failing routes
+
+A route is named as `docs/api/http.md` writes it, with `{id}` for a path
+parameter: `GET /api/models`, `PATCH /api/providers/{id}`. A failure is
+one of:
+
+| Failure    | The page sees                                                                  |
+| ---------- | ------------------------------------------------------------------------------ |
+| `500`      | That status with the documented error body; `409 name taken` sets the message. |
+| `502 bare` | That status with no body, as a proxy in front of a stopped harness answers.    |
+| `network`  | No answer at all: the harness is unreachable.                                  |
+| `hang`     | A request that never ends, to see a loading state.                             |
+
+A failed route stays failed until `heal`, so a test can show the error, heal
+the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
+{ status: 500 } }` to `open`, or call `eika.mock.failRoute` and
+`eika.mock.healRoute`. An unknown route throws and lists the known ones.
 
 ## Scenarios
 
@@ -104,5 +129,35 @@ test("settings", async ({ open, expectShot }) => {
 ```
 
 `expectShot` also fails on console errors, page errors, and unmocked routes.
-Baselines are rendered by Chromium on Linux; font rendering on another OS
-differs, so regenerate them there rather than loosening the threshold.
+The threshold is 10 pixels, so a changed word fails.
+
+Baselines are rendered by Chromium on Linux and have no platform suffix
+(`snapshotPathTemplate` in `playwright.config.ts`), so one set serves every
+Linux machine and CI. What keeps them stable across machines:
+
+- Every font is bundled: IBM Plex Sans and JetBrains Mono come from
+  `@fontsource-variable`, and each step waits for `document.fonts.ready`.
+- The UI uses no character outside those fonts' bundled subsets, since a
+  missing glyph is drawn by whatever system font has it. Draw a symbol such
+  as ⌘ or ← with a lucide icon instead.
+- The clock, the data, and the animations are fixed.
+
+Font rendering on macOS or Windows differs, so regenerate baselines on Linux
+rather than loosening the threshold. If CI's rendering drifts from a local
+machine's, the failed job's `playwright-report` artifact holds the diffs.
+
+## Checks and CI
+
+`make visual` runs the suite: about four minutes on a laptop, one browser at
+a time. `make check` runs it after the Go and web checks, so it takes about
+five minutes in all. `.github/workflows/ci.yml` runs the same three parts as
+separate jobs on `ubuntu-latest` (`go`, `web`, and `visual`). The visual job
+installs Chromium with its system libraries (`PLAYWRIGHT_DEPS=--with-deps`),
+and when it fails it uploads `e2e/report` and `e2e/test-results` as the
+`playwright-report` artifact: download it and open the diffs, or run
+`npx playwright show-report` on the report.
+
+The specs run one browser at a time (`workers: 1`); pass `--workers=4` where
+memory allows. They start their own Vite server on port 4319 and refuse to
+reuse one already there; set `EIKA_VISUAL_PORT` to move it. The Account tab
+shows that URL, so its baselines change with the port.

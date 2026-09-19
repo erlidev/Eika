@@ -31,9 +31,17 @@ export function SystemCheck() {
           Check again
         </Button>
       </div>
-      <ul className="divide-y rounded-lg border">
+      <ul className="divide-y rounded-md border">
         <CheckRow
-          state={system.isPending ? "pending" : data?.docker.reachable ? "ok" : "failed"}
+          state={
+            system.isError
+              ? "failed"
+              : system.isPending
+                ? "pending"
+                : data?.docker.reachable
+                  ? "ok"
+                  : "failed"
+          }
           title="Docker"
           detail={
             system.isError
@@ -43,49 +51,66 @@ export function SystemCheck() {
                 : "The harness cannot use the Docker socket."
           }
         >
-          {data !== undefined && !data.docker.reachable && (
+          {!system.isError && data !== undefined && !data.docker.reachable && (
             <>
-              <code className="bg-muted mt-1 block rounded px-2 py-1 font-mono text-[0.7rem] break-all">
+              <code className="bg-muted mt-1 block rounded-md px-2 py-1 font-mono text-2xs break-all">
                 {data.docker.error}
               </code>
               <span className="mt-1 block">
                 Check that Docker is running and that <code>/var/run/docker.sock</code> is mounted
-                into the harness container, as compose.yaml does.
+                into the harness container, as <code>compose.yaml</code> does.
               </span>
             </>
           )}
         </CheckRow>
         <CheckRow
           state={
-            system.isPending || data === undefined
-              ? "pending"
-              : !data.docker.reachable
-                ? "unknown"
-                : data.sandbox_image.present
-                  ? "ok"
-                  : "failed"
+            // A failed check says nothing about the image, even if an
+            // earlier one did: showing that answer as current would mislead.
+            system.isError
+              ? "unknown"
+              : system.isPending || data === undefined
+                ? "pending"
+                : !data.docker.reachable
+                  ? "unknown"
+                  : data.sandbox_image.present
+                    ? "ok"
+                    : // Docker pulls an image it lacks, but not the one Eika builds.
+                      data.sandbox_image.name === defaultSandboxImage
+                      ? "failed"
+                      : "warning"
           }
           title="Sandbox image"
           detail={
-            data === undefined
-              ? "Checking…"
-              : data.sandbox_image.present
-                ? `${data.sandbox_image.name} is ready.`
-                : `${data.sandbox_image.name} is not on the Docker host yet.`
+            system.isError ? (
+              "Not checked, since the harness did not answer."
+            ) : data === undefined ? (
+              "Checking…"
+            ) : !data.docker.reachable ? (
+              "Not checked, since the harness cannot reach Docker."
+            ) : (
+              <>
+                <code>{data.sandbox_image.name}</code>{" "}
+                {data.sandbox_image.present ? "is ready." : "is not on the Docker host yet."}
+              </>
+            )
           }
         >
-          {data !== undefined && data.docker.reachable && !data.sandbox_image.present && (
-            <span className="mt-1 block">
-              {data.sandbox_image.name === defaultSandboxImage ? (
-                <>
-                  Build it with <code>docker compose build sandbox-image</code>, or{" "}
-                  <code>make sandbox</code>, from the Eika repository.
-                </>
-              ) : (
-                "Docker pulls it when the first workspace starts. Pull a private image on the host first."
-              )}
-            </span>
-          )}
+          {!system.isError &&
+            data !== undefined &&
+            data.docker.reachable &&
+            !data.sandbox_image.present && (
+              <span className="mt-1 block">
+                {data.sandbox_image.name === defaultSandboxImage ? (
+                  <>
+                    Build it with <code>docker compose build sandbox-image</code>, or{" "}
+                    <code>make sandbox</code>, from the Eika repository.
+                  </>
+                ) : (
+                  "Docker pulls it when the first workspace starts. Pull a private image on the host first."
+                )}
+              </span>
+            )}
         </CheckRow>
       </ul>
     </div>
@@ -93,9 +118,9 @@ export function SystemCheck() {
 }
 
 type CheckRowProps = {
-  state: "ok" | "failed" | "pending" | "unknown";
+  state: "ok" | "failed" | "warning" | "pending" | "unknown";
   title: string;
-  detail: string;
+  detail: React.ReactNode;
   children?: React.ReactNode;
 };
 
@@ -107,8 +132,9 @@ function CheckRow({ state, title, detail, children }: CheckRowProps) {
         aria-hidden
         className={cn(
           "mt-0.5 size-4 shrink-0",
-          state === "ok" && "text-emerald-600 dark:text-emerald-400",
+          state === "ok" && "text-success",
           state === "failed" && "text-destructive",
+          state === "warning" && "text-warning",
           state === "unknown" && "text-muted-foreground",
           state === "pending" && "text-muted-foreground animate-spin",
         )}

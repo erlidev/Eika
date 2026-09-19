@@ -53,7 +53,7 @@ export function ToolCard({ call, open = false }: ToolCardProps) {
           {summary}
         </span>
         {call.durationMs !== undefined && (
-          <span className="text-muted-foreground shrink-0 font-mono text-[0.7rem] tabular-nums">
+          <span className="text-muted-foreground shrink-0 font-mono text-2xs tabular-nums">
             {formatDuration(call.durationMs)}
           </span>
         )}

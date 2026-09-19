@@ -12,19 +12,28 @@ import { ApiError, request } from "@/api/client";
 import { connect } from "@/api/connection";
 import { signIn } from "@/api/routes";
 import { Notice } from "@/components/Notice";
+import { Screen, ScreenHeader, ScreenMark } from "@/components/Screen";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useConnection } from "@/features/connect/useConnection";
+import { failureText } from "@/lib/failure";
 import { cn } from "@/lib/utils";
 
 export type SignInScreenProps = {
   /** unreachable says why the harness could not be asked whether it is set up. */
   unreachable?: string;
+  /**
+   * retry asks again, for a failure that may pass, such as a harness still
+   * starting. Only a signed-out browser gets here; a signed-in one whose
+   * load fails gets LoadFailedScreen instead.
+   */
+  retry?: () => void;
+  retrying?: boolean;
 };
 
-export function SignInScreen({ unreachable }: SignInScreenProps) {
+export function SignInScreen({ unreachable, retry, retrying = false }: SignInScreenProps) {
   const current = useConnection();
   const [password, setPassword] = useState("");
   const [token, setToken] = useState("");
@@ -41,9 +50,7 @@ export function SignInScreen({ unreachable }: SignInScreenProps) {
         ? withToken
           ? "The harness refused that token."
           : "That password is not the one this harness was set up with."
-        : error instanceof Error
-          ? error.message
-          : "The harness could not be reached.",
+        : failureText("sign in", error),
     );
   };
 
@@ -77,89 +84,100 @@ export function SignInScreen({ unreachable }: SignInScreenProps) {
   };
 
   return (
-    <main className="bg-muted/30 text-foreground flex min-h-screen items-center justify-center p-4">
-      <div className="bg-background w-full max-w-sm space-y-6 rounded-2xl border p-6 shadow-sm sm:p-8">
-        <div className="space-y-2">
-          <span className="bg-primary text-primary-foreground inline-flex size-9 items-center justify-center rounded-lg">
-            <Terminal aria-hidden className="size-4" />
-          </span>
-          <h1 className="text-xl font-semibold">Sign in to Eika</h1>
-          <p className="text-muted-foreground text-sm">
-            Enter the password chosen when this harness was set up.
-          </p>
-        </div>
+    <Screen className="space-y-6">
+      <ScreenHeader mark={<ScreenMark icon={Terminal} />} title="Sign in to Eika">
+        Enter the password chosen when this harness was set up.
+      </ScreenHeader>
 
-        {unreachable !== undefined && (
-          <Notice tone="error">Eika could not load. {unreachable}</Notice>
+      {unreachable !== undefined && (
+        <Notice
+          tone="error"
+          {...(retry === undefined
+            ? {}
+            : {
+                action: (
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    disabled={retrying}
+                    onClick={retry}
+                  >
+                    {retrying ? "Retrying…" : "Retry"}
+                  </Button>
+                ),
+              })}
+        >
+          Eika could not load. {unreachable}
+        </Notice>
+      )}
+
+      <form className="space-y-4" onSubmit={submit}>
+        {!withToken && (
+          <div className="space-y-1.5">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+              }}
+              autoFocus
+            />
+          </div>
         )}
 
-        <form className="space-y-4" onSubmit={submit}>
-          {!withToken && (
+        <Collapsible open={advanced} onOpenChange={setAdvanced}>
+          <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs">
+            <ChevronDown
+              aria-hidden
+              className={cn("size-3.5 transition-transform", !advanced && "-rotate-90")}
+            />
+            Advanced
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-4 pt-3">
             <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="api-token">API token</Label>
               <Input
-                id="password"
+                id="api-token"
                 type="password"
-                autoComplete="current-password"
-                value={password}
+                autoComplete="off"
+                value={token}
+                placeholder="instead of the password"
                 onChange={(e) => {
-                  setPassword(e.target.value);
+                  setToken(e.target.value);
                 }}
-                autoFocus
               />
+              <p className="text-muted-foreground text-xs">
+                The deployment&apos;s <code>EIKA_AUTH_TOKEN</code>, if it set one.
+              </p>
             </div>
-          )}
-
-          <Collapsible open={advanced} onOpenChange={setAdvanced}>
-            <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs">
-              <ChevronDown
-                aria-hidden
-                className={cn("size-3.5 transition-transform", !advanced && "-rotate-90")}
+            <div className="space-y-1.5">
+              <Label htmlFor="base-url">Harness URL</Label>
+              <Input
+                id="base-url"
+                value={baseUrl}
+                placeholder="this page's origin"
+                autoComplete="off"
+                onChange={(e) => {
+                  setBaseUrl(e.target.value);
+                }}
               />
-              Advanced
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-4 pt-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="api-token">API token</Label>
-                <Input
-                  id="api-token"
-                  type="password"
-                  autoComplete="off"
-                  value={token}
-                  placeholder="instead of the password"
-                  onChange={(e) => {
-                    setToken(e.target.value);
-                  }}
-                />
-                <p className="text-muted-foreground text-xs">
-                  The deployment&apos;s <code>EIKA_AUTH_TOKEN</code>, if it set one.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="base-url">Harness URL</Label>
-                <Input
-                  id="base-url"
-                  value={baseUrl}
-                  placeholder="this page's origin"
-                  autoComplete="off"
-                  onChange={(e) => {
-                    setBaseUrl(e.target.value);
-                  }}
-                />
-                <p className="text-muted-foreground text-xs">
-                  Leave empty unless the frontend runs somewhere else. The Vite dev server proxies
-                  <code className="mx-1">/api</code>, so leave it empty there too.
-                </p>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+              <p className="text-muted-foreground text-xs">
+                Leave empty unless the frontend runs somewhere else. The Vite dev server proxies
+                <code className="mx-1">/api</code>, so leave it empty there too.
+              </p>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
-          {problem !== "" && <Notice tone="error">{problem}</Notice>}
-          <Button type="submit" disabled={checking} className="w-full">
-            {checking ? "Signing in…" : "Sign in"}
-          </Button>
-        </form>
-      </div>
-    </main>
+        {problem !== "" && <Notice tone="error">{problem}</Notice>}
+        <Button type="submit" disabled={checking} className="w-full">
+          {checking ? "Signing in…" : "Sign in"}
+        </Button>
+      </form>
+    </Screen>
   );
 }

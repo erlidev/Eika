@@ -10,14 +10,16 @@ import { useState } from "react";
 
 import { probeProvider } from "@/api/routes";
 import type { Model, ModelInfo, Provider } from "@/api/types";
-import { LoadError, Notice } from "@/components/Notice";
+import { ActionError, LoadError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { chosenProblem, suggestLimits, suggestModelName } from "@/features/providers/limits";
+import type { ChosenProblem } from "@/features/providers/limits";
 import type { ModelChoice } from "@/features/providers/limits";
 import { useCreateModel, useModels, useTestModel } from "@/features/providers/queries";
+import { failureText } from "@/lib/failure";
 import { formatTokens } from "@/lib/format";
 
 export type ModelPickerProps = {
@@ -104,7 +106,7 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
           }),
         );
       } catch (error) {
-        setFailure(`${choice.id}: ${error instanceof Error ? error.message : String(error)}`);
+        setFailure(failureText(`add ${choice.id}`, error));
         // What was added stays added; the rest stays chosen to retry.
         setChosen(chosen.filter((c) => !added.some((m) => m.model === c.id)));
         setAdding(false);
@@ -138,7 +140,7 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
         )}
         {discovered.isError && (
           <Notice tone="error">
-            {discovered.error.message}
+            {failureText(`list the models ${provider.name} serves`, discovered.error)}
             <span className="text-muted-foreground mt-1 block">
               Type a model's identifier below to add it anyway.
             </span>
@@ -167,7 +169,7 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
         )}
 
         {available.length > 0 && (
-          <ul className="max-h-64 divide-y overflow-y-auto rounded-lg border">
+          <ul className="max-h-64 divide-y overflow-y-auto rounded-md border">
             {shown.map((info) => {
               const already = onProvider.has(info.id);
               const checked = already || chosen.some((c) => c.id === info.id);
@@ -249,6 +251,7 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
                 key={choice.id}
                 provider={provider}
                 choice={choice}
+                problem={problem?.id === choice.id ? problem : null}
                 onChange={(patch) => {
                   change(choice.id, patch);
                 }}
@@ -269,7 +272,9 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
           retry={() => void models.refetch()}
         />
       )}
-      {problem !== null && chosen.length > 0 && <Notice tone="error">{problem}</Notice>}
+      {problem !== null && chosen.length > 0 && (
+        <p className="text-destructive text-xs">Fix the field marked above to add the models.</p>
+      )}
       {failure !== "" && <Notice tone="error">{failure}</Notice>}
 
       <div className="flex flex-wrap items-center justify-end gap-2">
@@ -295,16 +300,20 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
 type ChoiceRowProps = {
   provider: Provider;
   choice: Choice;
+  /** problem is what keeps this choice from being added, shown under its field. */
+  problem: ChosenProblem | null;
   onChange: (patch: Partial<Choice>) => void;
   onRemove: () => void;
 };
 
 /** ChoiceRow is one model about to be added: its name, its limits, and a test. */
-function ChoiceRow({ provider, choice, onChange, onRemove }: ChoiceRowProps) {
+function ChoiceRow({ provider, choice, problem, onChange, onRemove }: ChoiceRowProps) {
   const test = useTestModel();
   const base = `choice-${provider.id}-${choice.id}`;
+  const problemFor = (field: ChosenProblem["field"]) =>
+    problem?.field === field ? problem.message : undefined;
   return (
-    <li className="bg-muted/30 space-y-3 rounded-lg border p-3">
+    <li className="bg-muted/30 space-y-3 rounded-md border p-3">
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate font-mono text-xs font-medium">{choice.id}</span>
         <Button
@@ -336,15 +345,19 @@ function ChoiceRow({ provider, choice, onChange, onRemove }: ChoiceRowProps) {
           <Input
             id={`${base}-name`}
             value={choice.name}
+            aria-invalid={problemFor("name") !== undefined}
+            aria-describedby={problemFor("name") ? `${base}-name-problem` : undefined}
             onChange={(e) => {
               onChange({ name: e.target.value });
             }}
           />
+          <FieldProblem id={`${base}-name-problem`} message={problemFor("name")} />
         </div>
         <NumberField
           id={`${base}-window`}
           label="Context window"
           value={choice.context_window}
+          problem={problemFor("context_window")}
           onChange={(context_window) => {
             onChange({ context_window });
           }}
@@ -353,6 +366,7 @@ function ChoiceRow({ provider, choice, onChange, onRemove }: ChoiceRowProps) {
           id={`${base}-output`}
           label="Max output"
           value={choice.max_output}
+          problem={problemFor("max_output")}
           onChange={(max_output) => {
             onChange({ max_output });
           }}
@@ -366,7 +380,9 @@ function ChoiceRow({ provider, choice, onChange, onRemove }: ChoiceRowProps) {
             : " (no text: it spent its budget thinking)"}
         </Notice>
       )}
-      {test.isError && <Notice tone="error">{test.error.message}</Notice>}
+      {test.isError && (
+        <ActionError action={`test ${choice.name.trim() || choice.id}`} error={test.error} />
+      )}
     </li>
   );
 }
@@ -375,11 +391,23 @@ type NumberFieldProps = {
   id: string;
   label: string;
   value: number;
+  /** problem is why the value cannot be used, shown under the field. */
+  problem?: string | undefined;
   onChange: (value: number) => void;
 };
 
+/** FieldProblem is what keeps one field from being used, right below it. */
+export function FieldProblem({ id, message }: { id: string; message: string | undefined }) {
+  if (message === undefined) return null;
+  return (
+    <p id={id} className="text-destructive text-xs">
+      {message}
+    </p>
+  );
+}
+
 /** NumberField is a labelled token count. */
-export function NumberField({ id, label, value, onChange }: NumberFieldProps) {
+export function NumberField({ id, label, value, problem, onChange }: NumberFieldProps) {
   return (
     <div className="space-y-1">
       <Label htmlFor={id} className="text-xs">
@@ -393,11 +421,14 @@ export function NumberField({ id, label, value, onChange }: NumberFieldProps) {
         inputMode="numeric"
         value={Number.isFinite(value) ? value : ""}
         className="font-mono tabular-nums"
+        aria-invalid={problem !== undefined}
+        aria-describedby={problem ? `${id}-problem` : undefined}
         onChange={(e) => {
           // Not parseInt: "2.5" must stay visible as the mistake it is.
           onChange(e.target.value === "" ? Number.NaN : Number(e.target.value));
         }}
       />
+      <FieldProblem id={`${id}-problem`} message={problem} />
     </div>
   );
 }

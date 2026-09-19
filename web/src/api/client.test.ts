@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, parseApiError, request, unreachableMessage } from "@/api/client";
+import { ApiError, notJsonMessage, parseApiError, request, unreachableMessage } from "@/api/client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -24,7 +24,9 @@ describe("parseApiError", () => {
   it.each([
     [502, /did not answer \(HTTP 502\)/],
     [500, /unexpected error/],
-    [418, /refused the request \(HTTP 418\)/],
+    [404, /no such route \(HTTP 404\)/],
+    [429, /turning away requests .*\(HTTP 429\)/],
+    [418, /refused the request \(HTTP 418\) without saying why/],
   ])("describes a %i without the documented body", (status, want) => {
     expect(parseApiError(status, "<html>").message).toMatch(want);
   });
@@ -34,6 +36,14 @@ describe("request", () => {
   it("says the harness could not be reached when fetch fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     await expect(request("/api/settings")).rejects.toThrow(unreachableMessage);
+  });
+
+  it("says a success that is not JSON came from something else", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("<!doctype html><title>x</title>", { status: 200 })),
+    );
+    await expect(request("/api/settings")).rejects.toThrow(notJsonMessage);
   });
 
   it("keeps an abort an abort", async () => {

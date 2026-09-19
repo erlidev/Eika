@@ -9,10 +9,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { Navigate, Route, Routes, useParams } from "react-router";
 
+import { ApiError } from "@/api/client";
 import { resetEventStream } from "@/api/stream";
 import { Workbench } from "@/app/Workbench";
 import { Splash } from "@/components/Splash";
-import { SignInScreen, useAuthStatus, useConnection } from "@/features/connect";
+import { LoadFailedScreen, SignInScreen, useAuthStatus, useConnection } from "@/features/connect";
 import { useSessions } from "@/features/sessions";
 import { setupComplete, useSettings } from "@/features/settings";
 import { SetupWizard } from "@/features/setup";
@@ -38,7 +39,15 @@ export function App() {
 function SignedOut() {
   const status = useAuthStatus();
   if (status.isPending) return <Splash />;
-  if (status.isError) return <SignInScreen unreachable={status.error.message} />;
+  if (status.isError) {
+    return (
+      <SignInScreen
+        unreachable={status.error.message}
+        retry={() => void status.refetch()}
+        retrying={status.isFetching}
+      />
+    );
+  }
   return status.data.password_set ? <SignInScreen /> : <SetupWizard />;
 }
 
@@ -47,9 +56,23 @@ function SignedIn() {
   const settings = useSettings();
   const status = useAuthStatus();
   if (settings.isPending || status.isPending) return <Splash />;
-  // A refused token disconnects in the client, which leaves this branch; any
-  // other failure is the harness's, and the sign-in screen can say so.
-  if (settings.isError) return <SignInScreen unreachable={settings.error.message} />;
+  // A refused token disconnects in the client, which leaves this branch for
+  // the sign-in screen. Any other failure is the harness's: the browser is
+  // still signed in, so it gets the error and Retry, never a password form.
+  // Only a first load that failed gets there: a refetch that fails later,
+  // such as the one after a model is deleted, keeps the settings already
+  // loaded rather than tear down the workbench and whatever is open in it.
+  if (settings.isError && settings.data === undefined) {
+    if (settings.error instanceof ApiError && settings.error.status === 401) return <Splash />;
+    return (
+      <LoadFailedScreen
+        what="the settings"
+        error={settings.error}
+        retry={() => void settings.refetch()}
+        retrying={settings.isFetching}
+      />
+    );
+  }
   if (status.data?.password_set === false || !setupComplete(settings.data)) {
     return <SetupWizard />;
   }

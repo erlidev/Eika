@@ -36,3 +36,25 @@ test("a running agent can be aborted", async ({ open, expectShot }) => {
   await eika.click("Abort");
   await expect(eika.page.getByRole("button", { name: "Abort" })).toBeHidden();
 });
+
+test("web search, fetch, and the other tool cards", async ({ open, expectShot }) => {
+  const eika = await open({ scenario: "agent-web" });
+  await eika.send("Check the cap");
+  await eika.click("role=button[name^=web_search]");
+  await eika.click("role=button[name^=web_fetch]");
+  await expect(
+    eika.page.getByRole("link", { name: "Exponential Backoff And Jitter" }),
+  ).toBeVisible();
+  await expectShot(eika, "agent-web-search", "role=button[name^=web_search] >> xpath=..");
+  await expectShot(eika, "agent-web-fetch", "role=button[name^=web_fetch] >> xpath=..");
+  // The rest of the cards, and a tool with no renderer of its own opened.
+  await eika.click("role=button[name^=spawn_agent]");
+  await eika.scroll("role=button[name^=spawn_agent]");
+  await expectShot(eika, "agent-web-cards", "role=main");
+});
+
+test("the session tree indents only a branch", async ({ open, expectShot }) => {
+  const eika = await open({ scenario: "agent-web" });
+  await eika.send("Check the cap");
+  await expectShot(eika, "session-tree-branch", "role=tree");
+});

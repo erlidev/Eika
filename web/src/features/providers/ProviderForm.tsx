@@ -9,7 +9,7 @@ import { ExternalLink } from "lucide-react";
 import { useState } from "react";
 
 import type { Provider } from "@/api/types";
-import { Notice } from "@/components/Notice";
+import { ActionError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +35,7 @@ import {
   useUpdateProvider,
 } from "@/features/providers/queries";
 import { cn } from "@/lib/utils";
+import { failureText } from "@/lib/failure";
 
 export type ProviderFormProps = {
   /** provider is the provider being changed; absent for a new one. */
@@ -58,7 +59,12 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
 
   const initialPreset = editing ? presetOf(provider.base_url) : presets[0];
   const [presetId, setPresetId] = useState(initialPreset?.id ?? customPresetId);
-  const [name, setName] = useState(provider?.name ?? initialPreset?.name ?? "");
+  // A new form starts with a name no provider has yet, as choosing a preset
+  // does, so it never opens on a problem nobody made.
+  const [name, setName] = useState(
+    () =>
+      provider?.name ?? (initialPreset ? uniqueProviderName(initialPreset.name, takenNames) : ""),
+  );
   const [baseUrl, setBaseUrl] = useState(provider?.base_url ?? initialPreset?.baseUrl ?? "");
   const [apiKey, setApiKey] = useState("");
   const [removeKey, setRemoveKey] = useState(false);
@@ -116,7 +122,7 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
                   choose(option);
                 }}
                 className={cn(
-                  "hover:bg-muted/60 focus-visible:ring-ring/50 rounded-lg border px-3 py-2 text-left transition-colors outline-none focus-visible:ring-3",
+                  "hover:bg-muted/60 focus-visible:ring-ring/50 rounded-md border px-3 py-2 text-left transition-colors outline-none focus-visible:ring-3",
                   presetId === option.id && "border-primary bg-muted/60 ring-primary/20 ring-2",
                 )}
               >
@@ -188,7 +194,7 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
             >
               Get a key
-              <ExternalLink aria-hidden className="size-3" />
+              <ExternalLink aria-hidden className="size-3.5" />
             </a>
           )}
         </div>
@@ -268,14 +274,19 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
       )}
       {probe.isError && (
         <Notice tone="error">
-          {probe.error.message}
+          {failureText("list the endpoint's models", probe.error)}
           <span className="text-muted-foreground mt-1 block">
             Some endpoints do not list their models. You can still save and add models by name.
           </span>
         </Notice>
       )}
 
-      {saveError && <Notice tone="error">{saveError.message}</Notice>}
+      {saveError && (
+        <ActionError
+          action={editing ? `save ${provider.name}` : "add the provider"}
+          error={saveError}
+        />
+      )}
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         {onCancel && (

@@ -17,6 +17,8 @@ import type {
   Project,
   Provider,
   Run,
+  SearchLimit,
+  SearchStatus,
   Session,
   Workspace,
 } from "../../src/api/types.ts";
@@ -37,17 +39,60 @@ type Handler = (req: {
   body: Record<string, unknown>;
 }) => Reply | Promise<Reply>;
 
-type RouteDef = { method: string; pattern: RegExp; auth: boolean; handle: Handler };
+type RouteDef = {
+  method: string;
+  /** key is the route as written, like `PATCH /api/providers/{id}`. */
+  key: string;
+  pattern: RegExp;
+  auth: boolean;
+  handle: Handler;
+};
 
 type Socket = { ws: WebSocketRoute; topics: Set<string> };
 
 /** RequestLog is one API request the page made, for a report or an assertion. */
 export type RequestLog = { method: string; path: string; status: number; body?: unknown };
 
+/**
+ * Failure is how a failing route answers: an HTTP status with the documented
+ * error body (or `bare` for a proxy's body-less answer), `network` for a
+ * request that never reaches the harness, or `hang` for one that never ends,
+ * to show a loading state.
+ */
+export type Failure =
+  { status: number; code?: string; message?: string; bare?: boolean } | "network" | "hang";
+
 /** MockOptions tune how the mock harness behaves. */
 export type MockOptions = {
   /** stepDelayMs is the pause between streamed events of a scripted reply. */
   stepDelayMs?: number;
+  /**
+   * failing makes routes fail from the first request, keyed as the route is
+   * written: `GET /api/providers`, `PATCH /api/providers/{id}`. See failRoute.
+   */
+  failing?: Record<string, Failure>;
+};
+
+/** parseFailure reads a failure as a step or flag writes it: `500`, `502 bare`, `network`, `hang`. */
+export function parseFailure(text: string): Failure {
+  const t = text.trim();
+  if (t === "network" || t === "hang") return t;
+  const match = /^(\d{3})(?:\s+(bare|.+))?$/.exec(t);
+  if (!match)
+    throw new Error(`a failure is a status like 500, "502 bare", network, or hang; got "${t}"`);
+  const status = Number(match[1]);
+  const rest = match[2];
+  if (rest === "bare") return { status, bare: true };
+  return rest === undefined ? { status } : { status, message: rest };
+}
+
+/** statusCodes are the documented error codes by HTTP status. */
+const statusCodes: Record<number, string> = {
+  400: "invalid_request",
+  401: "unauthorized",
+  404: "not_found",
+  409: "conflict",
+  500: "internal",
 };
 
 function ok(body: unknown, status = 200): Reply {
@@ -74,11 +119,35 @@ export class MockHarness {
   private busy = 0;
   private seq = 1000;
   private readonly answers = new Map<string, (answer: string) => void>();
+  private readonly failing = new Map<string, Failure>();
 
   constructor(world: World, options: MockOptions = {}) {
     this.world = world;
     this.stepDelayMs = options.stepDelayMs ?? 40;
     this.routes = this.buildRoutes();
+    for (const [route, failure] of Object.entries(options.failing ?? {})) {
+      this.failRoute(route, failure);
+    }
+  }
+
+  /**
+   * failRoute makes every request to a route fail until healRoute. The route
+   * is written as in docs/api/http.md, `GET /api/providers`; an unknown one
+   * throws, so a typo cannot pass for a route that works.
+   */
+  failRoute(route: string, failure: Failure): void {
+    const key = route.trim().replace(/\s+/g, " ");
+    if (!this.routes.some((r) => r.key === key)) {
+      throw new Error(
+        `mock harness has no route "${key}"; routes: ${this.routes.map((r) => r.key).join(", ")}`,
+      );
+    }
+    this.failing.set(key, failure);
+  }
+
+  /** healRoute lets a failed route answer normally again, as a Retry would find. */
+  healRoute(route: string): void {
+    this.failing.delete(route.trim().replace(/\s+/g, " "));
   }
 
   /** install serves the API for every page of the context. */
@@ -209,6 +278,30 @@ export class MockHarness {
         if (def.method !== method) continue;
         const match = def.pattern.exec(path);
         if (!match) continue;
+        const failure = this.failing.get(def.key);
+        if (failure === "hang") {
+          // Left unanswered on purpose; the page is waiting, not the mock.
+          this.requests.push({ method, path, status: 0 });
+          return;
+        }
+        if (failure === "network") {
+          this.requests.push({ method, path, status: 0 });
+          await route.abort("connectionrefused");
+          return;
+        }
+        if (failure !== undefined) {
+          reply = failure.bare
+            ? { status: failure.status }
+            : fail(
+                failure.status,
+                failure.code ?? statusCodes[failure.status] ?? "internal",
+                failure.message ??
+                  (failure.status >= 500
+                    ? "internal error"
+                    : `refused by the mock (HTTP ${String(failure.status)})`),
+              );
+          break;
+        }
         const authorised = request.headers().authorization === `Bearer ${mockToken}`;
         reply =
           def.auth && !authorised
@@ -241,7 +334,7 @@ export class MockHarness {
     const routes: RouteDef[] = [];
     const on = (method: string, path: string, handle: Handler, auth = true) => {
       const pattern = new RegExp(`^${path.replace(/\{[a-z_]+\}/g, "([^/]+)")}$`);
-      routes.push({ method, pattern, auth, handle });
+      routes.push({ method, key: `${method} ${path}`, pattern, auth, handle });
     };
     const find = <T extends { id: string }>(rows: T[], id: string | undefined, what: string) => {
       const row = rows.find((r) => r.id === id);
@@ -294,13 +387,105 @@ export class MockHarness {
     });
     on("GET", "/api/system", () => ok(w.system));
 
+    // Search.
+    const searchStatus = (): SearchStatus => {
+      const order =
+        (w.settings.settings.search_order as string[] | undefined) ??
+        w.settings.defaults.search_order;
+      const limits = {
+        ...w.settings.defaults.search_limits,
+        ...((w.settings.settings.search_limits as Record<string, SearchLimit> | undefined) ?? {}),
+      };
+      const keys = new Map(w.search.keys.map((k) => [k.name, k.set]));
+      return {
+        ...w.search,
+        order,
+        backends: w.search.backends.map((b) => {
+          const keySet = b.key ? (keys.get(b.key) ?? false) : false;
+          const limit = b.bucket ? (limits[b.bucket] ?? {}) : {};
+          const state = b.key_required && !keySet ? "no API key" : b.state;
+          return { ...b, key_set: keySet, limit, state };
+        }),
+      };
+    };
+    on("GET", "/api/search/status", () => ok(searchStatus()));
+    on("PUT", "/api/search/keys/{name}", ({ params, body }) => {
+      const row = w.search.keys.find((k) => k.name === params[0]);
+      if (!row) return fail(404, "not_found", `no search key named ${params[0] ?? ""}`);
+      const key = str(body.key);
+      row.set = key !== "";
+      if (key.length >= 16) row.hint = key.slice(-4);
+      else delete row.hint;
+      row.updated_at = now();
+      return ok({ keys: w.search.keys });
+    });
+    on("POST", "/api/search", ({ body }) => {
+      const query = str(body.query);
+      const source = str(body.source) || "web";
+      const results = [
+        { title: `${query}: official documentation`, url: "https://docs.example.com/" },
+        { title: `${query} on GitHub`, url: "https://github.com/example/project" },
+      ];
+      return ok({
+        text: results.map((r, i) => `${String(i + 1)}. ${r.title}\n   ${r.url}`).join("\n"),
+        is_error: false,
+        details: {
+          source,
+          query,
+          count: results.length,
+          ...(source === "web" ? { providers: ["searxng"] } : {}),
+          results,
+          ms: 212,
+        },
+      });
+    });
+
     // Providers and models.
     on("GET", "/api/providers", () => ok({ providers: w.providers, kinds: w.providerKinds }));
     on("POST", "/api/providers/probe", () => ok({ models: w.probeModels }));
-    on("POST", "/api/providers", ({ body }) => {
-      if (str(body.name) === "" || str(body.base_url) === "") {
-        return fail(400, "invalid_request", "name and base_url are required");
+    // As internal/server/providers.go validates a provider.
+    const providerProblem = (name: string, baseUrl: string, id?: string): Reply | undefined => {
+      if (name === "") return fail(400, "invalid_request", "name must be 1 to 64 characters");
+      if (baseUrl === "") {
+        return fail(
+          400,
+          "invalid_request",
+          "base_url is required, such as https://api.openai.com/v1",
+        );
       }
+      let url: URL;
+      try {
+        url = new URL(baseUrl);
+      } catch {
+        url = new URL("invalid:");
+      }
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        return fail(
+          400,
+          "invalid_request",
+          "base_url must be an http or https URL, such as https://api.openai.com/v1",
+        );
+      }
+      if (url.username !== "" || url.password !== "") {
+        return fail(
+          400,
+          "invalid_request",
+          "base_url must not contain credentials; put the key in api_key",
+        );
+      }
+      if (url.search !== "" || url.hash !== "" || baseUrl.includes("?") || baseUrl.includes("#")) {
+        return fail(400, "invalid_request", "base_url must not contain a query string or fragment");
+      }
+      if (w.providers.some((p) => p.name === name && p.id !== id)) {
+        return fail(409, "conflict", `a provider named "${name}" already exists`);
+      }
+      return undefined;
+    };
+    const keyHint = (key: string) => (key.length >= 16 ? { api_key_hint: key.slice(-4) } : {});
+
+    on("POST", "/api/providers", ({ body }) => {
+      const problem = providerProblem(str(body.name).trim(), str(body.base_url).trim());
+      if (problem) return problem;
       const key = str(body.api_key);
       const row: Provider = {
         id: this.nextId("prov"),
@@ -308,7 +493,7 @@ export class MockHarness {
         kind: str(body.kind) || "openai",
         base_url: str(body.base_url),
         api_key_set: key !== "",
-        ...(key.length > 8 ? { api_key_hint: `…${key.slice(-4)}` } : {}),
+        ...keyHint(key),
         created_at: now(),
         updated_at: now(),
       };
@@ -318,7 +503,13 @@ export class MockHarness {
     on("PATCH", "/api/providers/{id}", ({ params, body }) => {
       const row = find(w.providers, params[0], "provider");
       if ("status" in row) return row;
-      if (typeof body.name === "string") row.name = body.name;
+      const problem = providerProblem(
+        typeof body.name === "string" ? body.name.trim() : row.name,
+        typeof body.base_url === "string" ? body.base_url.trim() : row.base_url,
+        row.id,
+      );
+      if (problem) return problem;
+      if (typeof body.name === "string") row.name = body.name.trim();
       if (typeof body.base_url === "string") {
         // As the harness does: a new URL without a new key clears the key.
         if (body.base_url.trim() !== row.base_url && typeof body.api_key !== "string") {
@@ -327,7 +518,11 @@ export class MockHarness {
         }
         row.base_url = body.base_url.trim();
       }
-      if (typeof body.api_key === "string") row.api_key_set = body.api_key !== "";
+      if (typeof body.api_key === "string") {
+        row.api_key_set = body.api_key !== "";
+        delete row.api_key_hint;
+        Object.assign(row, keyHint(body.api_key));
+      }
       row.updated_at = now();
       return ok(row);
     });

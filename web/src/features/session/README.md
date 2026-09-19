@@ -30,7 +30,10 @@ one that holds client state of its own.
   helpers, `renderers.tsx` maps a tool name to a renderer, `parts.tsx` holds
   the pieces they share. Adding one is in `docs/EXTENDING.md`.
 - `SessionTreePanel.tsx` and `RunPanel.tsx` are the two panels `app/panels.tsx`
-  registers.
+  registers. The tree follows the WAI-ARIA tree pattern with flat rows
+  (`aria-level`, `aria-posinset`, `aria-setsize`) laid out by `tree.ts`: one
+  tab stop, arrows, Home and End to move, Enter to move the head. Nothing
+  collapses, so no row has `aria-expanded`; the head is `aria-current`.
 
 ## Why a store and not a query
 
@@ -42,4 +45,5 @@ title, its outline, its run); the store holds what it is _saying_.
 
 `npm test -- transcript` folds the scripted event sequences from
 `docs/api/events.md` through the reducer. A new event type or a new folding
-rule needs a case there.
+rule needs a case there. `npm test -- tree` covers the tree's rows and its
+keyboard movement.

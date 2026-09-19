@@ -96,6 +96,8 @@ export function Transcript({ empty }: TranscriptProps) {
           <Button
             size="sm"
             variant="secondary"
+            // The button floats over the transcript, so it casts a shadow.
+            // eslint-disable-next-line no-restricted-syntax
             className="pointer-events-auto shadow-md"
             onClick={jumpToLatest}
           >

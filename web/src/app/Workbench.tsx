@@ -77,7 +77,7 @@ export function Workbench() {
             aria-controls={`panel-${tab.id}`}
             tabIndex={panel?.id === tab.id ? 0 : -1}
             className={cn(
-              "hover:bg-accent/50 focus-visible:ring-ring flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs focus-visible:ring-1 focus-visible:outline-none",
+              "hover:bg-accent/50 focus-visible:ring-ring flex items-center gap-1.5 rounded-md px-2 py-1 text-xs focus-visible:ring-1 focus-visible:outline-none",
               panel?.id === tab.id && "bg-accent font-medium",
             )}
             onClick={() => {

@@ -6,7 +6,7 @@
 import { useState } from "react";
 
 import type { SettingsState } from "@/api/types";
-import { LoadError, Notice } from "@/components/Notice";
+import { ActionError, LoadError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -117,7 +117,7 @@ function SandboxForm({ state, save }: { state: SettingsState; save: SaveSettings
         <code>{state.defaults.sandbox_image}</code>, which the compose stack builds. Any image
         works: the harness copies its daemon in.
       </p>
-      {save.isError && <Notice tone="error">{save.error.message}</Notice>}
+      {save.isError && <ActionError action="save the sandbox image" error={save.error} />}
     </form>
   );
 }
@@ -157,7 +157,7 @@ function SubagentForm({ state, save }: { state: SettingsState; save: SaveSetting
           How far the tree of child agents may grow. Each child works in a sandbox of its own.
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-start">
         <div className="space-y-1">
           <Label htmlFor="subagent-depth" className="text-xs">
             Levels below a session (1–8)
@@ -169,12 +169,17 @@ function SubagentForm({ state, save }: { state: SettingsState; save: SaveSetting
             max={8}
             step={1}
             aria-invalid={depthProblem !== null}
-            aria-describedby={depthProblem ? "subagent-problem" : undefined}
+            aria-describedby={depthProblem ? "subagent-depth-problem" : undefined}
             value={Number.isFinite(depth) ? depth : ""}
             onChange={(e) => {
               setDepth(Number(e.target.value === "" ? Number.NaN : e.target.value));
             }}
           />
+          {depthProblem && (
+            <p id="subagent-depth-problem" className="text-destructive text-xs">
+              {depthProblem}
+            </p>
+          )}
         </div>
         <div className="space-y-1">
           <Label htmlFor="subagent-children" className="text-xs">
@@ -187,24 +192,31 @@ function SubagentForm({ state, save }: { state: SettingsState; save: SaveSetting
             max={16}
             step={1}
             aria-invalid={childrenProblem !== null}
-            aria-describedby={childrenProblem ? "subagent-problem" : undefined}
+            aria-describedby={childrenProblem ? "subagent-children-problem" : undefined}
             value={Number.isFinite(children) ? children : ""}
             onChange={(e) => {
               setChildren(Number(e.target.value === "" ? Number.NaN : e.target.value));
             }}
           />
+          {childrenProblem && (
+            <p id="subagent-children-problem" className="text-destructive text-xs">
+              {childrenProblem}
+            </p>
+          )}
         </div>
-        <Button type="submit" variant="outline" disabled={invalid || save.isPending}>
+        {/* sm:mt-5 lines the button up with the fields below their labels. */}
+        <Button
+          type="submit"
+          variant="outline"
+          className="justify-self-start sm:mt-5"
+          disabled={invalid || save.isPending}
+        >
           Save
         </Button>
       </div>
-      {invalid && (
-        <p id="subagent-problem" className="text-destructive text-xs">
-          {depthProblem ?? childrenProblem}
-        </p>
-      )}
+      {invalid && <p className="text-destructive text-xs">Fix the limits marked above to save.</p>}
       {save.isSuccess && <Notice tone="success">Saved. The next spawn uses these limits.</Notice>}
-      {save.isError && <Notice tone="error">{save.error.message}</Notice>}
+      {save.isError && <ActionError action="save the subagent limits" error={save.error} />}
     </form>
   );
 }
@@ -231,7 +243,7 @@ function SetupAgain() {
           Run the setup again
         </Button>
       </div>
-      {save.isError && <Notice tone="error">{save.error.message}</Notice>}
+      {save.isError && <ActionError action="reopen the setup" error={save.error} />}
     </div>
   );
 }

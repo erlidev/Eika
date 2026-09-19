@@ -84,10 +84,22 @@ describe("chosenProblem", () => {
     [{ max_output: 2.5 }, /max output as a whole number/],
     [{ max_output: 500_000 }, /cannot be larger than the context window/],
   ])("says how to fix %j", (patch, want) => {
-    expect(chosenProblem([{ ...choice, ...patch }], existing)).toMatch(want);
+    expect(chosenProblem([{ ...choice, ...patch }], existing)?.message).toMatch(want);
   });
 
   it("catches two new models with one name", () => {
-    expect(chosenProblem([choice, { ...choice, id: "other" }], existing)).toMatch(/rename one/);
+    expect(chosenProblem([choice, { ...choice, id: "other" }], existing)).toEqual({
+      id: "other",
+      field: "name",
+      message: expect.stringMatching(/rename one/) as string,
+    });
+  });
+
+  it("names the field at fault, so the form can mark it", () => {
+    expect(chosenProblem([{ ...choice, name: "gpt-5" }], existing)?.field).toBe("name");
+    expect(chosenProblem([{ ...choice, context_window: 0 }], existing)?.field).toBe(
+      "context_window",
+    );
+    expect(chosenProblem([{ ...choice, max_output: 500_000 }], existing)?.field).toBe("max_output");
   });
 });

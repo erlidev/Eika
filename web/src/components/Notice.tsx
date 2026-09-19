@@ -8,6 +8,7 @@
 import { CircleAlert, CircleCheck, Info, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { failureText } from "@/lib/failure";
 import { cn } from "@/lib/utils";
 
 export type NoticeTone = "info" | "success" | "error" | "pending";
@@ -25,8 +26,7 @@ const icons = { info: Info, success: CircleCheck, error: CircleAlert, pending: L
 const tones: Record<NoticeTone, string> = {
   info: "bg-muted/50 text-muted-foreground",
   pending: "bg-muted/50 text-muted-foreground",
-  success:
-    "border-emerald-600/25 bg-emerald-600/5 text-emerald-800 dark:border-emerald-400/25 dark:text-emerald-300",
+  success: "border-success/25 bg-success/5 text-success",
   error: "border-destructive/30 bg-destructive/5 text-destructive",
 };
 
@@ -36,7 +36,7 @@ export function Notice({ tone = "info", children, className, action }: NoticePro
     <div
       role={tone === "error" ? "alert" : "status"}
       className={cn(
-        "flex items-start gap-2 rounded-lg border px-3 py-2 text-xs leading-relaxed",
+        "flex items-start gap-2 rounded-md border px-3 py-2 text-xs leading-relaxed",
         tones[tone],
         className,
       )}
@@ -76,7 +76,26 @@ export function LoadError({ what, error, retry, retrying = false, className }: L
         </Button>
       }
     >
-      Could not load {what}. {error.message}
+      {failureText(`load ${what}`, error)}
+    </Notice>
+  );
+}
+
+export type ActionErrorProps = {
+  /** action is what the user asked for, as a verb phrase: "save the order". */
+  action: string;
+  error: unknown;
+  className?: string;
+};
+
+/**
+ * ActionError is a failed write or action, shown beside the control that
+ * started it: which action failed and what actually went wrong.
+ */
+export function ActionError({ action, error, className }: ActionErrorProps) {
+  return (
+    <Notice tone="error" {...(className === undefined ? {} : { className })}>
+      {failureText(action, error)}
     </Notice>
   );
 }

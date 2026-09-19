@@ -62,13 +62,16 @@ export function SettingsDialog() {
             Stored in the harness and shared by every browser, except the theme.
           </DialogDescription>
         </DialogHeader>
+        {/* min-w-0: the dialog is a grid, and without it the tab row's width
+            would widen every tab past a phone's screen. */}
         <Tabs
+          className="min-w-0"
           value={tab}
           onValueChange={(value) => {
             setTab(value as SettingsTab);
           }}
         >
-          <TabsList>
+          <TabsList className="max-w-full justify-start overflow-x-auto">
             {tabs.map((option) => (
               <TabsTrigger key={option.value} value={option.value}>
                 {option.label}
@@ -80,7 +83,7 @@ export function SettingsDialog() {
               onDefaultChange={(name) => {
                 save.mutate({ [settingKeys.defaultModel]: name });
               }}
-              defaultError={save.isError ? save.error.message : undefined}
+              defaultError={save.isError ? save.error : undefined}
             />
           </TabsContent>
           <TabsContent value="general" className="pt-3">

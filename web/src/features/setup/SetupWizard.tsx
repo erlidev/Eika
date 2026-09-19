@@ -7,7 +7,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Terminal } from "lucide-react";
+import { ArrowLeft, Check, Terminal } from "lucide-react";
 import { useState } from "react";
 
 import { ApiError } from "@/api/client";
@@ -16,6 +16,7 @@ import { queryKeys } from "@/api/keys";
 import { setupPassword } from "@/api/routes";
 import type { AuthStatus } from "@/api/types";
 import { LoadError, Notice } from "@/components/Notice";
+import { Screen, ScreenHeader } from "@/components/Screen";
 import { Splash } from "@/components/Splash";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ import { DefaultModelSelect, settingKeys, SystemCheck, useSaveSettings } from "@
 import { firstStep, nextStep, setupSteps, stepIndex, stepInfo } from "@/features/setup/steps";
 import type { SetupStep } from "@/features/setup/steps";
 import { cn } from "@/lib/utils";
+import { failureText } from "@/lib/failure";
 
 /** minPasswordLength matches what the harness accepts. */
 const minPasswordLength = 8;
@@ -69,7 +71,7 @@ function SignedInSetup() {
         step="provider"
         onSkip={finish}
         finishing={save.isPending}
-        problem={save.isError ? save.error.message : undefined}
+        problem={save.isError ? failureText("finish the setup", save.error) : undefined}
       >
         <LoadError
           what={`the ${providers.isError ? "providers" : "models"} already configured, so the setup cannot tell which steps are done`}
@@ -221,7 +223,7 @@ function SignedInSetup() {
       }
       onSkip={finish}
       finishing={save.isPending}
-      problem={save.isError ? save.error.message : undefined}
+      problem={save.isError ? failureText("finish the setup", save.error) : undefined}
     >
       {content}
     </WizardFrame>
@@ -243,83 +245,81 @@ function WizardFrame({ step, children, onBack, onSkip, finishing, problem }: Wiz
   const info = stepInfo(step);
   const index = stepIndex(step);
   return (
-    <main className="bg-muted/30 text-foreground flex min-h-screen items-start justify-center p-4 sm:items-center sm:p-8">
-      <div className="bg-background grid w-full max-w-4xl overflow-hidden rounded-2xl border shadow-sm md:grid-cols-[13rem_1fr]">
-        <aside className="bg-muted/40 hidden flex-col gap-8 border-r p-6 md:flex">
-          <div className="flex items-center gap-2">
-            <span className="bg-primary text-primary-foreground inline-flex size-7 items-center justify-center rounded-md">
-              <Terminal aria-hidden className="size-3.5" />
-            </span>
-            <span className="text-sm font-semibold">Eika setup</span>
-          </div>
-          <ol className="space-y-1" aria-label="Setup steps">
-            {setupSteps.map((s, i) => (
-              <li
-                key={s.id}
-                aria-current={s.id === step ? "step" : undefined}
+    <Screen wide padded={false} className="grid md:grid-cols-[13rem_1fr]">
+      <aside className="bg-muted/40 hidden flex-col gap-8 border-r p-6 md:flex">
+        <div className="flex items-center gap-2">
+          <span className="bg-primary text-primary-foreground inline-flex size-7 items-center justify-center rounded-md">
+            <Terminal aria-hidden className="size-3.5" />
+          </span>
+          <span className="text-sm font-semibold">Eika setup</span>
+        </div>
+        <ol className="space-y-1" aria-label="Setup steps">
+          {setupSteps.map((s, i) => (
+            <li
+              key={s.id}
+              aria-current={s.id === step ? "step" : undefined}
+              className={cn(
+                "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm",
+                s.id === step ? "bg-accent font-medium" : "text-muted-foreground",
+              )}
+            >
+              <span
                 className={cn(
-                  "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm",
-                  s.id === step ? "bg-background font-medium shadow-xs" : "text-muted-foreground",
+                  "inline-flex size-5 shrink-0 items-center justify-center rounded-full border text-2xs tabular-nums",
+                  i < index && "border-primary bg-primary text-primary-foreground",
+                  s.id === step && "border-primary text-foreground",
                 )}
               >
-                <span
-                  className={cn(
-                    "inline-flex size-5 shrink-0 items-center justify-center rounded-full border text-[0.7rem] tabular-nums",
-                    i < index && "border-primary bg-primary text-primary-foreground",
-                    s.id === step && "border-primary text-foreground",
-                  )}
-                >
-                  {i < index ? <Check aria-hidden className="size-3" /> : i + 1}
-                </span>
-                {s.label}
-              </li>
-            ))}
-          </ol>
-          <p className="text-muted-foreground mt-auto text-xs leading-relaxed">
-            Everything you choose here can be changed later in Settings.
-          </p>
-        </aside>
+                {i < index ? <Check aria-hidden className="size-3" /> : i + 1}
+              </span>
+              {s.label}
+            </li>
+          ))}
+        </ol>
+        <p className="text-muted-foreground mt-auto text-xs leading-relaxed">
+          Everything you choose here can be changed later in Settings.
+        </p>
+      </aside>
 
-        <section className="min-w-0 p-6 sm:p-8">
-          <p className="text-muted-foreground mb-1 text-xs md:hidden">
-            Step {String(index + 1)} of {String(setupSteps.length)}
-          </p>
-          <h1 className="text-xl font-semibold tracking-tight">{info.title}</h1>
-          <p className="text-muted-foreground mt-1 max-w-prose text-sm">{info.description}</p>
-          <div className="mt-6">{children}</div>
-          {problem !== undefined && (
-            <Notice tone="error" className="mt-4">
-              {problem}
-            </Notice>
-          )}
-          {(onBack !== undefined || onSkip !== undefined) && (
-            <div className="mt-8 flex items-center justify-between border-t pt-4 text-xs">
-              {onBack !== undefined ? (
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={onBack}
-                >
-                  ← Back
-                </button>
-              ) : (
-                <span />
-              )}
-              {onSkip !== undefined && (
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground disabled:opacity-50"
-                  disabled={finishing}
-                  onClick={onSkip}
-                >
-                  Skip the rest and open Eika
-                </button>
-              )}
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
+      <section className="min-w-0 p-6 sm:p-8">
+        <p className="text-muted-foreground mb-1 text-xs md:hidden">
+          Step {String(index + 1)} of {String(setupSteps.length)}
+        </p>
+        <ScreenHeader title={info.title}>{info.description}</ScreenHeader>
+        <div className="mt-6">{children}</div>
+        {problem !== undefined && (
+          <Notice tone="error" className="mt-4">
+            {problem}
+          </Notice>
+        )}
+        {(onBack !== undefined || onSkip !== undefined) && (
+          <div className="mt-8 flex items-center justify-between border-t pt-4 text-xs">
+            {onBack !== undefined ? (
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1"
+                onClick={onBack}
+              >
+                <ArrowLeft aria-hidden className="size-3.5" />
+                Back
+              </button>
+            ) : (
+              <span />
+            )}
+            {onSkip !== undefined && (
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+                disabled={finishing}
+                onClick={onSkip}
+              >
+                Skip the rest and open Eika
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+    </Screen>
   );
 }
 
@@ -359,7 +359,7 @@ function AccountStep({ baseUrl }: { baseUrl: string }) {
           // Someone finished setup first; the app offers sign-in instead.
           void client.invalidateQueries({ queryKey: queryKeys.authStatus() });
         }
-        setProblem(error instanceof Error ? error.message : "The harness could not be reached.");
+        setProblem(failureText("set the password", error));
       });
   };
 

@@ -35,8 +35,8 @@ export function EditDiff({ oldString, newString, startLine }: EditDiffProps) {
           key={`${String(index)}:${line.kind}`}
           className={cn(
             "flex gap-2 whitespace-pre",
-            line.kind === "add" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-            line.kind === "remove" && "bg-rose-500/10 text-rose-700 dark:text-rose-400",
+            line.kind === "add" && "bg-success/10 text-success",
+            line.kind === "remove" && "bg-destructive/10 text-destructive",
           )}
         >
           <span className="text-muted-foreground w-10 shrink-0 pr-1 text-right tabular-nums select-none">

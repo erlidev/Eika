@@ -15,7 +15,7 @@ DEV_COMPOSE := docker compose -f compose.yaml -f compose.dev.yaml
 
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
-	sandbox web-install clean visual visual-update shot
+	sandbox web-install clean visual visual-update shot playwright-browser
 
 all: build
 
@@ -70,19 +70,27 @@ fmt-check:
 	fi
 	cd $(WEB) && $(NPM) run format:check
 
-## check: everything CI runs. Requires `make web-install` once.
-check: fmt-check lint test-go typecheck test-web
+## check: everything CI runs, the visual suite included. Requires `make
+## web-install` once; the first run also downloads Chromium. It takes about
+## five minutes, four of them the visual suite; while iterating, run the
+## targets it lists one at a time.
+check: fmt-check lint test-go typecheck test-web visual
 
 typecheck: web-install
 	cd $(WEB) && $(NPM) run typecheck
 
-## visual: compare every screen with its baseline in web/e2e/__screenshots__.
-## It needs Chromium once: `cd web && npx playwright install chromium`.
-visual: web-install
+## visual: compare every screen with its baseline in web/e2e/__screenshots__,
+## one browser at a time. About four minutes. It installs the Chromium the
+## pinned Playwright expects when it is missing; CI adds its system
+## libraries with PLAYWRIGHT_DEPS=--with-deps.
+visual: web-install playwright-browser
 	cd $(WEB) && $(NPM) run visual
 
+playwright-browser: web-install
+	cd $(WEB) && npx playwright install $(PLAYWRIGHT_DEPS) chromium
+
 ## visual-update: accept the current rendering as the new baselines.
-visual-update: web-install
+visual-update: web-install playwright-browser
 	cd $(WEB) && $(NPM) run visual:update
 
 ## shot: screenshot the UI against the mock harness, e.g.

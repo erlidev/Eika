@@ -128,10 +128,11 @@ export const scenarios = {
     },
   },
   "setup-docker-down": {
-    description: "Setup wizard where Docker is unreachable and the sandbox image is missing.",
+    description:
+      "Setup wizard resumed at its Sandbox step (a provider and a model exist), with Docker unreachable and the sandbox image missing.",
     path: "/",
     build: () => {
-      const w = emptyWorld();
+      const w = configured().world;
       w.settings.settings = {};
       w.system.docker = {
         reachable: false,
@@ -226,6 +227,137 @@ export const scenarios = {
     build: () => {
       const b = workbench();
       b.world.replies.push([{ say: "Working on it, this will take a while…" }, { hang: true }]);
+      return b.world;
+    },
+  },
+  providers: {
+    description:
+      "Three providers: OpenAI with a stored key and two models, a local vLLM that needs no key, and OpenRouter whose key is missing. For the Models tab, ProviderForm, and ModelPicker.",
+    path: "/",
+    build: () => {
+      const b = configured();
+      b.provider({
+        name: "Local vLLM",
+        base_url: "http://localhost:8000/v1",
+        api_key_set: false,
+        api_key_hint: undefined,
+      });
+      const router = b.provider({
+        name: "OpenRouter",
+        base_url: "https://openrouter.ai/api/v1",
+        api_key_set: false,
+        api_key_hint: undefined,
+      });
+      b.model(router, { name: "claude-sonnet", model: "anthropic/claude-sonnet-4.5" });
+      return b.world;
+    },
+  },
+  "agent-web": {
+    description:
+      "Like workbench with an abandoned branch in the session tree; the next message plays a reply that uses web_search, web_fetch, read, grep, find, ls, write, and a tool with no renderer of its own. Expand a card by its summary to see its body.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      // An abandoned first answer, so the session tree has a branch.
+      const entries = b.world.entries["ses-backoff"] ?? [];
+      const first = entries[0];
+      if (first) {
+        entries.push({
+          id: "ent-abandoned",
+          seq: entries.length + 1,
+          kind: "assistant",
+          parent_id: first.id,
+          created_at: first.created_at,
+          message: { role: "assistant", content: "A constant one-second delay would do." },
+        });
+      }
+      b.world.replies.push([
+        { say: "Let me check how other clients cap their backoff." },
+        {
+          tool: "web_search",
+          args: { query: "exponential backoff jitter cap", count: 3 },
+          result: "1. Exponential Backoff And Jitter\n2. Retry strategies\n3. backoff package",
+          details: {
+            source: "web",
+            query: "exponential backoff jitter cap",
+            count: 3,
+            providers: ["searxng"],
+            attempts: [{ provider: "exa", error: "no API key" }],
+            results: [
+              {
+                title: "Exponential Backoff And Jitter",
+                url: "https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/",
+                description:
+                  "Adding jitter to exponential backoff spreads retries out, so clients that failed together do not retry together and fail again.",
+              },
+              {
+                title:
+                  "Retry strategies for distributed systems, with a very long title that has to wrap or truncate somewhere",
+                url: "https://example.com/a/very/long/path/that/keeps/going/and/going/until/it/cannot/fit/on/one/line/retry-strategies.html",
+              },
+              {
+                title: "backoff package",
+                url: "https://pkg.go.dev/github.com/cenkalti/backoff/v4",
+              },
+            ],
+            ms: 412,
+          },
+        },
+        {
+          tool: "web_fetch",
+          args: {
+            url: "https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/",
+            section: "Full Jitter",
+          },
+          result:
+            "## Full Jitter\n\nsleep = random_between(0, min(cap, base * 2 ** attempt))\n\nFull jitter does the least work and spreads calls best.",
+          details: {
+            url: "https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/",
+            final_url: "https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter",
+            format: "markdown",
+            section: "Full Jitter",
+            section_matched: true,
+            container: "article",
+            mode: "full",
+            ms: 845,
+          },
+        },
+        {
+          tool: "read",
+          args: { path: "internal/webhook/client.go", offset: 40, limit: 20 },
+          result:
+            "40\tfunc (c *Client) Send(ctx context.Context, e Event) error {\n41\t\tvar err error",
+        },
+        {
+          tool: "grep",
+          args: { pattern: "maxRetries", path: "internal", ignore_case: true },
+          result: "internal/webhook/client.go:12:const maxRetries = 5",
+        },
+        {
+          tool: "find",
+          args: { pattern: "*_test.go", path: "internal/webhook" },
+          result: "internal/webhook/client_test.go\ninternal/webhook/backoff_test.go",
+        },
+        {
+          tool: "ls",
+          args: { path: "internal/webhook" },
+          result: "backoff.go\nclient.go\nclient_test.go",
+        },
+        {
+          tool: "write",
+          args: {
+            path: "internal/webhook/backoff.go",
+            content: "package webhook\n\n// backoff is full jitter, capped at 30s.\n",
+          },
+          result: "wrote internal/webhook/backoff.go",
+        },
+        {
+          tool: "spawn_agent",
+          args: { task: "Review the backoff change", model: "gpt-5-mini" },
+          result: '{"status":"done"}',
+        },
+        { say: "Full jitter it is: the cap stays at 30s." },
+      ]);
       return b.world;
     },
   },

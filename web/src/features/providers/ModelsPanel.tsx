@@ -9,7 +9,7 @@ import { useState } from "react";
 
 import type { Model, Provider } from "@/api/types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { LoadError, Notice } from "@/components/Notice";
+import { ActionError, LoadError, Notice } from "@/components/Notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +36,7 @@ export type ModelsPanelProps = {
   /** onDefaultChange makes a model the default; the settings feature owns that write. */
   onDefaultChange: (name: string) => void;
   /** defaultError is why the last change of the default model failed. */
-  defaultError?: string | undefined;
+  defaultError?: Error | undefined;
 };
 
 export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps) {
@@ -86,10 +86,10 @@ export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps)
         />
       )}
       {defaultError !== undefined && (
-        <Notice tone="error">Could not change the default model. {defaultError}</Notice>
+        <ActionError action="change the default model" error={defaultError} />
       )}
       {providers.isSuccess && list.length === 0 && (
-        <div className="rounded-xl border border-dashed p-8 text-center">
+        <div className="rounded-md border border-dashed p-8 text-center">
           <p className="text-sm font-medium">No providers yet</p>
           <p className="text-muted-foreground mt-1 text-sm">
             Add one to give agents a model to run on.
@@ -233,23 +233,29 @@ function ProviderCard({
   const preset = presetOf(provider.base_url);
 
   return (
-    <li className="overflow-hidden rounded-xl border">
+    <li className="overflow-hidden rounded-md border">
       <div className="bg-muted/40 flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-2.5">
-        <div className="min-w-0 flex-1">
+        {/* A name column narrower than 10rem wraps the actions below it
+            instead of cutting the name to a letter or two. */}
+        <div className="min-w-40 flex-1">
           <p className="truncate text-sm font-medium">{provider.name}</p>
           <p className="text-muted-foreground truncate font-mono text-xs">{provider.base_url}</p>
         </div>
         <span className="text-muted-foreground flex items-center gap-1 text-xs">
-          <KeyRound aria-hidden className="size-3" />
-          {provider.api_key_set
-            ? provider.api_key_hint
-              ? `…${provider.api_key_hint}`
-              : "key stored"
-            : preset?.keyRequired === false
-              ? "no key needed"
-              : preset?.keyRequired
-                ? "no key: edit the provider to add one"
-                : "no key"}
+          <KeyRound aria-hidden className="size-3.5" />
+          {provider.api_key_set ? (
+            provider.api_key_hint ? (
+              <span className="font-mono">…{provider.api_key_hint}</span>
+            ) : (
+              "key stored"
+            )
+          ) : preset?.keyRequired === false ? (
+            "no key needed"
+          ) : preset?.keyRequired ? (
+            "no key: edit the provider to add one"
+          ) : (
+            "no key"
+          )}
         </span>
         <span className="flex items-center gap-1">
           <Button size="xs" variant="outline" onClick={onAddModels}>
@@ -301,7 +307,7 @@ function ProviderCard({
           ))}
         </ul>
       )}
-      {remove.isError && <Notice tone="error">{remove.error.message}</Notice>}
+      {remove.isError && <ActionError action={`delete ${provider.name}`} error={remove.error} />}
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
@@ -331,12 +337,18 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
   return (
     <li className="px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 truncate text-sm">
-            <span className="font-medium">{model.name}</span>
-            {isDefault && <Badge variant="secondary">Default</Badge>}
+        <div className="min-w-40 flex-1">
+          <p className="flex min-w-0 items-center gap-2 text-sm">
+            <span className="truncate font-medium">{model.name}</span>
+            {isDefault && (
+              <Badge variant="secondary" className="shrink-0">
+                Default
+              </Badge>
+            )}
             {model.reasoning_effort !== undefined && model.reasoning_effort !== "" && (
-              <Badge variant="outline">{model.reasoning_effort}</Badge>
+              <Badge variant="outline" className="shrink-0">
+                {model.reasoning_effort}
+              </Badge>
             )}
           </p>
           <p className="text-muted-foreground truncate font-mono text-xs">
@@ -388,14 +400,10 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
         </Notice>
       )}
       {test.isError && (
-        <Notice tone="error" className="mt-2">
-          {test.error.message}
-        </Notice>
+        <ActionError action={`test ${model.name}`} error={test.error} className="mt-2" />
       )}
       {remove.isError && (
-        <Notice tone="error" className="mt-2">
-          {remove.error.message}
-        </Notice>
+        <ActionError action={`delete ${model.name}`} error={remove.error} className="mt-2" />
       )}
       <ConfirmDialog
         open={confirming}

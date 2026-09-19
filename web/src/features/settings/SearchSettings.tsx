@@ -8,7 +8,7 @@ import { ArrowDown, ArrowUp } from "lucide-react";
 import { useState } from "react";
 
 import type { SearchBackendStatus, SearchLimit, SearchStatus, SettingsState } from "@/api/types";
-import { LoadError, Notice } from "@/components/Notice";
+import { ActionError, LoadError, Notice } from "@/components/Notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -143,7 +143,9 @@ function ProviderOrder({ state, status, save }: ProviderOrderProps) {
           const b = backend(name);
           const index = order.indexOf(name);
           return (
-            <li key={name} className="flex flex-wrap items-center gap-3 px-3 py-2">
+            // One line on a phone: the name truncates and the arrows stay at
+            // the end; usage and the probe move to a second line there.
+            <li key={name} className="flex items-center gap-3 px-3 py-1.5 sm:py-2">
               <Checkbox
                 id={`provider-${name}`}
                 checked={enabled}
@@ -152,17 +154,28 @@ function ProviderOrder({ state, status, save }: ProviderOrderProps) {
                 }}
                 aria-label={`Use ${name}`}
               />
-              <Label htmlFor={`provider-${name}`} className="min-w-24 font-mono text-sm">
-                {name}
-              </Label>
-              {b && <StateBadge backend={b} />}
-              {b && <span className="text-muted-foreground text-xs">{usageText(b)}</span>}
-              {b?.probe && (
-                <span className="text-muted-foreground text-xs">
-                  {status.searxng_url}: {b.probe}
-                </span>
-              )}
-              <div className="ml-auto flex gap-1">
+              <div className="flex min-w-0 flex-1 flex-col sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3">
+                <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                  <Label
+                    htmlFor={`provider-${name}`}
+                    title={name}
+                    className="block min-w-0 truncate font-mono text-sm sm:min-w-24"
+                  >
+                    {name}
+                  </Label>
+                  {b && <StateBadge backend={b} />}
+                </div>
+                {b && <span className="text-muted-foreground text-xs">{usageText(b)}</span>}
+                {b?.probe && (
+                  <span
+                    className="text-muted-foreground min-w-0 truncate text-xs"
+                    title={`${status.searxng_url}: ${b.probe}`}
+                  >
+                    <span className="font-mono">{status.searxng_url}</span>: {b.probe}
+                  </span>
+                )}
+              </div>
+              <div className="flex shrink-0 gap-1">
                 <Button
                   type="button"
                   variant="ghost"
@@ -213,7 +226,7 @@ function ProviderOrder({ state, status, save }: ProviderOrderProps) {
           With no provider selected, web searches fail. The sources still work.
         </Notice>
       )}
-      {save.isError && <Notice tone="error">{save.error.message}</Notice>}
+      {save.isError && <ActionError action="save the provider order" error={save.error} />}
     </form>
   );
 }
@@ -234,6 +247,12 @@ function SearchKeys({ status }: { status: SearchStatus }) {
       ))}
     </div>
   );
+}
+
+/** keyName names a search key in a sentence: "Exa key", "GitHub token". */
+function keyName(name: string): string {
+  const label = keyLabels[name] ?? name;
+  return name === "github" ? label : `${label} key`;
 }
 
 function KeyForm({ name, set, hint }: { name: string; set: boolean; hint?: string | undefined }) {
@@ -286,7 +305,7 @@ function KeyForm({ name, set, hint }: { name: string; set: boolean; hint?: strin
           Remove
         </Button>
       </div>
-      {save.isError && <Notice tone="error">{save.error.message}</Notice>}
+      {save.isError && <ActionError action={`update the ${keyName(name)}`} error={save.error} />}
     </form>
   );
 }
@@ -361,7 +380,7 @@ function Quotas({ state, save }: { state: SettingsState; save: SaveSettings }) {
         )}
       </div>
       {save.isSuccess && <Notice tone="success">Saved. The next search uses these quotas.</Notice>}
-      {save.isError && <Notice tone="error">{save.error.message}</Notice>}
+      {save.isError && <ActionError action="save the quotas" error={save.error} />}
     </form>
   );
 }
@@ -510,7 +529,7 @@ function TrySearch() {
           Search
         </Button>
       </div>
-      {search.isError && <Notice tone="error">{search.error.message}</Notice>}
+      {search.isError && <ActionError action="run the search" error={search.error} />}
       {search.data && (
         <div className="space-y-1">
           <p className="text-muted-foreground text-xs">

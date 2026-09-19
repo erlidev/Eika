@@ -120,6 +120,8 @@ export class EikaDriver {
     // A fixed clock keeps "5 minutes ago" the same in every screenshot while
     // timers still run, so streamed replies still arrive.
     await page.clock.setFixedTime(new Date(fixedNow));
+    // A target that is not there fails in seconds, not Playwright's 30.
+    page.setDefaultTimeout(10_000);
     const driver = new EikaDriver(page, mock);
     await driver.goto(options.path ?? named?.path ?? "/");
     return driver;
@@ -149,43 +151,103 @@ export class EikaDriver {
   }
 
   /**
-   * locate resolves a target. A Playwright selector (`role=…`, `text=…`,
-   * `css=…`, `#id`, `.class`, `[attr]`) is used as is; `label=`,
-   * `placeholder=`, and `testid=` use the matching getBy method; anything else
-   * is the visible name of a button, link, tab, field, or text, tried in that
-   * order, and the first visible match wins.
+   * locate resolves a target without waiting. A Playwright selector
+   * (`role=…`, `text=…`, `css=…`, `#id`, `.class`, `[attr]`) is used as is;
+   * `label=`, `placeholder=`, and `testid=` use the matching getBy method;
+   * anything else is the visible name of a button, link, tab, field, or text.
+   * Actions use find, which tries those kinds in order; locate merges them,
+   * so it suits a target with one match, such as a screenshot's subject.
    */
   locate(target: string): Locator {
+    const explicit = this.explicit(target);
+    if (explicit) return explicit;
+    const [first, ...rest] = this.candidates(target, this.page.locator(":root"));
+    let found = first ?? this.page.getByText(target, { exact: true });
+    for (const next of rest) found = found.or(next);
+    return found.filter({ visible: true }).first();
+  }
+
+  /**
+   * find resolves a target the way a person reads the page: a control named
+   * so wins over a label, a label over a placeholder, and those over plain
+   * text; and while a modal dialog is open, labels and text behind it do not
+   * count. It waits up to timeoutMs for any of them to appear.
+   */
+  async find(target: string, timeoutMs = 10_000): Promise<Locator> {
+    const explicit = this.explicit(target);
+    if (explicit) return explicit;
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const modal = this.page
+        .locator('[role="dialog"][aria-modal="true"], [role="alertdialog"]')
+        .filter({ visible: true })
+        .last();
+      const scope = (await modal.count()) > 0 ? modal : this.page.locator(":root");
+      for (const candidate of this.candidates(target, scope)) {
+        const visible = candidate.filter({ visible: true });
+        if ((await visible.count()) > 0) return visible.first();
+      }
+      if (Date.now() > deadline) return this.locate(target);
+      await this.page.waitForTimeout(100);
+    }
+  }
+
+  /** explicit is the locator for a selector target, or undefined for a bare name. */
+  private explicit(target: string): Locator | undefined {
     const page = this.page;
     const [prefix, rest] = splitPrefix(target);
     if (prefix === "label") return page.getByLabel(rest, { exact: true }).first();
     if (prefix === "placeholder") return page.getByPlaceholder(rest).first();
     if (prefix === "testid") return page.getByTestId(rest).first();
     if (selectorPrefixes.some((p) => target.startsWith(p))) return page.locator(target).first();
-    let found: Locator = page.getByRole(clickableRoles[0], { name: target, exact: true });
+    return undefined;
+  }
+
+  /**
+   * candidates are a bare name's matches, most specific first. Roles come
+   * from the accessibility tree, which already leaves out what a modal
+   * hides; labels, placeholders, and text are looked up within scope.
+   */
+  private candidates(target: string, scope: Locator): Locator[] {
+    let roles: Locator = this.page.getByRole(clickableRoles[0], { name: target, exact: true });
     for (const role of clickableRoles.slice(1)) {
-      found = found.or(page.getByRole(role, { name: target, exact: true }));
+      roles = roles.or(this.page.getByRole(role, { name: target, exact: true }));
     }
-    found = found
-      .or(page.getByLabel(target, { exact: true }))
-      .or(page.getByPlaceholder(target, { exact: true }))
-      .or(page.getByText(target, { exact: true }));
-    return found.filter({ visible: true }).first();
+    return [
+      roles,
+      scope.getByLabel(target, { exact: true }),
+      scope.getByPlaceholder(target, { exact: true }),
+      scope.getByText(target, { exact: true }),
+    ];
   }
 
   async click(target: string): Promise<void> {
-    await this.locate(target).click();
+    await (await this.find(target)).click();
     await this.settle();
   }
 
+  /**
+   * fill replaces a field's text. A number field refuses text through
+   * Playwright's fill, so there the keys are typed one by one, as a person
+   * would, and the browser keeps what it accepts.
+   */
   async fill(target: string, value: string): Promise<void> {
-    await this.locate(target).fill(value);
+    const field = await this.find(target);
+    const isNumber = await field.evaluate(
+      (el) => el instanceof HTMLInputElement && el.type === "number",
+    );
+    if (isNumber) {
+      await field.fill("");
+      await field.pressSequentially(value);
+    } else {
+      await field.fill(value);
+    }
     await this.settle();
   }
 
   /** select picks an option of a native select or a Radix one by its text. */
   async select(target: string, option: string): Promise<void> {
-    const field = this.locate(target);
+    const field = await this.find(target);
     const native = await field.evaluate((el) => el.tagName === "SELECT");
     if (native) {
       await field.selectOption({ label: option });
@@ -197,7 +259,13 @@ export class EikaDriver {
   }
 
   async hover(target: string): Promise<void> {
-    await this.locate(target).hover();
+    await (await this.find(target)).hover();
+    await this.settle();
+  }
+
+  /** scroll brings a target into view, even a disabled one that cannot be hovered. */
+  async scroll(target: string): Promise<void> {
+    await (await this.find(target)).scrollIntoViewIfNeeded();
     await this.settle();
   }
 
@@ -215,7 +283,7 @@ export class EikaDriver {
 
   /** waitFor waits for a target to be visible. */
   async waitFor(target: string, timeoutMs = 5000): Promise<void> {
-    await this.locate(target).waitFor({ state: "visible", timeout: timeoutMs });
+    await (await this.find(target, timeoutMs)).waitFor({ state: "visible", timeout: timeoutMs });
     await this.settle();
   }
 
@@ -246,7 +314,7 @@ export class EikaDriver {
     await this.settle();
     const common = { path: file, animations: "disabled", caret: "hide" } as const;
     if (options.target) {
-      await this.locate(options.target).screenshot(common);
+      await (await this.find(options.target)).screenshot(common);
     } else {
       await this.page.screenshot({ ...common, fullPage: options.fullPage === true });
     }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import type { Model, ReasoningEffort } from "@/api/types";
-import { Notice } from "@/components/Notice";
+import { ActionError } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { NumberField } from "@/features/providers/ModelPicker";
+import { FieldProblem, NumberField } from "@/features/providers/ModelPicker";
 import { useModels, useUpdateModel } from "@/features/providers/queries";
 
 export type ModelDialogProps = {
@@ -83,18 +83,32 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
   const [effort, setEffort] = useState<ReasoningEffort>(model.reasoning_effort ?? "");
   const [preserve, setPreserve] = useState(model.preserve_thinking);
 
-  const problem =
+  // Each problem belongs to one field and is shown right under it.
+  type Field = "name" | "id" | "window" | "output";
+  const problem: { field: Field; message: string } | null =
     name.trim() === ""
-      ? "Give the model a name."
+      ? { field: "name", message: "Give the model a name." }
       : takenNames.includes(name.trim())
-        ? `Another model is called “${name.trim()}”; choose a different name.`
+        ? {
+            field: "name",
+            message: `Another model is called “${name.trim()}”; choose a different name.`,
+          }
         : id.trim() === ""
-          ? "The identifier is what the endpoint calls the model; it cannot be empty."
-          : !Number.isInteger(window) || !(window > 0) || !Number.isInteger(output) || !(output > 0)
-            ? "Enter the limits as whole numbers of tokens, 1 or more."
-            : output > window
-              ? "Lower the max output: it cannot be larger than the context window."
-              : null;
+          ? {
+              field: "id",
+              message: "The identifier is what the endpoint calls the model; it cannot be empty.",
+            }
+          : !Number.isInteger(window) || !(window > 0)
+            ? { field: "window", message: "Enter a whole number of tokens, 1 or more." }
+            : !Number.isInteger(output) || !(output > 0)
+              ? { field: "output", message: "Enter a whole number of tokens, 1 or more." }
+              : output > window
+                ? {
+                    field: "output",
+                    message: "Lower the max output: it cannot be larger than the context window.",
+                  }
+                : null;
+  const problemFor = (field: Field) => (problem?.field === field ? problem.message : undefined);
 
   return (
     <form
@@ -134,10 +148,13 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
           <Input
             id="model-name"
             value={name}
+            aria-invalid={problemFor("name") !== undefined}
+            aria-describedby={problemFor("name") ? "model-name-problem" : undefined}
             onChange={(e) => {
               setName(e.target.value);
             }}
           />
+          <FieldProblem id="model-name-problem" message={problemFor("name")} />
         </div>
         <div className="space-y-1">
           <Label htmlFor="model-id" className="text-xs">
@@ -147,13 +164,28 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
             id="model-id"
             value={id}
             className="font-mono"
+            aria-invalid={problemFor("id") !== undefined}
+            aria-describedby={problemFor("id") ? "model-id-problem" : undefined}
             onChange={(e) => {
               setId(e.target.value);
             }}
           />
+          <FieldProblem id="model-id-problem" message={problemFor("id")} />
         </div>
-        <NumberField id="model-window" label="Context window" value={window} onChange={setWindow} />
-        <NumberField id="model-output" label="Max output" value={output} onChange={setOutput} />
+        <NumberField
+          id="model-window"
+          label="Context window"
+          value={window}
+          problem={problemFor("window")}
+          onChange={setWindow}
+        />
+        <NumberField
+          id="model-output"
+          label="Max output"
+          value={output}
+          problem={problemFor("output")}
+          onChange={setOutput}
+        />
       </div>
 
       <div className="space-y-1">
@@ -182,7 +214,7 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
         </p>
       </div>
 
-      <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+      <div className="flex items-start justify-between gap-4 rounded-md border p-3">
         <div className="space-y-0.5">
           <Label htmlFor="model-preserve" className="text-sm">
             Preserve reasoning between turns
@@ -195,8 +227,10 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
         <Switch id="model-preserve" checked={preserve} onCheckedChange={setPreserve} />
       </div>
 
-      {problem !== null && <p className="text-destructive text-xs">{problem}</p>}
-      {update.isError && <Notice tone="error">{update.error.message}</Notice>}
+      {problem !== null && (
+        <p className="text-destructive text-xs">Fix the field marked above to save.</p>
+      )}
+      {update.isError && <ActionError action={`save ${model.name}`} error={update.error} />}
 
       <DialogFooter>
         <Button type="button" variant="ghost" onClick={onDone}>

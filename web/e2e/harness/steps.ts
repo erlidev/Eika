@@ -3,10 +3,12 @@
  * write a flow without writing TypeScript.
  *
  *   click <target>            fill <target> = <value>     select <target> = <option>
- *   hover <target>            press <key>                 type <text>
+ *   hover <target>            scroll <target>             press <key>
+ *   type <text>
  *   send <message>            wait <ms | target>          goto <path>
  *   theme light|dark          viewport <w>x<h>            reload
  *   emit <event json>         shot <name> [= <target>]    fullshot <name>
+ *   fail <route> = <failure>  heal <route>
  *   aria                      # comment
  *
  * A target is what the UI calls the thing (see EikaDriver.locate).
@@ -14,6 +16,7 @@
 
 import type { EikaEvent } from "../../src/api/events.ts";
 import type { EikaDriver } from "./driver.ts";
+import { parseFailure } from "./mock.ts";
 
 /** Step is one parsed line. */
 export type Step = { verb: string; arg: string; value?: string; line: string };
@@ -24,6 +27,7 @@ export const verbs: Record<string, string> = {
   fill: "fill <target> = <value>",
   select: "select <target> = <option>",
   hover: "hover <target>",
+  scroll: "scroll <target>      bring it into view, e.g. the end of a long dialog",
   press: "press <key>          e.g. Enter, Escape, Control+K",
   type: "type <text>          into the focused element",
   send: "send <message>       type into the session composer and send",
@@ -35,6 +39,8 @@ export const verbs: Record<string, string> = {
   emit: 'emit <event json>    e.g. {"type":"workspace.state","topic":"workspace:ws-retries","payload":{...}}',
   shot: "shot <name> [= <target>]   screenshot the viewport, or one element",
   fullshot: "fullshot <name>      screenshot the whole scrollable page",
+  fail: "fail <route> = <failure>   e.g. fail GET /api/providers = 500; also 502 bare, network, hang",
+  heal: "heal <route>         let a failed route answer again, as a Retry finds it",
   aria: "aria                 save the accessibility tree",
 };
 
@@ -80,6 +86,8 @@ export async function runStep(driver: EikaDriver, step: Step, hooks: StepHooks):
       return driver.select(need(step, "arg"), need(step, "value"));
     case "hover":
       return driver.hover(need(step, "arg"));
+    case "scroll":
+      return driver.scroll(need(step, "arg"));
     case "press":
       return driver.press(need(step, "arg"));
     case "type":
@@ -126,6 +134,12 @@ export async function runStep(driver: EikaDriver, step: Step, hooks: StepHooks):
       await hooks.onShot(file);
       return;
     }
+    case "fail":
+      driver.mock.failRoute(need(step, "arg"), parseFailure(need(step, "value")));
+      return;
+    case "heal":
+      driver.mock.healRoute(need(step, "arg"));
+      return;
     case "aria":
       await hooks.onAria(await driver.aria());
       return;

@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { connect, disconnect } from "@/api/connection";
 import { changePassword, signOut } from "@/api/routes";
-import { Notice } from "@/components/Notice";
+import { ActionError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,9 +23,9 @@ export function AccountSettings() {
       <Separator />
       <div className="space-y-2">
         <h3 className="text-sm font-medium">This browser</h3>
-        <dl className="text-muted-foreground grid grid-cols-[auto_1fr] gap-x-3 font-mono text-xs">
-          <dt>harness</dt>
-          <dd className="truncate">{connection.baseUrl || window.location.origin}</dd>
+        <dl className="text-muted-foreground grid grid-cols-[auto_1fr] gap-x-3 text-xs">
+          <dt>Harness</dt>
+          <dd className="truncate font-mono">{connection.baseUrl || window.location.origin}</dd>
         </dl>
         <Button
           variant="secondary"
@@ -129,7 +129,7 @@ function PasswordForm({ baseUrl }: { baseUrl: string }) {
         <p className="text-muted-foreground text-xs">{problem}</p>
       )}
       {change.isSuccess && <Notice tone="success">The password was changed.</Notice>}
-      {change.isError && <Notice tone="error">{change.error.message}</Notice>}
+      {change.isError && <ActionError action="change the password" error={change.error} />}
       <Button
         type="submit"
         variant="outline"

@@ -5,10 +5,11 @@
  */
 
 import { GitBranch, Locate } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 import type { Node } from "@/api/types";
+import { LoadError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,21 +22,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useForkSession, useSessionOutline, useSetSessionHead } from "@/features/session/queries";
+import { nextTreeIndex, treeRows } from "@/features/session/tree";
 import { cn } from "@/lib/utils";
+import { failureText } from "@/lib/failure";
 
 export type SessionTreePanelProps = {
   sessionId: string;
 };
-
-/** childrenOf groups the outline by parent so it can be walked as a tree. */
-function childrenOf(nodes: Node[]): Map<string, Node[]> {
-  const byParent = new Map<string, Node[]>();
-  for (const node of nodes) {
-    const key = node.parent_id ?? "";
-    byParent.set(key, [...(byParent.get(key) ?? []), node]);
-  }
-  return byParent;
-}
 
 export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
   const outline = useSessionOutline(sessionId);
@@ -45,70 +38,136 @@ export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
   const [confirmHead, setConfirmHead] = useState<Node | null>(null);
   const [forkFrom, setForkFrom] = useState<Node | null>(null);
   const [forkTitle, setForkTitle] = useState("");
+  // The tree is one tab stop: the row last focused, or the head, takes it.
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const items = useRef(new Map<string, HTMLDivElement>());
 
   if (outline.isPending) {
-    return <p className="text-muted-foreground p-3 text-xs">Loading the tree…</p>;
+    return (
+      <div className="p-3">
+        <Notice tone="pending">Loading the tree…</Notice>
+      </div>
+    );
   }
   if (outline.isError) {
     return (
-      <p role="alert" className="text-destructive p-3 text-xs">
-        {outline.error.message}
-      </p>
+      <div className="p-3">
+        <LoadError
+          what="the session tree"
+          error={outline.error}
+          retrying={outline.isFetching}
+          retry={() => void outline.refetch()}
+        />
+      </div>
     );
   }
 
-  const byParent = childrenOf(outline.data.nodes);
   const head = outline.data.head_entry_id;
+  const rows = treeRows(outline.data.nodes, head);
+  const focused = Math.max(
+    0,
+    rows.findIndex((r) => r.node.id === (focusId ?? head)),
+  );
 
-  const rows = (parent: string, depth: number): React.ReactNode =>
-    (byParent.get(parent) ?? []).map((node) => (
-      <li key={node.id}>
-        <div
-          className={cn(
-            "hover:bg-accent/50 group flex items-center gap-1 rounded-sm py-0.5 pr-1",
-            node.id === head && "bg-accent",
-          )}
-          style={{ paddingLeft: `${String(depth * 12 + 4)}px` }}
-        >
-          <span className="text-muted-foreground w-[5.5rem] shrink-0 truncate font-mono text-[0.7rem]">
-            {node.kind}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-xs" title={node.preview}>
-            {node.preview || "—"}
-          </span>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-            aria-label={`Set head to ${node.kind} entry`}
-            onClick={() => {
-              setConfirmHead(node);
-            }}
-          >
-            <Locate aria-hidden className="size-3" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-            aria-label={`Fork from ${node.kind} entry`}
-            onClick={() => {
-              setForkFrom(node);
-              setForkTitle(node.preview.slice(0, 40) || "Fork");
-            }}
-          >
-            <GitBranch aria-hidden className="size-3" />
-          </Button>
-        </div>
-        <ul>{rows(node.id, depth + 1)}</ul>
-      </li>
-    ));
+  const startFork = (node: Node) => {
+    setForkFrom(node);
+    setForkTitle(node.preview.slice(0, 40) || "Fork");
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent, index: number, node: Node) => {
+    // Keys pressed on a row's buttons are the buttons' own.
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (node.id !== head) setConfirmHead(node);
+      return;
+    }
+    const next = nextTreeIndex(rows, index, e.key);
+    if (next === null) return;
+    e.preventDefault();
+    const id = rows[next]?.node.id;
+    if (id === undefined) return;
+    setFocusId(id);
+    items.current.get(id)?.focus();
+  };
 
   return (
     <div className="p-2">
-      <ul role="tree" aria-label="Session tree">
-        {rows("", 0)}
-      </ul>
+      {/* The WAI-ARIA tree pattern with flat rows: each row carries its level,
+          position, and set size. Nothing collapses, so no row has
+          aria-expanded. The head is the current entry. A row's buttons are
+          inside it and reachable with Tab from the focused row. */}
+      <div role="tree" aria-label="Session tree" aria-describedby={`${sessionId}-tree-keys`}>
+        {rows.map((row, index) => {
+          const { node } = row;
+          const isFocused = index === focused;
+          const isHead = node.id === head;
+          return (
+            <div
+              key={node.id}
+              ref={(el) => {
+                if (el) items.current.set(node.id, el);
+                else items.current.delete(node.id);
+              }}
+              role="treeitem"
+              aria-level={row.level}
+              aria-posinset={row.position}
+              aria-setsize={row.setSize}
+              aria-current={isHead ? "true" : undefined}
+              aria-label={`${node.kind}: ${node.preview || "no text"}${isHead ? " (head)" : ""}`}
+              tabIndex={isFocused ? 0 : -1}
+              onFocus={(e) => {
+                if (e.target === e.currentTarget) setFocusId(node.id);
+              }}
+              onKeyDown={(e) => {
+                onKeyDown(e, index, node);
+              }}
+              className={cn(
+                "hover:bg-accent/50 group focus-visible:ring-ring flex items-center gap-1 rounded-md py-0.5 pr-1 outline-none focus-visible:ring-2",
+                isHead && "bg-accent",
+              )}
+              style={{ paddingLeft: `${String((row.level - 1) * 12 + 4)}px` }}
+            >
+              <span className="text-muted-foreground w-[5.5rem] shrink-0 truncate font-mono text-2xs">
+                {node.kind}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs" title={node.preview}>
+                {node.preview || "—"}
+              </span>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                tabIndex={isFocused ? 0 : -1}
+                className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+                aria-label={`Set head to ${node.kind} entry`}
+                title="Move the head here"
+                onClick={() => {
+                  setConfirmHead(node);
+                }}
+              >
+                <Locate aria-hidden className="size-3" />
+              </Button>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                tabIndex={isFocused ? 0 : -1}
+                className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+                aria-label={`Fork from ${node.kind} entry`}
+                title="Fork a new session from here"
+                onClick={() => {
+                  startFork(node);
+                }}
+              >
+                <GitBranch aria-hidden className="size-3" />
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+      <p id={`${sessionId}-tree-keys`} className="sr-only">
+        Arrow keys move between entries, Enter moves the head to the focused entry, and Tab reaches
+        its buttons.
+      </p>
 
       <Dialog
         open={confirmHead !== null}
@@ -124,10 +183,10 @@ export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
               it stay in the session but leave the conversation.
             </DialogDescription>
           </DialogHeader>
-          <p className="bg-muted rounded-md p-2 font-mono text-xs">{confirmHead?.preview}</p>
+          <p className="bg-muted rounded-md p-2 text-xs">{confirmHead?.preview}</p>
           {setHead.isError && (
             <p role="alert" className="text-destructive text-xs">
-              {setHead.error.message}
+              {failureText("move the head", setHead.error)}
             </p>
           )}
           <DialogFooter>
@@ -184,7 +243,7 @@ export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
           </div>
           {fork.isError && (
             <p role="alert" className="text-destructive text-xs">
-              {fork.error.message}
+              {failureText("fork the session", fork.error)}
             </p>
           )}
           <DialogFooter>

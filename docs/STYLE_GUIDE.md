@@ -142,6 +142,72 @@ web/src/
 - Accessibility: every interactive element is a `button`, `a`, or input
   with a label. Keyboard navigation works for every panel.
 
+### Web UI design
+
+Eika's look is the "Dense dev tool" direction: a compact tool for people
+who read code all day. Cool slate neutrals, one teal accent, small corners,
+tight spacing, IBM Plex Sans for text and JetBrains Mono for anything a
+machine produced or reads. `web/src/index.css` is the single source of the
+look; a change to the look is a change to its tokens, never to a component.
+
+- **Colour** comes only from the theme tokens: `background`, `foreground`,
+  `card`, `popover`, `muted` / `muted-foreground` (secondary text, quiet
+  surfaces), `accent` (hover and selected rows), `primary` (the one action
+  on a screen, links, focus ring), `success`, `warning`, `destructive`,
+  `border`. No Tailwind palette colours (`emerald-600`), no hex, rgb, or
+  arbitrary colour values. Both themes follow from the tokens; do not add
+  `dark:` colour overrides in components.
+- **Type** uses the scale: `text-2xs` (badges, tiny metadata), `text-xs`
+  (secondary labels, status bars), `text-sm` (the default for UI text),
+  `text-base` (transcript prose), `text-lg` and up for headings only. No
+  arbitrary sizes. Weights: 400 body, 500 labels and buttons, 600 headings.
+- **Mono** (`font-mono`) for ids, paths, URLs, commands, image names, key
+  hints, tool names, model ids, token counts, and code. Everything else is
+  sans, including labels and what a person wrote (the composer, queued
+  messages): a model's display name is sans, its id mono.
+- **Spacing** uses the Tailwind scale, which the tokens make compact; do not
+  add arbitrary padding or gaps. Rows in sidebar and panel trees are single
+  line and truncate. A settings row truncates its name and its one-line
+  details, and lets its actions wrap below the name when the name column
+  would drop under `min-w-40`, so nothing is cut to a letter on a phone.
+- **Shape**: `index.css` maps every radius step to `--radius`, the one
+  small corner, so the `components/ui` primitives (whatever step they use)
+  and feature code agree. Feature code writes `rounded-md` for any box
+  (control, card, list, row, code chip) and `rounded-full` only for pills,
+  dots, and switches. Borders separate regions; shadows only on floating
+  layers (dialogs, popovers, a button floating over the transcript).
+- **Components**: build from `components/ui` primitives and shared
+  `components/` (`Notice` for inline status). A `Dialog` for a focused task,
+  a panel for something that stays open beside the transcript, a `Card` only
+  for a group of related settings.
+- **Icons**: lucide, in three sizes that follow the host, as the button
+  primitive does: `size-4` by default and in default controls, `size-3.5` in
+  `sm` controls and beside `text-xs` (dense rows, status bars, `Notice`),
+  `size-3` in `xs` controls (`h-6` buttons, `icon-xs` buttons) and beside
+  `text-2xs`. An icon-only button has an `aria-label`.
+- **Standalone screens** (sign-in, setup, load failure) use `Screen` from
+  `components/Screen.tsx`: one bordered panel with no shadow on a muted
+  backdrop, `max-w-sm` for a form or `wide` (`max-w-4xl`) beside a step
+  list, `p-6 sm:p-8`, and `ScreenHeader` for the mark and a `text-xl`
+  heading.
+- **Loading**: `Splash` while a whole page loads; a pending `Notice`
+  ("Loading the providers…") for a panel, tab, or dialog; a muted `text-xs`
+  "Loading…" row, indented like the rows it stands for, in a sidebar or
+  tree list.
+- **Errors** sit beside the control that caused them and say which action
+  failed and why: `ActionError` (or `failureText` in `lib/failure.ts` where
+  a `Notice` does not fit) for a write, `LoadError` for a read, both reading
+  "Could not <action>: <cause>". Never show a bare cause such as "name
+  taken". The client (`api/client.ts`) words the cause; keep what it says
+  accurate to the status, so a refusal never reads as "could not be reached".
+- **Characters**: only what the bundled fonts cover. A symbol such as ⌘ or ←
+  is a lucide icon, since a system font would draw it differently on every
+  machine and break the visual baselines.
+
+ESLint enforces the colour, type-size, radius, shadow, and icon-size rules
+for `web/src`. `components/ui` is generated shadcn code, exempt from lint and
+never hand-edited; its look changes only through the tokens.
+
 ### Tests
 
 - Vitest for `lib/` and store logic. Component tests only for non-trivial

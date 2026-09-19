@@ -13,8 +13,8 @@ export type WorkspaceStateBadgeProps = {
 };
 
 const tone: Record<string, string> = {
-  running: "border-emerald-500/40 text-emerald-700 dark:text-emerald-400",
-  creating: "border-amber-500/40 text-amber-700 dark:text-amber-400",
+  running: "border-success/40 text-success",
+  creating: "border-warning/40 text-warning",
   stopped: "text-muted-foreground",
   gone: "border-destructive/40 text-destructive",
 };
@@ -24,7 +24,7 @@ export function WorkspaceStateBadge({ workspaceId, state }: WorkspaceStateBadgeP
   return (
     <Badge
       variant="outline"
-      className={cn("h-4 px-1 font-mono text-[0.65rem]", tone[state])}
+      className={cn("h-4 px-1 font-mono text-2xs", tone[state])}
       aria-label={`Workspace state: ${state}`}
     >
       {state}

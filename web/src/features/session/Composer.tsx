@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { usePostMessage, useRunStatus } from "@/features/session/queries";
 import type { MessageMode } from "@/api/types";
-import { cn } from "@/lib/utils";
+import { failureText } from "@/lib/failure";
 
 export type ComposerProps = {
   sessionId: string;
@@ -54,7 +54,7 @@ export function Composer({ sessionId, model, disabled = false, disabledReason }:
             active ? "Steer the run, or queue a follow-up…" : "Send a message to the agent…"
           }
           rows={3}
-          className={cn("resize-none font-mono text-sm")}
+          className="resize-none text-sm"
           onChange={(e) => {
             setText(e.target.value);
           }}
@@ -106,7 +106,7 @@ export function Composer({ sessionId, model, disabled = false, disabledReason }:
         </div>
         {post.isError && (
           <p role="alert" className="text-destructive mt-2 text-xs">
-            {post.error.message}
+            {failureText("send the message", post.error)}
           </p>
         )}
         <Queues
@@ -136,7 +136,7 @@ function Queue({ label, messages }: { label: string; messages: string[] }) {
       <span className="font-medium">{label}</span>
       <ol className="mt-0.5 space-y-0.5">
         {messages.map((message, index) => (
-          <li key={`${String(index)}:${message}`} className="truncate font-mono">
+          <li key={`${String(index)}:${message}`} className="truncate">
             {message}
           </li>
         ))}

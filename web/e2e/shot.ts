@@ -16,6 +16,8 @@ import { createServer } from "vite";
 import type { ViteDevServer } from "vite";
 
 import { EikaDriver } from "./harness/driver.ts";
+import { parseFailure } from "./harness/mock.ts";
+import type { Failure } from "./harness/mock.ts";
 import { scenarios } from "./harness/scenarios.ts";
 import { parseStep, runStep, verbs } from "./harness/steps.ts";
 import type { Step } from "./harness/steps.ts";
@@ -28,6 +30,9 @@ const usage = `usage: npm run shot -- [options]
   --steps <file>          read steps from a file, one per line
   --theme light|dark      colour scheme (default: light)
   --viewport <w>x<h>      window size (default: 1440x900)
+  --fail "<route> = <f>"  make a route fail from the start, repeatable; <f> is a
+                          status (500), "502 bare", network, or hang. Example:
+                          --fail "GET /api/providers = 500"
   --out, -o <dir>         where screenshots go (default: e2e/out)
   --url <base>            use a running dev server instead of starting one
   --no-final              skip the screenshot taken after the last step
@@ -63,6 +68,7 @@ async function main(): Promise<number> {
       path: { type: "string", short: "p" },
       step: { type: "string", multiple: true, default: [] },
       steps: { type: "string" },
+      fail: { type: "string", multiple: true, default: [] },
       theme: { type: "string", default: "light" },
       viewport: { type: "string" },
       out: { type: "string", short: "o", default: "e2e/out" },
@@ -95,6 +101,13 @@ async function main(): Promise<number> {
   const lines = [...values.step];
   if (values.steps) lines.push(...readFileSync(values.steps, "utf8").split("\n"));
   const steps = lines.map(parseStep).filter((s): s is Step => s !== null);
+
+  const failing: Record<string, Failure> = {};
+  for (const flag of values.fail) {
+    const at = flag.lastIndexOf("=");
+    if (at < 0) throw new Error(`--fail takes "<route> = <failure>", got "${flag}"`);
+    failing[flag.slice(0, at).trim()] = parseFailure(flag.slice(at + 1));
+  }
 
   const out = resolve(values.out);
   mkdirSync(out, { recursive: true });
@@ -130,6 +143,7 @@ async function main(): Promise<number> {
     driver = await EikaDriver.launch(browser, baseURL, {
       scenario: values.scenario,
       theme,
+      failing,
       ...(values.path ? { path: values.path } : {}),
       ...(viewport ? { viewport } : {}),
     });

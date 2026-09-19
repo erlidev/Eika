@@ -60,8 +60,21 @@ function statusMessage(status: number): string {
     return `The harness did not answer (HTTP ${String(status)}); it may be starting or stopped. Try again in a moment.`;
   }
   if (status >= 500) return internalMessage;
-  return `The harness refused the request (HTTP ${String(status)}).`;
+  if (status === 404) {
+    return "The harness has no such route (HTTP 404). Check that the harness URL points at Eika and that the harness is up to date.";
+  }
+  if (status === 429) {
+    return "The harness is turning away requests from this browser (HTTP 429). Wait a moment, then try again.";
+  }
+  return `The harness refused the request (HTTP ${String(status)}) without saying why; the harness log names the cause.`;
 }
+
+/**
+ * notJsonMessage is what an answer that is not JSON reports: something other
+ * than the harness, such as a web server's page, answered the request.
+ */
+export const notJsonMessage =
+  "The answer was not from the harness: it was not JSON. Check that the harness URL points at Eika.";
 
 /**
  * unreachableMessage is what a request that never got an answer reports: the
@@ -150,6 +163,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     try {
       body = JSON.parse(text);
     } catch {
+      // A failure's status still says what happened; a success that is not
+      // JSON is not an answer at all.
+      if (response.ok) throw new Error(notJsonMessage);
       body = null;
     }
   }

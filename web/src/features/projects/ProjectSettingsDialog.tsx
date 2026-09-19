@@ -7,7 +7,7 @@
 import { useState } from "react";
 
 import type { Project, UpdateProject } from "@/api/types";
-import { Notice } from "@/components/Notice";
+import { ActionError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -101,7 +101,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
       </div>
 
       {remote && (
-        <div className="space-y-3 rounded-lg border p-3">
+        <div className="space-y-3 rounded-md border p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-medium">Credentials</h3>
             <span className="text-muted-foreground text-xs">
@@ -168,7 +168,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
       {update.isPending && remote && password !== "" && (
         <Notice tone="pending">Fetching from the remote with the new credentials…</Notice>
       )}
-      {update.isError && <Notice tone="error">{update.error.message}</Notice>}
+      {update.isError && <ActionError action={`save ${project.name}`} error={update.error} />}
 
       <DialogFooter>
         <Button type="button" variant="ghost" onClick={onDone}>

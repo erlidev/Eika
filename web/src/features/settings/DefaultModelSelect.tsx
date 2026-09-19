@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { useModels, useProviders } from "@/features/providers";
 import { settingKeys, useSaveSettings } from "@/features/settings/queries";
+import { failureText } from "@/lib/failure";
 
 export function DefaultModelSelect() {
   const models = useModels();
@@ -36,7 +37,15 @@ export function DefaultModelSelect() {
         }}
       >
         <SelectTrigger id="default-model" className="w-full">
-          <SelectValue placeholder={models.isPending ? "Loading the models…" : "No models yet"} />
+          <SelectValue
+            placeholder={
+              models.isError
+                ? "The models did not load; see below"
+                : models.isPending
+                  ? "Loading the models…"
+                  : "No models yet"
+            }
+          />
         </SelectTrigger>
         <SelectContent>
           {(providers.data?.providers ?? []).map((provider) => {
@@ -78,7 +87,7 @@ export function DefaultModelSelect() {
       )}
       {save.isError && (
         <p role="alert" className="text-destructive text-xs">
-          {save.error.message}
+          {failureText("change the default model", save.error)}
         </p>
       )}
     </div>

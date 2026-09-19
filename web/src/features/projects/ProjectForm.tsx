@@ -7,7 +7,7 @@
 import { useState } from "react";
 
 import type { CreateProject, Project, ProjectKind } from "@/api/types";
-import { Notice } from "@/components/Notice";
+import { ActionError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -77,7 +77,7 @@ export function ProjectForm({ onCreated, onCancel, cancelLabel, submitLabel }: P
                 setKind(option.value);
               }}
               className={cn(
-                "hover:bg-muted/60 focus-visible:ring-ring/50 rounded-lg border px-3 py-2 text-left outline-none focus-visible:ring-3",
+                "hover:bg-muted/60 focus-visible:ring-ring/50 rounded-md border px-3 py-2 text-left outline-none focus-visible:ring-3",
                 kind === option.value && "border-primary bg-muted/60 ring-primary/20 ring-2",
               )}
             >
@@ -139,7 +139,7 @@ export function ProjectForm({ onCreated, onCancel, cancelLabel, submitLabel }: P
             The repository is private
           </label>
           {isPrivate && (
-            <div className="bg-muted/30 space-y-3 rounded-lg border p-3">
+            <div className="bg-muted/30 space-y-3 rounded-md border p-3">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label htmlFor="project-username" className="text-xs">
@@ -199,7 +199,7 @@ export function ProjectForm({ onCreated, onCancel, cancelLabel, submitLabel }: P
       )}
 
       {problem !== null && touched && <p className="text-muted-foreground text-xs">{problem}</p>}
-      {create.isError && <Notice tone="error">{create.error.message}</Notice>}
+      {create.isError && <ActionError action="add the project" error={create.error} />}
       {create.isPending && kind === "remote" && (
         <Notice tone="pending">Mirroring the repository into the hub…</Notice>
       )}

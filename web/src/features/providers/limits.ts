@@ -80,30 +80,45 @@ export type ModelChoice = {
   max_output: number;
 };
 
+/** ChosenProblem is what keeps one chosen model from being added, and the field at fault. */
+export type ChosenProblem = {
+  /** id is the model identifier of the choice at fault. */
+  id: string;
+  field: "name" | "context_window" | "max_output";
+  message: string;
+};
+
 /** chosenProblem says why the chosen models cannot be added as they are, and how to fix it. */
 export function chosenProblem(
   chosen: readonly ModelChoice[],
   existing: readonly Model[],
-): string | null {
+): ChosenProblem | null {
   const names = new Set(existing.map((m) => m.name));
   const seen = new Set<string>();
   for (const c of chosen) {
+    const at = (field: ChosenProblem["field"], message: string): ChosenProblem => ({
+      id: c.id,
+      field,
+      message,
+    });
     const name = c.name.trim();
-    if (name === "") return `Give ${c.id} a name in Eika.`;
+    if (name === "") return at("name", `Give ${c.id} a name in Eika.`);
     if (names.has(name)) {
-      return `A model called “${name}” already exists; give ${c.id} another name.`;
+      return at("name", `A model called “${name}” already exists; give ${c.id} another name.`);
     }
-    if (seen.has(name)) return `Two models would be called “${name}”; rename one of them.`;
+    if (seen.has(name))
+      return at("name", `Two models would be called “${name}”; rename one of them.`);
     seen.add(name);
-    if (name.length > 128) return `Shorten the name of ${c.id} to 128 characters or fewer.`;
+    if (name.length > 128)
+      return at("name", `Shorten the name of ${c.id} to 128 characters or fewer.`);
     if (!Number.isInteger(c.context_window) || !(c.context_window > 0)) {
-      return `Enter ${c.id}'s context window as a whole number of tokens.`;
+      return at("context_window", `Enter ${c.id}'s context window as a whole number of tokens.`);
     }
     if (!Number.isInteger(c.max_output) || !(c.max_output > 0)) {
-      return `Enter ${c.id}'s max output as a whole number of tokens.`;
+      return at("max_output", `Enter ${c.id}'s max output as a whole number of tokens.`);
     }
     if (c.max_output > c.context_window) {
-      return `${c.id}: the max output cannot be larger than the context window.`;
+      return at("max_output", `${c.id}: the max output cannot be larger than the context window.`);
     }
   }
   return null;
