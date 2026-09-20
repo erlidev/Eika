@@ -1,7 +1,7 @@
 # Architecture
 
-This file describes Eika as it is today, at the end of phase 7, web search. It is updated
-in the same change that moves structure. Planned work lives in `docs/PLAN.md`.
+This file describes Eika as it is today, at the end of phase 8, terminal, editor, and diff. It is
+updated in the same change that moves structure. Planned work lives in `docs/PLAN.md`.
 
 ## What exists now
 
@@ -73,12 +73,16 @@ The pieces:
   channel of `Event` values: text deltas, assembled tool calls, usage, and a
   terminal done or error. `provider/openai` speaks Chat Completions with the
   official SDK; `provider/providertest` replays scripted responses in tests.
-  A model can set `reasoning_effort`. An OpenAI-compatible endpoint can also
-  set `preserve_thinking`; Eika then sends that extension, captures streamed
-  `reasoning_content`, and replays the reasoning with later assistant
-  messages. Preservation is enabled when the setting is absent. An endpoint
-  that rejects the extension must set it to false. It is not an OpenAI API
-  field.
+  A model can set `reasoning_effort`, and the words it may take are the
+  model's own row rather than a list in the code, because compatible
+  endpoints disagree on the vocabulary. Streamed `reasoning_content` always
+  becomes `KindReasoningDelta`, so a client can show the model thinking; an
+  OpenAI-compatible endpoint can also set `preserve_thinking`, which is what
+  makes Eika send that extension and replay the reasoning with later
+  assistant messages. An endpoint that rejects the extension must set it to
+  false. It is not an OpenAI API field. Usage is relayed as soon as a chunk
+  carries it, so an endpoint with continuous usage statistics lets a caller
+  measure a decode rate while the response is still arriving.
 - **tool** holds the `Tool` interface and a registry. A call receives a
   `CallContext` carrying the executor, the event emitter, and the session and
   run identifiers. `tool/builtin` implements `read`, `write`, `edit`, `bash`,
@@ -149,7 +153,7 @@ a container, and a URL.
 | `subagents` | id, parent_session_id, child_session_id, child_workspace_id, state, result, created_at, finished_at | One child agent and what it reported |
 | `settings` | key (primary), value (jsonb) | What the user changes at runtime |
 | `providers` | id, name (unique), kind, base_url, api_key (sealed), created_at, updated_at | A model provider: an endpoint of one provider kind and its key |
-| `models` | id, provider_id, name (unique), model, context_window, max_output, reasoning_effort, preserve_thinking, created_at, updated_at | A model a run may use; `name` is Eika's, `model` the endpoint's |
+| `models` | id, provider_id, name (unique), model, context_window, max_output, reasoning_effort, reasoning_efforts, preserve_thinking, created_at, updated_at | A model a run may use; `name` is Eika's, `model` the endpoint's, `reasoning_efforts` the words its effort cycles through |
 | `auth_password` | id (always 1), hash, updated_at | The sign-in password as a PBKDF2 hash |
 | `auth_sessions` | token_hash, created_at, expires_at | A signed-in browser, by the SHA-256 of its token |
 | `search_keys` | name (primary), key (sealed), updated_at | The API key of a search provider, or the GitHub token |
@@ -188,8 +192,9 @@ entries make up the conversation; `system` and `event` entries (questions,
 subagent lifecycle, compaction later) are shown in the user interface and are
 not sent to the model.
 
-An assistant message can also hold opaque reasoning data for a provider that
-must replay it. Tool arguments keep the model's exact text. Valid arguments
+An assistant message can also hold the model's reasoning, which the session
+view shows apart from the answer and a provider configured to preserve
+thinking replays. Tool arguments keep the model's exact text. Valid arguments
 are stored as their JSON value. Malformed arguments are stored as a JSON
 string with `arguments_malformed: true` and restored before the tool sees
 them. The marker distinguishes malformed text from a valid top-level JSON
@@ -283,9 +288,10 @@ The pieces:
   `POST /api/auth/login` hand out sessions and are the public routes under
   `/api`; setup succeeds once, while no password exists. `/healthz` is public,
   and `/git/` is mounted outside the middleware because the hub authenticates
-  workspaces itself with per-workspace credentials. The event stream is the
-  one route that also accepts the token as a query parameter, because a
-  browser cannot set a header on a WebSocket handshake. Sign-in attempts take
+  workspaces itself with per-workspace credentials. The two WebSocket
+  routes, the event stream and a workspace's terminal, are the only ones that
+  also accept the token as a query parameter, because a browser cannot set a
+  header on a WebSocket handshake; `bearerToken` matches them by path. Sign-in attempts take
   turns behind one mutex, which with the hash's cost bounds guessing without
   a lockout.
 - **Providers and models** are rows. A run, a probe, or a model test opens
@@ -449,6 +455,51 @@ workspace's token, and the workspace root. `Exec` decodes the daemon's
 newline-delimited frames and writes them into the caller's `Stdout` and
 `Stderr` as they arrive, so a tool streams output without buffering a whole
 command. A `404` from the daemon comes back as `sandbox.ErrNotFound`.
+
+### Terminal, files, and changes
+
+A person works in a workspace beside the agent through three kinds of route,
+all of which reach the sandbox the way the agent does, and none of which the
+harness serves from its own filesystem.
+
+Files and changes go through the executor. `GET` and `PUT
+/api/workspaces/{id}/file` and `GET .../files` call `Stat`, `ReadFile`,
+`WriteFile`, and `List`, after `executor.Resolve` has checked the path
+lexically; eikad checks it again after following symlinks. A refused path is
+`403`, a missing one `404`. Commit and push run `git` in the workspace through
+`Exec`, as the diff does; push then goes through `Host.Push` to the hub and,
+for an upstream push, `hub.Push` from the hub to the project's remote with the
+project's sealed credentials, which never enter the sandbox. A save, a commit,
+and a push publish `workspace.state` so that open views refresh.
+
+The terminal is the one sandbox connection that is not an executor call. It is
+`sandbox.Client.Terminal`, reached through `Host.Terminal` and the server's
+`Workspaces` interface, and deliberately absent from `executor.Executor`: a
+tool holds an executor, so it can run commands but can never get a PTY.
+
+```
+  browser                      harness (server/terminal.go)             sandbox
+  GET /api/workspaces/{id}/terminal?rows&cols&token
+     |                            |
+     |                            +-- Workspaces.Inspect: running? else 404/409
+     |                            +-- Host.Terminal -> sandbox.Client.Terminal
+     |                            |      dial ws://<address>/pty  --------> eikad /pty
+     |                            |      Authorization: Bearer EIKAD_TOKEN    shell on a PTY
+     |<-- 101 (origin checked) ---+
+     |                            |
+     |  input / resize  --------> relay, bytes unchanged  ---------------> pty write / resize
+     |  <-------- output, exit    relay, bytes unchanged  <--------------- pty read, exit
+     |                            |
+     |  close (status, reason) -> passed on as is ------------------------> shell killed
+     |  <- close (status, reason) passed on as is <------------------------ shell exited
+```
+
+The sandbox is dialled before the browser's handshake is accepted, so a
+stopped or missing workspace is an ordinary HTTP error. Each direction runs in
+its own goroutine; whichever side closes first has its close status and reason
+passed to the other, and a connection that drops without a close frame closes
+the other side with `1011`. A message is at most 1 MiB either way, which eikad
+enforces as well, so a large paste arrives whole.
 
 ### Workspace lifecycle
 
@@ -817,7 +868,9 @@ session features, which is why it lives in `app/` rather than in one of them.
 `app/Workbench.tsx` holds the two dividers; `components/ResizableSplit` is a
 pointer-events handler over a `role="separator"` element, so a pane is resized
 by dragging or by an arrow key and the width is remembered in localStorage
-through `lib/persisted`. Below 1024px the side panes become drawers.
+through `lib/persisted`. The divider draws a hairline and takes the pointer
+across about twelve pixels, which is the difference between a line worth
+looking at and one worth aiming at. Below 1024px the side panes become drawers.
 
 `app/panels.tsx` is the panel registry. The right pane's tab strip is that
 array filtered by what is open, so phases 6 and 8 add a panel by writing one
@@ -841,6 +894,17 @@ rows are replaced by the entries that follow, so nothing is drawn twice. The
 reducer is pure, so a scripted event sequence from `docs/api/events.md` is the
 whole test.
 
+The same reducer keeps the status bar's meter: `turn.progress` and `turn.end`
+carry usage, the model's configured context window, and generation time the
+harness measured. A decode rate needs two reports from one model attempt; a
+retry clears the baseline. Nothing in it is inferred from the text on screen,
+so an endpoint that reports usage only once shows context but no rate. Each
+assistant entry stores the final measured context state, which a replay uses
+to restore the meter after a reload. How the transcript renders — today,
+whether reasoning blocks start open — is `features/session/preferences.ts`, a
+localStorage store apart from the harness's settings, because two people
+reading one session can want different things from it.
+
 ### One client, one socket
 
 `api/client.ts` is the only place that calls `fetch`. It attaches the bearer
@@ -856,6 +920,17 @@ backs off and re-sends the union of the live topics. The first connection
 carries its topics in the handshake URL, so a client that never gets to send a
 frame still receives what it asked for. `bus.dropped` reaches every handler,
 whatever the topic, because it reports on the connection.
+
+### Reading a transcript
+
+A transcript is read for minutes at a time, so it is set apart from the
+chrome around it: `text-base` prose with `components/Markdown`, which styles
+headings, lists, quotations, tables, and fenced code (with its language and a
+way to copy it) from the theme tokens alone. The three voices are distinct at
+a glance — a message the user wrote is the one filled, named block on screen;
+the model's answer is unadorned prose; a tool call and the model's reasoning
+are collapsed rows that open on a click. Reasoning arrives as its own
+`reasoning.delta` stream, so it never interleaves with the answer.
 
 ### Tool call rendering
 

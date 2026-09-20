@@ -4,6 +4,8 @@ Drive the UI in a real browser against a **mock harness** and screenshot the
 result. No Go server, Postgres, or Docker needed: `harness/mock.ts` answers
 every `/api` route and the `/api/events` WebSocket from an in-memory world,
 and plays scripted agent replies so a sent message streams like a real run.
+A workspace's terminal socket is a shell that echoes what is typed (`exit`
+ends it), and its files come from the world's `files`.
 
 Chromium is needed once: `npx playwright install chromium`. `make visual`
 installs it when it is missing.
@@ -101,10 +103,15 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 `harness/scenarios.ts` names the starting states. The workbench ones share
 fixed ids: session `ses-backoff` in workspace `ws-retries` of project
 `proj-api`. The `agent-*` scenarios queue a scripted reply for the next
-message: tool calls with streamed output, a question with options, a
-provider failure, or a run that never ends. Add a scenario when a screen
+message: tool calls with streamed output, reasoning streamed before the
+answer, a question with options, a provider failure, or a run that never
+ends. Add a scenario when a screen
 needs data no existing one has; build it with `WorldBuilder` in
-`harness/world.ts`, and script replies as `ReplyStep` lists.
+`harness/world.ts`, and script replies as `ReplyStep` lists (`say` streams
+prose, `think` streams reasoning, `tool` runs a call, `ask` waits for an
+answer, `fail` ends the run, `hang` never ends it). A played reply also emits
+`turn.progress`, so the status bar's context meter and decode rate are on
+every screenshot of a session that has run.
 
 ## Regression baselines (`visual`)
 

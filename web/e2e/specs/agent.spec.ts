@@ -58,3 +58,18 @@ test("the session tree indents only a branch", async ({ open, expectShot }) => {
   await eika.send("Check the cap");
   await expectShot(eika, "session-tree-branch", "role=tree");
 });
+
+test("reasoning streams beside the answer", async ({ open, expectShot }) => {
+  const eika = await open({ scenario: "agent-reasoning" });
+  await eika.send("How should the jitter work?");
+  // The turn's own block is the last one: the stored conversation above it
+  // has reasoning of its own. Both are one line until they are opened, which
+  // is what the default preference asks for.
+  const thought = eika.page.getByRole("button", { name: /^Thought/ }).last();
+  await expect(thought).toBeVisible();
+  await expect(thought).toContainText("The cap is 30s");
+  await expectShot(eika, "agent-reasoning-compact");
+  await thought.click();
+  await expect(eika.page.getByText(/Full jitter over the capped delay/).last()).toBeVisible();
+  await expectShot(eika, "agent-reasoning-open");
+});

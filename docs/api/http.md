@@ -19,10 +19,11 @@ routes below, or the deployment's optional fixed API token, `EIKA_AUTH_TOKEN`.
 The exceptions are `GET /healthz`, `GET /api/healthz`, the three routes that
 hand out a session (`GET /api/auth/status`, `POST /api/auth/setup`,
 `POST /api/auth/login`), and the git hub under `/git/`, which authenticates
-workspaces itself with per-workspace basic auth. `GET /api/events` also
-accepts the token as the `token` query parameter, because a browser cannot set
-a header on a WebSocket handshake; no other route does, so a token never has
-to appear in an ordinary URL.
+workspaces itself with per-workspace basic auth. The two WebSocket routes,
+`GET /api/events` and `GET /api/workspaces/{id}/terminal`, also accept the
+token as the `token` query parameter, because a browser cannot set a header on
+a WebSocket handshake; no other route does, so a token never has to appear in
+an ordinary URL.
 
 A wrong, missing, or expired token is `401` with a `WWW-Authenticate: Bearer`
 header.
@@ -39,8 +40,10 @@ Every failure has one shape:
 |---|---|---|
 | `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field is malformed. |
 | `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
-| `not_found` | 404 | The addressed project, workspace, session, entry, run, question, provider, or model does not exist. |
-| `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a workspace that is not running, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
+| `forbidden` | 403 | A workspace path is outside the workspace, directly or through a symlink, or the sandbox may not open it. |
+| `not_found` | 404 | The addressed project, workspace, session, entry, run, question, provider, model, or workspace file does not exist. |
+| `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a workspace that is not running, nothing to commit, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
+| `too_large` | 413 | A file saved through the API is over its 2 MiB bound. |
 | `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
 
 ## Health
@@ -206,7 +209,8 @@ gone is not an error. `204`.
 ### `GET /api/workspaces/{id}/diff`
 
 Runs `git diff <base_commit>` and `git status --porcelain` inside the
-workspace through its executor.
+workspace through its executor. `?path=<path>` narrows both to one file or
+directory; a path outside the workspace is `403`.
 
 `200` with:
 
@@ -251,6 +255,111 @@ A conflict is a `200`, not an error: the target's tree is left conflicted on
 purpose, so the user or the agent working in it resolves it there. `409` when
 the target workspace is not running; `400` when the branch is not in the hub
 or the source belongs to another project.
+
+### `POST /api/workspaces/{id}/commit`
+
+Stages the workspace's changes with `git add -A` and commits them, inside the
+workspace through its executor. A repository without an identity of its own
+commits as `Eika Agent <agent@eika.local>`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `message` | string, required | The commit message. |
+| `paths` | string array | Commit only these workspace paths. Absent or empty commits every change. |
+
+`200` with `{"commit": string}`, the new commit. `400` for an empty message or
+when git itself failed, with git's message; `403` for a path outside the
+workspace; `409` with the message `nothing to commit` when nothing is staged,
+and when the workspace is not running. Publishes `workspace.state`.
+
+### `POST /api/workspaces/{id}/push`
+
+Pushes the workspace's HEAD to its branch in the hub and, when asked, the
+hub's branch on to the project's remote with the project's credentials. The
+push never forces.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `upstream` | boolean | Also push the branch from the hub to the project's `remote_url`. |
+
+`200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `branch` | string | The workspace's branch, which is the branch pushed. |
+| `commit` | string | The commit pushed. |
+| `upstream_pushed` | boolean | Whether the branch also went to the remote. |
+
+`400` when the hub or the remote refused the push, with git's message and no
+credentials, and when `upstream` is set for a project without a remote; `409`
+when the workspace is not running. Publishes `workspace.state`. A client
+builds a link to open a pull request from the project's `remote_url` and
+`branch`; the harness has no forge API.
+
+### `GET /api/workspaces/{id}/files`
+
+Lists one directory of the workspace: `?path=<path>`, relative to the
+workspace root, and absent or empty for the root. Directories come first,
+then files, each in byte order of their names.
+
+`200` with `{"entries": [FileEntry]}`. `400` when the path is a file; `403`
+when it is outside the workspace; `404` when it does not exist; `409` when the
+workspace is not running.
+
+### `GET /api/workspaces/{id}/file`
+
+Reads one file for the editor. `?path=<path>` is required.
+
+`200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `path` | string | The file, relative to the workspace root. |
+| `size` | number | Its size in bytes. |
+| `binary` | boolean | A NUL byte is in its first 8 KiB. `content` is then empty. |
+| `too_large` | boolean | It is over 2 MiB. `content` is then empty. |
+| `content` | string | The file's text. |
+
+`400` when the path is missing or a directory; `403`, `404`, and `409` as for
+the listing.
+
+### `PUT /api/workspaces/{id}/file`
+
+Saves the raw request body as one file, `?path=<path>`, creating its parent
+directories. The body is at most 2 MiB.
+
+`200` with the saved file's `FileEntry`. `400` when the path is missing or a
+directory; `403` when it is outside the workspace; `409` when the workspace is
+not running; `413` when the body is over the bound. Publishes
+`workspace.state`.
+
+### `GET /api/workspaces/{id}/terminal`
+
+Upgrades to a WebSocket carrying an interactive shell in the workspace.
+`?rows=` and `?cols=` set the starting size; absent means 24 by 80. The
+harness dials the sandbox's `/pty` and relays messages both ways unchanged, so
+they are exactly the PTY messages in `eikad.md`: the client sends
+`{"type":"input","data":<base64>}` and `{"type":"resize","rows":n,"cols":n}`,
+and receives `{"type":"output","data":<base64>}` and, when the shell exits,
+`{"type":"exit","exit_code":n}` (absent `exit_code` means 0) followed by a
+normal close. A close from either side is passed on with its status and
+reason; a lost connection closes the other side with `1011`.
+
+The token may be sent as `?token=`, and the handshake is accepted from the
+same origins as the event stream. Before the upgrade, `400` for a size that is
+not a number from 0 to 65535, `404` for a missing workspace, and `409` for a
+workspace that is not running.
+
+### FileEntry
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | The base name. |
+| `path` | string | Relative to the workspace root, slash-separated. |
+| `size` | number | Size in bytes. |
+| `mode` | number | Go file mode bits. |
+| `mod_time` | time | Last modification. |
+| `is_dir` | boolean | Whether it is a directory. |
 
 ### Workspace
 
@@ -355,9 +464,12 @@ there is nothing to clone; `409` when the source workspace is not running.
 | `created_at` | time | When it was written. |
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
 
-A provider message can include `reasoning` on an assistant entry when the
-configured endpoint preserves thinking. This value is opaque provider data
-that Eika replays; it is not assistant-visible content. A tool call's
+A provider message can include `reasoning` on an assistant entry whenever the
+endpoint streamed it. The session view shows it apart from the answer; Eika
+replays it to the provider only when `preserve_thinking` is on. An assistant
+message can also include `metrics` with `run_id`, turn `usage`, last-call
+`context`, `generation_ms`, and `context_window`. This UI metadata restores
+the context view after replay and is never sent to the provider. A tool call's
 `arguments` is normally an object. If a model returns malformed JSON, it is a
 string with the exact malformed text, and the tool call has
 `arguments_malformed: true`. The marker is absent for valid JSON, including a
@@ -590,8 +702,9 @@ none.
 | `name` | string | What Eika, its users, and `spawn_agent` call it; unique across providers. Defaults to `model`. |
 | `context_window` | number, required | The total token budget. A run refuses a request that cannot fit. |
 | `max_output` | number, required | The most tokens one response may have; at most `context_window`. |
-| `reasoning_effort` | string | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Empty leaves it to the endpoint. |
-| `preserve_thinking` | boolean | Ask a compatible endpoint for `reasoning_content` and replay it on later turns. Off by default; the official OpenAI API rejects it. |
+| `reasoning_effort` | string | The `reasoning_effort` in force. Compatible endpoints disagree on the vocabulary, so any word of at most 32 letters, digits, hyphens, and underscores is accepted; empty leaves it to the endpoint. |
+| `reasoning_efforts` | string array | The efforts this model offers, in the order the UI cycles through them. At most 12, each a non-empty value of the shape above. |
+| `preserve_thinking` | boolean | Ask a compatible endpoint for `reasoning_content` and replay it on later turns. Off by default; the official OpenAI API rejects it. Reasoning is streamed to clients either way. |
 
 `201` with the `Model`; `400` for a bad field or an unknown provider; `409`
 when the name is taken.
@@ -622,6 +735,7 @@ the model is there. `400` with what the endpoint answered when it failed.
 | `id`, `provider_id`, `name`, `model` | string | The model, its provider, Eika's name for it, and the endpoint's. |
 | `context_window`, `max_output` | number | Its limits. |
 | `reasoning_effort` | string, optional | As on `POST`. |
+| `reasoning_efforts` | string array | As on `POST`; always present, empty when the model offers no choices. |
 | `preserve_thinking` | boolean | As on `POST`. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 

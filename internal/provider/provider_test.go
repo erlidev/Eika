@@ -3,6 +3,7 @@ package provider_test
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,12 +38,12 @@ func TestRegistryBuild(t *testing.T) {
 }
 
 func TestValidReasoningEffort(t *testing.T) {
-	for _, effort := range []string{"", "none", "minimal", "low", "medium", "high", "xhigh", "max"} {
+	for _, effort := range []string{"", "none", "minimal", "low", "medium", "high", "xhigh", "max", "HIGH", "think-harder", "ultra_2"} {
 		if !provider.ValidReasoningEffort(effort) {
 			t.Errorf("ValidReasoningEffort(%q) = false", effort)
 		}
 	}
-	for _, effort := range []string{"HIGH", "extreme", " low"} {
+	for _, effort := range []string{" low", "very high", "high!", strings.Repeat("x", provider.MaxReasoningEffortLen+1)} {
 		if provider.ValidReasoningEffort(effort) {
 			t.Errorf("ValidReasoningEffort(%q) = true", effort)
 		}

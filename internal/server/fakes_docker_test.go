@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/coder/websocket"
+
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/local"
 	"github.com/erlidev/eika/internal/provider"
@@ -326,6 +328,12 @@ func (h *fakeHost) Executor(ws workspace.Workspace) (executor.Executor, error) {
 		return nil, fmt.Errorf("%w: %s", workspace.ErrNoWorkspace, ws.ID)
 	}
 	return local.New(found.dir)
+}
+
+// Terminal is refused: the terminal proxy has tests of its own, against a
+// scripted sandbox, that need no database.
+func (h *fakeHost) Terminal(_ context.Context, ws workspace.Workspace, _, _ uint16) (*websocket.Conn, error) {
+	return nil, fmt.Errorf("the fake host has no terminal for %s", ws.ID)
 }
 
 // update records a new state for a workspace.

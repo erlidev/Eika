@@ -98,10 +98,11 @@ frames in both directions.
 | `type` | string | `input`, `output`, `resize`, or `exit`. |
 | `data` | base64 string | Terminal input (`input`) or output (`output`). |
 | `rows`, `cols` | number | New window size on `resize`. |
-| `exit_code` | number | The shell's exit status on `exit`. |
+| `exit_code` | number | The shell's exit status on `exit`. Absent means 0. |
 
 The client sends `input` and `resize`; the daemon sends `output` and, once the
-shell exits, a final `exit` before closing.
+shell exits, a final `exit` before closing. A message is at most 1 MiB, so a
+large paste arrives as one `input`.
 
 ## GET /watch?path=
 

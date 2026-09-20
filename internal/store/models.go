@@ -19,9 +19,12 @@ type Model struct {
 	ContextWindow int
 	// MaxOutput is the most tokens one response may have.
 	MaxOutput int
-	// ReasoningEffort is the Chat Completions reasoning_effort value; empty
-	// leaves it to the endpoint.
+	// ReasoningEffort is the Chat Completions reasoning_effort value in
+	// force; empty leaves it to the endpoint.
 	ReasoningEffort string
+	// ReasoningEfforts are the values this model offers, in the order the UI
+	// cycles through them. Empty means the model's effort is not cycled.
+	ReasoningEfforts []string
 	// PreserveThinking asks a compatible endpoint for reasoning content and
 	// replays it on later turns.
 	PreserveThinking bool
@@ -32,7 +35,7 @@ type Model struct {
 // modelColumns is the column list every model query selects, in the order
 // scanModel reads them.
 const modelColumns = `id, provider_id, name, model, context_window, max_output,
-	reasoning_effort, preserve_thinking, created_at, updated_at`
+	reasoning_effort, reasoning_efforts, preserve_thinking, created_at, updated_at`
 
 // CreateModel inserts m and returns it with the fields the database
 // assigned. An empty ID gets a fresh one; a duplicate name is ErrConflict and
@@ -42,11 +45,12 @@ func (s *Store) CreateModel(ctx context.Context, m Model) (Model, error) {
 		m.ID = NewID()
 	}
 	const q = `INSERT INTO models (id, provider_id, name, model, context_window, max_output,
-			reasoning_effort, preserve_thinking)
-		SELECT $1, id, $3, $4, $5, $6, $7, $8 FROM providers WHERE id = $2
+			reasoning_effort, reasoning_efforts, preserve_thinking)
+		SELECT $1, id, $3, $4, $5, $6, $7, $8, $9 FROM providers WHERE id = $2
 		RETURNING ` + modelColumns
 	out, err := scanModel(s.pool.QueryRow(ctx, q, m.ID, m.ProviderID, m.Name, m.Model,
-		m.ContextWindow, m.MaxOutput, m.ReasoningEffort, m.PreserveThinking))
+		m.ContextWindow, m.MaxOutput, m.ReasoningEffort, efforts(m.ReasoningEfforts),
+		m.PreserveThinking))
 	if err != nil {
 		return Model{}, wrap("create model "+m.Name, err)
 	}
@@ -98,11 +102,11 @@ func (s *Store) Models(ctx context.Context) ([]Model, error) {
 // ErrConflict.
 func (s *Store) UpdateModel(ctx context.Context, m Model) (Model, error) {
 	const q = `UPDATE models SET name = $2, model = $3, context_window = $4, max_output = $5,
-			reasoning_effort = $6, preserve_thinking = $7, updated_at = now()
+			reasoning_effort = $6, reasoning_efforts = $7, preserve_thinking = $8, updated_at = now()
 		WHERE id = $1
 		RETURNING ` + modelColumns
 	out, err := scanModel(s.pool.QueryRow(ctx, q, m.ID, m.Name, m.Model, m.ContextWindow,
-		m.MaxOutput, m.ReasoningEffort, m.PreserveThinking))
+		m.MaxOutput, m.ReasoningEffort, efforts(m.ReasoningEfforts), m.PreserveThinking))
 	if err != nil {
 		return Model{}, wrap("update model "+m.ID, err)
 	}
@@ -121,11 +125,20 @@ func (s *Store) DeleteModel(ctx context.Context, id string) error {
 	return nil
 }
 
+// efforts is the list a text[] column is written from: a nil slice would be
+// stored as NULL, which the column forbids.
+func efforts(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
+}
+
 // scanModel reads one model row.
 func scanModel(row pgx.Row) (Model, error) {
 	var m Model
 	if err := row.Scan(&m.ID, &m.ProviderID, &m.Name, &m.Model, &m.ContextWindow, &m.MaxOutput,
-		&m.ReasoningEffort, &m.PreserveThinking, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		&m.ReasoningEffort, &m.ReasoningEfforts, &m.PreserveThinking, &m.CreatedAt, &m.UpdatedAt); err != nil {
 		return Model{}, err
 	}
 	m.CreatedAt, m.UpdatedAt = m.CreatedAt.UTC(), m.UpdatedAt.UTC()

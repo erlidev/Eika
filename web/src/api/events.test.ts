@@ -79,6 +79,31 @@ describe("parseEvent", () => {
     expect(event.type).toBe("message.reset");
   });
 
+  it("accepts streamed reasoning and turn progress", () => {
+    for (const body of [
+      {
+        type: "reasoning.delta",
+        topic: "session:s1",
+        time: "2026-01-02T03:04:05Z",
+        payload: { run_id: "run-1", text: "thinking" },
+      },
+      {
+        type: "turn.progress",
+        topic: "session:s1",
+        time: "2026-01-02T03:04:05Z",
+        payload: {
+          run_id: "run-1",
+          usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+          context: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+          generation_ms: 500,
+          context_window: 8192,
+        },
+      },
+    ]) {
+      expect(parseEvent(body).type).toBe(body.type);
+    }
+  });
+
   it("accepts a drop report", () => {
     const event = parseEvent({
       type: "bus.dropped",

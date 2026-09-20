@@ -7,6 +7,7 @@ export {
   useCreateProvider,
   useDeleteModel,
   useDeleteProvider,
+  useModel,
   useModels,
   useProviders,
   useTestModel,

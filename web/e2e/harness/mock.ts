@@ -22,7 +22,7 @@ import type {
   Session,
   Workspace,
 } from "../../src/api/types.ts";
-import { entryKind, fixedNow, pathOf, syncSystem } from "./world.ts";
+import { entryKind, fixedNow, minutesAgo, pathOf, syncSystem } from "./world.ts";
 import type { ReplyStep, World } from "./world.ts";
 
 /** mockToken is the bearer token the mock harness issues and accepts. */
@@ -37,6 +37,8 @@ type Handler = (req: {
   params: string[];
   query: URLSearchParams;
   body: Record<string, unknown>;
+  /** raw is the body as sent, for a route whose body is not JSON. */
+  raw: string;
 }) => Reply | Promise<Reply>;
 
 type RouteDef = {
@@ -95,6 +97,12 @@ const statusCodes: Record<number, string> = {
   500: "internal",
 };
 
+/** terminalPath matches a workspace's terminal socket and captures its id. */
+const terminalPath = /^\/api\/workspaces\/([^/]+)\/terminal$/;
+
+/** mockCommit is the commit every commit and push reports. */
+const mockCommit = "9b2e4c1f7a3d5e6b8c0a1f2e3d4c5b6a7f8e9d0c";
+
 function ok(body: unknown, status = 200): Reply {
   return { status, body };
 }
@@ -105,6 +113,11 @@ function fail(status: number, code: string, message: string): Reply {
 
 function str(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+/** strings narrows a JSON body field to the list of strings it should be. */
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
 export class MockHarness {
@@ -166,6 +179,12 @@ export class MockHarness {
         this.accept(ws);
       },
     );
+    await context.routeWebSocket(
+      (url) => terminalPath.test(url.pathname),
+      (ws) => {
+        this.shell(ws);
+      },
+    );
     await context.route(
       (url) => url.pathname.startsWith("/api/"),
       (route) => this.serve(route),
@@ -222,6 +241,54 @@ export class MockHarness {
     for (const e of this.world.eventsOnConnect) ws.send(JSON.stringify(e));
   }
 
+  /**
+   * shell plays a terminal that echoes what is typed and prints a prompt
+   * after each line; `exit` ends it the way a shell that exits cleanly does,
+   * with no exit code. A workspace that is not running refuses the socket.
+   */
+  private shell(ws: WebSocketRoute): void {
+    const url = new URL(ws.url());
+    const id = decodeURIComponent(terminalPath.exec(url.pathname)?.[1] ?? "");
+    const workspace = this.world.workspaces.find((x) => x.id === id);
+    if (url.searchParams.get("token") !== mockToken || workspace?.state !== "running") {
+      void ws.close({ code: 1011, reason: "refused" });
+      return;
+    }
+    const out = (text: string) => {
+      ws.send(JSON.stringify({ type: "output", data: Buffer.from(text).toString("base64") }));
+    };
+    const prompt = `${workspace.name} $ `;
+    out(`Connected to ${workspace.name} (${workspace.branch}).\r\n${prompt}`);
+    let line = "";
+    ws.onMessage((data) => {
+      let frame: { type?: string; data?: string };
+      try {
+        frame = JSON.parse(typeof data === "string" ? data : data.toString()) as typeof frame;
+      } catch {
+        return;
+      }
+      if (frame.type !== "input" || frame.data === undefined) return;
+      for (const ch of Buffer.from(frame.data, "base64").toString("utf8")) {
+        if (ch === "\r") {
+          if (line.trim() === "exit") {
+            out("\r\n");
+            ws.send(JSON.stringify({ type: "exit" }));
+            void ws.close();
+            return;
+          }
+          out(`\r\n${prompt}`);
+          line = "";
+        } else if (ch === "\x7f") {
+          if (line !== "") out("\b \b");
+          line = line.slice(0, -1);
+        } else {
+          line += ch;
+          out(ch);
+        }
+      }
+    });
+  }
+
   private onFrame(socket: Socket, data: string): void {
     let frame: { type?: string; topics?: string[]; session_id?: string; since?: string };
     try {
@@ -265,7 +332,7 @@ export class MockHarness {
     this.busy += 1;
     try {
       let body: Record<string, unknown> = {};
-      const raw = request.postData();
+      const raw = request.postData() ?? undefined;
       if (raw) {
         try {
           body = JSON.parse(raw) as Record<string, unknown>;
@@ -310,6 +377,7 @@ export class MockHarness {
                 params: match.slice(1).map(decodeURIComponent),
                 query: url.searchParams,
                 body,
+                raw: raw ?? "",
               });
         break;
       }
@@ -549,7 +617,8 @@ export class MockHarness {
         model: str(body.model),
         context_window: Number(body.context_window) || 0,
         max_output: Number(body.max_output) || 0,
-        reasoning_effort: str(body.reasoning_effort) as Model["reasoning_effort"],
+        reasoning_effort: str(body.reasoning_effort),
+        reasoning_efforts: strings(body.reasoning_efforts),
         preserve_thinking: body.preserve_thinking === true,
         created_at: now(),
         updated_at: now(),
@@ -674,6 +743,128 @@ export class MockHarness {
           status: "",
         },
       );
+    });
+
+    // Files, commit, and push: the Files, Terminal, and Changes panels.
+    const running = (id: string | undefined) => {
+      const row = find(w.workspaces, id, "workspace");
+      if ("status" in row) return row;
+      if (row.state !== "running") return fail(409, "conflict", "workspace is not running");
+      return row;
+    };
+    const filesOf = (id: string) => (w.files[id] ??= {});
+    const entry = (id: string, path: string) => {
+      const files = filesOf(id);
+      const isDir = !(path in files);
+      const content = files[path] ?? "";
+      return {
+        name: path.split("/").at(-1) ?? path,
+        path,
+        size: isDir ? 4096 : Buffer.byteLength(content),
+        mode: isDir ? 0o755 : 0o644,
+        mod_time: minutesAgo(30),
+        is_dir: isDir,
+      };
+    };
+    const diffOf = (row: Workspace) =>
+      (w.diffs[row.id] ??= {
+        workspace_id: row.id,
+        base_commit: row.base_commit,
+        diff: "",
+        status: "",
+      });
+    const changed = (row: Workspace) => {
+      row.updated_at = now();
+      this.emit(
+        this.event("workspace.state", `workspace:${row.id}`, {
+          workspace_id: row.id,
+          project_id: row.project_id,
+          state: row.state,
+        }),
+      );
+    };
+    on("GET", "/api/workspaces/{id}/files", ({ params, query }) => {
+      const row = running(params[0]);
+      if ("status" in row) return row;
+      const dir = query.get("path") ?? "";
+      const prefix = dir === "" ? "" : `${dir}/`;
+      const children = new Set<string>();
+      for (const path of Object.keys(filesOf(row.id))) {
+        if (!path.startsWith(prefix)) continue;
+        const name = path.slice(prefix.length).split("/")[0] ?? "";
+        if (name !== "") children.add(prefix + name);
+      }
+      if (dir !== "" && children.size === 0) return fail(404, "not_found", "no such directory");
+      const entries = [...children].map((path) => entry(row.id, path));
+      entries.sort((a, b) =>
+        a.is_dir !== b.is_dir
+          ? a.is_dir
+            ? -1
+            : 1
+          : a.name < b.name
+            ? -1
+            : a.name > b.name
+              ? 1
+              : 0,
+      );
+      return ok({ entries });
+    });
+    on("GET", "/api/workspaces/{id}/file", ({ params, query }) => {
+      const row = running(params[0]);
+      if ("status" in row) return row;
+      const path = query.get("path") ?? "";
+      const content = filesOf(row.id)[path];
+      if (content === undefined) return fail(404, "not_found", "no such file");
+      const size = Buffer.byteLength(content);
+      const binary = content.includes("\u0000");
+      const tooLarge = size > 2 << 20;
+      return ok({
+        path,
+        size,
+        binary,
+        too_large: tooLarge,
+        content: binary || tooLarge ? "" : content,
+      });
+    });
+    on("PUT", "/api/workspaces/{id}/file", ({ params, query, raw }) => {
+      const row = running(params[0]);
+      if ("status" in row) return row;
+      const path = query.get("path") ?? "";
+      if (path === "" || path.startsWith("/") || path.split("/").includes("..")) {
+        return fail(403, "forbidden", "path escapes the workspace");
+      }
+      const files = filesOf(row.id);
+      const isNew = !(path in files);
+      files[path] = raw;
+      const diff = diffOf(row);
+      if (!diff.status.split("\n").some((line) => line.slice(3) === path)) {
+        diff.status += `${isNew ? "??" : " M"} ${path}\n`;
+      }
+      changed(row);
+      return ok(entry(row.id, path));
+    });
+    on("POST", "/api/workspaces/{id}/commit", ({ params, body }) => {
+      const row = running(params[0]);
+      if ("status" in row) return row;
+      if (str(body.message).trim() === "") {
+        return fail(400, "invalid_request", "message is required");
+      }
+      const diff = diffOf(row);
+      if (diff.status.trim() === "") return fail(409, "conflict", "nothing to commit");
+      diff.status = "";
+      changed(row);
+      return ok({ commit: mockCommit });
+    });
+    on("POST", "/api/workspaces/{id}/push", ({ params, body }) => {
+      const row = running(params[0]);
+      if ("status" in row) return row;
+      const upstream = body.upstream === true;
+      const project = w.projects.find((p) => p.id === row.project_id);
+      if (upstream && (project?.remote_url ?? "") === "") {
+        return fail(400, "invalid_request", "the project has no remote to push to");
+      }
+      changed(row);
+      return ok({ branch: row.branch, commit: mockCommit, upstream_pushed: upstream });
     });
 
     // Sessions.
@@ -849,6 +1040,29 @@ export class MockHarness {
       this.emit(this.event(type, topic, { run_id: turn, ...payload }));
     };
     const steps: ReplyStep[] = this.world.replies.shift() ?? [{ say: `Mock reply to: ${text}` }];
+    // The harness measures usage and generation time and reports both; the
+    // mock counts words and pauses, so a screenshot shows a meter with the
+    // shape of a real one.
+    let outputTokens = 0;
+    let generationMs = 0;
+    const progress = () => {
+      generationMs += this.stepDelayMs;
+      send("turn.progress", {
+        usage: {
+          input_tokens: 1842,
+          output_tokens: outputTokens,
+          total_tokens: 1842 + outputTokens,
+        },
+        context: {
+          input_tokens: 1842,
+          output_tokens: outputTokens,
+          total_tokens: 1842 + outputTokens,
+        },
+        generation_ms: generationMs,
+        context_window: 400_000,
+      });
+    };
+    let reasoning = "";
     try {
       this.append(session, { role: "user", content: text });
       send("turn.start", {
@@ -859,15 +1073,34 @@ export class MockHarness {
       for (const step of steps) {
         await pause();
         if (run.state !== "running") return;
-        if ("say" in step) {
+        if ("think" in step) {
+          const words = step.think.split(/(?<= )/);
+          const chunk = Math.max(1, Math.ceil(words.length / 3));
+          for (let i = 0; i < words.length; i += chunk) {
+            const part = words.slice(i, i + chunk).join("");
+            send("reasoning.delta", { text: part });
+            outputTokens += words.slice(i, i + chunk).length;
+            progress();
+            await pause();
+          }
+          // Reasoning belongs to the assistant message the model then writes.
+          reasoning = step.think;
+        } else if ("say" in step) {
           // Stream the prose in a few chunks so a mid-stream screenshot shows a partial reply.
           const words = step.say.split(/(?<= )/);
           const chunk = Math.max(1, Math.ceil(words.length / 4));
           for (let i = 0; i < words.length; i += chunk) {
             send("message.delta", { text: words.slice(i, i + chunk).join("") });
+            outputTokens += words.slice(i, i + chunk).length;
+            progress();
             await pause();
           }
-          this.append(session, { role: "assistant", content: step.say });
+          this.append(session, {
+            role: "assistant",
+            content: step.say,
+            ...(reasoning === "" ? {} : { reasoning }),
+          });
+          reasoning = "";
         } else if ("tool" in step) {
           const callId = this.nextId("call");
           send("tool.call", { call_id: callId, name: step.tool, arguments: step.args });
@@ -949,9 +1182,17 @@ export class MockHarness {
       await pause();
       if (run.state !== "running") return;
       this.finish(run, "done");
+      const usage = {
+        input_tokens: 1842,
+        output_tokens: Math.max(outputTokens, 311),
+        total_tokens: 1842 + Math.max(outputTokens, 311),
+      };
       send("turn.end", {
         stop_reason: "stop",
-        usage: { input_tokens: 1842, output_tokens: 311, total_tokens: 2153 },
+        usage,
+        context: usage,
+        generation_ms: Math.max(generationMs, 4000),
+        context_window: 400_000,
       });
     } finally {
       this.busy -= 1;

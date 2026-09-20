@@ -32,15 +32,27 @@ type ModelInfo struct {
 	MaxOutput int `json:"max_output,omitempty"`
 }
 
+// MaxReasoningEffortLen bounds one reasoning_effort value.
+const MaxReasoningEffortLen = 32
+
 // ValidReasoningEffort reports whether effort is a value Request accepts for
-// ReasoningEffort. The empty value leaves the choice to the endpoint.
+// ReasoningEffort. Compatible endpoints disagree on the vocabulary — OpenAI
+// takes minimal through high, others take none, xhigh, max, or a word of
+// their own — so this checks the shape a request field may carry rather than
+// a fixed list, and the user configures which words a model offers. The empty
+// value leaves the choice to the endpoint.
 func ValidReasoningEffort(effort string) bool {
-	switch effort {
-	case "", "none", "minimal", "low", "medium", "high", "xhigh", "max":
-		return true
-	default:
+	if len(effort) > MaxReasoningEffortLen {
 		return false
 	}
+	for _, r := range effort {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Role is the author of a conversation message.
@@ -62,13 +74,27 @@ const (
 type Message struct {
 	Role    Role   `json:"role"`
 	Content string `json:"content,omitempty"`
-	// Reasoning is model reasoning that a compatible provider requires on a
-	// later request. It is stored only when the provider is configured to
-	// preserve thinking and is not shown as assistant content.
+	// Reasoning is the model's reasoning for this message. It is kept apart
+	// from Content because it is not the assistant's answer: a client shows
+	// it as its own block, and only a provider configured to preserve
+	// thinking replays it on a later request.
 	Reasoning  string     `json:"reasoning,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 	IsError    bool       `json:"is_error,omitempty"`
+	// Metrics records the measured usage of an assistant response for session
+	// replay. Providers do not receive this metadata.
+	Metrics *MessageMetrics `json:"metrics,omitempty"`
+}
+
+// MessageMetrics is the measured state after one assistant response. It is
+// stored with the response so a session replay can restore its context meter.
+type MessageMetrics struct {
+	RunID         string `json:"run_id"`
+	Usage         Usage  `json:"usage"`
+	Context       Usage  `json:"context"`
+	GenerationMS  int64  `json:"generation_ms"`
+	ContextWindow int    `json:"context_window"`
 }
 
 // ToolArguments is the exact argument text received from a model. ToolCall
@@ -213,9 +239,9 @@ type Request struct {
 	MaxTokens int
 	// Temperature overrides the model default when it is not nil.
 	Temperature *float64
-	// ReasoningEffort selects how much a reasoning model thinks: one of
-	// "none", "minimal", "low", "medium", "high", "xhigh", or "max".
-	// Empty leaves it to the model.
+	// ReasoningEffort selects how much a reasoning model thinks. Its
+	// vocabulary belongs to the endpoint; ValidReasoningEffort bounds the
+	// shape. Empty leaves it to the model.
 	ReasoningEffort string
 	// PreserveThinking asks a compatible Chat Completions endpoint to return
 	// reasoning data and replays that data with later assistant messages.
@@ -237,8 +263,8 @@ type EventKind string
 const (
 	// KindTextDelta carries the next piece of assistant text.
 	KindTextDelta EventKind = "text_delta"
-	// KindReasoningDelta carries private reasoning that must be preserved for
-	// a later provider request but is not assistant-visible text.
+	// KindReasoningDelta carries model reasoning apart from assistant-visible
+	// text. A client may show it whether or not a later request preserves it.
 	KindReasoningDelta EventKind = "reasoning_delta"
 	// KindToolCallDelta carries the next fragment of a tool call's arguments.
 	KindToolCallDelta EventKind = "tool_call_delta"

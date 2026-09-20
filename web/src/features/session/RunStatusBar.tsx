@@ -1,9 +1,10 @@
 /**
- * The strip above the composer: what the run is doing, which model it uses,
- * what the last turn cost, and the way to abort.
+ * The strip above the composer: what the run is doing, which model it uses and
+ * how hard it is thinking, how full its context window is, how fast it is
+ * decoding, and the way to abort.
  */
 
-import { Loader2, Radio, Square, WifiOff } from "lucide-react";
+import { Brain, Loader2, Radio, Square, WifiOff } from "lucide-react";
 
 import type { StreamStatus } from "@/api/stream";
 import { useStreamStatus } from "@/api/useStream";
@@ -18,10 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ContextMeter, DecodeRate } from "@/features/session/ContextMeter";
 import { useAbortRun, useRunStatus } from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
-import { useModels, useProviders } from "@/features/providers";
-import { formatTokens } from "@/lib/format";
+import { useModel, useModels, useProviders, useUpdateModel } from "@/features/providers";
+import { nextEffort } from "@/features/providers/efforts";
+import type { Model } from "@/api/types";
 import { cn } from "@/lib/utils";
 
 export type RunStatusBarProps = {
@@ -38,10 +41,11 @@ export function RunStatusBar({ sessionId, model, onModelChange }: RunStatusBarPr
   const models = useModels();
   const providers = useProviders();
   const stream = useStreamStatus();
-  const usage = useSessionStore((s) => s.usage);
+  const meter = useSessionStore((s) => s.meter);
   const dropped = useSessionStore((s) => s.dropped);
   const run = status.data?.run;
   const active = status.data?.active ?? false;
+  const chosen = useModel(model);
 
   return (
     <div className="text-muted-foreground flex flex-wrap items-center gap-2 border-t px-3 py-1.5 text-xs">
@@ -81,11 +85,10 @@ export function RunStatusBar({ sessionId, model, onModelChange }: RunStatusBarPr
         </SelectContent>
       </Select>
 
-      {usage && (
-        <span className="font-mono tabular-nums">
-          {formatTokens(usage.input_tokens)} in · {formatTokens(usage.output_tokens)} out
-        </span>
-      )}
+      {chosen && <EffortCycle model={chosen} />}
+
+      {meter && <ContextMeter meter={meter} />}
+      {meter && <DecodeRate meter={meter} />}
 
       <span className="ml-auto flex items-center gap-2">
         {dropped > 0 && <span title="Events the connection lost">{dropped} dropped</span>}
@@ -157,5 +160,42 @@ function LiveUpdates({ status }: { status: StreamStatus }) {
       />
       {label}
     </span>
+  );
+}
+
+/**
+ * EffortCycle is how hard the model thinks, and the way to change it without
+ * leaving the session: one click moves to the next word in the model's own
+ * list. The list is the model's setting, so the change applies to the next
+ * run in any session that uses it, which is why the button says so.
+ */
+function EffortCycle({ model }: { model: Model }) {
+  const update = useUpdateModel();
+  const efforts = model.reasoning_efforts;
+  if (efforts.length === 0) return null;
+  const current = model.reasoning_effort ?? "";
+  const next = nextEffort(current, efforts);
+
+  return (
+    <button
+      type="button"
+      disabled={update.isPending}
+      title={
+        `Reasoning effort for ${model.name}: ${current === "" ? "the endpoint's default" : current}. ` +
+        `Click for ${next}. It applies to this model's next run, wherever it runs.`
+      }
+      className={cn(
+        "hover:bg-accent flex h-6 items-center gap-1 rounded-md border px-1.5 transition-colors",
+        "focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none",
+        "disabled:opacity-50",
+      )}
+      onClick={() => {
+        update.mutate({ id: model.id, input: { reasoning_effort: next } });
+      }}
+    >
+      <Brain aria-hidden className="size-3" />
+      <span className="sr-only">Reasoning effort, click to cycle: </span>
+      <span className="font-mono">{current === "" ? "default" : current}</span>
+    </button>
   );
 }

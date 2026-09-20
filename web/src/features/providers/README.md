@@ -15,11 +15,14 @@ serves, with the limits and reasoning settings a run uses.
   URL asks for the key again.
 - `ModelPicker.tsx` lists what the endpoint serves, lets the user tick models
   or type one, suggests limits with `limits.ts`, and adds them.
-- `ModelDialog.tsx` changes one model; `ModelsPanel.tsx` is the whole list,
-  the Models tab of the settings dialog.
+- `ModelDialog.tsx` changes one model, its reasoning vocabulary included:
+  endpoints disagree on the words `reasoning_effort` takes, so the model
+  carries the list and `efforts.ts` holds the rules for editing and cycling
+  through it. `ModelsPanel.tsx` is the whole list, the Models tab of the
+  settings dialog.
 
 The setup wizard (`features/setup`) uses the form and the picker for its
 first provider.
 
-Test it: `npm test -- providers` runs the limit, name, preset, and form
-rules.
+Test it: `npm test -- providers` runs the limit, name, preset, form, and
+reasoning-effort rules.

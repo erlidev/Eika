@@ -320,10 +320,14 @@ func TestModelRoutes(t *testing.T) {
 	a := newAPI(t)
 	created := decodeBody[modelWire](t, request(t, a.Server, "POST", "/api/models", map[string]any{
 		"provider_id": a.testProvider.ID, "model": "gpt-x", "context_window": 1000, "max_output": 100,
-		"reasoning_effort": "high", "preserve_thinking": true,
+		"reasoning_effort": "high", "reasoning_efforts": []string{"low", "high"},
+		"preserve_thinking": true,
 	}), 201)
 	if created.Name != "gpt-x" || created.ReasoningEffort != "high" || !created.PreserveThinking {
 		t.Errorf("created = %+v, want the name to default to the model", created)
+	}
+	if strings.Join(created.ReasoningEfforts, ",") != "low,high" {
+		t.Errorf("created efforts = %v, want the list as it was given", created.ReasoningEfforts)
 	}
 
 	for name, body := range map[string]map[string]any{
@@ -331,8 +335,11 @@ func TestModelRoutes(t *testing.T) {
 		"no model":               {"provider_id": a.testProvider.ID, "context_window": 10, "max_output": 1},
 		"output past the window": {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 11},
 		"no window":              {"provider_id": a.testProvider.ID, "model": "m", "max_output": 1},
-		"an unknown effort":      {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "reasoning_effort": "extreme"},
-		"a provider that is not": {"provider_id": "absent", "model": "m", "context_window": 10, "max_output": 1},
+		// The vocabulary belongs to the endpoint, so only the shape is checked.
+		"an effort with a space":   {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "reasoning_effort": "very high"},
+		"an empty effort choice":   {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "reasoning_efforts": []string{""}},
+		"duplicate effort choices": {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "reasoning_efforts": []string{"low", "low"}},
+		"a provider that is not":   {"provider_id": "absent", "model": "m", "context_window": 10, "max_output": 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := request(t, a.Server, "POST", "/api/models", body)
@@ -340,6 +347,18 @@ func TestModelRoutes(t *testing.T) {
 				t.Errorf("status = %d, want a rejection: %s", rec.Code, rec.Body.String())
 			}
 		})
+	}
+
+	// An effort the endpoint's own vocabulary uses is taken as it is.
+	custom := decodeBody[modelWire](t, request(t, a.Server, "POST", "/api/models", map[string]any{
+		"provider_id": a.testProvider.ID, "model": "qwen-x", "context_window": 1000, "max_output": 100,
+		"reasoning_effort": "think-harder",
+	}), 201)
+	if custom.ReasoningEffort != "think-harder" {
+		t.Errorf("custom effort = %q, want the endpoint's own word", custom.ReasoningEffort)
+	}
+	if rec := request(t, a.Server, "DELETE", "/api/models/"+custom.ID, nil); rec.Code != 204 {
+		t.Fatalf("delete = %d", rec.Code)
 	}
 
 	// Renaming the default keeps it the default.

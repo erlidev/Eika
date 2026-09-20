@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
+
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
@@ -50,6 +52,9 @@ type Workspaces interface {
 	Push(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Fetch(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Executor(ws workspace.Workspace) (executor.Executor, error)
+	// Terminal opens a shell in a running workspace for the person using it.
+	// It is not part of the executor, so no tool can reach a terminal.
+	Terminal(ctx context.Context, ws workspace.Workspace, rows, cols uint16) (*websocket.Conn, error)
 	HasImage(ctx context.Context, ref string) (bool, error)
 }
 
@@ -64,10 +69,12 @@ type Subagents interface {
 }
 
 // Hub is the part of the git hub the API uses: creating a project's
-// repository, mirroring a remote into it, and serving git over HTTP.
+// repository, mirroring a remote into it, pushing a branch back to that
+// remote, and serving git over HTTP.
 type Hub interface {
 	Init(ctx context.Context, project string) (string, error)
 	Mirror(ctx context.Context, project, remoteURL string, creds hub.Credentials) error
+	Push(ctx context.Context, project, remoteURL, refspec string, creds hub.Credentials) error
 	Handler() http.Handler
 }
 

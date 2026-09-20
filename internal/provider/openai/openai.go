@@ -58,7 +58,7 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request) (<-chan pro
 	go func() {
 		defer close(out)
 		defer stream.Close()
-		relay(ctx, stream, out, req.PreserveThinking)
+		relay(ctx, stream, out)
 	}()
 	return out, nil
 }
@@ -71,9 +71,13 @@ type chunkStream interface {
 }
 
 // relay converts SDK chunks into provider events until the stream ends.
-func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, preserveThinking bool) {
+// Usage is forwarded as soon as a chunk carries it, so an endpoint that
+// reports it per chunk lets the caller measure a decode rate while the
+// response is still arriving; an endpoint that reports it once still yields
+// exactly one usage event.
+func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 	acc := newToolCalls()
-	var usage provider.Usage
+	var usage, reported provider.Usage
 	var stop string
 	send := func(e provider.Event) bool {
 		select {
@@ -82,6 +86,13 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, p
 		case <-ctx.Done():
 			return false
 		}
+	}
+	sendUsage := func() bool {
+		if usage == (provider.Usage{}) || usage == reported {
+			return true
+		}
+		reported = usage
+		return send(provider.Event{Kind: provider.KindUsage, Usage: usage})
 	}
 
 	for stream.Next() {
@@ -100,9 +111,11 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, p
 			if choice.Delta.Content != "" && !send(provider.TextDelta(choice.Delta.Content)) {
 				return
 			}
-			if preserveThinking {
-				reasoning := reasoningContent(choice.Delta)
-				if reasoning != "" && !send(provider.Event{
+			// Reasoning is relayed whatever the preserve_thinking setting is:
+			// showing the model thinking is the client's business, and
+			// replaying it to the endpoint is the request's.
+			if reasoning := reasoningContent(choice.Delta); reasoning != "" {
+				if !send(provider.Event{
 					Kind:           provider.KindReasoningDelta,
 					ReasoningDelta: reasoning,
 				}) {
@@ -122,6 +135,9 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, p
 				}
 			}
 		}
+		if !sendUsage() {
+			return
+		}
 	}
 	if err := stream.Err(); err != nil {
 		send(provider.Errorf(streamError(err)))
@@ -134,7 +150,7 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, p
 	// A response cut off by the token limit leaves the last tool call's
 	// arguments half-written, so report the stop instead of running it.
 	if stop == "length" {
-		if usage != (provider.Usage{}) && !send(provider.Event{Kind: provider.KindUsage, Usage: usage}) {
+		if !sendUsage() {
 			return
 		}
 		send(provider.Done(stop))
@@ -151,7 +167,7 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, p
 			return
 		}
 	}
-	if usage != (provider.Usage{}) && !send(provider.Event{Kind: provider.KindUsage, Usage: usage}) {
+	if !sendUsage() {
 		return
 	}
 	send(provider.Done(stop))

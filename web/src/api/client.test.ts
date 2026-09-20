@@ -22,6 +22,15 @@ describe("parseApiError", () => {
   });
 
   it.each([
+    [403, "forbidden"],
+    [413, "too_large"],
+    [409, "conflict"],
+  ])("reads the code of a %i the harness names", (status, code) => {
+    expect(parseApiError(status, { error: { code, message: "refused" } }).code).toBe(code);
+    expect(parseApiError(status, "<html>").code).toBe(code);
+  });
+
+  it.each([
     [502, /did not answer \(HTTP 502\)/],
     [500, /unexpected error/],
     [404, /no such route \(HTTP 404\)/],

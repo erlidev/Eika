@@ -18,6 +18,11 @@ func (s *Server) routes() {
 	// harness that has no database; every other route reads or writes rows.
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/events", s.handleEvents)
+	// A terminal reaches the workspace host and nothing else, so it is served
+	// whenever there is a host.
+	if s.deps.Workspaces != nil {
+		api.HandleFunc("GET /api/workspaces/{id}/terminal", s.handleTerminal)
+	}
 	if s.deps.Store != nil {
 		// Setup and sign-in are how a browser gets a token, so they are the
 		// routes under /api that need none.
@@ -59,6 +64,11 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /api/workspaces/{id}/stop", s.handleStopWorkspace)
 	api.HandleFunc("POST /api/workspaces/{id}/merge", s.handleMergeWorkspace)
 	api.HandleFunc("GET /api/workspaces/{id}/diff", s.handleWorkspaceDiff)
+	api.HandleFunc("POST /api/workspaces/{id}/commit", s.handleCommitWorkspace)
+	api.HandleFunc("POST /api/workspaces/{id}/push", s.handlePushWorkspace)
+	api.HandleFunc("GET /api/workspaces/{id}/files", s.handleListFiles)
+	api.HandleFunc("GET /api/workspaces/{id}/file", s.handleReadFile)
+	api.HandleFunc("PUT /api/workspaces/{id}/file", s.handleWriteFile)
 
 	api.HandleFunc("GET /api/sessions", s.handleListSessions)
 	api.HandleFunc("POST /api/sessions", s.handleCreateSession)

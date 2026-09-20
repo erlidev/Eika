@@ -351,14 +351,15 @@ type settingsWire struct {
 }
 
 type modelWire struct {
-	ID               string `json:"id"`
-	ProviderID       string `json:"provider_id"`
-	Name             string `json:"name"`
-	Model            string `json:"model"`
-	ContextWindow    int    `json:"context_window"`
-	MaxOutput        int    `json:"max_output"`
-	ReasoningEffort  string `json:"reasoning_effort"`
-	PreserveThinking bool   `json:"preserve_thinking"`
+	ID               string   `json:"id"`
+	ProviderID       string   `json:"provider_id"`
+	Name             string   `json:"name"`
+	Model            string   `json:"model"`
+	ContextWindow    int      `json:"context_window"`
+	MaxOutput        int      `json:"max_output"`
+	ReasoningEffort  string   `json:"reasoning_effort"`
+	ReasoningEfforts []string `json:"reasoning_efforts"`
+	PreserveThinking bool     `json:"preserve_thinking"`
 }
 
 type modelsWire struct {

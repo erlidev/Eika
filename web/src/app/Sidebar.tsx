@@ -382,7 +382,7 @@ function SessionRow({
     <li>
       <div
         className={cn(
-          "group hover:bg-accent/50 flex items-center gap-1 rounded-md pr-1",
+          "group hover:bg-accent flex items-center gap-1 rounded-md pr-1 transition-colors",
           current && "bg-accent",
         )}
       >
@@ -434,7 +434,7 @@ type RowProps = {
 
 function Row({ depth, open, onToggle, icon, label, meta, actions }: RowProps) {
   return (
-    <div className="group hover:bg-accent/50 flex items-center gap-1 rounded-md pr-1">
+    <div className="group hover:bg-accent flex items-center gap-1 rounded-md pr-1 transition-colors">
       <button
         type="button"
         aria-expanded={open}

@@ -23,7 +23,17 @@ func TestMessageEntryRoundTrip(t *testing.T) {
 		},
 		{
 			name: "assistant text",
-			msg:  provider.AssistantMessageWithReasoning("on it", "private analysis", nil),
+			msg: func() provider.Message {
+				m := provider.AssistantMessageWithReasoning("on it", "private analysis", nil)
+				m.Metrics = &provider.MessageMetrics{
+					RunID:         "run-1",
+					Usage:         provider.Usage{InputTokens: 10, OutputTokens: 2, TotalTokens: 12},
+					Context:       provider.Usage{InputTokens: 10, OutputTokens: 2, TotalTokens: 12},
+					GenerationMS:  500,
+					ContextWindow: 8192,
+				}
+				return m
+			}(),
 			kind: store.KindAssistant,
 		},
 		{
@@ -170,6 +180,12 @@ func TestMessageEntryRejectsUnknownRole(t *testing.T) {
 // that arrived without arguments comes back as an empty object.
 func sameMessage(a, b provider.Message) bool {
 	if a.Role != b.Role || a.Content != b.Content || a.Reasoning != b.Reasoning || a.ToolCallID != b.ToolCallID || a.IsError != b.IsError {
+		return false
+	}
+	if (a.Metrics == nil) != (b.Metrics == nil) {
+		return false
+	}
+	if a.Metrics != nil && b.Metrics != nil && *a.Metrics != *b.Metrics {
 		return false
 	}
 	if len(a.ToolCalls) != len(b.ToolCalls) {

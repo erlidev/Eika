@@ -1,5 +1,6 @@
 /** The form that changes one model: its name, its identifier, its limits, and its reasoning. */
 
+import { Plus, X } from "lucide-react";
 import { useState } from "react";
 
 import type { Model, ReasoningEffort } from "@/api/types";
@@ -15,16 +16,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { commonEfforts, effortProblem } from "@/features/providers/efforts";
 import { FieldProblem, NumberField } from "@/features/providers/ModelPicker";
 import { useModels, useUpdateModel } from "@/features/providers/queries";
+import { cn } from "@/lib/utils";
 
 export type ModelDialogProps = {
   /** model is the model being changed; null closes the dialog. */
@@ -32,20 +28,8 @@ export type ModelDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-/**
- * efforts are the reasoning_effort choices. A select item cannot have an
- * empty value, so "endpoint default" stands for the empty string.
- */
-const efforts: readonly { value: string; effort: ReasoningEffort; label: string }[] = [
-  { value: "default", effort: "", label: "Endpoint default" },
-  { value: "none", effort: "none", label: "None" },
-  { value: "minimal", effort: "minimal", label: "Minimal" },
-  { value: "low", effort: "low", label: "Low" },
-  { value: "medium", effort: "medium", label: "Medium" },
-  { value: "high", effort: "high", label: "High" },
-  { value: "xhigh", effort: "xhigh", label: "Extra high" },
-  { value: "max", effort: "max", label: "Max" },
-];
+/** endpointDefault stands for the empty effort, which a chip cannot hold. */
+const endpointDefault = "";
 
 export function ModelDialog({ model, onOpenChange }: ModelDialogProps) {
   return (
@@ -80,7 +64,8 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
   const [id, setId] = useState(model.model);
   const [window, setWindow] = useState(model.context_window);
   const [output, setOutput] = useState(model.max_output);
-  const [effort, setEffort] = useState<ReasoningEffort>(model.reasoning_effort ?? "");
+  const [effort, setEffort] = useState<ReasoningEffort>(model.reasoning_effort ?? endpointDefault);
+  const [efforts, setEfforts] = useState<ReasoningEffort[]>(model.reasoning_efforts);
   const [preserve, setPreserve] = useState(model.preserve_thinking);
 
   // Each problem belongs to one field and is shown right under it.
@@ -125,6 +110,7 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
               context_window: window,
               max_output: output,
               reasoning_effort: effort,
+              reasoning_efforts: efforts,
               preserve_thinking: preserve,
             },
           },
@@ -188,31 +174,17 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
         />
       </div>
 
-      <div className="space-y-1">
-        <Label htmlFor="model-effort" className="text-xs">
-          Reasoning effort
-        </Label>
-        <Select
-          value={efforts.find((e) => e.effort === effort)?.value ?? "default"}
-          onValueChange={(value) => {
-            setEffort(efforts.find((e) => e.value === value)?.effort ?? "");
-          }}
-        >
-          <SelectTrigger id="model-effort" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {efforts.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-muted-foreground text-xs">
-          Sent as reasoning_effort. Leave it to the endpoint unless the model supports it.
-        </p>
-      </div>
+      <EffortField
+        effort={effort}
+        efforts={efforts}
+        onEffortChange={setEffort}
+        onEffortsChange={(next) => {
+          setEfforts(next);
+          // An effort the list no longer holds cannot stay in force: the
+          // status bar cycles through this list and would never return to it.
+          if (effort !== endpointDefault && !next.includes(effort)) setEffort(endpointDefault);
+        }}
+      />
 
       <div className="flex items-start justify-between gap-4 rounded-md border p-3">
         <div className="space-y-0.5">
@@ -241,5 +213,150 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+/**
+ * EffortField is the model's reasoning vocabulary: the words this endpoint
+ * accepts, and which of them is in force. The status bar cycles through the
+ * list in this order, so the order is the user's.
+ */
+function EffortField({
+  effort,
+  efforts,
+  onEffortChange,
+  onEffortsChange,
+}: {
+  effort: ReasoningEffort;
+  efforts: readonly ReasoningEffort[];
+  onEffortChange: (effort: ReasoningEffort) => void;
+  onEffortsChange: (efforts: ReasoningEffort[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const add = () => {
+    const why = effortProblem(draft, efforts);
+    setProblem(why);
+    if (why !== null) return;
+    const added = draft.trim();
+    onEffortsChange([...efforts, added]);
+    // The first word a model is given is the one it should use.
+    if (efforts.length === 0) onEffortChange(added);
+    setDraft("");
+  };
+
+  const remove = (gone: ReasoningEffort) => {
+    onEffortsChange(efforts.filter((e) => e !== gone));
+    setProblem(null);
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="model-effort">Reasoning efforts</Label>
+      <p className="text-muted-foreground text-xs">
+        Sent as reasoning_effort. Add the words this endpoint accepts; the session&apos;s status bar
+        cycles through them in this order. Pick the one a new run starts on.
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        <EffortChip
+          label="Endpoint default"
+          chosen={effort === endpointDefault}
+          onChoose={() => {
+            onEffortChange(endpointDefault);
+          }}
+        />
+        {efforts.map((option) => (
+          <EffortChip
+            key={option}
+            label={option}
+            mono
+            chosen={effort === option}
+            onChoose={() => {
+              onEffortChange(option);
+            }}
+            onRemove={() => {
+              remove(option);
+            }}
+          />
+        ))}
+      </div>
+      <div className="flex gap-1.5">
+        <Input
+          id="model-effort"
+          value={draft}
+          list="model-effort-suggestions"
+          placeholder="high"
+          className="font-mono"
+          aria-label="Add a reasoning effort"
+          aria-invalid={problem !== null}
+          aria-describedby={problem === null ? undefined : "model-effort-problem"}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setProblem(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            // The field sits inside the model form; Enter adds a word here
+            // rather than saving the model.
+            e.preventDefault();
+            add();
+          }}
+        />
+        <datalist id="model-effort-suggestions">
+          {commonEfforts.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+        <Button type="button" variant="outline" onClick={add}>
+          <Plus aria-hidden />
+          Add
+        </Button>
+      </div>
+      <FieldProblem id="model-effort-problem" message={problem ?? undefined} />
+    </div>
+  );
+}
+
+/** EffortChip is one word in the model's vocabulary, and whether it is in force. */
+function EffortChip({
+  label,
+  chosen,
+  mono = false,
+  onChoose,
+  onRemove,
+}: {
+  label: string;
+  chosen: boolean;
+  mono?: boolean;
+  onChoose: () => void;
+  onRemove?: () => void;
+}) {
+  return (
+    <span
+      className={cn(
+        "flex items-center rounded-md border text-xs transition-colors",
+        chosen ? "border-primary bg-primary/10 text-foreground" : "hover:bg-accent",
+      )}
+    >
+      <button
+        type="button"
+        aria-pressed={chosen}
+        className={cn("py-1 pl-2", onRemove === undefined && "pr-2", mono && "font-mono")}
+        onClick={onChoose}
+      >
+        {label}
+      </button>
+      {onRemove && (
+        <button
+          type="button"
+          aria-label={`Remove ${label}`}
+          className="hover:text-destructive py-1 pr-1.5 pl-1"
+          onClick={onRemove}
+        >
+          <X aria-hidden className="size-3" />
+        </button>
+      )}
+    </span>
   );
 }

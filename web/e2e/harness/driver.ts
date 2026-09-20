@@ -120,6 +120,15 @@ export class EikaDriver {
     // A fixed clock keeps "5 minutes ago" the same in every screenshot while
     // timers still run, so streamed replies still arrive.
     await page.clock.setFixedTime(new Date(fixedNow));
+    // The fake clock's `performance` records no entries, and Monaco reads
+    // back the typing-latency measure it just made; answer it with a zero.
+    await page.addInitScript(() => {
+      const entries = performance.getEntriesByName.bind(performance);
+      performance.getEntriesByName = (name: string, type?: string) => {
+        const found = entries(name, type);
+        return found.length > 0 ? found : ([{ name, duration: 0 }] as PerformanceEntryList);
+      };
+    });
     // A target that is not there fails in seconds, not Playwright's 30.
     page.setDefaultTimeout(10_000);
     const driver = new EikaDriver(page, mock);

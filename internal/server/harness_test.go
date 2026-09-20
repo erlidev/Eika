@@ -74,6 +74,15 @@ type fakeHub struct {
 	// mirrorErr fails every Mirror when set, the way a remote refusing a
 	// token does.
 	mirrorErr error
+	// pushes records every push to a remote; pushErr fails them.
+	pushes  []hubPush
+	pushErr error
+}
+
+// hubPush is one push the API asked the hub for.
+type hubPush struct {
+	project, remoteURL, refspec string
+	creds                       hub.Credentials
 }
 
 // newFakeHub returns an empty hub.
@@ -109,6 +118,17 @@ func (h *fakeHub) Mirror(_ context.Context, project, remoteURL string, creds hub
 	}
 	h.mirrored[project] = remoteURL
 	h.credentials[project] = creds
+	return nil
+}
+
+// Push records a push to a project's remote.
+func (h *fakeHub) Push(_ context.Context, project, remoteURL, refspec string, creds hub.Credentials) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.pushErr != nil {
+		return h.pushErr
+	}
+	h.pushes = append(h.pushes, hubPush{project: project, remoteURL: remoteURL, refspec: refspec, creds: creds})
 	return nil
 }
 

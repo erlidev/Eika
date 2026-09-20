@@ -122,7 +122,7 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
                   choose(option);
                 }}
                 className={cn(
-                  "hover:bg-muted/60 focus-visible:ring-ring/50 rounded-md border px-3 py-2 text-left transition-colors outline-none focus-visible:ring-3",
+                  "hover:bg-accent focus-visible:ring-ring/50 rounded-md border px-3 py-2 text-left transition-colors outline-none focus-visible:ring-3",
                   presetId === option.id && "border-primary bg-muted/60 ring-primary/20 ring-2",
                 )}
               >

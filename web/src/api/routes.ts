@@ -8,16 +8,22 @@ import { request, requestEmpty } from "@/api/client";
 import type { Connection } from "@/api/connection";
 import type {
   AuthStatus,
+  CommitRequest,
+  CommitResult,
   CreateModel,
   CreateProject,
   CreateProvider,
   CreateWorkspace,
   Entry,
+  FileContent,
+  FileEntry,
   Model,
   ModelInfo,
   Models,
   PostMessage,
   ProbeProvider,
+  PushRequest,
+  PushResult,
   Project,
   Provider,
   Providers,
@@ -112,6 +118,56 @@ export function deleteWorkspace(id: string): Promise<void> {
 /** getWorkspaceDiff reads the workspace's changes against its base commit. */
 export function getWorkspaceDiff(id: string, signal?: AbortSignal): Promise<WorkspaceDiff> {
   return request<WorkspaceDiff>(`/api/workspaces/${encodeURIComponent(id)}/diff`, { signal });
+}
+
+/** listWorkspaceFiles lists one directory of a workspace; "" is the root. */
+export async function listWorkspaceFiles(
+  id: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<FileEntry[]> {
+  const body = await request<{ entries: FileEntry[] }>(
+    `/api/workspaces/${encodeURIComponent(id)}/files`,
+    { query: { path }, signal },
+  );
+  return body.entries;
+}
+
+/** readWorkspaceFile reads one text file of a workspace. */
+export function readWorkspaceFile(
+  id: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<FileContent> {
+  return request<FileContent>(`/api/workspaces/${encodeURIComponent(id)}/file`, {
+    query: { path },
+    signal,
+  });
+}
+
+/** writeWorkspaceFile replaces a file's contents and returns its new entry. */
+export function writeWorkspaceFile(id: string, path: string, content: string): Promise<FileEntry> {
+  return request<FileEntry>(`/api/workspaces/${encodeURIComponent(id)}/file`, {
+    method: "PUT",
+    query: { path },
+    text: content,
+  });
+}
+
+/** commitWorkspace commits the workspace's changes, or only the given paths. */
+export function commitWorkspace(id: string, input: CommitRequest): Promise<CommitResult> {
+  return request<CommitResult>(`/api/workspaces/${encodeURIComponent(id)}/commit`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+/** pushWorkspace pushes the workspace's branch to the hub, and upstream when asked. */
+export function pushWorkspace(id: string, input: PushRequest): Promise<PushResult> {
+  return request<PushResult>(`/api/workspaces/${encodeURIComponent(id)}/push`, {
+    method: "POST",
+    body: input,
+  });
 }
 
 /** listSessions lists sessions, optionally of one workspace. */

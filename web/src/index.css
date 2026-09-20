@@ -14,8 +14,10 @@
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
-  --text-base: 0.875rem;
-  --text-base--line-height: 1.375rem;
+  /* text-base is the transcript's reading size: prose is read for minutes at
+     a time, so it is larger and looser than the chrome around it. */
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.625rem;
 }
 
 @theme inline {
@@ -108,6 +110,10 @@
   --sidebar-accent-foreground: oklch(0.201 0.022 251.8);
   --sidebar-border: oklch(0.911 0.01 252.8);
   --sidebar-ring: oklch(0.536 0.089 205);
+  /* The scrollbar is furniture: visible enough to grab, quiet enough to read
+     a transcript past. */
+  --scrollbar: oklch(0.82 0.014 252.8);
+  --scrollbar-hover: oklch(0.68 0.02 252.8);
 }
 
 .dark {
@@ -144,6 +150,8 @@
   --sidebar-accent-foreground: oklch(0.943 0.011 243.7);
   --sidebar-border: oklch(0.304 0.027 248.7);
   --sidebar-ring: oklch(0.745 0.11 201);
+  --scrollbar: oklch(0.36 0.026 248.7);
+  --scrollbar-hover: oklch(0.48 0.028 248.7);
 }
 
 @layer base {
@@ -155,6 +163,63 @@
   }
   html {
     @apply font-sans;
+  }
+
+  /*
+   * Anything that acts on a click says so under the pointer. Tailwind v4
+   * dropped the browser default on buttons, and a dense tool has far more
+   * clickable rows than it has buttons, so the rule is stated once here for
+   * every control the app builds from, rather than per component.
+   */
+  button:not(:disabled),
+  summary,
+  label[for],
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="menuitemradio"]:not([aria-disabled="true"]),
+  [role="menuitemcheckbox"]:not([aria-disabled="true"]),
+  [role="switch"]:not([aria-disabled="true"]),
+  [role="checkbox"]:not([aria-disabled="true"]),
+  [role="radio"]:not([aria-disabled="true"]),
+  [role="treeitem"]:not([aria-disabled="true"]),
+  [role="combobox"]:not([aria-disabled="true"]),
+  [role="link"],
+  a[href] {
+    cursor: pointer;
+  }
+
+  /*
+   * Scrollbars. The platform default is a wide, opaque bar that cuts across a
+   * dense layout; these are thin, follow the theme, and only darken under the
+   * pointer. Firefox takes the standard properties, WebKit and Chromium the
+   * pseudo-elements, so both are stated.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 0.625rem;
+    height: 0.625rem;
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar);
+    border: 3px solid transparent;
+    border-radius: calc(infinity * 1px);
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-hover);
   }
 }
 

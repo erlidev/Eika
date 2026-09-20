@@ -193,7 +193,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 	})
 
 	var steered []string
-	var usage event.Usage
+	var gen generation
 	// restoreFrom keeps the durably stored prefix and takes back the suffix.
 	// Queue messages in the suffix return to the queue they came from.
 	restoreFrom := func(stored int) {
@@ -222,14 +222,11 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 			return a.fail(ctx, s, runID, fmt.Errorf("run turn: %w", err))
 		}
 
-		reply, turnUsage, stop, err := a.call(ctx, s, runID, system)
+		reply, stop, err := a.call(ctx, s, runID, system, &gen)
 		if err != nil {
 			restoreFrom(0)
 			return a.fail(ctx, s, runID, err)
 		}
-		usage.InputTokens += turnUsage.InputTokens
-		usage.OutputTokens += turnUsage.OutputTokens
-		usage.TotalTokens += turnUsage.TotalTokens
 		// The model has seen the pending messages; they are delivered for
 		// good and can be persisted.
 		for i, m := range pending {
@@ -240,6 +237,15 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 		}
 		pending, pendingMark = nil, -1
 		msgs, steered, origin = nil, nil, nil
+		if gen.context != (event.Usage{}) {
+			reply.Metrics = &provider.MessageMetrics{
+				RunID:         runID,
+				Usage:         providerUsage(gen.usage),
+				Context:       providerUsage(gen.context),
+				GenerationMS:  gen.elapsed.Milliseconds(),
+				ContextWindow: a.opts.ContextWindow,
+			}
+		}
 		appendReply := a.append
 		if len(reply.ToolCalls) != 0 {
 			appendReply = a.appendTerminal
@@ -249,9 +255,16 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 		}
 
 		if len(reply.ToolCalls) == 0 {
-			a.emit(ctx, s, event.TypeTurnEnd, event.TurnEnd{RunID: runID, StopReason: stop, Usage: usage})
+			a.emit(ctx, s, event.TypeTurnEnd, event.TurnEnd{
+				RunID:         runID,
+				StopReason:    stop,
+				Usage:         gen.usage,
+				Context:       gen.context,
+				GenerationMS:  gen.elapsed.Milliseconds(),
+				ContextWindow: a.opts.ContextWindow,
+			})
 			a.opts.Logger.Info("turn finished",
-				"session_id", s.ID, "run_id", runID, "total_tokens", usage.TotalTokens)
+				"session_id", s.ID, "run_id", runID, "total_tokens", gen.usage.TotalTokens)
 			return nil
 		}
 		for i, call := range reply.ToolCalls {
@@ -298,13 +311,56 @@ func (a *Agent) abandonToolCalls(ctx context.Context, s *Session, runID string, 
 	return joined
 }
 
+// generation is what a turn has measured about the model responses it has
+// consumed so far: the usage the provider reported and the wall time spent
+// producing it. turn.progress and turn.end report both, so a client can state
+// a decode rate that was measured rather than guessed.
+type generation struct {
+	usage   event.Usage
+	elapsed time.Duration
+	// context is the last model call's own usage: the prompt it sent plus
+	// what it produced, which is what fills the model's context window.
+	context event.Usage
+}
+
+// add folds one finished model response into the turn's totals.
+func (g *generation) add(u provider.Usage, elapsed time.Duration) {
+	g.usage.InputTokens += u.InputTokens
+	g.usage.OutputTokens += u.OutputTokens
+	g.usage.TotalTokens += u.TotalTokens
+	g.elapsed += elapsed
+	if u != (provider.Usage{}) {
+		g.context = event.Usage{
+			InputTokens:  u.InputTokens,
+			OutputTokens: u.OutputTokens,
+			TotalTokens:  u.TotalTokens,
+		}
+	}
+}
+
+// providerUsage converts the event protocol's usage shape to the provider
+// message shape stored with an assistant response.
+func providerUsage(u event.Usage) provider.Usage {
+	return provider.Usage{
+		InputTokens:  u.InputTokens,
+		OutputTokens: u.OutputTokens,
+		TotalTokens:  u.TotalTokens,
+	}
+}
+
 // call sends the conversation to the model, streaming the response as
 // message.delta events, and retries a retryable failure with backoff.
-func (a *Agent) call(ctx context.Context, s *Session, runID, system string) (provider.Message, provider.Usage, string, error) {
+func (a *Agent) call(ctx context.Context, s *Session, runID, system string, gen *generation) (provider.Message, string, error) {
+	messages := s.Conversation.Messages()
+	for i := range messages {
+		// Metrics belong to session replay. They are not conversation content
+		// and no provider receives them.
+		messages[i].Metrics = nil
+	}
 	req := provider.Request{
 		Model:            a.opts.Model,
 		System:           system,
-		Messages:         s.Conversation.Messages(),
+		Messages:         messages,
 		MaxTokens:        a.opts.MaxTokens,
 		Temperature:      a.opts.Temperature,
 		ReasoningEffort:  a.opts.ReasoningEffort,
@@ -314,20 +370,20 @@ func (a *Agent) call(ctx context.Context, s *Session, runID, system string) (pro
 		req.Tools = a.tools.Schemas()
 	}
 	if err := withinContextWindow(req, a.opts.ContextWindow); err != nil {
-		return provider.Message{}, provider.Usage{}, "", err
+		return provider.Message{}, "", err
 	}
 
 	backoff := a.opts.RetryBackoff
 	for attempt := 0; ; attempt++ {
-		msg, usage, stop, err := a.stream(ctx, s, runID, req)
+		msg, stop, err := a.stream(ctx, s, runID, req, gen)
 		if err == nil {
-			return msg, usage, stop, nil
+			return msg, stop, nil
 		}
 		if ctx.Err() != nil {
-			return provider.Message{}, provider.Usage{}, "", fmt.Errorf("call model: %w", ctx.Err())
+			return provider.Message{}, "", fmt.Errorf("call model: %w", ctx.Err())
 		}
 		if !provider.Retryable(err) || attempt >= a.opts.MaxRetries {
-			return provider.Message{}, provider.Usage{}, "", err
+			return provider.Message{}, "", err
 		}
 		a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
 		wait := min(backoff, maxRetryBackoff)
@@ -339,55 +395,97 @@ func (a *Agent) call(ctx context.Context, s *Session, runID, system string) (pro
 		select {
 		case <-time.After(wait):
 		case <-ctx.Done():
-			return provider.Message{}, provider.Usage{}, "", fmt.Errorf("call model: %w", ctx.Err())
+			return provider.Message{}, "", fmt.Errorf("call model: %w", ctx.Err())
 		}
 		backoff *= 2
 	}
 }
 
-// stream consumes one provider response.
-func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request) (provider.Message, provider.Usage, string, error) {
+// stream consumes one provider response. It emits the answer and the model's
+// reasoning as they arrive, and a turn.progress event each time the endpoint
+// reports usage, timed from the response's first token so that the rate a
+// client derives is measured rather than estimated.
+func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation) (provider.Message, string, error) {
 	events, err := a.provider.Stream(ctx, req)
 	if err != nil {
-		return provider.Message{}, provider.Usage{}, "", fmt.Errorf("call model: %w", err)
+		return provider.Message{}, "", fmt.Errorf("call model: %w", err)
 	}
 	var text strings.Builder
 	var reasoning strings.Builder
 	var calls []provider.ToolCall
 	var usage provider.Usage
 	var stop string
+	// started is the moment the response began producing tokens; the time
+	// before it is the endpoint's queue and prefill, not its decode rate.
+	var started time.Time
+	begin := func() {
+		if started.IsZero() {
+			started = time.Now()
+		}
+	}
 	done := false
 	for e := range events {
 		if done {
-			return provider.Message{}, provider.Usage{}, "", errors.New("call model: provider sent an event after completion")
+			return provider.Message{}, "", errors.New("call model: provider sent an event after completion")
 		}
 		switch e.Kind {
 		case provider.KindTextDelta:
+			begin()
 			text.WriteString(e.Text)
 			a.emit(ctx, s, event.TypeMessageDelta, event.MessageDelta{RunID: runID, Text: e.Text})
 		case provider.KindReasoningDelta:
+			begin()
 			reasoning.WriteString(e.ReasoningDelta)
+			a.emit(ctx, s, event.TypeReasoningDelta, event.ReasoningDelta{RunID: runID, Text: e.ReasoningDelta})
+		case provider.KindToolCallDelta:
+			begin()
 		case provider.KindToolCall:
 			calls = append(calls, e.ToolCall)
 		case provider.KindUsage:
 			usage = e.Usage
+			a.emitProgress(ctx, s, runID, gen, usage, started)
 		case provider.KindDone:
 			stop = e.StopReason
 			done = true
 		case provider.KindError:
-			return provider.Message{}, provider.Usage{}, "", fmt.Errorf("call model: %w", e.Err)
+			return provider.Message{}, "", fmt.Errorf("call model: %w", e.Err)
 		}
 	}
 	if !done {
-		return provider.Message{}, provider.Usage{}, "", errors.New("call model: provider stream closed without a completion event")
+		return provider.Message{}, "", errors.New("call model: provider stream closed without a completion event")
 	}
 	if stop == "" {
-		return provider.Message{}, provider.Usage{}, "", errors.New("call model: provider completion has no stop reason")
+		return provider.Message{}, "", errors.New("call model: provider completion has no stop reason")
 	}
 	if stop == "length" || stop == "content_filter" {
-		return provider.Message{}, provider.Usage{}, "", fmt.Errorf("call model: incomplete response with stop reason %q", stop)
+		return provider.Message{}, "", fmt.Errorf("call model: incomplete response with stop reason %q", stop)
 	}
-	return provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls), usage, stop, nil
+	gen.add(usage, elapsedSince(started))
+	return provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls), stop, nil
+}
+
+// emitProgress reports the turn's usage so far, counting the response in
+// flight. A response that reported usage before it produced a token has no
+// measured generation time yet, which the zero duration says honestly.
+func (a *Agent) emitProgress(ctx context.Context, s *Session, runID string, gen *generation, usage provider.Usage, started time.Time) {
+	total := *gen
+	total.add(usage, elapsedSince(started))
+	a.emit(ctx, s, event.TypeTurnProgress, event.TurnProgress{
+		RunID:         runID,
+		Usage:         total.usage,
+		Context:       total.context,
+		GenerationMS:  total.elapsed.Milliseconds(),
+		ContextWindow: a.opts.ContextWindow,
+	})
+}
+
+// elapsedSince is the time since start, and zero for a start that never
+// happened because the response produced nothing.
+func elapsedSince(start time.Time) time.Duration {
+	if start.IsZero() {
+		return 0
+	}
+	return time.Since(start)
 }
 
 // callTool runs one tool call and reports it as tool.call and tool.result
@@ -490,11 +588,17 @@ func withinContextWindow(req provider.Request, limit int) error {
 	if limit <= 0 {
 		return nil
 	}
+	messages := append([]provider.Message(nil), req.Messages...)
+	for i := range messages {
+		// Metrics are stored for the session view. A provider never receives
+		// them, so they are not part of this wire-size upper bound.
+		messages[i].Metrics = nil
+	}
 	data, err := json.Marshal(struct {
 		System   string             `json:"system"`
 		Messages []provider.Message `json:"messages"`
 		Tools    []provider.ToolDef `json:"tools"`
-	}{req.System, req.Messages, req.Tools})
+	}{req.System, messages, req.Tools})
 	if err != nil {
 		return fmt.Errorf("call model: estimate context: %w", err)
 	}

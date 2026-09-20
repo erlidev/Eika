@@ -2,9 +2,10 @@
 //
 // It owns the whole HTTP surface: the JSON API for projects, workspaces,
 // sessions, runs, questions, providers, models, and settings; password
-// sign-in and bearer token authentication; the WebSocket event stream; the
-// git hub mounted at its own prefix; and, when configured, the built
-// frontend. Nothing else in internal/ imports server.
+// sign-in and bearer token authentication; the WebSocket event stream; a
+// workspace's files, commits, pushes, and the terminal socket it relays to
+// the sandbox; the git hub mounted at its own prefix; and, when configured,
+// the built frontend. Nothing else in internal/ imports server.
 //
 // Providers, models, and credentials are rows the UI edits. The server seals
 // credentials with internal/secret and builds a provider client from a row

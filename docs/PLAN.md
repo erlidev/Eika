@@ -23,6 +23,9 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Sandbox image | One default `eika-sandbox` image; per-workspace override by image or Dockerfile |
 | Search | A port of the localsearch Pi extension. A web search asks one provider, the first usable one in a failover chain: a self-hosted SearXNG container, then Exa, Tavily, and Brave with a key, then Marginalia. Wikipedia, arXiv, and GitHub are sources the model names directly |
 | Auth | Single user. A password chosen in the guided setup signs a browser in and returns a session token; an optional `EIKA_AUTH_TOKEN` is a fixed API token for scripts |
+| Reasoning is streamed, not just stored | A provider emits reasoning deltas whatever `preserve_thinking` says, and the agent republishes them as `reasoning.delta`. Showing the model think is the client's business; replaying the reasoning to the endpoint is `preserve_thinking`'s, and tying the two would mean a user who wants to watch a model reason has to send its reasoning back to an API that rejects it. The session view shows each block collapsed to one line by default, expanded when the reader asks; the choice is a browser preference, not a harness setting, because two people reading one session can want different things |
+| Reasoning efforts belong to the model row | Compatible endpoints disagree on the vocabulary — OpenAI takes minimal through high, others take none, xhigh, max, or a word of their own — so `models.reasoning_efforts` holds the words a model offers and `provider.ValidReasoningEffort` checks only the shape (at most 32 letters, digits, hyphens, underscores). The session's status bar cycles through the list, which writes the model's `reasoning_effort` and so applies wherever that model next runs |
+| Context and decode rate are measured, never estimated | `turn.progress` carries the usage an endpoint reported, the configured context window of the model that reported it, and the time since a response's first token; `turn.end` repeats them for the whole turn. A client needs two comparable reports from one attempt and divides their differences. One report is not a rate, and a retry starts a new baseline. Counting characters on screen, or timing deltas, would give a number that looks precise and is not, so an endpoint that never reports usage shows no rate at all. `context` is the last model call's own usage, not the turn's sum: one conversation fills the window, not every prompt in the turn added together. The final context measurement is stored with each assistant entry so replay restores the view after a reload |
 | Compaction | Deferred; the session model must support it later |
 | Context-window enforcement | Before each model call, the agent compares a conservative JSON byte/token upper bound, including requested output, with the model's configured window. It fails before the provider call when the request cannot fit; compaction remains deferred |
 | Skills / templates | Deferred; AGENTS.md is in scope |
@@ -34,7 +37,7 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Harness process user | Non-root `eika`. The image's entry point starts as root only to add `eika` to the group that owns the mounted Docker socket, whatever its id on this host, then drops to `eika` with `setpriv`. Socket access is root-equivalent and accepted: sandboxes are sibling containers |
 | OpenAI SDK version | `github.com/openai/openai-go/v3`, pinned at v3.61.0, the latest stable major |
 | Chat Completions, not Responses | Providers are "OpenAI-compatible" endpoints. Every such endpoint implements Chat Completions; few implement the Responses API. The `Provider` interface hides the choice, so a Responses implementation can be added later as another kind |
-| Chat Completions reasoning | `reasoning_effort` uses the standard Chat Completions request field. `preserve_thinking` is a per-model switch for compatible endpoints and is off for a new model, because the official OpenAI API rejects it: when on, Eika captures streamed `reasoning_content`, stores it as provider-neutral reasoning data, and replays it on later assistant messages. The extension is not part of the OpenAI Chat Completions contract |
+| Chat Completions reasoning | `reasoning_effort` uses the standard Chat Completions request field. Streamed `reasoning_content` is always captured and stored as provider-neutral reasoning data. `preserve_thinking` is a per-model switch for compatible endpoints and is off for a new model, because the official OpenAI API rejects it: when on, Eika sends the extension and replays the stored reasoning on later assistant messages. The extension is not part of the OpenAI Chat Completions contract |
 | Malformed tool arguments | Keep the model's exact argument text. Valid arguments keep their JSON shape on the API and in storage. Malformed text is safely quoted and carries `arguments_malformed: true`, then is restored before tool decoding. The explicit marker distinguishes malformed text from a valid top-level JSON string. The tool can report a normal argument error and the session remains resumable |
 | Retries live in the agent loop | The SDK's retries are switched off (`WithMaxRetries(0)`). One place decides, so the scripted fake provider exercises the same retry path as the real one. Retryable means 408, 409, 429, 5xx, or a transport failure |
 | Provider API keys | Entered in the UI, sealed with AES-256-GCM by `internal/secret` before they reach a row, and opened by the server only to build a provider for one run, probe, or test. No package reads a key from the environment; the OpenAI provider sets its key and base URL explicitly so the SDK's `OPENAI_*` defaults never apply. The API returns whether a key is stored and the last four characters of a long one, never the key. A key belongs to the base URL it was entered for: changing a provider's URL without entering a key clears the stored key, and a probe at another URL never carries it, so a typo or a hostile URL cannot collect it |
@@ -113,6 +116,9 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | fetch address guard | The fetch client refuses to connect to a non-public address at dial time, after DNS, so a public name that resolves into a private range is refused too; redirects are re-checked on each connection and limited to five. localsearch's `allowPrivateHosts` is not ported: the harness shares a network with postgres and every sandbox |
 | Local model servers | The harness container maps `host.docker.internal` to the host gateway, so Ollama or LM Studio on the Docker host is reachable on Linux as on Docker Desktop. A connection failure to a loopback base URL says so |
 | Destructive actions confirm in a dialog | `components/ConfirmDialog` wraps shadcn's alert dialog. The browser's `confirm` cannot be styled, cannot say what survives a deletion, and cannot be reached by a test |
+| Terminal is not an executor call | The harness relays a browser WebSocket to eikad `/pty` through `Workspaces.Terminal` (`Host.Terminal`, `sandbox.Client.Terminal`), never through `executor.Executor`, so a tool can run commands but can never hold a PTY. Frames pass through unchanged; the token may ride in `?token=` on this path, as on the event stream |
+| Workspace edits reuse `workspace.state` | A file saved, a commit, or a push through the API publishes `workspace.state` with the unchanged state instead of a new event type: the payload is the same, and a client refreshes files and changes on either |
+| Upstream push is from the hub | "Push upstream" pushes the workspace to its hub branch, then the hub pushes that branch to the project's remote with the harness's sealed credentials, so no remote credential enters a sandbox. A pull request is a compare link the UI builds from `remote_url`; there is no forge API |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -277,8 +283,9 @@ documented in `docs/api/eikad.md`.
 
 One WebSocket per UI client, subscribed to topics (`workspace:<id>`,
 `session:<id>`, `global`). Events are the same types the agent loop emits
-internally (`internal/event`): `turn.start`, `message.delta`, `tool.call`,
-`tool.output`, `tool.result`, `turn.end`, `run.error`, `question.asked`,
+internally (`internal/event`): `turn.start`, `message.delta`,
+`reasoning.delta`, `message.reset`, `tool.call`, `tool.output`,
+`tool.result`, `turn.progress`, `turn.end`, `run.error`, `question.asked`,
 `subagent.started`, `subagent.finished`, `workspace.state`. Two more exist on
 the stream alone: `session.message`, which is what a replay sends, and
 `bus.dropped`, which tells one client it read too slowly. Documented in
@@ -391,5 +398,9 @@ parallel.
 - [x] Phase 6: Subagents (backend; the agent tree panel is UI work)
 - [x] UI configuration: providers, models, sign-in, and the guided setup
 - [x] Phase 7: Search
-- [ ] Phase 8: Terminal, editor, diff
+- [x] Phase 8: Terminal, editor, diff
+- [x] Transcript and configuration UI: streamed reasoning, per-model
+      reasoning efforts, the measured context and decode meter, and a pass
+      over the shell's legibility (prose typography, click affordances,
+      scrollbars, divider hit targets, a fixed-height settings dialog)
 - [ ] Phase 9: Hardening and docs

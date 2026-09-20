@@ -3,13 +3,14 @@
  * composer. It owns the session's stream subscription.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { Composer } from "@/features/session/Composer";
 import { abortsRun } from "@/features/session/escape";
 import { useAbortRun, useRunStatus, useSession } from "@/features/session/queries";
 import { RunStatusBar } from "@/features/session/RunStatusBar";
 import { Transcript } from "@/features/session/Transcript";
+import { useSessionStore } from "@/features/session/store";
 import { useSessionStream } from "@/features/session/useSessionStream";
 import { Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,8 @@ export function SessionView({ sessionId }: SessionViewProps) {
   const showSettings = useSettingsDialog((s) => s.show);
   const status = useRunStatus(sessionId);
   const abort = useAbortRun(sessionId);
-  const [model, setModel] = useState("");
+  const model = useSessionStore((s) => s.model);
+  const chooseModel = useSessionStore((s) => s.chooseModel);
 
   const workspaceId = session.data?.session.workspace_id;
   useWorkspaceEvents(workspaceId);
@@ -86,7 +88,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
           </Notice>
         </div>
       )}
-      <RunStatusBar sessionId={sessionId} model={chosenModel} onModelChange={setModel} />
+      <RunStatusBar sessionId={sessionId} model={chosenModel} onModelChange={chooseModel} />
       <Composer
         sessionId={sessionId}
         model={chosenModel}

@@ -41,6 +41,9 @@ const turn: EikaEvent[] = [
     run_id: "r1",
     stop_reason: "stop",
     usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 },
+    context: { input_tokens: 10, output_tokens: 4, total_tokens: 14 },
+    generation_ms: 1000,
+    context_window: 400_000,
   }),
 ];
 
@@ -82,7 +85,7 @@ describe("applyEvent", () => {
   it("ends the turn with its usage and stops streaming", () => {
     const state = fold(turn);
     expect(state.activeTurnId).toBe("");
-    expect(state.usage).toEqual({ input_tokens: 10, output_tokens: 4, total_tokens: 14 });
+    expect(state.meter?.usage).toEqual({ input_tokens: 10, output_tokens: 4, total_tokens: 14 });
     expect(state.stopReason).toBe("stop");
     expect(state.needsReplay).toBe(true);
     expect(items(state).every((item) => item.kind !== "assistant" || !item.streaming)).toBe(true);
@@ -291,5 +294,190 @@ describe("applyEvent", () => {
   it("ignores an event type it has no rule for", () => {
     const before = newTranscript(sessionID);
     expect(applyEvent(before, ev("subagent.started", { run_id: "r1" }))).toBe(before);
+  });
+});
+
+describe("reasoning", () => {
+  /** A turn that thinks, answers, and is then stored, as a replay delivers it. */
+  const thinking: EikaEvent[] = [
+    ev("turn.start", { run_id: "r1", session_id: sessionID, message: "why?" }),
+    ev("reasoning.delta", { run_id: "r1", text: "weighing " }),
+    ev("reasoning.delta", { run_id: "r1", text: "the options" }),
+    ev("message.delta", { run_id: "r1", text: "Because of the cap." }),
+  ];
+
+  it("accumulates reasoning into a block of its own", () => {
+    const rendered = items(fold(thinking.slice(0, 3)));
+    expect(rendered).toHaveLength(2);
+    expect(rendered[1]).toMatchObject({
+      kind: "reasoning",
+      text: "weighing the options",
+      streaming: true,
+    });
+  });
+
+  it("seals the reasoning when the answer starts", () => {
+    const rendered = items(fold(thinking));
+    expect(rendered.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant"]);
+    expect(rendered[1]).toMatchObject({ kind: "reasoning", streaming: false });
+    expect(rendered[2]).toMatchObject({ kind: "assistant", text: "Because of the cap." });
+  });
+
+  it("starts a new block when the model thinks again after answering", () => {
+    const rendered = items(
+      fold([...thinking, ev("reasoning.delta", { run_id: "r1", text: "one more thing" })]),
+    );
+    expect(rendered.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "reasoning"]);
+  });
+
+  it("discards a failed attempt's reasoning on message.reset", () => {
+    const rendered = items(fold([...thinking.slice(0, 3), ev("message.reset", { run_id: "r1" })]));
+    expect(rendered.map((i) => i.kind)).toEqual(["user"]);
+  });
+
+  it("renders a stored message's reasoning before its answer", () => {
+    const rendered = items(
+      fold([
+        ev("session.message", {
+          session_id: sessionID,
+          entry_id: "e1",
+          kind: "assistant",
+          created_at: "2026-01-01T00:00:00Z",
+          message: {
+            role: "assistant",
+            reasoning: "weighing the options",
+            content: "Because of the cap.",
+          },
+        }),
+      ]),
+    );
+    expect(rendered.map((i) => i.kind)).toEqual(["reasoning", "assistant"]);
+    expect(rendered[0]).toMatchObject({ text: "weighing the options", streaming: false });
+  });
+});
+
+describe("the meter", () => {
+  function progress(outputTokens: number, generationMs: number): EikaEvent {
+    return ev("turn.progress", {
+      run_id: "r1",
+      usage: { input_tokens: 100, output_tokens: outputTokens, total_tokens: 100 + outputTokens },
+      context: { input_tokens: 100, output_tokens: outputTokens, total_tokens: 100 + outputTokens },
+      generation_ms: generationMs,
+      context_window: 400_000,
+    });
+  }
+
+  it("is absent until an endpoint reports usage", () => {
+    expect(fold(turn.slice(0, 3)).meter).toBeUndefined();
+  });
+
+  it("divides the difference between two samples", () => {
+    const state = fold([progress(10, 1000), progress(40, 2000)]);
+    // Thirty tokens in the second second, not fifty over two.
+    expect(state.meter?.tokensPerSecond).toBeCloseTo(30);
+    expect(state.meter?.live).toBe(true);
+    expect(state.meter?.context.total_tokens).toBe(140);
+  });
+
+  it("does not invent a rate from one usage report", () => {
+    expect(fold([progress(40, 2000)]).meter?.tokensPerSecond).toBeUndefined();
+  });
+
+  it("starts a new rate baseline after a retry", () => {
+    const state = fold([
+      progress(40, 2000),
+      ev("message.reset", { run_id: "r1" }),
+      progress(50, 3000),
+    ]);
+    expect(state.meter?.tokensPerSecond).toBeUndefined();
+  });
+
+  it("keeps the last measured rate when a sample adds nothing", () => {
+    const state = fold([progress(10, 1000), progress(40, 2000), progress(40, 2500)]);
+    expect(state.meter?.tokensPerSecond).toBeCloseTo(30);
+  });
+
+  it("stops being live when the turn ends", () => {
+    const ended = ev("turn.end", {
+      run_id: "r1",
+      stop_reason: "stop",
+      usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 },
+      context: { input_tokens: 100, output_tokens: 10, total_tokens: 110 },
+      generation_ms: 1000,
+      context_window: 400_000,
+    });
+    const state = fold([...turn.slice(0, 3), progress(10, 1000), ended]);
+    expect(state.meter?.live).toBe(false);
+    expect(state.meter?.generationMs).toBe(1000);
+    expect(state.meter?.contextWindow).toBe(400_000);
+  });
+
+  it("keeps a measured rate when the final totals arrive", () => {
+    const ended = ev("turn.end", {
+      run_id: "r1",
+      stop_reason: "stop",
+      usage: { input_tokens: 100, output_tokens: 100, total_tokens: 200 },
+      context: { input_tokens: 100, output_tokens: 100, total_tokens: 200 },
+      generation_ms: 4000,
+      context_window: 400_000,
+    });
+    const state = fold([progress(10, 1000), progress(40, 2000), ended]);
+    expect(state.meter?.tokensPerSecond).toBeCloseTo(30);
+    expect(state.meter?.live).toBe(false);
+  });
+
+  it("does not replace a live measurement with an older replay entry", () => {
+    const live = fold([progress(10, 1000), progress(40, 2000)]);
+    const state = applyEvent(
+      live,
+      ev("session.message", {
+        session_id: sessionID,
+        entry_id: "e-old-metrics",
+        kind: "assistant",
+        created_at: "2026-01-01T00:00:00Z",
+        message: {
+          role: "assistant",
+          content: "older",
+          metrics: {
+            run_id: "r0",
+            usage: { input_tokens: 20, output_tokens: 2, total_tokens: 22 },
+            context: { input_tokens: 20, output_tokens: 2, total_tokens: 22 },
+            generation_ms: 500,
+            context_window: 8192,
+          },
+        },
+      }),
+    );
+    expect(state.meter?.runId).toBe("r1");
+    expect(state.meter?.tokensPerSecond).toBeCloseTo(30);
+  });
+
+  it("restores context usage from a stored assistant entry", () => {
+    const state = fold([
+      ev("session.message", {
+        session_id: sessionID,
+        entry_id: "e-metrics",
+        kind: "assistant",
+        created_at: "2026-01-01T00:00:00Z",
+        message: {
+          role: "assistant",
+          content: "done",
+          metrics: {
+            run_id: "r-stored",
+            usage: { input_tokens: 90, output_tokens: 10, total_tokens: 100 },
+            context: { input_tokens: 90, output_tokens: 10, total_tokens: 100 },
+            generation_ms: 1200,
+            context_window: 8192,
+          },
+        },
+      }),
+    ]);
+    expect(state.meter).toMatchObject({
+      runId: "r-stored",
+      contextWindow: 8192,
+      context: { total_tokens: 100 },
+      live: false,
+    });
+    expect(state.meter?.tokensPerSecond).toBeUndefined();
   });
 });

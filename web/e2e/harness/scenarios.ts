@@ -19,7 +19,11 @@ export type Scenario = {
 function configured(): WorldBuilder {
   const b = new WorldBuilder();
   const openai = b.provider({ name: "OpenAI" });
-  b.model(openai, { name: "gpt-5", reasoning_effort: "medium" });
+  b.model(openai, {
+    name: "gpt-5",
+    reasoning_effort: "medium",
+    reasoning_efforts: ["low", "medium", "high"],
+  });
   b.model(openai, { name: "gpt-5-mini" });
   return b;
 }
@@ -51,7 +55,12 @@ function workbench(): WorldBuilder {
       content:
         "The webhook client retries immediately on failure. Add exponential backoff with jitter, capped at 30s.",
     },
-    { role: "assistant", content: "I'll start by finding the retry loop." },
+    {
+      role: "assistant",
+      reasoning:
+        "The client retries in a loop with no delay. I need to find that loop before I can put a delay in it, so grep for retry under internal/webhook first.",
+      content: "I'll start by finding the retry loop.",
+    },
     {
       role: "assistant",
       tool_calls: [
@@ -85,6 +94,55 @@ function workbench(): WorldBuilder {
         "Done. The client now waits `backoff(attempt)` between tries:\n\n| attempt | delay |\n|---|---|\n| 1 | ~1s |\n| 2 | ~2s |\n| 5 | 30s (cap) |\n\n```go\nfunc backoff(n int) time.Duration {\n\td := time.Second << n\n\treturn min(d, 30*time.Second)\n}\n```",
     },
   ]);
+  b.world.files[ws.id] = {
+    ".git/HEAD": "ref: refs/heads/eika/fix-retries\n",
+    ".gitignore": "/bin\n*.out\n",
+    "README.md": "# payments-api\n\nThe payments service and its webhook client.\n",
+    "go.mod": "module example.com/payments-api\n\ngo 1.23\n",
+    "assets/logo.png": "\u0089PNG\r\n\u001a\n\u0000\u0000\u0000\rIHDR",
+    "internal/webhook/backoff.go": [
+      "package webhook",
+      "",
+      'import "time"',
+      "",
+      "// backoff is how long to wait before retry n: doubling from a second, capped at 30s.",
+      "func backoff(n int) time.Duration {",
+      "\td := time.Second << n",
+      "\treturn min(d, 30*time.Second)",
+      "}",
+      "",
+    ].join("\n"),
+    "internal/webhook/client.go": [
+      "package webhook",
+      "",
+      "import (",
+      '\t"context"',
+      '\t"time"',
+      ")",
+      "",
+      "// Client delivers events to a subscriber's endpoint.",
+      "type Client struct {",
+      "\tmaxRetries int",
+      "}",
+      "",
+      "// Send delivers one event, retrying with backoff.",
+      "func (c *Client) Send(ctx context.Context, e Event) error {",
+      "\tvar err error",
+      "\tfor attempt := 0; attempt < c.maxRetries; attempt++ {",
+      "\t\terr = c.post(ctx, e)",
+      "\t\tif err == nil {",
+      "\t\t\treturn nil",
+      "\t\t}",
+      "\t\ttime.Sleep(backoff(attempt))",
+      "\t\tcontinue",
+      "\t}",
+      "\treturn err",
+      "}",
+      "",
+    ].join("\n"),
+    "internal/webhook/client_test.go":
+      'package webhook\n\nimport "testing"\n\nfunc TestSend(t *testing.T) {}\n',
+  };
   b.world.diffs[ws.id] = {
     workspace_id: ws.id,
     base_commit: ws.base_commit,
@@ -186,6 +244,24 @@ export const scenarios = {
           details: { exit_code: 1 },
         },
         { say: "Tests pass. `go vet` flags unreachable code on line 51; I'll clean that up next." },
+      ]);
+      return b.world;
+    },
+  },
+  "agent-reasoning": {
+    description:
+      "Like workbench, but the next message streams reasoning before the answer. For the collapsed thinking block and the context meter.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      b.world.replies.push([
+        {
+          think:
+            "The cap is 30s and the base is a second, so attempt five already reaches it. Doubling past that buys nothing, and the jitter has to stay inside the cap or a retry can overshoot it. Full jitter over the capped delay is the usual answer.",
+        },
+        {
+          say: "Full jitter over the capped delay: `rand(0, min(2^n, 30s))`. That keeps every retry inside the cap and spreads the herd.",
+        },
       ]);
       return b.world;
     },

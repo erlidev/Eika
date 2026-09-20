@@ -4,10 +4,17 @@
  * When a Go type changes, change these in the same commit.
  */
 
-import type { EntryKind } from "@/api/events";
+import type { EntryKind, Usage } from "@/api/events";
 
 /** ErrorCode is the machine-readable half of an API error body. */
-export type ErrorCode = "invalid_request" | "unauthorized" | "not_found" | "conflict" | "internal";
+export type ErrorCode =
+  | "invalid_request"
+  | "unauthorized"
+  | "forbidden"
+  | "not_found"
+  | "conflict"
+  | "too_large"
+  | "internal";
 
 /** Project is a git repository Eika knows. */
 export type Project = {
@@ -83,6 +90,53 @@ export type WorkspaceDiff = {
   status: string;
 };
 
+/** FileEntry is one file or directory of a workspace listing. */
+export type FileEntry = {
+  name: string;
+  /** path is relative to the workspace root. */
+  path: string;
+  size: number;
+  mode: number;
+  mod_time: string;
+  is_dir: boolean;
+};
+
+/** FileContent is the body of GET /api/workspaces/{id}/file. */
+export type FileContent = {
+  path: string;
+  size: number;
+  /** binary says the file holds NUL bytes; content is then empty. */
+  binary: boolean;
+  /** too_large says the file is over the 2 MiB limit; content is then empty. */
+  too_large: boolean;
+  content: string;
+};
+
+/** CommitRequest is the body of POST /api/workspaces/{id}/commit. */
+export type CommitRequest = {
+  message: string;
+  /** paths limits the commit to these files; absent commits everything. */
+  paths?: string[];
+};
+
+/** CommitResult is what a commit made. */
+export type CommitResult = {
+  commit: string;
+};
+
+/** PushRequest is the body of POST /api/workspaces/{id}/push. */
+export type PushRequest = {
+  /** upstream also pushes the branch from the hub to the project's remote. */
+  upstream?: boolean;
+};
+
+/** PushResult is where a push put the workspace's branch. */
+export type PushResult = {
+  branch: string;
+  commit: string;
+  upstream_pushed: boolean;
+};
+
 /** Session is a tree of entries in one workspace. */
 export type Session = {
   id: string;
@@ -106,15 +160,26 @@ export type MessageToolCall = {
   arguments_malformed?: boolean;
 };
 
+/** MessageMetrics restores the measured context state with an assistant entry. */
+export type MessageMetrics = {
+  run_id: string;
+  usage: Usage;
+  context: Usage;
+  generation_ms: number;
+  context_window: number;
+};
+
 /** Message is one entry of a conversation, as the provider package stores it. */
 export type Message = {
   role: Role;
   content?: string;
-  /** reasoning is opaque provider data Eika replays; it is not assistant content. */
+  /** reasoning is the model's thinking for this message, shown apart from its answer. */
   reasoning?: string;
   tool_calls?: MessageToolCall[];
   tool_call_id?: string;
   is_error?: boolean;
+  /** metrics are stored UI metadata and are not sent to the provider. */
+  metrics?: MessageMetrics;
 };
 
 /** Entry is one stored node of a session tree, with its message. */
@@ -217,8 +282,16 @@ export type SettingsState = {
   defaults: SettingsDefaults;
 };
 
-/** ReasoningEffort is the Chat Completions reasoning_effort value; "" leaves it to the endpoint. */
-export type ReasoningEffort = "" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+/**
+ * ReasoningEffort is the Chat Completions reasoning_effort value; "" leaves it
+ * to the endpoint. Compatible endpoints disagree on the vocabulary, so it is
+ * any word of letters, digits, hyphens, and underscores the user configured,
+ * bounded by `maxReasoningEffortLength`.
+ */
+export type ReasoningEffort = string;
+
+/** maxReasoningEffortLength is the longest reasoning_effort the harness stores. */
+export const maxReasoningEffortLength = 32;
 
 /** Model is one model the user configured on a provider. */
 export type Model = {
@@ -231,6 +304,8 @@ export type Model = {
   context_window: number;
   max_output: number;
   reasoning_effort?: ReasoningEffort;
+  /** reasoning_efforts are the values this model offers, in cycling order. */
+  reasoning_efforts: ReasoningEffort[];
   preserve_thinking: boolean;
   created_at: string;
   updated_at: string;
@@ -252,6 +327,7 @@ export type CreateModel = {
   context_window: number;
   max_output: number;
   reasoning_effort?: ReasoningEffort;
+  reasoning_efforts?: ReasoningEffort[];
   preserve_thinking?: boolean;
 };
 

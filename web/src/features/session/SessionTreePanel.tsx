@@ -123,7 +123,7 @@ export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
                 onKeyDown(e, index, node);
               }}
               className={cn(
-                "hover:bg-accent/50 group focus-visible:ring-ring flex items-center gap-1 rounded-md py-0.5 pr-1 outline-none focus-visible:ring-2",
+                "hover:bg-accent group focus-visible:ring-ring flex items-center gap-1 rounded-md py-0.5 pr-1 transition-colors outline-none focus-visible:ring-2",
                 isHead && "bg-accent",
               )}
               style={{ paddingLeft: `${String((row.level - 1) * 12 + 4)}px` }}

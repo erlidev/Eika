@@ -100,6 +100,16 @@ export function useCreateModel(): UseMutationResult<Model, Error, CreateModel> {
   return useMutation({ mutationFn: createModel, onSuccess: () => refresh(client) });
 }
 
+/**
+ * useModel is the model a name selects, or the default model when the name is
+ * empty, which is what an unset session-level choice means.
+ */
+export function useModel(name: string): Model | undefined {
+  const models = useModels();
+  const wanted = name === "" ? (models.data?.default ?? "") : name;
+  return (models.data?.models ?? []).find((m) => m.name === wanted);
+}
+
 /** useUpdateModel changes a model. */
 export function useUpdateModel(): UseMutationResult<
   Model,

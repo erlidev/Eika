@@ -13,6 +13,9 @@ const (
 	TypeTurnStart = "turn.start"
 	// TypeMessageDelta carries an incremental piece of assistant output.
 	TypeMessageDelta = "message.delta"
+	// TypeReasoningDelta carries an incremental piece of the model's
+	// reasoning, which is shown apart from the assistant's answer.
+	TypeReasoningDelta = "reasoning.delta"
 	// TypeMessageReset tells clients to discard deltas from a failed model
 	// attempt before a retry starts.
 	TypeMessageReset = "message.reset"
@@ -22,6 +25,9 @@ const (
 	TypeToolOutput = "tool.output"
 	// TypeToolResult reports the final result of a tool call.
 	TypeToolResult = "tool.result"
+	// TypeTurnProgress reports measured token usage part-way through a turn,
+	// which is what a live decode rate is computed from.
+	TypeTurnProgress = "turn.progress"
 	// TypeTurnEnd reports that an assistant turn finished.
 	TypeTurnEnd = "turn.end"
 	// TypeRunError reports that an agent run failed.

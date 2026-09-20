@@ -179,15 +179,27 @@ Test a provider against an `httptest` server that serves its wire format, as
 `internal/provider/openai/openai_test.go` does. Test everything that consumes a
 provider with `provider/providertest`, the scripted fake.
 
-A model row also carries `reasoning_effort` and `preserve_thinking`, which
-the run passes on in `provider.Request`. `reasoning_effort` maps to the
-standard Chat Completions request field. `preserve_thinking` is a
-compatible-endpoint extension, not an OpenAI API field, and is off for a new
-model. When it is on, the OpenAI-compatible provider reads streamed
-`reasoning_content` into `KindReasoningDelta` events. The agent stores the
-assembled value in `Message.Reasoning`, and the provider sends it back as
+A model row also carries `reasoning_effort`, `reasoning_efforts`, and
+`preserve_thinking`, which the run passes on in `provider.Request`.
+`reasoning_effort` maps to the standard Chat Completions request field;
+`reasoning_efforts` is the list of words the session's status bar cycles
+through, since endpoints disagree on the vocabulary and the harness only
+checks the shape (`provider.ValidReasoningEffort`).
+
+A provider emits `KindReasoningDelta` for reasoning whatever
+`preserve_thinking` says: the agent turns those into `reasoning.delta` events
+so a client can show the model thinking, and stores the assembled value in
+`Message.Reasoning`. `preserve_thinking` is a compatible-endpoint extension,
+not an OpenAI API field, and is off for a new model; when it is on, the
+OpenAI-compatible provider sends the stored reasoning back as
 `reasoning_content` on later assistant messages. A new provider can map the
 provider-neutral reasoning value to its own wire format.
+
+Emit `KindUsage` as soon as the endpoint reports usage rather than only at the
+end. The agent times each response from its first token and republishes both
+as `turn.progress`. A client needs two reports from one attempt for a decode
+rate; an endpoint that reports usage once still produces one event and shows
+context usage without a rate.
 
 ## Adding a search backend
 
@@ -584,6 +596,29 @@ export const panels: readonly Panel[] = [sessionTreePanel, runPanel, sandboxPane
 The tab strip, the keyboard handling, the remembered active tab, and the narrow
 layout all follow from the array. Add a README line to the feature folder and
 you are done.
+
+The pane body scrolls, which suits a list. A panel that sizes and scrolls its
+own content, such as a terminal or an editor, sets `fill: true` instead: its
+component then gets the whole body at a fixed height (lay it out with `h-full`
+and `min-h-0`), and the pane may be dragged wider than a scrolling panel
+allows. The Files and Terminal panels are the examples:
+
+```tsx
+const terminalPanel: Panel = {
+  id: "terminal",
+  title: "Terminal",
+  icon: SquareTerminal,
+  available: (context) => context.workspaceId !== "",
+  fill: true,
+  Component: ({ workspaceId }) => <TerminalPanel workspaceId={workspaceId} />,
+};
+```
+
+A panel that works inside the sandbox wraps its content in `RunningWorkspace`
+from `features/workspaces`, which shows the workspace's state and a Start
+button until it runs. A panel whose component pulls in a large library loads
+that part with `React.lazy`, as the Files panel does for Monaco and the
+Terminal panel for xterm, so the main bundle stays small.
 
 ## Adding a tool renderer
 

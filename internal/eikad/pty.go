@@ -26,6 +26,10 @@ const (
 	// ptyWriteTimeout bounds one output message, so that a client that has
 	// stopped reading cannot keep the terminal alive.
 	ptyWriteTimeout = 30 * time.Second
+	// MaxPTYMessage bounds one message on a /pty socket in either direction.
+	// A pasted block of text arrives as one input message, so the bound is
+	// well above the WebSocket library's 32 KiB default.
+	MaxPTYMessage = 1 << 20
 )
 
 // handlePTY upgrades to a WebSocket and runs an interactive shell on a
@@ -47,6 +51,7 @@ func (d *Daemon) handlePTY(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
+	conn.SetReadLimit(MaxPTYMessage)
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()

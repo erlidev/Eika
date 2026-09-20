@@ -2,6 +2,7 @@
 /bin/
 /web/dist/
 /web/node_modules/
+/web/src/node_modules/
 /web/.vite/
 
 # Local configuration, secrets, and the state `make dev` keeps

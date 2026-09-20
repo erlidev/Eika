@@ -26,6 +26,9 @@ const (
 	maxModelName    = 128
 	maxModelID      = 256
 	maxAPIKey       = 4096
+	// maxReasoningEfforts bounds the choices one model may offer; a list
+	// longer than this is not something a user cycles through.
+	maxReasoningEfforts = 12
 	// maxContextWindow is far above any model today; it only catches a typo
 	// with too many zeros.
 	maxContextWindow = 100_000_000
@@ -112,6 +115,7 @@ type modelBody struct {
 	ContextWindow    int       `json:"context_window"`
 	MaxOutput        int       `json:"max_output"`
 	ReasoningEffort  string    `json:"reasoning_effort,omitempty"`
+	ReasoningEfforts []string  `json:"reasoning_efforts"`
 	PreserveThinking bool      `json:"preserve_thinking"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
@@ -130,23 +134,25 @@ type modelsResponse struct {
 type createModelRequest struct {
 	ProviderID string `json:"provider_id"`
 	// Name defaults to Model.
-	Name             string `json:"name"`
-	Model            string `json:"model"`
-	ContextWindow    int    `json:"context_window"`
-	MaxOutput        int    `json:"max_output"`
-	ReasoningEffort  string `json:"reasoning_effort"`
-	PreserveThinking bool   `json:"preserve_thinking"`
+	Name             string   `json:"name"`
+	Model            string   `json:"model"`
+	ContextWindow    int      `json:"context_window"`
+	MaxOutput        int      `json:"max_output"`
+	ReasoningEffort  string   `json:"reasoning_effort"`
+	ReasoningEfforts []string `json:"reasoning_efforts"`
+	PreserveThinking bool     `json:"preserve_thinking"`
 }
 
 // updateModelRequest is the body of PATCH /api/models/{id}. An absent field
 // is left alone; the provider does not change.
 type updateModelRequest struct {
-	Name             *string `json:"name"`
-	Model            *string `json:"model"`
-	ContextWindow    *int    `json:"context_window"`
-	MaxOutput        *int    `json:"max_output"`
-	ReasoningEffort  *string `json:"reasoning_effort"`
-	PreserveThinking *bool   `json:"preserve_thinking"`
+	Name             *string   `json:"name"`
+	Model            *string   `json:"model"`
+	ContextWindow    *int      `json:"context_window"`
+	MaxOutput        *int      `json:"max_output"`
+	ReasoningEffort  *string   `json:"reasoning_effort"`
+	ReasoningEfforts *[]string `json:"reasoning_efforts"`
+	PreserveThinking *bool     `json:"preserve_thinking"`
 }
 
 // testModelRequest is the body of POST /api/models/test: a model on a stored
@@ -386,6 +392,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 		ContextWindow:    req.ContextWindow,
 		MaxOutput:        req.MaxOutput,
 		ReasoningEffort:  req.ReasoningEffort,
+		ReasoningEfforts: req.ReasoningEfforts,
 		PreserveThinking: req.PreserveThinking,
 	}
 	if m.Name == "" {
@@ -439,6 +446,9 @@ func (s *Server) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	if req.ReasoningEffort != nil {
 		m.ReasoningEffort = *req.ReasoningEffort
 	}
+	if req.ReasoningEfforts != nil {
+		m.ReasoningEfforts = *req.ReasoningEfforts
+	}
 	if req.PreserveThinking != nil {
 		m.PreserveThinking = *req.PreserveThinking
 	}
@@ -491,7 +501,7 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !provider.ValidReasoningEffort(req.ReasoningEffort) {
-		s.fail(w, r, invalidf("reasoning_effort %q is not one of none, minimal, low, medium, high, xhigh, max", req.ReasoningEffort))
+		s.fail(w, r, invalidEffort(req.ReasoningEffort))
 		return
 	}
 	p, err := s.deps.Store.Provider(r.Context(), req.ProviderID)
@@ -658,9 +668,31 @@ func validateModel(m store.Model) error {
 	case m.MaxOutput < 1 || m.MaxOutput > m.ContextWindow:
 		return invalidf("max_output must be a positive number of tokens no larger than context_window")
 	case !provider.ValidReasoningEffort(m.ReasoningEffort):
-		return invalidf("reasoning_effort %q is not one of none, minimal, low, medium, high, xhigh, max", m.ReasoningEffort)
+		return invalidEffort(m.ReasoningEffort)
+	case len(m.ReasoningEfforts) > maxReasoningEfforts:
+		return invalidf("reasoning_efforts holds at most %d values", maxReasoningEfforts)
+	}
+	seen := make(map[string]struct{}, len(m.ReasoningEfforts))
+	for _, effort := range m.ReasoningEfforts {
+		if effort == "" {
+			return invalidf("reasoning_efforts holds no empty value; the endpoint default is not one of the choices")
+		}
+		if !provider.ValidReasoningEffort(effort) {
+			return invalidEffort(effort)
+		}
+		if _, exists := seen[effort]; exists {
+			return invalidf("reasoning_efforts contains duplicate value %q", effort)
+		}
+		seen[effort] = struct{}{}
 	}
 	return nil
+}
+
+// invalidEffort reports a reasoning_effort the harness will not send. The
+// vocabulary belongs to the endpoint, so the message describes the shape.
+func invalidEffort(effort string) error {
+	return invalidf("reasoning_effort %q must be at most %d letters, digits, hyphens, or underscores",
+		effort, provider.MaxReasoningEffortLen)
 }
 
 // sealKey trims and seals an API key for a provider row.
@@ -702,6 +734,15 @@ func (s *Server) asProvider(p store.Provider) providerBody {
 }
 
 // asModel renders a model on the wire.
+// effortList is how a model's choices go on the wire: always an array, so a
+// client never has to tell an absent list from an empty one.
+func effortList(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
+}
+
 func asModel(m store.Model) modelBody {
 	return modelBody{
 		ID:               m.ID,
@@ -711,6 +752,7 @@ func asModel(m store.Model) modelBody {
 		ContextWindow:    m.ContextWindow,
 		MaxOutput:        m.MaxOutput,
 		ReasoningEffort:  m.ReasoningEffort,
+		ReasoningEfforts: effortList(m.ReasoningEfforts),
 		PreserveThinking: m.PreserveThinking,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,

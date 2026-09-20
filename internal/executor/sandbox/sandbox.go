@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/coder/websocket"
+
 	"github.com/erlidev/eika/internal/eikad"
 	"github.com/erlidev/eika/internal/executor"
 )
@@ -194,6 +196,37 @@ func (c *Client) List(ctx context.Context, path string) ([]executor.FileInfo, er
 	return entries, nil
 }
 
+// Terminal opens an interactive shell in the sandbox: a WebSocket on the
+// daemon's /pty route carrying eikad.PTYMessage frames. A zero rows or cols
+// leaves that dimension to the daemon's default. It is not part of
+// executor.Executor on purpose: tools run commands, and a terminal is for the
+// person using the workspace.
+func (c *Client) Terminal(ctx context.Context, rows, cols uint16) (*websocket.Conn, error) {
+	q := url.Values{}
+	if rows > 0 {
+		q.Set("rows", strconv.FormatUint(uint64(rows), 10))
+	}
+	if cols > 0 {
+		q.Set("cols", strconv.FormatUint(uint64(cols), 10))
+	}
+	u := c.base + "/pty"
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	conn, resp, err := websocket.Dial(ctx, u, &websocket.DialOptions{
+		HTTPClient: c.http,
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + c.token}},
+	})
+	if err != nil {
+		// A refused handshake keeps the daemon's status and message.
+		if resp != nil && resp.Body != nil && resp.StatusCode != http.StatusSwitchingProtocols {
+			return nil, responseError(http.MethodGet, "/pty", resp)
+		}
+		return nil, fmt.Errorf("dial terminal: %w", err)
+	}
+	return conn, nil
+}
+
 // fileInfo converts the wire type into the executor type.
 func fileInfo(f eikad.FileInfo) executor.FileInfo {
 	return executor.FileInfo{
@@ -246,7 +279,8 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 }
 
 // responseError builds the error for a failed request, mapping 404 onto
-// ErrNotFound so that callers can branch on a missing file.
+// ErrNotFound and 403 onto fs.ErrPermission so that callers can branch on a
+// missing or refused file.
 func responseError(method, path string, resp *http.Response) error {
 	var body eikad.ErrorResponse
 	// The message is best effort: a daemon that failed mid-response may not
@@ -256,8 +290,13 @@ func responseError(method, path string, resp *http.Response) error {
 	if msg == "" {
 		msg = resp.Status
 	}
-	if resp.StatusCode == http.StatusNotFound {
+	switch resp.StatusCode {
+	case http.StatusNotFound:
 		return fmt.Errorf("%s %s: %s: %w", method, path, msg, ErrNotFound)
+	case http.StatusForbidden:
+		// The daemon refuses a path outside the root and a file it may not
+		// open alike; both are a refusal, not a harness failure.
+		return fmt.Errorf("%s %s: %s: %w", method, path, msg, fs.ErrPermission)
 	}
 	return fmt.Errorf("%s %s: %s", method, path, msg)
 }

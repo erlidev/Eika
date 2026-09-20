@@ -478,3 +478,93 @@ func TestStreamClassifiesErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamRelaysReasoningWithoutPreserveThinking(t *testing.T) {
+	// Showing the model think is the client's business; replaying it to the
+	// endpoint is preserve_thinking's, so reasoning arrives either way.
+	s := newSSEServer(t, http.StatusOK,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"weighing it"}}]}`,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":"stop"}]}`,
+	)
+	p := newProvider(t, s.URL)
+	events := collect(t, context.Background(), p, provider.Request{
+		Messages: []provider.Message{
+			provider.UserMessage("first"),
+			provider.AssistantMessageWithReasoning("answer", "prior thought", nil),
+			provider.UserMessage("continue"),
+		},
+	})
+
+	var reasoning strings.Builder
+	for _, e := range events {
+		if e.Kind == provider.KindReasoningDelta {
+			reasoning.WriteString(e.ReasoningDelta)
+		}
+	}
+	if reasoning.String() != "weighing it" {
+		t.Errorf("reasoning = %q, want the streamed reasoning", reasoning.String())
+	}
+
+	var sent struct {
+		PreserveThinking bool `json:"preserve_thinking"`
+		Messages         []struct {
+			ReasoningContent string `json:"reasoning_content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(<-s.body, &sent); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if sent.PreserveThinking {
+		t.Error("preserve_thinking was sent although the request did not ask for it")
+	}
+	if len(sent.Messages) != 3 || sent.Messages[1].ReasoningContent != "" {
+		t.Errorf("messages = %+v, want no replayed reasoning", sent.Messages)
+	}
+}
+
+func TestStreamRelaysUsageAsSoonAsAChunkReportsIt(t *testing.T) {
+	// An endpoint with continuous usage statistics reports on every chunk;
+	// each distinct report is relayed, so a caller can measure a decode rate
+	// while the response is still arriving.
+	s := newSSEServer(t, http.StatusOK,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"one "}}],"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11}}`,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"two"}}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}`,
+	)
+	p := newProvider(t, s.URL)
+	events := collect(t, context.Background(), p, provider.Request{
+		Messages: []provider.Message{provider.UserMessage("hi")},
+	})
+
+	var reported []int
+	for _, e := range events {
+		if e.Kind == provider.KindUsage {
+			reported = append(reported, e.Usage.OutputTokens)
+		}
+	}
+	if len(reported) != 3 || reported[0] != 1 || reported[2] != 3 {
+		t.Errorf("usage events = %v, want one per distinct report", reported)
+	}
+}
+
+func TestStreamReportsOneUsageEventWhenTheEndpointReportsOnce(t *testing.T) {
+	s := newSSEServer(t, http.StatusOK,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hi"}}]}`,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		`{"id":"1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}`,
+	)
+	p := newProvider(t, s.URL)
+	events := collect(t, context.Background(), p, provider.Request{
+		Messages: []provider.Message{provider.UserMessage("hi")},
+	})
+
+	usage := 0
+	for _, e := range events {
+		if e.Kind == provider.KindUsage {
+			usage++
+		}
+	}
+	if usage != 1 {
+		t.Errorf("usage events = %d, want exactly one", usage)
+	}
+}

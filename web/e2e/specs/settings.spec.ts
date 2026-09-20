@@ -192,6 +192,18 @@ test.describe("on a phone", () => {
     });
   }
 
+  test("the dialog keeps one height on every tab", async ({ open }) => {
+    const eika = await open({ scenario: "providers" });
+    await eika.click("Settings");
+    const heights: number[] = [];
+    for (const tab of ["Models", "General", "Search", "Account", "Appearance"]) {
+      await eika.click(`role=tab[name="${tab}"]`);
+      const box = await eika.page.getByRole("dialog").boundingBox();
+      heights.push(Math.round(box?.height ?? 0));
+    }
+    expect(new Set(heights).size, `the dialog resized between tabs: ${heights.join(", ")}`).toBe(1);
+  });
+
   test("the dialog never scrolls sideways", async ({ open }) => {
     const eika = await open({ scenario: "providers", viewport: phone });
     await eika.click("Settings");

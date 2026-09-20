@@ -159,8 +159,9 @@ look; a change to the look is a change to its tokens, never to a component.
   `dark:` colour overrides in components.
 - **Type** uses the scale: `text-2xs` (badges, tiny metadata), `text-xs`
   (secondary labels, status bars), `text-sm` (the default for UI text),
-  `text-base` (transcript prose), `text-lg` and up for headings only. No
-  arbitrary sizes. Weights: 400 body, 500 labels and buttons, 600 headings.
+  `text-base` (transcript prose, which is deliberately larger and looser than
+  the chrome around it: it is read for minutes at a time), `text-lg` and up
+  for headings only. No arbitrary sizes. Weights: 400 body, 500 labels and buttons, 600 headings.
 - **Mono** (`font-mono`) for ids, paths, URLs, commands, image names, key
   hints, tool names, model ids, token counts, and code. Everything else is
   sans, including labels and what a person wrote (the composer, queued
@@ -200,6 +201,15 @@ look; a change to the look is a change to its tokens, never to a component.
   "Could not <action>: <cause>". Never show a bare cause such as "name
   taken". The client (`api/client.ts`) words the cause; keep what it says
   accurate to the status, so a refusal never reads as "could not be reached".
+- **Clickability**: anything that acts on a click says so before it is
+  clicked. `index.css` states the pointer cursor once, for every element with
+  a clickable role, so a component never sets `cursor-pointer` and never
+  cancels it. A row, card header, tab, or tree item that responds to a click
+  takes `hover:bg-accent` with `transition-colors`; `bg-accent` alone marks
+  the selected one. A drag handle is at least ten pixels of target however
+  thin the line it draws.
+- **Scrollbars** are the thin themed ones `index.css` defines; a component
+  neither restyles nor hides them.
 - **Characters**: only what the bundled fonts cover. A symbol such as ⌘ or ←
   is a lucide icon, since a system font would draw it differently on every
   machine and break the visual baselines.

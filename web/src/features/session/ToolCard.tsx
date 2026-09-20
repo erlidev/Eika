@@ -40,7 +40,7 @@ export function ToolCard({ call, open = false }: ToolCardProps) {
     >
       <CollapsibleTrigger
         className={cn(
-          "hover:bg-accent/50 focus-visible:ring-ring flex w-full items-center gap-2 px-2 py-1.5 text-left",
+          "hover:bg-accent focus-visible:ring-ring flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors",
           "focus-visible:ring-1 focus-visible:outline-none",
         )}
       >

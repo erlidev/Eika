@@ -28,6 +28,8 @@ import type {
  */
 export type ReplyStep =
   | { say: string }
+  /** think streams reasoning, which the transcript shows apart from the answer. */
+  | { think: string }
   | {
       tool: string;
       args: Record<string, unknown>;
@@ -58,6 +60,11 @@ export type World = {
   projects: Project[];
   workspaces: Workspace[];
   diffs: Record<string, WorkspaceDiff>;
+  /**
+   * files holds each workspace's files by path, keyed by workspace id; the
+   * directories follow from the paths. Content with a NUL byte is binary.
+   */
+  files: Record<string, Record<string, string>>;
   sessions: Session[];
   /** entries holds each session's tree, keyed by session id, in insertion order. */
   entries: Record<string, Entry[]>;
@@ -120,6 +127,7 @@ export function emptyWorld(): World {
     projects: [],
     workspaces: [],
     diffs: {},
+    files: {},
     sessions: [],
     entries: {},
     runs: {},
@@ -220,6 +228,7 @@ export class WorldBuilder {
       model: input.name,
       context_window: 400000,
       max_output: 128000,
+      reasoning_efforts: [],
       preserve_thinking: false,
       created_at: minutesAgo(590),
       updated_at: minutesAgo(590),

@@ -1,7 +1,7 @@
 /** The unified diff the `edit` tool's card shows. */
 
+import { DiffRows } from "@/components/DiffRows";
 import { diffLines } from "@/lib/diff";
-import { cn } from "@/lib/utils";
 
 export type EditDiffProps = {
   /** oldString is the text the edit replaced. */
@@ -11,8 +11,6 @@ export type EditDiffProps = {
   /** startLine is the file line the replacement began at, for the gutter. */
   startLine: number;
 };
-
-const marks = { context: " ", add: "+", remove: "-" } as const;
 
 /**
  * EditDiff renders old against new. The edit tool sends only the replaced
@@ -30,22 +28,12 @@ export function EditDiff({ oldString, newString, startLine }: EditDiffProps) {
       aria-label="unified diff"
       className="focus-visible:ring-ring max-h-96 overflow-auto rounded-md border font-mono text-xs leading-relaxed focus-visible:ring-1 focus-visible:outline-none"
     >
-      {lines.map((line, index) => (
-        <div
-          key={`${String(index)}:${line.kind}`}
-          className={cn(
-            "flex gap-2 whitespace-pre",
-            line.kind === "add" && "bg-success/10 text-success",
-            line.kind === "remove" && "bg-destructive/10 text-destructive",
-          )}
-        >
-          <span className="text-muted-foreground w-10 shrink-0 pr-1 text-right tabular-nums select-none">
-            {line.oldLine === undefined ? "" : startLine + line.oldLine - 1}
-          </span>
-          <span className="w-3 shrink-0 select-none">{marks[line.kind]}</span>
-          <span className="pr-2">{line.text === "" ? " " : line.text}</span>
-        </div>
-      ))}
+      <DiffRows
+        lines={lines}
+        lineNumber={(line) =>
+          line.oldLine === undefined ? undefined : startLine + line.oldLine - 1
+        }
+      />
     </div>
   );
 }

@@ -24,6 +24,10 @@ import { cn } from "@/lib/utils";
 /** narrowWidth is where the three panes stop fitting side by side. */
 const narrowWidth = 1024;
 
+/** panelMax is how wide the context pane may grow; a `fill` panel may take more. */
+const panelMax = 640;
+const fillPanelMax = 960;
+
 export function Workbench() {
   const params = useParams();
   const sessionId = params.sessionId ?? "";
@@ -39,6 +43,9 @@ export function Workbench() {
 
   const tabs = availablePanels({ sessionId, workspaceId });
   const panel = tabs.find((tab) => tab.id === activePanel) ?? tabs[0];
+  // A wide editor or terminal is the point of dragging the pane out; the
+  // width is remembered, and a scrolling panel shows it capped again.
+  const maxPanelWidth = panel?.fill === true ? fillPanelMax : panelMax;
 
   // A tablist is one tab stop: Tab reaches the selected tab and the arrows
   // move between them, which is what the WAI-ARIA tabs pattern asks for.
@@ -77,7 +84,7 @@ export function Workbench() {
             aria-controls={`panel-${tab.id}`}
             tabIndex={panel?.id === tab.id ? 0 : -1}
             className={cn(
-              "hover:bg-accent/50 focus-visible:ring-ring flex items-center gap-1.5 rounded-md px-2 py-1 text-xs focus-visible:ring-1 focus-visible:outline-none",
+              "hover:bg-accent focus-visible:ring-ring flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors focus-visible:ring-1 focus-visible:outline-none",
               panel?.id === tab.id && "bg-accent font-medium",
             )}
             onClick={() => {
@@ -99,7 +106,10 @@ export function Workbench() {
         role="tabpanel"
         id={panel ? `panel-${panel.id}` : undefined}
         aria-labelledby={panel ? `panel-tab-${panel.id}` : undefined}
-        className="min-h-0 flex-1 overflow-y-auto"
+        className={cn(
+          "min-h-0 flex-1",
+          panel?.fill === true ? "overflow-hidden" : "overflow-y-auto",
+        )}
       >
         {panel && <panel.Component sessionId={sessionId} workspaceId={workspaceId} />}
       </div>
@@ -190,10 +200,10 @@ export function Workbench() {
           >
             <ResizableSplit
               side="end"
-              width={panelWidth}
+              width={Math.min(panelWidth, maxPanelWidth)}
               onWidthChange={setPanelWidth}
               min={240}
-              max={640}
+              max={maxPanelWidth}
               label="Resize the context panels"
               panel={contextPane}
             >

@@ -1,12 +1,15 @@
 /**
- * The run panel: the run itself, the two message queues, and the questions a
- * run is blocked on. It is the place to answer a question when the tool card
- * has scrolled out of the transcript.
+ * The run panel: the run itself, what it is costing, the two message queues,
+ * and the questions a run is blocked on. It is the place to answer a question
+ * when the tool card has scrolled out of the transcript, and the place the
+ * status bar's context meter explains itself.
  */
 
 import { LoadError, Notice } from "@/components/Notice";
+import { ContextBreakdown } from "@/features/session/ContextMeter";
 import { AskUserBody } from "@/features/session/renderers/AskUserRenderer";
 import { useRunStatus } from "@/features/session/queries";
+import { useSessionStore } from "@/features/session/store";
 import type { ToolItem } from "@/features/session/transcript";
 import { formatAgo } from "@/lib/format";
 
@@ -31,6 +34,7 @@ function questionCall(callId: string, question: string): ToolItem {
 
 export function RunPanel({ sessionId }: RunPanelProps) {
   const status = useRunStatus(sessionId);
+  const meter = useSessionStore((s) => s.meter);
   if (status.isPending) {
     return (
       <div className="p-3">
@@ -73,6 +77,10 @@ export function RunPanel({ sessionId }: RunPanelProps) {
         ) : (
           <p className="text-muted-foreground">This session has not run yet.</p>
         )}
+      </Section>
+
+      <Section title="Context">
+        <ContextBreakdown meter={meter} />
       </Section>
 
       <Section title={`Questions (${String(questions.length)})`}>

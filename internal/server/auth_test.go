@@ -57,26 +57,39 @@ func TestAuthLetsThePublicRoutesThrough(t *testing.T) {
 	}
 }
 
-func TestAuthAcceptsTheTokenInTheQueryForTheEventStreamOnly(t *testing.T) {
+func TestAuthAcceptsTheTokenInTheQueryForTheSocketsOnly(t *testing.T) {
 	s := server.New(testConfig(), testLogger(), server.Deps{}, server.Options{})
 
 	// The API rejects a query token, so that a token cannot leak through a
-	// link or a log of ordinary requests.
-	rec := requestWith(t, s, http.MethodGet, "/api/projects?token="+testToken, nil, "")
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("projects status = %d, want 401", rec.Code)
+	// link or a log of ordinary requests. Paths that only resemble a socket's
+	// are ordinary requests.
+	for _, path := range []string{
+		"/api/projects",
+		"/api/workspaces/w1/diff",
+		"/api/workspaces/w1/file",
+		"/api/workspaces/w1/terminal/extra",
+		"/api/workspaces/a/b/terminal",
+		"/api/events/extra",
+	} {
+		rec := requestWith(t, s, http.MethodGet, path+"?token="+testToken, nil, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s status = %d, want 401", path, rec.Code)
+		}
 	}
 
-	// The event stream accepts it, because a browser cannot set a header on a
+	// The sockets accept it, because a browser cannot set a header on a
 	// WebSocket handshake. Without the handshake headers the upgrade fails,
-	// which is past authentication and enough for this test.
-	rec = requestWith(t, s, http.MethodGet, "/api/events?token="+testToken, nil, "")
-	if rec.Code == http.StatusUnauthorized {
-		t.Errorf("event stream status = %d, want anything but 401", rec.Code)
-	}
-	rec = requestWith(t, s, http.MethodGet, "/api/events?token=nope", nil, "")
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("event stream with a wrong token = %d, want 401", rec.Code)
+	// or the route does not exist on a harness without a host, which is past
+	// authentication and enough for this test.
+	for _, path := range []string{"/api/events", "/api/workspaces/w1/terminal"} {
+		rec := requestWith(t, s, http.MethodGet, path+"?token="+testToken, nil, "")
+		if rec.Code == http.StatusUnauthorized {
+			t.Errorf("%s status = %d, want anything but 401", path, rec.Code)
+		}
+		rec = requestWith(t, s, http.MethodGet, path+"?token=nope", nil, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s with a wrong token = %d, want 401", path, rec.Code)
+		}
 	}
 }
 

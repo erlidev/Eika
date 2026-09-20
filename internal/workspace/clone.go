@@ -11,11 +11,12 @@ import (
 	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
-// The git identity commits made inside a workspace carry. The user's own
+// GitUserName and GitUserEmail are the git identity commits made inside a
+// workspace carry when its repository names none of its own. The user's own
 // identity belongs to the remote, which the harness pushes to.
 const (
-	gitUserName  = "Eika Agent"
-	gitUserEmail = "agent@eika.local"
+	GitUserName  = "Eika Agent"
+	GitUserEmail = "agent@eika.local"
 )
 
 // workspaceCredentialHelper answers the hub's basic auth challenge from the
@@ -206,8 +207,8 @@ func (h *Host) connectHub(ctx context.Context, ws Workspace, project string) (ex
 func configureGit(ctx context.Context, ex executor.Executor) error {
 	settings := [][]string{
 		{"config", "--global", "credential.helper", workspaceCredentialHelper},
-		{"config", "--global", "user.name", gitUserName},
-		{"config", "--global", "user.email", gitUserEmail},
+		{"config", "--global", "user.name", GitUserName},
+		{"config", "--global", "user.email", GitUserEmail},
 	}
 	for _, args := range settings {
 		if _, err := git(ctx, ex, args...); err != nil {

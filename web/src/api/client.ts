@@ -26,8 +26,10 @@ export class ApiError extends Error {
 const codes: readonly ErrorCode[] = [
   "invalid_request",
   "unauthorized",
+  "forbidden",
   "not_found",
   "conflict",
+  "too_large",
   "internal",
 ];
 
@@ -38,10 +40,14 @@ function codeForStatus(status: number): ErrorCode {
       return "invalid_request";
     case 401:
       return "unauthorized";
+    case 403:
+      return "forbidden";
     case 404:
       return "not_found";
     case 409:
       return "conflict";
+    case 413:
+      return "too_large";
     default:
       return "internal";
   }
@@ -109,6 +115,8 @@ export type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** body is encoded as JSON when present. */
   body?: unknown;
+  /** text is sent as is, as plain text, for a route whose body is a file's contents. */
+  text?: string;
   /** query holds search parameters; entries with no value are left out. */
   query?: Record<string, string | undefined>;
   signal?: AbortSignal;
@@ -137,12 +145,14 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const headers: Record<string, string> = { Accept: "application/json" };
   if (token !== "") headers.Authorization = `Bearer ${token}`;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  else if (options.text !== undefined) headers["Content-Type"] = "text/plain; charset=utf-8";
 
   const init: RequestInit = {
     method: options.method ?? "GET",
     headers,
   };
   if (options.body !== undefined) init.body = JSON.stringify(options.body);
+  else if (options.text !== undefined) init.body = options.text;
   if (options.signal) init.signal = options.signal;
 
   let response: Response;
