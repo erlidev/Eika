@@ -18,17 +18,6 @@ export function formatTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-/**
- * formatRate renders a measured decode rate. A rate under ten is shown to one
- * decimal, because the difference between 2 and 2.4 tokens a second is the
- * difference between waiting and giving up.
- */
-export function formatRate(tokensPerSecond: number): string {
-  if (!Number.isFinite(tokensPerSecond) || tokensPerSecond < 0) return "0";
-  if (tokensPerSecond < 10) return tokensPerSecond.toFixed(1);
-  return String(Math.round(tokensPerSecond));
-}
-
 /** formatBytes renders a file size in binary units: 512 B, 1.5 KiB, 3.2 MiB. */
 export function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return "0 B";

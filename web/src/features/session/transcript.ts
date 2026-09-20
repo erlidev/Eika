@@ -89,11 +89,12 @@ export type TranscriptItem =
   UserItem | AssistantItem | ReasoningItem | ToolItem | ErrorItem | NoticeItem;
 
 /**
- * Meter is what the status bar states about the turn: how full the model's
- * context window is and how fast it is decoding. Every number in it was
- * measured by the harness and reported in a turn.progress or turn.end event,
- * so nothing here is an estimate. It is absent until an endpoint reports
- * usage, because an endpoint that never does has nothing true to show.
+ * Meter is what the status bar states about the turn: how much of the model's
+ * context window the conversation fills and what the turn has cost. Every
+ * number in it was measured by the endpoint and reported in a turn.progress
+ * or turn.end event, so nothing here is an estimate. It is absent until an
+ * endpoint reports usage, because one that never does has nothing true to
+ * show.
  */
 export type Meter = {
   /** runId is the turn the measurements belong to. */
@@ -106,11 +107,6 @@ export type Meter = {
   generationMs: number;
   /** contextWindow belongs to the model that produced this measurement. */
   contextWindow: number;
-  /**
-   * tokensPerSecond is the decode rate measured between the two most recent
-   * comparable samples. It is absent until enough was measured to divide.
-   */
-  tokensPerSecond?: number;
   /** live is whether the turn this meter describes is still running. */
   live: boolean;
   /** source keeps a live measurement from being replaced by older replay entries. */
@@ -176,6 +172,23 @@ export function newTranscript(sessionId: string): TranscriptState {
     needsReplay: false,
     dropped: 0,
   };
+}
+
+/**
+ * cutOffText is what to tell the reader about a turn that stopped before the
+ * model was finished, and nothing for one that stopped because it was. The
+ * answer on screen is all there is, so the transcript has to say so: an
+ * answer that simply stops reads as a bug in the harness.
+ */
+export function cutOffText(stopReason: string | undefined): string | undefined {
+  switch (stopReason) {
+    case "length":
+      return "Cut off at the model's output limit. Ask it to continue, or raise Max output for this model.";
+    case "content_filter":
+      return "Cut off by the endpoint's content filter.";
+    default:
+      return undefined;
+  }
 }
 
 /** items is the whole transcript in render order. */
@@ -297,31 +310,14 @@ function applyReasoning(state: TranscriptState, e: EikaEvent): TranscriptState {
   };
 }
 
-/**
- * meterOf folds one measurement into the status bar's meter. A rate needs two
- * comparable samples. The first streamed token can contain an unknown number
- * of tokens, so treating the first usage report as a difference from zero
- * would state a precise but false rate.
- */
-function meterOf(previous: Meter | undefined, p: TurnProgress, live: boolean): Meter {
-  const base =
-    previous?.runId === p.run_id &&
-    previous.usage.output_tokens <= p.usage.output_tokens &&
-    previous.generationMs <= p.generation_ms
-      ? previous
-      : undefined;
-  const tokens = p.usage.output_tokens - (base?.usage.output_tokens ?? 0);
-  const ms = p.generation_ms - (base?.generationMs ?? 0);
-  // Nothing new was measured, so the last measured rate still stands.
-  const rate =
-    base !== undefined && tokens > 0 && ms > 0 ? (tokens * 1000) / ms : base?.tokensPerSecond;
+/** meterOf folds one measurement into the status bar's meter. */
+function meterOf(p: TurnProgress, live: boolean): Meter {
   return {
     runId: p.run_id,
     context: p.context,
     usage: p.usage,
     generationMs: p.generation_ms,
     contextWindow: p.context_window,
-    ...(rate === undefined ? {} : { tokensPerSecond: rate }),
     live,
     source: "live",
   };
@@ -330,7 +326,7 @@ function meterOf(previous: Meter | undefined, p: TurnProgress, live: boolean): M
 function applyProgress(state: TranscriptState, e: EikaEvent): TranscriptState {
   const p = payloadOf(e, "turn.progress");
   if (!p) return state;
-  return { ...state, meter: meterOf(state.meter, p, true) };
+  return { ...state, meter: meterOf(p, true) };
 }
 
 /**
@@ -350,8 +346,8 @@ function applyReset(state: TranscriptState, e: EikaEvent): TranscriptState {
       ),
   );
   const next = live.length === state.live.length ? { ...state } : { ...state, live };
-  // A retry starts a new response clock and usage counter. Keeping the failed
-  // attempt as a rate baseline would divide values from different attempts.
+  // A retry starts a new response clock and usage counter, so what the
+  // failed attempt measured describes nothing that is still on screen.
   if (next.meter?.runId === p.run_id) delete next.meter;
   return next;
 }
@@ -451,7 +447,7 @@ function applyTurnEnd(state: TranscriptState, e: EikaEvent): TranscriptState {
     ...state,
     live: seal(state.live),
     activeTurnId: state.activeTurnId === p.run_id ? "" : state.activeTurnId,
-    meter: meterOf(state.meter, p, false),
+    meter: meterOf(p, false),
     stopReason: p.stop_reason,
     // The turn's entries are written now; a replay fetches them and replaces
     // the live items this turn built.
@@ -593,9 +589,6 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
         contextWindow: metrics.context_window,
         live: false,
         source: "replay",
-        ...(state.meter?.runId === metrics.run_id && state.meter.tokensPerSecond !== undefined
-          ? { tokensPerSecond: state.meter.tokensPerSecond }
-          : {}),
       }
     : undefined;
 

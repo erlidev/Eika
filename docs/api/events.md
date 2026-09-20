@@ -159,15 +159,15 @@ so a replay delivers it too.
 
 Emitted every time the endpoint reports token usage, which for most endpoints
 is once per model call and for an endpoint with continuous usage statistics
-(vLLM, llama.cpp) is once per chunk. A client needs two reports from the same
-attempt and divides their usage difference by their `generation_ms`
-difference. The first report is only a baseline: timing starts when the first
-streamed token arrives, whose token count is unknown. A retry clears the
-baseline. An endpoint that reports usage once shows context usage but no rate.
+(vLLM, llama.cpp) is once per chunk.
 
 `generation_ms` is timed from each response's **first streamed token**, so it
 excludes the endpoint's queueing and prefill. A retried model attempt is not
 counted.
+
+There is no decode rate here. A Chat Completions endpoint reports its token
+counts when a response ends, never while one streams, so anything a client
+divided during a turn would be a guess rather than a measurement.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -182,10 +182,10 @@ counted.
 | Field | Type | Meaning |
 |---|---|---|
 | `run_id` | string | Identifies the turn. |
-| `stop_reason` | string, optional | Why the model stopped, for example `stop`. |
+| `stop_reason` | string, optional | Why the model stopped, for example `stop`. `length` and `content_filter` mean the endpoint cut the response off: what it did produce is kept and stored, its tool calls are dropped, and the turn ends here. A client says so rather than showing an answer that simply stops. |
 | `usage` | object | `input_tokens`, `output_tokens`, and `total_tokens`, summed over every model call in the turn. |
 | `context` | object | The last model call's own usage: how much of the model's context window the conversation now fills. |
-| `generation_ms` | number | The turn's total time inside model responses. A rate uses the difference between comparable progress reports, not this total alone. |
+| `generation_ms` | number | The turn's total time inside model responses. |
 | `context_window` | number | The configured window of the model that ran the turn. Zero means it is not configured. |
 
 ### `run.error`

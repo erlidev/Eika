@@ -250,8 +250,14 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 		if len(reply.ToolCalls) != 0 {
 			appendReply = a.appendTerminal
 		}
-		if err := appendReply(ctx, s, reply); err != nil {
-			return err
+		// A cut-off response can leave nothing behind: a tool call that ran
+		// out of room before it produced any prose. An empty assistant turn
+		// tells the model nothing and some endpoints refuse to be sent one,
+		// so the turn ends on the stop reason alone.
+		if !empty(reply) {
+			if err := appendReply(ctx, s, reply); err != nil {
+				return err
+			}
 		}
 
 		if len(reply.ToolCalls) == 0 {
@@ -403,8 +409,8 @@ func (a *Agent) call(ctx context.Context, s *Session, runID, system string, gen 
 
 // stream consumes one provider response. It emits the answer and the model's
 // reasoning as they arrive, and a turn.progress event each time the endpoint
-// reports usage, timed from the response's first token so that the rate a
-// client derives is measured rather than estimated.
+// reports usage, timed from the response's first token so that what a client
+// derives from it is measured rather than estimated.
 func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation) (provider.Message, string, error) {
 	events, err := a.provider.Stream(ctx, req)
 	if err != nil {
@@ -416,7 +422,7 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 	var usage provider.Usage
 	var stop string
 	// started is the moment the response began producing tokens; the time
-	// before it is the endpoint's queue and prefill, not its decode rate.
+	// before it is the endpoint's queue and prefill, not its generation time.
 	var started time.Time
 	begin := func() {
 		if started.IsZero() {
@@ -457,11 +463,29 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 	if stop == "" {
 		return provider.Message{}, "", errors.New("call model: provider completion has no stop reason")
 	}
-	if stop == "length" || stop == "content_filter" {
-		return provider.Message{}, "", fmt.Errorf("call model: incomplete response with stop reason %q", stop)
+	if cutOff(stop) {
+		// A response the endpoint cut off is kept, not thrown away. The user
+		// watched it stream, and the next turn must send it back to the model
+		// or the model reads its own answer as never given and apologises for
+		// a turn it did in fact take. Its tool calls go: one cut off partway
+		// through its arguments must not run, and an assistant message that
+		// carries a call with no result makes the next request malformed.
+		calls = nil
 	}
 	gen.add(usage, elapsedSince(started))
 	return provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls), stop, nil
+}
+
+// empty reports whether an assistant message carries nothing at all.
+func empty(m provider.Message) bool {
+	return m.Content == "" && m.Reasoning == "" && len(m.ToolCalls) == 0
+}
+
+// cutOff reports whether a stop reason means the model stopped before it was
+// finished, so the turn ends on what arrived rather than on the model's own
+// decision to stop.
+func cutOff(stop string) bool {
+	return stop == "length" || stop == "content_filter"
 }
 
 // emitProgress reports the turn's usage so far, counting the response in

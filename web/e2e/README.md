@@ -109,9 +109,10 @@ ends. Add a scenario when a screen
 needs data no existing one has; build it with `WorldBuilder` in
 `harness/world.ts`, and script replies as `ReplyStep` lists (`say` streams
 prose, `think` streams reasoning, `tool` runs a call, `ask` waits for an
-answer, `fail` ends the run, `hang` never ends it). A played reply also emits
-`turn.progress`, so the status bar's context meter and decode rate are on
-every screenshot of a session that has run.
+answer, `fail` ends the run, `cutOff` ends the turn on an incomplete stop
+reason, `hang` never ends it). A played reply also emits `turn.progress`, so
+the status bar's context meter is on every screenshot of a session that has
+run.
 
 ## Regression baselines (`visual`)
 
@@ -140,7 +141,7 @@ The threshold is 10 pixels, so a changed word fails.
 
 Baselines are rendered by Chromium on Linux and have no platform suffix
 (`snapshotPathTemplate` in `playwright.config.ts`), so one set serves every
-Linux machine and CI. What keeps them stable across machines:
+Linux machine. What keeps them stable across machines:
 
 - Every font is bundled: IBM Plex Sans and JetBrains Mono come from
   `@fontsource-variable`, and each step waits for `document.fonts.ready`.
@@ -150,19 +151,16 @@ Linux machine and CI. What keeps them stable across machines:
 - The clock, the data, and the animations are fixed.
 
 Font rendering on macOS or Windows differs, so regenerate baselines on Linux
-rather than loosening the threshold. If CI's rendering drifts from a local
-machine's, the failed job's `playwright-report` artifact holds the diffs.
+rather than loosening the threshold. If a machine's rendering drifts from the
+baselines', the run's report holds the diffs.
 
-## Checks and CI
+## Checks
 
 `make visual` runs the suite: about four minutes on a laptop, one browser at
 a time. `make check` runs it after the Go and web checks, so it takes about
-five minutes in all. `.github/workflows/ci.yml` runs the same three parts as
-separate jobs on `ubuntu-latest` (`go`, `web`, and `visual`). The visual job
-installs Chromium with its system libraries (`PLAYWRIGHT_DEPS=--with-deps`),
-and when it fails it uploads `e2e/report` and `e2e/test-results` as the
-`playwright-report` artifact: download it and open the diffs, or run
-`npx playwright show-report` on the report.
+five minutes in all. There is no CI, so `make check` locally is the only
+gate. A failed run writes `e2e/report` and `e2e/test-results`: open the diffs
+there, or run `npx playwright show-report` on the report.
 
 The specs run one browser at a time (`workers: 1`); pass `--workers=4` where
 memory allows. They start their own Vite server on port 4319 and refuse to

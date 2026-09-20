@@ -1004,7 +1004,7 @@ Rules that reviews enforce:
 `make check` runs `gofmt` and `goimports` verification, `go vet`,
 `staticcheck`, `golangci-lint` when it is installed, the Go tests, ESLint,
 `tsc`, and Vitest. `goimports` and `staticcheck` are pinned by `tool`
-directives in `go.mod`, so CI needs no global installs.
+directives in `go.mod`, so a checkout needs no global installs.
 
 The Go targets name `./cmd/... ./internal/...` rather than `./...`:
 `web/node_modules` ships Go files of its own (`flatted`), which `./...` would

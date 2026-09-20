@@ -1,6 +1,6 @@
 /**
- * The centre pane: one session's transcript, its run status, and the
- * composer. It owns the session's stream subscription.
+ * The centre pane: one session's transcript, the composer, and the run status
+ * bar under it. It owns the session's stream subscription.
  */
 
 import { useEffect } from "react";
@@ -88,7 +88,6 @@ export function SessionView({ sessionId }: SessionViewProps) {
           </Notice>
         </div>
       )}
-      <RunStatusBar sessionId={sessionId} model={chosenModel} onModelChange={chooseModel} />
       <Composer
         sessionId={sessionId}
         model={chosenModel}
@@ -99,6 +98,10 @@ export function SessionView({ sessionId }: SessionViewProps) {
             : "The workspace is not running; start it to send a message."
         }
       />
+      {/* The status bar is the pane's footer: the model, the meter, and the
+          connection are what the session is running on, not what it is
+          composing, so they read under the box rather than over it. */}
+      <RunStatusBar sessionId={sessionId} model={chosenModel} onModelChange={chooseModel} />
     </section>
   );
 }

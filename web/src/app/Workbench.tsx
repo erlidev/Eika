@@ -126,7 +126,9 @@ export function Workbench() {
     );
 
   return (
-    <div className="bg-background text-foreground flex h-screen flex-col">
+    // The workbench is the whole window and every pane scrolls inside itself,
+    // so the shell clips: nothing may scroll the page out from under the UI.
+    <div className="bg-background text-foreground flex h-screen flex-col overflow-hidden">
       <header className="flex shrink-0 items-center gap-2 border-b px-2 py-1.5">
         <Terminal aria-hidden className="size-4" />
         <span className="text-sm font-semibold">Eika</span>

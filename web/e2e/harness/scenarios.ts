@@ -296,6 +296,20 @@ export const scenarios = {
       return b.world;
     },
   },
+  "agent-cut-off": {
+    description:
+      "Like workbench, but the next message's answer is cut off at the model's output limit: what streamed is kept and the transcript says why it stopped.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      b.world.replies.push([
+        { think: "The file is about 35KB. I will write it in one go." },
+        { say: "Writing the file now. It starts like this:" },
+        { cutOff: "length" },
+      ]);
+      return b.world;
+    },
+  },
   "agent-running": {
     description:
       "Like workbench, but the next message starts a run that never finishes (for the running state and abort).",

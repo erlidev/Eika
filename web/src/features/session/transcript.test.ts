@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EikaEvent, EventType } from "@/api/events";
-import { applyEvent, items, newTranscript } from "@/features/session/transcript";
+import { applyEvent, cutOffText, items, newTranscript } from "@/features/session/transcript";
 import type { TranscriptState } from "@/features/session/transcript";
 
 const sessionID = "s1";
@@ -356,7 +356,44 @@ describe("reasoning", () => {
   });
 });
 
+describe("a turn the endpoint cut off", () => {
+  function ended(reason: string): EikaEvent {
+    return ev("turn.end", {
+      run_id: "r1",
+      stop_reason: reason,
+      usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 },
+      context: { input_tokens: 100, output_tokens: 10, total_tokens: 110 },
+      generation_ms: 1000,
+      context_window: 400_000,
+    });
+  }
+
+  it("keeps the text that did arrive and records why it stopped", () => {
+    const state = fold([...turn.slice(0, 3), ended("length")]);
+    expect(state.stopReason).toBe("length");
+    expect(cutOffText(state.stopReason)).toContain("output limit");
+    const last = [...state.committed, ...state.live].at(-1);
+    expect(last).toMatchObject({ kind: "assistant", streaming: false });
+  });
+
+  it("says nothing for a turn that stopped because the model was finished", () => {
+    expect(cutOffText(fold([...turn.slice(0, 3), ended("stop")]).stopReason)).toBeUndefined();
+  });
+
+  it("clears the notice when the next turn starts", () => {
+    const restart = ev("turn.start", {
+      run_id: "r2",
+      session_id: sessionID,
+      workspace_id: "w1",
+      message: "carry on",
+    });
+    const state = fold([...turn.slice(0, 3), ended("length"), restart]);
+    expect(cutOffText(state.stopReason)).toBeUndefined();
+  });
+});
+
 describe("the meter", () => {
+  /** progress is one turn.progress event carrying what the endpoint reported. */
   function progress(outputTokens: number, generationMs: number): EikaEvent {
     return ev("turn.progress", {
       run_id: "r1",
@@ -371,30 +408,16 @@ describe("the meter", () => {
     expect(fold(turn.slice(0, 3)).meter).toBeUndefined();
   });
 
-  it("divides the difference between two samples", () => {
+  it("takes the newest sample as it came", () => {
     const state = fold([progress(10, 1000), progress(40, 2000)]);
-    // Thirty tokens in the second second, not fifty over two.
-    expect(state.meter?.tokensPerSecond).toBeCloseTo(30);
     expect(state.meter?.live).toBe(true);
     expect(state.meter?.context.total_tokens).toBe(140);
+    expect(state.meter?.generationMs).toBe(2000);
   });
 
-  it("does not invent a rate from one usage report", () => {
-    expect(fold([progress(40, 2000)]).meter?.tokensPerSecond).toBeUndefined();
-  });
-
-  it("starts a new rate baseline after a retry", () => {
-    const state = fold([
-      progress(40, 2000),
-      ev("message.reset", { run_id: "r1" }),
-      progress(50, 3000),
-    ]);
-    expect(state.meter?.tokensPerSecond).toBeUndefined();
-  });
-
-  it("keeps the last measured rate when a sample adds nothing", () => {
-    const state = fold([progress(10, 1000), progress(40, 2000), progress(40, 2500)]);
-    expect(state.meter?.tokensPerSecond).toBeCloseTo(30);
+  it("drops the meter after a retry, whose measurements describe nothing on screen", () => {
+    const state = fold([progress(40, 2000), ev("message.reset", { run_id: "r1" })]);
+    expect(state.meter).toBeUndefined();
   });
 
   it("stops being live when the turn ends", () => {
@@ -412,7 +435,7 @@ describe("the meter", () => {
     expect(state.meter?.contextWindow).toBe(400_000);
   });
 
-  it("keeps a measured rate when the final totals arrive", () => {
+  it("takes the final totals when the turn ends", () => {
     const ended = ev("turn.end", {
       run_id: "r1",
       stop_reason: "stop",
@@ -422,7 +445,7 @@ describe("the meter", () => {
       context_window: 400_000,
     });
     const state = fold([progress(10, 1000), progress(40, 2000), ended]);
-    expect(state.meter?.tokensPerSecond).toBeCloseTo(30);
+    expect(state.meter?.usage.total_tokens).toBe(200);
     expect(state.meter?.live).toBe(false);
   });
 
@@ -449,7 +472,6 @@ describe("the meter", () => {
       }),
     );
     expect(state.meter?.runId).toBe("r1");
-    expect(state.meter?.tokensPerSecond).toBeCloseTo(30);
   });
 
   it("restores context usage from a stored assistant entry", () => {
@@ -478,6 +500,5 @@ describe("the meter", () => {
       context: { total_tokens: 100 },
       live: false,
     });
-    expect(state.meter?.tokensPerSecond).toBeUndefined();
   });
 });

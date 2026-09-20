@@ -40,6 +40,11 @@ export type ReplyStep =
     }
   | { ask: string; options?: string[]; allowFreeText?: boolean }
   | { fail: string; retryable?: boolean }
+  /**
+   * cutOff ends the turn on an incomplete stop reason, as an endpoint that
+   * ran out of output room does. What was said before it is kept.
+   */
+  | { cutOff: "length" | "content_filter" }
   /** hang leaves the run going: no turn.end is sent. */
   | { hang: true };
 

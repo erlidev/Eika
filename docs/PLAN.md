@@ -118,6 +118,8 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Destructive actions confirm in a dialog | `components/ConfirmDialog` wraps shadcn's alert dialog. The browser's `confirm` cannot be styled, cannot say what survives a deletion, and cannot be reached by a test |
 | Terminal is not an executor call | The harness relays a browser WebSocket to eikad `/pty` through `Workspaces.Terminal` (`Host.Terminal`, `sandbox.Client.Terminal`), never through `executor.Executor`, so a tool can run commands but can never hold a PTY. Frames pass through unchanged; the token may ride in `?token=` on this path, as on the event stream |
 | Workspace edits reuse `workspace.state` | A file saved, a commit, or a push through the API publishes `workspace.state` with the unchanged state instead of a new event type: the payload is the same, and a client refreshes files and changes on either |
+| No decode rate is shown | A Chat Completions endpoint reports its token counts when a response ends, never while one streams, so there is nothing to divide while the model writes. Counting stream deltas instead would be a guess wearing a measurement's clothes — one delta is one token on some endpoints and not on others — so the UI shows what was measured (context, turn cost, generation time) and no tok/s at all |
+| A cut-off response is kept, not discarded | A `length` or `content_filter` stop means the endpoint ended the response early. What it produced is stored and the turn ends on it, rather than the run failing and rolling back: the user watched that text stream, and a turn rolled back takes the user's own message with it, so the next call shows the model a history in which it never answered and it apologises for a turn it did take. The response's tool calls are dropped — one cut off partway through its arguments must not run, and one left without a result makes the next request malformed — and `turn.end` carries the stop reason so the UI says the answer was cut off |
 | Upstream push is from the hub | "Push upstream" pushes the workspace to its hub branch, then the hub pushes that branch to the project's remote with the harness's sealed credentials, so no remote credential enters a sandbox. A pull request is a compare link the UI builds from `remote_url`; there is no forge API |
 
 ## 2. Core principle: every agent action runs in a sandbox
@@ -231,7 +233,7 @@ Eika/
 
 `internal/` packages depend inward: `server -> agent -> tool -> executor`;
 nothing under `tool` imports `workspace`. Dependency direction is enforced by
-review and by `go vet`-style checks in CI where practical.
+review and by `go vet`-style checks in `make check` where practical.
 
 ## 5. Key interfaces
 
@@ -300,7 +302,7 @@ parallel.
 
 ### Phase 0: Foundations
 - Go module, `web/` scaffold, `Makefile` (`build`, `test`, `lint`, `check`, `dev`).
-- CI-style checks: `go vet`, `staticcheck`, `gofmt`, `tsc`, `eslint`, `prettier`.
+- Static checks: `go vet`, `staticcheck`, `gofmt`, `tsc`, `eslint`, `prettier`.
 - `docker-compose.yml` skeleton with eika, postgres, searxng.
 - `docs/ARCHITECTURE.md` initial version.
 
@@ -373,8 +375,8 @@ parallel.
 
 - Unit tests everywhere with the standard library; `executor/local` and a
   fake provider make the agent loop fully testable without Docker or a model.
-- Docker-dependent tests use build tag `docker` and run in CI only when a
-  socket is available.
+- Docker-dependent tests use build tag `docker` and run only when a socket
+  is available.
 - Frontend: Vitest for logic. Visual tests in `web/e2e/`: Playwright drives the UI
   against an in-browser mock of the HTTP API and event stream, compares screens
   with committed baselines (`make visual`), and gives agents a screenshot CLI

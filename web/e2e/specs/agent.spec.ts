@@ -73,3 +73,45 @@ test("reasoning streams beside the answer", async ({ open, expectShot }) => {
   await expect(eika.page.getByText(/Full jitter over the capped delay/).last()).toBeVisible();
   await expectShot(eika, "agent-reasoning-open");
 });
+
+test("an answer the endpoint cut off is kept, and says why it stopped", async ({
+  open,
+  expectShot,
+}) => {
+  const eika = await open({ scenario: "agent-cut-off" });
+  await eika.send("Write the file");
+  // The text stays on screen: throwing it away would leave the reader with a
+  // turn that produced nothing and the model with a history it never wrote.
+  // The same words are also in the live region and the session tree, so this
+  // names the paragraph in the transcript.
+  await expect(
+    eika.page.getByText("Writing the file now. It starts like this:").first(),
+  ).toBeVisible();
+  await expect(eika.page.getByText(/Cut off at the model's output limit/)).toBeVisible();
+  await expectShot(eika, "agent-cut-off");
+});
+
+test("the page itself never scrolls under the workbench", async ({ open }) => {
+  // A transcript long enough to scroll used to stretch the document: the
+  // visually hidden heading in each row is positioned at its place in the
+  // flow, and with no containing block inside the scroller it escaped to the
+  // page, leaving blank space below the whole UI.
+  const eika = await open({ scenario: "agent-web" });
+  await eika.send("Check the cap");
+  await expect(eika.page.getByRole("button", { name: /^web_fetch/ })).toBeVisible();
+  // The shell clips, so the document cannot grow whatever happens inside it;
+  // the pane below it is where an escaped row would still show up.
+  const room = await eika.page
+    .getByRole("main")
+    .evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(room).toBe(0);
+});
+
+test("a long message grows the box but never pushes the transcript out", async ({ open }) => {
+  const eika = await open({ scenario: "workbench" });
+  await eika.page.getByLabel("Message").fill("line\n".repeat(40));
+  const room = await eika.page
+    .getByRole("region", { name: "Session" })
+    .evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(room).toBe(0);
+});

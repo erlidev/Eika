@@ -49,7 +49,7 @@ test("run status bar: the live connection is labelled", async ({ open, expectSho
   const eika = await open({ scenario: "workbench" });
   const live = eika.page.getByRole("status", { name: "Live updates: Live" });
   await expect(live).toBeVisible();
-  await expect(live).toHaveAttribute("title", /Live updates are on/);
+  await expect(live).toHaveAttribute("title", "Live updates on");
   await expectShot(eika, "run-status-bar", 'role=status[name="Live updates: Live"] >> xpath=../..');
 });
 
@@ -69,6 +69,7 @@ test("the context meter states what the endpoint measured", async ({ open }) => 
   await eika.send("How should the jitter work?");
   const meter = eika.page.getByTitle(/^Context:/);
   await expect(meter).toContainText("/400k");
-  // The rate is measured between usage reports, never inferred from the text.
-  await expect(eika.page.getByText(/tok\/s/)).toBeVisible();
+  // No decode rate: the endpoint reports its token counts when a response
+  // ends, so a tok/s during a turn could only be a guess.
+  await expect(eika.page.getByText(/tok\/s/)).toHaveCount(0);
 });

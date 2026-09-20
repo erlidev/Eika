@@ -18,9 +18,8 @@ human changing the codebase. Read it fully before editing.
   Never add code that lets a tool touch the harness filesystem or shell.
 - Run `make check` before declaring work done. It formats, vets, lints, and
   tests both Go and the frontend, then compares the UI with its visual
-  baselines (about five minutes in all). Fix everything it reports. CI
-  (`.github/workflows/ci.yml`) runs the same checks on every push to main
-  and every pull request.
+  baselines (about five minutes in all). Fix everything it reports. There is
+  no CI: `make check` is the only gate, so run it locally before every push.
 - New behavior needs tests. A bug fix needs a regression test. See the style
   guide for what a good test looks like here.
 - Keep documentation current in the same change: `PLAN.md` checklist,

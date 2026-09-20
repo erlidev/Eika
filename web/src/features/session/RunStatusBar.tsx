@@ -1,7 +1,8 @@
 /**
- * The strip above the composer: what the run is doing, which model it uses and
- * how hard it is thinking, how full its context window is, how fast it is
- * decoding, and the way to abort.
+ * The strip under the composer: what the run is doing, which model it uses and
+ * how hard it is thinking, how full its context window is, and the way to
+ * abort. It sits below the box because the box is what the eye goes to, and a
+ * status line is read after it, not through it.
  */
 
 import { Brain, Loader2, Radio, Square, WifiOff } from "lucide-react";
@@ -19,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ContextMeter, DecodeRate } from "@/features/session/ContextMeter";
+import { ContextMeter } from "@/features/session/ContextMeter";
 import { useAbortRun, useRunStatus } from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
 import { useModel, useModels, useProviders, useUpdateModel } from "@/features/providers";
@@ -48,7 +49,7 @@ export function RunStatusBar({ sessionId, model, onModelChange }: RunStatusBarPr
   const chosen = useModel(model);
 
   return (
-    <div className="text-muted-foreground flex flex-wrap items-center gap-2 border-t px-3 py-1.5 text-xs">
+    <div className="text-muted-foreground flex flex-wrap items-center gap-2 border-t px-3 py-1 text-xs">
       {active ? (
         <span className="text-foreground flex items-center gap-1.5 font-medium">
           <Loader2 aria-hidden className="size-3.5 animate-spin" />
@@ -88,7 +89,6 @@ export function RunStatusBar({ sessionId, model, onModelChange }: RunStatusBarPr
       {chosen && <EffortCycle model={chosen} />}
 
       {meter && <ContextMeter meter={meter} />}
-      {meter && <DecodeRate meter={meter} />}
 
       <span className="ml-auto flex items-center gap-2">
         {dropped > 0 && <span title="Events the connection lost">{dropped} dropped</span>}
@@ -113,24 +113,10 @@ export function RunStatusBar({ sessionId, model, onModelChange }: RunStatusBarPr
 
 /** liveText is what each state of the event stream means for the page. */
 const liveText: Record<StreamStatus, { label: string; title: string }> = {
-  open: {
-    label: "Live",
-    title:
-      "Live updates are on: runs, output, and changes from other browsers appear as they happen.",
-  },
-  connecting: {
-    label: "Connecting…",
-    title: "Connecting to the harness for live updates.",
-  },
-  reconnecting: {
-    label: "Reconnecting…",
-    title:
-      "The live connection to the harness dropped and is being retried. Output from a run appears once it is back.",
-  },
-  idle: {
-    label: "Not live",
-    title: "No live connection to the harness: this page shows what it last loaded.",
-  },
+  open: { label: "Live", title: "Live updates on" },
+  connecting: { label: "Connecting…", title: "Connecting for live updates" },
+  reconnecting: { label: "Reconnecting…", title: "Live connection dropped, retrying" },
+  idle: { label: "Not live", title: "No live connection: showing the last load" },
 };
 
 /**
@@ -167,7 +153,7 @@ function LiveUpdates({ status }: { status: StreamStatus }) {
  * EffortCycle is how hard the model thinks, and the way to change it without
  * leaving the session: one click moves to the next word in the model's own
  * list. The list is the model's setting, so the change applies to the next
- * run in any session that uses it, which is why the button says so.
+ * run in any session that uses it.
  */
 function EffortCycle({ model }: { model: Model }) {
   const update = useUpdateModel();
@@ -180,10 +166,7 @@ function EffortCycle({ model }: { model: Model }) {
     <button
       type="button"
       disabled={update.isPending}
-      title={
-        `Reasoning effort for ${model.name}: ${current === "" ? "the endpoint's default" : current}. ` +
-        `Click for ${next}. It applies to this model's next run, wherever it runs.`
-      }
+      title={`Reasoning effort: ${current === "" ? "default" : current}. Click for ${next}.`}
       className={cn(
         "hover:bg-accent flex h-6 items-center gap-1 rounded-md border px-1.5 transition-colors",
         "focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none",

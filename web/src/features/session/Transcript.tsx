@@ -8,7 +8,7 @@
  * message in the session.
  */
 
-import { ArrowDown, TriangleAlert, User } from "lucide-react";
+import { ArrowDown, Scissors, TriangleAlert } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { Markdown } from "@/components/Markdown";
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Reasoning } from "@/features/session/Reasoning";
 import { useSessionStore } from "@/features/session/store";
 import { ToolCard } from "@/features/session/ToolCard";
+import { cutOffText } from "@/features/session/transcript";
 import type { TranscriptItem } from "@/features/session/transcript";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,7 @@ export function Transcript({ empty }: TranscriptProps) {
   const committed = useSessionStore((s) => s.committed);
   const live = useSessionStore((s) => s.live);
   const questions = useSessionStore((s) => s.questions);
+  const stopReason = useSessionStore((s) => s.stopReason);
 
   const rendered = useMemo(() => [...committed, ...live], [committed, live]);
   const questionCalls = useMemo(() => new Set(questions.map((q) => q.call_id)), [questions]);
@@ -60,7 +62,11 @@ export function Transcript({ empty }: TranscriptProps) {
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scroller}
-        className="min-h-0 flex-1 overflow-y-auto"
+        // `relative` is load-bearing: the visually hidden headings inside the
+        // rows are absolutely positioned at their place in the flow, so
+        // without a containing block here they escape this scroller and
+        // stretch the page itself by the transcript's scrolled height.
+        className="relative min-h-0 flex-1 overflow-y-auto"
         onScroll={() => {
           const el = scroller.current;
           if (!el) return;
@@ -80,6 +86,7 @@ export function Transcript({ empty }: TranscriptProps) {
                 openTool={item.kind === "tool" && questionCalls.has(item.callId)}
               />
             ))}
+            <CutOff reason={stopReason} />
             <div ref={bottom} />
           </div>
         )}
@@ -112,6 +119,25 @@ export function Transcript({ empty }: TranscriptProps) {
 }
 
 /**
+ * CutOff says that the last turn stopped before the model was finished. It
+ * belongs in the transcript rather than the status bar: it is about the
+ * answer above it, and it is gone as soon as the next turn starts.
+ */
+function CutOff({ reason }: { reason: string | undefined }) {
+  const text = cutOffText(reason);
+  if (text === undefined) return null;
+  return (
+    <p
+      role="status"
+      className="text-muted-foreground border-warning/50 flex items-center gap-2 border-l-2 pl-3 text-xs"
+    >
+      <Scissors aria-hidden className="size-3.5 shrink-0" />
+      {text}
+    </p>
+  );
+}
+
+/**
  * useAnnouncement is what a screen reader hears about the turn in flight: a
  * note when the model starts writing, and the reply itself once it is done.
  * The transcript a session opens with is not announced — the reader is
@@ -140,16 +166,18 @@ const Item = memo(function Item({ item, openTool }: { item: TranscriptItem; open
   switch (item.kind) {
     case "user":
       // A message the user wrote is the one thing on screen that did not come
-      // out of the model, so it is the one block with a filled surface and a
-      // named author. Nothing else in the transcript looks like this.
+      // out of the model. It is a bubble against the right edge, narrower than
+      // the model's full-width prose, so a glance down the transcript reads as
+      // a conversation with two sides rather than one column of blocks.
       return (
-        <article className="border-primary/30 bg-primary/5 rounded-md border border-l-2 px-3.5 py-2.5">
-          <h3 className="text-primary mb-1 flex items-center gap-1.5 text-xs font-semibold">
-            <User aria-hidden className="size-3.5" />
-            You
-          </h3>
-          <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">{item.text}</p>
-        </article>
+        <div className="flex justify-end">
+          <article className="bg-primary/10 border-primary/20 max-w-[80%] min-w-0 rounded-md border px-3.5 py-2">
+            <h3 className="sr-only">You</h3>
+            <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
+              {item.text}
+            </p>
+          </article>
+        </div>
       );
     case "reasoning":
       return <Reasoning item={item} />;

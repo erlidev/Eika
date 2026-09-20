@@ -1063,6 +1063,9 @@ export class MockHarness {
       });
     };
     let reasoning = "";
+    // The endpoint decides how a turn ends; a cut-off step changes it from
+    // the model's own "stop" to the reason it ran out of room.
+    let stopReason = "stop";
     try {
       this.append(session, { role: "user", content: text });
       send("turn.start", {
@@ -1174,6 +1177,9 @@ export class MockHarness {
           send("run.error", { message: step.fail, retryable: step.retryable ?? false });
           this.finish(run, "error", step.fail);
           return;
+        } else if ("cutOff" in step) {
+          stopReason = step.cutOff;
+          break;
         } else {
           this.busy -= 1;
           await new Promise<void>(() => undefined);
@@ -1188,7 +1194,7 @@ export class MockHarness {
         total_tokens: 1842 + Math.max(outputTokens, 311),
       };
       send("turn.end", {
-        stop_reason: "stop",
+        stop_reason: stopReason,
         usage,
         context: usage,
         generation_ms: Math.max(generationMs, 4000),

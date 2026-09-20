@@ -72,7 +72,7 @@ export function DefaultModelSelect() {
       <p id="default-model-hint" className="text-muted-foreground text-xs">
         {models.isSuccess && all.length === 0
           ? "Add a model first, under Settings, Models; the choice opens once there is one."
-          : "Used when a message names no model. A session can pick another above its composer."}
+          : "Used when a message names no model. A session can pick another in its status bar."}
       </p>
       {loadFailed && (
         <LoadError

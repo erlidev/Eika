@@ -566,20 +566,78 @@ func TestRunRejectsACompletionWithoutAStopReason(t *testing.T) {
 	}
 }
 
-func TestRunRejectsIncompleteStopReasons(t *testing.T) {
+func TestRunKeepsAResponseTheEndpointCutOff(t *testing.T) {
+	// The user watched this text stream. Throwing it away leaves the model
+	// reading its own answer as never given, so the next turn apologises for
+	// a turn it did in fact take.
 	for _, reason := range []string{"length", "content_filter"} {
 		t.Run(reason, func(t *testing.T) {
 			f := newFixture(t, []providertest.Step{
 				providertest.Stream(provider.TextDelta("partial"), provider.Done(reason)),
 			})
-			err := f.agent.Run(context.Background(), f.session, "hi")
-			if err == nil || !strings.Contains(err.Error(), reason) {
-				t.Fatalf("Run error = %v, want incomplete %s response", err, reason)
+			if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+				t.Fatalf("Run: %v", err)
 			}
-			if got := f.session.Conversation.Len(); got != 0 {
-				t.Errorf("conversation length = %d, want no incomplete response", got)
+			msgs := f.session.Conversation.Messages()
+			if len(msgs) != 2 {
+				t.Fatalf("conversation = %d messages, want the question and the answer it got", len(msgs))
+			}
+			if msgs[0].Role != provider.RoleUser || msgs[0].Content != "hi" {
+				t.Errorf("first message = %+v, want the user's own message kept", msgs[0])
+			}
+			if msgs[1].Role != provider.RoleAssistant || msgs[1].Content != "partial" {
+				t.Errorf("second message = %+v, want the text the endpoint did produce", msgs[1])
+			}
+
+			var end event.TurnEnd
+			f.events.payloadOf(t, event.TypeTurnEnd, &end)
+			if end.StopReason != reason {
+				t.Errorf("turn.end stop_reason = %q, want %q so a client can say the answer was cut off",
+					end.StopReason, reason)
 			}
 		})
+	}
+}
+
+func TestRunDropsToolCallsFromAResponseTheEndpointCutOff(t *testing.T) {
+	// A call cut off partway through its arguments must not run, and one left
+	// in the message without a result makes the next request malformed.
+	f := newFixture(t, []providertest.Step{
+		providertest.Stream(
+			provider.TextDelta("about to write it"),
+			provider.Event{
+				Kind:     provider.KindToolCall,
+				ToolCall: providertest.Call("call-1", "write", map[string]string{"path": "a.txt"}),
+			},
+			provider.Done("length"),
+		),
+	})
+	if err := f.agent.Run(context.Background(), f.session, "write the file"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	msgs := f.session.Conversation.Messages()
+	last := msgs[len(msgs)-1]
+	if len(last.ToolCalls) != 0 {
+		t.Errorf("assistant tool calls = %+v, want the half-written call dropped", last.ToolCalls)
+	}
+	if last.Content != "about to write it" {
+		t.Errorf("assistant content = %q, want the prose that did arrive", last.Content)
+	}
+	for _, e := range f.events.all() {
+		if e.Type == event.TypeToolCall {
+			t.Errorf("a tool call ran from a response the endpoint cut off")
+		}
+	}
+}
+
+func TestRunStoresNothingForACutOffResponseThatProducedNothing(t *testing.T) {
+	f := newFixture(t, []providertest.Step{providertest.Stream(provider.Done("length"))})
+	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	msgs := f.session.Conversation.Messages()
+	if len(msgs) != 1 || msgs[0].Role != provider.RoleUser {
+		t.Fatalf("conversation = %+v, want the question alone and no empty assistant turn", msgs)
 	}
 }
 

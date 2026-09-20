@@ -70,7 +70,7 @@ fmt-check:
 	fi
 	cd $(WEB) && $(NPM) run format:check
 
-## check: everything CI runs, the visual suite included. Requires `make
+## check: every check this project has, the visual suite included. Requires `make
 ## web-install` once; the first run also downloads Chromium. It takes about
 ## five minutes, four of them the visual suite; while iterating, run the
 ## targets it lists one at a time.
@@ -81,8 +81,8 @@ typecheck: web-install
 
 ## visual: compare every screen with its baseline in web/e2e/__screenshots__,
 ## one browser at a time. About four minutes. It installs the Chromium the
-## pinned Playwright expects when it is missing; CI adds its system
-## libraries with PLAYWRIGHT_DEPS=--with-deps.
+## pinned Playwright expects when it is missing; a bare machine adds its
+## system libraries with PLAYWRIGHT_DEPS=--with-deps.
 visual: web-install playwright-browser
 	cd $(WEB) && $(NPM) run visual
 
