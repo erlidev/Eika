@@ -7,10 +7,12 @@
 export type EventType =
   | "turn.start"
   | "message.delta"
+  | "reasoning.delta"
   | "message.reset"
   | "tool.call"
   | "tool.output"
   | "tool.result"
+  | "turn.progress"
   | "turn.end"
   | "run.error"
   | "question.asked"
@@ -38,6 +40,12 @@ export type TurnStart = {
 
 /** MessageDelta is the payload of a message.delta event. */
 export type MessageDelta = {
+  run_id: string;
+  text: string;
+};
+
+/** ReasoningDelta is the payload of a reasoning.delta event. */
+export type ReasoningDelta = {
   run_id: string;
   text: string;
 };
@@ -81,11 +89,34 @@ export type Usage = {
   total_tokens: number;
 };
 
+/**
+ * TurnProgress is the payload of a turn.progress event: the usage the endpoint
+ * has reported for the turn so far and the time spent generating it. Both are
+ * measured by the harness, so the difference between two of them is a true
+ * decode rate.
+ */
+export type TurnProgress = {
+  run_id: string;
+  usage: Usage;
+  /** context is the last model call's own prompt plus the response it produced. */
+  context: Usage;
+  /** generation_ms is the turn's time inside model responses, so far. */
+  generation_ms: number;
+  /** context_window is the configured window of the model that produced the usage. */
+  context_window: number;
+};
+
 /** TurnEnd is the payload of a turn.end event. */
 export type TurnEnd = {
   run_id: string;
   stop_reason?: string;
   usage: Usage;
+  /** context is how much of the model's window the conversation now fills. */
+  context: Usage;
+  /** generation_ms is the turn's total time inside model responses. */
+  generation_ms: number;
+  /** context_window is the configured window of the model that ran the turn. */
+  context_window: number;
 };
 
 /** RunError is the payload of a run.error event. */
@@ -167,10 +198,12 @@ export type BusDropped = {
 export type EventPayloads = {
   "turn.start": TurnStart;
   "message.delta": MessageDelta;
+  "reasoning.delta": ReasoningDelta;
   "message.reset": MessageReset;
   "tool.call": ToolCall;
   "tool.output": ToolOutput;
   "tool.result": ToolResult;
+  "turn.progress": TurnProgress;
   "turn.end": TurnEnd;
   "run.error": RunError;
   "question.asked": QuestionAsked;
@@ -216,10 +249,12 @@ export function sessionTopic(id: string): string {
 const eventTypes: readonly EventType[] = [
   "turn.start",
   "message.delta",
+  "reasoning.delta",
   "message.reset",
   "tool.call",
   "tool.output",
   "tool.result",
+  "turn.progress",
   "turn.end",
   "run.error",
   "question.asked",

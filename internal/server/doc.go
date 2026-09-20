@@ -1,12 +1,19 @@
 // Package server exposes the Eika harness over HTTP.
 //
 // It owns the whole HTTP surface: the JSON API for projects, workspaces,
-// sessions, runs, questions, and settings; the WebSocket event stream; bearer
-// token authentication; the git hub mounted at its own prefix; and, when
-// configured, the built frontend. Nothing else in internal/ imports server.
+// sessions, runs, questions, providers, models, and settings; password
+// sign-in and bearer token authentication; the WebSocket event stream; a
+// workspace's files, commits, pushes, and the terminal socket it relays to
+// the sandbox; the git hub mounted at its own prefix; and, when configured,
+// the built frontend. Nothing else in internal/ imports server.
 //
-// Run is the composition of the process: it opens the store, builds the hub,
-// the workspace host, the model set, and the tool registry, and serves. New
+// Providers, models, and credentials are rows the UI edits. The server seals
+// credentials with internal/secret and builds a provider client from a row
+// for one run, probe, or test at a time.
+//
+// Run is the composition of the process: it opens the store, loads the
+// sealing key, builds the hub, the workspace host, the provider registry, and
+// the tool registry, and serves. New
 // takes those pieces as Deps instead, which is how the tests run the API
 // against fakes. Handlers live one file per resource and are registered in
 // routes.go; docs/api/http.md documents every route.

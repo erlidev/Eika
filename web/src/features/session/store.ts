@@ -12,8 +12,16 @@ import type { TranscriptState } from "@/features/session/transcript";
 
 /** SessionStore is the open session's transcript and the ways it changes. */
 export type SessionStore = TranscriptState & {
+  /**
+   * model is the model this session's next run uses, empty for the default.
+   * It is here rather than in the session view because the status bar sets it
+   * and the run panel reads it, and neither owns the other.
+   */
+  model: string;
   /** open points the store at a session, discarding the previous one. */
   open: (sessionId: string) => void;
+  /** chooseModel points this session's next run at a model. */
+  chooseModel: (model: string) => void;
   /** apply folds one stream event in. */
   apply: (e: EikaEvent) => void;
   /** replayRequested records that the replay the state asked for is on its way. */
@@ -26,8 +34,14 @@ export type SessionStore = TranscriptState & {
 
 export const useSessionStore = create<SessionStore>((set) => ({
   ...newTranscript(""),
+  model: "",
   open: (sessionId) => {
-    set((state) => (state.sessionId === sessionId ? state : newTranscript(sessionId)));
+    set((state) =>
+      state.sessionId === sessionId ? state : { ...newTranscript(sessionId), model: "" },
+    );
+  },
+  chooseModel: (model) => {
+    set({ model });
   },
   apply: (e) => {
     set((state) => applyEvent(state, e));

@@ -11,6 +11,7 @@ import (
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/workspace"
+	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
 // gitTimeout bounds one git command the API runs inside a workspace.
@@ -65,6 +66,31 @@ type diffResponse struct {
 	// Status is the output of git status --porcelain, which lists untracked
 	// files the diff does not show.
 	Status string `json:"status"`
+}
+
+// commitRequest is the body of POST /api/workspaces/{id}/commit.
+type commitRequest struct {
+	Message string `json:"message"`
+	// Paths narrows the commit to these paths. Empty commits every change.
+	Paths []string `json:"paths"`
+}
+
+// commitResponse is the body of a successful commit.
+type commitResponse struct {
+	Commit string `json:"commit"`
+}
+
+// pushRequest is the body of POST /api/workspaces/{id}/push.
+type pushRequest struct {
+	// Upstream also pushes the branch from the hub to the project's remote.
+	Upstream bool `json:"upstream"`
+}
+
+// pushResponse is the body of a successful push.
+type pushResponse struct {
+	Branch         string `json:"branch"`
+	Commit         string `json:"commit"`
+	UpstreamPushed bool   `json:"upstream_pushed"`
 }
 
 // handleListWorkspaces lists the workspaces, of one project when the query
@@ -122,9 +148,13 @@ func (s *Server) createWorkspace(ctx context.Context, req createWorkspaceRequest
 		}
 	}
 
+	image := strings.TrimSpace(req.Image)
+	if image == "" && req.BuildContext == "" {
+		image = s.sandboxImage(ctx)
+	}
 	spec := workspace.Spec{
 		ID:           store.NewID(),
-		Image:        req.Image,
+		Image:        image,
 		BuildContext: req.BuildContext,
 		Dockerfile:   req.Dockerfile,
 		Project:      project.Name,
@@ -280,16 +310,25 @@ func (s *Server) handleWorkspaceDiff(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// ?path= narrows both to one file or directory.
+	var scope []string
+	if path := strings.TrimSpace(r.URL.Query().Get("path")); path != "" {
+		if _, err := executor.Resolve(ex.Root(), path); err != nil {
+			s.fail(w, r, fileError(err, path))
+			return
+		}
+		scope = []string{"--", path}
+	}
 	args := []string{"diff"}
 	if ws.BaseCommit != "" {
 		args = append(args, ws.BaseCommit)
 	}
-	diff, err := gitOutput(r.Context(), ex, args...)
+	diff, err := gitOutput(r.Context(), ex, append(args, scope...)...)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	status, err := gitOutput(r.Context(), ex, "status", "--porcelain")
+	status, err := gitOutput(r.Context(), ex, append([]string{"status", "--porcelain"}, scope...)...)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -300,6 +339,153 @@ func (s *Server) handleWorkspaceDiff(w http.ResponseWriter, r *http.Request) {
 		Diff:        diff,
 		Status:      status,
 	})
+}
+
+// handleCommitWorkspace stages the workspace's changes, all of them or the
+// paths the request names, and commits them.
+func (s *Server) handleCommitWorkspace(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[commitRequest](r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	message := strings.TrimSpace(req.Message)
+	if message == "" {
+		s.fail(w, r, invalidf("message is required"))
+		return
+	}
+	ws, err := s.deps.Store.Workspace(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	ex, err := s.executorFor(r.Context(), ws.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	commit, err := commitChanges(r.Context(), ex, message, req.Paths)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.workspaceState(r.Context(), ws.ID, ws.ProjectID, ws.State)
+	s.log.Info("workspace committed", "workspace_id", ws.ID, "commit", commit)
+	writeJSON(w, s.log, http.StatusOK, commitResponse{Commit: commit})
+}
+
+// commitChanges stages and commits inside a workspace and returns the new
+// commit. Paths are checked against the workspace root and passed after "--",
+// so that none of them can be read as an option.
+func commitChanges(ctx context.Context, ex executor.Executor, message string, paths []string) (string, error) {
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			return "", invalidf("paths must not contain an empty path")
+		}
+		if _, err := executor.Resolve(ex.Root(), p); err != nil {
+			return "", fileError(err, p)
+		}
+	}
+	scope := append([]string{"--"}, paths...)
+	if _, err := gitOutput(ctx, ex, append([]string{"add", "-A"}, scope...)...); err != nil {
+		return "", err
+	}
+	staged, err := gitOutput(ctx, ex, append([]string{"diff", "--cached", "--name-only"}, scope...)...)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(staged) == "" {
+		return "", conflictf("nothing to commit")
+	}
+	// A repository with an identity of its own, a local project's checkout,
+	// keeps it; anything else commits as Eika.
+	args := []string{"commit", "-m", message}
+	if _, err := gitOutput(ctx, ex, "config", "user.email"); err != nil {
+		args = append([]string{"-c", "user.name=" + workspace.GitUserName, "-c", "user.email=" + workspace.GitUserEmail}, args...)
+	}
+	if len(paths) > 0 {
+		args = append(args, scope...)
+	}
+	if _, err := gitOutput(ctx, ex, args...); err != nil {
+		return "", err
+	}
+	head, err := gitOutput(ctx, ex, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(head), nil
+}
+
+// handlePushWorkspace pushes the workspace's HEAD to its branch in the hub
+// and, when asked, from the hub on to the project's remote.
+func (s *Server) handlePushWorkspace(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[pushRequest](r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	ws, err := s.deps.Store.Workspace(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	project, err := s.deps.Store.Project(r.Context(), ws.ProjectID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if req.Upstream && project.RemoteURL == "" {
+		s.fail(w, r, invalidf("project %s has no remote to push to", project.Name))
+		return
+	}
+	host, err := s.deps.Workspaces.Inspect(r.Context(), ws.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if host.State != workspace.StateRunning {
+		s.fail(w, r, conflictf("workspace %s is %s, not running", ws.ID, host.State))
+		return
+	}
+	if err := s.deps.Workspaces.Push(r.Context(), host, project.Name, ws.Branch); err != nil {
+		if errors.Is(err, workspace.ErrBadBranch) {
+			s.fail(w, r, err)
+			return
+		}
+		s.fail(w, r, invalidf("push %s to the hub: %v", ws.Branch, err))
+		return
+	}
+	body := pushResponse{Branch: ws.Branch, Commit: s.head(r.Context(), host)}
+	if req.Upstream {
+		if err := s.pushUpstream(r.Context(), project, ws.Branch); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		body.UpstreamPushed = true
+	}
+	s.workspaceState(r.Context(), ws.ID, ws.ProjectID, ws.State)
+	s.log.Info("workspace pushed", "workspace_id", ws.ID, "branch", ws.Branch, "upstream", body.UpstreamPushed)
+	writeJSON(w, s.log, http.StatusOK, body)
+}
+
+// pushUpstream sends a branch from the hub to the project's remote with the
+// project's credentials, reporting a failure without them.
+func (s *Server) pushUpstream(ctx context.Context, p store.Project, branch string) error {
+	var creds hub.Credentials
+	if len(p.RemotePassword) > 0 {
+		var err error
+		if creds, err = s.projectCredentials(p); err != nil {
+			return err
+		}
+	}
+	ref := "refs/heads/" + branch
+	if err := s.deps.Hub.Push(ctx, p.Name, p.RemoteURL, ref+":"+ref, creds); err != nil {
+		remote, reason := withoutCredentials(p.RemoteURL, err)
+		reason = scrub(reason, creds.Password)
+		s.log.Error("push to remote", "project", p.Name, "remote", remote, "error", reason)
+		return invalidf("push %s to %s: %s", branch, remote, reason)
+	}
+	return nil
 }
 
 // executorFor returns the executor of a running workspace.

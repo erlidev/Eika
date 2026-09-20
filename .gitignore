@@ -2,10 +2,13 @@
 /bin/
 /web/dist/
 /web/node_modules/
+/web/src/node_modules/
 /web/.vite/
 
-# Local configuration and secrets
+# Local configuration, secrets, and the state `make dev` keeps
+/.env
 /deploy/.env
+/.dev/
 *.local.yaml
 
 # Editor and OS noise
@@ -14,3 +17,8 @@
 .idea/
 .vscode/
 .claude/
+
+# Visual test output; baselines in web/e2e/__screenshots__ are committed
+/web/e2e/out/
+/web/e2e/test-results/
+/web/e2e/report/

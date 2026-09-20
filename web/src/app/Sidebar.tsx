@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Play,
   Plus,
+  Settings2,
   Square,
   Trash2,
 } from "lucide-react";
@@ -20,7 +21,12 @@ import { useNavigate } from "react-router";
 import type { Project, Session, Workspace } from "@/api/types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
-import { CreateProjectDialog, useDeleteProject, useProjects } from "@/features/projects";
+import {
+  CreateProjectDialog,
+  ProjectSettingsDialog,
+  useDeleteProject,
+  useProjects,
+} from "@/features/projects";
 import { useCreateSession, useDeleteSession, useSessions } from "@/features/sessions";
 import {
   CreateWorkspaceDialog,
@@ -30,6 +36,7 @@ import {
   WorkspaceStateBadge,
 } from "@/features/workspaces";
 import { cn } from "@/lib/utils";
+import { failureText } from "@/lib/failure";
 
 export type SidebarProps = {
   /** sessionId is the open session, highlighted in the tree. */
@@ -72,7 +79,7 @@ export function Sidebar({ sessionId, onNavigate }: SidebarProps) {
         {projects.isPending && <p className="text-muted-foreground p-2 text-xs">Loading…</p>}
         {projects.isError && (
           <p role="alert" className="text-destructive p-2 text-xs">
-            {projects.error.message}
+            {failureText("load the projects", projects.error)}
           </p>
         )}
         {projects.data?.length === 0 && (
@@ -135,6 +142,7 @@ function ProjectRow({
 }: ProjectRowProps) {
   const remove = useDeleteProject();
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   return (
     <li>
@@ -149,6 +157,14 @@ function ProjectRow({
           <>
             <IconButton label={`New workspace in ${project.name}`} onClick={onAddWorkspace}>
               <Plus aria-hidden className="size-3" />
+            </IconButton>
+            <IconButton
+              label={`Settings of ${project.name}`}
+              onClick={() => {
+                setEditing(true);
+              }}
+            >
+              <Settings2 aria-hidden className="size-3" />
             </IconButton>
             <IconButton
               label={`Delete ${project.name}`}
@@ -172,6 +188,7 @@ function ProjectRow({
           remove.mutate(project.id);
         }}
       />
+      <ProjectSettingsDialog project={editing ? project : null} onOpenChange={setEditing} />
       {open && (
         <WorkspaceList
           projectId={project.id}
@@ -212,7 +229,7 @@ function WorkspaceList({
       )}
       {workspaces.isError && (
         <li role="alert" className="text-destructive py-1 pl-8 text-xs">
-          {workspaces.error.message}
+          {failureText("load the workspaces", workspaces.error)}
         </li>
       )}
       {(workspaces.data ?? []).map((workspace) => (
@@ -365,7 +382,7 @@ function SessionRow({
     <li>
       <div
         className={cn(
-          "group hover:bg-accent/50 flex items-center gap-1 rounded-sm pr-1",
+          "group hover:bg-accent flex items-center gap-1 rounded-md pr-1 transition-colors",
           current && "bg-accent",
         )}
       >
@@ -378,7 +395,7 @@ function SessionRow({
             void navigate(`/sessions/${session.id}`);
           }}
         >
-          <MessageSquare aria-hidden className="size-3 shrink-0" />
+          <MessageSquare aria-hidden className="size-3.5 shrink-0" />
           <span className="truncate">{session.title}</span>
         </button>
         <IconButton
@@ -417,7 +434,7 @@ type RowProps = {
 
 function Row({ depth, open, onToggle, icon, label, meta, actions }: RowProps) {
   return (
-    <div className="group hover:bg-accent/50 flex items-center gap-1 rounded-sm pr-1">
+    <div className="group hover:bg-accent flex items-center gap-1 rounded-md pr-1 transition-colors">
       <button
         type="button"
         aria-expanded={open}
@@ -426,16 +443,14 @@ function Row({ depth, open, onToggle, icon, label, meta, actions }: RowProps) {
         className="focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs focus-visible:ring-1 focus-visible:outline-none"
       >
         {open ? (
-          <ChevronDown aria-hidden className="size-3 shrink-0" />
+          <ChevronDown aria-hidden className="size-3.5 shrink-0" />
         ) : (
-          <ChevronRight aria-hidden className="size-3 shrink-0" />
+          <ChevronRight aria-hidden className="size-3.5 shrink-0" />
         )}
         {icon}
         <span className="truncate font-medium">{label}</span>
         {meta !== undefined && meta !== "" && (
-          <span className="text-muted-foreground shrink-0 truncate font-mono text-[0.65rem]">
-            {meta}
-          </span>
+          <span className="text-muted-foreground shrink-0 truncate font-mono text-2xs">{meta}</span>
         )}
       </button>
       <span className="flex shrink-0 gap-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
@@ -460,13 +475,13 @@ function IconButton({
 }) {
   return (
     <Button
-      size="icon"
+      size="icon-xs"
       variant="ghost"
       aria-label={label}
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className={cn("size-6", destructive && "hover:text-destructive")}
+      className={cn(destructive && "hover:text-destructive")}
     >
       {children}
     </Button>

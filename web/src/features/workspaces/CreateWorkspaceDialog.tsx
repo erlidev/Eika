@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateWorkspace } from "@/features/workspaces/queries";
+import { failureText } from "@/lib/failure";
 
 export type CreateWorkspaceDialogProps = {
   project: Project | null;
@@ -97,17 +98,23 @@ export function CreateWorkspaceDialog({ project, onOpenChange }: CreateWorkspace
               id="workspace-image"
               value={image}
               autoComplete="off"
-              placeholder="the deployment's sandbox image"
+              placeholder="the sandbox image from Settings, General"
               onChange={(e) => {
                 setImage(e.target.value);
               }}
             />
           </div>
 
-          {(problem ?? create.isError) && (
-            <p role="alert" className="text-destructive text-xs">
-              {problem ?? create.error?.message}
-            </p>
+          {/* An empty name is a hint, not an error: the dialog does not open
+              in red over a field nobody has typed in yet. */}
+          {problem !== null ? (
+            <p className="text-muted-foreground text-xs">{problem}</p>
+          ) : (
+            create.isError && (
+              <p role="alert" className="text-destructive text-xs">
+                {failureText("create the workspace", create.error)}
+              </p>
+            )
           )}
 
           <DialogFooter>

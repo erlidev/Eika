@@ -7,12 +7,18 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"time"
+
+	"github.com/coder/websocket"
 
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/search"
+	"github.com/erlidev/eika/internal/search/fetch"
+	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
@@ -46,6 +52,10 @@ type Workspaces interface {
 	Push(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Fetch(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Executor(ws workspace.Workspace) (executor.Executor, error)
+	// Terminal opens a shell in a running workspace for the person using it.
+	// It is not part of the executor, so no tool can reach a terminal.
+	Terminal(ctx context.Context, ws workspace.Workspace, rows, cols uint16) (*websocket.Conn, error)
+	HasImage(ctx context.Context, ref string) (bool, error)
 }
 
 // Subagents is the part of the subagent spawner the API uses: the children of
@@ -59,18 +69,22 @@ type Subagents interface {
 }
 
 // Hub is the part of the git hub the API uses: creating a project's
-// repository, mirroring a remote into it, and serving git over HTTP.
+// repository, mirroring a remote into it, pushing a branch back to that
+// remote, and serving git over HTTP.
 type Hub interface {
 	Init(ctx context.Context, project string) (string, error)
 	Mirror(ctx context.Context, project, remoteURL string, creds hub.Credentials) error
+	Push(ctx context.Context, project, remoteURL, refspec string, creds hub.Credentials) error
 	Handler() http.Handler
 }
 
-// Models is the set of models a run may use. The production implementation
-// builds a provider from the configuration; a test scripts one.
-type Models interface {
-	Names() []string
-	Provider(name string) (provider.Provider, error)
+// Providers builds a provider on an endpoint the user configured. The models
+// and providers themselves are rows; this is only what turns one into a
+// client. *provider.Registry is the production implementation; a test scripts
+// one.
+type Providers interface {
+	Kinds() []string
+	Build(kind string, e provider.Endpoint) (provider.Provider, error)
 }
 
 // Deps are the harness pieces the API serves. Every one of them is built once
@@ -82,10 +96,18 @@ type Deps struct {
 	Store      *store.Store
 	Hub        Hub
 	Workspaces Workspaces
-	Models     Models
-	Tools      *tool.Registry
-	Questions  *builtin.Questions
-	Bus        *event.Bus
+	Providers  Providers
+	// Secrets seals the credentials the UI writes, API keys and remote
+	// passwords, and opens them again when a provider or the hub needs one.
+	Secrets   *secret.Box
+	Tools     *tool.Registry
+	Questions *builtin.Questions
+	Bus       *event.Bus
+	// Search and Pages back web_search and web_fetch, which the tools hold;
+	// the API reports their health and lets the user try a search. Without
+	// them the search routes are not served.
+	Search *search.Engine
+	Pages  *fetch.Reader
 	// Subagents is set by UseSubagents rather than by the caller: the spawner
 	// needs the run manager this server owns.
 	Subagents Subagents
@@ -108,6 +130,10 @@ type Server struct {
 	deps Deps
 	tree *session.Tree
 	runs *runs
+
+	// loginMu makes sign-in attempts take turns, which bounds how fast a
+	// password can be guessed without locking its owner out.
+	loginMu sync.Mutex
 }
 
 // New builds a Server for the given configuration and dependencies. A zero

@@ -2,13 +2,20 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/openai"
+	"github.com/erlidev/eika/internal/search"
+	"github.com/erlidev/eika/internal/search/arxiv"
+	"github.com/erlidev/eika/internal/search/fetch"
+	"github.com/erlidev/eika/internal/search/github"
+	"github.com/erlidev/eika/internal/search/web"
+	"github.com/erlidev/eika/internal/search/wikipedia"
+	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool/builtin"
@@ -26,6 +33,12 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	}
 	defer st.Close()
 
+	// The key that seals credentials lives beside the hub, not in the
+	// database, so a copy of the database alone opens none of them.
+	secrets, err := secret.Load(cfg.SecretKeyFile)
+	if err != nil {
+		return err
+	}
 	repos, err := hub.New(cfg.HubRoot, log)
 	if err != nil {
 		return err
@@ -47,20 +60,24 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		}
 	}()
 
+	engine, pages, err := buildSearch(ctx, cfg, st, secrets, log)
+	if err != nil {
+		return err
+	}
+
 	questions := builtin.NewQuestions()
 	bus := event.NewBus(log)
 	// The spawner and the server need each other: the tools every run shares
 	// hold spawn_agent, and the spawner drives a child through the run
 	// manager. The spawner is built first and given the runner afterwards.
 	spawner := subagent.New(subagent.Options{
-		Store:       st,
-		Workspaces:  host,
-		Emitter:     bus,
-		MaxDepth:    cfg.Subagents.MaxDepth,
-		MaxChildren: cfg.Subagents.MaxChildren,
-		Logger:      log,
+		Store:      st,
+		Workspaces: host,
+		Emitter:    bus,
+		Limits:     subagentLimits(st, log),
+		Logger:     log,
 	})
-	tools, err := builtin.Registry(questions, spawner)
+	tools, err := builtin.Registry(builtin.Deps{Questions: questions, Agents: spawner, Search: engine, Pages: pages})
 	if err != nil {
 		return err
 	}
@@ -68,10 +85,13 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Store:      st,
 		Hub:        repos,
 		Workspaces: host,
-		Models:     configuredModels{registry: provider.NewRegistry(openai.New), models: cfg.Models},
+		Providers:  provider.NewRegistry(openai.New),
+		Secrets:    secrets,
 		Tools:      tools,
 		Questions:  questions,
 		Bus:        bus,
+		Search:     engine,
+		Pages:      pages,
 	}, opts)
 	s.UseSubagents(spawner, spawner.Attach)
 
@@ -84,36 +104,54 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	return s.Run(ctx)
 }
 
-// configuredModels is the set of models the configuration declares. It builds
-// a provider per run rather than holding one, so that a model's API key is
-// read when it is used and a run never shares a client with another.
-type configuredModels struct {
-	registry *provider.Registry
-	models   []config.Model
+// buildSearch builds the search engine over the built-in backends and the
+// page reader. The sources share one client; fetch has its own, which
+// refuses to connect to a non-public address, because its URLs come from the
+// model.
+func buildSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets *secret.Box, log *slog.Logger) (*search.Engine, *fetch.Reader, error) {
+	client := &http.Client{Timeout: search.Timeout}
+	return NewSearch(ctx, cfg, st, secrets, log, search.Searchers{
+		SearxNG:      web.NewSearxNG(client, cfg.SearxNGURL),
+		Exa:          web.NewExa(client),
+		Tavily:       web.NewTavily(client),
+		Brave:        web.NewBrave(client),
+		Marginalia:   web.NewMarginalia(client),
+		Wikipedia:    wikipedia.New(client, wikipedia.DefaultURL),
+		Arxiv:        arxiv.New(client, arxiv.DefaultURL),
+		GitHubCode:   github.New(client, github.DefaultURL, github.Code),
+		GitHubRepos:  github.New(client, github.DefaultURL, github.Repos),
+		GitHubIssues: github.New(client, github.DefaultURL, github.Issues),
+	}, fetch.NewClient())
 }
 
-// Names lists the configured model names, in configuration order: the first
-// is the default until the user picks one in the settings.
-func (m configuredModels) Names() []string {
-	out := make([]string, 0, len(m.models))
-	for _, model := range m.models {
-		out = append(out, model.Name)
+// NewSearch builds the search engine over searchers, and the page reader
+// over pageClient, both reading their settings, sealed keys, and usage
+// through the store. The wiring passes the real backends; a test passes
+// scripted ones.
+func NewSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets *secret.Box, log *slog.Logger,
+	searchers search.Searchers, pageClient *http.Client) (*search.Engine, *fetch.Reader, error) {
+	backend := searchBackend{store: st, secrets: secrets, log: log}
+	tracker, err := search.NewTracker(ctx, backend, log)
+	if err != nil {
+		return nil, nil, err
 	}
-	return out
-}
-
-// Provider builds the provider for one configured model.
-func (m configuredModels) Provider(name string) (provider.Provider, error) {
-	for _, model := range m.models {
-		if model.Name == name {
-			return m.registry.Build("openai", model)
-		}
+	engine, err := search.NewEngine(search.Config{
+		Backends:   search.Registry(searchers),
+		Tracker:    tracker,
+		Settings:   backend,
+		Keys:       backend,
+		SearxNGURL: cfg.SearxNGURL,
+		Log:        log,
+	})
+	if err != nil {
+		return nil, nil, err
 	}
-	return nil, fmt.Errorf("build provider: model %s is not configured", name)
+	pages := fetch.New(fetch.Config{Client: pageClient, Tracker: tracker, Keys: backend, Quota: engine})
+	return engine, pages, nil
 }
 
 var (
-	_ Models              = configuredModels{}
+	_ Providers           = (*provider.Registry)(nil)
 	_ Workspaces          = (*workspace.Host)(nil)
 	_ Hub                 = (*hub.Hub)(nil)
 	_ Subagents           = (*subagent.Spawner)(nil)
@@ -121,4 +159,10 @@ var (
 	_ builtin.Subagents   = (*subagent.Spawner)(nil)
 	_ subagent.Store      = (*store.Store)(nil)
 	_ subagent.Workspaces = (*workspace.Host)(nil)
+	_ builtin.Searcher    = (*search.Engine)(nil)
+	_ builtin.PageReader  = (*fetch.Reader)(nil)
+	_ fetch.Quota         = (*search.Engine)(nil)
+	_ search.Settings     = searchBackend{}
+	_ search.Keys         = searchBackend{}
+	_ search.UsageStore   = searchBackend{}
 )

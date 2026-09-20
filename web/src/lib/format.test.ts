@@ -5,6 +5,8 @@ import {
   firstLine,
   formatAgo,
   formatDuration,
+  formatBytes,
+  formatRate,
   formatTokens,
   shortId,
 } from "@/lib/format";
@@ -29,6 +31,15 @@ describe("formatTokens", () => {
     expect(formatTokens(4200)).toBe("4.2k");
     expect(formatTokens(42_000)).toBe("42k");
     expect(formatTokens(4_200_000)).toBe("4.2M");
+  });
+});
+
+describe("formatBytes", () => {
+  it("uses binary units", () => {
+    expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(1536)).toBe("1.5 KiB");
+    expect(formatBytes(3 * 1024 * 1024)).toBe("3.0 MiB");
+    expect(formatBytes(20 * 1024 * 1024)).toBe("20 MiB");
   });
 });
 
@@ -67,5 +78,18 @@ describe("firstLine", () => {
   it("keeps the first line and ellipsises a long one", () => {
     expect(firstLine("one\ntwo")).toBe("one");
     expect(firstLine("x".repeat(10), 5)).toBe("xxxx…");
+  });
+});
+
+describe("formatRate", () => {
+  it("keeps a decimal for a slow rate and rounds a fast one", () => {
+    expect(formatRate(2.44)).toBe("2.4");
+    expect(formatRate(42.6)).toBe("43");
+    expect(formatRate(1280)).toBe("1280");
+  });
+
+  it("answers zero for a rate that is not a number", () => {
+    expect(formatRate(Number.NaN)).toBe("0");
+    expect(formatRate(-1)).toBe("0");
   });
 });

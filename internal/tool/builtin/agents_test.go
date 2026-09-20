@@ -45,7 +45,7 @@ func (f *fakeAgents) List(context.Context, string) ([]builtin.AgentResult, error
 // agentTool returns one registered agent tool, backed by the given spawner.
 func agentTool(t *testing.T, name string, agents builtin.Subagents) tool.Tool {
 	t.Helper()
-	r, err := builtin.Registry(nil, agents)
+	r, err := builtin.Registry(builtin.Deps{Agents: agents})
 	if err != nil {
 		t.Fatalf("Registry: %v", err)
 	}

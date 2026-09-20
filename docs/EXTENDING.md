@@ -98,38 +98,37 @@ file answers "how much can a tool return".
 ## Adding a provider
 
 Implement `provider.Provider` in `internal/provider/<name>/` and register it in
-`internal/provider/registry.go`. Models are declared in configuration, not in
-code: a provider reads its model name, base URL, and the *name* of the
-environment variable holding its API key from `config.Model`, and resolves the
-key once in its constructor.
+`internal/provider/registry.go`. Providers and models are not declared in
+code or configuration: the user adds them in the web UI, and each provider
+row names its kind. The server builds a client for one run, probe, or test by
+calling the kind's constructor with a `provider.Endpoint`, the row's base URL
+and its key opened from the database, and drops the client afterwards.
 
 A provider converts a `provider.Request` into a stream of `provider.Event`
 values and never leaks a vendor SDK type upwards. It closes the channel after a
-`KindDone` or `KindError` event and stops when the context is cancelled.
-Retrying is the agent loop's job: classify a failure as a `provider.Error` and
-let the loop decide.
+`KindDone` or `KindError` event and stops when the context is cancelled. The
+request names the model by the endpoint's identifier. Retrying is the agent
+loop's job: classify a failure as a `provider.Error` and let the loop decide.
+
+A provider whose endpoint can list its models also implements
+`provider.Lister`. The setup screens call it to offer models to tick, with
+the context sizes it reports; without it, the user types model identifiers.
 
 ```go
 package echo
 
 import (
 	"context"
-	"fmt"
-	"os"
 
-	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/provider"
 )
 
 // Provider answers with the last user message, for local experiments.
-type Provider struct{ model config.Model }
+type Provider struct{ endpoint provider.Endpoint }
 
-// New returns a Provider for one configured model.
-func New(m config.Model) (provider.Provider, error) {
-	if os.Getenv(m.APIKeyEnv) == "" {
-		return nil, fmt.Errorf("build echo provider for model %s: environment variable %s is empty", m.Name, m.APIKeyEnv)
-	}
-	return &Provider{model: m}, nil
+// New returns a Provider on one endpoint.
+func New(e provider.Endpoint) (provider.Provider, error) {
+	return &Provider{endpoint: e}, nil
 }
 
 // Stream echoes the last message back as one text delta.
@@ -151,6 +150,11 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request) (<-chan pro
 	}()
 	return out, nil
 }
+
+// Models lists the one model this provider serves.
+func (p *Provider) Models(context.Context) ([]provider.ModelInfo, error) {
+	return []provider.ModelInfo{{ID: "echo", ContextWindow: 8192, MaxOutput: 1024}}, nil
+}
 ```
 
 Register it in `internal/provider/registry.go`. Constructors are parameters of
@@ -166,32 +170,137 @@ func NewRegistry(openAI, echo Constructor) *Registry {
 }
 ```
 
+`GET /api/providers` then lists the kind and `POST /api/providers` accepts it.
+The UI's provider form creates OpenAI-compatible providers only, so offering
+the new kind there means giving `web/src/features/providers/presets.ts` a
+preset for it and sending its kind from `ProviderForm.tsx`.
+
 Test a provider against an `httptest` server that serves its wire format, as
 `internal/provider/openai/openai_test.go` does. Test everything that consumes a
 provider with `provider/providertest`, the scripted fake.
 
-`config.Model` also supplies `reasoning_effort` and `preserve_thinking`.
-`reasoning_effort` maps to the standard Chat Completions request field.
-`preserve_thinking` is a compatible-endpoint extension, not an OpenAI API
-field. It is enabled when omitted; set it to false for an endpoint that does
-not accept it. When enabled, the OpenAI-compatible provider reads streamed
-`reasoning_content` into `KindReasoningDelta` events. The agent stores the
-assembled value in `Message.Reasoning`, and the provider sends it back as
+A model row also carries `reasoning_effort`, `reasoning_efforts`, and
+`preserve_thinking`, which the run passes on in `provider.Request`.
+`reasoning_effort` maps to the standard Chat Completions request field;
+`reasoning_efforts` is the list of words the session's status bar cycles
+through, since endpoints disagree on the vocabulary and the harness only
+checks the shape (`provider.ValidReasoningEffort`).
+
+A provider emits `KindReasoningDelta` for reasoning whatever
+`preserve_thinking` says: the agent turns those into `reasoning.delta` events
+so a client can show the model thinking, and stores the assembled value in
+`Message.Reasoning`. `preserve_thinking` is a compatible-endpoint extension,
+not an OpenAI API field, and is off for a new model; when it is on, the
+OpenAI-compatible provider sends the stored reasoning back as
 `reasoning_content` on later assistant messages. A new provider can map the
 provider-neutral reasoning value to its own wire format.
 
-## Adding a search source
+Emit `KindUsage` as soon as the endpoint reports usage rather than only at the
+end. The agent times each response from its first token and republishes both
+as `turn.progress`. A client needs two reports from one attempt for a decode
+rate; an endpoint that reports usage once still produces one event and shows
+context usage without a rate.
 
-Implement `search.Source` in `internal/search/<name>/` and register it in
+## Adding a search backend
+
+A search backend is a web provider in the failover chain (SearXNG, Exa,
+Tavily, Brave, Marginalia) or a source the model names in `web_search`'s
+`source` argument (Wikipedia, arXiv, the GitHub searches). Both implement
+`search.Searcher` in `internal/search/<package>/` and register in
 `internal/search/registry.go`. Search runs in the harness, not in a sandbox,
 because it is a network call rather than a filesystem or process action.
 
-Lands in phase 7.
+A searcher only speaks its backend's wire format. It returns at most
+`q.Limit` results, reduced to `search.Result`, with descriptions passed
+through `search.Clean`. The Engine does everything else: the key, quotas,
+cooldowns, pacing, caching, deduplication, and what the model reads. Build
+requests with `search.Get` or `search.Post` and send them with `search.JSON`
+(or `search.Do` for a body that is not JSON): they identify Eika, apply the
+timeout, bound the body, and turn a failed status into a `*search.HTTPError`
+that carries the header, which is how a `Retry-After` becomes a cooldown.
+Refuse a query you can tell will fail with `search.Errorf`, before spending a
+request.
+
+A keyed web provider, whose key the user enters in the Search tab:
+
+```go
+package web
+
+import (
+	"context"
+	"net/http"
+	"net/url"
+	"strconv"
+
+	"github.com/erlidev/eika/internal/search"
+)
+
+// Kagi searches Kagi's search API. It needs a key.
+type Kagi struct{ client *http.Client }
+
+// NewKagi returns a Kagi provider.
+func NewKagi(client *http.Client) *Kagi { return &Kagi{client: client} }
+
+// Search runs the query on Kagi's search API.
+func (k *Kagi) Search(ctx context.Context, q search.Query) ([]search.Result, error) {
+	params := url.Values{"q": {q.Text}, "limit": {strconv.Itoa(q.Limit)}}
+	req, err := search.Get(ctx, "https://kagi.com/api/v0/search?"+params.Encode())
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bot "+q.Key)
+	var body struct {
+		Data []struct {
+			T       int    `json:"t"`
+			URL     string `json:"url"`
+			Title   string `json:"title"`
+			Snippet string `json:"snippet"`
+		} `json:"data"`
+	}
+	if err := search.JSON(ctx, k.client, req, &body); err != nil {
+		return nil, err
+	}
+	var out []search.Result
+	for _, d := range body.Data {
+		if d.T == 0 { // 0 is a search result; other types are related searches
+			out = append(out, search.Result{Title: d.Title, URL: d.URL, Description: search.Clean(d.Snippet)})
+		}
+	}
+	return out, nil
+}
+```
+
+Register it with one entry in `Registry`, and add its field to
+`search.Searchers`, which the wiring fills in `internal/server/wire.go`
+(`Kagi: web.NewKagi(client)`), because this package cannot import the
+backends that import it:
+
+```go
+{Name: "kagi", Searcher: s.Kagi, Web: true, Key: "kagi", KeyRequired: true, Limit: Limit{Month: 100}},
+```
+
+`Name` is what the settings and the API store, so it never changes once
+shipped. `Web` puts it in the chain; its position in `Registry` is its place
+in the default order, and the user reorders from there. `Key` names the key
+it is sent in `q.Key`; `PUT /api/search/keys/kagi` accepts it from then on,
+and the Search tab lists it (give it a label in
+`web/src/features/search/search.ts`). `Limit` is its default quota, which
+`search_limits` overrides. A source leaves `Web` false and names itself in
+`web_search`'s `source` enum in `internal/tool/builtin/web.go`; `Bucket`
+makes it count against a quota, `Pool` caches a larger pool so a repeated
+query is free, and `Interval` spaces its requests for a backend that asks
+for it, as arXiv does.
+
+Test a backend with `searchtest.Client`, which answers requests in-process
+and records them; `internal/search/web/example_test.go` holds this example
+and its test. `searchtest.New` is a scripted searcher for testing whatever
+consumes one.
 
 ## Using a custom sandbox image
 
-A workspace runs in the image named by `sandbox_image`, but a `workspace.Spec`
-can override it per workspace, either with an image name or with a build
+A workspace runs the image the sandbox image setting names (Settings,
+General; `eika-sandbox:latest` by default), but a `workspace.Spec` can
+override it per workspace, either with an image name or with a build
 context. Any image works: the harness copies its own static `eikad` binary into
 the container at `/usr/local/bin/eikad` before starting it and uses that as the
 entrypoint, so an image needs no Eika-specific content at all.
@@ -228,9 +337,9 @@ The built image is tagged `eika-ws-<id>:latest`. Start the workspace with
 `host.Start`, then take its executor with `host.Executor(ws)`; every tool call
 goes through that.
 
-To change the default image for every workspace, set `sandbox_image` (or
-`EIKA_SANDBOX_IMAGE`) and, if you want Eika's own image as a base, extend
-`sandbox/Dockerfile` and rebuild it with `make sandbox`.
+To change the default image for every workspace, set it under Settings,
+General. To use Eika's own image as a base, extend `sandbox/Dockerfile` and
+rebuild it with `docker compose build sandbox-image` or `make sandbox`.
 
 ## Adding a migration
 
@@ -273,7 +382,8 @@ go test -tags docker ./internal/store/... ./internal/session/...
 
 One file per resource in `internal/server/`, one registration in
 `internal/server/routes.go`, one entry in `docs/api/http.md`. Everything under
-`/api` is behind the bearer token already, so a handler never checks it.
+`/api` is behind authentication already, a sign-in session or the API token,
+so a handler never checks it.
 
 A handler reads its input, calls the packages that do the work, and writes one
 of two things: a JSON body with `writeJSON`, or an error with `s.fail`. It
@@ -487,6 +597,29 @@ The tab strip, the keyboard handling, the remembered active tab, and the narrow
 layout all follow from the array. Add a README line to the feature folder and
 you are done.
 
+The pane body scrolls, which suits a list. A panel that sizes and scrolls its
+own content, such as a terminal or an editor, sets `fill: true` instead: its
+component then gets the whole body at a fixed height (lay it out with `h-full`
+and `min-h-0`), and the pane may be dragged wider than a scrolling panel
+allows. The Files and Terminal panels are the examples:
+
+```tsx
+const terminalPanel: Panel = {
+  id: "terminal",
+  title: "Terminal",
+  icon: SquareTerminal,
+  available: (context) => context.workspaceId !== "",
+  fill: true,
+  Component: ({ workspaceId }) => <TerminalPanel workspaceId={workspaceId} />,
+};
+```
+
+A panel that works inside the sandbox wraps its content in `RunningWorkspace`
+from `features/workspaces`, which shows the workspace's state and a Start
+button until it runs. A panel whose component pulls in a large library loads
+that part with `React.lazy`, as the Files panel does for Monaco and the
+Terminal panel for xterm, so the main bundle stays small.
+
 ## Adding a tool renderer
 
 A tool call is drawn as a collapsible card: a header the registry fills with a
@@ -500,23 +633,17 @@ carries the call's arguments, the output it streamed, and its result:
 ```tsx
 // web/src/features/session/renderers/renderers.tsx
 import { FieldList, ResultBlock } from "@/features/session/renderers/parts";
-import { detail, stringArg } from "@/features/session/renderers/registry";
+import { stringArg } from "@/features/session/renderers/registry";
 import type { ToolRenderer, ToolRendererProps } from "@/features/session/renderers/registry";
 import { firstLine } from "@/lib/format";
 
-/** webSearchRenderer shows the query and the results it returned. */
-const webSearchRenderer: ToolRenderer = {
-  summary: (call) => firstLine(stringArg(call, "query")),
+/** countLinesRenderer shows the file the example tool counted, and its count. */
+const countLinesRenderer: ToolRenderer = {
+  summary: (call) => firstLine(stringArg(call, "path")),
   Body: ({ call }: ToolRendererProps) => (
     <div className="space-y-2">
-      <FieldList
-        fields={[
-          ["query", stringArg(call, "query")],
-          ["source", stringArg(call, "source")],
-          ["results", String(detail(call, "result_count") ?? "")],
-        ]}
-      />
-      <ResultBlock call={call} label="search results" />
+      <FieldList fields={[["path", stringArg(call, "path")]]} />
+      <ResultBlock call={call} label="line count" />
     </div>
   ),
 };
@@ -535,9 +662,13 @@ export const toolRenderers: Record<string, ToolRenderer> = {
   bash: bashRenderer,
   edit: editRenderer,
   // ...
-  web_search: webSearchRenderer,
+  count_lines: countLinesRenderer,
 };
 ```
+
+A body with more than a few lines of markup belongs in a file of its own that
+exports only the component, as `WebRenderer.tsx` does for `web_search` and
+`web_fetch`; `renderers.tsx` keeps the summary and names the body.
 
 Two rules. The summary is one short line: it is truncated, not wrapped. The
 body must render a call that has not finished, because `tool.call` arrives

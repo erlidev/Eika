@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,9 @@ import (
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
+	"github.com/erlidev/eika/internal/search"
+	"github.com/erlidev/eika/internal/search/searchtest"
+	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/server"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/store/storetest"
@@ -38,9 +42,19 @@ type api struct {
 	hub       *fakeHub
 	questions *builtin.Questions
 	spawner   *subagent.Spawner
+	secrets   *secret.Box
+	// searxng and marginalia answer web searches; fetched serves every page
+	// web_fetch reads.
+	searxng, marginalia *searchtest.Searcher
+	fetched             *searchtest.Transport
+	// testProvider is the provider the model every run uses by default
+	// belongs to.
+	testProvider store.Provider
 
 	mu       sync.Mutex
 	provider provider.Provider
+	// endpoint is the endpoint the last provider was built on.
+	endpoint provider.Endpoint
 	// delay holds up building a run's provider, which is how a test widens
 	// the window two concurrent requests race in.
 	delay time.Duration
@@ -50,19 +64,39 @@ type api struct {
 func newAPI(t *testing.T) *api {
 	t.Helper()
 	st := storetest.Open(t)
-	a := &api{store: st, host: newFakeHost(t), hub: newFakeHub(), questions: builtin.NewQuestions()}
+	secrets, err := secret.Load(filepath.Join(t.TempDir(), "secret.key"))
+	if err != nil {
+		t.Fatalf("secret.Load: %v", err)
+	}
+	a := &api{store: st, host: newFakeHost(t), hub: newFakeHub(), questions: builtin.NewQuestions(), secrets: secrets}
 	// The bus is built here rather than left to server.New, because the
 	// spawner emits on the same one the stream fans out.
 	bus := event.NewBus(testLogger())
 	a.spawner = subagent.New(subagent.Options{
-		Store:       st,
-		Workspaces:  a.host,
-		Emitter:     bus,
-		MaxDepth:    2,
-		MaxChildren: 4,
-		Logger:      testLogger(),
+		Store:      st,
+		Workspaces: a.host,
+		Emitter:    bus,
+		Limits: func(context.Context) subagent.Limits {
+			return subagent.Limits{MaxDepth: 2, MaxChildren: 4}
+		},
+		Logger: testLogger(),
 	})
-	tools, err := builtin.Registry(a.questions, a.spawner)
+	a.searxng = searchtest.New(search.Result{Title: "Tokio", URL: "https://tokio.rs/", Description: "An async runtime."})
+	a.marginalia = searchtest.New(search.Result{Title: "Small web", URL: "https://small.example/"})
+	none := searchtest.New()
+	pageClient, fetched := searchtest.Client(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/markdown")
+		_, _ = w.Write([]byte("# Guide\n\nthe timeout is 30s\n"))
+	})
+	a.fetched = fetched
+	engine, pages, err := server.NewSearch(t.Context(), testConfig(), st, secrets, testLogger(), search.Searchers{
+		SearxNG: a.searxng, Exa: none, Tavily: none, Brave: none, Marginalia: a.marginalia,
+		Wikipedia: none, Arxiv: none, GitHubCode: none, GitHubRepos: none, GitHubIssues: none,
+	}, pageClient)
+	if err != nil {
+		t.Fatalf("server.NewSearch: %v", err)
+	}
+	tools, err := builtin.Registry(builtin.Deps{Questions: a.questions, Agents: a.spawner, Search: engine, Pages: pages})
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -70,13 +104,37 @@ func newAPI(t *testing.T) *api {
 		Store:      st,
 		Hub:        a.hub,
 		Workspaces: a.host,
-		Models:     fakeModels{names: []string{"test-model"}, build: a.buildProvider},
+		Providers:  fakeProviders{build: a.buildProvider},
+		Secrets:    secrets,
 		Tools:      tools,
 		Questions:  a.questions,
 		Bus:        bus,
+		Search:     engine,
+		Pages:      pages,
 	}, server.Options{})
 	a.Server.UseSubagents(a.spawner, a.spawner.Attach)
 	t.Cleanup(a.Server.Close)
+
+	// Every run uses test-model unless it names another. Its window is wide
+	// enough for the whole tool registry: the agent loop refuses a request
+	// whose conservative upper bound does not fit, and the schemas of thirteen
+	// tools are most of a small window.
+	key, err := secrets.Seal("test-key")
+	if err != nil {
+		t.Fatalf("seal key: %v", err)
+	}
+	a.testProvider, err = st.CreateProvider(t.Context(), store.Provider{
+		Name: "test", Kind: "openai", BaseURL: "http://model.invalid", APIKey: key,
+	})
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if _, err := st.CreateModel(t.Context(), store.Model{
+		ProviderID: a.testProvider.ID, Name: "test-model", Model: "test-model",
+		ContextWindow: 32768, MaxOutput: 1024,
+	}); err != nil {
+		t.Fatalf("create model: %v", err)
+	}
 	return a
 }
 
@@ -89,16 +147,32 @@ func (a *api) script(steps ...providertest.Step) *providertest.Provider {
 	return p
 }
 
-// buildProvider hands the run manager whatever the test scripted last.
-func (a *api) buildProvider(name string) (provider.Provider, error) {
+// buildProvider hands the run manager whatever the test scripted last, and
+// records the endpoint it was asked for.
+func (a *api) buildProvider(kind string, e provider.Endpoint) (provider.Provider, error) {
 	a.mu.Lock()
 	p, delay := a.provider, a.delay
+	a.endpoint = e
 	a.mu.Unlock()
 	time.Sleep(delay)
 	if p == nil {
-		return nil, fmt.Errorf("no provider scripted for model %s", name)
+		return nil, fmt.Errorf("no %s provider scripted for %s", kind, e.BaseURL)
 	}
 	return p, nil
+}
+
+// use makes p the provider the next build hands out.
+func (a *api) use(p provider.Provider) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.provider = p
+}
+
+// lastEndpoint returns the endpoint the last provider was built on.
+func (a *api) lastEndpoint() provider.Endpoint {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.endpoint
 }
 
 // newProject creates a local project on a directory the test owns and returns
@@ -186,8 +260,8 @@ type projectWire struct {
 	Name              string `json:"name"`
 	Kind              string `json:"kind"`
 	RemoteURL         string `json:"remote_url"`
-	RemoteUsernameEnv string `json:"remote_username_env"`
-	RemotePasswordEnv string `json:"remote_password_env"`
+	RemoteUsername    string `json:"remote_username"`
+	RemotePasswordSet bool   `json:"remote_password_set"`
 	HostPath          string `json:"host_path"`
 	DefaultBranch     string `json:"default_branch"`
 }
@@ -202,6 +276,7 @@ type workspaceWire struct {
 	Name       string `json:"name"`
 	Branch     string `json:"branch"`
 	BaseCommit string `json:"base_commit"`
+	Image      string `json:"image"`
 	State      string `json:"state"`
 }
 
@@ -268,14 +343,28 @@ type runStateWire struct {
 
 type settingsWire struct {
 	Settings map[string]json.RawMessage `json:"settings"`
+	Defaults struct {
+		SandboxImage        string `json:"sandbox_image"`
+		SubagentMaxDepth    int    `json:"subagent_max_depth"`
+		SubagentMaxChildren int    `json:"subagent_max_children"`
+	} `json:"defaults"`
+}
+
+type modelWire struct {
+	ID               string   `json:"id"`
+	ProviderID       string   `json:"provider_id"`
+	Name             string   `json:"name"`
+	Model            string   `json:"model"`
+	ContextWindow    int      `json:"context_window"`
+	MaxOutput        int      `json:"max_output"`
+	ReasoningEffort  string   `json:"reasoning_effort"`
+	ReasoningEfforts []string `json:"reasoning_efforts"`
+	PreserveThinking bool     `json:"preserve_thinking"`
 }
 
 type modelsWire struct {
-	Models []struct {
-		Name          string `json:"name"`
-		ContextWindow int    `json:"context_window"`
-	} `json:"models"`
-	Default string `json:"default"`
+	Models  []modelWire `json:"models"`
+	Default string      `json:"default"`
 }
 
 func TestProjectRoutes(t *testing.T) {
@@ -317,36 +406,89 @@ func TestProjectRoutes(t *testing.T) {
 	}
 }
 
-func TestPrivateRemoteCredentialsUseEnvironmentReferences(t *testing.T) {
+func TestPrivateRemoteCredentialsAreSealed(t *testing.T) {
 	a := newAPI(t)
-	t.Setenv("EIKA_TEST_GIT_USER", "git-user")
-	t.Setenv("EIKA_TEST_GIT_PASSWORD", "private-token")
-
 	rec := request(t, a.Server, "POST", "/api/projects", map[string]any{
-		"name":                "private",
-		"kind":                "remote",
-		"remote_url":          "https://example.invalid/private.git",
-		"remote_username_env": "EIKA_TEST_GIT_USER",
-		"remote_password_env": "EIKA_TEST_GIT_PASSWORD",
+		"name":            "private",
+		"kind":            "remote",
+		"remote_url":      "https://example.invalid/private.git",
+		"remote_username": "git-user",
+		"remote_password": "private-token",
 	})
 	created := decodeBody[projectWire](t, rec, 201)
-	if created.RemoteUsernameEnv != "EIKA_TEST_GIT_USER" || created.RemotePasswordEnv != "EIKA_TEST_GIT_PASSWORD" {
-		t.Errorf("credential environments = %q, %q", created.RemoteUsernameEnv, created.RemotePasswordEnv)
+	if created.RemoteUsername != "git-user" || !created.RemotePasswordSet {
+		t.Errorf("credentials = %q, set=%v", created.RemoteUsername, created.RemotePasswordSet)
 	}
 	if strings.Contains(rec.Body.String(), "private-token") {
-		t.Errorf("response exposed the resolved secret: %s", rec.Body.String())
+		t.Errorf("response exposed the password: %s", rec.Body.String())
 	}
-	creds := a.hub.credentials["private"]
-	if creds.UsernameEnv != "EIKA_TEST_GIT_USER" || creds.PasswordEnv != "EIKA_TEST_GIT_PASSWORD" {
-		t.Errorf("hub credentials = %+v, want the environment references", creds)
+	if creds := a.hub.credentials["private"]; creds.Username != "git-user" || creds.Password != "private-token" {
+		t.Errorf("hub credentials = %+v, want the project's", creds)
 	}
 	stored, err := a.store.Project(t.Context(), created.ID)
 	if err != nil {
 		t.Fatalf("read project: %v", err)
 	}
-	if stored.RemoteURL != "https://example.invalid/private.git" ||
-		stored.RemoteUsernameEnv != "EIKA_TEST_GIT_USER" || stored.RemotePasswordEnv != "EIKA_TEST_GIT_PASSWORD" {
-		t.Errorf("stored project = %+v", stored)
+	if len(stored.RemotePassword) == 0 || strings.Contains(string(stored.RemotePassword), "private-token") {
+		t.Errorf("stored password = %q, want it sealed", stored.RemotePassword)
+	}
+
+	// A new token is tried against the remote before it replaces the old one.
+	updated := decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+created.ID,
+		map[string]any{"remote_password": "rotated-token"}), 200)
+	if creds := a.hub.credentials["private"]; creds.Username != "git-user" || creds.Password != "rotated-token" {
+		t.Errorf("hub credentials after rotation = %+v", creds)
+	}
+	if !updated.RemotePasswordSet {
+		t.Error("the rotated password is not reported as set")
+	}
+
+	// A token the remote refuses is not stored.
+	a.hub.mirrorErr = fmt.Errorf("authentication failed for wrong-token")
+	rec = request(t, a.Server, "PATCH", "/api/projects/"+created.ID, map[string]any{"remote_password": "wrong-token"})
+	if rec.Code != 400 || strings.Contains(rec.Body.String(), "wrong-token") {
+		t.Errorf("refused token = %d %s, want a 400 that does not quote it", rec.Code, rec.Body.String())
+	}
+	a.hub.mirrorErr = nil
+	if creds, _ := a.store.Project(t.Context(), created.ID); string(creds.RemotePassword) == string(stored.RemotePassword) {
+		t.Error("the stored password did not change on the rotation")
+	}
+
+	// A password the harness can no longer open, as after the secret key
+	// file changed, is replaced by entering a new one.
+	unreadable, err := a.store.Project(t.Context(), created.ID)
+	if err != nil {
+		t.Fatalf("read project: %v", err)
+	}
+	unreadable.RemotePassword = []byte("sealed under a key this harness lacks")
+	if _, err := a.store.UpdateProject(t.Context(), unreadable); err != nil {
+		t.Fatalf("corrupt the stored password: %v", err)
+	}
+	if rec := request(t, a.Server, "PATCH", "/api/projects/"+created.ID, map[string]any{"remote_username": "git-user"}); rec.Code != 409 {
+		t.Errorf("username change over an unreadable password = %d, want 409", rec.Code)
+	}
+	decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+created.ID,
+		map[string]any{"remote_password": "re-entered-token"}), 200)
+	if creds := a.hub.credentials["private"]; creds.Username != "git-user" || creds.Password != "re-entered-token" {
+		t.Errorf("hub credentials after re-entry = %+v", creds)
+	}
+
+	// Removing the password makes the remote public again.
+	cleared := decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+created.ID,
+		map[string]any{"remote_password": ""}), 200)
+	if cleared.RemoteUsername != "" || cleared.RemotePasswordSet {
+		t.Errorf("cleared = %+v, want no credentials", cleared)
+	}
+
+	local, _ := a.newProject(t, "local")
+	if rec := request(t, a.Server, "PATCH", "/api/projects/"+local.ID,
+		map[string]any{"remote_username": "u", "remote_password": "p"}); rec.Code != 400 {
+		t.Errorf("credentials on a local project = %d, want 400", rec.Code)
+	}
+	branch := decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+local.ID,
+		map[string]any{"default_branch": "trunk"}), 200)
+	if branch.DefaultBranch != "trunk" {
+		t.Errorf("default_branch = %q, want trunk", branch.DefaultBranch)
 	}
 }
 
@@ -366,8 +508,8 @@ func TestProjectRoutesRejectBadRequests(t *testing.T) {
 		{"remote with a url query", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git?token=private"}, 400, "invalid_request"},
 		{"remote with an empty url query", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git?"}, 400, "invalid_request"},
 		{"remote with a url fragment", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git#private"}, 400, "invalid_request"},
-		{"remote with one credential reference", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git", "remote_password_env": "EIKA_GIT_PASSWORD"}, 400, "invalid_request"},
-		{"remote with an unrestricted environment", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git", "remote_username_env": "USER", "remote_password_env": "PASSWORD"}, 400, "invalid_request"},
+		{"remote with half a credential pair", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git", "remote_password": "token"}, 400, "invalid_request"},
+		{"local with remote credentials", map[string]any{"name": "x", "kind": "local", "host_path": "/tmp", "remote_username": "u", "remote_password": "p"}, 400, "invalid_request"},
 		{"local without a path", map[string]any{"name": "x", "kind": "local"}, 400, "invalid_request"},
 		{"local with a relative path", map[string]any{"name": "x", "kind": "local", "host_path": "rel"}, 400, "invalid_request"},
 		{"a name that is taken", map[string]any{"name": existing.Name, "kind": "local", "host_path": "/tmp"}, 409, "conflict"},
@@ -415,12 +557,10 @@ func TestProjectCreationDoesNotReturnURLCredentialData(t *testing.T) {
 func TestProjectRoutesRemoveCredentialDataFromStoredLegacyURLs(t *testing.T) {
 	a := newAPI(t)
 	project, err := a.store.CreateProject(t.Context(), store.Project{
-		Name:              "legacy-private",
-		Kind:              store.ProjectRemote,
-		RemoteURL:         "https://user:password-secret@example.test/repo.git?token=query-secret#fragment-secret",
-		RemoteUsernameEnv: "EIKA_GIT_USERNAME",
-		RemotePasswordEnv: "EIKA_GIT_PASSWORD",
-		DefaultBranch:     "main",
+		Name:          "legacy-private",
+		Kind:          store.ProjectRemote,
+		RemoteURL:     "https://user:password-secret@example.test/repo.git?token=query-secret#fragment-secret",
+		DefaultBranch: "main",
 	})
 	if err != nil {
 		t.Fatalf("create legacy project: %v", err)
@@ -675,8 +815,8 @@ func TestSettingsAndModels(t *testing.T) {
 	if len(models.Models) != 1 || models.Models[0].Name != "test-model" || models.Models[0].ContextWindow != 32768 {
 		t.Fatalf("models = %+v", models)
 	}
-	if models.Default != "" {
-		t.Errorf("default = %q, want none before the user picks one", models.Default)
+	if models.Default != "test-model" {
+		t.Errorf("default = %q, want the only model before the user picks one", models.Default)
 	}
 
 	put := decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{
@@ -689,12 +829,53 @@ func TestSettingsAndModels(t *testing.T) {
 	if len(got.Settings) != 2 {
 		t.Errorf("settings = %v, want both keys", got.Settings)
 	}
-	models = decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200)
-	if models.Default != "test-model" {
-		t.Errorf("default = %q, want the setting", models.Default)
+	if got.Defaults.SandboxImage != "eika-sandbox:latest" || got.Defaults.SubagentMaxDepth != 2 || got.Defaults.SubagentMaxChildren != 4 {
+		t.Errorf("defaults = %+v", got.Defaults)
 	}
 
-	// A run may only name a model the deployment configured.
+	// The keys the harness reads are checked; one bad value writes nothing.
+	for name, body := range map[string]map[string]any{
+		"a default model that does not exist": {"default_model": "gone"},
+		"a default model that is not a name":  {"default_model": 7},
+		"an empty sandbox image":              {"sandbox_image": ""},
+		"a sandbox image with a space":        {"sandbox_image": "eika sandbox"},
+		"a subagent depth of zero":            {"subagent_max_depth": 0},
+		"a subagent depth past the limit":     {"subagent_max_depth": 9},
+		"a child count that is not a number":  {"subagent_max_children": "two"},
+		"a setup flag that is not a boolean":  {"setup_complete": "yes"},
+		"a key that is too long":              {strings.Repeat("k", 65): true},
+		"a good key beside a bad one":         {"theme": "light", "subagent_max_depth": 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if rec := request(t, a.Server, "PUT", "/api/settings", body); rec.Code != 400 {
+				t.Errorf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+	after := decodeBody[settingsWire](t, request(t, a.Server, "GET", "/api/settings", nil), 200)
+	if string(after.Settings["theme"]) != `"dark"` {
+		t.Errorf("theme = %s, want the rejected request to have written nothing", after.Settings["theme"])
+	}
+	// A write the database refuses partway through, here a JSON string
+	// PostgreSQL cannot store, leaves every key as it was.
+	if rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{
+		"theme": "light", "a_note": "nul \u0000 byte", "z_note": "fine",
+	}); rec.Code != 500 {
+		t.Errorf("unstorable value = %d, want 500: %s", rec.Code, rec.Body.String())
+	}
+	after = decodeBody[settingsWire](t, request(t, a.Server, "GET", "/api/settings", nil), 200)
+	if string(after.Settings["theme"]) != `"dark"` || after.Settings["z_note"] != nil {
+		t.Errorf("settings = %v, want the failed write to have written nothing", after.Settings)
+	}
+	ok := decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{
+		"sandbox_image": "custom:1", "subagent_max_depth": 3, "subagent_max_children": 8, "setup_complete": true,
+		"default_model": nil,
+	}), 200)
+	if string(ok.Settings["subagent_max_depth"]) != "3" || string(ok.Settings["default_model"]) != "null" {
+		t.Errorf("settings = %v", ok.Settings)
+	}
+
+	// A run may only name a model that exists.
 	sess := a.session(t)
 	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages",
 		map[string]any{"text": "hi", "model": "gone"}); rec.Code != 400 {

@@ -29,7 +29,7 @@ func clearEnv(t *testing.T) {
 		"EIKA_LISTEN", "EIKA_DATABASE_URL", "EIKA_DOCKER_SOCKET",
 		"EIKA_SEARXNG_URL", "EIKA_SANDBOX_IMAGE", "EIKA_SANDBOX_NETWORK",
 		"EIKA_EIKAD_BINARY", "EIKA_HUB_ROOT", "EIKA_HUB_URL", "EIKA_AUTH_TOKEN",
-		"EIKA_ALLOWED_ORIGINS",
+		"EIKA_SECRET_KEY_FILE", "EIKA_ALLOWED_ORIGINS",
 	} {
 		t.Setenv(name, "")
 		if err := os.Unsetenv(name); err != nil {
@@ -38,18 +38,16 @@ func clearEnv(t *testing.T) {
 	}
 }
 
-// valid returns the defaults plus what Load adds to them: the auth token
-// every deployment must set, and the origins derived from the listen address.
+// valid returns the defaults plus what Load adds to them: the origins derived
+// from the listen address.
 func valid() config.Config {
 	c := config.Default()
-	c.AuthToken = "token"
 	c.AllowedOrigins = []string{"localhost:8080", "127.0.0.1:8080"}
 	return c
 }
 
 func TestLoadDefaults(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("EIKA_AUTH_TOKEN", "token")
 	cfg, err := config.Load("")
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -61,7 +59,6 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadEmptyFileUsesDefaults(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("EIKA_AUTH_TOKEN", "token")
 	for name, body := range map[string]string{
 		"empty":        "",
 		"comment only": "# nothing set here\n",
@@ -87,15 +84,8 @@ database_url: "postgres://u:p@db:5432/eika"
 docker_socket: "/run/docker.sock"
 searxng_url: "http://search:8080"
 sandbox_image: "custom:1"
+secret_key_file: "/data/key"
 auth_token: "s3cret"
-models:
-  - name: gpt-5
-    base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
-    context_window: 400000
-    max_output: 128000
-    reasoning_effort: high
-    preserve_thinking: true
 `)
 	cfg, err := config.Load(path)
 	if err != nil {
@@ -107,49 +97,28 @@ models:
 	if cfg.AuthToken != "s3cret" {
 		t.Errorf("auth_token = %q, want s3cret", cfg.AuthToken)
 	}
-	m, ok := cfg.Model("gpt-5")
-	if !ok {
-		t.Fatal("model gpt-5 not found")
-	}
-	if m.ContextWindow != 400000 || m.MaxOutput != 128000 || m.APIKeyEnv != "OPENAI_API_KEY" || m.ReasoningEffort != "high" || !m.ShouldPreserveThinking() {
-		t.Errorf("model = %+v, want the file values", m)
-	}
-	if _, ok := cfg.Model("absent"); ok {
-		t.Error("Model reported an undeclared model as present")
+	if cfg.SecretKeyFile != "/data/key" {
+		t.Errorf("secret_key_file = %q, want /data/key", cfg.SecretKeyFile)
 	}
 }
 
-func TestPreserveThinkingDefaultsOnAndCanBeDisabled(t *testing.T) {
+func TestLoadPointsSettingsThatMovedToTheUI(t *testing.T) {
 	clearEnv(t)
-	base := `
-auth_token: token
-models:
-  - name: compatible
-    base_url: http://model
-    api_key_env: MODEL_KEY
-    context_window: 1000
-    max_output: 100
-`
-	cfg, err := config.Load(writeConfig(t, base))
-	if err != nil {
-		t.Fatalf("load omitted preserve_thinking: %v", err)
-	}
-	if !cfg.Models[0].ShouldPreserveThinking() {
-		t.Error("omitted preserve_thinking is false, want true")
-	}
-
-	cfg, err = config.Load(writeConfig(t, base+"    preserve_thinking: false\n"))
-	if err != nil {
-		t.Fatalf("load explicit false preserve_thinking: %v", err)
-	}
-	if cfg.Models[0].ShouldPreserveThinking() {
-		t.Error("explicit false preserve_thinking is true, want false")
+	for key, body := range map[string]string{
+		"models":    "models:\n  - name: gpt-5\n",
+		"subagents": "subagents:\n  max_depth: 3\n",
+	} {
+		t.Run(key, func(t *testing.T) {
+			_, err := config.Load(writeConfig(t, body))
+			if err == nil || !strings.Contains(err.Error(), "web UI") {
+				t.Errorf("load = %v, want an error pointing at the web UI", err)
+			}
+		})
 	}
 }
 
 func TestLoadFileErrors(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("EIKA_AUTH_TOKEN", "token")
 	t.Run("missing file", func(t *testing.T) {
 		_, err := config.Load(filepath.Join(t.TempDir(), "absent.yaml"))
 		if !errors.Is(err, config.ErrNoConfigFile) {
@@ -183,6 +152,7 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 	t.Setenv("EIKA_EIKAD_BINARY", "/tmp/eikad")
 	t.Setenv("EIKA_HUB_ROOT", "/tmp/hub")
 	t.Setenv("EIKA_HUB_URL", "http://env:9090")
+	t.Setenv("EIKA_SECRET_KEY_FILE", "/tmp/key")
 
 	cfg, err := config.Load(path)
 	if err != nil {
@@ -198,9 +168,9 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 		EikadBinary:    "/tmp/eikad",
 		HubRoot:        "/tmp/hub",
 		HubURL:         "http://env:9090",
+		SecretKeyFile:  "/tmp/key",
 		AuthToken:      "from-env",
 		AllowedOrigins: []string{"localhost:9999", "127.0.0.1:9999"},
-		Subagents:      config.Subagents{MaxDepth: 2, MaxChildren: 4},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %v, want %v", cfg, want)
@@ -208,45 +178,18 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	model := config.Model{
-		Name:          "m",
-		BaseURL:       "http://api",
-		APIKeyEnv:     "KEY",
-		ContextWindow: 1,
-		MaxOutput:     1,
-	}
-	withModels := func(ms ...config.Model) config.Config {
-		c := valid()
-		c.Models = ms
-		return c
-	}
 	missing := func(clear func(c *config.Config)) config.Config {
 		c := valid()
 		clear(&c)
 		return c
 	}
-	noName := model
-	noName.Name = ""
-	noBase := model
-	noBase.BaseURL = ""
-	noKeyEnv := model
-	noKeyEnv.APIKeyEnv = ""
-	noWindow := model
-	noWindow.ContextWindow = 0
-	noOutput := model
-	noOutput.MaxOutput = -1
-	badEffort := model
-	badEffort.ReasoningEffort = "extreme"
-	other := model
-	other.Name = "other"
 
 	cases := []struct {
 		name string
 		cfg  config.Config
 		ok   bool
 	}{
-		{"defaults plus a token", valid(), true},
-		{"valid models", withModels(model, other), true},
+		{"defaults", valid(), true},
 		{"zero value", config.Config{}, false},
 		{"empty listen", missing(func(c *config.Config) { c.Listen = "" }), false},
 		{"empty database url", missing(func(c *config.Config) { c.DatabaseURL = "" }), false},
@@ -257,14 +200,8 @@ func TestValidate(t *testing.T) {
 		{"empty eikad binary", missing(func(c *config.Config) { c.EikadBinary = "" }), false},
 		{"empty hub root", missing(func(c *config.Config) { c.HubRoot = "" }), false},
 		{"empty hub url", missing(func(c *config.Config) { c.HubURL = "" }), false},
-		{"empty auth token", missing(func(c *config.Config) { c.AuthToken = "" }), false},
-		{"model without name", withModels(noName), false},
-		{"model without base url", withModels(noBase), false},
-		{"model without api key env", withModels(noKeyEnv), false},
-		{"model without context window", withModels(noWindow), false},
-		{"model with negative max output", withModels(noOutput), false},
-		{"model with invalid reasoning effort", withModels(badEffort), false},
-		{"duplicate model", withModels(model, model), false},
+		{"empty secret key file", missing(func(c *config.Config) { c.SecretKeyFile = "" }), false},
+		{"no auth token, because sign-in sessions need none", missing(func(c *config.Config) { c.AuthToken = "" }), true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -283,13 +220,6 @@ func TestStringRedactsSecrets(t *testing.T) {
 	cfg := valid()
 	cfg.AuthToken = "top-secret-token"
 	cfg.DatabaseURL = "postgres://eika:hunter2@postgres:5432/eika"
-	cfg.Models = []config.Model{{
-		Name:          "m",
-		BaseURL:       "http://api",
-		APIKeyEnv:     "OPENAI_API_KEY",
-		ContextWindow: 8,
-		MaxOutput:     4,
-	}}
 
 	s := cfg.String()
 	for _, secret := range []string{"top-secret-token", "hunter2"} {
@@ -297,7 +227,7 @@ func TestStringRedactsSecrets(t *testing.T) {
 			t.Errorf("String() leaked %q: %s", secret, s)
 		}
 	}
-	for _, want := range []string{"eika-sandbox:latest", "OPENAI_API_KEY", "postgres://eika:"} {
+	for _, want := range []string{"eika-sandbox:latest", "/var/lib/eika/secret.key", "postgres://eika:"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("String() dropped %q: %s", want, s)
 		}
@@ -373,7 +303,6 @@ func TestAllowedOrigins(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			clearEnv(t)
-			t.Setenv("EIKA_AUTH_TOKEN", "token")
 			t.Setenv("EIKA_LISTEN", c.listen)
 			if c.env != "" {
 				t.Setenv("EIKA_ALLOWED_ORIGINS", c.env)

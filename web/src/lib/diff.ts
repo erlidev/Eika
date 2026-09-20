@@ -1,6 +1,7 @@
 /**
  * A line diff for the `edit` tool renderer, which is the only place the UI
- * has two versions of a text and no diff from the harness. It is a plain
+ * has two versions of a text and no diff from the harness; `unifiedDiff.ts`
+ * reads the harness's diffs into the same shapes. It is a plain
  * longest-common-subsequence over lines; nothing here needs to scale past the
  * size of a file the edit tool will rewrite.
  */
@@ -13,12 +14,16 @@ export type DiffLine = {
   oldLine?: number;
   /** newLine is the 1-based line number in the new text, absent for a removal. */
   newLine?: number;
+  /** noNewline marks the last line of a text that does not end in a newline. */
+  noNewline?: boolean;
 };
 
 /** DiffHunk is a run of changed lines with the context around it. */
 export type DiffHunk = {
   oldStart: number;
   newStart: number;
+  /** header is what git prints after a hunk's ranges, usually the enclosing function. */
+  header?: string;
   lines: DiffLine[];
 };
 

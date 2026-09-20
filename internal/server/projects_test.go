@@ -100,14 +100,12 @@ func TestRemoteURLCredentialsDoNotReachLogs(t *testing.T) {
 
 func TestProjectResponsesRemoveLegacyURLCredentials(t *testing.T) {
 	p := asProject(store.Project{
-		ID:                "legacy",
-		Name:              "legacy",
-		Kind:              store.ProjectRemote,
-		RemoteURL:         "https://user:secret@example.test/repo.git?token=query-secret#fragment-secret",
-		RemoteUsernameEnv: "EIKA_GIT_USERNAME",
-		RemotePasswordEnv: "EIKA_GIT_PASSWORD",
-		DefaultBranch:     "main",
-		CreatedAt:         time.Unix(1, 0),
+		ID:            "legacy",
+		Name:          "legacy",
+		Kind:          store.ProjectRemote,
+		RemoteURL:     "https://user:secret@example.test/repo.git?token=query-secret#fragment-secret",
+		DefaultBranch: "main",
+		CreatedAt:     time.Unix(1, 0),
 	})
 	if p.RemoteURL != "https://example.test/repo.git" {
 		t.Errorf("remote_url = %q, want a URL without credential data", p.RemoteURL)

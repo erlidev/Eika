@@ -36,6 +36,20 @@ func (h *Host) createContainer(ctx context.Context, cfg *container.Config, hostC
 	return h.docker.ContainerCreate(ctx, cfg, hostCfg, netCfg, nil, name)
 }
 
+// HasImage reports whether the Docker daemon holds the image ref. An error
+// means the daemon could not be asked at all, which is how a socket the
+// harness cannot reach, or may not use, shows itself.
+func (h *Host) HasImage(ctx context.Context, ref string) (bool, error) {
+	_, err := h.docker.ImageInspect(ctx, ref)
+	if err == nil {
+		return true, nil
+	}
+	if cerrdefs.IsNotFound(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("inspect image %s: %w", ref, err)
+}
+
 // pullImage fetches an image the Docker daemon does not have.
 func (h *Host) pullImage(ctx context.Context, ref string) error {
 	body, err := h.docker.ImagePull(ctx, ref, image.PullOptions{})

@@ -40,7 +40,7 @@ export function ToolCard({ call, open = false }: ToolCardProps) {
     >
       <CollapsibleTrigger
         className={cn(
-          "hover:bg-accent/50 focus-visible:ring-ring flex w-full items-center gap-2 px-2 py-1.5 text-left",
+          "hover:bg-accent focus-visible:ring-ring flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors",
           "focus-visible:ring-1 focus-visible:outline-none",
         )}
       >
@@ -53,7 +53,7 @@ export function ToolCard({ call, open = false }: ToolCardProps) {
           {summary}
         </span>
         {call.durationMs !== undefined && (
-          <span className="text-muted-foreground shrink-0 font-mono text-[0.7rem] tabular-nums">
+          <span className="text-muted-foreground shrink-0 font-mono text-2xs tabular-nums">
             {formatDuration(call.durationMs)}
           </span>
         )}

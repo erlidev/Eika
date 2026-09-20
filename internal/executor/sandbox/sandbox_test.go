@@ -2,8 +2,11 @@ package sandbox_test
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http/httptest"
 	"os"
@@ -11,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 
 	"github.com/erlidev/eika/internal/eikad"
 	"github.com/erlidev/eika/internal/executor"
@@ -206,6 +211,82 @@ func TestPathsOutsideTheRootAreRefused(t *testing.T) {
 	}
 	if err := c.WriteFile(ctx, "../escape", []byte("x")); err == nil {
 		t.Error("WriteFile left the workspace")
+	}
+}
+
+func TestASymlinkOutOfTheRootIsAPermissionError(t *testing.T) {
+	c, root := newClient(t)
+	if err := os.Symlink(t.TempDir(), filepath.Join(root, "out")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if _, err := c.List(t.Context(), "out"); !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("List error = %v, want fs.ErrPermission", err)
+	}
+}
+
+func TestTerminalRunsAShell(t *testing.T) {
+	c, _ := newClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	conn, err := c.Terminal(ctx, 30, 100)
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	defer conn.CloseNow()
+
+	input, err := json.Marshal(eikad.PTYMessage{Type: eikad.PTYInput, Data: []byte("stty size; exit 4\n")})
+	if err != nil {
+		t.Fatalf("encode input: %v", err)
+	}
+	if err := conn.Write(ctx, websocket.MessageText, input); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	var output strings.Builder
+	for {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read: %v, output so far %q", err, output.String())
+		}
+		var msg eikad.PTYMessage
+		if err := json.Unmarshal(data, &msg); err != nil {
+			t.Fatalf("decode %q: %v", data, err)
+		}
+		if msg.Type == eikad.PTYOutput {
+			output.Write(msg.Data)
+			continue
+		}
+		if msg.Type != eikad.PTYExit || msg.ExitCode != 4 {
+			t.Fatalf("final message = %+v, want exit 4", msg)
+		}
+		break
+	}
+	// The size the client asked for is the size the shell got.
+	if !strings.Contains(output.String(), "30 100") {
+		t.Errorf("output = %q, want the terminal size 30 100", output.String())
+	}
+}
+
+func TestTerminalReportsARefusedHandshake(t *testing.T) {
+	root := t.TempDir()
+	d, err := eikad.New(eikad.Options{Root: root, Token: testToken},
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("new daemon: %v", err)
+	}
+	srv := httptest.NewServer(d.Handler())
+	t.Cleanup(srv.Close)
+
+	c, err := sandbox.New(sandbox.Options{BaseURL: srv.URL, Token: "wrong"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	conn, err := c.Terminal(t.Context(), 0, 0)
+	if err == nil {
+		conn.CloseNow()
+		t.Fatal("the daemon opened a terminal for a bad token")
+	}
+	if !strings.Contains(err.Error(), "/pty") {
+		t.Errorf("error = %v, want it to name the route", err)
 	}
 }
 

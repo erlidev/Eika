@@ -180,11 +180,12 @@ func (haltingHost) Inspect(context.Context, string) (workspace.Workspace, error)
 func newSpawner(t *testing.T, r *rows, depth, children int, attach bool) *subagent.Spawner {
 	t.Helper()
 	s := subagent.New(subagent.Options{
-		Store:       r,
-		Workspaces:  haltingHost{},
-		MaxDepth:    depth,
-		MaxChildren: children,
-		Logger:      testLogger(),
+		Store:      r,
+		Workspaces: haltingHost{},
+		Limits: func(context.Context) subagent.Limits {
+			return subagent.Limits{MaxDepth: depth, MaxChildren: children}
+		},
+		Logger: testLogger(),
 	})
 	if attach {
 		s.Attach(runner{})
@@ -369,11 +370,12 @@ func TestConcurrentSpawnsDoNotGetPastTheChildLimit(t *testing.T) {
 	r.session("s1", "ws1")
 	host := newBlockingHost()
 	s := subagent.New(subagent.Options{
-		Store:       r,
-		Workspaces:  host,
-		MaxDepth:    2,
-		MaxChildren: limit,
-		Logger:      testLogger(),
+		Store:      r,
+		Workspaces: host,
+		Limits: func(context.Context) subagent.Limits {
+			return subagent.Limits{MaxDepth: 2, MaxChildren: limit}
+		},
+		Logger: testLogger(),
 	})
 	s.Attach(runner{})
 

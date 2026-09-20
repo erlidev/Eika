@@ -12,7 +12,7 @@
  */
 
 import { payloadOf } from "@/api/events";
-import type { EikaEvent, SessionMessage, Usage } from "@/api/events";
+import type { EikaEvent, SessionMessage, TurnProgress, Usage } from "@/api/events";
 import type { Message, Question } from "@/api/types";
 
 /** UserItem is a message the user sent. */
@@ -27,6 +27,20 @@ export type UserItem = {
 /** AssistantItem is model prose, accumulated from deltas while it streams. */
 export type AssistantItem = {
   kind: "assistant";
+  key: string;
+  runId: string;
+  entryId?: string;
+  text: string;
+  streaming: boolean;
+};
+
+/**
+ * ReasoningItem is the model thinking: the reasoning it streamed before an
+ * answer. It is its own row because it is not the answer, and the session
+ * view shows it collapsed unless the reader asks for it.
+ */
+export type ReasoningItem = {
+  kind: "reasoning";
   key: string;
   runId: string;
   entryId?: string;
@@ -71,7 +85,37 @@ export type NoticeItem = {
 };
 
 /** TranscriptItem is one renderable row of the session view. */
-export type TranscriptItem = UserItem | AssistantItem | ToolItem | ErrorItem | NoticeItem;
+export type TranscriptItem =
+  UserItem | AssistantItem | ReasoningItem | ToolItem | ErrorItem | NoticeItem;
+
+/**
+ * Meter is what the status bar states about the turn: how full the model's
+ * context window is and how fast it is decoding. Every number in it was
+ * measured by the harness and reported in a turn.progress or turn.end event,
+ * so nothing here is an estimate. It is absent until an endpoint reports
+ * usage, because an endpoint that never does has nothing true to show.
+ */
+export type Meter = {
+  /** runId is the turn the measurements belong to. */
+  runId: string;
+  /** context is the last model call's prompt plus its response. */
+  context: Usage;
+  /** usage is what the turn has cost so far, over every model call. */
+  usage: Usage;
+  /** generationMs is the time the turn spent inside model responses. */
+  generationMs: number;
+  /** contextWindow belongs to the model that produced this measurement. */
+  contextWindow: number;
+  /**
+   * tokensPerSecond is the decode rate measured between the two most recent
+   * comparable samples. It is absent until enough was measured to divide.
+   */
+  tokensPerSecond?: number;
+  /** live is whether the turn this meter describes is still running. */
+  live: boolean;
+  /** source keeps a live measurement from being replaced by older replay entries. */
+  source: "live" | "replay";
+};
 
 /** TranscriptState is everything the session view derives from the stream. */
 export type TranscriptState = {
@@ -89,8 +133,8 @@ export type TranscriptState = {
   sealedTurns: readonly string[];
   /** activeTurnId is the streaming turn's run_id, empty when nothing streams. */
   activeTurnId: string;
-  /** usage is the token cost of the last turn that ended. */
-  usage?: Usage;
+  /** meter is the measured cost and decode rate of the newest turn. */
+  meter?: Meter;
   /** stopReason is why the last turn stopped. */
   stopReason?: string;
   /** questions are the `ask_user` calls waiting for an answer. */
@@ -172,6 +216,8 @@ export function applyEvent(state: TranscriptState, e: EikaEvent): TranscriptStat
       return applyTurnStart(state, e);
     case "message.delta":
       return applyDelta(state, e);
+    case "reasoning.delta":
+      return applyReasoning(state, e);
     case "message.reset":
       return applyReset(state, e);
     case "tool.call":
@@ -180,6 +226,8 @@ export function applyEvent(state: TranscriptState, e: EikaEvent): TranscriptStat
       return applyToolOutput(state, e);
     case "tool.result":
       return applyToolResult(state, e);
+    case "turn.progress":
+      return applyProgress(state, e);
     case "turn.end":
       return applyTurnEnd(state, e);
     case "run.error":
@@ -218,14 +266,71 @@ function applyDelta(state: TranscriptState, e: EikaEvent): TranscriptState {
       live: replaceAt(state.live, state.live.length - 1, { ...last, text: last.text + p.text }),
     };
   }
-  const key = `${p.run_id}:assistant:${String(state.live.length)}`;
+  // Prose that begins closes the reasoning that preceded it.
+  const live = seal(state.live);
+  const key = `${p.run_id}:assistant:${String(live.length)}`;
   return {
     ...state,
-    live: [
-      ...state.live,
-      { kind: "assistant", key, runId: p.run_id, text: p.text, streaming: true },
-    ],
+    live: [...live, { kind: "assistant", key, runId: p.run_id, text: p.text, streaming: true }],
   };
+}
+
+/**
+ * applyReasoning accumulates the model's thinking into the turn's current
+ * reasoning block, starting a new one when anything else came between.
+ */
+function applyReasoning(state: TranscriptState, e: EikaEvent): TranscriptState {
+  const p = payloadOf(e, "reasoning.delta");
+  if (!p) return state;
+  const last = state.live.at(-1);
+  if (last?.kind === "reasoning" && last.runId === p.run_id && last.streaming) {
+    return {
+      ...state,
+      live: replaceAt(state.live, state.live.length - 1, { ...last, text: last.text + p.text }),
+    };
+  }
+  const live = seal(state.live);
+  const key = `${p.run_id}:reasoning:${String(live.length)}`;
+  return {
+    ...state,
+    live: [...live, { kind: "reasoning", key, runId: p.run_id, text: p.text, streaming: true }],
+  };
+}
+
+/**
+ * meterOf folds one measurement into the status bar's meter. A rate needs two
+ * comparable samples. The first streamed token can contain an unknown number
+ * of tokens, so treating the first usage report as a difference from zero
+ * would state a precise but false rate.
+ */
+function meterOf(previous: Meter | undefined, p: TurnProgress, live: boolean): Meter {
+  const base =
+    previous?.runId === p.run_id &&
+    previous.usage.output_tokens <= p.usage.output_tokens &&
+    previous.generationMs <= p.generation_ms
+      ? previous
+      : undefined;
+  const tokens = p.usage.output_tokens - (base?.usage.output_tokens ?? 0);
+  const ms = p.generation_ms - (base?.generationMs ?? 0);
+  // Nothing new was measured, so the last measured rate still stands.
+  const rate =
+    base !== undefined && tokens > 0 && ms > 0 ? (tokens * 1000) / ms : base?.tokensPerSecond;
+  return {
+    runId: p.run_id,
+    context: p.context,
+    usage: p.usage,
+    generationMs: p.generation_ms,
+    contextWindow: p.context_window,
+    ...(rate === undefined ? {} : { tokensPerSecond: rate }),
+    live,
+    source: "live",
+  };
+}
+
+function applyProgress(state: TranscriptState, e: EikaEvent): TranscriptState {
+  const p = payloadOf(e, "turn.progress");
+  if (!p) return state;
+  return { ...state, meter: meterOf(state.meter, p, true) };
 }
 
 /**
@@ -237,14 +342,27 @@ function applyReset(state: TranscriptState, e: EikaEvent): TranscriptState {
   const p = payloadOf(e, "message.reset");
   if (!p) return state;
   const live = state.live.filter(
-    (item) => !(item.kind === "assistant" && item.runId === p.run_id && item.streaming),
+    (item) =>
+      !(
+        (item.kind === "assistant" || item.kind === "reasoning") &&
+        item.runId === p.run_id &&
+        item.streaming
+      ),
   );
-  return live.length === state.live.length ? state : { ...state, live };
+  const next = live.length === state.live.length ? { ...state } : { ...state, live };
+  // A retry starts a new response clock and usage counter. Keeping the failed
+  // attempt as a rate baseline would divide values from different attempts.
+  if (next.meter?.runId === p.run_id) delete next.meter;
+  return next;
 }
 
+/**
+ * seal closes the streaming block at the tail of a list. Prose and reasoning
+ * both stream, and either ends when anything else in the turn begins.
+ */
 function seal(list: TranscriptItem[]): TranscriptItem[] {
   const last = list.at(-1);
-  if (last?.kind === "assistant" && last.streaming) {
+  if ((last?.kind === "assistant" || last?.kind === "reasoning") && last.streaming) {
     return replaceAt(list, list.length - 1, { ...last, streaming: false });
   }
   return list;
@@ -333,7 +451,7 @@ function applyTurnEnd(state: TranscriptState, e: EikaEvent): TranscriptState {
     ...state,
     live: seal(state.live),
     activeTurnId: state.activeTurnId === p.run_id ? "" : state.activeTurnId,
-    usage: p.usage,
+    meter: meterOf(state.meter, p, false),
     stopReason: p.stop_reason,
     // The turn's entries are written now; a replay fetches them and replaces
     // the live items this turn built.
@@ -347,6 +465,7 @@ function applyTurnEnd(state: TranscriptState, e: EikaEvent): TranscriptState {
 function applyRunError(state: TranscriptState, e: EikaEvent): TranscriptState {
   const p = payloadOf(e, "run.error");
   if (!p) return state;
+  const meter = state.meter?.runId === p.run_id ? { ...state.meter, live: false } : state.meter;
   return {
     ...state,
     live: [
@@ -360,6 +479,7 @@ function applyRunError(state: TranscriptState, e: EikaEvent): TranscriptState {
       },
     ],
     activeTurnId: state.activeTurnId === p.run_id ? "" : state.activeTurnId,
+    ...(meter === undefined ? {} : { meter }),
   };
 }
 
@@ -396,6 +516,16 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
       ];
     case "assistant": {
       const out: TranscriptItem[] = [];
+      if (message?.reasoning) {
+        out.push({
+          kind: "reasoning",
+          key: `${p.entry_id}:reasoning`,
+          runId: "",
+          entryId: p.entry_id,
+          text: message.reasoning,
+          streaming: false,
+        });
+      }
       if (message?.content) {
         out.push({
           kind: "assistant",
@@ -448,6 +578,27 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
       : state.live.filter((item) => !state.sealedTurns.includes(item.runId));
   const sealedTurns = state.sealedTurns.length === 0 ? state.sealedTurns : [];
 
+  const message = asMessage(p.message);
+  const metrics = message?.metrics;
+  const mayRestoreMetrics =
+    metrics !== undefined &&
+    (state.activeTurnId === "" || state.activeTurnId === metrics.run_id) &&
+    !(state.meter?.source === "live" && state.meter.runId !== metrics.run_id);
+  const storedMeter: Meter | undefined = mayRestoreMetrics
+    ? {
+        runId: metrics.run_id,
+        usage: metrics.usage,
+        context: metrics.context,
+        generationMs: metrics.generation_ms,
+        contextWindow: metrics.context_window,
+        live: false,
+        source: "replay",
+        ...(state.meter?.runId === metrics.run_id && state.meter.tokensPerSecond !== undefined
+          ? { tokensPerSecond: state.meter.tokensPerSecond }
+          : {}),
+      }
+    : undefined;
+
   const base = {
     ...state,
     live,
@@ -455,12 +606,12 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
     entryIds: new Set(state.entryIds).add(p.entry_id),
     lastEntryId: p.entry_id,
     needsReplay: false,
+    ...(storedMeter === undefined ? {} : { meter: storedMeter }),
   };
 
   // A tool result completes the call its assistant entry already introduced
   // rather than adding a row of its own.
   if (p.kind === "tool_result") {
-    const message = asMessage(p.message);
     const callId = message?.tool_call_id ?? "";
     const index = findTool(base.committed, callId);
     const item = base.committed[index];

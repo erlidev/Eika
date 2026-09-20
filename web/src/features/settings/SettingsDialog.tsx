@@ -1,12 +1,18 @@
 /**
- * Deployment settings: the model a run uses when none is named, the colour
- * scheme, and the token this browser holds.
+ * The settings: models and providers, the harness-wide choices, web search,
+ * the account, and how the app looks. Everything but the appearance is stored
+ * in the harness. Its open state is `store.ts`, so anything can open it on a
+ * tab.
+ *
+ * The dialog is one fixed size whatever tab is showing, and each tab scrolls
+ * inside it: five tabs of very different lengths would otherwise resize the
+ * window under the pointer every time one was picked.
  */
 
 import { useSyncExternalStore } from "react";
 
-import { disconnect, getConnection, subscribeConnection } from "@/api/connection";
-import { Button } from "@/components/ui/button";
+import { getTheme, setTheme, subscribeTheme } from "@/app/theme";
+import type { Theme } from "@/app/theme";
 import {
   Dialog,
   DialogContent,
@@ -22,21 +28,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { getTheme, setTheme, subscribeTheme } from "@/app/theme";
-import type { Theme } from "@/app/theme";
-import {
-  defaultModelKey,
-  defaultModelOf,
-  useModels,
-  useSaveSettings,
-  useSettings,
-} from "@/features/settings/queries";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ModelsPanel } from "@/features/providers";
+import { useTranscriptPreferences } from "@/features/session";
+import type { ReasoningDisplay } from "@/features/session";
+import { AccountSettings } from "@/features/settings/AccountSettings";
+import { GeneralSettings } from "@/features/settings/GeneralSettings";
+import { settingKeys, useSaveSettings } from "@/features/settings/queries";
+import { SearchSettings } from "@/features/settings/SearchSettings";
+import { useSettingsDialog } from "@/features/settings/store";
+import type { SettingsTab } from "@/features/settings/store";
+import { Switch } from "@/components/ui/switch";
+import { useNarrow } from "@/lib/useNarrow";
 
-export type SettingsDialogProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-};
+/** sideNavWidth is where the tab list stops fitting beside the panel. */
+const sideNavWidth = 640;
+
+const tabs: readonly { value: SettingsTab; label: string }[] = [
+  { value: "models", label: "Models" },
+  { value: "general", label: "General" },
+  { value: "search", label: "Search" },
+  { value: "account", label: "Account" },
+  { value: "appearance", label: "Appearance" },
+];
 
 const themeLabels: Record<Theme, string> = {
   light: "Light",
@@ -44,104 +58,134 @@ const themeLabels: Record<Theme, string> = {
   system: "Follow the system",
 };
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const settings = useSettings();
-  const models = useModels();
+export function SettingsDialog() {
+  const open = useSettingsDialog((s) => s.open);
+  const tab = useSettingsDialog((s) => s.tab);
+  const setOpen = useSettingsDialog((s) => s.setOpen);
+  const setTab = useSettingsDialog((s) => s.setTab);
   const save = useSaveSettings();
-  const theme = useSyncExternalStore<Theme>(subscribeTheme, getTheme, () => "system");
-  const connection = useSyncExternalStore(subscribeConnection, getConnection, () => ({
-    baseUrl: "",
-    token: "",
-  }));
-
-  const defaultModel = defaultModelOf(settings.data);
+  // A phone has no room for a column of tab names beside the panel, so there
+  // the list goes back above it. It is the same list either way.
+  const narrow = useNarrow(sideNavWidth);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {/* One height for every tab, and the panel scrolls inside it. gap-0 and
+          p-0 replace the dialog's own padding, which the regions set for
+          themselves. */}
+      <DialogContent className="flex h-[min(85vh,42rem)] flex-col gap-0 p-0 sm:max-w-3xl">
+        <DialogHeader className="shrink-0 border-b px-4 py-3">
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            The model setting is stored in the harness; the theme and the token belong to this
-            browser.
+            Stored in the harness and shared by every browser, except the appearance.
           </DialogDescription>
         </DialogHeader>
-
-        <div className="space-y-2">
-          <Label htmlFor="default-model">Default model</Label>
-          <Select
-            value={defaultModel}
-            onValueChange={(value) => {
-              save.mutate({ [defaultModelKey]: value });
-            }}
+        {/* min-w-0: the dialog is a flex column, and without it the tab row's
+            width would widen every tab past a phone's screen. */}
+        <Tabs
+          orientation={narrow ? "horizontal" : "vertical"}
+          className="min-h-0 min-w-0 flex-1 gap-0"
+          value={tab}
+          onValueChange={(value) => {
+            setTab(value as SettingsTab);
+          }}
+        >
+          <TabsList
+            variant="line"
+            className={
+              narrow
+                ? "h-auto max-w-full shrink-0 justify-start gap-1 overflow-x-auto border-b px-2 py-1.5"
+                : // self-stretch rather than h-full: the list primitive sets
+                  // its own height for a vertical list, and the two would fight.
+                  "w-40 shrink-0 justify-start gap-0.5 self-stretch overflow-y-auto border-r p-2"
+            }
           >
-            <SelectTrigger id="default-model" className="w-full">
-              <SelectValue placeholder="the first configured model" />
-            </SelectTrigger>
-            <SelectContent>
-              {(models.data?.models ?? []).map((model) => (
-                <SelectItem key={model.name} value={model.name}>
-                  {model.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-muted-foreground text-xs">
-            Used when a message names no model. Configure the list in the deployment's
-            <code className="mx-1">eika.yaml</code>.
-          </p>
-          {save.isError && (
-            <p role="alert" className="text-destructive text-xs">
-              {save.error.message}
-            </p>
-          )}
-        </div>
-
-        <Separator />
-
-        <div className="space-y-2">
-          <Label htmlFor="theme">Theme</Label>
-          <Select
-            value={theme}
-            onValueChange={(value) => {
-              setTheme(value as Theme);
-            }}
-          >
-            <SelectTrigger id="theme" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(themeLabels) as Theme[]).map((option) => (
-                <SelectItem key={option} value={option}>
-                  {themeLabels[option]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Separator />
-
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium">Connection</h3>
-          <dl className="text-muted-foreground grid grid-cols-[auto_1fr] gap-x-3 font-mono text-xs">
-            <dt>harness</dt>
-            <dd className="truncate">{connection.baseUrl || "this origin"}</dd>
-            <dt>token</dt>
-            <dd>{connection.token === "" ? "none" : "stored in this browser"}</dd>
-          </dl>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              disconnect();
-              onOpenChange(false);
-            }}
-          >
-            Forget the token
-          </Button>
-        </div>
+            {tabs.map((option) => (
+              <TabsTrigger key={option.value} value={option.value} className="flex-none">
+                {option.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4">
+            <TabsContent value="models">
+              <ModelsPanel
+                onDefaultChange={(name) => {
+                  save.mutate({ [settingKeys.defaultModel]: name });
+                }}
+                defaultError={save.isError ? save.error : undefined}
+              />
+            </TabsContent>
+            <TabsContent value="general">
+              <GeneralSettings />
+            </TabsContent>
+            <TabsContent value="search">
+              <SearchSettings />
+            </TabsContent>
+            <TabsContent value="account">
+              <AccountSettings />
+            </TabsContent>
+            <TabsContent value="appearance">
+              <AppearanceSettings />
+            </TabsContent>
+          </div>
+        </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** AppearanceSettings are the choices this browser remembers on its own. */
+function AppearanceSettings() {
+  const reasoning = useTranscriptPreferences((s) => s.reasoning);
+  const setReasoning = useTranscriptPreferences((s) => s.setReasoning);
+  return (
+    <div className="space-y-6">
+      <ThemeSelect />
+      <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+        <div className="space-y-0.5">
+          <Label htmlFor="reasoning-display" className="text-sm">
+            Show the model&apos;s thinking in full
+          </Label>
+          <p className="text-muted-foreground text-xs">
+            Reasoning is streamed either way. Off, each block is one line in the transcript that
+            opens on a click; on, every block starts open.
+          </p>
+        </div>
+        <Switch
+          id="reasoning-display"
+          checked={reasoning === "expanded"}
+          onCheckedChange={(on) => {
+            setReasoning((on ? "expanded" : "compact") satisfies ReasoningDisplay);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ThemeSelect() {
+  const theme = useSyncExternalStore<Theme>(subscribeTheme, getTheme, () => "system");
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="theme">Theme</Label>
+      <Select
+        value={theme}
+        onValueChange={(value) => {
+          setTheme(value as Theme);
+        }}
+      >
+        <SelectTrigger id="theme" className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.keys(themeLabels) as Theme[]).map((option) => (
+            <SelectItem key={option} value={option}>
+              {themeLabels[option]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-muted-foreground text-xs">Remembered by this browser only.</p>
+    </div>
   );
 }

@@ -1,11 +1,15 @@
 /**
- * The run panel: the run itself, the two message queues, and the questions a
- * run is blocked on. It is the place to answer a question when the tool card
- * has scrolled out of the transcript.
+ * The run panel: the run itself, what it is costing, the two message queues,
+ * and the questions a run is blocked on. It is the place to answer a question
+ * when the tool card has scrolled out of the transcript, and the place the
+ * status bar's context meter explains itself.
  */
 
+import { LoadError, Notice } from "@/components/Notice";
+import { ContextBreakdown } from "@/features/session/ContextMeter";
 import { AskUserBody } from "@/features/session/renderers/AskUserRenderer";
 import { useRunStatus } from "@/features/session/queries";
+import { useSessionStore } from "@/features/session/store";
 import type { ToolItem } from "@/features/session/transcript";
 import { formatAgo } from "@/lib/format";
 
@@ -30,14 +34,24 @@ function questionCall(callId: string, question: string): ToolItem {
 
 export function RunPanel({ sessionId }: RunPanelProps) {
   const status = useRunStatus(sessionId);
+  const meter = useSessionStore((s) => s.meter);
   if (status.isPending) {
-    return <p className="text-muted-foreground p-3 text-xs">Loading the run…</p>;
+    return (
+      <div className="p-3">
+        <Notice tone="pending">Loading the run…</Notice>
+      </div>
+    );
   }
   if (status.isError) {
     return (
-      <p role="alert" className="text-destructive p-3 text-xs">
-        {status.error.message}
-      </p>
+      <div className="p-3">
+        <LoadError
+          what="the run status"
+          error={status.error}
+          retrying={status.isFetching}
+          retry={() => void status.refetch()}
+        />
+      </div>
     );
   }
   const { active, run, pending_steering, pending_follow_ups, questions } = status.data;
@@ -46,16 +60,16 @@ export function RunPanel({ sessionId }: RunPanelProps) {
     <div className="space-y-4 p-3 text-xs">
       <Section title="Run">
         {run ? (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono">
-            <dt className="text-muted-foreground">state</dt>
-            <dd>{active ? "running" : run.state}</dd>
-            <dt className="text-muted-foreground">id</dt>
-            <dd className="truncate">{run.id}</dd>
-            <dt className="text-muted-foreground">started</dt>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+            <dt className="text-muted-foreground">State</dt>
+            <dd className="font-mono">{active ? "running" : run.state}</dd>
+            <dt className="text-muted-foreground">Id</dt>
+            <dd className="truncate font-mono">{run.id}</dd>
+            <dt className="text-muted-foreground">Started</dt>
             <dd>{formatAgo(run.started_at)}</dd>
             {run.error !== undefined && run.error !== "" && (
               <>
-                <dt className="text-muted-foreground">error</dt>
+                <dt className="text-muted-foreground">Error</dt>
                 <dd className="text-destructive break-words">{run.error}</dd>
               </>
             )}
@@ -63,6 +77,10 @@ export function RunPanel({ sessionId }: RunPanelProps) {
         ) : (
           <p className="text-muted-foreground">This session has not run yet.</p>
         )}
+      </Section>
+
+      <Section title="Context">
+        <ContextBreakdown meter={meter} />
       </Section>
 
       <Section title={`Questions (${String(questions.length)})`}>
@@ -97,7 +115,7 @@ export function RunPanel({ sessionId }: RunPanelProps) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="text-muted-foreground mb-1 text-[0.7rem] font-semibold tracking-wide uppercase">
+      <h3 className="text-muted-foreground mb-1 text-2xs font-semibold tracking-wide uppercase">
         {title}
       </h3>
       {children}
@@ -110,7 +128,7 @@ function Queue({ messages }: { messages: string[] }) {
   return (
     <ol className="space-y-1">
       {messages.map((message, index) => (
-        <li key={`${String(index)}:${message}`} className="bg-muted rounded-sm px-2 py-1 font-mono">
+        <li key={`${String(index)}:${message}`} className="bg-muted rounded-md px-2 py-1">
           {message}
         </li>
       ))}

@@ -12,12 +12,12 @@ all three in the same commit.
 it is the one route that does.
 
 ```
-ws://<harness>/api/events?token=<auth_token>&topics=global,session:<id>&since=<entry_id>
+ws://<harness>/api/events?token=<token>&topics=global,session:<id>&since=<entry_id>
 ```
 
 | Parameter | Meaning |
 |---|---|
-| `token` | The deployment's bearer token. Required. |
+| `token` | A sign-in session's token or the deployment's API token. Required. |
 | `topics` | Comma-separated topics to subscribe to at once. Optional; a client may subscribe after connecting instead. |
 | `since` | An entry id. The session that entry belongs to is replayed from the entry after it, before any live event. Optional. |
 
@@ -80,11 +80,13 @@ on `session:<id>`; workspace lifecycle events on `workspace:<id>`. A
 ## Run events
 
 A turn emits `turn.start`, then `message.delta` for each piece of assistant
-text. If that model attempt fails and is retried, `message.reset` tells the
-client to discard those deltas before the next attempt starts. The turn then
-emits, for every tool call, `tool.call`, any number of `tool.output`, and
-`tool.result`. A turn that asked for tools calls the model again, so these
-repeat. The turn ends with `turn.end`, or with `run.error` if it failed.
+text and `reasoning.delta` for each piece of the model's thinking. If that
+model attempt fails and is retried, `message.reset` tells the client to
+discard both before the next attempt starts. The turn then emits, for every
+tool call, `tool.call`, any number of `tool.output`, and `tool.result`. A turn
+that asked for tools calls the model again, so these repeat. Whenever the
+endpoint reports token usage, the turn emits `turn.progress`. The turn ends
+with `turn.end`, or with `run.error` if it failed.
 
 `run_id` identifies one turn and appears on every event of that turn.
 
@@ -103,6 +105,19 @@ repeat. The turn ends with `turn.end`, or with `run.error` if it failed.
 |---|---|---|
 | `run_id` | string | Identifies the turn. |
 | `text` | string | The next piece of assistant text. Concatenate deltas in arrival order. |
+
+### `reasoning.delta`
+
+The model's own reasoning, which is not part of its answer. Eika streams it
+whatever `preserve_thinking` is set to: showing the model think is the
+client's business, and replaying the reasoning to the endpoint on later calls
+is `preserve_thinking`'s. It is stored on the assistant entry as `reasoning`,
+so a replay delivers it too.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `run_id` | string | Identifies the turn. |
+| `text` | string | The next piece of reasoning. Concatenate deltas in arrival order. |
 
 ### `message.reset`
 
@@ -140,6 +155,28 @@ repeat. The turn ends with `turn.end`, or with `run.error` if it failed.
 | `details` | object, optional | Structured data for the interface only, for example a command's exit code. |
 | `duration_ms` | number | How long the call took. |
 
+### `turn.progress`
+
+Emitted every time the endpoint reports token usage, which for most endpoints
+is once per model call and for an endpoint with continuous usage statistics
+(vLLM, llama.cpp) is once per chunk. A client needs two reports from the same
+attempt and divides their usage difference by their `generation_ms`
+difference. The first report is only a baseline: timing starts when the first
+streamed token arrives, whose token count is unknown. A retry clears the
+baseline. An endpoint that reports usage once shows context usage but no rate.
+
+`generation_ms` is timed from each response's **first streamed token**, so it
+excludes the endpoint's queueing and prefill. A retried model attempt is not
+counted.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `run_id` | string | Identifies the turn. |
+| `usage` | object | `input_tokens`, `output_tokens`, and `total_tokens`, summed over every model call in the turn so far. |
+| `context` | object | The **most recent** model call's own usage, in the same shape. This is what fills the model's context window; `usage` is what the turn costs, which is larger. |
+| `generation_ms` | number | The turn's time inside model responses so far. |
+| `context_window` | number | The configured window of the model that produced this usage. Zero means it is not configured. |
+
 ### `turn.end`
 
 | Field | Type | Meaning |
@@ -147,6 +184,9 @@ repeat. The turn ends with `turn.end`, or with `run.error` if it failed.
 | `run_id` | string | Identifies the turn. |
 | `stop_reason` | string, optional | Why the model stopped, for example `stop`. |
 | `usage` | object | `input_tokens`, `output_tokens`, and `total_tokens`, summed over every model call in the turn. |
+| `context` | object | The last model call's own usage: how much of the model's context window the conversation now fills. |
+| `generation_ms` | number | The turn's total time inside model responses. A rate uses the difference between comparable progress reports, not this total alone. |
+| `context_window` | number | The configured window of the model that ran the turn. Zero means it is not configured. |
 
 ### `run.error`
 
@@ -218,7 +258,10 @@ The same fields make up the tool result the parent's model sees.
 ### `workspace.state`
 
 Published on `workspace:<id>` whenever a workspace reaches a new lifecycle
-state, including the reconciliation a harness does at startup.
+state, including the reconciliation a harness does at startup. It is also
+published, with the state unchanged, after a file is saved, a commit, or a
+push through the API, so that views of the workspace's files and changes
+refresh.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -243,7 +286,7 @@ renders a message it watched arrive live.
 | `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, or `event`. |
 | `commit` | string, optional | The workspace HEAD commit the entry was produced at. |
 | `created_at` | time | When the entry was written. |
-| `message` | object | The entry's stored payload: a provider message for the conversation kinds. |
+| `message` | object | The entry's stored payload: a provider message for the conversation kinds. An assistant message can include `reasoning` and `metrics`; `metrics` holds `run_id`, turn `usage`, last-call `context`, `generation_ms`, and `context_window`, so replay restores the context view. Metrics are not sent to the provider. |
 
 ### `bus.dropped`
 

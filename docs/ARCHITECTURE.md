@@ -1,25 +1,26 @@
 # Architecture
 
-This file describes Eika as it is today, at the end of phase 6. It is updated
-in the same change that moves structure. Planned work lives in `docs/PLAN.md`.
+This file describes Eika as it is today, at the end of phase 8, terminal, editor, and diff. It is
+updated in the same change that moves structure. Planned work lives in `docs/PLAN.md`.
 
 ## What exists now
 
 Two Go binaries, the agent core, the sandbox machinery agents run in, the
 database that outlives them, the HTTP API and event stream that drive all of
-it, child agents that work in sandboxes of their own, one frontend, and a
-three-service compose stack.
+it, child agents that work in sandboxes of their own, web search and page
+reading, one frontend, and a three-service compose stack.
 
 | Piece | Path | Responsibility today |
 |---|---|---|
 | `eika` | `cmd/eika` | Loads configuration, serves HTTP, optionally serves the built frontend |
-| `eikad` | `cmd/eikad` | Sandbox daemon: exec, files, terminal, change watcher |
-| `config` | `internal/config` | YAML file plus `EIKA_*` environment overrides, validation, redacted `String()` |
+| `eikad` | `cmd/eikad` | Sandbox daemon: exec, files, terminal, change watcher; `eikad filter` runs a web_fetch filter |
+| `config` | `internal/config` | Deployment configuration: defaults for the compose stack, an optional YAML file, `EIKA_*` overrides, validation, redacted `String()` |
+| `secret` | `internal/secret` | Seals the credentials the UI stores, API keys and git passwords, with a key kept apart from the database |
 | `event` | `internal/event` | The event envelope, the type name constants, the payload structs, the `Emitter` interface, and the fan-out `Bus` |
-| `server` | `internal/server` | Composition of the process, the JSON API, the WebSocket event stream, bearer auth, and the run manager |
+| `server` | `internal/server` | Composition of the process, the JSON API, the WebSocket event stream, sign-in and bearer auth, provider and model management, and the run manager |
 | `agent` | `internal/agent` | The agent loop: turns, tool dispatch, steering and follow-up queues, retries, events |
 | `provider` | `internal/provider` | The model interface, message and event types, the kind registry, the OpenAI implementation, the scripted fake |
-| `tool` | `internal/tool` | The tool interface, call context, result type, and registry; `tool/builtin` holds the eleven built-in tools |
+| `tool` | `internal/tool` | The tool interface, call context, result type, and registry; `tool/builtin` holds the thirteen built-in tools |
 | `executor` | `internal/executor` | The interface every agent action goes through, path validation, and `executor/local` for tests |
 | `contextfile` | `internal/contextfile` | AGENTS.md discovery and the system prompt section it becomes |
 | `eikad` | `internal/eikad` | The daemon's handlers, path confinement, and wire types |
@@ -29,7 +30,9 @@ three-service compose stack.
 | `store` | `internal/store` | The PostgreSQL pool, the embedded migrations, and the queries behind every table |
 | `session` | `internal/session` | The session tree: append, head, branch, fork, outline, and the agent store that records a run |
 | `subagent` | `internal/subagent` | Spawning child agents: the hand-over commit, the child workspace and session, the limits, and the result the parent reads |
-| frontend | `web/` | Vite, React 19, Tailwind v4, shadcn/ui; the three-pane workbench: project tree, streaming session, context panels |
+| `search` | `internal/search` | The search engine: the web failover chain, quotas and cooldowns, the result cache, and the backends in `search/web`, `wikipedia`, `arxiv`, and `github` |
+| `fetch` | `internal/search/fetch` | Reading one URL as Markdown: URL planning, GitHub reads, HTML extraction, section selection, and the content budget from `search/page`; `search/filter` is the JavaScript filter eikad runs |
+| frontend | `web/` | Vite, React 19, Tailwind v4, shadcn/ui; the guided setup, the settings, and the three-pane workbench: project tree, streaming session, context panels |
 
 `eika` serves `GET /healthz` and `GET /api/healthz`, both returning
 `{"status":"ok"}`. `/healthz` is the container health check; `/api/healthz` is
@@ -70,12 +73,16 @@ The pieces:
   channel of `Event` values: text deltas, assembled tool calls, usage, and a
   terminal done or error. `provider/openai` speaks Chat Completions with the
   official SDK; `provider/providertest` replays scripted responses in tests.
-  A model can set `reasoning_effort`. An OpenAI-compatible endpoint can also
-  set `preserve_thinking`; Eika then sends that extension, captures streamed
-  `reasoning_content`, and replays the reasoning with later assistant
-  messages. Preservation is enabled when the setting is absent. An endpoint
-  that rejects the extension must set it to false. It is not an OpenAI API
-  field.
+  A model can set `reasoning_effort`, and the words it may take are the
+  model's own row rather than a list in the code, because compatible
+  endpoints disagree on the vocabulary. Streamed `reasoning_content` always
+  becomes `KindReasoningDelta`, so a client can show the model thinking; an
+  OpenAI-compatible endpoint can also set `preserve_thinking`, which is what
+  makes Eika send that extension and replay the reasoning with later
+  assistant messages. An endpoint that rejects the extension must set it to
+  false. It is not an OpenAI API field. Usage is relayed as soon as a chunk
+  carries it, so an endpoint with continuous usage statistics lets a caller
+  measure a decode rate while the response is still arriving.
 - **tool** holds the `Tool` interface and a registry. A call receives a
   `CallContext` carrying the executor, the event emitter, and the session and
   run identifiers. `tool/builtin` implements `read`, `write`, `edit`, `bash`,
@@ -138,13 +145,19 @@ a container, and a URL.
 | Table | Columns | Holds |
 |---|---|---|
 | `schema_migrations` | version, applied_at | Which embedded migrations this database carries |
-| `projects` | id, name (unique), kind (remote/local), remote_url, remote_username_env, remote_password_env, host_path, default_branch, created_at | A git repository Eika knows and the names of its optional credential variables |
+| `projects` | id, name (unique), kind (remote/local), remote_url, remote_username, remote_password (sealed), host_path, default_branch, created_at | A git repository Eika knows and a private remote's credentials |
 | `workspaces` | id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id, created_at, updated_at | The record of one sandbox container; `state` mirrors `workspace.State` |
 | `sessions` | id, workspace_id, title, head_entry_id, parent_session_id, created_at, updated_at | One session tree and the head a run continues from |
 | `session_entries` | id, session_id, parent_id, seq, kind, payload (jsonb), commit_sha, created_at | One node of a session tree |
 | `runs` | id, session_id, state, started_at, finished_at, error | One execution of the agent loop |
 | `subagents` | id, parent_session_id, child_session_id, child_workspace_id, state, result, created_at, finished_at | One child agent and what it reported |
 | `settings` | key (primary), value (jsonb) | What the user changes at runtime |
+| `providers` | id, name (unique), kind, base_url, api_key (sealed), created_at, updated_at | A model provider: an endpoint of one provider kind and its key |
+| `models` | id, provider_id, name (unique), model, context_window, max_output, reasoning_effort, reasoning_efforts, preserve_thinking, created_at, updated_at | A model a run may use; `name` is Eika's, `model` the endpoint's, `reasoning_efforts` the words its effort cycles through |
+| `auth_password` | id (always 1), hash, updated_at | The sign-in password as a PBKDF2 hash |
+| `auth_sessions` | token_hash, created_at, expires_at | A signed-in browser, by the SHA-256 of its token |
+| `search_keys` | name (primary), key (sealed), updated_at | The API key of a search provider, or the GitHub token |
+| `search_usage` | name (primary), day, day_used, month, month_used, cooldown_until, fail_streak, updated_at | One search quota bucket's counters and cooldown, so quotas survive a restart |
 
 Everything cascades from `projects`: deleting a project deletes its
 workspaces, their sessions, and their entries. `sessions.head_entry_id` has no
@@ -179,8 +192,9 @@ entries make up the conversation; `system` and `event` entries (questions,
 subagent lifecycle, compaction later) are shown in the user interface and are
 not sent to the model.
 
-An assistant message can also hold opaque reasoning data for a provider that
-must replay it. Tool arguments keep the model's exact text. Valid arguments
+An assistant message can also hold the model's reasoning, which the session
+view shows apart from the answer and a provider configured to preserve
+thinking replays. Tool arguments keep the model's exact text. Valid arguments
 are stored as their JSON value. Malformed arguments are stored as a JSON
 string with `arguments_malformed: true` and restored before the tool sees
 them. The marker distinguishes malformed text from a valid top-level JSON
@@ -227,9 +241,10 @@ configuration, and calls it.
   cmd/eika  ->  server.Run(ctx, cfg, log, opts)
                     |
                     +-- store.Open ------------------ postgres
+                    +-- secret.Load ----------------- /var/lib/eika/secret.key
                     +-- hub.New --------------------- /var/lib/eika/hub
                     +-- workspace.NewHost ----------- docker socket
-                    +-- provider.NewRegistry(cfg.Models)
+                    +-- provider.NewRegistry(openai.New)
                     +-- builtin.Registry(questions)
                     +-- event.NewBus
                     |
@@ -260,17 +275,34 @@ configuration, and calls it.
 The pieces:
 
 - **Deps** are the harness pieces every request shares: the store, the hub,
-  the workspace host, the model set, the tool registry, the question broker,
-  and the bus. `Workspaces`, `Hub`, and `Models` are interfaces, defined in
-  `server` because that is where they are consumed, so the handler tests run
-  the whole API against a host backed by temporary directories. A zero `Deps`
-  serves the health checks and the event stream alone.
-- **Auth** is one middleware over the whole `/api` subtree, comparing the
-  bearer token in constant time. `/healthz` is public, and `/git/` is mounted
-  outside it because the hub authenticates workspaces itself with
-  per-workspace credentials. The event stream is the one route that also
-  accepts the token as a query parameter, because a browser cannot set a
-  header on a WebSocket handshake.
+  the workspace host, the provider kind registry, the secret box, the tool
+  registry, the question broker, and the bus. `Workspaces`, `Hub`, and
+  `Providers` are interfaces, defined in `server` because that is where they
+  are consumed, so the handler tests run the whole API against a host backed
+  by temporary directories and a scripted provider. A zero `Deps` serves the
+  health checks and the event stream alone.
+- **Auth** is one middleware over the whole `/api` subtree. A request carries
+  a bearer token: a sign-in session's, looked up by its SHA-256 in
+  `auth_sessions`, or the deployment's optional API token, compared in
+  constant time. `GET /api/auth/status`, `POST /api/auth/setup`, and
+  `POST /api/auth/login` hand out sessions and are the public routes under
+  `/api`; setup succeeds once, while no password exists. `/healthz` is public,
+  and `/git/` is mounted outside the middleware because the hub authenticates
+  workspaces itself with per-workspace credentials. The two WebSocket
+  routes, the event stream and a workspace's terminal, are the only ones that
+  also accept the token as a query parameter, because a browser cannot set a
+  header on a WebSocket handshake; `bearerToken` matches them by path. Sign-in attempts take
+  turns behind one mutex, which with the hash's cost bounds guessing without
+  a lockout.
+- **Providers and models** are rows. A run, a probe, or a model test opens
+  the provider's sealed key, builds a client through `Providers`
+  (`*provider.Registry` in production), and drops it when done, so a changed
+  key applies to the next use. `runModel` picks the model a run uses: the one
+  the request names, the `default_model` setting, or the first model.
+- **Settings** are one key/value table the UI writes. The keys the harness
+  reads itself (`default_model`, `sandbox_image`, `subagent_max_depth`,
+  `subagent_max_children`, `setup_complete`) are validated on write and read
+  with a fallback to their defaults, so a bad row never stops a run.
 - **Errors** have one shape, `{"error":{"code","message"}}`. `statusOf` maps
   the sentinel errors of the packages the handlers call onto statuses:
   `store.ErrNotFound`, `workspace.ErrNoWorkspace`, `hub.ErrNoProject`, and
@@ -284,12 +316,13 @@ The pieces:
   gets the run row as soon as the loop begins and follows the rest on the
   event stream. The agent is built per run from the workspace's executor, a
   `session.Store` on the session tree, the bus as its emitter, and the model
-  the request or the `default_model` setting names. Assistant entries record
+  `runModel` resolves, whose endpoint identifier, limits, and reasoning
+  settings become the agent's options. Assistant entries record
   the workspace HEAD through a commit function that runs `git rev-parse HEAD`
   through the executor and reports no commit when the workspace holds no
-  repository. `agent.Options` in `runs.begin` is the hook the later phases
-  register their tools in: search in phase 7. The subagent tools need no entry
-  there; the spawner reaches the run manager itself (see Subagents). A run ends
+  repository. Every tool is in the registry all runs share, which holds what
+  the tools reach beyond the workspace: the question broker, the spawner (see
+  Subagents), the search engine, and the page reader (see Search). A run ends
   `done`, `error`, or `aborted`, recorded with a retrying `store.FinishRun`
   call on a context that outlives the cancelled one. If its 30-second
   foreground window ends, the run manager continues the exact write in the
@@ -317,20 +350,29 @@ The whole HTTP surface is `routes.go`, one handler file per resource, and
 
 ## Configuration
 
-Configuration is loaded once in `main` and passed down as a `config.Config`
-value. No other package reads the environment. Precedence, lowest first:
+Configuration is two things. What the process needs before it can reach its
+database, addresses, paths, and the Docker topology, is deployment
+configuration: `config.Config`, loaded once in `main` and passed down. What a
+user chooses, model providers and models, the default model, the sandbox
+image, the subagent limits, git credentials, and the sign-in password, is
+rows in the database, edited in the web UI. No package reads the environment
+for either.
+
+Deployment configuration's precedence, lowest first:
 
 ```
 config.Default()  ->  the YAML file named by -config  ->  EIKA_* environment variables
 ```
 
-An empty or comment-only file is valid and means "use the defaults".
-`Validate` rejects an empty `listen`, `database_url`, `docker_socket`,
-`searxng_url`, `sandbox_image`, `eikad_binary`, `hub_root`, `hub_url`, or
-`auth_token`, so a deployment cannot come up with an unauthenticated API by
-accident. `sandbox_network` is the one field that may be empty: that is the
-development mode where sandboxes publish their daemon port on `127.0.0.1`
-instead of being reached by container name.
+The defaults are the compose stack's, so the harness image runs with no file
+and the stack sets only `EIKA_DATABASE_URL`. `Validate` rejects an empty
+`listen`, `database_url`, `docker_socket`, `searxng_url`, `sandbox_image`,
+`eikad_binary`, `hub_root`, `hub_url`, or `secret_key_file`.
+`sandbox_network` may be empty: that is the development mode where sandboxes
+publish their daemon port on `127.0.0.1` instead of being reached by
+container name. `auth_token` may be empty too: it is an optional fixed API
+token for scripts, beside password sign-in. A file that still sets `models`
+or `subagents` is refused with a pointer to where the setting went.
 
 `allowed_origins` lists the browser origins that may open the event stream,
 on top of the one derived from `listen`, which `Load` always prepends. An
@@ -340,13 +382,15 @@ list, which is what `make dev` uses to let the Vite dev server through. A
 deployment that serves the frontend from the harness needs none of them,
 because a same-origin handshake is always accepted.
 
-The deployed file is `deploy/eika.yaml`; secrets come from the environment
-(`EIKA_AUTH_TOKEN`, the per-model `api_key_env` variables, and optional
-`EIKA_*` git credential variables). Model API keys and remote git credentials
-are never stored in configuration or project rows. A model or remote project
-declares the *name* of the environment variable that holds its credential.
-`Config.String()` redacts the auth token and the database password so a config
-can be logged.
+Credentials the UI stores are sealed by `internal/secret` with AES-256-GCM
+before they reach a row. The key is 32 random bytes, hex in
+`secret_key_file` (`/var/lib/eika/secret.key`, in the hub volume), created on
+the first start. A copy of the database alone therefore opens no key or
+token; a harness whose key file changed reports that a stored key cannot be
+read and asks for it again. The API returns whether a credential is stored
+and, for a long API key, its last four characters, never the value.
+`Config.String()` redacts the auth token and the database password so a
+config can be logged.
 
 ## Sandboxes
 
@@ -379,6 +423,10 @@ against its bare repositories.
 `cmd/eikad` is a thin main over `internal/eikad`: it reads `EIKAD_TOKEN` from
 the environment, refuses to start without it, and serves the daemon through
 `server.Serve`, the same listener lifecycle the harness uses.
+`eikad filter` is the one other mode: a one-shot command that reads a
+web_fetch filter request on stdin, runs it with `search/filter`, and writes
+the outcome to stdout. It needs no token, because it is only ever run through
+the daemon's own exec.
 
 The daemon confines every path to its root (`/workspace`). A path may be
 relative to the root or absolute inside it; `..` is rejected rather than
@@ -407,6 +455,51 @@ workspace's token, and the workspace root. `Exec` decodes the daemon's
 newline-delimited frames and writes them into the caller's `Stdout` and
 `Stderr` as they arrive, so a tool streams output without buffering a whole
 command. A `404` from the daemon comes back as `sandbox.ErrNotFound`.
+
+### Terminal, files, and changes
+
+A person works in a workspace beside the agent through three kinds of route,
+all of which reach the sandbox the way the agent does, and none of which the
+harness serves from its own filesystem.
+
+Files and changes go through the executor. `GET` and `PUT
+/api/workspaces/{id}/file` and `GET .../files` call `Stat`, `ReadFile`,
+`WriteFile`, and `List`, after `executor.Resolve` has checked the path
+lexically; eikad checks it again after following symlinks. A refused path is
+`403`, a missing one `404`. Commit and push run `git` in the workspace through
+`Exec`, as the diff does; push then goes through `Host.Push` to the hub and,
+for an upstream push, `hub.Push` from the hub to the project's remote with the
+project's sealed credentials, which never enter the sandbox. A save, a commit,
+and a push publish `workspace.state` so that open views refresh.
+
+The terminal is the one sandbox connection that is not an executor call. It is
+`sandbox.Client.Terminal`, reached through `Host.Terminal` and the server's
+`Workspaces` interface, and deliberately absent from `executor.Executor`: a
+tool holds an executor, so it can run commands but can never get a PTY.
+
+```
+  browser                      harness (server/terminal.go)             sandbox
+  GET /api/workspaces/{id}/terminal?rows&cols&token
+     |                            |
+     |                            +-- Workspaces.Inspect: running? else 404/409
+     |                            +-- Host.Terminal -> sandbox.Client.Terminal
+     |                            |      dial ws://<address>/pty  --------> eikad /pty
+     |                            |      Authorization: Bearer EIKAD_TOKEN    shell on a PTY
+     |<-- 101 (origin checked) ---+
+     |                            |
+     |  input / resize  --------> relay, bytes unchanged  ---------------> pty write / resize
+     |  <-------- output, exit    relay, bytes unchanged  <--------------- pty read, exit
+     |                            |
+     |  close (status, reason) -> passed on as is ------------------------> shell killed
+     |  <- close (status, reason) passed on as is <------------------------ shell exited
+```
+
+The sandbox is dialled before the browser's handshake is accepted, so a
+stopped or missing workspace is an ordinary HTTP error. Each direction runs in
+its own goroutine; whichever side closes first has its close status and reason
+passed to the other, and a connection that drops without a close frame closes
+the other side with `1011`. A message is at most 1 MiB either way, which eikad
+enforces as well, so a large paste arrives whole.
 
 ### Workspace lifecycle
 
@@ -476,19 +569,20 @@ as its base commit.
 
 Upstream remotes are the harness's business alone: `Mirror` fetches every
 branch of a remote into the hub and `Push` sends a refspec back. A private
-project stores only the names of matched `EIKA_*` username and password
-variables. The API rejects credentials in `remote_url`. The hub resolves the
-variables for each git command and passes their values through the process
-environment with a one-line credential helper. The values are never stored,
-returned by the API, written to disk, or put in a process argument.
+project's username and password or token are entered with the project and
+its password is sealed; the API rejects credentials in `remote_url`. The
+server opens the password for one git command and the hub passes it through
+the process environment with a one-line credential helper, so it is never
+written to disk or put in a process argument. Changing a project's
+credentials fetches with the new ones first, so a wrong token is refused
+before it is stored.
 
 The API also rejects URL query strings and fragments because they can hold
 tokens. Migration `0002_remote_credentials` removes userinfo, query strings,
-and fragments from old remote URLs. An affected remote project receives the
-generic `EIKA_GIT_USERNAME` and `EIKA_GIT_PASSWORD` references. An operator
-must set those two variables before Eika fetches or pushes that project again.
-A public legacy URL that has none of these credential indicators stays
-unchanged and receives no credential references.
+and fragments from old remote URLs, and migration `0003_ui_configuration`
+drops the environment-variable references earlier versions stored instead of
+credentials, so such a project has its credentials entered again in its
+settings.
 
 ## Subagents
 
@@ -556,8 +650,9 @@ The pieces:
   context of the parent run that asked for it. So the child's tools, events,
   entries, and retry behavior are the parent's, and no second agent loop
   exists.
-- **The limits** are `subagents.max_depth` and `subagents.max_children` in the
-  configuration, 2 and 4 by default. Depth is measured by walking `subagents`
+- **The limits** are the `subagent_max_depth` and `subagent_max_children`
+  settings, 2 and 4 by default, which `subagent.Options.Limits` reads at
+  every spawn, so a change applies to the next child. Depth is measured by walking `subagents`
   rows up from the spawning session; width counts that session's running
   children, rows and live reservations alike. A spawn claims its slot under
   the lock that counts them before it does any of the slow work, so two
@@ -591,56 +686,135 @@ with `with_workspace` pushes the current workspace, clones a new one from the
 hub at the commit the fork entry recorded, on `<branch>-fork-<short id>`, and
 points the forked session at it, so the files rewind with the conversation.
 
-## Compose topology
+## Search
+
+`internal/search` is a port of the localsearch Pi extension. The model has
+two tools. `web_search` takes a query, a source, and a count; `web_fetch`
+takes a URL and optionally a section, a filter, and a format.
 
 ```
-          127.0.0.1:8080                   127.0.0.1:8888 (debug only)
-                 |                                  |
-         +-------v--------+   internal net   +------v--------+
-         |     eika       +------------------>    searxng    |
-         |  (harness)     |                  |  JSON format  |
-         +---+--------+---+                  +---------------+
-             |        |
-   /var/run/ |        | internal net
- docker.sock +        v
- (sibling             +----------------+
-  containers)         |    postgres    |  volume: eika-postgres
-                      |      16        |  127.0.0.1:5432
-                      +----------------+
+ web_search --> search.Engine --+-- source "web": the failover chain
+                                |     searxng -> exa -> tavily -> brave -> marginalia
+                                |     (search_order; one provider answers)
+                                +-- wikipedia | arxiv | github_code/repos/issues
+                                |
+                  Tracker: quotas and cooldowns per bucket --> search_usage
+                  Keys: sealed search_keys, opened per request
 
-   volume eika-hub -> /var/lib/eika in the harness; bare repositories live
-                      in /var/lib/eika/hub
+ web_fetch --> fetch.Reader --> plan the URL --+-- GitHub API / raw host
+                                               +-- text file, fenced
+                                               +-- HTML: container, readability,
+                                                   body --> Markdown
+               cache --> section --> filter (eikad filter, in the sandbox)
+                                 --> or budget: whole, outline, or truncated
+```
+
+- **The failover chain.** A web search asks exactly one provider: the first
+  in `search_order` that has its key, quota left in its bucket, and no
+  cooldown. It stops at the first that answers with results; a transport
+  failure, an HTTP error, a rate limit, or no results records an attempt and
+  moves on. A failure cools the bucket down for 15 minutes, doubling to six
+  hours, or until the server's `Retry-After` or `X-RateLimit-Reset` (capped
+  at a day). An empty `search_order` turns web search off. When
+  SearXNG failed and a fallback answered, the result opens with a `Notice:`
+  line saying so and how to fix it, because the details that record the
+  attempts never reach the model. A search asks for a pool of 30 results and
+  caches it for a day, so the same query with a larger count is free.
+- **Sources** go to their one backend. arXiv is paced one request at a time,
+  three seconds apart, and its pool is cached. The GitHub sources and
+  web_fetch's GitHub reads count against one `github` bucket, which a 403 or
+  429 cools down until GitHub's reset time. GitHub repository search refuses
+  qualifiers that only code or issue search understands.
+- **Keys and settings.** Exa, Tavily, Brave, and GitHub keys are sealed rows
+  in `search_keys`, read per request, so a new key applies to the next
+  search. web_fetch sends the GitHub token only to the GitHub API and, over
+  https, to `githubusercontent.com` and its subdomains. `search_order` and `search_limits` are settings validated against
+  the registered backends. The SearXNG URL is deployment configuration.
+- **Reading a page.** `fetch.Reader` plans the URL before any request (see the
+  PLAN decision on web_fetch reads), dispatches on the content type the server
+  sent, and caches the Markdown for six hours. A section is selected by
+  heading, exact then prefix then substring, with its subsections; a URL
+  fragment selects the same way but falls back to the page. Past 10,000
+  tokens a plain read returns the page outline and a narrowed read is cut on
+  a section boundary with a note of what was left out.
+- **Filters run in the sandbox.** A filter is JavaScript the model wrote. The
+  tool runs `eikad filter` through the run's executor with the page on stdin;
+  eikad runs it in goja with a two-second limit, renders the result, cuts it
+  to the budget, and writes the outcome to stdout. The harness never
+  evaluates model code, and does not link goja.
+- **The address guard.** `fetch.NewClient` refuses to dial a non-public
+  address after DNS resolution, re-checks every redirect's connection, and
+  uses no proxy, so a model cannot point web_fetch at postgres, a sandbox, or
+  a cloud metadata endpoint. Obvious private names are refused before any
+  request with a clear message.
+
+The Search tab of the settings dialog shows every backend's state and usage,
+reorders and disables web providers, stores keys, edits quotas, and tries a
+search through `POST /api/search`.
+
+## Compose topology
+
+`compose.yaml` at the repository root is the whole deployment, and it needs
+no configuration: `docker compose up -d` builds and starts it.
+
+```
+                     127.0.0.1:8080
+                           |
+                   +-------v--------+   internal net   +---------------+
+  host.docker. <---+     eika       +------------------>    searxng    |
+  internal (a      |  (harness)     |                  |  JSON format  |
+  local model      +---+--------+---+                  +---------------+
+  server)              |        |
+             /var/run/ |        | internal net
+           docker.sock +        v
+           (sibling             +----------------+
+            containers)         |    postgres    |  volume: eika-postgres
+                                |      16        |  internal only
+                                +----------------+
+
+   volume eika-hub -> /var/lib/eika in the harness: bare repositories in
+                      /var/lib/eika/hub and the sealing key in secret.key
 
    sandbox containers eika-ws-<id> join eika_sandbox, which only the harness
    also joins: the harness reaches them by name and they reach the hub at
    http://eika:8080, but never postgres or searxng
 ```
 
-Every published port binds to 127.0.0.1. Eika is single-user and holds
-credentials, so nothing listens on a public interface; put a reverse proxy in
-front of it for remote access.
+Only the harness publishes a port, on 127.0.0.1. Eika is single-user and
+holds credentials, so nothing listens on a public interface; put a reverse
+proxy in front of it for remote access. Postgres and SearXNG are reachable on
+the internal network alone, which is why their built-in password and secret
+are safe defaults; `compose.dev.yaml` publishes them on loopback for
+`make dev`. The harness maps `host.docker.internal` to the host gateway, so a
+model server on the Docker host is reachable on Linux as it is on Docker
+Desktop.
+
+A `sandbox-image` service builds `eika-sandbox:latest` from
+`sandbox/Dockerfile` and exits at once; the harness waits for it to complete,
+so the default image exists before the first workspace. Its build context is
+the repository root because it builds `eikad` from source and bakes it in;
+the harness still copies its own build over it at container creation, which
+is what makes an arbitrary image usable as a sandbox.
 
 The harness runs as the non-root user `eika` (uid 1000). It still needs the
-Docker socket, and the socket's group id differs between hosts, so the image
-takes a `DOCKER_GID` build argument (default 999) and adds `eika` to that
-group. Accepted risk: access to the Docker socket is equivalent to root on the
-host. The harness cannot avoid it, because sandboxes are sibling containers
-that it starts itself. Nothing inside a sandbox ever sees the socket.
+Docker socket, and the socket's group id differs between hosts, so the
+image's entry point, `deploy/eika-entrypoint.sh`, starts as root only to add
+`eika` to whatever group owns the mounted socket, then drops to `eika` with
+`setpriv`. Accepted risk: access to the Docker socket is equivalent to root on
+the host. The harness cannot avoid it, because sandboxes are sibling
+containers that it starts itself. Nothing inside a sandbox ever sees the
+socket.
 
 The harness image is built by the multi-stage `Dockerfile` at the repository
 root: stage one builds the frontend with Node 22, stage two builds both Go
 binaries statically, and the runtime stage carries `eika`, the frontend bundle,
 and `eikad`, staged at `/usr/local/share/eika/eikad`, which is where
-`workspace.Host` reads it to copy into sandboxes. The harness mounts the Docker
-socket because sandboxes are sibling containers, not children.
+`workspace.Host` reads it to copy into sandboxes.
 
-`sandbox/Dockerfile` builds the default workspace image. Its build context is
-the repository root because it builds `eikad` from source in a builder stage
-and bakes it in; the harness still copies its own build over it at container
-creation, which is what makes an arbitrary image usable as a sandbox.
-
-`deploy/.env.example` documents every variable. `deploy/searxng/settings.yml`
-enables the JSON result format, which the harness needs to parse results.
+`.env.example` documents the few optional variables: the published port, the
+API token, and replacements for the internal password and secret.
+`deploy/searxng/settings.yml` enables the JSON result format, which the
+harness needs to parse results.
 
 ## Frontend
 
@@ -655,6 +829,23 @@ web/src/
   api/          wire types mirroring docs/api/, HTTP client, event stream
   lib/          pure utilities with tests
 ```
+
+### Signing in and the guided setup
+
+`app/App.tsx` decides what a browser sees. Without a token it asks
+`GET /api/auth/status`, which needs none: a harness with no password gets the
+guided setup (`features/setup`), and one with a password gets the sign-in
+screen (`features/connect`). With a token it shows the setup until the
+harness has a password and the `setup_complete` setting is true, then the
+workbench. The setup walks a password, a provider, its models, the sandbox
+check, and a first project, resuming at the first thing still missing; every
+step after the password can be skipped.
+
+The settings dialog (`features/settings`) is where everything the setup asked
+lives afterwards: providers and models (`features/providers`), the default
+model, the sandbox image, the subagent limits, and the password. Its open
+state is a small store, so the command palette and a session with no model
+open it on the right tab.
 
 ### The workbench
 
@@ -677,7 +868,9 @@ session features, which is why it lives in `app/` rather than in one of them.
 `app/Workbench.tsx` holds the two dividers; `components/ResizableSplit` is a
 pointer-events handler over a `role="separator"` element, so a pane is resized
 by dragging or by an arrow key and the width is remembered in localStorage
-through `lib/persisted`. Below 1024px the side panes become drawers.
+through `lib/persisted`. The divider draws a hairline and takes the pointer
+across about twelve pixels, which is the difference between a line worth
+looking at and one worth aiming at. Below 1024px the side panes become drawers.
 
 `app/panels.tsx` is the panel registry. The right pane's tab strip is that
 array filtered by what is open, so phases 6 and 8 add a panel by writing one
@@ -701,11 +894,22 @@ rows are replaced by the entries that follow, so nothing is drawn twice. The
 reducer is pure, so a scripted event sequence from `docs/api/events.md` is the
 whole test.
 
+The same reducer keeps the status bar's meter: `turn.progress` and `turn.end`
+carry usage, the model's configured context window, and generation time the
+harness measured. A decode rate needs two reports from one model attempt; a
+retry clears the baseline. Nothing in it is inferred from the text on screen,
+so an endpoint that reports usage only once shows context but no rate. Each
+assistant entry stores the final measured context state, which a replay uses
+to restore the meter after a reload. How the transcript renders — today,
+whether reasoning blocks start open — is `features/session/preferences.ts`, a
+localStorage store apart from the harness's settings, because two people
+reading one session can want different things from it.
+
 ### One client, one socket
 
 `api/client.ts` is the only place that calls `fetch`. It attaches the bearer
 token, decodes the documented error body into an `ApiError`, and forgets a
-token the harness answers `401` to, which returns the user to the connect
+token the harness answers `401` to, which returns the user to the sign-in
 screen. `api/connection.ts` holds the token and the harness URL in
 localStorage; it is a plain module with listeners rather than a store, because
 `api/` may not depend on a feature.
@@ -717,13 +921,26 @@ carries its topics in the handshake URL, so a client that never gets to send a
 frame still receives what it asked for. `bus.dropped` reaches every handler,
 whatever the topic, because it reports on the connection.
 
+### Reading a transcript
+
+A transcript is read for minutes at a time, so it is set apart from the
+chrome around it: `text-base` prose with `components/Markdown`, which styles
+headings, lists, quotations, tables, and fenced code (with its language and a
+way to copy it) from the theme tokens alone. The three voices are distinct at
+a glance — a message the user wrote is the one filled, named block on screen;
+the model's answer is unadorned prose; a tool call and the model's reasoning
+are collapsed rows that open on a click. Reasoning arrives as its own
+`reasoning.delta` stream, so it never interleaves with the answer.
+
 ### Tool call rendering
 
 A tool call is a collapsible card. `features/session/renderers/renderers.tsx`
 maps a tool name to a renderer: `bash` shows the command, its streamed output,
 and its exit code; `edit` shows a unified diff computed by `lib/diff.ts`;
 `read`, `write`, `grep`, `find`, and `ls` show their arguments and their
-result; `ask_user` renders the question form inline and posts the answer. A
+result; `ask_user` renders the question form inline and posts the answer;
+`web_search` lists its results as links (web URLs only) from the tool's
+details; `web_fetch` shows the page, how it was narrowed, and its content. A
 tool with no renderer falls back to formatted JSON, so a new tool is useful
 before anyone writes a renderer for it.
 
@@ -736,9 +953,7 @@ renders `index.html`, so client-side routes survive a full page load.
 
 ## Package dependency direction
 
-Dependencies point inward. An arrow means "may import". Packages in
-parentheses do not exist yet; the direction is fixed now so later phases do not
-have to renegotiate it.
+Dependencies point inward. An arrow means "may import".
 
 ```
         cmd/eika                                cmd/eikad
@@ -750,7 +965,7 @@ have to renegotiate it.
             |
     +-------+---------+---------+---------+----------+
     v                 v         v         v          v
-  agent  <--------  session   store   workspace   subagent   (search)
+  agent  <--------  session   store   workspace   subagent    search
     |    \              |                  |            |
     |     \             v                  v            |
     |      +-> contextfile           workspace/hub  <----+
@@ -761,14 +976,17 @@ have to renegotiate it.
     v                 |
  provider    executor/sandbox  ----->  eikad (wire types only)
 
-        +-----------------------------------+
-        |  config, event: imported by all   |
-        +-----------------------------------+
+        +-------------------------------------------+
+        |  config, event, secret: imported by all   |
+        +-------------------------------------------+
 
 workspace is imported by server and subagent only. Never by tool.
 subagent also imports session, store, event, and tool/builtin, for the
 Subagents interface the agent tools call it through.
 workspace also imports executor, which is what Host.Executor hands back.
+tool/builtin imports search and search/fetch for web_search and web_fetch;
+search imports nothing from internal/. search/filter (goja) is imported by
+cmd/eikad alone, so the harness binary does not link a JavaScript engine.
 ```
 
 Rules that reviews enforce:
@@ -776,7 +994,8 @@ Rules that reviews enforce:
 - Nothing imports `server`, except `cmd/`.
 - `tool` never imports `workspace`. Tools reach a workspace only through an
   `executor.Executor`.
-- `config` and `event` are leaves: they import nothing from `internal/`.
+- `config`, `event`, and `secret` are leaves: they import nothing from
+  `internal/`.
 - Agent actions on files or processes go through `executor`. The harness
   process never touches the host filesystem on an agent's behalf.
 

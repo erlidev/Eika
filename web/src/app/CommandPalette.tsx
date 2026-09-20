@@ -4,6 +4,7 @@
  * offers from the same queries the sidebar uses, so it needs no state.
  */
 
+import { Command as CommandIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
@@ -63,12 +64,20 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
         variant="ghost"
         size="sm"
         className="text-muted-foreground h-7 gap-2 px-2 text-xs"
+        aria-keyshortcuts="Meta+K Control+K"
         onClick={() => {
           setOpen(true);
         }}
       >
         Commands
-        <kbd className="bg-muted rounded-sm px-1 font-mono text-[0.65rem]">⌘K</kbd>
+        {/* An icon, not the ⌘ character, which the bundled fonts lack: a
+            system font would draw it differently on every machine. */}
+        <kbd
+          aria-hidden
+          className="bg-muted flex items-center gap-0.5 rounded-md px-1 font-mono text-2xs"
+        >
+          <CommandIcon aria-hidden className="size-3" />K
+        </kbd>
       </Button>
       <CommandDialog
         open={open}

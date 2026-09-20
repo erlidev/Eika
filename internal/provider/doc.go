@@ -7,7 +7,8 @@
 // Conversation messages, tool definitions, and usage live here because both
 // the loop and every provider implementation need them.
 //
-// The entry points are Provider, Request, Event, and Registry, which maps a
-// provider kind name from configuration to a constructor. The only
-// implementation today is provider/openai.
+// The entry points are Provider, Request, Event, and Registry, which maps the
+// kind a provider row names to a constructor taking that row's Endpoint.
+// Lister is the optional interface of a provider that can list its models.
+// The only implementation today is provider/openai.
 package provider

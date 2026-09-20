@@ -1,13 +1,31 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource-variable/jetbrains-mono";
 
 @custom-variant dark (&:is(.dark *));
 
+@theme {
+  --spacing: 0.225rem;
+  --text-2xs: 0.65rem;
+  --text-2xs--line-height: 0.875rem;
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  /* text-base is the transcript's reading size: prose is read for minutes at
+     a time, so it is larger and looser than the chrome around it. */
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.625rem;
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: "Geist Variable", sans-serif;
+  --font-sans: "IBM Plex Sans Variable", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -39,82 +57,101 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  /* One corner for every box: the shadcn primitives' rounded-sm … rounded-3xl
+     and feature code's rounded-md all resolve to --radius, so a card, a
+     control, and a list look alike. rounded-4xl (the Badge) stays a pill. */
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-xl: var(--radius);
+  --radius-2xl: var(--radius);
+  --radius-3xl: var(--radius);
+  --radius-4xl: calc(infinity * 1px);
 }
 
+/*
+ * Eika's design tokens: direction "Dense dev tool" (docs/STYLE_GUIDE.md,
+ * Web UI design). Cool slate neutrals, one teal accent, small radius, and a
+ * tighter spacing unit and type scale so every screen is compact. Change the look
+ * here, never in a component.
+ */
 :root {
+  --radius: 0.25rem;
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.201 0.022 251.8);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.201 0.022 251.8);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.201 0.022 251.8);
+  --primary: oklch(0.536 0.089 205);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.957 0.005 247.9);
+  --secondary-foreground: oklch(0.201 0.022 251.8);
+  --muted: oklch(0.957 0.005 247.9);
+  --muted-foreground: oklch(0.506 0.025 252.7);
+  --accent: oklch(0.95 0.016 201.7);
+  --accent-foreground: oklch(0.201 0.022 251.8);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --success: oklch(0.524 0.14 148);
+  --warning: oklch(0.554 0.117 75);
+  --border: oklch(0.911 0.01 252.8);
+  --input: oklch(0.911 0.01 252.8);
+  --ring: oklch(0.536 0.089 205);
+  --chart-1: oklch(0.536 0.089 205);
+  --chart-2: oklch(0.524 0.14 148);
+  --chart-3: oklch(0.554 0.117 75);
+  --chart-4: oklch(0.577 0.245 27.325);
+  --chart-5: oklch(0.506 0.025 252.7);
+  --sidebar: oklch(0.972 0.003 247.9);
+  --sidebar-foreground: oklch(0.201 0.022 251.8);
+  --sidebar-primary: oklch(0.536 0.089 205);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.95 0.016 201.7);
+  --sidebar-accent-foreground: oklch(0.201 0.022 251.8);
+  --sidebar-border: oklch(0.911 0.01 252.8);
+  --sidebar-ring: oklch(0.536 0.089 205);
+  /* The scrollbar is furniture: visible enough to grab, quiet enough to read
+     a transcript past. */
+  --scrollbar: oklch(0.82 0.014 252.8);
+  --scrollbar-hover: oklch(0.68 0.02 252.8);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.176 0.014 258.4);
+  --foreground: oklch(0.943 0.011 243.7);
+  --card: oklch(0.206 0.019 252.1);
+  --card-foreground: oklch(0.943 0.011 243.7);
+  --popover: oklch(0.206 0.019 252.1);
+  --popover-foreground: oklch(0.943 0.011 243.7);
+  --primary: oklch(0.745 0.11 201);
+  --primary-foreground: oklch(0.176 0.014 258.4);
+  --secondary: oklch(0.232 0.023 254.3);
+  --secondary-foreground: oklch(0.943 0.011 243.7);
+  --muted: oklch(0.232 0.023 254.3);
+  --muted-foreground: oklch(0.674 0.027 252);
+  --accent: oklch(0.29 0.041 221.6);
+  --accent-foreground: oklch(0.943 0.011 243.7);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --success: oklch(0.772 0.188 145.5);
+  --warning: oklch(0.72 0.14 79.9);
+  --border: oklch(0.304 0.027 248.7);
+  --input: oklch(0.304 0.027 248.7);
+  --ring: oklch(0.745 0.11 201);
+  --chart-1: oklch(0.745 0.11 201);
+  --chart-2: oklch(0.772 0.188 145.5);
+  --chart-3: oklch(0.72 0.14 79.9);
+  --chart-4: oklch(0.704 0.191 22.216);
+  --chart-5: oklch(0.674 0.027 252);
+  --sidebar: oklch(0.206 0.019 252.1);
+  --sidebar-foreground: oklch(0.943 0.011 243.7);
+  --sidebar-primary: oklch(0.745 0.11 201);
+  --sidebar-primary-foreground: oklch(0.176 0.014 258.4);
+  --sidebar-accent: oklch(0.29 0.041 221.6);
+  --sidebar-accent-foreground: oklch(0.943 0.011 243.7);
+  --sidebar-border: oklch(0.304 0.027 248.7);
+  --sidebar-ring: oklch(0.745 0.11 201);
+  --scrollbar: oklch(0.36 0.026 248.7);
+  --scrollbar-hover: oklch(0.48 0.028 248.7);
 }
 
 @layer base {
@@ -127,12 +164,69 @@
   html {
     @apply font-sans;
   }
+
+  /*
+   * Anything that acts on a click says so under the pointer. Tailwind v4
+   * dropped the browser default on buttons, and a dense tool has far more
+   * clickable rows than it has buttons, so the rule is stated once here for
+   * every control the app builds from, rather than per component.
+   */
+  button:not(:disabled),
+  summary,
+  label[for],
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="menuitemradio"]:not([aria-disabled="true"]),
+  [role="menuitemcheckbox"]:not([aria-disabled="true"]),
+  [role="switch"]:not([aria-disabled="true"]),
+  [role="checkbox"]:not([aria-disabled="true"]),
+  [role="radio"]:not([aria-disabled="true"]),
+  [role="treeitem"]:not([aria-disabled="true"]),
+  [role="combobox"]:not([aria-disabled="true"]),
+  [role="link"],
+  a[href] {
+    cursor: pointer;
+  }
+
+  /*
+   * Scrollbars. The platform default is a wide, opaque bar that cuts across a
+   * dense layout; these are thin, follow the theme, and only darken under the
+   * pointer. Firefox takes the standard properties, WebKit and Chromium the
+   * pseudo-elements, so both are stated.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 0.625rem;
+    height: 0.625rem;
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar);
+    border: 3px solid transparent;
+    border-radius: calc(infinity * 1px);
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-hover);
+  }
 }
 
 /*
  * Syntax highlighting for fenced code. `rehype-highlight` emits highlight.js
  * class names but no colours; these are the few token groups that matter,
- * defined against the neutral palette so they follow the theme.
+ * defined against the slate palette so they follow the theme.
  */
 :root {
   --code-keyword: oklch(0.45 0.16 280);

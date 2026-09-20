@@ -98,11 +98,29 @@ export function apiUrl(path: string): string {
  * token as a query parameter because a browser cannot set a handshake header.
  */
 export function eventStreamUrl(topics: readonly string[], since?: string): string {
-  const base = current.baseUrl === "" ? window.location.origin : current.baseUrl;
-  const url = new URL("/api/events", base);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("token", current.token);
+  const url = socketUrl("/api/events");
   if (topics.length > 0) url.searchParams.set("topics", topics.join(","));
   if (since !== undefined && since !== "") url.searchParams.set("since", since);
   return url.toString();
+}
+
+/**
+ * terminalUrl builds the WebSocket URL of a workspace's shell, sized to the
+ * terminal that opens it. Like the event stream, it carries the token as a
+ * query parameter.
+ */
+export function terminalUrl(workspaceId: string, rows: number, cols: number): string {
+  const url = socketUrl(`/api/workspaces/${encodeURIComponent(workspaceId)}/terminal`);
+  url.searchParams.set("rows", String(rows));
+  url.searchParams.set("cols", String(cols));
+  return url.toString();
+}
+
+/** socketUrl resolves a WebSocket path against the base URL, with the token attached. */
+function socketUrl(path: string): URL {
+  const base = current.baseUrl === "" ? window.location.origin : current.baseUrl;
+  const url = new URL(path, base);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("token", current.token);
+  return url;
 }

@@ -8,19 +8,25 @@ character base32 strings `store.NewID` produces. The Go wire types live in
 
 ## Authentication
 
-Every route under `/api` requires the deployment's bearer token:
+Every route under `/api` requires a bearer token:
 
 ```
-Authorization: Bearer <auth_token>
+Authorization: Bearer <token>
 ```
 
-The exceptions are `GET /healthz`, `GET /api/healthz`, and the git hub under
-`/git/`, which authenticates workspaces itself with per-workspace basic auth.
-`GET /api/events` also accepts the token as the `token` query parameter,
-because a browser cannot set a header on a WebSocket handshake; no other route
-does, so a token never has to appear in an ordinary URL.
+The token is a sign-in session's, from the setup, sign-in, or password
+routes below, or the deployment's optional fixed API token, `EIKA_AUTH_TOKEN`.
+The exceptions are `GET /healthz`, `GET /api/healthz`, the three routes that
+hand out a session (`GET /api/auth/status`, `POST /api/auth/setup`,
+`POST /api/auth/login`), and the git hub under `/git/`, which authenticates
+workspaces itself with per-workspace basic auth. The two WebSocket routes,
+`GET /api/events` and `GET /api/workspaces/{id}/terminal`, also accept the
+token as the `token` query parameter, because a browser cannot set a header on
+a WebSocket handshake; no other route does, so a token never has to appear in
+an ordinary URL.
 
-A wrong or missing token is `401` with a `WWW-Authenticate: Bearer` header.
+A wrong, missing, or expired token is `401` with a `WWW-Authenticate: Bearer`
+header.
 
 ## Errors
 
@@ -33,9 +39,11 @@ Every failure has one shape:
 | Code | Status | Meaning |
 |---|---|---|
 | `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field is malformed. |
-| `unauthorized` | 401 | The bearer token was missing or wrong. |
-| `not_found` | 404 | The addressed project, workspace, session, entry, run, or question does not exist. |
-| `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, or a workspace that is not running. |
+| `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
+| `forbidden` | 403 | A workspace path is outside the workspace, directly or through a symlink, or the sandbox may not open it. |
+| `not_found` | 404 | The addressed project, workspace, session, entry, run, question, provider, model, or workspace file does not exist. |
+| `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a workspace that is not running, nothing to commit, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
+| `too_large` | 413 | A file saved through the API is over its 2 MiB bound. |
 | `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
 
 ## Health
@@ -44,6 +52,45 @@ Every failure has one shape:
 |---|---|---|
 | GET | `/healthz` | `{"status":"ok"}`. The container health check. |
 | GET | `/api/healthz` | The same, under the prefix the frontend uses. |
+
+## Sign-in
+
+Eika has one user and one password, chosen in the guided setup. Signing in
+exchanges it for a session token that lasts 30 days.
+
+### `GET /api/auth/status`
+
+No token needed. `200` with `{"password_set": boolean}`: false until setup has
+chosen the password, which is how the UI decides between setup and sign-in.
+
+### `POST /api/auth/setup`
+
+No token needed. `{"password": string}`, at least 8 characters. Sets the
+password of a harness that has none and signs in. `201` with a `SignIn`. `409`
+once a password exists, so setup can be claimed once.
+
+### `POST /api/auth/login`
+
+No token needed. `{"password": string}`. `200` with a `SignIn`; `401` for a
+wrong password; `409` before setup. Attempts are checked one at a time.
+
+### `POST /api/auth/logout`
+
+Ends the session whose token the request carries. The API token is not a
+session and stays valid. `204`.
+
+### `PUT /api/auth/password`
+
+`{"current_password": string, "new_password": string}`. Replaces the password,
+ends every session, and signs this browser in again: `200` with a `SignIn`.
+`400` when the current password is wrong or the new one is too short.
+
+### SignIn
+
+| Field | Type | Meaning |
+|---|---|---|
+| `token` | string | The bearer token to send from now on. |
+| `expires_at` | time | When it stops working. |
 
 ## Projects
 
@@ -62,21 +109,15 @@ project also has a host directory its workspaces bind-mount.
 | `name` | string, required | The project name. It is also the hub repository's directory, so it may not contain a slash or `..`. |
 | `kind` | `remote` or `local`, required | Where the code comes from. |
 | `remote_url` | string | Required for `remote`. The upstream the hub mirrors. |
-| `remote_username_env` | string | Optional for `remote`. The `EIKA_*` environment variable that holds the upstream username. Set it with `remote_password_env`. |
-| `remote_password_env` | string | Optional for `remote`. The `EIKA_*` environment variable that holds the upstream password or token. Set it with `remote_username_env`. |
+| `remote_username` | string | Optional for `remote`. The user the hub authenticates to the upstream as; for a token, any placeholder such as `x-access-token`. Set it with `remote_password`. |
+| `remote_password` | string | Optional for `remote`. The upstream password or access token. It is encrypted at rest and never returned. Set it with `remote_username`. |
 | `host_path` | string | Required for `local`. An absolute path on the Docker host, bind-mounted at the workspace root. |
 | `default_branch` | string | The branch a workspace uses when it names none. Defaults to `main`. |
 
 `remote_url` must not contain userinfo, a query string, or a fragment. These
 URL parts can expose credentials in stored data, API responses, logs, and Git
-arguments. For a private HTTPS remote, put the username and password or token
-in the harness environment and send only their variable names. Public remotes
-omit both fields.
-
-When Eika upgrades an old project whose remote URL has one of these parts, it
-removes the unsafe part and sets the references to `EIKA_GIT_USERNAME` and
-`EIKA_GIT_PASSWORD`. Set these variables in the harness environment before
-the next fetch or push. Public old URLs without these parts do not change.
+arguments. A private HTTPS remote sends its username and password or token in
+their own fields; a public remote omits both.
 
 `201` with the `Project`. `400` for a missing or malformed field, an incomplete
 credential pair, and a remote the hub cannot mirror; `409` when the name is
@@ -85,6 +126,19 @@ taken.
 ### `GET /api/projects/{id}`
 
 `200` with the `Project`, `404` when there is none.
+
+### `PATCH /api/projects/{id}`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `remote_username` | string | Replaces the upstream username. |
+| `remote_password` | string | Replaces the upstream password; the empty string removes the credentials, username included. |
+| `default_branch` | string | Replaces the branch new workspaces use. |
+
+An absent field is left alone. Where the code comes from does not change.
+New credentials fetch from the remote before they are stored, so a token the
+remote refuses is `400` and changes nothing. Credentials on a local project
+are `400`. `200` with the `Project`.
 
 ### `DELETE /api/projects/{id}`
 
@@ -100,8 +154,8 @@ it holds the branches the workspaces pushed. `204`.
 | `name` | string | The project name, unique. |
 | `kind` | `remote` or `local` | Where the code comes from. |
 | `remote_url` | string, optional | The upstream, for a remote project. |
-| `remote_username_env` | string, optional | The name of the upstream username variable. This is not the variable's value. |
-| `remote_password_env` | string, optional | The name of the upstream password variable. This is not the variable's value. |
+| `remote_username` | string, optional | The upstream username of a private remote. |
+| `remote_password_set` | boolean, optional | A password is stored. The password itself is never returned. |
 | `host_path` | string, optional | The bind-mounted directory, for a local project. |
 | `default_branch` | string | The branch new workspaces use. |
 | `created_at` | time | When it was registered. |
@@ -126,7 +180,7 @@ a rejected request leaves no container and writes no row.
 | `project_id` | string, required | The project to check out. |
 | `name` | string, required | What the user calls this workspace. |
 | `branch` | string | The branch to work on. Defaults to the project's `default_branch`. |
-| `image` | string | The container image. Defaults to the configured `sandbox_image`. Ignored when `build_context` is set. |
+| `image` | string | The container image. Defaults to the `sandbox_image` setting, or the deployment's `eika-sandbox:latest`. Ignored when `build_context` is set. |
 | `build_context` | string | A directory on the Docker host holding a Dockerfile and its context; the image is built from it first. |
 | `dockerfile` | string | The Dockerfile's name within `build_context`. Defaults to `Dockerfile`. |
 | `parent_workspace_id` | string | The workspace this one was branched from, recorded for the UI. |
@@ -155,7 +209,8 @@ gone is not an error. `204`.
 ### `GET /api/workspaces/{id}/diff`
 
 Runs `git diff <base_commit>` and `git status --porcelain` inside the
-workspace through its executor.
+workspace through its executor. `?path=<path>` narrows both to one file or
+directory; a path outside the workspace is `403`.
 
 `200` with:
 
@@ -200,6 +255,111 @@ A conflict is a `200`, not an error: the target's tree is left conflicted on
 purpose, so the user or the agent working in it resolves it there. `409` when
 the target workspace is not running; `400` when the branch is not in the hub
 or the source belongs to another project.
+
+### `POST /api/workspaces/{id}/commit`
+
+Stages the workspace's changes with `git add -A` and commits them, inside the
+workspace through its executor. A repository without an identity of its own
+commits as `Eika Agent <agent@eika.local>`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `message` | string, required | The commit message. |
+| `paths` | string array | Commit only these workspace paths. Absent or empty commits every change. |
+
+`200` with `{"commit": string}`, the new commit. `400` for an empty message or
+when git itself failed, with git's message; `403` for a path outside the
+workspace; `409` with the message `nothing to commit` when nothing is staged,
+and when the workspace is not running. Publishes `workspace.state`.
+
+### `POST /api/workspaces/{id}/push`
+
+Pushes the workspace's HEAD to its branch in the hub and, when asked, the
+hub's branch on to the project's remote with the project's credentials. The
+push never forces.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `upstream` | boolean | Also push the branch from the hub to the project's `remote_url`. |
+
+`200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `branch` | string | The workspace's branch, which is the branch pushed. |
+| `commit` | string | The commit pushed. |
+| `upstream_pushed` | boolean | Whether the branch also went to the remote. |
+
+`400` when the hub or the remote refused the push, with git's message and no
+credentials, and when `upstream` is set for a project without a remote; `409`
+when the workspace is not running. Publishes `workspace.state`. A client
+builds a link to open a pull request from the project's `remote_url` and
+`branch`; the harness has no forge API.
+
+### `GET /api/workspaces/{id}/files`
+
+Lists one directory of the workspace: `?path=<path>`, relative to the
+workspace root, and absent or empty for the root. Directories come first,
+then files, each in byte order of their names.
+
+`200` with `{"entries": [FileEntry]}`. `400` when the path is a file; `403`
+when it is outside the workspace; `404` when it does not exist; `409` when the
+workspace is not running.
+
+### `GET /api/workspaces/{id}/file`
+
+Reads one file for the editor. `?path=<path>` is required.
+
+`200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `path` | string | The file, relative to the workspace root. |
+| `size` | number | Its size in bytes. |
+| `binary` | boolean | A NUL byte is in its first 8 KiB. `content` is then empty. |
+| `too_large` | boolean | It is over 2 MiB. `content` is then empty. |
+| `content` | string | The file's text. |
+
+`400` when the path is missing or a directory; `403`, `404`, and `409` as for
+the listing.
+
+### `PUT /api/workspaces/{id}/file`
+
+Saves the raw request body as one file, `?path=<path>`, creating its parent
+directories. The body is at most 2 MiB.
+
+`200` with the saved file's `FileEntry`. `400` when the path is missing or a
+directory; `403` when it is outside the workspace; `409` when the workspace is
+not running; `413` when the body is over the bound. Publishes
+`workspace.state`.
+
+### `GET /api/workspaces/{id}/terminal`
+
+Upgrades to a WebSocket carrying an interactive shell in the workspace.
+`?rows=` and `?cols=` set the starting size; absent means 24 by 80. The
+harness dials the sandbox's `/pty` and relays messages both ways unchanged, so
+they are exactly the PTY messages in `eikad.md`: the client sends
+`{"type":"input","data":<base64>}` and `{"type":"resize","rows":n,"cols":n}`,
+and receives `{"type":"output","data":<base64>}` and, when the shell exits,
+`{"type":"exit","exit_code":n}` (absent `exit_code` means 0) followed by a
+normal close. A close from either side is passed on with its status and
+reason; a lost connection closes the other side with `1011`.
+
+The token may be sent as `?token=`, and the handshake is accepted from the
+same origins as the event stream. Before the upgrade, `400` for a size that is
+not a number from 0 to 65535, `404` for a missing workspace, and `409` for a
+workspace that is not running.
+
+### FileEntry
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | The base name. |
+| `path` | string | Relative to the workspace root, slash-separated. |
+| `size` | number | Size in bytes. |
+| `mode` | number | Go file mode bits. |
+| `mod_time` | time | Last modification. |
+| `is_dir` | boolean | Whether it is a directory. |
 
 ### Workspace
 
@@ -304,9 +464,12 @@ there is nothing to clone; `409` when the source workspace is not running.
 | `created_at` | time | When it was written. |
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
 
-A provider message can include `reasoning` on an assistant entry when the
-configured endpoint preserves thinking. This value is opaque provider data
-that Eika replays; it is not assistant-visible content. A tool call's
+A provider message can include `reasoning` on an assistant entry whenever the
+endpoint streamed it. The session view shows it apart from the answer; Eika
+replays it to the provider only when `preserve_thinking` is on. An assistant
+message can also include `metrics` with `run_id`, turn `usage`, last-call
+`context`, `generation_ms`, and `context_window`. This UI metadata restores
+the context view after replay and is never sent to the provider. A tool call's
 `arguments` is normally an object. If a model returns malformed JSON, it is a
 string with the exact malformed text, and the tool call has
 `arguments_malformed: true`. The marker is absent for valid JSON, including a
@@ -324,7 +487,7 @@ on the event stream.
 |---|---|---|
 | `text` | string, required | The message. |
 | `mode` | `run`, `steer`, or `follow_up` | What to do with it. Empty means `run`. |
-| `model` | string | The model this run uses. Empty uses the `default_model` setting, or the first configured model. |
+| `model` | string | The name of the model this run uses. Empty uses the `default_model` setting, or the first model. |
 
 - `run` starts a run from the session's head. `409` when one is already going.
 - `steer` joins the run in progress as soon as the running tool call
@@ -332,9 +495,9 @@ on the event stream.
 - `follow_up` waits until the current turn ends and then starts the next one.
 - `steer` and `follow_up` are `409` when the session has no run in progress.
 
-`202` with the `Run`. `400` for empty text, an unknown mode, or a model the
-deployment did not configure; `409` when the session's workspace is not
-running.
+`202` with the `Run`. `400` for empty text, an unknown mode, or a model that
+does not exist; `409` when the session's workspace is not running or no model
+is configured.
 
 ### `GET /api/sessions/{id}/run`
 
@@ -399,8 +562,9 @@ how a run makes and waits for them; these routes are how the UI watches and
 stops them. The lifecycle is on the stream as `subagent.started` and
 `subagent.finished`.
 
-`subagents.max_depth` and `subagents.max_children` in the configuration bound
-how deep and how wide the tree may grow; the defaults are 2 and 4.
+The `subagent_max_depth` and `subagent_max_children` settings bound how deep
+and how wide the tree may grow; the defaults are 2 and 4, and a change applies
+to the next spawn.
 
 ### `GET /api/sessions/{id}/agents`
 
@@ -449,27 +613,235 @@ The same object the parent's model receives as the `spawn_agent` tool result.
 | `diff_stat` | string, optional | `git diff --stat` from the parent's base commit to that head. |
 | `error` | string, optional | Why a child that did not finish cleanly stopped. |
 
-## Settings and models
+## Providers
+
+A provider is an OpenAI-compatible endpoint and the key it takes. Its
+models are listed separately.
+
+### `GET /api/providers`
+
+`200` with `{"providers": [Provider], "kinds": [string]}`, oldest first.
+`kinds` are the provider kinds this harness can talk to: `openai` today.
+
+### `POST /api/providers`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string, required | What the user calls it; unique. |
+| `kind` | string | One of `kinds`. Defaults to `openai`. |
+| `base_url` | string, required | An http or https API root, such as `https://api.openai.com/v1`. No credentials, query string, or fragment. |
+| `api_key` | string | The key. Encrypted at rest and never returned. Empty for an endpoint that asks for none. |
+
+`201` with the `Provider`; `400` for a bad field; `409` when the name is taken.
+
+### `PATCH /api/providers/{id}`
+
+`name`, `base_url`, and `api_key`, each optional; an absent field is left
+alone and an empty `api_key` removes the key. A stored key belongs to the
+base URL it was entered for: a `base_url` that differs from the stored one,
+without an `api_key`, clears the stored key, so it is never sent to the new
+endpoint. `200` with the `Provider`; `400` for a bad field; `409` when the
+name is taken.
+
+### `DELETE /api/providers/{id}`
+
+Removes the provider and its models. A run already going keeps the client it
+built. `204`.
+
+### `POST /api/providers/probe`
+
+Asks an endpoint which models it serves: the setup screens' connection test
+and model list.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `provider_id` | string | A stored provider to probe with its stored key. |
+| `kind` | string | Without `provider_id`, the kind of the endpoint. Defaults to `openai`. |
+| `base_url` | string | Overrides or, without `provider_id`, names the endpoint. A stored key is used only with the stored base URL; with another one, the probe carries `api_key` or no key. |
+| `api_key` | string | Overrides or, without `provider_id`, gives the key. |
+
+`200` with `{"models": [ModelInfo]}`, sorted by id. `400` with what the
+endpoint answered, the key removed, when it could not be used; a connection
+to a loopback address that fails says to use `host.docker.internal`, because
+the harness runs in a container. `400` too for a kind that cannot list.
+
+### Provider
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id`, `name`, `kind`, `base_url` | string | The provider. |
+| `api_key_set` | boolean | A key is stored. |
+| `api_key_hint` | string, optional | The last four characters of a key of 16 or more. |
+| `created_at`, `updated_at` | time | When it was made and last changed. |
+
+### ModelInfo
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | The endpoint's identifier for the model. |
+| `context_window` | number, optional | The context size the endpoint reports. |
+| `max_output` | number, optional | The output limit the endpoint reports. |
+
+## Models
+
+A model is one model of a provider that runs may use.
+
+### `GET /api/models`
+
+`200` with `{"models": [Model], "default": string}`, oldest first. `default`
+is the model a run uses when it names none: the `default_model` setting when
+it names a model that exists, the first model otherwise, absent when there are
+none.
+
+### `POST /api/models`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `provider_id` | string, required | The provider it belongs to. |
+| `model` | string, required | The endpoint's identifier, such as `gpt-5`. |
+| `name` | string | What Eika, its users, and `spawn_agent` call it; unique across providers. Defaults to `model`. |
+| `context_window` | number, required | The total token budget. A run refuses a request that cannot fit. |
+| `max_output` | number, required | The most tokens one response may have; at most `context_window`. |
+| `reasoning_effort` | string | The `reasoning_effort` in force. Compatible endpoints disagree on the vocabulary, so any word of at most 32 letters, digits, hyphens, and underscores is accepted; empty leaves it to the endpoint. |
+| `reasoning_efforts` | string array | The efforts this model offers, in the order the UI cycles through them. At most 12, each a non-empty value of the shape above. |
+| `preserve_thinking` | boolean | Ask a compatible endpoint for `reasoning_content` and replay it on later turns. Off by default; the official OpenAI API rejects it. Reasoning is streamed to clients either way. |
+
+`201` with the `Model`; `400` for a bad field or an unknown provider; `409`
+when the name is taken.
+
+### `PATCH /api/models/{id}`
+
+Any field of `POST` but `provider_id`; an absent field is left alone.
+Renaming the default model keeps it the default. `200` with the `Model`.
+
+### `DELETE /api/models/{id}`
+
+`204`. When it was the default, the first remaining model is the default until
+the user picks another.
+
+### `POST /api/models/test`
+
+`{"provider_id": string, "model": string, "reasoning_effort": string,
+"preserve_thinking": boolean}`: a model on a stored provider, saved or not.
+Sends one short request with no tools and answers `200` with
+`{"reply": string, "stop_reason": string, "latency_ms": number}`. A reasoning
+model that spends its budget thinking replies with nothing, which still shows
+the model is there. `400` with what the endpoint answered when it failed.
+
+### Model
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id`, `provider_id`, `name`, `model` | string | The model, its provider, Eika's name for it, and the endpoint's. |
+| `context_window`, `max_output` | number | Its limits. |
+| `reasoning_effort` | string, optional | As on `POST`. |
+| `reasoning_efforts` | string array | As on `POST`; always present, empty when the model offers no choices. |
+| `preserve_thinking` | boolean | As on `POST`. |
+| `created_at`, `updated_at` | time | When it was made and last changed. |
+
+## Settings
 
 ### `GET /api/settings`
 
-`200` with `{"settings": {key: value}}`, the settings table as one object.
-Values are whatever JSON was stored.
+`200` with `{"settings": {key: value}, "defaults": Defaults}`: the settings
+table as one object, with values as they were stored, and the values the
+harness uses for its own keys while the table does not name them.
 
 ### `PUT /api/settings`
 
 A JSON object of the keys to write. Keys the body does not name are left
-alone. `200` with the whole table as it now stands.
+alone; JSON `null` stores null, which means "use the default". `200` with the
+same body as `GET`. Keys are 1 to 64 characters. The harness reads and
+validates these keys; any other key is the UI's own and is stored as it
+comes. One invalid value is `400` and writes nothing. The keys are written
+in one transaction, so a write the database refuses is a `500` that also
+writes nothing.
 
-`default_model` is the one key the harness reads itself: a JSON string naming
-the model a run uses when the request names none.
+| Key | Value | Meaning |
+|---|---|---|
+| `default_model` | string | The name of the model a run uses when the request names none. It must name a model. |
+| `sandbox_image` | string | The image a new workspace runs when it names none. |
+| `subagent_max_depth` | number, 1 to 8 | How many levels of children a session may have. |
+| `subagent_max_children` | number, 1 to 16 | How many children of one session may run at a time. |
+| `setup_complete` | boolean | The user finished or skipped the guided setup. |
+| `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
+| `search_limits` | object | Quotas by bucket, `{"exa": {"month": 500}, "marginalia": {"day": 50}}`. Each bucket must exist; `day` and `month` are whole numbers from 1 to 10 000 000, and 0 or an absent field is unlimited. Anything else is `400` naming the bucket and the range. A bucket not named keeps its default. |
 
-### `GET /api/models`
+### Defaults
 
-`200` with `{"models": [{name, context_window, max_output}], "default": string}`.
-The models are the ones the deployment configured, in configuration order;
-`default` is the `default_model` setting, empty when the user has not chosen
-one.
+| Field | Type | Meaning |
+|---|---|---|
+| `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
+| `subagent_max_depth` | number | 2. |
+| `subagent_max_children` | number | 4. |
+| `search_order` | array of strings | Every web provider in its default order: `searxng`, `exa`, `tavily`, `brave`, `marginalia`. |
+| `search_limits` | object | Every quota bucket's default, as `search_limits` takes it: Exa 900 a month, Tavily 1000, Brave 2000, Marginalia 100 a day, SearXNG and GitHub unlimited. |
+
+## Search
+
+The engine behind `web_search` and the health of its backends. The keys are
+sealed like provider keys and never returned: a key is reported as set, and a
+key of 16 characters or more by its last four.
+
+### `GET /api/search/status`
+
+`200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `order` | array of strings | The web provider order in force. |
+| `backends` | array of Backend | Every backend, web providers first, in registration order. |
+| `keys` | array of SearchKey | Every key a backend uses, stored or not. |
+| `cached_searches` | number | Searches the result cache holds. |
+| `cached_pages` | number | Pages the web_fetch cache holds. |
+| `searxng_url` | string | Where the deployment looks for SearXNG. |
+
+Backend:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | The provider or source name. |
+| `web` | boolean | A provider in the web chain; otherwise a source web_search names. |
+| `key`, `key_required`, `key_set` | string, boolean, boolean | The key it is sent, whether it is skipped without it, and whether it is stored. |
+| `bucket` | string | The quota bucket it counts against; absent when it is not tracked. |
+| `state` | string | `ready`, `no API key`, `cooling down 12m`, `daily quota spent`, or `monthly quota spent`. |
+| `usage` | object | `day`, `day_used`, `month`, `month_used`, `cooldown_until`, `fail_streak`. |
+| `limit` | object | `day` and `month`; absent or 0 is unlimited. |
+| `probe` | string | For SearXNG: `up`, `HTTP 403`, `connection refused`, and the like. |
+
+SearchKey: `name`, `set`, `hint` (the last four characters), `updated_at`.
+
+### `PUT /api/search/keys/{name}`
+
+`{"key": string}` stores the key under `name`, one of `exa`, `tavily`,
+`brave`, `github`; an empty key removes it. `200` with `{"keys": [SearchKey]}`.
+An unknown name is `404`, a key over 4096 bytes `400`.
+
+### `POST /api/search`
+
+Runs one search exactly as `web_search` does, spending quota. The body is
+`{"query": string, "source": string, "count": number}`: `source` is `web`
+(the default), `wikipedia`, `arxiv`, `github_code`, `github_repos`, or
+`github_issues`; `count` is 1 to 25, default 10; the query is at most 500
+characters. `200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `text` | string | What the model would read. |
+| `is_error` | boolean | The search failed in a way the model would be told about: an empty query, no provider answering, a source refusing the query. |
+| `details` | object | `source`, `query`, `count`, `providers` (the one that answered), `attempts` (`{provider, error}` skipped on the way), `cached`, `pool`, `results` (`{title, url, description}`), `ms`. These are also web_search's tool details. |
+
+## System
+
+### `GET /api/system`
+
+What the setup screens check before the first workspace. `200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `docker` | `{"reachable": boolean, "error": string}` | Whether the harness can use the Docker socket, and the client's reason when it cannot. |
+| `sandbox_image` | `{"name": string, "present": boolean}` | The image new workspaces run and whether the Docker host has it. |
+| `providers`, `models`, `projects` | number | How many of each exist. |
 
 ## Event stream
 

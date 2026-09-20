@@ -9,6 +9,9 @@ lifecycle state.
 - `useWorkspaceEvents.ts` subscribes to `workspace:<id>` and invalidates the
   cached workspace when the harness reports a new state. Nothing polls.
 - `WorkspaceStateBadge.tsx` is that state as a badge.
+- `RunningWorkspace.tsx` gates a panel that works inside the sandbox (Files,
+  Terminal, Changes): its content while the workspace runs, its state and a
+  Start button otherwise.
 - `CreateWorkspaceDialog.tsx` creates one, optionally on a branch or an image
   other than the deployment's default.
 

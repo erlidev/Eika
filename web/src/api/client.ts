@@ -26,8 +26,10 @@ export class ApiError extends Error {
 const codes: readonly ErrorCode[] = [
   "invalid_request",
   "unauthorized",
+  "forbidden",
   "not_found",
   "conflict",
+  "too_large",
   "internal",
 ];
 
@@ -38,14 +40,54 @@ function codeForStatus(status: number): ErrorCode {
       return "invalid_request";
     case 401:
       return "unauthorized";
+    case 403:
+      return "forbidden";
     case 404:
       return "not_found";
     case 409:
       return "conflict";
+    case 413:
+      return "too_large";
     default:
       return "internal";
   }
 }
+
+/**
+ * internalMessage replaces the harness's bare "internal error", which says
+ * nothing a user can act on.
+ */
+const internalMessage =
+  "The harness hit an unexpected error. Try again; if it keeps failing, the harness log names the cause.";
+
+/** statusMessage describes a failure that came without the documented body. */
+function statusMessage(status: number): string {
+  if (status === 502 || status === 503 || status === 504) {
+    return `The harness did not answer (HTTP ${String(status)}); it may be starting or stopped. Try again in a moment.`;
+  }
+  if (status >= 500) return internalMessage;
+  if (status === 404) {
+    return "The harness has no such route (HTTP 404). Check that the harness URL points at Eika and that the harness is up to date.";
+  }
+  if (status === 429) {
+    return "The harness is turning away requests from this browser (HTTP 429). Wait a moment, then try again.";
+  }
+  return `The harness refused the request (HTTP ${String(status)}) without saying why; the harness log names the cause.`;
+}
+
+/**
+ * notJsonMessage is what an answer that is not JSON reports: something other
+ * than the harness, such as a web server's page, answered the request.
+ */
+export const notJsonMessage =
+  "The answer was not from the harness: it was not JSON. Check that the harness URL points at Eika.";
+
+/**
+ * unreachableMessage is what a request that never got an answer reports: the
+ * browser could not reach the harness at all.
+ */
+export const unreachableMessage =
+  "The harness could not be reached. Check that it is running and that this browser can reach it, then try again.";
 
 /**
  * parseApiError narrows a failure body to an ApiError. A proxy or a crash can
@@ -53,7 +95,7 @@ function codeForStatus(status: number): ErrorCode {
  * decides the code whenever the body does not.
  */
 export function parseApiError(status: number, body: unknown): ApiError {
-  const fallback = new ApiError(status, codeForStatus(status), `request failed: ${String(status)}`);
+  const fallback = new ApiError(status, codeForStatus(status), statusMessage(status));
   if (typeof body !== "object" || body === null) return fallback;
   const detail: unknown = (body as Record<string, unknown>).error;
   if (typeof detail !== "object" || detail === null) return fallback;
@@ -62,14 +104,19 @@ export function parseApiError(status: number, body: unknown): ApiError {
   const message = typeof record.message === "string" ? record.message : "";
   if (message === "") return fallback;
   const known = codes.includes(code as ErrorCode) ? (code as ErrorCode) : codeForStatus(status);
+  if (known === "internal" && message === "internal error") {
+    return new ApiError(status, known, internalMessage);
+  }
   return new ApiError(status, known, message);
 }
 
 /** RequestOptions are the parts of a request that vary by route. */
 export type RequestOptions = {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** body is encoded as JSON when present. */
   body?: unknown;
+  /** text is sent as is, as plain text, for a route whose body is a file's contents. */
+  text?: string;
   /** query holds search parameters; entries with no value are left out. */
   query?: Record<string, string | undefined>;
   signal?: AbortSignal;
@@ -98,18 +145,24 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const headers: Record<string, string> = { Accept: "application/json" };
   if (token !== "") headers.Authorization = `Bearer ${token}`;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  else if (options.text !== undefined) headers["Content-Type"] = "text/plain; charset=utf-8";
 
   const init: RequestInit = {
     method: options.method ?? "GET",
     headers,
   };
   if (options.body !== undefined) init.body = JSON.stringify(options.body);
+  else if (options.text !== undefined) init.body = options.text;
   if (options.signal) init.signal = options.signal;
 
-  const response = await fetch(
-    resolveUrl(connection.baseUrl, withQuery(path, options.query)),
-    init,
-  );
+  let response: Response;
+  try {
+    response = await fetch(resolveUrl(connection.baseUrl, withQuery(path, options.query)), init);
+  } catch (error) {
+    // An abort is the caller's own doing and stays one.
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new Error(unreachableMessage, { cause: error });
+  }
   if (response.status === 204 || response.headers.get("Content-Length") === "0") {
     if (response.ok) return undefined as T;
   }
@@ -120,6 +173,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     try {
       body = JSON.parse(text);
     } catch {
+      // A failure's status still says what happened; a success that is not
+      // JSON is not an answer at all.
+      if (response.ok) throw new Error(notJsonMessage);
       body = null;
     }
   }

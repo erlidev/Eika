@@ -70,9 +70,15 @@ export function ResizableSplit({
       aria-valuemax={max}
       tabIndex={0}
       className={cn(
-        "bg-border hover:bg-ring focus-visible:bg-ring relative w-px shrink-0 cursor-col-resize transition-colors",
-        "after:absolute after:inset-y-0 after:-left-1 after:-right-1 after:content-['']",
-        dragging && "bg-ring",
+        // A hairline is the right thing to look at and the wrong thing to aim
+        // at. The divider is a wide transparent strip that reaches wider
+        // still through `before`, so it is about twelve pixels of target; the
+        // line the eye sees is `after`, one pixel down the middle of it.
+        "relative z-10 w-1.5 shrink-0 cursor-col-resize",
+        "before:absolute before:inset-y-0 before:-inset-x-1 before:content-['']",
+        "after:bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:transition-all after:content-['']",
+        "hover:after:bg-ring hover:after:w-0.5 focus-visible:outline-none focus-visible:after:bg-ring focus-visible:after:w-0.5",
+        dragging && "after:bg-ring after:w-0.5",
       )}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);

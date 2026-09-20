@@ -8,11 +8,12 @@
  * message in the session.
  */
 
-import { ArrowDown, TriangleAlert } from "lucide-react";
+import { ArrowDown, TriangleAlert, User } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
+import { Reasoning } from "@/features/session/Reasoning";
 import { useSessionStore } from "@/features/session/store";
 import { ToolCard } from "@/features/session/ToolCard";
 import type { TranscriptItem } from "@/features/session/transcript";
@@ -71,7 +72,7 @@ export function Transcript({ empty }: TranscriptProps) {
             {empty ?? "No messages yet."}
           </div>
         ) : (
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-5">
             {rendered.map((item) => (
               <Item
                 key={item.key}
@@ -96,6 +97,8 @@ export function Transcript({ empty }: TranscriptProps) {
           <Button
             size="sm"
             variant="secondary"
+            // The button floats over the transcript, so it casts a shadow.
+            // eslint-disable-next-line no-restricted-syntax
             className="pointer-events-auto shadow-md"
             onClick={jumpToLatest}
           >
@@ -136,12 +139,20 @@ function useAnnouncement(rendered: TranscriptItem[]): string {
 const Item = memo(function Item({ item, openTool }: { item: TranscriptItem; openTool: boolean }) {
   switch (item.kind) {
     case "user":
+      // A message the user wrote is the one thing on screen that did not come
+      // out of the model, so it is the one block with a filled surface and a
+      // named author. Nothing else in the transcript looks like this.
       return (
-        <article className="bg-muted/60 ml-auto max-w-[85%] rounded-md border px-3 py-2">
-          <h3 className="sr-only">You</h3>
-          <p className="text-sm whitespace-pre-wrap">{item.text}</p>
+        <article className="border-primary/30 bg-primary/5 rounded-md border border-l-2 px-3.5 py-2.5">
+          <h3 className="text-primary mb-1 flex items-center gap-1.5 text-xs font-semibold">
+            <User aria-hidden className="size-3.5" />
+            You
+          </h3>
+          <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">{item.text}</p>
         </article>
       );
+    case "reasoning":
+      return <Reasoning item={item} />;
     case "assistant":
       return (
         <article className="min-w-0">
@@ -150,7 +161,7 @@ const Item = memo(function Item({ item, openTool }: { item: TranscriptItem; open
           {item.streaming && (
             <span
               aria-hidden
-              className="bg-foreground ml-0.5 inline-block h-3.5 w-1.5 animate-pulse align-text-bottom"
+              className="bg-foreground ml-0.5 inline-block h-4 w-1.5 animate-pulse align-text-bottom"
             />
           )}
         </article>

@@ -539,3 +539,37 @@ func TestPTYRunsAShell(t *testing.T) {
 		}
 	}
 }
+
+func TestPTYAcceptsAPasteLargerThanTheSocketDefault(t *testing.T) {
+	base, _ := newDaemon(t, eikad.Options{})
+	conn := dial(t, base+"/pty")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	// Comment lines keep the shell from doing any work with the paste; the
+	// point is only that 64 KiB arrives as one message and is accepted.
+	paste := strings.Repeat("#"+strings.Repeat("x", 98)+"\n", 650) + "exit 3\n"
+	data, err := json.Marshal(eikad.PTYMessage{Type: eikad.PTYInput, Data: []byte(paste)})
+	if err != nil {
+		t.Fatalf("encode pty message: %v", err)
+	}
+	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+		t.Fatalf("write pty message: %v", err)
+	}
+	for {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read pty message: %v", err)
+		}
+		var msg eikad.PTYMessage
+		if err := json.Unmarshal(data, &msg); err != nil {
+			t.Fatalf("decode pty message: %v", err)
+		}
+		if msg.Type == eikad.PTYExit {
+			if msg.ExitCode != 3 {
+				t.Errorf("exit code = %d, want 3", msg.ExitCode)
+			}
+			return
+		}
+	}
+}

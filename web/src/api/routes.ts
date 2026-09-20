@@ -5,19 +5,46 @@
  */
 
 import { request, requestEmpty } from "@/api/client";
+import type { Connection } from "@/api/connection";
 import type {
+  AuthStatus,
+  CommitRequest,
+  CommitResult,
+  CreateModel,
   CreateProject,
+  CreateProvider,
   CreateWorkspace,
   Entry,
+  FileContent,
+  FileEntry,
+  Model,
+  ModelInfo,
   Models,
   PostMessage,
+  ProbeProvider,
+  PushRequest,
+  PushResult,
   Project,
+  Provider,
+  Providers,
   Run,
   RunStatus,
+  SearchKey,
+  SearchOutcome,
+  SearchRequest,
+  SearchStatus,
   Session,
   SessionOutline,
   SessionPath,
   Settings,
+  SettingsState,
+  SignIn,
+  SystemStatus,
+  TestModel,
+  TestModelResult,
+  UpdateModel,
+  UpdateProject,
+  UpdateProvider,
   Workspace,
   WorkspaceDiff,
 } from "@/api/types";
@@ -36,6 +63,14 @@ export function createProject(input: CreateProject): Promise<Project> {
 /** getProject reads one project. */
 export function getProject(id: string, signal?: AbortSignal): Promise<Project> {
   return request<Project>(`/api/projects/${encodeURIComponent(id)}`, { signal });
+}
+
+/** updateProject changes a project's remote credentials or default branch. */
+export function updateProject(id: string, input: UpdateProject): Promise<Project> {
+  return request<Project>(`/api/projects/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: input,
+  });
 }
 
 /** deleteProject destroys a project with its workspaces and sessions. */
@@ -83,6 +118,56 @@ export function deleteWorkspace(id: string): Promise<void> {
 /** getWorkspaceDiff reads the workspace's changes against its base commit. */
 export function getWorkspaceDiff(id: string, signal?: AbortSignal): Promise<WorkspaceDiff> {
   return request<WorkspaceDiff>(`/api/workspaces/${encodeURIComponent(id)}/diff`, { signal });
+}
+
+/** listWorkspaceFiles lists one directory of a workspace; "" is the root. */
+export async function listWorkspaceFiles(
+  id: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<FileEntry[]> {
+  const body = await request<{ entries: FileEntry[] }>(
+    `/api/workspaces/${encodeURIComponent(id)}/files`,
+    { query: { path }, signal },
+  );
+  return body.entries;
+}
+
+/** readWorkspaceFile reads one text file of a workspace. */
+export function readWorkspaceFile(
+  id: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<FileContent> {
+  return request<FileContent>(`/api/workspaces/${encodeURIComponent(id)}/file`, {
+    query: { path },
+    signal,
+  });
+}
+
+/** writeWorkspaceFile replaces a file's contents and returns its new entry. */
+export function writeWorkspaceFile(id: string, path: string, content: string): Promise<FileEntry> {
+  return request<FileEntry>(`/api/workspaces/${encodeURIComponent(id)}/file`, {
+    method: "PUT",
+    query: { path },
+    text: content,
+  });
+}
+
+/** commitWorkspace commits the workspace's changes, or only the given paths. */
+export function commitWorkspace(id: string, input: CommitRequest): Promise<CommitResult> {
+  return request<CommitResult>(`/api/workspaces/${encodeURIComponent(id)}/commit`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+/** pushWorkspace pushes the workspace's branch to the hub, and upstream when asked. */
+export function pushWorkspace(id: string, input: PushRequest): Promise<PushResult> {
+  return request<PushResult>(`/api/workspaces/${encodeURIComponent(id)}/push`, {
+    method: "POST",
+    body: input,
+  });
 }
 
 /** listSessions lists sessions, optionally of one workspace. */
@@ -166,22 +251,139 @@ export function answerQuestion(id: string, answer: string): Promise<void> {
   });
 }
 
-/** getSettings reads the settings table as one object. */
-export async function getSettings(signal?: AbortSignal): Promise<Settings> {
-  const body = await request<{ settings: Settings }>("/api/settings", { signal });
-  return body.settings;
+/** getSettings reads the settings table and the defaults of the harness's own keys. */
+export function getSettings(signal?: AbortSignal): Promise<SettingsState> {
+  return request<SettingsState>("/api/settings", { signal });
 }
 
 /** putSettings writes the named keys and leaves the rest alone. */
-export async function putSettings(values: Settings): Promise<Settings> {
-  const body = await request<{ settings: Settings }>("/api/settings", {
-    method: "PUT",
-    body: values,
-  });
-  return body.settings;
+export function putSettings(values: Settings): Promise<SettingsState> {
+  return request<SettingsState>("/api/settings", { method: "PUT", body: values });
 }
 
-/** getModels lists the configured models and the chosen default. */
+/** getSearchStatus reports every search backend's health, the stored keys, and the caches. */
+export function getSearchStatus(signal?: AbortSignal): Promise<SearchStatus> {
+  return request<SearchStatus>("/api/search/status", { signal });
+}
+
+/** putSearchKey stores a search API key, or removes it when key is empty. */
+export async function putSearchKey(name: string, key: string): Promise<SearchKey[]> {
+  const body = await request<{ keys: SearchKey[] }>(
+    `/api/search/keys/${encodeURIComponent(name)}`,
+    {
+      method: "PUT",
+      body: { key },
+    },
+  );
+  return body.keys;
+}
+
+/** runSearch runs one search as web_search would, spending quota like any other. */
+export function runSearch(input: SearchRequest): Promise<SearchOutcome> {
+  return request<SearchOutcome>("/api/search", { method: "POST", body: input });
+}
+
+/** getSystem reports whether Docker and the sandbox image are ready. */
+export function getSystem(signal?: AbortSignal): Promise<SystemStatus> {
+  return request<SystemStatus>("/api/system", { signal });
+}
+
+/** listProviders lists the model providers and the kinds a new one may have. */
+export function listProviders(signal?: AbortSignal): Promise<Providers> {
+  return request<Providers>("/api/providers", { signal });
+}
+
+/** createProvider records a provider; its key is sealed by the harness. */
+export function createProvider(input: CreateProvider): Promise<Provider> {
+  return request<Provider>("/api/providers", { method: "POST", body: input });
+}
+
+/** updateProvider changes a provider's name, endpoint, or key. */
+export function updateProvider(id: string, input: UpdateProvider): Promise<Provider> {
+  return request<Provider>(`/api/providers/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+/** deleteProvider removes a provider with its models. */
+export function deleteProvider(id: string): Promise<void> {
+  return requestEmpty(`/api/providers/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** probeProvider asks an endpoint which models it serves. */
+export async function probeProvider(input: ProbeProvider): Promise<ModelInfo[]> {
+  const body = await request<{ models: ModelInfo[] }>("/api/providers/probe", {
+    method: "POST",
+    body: input,
+  });
+  return body.models;
+}
+
+/** getModels lists the models and the one a run uses by default. */
 export function getModels(signal?: AbortSignal): Promise<Models> {
   return request<Models>("/api/models", { signal });
+}
+
+/** createModel adds a model to a provider. */
+export function createModel(input: CreateModel): Promise<Model> {
+  return request<Model>("/api/models", { method: "POST", body: input });
+}
+
+/** updateModel changes a model. */
+export function updateModel(id: string, input: UpdateModel): Promise<Model> {
+  return request<Model>(`/api/models/${encodeURIComponent(id)}`, { method: "PATCH", body: input });
+}
+
+/** deleteModel removes a model. */
+export function deleteModel(id: string): Promise<void> {
+  return requestEmpty(`/api/models/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** testModel sends one small request to a model and reports its answer. */
+export function testModel(input: TestModel): Promise<TestModelResult> {
+  return request<TestModelResult>("/api/models/test", { method: "POST", body: input });
+}
+
+/**
+ * getAuthStatus says whether the harness has been set up. It needs no token,
+ * so it passes the connection explicitly: a stored token the harness refuses
+ * must not be forgotten by a route that never needed it.
+ */
+export function getAuthStatus(connection: Connection, signal?: AbortSignal): Promise<AuthStatus> {
+  return request<AuthStatus>("/api/auth/status", {
+    connection: { ...connection, token: "" },
+    signal,
+  });
+}
+
+/** setupPassword chooses the sign-in password of a new harness and signs in. */
+export function setupPassword(baseUrl: string, password: string): Promise<SignIn> {
+  return request<SignIn>("/api/auth/setup", {
+    method: "POST",
+    body: { password },
+    connection: { baseUrl, token: "" },
+  });
+}
+
+/** signIn exchanges the password for a session token. */
+export function signIn(baseUrl: string, password: string): Promise<SignIn> {
+  return request<SignIn>("/api/auth/login", {
+    method: "POST",
+    body: { password },
+    connection: { baseUrl, token: "" },
+  });
+}
+
+/** signOut ends the session this browser holds. */
+export function signOut(): Promise<void> {
+  return requestEmpty("/api/auth/logout", { method: "POST" });
+}
+
+/** changePassword replaces the password, ending every session, and signs in again. */
+export function changePassword(currentPassword: string, newPassword: string): Promise<SignIn> {
+  return request<SignIn>("/api/auth/password", {
+    method: "PUT",
+    body: { current_password: currentPassword, new_password: newPassword },
+  });
 }

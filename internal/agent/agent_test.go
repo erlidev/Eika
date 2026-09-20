@@ -152,6 +152,13 @@ func (r *recorder) types() []string {
 	return out
 }
 
+// all returns the recorded events in order.
+func (r *recorder) all() []event.Event {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]event.Event(nil), r.events...)
+}
+
 // payloadOf returns the first payload of the given event type.
 func (r *recorder) payloadOf(t *testing.T, typ string, v any) {
 	t.Helper()
@@ -201,7 +208,7 @@ func newFixture(t *testing.T, steps []providertest.Step, extra ...tool.Tool) *fi
 	if err != nil {
 		t.Fatalf("local.New: %v", err)
 	}
-	r, err := builtin.Registry(nil, nil)
+	r, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -214,11 +221,12 @@ func newFixture(t *testing.T, steps []providertest.Step, extra ...tool.Tool) *fi
 	rec := &recorder{}
 	store := agent.NewMemoryStore()
 	a := agent.New(p, r, agent.Options{
-		Executor:     e,
-		Emitter:      rec,
-		Store:        store,
-		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RetryBackoff: time.Millisecond,
+		Executor:      e,
+		Emitter:       rec,
+		Store:         store,
+		ContextWindow: 400_000,
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RetryBackoff:  time.Millisecond,
 	})
 	return &fixture{agent: a, provider: p, events: rec, store: store, exec: e, session: agent.NewSession("session-1", "workspace-1")}
 }
@@ -598,12 +606,20 @@ func TestRunForwardsReasoningConfiguration(t *testing.T) {
 		PreserveThinking: true,
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	if err := a.Run(context.Background(), agent.NewSession("s1", "w1"), "hello"); err != nil {
+	s := agent.NewSession("s1", "w1")
+	s.Conversation.Append(provider.UserMessage("earlier"))
+	prior := provider.AssistantMessage("answer", nil)
+	prior.Metrics = &provider.MessageMetrics{RunID: "prior", ContextWindow: 8192}
+	s.Conversation.Append(prior)
+	if err := a.Run(context.Background(), s, "hello"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	req := p.Requests()[0]
 	if req.ReasoningEffort != "high" || !req.PreserveThinking {
 		t.Errorf("request reasoning = %q preserve = %t", req.ReasoningEffort, req.PreserveThinking)
+	}
+	if req.Messages[1].Metrics != nil {
+		t.Errorf("provider received stored UI metrics: %+v", req.Messages[1].Metrics)
 	}
 }
 
@@ -798,7 +814,7 @@ func TestAbortPersistsATerminalResultForEveryToolCall(t *testing.T) {
 		cancel()
 		return "stopped"
 	}}
-	registry, err := builtin.Registry(nil, nil)
+	registry, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -830,7 +846,7 @@ func TestAbortPersistsATerminalResultForEveryToolCall(t *testing.T) {
 }
 
 func TestCompletedToolResultStoreFailurePersistsATerminalResult(t *testing.T) {
-	registry, err := builtin.Registry(nil, nil)
+	registry, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -871,7 +887,7 @@ func TestSteeringStoreFailureRestoresOnlyTheUnstoredMessages(t *testing.T) {
 		a.Steer("retry steering")
 		return "queued"
 	}}
-	registry, err := builtin.Registry(nil, nil)
+	registry, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -944,7 +960,7 @@ func TestMalformedToolArgumentsBecomeARecoverableToolResult(t *testing.T) {
 		Arguments: provider.ToolArguments(`{"path":`),
 	}
 	p := providertest.New(providertest.Calls("", call), providertest.Text("recovered"))
-	registry, err := builtin.Registry(nil, nil)
+	registry, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -975,7 +991,7 @@ func TestToolsWithoutAWorkspaceFailInsteadOfPanicking(t *testing.T) {
 		providertest.Calls("", providertest.Call("c1", "ls", map[string]any{})),
 		providertest.Text("no workspace then"),
 	})
-	registry, err := builtin.Registry(nil, nil)
+	registry, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -989,5 +1005,126 @@ func TestToolsWithoutAWorkspaceFailInsteadOfPanicking(t *testing.T) {
 	result := f.session.Conversation.Messages()[2]
 	if !result.IsError || !strings.Contains(result.Content, "no workspace") {
 		t.Errorf("tool message = %+v, want a no-workspace error", result)
+	}
+}
+
+func TestRunStreamsReasoningApartFromTheAnswer(t *testing.T) {
+	f := newFixture(t, []providertest.Step{providertest.Stream(
+		provider.Event{Kind: provider.KindReasoningDelta, ReasoningDelta: "weighing "},
+		provider.Event{Kind: provider.KindReasoningDelta, ReasoningDelta: "options"},
+		provider.TextDelta("the answer"),
+		provider.Done("stop"),
+	)})
+	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var reasoning strings.Builder
+	for _, e := range f.events.all() {
+		if e.Type != event.TypeReasoningDelta {
+			continue
+		}
+		var p event.ReasoningDelta
+		if err := e.DecodePayload(&p); err != nil {
+			t.Fatalf("decode reasoning.delta payload: %v", err)
+		}
+		reasoning.WriteString(p.Text)
+	}
+	if reasoning.String() != "weighing options" {
+		t.Errorf("streamed reasoning = %q, want the whole reasoning", reasoning.String())
+	}
+
+	msgs := f.session.Conversation.Messages()
+	last := msgs[len(msgs)-1]
+	if last.Content != "the answer" || last.Reasoning != "weighing options" {
+		t.Errorf("assistant message = %+v, want the answer and its reasoning kept apart", last)
+	}
+}
+
+func TestTurnReportsMeasuredUsageWhileItStreams(t *testing.T) {
+	// An endpoint that reports usage per chunk, as vLLM does with continuous
+	// usage statistics: every snapshot becomes a turn.progress event.
+	f := newFixture(t, []providertest.Step{providertest.Stream(
+		provider.TextDelta("one "),
+		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 100, OutputTokens: 1, TotalTokens: 101}},
+		provider.TextDelta("two"),
+		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 100, OutputTokens: 2, TotalTokens: 102}},
+		provider.Done("stop"),
+	)})
+	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var progress []event.TurnProgress
+	for _, e := range f.events.all() {
+		if e.Type != event.TypeTurnProgress {
+			continue
+		}
+		var p event.TurnProgress
+		if err := e.DecodePayload(&p); err != nil {
+			t.Fatalf("decode turn.progress payload: %v", err)
+		}
+		progress = append(progress, p)
+	}
+	if len(progress) != 2 {
+		t.Fatalf("turn.progress events = %d, want one per reported usage", len(progress))
+	}
+	if progress[0].Usage.OutputTokens != 1 || progress[1].Usage.OutputTokens != 2 {
+		t.Errorf("progress output tokens = %d then %d, want 1 then 2",
+			progress[0].Usage.OutputTokens, progress[1].Usage.OutputTokens)
+	}
+	if progress[1].GenerationMS < progress[0].GenerationMS {
+		t.Errorf("generation_ms went backwards: %d then %d", progress[0].GenerationMS, progress[1].GenerationMS)
+	}
+	if progress[1].ContextWindow != 400_000 {
+		t.Errorf("turn.progress context_window = %d, want 400000", progress[1].ContextWindow)
+	}
+
+	var end event.TurnEnd
+	f.events.payloadOf(t, event.TypeTurnEnd, &end)
+	if end.Usage.OutputTokens != 2 || end.Usage.TotalTokens != 102 {
+		t.Errorf("turn.end usage = %+v, want the last reported snapshot", end.Usage)
+	}
+	if end.Context.TotalTokens != 102 {
+		t.Errorf("turn.end context = %+v, want the last call's own usage", end.Context)
+	}
+	if end.ContextWindow != 400_000 {
+		t.Errorf("turn.end context_window = %d, want 400000", end.ContextWindow)
+	}
+	if end.GenerationMS < 0 {
+		t.Errorf("turn.end generation_ms = %d, want the measured time", end.GenerationMS)
+	}
+	stored := f.store.Messages(f.session.ID)
+	last := stored[len(stored)-1]
+	if last.Metrics == nil || last.Metrics.RunID == "" || last.Metrics.Context.TotalTokens != 102 || last.Metrics.ContextWindow != 400_000 {
+		t.Errorf("stored assistant metrics = %+v, want the final context measurement", last.Metrics)
+	}
+}
+
+func TestTurnSumsGenerationOverEveryModelCall(t *testing.T) {
+	f := newFixture(t, []providertest.Step{
+		{Events: []provider.Event{
+			provider.TextDelta("running it"),
+			provider.Event{Kind: provider.KindToolCall, ToolCall: providertest.Call("c1", "read_file", map[string]any{"path": "missing.txt"})},
+			provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 10, OutputTokens: 3, TotalTokens: 13}},
+			provider.Done("tool_calls"),
+		}},
+		providertest.Stream(
+			provider.TextDelta("done"),
+			provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 20, OutputTokens: 4, TotalTokens: 24}},
+			provider.Done("stop"),
+		),
+	})
+	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var end event.TurnEnd
+	f.events.payloadOf(t, event.TypeTurnEnd, &end)
+	if end.Usage.OutputTokens != 7 || end.Usage.TotalTokens != 37 {
+		t.Errorf("turn.end usage = %+v, want both calls summed", end.Usage)
+	}
+	// The window holds one conversation, not the sum of every prompt in it.
+	if end.Context.TotalTokens != 24 {
+		t.Errorf("turn.end context = %+v, want the last call's own usage", end.Context)
 	}
 }

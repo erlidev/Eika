@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 import { queryKeys } from "@/api/keys";
-import { createProject, deleteProject, listProjects } from "@/api/routes";
-import type { CreateProject, Project } from "@/api/types";
+import { createProject, deleteProject, listProjects, updateProject } from "@/api/routes";
+import type { CreateProject, Project, UpdateProject } from "@/api/types";
 
 /** useProjects lists every project the harness knows. */
 export function useProjects(): UseQueryResult<Project[]> {
@@ -21,6 +21,22 @@ export function useCreateProject(): UseMutationResult<Project, Error, CreateProj
   return useMutation({
     mutationFn: createProject,
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.projects() }),
+  });
+}
+
+/** useUpdateProject changes a project's credentials or default branch. */
+export function useUpdateProject(): UseMutationResult<
+  Project,
+  Error,
+  { id: string; input: UpdateProject }
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }) => updateProject(id, input),
+    onSuccess: async (project) => {
+      client.setQueryData(queryKeys.project(project.id), project);
+      await client.invalidateQueries({ queryKey: queryKeys.projects() });
+    },
   });
 }
 

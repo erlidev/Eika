@@ -27,6 +27,14 @@ type MessageDelta struct {
 	Text  string `json:"text"`
 }
 
+// ReasoningDelta is the payload of a reasoning.delta event: the next piece of
+// the model's reasoning for the turn. It is streamed apart from the answer so
+// a client can show it as its own block or keep it collapsed.
+type ReasoningDelta struct {
+	RunID string `json:"run_id"`
+	Text  string `json:"text"`
+}
+
 // MessageReset is the payload of a message.reset event: the current model
 // attempt failed and any text deltas from it must be discarded.
 type MessageReset struct {
@@ -107,12 +115,41 @@ type ToolResult struct {
 	DurationMS int64           `json:"duration_ms"`
 }
 
+// TurnProgress is the payload of a turn.progress event: the usage a provider
+// has reported for the turn so far, with the time spent generating it. Both
+// numbers are measured, never estimated, so a client divides one difference
+// by the other to get a decode rate that is true of the endpoint. An endpoint
+// that reports usage only when a response ends produces one of these per model
+// call; one that reports it per chunk produces many.
+type TurnProgress struct {
+	RunID string `json:"run_id"`
+	Usage Usage  `json:"usage"`
+	// Context is the most recent model call's own usage: the prompt it sent
+	// plus the response it produced. Usage is what the turn cost, which is
+	// larger; this is what fills the model's context window.
+	Context Usage `json:"context"`
+	// GenerationMS is how long the turn has spent inside model responses,
+	// measured from each response's first streamed token.
+	GenerationMS int64 `json:"generation_ms"`
+	// ContextWindow is the configured window of the model that produced this
+	// measurement. It keeps the usage bound to the model that reported it.
+	ContextWindow int `json:"context_window"`
+}
+
 // TurnEnd is the payload of a turn.end event: the assistant produced no
 // further tool calls and the turn is complete.
 type TurnEnd struct {
 	RunID      string `json:"run_id"`
 	StopReason string `json:"stop_reason,omitempty"`
 	Usage      Usage  `json:"usage"`
+	// Context is the last model call's own usage, which is how much of the
+	// model's context window the conversation now fills.
+	Context Usage `json:"context"`
+	// GenerationMS is the turn's total time inside model responses, the
+	// denominator of its decode rate.
+	GenerationMS int64 `json:"generation_ms"`
+	// ContextWindow is the configured window of the model that ran the turn.
+	ContextWindow int `json:"context_window"`
 }
 
 // Usage reports the tokens a turn cost, summed over every model call it made.

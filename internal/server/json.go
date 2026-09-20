@@ -13,8 +13,9 @@ import (
 	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
-// maxRequestBytes bounds a request body. Everything the API accepts is small;
-// file content reaches a workspace through a tool, not through this API.
+// maxRequestBytes bounds a JSON request body. Everything the API accepts as
+// JSON is small; a file saved from the editor is a raw body with a bound of
+// its own, maxFileBytes.
 const maxRequestBytes = 1 << 20
 
 // writeJSON writes v as a JSON response with the given status code. An
@@ -49,8 +50,10 @@ func decodeJSON[T any](r *http.Request) (T, error) {
 const (
 	codeInvalidRequest = "invalid_request"
 	codeUnauthorized   = "unauthorized"
+	codeForbidden      = "forbidden"
 	codeNotFound       = "not_found"
 	codeConflict       = "conflict"
+	codeTooLarge       = "too_large"
 	codeInternal       = "internal"
 )
 
@@ -80,6 +83,17 @@ func (e apiError) Error() string { return e.message }
 // invalidf reports a request the API will not act on.
 func invalidf(format string, args ...any) error {
 	return apiError{status: http.StatusBadRequest, code: codeInvalidRequest, message: fmt.Sprintf(format, args...)}
+}
+
+// forbiddenf reports a request for something the API will not reach, such as
+// a path outside the workspace.
+func forbiddenf(format string, args ...any) error {
+	return apiError{status: http.StatusForbidden, code: codeForbidden, message: fmt.Sprintf(format, args...)}
+}
+
+// tooLargef reports a request body over the route's bound.
+func tooLargef(format string, args ...any) error {
+	return apiError{status: http.StatusRequestEntityTooLarge, code: codeTooLarge, message: fmt.Sprintf(format, args...)}
 }
 
 // notFoundf reports that the addressed thing does not exist.

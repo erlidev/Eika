@@ -26,12 +26,12 @@ type Project struct {
 	Kind ProjectKind
 	// RemoteURL is the git remote a ProjectRemote mirrors, empty otherwise.
 	RemoteURL string
-	// RemoteUsernameEnv names the environment variable that holds the remote
-	// username. It is empty for a public remote.
-	RemoteUsernameEnv string
-	// RemotePasswordEnv names the environment variable that holds the remote
-	// password or token. It is empty for a public remote.
-	RemotePasswordEnv string
+	// RemoteUsername is the user the hub authenticates to the remote as. It
+	// is empty for a public remote.
+	RemoteUsername string
+	// RemotePassword is the remote password or token as the harness sealed
+	// it, nil for a public remote. The store never sees it in the clear.
+	RemotePassword []byte
 	// HostPath is the Docker host directory a ProjectLocal lives in, empty
 	// otherwise.
 	HostPath string
@@ -42,7 +42,7 @@ type Project struct {
 
 // projectColumns is the column list every project query selects, in the order
 // scanProject reads them.
-const projectColumns = `id, name, kind, remote_url, remote_username_env, remote_password_env,
+const projectColumns = `id, name, kind, remote_url, remote_username, remote_password,
 	host_path, default_branch, created_at`
 
 // CreateProject inserts p and returns it with the fields the database
@@ -51,12 +51,12 @@ func (s *Store) CreateProject(ctx context.Context, p Project) (Project, error) {
 	if p.ID == "" {
 		p.ID = NewID()
 	}
-	const q = `INSERT INTO projects (id, name, kind, remote_url, remote_username_env,
-		remote_password_env, host_path, default_branch)
+	const q = `INSERT INTO projects (id, name, kind, remote_url, remote_username,
+		remote_password, host_path, default_branch)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING ` + projectColumns
 	row := s.pool.QueryRow(ctx, q, p.ID, p.Name, p.Kind, p.RemoteURL,
-		p.RemoteUsernameEnv, p.RemotePasswordEnv, p.HostPath, p.DefaultBranch)
+		p.RemoteUsername, p.RemotePassword, p.HostPath, p.DefaultBranch)
 	out, err := scanProject(row)
 	if err != nil {
 		return Project{}, wrap("create project "+p.Name, err)
@@ -105,6 +105,20 @@ func (s *Store) Projects(ctx context.Context) ([]Project, error) {
 	return out, nil
 }
 
+// UpdateProject writes p's remote credentials and default branch over the
+// stored row and returns the row as it now stands. Where a project's code
+// comes from does not change after it is created.
+func (s *Store) UpdateProject(ctx context.Context, p Project) (Project, error) {
+	const q = `UPDATE projects SET remote_username = $2, remote_password = $3, default_branch = $4
+		WHERE id = $1
+		RETURNING ` + projectColumns
+	out, err := scanProject(s.pool.QueryRow(ctx, q, p.ID, p.RemoteUsername, p.RemotePassword, p.DefaultBranch))
+	if err != nil {
+		return Project{}, wrap("update project "+p.ID, err)
+	}
+	return out, nil
+}
+
 // DeleteProject removes a project and everything that hangs off it.
 func (s *Store) DeleteProject(ctx context.Context, id string) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM projects WHERE id = $1`, id)
@@ -120,8 +134,8 @@ func (s *Store) DeleteProject(ctx context.Context, id string) error {
 // scanProject reads one project row.
 func scanProject(row pgx.Row) (Project, error) {
 	var p Project
-	if err := row.Scan(&p.ID, &p.Name, &p.Kind, &p.RemoteURL, &p.RemoteUsernameEnv,
-		&p.RemotePasswordEnv, &p.HostPath, &p.DefaultBranch, &p.CreatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.Kind, &p.RemoteURL, &p.RemoteUsername,
+		&p.RemotePassword, &p.HostPath, &p.DefaultBranch, &p.CreatedAt); err != nil {
 		return Project{}, err
 	}
 	p.CreatedAt = p.CreatedAt.UTC()

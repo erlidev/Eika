@@ -91,15 +91,14 @@ func TestRemoteCredentialMigrationSanitizesLegacyURLs(t *testing.T) {
 	}
 	t.Cleanup(st.Close)
 	cases := []struct {
-		id          string
-		remote      string
-		credentials bool
+		id     string
+		remote string
 	}{
-		{"legacy-userinfo", "https://example.test/userinfo.git", true},
-		{"legacy-query", "https://example.test/query.git", true},
-		{"legacy-fragment", "https://example.test/fragment.git", true},
-		{"legacy-public", "https://example.test/public.git", false},
-		{"legacy-escaped", "https://example.test/repo%3Fversion.git", false},
+		{"legacy-userinfo", "https://example.test/userinfo.git"},
+		{"legacy-query", "https://example.test/query.git"},
+		{"legacy-fragment", "https://example.test/fragment.git"},
+		{"legacy-public", "https://example.test/public.git"},
+		{"legacy-escaped", "https://example.test/repo%3Fversion.git"},
 	}
 	for _, c := range cases {
 		project, err := st.Project(ctx, c.id)
@@ -109,13 +108,10 @@ func TestRemoteCredentialMigrationSanitizesLegacyURLs(t *testing.T) {
 		if project.RemoteURL != c.remote {
 			t.Errorf("%s remote_url = %q, want %q", c.id, project.RemoteURL, c.remote)
 		}
-		wantUsername, wantPassword := "", ""
-		if c.credentials {
-			wantUsername, wantPassword = "EIKA_GIT_USERNAME", "EIKA_GIT_PASSWORD"
-		}
-		if project.RemoteUsernameEnv != wantUsername || project.RemotePasswordEnv != wantPassword {
-			t.Errorf("%s credential environments = %q, %q, want %q, %q",
-				c.id, project.RemoteUsernameEnv, project.RemotePasswordEnv, wantUsername, wantPassword)
+		// The credentials an old URL carried are not moved anywhere: they are
+		// entered again, and sealed, in the project's settings.
+		if project.RemoteUsername != "" || project.RemotePassword != nil {
+			t.Errorf("%s credentials = %q, %v, want none", c.id, project.RemoteUsername, project.RemotePassword)
 		}
 	}
 }
@@ -252,6 +248,33 @@ func TestRunsSubagentsAndSettings(t *testing.T) {
 	}
 	if all, err := st.Settings(ctx); err != nil || len(all) != 1 {
 		t.Fatalf("Settings = %+v, %v; want one row", all, err)
+	}
+}
+
+func TestSetSettingsWritesAllOrNothing(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+
+	if err := st.SetSettings(ctx, map[string]json.RawMessage{"a": json.RawMessage(`1`), "b": json.RawMessage(`2`)}); err != nil {
+		t.Fatalf("SetSettings: %v", err)
+	}
+	// PostgreSQL refuses a NUL character in jsonb, so this batch fails partway.
+	err := st.SetSettings(ctx, map[string]json.RawMessage{
+		"a": json.RawMessage(`10`), "b": json.RawMessage(`"\u0000"`), "c": json.RawMessage(`30`),
+	})
+	if err == nil {
+		t.Fatal("SetSettings with an unstorable value succeeded, want an error")
+	}
+	all, err := st.Settings(ctx)
+	if err != nil {
+		t.Fatalf("Settings: %v", err)
+	}
+	got := map[string]string{}
+	for _, set := range all {
+		got[set.Key] = string(set.Value)
+	}
+	if len(got) != 2 || got["a"] != "1" || got["b"] != "2" {
+		t.Errorf("settings = %v, want the failed batch to have written nothing", got)
 	}
 }
 

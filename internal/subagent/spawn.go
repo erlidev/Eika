@@ -217,12 +217,13 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 // which exists from here so that an abort or a shutdown arriving while the
 // child is still being built still stops it.
 func (s *Spawner) reserve(ctx context.Context, parentSessionID, id, name string) (*child, context.Context, error) {
-	depth, err := s.depthOf(ctx, parentSessionID)
+	limits := s.limits(ctx)
+	depth, err := s.depthOf(ctx, parentSessionID, limits.MaxDepth)
 	if err != nil {
 		return nil, nil, err
 	}
-	if depth+1 > s.opts.MaxDepth {
-		return nil, nil, fmt.Errorf("%w: %d levels are allowed", ErrTooDeep, s.opts.MaxDepth)
+	if depth+1 > limits.MaxDepth {
+		return nil, nil, fmt.Errorf("%w: %d levels are allowed", ErrTooDeep, limits.MaxDepth)
 	}
 	// Rows are the record of children this harness is no longer running; the
 	// reservations below are the ones no row has caught up with yet.
@@ -242,8 +243,8 @@ func (s *Spawner) reserve(ctx context.Context, parentSessionID, id, name string)
 			live++
 		}
 	}
-	if max(recorded, live) >= s.opts.MaxChildren {
-		return nil, nil, fmt.Errorf("%w: %d at a time are allowed", ErrTooMany, s.opts.MaxChildren)
+	if max(recorded, live) >= limits.MaxChildren {
+		return nil, nil, fmt.Errorf("%w: %d at a time are allowed", ErrTooMany, limits.MaxChildren)
 	}
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	c := &child{
@@ -466,10 +467,11 @@ func (s *Spawner) discardRecorded(ctx context.Context, host workspace.Workspace)
 }
 
 // depthOf reports how many parents a session has above it, following the
-// subagent rows up to the session a user started.
-func (s *Spawner) depthOf(ctx context.Context, sessionID string) (int, error) {
+// subagent rows up to the session a user started. It stops counting past
+// maxDepth, because any depth beyond it is refused the same way.
+func (s *Spawner) depthOf(ctx context.Context, sessionID string, maxDepth int) (int, error) {
 	depth := 0
-	for id := sessionID; depth <= s.opts.MaxDepth; depth++ {
+	for id := sessionID; depth <= maxDepth; depth++ {
 		row, err := s.opts.Store.SubagentOfSession(ctx, id)
 		if errors.Is(err, store.ErrNotFound) {
 			return depth, nil

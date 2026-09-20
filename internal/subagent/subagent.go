@@ -90,14 +90,21 @@ type Options struct {
 	// Emitter receives subagent.started and subagent.finished. Nil drops
 	// them.
 	Emitter event.Emitter
-	// MaxDepth is how many levels of children a root session may have below
-	// it. Zero means one.
-	MaxDepth int
-	// MaxChildren is how many children of one session may run at a time.
-	// Zero means one.
-	MaxChildren int
+	// Limits returns the bounds a spawn is checked against. It is called at
+	// every spawn, so a change the user makes in the settings applies to the
+	// next child. Nil, or a bound below one, means one.
+	Limits func(ctx context.Context) Limits
 	// Logger receives one line per spawned and finished child.
 	Logger *slog.Logger
+}
+
+// Limits bounds the tree of children a session may grow.
+type Limits struct {
+	// MaxDepth is how many levels of children a root session may have below
+	// it, so 2 allows a child and a grandchild.
+	MaxDepth int
+	// MaxChildren is how many children of one session may run at a time.
+	MaxChildren int
 }
 
 // Spawner runs child agents for the sessions of one harness.
@@ -123,9 +130,16 @@ func New(opts Options) *Spawner {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	opts.MaxDepth = max(opts.MaxDepth, 1)
-	opts.MaxChildren = max(opts.MaxChildren, 1)
 	return &Spawner{opts: opts, children: make(map[string]*child)}
+}
+
+// limits returns the bounds for a spawn happening now, never below one.
+func (s *Spawner) limits(ctx context.Context) Limits {
+	var l Limits
+	if s.opts.Limits != nil {
+		l = s.opts.Limits(ctx)
+	}
+	return Limits{MaxDepth: max(l.MaxDepth, 1), MaxChildren: max(l.MaxChildren, 1)}
 }
 
 // Attach gives the spawner the runner that drives a child's session. It is

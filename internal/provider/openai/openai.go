@@ -6,9 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
+	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/openai/openai-go/v3"
@@ -16,39 +15,34 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/shared"
 
-	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/provider"
 )
 
 // Provider streams responses from an OpenAI-compatible Chat Completions
-// endpoint.
+// endpoint and lists the models it serves.
 type Provider struct {
 	client openai.Client
-	model  config.Model
 }
 
-// New returns a Provider for one configured model. The API key is read from
-// the environment variable the model names, which is the only place a key
-// exists; a missing variable is an error. It returns the interface type
-// because it is the constructor the provider registry holds.
-func New(m config.Model) (provider.Provider, error) {
-	key, ok := os.LookupEnv(m.APIKeyEnv)
-	if ok {
-		key = strings.TrimSpace(key)
-	}
-	if !ok || key == "" {
-		return nil, fmt.Errorf("build openai provider for model %s: environment variable %s is empty", m.Name, m.APIKeyEnv)
+// New returns a Provider on one endpoint. An empty key is sent as it is,
+// because a local endpoint may ask for none; the harness environment is never
+// consulted for one. It returns the interface type because it is the
+// constructor the provider registry holds.
+func New(e provider.Endpoint) (provider.Provider, error) {
+	if e.BaseURL == "" {
+		return nil, errors.New("build openai provider: base url is empty")
 	}
 	opts := []option.RequestOption{
-		option.WithAPIKey(key),
+		// The key and the base URL come from the user's provider settings.
+		// Set explicitly, even when empty, they override the OPENAI_API_KEY
+		// and OPENAI_BASE_URL the SDK would read from the environment.
+		option.WithAPIKey(e.APIKey),
+		option.WithBaseURL(e.BaseURL),
 		// Retries are the agent loop's job, so that every provider and the
 		// scripted fake behave the same way.
 		option.WithMaxRetries(0),
 	}
-	if m.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(m.BaseURL))
-	}
-	return &Provider{client: openai.NewClient(opts...), model: m}, nil
+	return &Provider{client: openai.NewClient(opts...)}, nil
 }
 
 // Stream sends one request and converts the SDK's chunks into provider events.
@@ -64,7 +58,7 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request) (<-chan pro
 	go func() {
 		defer close(out)
 		defer stream.Close()
-		relay(ctx, stream, out, req.PreserveThinking)
+		relay(ctx, stream, out)
 	}()
 	return out, nil
 }
@@ -77,9 +71,13 @@ type chunkStream interface {
 }
 
 // relay converts SDK chunks into provider events until the stream ends.
-func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, preserveThinking bool) {
+// Usage is forwarded as soon as a chunk carries it, so an endpoint that
+// reports it per chunk lets the caller measure a decode rate while the
+// response is still arriving; an endpoint that reports it once still yields
+// exactly one usage event.
+func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 	acc := newToolCalls()
-	var usage provider.Usage
+	var usage, reported provider.Usage
 	var stop string
 	send := func(e provider.Event) bool {
 		select {
@@ -88,6 +86,13 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, p
 		case <-ctx.Done():
 			return false
 		}
+	}
+	sendUsage := func() bool {
+		if usage == (provider.Usage{}) || usage == reported {
+			return true
+		}
+		reported = usage
+		return send(provider.Event{Kind: provider.KindUsage, Usage: usage})
 	}
 
 	for stream.Next() {
@@ -106,9 +111,11 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, p
 			if choice.Delta.Content != "" && !send(provider.TextDelta(choice.Delta.Content)) {
 				return
 			}
-			if preserveThinking {
-				reasoning := reasoningContent(choice.Delta)
-				if reasoning != "" && !send(provider.Event{
+			// Reasoning is relayed whatever the preserve_thinking setting is:
+			// showing the model thinking is the client's business, and
+			// replaying it to the endpoint is the request's.
+			if reasoning := reasoningContent(choice.Delta); reasoning != "" {
+				if !send(provider.Event{
 					Kind:           provider.KindReasoningDelta,
 					ReasoningDelta: reasoning,
 				}) {
@@ -128,6 +135,9 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, p
 				}
 			}
 		}
+		if !sendUsage() {
+			return
+		}
 	}
 	if err := stream.Err(); err != nil {
 		send(provider.Errorf(streamError(err)))
@@ -140,7 +150,7 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, p
 	// A response cut off by the token limit leaves the last tool call's
 	// arguments half-written, so report the stop instead of running it.
 	if stop == "length" {
-		if usage != (provider.Usage{}) && !send(provider.Event{Kind: provider.KindUsage, Usage: usage}) {
+		if !sendUsage() {
 			return
 		}
 		send(provider.Done(stop))
@@ -157,7 +167,7 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event, p
 			return
 		}
 	}
-	if usage != (provider.Usage{}) && !send(provider.Event{Kind: provider.KindUsage, Usage: usage}) {
+	if !sendUsage() {
 		return
 	}
 	send(provider.Done(stop))
@@ -190,21 +200,16 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 		messages = append(messages, converted)
 	}
 
-	model := req.Model
-	if model == "" {
-		model = p.model.Name
+	if req.Model == "" {
+		return openai.ChatCompletionNewParams{}, errors.New("build chat completion: request names no model")
 	}
 	params := openai.ChatCompletionNewParams{
-		Model:         shared.ChatModel(model),
+		Model:         shared.ChatModel(req.Model),
 		Messages:      messages,
 		StreamOptions: openai.ChatCompletionStreamOptionsParam{IncludeUsage: param.NewOpt(true)},
 	}
-	maxTokens := req.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = p.model.MaxOutput
-	}
-	if maxTokens > 0 {
-		params.MaxCompletionTokens = param.NewOpt(int64(maxTokens))
+	if req.MaxTokens > 0 {
+		params.MaxCompletionTokens = param.NewOpt(int64(req.MaxTokens))
 	}
 	if req.Temperature != nil {
 		params.Temperature = param.NewOpt(*req.Temperature)
@@ -263,11 +268,70 @@ func message(m provider.Message, preserveThinking bool) (openai.ChatCompletionMe
 	}
 }
 
+// Models lists the models the endpoint serves, sorted by id. Compatible
+// endpoints add fields of their own to each model; the ones that say how
+// large its context is are read when present, so the setup screens can
+// suggest limits instead of guessing them.
+func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	pages := p.client.Models.ListAutoPaging(ctx)
+	var out []provider.ModelInfo
+	for pages.Next() {
+		m := pages.Current()
+		info := provider.ModelInfo{ID: m.ID}
+		info.ContextWindow, info.MaxOutput = modelLimits(m.RawJSON())
+		out = append(out, info)
+	}
+	if err := pages.Err(); err != nil {
+		return nil, apiError("list models", err)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// modelLimits reads the context window and the output limit that compatible
+// endpoints report beside a model's id. OpenRouter says context_length and
+// top_provider.max_completion_tokens, vLLM max_model_len, and Groq
+// context_window and max_completion_tokens. Zero means nobody said.
+func modelLimits(raw string) (contextWindow, maxOutput int) {
+	var fields struct {
+		ContextLength       int `json:"context_length"`
+		ContextWindow       int `json:"context_window"`
+		MaxModelLen         int `json:"max_model_len"`
+		MaxCompletionTokens int `json:"max_completion_tokens"`
+		TopProvider         struct {
+			ContextLength       int `json:"context_length"`
+			MaxCompletionTokens int `json:"max_completion_tokens"`
+		} `json:"top_provider"`
+	}
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		return 0, 0
+	}
+	contextWindow = firstPositive(fields.ContextLength, fields.ContextWindow, fields.MaxModelLen, fields.TopProvider.ContextLength)
+	maxOutput = firstPositive(fields.TopProvider.MaxCompletionTokens, fields.MaxCompletionTokens)
+	return contextWindow, maxOutput
+}
+
+// firstPositive returns the first value above zero, or zero.
+func firstPositive(values ...int) int {
+	for _, v := range values {
+		if v > 0 {
+			return v
+		}
+	}
+	return 0
+}
+
 // streamError classifies an SDK failure so the agent loop knows whether to
 // retry it. Anything that is not an API status error is a transport failure
 // and worth one more attempt.
 func streamError(err error) error {
-	out := &provider.Error{Op: "stream chat completion", Err: err, Retryable: true}
+	return apiError("stream chat completion", err)
+}
+
+// apiError classifies an SDK failure of the operation op. Anything that is
+// not an API status error is a transport failure and worth one more attempt.
+func apiError(op string, err error) error {
+	out := &provider.Error{Op: op, Err: err, Retryable: true}
 	var apiErr *openai.Error
 	if !errors.As(err, &apiErr) {
 		return out
@@ -306,4 +370,7 @@ func retryAfter(h http.Header) time.Duration {
 	return 0
 }
 
-var _ provider.Provider = (*Provider)(nil)
+var (
+	_ provider.Provider = (*Provider)(nil)
+	_ provider.Lister   = (*Provider)(nil)
+)

@@ -37,7 +37,13 @@ type Config struct {
 	HubRoot string `yaml:"hub_root"`
 	// HubURL is the harness base URL a sandbox reaches the git hub on.
 	HubURL string `yaml:"hub_url"`
-	// AuthToken is the bearer token required by every API route but /healthz.
+	// SecretKeyFile holds the key that seals the credentials the user enters
+	// in the UI before they reach the database. It is created on first start,
+	// so it lives in the harness's own volume, apart from the database.
+	SecretKeyFile string `yaml:"secret_key_file"`
+	// AuthToken is an optional fixed API token, accepted as a bearer token
+	// beside the sessions a password sign-in creates. It is for scripts and
+	// development; a deployment the UI sets up needs none.
 	AuthToken string `yaml:"auth_token"`
 	// AllowedOrigins lists the browser origins that may open the event
 	// stream, on top of the harness's own. Each entry is a host pattern
@@ -45,54 +51,22 @@ type Config struct {
 	// reduced to its host. Same-origin requests are always allowed, so a
 	// deployment that serves the frontend itself needs none of these.
 	AllowedOrigins []string `yaml:"allowed_origins"`
-	// Models lists the models the harness may use, in preference order.
-	Models []Model `yaml:"models"`
-	// Subagents bounds how deep and how wide the agent tree may grow.
-	Subagents Subagents `yaml:"subagents"`
 }
 
-// Subagents bounds the tree of child agents a run may spawn.
-type Subagents struct {
-	// MaxDepth is how many levels of children a session may have below it.
-	// A top-level session is depth zero, so 2 allows a child and a
-	// grandchild.
-	MaxDepth int `yaml:"max_depth"`
-	// MaxChildren is how many children of one session may run at a time.
-	MaxChildren int `yaml:"max_children"`
-}
-
-// Model describes one OpenAI-compatible model endpoint.
-type Model struct {
-	// Name is the model identifier sent to the provider.
-	Name string `yaml:"name"`
-	// BaseURL is the OpenAI-compatible API root.
-	BaseURL string `yaml:"base_url"`
-	// APIKeyEnv names the environment variable holding the API key. The key
-	// itself never appears in a configuration file.
-	APIKeyEnv string `yaml:"api_key_env"`
-	// ContextWindow is the model's total token budget.
-	ContextWindow int `yaml:"context_window"`
-	// MaxOutput is the maximum number of tokens the model may generate.
-	MaxOutput int `yaml:"max_output"`
-	// ReasoningEffort is the Chat Completions reasoning_effort value. Empty
-	// leaves the choice to the model endpoint.
-	ReasoningEffort string `yaml:"reasoning_effort"`
-	// PreserveThinking controls the compatible preserve_thinking extension.
-	// Nil means enabled; an endpoint that rejects the extension must set false.
-	PreserveThinking *bool `yaml:"preserve_thinking"`
-}
-
-// ShouldPreserveThinking returns the effective preserve_thinking value. The
-// extension is enabled when the field is absent and can be explicitly disabled
-// for an incompatible endpoint.
-func (m Model) ShouldPreserveThinking() bool {
-	return m.PreserveThinking == nil || *m.PreserveThinking
+// movedToUI names the file keys earlier versions read that are now settings
+// in the web UI, with where to find each. A file that still sets one fails
+// with that pointer rather than a bare unknown-field error.
+var movedToUI = map[string]string{
+	"models":    "models are added in the web UI under Settings, Models",
+	"subagents": "subagent limits are set in the web UI under Settings, General",
 }
 
 // ErrNoConfigFile reports that a named configuration file does not exist.
 var ErrNoConfigFile = errors.New("config file not found")
 
-// Default returns the configuration used when nothing else is set.
+// Default returns the configuration used when nothing else is set. It is the
+// configuration of the harness container in the compose stack, so that stack
+// needs no configuration file and no environment beyond the database URL.
 func Default() Config {
 	return Config{
 		Listen:       ":8080",
@@ -107,7 +81,7 @@ func Default() Config {
 		EikadBinary:    "/usr/local/share/eika/eikad",
 		HubRoot:        "/var/lib/eika/hub",
 		HubURL:         "http://eika:8080",
-		Subagents:      Subagents{MaxDepth: 2, MaxChildren: 4},
+		SecretKeyFile:  "/var/lib/eika/secret.key",
 	}
 }
 
@@ -124,6 +98,9 @@ func Load(path string) (Config, error) {
 				return Config{}, fmt.Errorf("read config %s: %w", path, ErrNoConfigFile)
 			}
 			return Config{}, fmt.Errorf("read config %s: %w", path, err)
+		}
+		if err := checkMovedKeys(data); err != nil {
+			return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 		}
 		dec := yaml.NewDecoder(bytes.NewReader(data))
 		dec.KnownFields(true)
@@ -147,9 +124,22 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-// applyEnv overlays the EIKA_* environment variables onto c. Models are
-// configured in the file only, because a list does not fit an environment
-// variable cleanly.
+// checkMovedKeys rejects a file that sets a key the web UI owns now.
+func checkMovedKeys(data []byte) error {
+	var keys map[string]any
+	if err := yaml.Unmarshal(data, &keys); err != nil {
+		// The strict decode that follows reports a malformed file better.
+		return nil
+	}
+	for key, where := range movedToUI {
+		if _, ok := keys[key]; ok {
+			return fmt.Errorf("%s is no longer read from the file: %s; remove it", key, where)
+		}
+	}
+	return nil
+}
+
+// applyEnv overlays the EIKA_* environment variables onto c.
 func (c *Config) applyEnv() {
 	overrides := map[string]*string{
 		"EIKA_LISTEN":          &c.Listen,
@@ -162,6 +152,7 @@ func (c *Config) applyEnv() {
 		"EIKA_HUB_ROOT":        &c.HubRoot,
 		"EIKA_HUB_URL":         &c.HubURL,
 		"EIKA_AUTH_TOKEN":      &c.AuthToken,
+		"EIKA_SECRET_KEY_FILE": &c.SecretKeyFile,
 	}
 	for name, field := range overrides {
 		if v, ok := os.LookupEnv(name); ok {
@@ -236,57 +227,10 @@ func (c Config) Validate() error {
 	if c.HubURL == "" {
 		return errors.New("validate config: hub_url is empty")
 	}
-	if c.AuthToken == "" {
-		return errors.New("validate config: auth_token is empty")
-	}
-	if c.Subagents.MaxDepth < 1 {
-		return errors.New("validate config: subagents.max_depth is less than one")
-	}
-	if c.Subagents.MaxChildren < 1 {
-		return errors.New("validate config: subagents.max_children is less than one")
-	}
-	seen := make(map[string]bool, len(c.Models))
-	for i, m := range c.Models {
-		switch {
-		case m.Name == "":
-			return fmt.Errorf("validate config: models[%d] has no name", i)
-		case seen[m.Name]:
-			return fmt.Errorf("validate config: model %s is declared twice", m.Name)
-		case m.BaseURL == "":
-			return fmt.Errorf("validate config: model %s has no base_url", m.Name)
-		case m.APIKeyEnv == "":
-			return fmt.Errorf("validate config: model %s has no api_key_env", m.Name)
-		case m.ContextWindow <= 0:
-			return fmt.Errorf("validate config: model %s has a non-positive context_window", m.Name)
-		case m.MaxOutput <= 0:
-			return fmt.Errorf("validate config: model %s has a non-positive max_output", m.Name)
-		case !validReasoningEffort(m.ReasoningEffort):
-			return fmt.Errorf("validate config: model %s has invalid reasoning_effort %q", m.Name, m.ReasoningEffort)
-		}
-		seen[m.Name] = true
+	if c.SecretKeyFile == "" {
+		return errors.New("validate config: secret_key_file is empty")
 	}
 	return nil
-}
-
-// validReasoningEffort reports whether effort is a known Chat Completions
-// value. The empty value asks the endpoint to use its default.
-func validReasoningEffort(effort string) bool {
-	switch effort {
-	case "", "none", "minimal", "low", "medium", "high", "xhigh", "max":
-		return true
-	default:
-		return false
-	}
-}
-
-// Model returns the configured model with the given name.
-func (c Config) Model(name string) (Model, bool) {
-	for _, m := range c.Models {
-		if m.Name == name {
-			return m, true
-		}
-	}
-	return Model{}, false
 }
 
 // redacted is the placeholder that replaces a secret in String output.
@@ -295,21 +239,10 @@ const redacted = "[REDACTED]"
 // String renders the configuration with secrets replaced by a placeholder so
 // that it is safe to log.
 func (c Config) String() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s eikad_binary=%s hub_root=%s hub_url=%s auth_token=%s allowed_origins=%s subagents=depth:%d,children:%d models=[",
+	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s eikad_binary=%s hub_root=%s hub_url=%s secret_key_file=%s auth_token=%s allowed_origins=%s}",
 		c.Listen, redactURL(c.DatabaseURL), c.DockerSocket, c.SearxNGURL, c.SandboxImage,
-		c.SandboxNetwork, c.EikadBinary, c.HubRoot, c.HubURL, redact(c.AuthToken),
-		strings.Join(c.AllowedOrigins, ","), c.Subagents.MaxDepth, c.Subagents.MaxChildren)
-	for i, m := range c.Models {
-		if i > 0 {
-			b.WriteByte(' ')
-		}
-		fmt.Fprintf(&b, "%s@%s(api_key_env=%s context_window=%d max_output=%d reasoning_effort=%s preserve_thinking=%t)",
-			m.Name, m.BaseURL, m.APIKeyEnv, m.ContextWindow, m.MaxOutput,
-			m.ReasoningEffort, m.ShouldPreserveThinking())
-	}
-	b.WriteString("]}")
-	return b.String()
+		c.SandboxNetwork, c.EikadBinary, c.HubRoot, c.HubURL, c.SecretKeyFile,
+		redact(c.AuthToken), strings.Join(c.AllowedOrigins, ","))
 }
 
 // redact hides a secret while preserving whether it was set at all.

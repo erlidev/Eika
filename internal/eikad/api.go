@@ -2,6 +2,10 @@ package eikad
 
 import "time"
 
+// BinaryPath is where eikad lives in every sandbox. The harness copies its
+// own build there, and runs `eikad filter` from it for fetch filters.
+const BinaryPath = "/usr/local/bin/eikad"
+
 // ExecRequest is the body of POST /exec.
 //
 // Stdin is sent up front rather than streamed: /exec is for non-interactive

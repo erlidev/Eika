@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -18,6 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+
+	"github.com/erlidev/eika/internal/eikad"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/workspace"
 	"github.com/erlidev/eika/internal/workspace/hub"
@@ -208,6 +212,46 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		}
 		if got := run(t, ex, "cat /workspace/notes/hello.txt"); got != "hei" {
 			t.Errorf("the file is not in the container: %q", got)
+		}
+	})
+
+	t.Run("opens a terminal in the workspace", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+		conn, err := host.Terminal(ctx, ws, 24, 80)
+		if err != nil {
+			t.Fatalf("terminal: %v", err)
+		}
+		defer conn.CloseNow()
+		input, err := json.Marshal(eikad.PTYMessage{Type: eikad.PTYInput, Data: []byte("cat notes/hello.txt; exit 5\n")})
+		if err != nil {
+			t.Fatalf("encode input: %v", err)
+		}
+		if err := conn.Write(ctx, websocket.MessageText, input); err != nil {
+			t.Fatalf("write input: %v", err)
+		}
+		var output strings.Builder
+		for {
+			_, data, err := conn.Read(ctx)
+			if err != nil {
+				t.Fatalf("read: %v, output so far %q", err, output.String())
+			}
+			var msg eikad.PTYMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				t.Fatalf("decode %q: %v", data, err)
+			}
+			if msg.Type == eikad.PTYOutput {
+				output.Write(msg.Data)
+				continue
+			}
+			if msg.Type != eikad.PTYExit || msg.ExitCode != 5 {
+				t.Fatalf("final message = %+v, want exit 5", msg)
+			}
+			break
+		}
+		// The shell starts in the workspace root, where the file was written.
+		if !strings.Contains(output.String(), "hei") {
+			t.Errorf("output = %q, want the file's content", output.String())
 		}
 	})
 
@@ -581,4 +625,19 @@ func TestWorkspaceHandsWorkToAChildClone(t *testing.T) {
 			t.Error("the branch name ran as a command")
 		}
 	})
+}
+
+func TestHasImageTellsPresentFromMissing(t *testing.T) {
+	requireImage(t)
+	repos, err := hub.New(t.TempDir(), testLogger())
+	if err != nil {
+		t.Fatalf("hub.New: %v", err)
+	}
+	host := newHost(t, repos, "http://hub.invalid")
+	if ok, err := host.HasImage(t.Context(), sandboxImage); err != nil || !ok {
+		t.Errorf("HasImage(%s) = %v, %v; want present", sandboxImage, ok, err)
+	}
+	if ok, err := host.HasImage(t.Context(), "eika-test-absent-"+strings.ToLower(t.Name())+":never"); err != nil || ok {
+		t.Errorf("HasImage of a missing image = %v, %v; want absent", ok, err)
+	}
 }
