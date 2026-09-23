@@ -556,7 +556,7 @@ func (r *runs) stop(ctx context.Context, sessionID string) {
 // deleting that workspace has to do first: the runs reach it through an
 // executor that is about to go away.
 func (r *runs) stopSessionsOf(ctx context.Context, st *store.Store, workspaceID string) {
-	sessions, err := st.Sessions(ctx, workspaceID)
+	sessions, err := st.Sessions(ctx, workspaceID, false)
 	if err != nil {
 		r.server.log.Error("list sessions of workspace", "workspace_id", workspaceID, "error", err)
 		return

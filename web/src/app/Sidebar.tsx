@@ -5,9 +5,11 @@
  */
 
 import {
+  Bot,
   ChevronDown,
   ChevronRight,
   FolderGit2,
+  GitBranch,
   MessageSquare,
   Play,
   Plus,
@@ -15,7 +17,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import type { Project, Session, Workspace } from "@/api/types";
@@ -27,7 +29,14 @@ import {
   useDeleteProject,
   useProjects,
 } from "@/features/projects";
-import { useCreateSession, useDeleteSession, useSessions } from "@/features/sessions";
+import {
+  agentWorkspaces,
+  sessionTree,
+  useCreateSession,
+  useDeleteSession,
+  useSessions,
+} from "@/features/sessions";
+import type { SessionNode } from "@/features/sessions";
 import {
   CreateWorkspaceDialog,
   useDeleteWorkspace,
@@ -222,6 +231,12 @@ function WorkspaceList({
   onNavigate,
 }: WorkspaceListProps) {
   const workspaces = useWorkspaces(projectId);
+  // Every session of the project, to find the workspaces that exist only to
+  // hold a fork or a child agent. Those are reached through the session that
+  // owns them and are not listed here as containers of their own.
+  const sessions = useSessions();
+  const owned = useMemo(() => agentWorkspaces(sessions.data ?? []), [sessions.data]);
+  const listed = (workspaces.data ?? []).filter((w) => !owned.has(w.id));
   return (
     <ul>
       {workspaces.isPending && (
@@ -232,7 +247,7 @@ function WorkspaceList({
           {failureText("load the workspaces", workspaces.error)}
         </li>
       )}
-      {(workspaces.data ?? []).map((workspace) => (
+      {listed.map((workspace) => (
         <WorkspaceRow
           key={workspace.id}
           workspace={workspace}
@@ -244,7 +259,7 @@ function WorkspaceList({
           onNavigate={onNavigate}
         />
       ))}
-      {workspaces.data?.length === 0 && (
+      {workspaces.data !== undefined && listed.length === 0 && (
         <li className="text-muted-foreground py-1 pl-8 text-xs">No workspaces.</li>
       )}
     </ul>
@@ -337,7 +352,12 @@ function WorkspaceRow({ workspace, open, onToggle, sessionId, onNavigate }: Work
   );
 }
 
-/** SessionList holds the session query, for the same reason WorkspaceList does. */
+/**
+ * SessionList holds the session query, for the same reason WorkspaceList
+ * does. It asks for the descendants as well, because a fork with a workspace
+ * and a child agent both live somewhere else and still belong under the
+ * session they came from.
+ */
 function SessionList({
   workspaceId,
   sessionId,
@@ -347,15 +367,17 @@ function SessionList({
   sessionId?: string;
   onNavigate?: () => void;
 }) {
-  const sessions = useSessions(workspaceId);
+  const sessions = useSessions(workspaceId, true);
+  const tree = useMemo(() => sessionTree(sessions.data ?? []), [sessions.data]);
   return (
     <ul>
       {sessions.isPending && <li className="text-muted-foreground py-1 pl-12 text-xs">Loading…</li>}
-      {(sessions.data ?? []).map((session) => (
+      {tree.map((node) => (
         <SessionRow
-          key={session.id}
-          session={session}
-          current={session.id === sessionId}
+          key={node.session.id}
+          node={node}
+          depth={0}
+          sessionId={sessionId}
           onNavigate={onNavigate}
         />
       ))}
@@ -366,15 +388,53 @@ function SessionList({
   );
 }
 
+/**
+ * sessionIcon marks what a session is. A fork and a child agent are both
+ * drawn under the session they came from, and the icon says which it is: the
+ * indent alone cannot, and they behave differently.
+ */
+function sessionIcon(kind: Session["kind"]) {
+  switch (kind) {
+    case "fork":
+      return <GitBranch aria-hidden className="size-3.5 shrink-0" />;
+    case "agent":
+      return <Bot aria-hidden className="size-3.5 shrink-0" />;
+    default:
+      return <MessageSquare aria-hidden className="size-3.5 shrink-0" />;
+  }
+}
+
+/** sessionKindLabel names a session's kind for a screen reader. */
+function sessionKindLabel(kind: Session["kind"]): string {
+  switch (kind) {
+    case "fork":
+      return "fork";
+    case "agent":
+      return "agent";
+    default:
+      return "session";
+  }
+}
+
+/**
+ * SessionRow draws one session and, in a list of its own, the forks and child
+ * agents that came out of it. The nesting is in the markup rather than only
+ * in the indent, so the shape is there for a screen reader too.
+ */
 function SessionRow({
-  session,
-  current,
+  node,
+  depth,
+  sessionId,
   onNavigate,
 }: {
-  session: Session;
-  current: boolean;
+  node: SessionNode;
+  /** depth is how many sessions this one hangs under; 0 is the user's own. */
+  depth: number;
+  sessionId?: string;
   onNavigate?: () => void;
 }) {
+  const { session } = node;
+  const current = session.id === sessionId;
   const remove = useDeleteSession();
   const navigate = useNavigate();
   const [confirming, setConfirming] = useState(false);
@@ -389,14 +449,18 @@ function SessionRow({
         <button
           type="button"
           aria-current={current ? "page" : undefined}
-          className="focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-1.5 py-1 pl-10 text-left text-xs focus-visible:ring-1 focus-visible:outline-none"
+          className="focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs focus-visible:ring-1 focus-visible:outline-none"
+          style={{ paddingLeft: `${String(40 + depth * 12)}px` }}
           onClick={() => {
             onNavigate?.();
             void navigate(`/sessions/${session.id}`);
           }}
         >
-          <MessageSquare aria-hidden className="size-3.5 shrink-0" />
+          {sessionIcon(session.kind)}
           <span className="truncate">{session.title}</span>
+          {session.kind !== "user" && (
+            <span className="sr-only">{` (${sessionKindLabel(session.kind)})`}</span>
+          )}
         </button>
         <IconButton
           label={`Delete ${session.title}`}
@@ -412,12 +476,29 @@ function SessionRow({
         open={confirming}
         onOpenChange={setConfirming}
         title={`Delete ${session.title}?`}
-        description="The session's run is aborted and its entries are deleted. The workspace and its files stay."
+        description={
+          session.kind === "agent"
+            ? "The child agent's run is aborted and its entries are deleted. Its workspace and the branch it pushed stay."
+            : "The session's run is aborted and its entries are deleted. The workspace and its files stay."
+        }
         confirmLabel="Delete session"
         onConfirm={() => {
           remove.mutate(session.id);
         }}
       />
+      {node.children.length > 0 && (
+        <ul>
+          {node.children.map((child) => (
+            <SessionRow
+              key={child.session.id}
+              node={child}
+              depth={depth + 1}
+              sessionId={sessionId}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </ul>
+      )}
     </li>
   );
 }

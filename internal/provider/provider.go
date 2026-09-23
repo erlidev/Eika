@@ -95,6 +95,9 @@ type MessageMetrics struct {
 	Context       Usage  `json:"context"`
 	GenerationMS  int64  `json:"generation_ms"`
 	ContextWindow int    `json:"context_window"`
+	// Timings is how fast the model call that produced this message ran, and
+	// is absent when nothing measured it.
+	Timings *Timings `json:"timings,omitempty"`
 }
 
 // ToolArguments is the exact argument text received from a model. ToolCall
@@ -255,6 +258,50 @@ type Usage struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
+// TimingSource says who measured a set of Timings. The two are not equally
+// exact: an endpoint times its own phases from the inside, while the harness
+// can only time the stream that reaches it.
+type TimingSource string
+
+// The parties that can measure a response's speed.
+const (
+	// TimedByEndpoint means the endpoint reported the generation phase itself.
+	TimedByEndpoint TimingSource = "endpoint"
+	// TimedByHarness means the harness timed the generation phase, from the
+	// response's first streamed token to its last.
+	TimedByHarness TimingSource = "harness"
+)
+
+// Timings is how long one model call spent in each of its two phases and how
+// many tokens each phase moved, so that a client can state a rate rather than
+// a duration. Reading the prompt and generating the answer run at speeds that
+// differ by orders of magnitude, so the two are never summed.
+//
+// A phase nobody measured is left zero. The prompt phase is reported only by
+// an endpoint that measures it: from outside, the time an endpoint spends
+// reading a prompt cannot be told apart from the time it spends queueing.
+type Timings struct {
+	// PromptTokens and PromptMS are the prompt the endpoint read and how long
+	// reading it took.
+	PromptTokens int     `json:"prompt_tokens,omitempty"`
+	PromptMS     float64 `json:"prompt_ms,omitempty"`
+	// DecodeTokens and DecodeMS are the tokens generated and the time spent
+	// generating them.
+	DecodeTokens int     `json:"decode_tokens,omitempty"`
+	DecodeMS     float64 `json:"decode_ms,omitempty"`
+	// Source says who measured the generation phase.
+	Source TimingSource `json:"source,omitempty"`
+}
+
+// HasPrompt reports whether the prompt phase yields a rate.
+func (t Timings) HasPrompt() bool { return t.PromptTokens > 0 && t.PromptMS > 0 }
+
+// HasDecode reports whether the generation phase yields a rate.
+func (t Timings) HasDecode() bool { return t.DecodeTokens > 0 && t.DecodeMS > 0 }
+
+// Known reports whether either phase was measured.
+func (t Timings) Known() bool { return t.HasPrompt() || t.HasDecode() }
+
 // EventKind names the shape of a streaming event.
 type EventKind string
 
@@ -297,6 +344,9 @@ type Event struct {
 	ToolCall ToolCall
 	// Usage is the token usage of a KindUsage event.
 	Usage Usage
+	// Timings is what the endpoint said about its own speed, on a KindUsage
+	// event. It is the zero value for an endpoint that says nothing.
+	Timings Timings
 	// StopReason is why generation ended, on a KindDone event.
 	StopReason string
 	// Err is the failure of a KindError event.

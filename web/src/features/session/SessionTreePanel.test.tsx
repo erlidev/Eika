@@ -13,15 +13,37 @@ declare global {
 }
 
 const at = "2026-03-14T15:00:00Z";
-// a - b - c (head), with a branch x off b.
+// a - b - c (head), with a branch x off b. `b` asked for a tool call that
+// nothing on this branch answers, so it is in the middle of a turn.
 const outline = {
   session_id: "s1",
   head_entry_id: "c",
   nodes: [
-    { id: "a", kind: "user", preview: "Fix the retries", created_at: at },
-    { id: "b", parent_id: "a", kind: "assistant", preview: "Looking", created_at: at },
-    { id: "c", parent_id: "b", kind: "assistant", preview: "Done", created_at: at },
-    { id: "x", parent_id: "b", kind: "user", preview: "Try again", created_at: at },
+    { id: "a", kind: "user", preview: "Fix the retries", resumable: true, created_at: at },
+    {
+      id: "b",
+      parent_id: "a",
+      kind: "assistant",
+      preview: "Looking",
+      resumable: false,
+      created_at: at,
+    },
+    {
+      id: "c",
+      parent_id: "b",
+      kind: "assistant",
+      preview: "Done",
+      resumable: true,
+      created_at: at,
+    },
+    {
+      id: "x",
+      parent_id: "b",
+      kind: "user",
+      preview: "Try again",
+      resumable: true,
+      created_at: at,
+    },
   ],
 };
 
@@ -94,7 +116,7 @@ describe("SessionTreePanel", () => {
       ]),
     ).toEqual([
       ["user: Fix the retries", "1", "1", "3"],
-      ["assistant: Looking", "1", "2", "3"],
+      ["assistant: Looking (mid-turn, cannot branch here)", "1", "2", "3"],
       ["user: Try again", "2", "1", "1"],
       ["assistant: Done (head)", "1", "3", "3"],
     ]);
@@ -123,5 +145,20 @@ describe("SessionTreePanel", () => {
     press("Home");
     press("Enter");
     expect(document.body.textContent).toContain("Move the head here?");
+  });
+
+  it("offers no branch from an entry in the middle of a turn", async () => {
+    await render();
+    // `b` left a tool call unanswered, so a run cannot continue from it and
+    // the harness refuses that head: neither button is live, and Enter on
+    // the row asks nothing.
+    const buttons = items()[1]?.querySelectorAll("button") ?? [];
+    expect([...buttons].map((b) => b.disabled)).toEqual([true, true]);
+    items()[1]?.focus();
+    press("Enter");
+    expect(document.body.textContent).not.toContain("Move the head here?");
+
+    const live = items()[0]?.querySelectorAll("button") ?? [];
+    expect([...live].map((b) => b.disabled)).toEqual([false, false]);
   });
 });

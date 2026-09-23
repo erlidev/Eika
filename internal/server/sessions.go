@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -12,9 +13,12 @@ import (
 
 // sessionBody is one session on the wire.
 type sessionBody struct {
-	ID              string    `json:"id"`
-	WorkspaceID     string    `json:"workspace_id"`
-	Title           string    `json:"title"`
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+	Title       string `json:"title"`
+	// Kind is user, fork, or agent: who opened the session. It is what the
+	// session tree draws a row as under the session it came from.
+	Kind            string    `json:"kind"`
 	HeadEntryID     string    `json:"head_entry_id,omitempty"`
 	ParentSessionID string    `json:"parent_session_id,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -82,9 +86,13 @@ type pathResponse struct {
 }
 
 // handleListSessions lists the sessions, of one workspace when the query
-// names one.
+// names one. `descendants=true` adds the forks and child agents those
+// sessions led to, which run in workspaces of their own, so that one request
+// returns the whole tree a workspace is the root of.
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
-	sessions, err := s.deps.Store.Sessions(r.Context(), r.URL.Query().Get("workspace_id"))
+	query := r.URL.Query()
+	sessions, err := s.deps.Store.Sessions(r.Context(),
+		query.Get("workspace_id"), query.Get("descendants") == "true")
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -219,6 +227,12 @@ func (s *Server) handleSetSessionHead(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, conflictf("session %s has a run in progress", id))
 		return
 	}
+	if req.EntryID != "" {
+		if err := s.checkResumable(r.Context(), id, req.EntryID); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	if err := s.tree.SetHead(r.Context(), id, req.EntryID); err != nil {
 		s.fail(w, r, err)
 		return
@@ -250,6 +264,12 @@ func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// The check comes before the workspace is cloned: a fork that the tree
+	// would refuse must not leave a container behind.
+	if err := s.checkResumable(r.Context(), id, req.EntryID); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	opts := store.ForkOptions{Title: strings.TrimSpace(req.Title)}
 	var forked store.Workspace
 	if req.WithWorkspace {
@@ -277,6 +297,22 @@ func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.log, http.StatusCreated, asSession(fork))
 }
 
+// checkResumable refuses an entry a run cannot continue from. A path that
+// stops with tool calls unanswered is a conversation no endpoint accepts, so
+// a head or a fork placed there would produce a session that fails on its
+// next run rather than one that branches.
+func (s *Server) checkResumable(ctx context.Context, sessionID, entryID string) error {
+	ok, err := s.tree.Resumable(ctx, sessionID, entryID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return invalidf("entry %s leaves tool calls unanswered, so a run cannot continue from it; "+
+			"choose the entry that answers the last of them", entryID)
+	}
+	return nil
+}
+
 // handleDeleteSession removes a session and its entries.
 func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -299,6 +335,7 @@ func asSession(sess store.Session) sessionBody {
 		ID:              sess.ID,
 		WorkspaceID:     sess.WorkspaceID,
 		Title:           sess.Title,
+		Kind:            string(sess.Kind),
 		HeadEntryID:     sess.HeadEntryID,
 		ParentSessionID: sess.ParentSessionID,
 		CreatedAt:       sess.CreatedAt,

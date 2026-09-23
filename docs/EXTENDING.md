@@ -196,10 +196,17 @@ OpenAI-compatible provider sends the stored reasoning back as
 provider-neutral reasoning value to its own wire format.
 
 Emit `KindUsage` as soon as the endpoint reports usage rather than only at the
-end. The agent times each response from its first token and republishes both
-as `turn.progress`. A client needs two reports from one attempt for a decode
-rate; an endpoint that reports usage once still produces one event and shows
-context usage without a rate.
+end. The agent republishes it as `turn.progress`, so an endpoint that reports
+usage per chunk keeps the context meter current while a response streams.
+
+Set `Event.Timings` on that event when the endpoint measures its own speed.
+Fill each phase with the tokens it moved and the milliseconds it took, in
+`provider.Timings`, converting whatever units the endpoint uses; the shapes
+the OpenAI-compatible provider already reads are listed in
+`docs/api/events.md` and parsed in `internal/provider/openai/timings.go`.
+Leave a phase zero rather than guessing at it: the agent fills a missing
+generation phase by timing the stream from its first token, and a prompt
+phase nobody measured is shown as nothing at all.
 
 ## Adding a search backend
 

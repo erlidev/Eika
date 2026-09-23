@@ -165,10 +165,6 @@ is once per model call and for an endpoint with continuous usage statistics
 excludes the endpoint's queueing and prefill. A retried model attempt is not
 counted.
 
-There is no decode rate here. A Chat Completions endpoint reports its token
-counts when a response ends, never while one streams, so anything a client
-divided during a turn would be a guess rather than a measurement.
-
 | Field | Type | Meaning |
 |---|---|---|
 | `run_id` | string | Identifies the turn. |
@@ -176,6 +172,46 @@ divided during a turn would be a guess rather than a measurement.
 | `context` | object | The **most recent** model call's own usage, in the same shape. This is what fills the model's context window; `usage` is what the turn costs, which is larger. |
 | `generation_ms` | number | The turn's time inside model responses so far. |
 | `context_window` | number | The configured window of the model that produced this usage. Zero means it is not configured. |
+| `timings` | object, optional | How fast the **most recent** model call ran. See below. |
+
+#### `timings`
+
+Generation speed, split into the two phases whose speeds differ by orders of
+magnitude. Both are stated as a token count and the milliseconds that count
+took, so a client divides the pair rather than trusting a rate somebody else
+rounded. The two are never summed.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `prompt_tokens` | number, optional | Tokens of prompt the endpoint read. |
+| `prompt_ms` | number, optional | How long reading them took. |
+| `decode_tokens` | number, optional | Tokens generated in the measured window. |
+| `decode_ms` | number, optional | How long generating them took. |
+| `source` | string, optional | `endpoint` or `harness`: who timed the generation phase. |
+
+A phase nobody measured is absent, and `timings` itself is absent when neither
+was. The prompt phase comes only from an endpoint that reports its own
+timings: from outside, the time an endpoint spends reading a prompt cannot be
+told apart from the time it spends queueing.
+
+These endpoints report their own timings, and Eika reads all of their shapes:
+
+| Engine | Where it reports |
+|---|---|
+| llama.cpp | `timings.{prompt_n, prompt_ms, prompt_per_second, predicted_n, predicted_ms, predicted_per_second}` |
+| vLLM | `metrics.{time_to_first_token_ms, queue_time_ms, generation_time_ms}`, with `--enable-per-request-metrics` |
+| NVIDIA NIM | `stats.{llm_input_token_length, time_in_queue_in_ms, response_tokens{…}}` |
+| LM Studio | `stats.{time_to_first_token, generation_time, tokens_per_second}`, in seconds |
+| TabbyAPI | `usage.{prompt_tokens_per_sec, completion_tokens_per_sec}` |
+| Groq | `x_groq.usage.{prompt_time, completion_time}`, in seconds |
+| Ollama | `prompt_eval_count`, `prompt_eval_duration`, `eval_count`, `eval_duration`, in nanoseconds |
+
+For the rest — OpenAI, Anthropic, OpenRouter, SGLang, Together — the harness
+times the generation phase itself, from the response's first streamed token to
+its last, and `source` is `harness`. The first token is not among
+`decode_tokens`: the clock starts when it arrives, so the window it opens
+holds the tokens that followed it. A response of one token measures nothing
+and reports no `timings`.
 
 ### `turn.end`
 
@@ -187,6 +223,7 @@ divided during a turn would be a guess rather than a measurement.
 | `context` | object | The last model call's own usage: how much of the model's context window the conversation now fills. |
 | `generation_ms` | number | The turn's total time inside model responses. |
 | `context_window` | number | The configured window of the model that ran the turn. Zero means it is not configured. |
+| `timings` | object, optional | How fast the turn's last model call ran, in the shape `turn.progress` documents. |
 
 ### `run.error`
 
@@ -286,7 +323,7 @@ renders a message it watched arrive live.
 | `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, or `event`. |
 | `commit` | string, optional | The workspace HEAD commit the entry was produced at. |
 | `created_at` | time | When the entry was written. |
-| `message` | object | The entry's stored payload: a provider message for the conversation kinds. An assistant message can include `reasoning` and `metrics`; `metrics` holds `run_id`, turn `usage`, last-call `context`, `generation_ms`, and `context_window`, so replay restores the context view. Metrics are not sent to the provider. |
+| `message` | object | The entry's stored payload: a provider message for the conversation kinds. An assistant message can include `reasoning` and `metrics`; `metrics` holds `run_id`, turn `usage`, last-call `context`, `generation_ms`, `context_window`, and optional `timings`, so replay restores the context view and the speed the answer was produced at. Metrics are not sent to the provider. |
 
 ### `bus.dropped`
 

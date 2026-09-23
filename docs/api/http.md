@@ -383,7 +383,14 @@ continues from.
 
 ### `GET /api/sessions`
 
-`?workspace_id=<id>` narrows the list. `200` with `{"sessions": [Session]}`.
+`?workspace_id=<id>` narrows the list. `?descendants=true` adds the forks and
+child agents those sessions led to, wherever they run: a fork with a workspace
+and a subagent each live in a workspace of their own, and both belong under
+the session they came from. It is ignored without `workspace_id`, which
+already returns every session.
+
+`200` with `{"sessions": [Session]}`, oldest first. The rows are flat; a
+client hangs each one under its `parent_session_id`.
 
 ### `POST /api/sessions`
 
@@ -403,7 +410,14 @@ Aborts the session's run, then deletes it and its entries. `204`.
 Every entry of the tree, without payloads: what the session tree panel draws.
 
 `200` with `{"session_id": string, "head_entry_id": string, "nodes": [Node]}`,
-where a `Node` is `{id, parent_id?, kind, preview, commit?, created_at}`.
+where a `Node` is
+`{id, parent_id?, kind, preview, commit?, resumable, created_at}`.
+
+`resumable` is whether a run can continue from that entry: the path down to it
+leaves no tool call unanswered. It is false for an assistant entry whose tool
+calls are still out and for a tool result that is not the last of its set. The
+head and fork routes refuse those entries, so a client offers no branch from
+a node that is not resumable.
 
 ### `GET /api/sessions/{id}/path`
 
@@ -417,9 +431,12 @@ same order.
 ### `POST /api/sessions/{id}/head`
 
 `{"entry_id": string}`. Moves the head to one of the session's own entries, so
-the next run continues from there and the tree branches in place. `200` with
-the `Session`. `409` while a run is going; `404` when the entry is not the
-session's.
+the next run continues from there and the tree branches in place. An empty
+`entry_id` clears the head, so the session starts again from its root.
+
+`200` with the `Session`. `409` while a run is going; `404` when the entry is
+not the session's; `400` when the entry is not `resumable`, because a path
+that stops with tool calls unanswered is a conversation no endpoint accepts.
 
 ### `POST /api/sessions/{id}/fork`
 
@@ -438,8 +455,14 @@ workspace in the same project is created and cloned from the hub at the
 commit that entry recorded, on branch `<source branch>-fork-<8 chars of the
 new id>`, and the fork points at it. The files rewind with the conversation.
 
-`201` with the new `Session`. `400` when the entry recorded no commit, so
-there is nothing to clone; `409` when the source workspace is not running.
+`201` with the new `Session`, whose `kind` is `fork` and whose
+`parent_session_id` is the source.
+
+`400` when `entry_id` is missing, when the entry is not `resumable`, or, with
+`with_workspace`, when the entry recorded no commit and there is nothing to
+clone; `409` when the source workspace is not running. The resumability check
+runs before anything is created, so a refused fork leaves no workspace
+behind.
 
 ### Session
 
@@ -448,8 +471,9 @@ there is nothing to clone; `409` when the source workspace is not running.
 | `id` | string | The session id. |
 | `workspace_id` | string | Where its runs act. |
 | `title` | string | What the user calls it. |
+| `kind` | string | `user`, `fork`, or `agent`: who opened it. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
-| `parent_session_id` | string, optional | The session it was forked from. |
+| `parent_session_id` | string, optional | The session it was forked from, or the one whose run spawned it. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ### Entry
@@ -468,8 +492,9 @@ A provider message can include `reasoning` on an assistant entry whenever the
 endpoint streamed it. The session view shows it apart from the answer; Eika
 replays it to the provider only when `preserve_thinking` is on. An assistant
 message can also include `metrics` with `run_id`, turn `usage`, last-call
-`context`, `generation_ms`, and `context_window`. This UI metadata restores
-the context view after replay and is never sent to the provider. A tool call's
+`context`, `generation_ms`, `context_window`, and an optional `timings`
+(`docs/api/events.md`). This UI metadata restores the context view and the
+answer's generation speed after replay, and is never sent to the provider. A tool call's
 `arguments` is normally an object. If a model returns malformed JSON, it is a
 string with the exact malformed text, and the tool call has
 `arguments_malformed: true`. The marker is absent for valid JSON, including a

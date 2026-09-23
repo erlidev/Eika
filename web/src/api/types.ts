@@ -4,7 +4,7 @@
  * When a Go type changes, change these in the same commit.
  */
 
-import type { EntryKind, Usage } from "@/api/events";
+import type { EntryKind, Timings, Usage } from "@/api/events";
 
 /** ErrorCode is the machine-readable half of an API error body. */
 export type ErrorCode =
@@ -137,11 +137,16 @@ export type PushResult = {
   upstream_pushed: boolean;
 };
 
+/** SessionKind is who opened a session. */
+export type SessionKind = "user" | "fork" | "agent";
+
 /** Session is a tree of entries in one workspace. */
 export type Session = {
   id: string;
   workspace_id: string;
   title: string;
+  /** kind says whether the user opened it, a fork made it, or a run spawned it. */
+  kind: SessionKind;
   head_entry_id?: string;
   parent_session_id?: string;
   created_at: string;
@@ -167,6 +172,8 @@ export type MessageMetrics = {
   context: Usage;
   generation_ms: number;
   context_window: number;
+  /** timings is how fast the model call that produced this message ran. */
+  timings?: Timings;
 };
 
 /** Message is one entry of a conversation, as the provider package stores it. */
@@ -200,6 +207,12 @@ export type Node = {
   kind: EntryKind;
   preview: string;
   commit?: string;
+  /**
+   * resumable is whether a run can continue from this entry. An entry in the
+   * middle of a turn leaves tool calls unanswered, so the harness refuses to
+   * put the head or a fork there and the tree offers neither.
+   */
+  resumable: boolean;
   created_at: string;
 };
 

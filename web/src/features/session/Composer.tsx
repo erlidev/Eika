@@ -8,12 +8,13 @@
  * them there gives the transcript back the row they used to cost.
  */
 
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { ArrowUp } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { usePostMessage, useRunStatus } from "@/features/session/queries";
+import { useSessionStore } from "@/features/session/store";
 import type { MessageMode } from "@/api/types";
 import { failureText } from "@/lib/failure";
 
@@ -28,7 +29,11 @@ export type ComposerProps = {
 };
 
 export function Composer({ sessionId, model, disabled = false, disabledReason }: ComposerProps) {
-  const [text, setText] = useState("");
+  // The text is in the session store, not here: rewinding to a message puts
+  // that message back in the box to edit, and the transcript row that does it
+  // is not this component's parent.
+  const text = useSessionStore((s) => s.draft);
+  const setText = useSessionStore((s) => s.edit);
   const box = useRef<HTMLTextAreaElement>(null);
   const status = useRunStatus(sessionId);
   const post = usePostMessage(sessionId);

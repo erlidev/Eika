@@ -8,6 +8,7 @@ function node(id: string, parent?: string): Node {
     id,
     kind: "user",
     preview: id,
+    resumable: true,
     created_at: "2026-03-14T15:00:00Z",
     ...(parent === undefined ? {} : { parent_id: parent }),
   };

@@ -161,6 +161,7 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 	sess, err := s.opts.Store.CreateSession(ctx, store.Session{
 		WorkspaceID:     childWS.ID,
 		Title:           req.Name,
+		Kind:            store.SessionAgent,
 		ParentSessionID: parent.ID,
 	})
 	if err != nil {

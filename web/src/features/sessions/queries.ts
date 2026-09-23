@@ -7,11 +7,18 @@ import { queryKeys } from "@/api/keys";
 import { createSession, deleteSession, listSessions } from "@/api/routes";
 import type { Session } from "@/api/types";
 
-/** useSessions lists the sessions of one workspace, or all of them. */
-export function useSessions(workspaceId?: string): UseQueryResult<Session[]> {
+/**
+ * useSessions lists the sessions of one workspace, or all of them.
+ * `descendants` also brings back the forks and child agents they led to,
+ * which the sidebar hangs under the session each came from.
+ */
+export function useSessions(
+  workspaceId?: string,
+  descendants?: boolean,
+): UseQueryResult<Session[]> {
   return useQuery({
-    queryKey: queryKeys.sessions(workspaceId),
-    queryFn: ({ signal }) => listSessions(workspaceId, signal),
+    queryKey: queryKeys.sessions(workspaceId, descendants),
+    queryFn: ({ signal }) => listSessions(workspaceId, descendants, signal),
   });
 }
 

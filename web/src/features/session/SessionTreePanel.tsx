@@ -79,7 +79,7 @@ export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
     if (e.target !== e.currentTarget) return;
     if (e.key === "Enter") {
       e.preventDefault();
-      if (node.id !== head) setConfirmHead(node);
+      if (node.id !== head && node.resumable) setConfirmHead(node);
       return;
     }
     const next = nextTreeIndex(rows, index, e.key);
@@ -102,6 +102,12 @@ export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
           const { node } = row;
           const isFocused = index === focused;
           const isHead = node.id === head;
+          // An entry in the middle of a turn leaves tool calls unanswered, so
+          // no run can continue from it. The harness refuses it; the row says
+          // so rather than letting the click find out.
+          const midTurn = !node.resumable;
+          const why =
+            "This entry is in the middle of a turn: it leaves tool calls unanswered, so a run cannot continue from it.";
           return (
             <div
               key={node.id}
@@ -114,7 +120,9 @@ export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
               aria-posinset={row.position}
               aria-setsize={row.setSize}
               aria-current={isHead ? "true" : undefined}
-              aria-label={`${node.kind}: ${node.preview || "no text"}${isHead ? " (head)" : ""}`}
+              aria-label={`${node.kind}: ${node.preview || "no text"}${isHead ? " (head)" : ""}${
+                midTurn ? " (mid-turn, cannot branch here)" : ""
+              }`}
               tabIndex={isFocused ? 0 : -1}
               onFocus={(e) => {
                 if (e.target === e.currentTarget) setFocusId(node.id);
@@ -131,16 +139,23 @@ export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
               <span className="text-muted-foreground w-[5.5rem] shrink-0 truncate font-mono text-2xs">
                 {node.kind}
               </span>
-              <span className="min-w-0 flex-1 truncate text-xs" title={node.preview}>
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate text-xs",
+                  midTurn && "text-muted-foreground",
+                )}
+                title={midTurn ? why : node.preview}
+              >
                 {node.preview || "—"}
               </span>
               <Button
                 size="icon-xs"
                 variant="ghost"
                 tabIndex={isFocused ? 0 : -1}
-                className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+                disabled={midTurn}
+                className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-0 group-focus-within:disabled:opacity-40 group-hover:disabled:opacity-40"
                 aria-label={`Set head to ${node.kind} entry`}
-                title="Move the head here"
+                title={midTurn ? why : "Move the head here"}
                 onClick={() => {
                   setConfirmHead(node);
                 }}
@@ -151,9 +166,10 @@ export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
                 size="icon-xs"
                 variant="ghost"
                 tabIndex={isFocused ? 0 : -1}
-                className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+                disabled={midTurn}
+                className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-0 group-focus-within:disabled:opacity-40 group-hover:disabled:opacity-40"
                 aria-label={`Fork from ${node.kind} entry`}
-                title="Fork a new session from here"
+                title={midTurn ? why : "Fork a new session from here"}
                 onClick={() => {
                   startFork(node);
                 }}
@@ -166,7 +182,8 @@ export function SessionTreePanel({ sessionId }: SessionTreePanelProps) {
       </div>
       <p id={`${sessionId}-tree-keys`} className="sr-only">
         Arrow keys move between entries, Enter moves the head to the focused entry, and Tab reaches
-        its buttons.
+        its buttons. An entry in the middle of a turn cannot be branched from, and its buttons are
+        disabled.
       </p>
 
       <Dialog

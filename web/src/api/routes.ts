@@ -170,10 +170,19 @@ export function pushWorkspace(id: string, input: PushRequest): Promise<PushResul
   });
 }
 
-/** listSessions lists sessions, optionally of one workspace. */
-export async function listSessions(workspaceId?: string, signal?: AbortSignal): Promise<Session[]> {
+/**
+ * listSessions lists sessions, optionally of one workspace. `descendants`
+ * adds the forks and child agents those sessions led to, which run in
+ * workspaces of their own, so the sidebar draws the whole tree from one
+ * request.
+ */
+export async function listSessions(
+  workspaceId?: string,
+  descendants?: boolean,
+  signal?: AbortSignal,
+): Promise<Session[]> {
   const body = await request<{ sessions: Session[] }>("/api/sessions", {
-    query: { workspace_id: workspaceId },
+    query: { workspace_id: workspaceId, ...(descendants === true ? { descendants: "true" } : {}) },
     signal,
   });
   return body.sessions;

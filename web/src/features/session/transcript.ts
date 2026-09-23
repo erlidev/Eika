@@ -12,7 +12,7 @@
  */
 
 import { payloadOf } from "@/api/events";
-import type { EikaEvent, SessionMessage, TurnProgress, Usage } from "@/api/events";
+import type { EikaEvent, SessionMessage, Timings, TurnProgress, Usage } from "@/api/events";
 import type { Message, Question } from "@/api/types";
 
 /** UserItem is a message the user sent. */
@@ -32,6 +32,12 @@ export type AssistantItem = {
   entryId?: string;
   text: string;
   streaming: boolean;
+  /**
+   * timings is how fast the model call that wrote this message ran. It is
+   * absent until the call reports its usage, which is when the endpoint
+   * states its own speed and when the harness can state the rate it timed.
+   */
+  timings?: Timings;
 };
 
 /**
@@ -105,6 +111,8 @@ export type Meter = {
   usage: Usage;
   /** generationMs is the time the turn spent inside model responses. */
   generationMs: number;
+  /** timings is how fast the last model call ran, absent until one is timed. */
+  timings?: Timings;
   /** contextWindow belongs to the model that produced this measurement. */
   contextWindow: number;
   /** live is whether the turn this meter describes is still running. */
@@ -157,7 +165,13 @@ export type ToolResultRecord = {
   durationMs: number;
 };
 
-/** newTranscript returns the empty state for one session. */
+/**
+ * newTranscript returns the empty state for one session. Every field of
+ * TranscriptState is named here, the optional `meter` and `stopReason`
+ * included: the store resets by merging this over the session that was open,
+ * so a field left out of it would survive the switch and go on describing a
+ * session that is no longer on screen.
+ */
 export function newTranscript(sessionId: string): TranscriptState {
   return {
     sessionId,
@@ -167,6 +181,8 @@ export function newTranscript(sessionId: string): TranscriptState {
     live: [],
     sealedTurns: [],
     activeTurnId: "",
+    meter: undefined,
+    stopReason: undefined,
     questions: [],
     toolResults: {},
     needsReplay: false,
@@ -320,13 +336,34 @@ function meterOf(p: TurnProgress, live: boolean): Meter {
     contextWindow: p.context_window,
     live,
     source: "live",
+    ...(p.timings === undefined ? {} : { timings: p.timings }),
   };
+}
+
+/**
+ * timeLive stamps a measurement onto the message it describes: the prose the
+ * turn is writing now. A model call that produced only tool calls has no
+ * message on screen, and a call whose prose a tool already closed is no longer
+ * the one being timed, so only a block still streaming takes the numbers.
+ */
+function timeLive(
+  live: TranscriptItem[],
+  runId: string,
+  timings: Timings | undefined,
+): TranscriptItem[] {
+  if (timings === undefined) return live;
+  for (let i = live.length - 1; i >= 0; i -= 1) {
+    const item = live[i];
+    if (item?.kind !== "assistant" || item.runId !== runId || !item.streaming) continue;
+    return replaceAt(live, i, { ...item, timings });
+  }
+  return live;
 }
 
 function applyProgress(state: TranscriptState, e: EikaEvent): TranscriptState {
   const p = payloadOf(e, "turn.progress");
   if (!p) return state;
-  return { ...state, meter: meterOf(p, true) };
+  return { ...state, live: timeLive(state.live, p.run_id, p.timings), meter: meterOf(p, true) };
 }
 
 /**
@@ -445,7 +482,7 @@ function applyTurnEnd(state: TranscriptState, e: EikaEvent): TranscriptState {
   if (!p) return state;
   return {
     ...state,
-    live: seal(state.live),
+    live: seal(timeLive(state.live, p.run_id, p.timings)),
     activeTurnId: state.activeTurnId === p.run_id ? "" : state.activeTurnId,
     meter: meterOf(p, false),
     stopReason: p.stop_reason,
@@ -530,6 +567,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
           entryId: p.entry_id,
           text: message.content,
           streaming: false,
+          ...(message.metrics?.timings === undefined ? {} : { timings: message.metrics.timings }),
         });
       }
       for (const call of message?.tool_calls ?? []) {
@@ -589,6 +627,7 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
         contextWindow: metrics.context_window,
         live: false,
         source: "replay",
+        ...(metrics.timings === undefined ? {} : { timings: metrics.timings }),
       }
     : undefined;
 

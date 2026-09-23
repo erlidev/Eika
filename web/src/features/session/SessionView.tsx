@@ -69,7 +69,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
       </header>
       {/* The transcript owns its scroller: it has to measure it to decide
           whether the user is still following the stream. */}
-      <Transcript empty="Send a message to start the first turn." />
+      <Transcript sessionId={sessionId} empty="Send a message to start the first turn." />
       {noModel && (
         <div className="border-t px-3 py-2">
           <Notice className="mx-auto max-w-3xl">

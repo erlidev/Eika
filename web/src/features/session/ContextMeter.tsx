@@ -5,16 +5,17 @@
  * Every number here was measured by the endpoint and arrived in a
  * turn.progress or turn.end event (docs/api/events.md). Nothing is estimated
  * from the text on screen, so the meter is absent until an endpoint reports
- * usage. There is no decode rate: a Chat Completions endpoint reports its
- * token counts when a response ends, never while one streams, so a rate shown
- * during a turn could only be a guess dressed up as a measurement.
+ * usage. How fast the turn ran is not in the bar: it belongs to the answer
+ * that was produced at that speed, so `Speed.tsx` states it there, and the
+ * breakdown below repeats it for a reader who asked for it.
  *
  * The tooltips state the numbers and nothing else; the run panel's breakdown
  * is where they are explained.
  */
 
+import { useTranscriptPreferences } from "@/features/session/preferences";
 import type { Meter } from "@/features/session/transcript";
-import { formatTokens } from "@/lib/format";
+import { formatRate, formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type ContextMeterProps = {
@@ -94,6 +95,7 @@ export type ContextBreakdownProps = {
  * it that number".
  */
 export function ContextBreakdown({ meter }: ContextBreakdownProps) {
+  const showSpeed = useTranscriptPreferences((s) => s.speed);
   if (!meter || meter.context.total_tokens === 0) {
     return <p className="text-muted-foreground">No model call has reported its usage yet.</p>;
   }
@@ -143,7 +145,45 @@ export function ContextBreakdown({ meter }: ContextBreakdownProps) {
           {formatTokens(meter.usage.input_tokens)} in · {formatTokens(meter.usage.output_tokens)}{" "}
           out
         </dd>
+        {showSpeed && <SpeedRows meter={meter} />}
       </dl>
     </div>
+  );
+}
+
+/**
+ * SpeedRows are the last model call's two rates, for a reader who turned them
+ * on. They are rows of the breakdown's list rather than a block of their own,
+ * so they read as two more measurements of the same call.
+ */
+function SpeedRows({ meter }: { meter: Meter }) {
+  const decode = formatRate(meter.timings?.decode_tokens, meter.timings?.decode_ms);
+  const prompt = formatRate(meter.timings?.prompt_tokens, meter.timings?.prompt_ms);
+  return (
+    <>
+      {decode !== "" && (
+        <>
+          <dt
+            className="text-muted-foreground"
+            title={
+              meter.timings?.source === "harness"
+                ? "Timed here, from the response's first streamed token."
+                : "Timed by the endpoint."
+            }
+          >
+            Generation
+          </dt>
+          <dd className="font-mono tabular-nums">{decode}</dd>
+        </>
+      )}
+      {prompt !== "" && (
+        <>
+          <dt className="text-muted-foreground" title="Timed by the endpoint.">
+            Prompt processing
+          </dt>
+          <dd className="font-mono tabular-nums">{prompt}</dd>
+        </>
+      )}
+    </>
   );
 }

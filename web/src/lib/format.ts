@@ -18,6 +18,19 @@ export function formatTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
+/**
+ * formatRate renders a generation speed in tokens per second. It returns an
+ * empty string for a measurement that cannot make a rate, so a caller never
+ * shows a division by zero as a speed.
+ */
+export function formatRate(tokens: number | undefined, ms: number | undefined): string {
+  if (tokens === undefined || ms === undefined) return "";
+  if (!Number.isFinite(tokens) || !Number.isFinite(ms) || tokens <= 0 || ms <= 0) return "";
+  const rate = (tokens / ms) * 1000;
+  if (rate >= 1000) return `${(rate / 1000).toFixed(1)}k tok/s`;
+  return `${rate.toFixed(rate < 100 ? 1 : 0)} tok/s`;
+}
+
 /** formatBytes renders a file size in binary units: 512 B, 1.5 KiB, 3.2 MiB. */
 export function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return "0 B";

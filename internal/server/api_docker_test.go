@@ -292,10 +292,12 @@ type diffWire struct {
 }
 
 type sessionWire struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspace_id"`
-	Title       string `json:"title"`
-	HeadEntryID string `json:"head_entry_id"`
+	ID              string `json:"id"`
+	WorkspaceID     string `json:"workspace_id"`
+	Title           string `json:"title"`
+	Kind            string `json:"kind"`
+	HeadEntryID     string `json:"head_entry_id"`
+	ParentSessionID string `json:"parent_session_id"`
 }
 
 type sessionsWire struct {
@@ -319,9 +321,10 @@ type outlineWire struct {
 	SessionID   string `json:"session_id"`
 	HeadEntryID string `json:"head_entry_id"`
 	Nodes       []struct {
-		ID      string `json:"id"`
-		Kind    string `json:"kind"`
-		Preview string `json:"preview"`
+		ID        string `json:"id"`
+		Kind      string `json:"kind"`
+		Preview   string `json:"preview"`
+		Resumable bool   `json:"resumable"`
 	} `json:"nodes"`
 }
 
@@ -739,6 +742,62 @@ func TestDeleteWorkspacePreservesRowWhenInspectFails(t *testing.T) {
 	}
 }
 
+// A run's tool calls have to be answered before the conversation can go
+// anywhere else, so the entries in the middle of a turn are not places a
+// head or a fork may be put: a session made there fails on its next run.
+func TestHeadAndForkRefuseAnUnansweredTurn(t *testing.T) {
+	a := newAPI(t)
+	project, dir := a.newProject(t, "demo")
+	initRepo(t, dir)
+	ws := a.newWorkspace(t, project.ID)
+	sess := a.newSession(t, ws.ID)
+
+	a.script(
+		providertest.Calls("looking",
+			provider.ToolCall{ID: "call_1", Name: "ls", Arguments: provider.ToolArguments(`{"path":"."}`)},
+			provider.ToolCall{ID: "call_2", Name: "ls", Arguments: provider.ToolArguments(`{"path":"."}`)},
+		),
+		providertest.Text("both read"),
+	)
+	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages",
+		map[string]any{"text": "what is here"}); rec.Code != 202 {
+		t.Fatalf("post message = %d: %s", rec.Code, rec.Body.String())
+	}
+	a.waitIdle(t, sess.ID)
+
+	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
+	// user, assistant with two calls, two results, the closing answer.
+	if len(path.Entries) != 5 {
+		t.Fatalf("entries = %d, want 5: %+v", len(path.Entries), path.Entries)
+	}
+	outline := decodeBody[outlineWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/outline", nil), 200)
+	want := []bool{true, false, false, true, true}
+	for i, node := range outline.Nodes {
+		if node.Resumable != want[i] {
+			t.Errorf("node %d (%s) resumable = %v, want %v", i, node.Kind, node.Resumable, want[i])
+		}
+	}
+
+	// The assistant turn that asked for two calls, and the result that
+	// answers only the first, are both mid-turn.
+	for _, at := range []int{1, 2} {
+		body := map[string]any{"entry_id": path.Entries[at].ID}
+		if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/head", body); rec.Code != 400 {
+			t.Errorf("head at entry %d = %d, want 400: %s", at, rec.Code, rec.Body.String())
+		}
+		body["title"] = "mid-turn"
+		if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork", body); rec.Code != 400 {
+			t.Errorf("fork at entry %d = %d, want 400: %s", at, rec.Code, rec.Body.String())
+		}
+	}
+	// The result that answers the last call closes the turn, so it is a
+	// place a branch may start.
+	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/head",
+		map[string]any{"entry_id": path.Entries[3].ID}); rec.Code != 200 {
+		t.Errorf("head at the closing result = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSessionRoutes(t *testing.T) {
 	a := newAPI(t)
 	project, dir := a.newProject(t, "demo")
@@ -795,6 +854,17 @@ func TestSessionRoutes(t *testing.T) {
 	forkPath := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+fork.ID+"/path", nil), 200)
 	if len(forkPath.Entries) != 2 {
 		t.Errorf("fork entries = %d, want the copied path", len(forkPath.Entries))
+	}
+
+	if fork.Kind != "fork" || fork.ParentSessionID != sess.ID {
+		t.Errorf("fork = %+v, want kind fork under %s", fork, sess.ID)
+	}
+	// The fork lives in the source's workspace, so it is in the plain
+	// listing; a fork with a workspace of its own would need descendants.
+	tree := decodeBody[sessionsWire](t, request(t, a.Server, "GET",
+		"/api/sessions?workspace_id="+ws.ID+"&descendants=true", nil), 200)
+	if len(tree.Sessions) != 2 {
+		t.Errorf("sessions with descendants = %d, want the session and its fork", len(tree.Sessions))
 	}
 
 	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork", map[string]any{"title": "no entry"}); rec.Code != 400 {

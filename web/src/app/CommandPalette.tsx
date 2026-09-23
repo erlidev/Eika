@@ -35,7 +35,7 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
   const session = useSession(sessionId === "" ? undefined : sessionId);
   const workspaceId = session.data?.session.workspace_id;
   const workspaces = useWorkspaces();
-  const sessions = useSessions(workspaceId);
+  const sessions = useSessions(workspaceId, true);
   const createSession = useCreateSession();
   const navigate = useNavigate();
 
@@ -127,16 +127,25 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
               </CommandItem>
             </CommandGroup>
 
+            {/* The forks and child agents of this workspace's sessions are
+                here too: they are sessions to switch to like any other. The
+                kind is spelled out, because the palette is a flat list and
+                the sidebar's nesting is what says it there. */}
             <CommandGroup heading="Sessions">
               {(sessions.data ?? []).map((entry) => (
                 <CommandItem
                   key={entry.id}
-                  value={`session ${entry.title} ${entry.id}`}
+                  value={`session ${entry.kind} ${entry.title} ${entry.id}`}
                   onSelect={() => {
                     run(() => void navigate(`/sessions/${entry.id}`));
                   }}
                 >
                   {entry.title}
+                  {entry.kind !== "user" && (
+                    <span className="text-muted-foreground ml-auto font-mono text-xs">
+                      {entry.kind}
+                    </span>
+                  )}
                 </CommandItem>
               ))}
             </CommandGroup>

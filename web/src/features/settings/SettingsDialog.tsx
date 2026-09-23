@@ -138,6 +138,8 @@ export function SettingsDialog() {
 function AppearanceSettings() {
   const reasoning = useTranscriptPreferences((s) => s.reasoning);
   const setReasoning = useTranscriptPreferences((s) => s.setReasoning);
+  const speed = useTranscriptPreferences((s) => s.speed);
+  const setSpeed = useTranscriptPreferences((s) => s.setSpeed);
   return (
     <div className="space-y-6">
       <ThemeSelect />
@@ -158,6 +160,20 @@ function AppearanceSettings() {
             setReasoning((on ? "expanded" : "compact") satisfies ReasoningDisplay);
           }}
         />
+      </div>
+      <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+        <div className="space-y-0.5">
+          <Label htmlFor="transcript-speed" className="text-sm">
+            Show how fast each answer was produced
+          </Label>
+          <p className="text-muted-foreground text-xs">
+            A line of tokens per second under every answer: generation always, and prompt processing
+            for an endpoint that measures its own. llama.cpp, vLLM, TabbyAPI, Groq, LM Studio and
+            NIM report both; for the rest the generation rate is timed here, from the first token,
+            and there is no prompt rate to state.
+          </p>
+        </div>
+        <Switch id="transcript-speed" checked={speed} onCheckedChange={setSpeed} />
       </div>
     </div>
   );

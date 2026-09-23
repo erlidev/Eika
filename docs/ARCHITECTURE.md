@@ -81,8 +81,11 @@ The pieces:
   makes Eika send that extension and replay the reasoning with later
   assistant messages. An endpoint that rejects the extension must set it to
   false. It is not an OpenAI API field. Usage is relayed as soon as a chunk
-  carries it, so an endpoint with continuous usage statistics lets a caller
-  measure a decode rate while the response is still arriving.
+  carries it, so an endpoint with continuous usage statistics keeps the
+  context meter current while the response is still arriving. An endpoint that
+  measures its own speed (llama.cpp, vLLM, NIM, LM Studio, TabbyAPI, Groq,
+  Ollama) reports it in fields outside the OpenAI shape; `openai/timings.go`
+  reads them into `provider.Timings` on the usage event.
 - **tool** holds the `Tool` interface and a registry. A call receives a
   `CallContext` carrying the executor, the event emitter, and the session and
   run identifiers. `tool/builtin` implements `read`, `write`, `edit`, `bash`,
@@ -147,7 +150,7 @@ a container, and a URL.
 | `schema_migrations` | version, applied_at | Which embedded migrations this database carries |
 | `projects` | id, name (unique), kind (remote/local), remote_url, remote_username, remote_password (sealed), host_path, default_branch, created_at | A git repository Eika knows and a private remote's credentials |
 | `workspaces` | id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id, created_at, updated_at | The record of one sandbox container; `state` mirrors `workspace.State` |
-| `sessions` | id, workspace_id, title, head_entry_id, parent_session_id, created_at, updated_at | One session tree and the head a run continues from |
+| `sessions` | id, workspace_id, title, kind (user/fork/agent), head_entry_id, parent_session_id, created_at, updated_at | One session tree, who opened it, and the head a run continues from |
 | `session_entries` | id, session_id, parent_id, seq, kind, payload (jsonb), commit_sha, created_at | One node of a session tree |
 | `runs` | id, session_id, state, started_at, finished_at, error | One execution of the agent loop |
 | `subagents` | id, parent_session_id, child_session_id, child_workspace_id, state, result, created_at, finished_at | One child agent and what it reported |
@@ -227,6 +230,16 @@ continuations and the head decides which one the next run extends. A fork
 copies the path into a session of its own and shares no rows, so the two
 sessions cannot disturb each other, either one can be deleted, and the fork
 can be pointed at a workspace cloned at its last entry's commit.
+
+Both are allowed only at a resumable entry: one whose path leaves no tool call
+unanswered, since a model that asked for three calls needs all three answered
+before it is asked anything else. `session.PathResumable` is the rule,
+`Outline` reports it per node, and the server checks `Tree.Resumable` before
+it moves a head or clones a fork's workspace. A fork is written with kind
+`fork` and a subagent's session with kind `agent`; `Store.Sessions` with
+descendants follows `parent_session_id` recursively, so the sidebar can hang
+both under the session they came from even when they run in a workspace of
+their own.
 
 ## Server, run manager, event bus
 
@@ -895,13 +908,15 @@ reducer is pure, so a scripted event sequence from `docs/api/events.md` is the
 whole test.
 
 The same reducer keeps the status bar's meter: `turn.progress` and `turn.end`
-carry usage, the model's configured context window, and generation time the
-harness measured. A decode rate needs two reports from one model attempt; a
-retry clears the baseline. Nothing in it is inferred from the text on screen,
-so an endpoint that reports usage only once shows context but no rate. Each
-assistant entry stores the final measured context state, which a replay uses
-to restore the meter after a reload. How the transcript renders — today,
-whether reasoning blocks start open — is `features/session/preferences.ts`, a
+carry usage, the model's configured context window, the generation time the
+harness measured, and the last model call's `timings`: a token count and a
+duration for prompt processing and for generation, from the endpoint's own
+clock or, for generation alone, from the harness timing the stream. Nothing in
+it is inferred from the text on screen. Each assistant entry stores the final
+measured context state and timings, which a replay uses to restore the meter
+and the speed line after a reload. How the transcript renders — whether
+reasoning blocks start open, whether each answer states its speed — is
+`features/session/preferences.ts`, a
 localStorage store apart from the harness's settings, because two people
 reading one session can want different things from it.
 

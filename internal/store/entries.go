@@ -196,6 +196,7 @@ func (s *Store) ForkSession(ctx context.Context, sessionID, entryID string, opts
 		fork := Session{
 			WorkspaceID:     cmp.Or(opts.WorkspaceID, src.WorkspaceID),
 			Title:           cmp.Or(opts.Title, src.Title),
+			Kind:            SessionFork,
 			ParentSessionID: sessionID,
 		}
 		if fork, err = createSession(ctx, q, fork); err != nil {

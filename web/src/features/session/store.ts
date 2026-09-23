@@ -18,8 +18,23 @@ export type SessionStore = TranscriptState & {
    * and the run panel reads it, and neither owns the other.
    */
   model: string;
+  /**
+   * draft is the text in the composer. It is in the store rather than in the
+   * composer because rewinding to a message puts that message back in the box
+   * for editing, and the two are not each other's parents.
+   */
+  draft: string;
   /** open points the store at a session, discarding the previous one. */
   open: (sessionId: string) => void;
+  /** edit replaces the composer's text. */
+  edit: (draft: string) => void;
+  /**
+   * rewound discards the transcript and asks for the session's path again.
+   * Moving the head makes the entries after it no longer part of the
+   * conversation, and a replay only ever adds: without this the abandoned
+   * branch stays on screen and the next turn reads as continuing it.
+   */
+  rewound: () => void;
   /** chooseModel points this session's next run at a model. */
   chooseModel: (model: string) => void;
   /** apply folds one stream event in. */
@@ -35,10 +50,22 @@ export type SessionStore = TranscriptState & {
 export const useSessionStore = create<SessionStore>((set) => ({
   ...newTranscript(""),
   model: "",
+  draft: "",
   open: (sessionId) => {
     set((state) =>
-      state.sessionId === sessionId ? state : { ...newTranscript(sessionId), model: "" },
+      state.sessionId === sessionId ? state : { ...newTranscript(sessionId), model: "", draft: "" },
     );
+  },
+  edit: (draft) => {
+    set({ draft });
+  },
+  rewound: () => {
+    set((state) => ({
+      ...newTranscript(state.sessionId),
+      model: state.model,
+      draft: state.draft,
+      needsReplay: true,
+    }));
   },
   chooseModel: (model) => {
     set({ model });

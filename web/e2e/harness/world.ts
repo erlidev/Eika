@@ -278,6 +278,7 @@ export class WorldBuilder {
     const row: Session = {
       id: this.id("ses"),
       workspace_id: workspace.id,
+      kind: "user",
       created_at: minutesAgo(120),
       updated_at: minutesAgo(5),
       ...input,

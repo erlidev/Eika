@@ -16,7 +16,8 @@ export const queryKeys = {
       ? (["workspace", id, "files"] as const)
       : (["workspace", id, "files", path] as const),
   workspaceFile: (id: string, path: string) => ["workspace", id, "file", path] as const,
-  sessions: (workspaceId?: string) => ["sessions", workspaceId ?? "all"] as const,
+  sessions: (workspaceId?: string, descendants?: boolean) =>
+    ["sessions", workspaceId ?? "all", descendants === true ? "tree" : "flat"] as const,
   session: (id: string) => ["session", id] as const,
   sessionOutline: (id: string) => ["session", id, "outline"] as const,
   sessionPath: (id: string) => ["session", id, "path"] as const,

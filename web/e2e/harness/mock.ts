@@ -870,7 +870,23 @@ export class MockHarness {
     // Sessions.
     on("GET", "/api/sessions", ({ query }) => {
       const ws = query.get("workspace_id");
-      return ok({ sessions: ws ? w.sessions.filter((s) => s.workspace_id === ws) : w.sessions });
+      if (!ws) return ok({ sessions: w.sessions });
+      const listed = w.sessions.filter((s) => s.workspace_id === ws);
+      if (query.get("descendants") !== "true") return ok({ sessions: listed });
+      // The forks and child agents those sessions led to, wherever they run,
+      // as the harness's recursive listing returns them.
+      const reached = new Set(listed.map((s) => s.id));
+      for (let more = true; more;) {
+        more = false;
+        for (const s of w.sessions) {
+          const parent = s.parent_session_id;
+          if (parent !== undefined && reached.has(parent) && !reached.has(s.id)) {
+            reached.add(s.id);
+            more = true;
+          }
+        }
+      }
+      return ok({ sessions: w.sessions.filter((s) => reached.has(s.id)) });
     });
     on("POST", "/api/sessions", ({ body }) => {
       const ws = find(w.workspaces, str(body.workspace_id), "workspace");
@@ -879,6 +895,7 @@ export class MockHarness {
         id: this.nextId("ses"),
         workspace_id: ws.id,
         title: str(body.title) || "New session",
+        kind: "user",
         created_at: now(),
         updated_at: now(),
       };
@@ -902,12 +919,13 @@ export class MockHarness {
       return ok({
         session_id: row.id,
         head_entry_id: row.head_entry_id,
-        nodes: (w.entries[row.id] ?? []).map((e) => ({
+        nodes: resumableEntries(w.entries[row.id] ?? []).map(({ entry: e, resumable }) => ({
           id: e.id,
           parent_id: e.parent_id,
           kind: e.kind,
           preview: preview(e.message),
           commit: e.commit,
+          resumable,
           created_at: e.created_at,
         })),
       });
@@ -921,18 +939,29 @@ export class MockHarness {
     on("POST", "/api/sessions/{id}/head", ({ params, body }) => {
       const row = find(w.sessions, params[0], "session");
       if ("status" in row) return row;
+      // An empty entry id clears the head, which is what rewinding to the
+      // session's first message means: the next run starts a new root.
+      if (str(body.entry_id) === "") {
+        delete row.head_entry_id;
+        return ok(row);
+      }
       const entry = find(w.entries[row.id] ?? [], str(body.entry_id), "entry");
       if ("status" in entry) return entry;
+      const refused = midTurn(w.entries[row.id] ?? [], entry.id);
+      if (refused) return refused;
       row.head_entry_id = entry.id;
       return ok(row);
     });
     on("POST", "/api/sessions/{id}/fork", ({ params, body }) => {
       const source = find(w.sessions, params[0], "session");
       if ("status" in source) return source;
+      const refused = midTurn(w.entries[source.id] ?? [], str(body.entry_id));
+      if (refused) return refused;
       const row: Session = {
         id: this.nextId("ses"),
         workspace_id: source.workspace_id,
         title: str(body.title) || `${source.title} (fork)`,
+        kind: "fork",
         parent_session_id: source.id,
         head_entry_id: str(body.entry_id),
         created_at: now(),
@@ -1045,6 +1074,15 @@ export class MockHarness {
     // shape of a real one.
     let outputTokens = 0;
     let generationMs = 0;
+    // A local engine that measures both of its phases, as llama.cpp does, so
+    // the transcript's speed line has something true to state.
+    const timings = () => ({
+      prompt_tokens: 1842,
+      prompt_ms: 420,
+      decode_tokens: Math.max(outputTokens - 1, 1),
+      decode_ms: Math.max(generationMs, 1),
+      source: "endpoint" as const,
+    });
     const progress = () => {
       generationMs += this.stepDelayMs;
       send("turn.progress", {
@@ -1060,6 +1098,7 @@ export class MockHarness {
         },
         generation_ms: generationMs,
         context_window: 400_000,
+        timings: timings(),
       });
     };
     let reasoning = "";
@@ -1102,6 +1141,22 @@ export class MockHarness {
             role: "assistant",
             content: step.say,
             ...(reasoning === "" ? {} : { reasoning }),
+            metrics: {
+              run_id: turn,
+              usage: {
+                input_tokens: 1842,
+                output_tokens: outputTokens,
+                total_tokens: 1842 + outputTokens,
+              },
+              context: {
+                input_tokens: 1842,
+                output_tokens: outputTokens,
+                total_tokens: 1842 + outputTokens,
+              },
+              generation_ms: generationMs,
+              context_window: 400_000,
+              timings: timings(),
+            },
           });
           reasoning = "";
         } else if ("tool" in step) {
@@ -1199,6 +1254,13 @@ export class MockHarness {
         context: usage,
         generation_ms: Math.max(generationMs, 4000),
         context_window: 400_000,
+        timings: {
+          prompt_tokens: 1842,
+          prompt_ms: 420,
+          decode_tokens: usage.output_tokens - 1,
+          decode_ms: Math.max(generationMs, 4000),
+          source: "endpoint" as const,
+        },
       });
     } finally {
       this.busy -= 1;
@@ -1210,4 +1272,39 @@ function preview(message: Message): string {
   if (message.content) return message.content.slice(0, 80);
   const call = message.tool_calls?.[0];
   return call?.name ?? "";
+}
+
+/**
+ * resumableEntries pairs each entry with whether a run can continue from it,
+ * the way `internal/session` does: an entry is resumable when the path down
+ * to it leaves no tool call unanswered.
+ */
+function resumableEntries(entries: Entry[]): { entry: Entry; resumable: boolean }[] {
+  const pending = new Map<string, string[]>();
+  return entries.map((entry) => {
+    const parent = pending.get(entry.parent_id ?? "") ?? [];
+    const message = entry.message;
+    let left = parent;
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      left = [...parent, ...message.tool_calls.map((c) => c.id)];
+    } else if (message.role === "tool" && message.tool_call_id !== undefined) {
+      left = parent.filter((id) => id !== message.tool_call_id);
+    }
+    pending.set(entry.id, left);
+    return { entry, resumable: left.length === 0 };
+  });
+}
+
+/**
+ * midTurn is the refusal the harness answers with when a head or a fork names
+ * an entry that leaves tool calls unanswered, and nothing when it does not.
+ */
+function midTurn(entries: Entry[], entryId: string): Reply | undefined {
+  const found = resumableEntries(entries).find(({ entry }) => entry.id === entryId);
+  if (found === undefined || found.resumable) return undefined;
+  return fail(
+    400,
+    "invalid",
+    `entry ${entryId} leaves tool calls unanswered, so a run cannot continue from it`,
+  );
 }
