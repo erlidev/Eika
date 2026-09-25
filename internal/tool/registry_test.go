@@ -42,6 +42,46 @@ func TestRegistry(t *testing.T) {
 	}
 }
 
+// standaloneStub is a stub that runs without a workspace.
+type standaloneStub struct{ stub }
+
+func (standaloneStub) Standalone() {}
+
+func TestNeedsWorkspace(t *testing.T) {
+	cases := []struct {
+		name string
+		tool tool.Tool
+		want bool
+	}{
+		{"a tool that says nothing needs one", stub{name: "a"}, true},
+		{"a standalone tool does not", standaloneStub{stub{name: "b"}}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := tool.NeedsWorkspace(c.tool); got != c.want {
+				t.Errorf("NeedsWorkspace = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestRegistryFilter(t *testing.T) {
+	r, err := tool.NewRegistry(stub{name: "b"}, standaloneStub{stub{name: "a"}}, stub{name: "c"})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	kept := r.Filter(func(t tool.Tool) bool { return !tool.NeedsWorkspace(t) })
+	if list := kept.List(); len(list) != 1 || list[0].Name() != "a" {
+		t.Errorf("Filter kept %v, want only a", list)
+	}
+	if _, ok := kept.Get("b"); ok {
+		t.Error("the filtered registry still finds b")
+	}
+	if len(r.List()) != 3 {
+		t.Error("Filter changed the registry it was called on")
+	}
+}
+
 func TestRegistryRejectsBadRegistration(t *testing.T) {
 	cases := []struct {
 		name string

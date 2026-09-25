@@ -1,7 +1,9 @@
 # session
 
 The session that is open: its streaming transcript, its composer, its run, and
-the two context panels it registers. This is the largest feature and the only
+the three context panels it registers. A chat is a session with no workspace
+and uses the same view; its header says it is a chat where a workspace
+session's names its workspace. This is the largest feature and the only
 one that holds client state of its own.
 
 ## Entry points
@@ -61,6 +63,13 @@ one that holds client state of its own.
   `useRewind` is the one a message's rewind calls: it lands the head on the
   entry before the message and then puts the text in the composer, in that
   order, so a refused move leaves nothing in the box.
+- `ToolsPanel.tsx` is a chat's third panel, in place of a workspace's files,
+  terminal, and changes: a switch for each tool that needs no workspace, and
+  the names of the ones a chat never has. `tools.ts` holds the pure parts —
+  which tools a chat can offer, the list a switch sends, and the one-line
+  summary of a description written for the model. The harness reports the
+  tools a session's next run offers, so the panel never works that out
+  itself.
 - `ToolCard.tsx` draws one tool call and delegates to the renderer registry.
 - `renderers/` is that registry: `registry.ts` has the type and the argument
   helpers, `renderers.tsx` maps a tool name to a renderer, `parts.tsx` holds
@@ -86,4 +95,5 @@ title, its outline, its run); the store holds what it is _saying_.
 `npm test -- transcript` folds the scripted event sequences from
 `docs/api/events.md` through the reducer, the meter's arithmetic included. A
 new event type or a new folding rule needs a case there. `npm test -- tree` covers the tree's rows, its
-keyboard movement, and `rewindTarget`.
+keyboard movement, and `rewindTarget`. `npm test -- session/tools` covers a
+chat's tool choice.

@@ -22,7 +22,7 @@ import type {
   Session,
   Workspace,
 } from "../../src/api/types.ts";
-import { entryKind, fixedNow, minutesAgo, pathOf, syncSystem } from "./world.ts";
+import { entryKind, fixedNow, minutesAgo, pathOf, sessionTools, syncSystem } from "./world.ts";
 import type { ReplyStep, World } from "./world.ts";
 
 /** mockToken is the bearer token the mock harness issues and accepts. */
@@ -454,6 +454,7 @@ export class MockHarness {
       return ok(w.settings);
     });
     on("GET", "/api/system", () => ok(w.system));
+    on("GET", "/api/tools", () => ok({ tools: w.tools }));
 
     // Search.
     const searchStatus = (): SearchStatus => {
@@ -677,7 +678,9 @@ export class MockHarness {
       const gone = new Set(w.workspaces.filter((x) => x.project_id === params[0]).map((x) => x.id));
       w.projects = w.projects.filter((p) => p.id !== params[0]);
       w.workspaces = w.workspaces.filter((x) => !gone.has(x.id));
-      w.sessions = w.sessions.filter((s) => !gone.has(s.workspace_id));
+      w.sessions = w.sessions.filter(
+        (s) => s.workspace_id === undefined || !gone.has(s.workspace_id),
+      );
       return { status: 204 };
     });
 
@@ -870,6 +873,12 @@ export class MockHarness {
     // Sessions.
     on("GET", "/api/sessions", ({ query }) => {
       const ws = query.get("workspace_id");
+      if (query.get("chats") === "true") {
+        if (ws) return fail(400, "invalid_request", "a chat has no workspace");
+        // Oldest first, as the harness lists them.
+        const chats = w.sessions.filter((s) => s.workspace_id === undefined);
+        return ok({ sessions: chats.toSorted((a, b) => a.created_at.localeCompare(b.created_at)) });
+      }
       if (!ws) return ok({ sessions: w.sessions });
       const listed = w.sessions.filter((s) => s.workspace_id === ws);
       if (query.get("descendants") !== "true") return ok({ sessions: listed });
@@ -889,13 +898,18 @@ export class MockHarness {
       return ok({ sessions: w.sessions.filter((s) => reached.has(s.id)) });
     });
     on("POST", "/api/sessions", ({ body }) => {
-      const ws = find(w.workspaces, str(body.workspace_id), "workspace");
-      if ("status" in ws) return ws;
+      const chat = body.chat === true;
+      if (chat && str(body.workspace_id) !== "") {
+        return fail(400, "invalid_request", "a chat has no workspace");
+      }
+      const ws = chat ? undefined : find(w.workspaces, str(body.workspace_id), "workspace");
+      if (ws !== undefined && "status" in ws) return ws;
       const row: Session = {
-        id: this.nextId("ses"),
-        workspace_id: ws.id,
-        title: str(body.title) || "New session",
+        id: this.nextId(chat ? "chat" : "ses"),
+        ...(ws ? { workspace_id: ws.id } : {}),
+        title: str(body.title) || (chat ? "New chat" : "New session"),
         kind: "user",
+        tools: sessionTools(w, chat),
         created_at: now(),
         updated_at: now(),
       };
@@ -958,10 +972,11 @@ export class MockHarness {
       const refused = midTurn(w.entries[source.id] ?? [], str(body.entry_id));
       if (refused) return refused;
       const row: Session = {
-        id: this.nextId("ses"),
-        workspace_id: source.workspace_id,
+        id: this.nextId(source.workspace_id === undefined ? "chat" : "ses"),
+        ...(source.workspace_id === undefined ? {} : { workspace_id: source.workspace_id }),
         title: str(body.title) || `${source.title} (fork)`,
         kind: "fork",
+        tools: [...source.tools],
         parent_session_id: source.id,
         head_entry_id: str(body.entry_id),
         created_at: now(),
@@ -970,6 +985,22 @@ export class MockHarness {
       w.sessions.unshift(row);
       w.entries[row.id] = [...(w.entries[source.id] ?? [])];
       return ok(row, 201);
+    });
+    on("PUT", "/api/sessions/{id}/tools", ({ params, body }) => {
+      const row = find(w.sessions, params[0], "session");
+      if ("status" in row) return row;
+      if (!Array.isArray(body.tools)) return fail(400, "invalid_request", "tools is required");
+      const names = [...new Set(body.tools.map((name) => str(name)))].sort();
+      for (const name of names) {
+        const known = w.tools.find((t) => t.name === name);
+        if (!known) return fail(400, "invalid_request", `there is no tool "${name}"`);
+        if (row.workspace_id === undefined && known.needs_workspace) {
+          return fail(400, "invalid_request", `${name} needs a workspace, and a chat has none`);
+        }
+      }
+      row.tools = names;
+      row.updated_at = now();
+      return ok(row);
     });
     on("GET", "/api/sessions/{id}/agents", () => ok({ agents: [] }));
 

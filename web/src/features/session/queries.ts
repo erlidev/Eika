@@ -11,10 +11,12 @@ import {
   getRunStatus,
   getSession,
   getSessionOutline,
+  listTools,
   postMessage,
   setSessionHead,
+  setSessionTools,
 } from "@/api/routes";
-import type { Entry, PostMessage, Run, Session, SessionOutline } from "@/api/types";
+import type { Entry, PostMessage, Run, Session, SessionOutline, Tool } from "@/api/types";
 import { useSessionStore } from "@/features/session/store";
 import { rewindTarget } from "@/features/session/tree";
 
@@ -137,5 +139,32 @@ export function useForkSession(
   return useMutation({
     mutationFn: ({ entryId, title }) => forkSession(sessionId, entryId, title),
     onSuccess: () => client.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+}
+
+/**
+ * useTools lists every tool a run can offer. The list is the harness's
+ * build, not something the user changes, so it is read once per page.
+ */
+export function useTools(): UseQueryResult<Tool[]> {
+  return useQuery({
+    queryKey: queryKeys.tools(),
+    queryFn: ({ signal }) => listTools(signal),
+    staleTime: Infinity,
+  });
+}
+
+/** useSetSessionTools chooses the tools the session's next run offers the model. */
+export function useSetSessionTools(sessionId: string): UseMutationResult<Session, Error, string[]> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (tools: string[]) => setSessionTools(sessionId, tools),
+    onSuccess: (session) => {
+      client.setQueryData<{ session: Session; head?: Entry }>(
+        queryKeys.session(sessionId),
+        (old) => (old === undefined ? old : { ...old, session }),
+      );
+      return client.invalidateQueries({ queryKey: ["sessions"] });
+    },
   });
 }

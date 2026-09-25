@@ -74,10 +74,13 @@ export function agentWorkspaces(sessions: Session[]): Set<string> {
   const hosting = new Set<string>();
   const kept = new Set<string>();
   for (const session of sessions) {
-    hosting.add(session.workspace_id);
+    // A chat is in no workspace, so it neither hides one nor keeps one.
+    const workspace = session.workspace_id;
+    if (workspace === undefined) continue;
+    hosting.add(workspace);
     const parent = session.parent_session_id;
     const reachable = parent !== undefined && parent !== "" && listed.has(parent);
-    if (session.kind === "user" || !reachable) kept.add(session.workspace_id);
+    if (session.kind === "user" || !reachable) kept.add(workspace);
   }
   return new Set([...hosting].filter((id) => !kept.has(id)));
 }

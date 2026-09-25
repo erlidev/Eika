@@ -1066,6 +1066,66 @@ func TestToolsWithoutAWorkspaceFailInsteadOfPanicking(t *testing.T) {
 	}
 }
 
+// standaloneTool is a callTool that runs without a workspace and records
+// whether it was handed an executor.
+type standaloneTool struct {
+	callTool
+	sawExecutor *bool
+}
+
+func (standaloneTool) Standalone() {}
+
+func (s standaloneTool) Call(ctx context.Context, c tool.CallContext, raw json.RawMessage) (tool.Result, error) {
+	*s.sawExecutor = c.Exec != nil
+	return s.callTool.Call(ctx, c, raw)
+}
+
+func TestAStandaloneToolRunsWithoutAWorkspace(t *testing.T) {
+	f := newFixture(t, []providertest.Step{
+		providertest.Calls("", providertest.Call("c1", "lookup", map[string]any{})),
+		providertest.Text("found it"),
+	})
+	sawExecutor := true
+	lookup := standaloneTool{
+		callTool:    callTool{name: "lookup", run: func(context.Context) string { return "the answer" }},
+		sawExecutor: &sawExecutor,
+	}
+	registry, err := tool.NewRegistry(lookup)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	chat := agent.New(f.provider, registry, agent.Options{
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RetryBackoff: time.Millisecond,
+	})
+	if err := chat.Run(context.Background(), agent.NewSession("chat-1", ""), "look it up"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	messages := f.provider.Requests()[1].Messages
+	result := messages[len(messages)-1]
+	if result.IsError || result.Content != "the answer" {
+		t.Errorf("tool message = %+v, want the tool's answer", result)
+	}
+	if sawExecutor {
+		t.Error("a standalone tool in a chat was handed an executor")
+	}
+}
+
+func TestAnAgentWithoutAWorkspaceIsToldItHasNone(t *testing.T) {
+	p := providertest.New(providertest.Text("ok"))
+	chat := agent.New(p, nil, agent.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err := chat.Run(context.Background(), agent.NewSession("chat-1", ""), "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	system := p.Requests()[0].System
+	if !strings.Contains(system, "no workspace") {
+		t.Errorf("system prompt = %q, want the chat rules", system)
+	}
+	if strings.Contains(system, "sandboxed workspace") {
+		t.Errorf("system prompt = %q, still describes a workspace", system)
+	}
+}
+
 func TestRunStreamsReasoningApartFromTheAnswer(t *testing.T) {
 	f := newFixture(t, []providertest.Step{providertest.Stream(
 		provider.Event{Kind: provider.KindReasoningDelta, ReasoningDelta: "weighing "},

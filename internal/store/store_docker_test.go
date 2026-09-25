@@ -236,6 +236,78 @@ func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
 	}
 }
 
+// A chat is a session with no workspace. It is listed apart from every
+// workspace's sessions, its fork is a chat too, and both keep the tools the
+// user chose.
+func TestChatsHaveNoWorkspaceAndKeepTheirTools(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+
+	project := newProject(t, st)
+	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+		ProjectID: project.ID, Name: "main", Branch: "main", State: "running",
+	})
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	if _, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID, Title: "work"}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	chat, err := st.CreateSession(ctx, store.Session{Title: "question"})
+	if err != nil {
+		t.Fatalf("create chat: %v", err)
+	}
+	if !chat.Chat() || chat.WorkspaceID != "" {
+		t.Errorf("chat = %+v, want no workspace", chat)
+	}
+	if chat.Tools != nil {
+		t.Errorf("new chat tools = %#v, want nil for every tool", chat.Tools)
+	}
+
+	if err := st.SetSessionTools(ctx, chat.ID, []string{"web_search"}); err != nil {
+		t.Fatalf("set tools: %v", err)
+	}
+	entry, err := st.AppendEntry(ctx, chat.ID, store.Entry{Kind: store.KindUser, Payload: json.RawMessage(`{"role":"user","content":"hi"}`)})
+	if err != nil {
+		t.Fatalf("append entry: %v", err)
+	}
+	fork, err := st.ForkSession(ctx, chat.ID, entry.ID, store.ForkOptions{})
+	if err != nil {
+		t.Fatalf("fork chat: %v", err)
+	}
+	if !fork.Chat() || len(fork.Tools) != 1 || fork.Tools[0] != "web_search" {
+		t.Errorf("fork = %+v, want a chat with web_search", fork)
+	}
+
+	chats, err := st.Chats(ctx)
+	if err != nil {
+		t.Fatalf("Chats: %v", err)
+	}
+	if len(chats) != 2 || chats[0].ID != chat.ID || chats[1].ID != fork.ID {
+		t.Fatalf("Chats = %+v, want the chat and its fork", chats)
+	}
+	if all, err := st.Sessions(ctx, "", false); err != nil || len(all) != 3 {
+		t.Errorf("every session = %d rows, %v; want 3", len(all), err)
+	}
+
+	// An empty list is no tools, which is not the same as every tool.
+	if err := st.SetSessionTools(ctx, chat.ID, []string{}); err != nil {
+		t.Fatalf("clear tools: %v", err)
+	}
+	if got, err := st.Session(ctx, chat.ID); err != nil || got.Tools == nil || len(got.Tools) != 0 {
+		t.Errorf("tools after clearing = %#v, %v; want empty, not nil", got.Tools, err)
+	}
+	if err := st.SetSessionTools(ctx, chat.ID, nil); err != nil {
+		t.Fatalf("restore tools: %v", err)
+	}
+	if got, err := st.Session(ctx, chat.ID); err != nil || got.Tools != nil {
+		t.Errorf("tools after restoring = %#v, %v; want nil", got.Tools, err)
+	}
+	if err := st.SetSessionTools(ctx, "missing", nil); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("SetSessionTools on a missing session = %v, want ErrNotFound", err)
+	}
+}
+
 func TestRunsSubagentsAndSettings(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()

@@ -4,17 +4,19 @@
  * collapse into drawers so the session still has a usable width.
  */
 
-import { PanelLeft, PanelRight, Settings, Terminal } from "lucide-react";
+import { MessageCircle, PanelLeft, PanelRight, Settings, Terminal } from "lucide-react";
 import { useState } from "react";
-import { useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 
 import { CommandPalette } from "@/app/CommandPalette";
 import { availablePanels } from "@/app/panels";
 import { Sidebar } from "@/app/Sidebar";
 import { ThemeToggle } from "@/app/ThemeToggle";
+import { ActionError } from "@/components/Notice";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
 import { SessionView, useSession } from "@/features/session";
+import { useCreateSession } from "@/features/sessions";
 import { SettingsDialog, useSettingsDialog } from "@/features/settings";
 import { usePersistedNumber, usePersistedString } from "@/lib/persisted";
 import { nextTabIndex } from "@/lib/tablist";
@@ -33,6 +35,7 @@ export function Workbench() {
   const sessionId = params.sessionId ?? "";
   const session = useSession(sessionId === "" ? undefined : sessionId);
   const workspaceId = session.data?.session.workspace_id ?? "";
+  const chat = session.data !== undefined && session.data.session.workspace_id === undefined;
 
   const [sidebarWidth, setSidebarWidth] = usePersistedNumber("eika.pane.sidebar", 260);
   const [panelWidth, setPanelWidth] = usePersistedNumber("eika.pane.panel", 340);
@@ -41,7 +44,7 @@ export function Workbench() {
   const [drawer, setDrawer] = useState<"sidebar" | "panel" | null>(null);
   const narrow = useNarrow(narrowWidth);
 
-  const tabs = availablePanels({ sessionId, workspaceId });
+  const tabs = availablePanels({ sessionId, workspaceId, chat });
   const panel = tabs.find((tab) => tab.id === activePanel) ?? tabs[0];
   // A wide editor or terminal is the point of dragging the pane out; the
   // width is remembered, and a scrolling panel shows it capped again.
@@ -111,16 +114,18 @@ export function Workbench() {
           panel?.fill === true ? "overflow-hidden" : "overflow-y-auto",
         )}
       >
-        {panel && <panel.Component sessionId={sessionId} workspaceId={workspaceId} />}
+        {panel && <panel.Component sessionId={sessionId} workspaceId={workspaceId} chat={chat} />}
       </div>
     </aside>
   );
 
   const centre =
     sessionId === "" ? (
-      <div className="text-muted-foreground flex flex-1 items-center justify-center p-8 text-sm">
-        Pick a session on the left, or create one in a workspace.
-      </div>
+      <NothingOpen
+        onOpened={() => {
+          setDrawer(null);
+        }}
+      />
     ) : (
       <SessionView sessionId={sessionId} />
     );
@@ -138,7 +143,7 @@ export function Workbench() {
               size="icon"
               variant="ghost"
               className="size-7"
-              aria-label="Show projects"
+              aria-label="Show projects and chats"
               aria-expanded={drawer === "sidebar"}
               onClick={() => {
                 setDrawer(drawer === "sidebar" ? null : "sidebar");
@@ -216,6 +221,42 @@ export function Workbench() {
       )}
 
       <SettingsDialog />
+    </div>
+  );
+}
+
+/**
+ * NothingOpen is the centre pane before a session is picked: where to find
+ * one, and the one action that needs no project, starting a chat.
+ */
+function NothingOpen({ onOpened }: { onOpened: () => void }) {
+  const create = useCreateSession();
+  const navigate = useNavigate();
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+      <p className="text-muted-foreground text-sm">
+        Pick a session or a chat on the left, or create a session in a workspace.
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={create.isPending}
+        onClick={() => {
+          create.mutate(
+            { chat: true, title: "New chat" },
+            {
+              onSuccess: (created) => {
+                onOpened();
+                void navigate(`/sessions/${created.id}`);
+              },
+            },
+          );
+        }}
+      >
+        <MessageCircle aria-hidden className="size-3.5" />
+        New chat
+      </Button>
+      {create.isError && <ActionError action="start a chat" error={create.error} />}
     </div>
   );
 }

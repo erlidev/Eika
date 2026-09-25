@@ -96,7 +96,7 @@ with `turn.end`, or with `run.error` if it failed.
 |---|---|---|
 | `run_id` | string | Identifies the turn. |
 | `session_id` | string | The session the turn runs in. |
-| `workspace_id` | string, optional | The workspace the session belongs to. |
+| `workspace_id` | string, optional | The workspace the session belongs to. Absent in a chat. |
 | `message` | string | The user message that started the turn. Empty when the turn was started by tools alone. |
 
 ### `message.delta`

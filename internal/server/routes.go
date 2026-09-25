@@ -78,6 +78,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/sessions/{id}/path", s.handleSessionPath)
 	api.HandleFunc("POST /api/sessions/{id}/head", s.handleSetSessionHead)
 	api.HandleFunc("POST /api/sessions/{id}/fork", s.handleForkSession)
+	api.HandleFunc("PUT /api/sessions/{id}/tools", s.handleSetSessionTools)
 	api.HandleFunc("GET /api/sessions/{id}/agents", s.handleSessionAgents)
 	api.HandleFunc("POST /api/subagents/{id}/abort", s.handleAbortSubagent)
 
@@ -85,6 +86,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/sessions/{id}/run", s.handleSessionRun)
 	api.HandleFunc("POST /api/runs/{id}/abort", s.handleAbortRun)
 	api.HandleFunc("POST /api/questions/{id}/answer", s.handleAnswerQuestion)
+	api.HandleFunc("GET /api/tools", s.handleListTools)
 
 	api.HandleFunc("GET /api/providers", s.handleListProviders)
 	api.HandleFunc("POST /api/providers", s.handleCreateProvider)

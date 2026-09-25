@@ -22,9 +22,11 @@ const (
 	SessionAgent SessionKind = "agent"
 )
 
-// Session is one tree of entries inside a workspace.
+// Session is one tree of entries, inside a workspace or, for a chat, in none.
 type Session struct {
-	ID          string
+	ID string
+	// WorkspaceID is the workspace the session's runs act in, empty for a
+	// chat.
 	WorkspaceID string
 	Title       string
 	// Kind is who opened the session. An empty kind on input is SessionUser.
@@ -35,13 +37,21 @@ type Session struct {
 	// ParentSessionID is the session this one was forked from, empty for a
 	// session the user started.
 	ParentSessionID string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// Tools names the tools the session's runs may offer the model. Nil is
+	// every tool the session can run; an empty, non-nil slice is none.
+	Tools     []string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
+
+// Chat reports whether the session is a chat: one with no workspace, whose
+// runs offer the model only the tools that need none.
+func (s Session) Chat() bool { return s.WorkspaceID == "" }
 
 // sessionColumns is the column list every session query selects, in the order
 // scanSession reads them.
-const sessionColumns = `id, workspace_id, title, kind, head_entry_id, parent_session_id, created_at, updated_at`
+const sessionColumns = `id, workspace_id, title, kind, head_entry_id, parent_session_id, tools,
+	created_at, updated_at`
 
 // CreateSession inserts sess and returns it with the fields the database
 // assigned. An empty ID gets a fresh one.
@@ -61,11 +71,11 @@ func createSession(ctx context.Context, q querier, sess Session) (Session, error
 	if sess.Kind == "" {
 		sess.Kind = SessionUser
 	}
-	const insert = `INSERT INTO sessions (id, workspace_id, title, kind, head_entry_id, parent_session_id)
-		VALUES ($1, $2, $3, $4, $5, $6)
+	const insert = `INSERT INTO sessions (id, workspace_id, title, kind, head_entry_id, parent_session_id, tools)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING ` + sessionColumns
-	row := q.QueryRow(ctx, insert, sess.ID, sess.WorkspaceID, sess.Title, sess.Kind,
-		nullable(sess.HeadEntryID), nullable(sess.ParentSessionID))
+	row := q.QueryRow(ctx, insert, sess.ID, nullable(sess.WorkspaceID), sess.Title, sess.Kind,
+		nullable(sess.HeadEntryID), nullable(sess.ParentSessionID), sess.Tools)
 	return scanSession(row)
 }
 
@@ -80,7 +90,7 @@ func (s *Store) Session(ctx context.Context, id string) (Session, error) {
 }
 
 // Sessions returns the sessions of one workspace, oldest first. An empty
-// workspaceID returns every session.
+// workspaceID returns every session, chats included.
 //
 // withDescendants also returns the forks and child agents those sessions led
 // to, wherever they live. A fork with a workspace and a subagent both run in
@@ -101,7 +111,7 @@ func (s *Store) Sessions(ctx context.Context, workspaceID string, withDescendant
 				SELECT ` + sessionColumns + ` FROM sessions WHERE workspace_id = $1
 				UNION
 				SELECT s.id, s.workspace_id, s.title, s.kind, s.head_entry_id,
-					s.parent_session_id, s.created_at, s.updated_at
+					s.parent_session_id, s.tools, s.created_at, s.updated_at
 				FROM sessions s JOIN reachable r ON s.parent_session_id = r.id
 			)
 			SELECT ` + sessionColumns + ` FROM reachable ORDER BY created_at, id`
@@ -121,17 +131,34 @@ func (s *Store) Sessions(ctx context.Context, workspaceID string, withDescendant
 	if err != nil {
 		return nil, wrap("list sessions", err)
 	}
+	return collectSessions("list sessions", rows)
+}
+
+// Chats returns every session with no workspace, oldest first. A fork of a
+// chat is a chat, so the list holds the forks as well; the caller hangs each
+// under its ParentSessionID.
+func (s *Store) Chats(ctx context.Context) ([]Session, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+sessionColumns+` FROM sessions
+		WHERE workspace_id IS NULL ORDER BY created_at, id`)
+	if err != nil {
+		return nil, wrap("list chats", err)
+	}
+	return collectSessions("list chats", rows)
+}
+
+// collectSessions reads every row of a session query and closes it.
+func collectSessions(op string, rows pgx.Rows) ([]Session, error) {
 	defer rows.Close()
 	var out []Session
 	for rows.Next() {
 		sess, err := scanSession(rows)
 		if err != nil {
-			return nil, wrap("list sessions", err)
+			return nil, wrap(op, err)
 		}
 		out = append(out, sess)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, wrap("list sessions", err)
+		return nil, wrap(op, err)
 	}
 	return out, nil
 }
@@ -144,6 +171,19 @@ func (s *Store) SetSessionTitle(ctx context.Context, id, title string) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return wrap("set session title "+id, pgx.ErrNoRows)
+	}
+	return nil
+}
+
+// SetSessionTools chooses the tools a session's runs may offer the model. Nil
+// restores every tool the session can run; an empty, non-nil slice is none.
+func (s *Store) SetSessionTools(ctx context.Context, id string, tools []string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE sessions SET tools = $2, updated_at = now() WHERE id = $1`, id, tools)
+	if err != nil {
+		return wrap("set session tools "+id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return wrap("set session tools "+id, pgx.ErrNoRows)
 	}
 	return nil
 }
@@ -163,15 +203,17 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 // scanSession reads one session row.
 func scanSession(row pgx.Row) (Session, error) {
 	var (
-		sess   Session
-		head   *string
-		parent *string
+		sess      Session
+		workspace *string
+		head      *string
+		parent    *string
 	)
-	err := row.Scan(&sess.ID, &sess.WorkspaceID, &sess.Title, &sess.Kind, &head, &parent,
+	err := row.Scan(&sess.ID, &workspace, &sess.Title, &sess.Kind, &head, &parent, &sess.Tools,
 		&sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
 		return Session{}, err
 	}
+	sess.WorkspaceID = text(workspace)
 	sess.HeadEntryID = text(head)
 	sess.ParentSessionID = text(parent)
 	sess.CreatedAt = sess.CreatedAt.UTC()

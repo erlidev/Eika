@@ -18,6 +18,7 @@ import type {
   Session,
   SettingsState,
   SystemStatus,
+  Tool,
   Workspace,
   WorkspaceDiff,
 } from "../../src/api/types.ts";
@@ -71,6 +72,8 @@ export type World = {
    */
   files: Record<string, Record<string, string>>;
   sessions: Session[];
+  /** tools is GET /api/tools: every tool a run can offer, sorted by name. */
+  tools: Tool[];
   /** entries holds each session's tree, keyed by session id, in insertion order. */
   entries: Record<string, Entry[]>;
   runs: Record<string, Run>;
@@ -134,6 +137,7 @@ export function emptyWorld(): World {
     diffs: {},
     files: {},
     sessions: [],
+    tools: toolCatalog(),
     entries: {},
     runs: {},
     activeRuns: {},
@@ -195,6 +199,46 @@ function searchStatus(): SearchStatus {
     cached_pages: 37,
     searxng_url: "http://searxng:8080",
   };
+}
+
+/** toolCatalog is the harness's built-in tools, as GET /api/tools lists them. */
+function toolCatalog(): Tool[] {
+  const tool = (name: string, description: string, needsWorkspace = true): Tool => ({
+    name,
+    description,
+    needs_workspace: needsWorkspace,
+  });
+  return [
+    tool("ask_user", "Ask the user a question and wait for the answer.", false),
+    tool("bash", "Run a shell command in the workspace."),
+    tool("edit", "Replace one exact string in a file."),
+    tool("find", "Find files whose path matches a glob."),
+    tool("grep", "Search file contents with a regular expression."),
+    tool("list_agents", "List the child agents this session spawned."),
+    tool("ls", "List a directory."),
+    tool("read", "Read a text file."),
+    tool("spawn_agent", "Start a child agent in a workspace of its own."),
+    tool("wait_agents", "Wait for child agents to finish."),
+    tool(
+      "web_fetch",
+      "Fetch a web page or file by URL and return its content as Markdown.\nUse it to read a page you already have a URL for.",
+      false,
+    ),
+    tool(
+      "web_search",
+      "Search the web, Wikipedia, arXiv or GitHub. Returns titles, URLs and snippets.",
+      false,
+    ),
+    tool("write", "Write a file, replacing what it held."),
+  ];
+}
+
+/**
+ * sessionTools is the tool list a new session reports: every tool, or for a
+ * chat every tool that needs no workspace, as the harness narrows it.
+ */
+export function sessionTools(world: World, chat: boolean): string[] {
+  return world.tools.filter((t) => !chat || !t.needs_workspace).map((t) => t.name);
 }
 
 /** WorldBuilder adds rows with consistent ids and timestamps. */
@@ -279,7 +323,23 @@ export class WorldBuilder {
       id: this.id("ses"),
       workspace_id: workspace.id,
       kind: "user",
+      tools: sessionTools(this.world, false),
       created_at: minutesAgo(120),
+      updated_at: minutesAgo(5),
+      ...input,
+    };
+    this.world.sessions.unshift(row);
+    this.world.entries[row.id] ??= [];
+    return row;
+  }
+
+  /** chat adds a session with no workspace, offering the tools that need none. */
+  chat(input: Partial<Session> & { title: string }): Session {
+    const row: Session = {
+      id: this.id("chat"),
+      kind: "user",
+      tools: sessionTools(this.world, true),
+      created_at: minutesAgo(90),
       updated_at: minutesAgo(5),
       ...input,
     };

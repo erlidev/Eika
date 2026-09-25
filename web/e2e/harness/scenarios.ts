@@ -193,6 +193,53 @@ function workbench(): WorldBuilder {
   return b;
 }
 
+/**
+ * chats adds two chats and a fork of one to a workbench: sessions with no
+ * workspace, listed apart from the projects. The main one is `chat-jitter`.
+ */
+function chats(): WorldBuilder {
+  const b = workbench();
+  b.chat({
+    id: "chat-postgres",
+    title: "Postgres advisory locks",
+    created_at: "2026-03-13T09:00:00.000Z",
+  });
+  const main = b.chat({ id: "chat-jitter", title: "What is full jitter?" });
+  b.conversation(main, [
+    { role: "user", content: "What is full jitter, and why do retry clients use it?" },
+    {
+      role: "assistant",
+      tool_calls: [
+        {
+          id: "w1",
+          name: "web_search",
+          arguments: { query: "full jitter exponential backoff", count: 3 },
+        },
+      ],
+    },
+    {
+      role: "tool",
+      tool_call_id: "w1",
+      content:
+        "1. Exponential Backoff And Jitter\n   https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/\n   Adding jitter spreads retries out.",
+    },
+    {
+      role: "assistant",
+      content:
+        "Full jitter picks each delay at random between zero and the capped exponential backoff:\n\n```text\nsleep = random_between(0, min(cap, base * 2 ** attempt))\n```\n\nClients that failed together then retry at different times instead of failing together again ([AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)).",
+    },
+  ]);
+  b.chat({
+    id: "chat-jitter-fork",
+    title: "What is full jitter? (fork)",
+    kind: "fork",
+    parent_session_id: main.id,
+    tools: ["web_search"],
+    created_at: "2026-03-14T14:30:00.000Z",
+  });
+  return b;
+}
+
 export const scenarios = {
   "setup-new": {
     description: "A brand-new harness: no password yet, so the guided setup opens.",
@@ -476,6 +523,48 @@ export const scenarios = {
         },
         { say: "Full jitter it is: the cap stays at 30s." },
       ]);
+      return b.world;
+    },
+  },
+  chat: {
+    description:
+      "Like workbench with two chats and a fork in the sidebar's Chats section; chat-jitter is open, and the next message plays a reply that searches the web and answers.",
+    path: "/sessions/chat-jitter",
+    build: () => {
+      const b = chats();
+      b.world.replies.push([
+        {
+          tool: "web_search",
+          args: { query: "decorrelated jitter", count: 3 },
+          result: "1. Exponential Backoff And Jitter",
+          details: {
+            source: "web",
+            query: "decorrelated jitter",
+            count: 3,
+            providers: ["searxng"],
+            results: [
+              {
+                title: "Exponential Backoff And Jitter",
+                url: "https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/",
+                description: "Decorrelated jitter grows each delay from the one before it.",
+              },
+            ],
+            ms: 380,
+          },
+        },
+        {
+          say: "Decorrelated jitter grows each delay from the last one rather than from the attempt number.",
+        },
+      ]);
+      return b.world;
+    },
+  },
+  "chat-empty": {
+    description: "A chat with no messages yet, beside the workbench's projects.",
+    path: "/sessions/chat-new",
+    build: () => {
+      const b = workbench();
+      b.chat({ id: "chat-new", title: "New chat" });
       return b.world;
     },
   },

@@ -48,6 +48,10 @@ type webSearchArgs struct {
 // Name is the identifier the model calls the tool by.
 func (webSearchTool) Name() string { return "web_search" }
 
+// Standalone marks web_search as a tool a chat may offer: a search is a
+// network call the harness makes.
+func (webSearchTool) Standalone() {}
+
 // Description tells the model what the tool does. Every word of it is paid
 // for on every request, so it says only what the model needs before its
 // first call; the rest arrives in the results when it is useful.
@@ -113,6 +117,11 @@ type webFetchArgs struct {
 // Name is the identifier the model calls the tool by.
 func (webFetchTool) Name() string { return "web_fetch" }
 
+// Standalone marks web_fetch as a tool a chat may offer. Reading a page is a
+// network call the harness makes; only a filter needs the workspace, and
+// Call refuses one when there is none.
+func (webFetchTool) Standalone() {}
+
 // Description tells the model what the tool does, and the ladder for reading
 // a page too long to take whole.
 func (webFetchTool) Description() string {
@@ -156,6 +165,10 @@ func (t webFetchTool) Call(ctx context.Context, c tool.CallContext, raw json.Raw
 	}
 	if t.pages == nil {
 		return tool.Errorf("web_fetch: this harness has no fetch configured"), nil
+	}
+	if args.Filter != "" && c.Exec == nil {
+		return tool.Errorf("web_fetch: a filter runs in a workspace sandbox, and this chat has none; " +
+			"fetch the page or one section of it instead"), nil
 	}
 	req := fetch.Request{URL: args.URL, Section: args.Section, Filter: args.Filter, Format: args.Format}
 	out, err := t.pages.Read(ctx, req, sandboxFilter(c.Exec))
@@ -209,6 +222,6 @@ func sandboxFilter(exec executor.Executor) fetch.FilterFunc {
 }
 
 var (
-	_ tool.Tool = webSearchTool{}
-	_ tool.Tool = webFetchTool{}
+	_ tool.Standalone = webSearchTool{}
+	_ tool.Standalone = webFetchTool{}
 )

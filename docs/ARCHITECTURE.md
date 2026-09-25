@@ -88,7 +88,10 @@ The pieces:
   reads them into `provider.Timings` on the usage event.
 - **tool** holds the `Tool` interface and a registry. A call receives a
   `CallContext` carrying the executor, the event emitter, and the session and
-  run identifiers. `tool/builtin` implements `read`, `write`, `edit`, `bash`,
+  run identifiers. A tool that also implements `tool.Standalone` runs without
+  a workspace, with a nil executor; every other tool needs one, and
+  `Registry.Filter` narrows the shared registry to what one run may offer.
+  `tool/builtin` implements `read`, `write`, `edit`, `bash`,
   `grep`, `find`, and `ls` with Pi's semantics, and keeps every output bound in
   `limits.go`. `ask_user` is the one tool that blocks on a human rather than on
   the workspace: it registers a question with the `Questions` broker, emits
@@ -150,7 +153,7 @@ a container, and a URL.
 | `schema_migrations` | version, applied_at | Which embedded migrations this database carries |
 | `projects` | id, name (unique), kind (remote/local), remote_url, remote_username, remote_password (sealed), host_path, default_branch, created_at | A git repository Eika knows and a private remote's credentials |
 | `workspaces` | id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id, created_at, updated_at | The record of one sandbox container; `state` mirrors `workspace.State` |
-| `sessions` | id, workspace_id, title, kind (user/fork/agent), head_entry_id, parent_session_id, created_at, updated_at | One session tree, who opened it, and the head a run continues from |
+| `sessions` | id, workspace_id (NULL for a chat), title, kind (user/fork/agent), head_entry_id, parent_session_id, tools (NULL for every tool), created_at, updated_at | One session tree, who opened it, the head a run continues from, and the tools its runs may offer |
 | `session_entries` | id, session_id, parent_id, seq, kind, payload (jsonb), commit_sha, created_at | One node of a session tree |
 | `runs` | id, session_id, state, started_at, finished_at, error | One execution of the agent loop |
 | `subagents` | id, parent_session_id, child_session_id, child_workspace_id, state, result, created_at, finished_at | One child agent and what it reported |
@@ -163,7 +166,8 @@ a container, and a URL.
 | `search_usage` | name (primary), day, day_used, month, month_used, cooldown_until, fail_streak, updated_at | One search quota bucket's counters and cooldown, so quotas survive a restart |
 
 Everything cascades from `projects`: deleting a project deletes its
-workspaces, their sessions, and their entries. `sessions.head_entry_id` has no
+workspaces, their sessions, and their entries. A chat has no workspace, so it
+hangs off nothing and is deleted on its own. `sessions.head_entry_id` has no
 foreign key, because `session_entries` already references `sessions` and a key
 in the other direction would be a cycle; the guarded `UPDATE` in `SetSessionHead`
 sets a head only when the entry is one of the session's own. Every foreign key
@@ -240,6 +244,40 @@ it moves a head or clones a fork's workspace. A fork is written with kind
 descendants follows `parent_session_id` recursively, so the sidebar can hang
 both under the session they came from even when they run in a workspace of
 their own.
+
+## Chats
+
+A chat is a session with no workspace: `sessions.workspace_id` is NULL. It is
+the same session tree, run manager, event stream, and session view as any
+other session. What it lacks is everything that reaches a sandbox, and each
+piece that would reach one checks for it:
+
+```
+POST /api/sessions {"chat": true}  ->  sessions row, workspace_id NULL
+POST /api/sessions/{id}/messages
+   |
+   v
+runs.begin
+   +-- no executorFor, no commit function     (nothing to act in or record)
+   +-- sessionTools(sess)                     registry every run shares
+   |      drop tools that NeedsWorkspace        ask_user, web_search, web_fetch
+   |      keep the ones sessions.tools names    left for a chat
+   +-- agent.New(provider, narrowed, Options{Executor: nil})
+          system prompt: the chat rules, no context files
+          a standalone tool runs with a nil executor
+          any other call is refused as an unknown tool
+```
+
+The model is never told about a tool it may not use, and the refusal in the
+agent loop is the second line: a model that calls one anyway gets an error
+result, not a sandbox. web_fetch reads pages in a chat but refuses a filter,
+because the model's JavaScript runs only in a sandbox. A chat's fork is a
+chat and keeps its tools; a fork with a workspace is refused.
+
+`sessions.tools` is the user's choice for any session, NULL until one is
+made. The API reports the effective list, what the next run will offer, so
+the client shows it without knowing the rule, and `GET /api/tools` says which
+tools need a workspace.
 
 ## Server, run manager, event bus
 
@@ -878,6 +916,8 @@ The shell is three panes.
 
 `app/Sidebar.tsx` is the only place that composes the project, workspace, and
 session features, which is why it lives in `app/` rather than in one of them.
+Below the projects it lists the chats in a section of their own, newest first,
+each with its forks nested under it.
 `app/Workbench.tsx` holds the two dividers; `components/ResizableSplit` is a
 pointer-events handler over a `role="separator"` element, so a pane is resized
 by dragging or by an arrow key and the width is remembered in localStorage
@@ -887,7 +927,12 @@ looking at and one worth aiming at. Below 1024px the side panes become drawers.
 
 `app/panels.tsx` is the panel registry. The right pane's tab strip is that
 array filtered by what is open, so phases 6 and 8 add a panel by writing one
-component and one entry. Phase 5 registers the session tree and the run.
+component and one entry. Phase 5 registers the session tree and the run. A
+workspace session adds the files, the terminal, and the changes; a chat has
+none of those and shows its Tools panel instead, the switches for the tools
+its runs may offer. The session header says which of the two is open: a
+workspace session names its workspace, branch, and state, and a chat carries a
+"Chat · no workspace" badge.
 
 ### Two kinds of state
 

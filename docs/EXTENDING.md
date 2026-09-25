@@ -95,6 +95,25 @@ while it runs reports it with `c.Output(ctx, chunk)`, which becomes a
 Put every bound a tool applies in `internal/tool/builtin/limits.go`, so that one
 file answers "how much can a tool return".
 
+A tool that needs no workspace, because it only makes a network call or asks
+the user something, can also be offered in a chat. Say so by implementing
+`tool.Standalone`; its `CallContext.Exec` is then nil in a chat, and the tool
+works without it or answers the model with what it cannot do there. This is
+web_search's, in `internal/tool/builtin/web.go`:
+
+```go
+// Standalone marks web_search as a tool a chat may offer: a search is a
+// network call the harness makes.
+func (webSearchTool) Standalone() {}
+
+var _ tool.Standalone = webSearchTool{}
+```
+
+A tool that says nothing needs a workspace and never reaches a chat. Add it to
+the list in `TestOnlyToolsThatNeedNoWorkspaceAreStandalone`, which is what
+keeps a file or command tool from being marked by mistake. The chat's Tools
+panel lists it with a switch as soon as it is registered.
+
 ## Adding a provider
 
 Implement `provider.Provider` in `internal/provider/<name>/` and register it in
@@ -529,7 +548,8 @@ panel is a component plus one entry in `web/src/app/panels.tsx`; nothing else
 in the shell changes.
 
 Write the component in the feature that owns its data. A panel receives the
-open session and its workspace, both empty strings when nothing is open:
+open session and its workspace, both empty strings when nothing is open, and
+whether the session is a chat, which has no workspace:
 
 ```tsx
 // web/src/features/workspaces/SandboxPanel.tsx

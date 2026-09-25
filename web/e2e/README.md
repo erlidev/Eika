@@ -102,7 +102,9 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 
 `harness/scenarios.ts` names the starting states. The workbench ones share
 fixed ids: session `ses-backoff` in workspace `ws-retries` of project
-`proj-api`. The `agent-*` scenarios queue a scripted reply for the next
+`proj-api`. `chat` adds the sidebar's Chats section and opens chat
+`chat-jitter`, a session with no workspace; `chat-empty` opens one with no
+messages. The `agent-*` scenarios queue a scripted reply for the next
 message: tool calls with streamed output, reasoning streamed before the
 answer, a question with options, a provider failure, or a run that never
 ends. Add a scenario when a screen

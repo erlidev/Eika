@@ -13,6 +13,7 @@ import type {
   CreateModel,
   CreateProject,
   CreateProvider,
+  CreateSession,
   CreateWorkspace,
   Entry,
   FileContent,
@@ -22,11 +23,11 @@ import type {
   Models,
   PostMessage,
   ProbeProvider,
-  PushRequest,
-  PushResult,
   Project,
   Provider,
   Providers,
+  PushRequest,
+  PushResult,
   Run,
   RunStatus,
   SearchKey,
@@ -42,6 +43,7 @@ import type {
   SystemStatus,
   TestModel,
   TestModelResult,
+  Tool,
   UpdateModel,
   UpdateProject,
   UpdateProvider,
@@ -188,9 +190,32 @@ export async function listSessions(
   return body.sessions;
 }
 
-/** createSession opens a session in a workspace. */
-export function createSession(input: { workspace_id: string; title: string }): Promise<Session> {
+/** listChats lists the sessions with no workspace, forks of chats included. */
+export async function listChats(signal?: AbortSignal): Promise<Session[]> {
+  const body = await request<{ sessions: Session[] }>("/api/sessions", {
+    query: { chats: "true" },
+    signal,
+  });
+  return body.sessions;
+}
+
+/** createSession opens a session in a workspace, or a chat in none. */
+export function createSession(input: CreateSession): Promise<Session> {
   return request<Session>("/api/sessions", { method: "POST", body: input });
+}
+
+/** setSessionTools chooses the tools the session's next run offers the model. */
+export function setSessionTools(id: string, tools: string[]): Promise<Session> {
+  return request<Session>(`/api/sessions/${encodeURIComponent(id)}/tools`, {
+    method: "PUT",
+    body: { tools },
+  });
+}
+
+/** listTools lists every tool a run can offer, with whether it needs a workspace. */
+export async function listTools(signal?: AbortSignal): Promise<Tool[]> {
+  const body = await request<{ tools: Tool[] }>("/api/tools", { signal });
+  return body.tools;
 }
 
 /** getSession reads a session with the entry its head points at. */

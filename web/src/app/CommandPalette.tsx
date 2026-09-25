@@ -1,6 +1,7 @@
 /**
- * Cmd/Ctrl+K. It switches sessions, opens a new one in the workspace that is
- * open, toggles the theme, and opens the settings. It reads the lists it
+ * Cmd/Ctrl+K. It switches sessions and chats, opens a new session in the
+ * workspace that is open or a new chat, toggles the theme, and opens the
+ * settings. It reads the lists it
  * offers from the same queries the sidebar uses, so it needs no state.
  */
 
@@ -20,7 +21,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { useSession } from "@/features/session";
-import { useCreateSession, useSessions } from "@/features/sessions";
+import { useChats, useCreateSession, useSessions } from "@/features/sessions";
 import { useWorkspaces } from "@/features/workspaces";
 
 export type CommandPaletteProps = {
@@ -35,7 +36,11 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
   const session = useSession(sessionId === "" ? undefined : sessionId);
   const workspaceId = session.data?.session.workspace_id;
   const workspaces = useWorkspaces();
+  // With no workspace open this lists every session, chats included; the
+  // chats have a group of their own, so they are left out of this one.
   const sessions = useSessions(workspaceId, true);
+  const workspaceSessions = (sessions.data ?? []).filter((s) => s.workspace_id !== undefined);
+  const chats = useChats();
   const createSession = useCreateSession();
   const navigate = useNavigate();
 
@@ -83,7 +88,7 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
         open={open}
         onOpenChange={setOpen}
         title="Commands"
-        description="Switch session, create one, or change the theme."
+        description="Switch session or chat, create one, or change the theme."
       >
         {/*
           This build's CommandDialog renders the dialog alone; cmdk's own
@@ -112,6 +117,18 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
               <CommandItem
                 onSelect={() => {
                   run(() => {
+                    createSession.mutate(
+                      { chat: true, title: "New chat" },
+                      { onSuccess: (created) => void navigate(`/sessions/${created.id}`) },
+                    );
+                  });
+                }}
+              >
+                New chat
+              </CommandItem>
+              <CommandItem
+                onSelect={() => {
+                  run(() => {
                     setTheme(nextTheme(getTheme()));
                   });
                 }}
@@ -132,7 +149,7 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
                 kind is spelled out, because the palette is a flat list and
                 the sidebar's nesting is what says it there. */}
             <CommandGroup heading="Sessions">
-              {(sessions.data ?? []).map((entry) => (
+              {workspaceSessions.map((entry) => (
                 <CommandItem
                   key={entry.id}
                   value={`session ${entry.kind} ${entry.title} ${entry.id}`}
@@ -146,6 +163,21 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
                       {entry.kind}
                     </span>
                   )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+
+            <CommandGroup heading="Chats">
+              {(chats.data ?? []).map((entry) => (
+                <CommandItem
+                  key={entry.id}
+                  value={`chat ${entry.title} ${entry.id}`}
+                  onSelect={() => {
+                    run(() => void navigate(`/sessions/${entry.id}`));
+                  }}
+                >
+                  {entry.title}
+                  <span className="text-muted-foreground ml-auto font-mono text-xs">chat</span>
                 </CommandItem>
               ))}
             </CommandGroup>

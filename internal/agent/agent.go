@@ -58,7 +58,9 @@ type Options struct {
 	// each attempt.
 	RetryBackoff time.Duration
 	// Executor is what tools act through. A nil executor means the agent has
-	// no workspace: tools that need one fail and no context files are read.
+	// no workspace, as in a chat: tools that need one fail, standalone tools
+	// run with a nil executor, no context files are read, and the system
+	// prompt says there is no workspace.
 	Executor executor.Executor
 	// Emitter receives the run's events. Nil drops them.
 	Emitter event.Emitter
@@ -594,7 +596,7 @@ func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provid
 	if !ok {
 		return tool.Errorf("unknown tool %q", c.Name), nil
 	}
-	if a.opts.Executor == nil {
+	if a.opts.Executor == nil && tool.NeedsWorkspace(t) {
 		return tool.Errorf("this session has no workspace, so %s cannot run", c.Name), nil
 	}
 	return t.Call(ctx, tool.CallContext{

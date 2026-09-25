@@ -126,6 +126,10 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Workspace edits reuse `workspace.state` | A file saved, a commit, or a push through the API publishes `workspace.state` with the unchanged state instead of a new event type: the payload is the same, and a client refreshes files and changes on either |
 | A cut-off response is kept, not discarded | A `length` or `content_filter` stop means the endpoint ended the response early. What it produced is stored and the turn ends on it, rather than the run failing and rolling back: the user watched that text stream, and a turn rolled back takes the user's own message with it, so the next call shows the model a history in which it never answered and it apologises for a turn it did take. The response's tool calls are dropped — one cut off partway through its arguments must not run, and one left without a result makes the next request malformed — and `turn.end` carries the stop reason so the UI says the answer was cut off |
 | Upstream push is from the hub | "Push upstream" pushes the workspace to its hub branch, then the hub pushes that branch to the project's remote with the harness's sealed credentials, so no remote credential enters a sandbox. A pull request is a compare link the UI builds from `remote_url`; there is no forge API |
+| A chat is a session with no workspace | `sessions.workspace_id` is nullable, and a session without one is a chat. It is the same session tree, run manager, transcript, and event protocol as any other session, so a chat needs no second loop, store, or view; what it lacks is everything that reaches a sandbox, and its system prompt says so. A chat is created on purpose (`chat: true`), never by leaving a workspace out, and a fork of a chat is a chat. A workspace's sessions cascade with it, so deleting a workspace never turns them into chats |
+| A tool says it runs without a workspace | `tool.Standalone` is an optional marker interface, and `tool.NeedsWorkspace` is true for every tool that does not implement it, so a new tool stays out of chats until its author says it belongs there. `ask_user`, `web_search`, and `web_fetch` are standalone. web_fetch refuses a filter in a chat, because the model's JavaScript runs only in a sandbox. The agent refuses a workspace tool when it has no executor, and a chat's run is built from a registry that does not hold one, so the model is never offered one |
+| A session's tools are a column | `sessions.tools` is NULL for every tool the session can run, or the names the user chose. A run filters the shared registry by it, so the choice is enforced where the model's tool list is built rather than in the UI, and the API reports the effective list so the client never re-derives the rule. Only a chat offers the choice in the UI; the column and `PUT /api/sessions/{id}/tools` apply to any session |
+| Chats are apart in the UI | The sidebar lists chats in a section of their own below the projects, a chat's header says it is a chat with no workspace where a workspace session's names its workspace, and a chat's context pane has a Tools panel in place of Files, Terminal, and Changes. The transcript, composer, status bar, and tree are the session view as it is, so a chat reads as the same tool |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -147,6 +151,9 @@ Workspace      A sandbox container + volume holding a clone of a Project on a
                creating -> running -> stopped -> archived.
 Session        A tree of entries (user, assistant, tool call, tool result,
                system events) inside one workspace. Has a head pointer.
+Chat           A session with no workspace. Its runs get only the tools that
+               need none (web search, fetch, questions), narrowed to the ones
+               the user turned on.
 Agent run      One execution of the agent loop on a session from its head.
 Subagent       A child agent run in its own Workspace (cloned from the parent's
                workspace at its current commit, on a child branch), with its
@@ -420,4 +427,7 @@ parallel.
 - [x] Session branching: resumable-only fork and head points, rewind from a
       user message in the transcript, and forks and child agents nested under
       the session they came from
+- [x] Chat mode: sessions with no workspace, the standalone tools they may
+      run, a per-session tool choice, and a chat section and Tools panel in
+      the UI
 - [ ] Phase 9: Hardening and docs

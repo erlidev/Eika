@@ -24,8 +24,28 @@ type Tool interface {
 	Call(ctx context.Context, c CallContext, args json.RawMessage) (Result, error)
 }
 
+// Standalone is implemented by a tool that runs without a workspace, and so
+// may be offered in a chat. Its CallContext.Exec is nil there: the tool works
+// without it or answers the model with what it cannot do.
+//
+// A tool that does not implement it needs a workspace, which keeps a new tool
+// out of chats until its author says it belongs there.
+type Standalone interface {
+	Tool
+	// Standalone marks the tool. It is never called.
+	Standalone()
+}
+
+// NeedsWorkspace reports whether t can run only in a session with a
+// workspace.
+func NeedsWorkspace(t Tool) bool {
+	_, standalone := t.(Standalone)
+	return !standalone
+}
+
 // CallContext is everything one tool call may use. Exec is the only way to
-// reach files and processes; Emit streams partial output to watching clients.
+// reach files and processes, and is nil in a session with no workspace; Emit
+// streams partial output to watching clients.
 type CallContext struct {
 	Exec        executor.Executor
 	Emit        event.Emitter

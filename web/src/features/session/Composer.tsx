@@ -26,9 +26,17 @@ export type ComposerProps = {
   disabled?: boolean;
   /** disabledReason explains why, under the box. */
   disabledReason?: string;
+  /** placeholder is what the empty box says while no run is going. */
+  placeholder?: string;
 };
 
-export function Composer({ sessionId, model, disabled = false, disabledReason }: ComposerProps) {
+export function Composer({
+  sessionId,
+  model,
+  disabled = false,
+  disabledReason,
+  placeholder = "Send a message to the agent…",
+}: ComposerProps) {
   // The text is in the session store, not here: rewinding to a message puts
   // that message back in the box to edit, and the transcript row that does it
   // is not this component's parent.
@@ -67,9 +75,7 @@ export function Composer({ sessionId, model, disabled = false, disabledReason }:
             value={text}
             disabled={disabled}
             aria-label="Message"
-            placeholder={
-              active ? "Steer the run, or queue a follow-up…" : "Send a message to the agent…"
-            }
+            placeholder={active ? "Steer the run, or queue a follow-up…" : placeholder}
             rows={2}
             // field-sizing grows the box with the text, which without a cap
             // would push the transcript out of the pane on a long message.

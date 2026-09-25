@@ -140,18 +140,33 @@ export type PushResult = {
 /** SessionKind is who opened a session. */
 export type SessionKind = "user" | "fork" | "agent";
 
-/** Session is a tree of entries in one workspace. */
+/** Session is a tree of entries in one workspace, or in none for a chat. */
 export type Session = {
   id: string;
-  workspace_id: string;
+  /** workspace_id is where the session's runs act; a chat has none. */
+  workspace_id?: string;
   title: string;
   /** kind says whether the user opened it, a fork made it, or a run spawned it. */
   kind: SessionKind;
   head_entry_id?: string;
   parent_session_id?: string;
+  /** tools are the tools the next run offers the model, sorted by name. */
+  tools: string[];
   created_at: string;
   updated_at: string;
 };
+
+/** Tool is one tool a run can offer the model, from GET /api/tools. */
+export type Tool = {
+  name: string;
+  /** description is what the model is told the tool does. */
+  description: string;
+  /** needs_workspace keeps the tool out of a chat. */
+  needs_workspace: boolean;
+};
+
+/** CreateSession opens a session in a workspace, or a chat in none. */
+export type CreateSession = { workspace_id: string; title: string } | { chat: true; title: string };
 
 /** Role is the author of one provider message. */
 export type Role = "system" | "user" | "assistant" | "tool";

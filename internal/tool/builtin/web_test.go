@@ -124,11 +124,25 @@ func (failing) Exec(context.Context, executor.ExecSpec) (executor.ExecResult, er
 }
 
 func TestWebFetchReportsASandboxThatCannotRunTheFilter(t *testing.T) {
-	for name, c := range map[string]tool.CallContext{"no workspace": {}, "stopped": {Exec: failing{}}} {
-		res := callWeb(t, builtin.Deps{Pages: newPages()}, c, "web_fetch",
-			map[string]any{"url": "https://example.com/guide.md", "filter": "text"})
-		if !res.IsError || !strings.HasPrefix(res.Content, "fetch failed: the filter could not run in the sandbox") {
-			t.Errorf("%s: %q", name, res.Content)
-		}
+	res := callWeb(t, builtin.Deps{Pages: newPages()}, tool.CallContext{Exec: failing{}}, "web_fetch",
+		map[string]any{"url": "https://example.com/guide.md", "filter": "text"})
+	if !res.IsError || !strings.HasPrefix(res.Content, "fetch failed: the filter could not run in the sandbox") {
+		t.Errorf("content = %q", res.Content)
+	}
+}
+
+// A chat has no workspace, so the model's JavaScript has nowhere to run; the
+// page itself is still a network read the harness makes.
+func TestWebFetchInAChatRefusesAFilterButReadsThePage(t *testing.T) {
+	chat := tool.CallContext{}
+	res := callWeb(t, builtin.Deps{Pages: newPages()}, chat, "web_fetch",
+		map[string]any{"url": "https://example.com/guide.md", "filter": "text"})
+	if !res.IsError || !strings.Contains(res.Content, "this chat has none") {
+		t.Errorf("filter in a chat = %q", res.Content)
+	}
+	res = callWeb(t, builtin.Deps{Pages: newPages()}, chat, "web_fetch",
+		map[string]any{"url": "https://example.com/guide.md", "section": "timeouts"})
+	if res.IsError || res.Content != "## Timeouts\n\nthe timeout is 30s" {
+		t.Errorf("section in a chat = %q", res.Content)
 	}
 }

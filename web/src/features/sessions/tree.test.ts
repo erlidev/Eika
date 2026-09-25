@@ -9,6 +9,7 @@ function session(id: string, over: Partial<Session> = {}): Session {
     workspace_id: "ws-1",
     title: id,
     kind: "user",
+    tools: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...over,
@@ -84,5 +85,15 @@ describe("agentWorkspaces", () => {
 
   it("keeps a workspace that has no sessions at all", () => {
     expect([...agentWorkspaces([])]).toEqual([]);
+  });
+
+  it("leaves chats out, since they are in no workspace", () => {
+    const chat = session("chat", { workspace_id: undefined });
+    const fork = session("chat-fork", {
+      workspace_id: undefined,
+      kind: "fork",
+      parent_session_id: "chat",
+    });
+    expect([...agentWorkspaces([chat, fork])]).toEqual([]);
   });
 });

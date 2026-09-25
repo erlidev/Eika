@@ -18,6 +18,8 @@ export const queryKeys = {
   workspaceFile: (id: string, path: string) => ["workspace", id, "file", path] as const,
   sessions: (workspaceId?: string, descendants?: boolean) =>
     ["sessions", workspaceId ?? "all", descendants === true ? "tree" : "flat"] as const,
+  /** chats sits under the sessions prefix, so invalidating sessions refreshes it. */
+  chats: () => ["sessions", "chats"] as const,
   session: (id: string) => ["session", id] as const,
   sessionOutline: (id: string) => ["session", id, "outline"] as const,
   sessionPath: (id: string) => ["session", id, "path"] as const,
@@ -27,5 +29,6 @@ export const queryKeys = {
   providers: () => ["providers"] as const,
   system: () => ["system"] as const,
   searchStatus: () => ["search", "status"] as const,
+  tools: () => ["tools"] as const,
   authStatus: () => ["auth", "status"] as const,
 };
