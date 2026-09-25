@@ -72,8 +72,9 @@ it needs with `session.replay`.
 | `payload` | object, optional | Type-specific body. |
 
 There are three kinds of topic: `global`, `workspace:<id>`, and
-`session:<id>`. Agent run events and question and replay events are published
-on `session:<id>`; workspace lifecycle events on `workspace:<id>`. A
+`session:<id>`. Agent run events, question and elicitation events, and replay
+events are published on `session:<id>`; workspace lifecycle events on
+`workspace:<id>`; MCP server state on `global`. A
 `bus.dropped` event reaches one connection only and carries the topic
 `global`, whatever that connection subscribed to.
 
@@ -248,6 +249,31 @@ The run called `ask_user` and is blocked until
 | `options` | string array, optional | The answers to choose from. Absent for an open question. |
 | `allow_free_text` | boolean | An answer outside `options` is accepted. |
 
+### `mcp.elicitation`
+
+An MCP server asked the user for input during a tool call, which waits until
+`POST /api/elicitations/{id}/answer` delivers an answer or the run is
+aborted. The request is also in the run state's `elicitations` until then,
+so a client that connects late still finds it; nothing announces its answer
+but the call's `tool.result`. A request the UI could not show, a form whose
+schema is not flat or a URL that is not http or https, is declined without
+being asked.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `elicitation_id` | string | What to POST the answer to. |
+| `run_id` | string | Identifies the turn. |
+| `session_id` | string | The session that is waiting. |
+| `call_id` | string | The MCP tool call that waits. |
+| `server` | string | The name of the MCP server that asks. |
+| `mode` | string | `form`, for fields to fill in, or `url`, for a page to open. |
+| `message` | string | What the server says it wants. |
+| `requested_schema` | object, optional | In `form` mode, the flat JSON Schema of the fields; see Elicitation in `http.md`. |
+| `url` | string, optional | In `url` mode, the page to send the user to. |
+
+An MCP tool's `tool.result` carries the server's content blocks in
+`details`; `http.md` documents the shape under MCP tool calls.
+
 ## Subagent events
 
 Both are published on the **parent** session's topic, `session:<parent id>`,
@@ -305,6 +331,23 @@ refresh.
 | `workspace_id` | string | The workspace. |
 | `project_id` | string, optional | The project it holds. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
+
+## MCP events
+
+### `mcp.server`
+
+Published on `global` whenever an MCP server's state changes, what it serves
+changes (its tools, resources, or prompts were listed again), it is
+authorized or signed out, its configuration changes, or it is deleted. A
+client refetches `GET /api/mcp/servers/{id}` for the rest, so the settings
+page stays current without polling.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `server_id` | string | The server. |
+| `name` | string | Its name. |
+| `state` | string | `disabled`, `idle`, `connecting`, `connected`, `unauthorized`, `error`, or `removed` for a server that was deleted. |
+| `error` | string, optional | Why it is `unauthorized` or in `error`. |
 
 ## Stream events
 

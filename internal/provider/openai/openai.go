@@ -218,23 +218,53 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 		Messages:      messages,
 		StreamOptions: openai.ChatCompletionStreamOptionsParam{IncludeUsage: param.NewOpt(true)},
 	}
-	if req.MaxTokens > 0 {
-		params.MaxCompletionTokens = param.NewOpt(int64(req.MaxTokens))
-	}
-	if req.Temperature != nil {
-		params.Temperature = param.NewOpt(*req.Temperature)
-	}
 	extra := map[string]any{}
+	s := req.Sampling
+	if s.MaxOutput != nil {
+		params.MaxCompletionTokens = param.NewOpt(int64(*s.MaxOutput))
+	}
+	if s.Temperature != nil {
+		params.Temperature = param.NewOpt(*s.Temperature)
+	}
+	if s.TopP != nil {
+		params.TopP = param.NewOpt(*s.TopP)
+	}
+	if s.FrequencyPenalty != nil {
+		params.FrequencyPenalty = param.NewOpt(*s.FrequencyPenalty)
+	}
+	if s.PresencePenalty != nil {
+		params.PresencePenalty = param.NewOpt(*s.PresencePenalty)
+	}
+	if s.Seed != nil {
+		params.Seed = param.NewOpt(*s.Seed)
+	}
+	if len(s.Stop) > 0 {
+		params.Stop = openai.ChatCompletionNewParamsStopUnion{OfStringArray: s.Stop}
+	}
+	// Chat Completions has no top_k or min_p. vLLM, llama.cpp, SGLang, LM
+	// Studio, and OpenRouter read them beside the standard fields; an
+	// endpoint that does not may refuse the request, so they go only when
+	// set.
+	if s.TopK != nil {
+		extra["top_k"] = *s.TopK
+	}
+	if s.MinP != nil {
+		extra["min_p"] = *s.MinP
+	}
+	effort := ""
+	if s.ReasoningEffort != nil {
+		effort = *s.ReasoningEffort
+	}
 	switch {
-	case req.ReasoningEffort == "":
-	case req.ReasoningEffort == provider.EffortNone && req.ThinkingSwitch == provider.SwitchTemplate:
+	case effort == "":
+	case effort == provider.EffortNone && req.ThinkingSwitch == provider.SwitchTemplate:
 		// Both names, because templates disagree on the one they read and
 		// ignore the other.
 		extra["chat_template_kwargs"] = map[string]any{"enable_thinking": false, "thinking": false}
-	case req.ReasoningEffort == provider.EffortNone && req.ThinkingSwitch == provider.SwitchThinking:
+	case effort == provider.EffortNone && req.ThinkingSwitch == provider.SwitchThinking:
 		extra["thinking"] = map[string]any{"type": "disabled"}
 	default:
-		params.ReasoningEffort = shared.ReasoningEffort(req.ReasoningEffort)
+		params.ReasoningEffort = shared.ReasoningEffort(effort)
 	}
 	if req.PreserveThinking {
 		extra["preserve_thinking"] = true

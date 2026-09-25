@@ -2,7 +2,8 @@
 // workspace container.
 //
 // It is the only process the harness talks to when an agent runs a command,
-// reads or writes a file, opens a terminal, or watches for changes. Every path
+// reads or writes a file, opens a terminal, watches for changes, or starts a
+// stdio MCP server, whose standard streams /process carries. Every path
 // it accepts is confined to the workspace root: traversal and symlinks that
 // leave the root are rejected. Every route but /healthz requires the bearer
 // token the harness passes as EIKAD_TOKEN at container start.

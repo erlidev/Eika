@@ -114,6 +114,15 @@ the list in `TestOnlyToolsThatNeedNoWorkspaceAreStandalone`, which is what
 keeps a file or command tool from being marked by mistake. The chat's Tools
 panel lists it with a switch as soon as it is registered.
 
+A tool that belongs to a service rather than to Eika needs no code here: run
+it as an MCP server and add the server under Settings, MCP. Its tools reach
+runs as `mcp__<server>__<tool>`, built by `internal/mcp` from what the server
+lists, and obey a profile's or a session's tool choice like a built-in; a
+choice can also take every tool of a server with `mcp__<server>__*`, which
+`toolChosen` in `internal/server/tools.go` resolves. Do not add a
+built-in with a name that starts with `mcp_`: the server treats that prefix
+as the pool's (`isMCPTool` in `internal/server/tools.go`).
+
 ## Adding a provider
 
 Implement `provider.Provider` in `internal/provider/<name>/` and register it in
@@ -198,9 +207,19 @@ Test a provider against an `httptest` server that serves its wire format, as
 `internal/provider/openai/openai_test.go` does. Test everything that consumes a
 provider with `provider/providertest`, the scripted fake.
 
+The sampling parameters arrive in `Request.Sampling`, resolved by the server
+from the session's overrides, its profile, and the model row: temperature,
+top_p, top_k, min_p, the two penalties, seed, stop sequences, max output
+tokens, and reasoning effort. Each is a pointer, or a nil slice, and nil
+means the endpoint's default, so send a field only when it is set. Map each
+to the endpoint's own field; one the wire format has no field for (Chat
+Completions has none for top_k and min_p) goes in whatever extension the
+endpoint reads, or is left out when it has none.
+
 A model row also carries `reasoning_effort`, `reasoning_efforts`, and
-`preserve_thinking`, which the run passes on in `provider.Request`.
-`reasoning_effort` maps to the standard Chat Completions request field;
+`preserve_thinking`: the row's effort is the bottom layer of
+`Sampling.ReasoningEffort`, and the switches go in `provider.Request` as they
+are. `reasoning_effort` maps to the standard Chat Completions request field;
 `reasoning_efforts` is the list of words the session's status bar cycles
 through, since endpoints disagree on the vocabulary and the harness only
 checks the shape (`provider.ValidReasoningEffort`). The effort
@@ -516,7 +535,10 @@ since reflection cannot see what it writes.
 
 Tests go in `internal/server/api_docker_test.go` and use the fakes in
 `fakes_docker_test.go`: a real database from `storetest` and a workspace host
-backed by temporary directories.
+backed by temporary directories. A method added to `Workspaces` is added to
+`fakeHost` too; its `Process` starts what the test sets in `process`, which is
+how `mcp_docker_test.go` runs a scripted stdio MCP server
+(`internal/mcp/mcptest`) in a workspace.
 
 ```
 go test -tags docker ./internal/server/...

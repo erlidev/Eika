@@ -13,7 +13,7 @@
 
 import { payloadOf } from "@/api/events";
 import type { EikaEvent, SessionMessage, Timings, TurnProgress, Usage } from "@/api/events";
-import type { Message, Question } from "@/api/types";
+import type { Elicitation, Message, Question } from "@/api/types";
 
 /** UserItem is a message the user sent. */
 export type UserItem = {
@@ -143,6 +143,8 @@ export type TranscriptState = {
   stopReason?: string;
   /** questions are the `ask_user` calls waiting for an answer. */
   questions: Question[];
+  /** elicitations are what MCP servers asked the user during tool calls, waiting for an answer. */
+  elicitations: Elicitation[];
   /**
    * toolResults keeps every `tool.result` by call id. It serves two cases at
    * once: a result that arrives before its `tool.call` still reaches the card
@@ -184,6 +186,7 @@ export function newTranscript(sessionId: string): TranscriptState {
     meter: undefined,
     stopReason: undefined,
     questions: [],
+    elicitations: [],
     toolResults: {},
     needsReplay: false,
     dropped: 0,
@@ -263,6 +266,8 @@ export function applyEvent(state: TranscriptState, e: EikaEvent): TranscriptStat
       return applyRunError(state, e);
     case "question.asked":
       return applyQuestion(state, e);
+    case "mcp.elicitation":
+      return applyElicitation(state, e);
     case "session.message":
       return applySessionMessage(state, e);
     case "bus.dropped":
@@ -446,8 +451,10 @@ function applyToolOutput(state: TranscriptState, e: EikaEvent): TranscriptState 
 function applyToolResult(state: TranscriptState, e: EikaEvent): TranscriptState {
   const p = payloadOf(e, "tool.result");
   if (!p) return state;
-  // A finished call answers any question it was blocked on.
+  // A finished call answers any question it was blocked on, and ends any
+  // request of its server for input.
   const questions = state.questions.filter((q) => q.call_id !== p.call_id);
+  const elicitations = state.elicitations.filter((x) => x.call_id !== p.call_id);
   const toolResults = {
     ...state.toolResults,
     [p.call_id]: {
@@ -460,10 +467,13 @@ function applyToolResult(state: TranscriptState, e: EikaEvent): TranscriptState 
   };
   const index = findTool(state.live, p.call_id);
   const item = state.live[index];
-  if (index < 0 || item?.kind !== "tool") return { ...state, questions, toolResults };
+  if (index < 0 || item?.kind !== "tool") {
+    return { ...state, questions, elicitations, toolResults };
+  }
   return {
     ...state,
     questions,
+    elicitations,
     toolResults,
     live: replaceAt(state.live, index, {
       ...item,
@@ -531,6 +541,25 @@ function applyQuestion(state: TranscriptState, e: EikaEvent): TranscriptState {
     ...(p.options ? { options: p.options } : {}),
   };
   return { ...state, questions: [...state.questions, question] };
+}
+
+function applyElicitation(state: TranscriptState, e: EikaEvent): TranscriptState {
+  const p = payloadOf(e, "mcp.elicitation");
+  if (!p) return state;
+  if (state.elicitations.some((x) => x.id === p.elicitation_id)) return state;
+  const elicitation: Elicitation = {
+    id: p.elicitation_id,
+    session_id: p.session_id,
+    run_id: p.run_id,
+    call_id: p.call_id,
+    server: p.server,
+    mode: p.mode,
+    message: p.message,
+    asked_at: e.time,
+    ...(p.requested_schema === undefined ? {} : { requested_schema: p.requested_schema }),
+    ...(p.url === undefined ? {} : { url: p.url }),
+  };
+  return { ...state, elicitations: [...state.elicitations, elicitation] };
 }
 
 /** entryItems turns one stored entry into the items it renders as. */

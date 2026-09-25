@@ -10,6 +10,7 @@ function session(id: string, over: Partial<Session> = {}): Session {
     title: id,
     kind: "user",
     tools: [],
+    overridden: false,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...over,

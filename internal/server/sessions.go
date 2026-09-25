@@ -24,10 +24,17 @@ type sessionBody struct {
 	HeadEntryID     string `json:"head_entry_id,omitempty"`
 	ParentSessionID string `json:"parent_session_id,omitempty"`
 	// Tools names the tools the session's next run offers the model,
-	// ordered by name: what the session chose, narrowed to what it can run.
-	Tools     []string  `json:"tools"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	// ordered by name: what the session or its profile chose, narrowed to
+	// what it can run.
+	Tools []string `json:"tools"`
+	// ProfileID is the profile the session chose, absent when it runs with
+	// whichever profile is the default.
+	ProfileID string `json:"profile_id,omitempty"`
+	// Overridden reports whether the session sets anything of its own over
+	// its profile: its overrides or its tool choice.
+	Overridden bool      `json:"overridden"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // entryBody is one session entry on the wire, payload included.
@@ -117,9 +124,19 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	base, err := s.loadConfigBase(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	out := make([]sessionBody, 0, len(sessions))
 	for _, sess := range sessions {
-		out = append(out, s.asSession(sess))
+		body, err := s.asSession(sess, base)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		out = append(out, body)
 	}
 	writeJSON(w, s.log, http.StatusOK, sessionsResponse{Sessions: out})
 }
@@ -157,7 +174,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("session created", "session_id", sess.ID, "workspace_id", sess.WorkspaceID, "chat", sess.Chat())
-	writeJSON(w, s.log, http.StatusCreated, s.asSession(sess))
+	s.writeSession(w, r, http.StatusCreated, sess)
 }
 
 // handleSession returns a session and the entry it continues from.
@@ -167,7 +184,17 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	body := sessionResponse{Session: s.asSession(sess)}
+	base, err := s.loadConfigBase(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	rendered, err := s.asSession(sess, base)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	body := sessionResponse{Session: rendered}
 	if sess.HeadEntryID != "" {
 		head, err := s.deps.Store.Entry(r.Context(), sess.HeadEntryID)
 		if err != nil {
@@ -270,7 +297,7 @@ func (s *Server) handleSetSessionHead(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, s.log, http.StatusOK, s.asSession(sess))
+	s.writeSession(w, r, http.StatusOK, sess)
 }
 
 // handleForkSession copies the branch down to an entry into a session of its
@@ -326,7 +353,7 @@ func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
 		s.workspaceState(r.Context(), forked.ID, forked.ProjectID, forked.State)
 	}
 	s.log.Info("session forked", "session_id", id, "fork_id", fork.ID, "entry_id", req.EntryID)
-	writeJSON(w, s.log, http.StatusCreated, s.asSession(fork))
+	s.writeSession(w, r, http.StatusCreated, fork)
 }
 
 // checkResumable refuses an entry a run cannot continue from. A path that
@@ -361,10 +388,29 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// writeSession answers with one session on the wire.
+func (s *Server) writeSession(w http.ResponseWriter, r *http.Request, status int, sess store.Session) {
+	base, err := s.loadConfigBase(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	body, err := s.asSession(sess, base)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, s.log, status, body)
+}
+
 // asSession renders a stored session on the wire, with the tools its next
 // run offers rather than the stored choice, so a client never re-derives
-// which tools a chat may hold.
-func (s *Server) asSession(sess store.Session) sessionBody {
+// which tools a chat may hold or what the profile chose.
+func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, error) {
+	c, err := base.resolveSession(sess, "")
+	if err != nil {
+		return sessionBody{}, err
+	}
 	return sessionBody{
 		ID:              sess.ID,
 		WorkspaceID:     sess.WorkspaceID,
@@ -372,10 +418,12 @@ func (s *Server) asSession(sess store.Session) sessionBody {
 		Kind:            string(sess.Kind),
 		HeadEntryID:     sess.HeadEntryID,
 		ParentSessionID: sess.ParentSessionID,
-		Tools:           s.sessionToolNames(sess),
+		Tools:           s.sessionToolNames(sess, c.tools),
+		ProfileID:       sess.ProfileID,
+		Overridden:      !sess.Overrides.Empty() || sess.Tools != nil,
 		CreatedAt:       sess.CreatedAt,
 		UpdatedAt:       sess.UpdatedAt,
-	}
+	}, nil
 }
 
 // asEntry renders a stored entry on the wire. An entry that holds something

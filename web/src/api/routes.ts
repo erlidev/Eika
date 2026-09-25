@@ -10,19 +10,34 @@ import type {
   AuthStatus,
   CommitRequest,
   CommitResult,
+  Configuration,
+  ContentDetail,
+  CreateMCPServer,
   CreateModel,
   CreateProject,
   CreateProvider,
   CreateSession,
   CreateWorkspace,
+  ElicitationAnswer,
   Entry,
   FileContent,
   FileEntry,
+  MCPPromptResult,
+  MCPServer,
+  MCPServerDetails,
   Model,
+  ModelContext,
+  ModelRequest,
+  ModelRequests,
   ModelInfo,
   Models,
+  OAuthCallback,
   PostMessage,
   ProbeProvider,
+  Profile,
+  ProfileInput,
+  Profiles,
+  ProfileSettings,
   Project,
   Provider,
   Providers,
@@ -35,6 +50,7 @@ import type {
   SearchRequest,
   SearchStatus,
   Session,
+  SessionConfiguration,
   SessionOutline,
   SessionPath,
   Settings,
@@ -44,6 +60,7 @@ import type {
   TestModel,
   TestModelResult,
   Tool,
+  UpdateMCPServer,
   UpdateModel,
   UpdateProject,
   UpdateProvider,
@@ -204,8 +221,11 @@ export function createSession(input: CreateSession): Promise<Session> {
   return request<Session>("/api/sessions", { method: "POST", body: input });
 }
 
-/** setSessionTools chooses the tools the session's next run offers the model. */
-export function setSessionTools(id: string, tools: string[]): Promise<Session> {
+/**
+ * setSessionTools chooses the tools the session's next run offers the model;
+ * null clears the choice, so the profile's applies.
+ */
+export function setSessionTools(id: string, tools: string[] | null): Promise<Session> {
   return request<Session>(`/api/sessions/${encodeURIComponent(id)}/tools`, {
     method: "PUT",
     body: { tools },
@@ -283,6 +303,115 @@ export function answerQuestion(id: string, answer: string): Promise<void> {
     method: "POST",
     body: { answer },
   });
+}
+
+/**
+ * ConfigurationDraft is what a session's editor has chosen and not saved:
+ * inherited then falls through as if it were. An absent field keeps the
+ * saved one; "" is the default profile, or no model of the session's own.
+ */
+export type ConfigurationDraft = { profileId?: string; modelId?: string };
+
+/** getSessionConfiguration reads what a session sets itself and what its next run resolves to. */
+export function getSessionConfiguration(
+  id: string,
+  draft: ConfigurationDraft = {},
+  signal?: AbortSignal,
+): Promise<SessionConfiguration> {
+  const query = new URLSearchParams();
+  if (draft.profileId !== undefined) query.set("profile_id", draft.profileId);
+  if (draft.modelId !== undefined) query.set("model_id", draft.modelId);
+  const search = query.size > 0 ? `?${query.toString()}` : "";
+  return request<SessionConfiguration>(
+    `/api/sessions/${encodeURIComponent(id)}/configuration${search}`,
+    { signal },
+  );
+}
+
+/** setSessionProfile chooses a session's profile; "" is the default one. */
+export function setSessionProfile(id: string, profileId: string): Promise<SessionConfiguration> {
+  return request<SessionConfiguration>(`/api/sessions/${encodeURIComponent(id)}/profile`, {
+    method: "PUT",
+    body: { profile_id: profileId },
+  });
+}
+
+/** setSessionOverrides replaces what a session sets over its profile. */
+export function setSessionOverrides(
+  id: string,
+  overrides: ProfileSettings,
+): Promise<SessionConfiguration> {
+  return request<SessionConfiguration>(`/api/sessions/${encodeURIComponent(id)}/overrides`, {
+    method: "PUT",
+    body: overrides,
+  });
+}
+
+/**
+ * getSessionContext previews the session's next model request, as a run
+ * that names `model` ("" for none) would send it.
+ */
+export function getSessionContext(
+  id: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<ModelContext> {
+  return request<ModelContext>(`/api/sessions/${encodeURIComponent(id)}/context`, {
+    query: { model: model === "" ? undefined : model },
+    signal,
+  });
+}
+
+/** listSessionRequests lists the records of a session's model calls, oldest first. */
+export async function listSessionRequests(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ModelRequest[]> {
+  const body = await request<ModelRequests>(`/api/sessions/${encodeURIComponent(id)}/requests`, {
+    signal,
+  });
+  return body.requests ?? [];
+}
+
+/** getSessionRequest reads one recorded model call in the preview's shape. */
+export function getSessionRequest(
+  id: string,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<ModelContext> {
+  return request<ModelContext>(
+    `/api/sessions/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}`,
+    { signal },
+  );
+}
+
+/** listProfiles lists the profiles, the default one, and the built-in prompts. */
+export function listProfiles(signal?: AbortSignal): Promise<Profiles> {
+  return request<Profiles>("/api/profiles", { signal });
+}
+
+/** getInheritedProfile reads what a profile choosing a model ("" for none) falls through to. */
+export function getInheritedProfile(modelId: string, signal?: AbortSignal): Promise<Configuration> {
+  const search = modelId === "" ? "" : `?model_id=${encodeURIComponent(modelId)}`;
+  return request<Configuration>(`/api/profiles/inherited${search}`, { signal });
+}
+
+/** createProfile adds a profile. */
+export function createProfile(input: ProfileInput): Promise<Profile> {
+  return request<Profile>("/api/profiles", { method: "POST", body: input });
+}
+
+/** updateProfile replaces a profile with the one given. */
+export function updateProfile(id: string, input: ProfileInput): Promise<Profile> {
+  return request<Profile>(`/api/profiles/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: input,
+  });
+}
+
+/** deleteProfile removes a profile; its sessions go back to the default one. */
+export function deleteProfile(id: string): Promise<void> {
+  return requestEmpty(`/api/profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** getSettings reads the settings table and the defaults of the harness's own keys. */
@@ -419,5 +548,111 @@ export function changePassword(currentPassword: string, newPassword: string): Pr
   return request<SignIn>("/api/auth/password", {
     method: "PUT",
     body: { current_password: currentPassword, new_password: newPassword },
+  });
+}
+
+/** listMCPServers lists the configured MCP servers by name, with the state each is in. */
+export async function listMCPServers(signal?: AbortSignal): Promise<MCPServer[]> {
+  const body = await request<{ servers: MCPServer[] | null }>("/api/mcp/servers", { signal });
+  return body.servers ?? [];
+}
+
+/** createMCPServer configures an MCP server; an enabled http one starts connecting. */
+export function createMCPServer(input: CreateMCPServer): Promise<MCPServer> {
+  return request<MCPServer>("/api/mcp/servers", { method: "POST", body: input });
+}
+
+/** getMCPServer reads everything the harness knows of one MCP server. */
+export function getMCPServer(id: string, signal?: AbortSignal): Promise<MCPServerDetails> {
+  return request<MCPServerDetails>(`/api/mcp/servers/${encodeURIComponent(id)}`, { signal });
+}
+
+/** updateMCPServer changes an MCP server; its connections end and start again. */
+export function updateMCPServer(id: string, input: UpdateMCPServer): Promise<MCPServer> {
+  return request<MCPServer>(`/api/mcp/servers/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+/** deleteMCPServer removes an MCP server with its credentials and connections. */
+export function deleteMCPServer(id: string): Promise<void> {
+  return requestEmpty(`/api/mcp/servers/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/**
+ * connectMCPServer drops a server's connection and connects again, in the
+ * workspace for a stdio server, and answers with how that went.
+ */
+export function connectMCPServer(id: string, workspaceId?: string): Promise<MCPServerDetails> {
+  return request<MCPServerDetails>(`/api/mcp/servers/${encodeURIComponent(id)}/connect`, {
+    method: "POST",
+    body: workspaceId === undefined ? {} : { workspace_id: workspaceId },
+  });
+}
+
+/** authorizeMCPServer starts an OAuth authorization and answers with where to send the browser. */
+export async function authorizeMCPServer(id: string, redirectUri: string): Promise<string> {
+  const body = await request<{ authorization_url: string }>(
+    `/api/mcp/servers/${encodeURIComponent(id)}/authorize`,
+    { method: "POST", body: { redirect_uri: redirectUri } },
+  );
+  return body.authorization_url;
+}
+
+/** finishMCPAuthorization hands the authorization server's answer to the harness. */
+export async function finishMCPAuthorization(input: OAuthCallback): Promise<string> {
+  const body = await request<{ server_id: string }>("/api/mcp/oauth/callback", {
+    method: "POST",
+    body: input,
+  });
+  return body.server_id;
+}
+
+/** signOutMCPServer revokes and forgets a server's tokens. */
+export function signOutMCPServer(id: string): Promise<void> {
+  return requestEmpty(`/api/mcp/servers/${encodeURIComponent(id)}/authorization`, {
+    method: "DELETE",
+  });
+}
+
+/** readMCPResource reads one resource of a server. */
+export async function readMCPResource(
+  id: string,
+  uri: string,
+  workspaceId?: string,
+): Promise<ContentDetail[]> {
+  const body = await request<{ contents: ContentDetail[] | null }>(
+    `/api/mcp/servers/${encodeURIComponent(id)}/resources/read`,
+    {
+      method: "POST",
+      body: { uri, ...(workspaceId === undefined ? {} : { workspace_id: workspaceId }) },
+    },
+  );
+  return body.contents ?? [];
+}
+
+/** getMCPPrompt renders one prompt of a server with its arguments. */
+export function getMCPPrompt(
+  id: string,
+  name: string,
+  args: Record<string, string>,
+  workspaceId?: string,
+): Promise<MCPPromptResult> {
+  return request<MCPPromptResult>(`/api/mcp/servers/${encodeURIComponent(id)}/prompts/get`, {
+    method: "POST",
+    body: {
+      name,
+      arguments: args,
+      ...(workspaceId === undefined ? {} : { workspace_id: workspaceId }),
+    },
+  });
+}
+
+/** answerElicitation delivers the user's answer to an MCP tool call waiting on it. */
+export function answerElicitation(id: string, answer: ElicitationAnswer): Promise<void> {
+  return requestEmpty(`/api/elicitations/${encodeURIComponent(id)}/answer`, {
+    method: "POST",
+    body: answer,
   });
 }

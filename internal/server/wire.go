@@ -7,6 +7,7 @@ import (
 
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/openai"
 	"github.com/erlidev/eika/internal/search"
@@ -81,6 +82,10 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	if err != nil {
 		return err
 	}
+	// The pool closes after the server, whose runs call its tools, and
+	// before the store it reads.
+	pool := NewMCP(cfg, st, secrets, host, bus, log)
+	defer pool.Close()
 	s := New(cfg, log, Deps{
 		Store:      st,
 		Hub:        repos,
@@ -92,8 +97,14 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Bus:        bus,
 		Search:     engine,
 		Pages:      pages,
+		MCP:        pool,
 	}, opts)
 	s.UseSubagents(spawner, spawner.Attach)
+	// Remote servers connect in the background, so their tools are there
+	// when the first run asks; one that is down must not stop the API.
+	if err := pool.Start(ctx); err != nil {
+		log.Error("start mcp servers", "error", err)
+	}
 
 	// A container may have stopped or been removed while the harness was
 	// down. Reconciling is how the recorded states catch up; a Docker daemon
@@ -162,6 +173,8 @@ var (
 	_ builtin.Searcher    = (*search.Engine)(nil)
 	_ builtin.PageReader  = (*fetch.Reader)(nil)
 	_ fetch.Quota         = (*search.Engine)(nil)
+	_ mcp.Store           = mcpStore{}
+	_ mcp.Launcher        = mcpLauncher{}
 	_ search.Settings     = searchBackend{}
 	_ search.Keys         = searchBackend{}
 	_ search.UsageStore   = searchBackend{}

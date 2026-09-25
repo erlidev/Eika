@@ -157,12 +157,15 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 		return nil, err
 	}
 	// From here the child's sandbox has a row of its own, so a failure has
-	// both to remove.
+	// both to remove. The child runs as its parent is configured to: the
+	// same profile, with the parent's overrides of it.
 	sess, err := s.opts.Store.CreateSession(ctx, store.Session{
 		WorkspaceID:     childWS.ID,
 		Title:           req.Name,
 		Kind:            store.SessionAgent,
 		ParentSessionID: parent.ID,
+		ProfileID:       parent.ProfileID,
+		Overrides:       parent.Overrides,
 	})
 	if err != nil {
 		s.discardRecorded(ctx, host)

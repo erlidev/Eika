@@ -19,6 +19,8 @@ export type EventType =
   | "subagent.started"
   | "subagent.finished"
   | "workspace.state"
+  | "mcp.server"
+  | "mcp.elicitation"
   | "session.message"
   | "bus.dropped";
 
@@ -191,6 +193,28 @@ export type WorkspaceState = {
   state: string;
 };
 
+/** MCPServerChanged is the payload of an mcp.server event: refetch the server's details. */
+export type MCPServerChanged = {
+  server_id: string;
+  name: string;
+  /** state is where the connection stands, or removed for a deleted server. */
+  state: string;
+  error?: string;
+};
+
+/** MCPElicitation is the payload of an mcp.elicitation event: an MCP server asks the user. */
+export type MCPElicitation = {
+  elicitation_id: string;
+  run_id: string;
+  session_id: string;
+  call_id: string;
+  server: string;
+  mode: "form" | "url";
+  message: string;
+  requested_schema?: unknown;
+  url?: string;
+};
+
 /** EntryKind is what one session entry holds. */
 export type EntryKind = "user" | "assistant" | "tool_call" | "tool_result" | "system" | "event";
 
@@ -230,6 +254,8 @@ export type EventPayloads = {
   "subagent.started": SubagentStarted;
   "subagent.finished": SubagentFinished;
   "workspace.state": WorkspaceState;
+  "mcp.server": MCPServerChanged;
+  "mcp.elicitation": MCPElicitation;
   "session.message": SessionMessage;
   "bus.dropped": BusDropped;
 };
@@ -282,6 +308,8 @@ export const eventTypes: readonly EventType[] = [
   "subagent.started",
   "subagent.finished",
   "workspace.state",
+  "mcp.server",
+  "mcp.elicitation",
   "session.message",
   "bus.dropped",
 ];

@@ -8,12 +8,13 @@ updated in the same change that moves structure. Planned work lives in `docs/PLA
 Two Go binaries, the agent core, the sandbox machinery agents run in, the
 database that outlives them, the HTTP API and event stream that drive all of
 it, child agents that work in sandboxes of their own, web search and page
-reading, one frontend, and a three-service compose stack.
+reading, MCP servers whose tools runs offer, one frontend, and a
+three-service compose stack.
 
 | Piece | Path | Responsibility today |
 |---|---|---|
 | `eika` | `cmd/eika` | Loads configuration, serves HTTP, optionally serves the built frontend |
-| `eikad` | `cmd/eikad` | Sandbox daemon: exec, files, terminal, change watcher; `eikad filter` runs a web_fetch filter |
+| `eikad` | `cmd/eikad` | Sandbox daemon: exec, files, terminal, change watcher, long-lived processes; `eikad filter` runs a web_fetch filter |
 | `config` | `internal/config` | Deployment configuration: defaults for the compose stack, an optional YAML file, `EIKA_*` overrides, validation, redacted `String()` |
 | `secret` | `internal/secret` | Seals the credentials the UI stores, API keys and git passwords, with a key kept apart from the database |
 | `event` | `internal/event` | The event envelope, the type name constants, the payload structs, the `Emitter` interface, and the fan-out `Bus` |
@@ -31,6 +32,8 @@ reading, one frontend, and a three-service compose stack.
 | `session` | `internal/session` | The session tree: append, head, branch, fork, outline, and the agent store that records a run |
 | `subagent` | `internal/subagent` | Spawning child agents: the hand-over commit, the child workspace and session, the limits, and the result the parent reads |
 | `search` | `internal/search` | The search engine: the web failover chain, quotas and cooldowns, the result cache, and the backends in `search/web`, `wikipedia`, `arxiv`, and `github` |
+| `mcp` | `internal/mcp` | The Model Context Protocol client: both protocol eras, the Streamable HTTP, HTTP+SSE, and stdio transports, the pool of connections, the tools runs offer, and elicitation; `mcp/mcptest` holds the fake servers |
+| `oauth` | `internal/mcp/oauth` | MCP authorization: the Bearer challenge, protected resource and authorization server discovery, client registration, and the authorization code flow with PKCE |
 | `fetch` | `internal/search/fetch` | Reading one URL as Markdown: URL planning, GitHub reads, HTML extraction, section selection, and the content budget from `search/page`; `search/filter` is the JavaScript filter eikad runs |
 | frontend | `web/` | Vite, React 19, Tailwind v4, shadcn/ui; the guided setup, the settings, and the three-pane workbench: project tree, streaming session, context panels |
 
@@ -109,6 +112,16 @@ The pieces:
   section.
 - **event** owns the envelope, the run payload structs, and the `Emitter`
   interface both the loop and the tools emit through.
+- **context assembly** (`agent/context.go`) builds every model request in
+  one place, as an `agent.Context`: the system prompt by named section (the
+  base prompt, the context files, the extra instructions), the tool schemas
+  marked built-in or MCP, the messages exactly as sent, and the parameters,
+  with a size estimated at four bytes to a token for each. A run's model
+  call and `Agent.Preview` share it, and a `Recorder` is told about every
+  call that returned a response. The base prompt is `WorkspacePrompt` or
+  `ChatPrompt` unless `Options.BasePrompt` replaces it, and the sampling
+  parameters are one `provider.Sampling`, whose nil fields are the
+  endpoint's.
 
 Queues follow Pi. A steering message joins the conversation as soon as the
 running tool finishes, before the next model call. A follow-up message waits
@@ -156,20 +169,25 @@ a container, and a URL.
 | `schema_migrations` | version, applied_at | Which embedded migrations this database carries |
 | `projects` | id, name (unique), kind (remote/local), remote_url, remote_username, remote_password (sealed), host_path, default_branch, created_at | A git repository Eika knows and a private remote's credentials |
 | `workspaces` | id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id, created_at, updated_at | The record of one sandbox container; `state` mirrors `workspace.State` |
-| `sessions` | id, workspace_id (NULL for a chat), title, kind (user/fork/agent), head_entry_id, parent_session_id, tools (NULL for every tool), created_at, updated_at | One session tree, who opened it, the head a run continues from, and the tools its runs may offer |
+| `sessions` | id, workspace_id (NULL for a chat), title, kind (user/fork/agent), head_entry_id, parent_session_id, tools (NULL for the profile's choice), profile_id (NULL for the default profile), overrides (jsonb, NULL for none), created_at, updated_at | One session tree, who opened it, the head a run continues from, the tools its runs may offer, and the profile it runs with and what it sets over it |
 | `session_entries` | id, session_id, parent_id, seq, kind, payload (jsonb), commit_sha, created_at | One node of a session tree |
 | `runs` | id, session_id, state, started_at, finished_at, error | One execution of the agent loop |
 | `subagents` | id, parent_session_id, child_session_id, child_workspace_id, state, result, created_at, finished_at | One child agent and what it reported |
 | `settings` | key (primary), value (jsonb) | What the user changes at runtime |
 | `providers` | id, name (unique), kind, base_url, api_key (sealed), created_at, updated_at | A model provider: an endpoint of one provider kind and its key |
 | `models` | id, provider_id, name (unique), model, context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, created_at, updated_at | A model a run may use; `name` is Eika's, `model` the endpoint's, `reasoning_efforts` the words its effort cycles through, `thinking_switch` the request field that carries the effort `none` |
+| `profiles` | id, name (unique), description, model_id, workspace_prompt, chat_prompt, instructions, context_files, tools, sampling (jsonb), created_at, updated_at | A named configuration of what a run sends; NULL, and a sampling key left out, is not set |
+| `model_requests` | id, session_id, run_id, entry_id, model_id, model, sections (jsonb), tools (jsonb), parameters (jsonb), message_tokens, input_tokens, output_tokens, total_tokens, created_at | One model call a run made: what it sent besides the messages, which are the session's path down to entry_id, and what the endpoint measured |
 | `auth_password` | id (always 1), hash, updated_at | The sign-in password as a PBKDF2 hash |
 | `auth_sessions` | token_hash, created_at, expires_at | A signed-in browser, by the SHA-256 of its token |
 | `search_keys` | name (primary), key (sealed), updated_at | The API key of a search provider, or the GitHub token |
 | `search_usage` | name (primary), day, day_used, month, month_used, cooldown_until, fail_streak, updated_at | One search quota bucket's counters and cooldown, so quotas survive a restart |
+| `mcp_servers` | id, name (unique), kind (http/stdio), url, headers (sealed), command, args, env (sealed), enabled, disabled_tools, oauth_client_id, oauth_client_secret (sealed), created_at, updated_at | An MCP server the user configured: a remote endpoint and its headers, or a command started in workspaces and its environment |
+| `mcp_credentials` | server_id (primary, cascades), issuer, resource, resource_metadata_url, metadata (jsonb), client_id, client_secret (sealed), client_auth_method, client_registration, redirect_uri, access_token (sealed), refresh_token (sealed), scope, expires_at, updated_at | What authorizing an MCP server left: its authorization server, the client registered there, and the tokens |
 
 Everything cascades from `projects`: deleting a project deletes its
-workspaces, their sessions, and their entries. A chat has no workspace, so it
+workspaces, their sessions, their entries, and their model requests. An MCP server's credentials
+cascade from its `mcp_servers` row. A chat has no workspace, so it
 hangs off nothing and is deleted on its own. `sessions.head_entry_id` has no
 foreign key, because `session_entries` already references `sessions` and a key
 in the other direction would be a cycle; the guarded `UPDATE` in `SetSessionHead`
@@ -278,7 +296,7 @@ because the model's JavaScript runs only in a sandbox. A chat's fork is a
 chat and keeps its tools; a fork with a workspace is refused.
 
 `sessions.tools` is the user's choice for any session, NULL until one is
-made. The API reports the effective list, what the next run will offer, so
+made, when the session's profile's choice applies. The API reports the effective list, what the next run will offer, so
 the client shows it without knowing the rule, and `GET /api/tools` says which
 tools need a workspace.
 
@@ -301,6 +319,7 @@ configuration, and calls it.
                     +-- provider.NewRegistry(openai.New)
                     +-- builtin.Registry(questions)
                     +-- event.NewBus
+                    +-- NewMCP -> mcp.Pool ---------- MCP servers (Start after New)
                     |
                     v
                server.New(Deps) -> routes -> Serve
@@ -330,7 +349,7 @@ The pieces:
 
 - **Deps** are the harness pieces every request shares: the store, the hub,
   the workspace host, the provider kind registry, the secret box, the tool
-  registry, the question broker, and the bus. `Workspaces`, `Hub`, and
+  registry, the question broker, the bus, and the MCP pool (see MCP). `Workspaces`, `Hub`, and
   `Providers` are interfaces, defined in `server` because that is where they
   are consumed, so the handler tests run the whole API against a host backed
   by temporary directories and a scripted provider. A zero `Deps` serves the
@@ -351,27 +370,58 @@ The pieces:
 - **Providers and models** are rows. A run, a probe, or a model test opens
   the provider's sealed key, builds a client through `Providers`
   (`*provider.Registry` in production), and drops it when done, so a changed
-  key applies to the next use. `runModel` picks the model a run uses: the one
-  the request names, the `default_model` setting, or the first model.
+  key applies to the next use.
+- **Profiles and a run's configuration.** `configuration.go` holds the one
+  rule for what a run sends. `configure` loads the models, the profiles, and
+  the two defaults, and `resolve` takes each value from the first layer that
+  sets it:
+
+  ```
+  request model -> session overrides + tools -> profile -> model row -> default
+  ```
+
+  The model row supplies `max_output` and `reasoning_effort`; the default is
+  the `default_model` setting (or the first model), the built-in prompts,
+  context files read, every tool, and the endpoint's own sampling defaults.
+  An effort from above the model row that the model does not offer falls
+  through to the row's and is reported as dropped. The result carries the
+  layer of every value, which the API returns so the UI never re-derives the
+  rule, and `inherited` is the same resolution with one layer's own values
+  taken away, which is what an editor of that layer shows as fall-through.
+  A tool choice is resolved against the registry and the MCP pool by one
+  function, `toolChosen`, where `mcp__<server>__*` takes every tool the
+  server offers. `newAgent` turns a configuration into `agent.Options`; the
+  run manager and the context preview both call it, so the preview
+  (`GET /api/sessions/{id}/context`, through `agent.Preview`) is the request
+  the next run sends. A run's `Recorder` writes each model call to
+  `model_requests`, keyed by the run row and the session's head when the call
+  was made.
 - **Settings** are one key/value table the UI writes. The keys the harness
   reads itself (`default_model`, `sandbox_image`, `subagent_max_depth`,
   `subagent_max_children`, `setup_complete`) are validated on write and read
   with a fallback to their defaults, so a bad row never stops a run.
 - **Errors** have one shape, `{"error":{"code","message"}}`. `statusOf` maps
   the sentinel errors of the packages the handlers call onto statuses:
-  `store.ErrNotFound`, `workspace.ErrNoWorkspace`, `hub.ErrNoProject`, and
-  `builtin.ErrNoQuestion` are 404; `store.ErrConflict` is 409;
-  `hub.ErrBadProject`, `workspace.ErrBadBranch`, and `builtin.ErrBadAnswer`
-  are 400. Anything unmapped is the harness's own failure: it is logged in
+  `store.ErrNotFound`, `workspace.ErrNoWorkspace`, `hub.ErrNoProject`,
+  `builtin.ErrNoQuestion`, `mcp.ErrNoElicitation`, and
+  `mcp.ErrNoAuthorization` are 404; `store.ErrConflict` and
+  `mcp.ErrDisabled` are 409; `hub.ErrBadProject`, `workspace.ErrBadBranch`,
+  `builtin.ErrBadAnswer`, `mcp.ErrBadElicitationAnswer`, and
+  `mcp.ErrNeedsWorkspace` are 400. An MCP server's or its authorization
+  server's own failure, which says what the user can do about it, is
+  reported as 400 by `mcpFailure`; the database behind the pool stays
+  internal. Anything unmapped is the harness's own failure: it is logged in
   full and reported as `internal error`, so a database message never reaches a
   client.
 - **The run manager** owns one goroutine per active run and at most one run
   per session. A run is not bound to the request that started it: the client
   gets the run row as soon as the loop begins and follows the rest on the
   event stream. The agent is built per run from the workspace's executor, a
-  `session.Store` on the session tree, the bus as its emitter, and the model
-  `runModel` resolves, whose endpoint identifier, limits, and reasoning
-  settings become the agent's options. Assistant entries record
+  `session.Store` on the session tree, the bus as its emitter, a recorder of
+  its model calls, and the configuration `configure` resolves: the model's
+  endpoint identifier, limits, and switches, the sampling parameters, the
+  base prompt, the instructions, whether context files are read, and the
+  tool choice. Assistant entries record
   the workspace HEAD through a commit function that runs `git rev-parse HEAD`
   through the executor and reports no commit when the workspace holds no
   repository. Every tool is in the registry all runs share, which holds what
@@ -434,7 +484,16 @@ entry is a host pattern and a whole URL is reduced to its host, so a
 deployment can write either; `EIKA_ALLOWED_ORIGINS` takes a comma-separated
 list, which is what `make dev` uses to let the Vite dev server through. A
 deployment that serves the frontend from the harness needs none of them,
-because a same-origin handshake is always accepted.
+because a same-origin handshake is always accepted. The same hosts, with the
+one a request came to, are where an MCP authorization may send the browser
+back.
+
+`public_url` is the address people reach the deployment at, empty by
+default. When it is https, the harness serves its OAuth Client ID Metadata
+Document below it, and an MCP authorization server that accepts one
+identifies Eika by it instead of registering a client; a harness on
+127.0.0.1 has no address an authorization server could fetch. `Validate`
+accepts a bare http or https origin.
 
 Credentials the UI stores are sealed by `internal/secret` with AES-256-GCM
 before they reach a row. The key is 32 random bytes, hex in
@@ -458,7 +517,8 @@ against its bare repositories.
  +----------------------------+              +----------------------------------+
  |  agent -> tool             |   HTTP       |  eikad :7000                     |
  |    -> executor.Executor ---+------------->|    /exec  /files  /stat  /list   |
- |       (executor/sandbox)   |  bearer      |    /pty   /watch  /healthz       |
+ |       (executor/sandbox)   |  bearer      |    /pty   /watch  /process       |
+ |  mcp.Pool -> Host.Process -+------------->|    /healthz                      |
  |                            |  EIKAD_TOKEN |                                  |
  |  workspace.Host -----------+--- docker ---+-> container + volume eika-ws-<id>|
  |                            |   socket     |    mounted at /workspace         |
@@ -526,10 +586,13 @@ for an upstream push, `hub.Push` from the hub to the project's remote with the
 project's sealed credentials, which never enter the sandbox. A save, a commit,
 and a push publish `workspace.state` so that open views refresh.
 
-The terminal is the one sandbox connection that is not an executor call. It is
-`sandbox.Client.Terminal`, reached through `Host.Terminal` and the server's
-`Workspaces` interface, and deliberately absent from `executor.Executor`: a
-tool holds an executor, so it can run commands but can never get a PTY.
+The terminal is one of the two sandbox connections that are not executor
+calls. It is `sandbox.Client.Terminal`, reached through `Host.Terminal` and
+the server's `Workspaces` interface, and deliberately absent from
+`executor.Executor`: a tool holds an executor, so it can run commands but can
+never get a PTY. The other is `sandbox.Client.Process`, eikad's `/process`,
+which the MCP pool runs a stdio server over (see MCP) and which is kept off
+the executor for the same reason.
 
 ```
   browser                      harness (server/terminal.go)             sandbox
@@ -806,6 +869,126 @@ The Search tab of the settings dialog shows every backend's state and usage,
 reorders and disables web providers, stores keys, edits quotas, and tries a
 search through `POST /api/search`.
 
+## MCP
+
+`internal/mcp` is a Model Context Protocol client written against the
+protocol itself, without an SDK, and `internal/mcp/oauth` its authorization.
+The servers the user configures under Settings are rows in `mcp_servers`;
+their tools join a run's registry beside the built-in ones.
+
+```
+            runs.begin                     GET /api/mcp/servers/{id}, routes in mcp.go
+                |                                   |
+                v                                   v
+   mcp.Pool.Tools(ctx, workspace)            mcp.Pool.Details / Reconnect / ...
+                |
+   +------------+--------------------------+
+   | one conn per remote server            | one conn per stdio server per workspace
+   v                                       v
+ ConnectHTTP                          Launcher.Launch (server/mcp.go: mcpLauncher)
+   modern request (server/discover)        -> Workspaces.Process -> Host.Process
+   else initialize (2025-11-25 ...)        -> sandbox.Client.Process
+   else HTTP+SSE (2024-11-05)              -> eikad GET /process (WebSocket)
+   headers: configured, then Bearer        -> the command, in the workspace
+   token from mcp_credentials            ConnectStdio: server/discover, else initialize
+                |                                   |
+                +---------------+-------------------+
+                                v
+              catalog: tools, resources, templates, prompts
+              events: mcp.server on global, mcp.elicitation on session:<id>
+```
+
+The pieces:
+
+- **Two eras.** The client targets the 2026-07-28 revision, whose requests
+  are stateless and carry their version, client, and capabilities in
+  `_meta`, and falls back to an `initialize` handshake for a server that
+  does not answer `server/discover` as a modern one; over HTTP it falls back
+  once more, to the deprecated HTTP+SSE transport. A modern server may answer
+  a request with `input_required`, and the client answers what it asked and
+  sends the request again, up to eight rounds. `Client.Info` records the era,
+  transport, and version found, which the UI shows.
+- **Transports.** `http.go` is Streamable HTTP: a POST per message whose
+  answer is JSON or an event stream, the `Mcp-Method`, `Mcp-Name`, and
+  `Mcp-Param-*` headers of the modern revision (a tool whose `x-mcp-header`
+  annotations break the rules is listed as excluded, never offered), and an
+  older server's `Mcp-Session-Id`, GET stream, and DELETE. `legacysse.go` is
+  HTTP+SSE, whose endpoint must be on the server's own origin. `stdio.go` is
+  newline-delimited JSON over any `io.ReadWriteCloser`.
+- **The pool.** `Pool` keeps one connection to each remote server, connected
+  in the background at start, and one to each stdio server in each workspace
+  that uses it. Concurrent callers share one attempt; a failure stands for 30
+  seconds before a run asks again, so a server that is down costs each run
+  nothing. A modern connection holds `subscriptions/listen` open, and a
+  changed list is read again and announced. `Store` is the database behind
+  it, which `server` implements over `store` and `secret` (`mcpStore`), so
+  the pool never sees a sealed value and the store never an open one.
+- **Stdio servers run in the workspace.** A stdio server is a process an
+  agent's session asked for, so it runs where every such process runs: eikad
+  starts it through `/process`, the harness holding the other end of its
+  standard streams over a WebSocket. The route is reached through the
+  server's `Workspaces` and `Host.Process`, never through
+  `executor.Executor`, so a tool still cannot hold a process of its own.
+  Stopping or deleting a workspace ends its stdio servers after its runs,
+  and a container that stops takes them with it. Their environment is
+  visible to the agent in that workspace.
+- **Tools.** `Pool.Tools` connects what a run may use, waiting at most 15
+  seconds, and returns `mcp__<server>__<tool>` tools, cut to 64 characters
+  with a hash, and `mcp_list_resources` and `mcp_read_resource` when a
+  server has resources. A remote server's tools are standalone and reach
+  chats; a stdio server's need a workspace. The session's tool choice
+  narrows them as it narrows the built-ins (`sessionTools` in
+  `server/tools.go`), and a session whose choice names no MCP tool starts no
+  server. `Pool.Offered` builds the same tools from each server's last
+  listing without connecting, which is what `GET /api/tools` and the
+  session's effective tool list show. A call's progress becomes
+  `tool.output`; its result's text is what the model reads, images and audio
+  replaced by a line saying the user saw them, and its blocks, media within
+  4 MiB, are the `tool.result` details. A call whose session expired, or
+  whose token a refresh replaced, is sent once more; every other failure is
+  the model's to read.
+- **Authorization.** `auth.go` and `oauth` run OAuth 2.1 as the MCP
+  authorization spec describes it:
+
+```
+ browser               harness (server/mcp.go, mcp.Pool)          authorization server
+ POST .../authorize {redirect_uri}
+    ------------------> checkRedirect: <UI host>/mcp/callback
+                        oauth.Discover: WWW-Authenticate, protected
+                          resource metadata, RFC 8414 / OpenID metadata
+                        client: oauth_client_id | metadata document
+                          (https public_url) | dynamic registration ----->
+                        PKCE S256, state, scope, resource; pending 10 min
+    <------------------ {authorization_url}
+    ---------------------------------------------------------------------> sign in, consent
+    <--------------------------------------------------------------------- 302 /mcp/callback?code&state&iss
+ /mcp/callback page
+ POST /api/mcp/oauth/callback {state, code, iss}
+    ------------------> CheckIssuer (RFC 9207), then Exchange -------------> token
+                        tokens sealed in mcp_credentials; Reconnect
+    <------------------ {server_id}
+```
+
+  The redirect comes back to a frontend route that posts to the
+  authenticated API, so no unauthenticated route receives the code and the
+  sign-in token never leaves the browser. A token is refreshed a minute
+  before it expires and after a 401, a 403 with `insufficient_scope` asks
+  for the union of the scopes, and signing out revokes both tokens and keeps
+  the client. `GET /oauth/client-metadata.json` serves the metadata document
+  for a deployment with an https `public_url`.
+- **Elicitation.** A server may ask the user for input during a call, as an
+  `input_required` result or, on an older server, an `elicitation/create`
+  request. `mcp.Elicitations` registers it, emits `mcp.elicitation`, and
+  holds the call until `POST /api/elicitations/{id}/answer`, the shape
+  `ask_user` has. Roots and sampling are not declared. A server's stderr, an
+  older server's log notifications, and what the client did go to a
+  200-line log per server that the details show.
+
+Every bound the client applies is in `internal/mcp/limits.go`.
+`internal/mcp/mcptest` holds a scripted server in each era and a fake
+authorization server, which the package's tests and the server's handler
+tests run against.
+
 ## Compose topology
 
 `compose.yaml` at the repository root is the whole deployment, and it needs
@@ -896,10 +1079,29 @@ check, and a first project, resuming at the first thing still missing; every
 step after the password can be skipped.
 
 The settings dialog (`features/settings`) is where everything the setup asked
-lives afterwards: providers and models (`features/providers`), the default
-model, the sandbox image, the subagent limits, and the password. Its open
-state is a small store, so the command palette and a session with no model
-open it on the right tab.
+lives afterwards: providers and models (`features/providers`), the profiles
+and the default one (`features/profiles`), the default model, the sandbox
+image, the subagent limits, the MCP servers (`features/mcp`), and the
+password.
+
+A profile's editor (`features/profiles/SettingsEditor`) has Prompt, Tools,
+and Sampling tabs. A field the profile leaves unset shows, muted, what it
+falls through to, from the `inherited` configuration the API returns with
+the layer it came from; a set field has a reset. The session's status bar
+shows its profile beside the model, marked when the session overrides it,
+and opens the same editor over the session's overrides, its profile, and
+its tool choice. Its open state is a small store, so the
+command palette, a session with no model, and the MCP sign-in's return open
+it on the right tab.
+
+The MCP tab lists the servers with their state and opens each on a page of
+its own: its connection and sign-in, a switch per tool, its resources and
+prompts to try, its log, and what the connection learned. Signing in sends
+the browser to the authorization server, which returns it to `/mcp/callback`
+(`features/mcp/MCPCallbackScreen`); that page posts what came back to
+`POST /api/mcp/oauth/callback` and opens the settings on the server again.
+`useMCPEvents`, which the workbench calls once, subscribes to `global` and
+refreshes the servers and the tool list on every `mcp.server` event.
 
 ### The workbench
 
@@ -933,14 +1135,22 @@ array filtered by what is open, so phases 6 and 8 add a panel by writing one
 component and one entry. Phase 5 registers the session tree and the run. A
 workspace session adds the files, the terminal, and the changes; a chat has
 none of those and shows its Tools panel instead, the switches for the tools
-its runs may offer. The session header says which of the two is open: a
+its runs may offer. Every session has a Context panel (`features/context`):
+the next model request, previewed live by the harness, or any recorded call,
+as a stacked token bar by part (base prompt, context files, instructions,
+built-in tools, MCP tools, messages) whose segments open their part, the
+schemas raw or pretty-printed, and the parameters sent with the layer each
+came from. The estimates are scaled to the session's last measured call.
+The session header says which of the two is open: a
 workspace session names its workspace, branch, and state, and a chat carries a
 "Chat · no workspace" badge.
 
 ### Two kinds of state
 
 Server state is TanStack Query over `api/routes.ts`. Nothing polls: an event
-invalidates what it makes stale. `features/workspaces/useWorkspaceEvents`
+invalidates what it makes stale. `features/mcp`'s `useMCPEvents` refreshes
+the MCP servers and the tool list on `mcp.server`;
+`features/workspaces/useWorkspaceEvents`
 subscribes to `workspace:<id>` and refreshes the workspace a `workspace.state`
 event names; `features/session/useSessionStream` refreshes the run status and
 the outline when a turn ends.
@@ -953,7 +1163,11 @@ the turn in flight, and `session.message` events keyed by `entry_id` are the
 stored conversation a replay delivers. A turn that ends is sealed and its live
 rows are replaced by the entries that follow, so nothing is drawn twice. The
 reducer is pure, so a scripted event sequence from `docs/api/events.md` is the
-whole test.
+whole test. It also holds what the run waits on the user for: `ask_user`
+questions and `mcp.elicitation` requests, each dropped by its call's
+`tool.result`. An MCP tool's card (`renderers/MCPRenderer.tsx`, chosen for
+any name starting `mcp_`) shows a waiting request as its form, and the
+server's content blocks once the call is done.
 
 The same reducer keeps the status bar's meter: `turn.progress` and `turn.end`
 carry usage, the model's configured context window, the generation time the
@@ -1024,9 +1238,9 @@ Dependencies point inward. An arrow means "may import".
        |  server  |                             |  eikad  |
        +----+-----+                             +---------+
             |
-    +-------+---------+---------+---------+----------+
-    v                 v         v         v          v
-  agent  <--------  session   store   workspace   subagent    search
+    +-------+---------+---------+---------+----------+----------+
+    v                 v         v         v          v          v
+  agent  <--------  session   store   workspace   subagent    search     mcp --> mcp/oauth
     |    \              |                  |            |
     |     \             v                  v            |
     |      +-> contextfile           workspace/hub  <----+
@@ -1048,6 +1262,9 @@ workspace also imports executor, which is what Host.Executor hands back.
 tool/builtin imports search and search/fetch for web_search and web_fetch;
 search imports nothing from internal/. search/filter (goja) is imported by
 cmd/eikad alone, so the harness binary does not link a JavaScript engine.
+mcp imports tool, for the tools it hands a run, event, and mcp/oauth, and
+never workspace or executor: the server hands it a Store and a Launcher, and
+a stdio server's process reaches the workspace through them.
 ```
 
 Rules that reviews enforce:

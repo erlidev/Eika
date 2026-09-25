@@ -5,22 +5,44 @@
 
 import type { Tool } from "@/api/types";
 
+/** ServerTools are the tools one MCP server offers a chat. */
+export type ServerTools = { server: string; tools: Tool[] };
+
 /** ChatTools splits the harness's tools by whether a chat can offer them. */
 export type ChatTools = {
-  /** offered are the tools that need no workspace: the ones a chat chooses from. */
+  /** offered are the built-in tools that need no workspace: the ones a chat chooses from. */
   offered: Tool[];
-  /** unavailable are the names of the tools a chat never has, sorted. */
+  /** servers are the MCP servers whose tools a chat can offer, by name, each with its tools. */
+  servers: ServerTools[];
+  /** unavailable are the names of the built-in tools a chat never has, sorted. */
   unavailable: string[];
+  /** unavailableServers are the MCP servers that run in a workspace, which a chat has none of. */
+  unavailableServers: string[];
 };
 
 /** chatTools splits the tool list for a session with no workspace. */
 export function chatTools(tools: Tool[]): ChatTools {
+  const servers = new Map<string, Tool[]>();
+  const unavailableServers = new Set<string>();
+  const offered: Tool[] = [];
+  const unavailable: string[] = [];
+  for (const t of tools) {
+    if (t.server === undefined) {
+      if (t.needs_workspace) unavailable.push(t.name);
+      else offered.push(t);
+    } else if (t.needs_workspace) {
+      unavailableServers.add(t.server);
+    } else {
+      servers.set(t.server, [...(servers.get(t.server) ?? []), t]);
+    }
+  }
   return {
-    offered: tools.filter((t) => !t.needs_workspace),
-    unavailable: tools
-      .filter((t) => t.needs_workspace)
-      .map((t) => t.name)
-      .sort(),
+    offered,
+    servers: [...servers]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([server, list]) => ({ server, tools: list })),
+    unavailable: unavailable.sort(),
+    unavailableServers: [...unavailableServers].sort(),
   };
 }
 

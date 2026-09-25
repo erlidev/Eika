@@ -11,7 +11,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -306,5 +308,182 @@ func TestABadTokenIsRefused(t *testing.T) {
 	}
 	if _, err := c.Stat(t.Context(), "."); err == nil {
 		t.Error("the daemon accepted a bad token")
+	}
+}
+
+// lines collects what a process writes to stderr, a line at a time.
+type lines struct {
+	mu  sync.Mutex
+	got []string
+}
+
+func (l *lines) add(line string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.got = append(l.got, line)
+}
+
+func (l *lines) all() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.got)
+}
+
+// readUntil reads a process's stdout until it holds want.
+func readUntil(t *testing.T, r io.Reader, want string) string {
+	t.Helper()
+	var out strings.Builder
+	buf := make([]byte, 256)
+	for !strings.Contains(out.String(), want) {
+		n, err := r.Read(buf)
+		out.Write(buf[:n])
+		if err != nil {
+			t.Fatalf("read stdout: %v, output so far %q", err, out.String())
+		}
+	}
+	return out.String()
+}
+
+func TestProcessCarriesItsStandardStreams(t *testing.T) {
+	c, root := newClient(t)
+	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stderr lines
+	script := `echo "in $(basename "$PWD") $GREETING"; printf 'first\nsecond' >&2; echo >&2; while read line; do echo "got $line"; done`
+	p, err := c.Process(t.Context(), sandbox.ProcessSpec{
+		Command: "sh", Args: []string{"-c", script}, Dir: "sub", Env: []string{"GREETING=hi"},
+	}, stderr.add)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	defer p.Close()
+	if _, err := p.Write([]byte("one\ntwo\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if out := readUntil(t, p, "got two\n"); out != "in sub hi\ngot one\ngot two\n" {
+		t.Errorf("stdout = %q", out)
+	}
+	// Stdout and stderr are separate pipes, so stderr may still be on its
+	// way when stdout has arrived.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(stderr.all()) < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := stderr.all(); !slices.Equal(got, []string{"first", "second"}) {
+		t.Errorf("stderr lines = %q, want each line once, whole", got)
+	}
+}
+
+func TestProcessOutlivesTheContextThatStartedIt(t *testing.T) {
+	c, _ := newClient(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	p, err := c.Process(ctx, sandbox.ProcessSpec{Command: "cat"}, nil)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	defer p.Close()
+	// The pool connects on a context that ends once connecting is done;
+	// the server it started keeps running.
+	cancel()
+	if _, err := p.Write([]byte("still here\n")); err != nil {
+		t.Fatalf("write after the context ended: %v", err)
+	}
+	readUntil(t, p, "still here\n")
+}
+
+func TestProcessReadFailsWithHowItEnded(t *testing.T) {
+	c, _ := newClient(t)
+	cases := map[string]struct {
+		spec sandbox.ProcessSpec
+		want string
+	}{
+		"exit status":    {sandbox.ProcessSpec{Command: "sh", Args: []string{"-c", "echo bye; exit 3"}}, "status 3"},
+		"missing binary": {sandbox.ProcessSpec{Command: "no-such-command-anywhere"}, "no-such-command-anywhere"},
+		"escaping dir":   {sandbox.ProcessSpec{Command: "true", Dir: "../.."}, "outside the workspace"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var stderr lines
+			p, err := c.Process(t.Context(), tc.spec, stderr.add)
+			if err != nil {
+				t.Fatalf("Process: %v", err)
+			}
+			defer p.Close()
+			_, err = io.ReadAll(p)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("read error = %v, want one saying %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestProcessFlushesAnUnfinishedStderrLine(t *testing.T) {
+	c, _ := newClient(t)
+	var stderr lines
+	p, err := c.Process(t.Context(), sandbox.ProcessSpec{Command: "sh", Args: []string{"-c", "printf 'no newline' >&2"}}, stderr.add)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	defer p.Close()
+	_, _ = io.ReadAll(p)
+	if got := stderr.all(); !slices.Equal(got, []string{"no newline"}) {
+		t.Errorf("stderr lines = %q", got)
+	}
+}
+
+func TestClosingAProcessStopsIt(t *testing.T) {
+	c, root := newClient(t)
+	marker := filepath.Join(root, "stopped")
+	// The process ignores its stdin closing and waits for SIGTERM, which it
+	// records before exiting.
+	script := `trap 'touch stopped; exit 0' TERM; echo ready; while :; do sleep 0.05; done`
+	p, err := c.Process(t.Context(), sandbox.ProcessSpec{Command: "sh", Args: []string{"-c", script}}, nil)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	readUntil(t, p, "ready\n")
+	closed := make(chan error, 1)
+	go func() { closed <- p.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close did not return")
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the process was not stopped after Close")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestProcessReportsARefusedHandshake(t *testing.T) {
+	root := t.TempDir()
+	d, err := eikad.New(eikad.Options{Root: root, Token: testToken},
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("new daemon: %v", err)
+	}
+	srv := httptest.NewServer(d.Handler())
+	t.Cleanup(srv.Close)
+	c, err := sandbox.New(sandbox.Options{BaseURL: srv.URL, Token: "wrong"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	p, err := c.Process(t.Context(), sandbox.ProcessSpec{Command: "cat"}, nil)
+	if err == nil {
+		p.Close()
+		t.Fatal("the daemon started a process for a bad token")
+	}
+	if !strings.Contains(err.Error(), "/process") {
+		t.Errorf("error = %v, want it to name the route", err)
 	}
 }

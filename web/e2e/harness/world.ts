@@ -6,10 +6,17 @@
  */
 
 import type { EikaEvent } from "../../src/api/events.ts";
+import { defaultProfile, previewContext, record } from "./profiles.ts";
+import type { RecordedRequest, StoredProfile } from "./profiles.ts";
 import type {
+  ContentDetail,
+  Elicitation,
   Entry,
+  MCPServer,
+  MCPServerDetails,
   Message,
   Model,
+  ProfileSettings,
   Project,
   Provider,
   Question,
@@ -40,6 +47,19 @@ export type ReplyStep =
       details?: Record<string, unknown>;
     }
   | { ask: string; options?: string[]; allowFreeText?: boolean }
+  /**
+   * mcp calls a tool of an MCP server, `mcp__<server>__<tool>`, whose result
+   * carries the server's content blocks. With `elicit` the server first asks
+   * the user and waits; an answer other than accept makes the result say so.
+   */
+  | {
+      mcp: { server: string; tool: string };
+      args: Record<string, unknown>;
+      content: ContentDetail[];
+      structured?: unknown;
+      isError?: boolean;
+      elicit?: Pick<Elicitation, "mode" | "message" | "requested_schema" | "url">;
+    }
   | { fail: string; retryable?: boolean }
   /**
    * cutOff ends the turn on an incomplete stop reason, as an endpoint that
@@ -80,6 +100,10 @@ export type World = {
   /** activeRuns maps a session to the run that is going on it. */
   activeRuns: Record<string, string>;
   questions: Question[];
+  /** elicitations are what MCP servers ask during the runs that are going. */
+  elicitations: Elicitation[];
+  /** mcpServers are the configured MCP servers, each with all the harness knows of it. */
+  mcpServers: MCPServerDetails[];
   pendingSteering: Record<string, string[]>;
   pendingFollowUps: Record<string, string[]>;
   /** replies are consumed one per run, oldest first; an empty list echoes. */
@@ -88,6 +112,14 @@ export type World = {
   probeModels: { id: string; context_window?: number; max_output?: number }[];
   /** eventsOnConnect are sent once to every event stream that opens. */
   eventsOnConnect: EikaEvent[];
+  /** profiles are the profiles, oldest first; the default_profile setting names the default. */
+  profiles: StoredProfile[];
+  /** overrides are what each session sets over its profile, by session id. */
+  overrides: Record<string, ProfileSettings>;
+  /** toolChoices are the sessions' own tool choices, by session id; one with none inherits. */
+  toolChoices: Record<string, string[]>;
+  /** requests are each session's recorded model calls, oldest first. */
+  requests: Record<string, RecordedRequest[]>;
 };
 
 /** fixedNow is the clock every screenshot is taken at. */
@@ -142,6 +174,8 @@ export function emptyWorld(): World {
     runs: {},
     activeRuns: {},
     questions: [],
+    elicitations: [],
+    mcpServers: [],
     pendingSteering: {},
     pendingFollowUps: {},
     replies: [],
@@ -150,6 +184,10 @@ export function emptyWorld(): World {
       { id: "gpt-5-mini", context_window: 400000, max_output: 128000 },
     ],
     eventsOnConnect: [],
+    profiles: [defaultProfile()],
+    overrides: {},
+    toolChoices: {},
+    requests: {},
   };
 }
 
@@ -322,6 +360,7 @@ export class WorldBuilder {
       workspace_id: workspace.id,
       kind: "user",
       tools: sessionTools(this.world, false),
+      overridden: false,
       created_at: minutesAgo(120),
       updated_at: minutesAgo(5),
       ...input,
@@ -337,6 +376,7 @@ export class WorldBuilder {
       id: this.id("chat"),
       kind: "user",
       tools: sessionTools(this.world, true),
+      overridden: false,
       created_at: minutesAgo(90),
       updated_at: minutesAgo(5),
       ...input,
@@ -344,6 +384,75 @@ export class WorldBuilder {
     this.world.sessions.unshift(row);
     this.world.entries[row.id] ??= [];
     return row;
+  }
+
+  /**
+   * mcpServer adds an MCP server with nothing listed yet; pass the details it
+   * has on top. Its tools join GET /api/tools as the harness offers them.
+   */
+  mcpServer(
+    server: Partial<MCPServer> & Pick<MCPServer, "name" | "kind">,
+    details: Partial<Omit<MCPServerDetails, "server">> = {},
+  ): MCPServerDetails {
+    const row: MCPServerDetails = {
+      server: {
+        id: this.id("mcp"),
+        url: "",
+        header_names: [],
+        command: "",
+        args: [],
+        env_names: [],
+        enabled: true,
+        disabled_tools: [],
+        oauth_client_id: "",
+        oauth_client_secret_set: false,
+        state: "idle",
+        workspaces: [],
+        created_at: minutesAgo(300),
+        updated_at: minutesAgo(300),
+        ...server,
+      },
+      tools: [],
+      excluded_tools: [],
+      resources: [],
+      resource_templates: [],
+      prompts: [],
+      list_errors: {},
+      logs: [],
+      auth: { challenged: false, authorized: false, has_refresh_token: false },
+      ...details,
+    };
+    this.world.mcpServers.push(row);
+    this.world.mcpServers.sort((a, b) => a.server.name.localeCompare(b.server.name));
+    syncMCPTools(this.world);
+    return row;
+  }
+
+  /** profile adds a profile that sets what input names and nothing else. */
+  profile(input: Partial<StoredProfile> & { name: string }): StoredProfile {
+    const row: StoredProfile = {
+      ...defaultProfile(),
+      id: this.id("prof"),
+      created_at: minutesAgo(200),
+      updated_at: minutesAgo(200),
+      ...input,
+    };
+    this.world.profiles.push(row);
+    return row;
+  }
+
+  /**
+   * request records the model call a session's run made when its path ended
+   * where it ends now, as the harness keeps one per call.
+   */
+  request(session: Session, minutes: number, outputTokens: number): RecordedRequest {
+    return record(this.world, session, {
+      id: this.id("req"),
+      runId: this.id("run"),
+      context: previewContext(this.world, session, ""),
+      outputTokens,
+      at: minutesAgo(minutes),
+    });
   }
 
   /**
@@ -408,4 +517,42 @@ export function syncSystem(world: World): void {
   world.system.providers = world.providers.length;
   world.system.models = world.models.length;
   world.system.projects = world.projects.length;
+}
+
+/**
+ * syncMCPTools rebuilds GET /api/tools from the built-in tools and what each
+ * enabled MCP server last listed, as the harness offers them: a stdio
+ * server's tools need a workspace, and a disabled tool is left out.
+ */
+export function syncMCPTools(world: World): void {
+  const builtIn = world.tools.filter((t) => t.server === undefined && !t.name.startsWith("mcp_"));
+  const offered = world.mcpServers
+    .filter((d) => d.server.enabled)
+    .flatMap((d) =>
+      (d.tools ?? [])
+        .filter((t) => t.enabled)
+        .map((t) => ({
+          name: t.exposed_name,
+          description: t.description ?? "",
+          needs_workspace: d.server.kind === "stdio",
+          server: d.server.name,
+        })),
+    );
+  const resources = world.mcpServers.some((d) => d.server.enabled && (d.resources ?? []).length > 0)
+    ? [
+        {
+          name: "mcp_list_resources",
+          description: "List the resources the MCP servers of this run offer.",
+          needs_workspace: false,
+        },
+        {
+          name: "mcp_read_resource",
+          description: "Read one resource of an MCP server by its URI.",
+          needs_workspace: false,
+        },
+      ]
+    : [];
+  world.tools = [...builtIn, ...offered, ...resources].sort((a, b) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+  );
 }

@@ -29,7 +29,7 @@ func clearEnv(t *testing.T) {
 		"EIKA_LISTEN", "EIKA_DATABASE_URL", "EIKA_DOCKER_SOCKET",
 		"EIKA_SEARXNG_URL", "EIKA_SANDBOX_IMAGE", "EIKA_SANDBOX_NETWORK",
 		"EIKA_EIKAD_BINARY", "EIKA_HUB_ROOT", "EIKA_HUB_URL", "EIKA_AUTH_TOKEN",
-		"EIKA_SECRET_KEY_FILE", "EIKA_ALLOWED_ORIGINS",
+		"EIKA_SECRET_KEY_FILE", "EIKA_ALLOWED_ORIGINS", "EIKA_PUBLIC_URL",
 	} {
 		t.Setenv(name, "")
 		if err := os.Unsetenv(name); err != nil {
@@ -202,6 +202,11 @@ func TestValidate(t *testing.T) {
 		{"empty hub url", missing(func(c *config.Config) { c.HubURL = "" }), false},
 		{"empty secret key file", missing(func(c *config.Config) { c.SecretKeyFile = "" }), false},
 		{"no auth token, because sign-in sessions need none", missing(func(c *config.Config) { c.AuthToken = "" }), true},
+		{"https public url", missing(func(c *config.Config) { c.PublicURL = "https://eika.example.com" }), true},
+		{"http public url with a trailing slash", missing(func(c *config.Config) { c.PublicURL = "http://10.0.0.5:8080/" }), true},
+		{"public url with a path", missing(func(c *config.Config) { c.PublicURL = "https://example.com/eika" }), false},
+		{"public url without a scheme", missing(func(c *config.Config) { c.PublicURL = "eika.example.com" }), false},
+		{"public url with credentials", missing(func(c *config.Config) { c.PublicURL = "https://u:p@eika.example.com" }), false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

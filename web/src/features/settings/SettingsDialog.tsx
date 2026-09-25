@@ -1,11 +1,11 @@
 /**
- * The settings: models and providers, the harness-wide choices, web search,
- * the account, and how the app looks. Everything but the appearance is stored
+ * The settings: models and providers, profiles, the harness-wide choices, web search,
+ * MCP servers, the account, and how the app looks. Everything but the appearance is stored
  * in the harness. Its open state is `store.ts`, so anything can open it on a
  * tab.
  *
  * The dialog is one fixed size whatever tab is showing, and each tab scrolls
- * inside it: five tabs of very different lengths would otherwise resize the
+ * inside it: six tabs of very different lengths would otherwise resize the
  * window under the pointer every time one was picked.
  */
 
@@ -29,6 +29,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MCPSettings } from "@/features/mcp";
+import { ProfilesSettings } from "@/features/profiles";
 import { ModelsPanel } from "@/features/providers";
 import { useTranscriptPreferences } from "@/features/session";
 import type { ReasoningDisplay } from "@/features/session";
@@ -46,8 +48,10 @@ const sideNavWidth = 640;
 
 const tabs: readonly { value: SettingsTab; label: string }[] = [
   { value: "models", label: "Models" },
+  { value: "profiles", label: "Profiles" },
   { value: "general", label: "General" },
   { value: "search", label: "Search" },
+  { value: "mcp", label: "MCP" },
   { value: "account", label: "Account" },
   { value: "appearance", label: "Appearance" },
 ];
@@ -115,11 +119,17 @@ export function SettingsDialog() {
                 defaultError={save.isError ? save.error : undefined}
               />
             </TabsContent>
+            <TabsContent value="profiles">
+              <ProfilesSettings />
+            </TabsContent>
             <TabsContent value="general">
               <GeneralSettings />
             </TabsContent>
             <TabsContent value="search">
               <SearchSettings />
+            </TabsContent>
+            <TabsContent value="mcp">
+              <MCPSettings />
             </TabsContent>
             <TabsContent value="account">
               <AccountSettings />

@@ -18,8 +18,9 @@ The token is a sign-in session's, from the setup, sign-in, or password
 routes below, or the deployment's optional fixed API token, `EIKA_AUTH_TOKEN`.
 The exceptions are `GET /healthz`, `GET /api/healthz`, the three routes that
 hand out a session (`GET /api/auth/status`, `POST /api/auth/setup`,
-`POST /api/auth/login`), and the git hub under `/git/`, which authenticates
-workspaces itself with per-workspace basic auth. The two WebSocket routes,
+`POST /api/auth/login`), `GET /oauth/client-metadata.json`, which an OAuth
+authorization server fetches, and the git hub under `/git/`, which
+authenticates workspaces itself with per-workspace basic auth. The two WebSocket routes,
 `GET /api/events` and `GET /api/workspaces/{id}/terminal`, also accept the
 token as the `token` query parameter, because a browser cannot set a header on
 a WebSocket handshake; no other route does, so a token never has to appear in
@@ -41,7 +42,7 @@ Every failure has one shape:
 | `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field is malformed. |
 | `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
 | `forbidden` | 403 | A workspace path is outside the workspace, directly or through a symlink, or the sandbox may not open it. |
-| `not_found` | 404 | The addressed project, workspace, session, entry, run, question, provider, model, or workspace file does not exist. |
+| `not_found` | 404 | The addressed project, workspace, session, entry, run, question, provider, model, MCP server, elicitation, pending authorization, or workspace file does not exist. |
 | `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a workspace that is not running, nothing to commit, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
 | `too_large` | 413 | A file saved through the API is over its 2 MiB bound. |
 | `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
@@ -478,12 +479,107 @@ behind.
 
 ### `PUT /api/sessions/{id}/tools`
 
-`{"tools": [string]}`, required; an empty list turns every tool off. Chooses
-the tools the session's next run offers the model; a run already going keeps
-the ones it started with. The names are stored sorted, once each.
+`{"tools": [string] | null}`, required; an empty list turns every tool off,
+and `null` clears the session's own choice, so that its profile's applies.
+Chooses the tools the session's next run offers the model; a run already
+going keeps the ones it started with. An entry is a tool name or
+`mcp__<server>__*`, every tool that MCP server offers, including one it adds
+later. The entries are stored sorted, once each.
 
-`200` with the `Session`. `400` when `tools` is missing, names a tool that
-does not exist, or, for a chat, names a tool that needs a workspace.
+`200` with the `Session`. `400` when `tools` is missing or not a list, names
+a tool or an MCP server that does not exist, or, for a chat, names a tool or
+a stdio server that needs a workspace.
+
+### `GET /api/sessions/{id}/configuration`
+
+What the session sets for itself over its profile, and what its next run
+resolves to. `200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `session_id` | string | The session. |
+| `profile_id` | string, optional | The profile the session chose. Absent, it runs with whichever profile is the default. |
+| `overrides` | ProfileSettings | What the session sets over its profile. |
+| `tools` | string array or null | The session's own tool choice, null when it has made none. |
+| `resolved` | Configuration | What the next run uses when the message names no model. |
+| `inherited` | Configuration | What the session's overrides fall through to: the configuration as it would be if the session set nothing itself, except that a model the session chose still supplies the model row below its unset values. |
+
+An editor asks with what it has chosen and not saved: `?profile_id=` and
+`?model_id=` stand in for the session's profile (empty: the default one)
+and its own model (empty: none) in `inherited`, so the editor shows the
+values they bring as they are chosen. Everything else in the answer is
+what is saved. `400` for a profile or a model that does not exist.
+
+### `PUT /api/sessions/{id}/profile`
+
+`{"profile_id": string}`; empty goes back to the default profile. The
+session's overrides stay. `200` with the body of
+`GET /api/sessions/{id}/configuration`; `400` for a profile that does not
+exist.
+
+### `PUT /api/sessions/{id}/overrides`
+
+A ProfileSettings object, which replaces everything the session sets over
+its profile; one that sets nothing clears them. `200` with the body of
+`GET /api/sessions/{id}/configuration`; `400` for a model that does not
+exist, a sampling parameter out of range, or a prompt over 64 KiB.
+
+### `GET /api/sessions/{id}/context`
+
+The session's next model request, assembled by the same code a run uses:
+the request a run started now would send, with the run's new message still
+to be appended. `?model=<name>` names the model the run would request, as a
+message does. The MCP tools are those the servers last listed; a preview
+connects nothing. The context files are read in the workspace as a run
+reads them; when it is not running, the preview has everything else and
+`context_files_unread` says why the files are missing, since a run would
+start the workspace and read them. `200` with a ModelContext. `400` for a
+model that does not exist.
+
+### `GET /api/sessions/{id}/requests`
+
+The records of the session's model calls: one per call a run made that
+returned a response. `200` with `{"session_id": string, "requests":
+[ModelRequest]}`, oldest first. The records go with their session.
+
+### `GET /api/sessions/{id}/requests/{request_id}`
+
+One recorded call, in the shape of the preview: its sections, tool schemas,
+and parameters as it sent them, and its messages rebuilt from the session's
+path down to the entry the call's conversation ended at. `200` with a
+ModelContext that has `request`; `404` for a record of another session.
+
+### ModelContext
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sections` | array | The system prompt by section, in order: `{kind, text, tokens, files}`. `kind` is `base`, `context_files`, or `instructions`; `files` lists a `context_files` section's files as `{path, text, tokens}`. The system prompt is the sections' texts joined by a blank line. |
+| `tools` | array | The tool schemas sent: `{name, description, schema, source, tokens}`, where `source` is `builtin` or `mcp`. |
+| `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` only when the model preserves thinking. |
+| `message_tokens` | number | The estimated size of the messages. |
+| `parameters` | object | `{model, sampling, thinking_switch, preserve_thinking}`: the endpoint's identifier of the model, the sampling parameters sent (a Sampling), and the model's switches. |
+| `sources` | object | The layer each parameter came from, keyed `model`, `thinking_switch`, `preserve_thinking`, and `sampling.<parameter>`. |
+| `dropped_effort` | string, optional | A reasoning effort the configuration chose that the model does not offer, which is not sent. |
+| `context_files_unread` | string, optional | In a preview, why the context files a run would read are missing: the workspace is not running. |
+| `request` | ModelRequest, optional | The record this is; absent for the next request. |
+| `calibration` | object, optional | `{request_id, input_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
+
+Every `tokens` figure is an estimate, four bytes to a token; only a record's
+`input_tokens` is measured.
+
+### ModelRequest
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | The record id. |
+| `session_id` | string | The session. |
+| `run_id` | string | The run that made the call: a `Run`'s id. |
+| `entry_id` | string, optional | The session entry the call's conversation ended at. |
+| `model_id` | string, optional | The model, absent once it is deleted. |
+| `model` | string | The model's name when the call was made. |
+| `message_tokens` | number | The estimated size of the messages sent. |
+| `input_tokens`, `output_tokens`, `total_tokens` | number | What the endpoint measured for the call, 0 when it reported nothing. |
+| `created_at` | time | When the call returned. |
 
 ### Session
 
@@ -495,7 +591,9 @@ does not exist, or, for a chat, names a tool that needs a workspace.
 | `kind` | string | `user`, `fork`, or `agent`: who opened it. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
 | `parent_session_id` | string, optional | The session it was forked from, or the one whose run spawned it. |
-| `tools` | string array | The tools the next run offers the model, sorted: every tool the session can run until the user chooses, and never one that needs a workspace in a chat. |
+| `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a workspace in a chat. |
+| `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. A fork and a child agent start with their parent's. |
+| `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ### Entry
@@ -534,7 +632,7 @@ on the event stream.
 |---|---|---|
 | `text` | string, required | The message. |
 | `mode` | `run`, `steer`, or `follow_up` | What to do with it. Empty means `run`. |
-| `model` | string | The name of the model this run uses. Empty uses the `default_model` setting, or the first model. |
+| `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first model. |
 
 - `run` starts a run from the session's head. `409` when one is already going.
 - `steer` joins the run in progress as soon as the running tool call
@@ -559,6 +657,7 @@ What the session is doing and what is waiting for it.
 | `pending_steering` | string array | Steering messages the run has not delivered yet, oldest first. |
 | `pending_follow_ups` | string array | Follow-up messages waiting for the turn to end. |
 | `questions` | Question array | Questions of this session that a run is blocked on. |
+| `elicitations` | Elicitation array | What MCP servers asked the user during this session's tool calls, which wait on an answer, oldest first. |
 
 Accepted queue messages remain in these arrays after a run aborts or fails.
 The next run on the session receives them.
@@ -589,7 +688,15 @@ choice picks from.
 |---|---|---|
 | `name` | string | What the model calls it, and what `PUT /api/sessions/{id}/tools` takes. |
 | `description` | string | What the model is told it does. |
-| `needs_workspace` | boolean | It acts on files or processes, so a chat never offers it. |
+| `needs_workspace` | boolean | It acts on files or processes, so a chat never offers it. A `stdio` MCP server's tools do. |
+| `server` | string, optional | The MCP server whose tool it is. Absent for a built-in tool and for `mcp_list_resources` and `mcp_read_resource`, which reach every server of a run. |
+
+The list includes the tools each enabled MCP server offered when it was last
+listed, without connecting to any, and the two resource tools when one of
+them has resources. A run offers the tools of the servers it reaches when it
+starts: remote ones, and the stdio ones in its workspace, which it starts. A
+server not connected yet has 15 seconds; one that cannot be reached leaves
+its tools out of that run.
 
 ### Run
 
@@ -601,6 +708,19 @@ choice picks from.
 | `started_at` | time | When it began. |
 | `finished_at` | time, optional | When it ended. |
 | `error` | string, optional | Why an `error` run failed. |
+
+### Elicitation
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | The elicitation id, which the answer route takes. |
+| `session_id`, `run_id`, `call_id` | string | The tool call that waits. |
+| `server` | string | The name of the MCP server that asks. |
+| `mode` | string | `form`, for fields to fill in, or `url`, for a page to open. |
+| `message` | string | What the server says it wants. |
+| `requested_schema` | object, optional | In `form` mode, a flat JSON Schema object: its `properties` are `string` (perhaps with `enum`, `format`, `minLength`, `maxLength`), `number`, `integer`, `boolean`, or `array` of strings, and `required` names the ones that must be given. |
+| `url` | string, optional | In `url` mode, the http or https page to send the user to; accept once they have been. |
+| `asked_at` | time | When the server asked. |
 
 ### Question
 
@@ -802,6 +922,119 @@ the model is there. `400` with what the endpoint answered when it failed.
 | `preserve_thinking` | boolean | As on `POST`. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
+## Profiles
+
+A profile is a named configuration of what a run sends: the model, the base
+prompts, extra instructions, whether context files are read, the tools, and
+the sampling parameters. Every setting is optional, and one that is not set
+falls through. A run's configuration is resolved one value at a time, from
+the first layer that sets it:
+
+```
+the message's model -> the session's overrides -> the profile -> the model row -> the default
+```
+
+The model row supplies `max_output` and `reasoning_effort`; the default is
+the `default_model` setting, the built-in prompts, context files read, every
+tool, and for any other sampling parameter the endpoint's own default. A
+reasoning effort chosen above the model row that the model does not offer is
+not sent: the model row's own is, and the configuration names the dropped
+one. The harness creates one profile, `Default`, that sets nothing.
+
+### `GET /api/profiles`
+
+`200` with `{"profiles": [Profile], "default": string, "prompts":
+{"workspace": string, "chat": string}}`: every profile, oldest first, the id
+of the default one, and the built-in base prompts of a workspace session and
+of a chat.
+
+### `GET /api/profiles/inherited`
+
+`?model_id=` optional. `200` with the Configuration a profile that chooses
+that model (absent or empty: none) falls through to: the model's own values
+and the defaults. Nothing else a profile sets changes it, so a profile
+editor asks with the model it has chosen before the profile is saved, and a
+new profile asks before it exists. `400` for a model that does not exist.
+
+### `POST /api/profiles`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string, required | Unique, 1 to 64 characters. |
+| `description` | string | At most 500 characters. |
+| ProfileSettings fields | | What the profile sets. |
+| `tools` | string array or null | The tool choice, in the shape `PUT /api/sessions/{id}/tools` takes; null is every tool, an empty list none. A profile may choose a tool that needs a workspace: a chat's runs leave it out. |
+
+`201` with the `Profile`. `400` for a bad field; `409` when the name is taken.
+
+### `PUT /api/profiles/{id}`
+
+The same body as `POST`, which replaces the whole profile. `200` with the
+`Profile`; `404` for an unknown profile. Runs already going keep the
+configuration they started with.
+
+### `DELETE /api/profiles/{id}`
+
+`204`. The sessions that chose it run with the default profile, and when it
+was the default, the first profile is. `409` for the last profile: a run
+always needs one.
+
+### ProfileSettings
+
+What a profile sets, and what a session overrides of it. A field that is
+null, an absent `model_id`, and a sampling parameter left out are not set.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `model_id` | string, optional | The model, by id. |
+| `workspace_prompt` | string or null | Replaces the built-in base prompt of a workspace session, the empty string included. At most 64 KiB. |
+| `chat_prompt` | string or null | Replaces the built-in base prompt of a chat, likewise. |
+| `instructions` | string or null | Follows the base prompt and the context files. At most 64 KiB. |
+| `context_files` | boolean or null | Whether the workspace's AGENTS.md files are read. |
+| `sampling` | Sampling | The sampling parameters set here. |
+
+### Sampling
+
+Every field is optional; one left out is not set.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `temperature` | number, 0 to 2 | |
+| `top_p` | number, 0 to 1 | |
+| `top_k` | number, at least 1 | Not a Chat Completions field; vLLM, llama.cpp, SGLang, LM Studio, and OpenRouter read it. Sent only when set. |
+| `min_p` | number, 0 to 1 | Like `top_k`. |
+| `frequency_penalty`, `presence_penalty` | number, -2 to 2 | |
+| `seed` | number | |
+| `stop` | string array | At most 16 sequences of 1 to 256 bytes. An empty list sends none, which clears a lower layer's. |
+| `max_output` | number, at least 1 | The most tokens one response may generate. |
+| `reasoning_effort` | string | A word the model offers; the empty string leaves it to the endpoint. |
+
+### Profile
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id`, `name`, `description` | string | The profile. |
+| ProfileSettings fields | | What it sets. |
+| `tools` | string array or null | Its tool choice. |
+| `inherited` | Configuration | What its unset values fall through to: the model row of the model it resolves to, and the defaults. |
+| `created_at`, `updated_at` | time | When it was made and last changed. |
+
+### Configuration
+
+A resolved configuration, with the layer each value came from.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `profile_id`, `profile_name` | string | The profile it starts from. |
+| `model_id`, `model` | string | The model's id and name, empty when no model is configured. |
+| `workspace_prompt`, `chat_prompt` | string | The base prompts. |
+| `instructions` | string | The extra instructions, empty for none. |
+| `context_files` | boolean | Whether context files are read. |
+| `tools` | string array or null | The tool choice; null is every tool the session can run. |
+| `sampling` | Sampling | The sampling parameters sent. |
+| `dropped_effort` | string, optional | An effort chosen above the model that the model does not offer. |
+| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, or `default`, keyed `profile`, `model`, `workspace_prompt`, `chat_prompt`, `instructions`, `context_files`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
+
 ## Settings
 
 ### `GET /api/settings`
@@ -822,7 +1055,8 @@ writes nothing.
 
 | Key | Value | Meaning |
 |---|---|---|
-| `default_model` | string | The name of the model a run uses when the request names none. It must name a model. |
+| `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a model. |
+| `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
 | `sandbox_image` | string | The image a new workspace runs when it names none. |
 | `subagent_max_depth` | number, 1 to 8 | How many levels of children a session may have. |
 | `subagent_max_children` | number, 1 to 16 | How many children of one session may run at a time. |
@@ -893,6 +1127,235 @@ characters. `200` with:
 | `text` | string | What the model would read. |
 | `is_error` | boolean | The search failed in a way the model would be told about: an empty query, no provider answering, a source refusing the query. |
 | `details` | object | `source`, `query`, `count`, `providers` (the one that answered), `attempts` (`{provider, error}` skipped on the way), `cached`, `pool`, `results` (`{title, url, description}`), `ms`. These are also web_search's tool details. |
+
+## MCP servers
+
+An MCP server is a Model Context Protocol server whose tools runs offer
+beside the built-in ones. An `http` server is remote: the harness connects to
+it, and its tools reach chats too. A `stdio` server is a command the harness
+starts in each workspace whose session uses it, through eikad's `/process`;
+its tools need a workspace. A server's tool is named
+`mcp__<server>__<tool>`, cut to 64 characters with a hash when longer. The
+state of every server is on the `global` topic as `mcp.server` events.
+
+Header and environment values and the OAuth client secret are sealed like
+provider keys and never returned; their names are. So are the OAuth tokens,
+of which the API reports only whether they exist. A stdio server's
+environment is visible to the agent in the workspace it runs in.
+
+### `GET /api/mcp/servers`
+
+`200` with `{"servers": [MCPServer]}`, by name.
+
+### `POST /api/mcp/servers`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string, required | What the user calls it; unique, at most 32 characters of letters, digits, hyphens, and single underscores between them, since it is part of every tool name. |
+| `kind` | `http` or `stdio`, required | How the server is reached. It never changes. |
+| `url` | string | An `http` server's http or https endpoint. No credentials or fragment. |
+| `headers` | object of strings | Headers every request to an `http` server carries, such as an API key. At most 64; not one the client sets itself (`Accept`, `Content-Type`, `Mcp-*`, `MCP-Protocol-Version`, `Last-Event-ID`, ...). A configured `Authorization` header replaces OAuth. |
+| `command` | string | A `stdio` server's program, such as `npx`. |
+| `args` | string array | Its arguments. At most 64. |
+| `env` | object of strings | Variables its process gets on top of the workspace's. At most 64. |
+| `enabled` | boolean | Defaults to true. A server that is off is not connected and offers nothing. |
+| `disabled_tools` | string array | Server tool names (not `mcp__` names) left out of every run. |
+| `oauth_client_id` | string | An `http` server's client registered by hand with its authorization server. |
+| `oauth_client_secret` | string | That client's secret, if it has one. |
+
+`201` with the `MCPServer`. An enabled `http` server starts connecting at
+once. `400` for a bad field or a field of the other kind; `409` when the name
+is taken.
+
+### `GET /api/mcp/servers/{id}`
+
+Everything the harness knows of one server. `200` with `MCPServerDetails`;
+`404` for an unknown server, `409` when its secrets cannot be opened any more.
+
+### `PATCH /api/mcp/servers/{id}`
+
+`name`, `url`, `headers`, `command`, `args`, `env`, `enabled`,
+`disabled_tools`, `oauth_client_id`, and `oauth_client_secret`, each
+optional; an absent field is left alone. `headers` and `env` replace the
+whole set, and a `null` value keeps the value stored under that name, so a
+form can change one entry without the others' values. An empty
+`oauth_client_secret` removes it, and so does clearing `oauth_client_id`.
+A `url` that differs from the stored one drops the stored headers, unless
+the request gives `headers`, and the OAuth tokens, which were issued for the
+old URL; the registered client is kept. A new `name` is carried into the
+tool choices of profiles and sessions, so `mcp__<old>__*` and
+`mcp__<old>__<tool>` entries become `mcp__<name>__…`. The server's
+connections end and an enabled `http` server connects again. `200` with the `MCPServer`; `400` for
+a bad field, a field of the other kind, or a `null` for a name with no
+stored value; `409` when the name is taken.
+
+### `DELETE /api/mcp/servers/{id}`
+
+Removes the server, its credentials, and its connections, and emits
+`mcp.server` with state `removed`. `204`.
+
+### `POST /api/mcp/servers/{id}/connect`
+
+`{"workspace_id": string}`, where the workspace is where a `stdio` server
+runs and is ignored for an `http` one; send `{}` for an `http` server. Drops
+the server's connection there and connects again, waiting for the attempt.
+`200` with `MCPServerDetails`, whatever the attempt came to: a server that
+did not connect says why in `server.state`, `server.error`, and `logs`.
+`400` for a `stdio` server without a workspace, `404` for an unknown server
+or workspace, `409` for a server that is off or a workspace that is not
+running.
+
+### `POST /api/mcp/servers/{id}/authorize`
+
+Starts authorizing an `http` server with OAuth 2.1 as the MCP authorization
+spec describes it: `{"redirect_uri": string}`, which must be the web UI's
+`/mcp/callback` page, with no query or fragment, on the host the request
+came to, a host `allowed_origins` names, or the host of `public_url`. The
+frontend sends `<window.location.origin>/mcp/callback`.
+
+`200` with `{"authorization_url": string}`: send the browser there. The
+authorization server sends it back to `redirect_uri` with `code`, `state`,
+and perhaps `iss`, or `error` and `error_description`; the page posts them
+to `POST /api/mcp/oauth/callback`. The authorization waits ten minutes.
+
+The harness discovers the authorization server from the server's
+`WWW-Authenticate` challenge or its protected resource metadata, and picks a
+client: `oauth_client_id` when set, then its own Client ID Metadata Document
+when the authorization server supports one and `public_url` is https, then
+dynamic registration. `400` with what went wrong when there is no way to get
+a client (the message names the redirect URI to register one by hand with),
+the authorization server does not offer PKCE, a discovery document is
+missing or refers elsewhere, or the redirect URI is not the UI's; `400` for a
+`stdio` server.
+
+### `POST /api/mcp/oauth/callback`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `state` | string | The `state` query parameter the browser came back with. |
+| `code` | string | The `code` parameter. |
+| `iss` | string or absent | The `iss` parameter. Send it exactly when the redirect carried one; an absent `iss` and an empty one are different answers. |
+| `error`, `error_description` | string | The error parameters, when the authorization server refused. |
+
+Checks that the answer came from the authorization server the authorization
+started with, redeems the code, stores the tokens sealed, and connects the
+server with them. `200` with `{"server_id": string}`. `404` when no
+authorization waits for that `state` (it finished, expired, or was answered
+once already); `400` with the reason when the issuer is wrong, the
+authorization server refused, or it would not redeem the code.
+
+### `DELETE /api/mcp/servers/{id}/authorization`
+
+Signs out: asks the authorization server to revoke the refresh token and
+the access token, forgets both, and ends the server's connections. The
+registered client is kept for the next authorization. `204`.
+
+### `POST /api/mcp/servers/{id}/resources/read`
+
+`{"uri": string, "workspace_id": string}`, where `workspace_id` is only for
+a `stdio` server. Reads one resource. `200` with
+`{"contents": [ContentDetail]}`, each of type `resource`. `400` with the
+server's message when it refuses; an `http` server that is not connected is
+connected first.
+
+### `POST /api/mcp/servers/{id}/prompts/get`
+
+`{"name": string, "arguments": {string: string}, "workspace_id": string}`.
+Renders a prompt. `200` with `{"description": string, "messages":
+[{"role": "user" or "assistant", "content": ContentDetail}]}`; `400` with
+the server's message when it refuses.
+
+### `POST /api/elicitations/{id}/answer`
+
+An MCP server asked the user for input during a tool call, as an
+`mcp.elicitation` event and an entry of the run state's `elicitations`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `action` | string, required | `accept`, `decline`, or `cancel`. |
+| `content` | object | For an accepted `form`: the values by field name, each of the type the field's schema says. Absent otherwise. |
+
+Delivers the answer to the waiting call. `204`. `404` when nothing waits on
+that elicitation (it was answered, or its run ended); `400` for another
+action, content that does not fit the form, or content with anything but an
+accepted form.
+
+### `GET /oauth/client-metadata.json`
+
+Public, outside `/api`: the harness's OAuth Client ID Metadata Document,
+which an authorization server fetches to learn who Eika is. Served only when
+`public_url` is https, where the document's `client_id` is
+`<public_url>/oauth/client-metadata.json` and its one redirect URI
+`<public_url>/mcp/callback`; `404` otherwise.
+
+### MCPServer
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id`, `name` | string | The server. |
+| `kind` | string | `http` or `stdio`. |
+| `url` | string | An `http` server's endpoint; empty for `stdio`. |
+| `header_names` | string array | The headers every request carries, sorted. |
+| `command`, `args` | string, string array | A `stdio` server's command line. |
+| `env_names` | string array | The variables its process gets, sorted. |
+| `enabled` | boolean | The server is on. |
+| `disabled_tools` | string array | Server tool names left out of every run, sorted. |
+| `oauth_client_id` | string | The client registered by hand, if any. |
+| `oauth_client_secret_set` | boolean | That client has a secret stored. |
+| `state` | string | `disabled`, `idle` (not connected, nothing failed), `connecting`, `connected`, `unauthorized` (it needs OAuth authorization), or `error`. A `stdio` server is `connected` while it runs in any workspace. |
+| `error` | string, optional | Why it is `unauthorized` or in `error`. |
+| `workspaces` | string array | The workspaces a `stdio` server runs in now. |
+| `created_at`, `updated_at` | time | When it was made and last changed. |
+
+### MCPServerDetails
+
+| Field | Type | Meaning |
+|---|---|---|
+| `server` | MCPServer | The server and its state. |
+| `connection` | object, optional | What the latest successful connection learned; absent before one. `era` (`modern` for the 2026-07-28 revision, `legacy` for an initialize-based one), `transport` (`streamable_http`, `sse`, or `stdio`), `protocol_version`, `supported_versions` (a modern server's list), `server_info` (`name`, `title`, `version`, `description`, `website_url`), `capabilities` (booleans `tools`, `tools_list_changed`, `resources`, `resources_subscribe`, `resources_list_changed`, `prompts`, `prompts_list_changed`, `logging`, `completions`, and the string arrays `experimental` and `extensions`), and `instructions`. |
+| `tools` | array | Every tool the server lists: `name` (the server's), `exposed_name` (what the model calls it), `title`, `description`, `input_schema`, `output_schema`, `annotations` (`title` and the nullable booleans `read_only`, `destructive`, `idempotent`, `open_world`, which are the server's own claims), and `enabled` (false for one in `disabled_tools`). |
+| `excluded_tools` | array | Tools listed but never offered, with `name` and `reason`: a modern server's tool whose `x-mcp-header` annotations break the rules. |
+| `resources` | array | `uri`, `name`, `title`, `description`, `mime_type`, `size`. |
+| `resource_templates` | array | `uri_template`, `name`, `title`, `description`, `mime_type`. |
+| `prompts` | array | `name`, `title`, `description`, `arguments` (`name`, `title`, `description`, `required`). |
+| `list_errors` | object of strings | The lists the server could not give, by method, such as `prompts/list`. |
+| `fetched_at` | time, optional | When the lists were read. They are kept after the connection ends. |
+| `logs` | array | The last 200 lines of the server's log, oldest first: `time`, `source` (`stderr` for a stdio server's own output, `server` for a log notification, `eika` for what the harness did), `level`, and `text`. |
+| `auth` | object | `challenged` (the server asked for authorization) with `challenge` (`resource_metadata`, `scope`, `error`, `error_description`), `authorized` (an access token is stored), `has_refresh_token`, `issuer`, `resource`, `resource_metadata_url`, `scope`, `expires_at`, `client_id`, `registration` (`preregistered`, `metadata_document`, or `dynamic`), and `updated_at`. |
+
+### ContentDetail
+
+One block of an MCP tool result, a read resource, or a rendered prompt, as
+the UI shows it. Images and audio are the UI's alone: the model reads a line
+saying they were shown to the user.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `type` | string | `text`, `image`, `audio`, `resource_link`, or `resource`. |
+| `text` | string, optional | The text of a `text` block or a text resource, cut in the middle past 48 KiB. |
+| `mime_type`, `uri`, `name`, `description` | string, optional | What the block says of itself. |
+| `data` | base64 string, optional | An image, audio, or binary resource. Absent when the result's media were over 4 MiB. |
+| `size` | number, optional | The decoded size of `data`, or of what was left out. |
+| `omitted` | boolean, optional | The media were left out for the budget. |
+
+### MCP tool calls
+
+An MCP tool's call is an ordinary `tool.call` and `tool.result`, named
+`mcp__<server>__<tool>`; progress the server reports arrives as `tool.output`
+lines, `progress 3/10: message`. The `tool.result` event's `details` is:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `server` | string | The server's name. |
+| `tool` | string | The tool's name on the server. |
+| `content` | ContentDetail array | Every block the server sent, in order. |
+| `structured_content` | JSON value, optional | The tool's structured result. |
+| `is_error` | boolean, optional | The server said the tool failed. |
+
+`mcp_list_resources` and `mcp_read_resource` read the resources of every
+server a run reaches; the second's details are the same shape, with `tool`
+`mcp_read_resource`. Details are not stored with the session, so a replayed
+tool result carries its `content` alone.
 
 ## System
 

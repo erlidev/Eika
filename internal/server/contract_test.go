@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/server/servertest"
@@ -79,16 +80,29 @@ var routeWire = map[string]wire{
 	"GET /api/workspaces/{id}/file":    {status: http.StatusOK, response: fileResponse{}},
 	"PUT /api/workspaces/{id}/file":    {status: http.StatusOK, raw: true, response: fileEntry{}},
 
-	"GET /api/sessions":                {status: http.StatusOK, response: sessionsResponse{}},
-	"POST /api/sessions":               {status: http.StatusCreated, request: createSessionRequest{}, response: sessionBody{}},
-	"GET /api/sessions/{id}":           {status: http.StatusOK, response: sessionResponse{}},
-	"DELETE /api/sessions/{id}":        {status: http.StatusNoContent},
-	"GET /api/sessions/{id}/outline":   {status: http.StatusOK, response: outlineResponse{}},
-	"GET /api/sessions/{id}/path":      {status: http.StatusOK, response: pathResponse{}},
-	"POST /api/sessions/{id}/head":     {status: http.StatusOK, request: setHeadRequest{}, response: sessionBody{}},
-	"POST /api/sessions/{id}/fork":     {status: http.StatusCreated, request: forkRequest{}, response: sessionBody{}},
-	"PUT /api/sessions/{id}/tools":     {status: http.StatusOK, request: setToolsRequest{}, response: sessionBody{}},
-	"GET /api/sessions/{id}/agents":    {status: http.StatusOK, response: agentsResponse{}},
+	"GET /api/sessions":              {status: http.StatusOK, response: sessionsResponse{}},
+	"POST /api/sessions":             {status: http.StatusCreated, request: createSessionRequest{}, response: sessionBody{}},
+	"GET /api/sessions/{id}":         {status: http.StatusOK, response: sessionResponse{}},
+	"DELETE /api/sessions/{id}":      {status: http.StatusNoContent},
+	"GET /api/sessions/{id}/outline": {status: http.StatusOK, response: outlineResponse{}},
+	"GET /api/sessions/{id}/path":    {status: http.StatusOK, response: pathResponse{}},
+	"POST /api/sessions/{id}/head":   {status: http.StatusOK, request: setHeadRequest{}, response: sessionBody{}},
+	"POST /api/sessions/{id}/fork":   {status: http.StatusCreated, request: forkRequest{}, response: sessionBody{}},
+	"PUT /api/sessions/{id}/tools":   {status: http.StatusOK, request: setToolsRequest{}, response: sessionBody{}},
+	"GET /api/sessions/{id}/agents":  {status: http.StatusOK, response: agentsResponse{}},
+
+	"GET /api/sessions/{id}/configuration":         {status: http.StatusOK, response: sessionConfigurationResponse{}},
+	"PUT /api/sessions/{id}/profile":               {status: http.StatusOK, request: setSessionProfileRequest{}, response: sessionConfigurationResponse{}},
+	"PUT /api/sessions/{id}/overrides":             {status: http.StatusOK, request: profileSettingsBody{}, response: sessionConfigurationResponse{}},
+	"GET /api/sessions/{id}/context":               {status: http.StatusOK, response: contextResponse{}},
+	"GET /api/sessions/{id}/requests":              {status: http.StatusOK, response: requestsResponse{}},
+	"GET /api/sessions/{id}/requests/{request_id}": {status: http.StatusOK, response: contextResponse{}},
+	"GET /api/profiles":                            {status: http.StatusOK, response: profilesResponse{}},
+	"GET /api/profiles/inherited":                  {status: http.StatusOK, response: configurationBody{}},
+	"POST /api/profiles":                           {status: http.StatusCreated, request: profileRequest{}, response: profileBody{}},
+	"PUT /api/profiles/{id}":                       {status: http.StatusOK, request: profileRequest{}, response: profileBody{}},
+	"DELETE /api/profiles/{id}":                    {status: http.StatusNoContent},
+
 	"POST /api/subagents/{id}/abort":   {status: http.StatusOK, response: agentBody{}},
 	"POST /api/sessions/{id}/messages": {status: http.StatusAccepted, request: messageRequest{}, response: runBody{}},
 	"GET /api/sessions/{id}/run":       {status: http.StatusOK, response: runStateResponse{}},
@@ -112,6 +126,19 @@ var routeWire = map[string]wire{
 	"GET /api/settings":           {status: http.StatusOK, response: settingsResponse{}},
 	"PUT /api/settings":           {status: http.StatusOK, request: map[string]json.RawMessage{}, response: settingsResponse{}},
 	"GET /api/system":             {status: http.StatusOK, response: systemResponse{}},
+
+	"GET /api/mcp/servers":                       {status: http.StatusOK, response: mcpServersResponse{}},
+	"POST /api/mcp/servers":                      {status: http.StatusCreated, request: createMCPServerRequest{}, response: mcpServerBody{}},
+	"GET /api/mcp/servers/{id}":                  {status: http.StatusOK, response: mcpServerDetails{}},
+	"PATCH /api/mcp/servers/{id}":                {status: http.StatusOK, request: updateMCPServerRequest{}, response: mcpServerBody{}},
+	"DELETE /api/mcp/servers/{id}":               {status: http.StatusNoContent},
+	"POST /api/mcp/servers/{id}/connect":         {status: http.StatusOK, request: mcpWorkspaceRequest{}, response: mcpServerDetails{}},
+	"POST /api/mcp/servers/{id}/authorize":       {status: http.StatusOK, request: authorizeRequest{}, response: authorizeResponse{}},
+	"DELETE /api/mcp/servers/{id}/authorization": {status: http.StatusNoContent},
+	"POST /api/mcp/servers/{id}/resources/read":  {status: http.StatusOK, request: readResourceRequest{}, response: readResourceResponse{}},
+	"POST /api/mcp/servers/{id}/prompts/get":     {status: http.StatusOK, request: getPromptRequest{}, response: mcp.RenderedPrompt{}},
+	"POST /api/mcp/oauth/callback":               {status: http.StatusOK, request: oauthCallbackRequest{}, response: oauthCallbackResponse{}},
+	"POST /api/elicitations/{id}/answer":         {status: http.StatusNoContent, request: elicitationAnswerRequest{}},
 }
 
 // eventPayloads lists every event type with its payload type.
@@ -130,6 +157,8 @@ var eventPayloads = map[string]any{
 	event.TypeSubagentStarted:  event.SubagentStarted{},
 	event.TypeSubagentFinished: event.SubagentFinished{},
 	event.TypeWorkspaceState:   event.WorkspaceState{},
+	event.TypeMCPServer:        event.MCPServer{},
+	event.TypeMCPElicitation:   event.MCPElicitation{},
 	event.TypeSessionMessage:   event.SessionMessage{},
 	event.TypeBusDropped:       event.BusDropped{},
 }

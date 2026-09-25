@@ -39,7 +39,13 @@ type Session struct {
 	ParentSessionID string
 	// Tools names the tools the session's runs may offer the model. Nil is
 	// every tool the session can run; an empty, non-nil slice is none.
-	Tools     []string
+	Tools []string
+	// ProfileID is the profile the session's runs start from, empty for
+	// whichever profile is the default when a run starts.
+	ProfileID string
+	// Overrides are the profile settings the session sets for itself; what
+	// they leave unset comes from the profile.
+	Overrides ProfileSettings
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -51,14 +57,14 @@ func (s Session) Chat() bool { return s.WorkspaceID == "" }
 // sessionColumns is the column list every session query selects, in the order
 // scanSession reads them.
 const sessionColumns = `id, workspace_id, title, kind, head_entry_id, parent_session_id, tools,
-	created_at, updated_at`
+	profile_id, overrides, created_at, updated_at`
 
 // CreateSession inserts sess and returns it with the fields the database
-// assigned. An empty ID gets a fresh one.
+// assigned. An empty ID gets a fresh one; an unknown profile is ErrNotFound.
 func (s *Store) CreateSession(ctx context.Context, sess Session) (Session, error) {
 	out, err := createSession(ctx, s.pool, sess)
 	if err != nil {
-		return Session{}, wrap("create session", err)
+		return Session{}, wrapMissing("create session", err)
 	}
 	return out, nil
 }
@@ -71,11 +77,17 @@ func createSession(ctx context.Context, q querier, sess Session) (Session, error
 	if sess.Kind == "" {
 		sess.Kind = SessionUser
 	}
-	const insert = `INSERT INTO sessions (id, workspace_id, title, kind, head_entry_id, parent_session_id, tools)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	overrides, err := overridesJSON(sess.Overrides)
+	if err != nil {
+		return Session{}, err
+	}
+	const insert = `INSERT INTO sessions (id, workspace_id, title, kind, head_entry_id, parent_session_id, tools,
+			profile_id, overrides)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING ` + sessionColumns
 	row := q.QueryRow(ctx, insert, sess.ID, nullable(sess.WorkspaceID), sess.Title, sess.Kind,
-		nullable(sess.HeadEntryID), nullable(sess.ParentSessionID), sess.Tools)
+		nullable(sess.HeadEntryID), nullable(sess.ParentSessionID), sess.Tools,
+		nullable(sess.ProfileID), overrides)
 	return scanSession(row)
 }
 
@@ -111,7 +123,7 @@ func (s *Store) Sessions(ctx context.Context, workspaceID string, withDescendant
 				SELECT ` + sessionColumns + ` FROM sessions WHERE workspace_id = $1
 				UNION
 				SELECT s.id, s.workspace_id, s.title, s.kind, s.head_entry_id,
-					s.parent_session_id, s.tools, s.created_at, s.updated_at
+					s.parent_session_id, s.tools, s.profile_id, s.overrides, s.created_at, s.updated_at
 				FROM sessions s JOIN reachable r ON s.parent_session_id = r.id
 			)
 			SELECT ` + sessionColumns + ` FROM reachable ORDER BY created_at, id`
@@ -207,15 +219,21 @@ func scanSession(row pgx.Row) (Session, error) {
 		workspace *string
 		head      *string
 		parent    *string
+		profile   *string
+		overrides []byte
 	)
 	err := row.Scan(&sess.ID, &workspace, &sess.Title, &sess.Kind, &head, &parent, &sess.Tools,
-		&sess.CreatedAt, &sess.UpdatedAt)
+		&profile, &overrides, &sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
+		return Session{}, err
+	}
+	if sess.Overrides, err = readOverrides(overrides); err != nil {
 		return Session{}, err
 	}
 	sess.WorkspaceID = text(workspace)
 	sess.HeadEntryID = text(head)
 	sess.ParentSessionID = text(parent)
+	sess.ProfileID = text(profile)
 	sess.CreatedAt = sess.CreatedAt.UTC()
 	sess.UpdatedAt = sess.UpdatedAt.UTC()
 	return sess, nil

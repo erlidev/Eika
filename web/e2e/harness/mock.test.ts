@@ -194,6 +194,218 @@ describe("the mock answers as the harness does", () => {
     expect(mock.contractBreaks).toEqual([]);
   });
 
+  it("answers every MCP route with the harness's status and shapes", async () => {
+    const mock = open("mcp");
+    const requests: [string, string, unknown?][] = [
+      ["GET /api/mcp/servers", "/api/mcp/servers"],
+      [
+        "POST /api/mcp/servers",
+        "/api/mcp/servers",
+        {
+          name: "notion",
+          kind: "http",
+          url: "https://mcp.notion.com/mcp",
+          headers: { "X-Key": "k" },
+        },
+      ],
+      ["GET /api/mcp/servers/{id}", "/api/mcp/servers/mcp-github"],
+      [
+        "PATCH /api/mcp/servers/{id}",
+        "/api/mcp/servers/mcp-github",
+        { disabled_tools: ["create_issue"], headers: { "X-Key": null } },
+      ],
+      ["POST /api/mcp/servers/{id}/connect", "/api/mcp/servers/mcp-github/connect", {}],
+      [
+        "POST /api/mcp/servers/{id}/connect",
+        "/api/mcp/servers/mcp-filesystem/connect",
+        { workspace_id: "ws-retries" },
+      ],
+      [
+        "POST /api/mcp/servers/{id}/resources/read",
+        "/api/mcp/servers/mcp-github/resources/read",
+        { uri: "repo://example/payments-api/README.md" },
+      ],
+      [
+        "POST /api/mcp/servers/{id}/prompts/get",
+        "/api/mcp/servers/mcp-github/prompts/get",
+        { name: "summarize_pr", arguments: { repo: "example/payments-api", number: "42" } },
+      ],
+      [
+        "POST /api/mcp/servers/{id}/authorize",
+        "/api/mcp/servers/mcp-linear/authorize",
+        { redirect_uri: "http://localhost:4319/mcp/callback" },
+      ],
+      ["DELETE /api/mcp/servers/{id}/authorization", "/api/mcp/servers/mcp-github/authorization"],
+      ["DELETE /api/mcp/servers/{id}", "/api/mcp/servers/mcp-docs"],
+    ];
+    for (const [key, path, body] of requests) {
+      const reply = await call(mock, key.split(" ")[0] ?? "", path, body);
+      expect(reply.status, `${key}: ${JSON.stringify(reply.body)}`).toBe(statusOf(key));
+    }
+
+    // The authorization URL is the callback, as an authorization server that
+    // approves at once would redirect; its parameters finish the sign-in.
+    const started = await call(mock, "POST", "/api/mcp/servers/mcp-linear/authorize", {
+      redirect_uri: "http://localhost:4319/mcp/callback",
+    });
+    const back = new URL((started.body as { authorization_url: string }).authorization_url);
+    const finished = await call(mock, "POST", "/api/mcp/oauth/callback", {
+      state: back.searchParams.get("state"),
+      code: back.searchParams.get("code"),
+      iss: back.searchParams.get("iss"),
+    });
+    expect(finished.status).toBe(statusOf("POST /api/mcp/oauth/callback"));
+    expect(mock.world.mcpServers.find((d) => d.server.id === "mcp-linear")?.server.state).toBe(
+      "connected",
+    );
+    // A state is redeemed once.
+    const again = await call(mock, "POST", "/api/mcp/oauth/callback", {
+      state: back.searchParams.get("state"),
+      code: "x",
+    });
+    expect(again.status).toBe(404);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
+  it("answers every profile and context route with the harness's status and shapes", async () => {
+    const mock = open("workbench");
+    const model = mock.world.models[0]?.id ?? "";
+    const created = await call(mock, "POST", "/api/profiles", {
+      name: "Careful",
+      description: "reviews",
+      instructions: "Check twice.",
+      model_id: model,
+      sampling: { temperature: 0.2, stop: ["END"] },
+      tools: ["bash", "mcp__github__*"],
+    });
+    expect(created.status).toBe(statusOf("POST /api/profiles"));
+    const profile = (created.body as { id: string }).id;
+    const requests: [string, string, unknown?][] = [
+      ["GET /api/profiles", "/api/profiles"],
+      ["GET /api/profiles/inherited", `/api/profiles/inherited?model_id=${model}`],
+      [
+        "GET /api/sessions/{id}/configuration",
+        `/api/sessions/ses-backoff/configuration?profile_id=${profile}&model_id=`,
+      ],
+      ["PUT /api/profiles/{id}", `/api/profiles/${profile}`, { name: "Careful", tools: null }],
+      [
+        "PUT /api/sessions/{id}/profile",
+        "/api/sessions/ses-backoff/profile",
+        { profile_id: profile },
+      ],
+      [
+        "PUT /api/sessions/{id}/overrides",
+        "/api/sessions/ses-backoff/overrides",
+        { sampling: { top_k: 20 }, workspace_prompt: "" },
+      ],
+      ["GET /api/sessions/{id}/configuration", "/api/sessions/ses-backoff/configuration"],
+      ["PUT /api/sessions/{id}/tools", "/api/sessions/ses-backoff/tools", { tools: null }],
+      ["GET /api/sessions/{id}/context", "/api/sessions/ses-backoff/context?model=gpt-5-mini"],
+      ["POST /api/sessions/{id}/messages", "/api/sessions/ses-backoff/messages", { text: "Go on" }],
+    ];
+    for (const [key, path, body] of requests) {
+      const reply = await call(mock, key.split(" ")[0] ?? "", path, body);
+      expect(reply.status, `${key}: ${JSON.stringify(reply.body)}`).toBe(statusOf(key));
+    }
+    await mock.idle();
+    const listed = await call(mock, "GET", "/api/sessions/ses-backoff/requests");
+    expect(listed.status).toBe(statusOf("GET /api/sessions/{id}/requests"));
+    const recorded = (listed.body as { requests: { id: string }[] }).requests.at(-1)?.id ?? "";
+    const one = await call(mock, "GET", `/api/sessions/ses-backoff/requests/${recorded}`);
+    expect(one.status).toBe(statusOf("GET /api/sessions/{id}/requests/{request_id}"));
+    const deleted = await call(mock, "DELETE", `/api/profiles/${profile}`);
+    expect(deleted.status).toBe(statusOf("DELETE /api/profiles/{id}"));
+    const last = await call(mock, "DELETE", "/api/profiles/prof-default");
+    expect(last.status).toBe(409);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
+  it("resolves a session's configuration layer by layer, as the harness does", async () => {
+    const mock = open("workbench");
+    const created = await call(mock, "POST", "/api/profiles", {
+      name: "Terse",
+      instructions: "One line.",
+      sampling: { temperature: 0.4, max_output: 200 },
+    });
+    const profile = (created.body as { id: string }).id;
+    await call(mock, "PUT", "/api/sessions/ses-backoff/profile", { profile_id: profile });
+    const reply = await call(mock, "PUT", "/api/sessions/ses-backoff/overrides", {
+      sampling: { temperature: 0.9 },
+    });
+    const config = reply.body as {
+      resolved: { sampling: Record<string, unknown>; sources: Record<string, string> };
+      inherited: { sampling: Record<string, unknown>; sources: Record<string, string> };
+    };
+    expect(config.resolved.sampling).toMatchObject({ temperature: 0.9, max_output: 200 });
+    expect(config.resolved.sources).toMatchObject({
+      profile: "session",
+      "sampling.temperature": "session",
+      "sampling.max_output": "profile",
+      instructions: "profile",
+    });
+    expect(config.inherited.sampling).toMatchObject({ temperature: 0.4 });
+    const session = mock.world.sessions.find((s) => s.id === "ses-backoff");
+    expect(session?.overridden).toBe(true);
+  });
+
+  it("carries a renamed MCP server's name into tool choices, as the harness does", async () => {
+    const mock = open("mcp");
+    const created = await call(mock, "POST", "/api/profiles", {
+      name: "Code",
+      tools: ["mcp__github__*"],
+    });
+    expect(created.status).toBe(201);
+    mock.world.toolChoices["ses-any"] = ["mcp__github__search", "mcp__github2__*"];
+    await call(mock, "PATCH", "/api/mcp/servers/mcp-github", { name: "gh" });
+    const profile = mock.world.profiles.find((p) => p.name === "Code");
+    expect(profile?.tools).toEqual(["mcp__gh__*"]);
+    expect(mock.world.toolChoices["ses-any"]).toEqual(["mcp__gh__search", "mcp__github2__*"]);
+  });
+
+  it("answers with what a draft falls through to and saves nothing, as the harness does", async () => {
+    const mock = open("workbench");
+    const created = await call(mock, "POST", "/api/profiles", {
+      name: "Terse",
+      instructions: "One line.",
+    });
+    const profile = (created.body as { id: string }).id;
+    const reply = await call(
+      mock,
+      "GET",
+      `/api/sessions/ses-backoff/configuration?profile_id=${profile}`,
+    );
+    const config = reply.body as {
+      profile_id?: string;
+      inherited: { instructions: string; profile_id: string };
+    };
+    expect(config.inherited).toMatchObject({ instructions: "One line.", profile_id: profile });
+    expect(config.profile_id).toBeUndefined();
+    const unknown = await call(mock, "GET", "/api/profiles/inherited?model_id=absent");
+    expect(unknown.status).toBe(400);
+  });
+
+  it("streams an MCP server's request for input, and takes the answer", async () => {
+    const mock = open("agent-mcp");
+    await call(mock, "POST", "/api/sessions/ses-backoff/messages", { text: "File it" });
+    await expect.poll(() => mock.world.elicitations.length).toBe(1);
+    const run = await call(mock, "GET", "/api/sessions/ses-backoff/run");
+    expect((run.body as { elicitations: unknown[] }).elicitations).toHaveLength(1);
+    const id = mock.world.elicitations[0]?.id ?? "";
+    const refused = await call(mock, "POST", `/api/elicitations/${id}/answer`, {
+      action: "decline",
+      content: { assignee: "ada" },
+    });
+    expect(refused.status).toBe(400);
+    const reply = await call(mock, "POST", `/api/elicitations/${id}/answer`, {
+      action: "accept",
+      content: { assignee: "ada", labels: ["flaky-test"] },
+    });
+    expect(reply.status).toBe(statusOf("POST /api/elicitations/{id}/answer"));
+    await mock.idle();
+    expect(mock.world.elicitations).toEqual([]);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
   it("sets a password up the way the harness does", async () => {
     const mock = open("setup-new");
     const reply = await call(mock, "POST", "/api/auth/setup", { password: "correct horse" });

@@ -132,7 +132,7 @@ func TestSessionToolsAreChosenAndChecked(t *testing.T) {
 	}{
 		{"a tool that does not exist", []string{"teleport"}, 400},
 		{"a tool that needs a workspace", []string{"web_search", "bash"}, 400},
-		{"no list at all", nil, 400},
+		{"a name rather than a list", "bash", 400},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

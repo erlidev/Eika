@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SessionProfile, useSessionConfiguration } from "@/features/profiles";
 import { ContextMeter } from "@/features/session/ContextMeter";
 import { useAbortRun, useRunStatus } from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
@@ -30,13 +31,23 @@ import { cn } from "@/lib/utils";
 
 export type RunStatusBarProps = {
   sessionId: string;
+  /** chat says the session has no workspace. */
+  chat: boolean;
+  /** overridden says the session sets something of its own over its profile. */
+  overridden: boolean;
   /** model is the model the composer will use. */
   model: string;
   /** onModelChange overrides the model for this session only. */
   onModelChange: (model: string) => void;
 };
 
-export function RunStatusBar({ sessionId, model, onModelChange }: RunStatusBarProps) {
+export function RunStatusBar({
+  sessionId,
+  chat,
+  overridden,
+  model,
+  onModelChange,
+}: RunStatusBarProps) {
   const status = useRunStatus(sessionId);
   const abort = useAbortRun(sessionId);
   const models = useModels();
@@ -47,6 +58,13 @@ export function RunStatusBar({ sessionId, model, onModelChange }: RunStatusBarPr
   const run = status.data?.run;
   const active = status.data?.active ?? false;
   const chosen = useModel(model);
+  // A profile or the session can set the effort over the model's own, and
+  // then the model's cycle would change nothing the next run sends.
+  const configuration = useSessionConfiguration(sessionId);
+  const resolved = configuration.data?.resolved;
+  const effortSource =
+    resolved?.model === model ? resolved.sources?.["sampling.reasoning_effort"] : undefined;
+  const configuredEffort = resolved?.sampling.reasoning_effort ?? "";
 
   return (
     <div className="text-muted-foreground flex flex-wrap items-center gap-2 border-t px-3 py-1 text-xs">
@@ -86,7 +104,23 @@ export function RunStatusBar({ sessionId, model, onModelChange }: RunStatusBarPr
         </SelectContent>
       </Select>
 
-      {chosen && <EffortCycle model={chosen} />}
+      <SessionProfile sessionId={sessionId} chat={chat} overridden={overridden} />
+
+      {chosen &&
+        (effortSource === "session" || effortSource === "profile" ? (
+          <span
+            className="flex h-6 items-center gap-1 rounded-md border border-dashed px-1.5"
+            title={`Reasoning effort ${configuredEffort === "" ? "default" : configuredEffort}, set by the ${effortSource === "session" ? "session" : "profile"}. Change it in the profile's settings.`}
+          >
+            <Brain aria-hidden className="size-3" />
+            <span className="sr-only">Reasoning effort, set by the {effortSource}: </span>
+            <span className="font-mono">
+              {configuredEffort === "" ? "default" : configuredEffort}
+            </span>
+          </span>
+        ) : (
+          <EffortCycle model={chosen} />
+        ))}
 
       {meter && <ContextMeter meter={meter} />}
 

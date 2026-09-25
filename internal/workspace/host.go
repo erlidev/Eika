@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -401,6 +402,21 @@ func (h *Host) Terminal(ctx context.Context, ws Workspace, rows, cols uint16) (*
 		return nil, err
 	}
 	return c.Terminal(ctx, rows, cols)
+}
+
+// Process starts a long-lived process in a running workspace with its
+// standard streams connected to the caller: how the harness runs a stdio MCP
+// server where the agent's processes run. Like Terminal, it is kept apart
+// from Executor, so no tool can hold a process of its own.
+func (h *Host) Process(ctx context.Context, ws Workspace, spec sandbox.ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error) {
+	if ws.Address == "" {
+		return nil, fmt.Errorf("workspace %s has no address: it is not running", ws.ID)
+	}
+	c, err := sandbox.New(sandbox.Options{BaseURL: ws.Address, Token: ws.Token, Root: Root})
+	if err != nil {
+		return nil, err
+	}
+	return c.Process(ctx, spec, stderr)
 }
 
 // address is the base URL the harness reaches the workspace's daemon on: the

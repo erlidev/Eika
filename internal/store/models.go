@@ -53,7 +53,7 @@ func (s *Store) CreateModel(ctx context.Context, m Model) (Model, error) {
 		SELECT $1, id, $3, $4, $5, $6, $7, $8, $9, $10 FROM providers WHERE id = $2
 		RETURNING ` + modelColumns
 	out, err := scanModel(s.pool.QueryRow(ctx, q, m.ID, m.ProviderID, m.Name, m.Model,
-		m.ContextWindow, m.MaxOutput, m.ReasoningEffort, efforts(m.ReasoningEfforts),
+		m.ContextWindow, m.MaxOutput, m.ReasoningEffort, textArray(m.ReasoningEfforts),
 		thinkingSwitch(m.ThinkingSwitch), m.PreserveThinking))
 	if err != nil {
 		return Model{}, wrap("create model "+m.Name, err)
@@ -111,7 +111,7 @@ func (s *Store) UpdateModel(ctx context.Context, m Model) (Model, error) {
 		WHERE id = $1
 		RETURNING ` + modelColumns
 	out, err := scanModel(s.pool.QueryRow(ctx, q, m.ID, m.Name, m.Model, m.ContextWindow,
-		m.MaxOutput, m.ReasoningEffort, efforts(m.ReasoningEfforts), thinkingSwitch(m.ThinkingSwitch),
+		m.MaxOutput, m.ReasoningEffort, textArray(m.ReasoningEfforts), thinkingSwitch(m.ThinkingSwitch),
 		m.PreserveThinking))
 	if err != nil {
 		return Model{}, wrap("update model "+m.ID, err)
@@ -119,21 +119,32 @@ func (s *Store) UpdateModel(ctx context.Context, m Model) (Model, error) {
 	return out, nil
 }
 
-// DeleteModel removes a model.
+// DeleteModel removes a model. A profile that chose it, and a session whose
+// overrides did, fall back to the default model, as a model_id foreign key
+// set to NULL would.
 func (s *Store) DeleteModel(ctx context.Context, id string) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM models WHERE id = $1`, id)
-	if err != nil {
-		return wrap("delete model "+id, err)
-	}
-	if tag.RowsAffected() == 0 {
-		return wrap("delete model "+id, pgx.ErrNoRows)
-	}
-	return nil
+	return s.tx(ctx, func(q querier) error {
+		tag, err := q.Exec(ctx, `DELETE FROM models WHERE id = $1`, id)
+		if err != nil {
+			return wrap("delete model "+id, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return wrap("delete model "+id, pgx.ErrNoRows)
+		}
+		// Overrides are a document with no key to the model, so the
+		// database cannot do this one itself.
+		const unset = `UPDATE sessions SET overrides = nullif(overrides - 'model_id', '{}'::jsonb)
+			WHERE overrides->>'model_id' = $1`
+		if _, err := q.Exec(ctx, unset, id); err != nil {
+			return wrap("delete model "+id, err)
+		}
+		return nil
+	})
 }
 
-// efforts is the list a text[] column is written from: a nil slice would be
-// stored as NULL, which the column forbids.
-func efforts(list []string) []string {
+// textArray is the list a text[] column is written from: a nil slice would
+// be stored as NULL, which the column forbids.
+func textArray(list []string) []string {
 	if list == nil {
 		return []string{}
 	}

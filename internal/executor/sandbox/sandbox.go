@@ -303,3 +303,149 @@ func responseError(method, path string, resp *http.Response) error {
 
 // Compile-time check that a Client is a usable executor.
 var _ executor.Executor = (*Client)(nil)
+
+// ProcessSpec is a long-lived process to run in the sandbox with its
+// standard streams connected to the caller.
+type ProcessSpec struct {
+	Command string
+	Args    []string
+	// Dir is relative to the workspace root; empty is the root.
+	Dir string
+	// Env holds KEY=VALUE entries added to the sandbox's environment.
+	Env []string
+}
+
+// maxStderrLine bounds one line of a process's stderr passed on; the rest
+// of a longer line is dropped.
+const maxStderrLine = 4096
+
+// Process starts a long-lived process in the sandbox, on the daemon's
+// /process route: writes reach its stdin, reads come from its stdout, and
+// Close ends it. Each line it writes to stderr is passed to stderr, which
+// may be nil. A read after the process ended fails with how it ended.
+//
+// Like Terminal, it is not part of executor.Executor: it is how the harness
+// runs a stdio MCP server the user configured, not something a tool calls.
+func (c *Client) Process(ctx context.Context, spec ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error) {
+	conn, resp, err := websocket.Dial(ctx, c.base+"/process", &websocket.DialOptions{
+		HTTPClient: c.http,
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + c.token}},
+	})
+	if err != nil {
+		if resp != nil && resp.Body != nil && resp.StatusCode != http.StatusSwitchingProtocols {
+			return nil, responseError(http.MethodGet, "/process", resp)
+		}
+		return nil, fmt.Errorf("dial process: %w", err)
+	}
+	// Past the bound, the caller's reader has more than one whole message
+	// to take; the daemon's output chunks are far smaller.
+	conn.SetReadLimit(eikad.MaxProcessMessage)
+	start, err := json.Marshal(eikad.ProcessMessage{Type: eikad.ProcessStart, Command: spec.Command, Args: spec.Args, Dir: spec.Dir, Env: spec.Env})
+	if err != nil {
+		conn.CloseNow()
+		return nil, fmt.Errorf("encode process start: %w", err)
+	}
+	if err := conn.Write(ctx, websocket.MessageText, start); err != nil {
+		conn.CloseNow()
+		return nil, fmt.Errorf("start process: %w", err)
+	}
+	p := &process{conn: conn, stderr: stderr, done: make(chan struct{})}
+	p.out, p.feed = io.Pipe()
+	p.ctx, p.stop = context.WithCancel(context.Background())
+	go p.read()
+	return p, nil
+}
+
+// process is the harness's end of a /process socket.
+type process struct {
+	conn   *websocket.Conn
+	stderr func(string)
+	// out is what Read returns, fed by read from the stdout messages.
+	out  *io.PipeReader
+	feed *io.PipeWriter
+	// ctx lives as long as the process: Write has no context of its own,
+	// and Close ends both a pending write and the reader.
+	ctx  context.Context
+	stop context.CancelFunc
+	done chan struct{}
+	// line holds the part of a stderr line still waiting for its end.
+	line []byte
+}
+
+// Read returns what the process wrote to stdout.
+func (p *process) Read(b []byte) (int, error) { return p.out.Read(b) }
+
+// Write sends b to the process's stdin.
+func (p *process) Write(b []byte) (int, error) {
+	data, err := json.Marshal(eikad.ProcessMessage{Type: eikad.ProcessStdin, Data: b})
+	if err != nil {
+		return 0, err
+	}
+	if err := p.conn.Write(p.ctx, websocket.MessageText, data); err != nil {
+		return 0, fmt.Errorf("write to process: %w", err)
+	}
+	return len(b), nil
+}
+
+// Close ends the process: the daemon closes its stdin, then stops it.
+func (p *process) Close() error {
+	// Output nobody will read must not hold up the reader.
+	_ = p.out.Close()
+	_ = p.conn.Close(websocket.StatusNormalClosure, "")
+	p.stop()
+	<-p.done
+	return nil
+}
+
+// read delivers the daemon's messages until the socket ends.
+func (p *process) read() {
+	defer close(p.done)
+	ended := errors.New("the process connection closed")
+	defer func() { p.feed.CloseWithError(ended) }()
+	for {
+		_, data, err := p.conn.Read(p.ctx)
+		if err != nil {
+			return
+		}
+		var msg eikad.ProcessMessage
+		if json.Unmarshal(data, &msg) != nil {
+			continue
+		}
+		switch msg.Type {
+		case eikad.ProcessStdout:
+			if _, err := p.feed.Write(msg.Data); err != nil {
+				return
+			}
+		case eikad.ProcessStderr:
+			p.stderrLines(msg.Data)
+		case eikad.ProcessExit:
+			p.stderrLines([]byte("\n"))
+			ended = fmt.Errorf("the process exited with status %d", msg.ExitCode)
+		case eikad.ProcessError:
+			ended = errors.New(msg.Error)
+		}
+	}
+}
+
+// stderrLines passes on each whole line of stderr.
+func (p *process) stderrLines(data []byte) {
+	if p.stderr == nil {
+		return
+	}
+	for len(data) > 0 {
+		i := bytes.IndexByte(data, '\n')
+		if i < 0 {
+			if room := maxStderrLine - len(p.line); room > 0 {
+				p.line = append(p.line, data[:min(room, len(data))]...)
+			}
+			return
+		}
+		if room := maxStderrLine - len(p.line); room > 0 {
+			p.line = append(p.line, data[:min(room, i)]...)
+		}
+		if line := strings.TrimRight(string(p.line), "\r"); line != "" {
+			p.stderr(line)
+		}
+		p.line, data = p.line[:0], data[i+1:]
+	}
+}

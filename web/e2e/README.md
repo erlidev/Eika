@@ -107,14 +107,22 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 fixed ids: session `ses-backoff` in workspace `ws-retries` of project
 `proj-api`. `chat` adds the sidebar's Chats section and opens chat
 `chat-jitter`, a session with no workspace; `chat-empty` opens one with no
-messages. The `agent-*` scenarios queue a scripted reply for the next
-message: tool calls with streamed output, reasoning streamed before the
-answer, a question with options, a provider failure, or a run that never
-ends. Add a scenario when a screen
-needs data no existing one has; build it with `WorldBuilder` in
+messages. `mcp` adds five MCP servers, one in each state, and `chat-mcp` the
+same servers beside the chats; the mock's authorization server approves at
+once, so Sign in returns straight to `/mcp/callback`. `profiles` adds two
+profiles to the workbench, puts `ses-backoff` on one with an override of its
+own, gives its workspace an AGENTS.md, and records two of its model calls,
+for the Profiles tab, the status bar's profile, and the Context panel; the
+mock resolves profiles and assembles requests in `harness/profiles.ts`, and
+every run it plays records its model call. The `agent-*`
+scenarios queue a scripted reply for the next message: tool calls with
+streamed output, reasoning streamed before the answer, a question with
+options, an MCP server asking for input, a provider failure, or a run that
+never ends. Add a scenario when a screen needs data no existing one has; build it with `WorldBuilder` in
 `harness/world.ts`, and script replies as `ReplyStep` lists (`say` streams
 prose, `think` streams reasoning, `tool` runs a call, `ask` waits for an
-answer, `fail` ends the run, `cutOff` ends the turn on an incomplete stop
+answer, `mcp` calls an MCP server's tool, which with `elicit` first asks the
+user for input, `fail` ends the run, `cutOff` ends the turn on an incomplete stop
 reason, `hang` never ends it). A played reply also emits `turn.progress`, so
 the status bar's context meter is on every screenshot of a session that has
 run.

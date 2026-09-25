@@ -11,7 +11,11 @@ import type { BrowserContext, Route, WebSocketRoute } from "@playwright/test";
 
 import type { EikaEvent, EventType } from "../../src/api/events.ts";
 import type {
+  ContentDetail,
+  Elicitation,
+  ElicitationAnswer,
   Entry,
+  MCPServerDetails,
   Message,
   Model,
   Project,
@@ -24,7 +28,28 @@ import type {
   Workspace,
 } from "../../src/api/types.ts";
 import { check, contract, matchRoute } from "./contract.ts";
-import { entryKind, fixedNow, minutesAgo, pathOf, sessionTools, syncSystem } from "./world.ts";
+import {
+  inheritedProfile,
+  previewContext,
+  profileBody,
+  profilesBody,
+  record,
+  recordedContext,
+  samplingProblem,
+  sessionConfiguration,
+  settingsOf,
+  syncSession,
+} from "./profiles.ts";
+import type { ConfigurationDraft } from "./profiles.ts";
+import {
+  entryKind,
+  fixedNow,
+  minutesAgo,
+  pathOf,
+  sessionTools,
+  syncMCPTools,
+  syncSystem,
+} from "./world.ts";
 import type { ReplyStep, World } from "./world.ts";
 
 /** mockToken is the bearer token the mock harness issues and accepts. */
@@ -145,6 +170,9 @@ export class MockHarness {
   private busy = 0;
   private seq = 1000;
   private readonly answers = new Map<string, (answer: string) => void>();
+  private readonly elicitAnswers = new Map<string, (answer: ElicitationAnswer) => void>();
+  /** authorizations maps an OAuth state the mock handed out to the server it authorizes. */
+  private readonly authorizations = new Map<string, string>();
   private readonly failing = new Map<string, Failure>();
 
   constructor(world: World, options: MockOptions = {}) {
@@ -559,11 +587,21 @@ export class MockHarness {
     // Settings and system.
     on("GET", "/api/settings", () => ok(w.settings));
     on("PUT", "/api/settings", ({ body }) => {
+      const named = body.default_profile;
+      if (typeof named === "string" && named !== "" && !w.profiles.some((p) => p.id === named)) {
+        return fail(
+          400,
+          "invalid_request",
+          `default_profile names "${named}", which is not a profile`,
+        );
+      }
       for (const [key, value] of Object.entries(body)) {
         if (value === null) Reflect.deleteProperty(w.settings.settings, key);
         else w.settings.settings[key] = value;
       }
       if (typeof body.default_model === "string") w.defaultModel = body.default_model;
+      // A new default profile can change what every session offers.
+      for (const session of w.sessions) syncSession(w, session);
       return ok(w.settings);
     });
     on("GET", "/api/system", () => ok(w.system));
@@ -1024,9 +1062,11 @@ export class MockHarness {
         title: str(body.title) || (chat ? "New chat" : "New session"),
         kind: "user",
         tools: sessionTools(w, chat),
+        overridden: false,
         created_at: now(),
         updated_at: now(),
       };
+      syncSession(w, row);
       w.sessions.unshift(row);
       w.entries[row.id] = [];
       return ok(row, 201);
@@ -1091,11 +1131,18 @@ export class MockHarness {
         title: str(body.title) || `${source.title} (fork)`,
         kind: "fork",
         tools: [...source.tools],
+        overridden: source.overridden,
+        ...(source.profile_id === undefined ? {} : { profile_id: source.profile_id }),
         parent_session_id: source.id,
         head_entry_id: str(body.entry_id),
         created_at: now(),
         updated_at: now(),
       };
+      // A fork runs as its source is configured to.
+      const overrides = w.overrides[source.id];
+      if (overrides !== undefined) w.overrides[row.id] = overrides;
+      const choice = w.toolChoices[source.id];
+      if (choice !== undefined) w.toolChoices[row.id] = [...choice];
       w.sessions.unshift(row);
       w.entries[row.id] = [...(w.entries[source.id] ?? [])];
       return ok(row, 201);
@@ -1103,19 +1150,155 @@ export class MockHarness {
     on("PUT", "/api/sessions/{id}/tools", ({ params, body }) => {
       const row = find(w.sessions, params[0], "session");
       if ("status" in row) return row;
+      if (body.tools === null) {
+        // Null clears the session's choice, and its profile's applies.
+        Reflect.deleteProperty(w.toolChoices, row.id);
+        syncSession(w, row);
+        return ok(row);
+      }
       if (!Array.isArray(body.tools)) return fail(400, "invalid_request", "tools is required");
       const names = [...new Set(body.tools.map((name) => str(name)))].sort();
       for (const name of names) {
+        const server = /^mcp__(.+)__\*$/.exec(name)?.[1];
+        if (server !== undefined) {
+          if (!w.mcpServers.some((d) => d.server.name === server)) {
+            return fail(400, "invalid_request", `there is no MCP server "${server}"`);
+          }
+          continue;
+        }
         const known = w.tools.find((t) => t.name === name);
         if (!known) return fail(400, "invalid_request", `there is no tool "${name}"`);
         if (row.workspace_id === undefined && known.needs_workspace) {
           return fail(400, "invalid_request", `${name} needs a workspace, and a chat has none`);
         }
       }
-      row.tools = names;
+      w.toolChoices[row.id] = names;
+      syncSession(w, row);
       row.updated_at = now();
       return ok(row);
     });
+    on("GET", "/api/sessions/{id}/configuration", ({ params, query }) => {
+      const row = find(w.sessions, params[0], "session");
+      if ("status" in row) return row;
+      const draft: ConfigurationDraft = {};
+      const profileId = query.get("profile_id");
+      const modelId = query.get("model_id");
+      if (profileId !== null) {
+        if (profileId !== "" && !w.profiles.some((p) => p.id === profileId)) {
+          return fail(400, "invalid_request", `profile ${profileId} does not exist`);
+        }
+        draft.profileId = profileId;
+      }
+      if (modelId !== null) {
+        if (modelId !== "" && !w.models.some((m) => m.id === modelId)) {
+          return fail(400, "invalid_request", `model ${modelId} does not exist`);
+        }
+        draft.modelId = modelId;
+      }
+      return ok(sessionConfiguration(w, row, draft));
+    });
+    on("PUT", "/api/sessions/{id}/profile", ({ params, body }) => {
+      const row = find(w.sessions, params[0], "session");
+      if ("status" in row) return row;
+      const id = str(body.profile_id);
+      if (id === "") Reflect.deleteProperty(row, "profile_id");
+      else if (w.profiles.some((p) => p.id === id)) row.profile_id = id;
+      else return fail(400, "invalid_request", `profile ${id} does not exist`);
+      syncSession(w, row);
+      return ok(sessionConfiguration(w, row));
+    });
+    on("PUT", "/api/sessions/{id}/overrides", ({ params, body }) => {
+      const row = find(w.sessions, params[0], "session");
+      if ("status" in row) return row;
+      const settings = settingsOf(body);
+      const problem = samplingProblem(settings.sampling);
+      if (problem !== undefined) return fail(400, "invalid_request", problem);
+      w.overrides[row.id] = settings;
+      syncSession(w, row);
+      return ok(sessionConfiguration(w, row));
+    });
+    on("GET", "/api/sessions/{id}/context", ({ params, query }) => {
+      const row = find(w.sessions, params[0], "session");
+      if ("status" in row) return row;
+      const model = query.get("model") ?? "";
+      if (model !== "" && !w.models.some((m) => m.name === model)) {
+        return fail(400, "invalid_request", `unknown model "${model}"`);
+      }
+      return ok(previewContext(w, row, model));
+    });
+    on("GET", "/api/sessions/{id}/requests", ({ params }) => {
+      const row = find(w.sessions, params[0], "session");
+      if ("status" in row) return row;
+      return ok({ session_id: row.id, requests: (w.requests[row.id] ?? []).map((r) => r.record) });
+    });
+    on("GET", "/api/sessions/{id}/requests/{request_id}", ({ params }) => {
+      const found = (w.requests[params[0] ?? ""] ?? []).find((r) => r.record.id === params[1]);
+      if (!found) return fail(404, "not_found", "model request not found");
+      return ok(recordedContext(found));
+    });
+
+    // Profiles.
+    const profileInput = (body: Record<string, unknown>) => {
+      const name = str(body.name).trim();
+      if (name === "") return fail(400, "invalid_request", "name must be 1 to 64 characters");
+      const settings = settingsOf(body);
+      const problem = samplingProblem(settings.sampling);
+      if (problem !== undefined) return fail(400, "invalid_request", problem);
+      if (settings.model_id !== undefined && !w.models.some((m) => m.id === settings.model_id)) {
+        return fail(400, "invalid_request", `model ${settings.model_id} does not exist`);
+      }
+      const tools = Array.isArray(body.tools) ? [...new Set(strings(body.tools))].sort() : null;
+      return { name, description: str(body.description).trim(), ...settings, tools };
+    };
+    on("GET", "/api/profiles", () => ok(profilesBody(w)));
+    on("GET", "/api/profiles/inherited", ({ query }) => {
+      const modelId = query.get("model_id") ?? "";
+      if (modelId !== "" && !w.models.some((m) => m.id === modelId)) {
+        return fail(400, "invalid_request", `model ${modelId} does not exist`);
+      }
+      return ok(inheritedProfile(w, modelId));
+    });
+    on("POST", "/api/profiles", ({ body }) => {
+      const input = profileInput(body);
+      if ("status" in input) return input;
+      if (w.profiles.some((p) => p.name === input.name)) {
+        return fail(409, "conflict", `a profile named "${input.name}" already exists`);
+      }
+      const row = { id: this.nextId("prof"), ...input, created_at: now(), updated_at: now() };
+      w.profiles.push(row);
+      return ok(profileBody(w, row), 201);
+    });
+    on("PUT", "/api/profiles/{id}", ({ params, body }) => {
+      const row = find(w.profiles, params[0], "profile");
+      if ("status" in row) return row;
+      const input = profileInput(body);
+      if ("status" in input) return input;
+      if (w.profiles.some((p) => p.name === input.name && p.id !== row.id)) {
+        return fail(409, "conflict", `a profile named "${input.name}" already exists`);
+      }
+      const updated = { ...input, id: row.id, created_at: row.created_at, updated_at: now() };
+      w.profiles = w.profiles.map((p) => (p.id === row.id ? updated : p));
+      for (const session of w.sessions) syncSession(w, session);
+      return ok(profileBody(w, updated));
+    });
+    on("DELETE", "/api/profiles/{id}", ({ params }) => {
+      const row = find(w.profiles, params[0], "profile");
+      if ("status" in row) return row;
+      if (w.profiles.length === 1) {
+        return fail(
+          409,
+          "conflict",
+          `profile ${row.id} is the last one, and a run always needs a profile`,
+        );
+      }
+      w.profiles = w.profiles.filter((p) => p.id !== row.id);
+      for (const session of w.sessions) {
+        if (session.profile_id === row.id) Reflect.deleteProperty(session, "profile_id");
+        syncSession(w, session);
+      }
+      return { status: 204 };
+    });
+
     on("GET", "/api/sessions/{id}/agents", ({ params }) =>
       ok({ session_id: params[0], agents: [] }),
     );
@@ -1136,6 +1319,7 @@ export class MockHarness {
         pending_steering: w.pendingSteering[id] ?? [],
         pending_follow_ups: w.pendingFollowUps[id] ?? [],
         questions: w.questions.filter((q) => q.session_id === id),
+        elicitations: w.elicitations.filter((e) => e.session_id === id),
       });
     });
     on("POST", "/api/sessions/{id}/messages", ({ params, body }) => {
@@ -1179,6 +1363,328 @@ export class MockHarness {
       return { status: 204 };
     });
 
+    // MCP servers, as internal/server/mcp.go serves them. An authorization
+    // server is not mocked: the authorization URL is the callback itself,
+    // as an authorization server that approves at once would redirect.
+    const mcpNamePattern = /^[A-Za-z0-9-]+(_[A-Za-z0-9-]+)*$/;
+    const mcpServer = (id: string | undefined) => {
+      const row = w.mcpServers.find((d) => d.server.id === id);
+      return row ?? fail(404, "not_found", "mcp server not found");
+    };
+    const mcpChanged = (d: MCPServerDetails, state: string = d.server.state) => {
+      syncMCPTools(w);
+      d.server.updated_at = now();
+      this.emit(
+        this.event("mcp.server", "global", {
+          server_id: d.server.id,
+          name: d.server.name,
+          state,
+          ...(d.server.error === undefined ? {} : { error: d.server.error }),
+        }),
+      );
+    };
+    const mcpNameProblem = (name: string, id?: string): Reply | undefined => {
+      if (name === "" || name.length > 32 || !mcpNamePattern.test(name)) {
+        return fail(
+          400,
+          "invalid_request",
+          "name must be 1 to 32 letters, digits, hyphens, and single underscores between them",
+        );
+      }
+      if (w.mcpServers.some((d) => d.server.name === name && d.server.id !== id)) {
+        return fail(409, "conflict", `an MCP server named ${name} exists`);
+      }
+      return undefined;
+    };
+    const mcpURLProblem = (raw: string): Reply | undefined => {
+      let url: URL;
+      try {
+        url = new URL(raw);
+      } catch {
+        return fail(400, "invalid_request", "url must be an http or https URL");
+      }
+      if ((url.protocol !== "http:" && url.protocol !== "https:") || url.hash !== "") {
+        return fail(400, "invalid_request", "url must be an http or https URL with no fragment");
+      }
+      return undefined;
+    };
+    const names = (value: unknown) =>
+      typeof value === "object" && value !== null ? Object.keys(value).sort() : [];
+    const connectHTTP = (d: MCPServerDetails) => {
+      if (!d.server.enabled) {
+        d.server.state = "disabled";
+      } else if (d.auth.challenged && !d.auth.authorized) {
+        d.server.state = "unauthorized";
+        d.server.error = "the server needs authorization";
+      } else {
+        d.server.state = "connected";
+        delete d.server.error;
+      }
+    };
+    on("GET", "/api/mcp/servers", () => ok({ servers: w.mcpServers.map((d) => d.server) }));
+    on("POST", "/api/mcp/servers", ({ body }) => {
+      const name = str(body.name);
+      const problem = mcpNameProblem(name);
+      if (problem) return problem;
+      const kind = str(body.kind);
+      if (kind !== "http" && kind !== "stdio") {
+        return fail(400, "invalid_request", "kind must be http or stdio");
+      }
+      if (kind === "http") {
+        const bad = mcpURLProblem(str(body.url));
+        if (bad) return bad;
+      } else if (str(body.command) === "") {
+        return fail(400, "invalid_request", "a stdio server needs a command");
+      }
+      const d: MCPServerDetails = {
+        server: {
+          id: this.nextId("mcp"),
+          name,
+          kind,
+          url: kind === "http" ? str(body.url) : "",
+          header_names: names(body.headers),
+          command: str(body.command),
+          args: strings(body.args),
+          env_names: names(body.env),
+          enabled: body.enabled !== false,
+          disabled_tools: strings(body.disabled_tools).sort(),
+          oauth_client_id: str(body.oauth_client_id),
+          oauth_client_secret_set: str(body.oauth_client_secret) !== "",
+          state: "idle",
+          workspaces: [],
+          created_at: now(),
+          updated_at: now(),
+        },
+        tools: [],
+        excluded_tools: [],
+        resources: [],
+        resource_templates: [],
+        prompts: [],
+        list_errors: {},
+        logs: [],
+        auth: { challenged: false, authorized: false, has_refresh_token: false },
+      };
+      if (!d.server.enabled) d.server.state = "disabled";
+      else if (kind === "http") connectHTTP(d);
+      w.mcpServers.push(d);
+      w.mcpServers.sort((a, b) => a.server.name.localeCompare(b.server.name));
+      mcpChanged(d);
+      return ok(d.server, 201);
+    });
+    on("GET", "/api/mcp/servers/{id}", ({ params }) => {
+      const d = mcpServer(params[0]);
+      return "status" in d ? d : ok(d);
+    });
+    on("PATCH", "/api/mcp/servers/{id}", ({ params, body }) => {
+      const d = mcpServer(params[0]);
+      if ("status" in d) return d;
+      const s = d.server;
+      if (typeof body.name === "string") {
+        const problem = mcpNameProblem(body.name, s.id);
+        if (problem) return problem;
+      }
+      if (typeof body.url === "string") {
+        if (s.kind !== "http") return fail(400, "invalid_request", "a stdio server has no url");
+        const bad = mcpURLProblem(body.url);
+        if (bad) return bad;
+      }
+      if (typeof body.command === "string" && s.kind !== "stdio") {
+        return fail(400, "invalid_request", "an http server has no command");
+      }
+      if (typeof body.name === "string") {
+        // As the harness does: tool choices follow the server's new name.
+        const from = `mcp__${s.name}__`;
+        const to = `mcp__${body.name}__`;
+        const rename = (choice: string[] | null) =>
+          choice?.map((e) => (e.startsWith(from) ? to + e.slice(from.length) : e)) ?? null;
+        for (const p of w.profiles) p.tools = rename(p.tools);
+        for (const [id, choice] of Object.entries(w.toolChoices))
+          w.toolChoices[id] = rename(choice) ?? choice;
+        s.name = body.name;
+        for (const t of d.tools ?? []) t.exposed_name = `mcp__${s.name}__${t.name}`;
+      }
+      if (typeof body.url === "string" && body.url !== s.url) {
+        s.url = body.url;
+        // As the harness does: the old URL's headers and tokens do not follow it.
+        if (body.headers === undefined) s.header_names = [];
+        d.auth = { ...d.auth, authorized: false, has_refresh_token: false };
+      }
+      if (body.headers !== undefined) s.header_names = names(body.headers);
+      if (typeof body.command === "string") s.command = body.command;
+      if (Array.isArray(body.args)) s.args = strings(body.args);
+      if (body.env !== undefined) s.env_names = names(body.env);
+      if (typeof body.enabled === "boolean") s.enabled = body.enabled;
+      if (Array.isArray(body.disabled_tools)) {
+        s.disabled_tools = strings(body.disabled_tools).sort();
+        for (const t of d.tools ?? []) t.enabled = !s.disabled_tools.includes(t.name);
+      }
+      if (typeof body.oauth_client_id === "string") {
+        s.oauth_client_id = body.oauth_client_id;
+        if (body.oauth_client_id === "") s.oauth_client_secret_set = false;
+      }
+      if (typeof body.oauth_client_secret === "string") {
+        s.oauth_client_secret_set = body.oauth_client_secret !== "";
+      }
+      if (!s.enabled) {
+        s.state = "disabled";
+        s.workspaces = [];
+      } else if (s.kind === "http") {
+        connectHTTP(d);
+      } else if (s.state === "disabled") {
+        s.state = "idle";
+      }
+      mcpChanged(d);
+      return ok(s);
+    });
+    on("DELETE", "/api/mcp/servers/{id}", ({ params }) => {
+      const d = mcpServer(params[0]);
+      if ("status" in d) return { status: 204 };
+      w.mcpServers = w.mcpServers.filter((x) => x !== d);
+      mcpChanged(d, "removed");
+      return { status: 204 };
+    });
+    on("POST", "/api/mcp/servers/{id}/connect", ({ params, body }) => {
+      const d = mcpServer(params[0]);
+      if ("status" in d) return d;
+      if (!d.server.enabled) return fail(409, "conflict", "the server is off");
+      if (d.server.kind === "stdio") {
+        const id = str(body.workspace_id);
+        if (id === "") {
+          return fail(400, "invalid_request", "a stdio server runs in a workspace: name one");
+        }
+        const ws = running(id);
+        if ("status" in ws) return ws;
+        d.server.state = "connected";
+        d.server.workspaces = [...new Set([...(d.server.workspaces ?? []), ws.id])];
+      } else {
+        connectHTTP(d);
+      }
+      (d.logs ??= []).push({
+        time: now(),
+        source: "eika",
+        level: "info",
+        text:
+          d.server.state === "connected" ? "connected" : `did not connect: ${d.server.error ?? ""}`,
+      });
+      mcpChanged(d);
+      return ok(d);
+    });
+    on("POST", "/api/mcp/servers/{id}/authorize", ({ params, body }) => {
+      const d = mcpServer(params[0]);
+      if ("status" in d) return d;
+      if (d.server.kind !== "http") {
+        return fail(400, "invalid_request", "a stdio server is not authorized with OAuth");
+      }
+      let redirect: URL;
+      try {
+        redirect = new URL(str(body.redirect_uri));
+      } catch {
+        return fail(400, "invalid_request", "redirect_uri must be an http or https URL");
+      }
+      if (redirect.pathname !== "/mcp/callback" || redirect.search !== "") {
+        return fail(
+          400,
+          "invalid_request",
+          "redirect_uri must be the /mcp/callback page of the web UI",
+        );
+      }
+      const state = this.nextId("state");
+      this.authorizations.set(state, d.server.id);
+      const issuer = d.auth.issuer ?? "https://auth.example.com";
+      redirect.search = new URLSearchParams({ code: "mock-code", state, iss: issuer }).toString();
+      return ok({ authorization_url: redirect.toString() });
+    });
+    on("POST", "/api/mcp/oauth/callback", ({ body }) => {
+      const id = this.authorizations.get(str(body.state));
+      if (id === undefined) return fail(404, "not_found", "no authorization waits for that state");
+      this.authorizations.delete(str(body.state));
+      if (str(body.error) !== "") {
+        return fail(400, "invalid_request", `the authorization server refused: ${str(body.error)}`);
+      }
+      const d = mcpServer(id);
+      if ("status" in d) return d;
+      d.auth = {
+        ...d.auth,
+        authorized: true,
+        has_refresh_token: true,
+        issuer: d.auth.issuer ?? "https://auth.example.com",
+        expires_at: "2026-03-14T16:00:00.000Z",
+        updated_at: now(),
+        registration: d.auth.registration ?? "dynamic",
+        client_id: d.auth.client_id ?? "eika-mock-client",
+      };
+      connectHTTP(d);
+      mcpChanged(d);
+      return ok({ server_id: d.server.id });
+    });
+    on("DELETE", "/api/mcp/servers/{id}/authorization", ({ params }) => {
+      const d = mcpServer(params[0]);
+      if ("status" in d) return d;
+      d.auth = { ...d.auth, authorized: false, has_refresh_token: false };
+      delete d.auth.expires_at;
+      connectHTTP(d);
+      mcpChanged(d);
+      return { status: 204 };
+    });
+    on("POST", "/api/mcp/servers/{id}/resources/read", ({ params, body }) => {
+      const d = mcpServer(params[0]);
+      if ("status" in d) return d;
+      const uri = str(body.uri);
+      const found = (d.resources ?? []).find((r) => r.uri === uri);
+      if (!found) return fail(400, "invalid_request", `read the resource: no resource ${uri}`);
+      const content: ContentDetail = {
+        type: "resource",
+        uri,
+        ...(found.mime_type === undefined ? {} : { mime_type: found.mime_type }),
+        text: `# ${found.title ?? found.name}\n\n${found.description ?? ""}\n`,
+      };
+      return ok({ contents: [content] });
+    });
+    on("POST", "/api/mcp/servers/{id}/prompts/get", ({ params, body }) => {
+      const d = mcpServer(params[0]);
+      if ("status" in d) return d;
+      const prompt = (d.prompts ?? []).find((p) => p.name === str(body.name));
+      if (!prompt)
+        return fail(400, "invalid_request", `get the prompt: no prompt ${str(body.name)}`);
+      const given = (body.arguments ?? {}) as Record<string, unknown>;
+      for (const a of prompt.arguments ?? []) {
+        if (a.required && str(given[a.name]) === "") {
+          return fail(400, "invalid_request", `get the prompt: ${a.name} is required`);
+        }
+      }
+      const filled = Object.entries(given)
+        .map(([k, v]) => `${k}: ${str(v)}`)
+        .join("\n");
+      return ok({
+        ...(prompt.description === undefined ? {} : { description: prompt.description }),
+        messages: [
+          {
+            role: "user",
+            content: { type: "text", text: `${prompt.description ?? prompt.name}\n\n${filled}` },
+          },
+        ],
+      });
+    });
+    on("POST", "/api/elicitations/{id}/answer", ({ params, body }) => {
+      const answer = this.elicitAnswers.get(params[0] ?? "");
+      if (!answer) return fail(404, "not_found", "nothing waits on that elicitation");
+      const action = str(body.action);
+      if (action !== "accept" && action !== "decline" && action !== "cancel") {
+        return fail(400, "invalid_request", "action must be accept, decline, or cancel");
+      }
+      const elicitation = w.elicitations.find((e) => e.id === params[0]);
+      if (body.content !== undefined && (action !== "accept" || elicitation?.mode !== "form")) {
+        return fail(400, "invalid_request", "content goes only with an accepted form");
+      }
+      answer({
+        action,
+        ...(typeof body.content === "object" && body.content !== null
+          ? { content: body.content as Record<string, unknown> }
+          : {}),
+      });
+      return { status: 204 };
+    });
+
     return routes;
   }
 
@@ -1188,6 +1694,7 @@ export class MockHarness {
     if (error !== undefined) run.error = error;
     Reflect.deleteProperty(this.world.activeRuns, run.session_id);
     this.world.questions = this.world.questions.filter((q) => q.run_id !== run.id);
+    this.world.elicitations = this.world.elicitations.filter((e) => e.run_id !== run.id);
   }
 
   private append(session: Session, message: Message): Entry {
@@ -1254,6 +1761,10 @@ export class MockHarness {
     let stopReason = "stop";
     try {
       this.append(session, { role: "user", content: text });
+      // What the model call is sent, which the harness records once the
+      // response is in.
+      const sent = previewContext(this.world, session, "");
+      const sentAt = session.head_entry_id;
       send("turn.start", {
         session_id: session.id,
         workspace_id: session.workspace_id,
@@ -1375,6 +1886,81 @@ export class MockHarness {
             is_error: false,
             duration_ms: 5000,
           });
+        } else if ("mcp" in step) {
+          const callId = this.nextId("call");
+          const name = `mcp__${step.mcp.server}__${step.mcp.tool}`;
+          send("tool.call", { call_id: callId, name, arguments: step.args });
+          this.append(session, {
+            role: "assistant",
+            tool_calls: [{ id: callId, name, arguments: step.args }],
+          });
+          let declined = "";
+          if (step.elicit) {
+            const elicitation: Elicitation = {
+              id: this.nextId("eli"),
+              session_id: session.id,
+              run_id: run.id,
+              call_id: callId,
+              server: step.mcp.server,
+              asked_at: fixedNow,
+              ...step.elicit,
+            };
+            this.world.elicitations.push(elicitation);
+            await pause();
+            send("mcp.elicitation", {
+              elicitation_id: elicitation.id,
+              session_id: session.id,
+              call_id: callId,
+              server: elicitation.server,
+              mode: elicitation.mode,
+              message: elicitation.message,
+              ...(elicitation.requested_schema === undefined
+                ? {}
+                : { requested_schema: elicitation.requested_schema }),
+              ...(elicitation.url === undefined ? {} : { url: elicitation.url }),
+            });
+            // As with a question, waiting on a person is not the page's work.
+            this.busy -= 1;
+            const answer = await new Promise<ElicitationAnswer>((resolve) => {
+              this.elicitAnswers.set(elicitation.id, resolve);
+            });
+            this.busy += 1;
+            this.elicitAnswers.delete(elicitation.id);
+            this.world.elicitations = this.world.elicitations.filter(
+              (e) => e.id !== elicitation.id,
+            );
+            if (answer.action !== "accept") declined = `The user chose to ${answer.action}.`;
+          }
+          await pause();
+          const content: ContentDetail[] =
+            declined === "" ? step.content : [{ type: "text", text: declined }];
+          const text = content
+            .map((c) =>
+              c.type === "text" || c.type === "resource"
+                ? (c.text ?? "")
+                : `[${c.type} ${c.mime_type ?? ""}: shown to the user, not to you]`,
+            )
+            .join("\n\n");
+          send("tool.result", {
+            call_id: callId,
+            name,
+            content: text,
+            is_error: step.isError === true,
+            details: {
+              server: step.mcp.server,
+              tool: step.mcp.tool,
+              content,
+              ...(step.structured === undefined ? {} : { structured_content: step.structured }),
+              ...(step.isError === true ? { is_error: true } : {}),
+            },
+            duration_ms: 842,
+          });
+          this.append(session, {
+            role: "tool",
+            tool_call_id: callId,
+            content: text,
+            is_error: step.isError === true,
+          });
         } else if ("fail" in step) {
           send("run.error", { message: step.fail, retryable: step.retryable ?? false });
           this.finish(run, "error", step.fail);
@@ -1389,6 +1975,13 @@ export class MockHarness {
       }
       await pause();
       if (run.state !== "running") return;
+      record(this.world, session, {
+        id: this.nextId("req"),
+        runId: run.id,
+        context: sent,
+        outputTokens: Math.max(outputTokens, 311),
+        ...(sentAt === undefined ? {} : { entryId: sentAt }),
+      });
       this.finish(run, "done");
       const usage = {
         input_tokens: 1842,

@@ -287,14 +287,18 @@ func (s *Server) destroyWorkspace(ctx context.Context, ws store.Workspace) error
 	return nil
 }
 
-// stopRunsIn aborts every run in a workspace before the workspace goes away
-// under it. It detaches from the request for the same reason discard does: a
-// run left going would keep writing through an executor that no longer has a
+// stopRunsIn aborts every run in a workspace, then ends the stdio MCP
+// servers running there, before the workspace goes away under them. It
+// detaches from the request for the same reason discard does: a run left
+// going would keep writing through an executor that no longer has a
 // container behind it.
 func (s *Server) stopRunsIn(ctx context.Context, workspaceID string) {
 	ctx, cancel := teardown(ctx)
 	defer cancel()
 	s.runs.stopSessionsOf(ctx, s.deps.Store, workspaceID)
+	if s.deps.MCP != nil {
+		s.deps.MCP.StopWorkspace(workspaceID)
+	}
 }
 
 // handleWorkspaceDiff reports what the workspace changed since it was

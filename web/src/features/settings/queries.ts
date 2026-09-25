@@ -10,6 +10,7 @@ import type { Settings, SettingsState, SystemStatus } from "@/api/types";
 /** The settings keys the harness reads itself. Every other key is the UI's own. */
 export const settingKeys = {
   defaultModel: "default_model",
+  defaultProfile: "default_profile",
   sandboxImage: "sandbox_image",
   subagentMaxDepth: "subagent_max_depth",
   subagentMaxChildren: "subagent_max_children",
@@ -31,10 +32,12 @@ export function useSaveSettings(): UseMutationResult<SettingsState, Error, Setti
     mutationFn: putSettings,
     onSuccess: async (state) => {
       client.setQueryData(queryKeys.settings(), state);
-      // The default model, the sandbox image, and the search order and
-      // quotas are reported elsewhere too.
+      // The default model and profile, the sandbox image, and the search
+      // order and quotas are reported elsewhere too.
       await Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.models() }),
+        client.invalidateQueries({ queryKey: queryKeys.profiles() }),
+        client.invalidateQueries({ queryKey: ["session"] }),
         client.invalidateQueries({ queryKey: queryKeys.system() }),
         client.invalidateQueries({ queryKey: queryKeys.searchStatus() }),
       ]);

@@ -4,7 +4,8 @@
  * no existing one has, and keep ids stable: specs and agents address them.
  */
 
-import { emptyWorld, WorldBuilder } from "./world.ts";
+import { noSettings, syncSession } from "./profiles.ts";
+import { emptyWorld, minutesAgo, sessionTools, WorldBuilder } from "./world.ts";
 import type { World } from "./world.ts";
 
 /** Scenario is a starting state an agent or a spec can open by name. */
@@ -197,6 +198,46 @@ function workbench(): WorldBuilder {
 }
 
 /**
+ * profiles adds two profiles to a workbench, puts ses-backoff on one with an
+ * override of its own, and records two of its model calls: one when only
+ * its first message had been sent, and one at its head.
+ */
+function profiles(): WorldBuilder {
+  const b = workbench();
+  const w = b.world;
+  const mini = w.models.find((m) => m.name === "gpt-5-mini");
+  // A model whose own values differ, so an editor that picks it shows them.
+  if (mini) mini.max_output = 64000;
+  const reviewer = b.profile({
+    name: "Reviewer",
+    description: "Reads and reviews; changes nothing",
+    instructions: "Review the change and report problems. Do not edit files.",
+    sampling: { temperature: 0.2 },
+    tools: ["bash", "web_fetch"],
+  });
+  b.profile({
+    name: "Fast",
+    ...(mini ? { model_id: mini.id } : {}),
+    sampling: { reasoning_effort: "low", max_output: 4096 },
+  });
+  const ws = w.workspaces.find((x) => x.id === "ws-retries");
+  const main = w.sessions.find((x) => x.id === "ses-backoff");
+  if (!ws || !main) throw new Error("the workbench has no ses-backoff");
+  (w.files[ws.id] ??= {})["AGENTS.md"] =
+    "# payments-api\n\nRun `go test ./...` before you report. Keep the webhook client free of global state.\n";
+  main.profile_id = reviewer.id;
+  w.overrides[main.id] = { ...noSettings(), sampling: { temperature: 0.7 } };
+  syncSession(w, main);
+  const head = main.head_entry_id;
+  const first = (w.entries[main.id] ?? [])[0];
+  if (first) main.head_entry_id = first.id;
+  b.request(main, 40, 212);
+  main.head_entry_id = head;
+  b.request(main, 12, 318);
+  return b;
+}
+
+/**
  * chats adds two chats and a fork of one to a workbench: sessions with no
  * workspace, listed apart from the projects. The main one is `chat-jitter`.
  */
@@ -241,6 +282,270 @@ function chats(): WorldBuilder {
     created_at: "2026-03-14T14:30:00.000Z",
   });
   return b;
+}
+
+/** chartPNG is a 96x48 bar chart, as an MCP tool might send one. */
+const chartPNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwCAIAAABhdOiYAAAAkklEQVR42u3awQmAIACGURdoy0ZoiKBrq0bQqU4REYgYaPnguwiC/O9sWNbtrB+m61FHARAgQM0CdfP4GCBAgAABAlQcKLofECBAgH4OFH0CECBAXwXK3w8IECBAVQPlCwICBOirQDXsBwQIEKCqgfIvAAIEqAxQI/sBAQIECBAgQIAAAXoHSLeCv/QJ/4MEKLkdyOnW8ZEYQV0AAAAASUVORK5CYII=";
+
+/**
+ * mcpServers adds the MCP servers the settings and the transcript are shown
+ * with: `github`, a remote server that is connected and signed in, with
+ * tools, resources, and prompts; `linear`, a remote one that needs a sign-in;
+ * `filesystem`, a stdio one that ran in fix-retries; `sentry`, whose last
+ * connection failed; and `docs`, which is off.
+ */
+function mcpServers(b: WorldBuilder): void {
+  const tool = (
+    server: string,
+    name: string,
+    description: string,
+    annotations?: Partial<{
+      read_only: boolean;
+      destructive: boolean;
+      idempotent: boolean;
+      open_world: boolean;
+    }>,
+    enabled = true,
+  ) => ({
+    name,
+    exposed_name: `mcp__${server}__${name}`,
+    description,
+    input_schema: {
+      type: "object",
+      properties: { query: { type: "string", description: "What to look for." } },
+      required: ["query"],
+    },
+    ...(annotations === undefined
+      ? {}
+      : {
+          annotations: {
+            read_only: annotations.read_only ?? null,
+            destructive: annotations.destructive ?? null,
+            idempotent: annotations.idempotent ?? null,
+            open_world: annotations.open_world ?? null,
+          },
+        }),
+    enabled,
+  });
+  const capabilities = {
+    tools: true,
+    tools_list_changed: true,
+    resources: true,
+    resources_subscribe: false,
+    resources_list_changed: false,
+    prompts: true,
+    prompts_list_changed: false,
+    logging: false,
+    completions: false,
+    experimental: [],
+    extensions: [],
+  };
+  b.mcpServer(
+    {
+      id: "mcp-github",
+      name: "github",
+      kind: "http",
+      url: "https://api.githubcopilot.com/mcp/",
+      state: "connected",
+      disabled_tools: ["merge_pull_request"],
+    },
+    {
+      connection: {
+        era: "modern",
+        transport: "streamable_http",
+        protocol_version: "2026-07-28",
+        supported_versions: ["2026-07-28", "2025-11-25"],
+        server_info: {
+          name: "github-mcp-server",
+          title: "GitHub",
+          version: "1.4.0",
+          website_url: "https://github.com/github/github-mcp-server",
+        },
+        capabilities,
+        instructions: "Prefer search_issues over listing every issue of a repository.",
+      },
+      tools: [
+        tool("github", "search_issues", "Search issues and pull requests across GitHub.", {
+          read_only: true,
+          open_world: true,
+        }),
+        tool("github", "create_issue", "Open an issue in a repository.", {
+          destructive: false,
+          open_world: true,
+        }),
+        tool(
+          "github",
+          "merge_pull_request",
+          "Merge a pull request into its base branch.",
+          { destructive: true, idempotent: false },
+          false,
+        ),
+      ],
+      resources: [
+        {
+          uri: "repo://example/payments-api/README.md",
+          name: "README.md",
+          title: "payments-api README",
+          description: "The repository's front page.",
+          mime_type: "text/markdown",
+          size: 2048,
+        },
+      ],
+      resource_templates: [
+        {
+          uri_template: "repo://{owner}/{repo}/contents/{path}",
+          name: "file",
+          title: "Repository file",
+          description: "Any file of a repository.",
+        },
+      ],
+      prompts: [
+        {
+          name: "summarize_pr",
+          title: "Summarize a pull request",
+          description: "Summarize a pull request's change and its review.",
+          arguments: [
+            { name: "repo", description: "owner/name", required: true },
+            { name: "number", description: "the pull request number", required: true },
+          ],
+        },
+      ],
+      fetched_at: minutesAgo(12),
+      logs: [
+        {
+          time: minutesAgo(12),
+          source: "eika",
+          level: "info",
+          text: "connected over Streamable HTTP, protocol 2026-07-28",
+        },
+        {
+          time: minutesAgo(12),
+          source: "eika",
+          level: "info",
+          text: "listed 3 tools, 1 resource, 1 prompt",
+        },
+      ],
+      auth: {
+        challenged: true,
+        challenge: {
+          resource_metadata:
+            "https://api.githubcopilot.com/.well-known/oauth-protected-resource/mcp/",
+          scope: "repo",
+        },
+        authorized: true,
+        has_refresh_token: true,
+        issuer: "https://github.com/login/oauth",
+        resource: "https://api.githubcopilot.com/mcp/",
+        scope: "repo read:org",
+        expires_at: "2026-03-14T23:00:00.000Z",
+        client_id: "Iv1.eika7f3a",
+        registration: "dynamic",
+        updated_at: minutesAgo(12),
+      },
+    },
+  );
+  b.mcpServer(
+    {
+      id: "mcp-linear",
+      name: "linear",
+      kind: "http",
+      url: "https://mcp.linear.app/mcp",
+      state: "unauthorized",
+      error: "the server answered 401: sign in to use it",
+    },
+    {
+      auth: {
+        challenged: true,
+        challenge: {
+          resource_metadata: "https://mcp.linear.app/.well-known/oauth-protected-resource",
+          error: "invalid_token",
+        },
+        authorized: false,
+        has_refresh_token: false,
+        issuer: "https://mcp.linear.app",
+      },
+      logs: [
+        {
+          time: minutesAgo(3),
+          source: "eika",
+          level: "warning",
+          text: "401 Unauthorized: the server needs authorization",
+        },
+      ],
+    },
+  );
+  b.mcpServer(
+    {
+      id: "mcp-filesystem",
+      name: "filesystem",
+      kind: "stdio",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      env_names: ["LOG_LEVEL"],
+      state: "idle",
+    },
+    {
+      connection: {
+        era: "legacy",
+        transport: "stdio",
+        protocol_version: "2025-06-18",
+        supported_versions: [],
+        server_info: { name: "secure-filesystem-server", version: "0.6.2" },
+        capabilities: { ...capabilities, resources: false, prompts: false },
+      },
+      tools: [
+        tool("filesystem", "read_text_file", "Read a text file of the allowed directories.", {
+          read_only: true,
+        }),
+        tool("filesystem", "write_file", "Create or overwrite a file.", { destructive: true }),
+      ],
+      fetched_at: minutesAgo(40),
+      logs: [
+        {
+          time: minutesAgo(41),
+          source: "stderr",
+          level: "info",
+          text: "Secure MCP Filesystem Server running on stdio",
+        },
+        {
+          time: minutesAgo(41),
+          source: "stderr",
+          level: "info",
+          text: "Allowed directories: [ '/workspace' ]",
+        },
+      ],
+    },
+  );
+  b.mcpServer(
+    {
+      id: "mcp-sentry",
+      name: "sentry",
+      kind: "http",
+      url: "https://sentry.internal/mcp",
+      state: "error",
+      error: "connect: dial tcp: lookup sentry.internal: no such host",
+      header_names: ["Authorization"],
+    },
+    {
+      logs: [
+        {
+          time: minutesAgo(2),
+          source: "eika",
+          level: "error",
+          text: "connect: dial tcp: lookup sentry.internal: no such host",
+        },
+      ],
+    },
+  );
+  b.mcpServer({
+    id: "mcp-docs",
+    name: "docs",
+    kind: "http",
+    url: "https://docs.example.com/mcp",
+    enabled: false,
+    state: "disabled",
+  });
 }
 
 export const scenarios = {
@@ -550,6 +855,125 @@ export const scenarios = {
       ]);
       return b.world;
     },
+  },
+  mcp: {
+    description:
+      "Like workbench with five MCP servers: github (connected, signed in, tools, resources, a prompt), linear (needs sign-in), filesystem (stdio), sentry (failed), and docs (off). Open Settings, MCP.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      mcpServers(b);
+      return b.world;
+    },
+  },
+  "chat-mcp": {
+    description:
+      "Like chat, with the mcp scenario's servers: the chat's Tools panel lists the remote servers' tools under each server.",
+    path: "/sessions/chat-jitter",
+    build: () => {
+      const b = chats();
+      mcpServers(b);
+      // A chat that never chose its tools offers every one it can, the
+      // servers' included, as the harness reports it.
+      for (const chat of b.world.sessions.filter((x) => x.id === "chat-jitter")) {
+        chat.tools = sessionTools(b.world, true);
+      }
+      return b.world;
+    },
+  },
+  "agent-mcp": {
+    description:
+      "Like mcp, but the next message calls github's create_issue, which asks for input in a form first, then search_issues, which answers with text and an image.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      mcpServers(b);
+      b.world.replies.push([
+        { say: "I'll file the flaky test as an issue." },
+        {
+          mcp: { server: "github", tool: "create_issue" },
+          args: { repo: "example/payments-api", title: "TestRetry is flaky" },
+          content: [{ type: "text", text: "Opened example/payments-api#42." }],
+          structured: { number: 42, url: "https://github.com/example/payments-api/issues/42" },
+          elicit: {
+            mode: "form",
+            message: "Which labels and assignee should the issue get?",
+            requested_schema: {
+              type: "object",
+              properties: {
+                labels: {
+                  type: "array",
+                  title: "Labels",
+                  items: { type: "string", enum: ["bug", "flaky-test", "good first issue"] },
+                },
+                assignee: { type: "string", title: "Assignee", description: "A GitHub login." },
+                priority: {
+                  type: "string",
+                  title: "Priority",
+                  oneOf: [
+                    { const: "p1", title: "Soon" },
+                    { const: "p2", title: "Whenever" },
+                  ],
+                  default: "p2",
+                },
+                notify: { type: "boolean", title: "Notify the team", default: true },
+              },
+              required: ["assignee"],
+            },
+          },
+        },
+        {
+          mcp: { server: "github", tool: "search_issues" },
+          args: { query: "repo:example/payments-api flaky" },
+          content: [
+            { type: "text", text: "1 result: #42 TestRetry is flaky (open)" },
+            {
+              type: "image",
+              mime_type: "image/png",
+              data: chartPNG,
+              size: 203,
+              name: "burndown chart",
+            },
+            {
+              type: "resource_link",
+              uri: "https://github.com/example/payments-api/issues/42",
+              name: "#42 TestRetry is flaky",
+            },
+          ],
+        },
+        { say: "Filed #42 and assigned it." },
+      ]);
+      return b.world;
+    },
+  },
+  "agent-mcp-url": {
+    description:
+      "Like mcp, but the next message calls linear's list_issues, whose server sends the user to a page to connect their account first.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      mcpServers(b);
+      b.world.replies.push([
+        {
+          mcp: { server: "linear", tool: "list_issues" },
+          args: { team: "PAY" },
+          content: [{ type: "text", text: "PAY-12 Retries hammer the webhook endpoint" }],
+          elicit: {
+            mode: "url",
+            message: "Connect your Linear workspace to let the server read its issues.",
+            url: "https://linear.app/oauth/authorize?client_id=mcp&state=abc",
+          },
+        },
+        { say: "PAY-12 tracks the same problem." },
+      ]);
+      return b.world;
+    },
+  },
+  profiles: {
+    description:
+      "Like workbench, with two more profiles: ses-backoff runs with Reviewer and overrides its temperature, its workspace has an AGENTS.md, and two of its model calls are recorded. For the Profiles tab, the status bar's profile, and the Context panel.",
+    path: "/sessions/ses-backoff",
+    build: () => profiles().world,
   },
   "chat-empty": {
     description: "A chat with no messages yet, beside the workbench's projects.",

@@ -1,6 +1,15 @@
 {
   "routes": {
+    "DELETE /api/mcp/servers/{id}": {
+      "status": 204
+    },
+    "DELETE /api/mcp/servers/{id}/authorization": {
+      "status": 204
+    },
     "DELETE /api/models/{id}": {
+      "status": 204
+    },
+    "DELETE /api/profiles/{id}": {
       "status": 204
     },
     "DELETE /api/projects/{id}": {
@@ -35,6 +44,347 @@
         }
       },
       "public": true
+    },
+    "GET /api/mcp/servers": {
+      "status": 200,
+      "response": {
+        "object": {
+          "servers": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "args": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "command": "string",
+                  "created_at": "string",
+                  "disabled_tools": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "enabled": "boolean",
+                  "env_names": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "error": "string",
+                  "header_names": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "id": "string",
+                  "kind": "string",
+                  "name": "string",
+                  "oauth_client_id": "string",
+                  "oauth_client_secret_set": "boolean",
+                  "state": "string",
+                  "updated_at": "string",
+                  "url": "string",
+                  "workspaces": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  }
+                },
+                "optional": [
+                  "error"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/mcp/servers/{id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "auth": {
+            "object": {
+              "authorized": "boolean",
+              "challenge": {
+                "object": {
+                  "error": "string",
+                  "error_description": "string",
+                  "resource_metadata": "string",
+                  "scope": "string"
+                },
+                "optional": [
+                  "error",
+                  "error_description",
+                  "resource_metadata",
+                  "scope"
+                ]
+              },
+              "challenged": "boolean",
+              "client_id": "string",
+              "expires_at": "string",
+              "has_refresh_token": "boolean",
+              "issuer": "string",
+              "registration": "string",
+              "resource": "string",
+              "resource_metadata_url": "string",
+              "scope": "string",
+              "updated_at": "string"
+            },
+            "optional": [
+              "challenge",
+              "client_id",
+              "expires_at",
+              "issuer",
+              "registration",
+              "resource",
+              "resource_metadata_url",
+              "scope",
+              "updated_at"
+            ]
+          },
+          "connection": {
+            "object": {
+              "capabilities": {
+                "object": {
+                  "completions": "boolean",
+                  "experimental": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "extensions": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "logging": "boolean",
+                  "prompts": "boolean",
+                  "prompts_list_changed": "boolean",
+                  "resources": "boolean",
+                  "resources_list_changed": "boolean",
+                  "resources_subscribe": "boolean",
+                  "tools": "boolean",
+                  "tools_list_changed": "boolean"
+                }
+              },
+              "era": "string",
+              "instructions": "string",
+              "protocol_version": "string",
+              "server_info": {
+                "object": {
+                  "description": "string",
+                  "name": "string",
+                  "title": "string",
+                  "version": "string",
+                  "website_url": "string"
+                },
+                "optional": [
+                  "description",
+                  "title",
+                  "website_url"
+                ]
+              },
+              "supported_versions": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "transport": "string"
+            },
+            "optional": [
+              "instructions"
+            ]
+          },
+          "excluded_tools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "name": "string",
+                  "reason": "string"
+                }
+              }
+            }
+          },
+          "fetched_at": "string",
+          "list_errors": {
+            "nullable": {
+              "map": "string"
+            }
+          },
+          "logs": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "level": "string",
+                  "source": "string",
+                  "text": "string",
+                  "time": "string"
+                }
+              }
+            }
+          },
+          "prompts": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "arguments": {
+                    "nullable": {
+                      "array": {
+                        "object": {
+                          "description": "string",
+                          "name": "string",
+                          "required": "boolean",
+                          "title": "string"
+                        },
+                        "optional": [
+                          "description",
+                          "title"
+                        ]
+                      }
+                    }
+                  },
+                  "description": "string",
+                  "name": "string",
+                  "title": "string"
+                },
+                "optional": [
+                  "description",
+                  "title"
+                ]
+              }
+            }
+          },
+          "resource_templates": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "description": "string",
+                  "mime_type": "string",
+                  "name": "string",
+                  "title": "string",
+                  "uri_template": "string"
+                },
+                "optional": [
+                  "description",
+                  "mime_type",
+                  "title"
+                ]
+              }
+            }
+          },
+          "resources": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "description": "string",
+                  "mime_type": "string",
+                  "name": "string",
+                  "size": "number",
+                  "title": "string",
+                  "uri": "string"
+                },
+                "optional": [
+                  "description",
+                  "mime_type",
+                  "size",
+                  "title"
+                ]
+              }
+            }
+          },
+          "server": {
+            "object": {
+              "args": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "command": "string",
+              "created_at": "string",
+              "disabled_tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "enabled": "boolean",
+              "env_names": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "error": "string",
+              "header_names": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "id": "string",
+              "kind": "string",
+              "name": "string",
+              "oauth_client_id": "string",
+              "oauth_client_secret_set": "boolean",
+              "state": "string",
+              "updated_at": "string",
+              "url": "string",
+              "workspaces": {
+                "nullable": {
+                  "array": "string"
+                }
+              }
+            },
+            "optional": [
+              "error"
+            ]
+          },
+          "tools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "annotations": {
+                    "object": {
+                      "destructive": {
+                        "nullable": "boolean"
+                      },
+                      "idempotent": {
+                        "nullable": "boolean"
+                      },
+                      "open_world": {
+                        "nullable": "boolean"
+                      },
+                      "read_only": {
+                        "nullable": "boolean"
+                      },
+                      "title": "string"
+                    },
+                    "optional": [
+                      "title"
+                    ]
+                  },
+                  "description": "string",
+                  "enabled": "boolean",
+                  "exposed_name": "string",
+                  "input_schema": "any",
+                  "name": "string",
+                  "output_schema": "any",
+                  "title": "string"
+                },
+                "optional": [
+                  "annotations",
+                  "description",
+                  "output_schema",
+                  "title"
+                ]
+              }
+            }
+          }
+        },
+        "optional": [
+          "connection",
+          "fetched_at"
+        ]
+      }
     },
     "GET /api/models": {
       "status": 200,
@@ -71,6 +421,193 @@
         },
         "optional": [
           "default"
+        ]
+      }
+    },
+    "GET /api/profiles": {
+      "status": 200,
+      "response": {
+        "object": {
+          "default": "string",
+          "profiles": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "chat_prompt": {
+                    "nullable": "string"
+                  },
+                  "context_files": {
+                    "nullable": "boolean"
+                  },
+                  "created_at": "string",
+                  "description": "string",
+                  "id": "string",
+                  "inherited": {
+                    "object": {
+                      "chat_prompt": "string",
+                      "context_files": "boolean",
+                      "dropped_effort": "string",
+                      "instructions": "string",
+                      "model": "string",
+                      "model_id": "string",
+                      "profile_id": "string",
+                      "profile_name": "string",
+                      "sampling": {
+                        "object": {
+                          "frequency_penalty": "number",
+                          "max_output": "number",
+                          "min_p": "number",
+                          "presence_penalty": "number",
+                          "reasoning_effort": "string",
+                          "seed": "number",
+                          "stop": {
+                            "array": "string"
+                          },
+                          "temperature": "number",
+                          "top_k": "number",
+                          "top_p": "number"
+                        },
+                        "optional": [
+                          "frequency_penalty",
+                          "max_output",
+                          "min_p",
+                          "presence_penalty",
+                          "reasoning_effort",
+                          "seed",
+                          "stop",
+                          "temperature",
+                          "top_k",
+                          "top_p"
+                        ]
+                      },
+                      "sources": {
+                        "nullable": {
+                          "map": "string"
+                        }
+                      },
+                      "tools": {
+                        "nullable": {
+                          "array": "string"
+                        }
+                      },
+                      "workspace_prompt": "string"
+                    },
+                    "optional": [
+                      "dropped_effort"
+                    ]
+                  },
+                  "instructions": {
+                    "nullable": "string"
+                  },
+                  "model_id": "string",
+                  "name": "string",
+                  "sampling": {
+                    "object": {
+                      "frequency_penalty": "number",
+                      "max_output": "number",
+                      "min_p": "number",
+                      "presence_penalty": "number",
+                      "reasoning_effort": "string",
+                      "seed": "number",
+                      "stop": {
+                        "array": "string"
+                      },
+                      "temperature": "number",
+                      "top_k": "number",
+                      "top_p": "number"
+                    },
+                    "optional": [
+                      "frequency_penalty",
+                      "max_output",
+                      "min_p",
+                      "presence_penalty",
+                      "reasoning_effort",
+                      "seed",
+                      "stop",
+                      "temperature",
+                      "top_k",
+                      "top_p"
+                    ]
+                  },
+                  "tools": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "updated_at": "string",
+                  "workspace_prompt": {
+                    "nullable": "string"
+                  }
+                },
+                "optional": [
+                  "model_id"
+                ]
+              }
+            }
+          },
+          "prompts": {
+            "object": {
+              "chat": "string",
+              "workspace": "string"
+            }
+          }
+        }
+      }
+    },
+    "GET /api/profiles/inherited": {
+      "status": 200,
+      "response": {
+        "object": {
+          "chat_prompt": "string",
+          "context_files": "boolean",
+          "dropped_effort": "string",
+          "instructions": "string",
+          "model": "string",
+          "model_id": "string",
+          "profile_id": "string",
+          "profile_name": "string",
+          "sampling": {
+            "object": {
+              "frequency_penalty": "number",
+              "max_output": "number",
+              "min_p": "number",
+              "presence_penalty": "number",
+              "reasoning_effort": "string",
+              "seed": "number",
+              "stop": {
+                "array": "string"
+              },
+              "temperature": "number",
+              "top_k": "number",
+              "top_p": "number"
+            },
+            "optional": [
+              "frequency_penalty",
+              "max_output",
+              "min_p",
+              "presence_penalty",
+              "reasoning_effort",
+              "seed",
+              "stop",
+              "temperature",
+              "top_k",
+              "top_p"
+            ]
+          },
+          "sources": {
+            "nullable": {
+              "map": "string"
+            }
+          },
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "workspace_prompt": "string"
+        },
+        "optional": [
+          "dropped_effort"
         ]
       }
     },
@@ -246,7 +783,9 @@
                   "head_entry_id": "string",
                   "id": "string",
                   "kind": "string",
+                  "overridden": "boolean",
                   "parent_session_id": "string",
+                  "profile_id": "string",
                   "title": "string",
                   "tools": {
                     "nullable": {
@@ -259,6 +798,7 @@
                 "optional": [
                   "head_entry_id",
                   "parent_session_id",
+                  "profile_id",
                   "workspace_id"
                 ]
               }
@@ -361,7 +901,9 @@
               "head_entry_id": "string",
               "id": "string",
               "kind": "string",
+              "overridden": "boolean",
               "parent_session_id": "string",
+              "profile_id": "string",
               "title": "string",
               "tools": {
                 "nullable": {
@@ -374,6 +916,7 @@
             "optional": [
               "head_entry_id",
               "parent_session_id",
+              "profile_id",
               "workspace_id"
             ]
           }
@@ -437,6 +980,374 @@
           },
           "session_id": "string"
         }
+      }
+    },
+    "GET /api/sessions/{id}/configuration": {
+      "status": 200,
+      "response": {
+        "object": {
+          "inherited": {
+            "object": {
+              "chat_prompt": "string",
+              "context_files": "boolean",
+              "dropped_effort": "string",
+              "instructions": "string",
+              "model": "string",
+              "model_id": "string",
+              "profile_id": "string",
+              "profile_name": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "sources": {
+                "nullable": {
+                  "map": "string"
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "workspace_prompt": "string"
+            },
+            "optional": [
+              "dropped_effort"
+            ]
+          },
+          "overrides": {
+            "object": {
+              "chat_prompt": {
+                "nullable": "string"
+              },
+              "context_files": {
+                "nullable": "boolean"
+              },
+              "instructions": {
+                "nullable": "string"
+              },
+              "model_id": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "workspace_prompt": {
+                "nullable": "string"
+              }
+            },
+            "optional": [
+              "model_id"
+            ]
+          },
+          "profile_id": "string",
+          "resolved": {
+            "object": {
+              "chat_prompt": "string",
+              "context_files": "boolean",
+              "dropped_effort": "string",
+              "instructions": "string",
+              "model": "string",
+              "model_id": "string",
+              "profile_id": "string",
+              "profile_name": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "sources": {
+                "nullable": {
+                  "map": "string"
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "workspace_prompt": "string"
+            },
+            "optional": [
+              "dropped_effort"
+            ]
+          },
+          "session_id": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        },
+        "optional": [
+          "profile_id"
+        ]
+      }
+    },
+    "GET /api/sessions/{id}/context": {
+      "status": 200,
+      "response": {
+        "object": {
+          "calibration": {
+            "object": {
+              "estimated_tokens": "number",
+              "input_tokens": "number",
+              "request_id": "string"
+            }
+          },
+          "context_files_unread": "string",
+          "dropped_effort": "string",
+          "message_tokens": "number",
+          "messages": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "content": "string",
+                  "is_error": "boolean",
+                  "metrics": {
+                    "object": {
+                      "context": {
+                        "object": {
+                          "input_tokens": "number",
+                          "output_tokens": "number",
+                          "total_tokens": "number"
+                        }
+                      },
+                      "context_window": "number",
+                      "generation_ms": "number",
+                      "run_id": "string",
+                      "timings": {
+                        "object": {
+                          "decode_ms": "number",
+                          "decode_tokens": "number",
+                          "prompt_ms": "number",
+                          "prompt_tokens": "number",
+                          "source": "string"
+                        },
+                        "optional": [
+                          "decode_ms",
+                          "decode_tokens",
+                          "prompt_ms",
+                          "prompt_tokens",
+                          "source"
+                        ]
+                      },
+                      "usage": {
+                        "object": {
+                          "input_tokens": "number",
+                          "output_tokens": "number",
+                          "total_tokens": "number"
+                        }
+                      }
+                    },
+                    "optional": [
+                      "timings"
+                    ]
+                  },
+                  "reasoning": "string",
+                  "role": "string",
+                  "tool_call_id": "string",
+                  "tool_calls": {
+                    "array": {
+                      "object": {
+                        "arguments": "any",
+                        "arguments_malformed": "boolean",
+                        "id": "string",
+                        "name": "string"
+                      },
+                      "optional": [
+                        "arguments_malformed"
+                      ]
+                    }
+                  }
+                },
+                "optional": [
+                  "content",
+                  "is_error",
+                  "metrics",
+                  "reasoning",
+                  "tool_call_id",
+                  "tool_calls"
+                ]
+              }
+            }
+          },
+          "parameters": {
+            "object": {
+              "model": "string",
+              "preserve_thinking": "boolean",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "thinking_switch": "string"
+            },
+            "optional": [
+              "thinking_switch"
+            ]
+          },
+          "request": {
+            "object": {
+              "created_at": "string",
+              "entry_id": "string",
+              "id": "string",
+              "input_tokens": "number",
+              "message_tokens": "number",
+              "model": "string",
+              "model_id": "string",
+              "output_tokens": "number",
+              "run_id": "string",
+              "session_id": "string",
+              "total_tokens": "number"
+            },
+            "optional": [
+              "entry_id",
+              "model_id"
+            ]
+          },
+          "sections": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "files": {
+                    "array": {
+                      "object": {
+                        "path": "string",
+                        "text": "string",
+                        "tokens": "number"
+                      }
+                    }
+                  },
+                  "kind": "string",
+                  "text": "string",
+                  "tokens": "number"
+                },
+                "optional": [
+                  "files"
+                ]
+              }
+            }
+          },
+          "sources": {
+            "nullable": {
+              "map": "string"
+            }
+          },
+          "tools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "description": "string",
+                  "name": "string",
+                  "schema": "any",
+                  "source": "string",
+                  "tokens": "number"
+                }
+              }
+            }
+          }
+        },
+        "optional": [
+          "calibration",
+          "context_files_unread",
+          "dropped_effort",
+          "request"
+        ]
       }
     },
     "GET /api/sessions/{id}/outline": {
@@ -640,11 +1551,259 @@
         }
       }
     },
+    "GET /api/sessions/{id}/requests": {
+      "status": 200,
+      "response": {
+        "object": {
+          "requests": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "created_at": "string",
+                  "entry_id": "string",
+                  "id": "string",
+                  "input_tokens": "number",
+                  "message_tokens": "number",
+                  "model": "string",
+                  "model_id": "string",
+                  "output_tokens": "number",
+                  "run_id": "string",
+                  "session_id": "string",
+                  "total_tokens": "number"
+                },
+                "optional": [
+                  "entry_id",
+                  "model_id"
+                ]
+              }
+            }
+          },
+          "session_id": "string"
+        }
+      }
+    },
+    "GET /api/sessions/{id}/requests/{request_id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "calibration": {
+            "object": {
+              "estimated_tokens": "number",
+              "input_tokens": "number",
+              "request_id": "string"
+            }
+          },
+          "context_files_unread": "string",
+          "dropped_effort": "string",
+          "message_tokens": "number",
+          "messages": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "content": "string",
+                  "is_error": "boolean",
+                  "metrics": {
+                    "object": {
+                      "context": {
+                        "object": {
+                          "input_tokens": "number",
+                          "output_tokens": "number",
+                          "total_tokens": "number"
+                        }
+                      },
+                      "context_window": "number",
+                      "generation_ms": "number",
+                      "run_id": "string",
+                      "timings": {
+                        "object": {
+                          "decode_ms": "number",
+                          "decode_tokens": "number",
+                          "prompt_ms": "number",
+                          "prompt_tokens": "number",
+                          "source": "string"
+                        },
+                        "optional": [
+                          "decode_ms",
+                          "decode_tokens",
+                          "prompt_ms",
+                          "prompt_tokens",
+                          "source"
+                        ]
+                      },
+                      "usage": {
+                        "object": {
+                          "input_tokens": "number",
+                          "output_tokens": "number",
+                          "total_tokens": "number"
+                        }
+                      }
+                    },
+                    "optional": [
+                      "timings"
+                    ]
+                  },
+                  "reasoning": "string",
+                  "role": "string",
+                  "tool_call_id": "string",
+                  "tool_calls": {
+                    "array": {
+                      "object": {
+                        "arguments": "any",
+                        "arguments_malformed": "boolean",
+                        "id": "string",
+                        "name": "string"
+                      },
+                      "optional": [
+                        "arguments_malformed"
+                      ]
+                    }
+                  }
+                },
+                "optional": [
+                  "content",
+                  "is_error",
+                  "metrics",
+                  "reasoning",
+                  "tool_call_id",
+                  "tool_calls"
+                ]
+              }
+            }
+          },
+          "parameters": {
+            "object": {
+              "model": "string",
+              "preserve_thinking": "boolean",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "thinking_switch": "string"
+            },
+            "optional": [
+              "thinking_switch"
+            ]
+          },
+          "request": {
+            "object": {
+              "created_at": "string",
+              "entry_id": "string",
+              "id": "string",
+              "input_tokens": "number",
+              "message_tokens": "number",
+              "model": "string",
+              "model_id": "string",
+              "output_tokens": "number",
+              "run_id": "string",
+              "session_id": "string",
+              "total_tokens": "number"
+            },
+            "optional": [
+              "entry_id",
+              "model_id"
+            ]
+          },
+          "sections": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "files": {
+                    "array": {
+                      "object": {
+                        "path": "string",
+                        "text": "string",
+                        "tokens": "number"
+                      }
+                    }
+                  },
+                  "kind": "string",
+                  "text": "string",
+                  "tokens": "number"
+                },
+                "optional": [
+                  "files"
+                ]
+              }
+            }
+          },
+          "sources": {
+            "nullable": {
+              "map": "string"
+            }
+          },
+          "tools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "description": "string",
+                  "name": "string",
+                  "schema": "any",
+                  "source": "string",
+                  "tokens": "number"
+                }
+              }
+            }
+          }
+        },
+        "optional": [
+          "calibration",
+          "context_files_unread",
+          "dropped_effort",
+          "request"
+        ]
+      }
+    },
     "GET /api/sessions/{id}/run": {
       "status": 200,
       "response": {
         "object": {
           "active": "boolean",
+          "elicitations": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "asked_at": "string",
+                  "call_id": "string",
+                  "id": "string",
+                  "message": "string",
+                  "mode": "string",
+                  "requested_schema": "any",
+                  "run_id": "string",
+                  "server": "string",
+                  "session_id": "string",
+                  "url": "string"
+                },
+                "optional": [
+                  "requested_schema",
+                  "url"
+                ]
+              }
+            }
+          },
           "pending_follow_ups": {
             "nullable": {
               "array": "string"
@@ -770,8 +1929,12 @@
                 "object": {
                   "description": "string",
                   "name": "string",
-                  "needs_workspace": "boolean"
-                }
+                  "needs_workspace": "boolean",
+                  "server": "string"
+                },
+                "optional": [
+                  "server"
+                ]
               }
             }
           }
@@ -881,6 +2044,75 @@
     },
     "GET /api/workspaces/{id}/terminal": {
       "websocket": true
+    },
+    "PATCH /api/mcp/servers/{id}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "args": {
+            "array": "string"
+          },
+          "command": "string",
+          "disabled_tools": {
+            "array": "string"
+          },
+          "enabled": "boolean",
+          "env": {
+            "map": "string"
+          },
+          "headers": {
+            "map": "string"
+          },
+          "name": "string",
+          "oauth_client_id": "string",
+          "oauth_client_secret": "string",
+          "url": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "args": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "command": "string",
+          "created_at": "string",
+          "disabled_tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "enabled": "boolean",
+          "env_names": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "error": "string",
+          "header_names": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "id": "string",
+          "kind": "string",
+          "name": "string",
+          "oauth_client_id": "string",
+          "oauth_client_secret_set": "boolean",
+          "state": "string",
+          "updated_at": "string",
+          "url": "string",
+          "workspaces": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        },
+        "optional": [
+          "error"
+        ]
+      }
     },
     "PATCH /api/models/{id}": {
       "status": 200,
@@ -1009,6 +2241,498 @@
       },
       "public": true
     },
+    "POST /api/elicitations/{id}/answer": {
+      "status": 204,
+      "request": {
+        "object": {
+          "action": "string",
+          "content": "any"
+        }
+      }
+    },
+    "POST /api/mcp/oauth/callback": {
+      "status": 200,
+      "request": {
+        "object": {
+          "code": "string",
+          "error": "string",
+          "error_description": "string",
+          "iss": "string",
+          "state": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "server_id": "string"
+        }
+      }
+    },
+    "POST /api/mcp/servers": {
+      "status": 201,
+      "request": {
+        "object": {
+          "args": {
+            "array": "string"
+          },
+          "command": "string",
+          "disabled_tools": {
+            "array": "string"
+          },
+          "enabled": "boolean",
+          "env": {
+            "map": "string"
+          },
+          "headers": {
+            "map": "string"
+          },
+          "kind": "string",
+          "name": "string",
+          "oauth_client_id": "string",
+          "oauth_client_secret": "string",
+          "url": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "args": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "command": "string",
+          "created_at": "string",
+          "disabled_tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "enabled": "boolean",
+          "env_names": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "error": "string",
+          "header_names": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "id": "string",
+          "kind": "string",
+          "name": "string",
+          "oauth_client_id": "string",
+          "oauth_client_secret_set": "boolean",
+          "state": "string",
+          "updated_at": "string",
+          "url": "string",
+          "workspaces": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        },
+        "optional": [
+          "error"
+        ]
+      }
+    },
+    "POST /api/mcp/servers/{id}/authorize": {
+      "status": 200,
+      "request": {
+        "object": {
+          "redirect_uri": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "authorization_url": "string"
+        }
+      }
+    },
+    "POST /api/mcp/servers/{id}/connect": {
+      "status": 200,
+      "request": {
+        "object": {
+          "workspace_id": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "auth": {
+            "object": {
+              "authorized": "boolean",
+              "challenge": {
+                "object": {
+                  "error": "string",
+                  "error_description": "string",
+                  "resource_metadata": "string",
+                  "scope": "string"
+                },
+                "optional": [
+                  "error",
+                  "error_description",
+                  "resource_metadata",
+                  "scope"
+                ]
+              },
+              "challenged": "boolean",
+              "client_id": "string",
+              "expires_at": "string",
+              "has_refresh_token": "boolean",
+              "issuer": "string",
+              "registration": "string",
+              "resource": "string",
+              "resource_metadata_url": "string",
+              "scope": "string",
+              "updated_at": "string"
+            },
+            "optional": [
+              "challenge",
+              "client_id",
+              "expires_at",
+              "issuer",
+              "registration",
+              "resource",
+              "resource_metadata_url",
+              "scope",
+              "updated_at"
+            ]
+          },
+          "connection": {
+            "object": {
+              "capabilities": {
+                "object": {
+                  "completions": "boolean",
+                  "experimental": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "extensions": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "logging": "boolean",
+                  "prompts": "boolean",
+                  "prompts_list_changed": "boolean",
+                  "resources": "boolean",
+                  "resources_list_changed": "boolean",
+                  "resources_subscribe": "boolean",
+                  "tools": "boolean",
+                  "tools_list_changed": "boolean"
+                }
+              },
+              "era": "string",
+              "instructions": "string",
+              "protocol_version": "string",
+              "server_info": {
+                "object": {
+                  "description": "string",
+                  "name": "string",
+                  "title": "string",
+                  "version": "string",
+                  "website_url": "string"
+                },
+                "optional": [
+                  "description",
+                  "title",
+                  "website_url"
+                ]
+              },
+              "supported_versions": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "transport": "string"
+            },
+            "optional": [
+              "instructions"
+            ]
+          },
+          "excluded_tools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "name": "string",
+                  "reason": "string"
+                }
+              }
+            }
+          },
+          "fetched_at": "string",
+          "list_errors": {
+            "nullable": {
+              "map": "string"
+            }
+          },
+          "logs": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "level": "string",
+                  "source": "string",
+                  "text": "string",
+                  "time": "string"
+                }
+              }
+            }
+          },
+          "prompts": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "arguments": {
+                    "nullable": {
+                      "array": {
+                        "object": {
+                          "description": "string",
+                          "name": "string",
+                          "required": "boolean",
+                          "title": "string"
+                        },
+                        "optional": [
+                          "description",
+                          "title"
+                        ]
+                      }
+                    }
+                  },
+                  "description": "string",
+                  "name": "string",
+                  "title": "string"
+                },
+                "optional": [
+                  "description",
+                  "title"
+                ]
+              }
+            }
+          },
+          "resource_templates": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "description": "string",
+                  "mime_type": "string",
+                  "name": "string",
+                  "title": "string",
+                  "uri_template": "string"
+                },
+                "optional": [
+                  "description",
+                  "mime_type",
+                  "title"
+                ]
+              }
+            }
+          },
+          "resources": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "description": "string",
+                  "mime_type": "string",
+                  "name": "string",
+                  "size": "number",
+                  "title": "string",
+                  "uri": "string"
+                },
+                "optional": [
+                  "description",
+                  "mime_type",
+                  "size",
+                  "title"
+                ]
+              }
+            }
+          },
+          "server": {
+            "object": {
+              "args": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "command": "string",
+              "created_at": "string",
+              "disabled_tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "enabled": "boolean",
+              "env_names": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "error": "string",
+              "header_names": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "id": "string",
+              "kind": "string",
+              "name": "string",
+              "oauth_client_id": "string",
+              "oauth_client_secret_set": "boolean",
+              "state": "string",
+              "updated_at": "string",
+              "url": "string",
+              "workspaces": {
+                "nullable": {
+                  "array": "string"
+                }
+              }
+            },
+            "optional": [
+              "error"
+            ]
+          },
+          "tools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "annotations": {
+                    "object": {
+                      "destructive": {
+                        "nullable": "boolean"
+                      },
+                      "idempotent": {
+                        "nullable": "boolean"
+                      },
+                      "open_world": {
+                        "nullable": "boolean"
+                      },
+                      "read_only": {
+                        "nullable": "boolean"
+                      },
+                      "title": "string"
+                    },
+                    "optional": [
+                      "title"
+                    ]
+                  },
+                  "description": "string",
+                  "enabled": "boolean",
+                  "exposed_name": "string",
+                  "input_schema": "any",
+                  "name": "string",
+                  "output_schema": "any",
+                  "title": "string"
+                },
+                "optional": [
+                  "annotations",
+                  "description",
+                  "output_schema",
+                  "title"
+                ]
+              }
+            }
+          }
+        },
+        "optional": [
+          "connection",
+          "fetched_at"
+        ]
+      }
+    },
+    "POST /api/mcp/servers/{id}/prompts/get": {
+      "status": 200,
+      "request": {
+        "object": {
+          "arguments": {
+            "map": "string"
+          },
+          "name": "string",
+          "workspace_id": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "description": "string",
+          "messages": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "content": {
+                    "object": {
+                      "data": "string",
+                      "description": "string",
+                      "mime_type": "string",
+                      "name": "string",
+                      "omitted": "boolean",
+                      "size": "number",
+                      "text": "string",
+                      "type": "string",
+                      "uri": "string"
+                    },
+                    "optional": [
+                      "data",
+                      "description",
+                      "mime_type",
+                      "name",
+                      "omitted",
+                      "size",
+                      "text",
+                      "uri"
+                    ]
+                  },
+                  "role": "string"
+                }
+              }
+            }
+          }
+        },
+        "optional": [
+          "description"
+        ]
+      }
+    },
+    "POST /api/mcp/servers/{id}/resources/read": {
+      "status": 200,
+      "request": {
+        "object": {
+          "uri": "string",
+          "workspace_id": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "contents": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "data": "string",
+                  "description": "string",
+                  "mime_type": "string",
+                  "name": "string",
+                  "omitted": "boolean",
+                  "size": "number",
+                  "text": "string",
+                  "type": "string",
+                  "uri": "string"
+                },
+                "optional": [
+                  "data",
+                  "description",
+                  "mime_type",
+                  "name",
+                  "omitted",
+                  "size",
+                  "text",
+                  "uri"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "POST /api/models": {
       "status": 201,
       "request": {
@@ -1067,6 +2791,151 @@
           "reply": "string",
           "stop_reason": "string"
         }
+      }
+    },
+    "POST /api/profiles": {
+      "status": 201,
+      "request": {
+        "object": {
+          "chat_prompt": "string",
+          "context_files": "boolean",
+          "description": "string",
+          "instructions": "string",
+          "model_id": "string",
+          "name": "string",
+          "sampling": {
+            "object": {
+              "frequency_penalty": "number",
+              "max_output": "number",
+              "min_p": "number",
+              "presence_penalty": "number",
+              "reasoning_effort": "string",
+              "seed": "number",
+              "stop": {
+                "array": "string"
+              },
+              "temperature": "number",
+              "top_k": "number",
+              "top_p": "number"
+            }
+          },
+          "tools": {
+            "array": "string"
+          },
+          "workspace_prompt": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "chat_prompt": {
+            "nullable": "string"
+          },
+          "context_files": {
+            "nullable": "boolean"
+          },
+          "created_at": "string",
+          "description": "string",
+          "id": "string",
+          "inherited": {
+            "object": {
+              "chat_prompt": "string",
+              "context_files": "boolean",
+              "dropped_effort": "string",
+              "instructions": "string",
+              "model": "string",
+              "model_id": "string",
+              "profile_id": "string",
+              "profile_name": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "sources": {
+                "nullable": {
+                  "map": "string"
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "workspace_prompt": "string"
+            },
+            "optional": [
+              "dropped_effort"
+            ]
+          },
+          "instructions": {
+            "nullable": "string"
+          },
+          "model_id": "string",
+          "name": "string",
+          "sampling": {
+            "object": {
+              "frequency_penalty": "number",
+              "max_output": "number",
+              "min_p": "number",
+              "presence_penalty": "number",
+              "reasoning_effort": "string",
+              "seed": "number",
+              "stop": {
+                "array": "string"
+              },
+              "temperature": "number",
+              "top_k": "number",
+              "top_p": "number"
+            },
+            "optional": [
+              "frequency_penalty",
+              "max_output",
+              "min_p",
+              "presence_penalty",
+              "reasoning_effort",
+              "seed",
+              "stop",
+              "temperature",
+              "top_k",
+              "top_p"
+            ]
+          },
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "updated_at": "string",
+          "workspace_prompt": {
+            "nullable": "string"
+          }
+        },
+        "optional": [
+          "model_id"
+        ]
       }
     },
     "POST /api/projects": {
@@ -1254,7 +3123,9 @@
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
+          "overridden": "boolean",
           "parent_session_id": "string",
+          "profile_id": "string",
           "title": "string",
           "tools": {
             "nullable": {
@@ -1267,6 +3138,7 @@
         "optional": [
           "head_entry_id",
           "parent_session_id",
+          "profile_id",
           "workspace_id"
         ]
       }
@@ -1286,7 +3158,9 @@
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
+          "overridden": "boolean",
           "parent_session_id": "string",
+          "profile_id": "string",
           "title": "string",
           "tools": {
             "nullable": {
@@ -1299,6 +3173,7 @@
         "optional": [
           "head_entry_id",
           "parent_session_id",
+          "profile_id",
           "workspace_id"
         ]
       }
@@ -1316,7 +3191,9 @@
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
+          "overridden": "boolean",
           "parent_session_id": "string",
+          "profile_id": "string",
           "title": "string",
           "tools": {
             "nullable": {
@@ -1329,6 +3206,7 @@
         "optional": [
           "head_entry_id",
           "parent_session_id",
+          "profile_id",
           "workspace_id"
         ]
       }
@@ -1558,6 +3436,151 @@
         }
       }
     },
+    "PUT /api/profiles/{id}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "chat_prompt": "string",
+          "context_files": "boolean",
+          "description": "string",
+          "instructions": "string",
+          "model_id": "string",
+          "name": "string",
+          "sampling": {
+            "object": {
+              "frequency_penalty": "number",
+              "max_output": "number",
+              "min_p": "number",
+              "presence_penalty": "number",
+              "reasoning_effort": "string",
+              "seed": "number",
+              "stop": {
+                "array": "string"
+              },
+              "temperature": "number",
+              "top_k": "number",
+              "top_p": "number"
+            }
+          },
+          "tools": {
+            "array": "string"
+          },
+          "workspace_prompt": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "chat_prompt": {
+            "nullable": "string"
+          },
+          "context_files": {
+            "nullable": "boolean"
+          },
+          "created_at": "string",
+          "description": "string",
+          "id": "string",
+          "inherited": {
+            "object": {
+              "chat_prompt": "string",
+              "context_files": "boolean",
+              "dropped_effort": "string",
+              "instructions": "string",
+              "model": "string",
+              "model_id": "string",
+              "profile_id": "string",
+              "profile_name": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "sources": {
+                "nullable": {
+                  "map": "string"
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "workspace_prompt": "string"
+            },
+            "optional": [
+              "dropped_effort"
+            ]
+          },
+          "instructions": {
+            "nullable": "string"
+          },
+          "model_id": "string",
+          "name": "string",
+          "sampling": {
+            "object": {
+              "frequency_penalty": "number",
+              "max_output": "number",
+              "min_p": "number",
+              "presence_penalty": "number",
+              "reasoning_effort": "string",
+              "seed": "number",
+              "stop": {
+                "array": "string"
+              },
+              "temperature": "number",
+              "top_k": "number",
+              "top_p": "number"
+            },
+            "optional": [
+              "frequency_penalty",
+              "max_output",
+              "min_p",
+              "presence_penalty",
+              "reasoning_effort",
+              "seed",
+              "stop",
+              "temperature",
+              "top_k",
+              "top_p"
+            ]
+          },
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "updated_at": "string",
+          "workspace_prompt": {
+            "nullable": "string"
+          }
+        },
+        "optional": [
+          "model_id"
+        ]
+      }
+    },
     "PUT /api/search/keys/{name}": {
       "status": 200,
       "request": {
@@ -1586,13 +3609,387 @@
         }
       }
     },
+    "PUT /api/sessions/{id}/overrides": {
+      "status": 200,
+      "request": {
+        "object": {
+          "chat_prompt": "string",
+          "context_files": "boolean",
+          "instructions": "string",
+          "model_id": "string",
+          "sampling": {
+            "object": {
+              "frequency_penalty": "number",
+              "max_output": "number",
+              "min_p": "number",
+              "presence_penalty": "number",
+              "reasoning_effort": "string",
+              "seed": "number",
+              "stop": {
+                "array": "string"
+              },
+              "temperature": "number",
+              "top_k": "number",
+              "top_p": "number"
+            }
+          },
+          "workspace_prompt": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "inherited": {
+            "object": {
+              "chat_prompt": "string",
+              "context_files": "boolean",
+              "dropped_effort": "string",
+              "instructions": "string",
+              "model": "string",
+              "model_id": "string",
+              "profile_id": "string",
+              "profile_name": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "sources": {
+                "nullable": {
+                  "map": "string"
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "workspace_prompt": "string"
+            },
+            "optional": [
+              "dropped_effort"
+            ]
+          },
+          "overrides": {
+            "object": {
+              "chat_prompt": {
+                "nullable": "string"
+              },
+              "context_files": {
+                "nullable": "boolean"
+              },
+              "instructions": {
+                "nullable": "string"
+              },
+              "model_id": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "workspace_prompt": {
+                "nullable": "string"
+              }
+            },
+            "optional": [
+              "model_id"
+            ]
+          },
+          "profile_id": "string",
+          "resolved": {
+            "object": {
+              "chat_prompt": "string",
+              "context_files": "boolean",
+              "dropped_effort": "string",
+              "instructions": "string",
+              "model": "string",
+              "model_id": "string",
+              "profile_id": "string",
+              "profile_name": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "sources": {
+                "nullable": {
+                  "map": "string"
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "workspace_prompt": "string"
+            },
+            "optional": [
+              "dropped_effort"
+            ]
+          },
+          "session_id": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        },
+        "optional": [
+          "profile_id"
+        ]
+      }
+    },
+    "PUT /api/sessions/{id}/profile": {
+      "status": 200,
+      "request": {
+        "object": {
+          "profile_id": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "inherited": {
+            "object": {
+              "chat_prompt": "string",
+              "context_files": "boolean",
+              "dropped_effort": "string",
+              "instructions": "string",
+              "model": "string",
+              "model_id": "string",
+              "profile_id": "string",
+              "profile_name": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "sources": {
+                "nullable": {
+                  "map": "string"
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "workspace_prompt": "string"
+            },
+            "optional": [
+              "dropped_effort"
+            ]
+          },
+          "overrides": {
+            "object": {
+              "chat_prompt": {
+                "nullable": "string"
+              },
+              "context_files": {
+                "nullable": "boolean"
+              },
+              "instructions": {
+                "nullable": "string"
+              },
+              "model_id": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "workspace_prompt": {
+                "nullable": "string"
+              }
+            },
+            "optional": [
+              "model_id"
+            ]
+          },
+          "profile_id": "string",
+          "resolved": {
+            "object": {
+              "chat_prompt": "string",
+              "context_files": "boolean",
+              "dropped_effort": "string",
+              "instructions": "string",
+              "model": "string",
+              "model_id": "string",
+              "profile_id": "string",
+              "profile_name": "string",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "sources": {
+                "nullable": {
+                  "map": "string"
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "workspace_prompt": "string"
+            },
+            "optional": [
+              "dropped_effort"
+            ]
+          },
+          "session_id": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        },
+        "optional": [
+          "profile_id"
+        ]
+      }
+    },
     "PUT /api/sessions/{id}/tools": {
       "status": 200,
       "request": {
         "object": {
-          "tools": {
-            "array": "string"
-          }
+          "tools": "any"
         }
       },
       "response": {
@@ -1601,7 +3998,9 @@
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
+          "overridden": "boolean",
           "parent_session_id": "string",
+          "profile_id": "string",
           "title": "string",
           "tools": {
             "nullable": {
@@ -1614,6 +4013,7 @@
         "optional": [
           "head_entry_id",
           "parent_session_id",
+          "profile_id",
           "workspace_id"
         ]
       }
@@ -1698,6 +4098,34 @@
       "object": {
         "dropped": "number"
       }
+    },
+    "mcp.elicitation": {
+      "object": {
+        "call_id": "string",
+        "elicitation_id": "string",
+        "message": "string",
+        "mode": "string",
+        "requested_schema": "any",
+        "run_id": "string",
+        "server": "string",
+        "session_id": "string",
+        "url": "string"
+      },
+      "optional": [
+        "requested_schema",
+        "url"
+      ]
+    },
+    "mcp.server": {
+      "object": {
+        "error": "string",
+        "name": "string",
+        "server_id": "string",
+        "state": "string"
+      },
+      "optional": [
+        "error"
+      ]
     },
     "message.delta": {
       "object": {

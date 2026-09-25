@@ -33,6 +33,11 @@ func (s *Server) routes() {
 	}
 	s.mux.Handle("/api/", s.authenticated(api))
 
+	// An OAuth authorization server fetches the harness's client metadata
+	// document to learn who Eika is, with no token to present.
+	if s.deps.MCP != nil {
+		s.mux.HandleFunc("GET /oauth/client-metadata.json", s.handleClientMetadata)
+	}
 	// The hub authenticates workspaces itself, with a per-workspace token
 	// scoped to one project, so it is mounted outside the bearer token.
 	if s.deps.Hub != nil {
@@ -79,6 +84,12 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /api/sessions/{id}/head", s.handleSetSessionHead)
 	api.HandleFunc("POST /api/sessions/{id}/fork", s.handleForkSession)
 	api.HandleFunc("PUT /api/sessions/{id}/tools", s.handleSetSessionTools)
+	api.HandleFunc("GET /api/sessions/{id}/configuration", s.handleSessionConfiguration)
+	api.HandleFunc("PUT /api/sessions/{id}/profile", s.handleSetSessionProfile)
+	api.HandleFunc("PUT /api/sessions/{id}/overrides", s.handleSetSessionOverrides)
+	api.HandleFunc("GET /api/sessions/{id}/context", s.handleSessionContext)
+	api.HandleFunc("GET /api/sessions/{id}/requests", s.handleSessionRequests)
+	api.HandleFunc("GET /api/sessions/{id}/requests/{request_id}", s.handleSessionRequest)
 	api.HandleFunc("GET /api/sessions/{id}/agents", s.handleSessionAgents)
 	api.HandleFunc("POST /api/subagents/{id}/abort", s.handleAbortSubagent)
 
@@ -100,10 +111,31 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PATCH /api/models/{id}", s.handleUpdateModel)
 	api.HandleFunc("DELETE /api/models/{id}", s.handleDeleteModel)
 
+	api.HandleFunc("GET /api/profiles", s.handleListProfiles)
+	api.HandleFunc("GET /api/profiles/inherited", s.handleInheritedProfile)
+	api.HandleFunc("POST /api/profiles", s.handleCreateProfile)
+	api.HandleFunc("PUT /api/profiles/{id}", s.handleUpdateProfile)
+	api.HandleFunc("DELETE /api/profiles/{id}", s.handleDeleteProfile)
+
 	if s.deps.Search != nil {
 		api.HandleFunc("POST /api/search", s.handleSearch)
 		api.HandleFunc("GET /api/search/status", s.handleSearchStatus)
 		api.HandleFunc("PUT /api/search/keys/{name}", s.handlePutSearchKey)
+	}
+
+	if s.deps.MCP != nil {
+		api.HandleFunc("GET /api/mcp/servers", s.handleListMCPServers)
+		api.HandleFunc("POST /api/mcp/servers", s.handleCreateMCPServer)
+		api.HandleFunc("GET /api/mcp/servers/{id}", s.handleMCPServer)
+		api.HandleFunc("PATCH /api/mcp/servers/{id}", s.handleUpdateMCPServer)
+		api.HandleFunc("DELETE /api/mcp/servers/{id}", s.handleDeleteMCPServer)
+		api.HandleFunc("POST /api/mcp/servers/{id}/connect", s.handleConnectMCPServer)
+		api.HandleFunc("POST /api/mcp/servers/{id}/authorize", s.handleAuthorizeMCPServer)
+		api.HandleFunc("DELETE /api/mcp/servers/{id}/authorization", s.handleSignOutMCPServer)
+		api.HandleFunc("POST /api/mcp/servers/{id}/resources/read", s.handleReadMCPResource)
+		api.HandleFunc("POST /api/mcp/servers/{id}/prompts/get", s.handleGetMCPPrompt)
+		api.HandleFunc("POST /api/mcp/oauth/callback", s.handleMCPCallback)
+		api.HandleFunc("POST /api/elicitations/{id}/answer", s.handleAnswerElicitation)
 	}
 
 	api.HandleFunc("GET /api/settings", s.handleSettings)

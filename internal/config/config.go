@@ -51,6 +51,12 @@ type Config struct {
 	// reduced to its host. Same-origin requests are always allowed, so a
 	// deployment that serves the frontend itself needs none of these.
 	AllowedOrigins []string `yaml:"allowed_origins"`
+	// PublicURL is the address people reach the deployment at, such as
+	// https://eika.example.com. It is optional. When it is https, MCP
+	// authorization servers that accept a Client ID Metadata Document
+	// identify Eika by the one it serves there, instead of registering a
+	// client, and its host may receive the browser back from them.
+	PublicURL string `yaml:"public_url"`
 }
 
 // movedToUI names the file keys earlier versions read that are now settings
@@ -153,6 +159,7 @@ func (c *Config) applyEnv() {
 		"EIKA_HUB_URL":         &c.HubURL,
 		"EIKA_AUTH_TOKEN":      &c.AuthToken,
 		"EIKA_SECRET_KEY_FILE": &c.SecretKeyFile,
+		"EIKA_PUBLIC_URL":      &c.PublicURL,
 	}
 	for name, field := range overrides {
 		if v, ok := os.LookupEnv(name); ok {
@@ -230,6 +237,13 @@ func (c Config) Validate() error {
 	if c.SecretKeyFile == "" {
 		return errors.New("validate config: secret_key_file is empty")
 	}
+	if c.PublicURL != "" {
+		u, err := url.Parse(c.PublicURL)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil ||
+			u.RawQuery != "" || u.Fragment != "" || strings.Trim(u.Path, "/") != "" {
+			return fmt.Errorf("validate config: public_url %q is not a bare http or https address such as https://eika.example.com", c.PublicURL)
+		}
+	}
 	return nil
 }
 
@@ -239,10 +253,10 @@ const redacted = "[REDACTED]"
 // String renders the configuration with secrets replaced by a placeholder so
 // that it is safe to log.
 func (c Config) String() string {
-	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s eikad_binary=%s hub_root=%s hub_url=%s secret_key_file=%s auth_token=%s allowed_origins=%s}",
+	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s eikad_binary=%s hub_root=%s hub_url=%s secret_key_file=%s auth_token=%s allowed_origins=%s public_url=%s}",
 		c.Listen, redactURL(c.DatabaseURL), c.DockerSocket, c.SearxNGURL, c.SandboxImage,
 		c.SandboxNetwork, c.EikadBinary, c.HubRoot, c.HubURL, c.SecretKeyFile,
-		redact(c.AuthToken), strings.Join(c.AllowedOrigins, ","))
+		redact(c.AuthToken), strings.Join(c.AllowedOrigins, ","), c.PublicURL)
 }
 
 // redact hides a secret while preserving whether it was set at all.

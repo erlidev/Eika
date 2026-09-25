@@ -32,23 +32,28 @@ const (
 type Options struct {
 	// Model overrides the provider's configured model name.
 	Model string
-	// MaxTokens bounds one response. Zero leaves it to the provider.
-	MaxTokens int
 	// ContextWindow bounds the input and requested output of one model call.
 	// Zero disables the preflight bound.
 	ContextWindow int
-	// Temperature overrides the model default when it is not nil.
-	Temperature *float64
-	// ReasoningEffort selects how much a reasoning model thinks.
-	ReasoningEffort string
+	// Sampling holds the sampling parameters every model call sends; a nil
+	// field is left to the endpoint.
+	Sampling provider.Sampling
 	// ThinkingSwitch is the request field that carries the effort "none".
 	ThinkingSwitch provider.ThinkingSwitch
 	// PreserveThinking keeps compatible Chat Completions reasoning data in
 	// assistant messages and replays it on later model calls.
 	PreserveThinking bool
-	// SystemPrompt is appended after the base prompt and the workspace's
-	// context files.
-	SystemPrompt string
+	// BasePrompt replaces the built-in base prompt when it is not nil, the
+	// empty string included. The built-in one is WorkspacePrompt for an
+	// agent with an Executor and ChatPrompt for one without, so the caller
+	// passes the override for the agent's kind.
+	BasePrompt *string
+	// SkipContextFiles leaves the workspace's context files out of the
+	// system prompt; none are read.
+	SkipContextFiles bool
+	// Instructions follow the base prompt and the workspace's context files
+	// in the system prompt.
+	Instructions string
 	// ContextDir is the workspace-relative directory whose context files
 	// apply. Empty means the workspace root.
 	ContextDir string
@@ -70,6 +75,9 @@ type Options struct {
 	Store Store
 	// Logger receives one line per finished or failed turn.
 	Logger *slog.Logger
+	// Recorder is told about every model call that returned a response. Nil
+	// records nothing.
+	Recorder Recorder
 }
 
 // Agent runs the loop for one session at a time.
@@ -145,7 +153,7 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage string) error {
 	if s == nil || s.Conversation == nil {
 		return errors.New("run agent: session has no conversation")
 	}
-	system, err := a.systemPrompt(ctx)
+	prompt, err := a.prompt(ctx)
 	if err != nil {
 		return fmt.Errorf("run agent: %w", err)
 	}
@@ -159,7 +167,7 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage string) error {
 		msgs = nil
 	}
 	for {
-		if err := a.turn(ctx, s, system, msgs, origin); err != nil {
+		if err := a.turn(ctx, s, prompt, msgs, origin); err != nil {
 			return err
 		}
 		msgs, origin = a.nextQueued()
@@ -170,9 +178,10 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage string) error {
 }
 
 // turn runs one assistant turn: deliver msgs, then alternate model calls and
-// tool calls until the model stops asking for tools. origin is the queue msgs
-// came from, so that an aborted turn can put them back.
-func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []string, origin *queue) error {
+// tool calls until the model stops asking for tools. prompt is the run's
+// system prompt by section. origin is the queue msgs came from, so that an
+// aborted turn can put them back.
+func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []string, origin *queue) error {
 	runID := newRunID()
 	// Undelivered messages are in the conversation, because the model call
 	// needs them, but not yet in the store. A turn that never gets a response
@@ -226,7 +235,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 			return a.fail(ctx, s, runID, fmt.Errorf("run turn: %w", err))
 		}
 
-		reply, stop, err := a.call(ctx, s, runID, system, &gen)
+		resp, sent, err := a.call(ctx, s, runID, prompt, &gen)
 		if err != nil {
 			restoreFrom(0)
 			return a.fail(ctx, s, runID, err)
@@ -241,6 +250,10 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 		}
 		pending, pendingMark = nil, -1
 		msgs, steered, origin = nil, nil, nil
+		// Everything the call sent is stored and its reply is not yet, which
+		// is the moment Recorder promises.
+		a.record(ctx, s, runID, sent, resp.usage)
+		reply, stop := resp.message, resp.stop
 		if gen.context != (event.Usage{}) {
 			reply.Metrics = &provider.MessageMetrics{
 				RunID:         runID,
@@ -391,43 +404,35 @@ func providerUsage(u event.Usage) provider.Usage {
 	}
 }
 
+// response is one model response the agent consumed.
+type response struct {
+	message provider.Message
+	stop    string
+	// usage is what the endpoint measured for this response alone.
+	usage provider.Usage
+}
+
 // call sends the conversation to the model, streaming the response as
-// message.delta events, and retries a retryable failure with backoff.
-func (a *Agent) call(ctx context.Context, s *Session, runID, system string, gen *generation) (provider.Message, string, error) {
-	messages := s.Conversation.Messages()
-	for i := range messages {
-		// Metrics belong to session replay. They are not conversation content
-		// and no provider receives them.
-		messages[i].Metrics = nil
-	}
-	req := provider.Request{
-		Model:            a.opts.Model,
-		System:           system,
-		Messages:         messages,
-		MaxTokens:        a.opts.MaxTokens,
-		Temperature:      a.opts.Temperature,
-		ReasoningEffort:  a.opts.ReasoningEffort,
-		ThinkingSwitch:   a.opts.ThinkingSwitch,
-		PreserveThinking: a.opts.PreserveThinking,
-	}
-	if a.tools != nil {
-		req.Tools = a.tools.Schemas()
-	}
+// message.delta events, and retries a retryable failure with backoff. It
+// returns the response and the request it answered.
+func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Section, gen *generation) (response, Context, error) {
+	sent := a.assemble(s, prompt)
+	req := sent.Request()
 	if err := withinContextWindow(req, a.opts.ContextWindow); err != nil {
-		return provider.Message{}, "", err
+		return response{}, Context{}, err
 	}
 
 	backoff := a.opts.RetryBackoff
 	for attempt := 0; ; attempt++ {
-		msg, stop, err := a.stream(ctx, s, runID, req, gen)
+		resp, err := a.stream(ctx, s, runID, req, gen)
 		if err == nil {
-			return msg, stop, nil
+			return resp, sent, nil
 		}
 		if ctx.Err() != nil {
-			return provider.Message{}, "", fmt.Errorf("call model: %w", ctx.Err())
+			return response{}, Context{}, fmt.Errorf("call model: %w", ctx.Err())
 		}
 		if !provider.Retryable(err) || attempt >= a.opts.MaxRetries {
-			return provider.Message{}, "", err
+			return response{}, Context{}, err
 		}
 		a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
 		wait := min(backoff, maxRetryBackoff)
@@ -439,7 +444,7 @@ func (a *Agent) call(ctx context.Context, s *Session, runID, system string, gen 
 		select {
 		case <-time.After(wait):
 		case <-ctx.Done():
-			return provider.Message{}, "", fmt.Errorf("call model: %w", ctx.Err())
+			return response{}, Context{}, fmt.Errorf("call model: %w", ctx.Err())
 		}
 		backoff *= 2
 	}
@@ -449,10 +454,10 @@ func (a *Agent) call(ctx context.Context, s *Session, runID, system string, gen 
 // reasoning as they arrive, and a turn.progress event each time the endpoint
 // reports usage, timed from the response's first token so that what a client
 // derives from it is measured rather than estimated.
-func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation) (provider.Message, string, error) {
+func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation) (response, error) {
 	events, err := a.provider.Stream(ctx, req)
 	if err != nil {
-		return provider.Message{}, "", fmt.Errorf("call model: %w", err)
+		return response{}, fmt.Errorf("call model: %w", err)
 	}
 	var text strings.Builder
 	var reasoning strings.Builder
@@ -471,7 +476,7 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 	done := false
 	for e := range events {
 		if done {
-			return provider.Message{}, "", errors.New("call model: provider sent an event after completion")
+			return response{}, errors.New("call model: provider sent an event after completion")
 		}
 		switch e.Kind {
 		case provider.KindTextDelta:
@@ -500,14 +505,14 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 			stop = e.StopReason
 			done = true
 		case provider.KindError:
-			return provider.Message{}, "", fmt.Errorf("call model: %w", e.Err)
+			return response{}, fmt.Errorf("call model: %w", e.Err)
 		}
 	}
 	if !done {
-		return provider.Message{}, "", errors.New("call model: provider stream closed without a completion event")
+		return response{}, errors.New("call model: provider stream closed without a completion event")
 	}
 	if stop == "" {
-		return provider.Message{}, "", errors.New("call model: provider completion has no stop reason")
+		return response{}, errors.New("call model: provider completion has no stop reason")
 	}
 	if cutOff(stop) {
 		// A response the endpoint cut off is kept, not thrown away. The user
@@ -520,7 +525,11 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 	}
 	elapsed := elapsedSince(started)
 	gen.add(usage, elapsed, withHarnessDecode(timings, usage, elapsed))
-	return provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls), stop, nil
+	return response{
+		message: provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls),
+		stop:    stop,
+		usage:   usage,
+	}, nil
 }
 
 // empty reports whether an assistant message carries nothing at all.
@@ -656,26 +665,25 @@ func (a *Agent) closeQueues() {
 
 // withinContextWindow applies a conservative token upper bound. Chat
 // Completions tokenizers encode UTF-8 bytes into no more tokens than bytes;
-// using the JSON wire size also includes message and tool framing.
+// using the JSON wire size also includes message and tool framing. The
+// request's messages are the ones assemble prepared, which carry nothing the
+// provider does not receive.
 func withinContextWindow(req provider.Request, limit int) error {
 	if limit <= 0 {
 		return nil
-	}
-	messages := append([]provider.Message(nil), req.Messages...)
-	for i := range messages {
-		// Metrics are stored for the session view. A provider never receives
-		// them, so they are not part of this wire-size upper bound.
-		messages[i].Metrics = nil
 	}
 	data, err := json.Marshal(struct {
 		System   string             `json:"system"`
 		Messages []provider.Message `json:"messages"`
 		Tools    []provider.ToolDef `json:"tools"`
-	}{req.System, messages, req.Tools})
+	}{req.System, req.Messages, req.Tools})
 	if err != nil {
 		return fmt.Errorf("call model: estimate context: %w", err)
 	}
-	estimated := len(data) + req.MaxTokens
+	estimated := len(data)
+	if m := req.Sampling.MaxOutput; m != nil {
+		estimated += *m
+	}
 	if estimated > limit {
 		return fmt.Errorf("call model: context upper bound %d exceeds configured window %d", estimated, limit)
 	}

@@ -6,7 +6,8 @@
 // list, and inspect. Host.Executor hands back an executor.Executor pointed at
 // the workspace's eikad daemon, which is the only way an agent reaches the
 // container. Host.Terminal opens a shell there for the person using the
-// workspace; it is kept off the executor so no tool can reach one.
+// workspace, and Host.Process starts a stdio MCP server there for the
+// harness; both are kept off the executor so no tool can reach them.
 //
 // Containers carry the label eika.workspace=<id>, so List reconciles the
 // harness with what is actually running after a restart. Repositories come

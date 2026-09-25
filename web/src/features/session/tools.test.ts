@@ -20,6 +20,24 @@ describe("chatTools", () => {
     expect(split.offered.map((t) => t.name)).toEqual(["ask_user", "web_search"]);
     expect(split.unavailable).toEqual(["bash", "ls"]);
   });
+
+  it("groups an MCP server's tools under it, and a stdio server's apart", () => {
+    const split = chatTools([
+      tool("ask_user", false),
+      { ...tool("mcp__linear__list_issues", false), server: "linear" },
+      { ...tool("mcp__github__search_issues", false), server: "github" },
+      { ...tool("mcp__github__get_file", false), server: "github" },
+      { ...tool("mcp__fs__read_file", true), server: "fs" },
+      tool("mcp_read_resource", false),
+    ]);
+    expect(split.offered.map((t) => t.name)).toEqual(["ask_user", "mcp_read_resource"]);
+    expect(split.servers.map((s) => [s.server, s.tools.map((t) => t.name)])).toEqual([
+      ["github", ["mcp__github__search_issues", "mcp__github__get_file"]],
+      ["linear", ["mcp__linear__list_issues"]],
+    ]);
+    expect(split.unavailable).toEqual([]);
+    expect(split.unavailableServers).toEqual(["fs"]);
+  });
 });
 
 describe("withTool", () => {

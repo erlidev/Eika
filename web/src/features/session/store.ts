@@ -45,6 +45,8 @@ export type SessionStore = TranscriptState & {
   replayNeeded: () => void;
   /** dismissQuestion drops a question the user has just answered. */
   dismissQuestion: (questionId: string) => void;
+  /** dismissElicitation drops a request for input the user has just answered. */
+  dismissElicitation: (elicitationId: string) => void;
 };
 
 export const useSessionStore = create<SessionStore>((set) => ({
@@ -81,5 +83,10 @@ export const useSessionStore = create<SessionStore>((set) => ({
   },
   dismissQuestion: (questionId) => {
     set((state) => ({ questions: state.questions.filter((q) => q.id !== questionId) }));
+  },
+  dismissElicitation: (elicitationId) => {
+    set((state) => ({
+      elicitations: state.elicitations.filter((x) => x.id !== elicitationId),
+    }));
   },
 }));

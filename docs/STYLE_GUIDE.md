@@ -51,7 +51,11 @@ here in the same change, with a sentence of reasoning.
   method. Never `panic` outside `main` and `init` for programmer errors.
 - Context: the first parameter of any function that does I/O, blocks, or
   can be cancelled is `ctx context.Context`. Never store a context in a
-  struct.
+  struct, with one exception: an object that owns goroutines outliving the
+  call that started them, such as a connection or a pool, keeps the context
+  that bounds their lifetime, made in its constructor and cancelled by its
+  `Close`. An `io.Reader`, an `io.Writer`, or a callback has no context
+  parameter to pass one through.
 - Concurrency: every goroutine has an owner that knows when it exits.
   Use `errgroup` or an explicit `sync.WaitGroup`. Channels are closed by the
   sender. Protect shared state with a mutex named `mu` placed directly above

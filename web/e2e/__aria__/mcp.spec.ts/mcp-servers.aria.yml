@@ -1,0 +1,37 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "General"
+    - tab "Search"
+    - tab "MCP" [selected]
+    - tab "Account"
+    - tab "Appearance"
+  - tabpanel "MCP":
+    - paragraph: Model Context Protocol servers give agents tools, resources, and prompts of other services. A run offers the tools of the servers that are on, beside the built-in ones.
+    - button "Add server"
+    - list "MCP servers":
+      - listitem:
+        - button "docs, http":
+          - paragraph: docs http off
+          - paragraph: https://docs.example.com/mcp
+      - listitem:
+        - button "filesystem, stdio":
+          - paragraph: filesystem stdio not connected
+          - paragraph: npx -y @modelcontextprotocol/server-filesystem .
+      - listitem:
+        - button "github, http":
+          - paragraph: github http connected
+          - paragraph: https://api.githubcopilot.com/mcp/
+      - listitem:
+        - button "linear, http":
+          - paragraph: "/linear http needs sign-in : the server answered \\d+: sign in to use it/"
+          - paragraph: https://mcp.linear.app/mcp
+          - paragraph: "/the server answered \\d+: sign in to use it/"
+      - listitem:
+        - button "sentry, http":
+          - paragraph: "sentry http error : connect: dial tcp: lookup sentry.internal: no such host"
+          - paragraph: https://sentry.internal/mcp
+          - paragraph: "connect: dial tcp: lookup sentry.internal: no such host"
+  - button "Close"

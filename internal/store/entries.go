@@ -178,7 +178,7 @@ type ForkOptions struct {
 // entry. The copies are rows of their own: a fork shares no entry with the
 // session it came from, so editing or continuing either one cannot disturb
 // the other, and deleting one cannot orphan the other. The fork keeps the
-// source's choice of tools.
+// source's choice of tools, its profile, and its overrides.
 func (s *Store) ForkSession(ctx context.Context, sessionID, entryID string, opts ForkOptions) (Session, error) {
 	var out Session
 	err := s.tx(ctx, func(q querier) error {
@@ -201,6 +201,8 @@ func (s *Store) ForkSession(ctx context.Context, sessionID, entryID string, opts
 			Kind:            SessionFork,
 			ParentSessionID: sessionID,
 			Tools:           src.Tools,
+			ProfileID:       src.ProfileID,
+			Overrides:       src.Overrides,
 		}
 		if fork, err = createSession(ctx, q, fork); err != nil {
 			return wrap("fork session "+sessionID, err)

@@ -1,0 +1,31 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "Profiles" [selected]
+    - tab "General"
+    - tab "Search"
+    - tab "MCP"
+    - tab "Account"
+    - tab "Appearance"
+  - tabpanel "Profiles":
+    - paragraph: "A profile says what a run sends: the model, the base prompt, extra instructions, the tools, and the sampling parameters. What a profile leaves unset comes from the model and the defaults; a session can override its profile from the status bar."
+    - button "New profile"
+    - text: Default profile
+    - combobox "Default profile"
+    - paragraph: What a session runs with until it picks a profile of its own.
+    - list "Profiles":
+      - listitem:
+        - 'button "Default default Sets nothing: runs as the model and the defaults say"':
+          - paragraph: Default default
+          - paragraph: "Sets nothing: runs as the model and the defaults say"
+      - listitem:
+        - button "Reviewer Reads and reviews; changes nothing":
+          - paragraph: Reviewer
+          - paragraph: Reads and reviews; changes nothing
+      - listitem:
+        - button "Fast gpt-5 · 2 sampling parameters":
+          - paragraph: Fast
+          - paragraph: gpt-5 · 2 sampling parameters
+  - button "Close"

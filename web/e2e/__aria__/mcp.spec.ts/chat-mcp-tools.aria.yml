@@ -1,0 +1,36 @@
+- tabpanel "Tools":
+  - paragraph: A chat has no workspace, so the model can use only the tools below. A change applies from the next message.
+  - list "Tools in this chat":
+    - listitem:
+      - text: ask_user
+      - paragraph: Ask the user a question and wait for the answer.
+      - switch "ask_user" [checked]
+    - listitem:
+      - text: mcp_list_resources
+      - paragraph: List the resources the MCP servers of this run offer.
+      - switch "mcp_list_resources" [checked]
+    - listitem:
+      - text: mcp_read_resource
+      - paragraph: Read one resource of an MCP server by its URI.
+      - switch "mcp_read_resource" [checked]
+    - listitem:
+      - text: web_fetch
+      - paragraph: Fetch a web page or file by URL and return its content as Markdown.
+      - switch "web_fetch" [checked]
+    - listitem:
+      - text: web_search
+      - paragraph: Search the web, Wikipedia, arXiv or GitHub.
+      - switch "web_search" [checked]
+  - heading "MCP server github" [level=3]
+  - list "Tools of github":
+    - listitem:
+      - text: create_issue
+      - paragraph: Open an issue in a repository.
+      - switch "mcp__github__create_issue" [checked]
+    - listitem:
+      - text: search_issues
+      - paragraph: Search issues and pull requests across GitHub.
+      - switch "mcp__github__search_issues"
+  - heading "Need a workspace" [level=3]
+  - paragraph: "Files, commands, and child agents belong to a workspace session: bash, list_agents, spawn_agent, wait_agents."
+  - paragraph: "So do the MCP servers that run as a command in the workspace: filesystem."

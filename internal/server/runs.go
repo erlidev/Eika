@@ -13,7 +13,7 @@ import (
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/executor"
-	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
@@ -142,6 +142,9 @@ type runStateResponse struct {
 	PendingFollowUps []string `json:"pending_follow_ups"`
 	// Questions the run is waiting on an answer for.
 	Questions []builtin.Question `json:"questions"`
+	// Elicitations are what MCP servers asked the user during the run's
+	// tool calls, which wait on an answer.
+	Elicitations []mcp.Elicitation `json:"elicitations"`
 }
 
 // runs owns the agent runs that are going right now: one goroutine each, one
@@ -234,11 +237,19 @@ func (s *Server) handleSessionRun(w http.ResponseWriter, r *http.Request) {
 		PendingSteering:  []string{},
 		PendingFollowUps: []string{},
 		Questions:        []builtin.Question{},
+		Elicitations:     []mcp.Elicitation{},
 	}
 	if s.deps.Questions != nil {
 		for _, q := range s.deps.Questions.Pending() {
 			if q.SessionID == id {
 				body.Questions = append(body.Questions, q)
+			}
+		}
+	}
+	if s.deps.MCP != nil {
+		for _, e := range s.deps.MCP.Elicitations().Pending() {
+			if e.SessionID == id {
+				body.Elicitations = append(body.Elicitations, e)
 			}
 		}
 	}
@@ -374,7 +385,11 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 		}
 		commit = workspaceCommit(ex)
 	}
-	m, p, err := s.runModel(ctx, model)
+	cfg, err := s.configure(ctx, sess, model)
+	if err != nil {
+		return store.Run{}, nil, err
+	}
+	p, err := s.providerFor(ctx, cfg)
 	if err != nil {
 		return store.Run{}, nil, err
 	}
@@ -385,19 +400,14 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 	}
 	// The tools every run shares hold what they reach beyond the workspace:
 	// the spawner, the search engine, and the page reader. A run narrows
-	// them to what its session may offer and adds only its own executor,
-	// which is also where a web_fetch filter runs.
-	ag := agent.New(p, s.sessionTools(sess), agent.Options{
-		Model:            m.Model,
-		MaxTokens:        m.MaxOutput,
-		ContextWindow:    m.ContextWindow,
-		ReasoningEffort:  m.ReasoningEffort,
-		ThinkingSwitch:   provider.ThinkingSwitch(m.ThinkingSwitch),
-		PreserveThinking: m.PreserveThinking,
-		Executor:         ex,
-		Emitter:          s.deps.Bus,
-		Store:            sessionStore,
-		Logger:           s.log,
+	// them to its tool choice, together with the tools of the MCP servers it
+	// reaches now, and adds only its own executor, which is also where a
+	// web_fetch filter runs.
+	ag := s.newAgent(p, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
+		Emitter:  s.deps.Bus,
+		Store:    sessionStore,
+		Logger:   s.log,
+		Recorder: callRecorder{store: s.deps.Store, run: active, config: cfg},
 	})
 
 	row, err := s.deps.Store.StartRun(ctx, sessionID)
@@ -418,7 +428,8 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 
 	started = true
 	go r.drive(runCtx, active, loaded, text)
-	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", m.Name)
+	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", cfg.model.Name,
+		"profile_id", cfg.profile.ID)
 	return row, active, nil
 }
 

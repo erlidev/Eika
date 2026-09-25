@@ -5,7 +5,7 @@ are in `docs/STYLE_GUIDE.md` section 3.
 
 ```
 app/          routes, the layout shell, the panel registry
-features/     one folder per domain feature (projects, workspaces, sessions, session, files, terminal, changes, providers, settings, setup, connect)
+features/     one folder per domain feature (projects, workspaces, sessions, session, files, terminal, changes, providers, profiles, context, search, mcp, settings, setup, connect)
 components/   shared presentational components; components/ui is shadcn-managed
 api/          wire types mirroring docs/api/, the HTTP client, the WebSocket stream
 lib/          pure utilities with tests
@@ -47,7 +47,10 @@ session store answers it with a replay from the last entry it holds.
 
 Nothing polls. An event invalidates the queries it makes stale:
 `features/workspaces/useWorkspaceEvents` for a container's lifecycle,
-`features/session/useSessionStream` for a turn that ended.
+`features/session/useSessionStream` for a turn that ended (which also
+refreshes the Context panel's next request and recorded calls), and
+`features/mcp`'s `useMCPEvents` for an MCP server's state on the global
+topic.
 
 ## Keyboard
 

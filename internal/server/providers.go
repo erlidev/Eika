@@ -533,12 +533,15 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), testTimeout)
 	defer cancel()
+	sampling := provider.Sampling{MaxOutput: new(testMaxTokens)}
+	if req.ReasoningEffort != "" {
+		sampling.ReasoningEffort = &req.ReasoningEffort
+	}
 	started := time.Now()
 	reply, stop, err := complete(ctx, client, provider.Request{
 		Model:            model,
 		Messages:         []provider.Message{provider.UserMessage(testPrompt)},
-		MaxTokens:        testMaxTokens,
-		ReasoningEffort:  req.ReasoningEffort,
+		Sampling:         sampling,
 		ThinkingSwitch:   provider.ThinkingSwitch(req.ThinkingSwitch),
 		PreserveThinking: req.PreserveThinking,
 	})
@@ -576,44 +579,26 @@ func complete(ctx context.Context, p provider.Provider, req provider.Request) (s
 	return "", "", errors.New("the response ended without finishing")
 }
 
-// runModel resolves the model a run uses: the one the request named, the
-// default, or the first model, and builds a provider on its endpoint.
-func (s *Server) runModel(ctx context.Context, requested string) (store.Model, provider.Provider, error) {
-	models, err := s.deps.Store.Models(ctx)
+// providerFor builds a provider on the endpoint of the model a run's
+// configuration resolved to. A deployment with no model has nothing to run
+// on.
+func (s *Server) providerFor(ctx context.Context, cfg runConfig) (provider.Provider, error) {
+	if !cfg.modelOK {
+		return nil, conflictf("no model is configured; add one under Settings, Models")
+	}
+	p, err := s.deps.Store.Provider(ctx, cfg.model.ProviderID)
 	if err != nil {
-		return store.Model{}, nil, err
-	}
-	if len(models) == 0 {
-		return store.Model{}, nil, conflictf("no model is configured; add one under Settings, Models")
-	}
-	var m store.Model
-	if requested != "" {
-		found := false
-		for _, candidate := range models {
-			if candidate.Name == requested {
-				m, found = candidate, true
-				break
-			}
-		}
-		if !found {
-			return store.Model{}, nil, invalidf("unknown model %q", requested)
-		}
-	} else {
-		m, _ = s.defaultModel(ctx, models)
-	}
-	p, err := s.deps.Store.Provider(ctx, m.ProviderID)
-	if err != nil {
-		return store.Model{}, nil, err
+		return nil, err
 	}
 	key, err := s.openKey(p)
 	if err != nil {
-		return store.Model{}, nil, err
+		return nil, err
 	}
 	client, err := s.deps.Providers.Build(p.Kind, provider.Endpoint{BaseURL: p.BaseURL, APIKey: key})
 	if err != nil {
-		return store.Model{}, nil, fmt.Errorf("build provider %s: %s", p.Name, scrub(err.Error(), key))
+		return nil, fmt.Errorf("build provider %s: %s", p.Name, scrub(err.Error(), key))
 	}
-	return m, client, nil
+	return client, nil
 }
 
 // defaultModel returns the model a run uses when it names none: the one the

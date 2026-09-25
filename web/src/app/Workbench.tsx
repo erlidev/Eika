@@ -15,6 +15,7 @@ import { ThemeToggle } from "@/app/ThemeToggle";
 import { ActionError } from "@/components/Notice";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
+import { useMCPEvents } from "@/features/mcp";
 import { SessionView, useSession } from "@/features/session";
 import { useCreateSession } from "@/features/sessions";
 import { SettingsDialog, useSettingsDialog } from "@/features/settings";
@@ -43,6 +44,10 @@ export function Workbench() {
   const showSettings = useSettingsDialog((s) => s.show);
   const [drawer, setDrawer] = useState<"sidebar" | "panel" | null>(null);
   const narrow = useNarrow(narrowWidth);
+  // The MCP servers change on their own, as they connect, drop, and list
+  // new tools; one subscription for the whole workbench keeps the settings
+  // and the tool lists current.
+  useMCPEvents();
 
   const tabs = availablePanels({ sessionId, workspaceId, chat });
   const panel = tabs.find((tab) => tab.id === activePanel) ?? tabs[0];

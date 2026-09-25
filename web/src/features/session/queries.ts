@@ -6,6 +6,7 @@ import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 import { queryKeys } from "@/api/keys";
 import {
   abortRun,
+  answerElicitation,
   answerQuestion,
   forkSession,
   getRunStatus,
@@ -16,7 +17,16 @@ import {
   setSessionHead,
   setSessionTools,
 } from "@/api/routes";
-import type { Entry, PostMessage, Run, Session, SessionOutline, Tool } from "@/api/types";
+import type {
+  ElicitationAnswer,
+  Entry,
+  PostMessage,
+  Run,
+  RunStatus,
+  Session,
+  SessionOutline,
+  Tool,
+} from "@/api/types";
 import { useSessionStore } from "@/features/session/store";
 import { rewindTarget } from "@/features/session/tree";
 
@@ -78,6 +88,26 @@ export function useAnswerQuestion(
   return useMutation({
     mutationFn: ({ id, answer }) => answerQuestion(id, answer),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.runStatus(sessionId) }),
+  });
+}
+
+/** useAnswerElicitation delivers the user's answer to an MCP server that asked for input. */
+export function useAnswerElicitation(
+  sessionId: string,
+): UseMutationResult<void, Error, { id: string; answer: ElicitationAnswer }> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, answer }) => answerElicitation(id, answer),
+    // The run state is refetched, but until it arrives the answered request
+    // must not show again from the copy held.
+    onSuccess: (_, { id }) => {
+      client.setQueryData<RunStatus>(queryKeys.runStatus(sessionId), (old) =>
+        old === undefined
+          ? old
+          : { ...old, elicitations: old.elicitations.filter((x) => x.id !== id) },
+      );
+      return client.invalidateQueries({ queryKey: queryKeys.runStatus(sessionId) });
+    },
   });
 }
 
@@ -143,8 +173,9 @@ export function useForkSession(
 }
 
 /**
- * useTools lists every tool a run can offer. The list is the harness's
- * build, not something the user changes, so it is read once per page.
+ * useTools lists every tool a run can offer. The built-in ones are the
+ * harness's build and the MCP servers' change only with an `mcp.server`
+ * event, which invalidates this, so it is never refetched otherwise.
  */
 export function useTools(): UseQueryResult<Tool[]> {
   return useQuery({

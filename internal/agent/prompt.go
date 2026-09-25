@@ -7,9 +7,10 @@ import (
 	"github.com/erlidev/eika/internal/contextfile"
 )
 
-// basePrompt is the role and the working rules every Eika agent gets. It stays
-// short on purpose: workspace instructions and the user say the rest.
-const basePrompt = `You are Eika, a coding agent working inside a sandboxed workspace.
+// WorkspacePrompt is the built-in base prompt of an agent with a workspace:
+// the role and the working rules. It stays short on purpose: workspace
+// instructions and the user say the rest. Options.BasePrompt replaces it.
+const WorkspacePrompt = `You are Eika, a coding agent working inside a sandboxed workspace.
 
 Rules:
 - Every file and command action goes through your tools. The workspace root is your working directory and paths are relative to it.
@@ -18,10 +19,10 @@ Rules:
 - Be concise. Answer in plain sentences, without preamble or summaries of what you are about to do.
 - If a request is ambiguous, state the interpretation you are using, or ask when you cannot proceed without an answer.`
 
-// chatPrompt replaces basePrompt for an agent with no workspace. A model told
-// it works in a sandbox would offer to read files and run commands it has no
-// tools for.
-const chatPrompt = `You are Eika, an assistant in a chat with the user.
+// ChatPrompt is the built-in base prompt of an agent with no workspace. A
+// model told it works in a sandbox would offer to read files and run
+// commands it has no tools for. Options.BasePrompt replaces it.
+const ChatPrompt = `You are Eika, an assistant in a chat with the user.
 
 Rules:
 - This chat has no workspace: there are no files to read or change and no commands to run. Use only the tools you are given; there may be none.
@@ -29,23 +30,45 @@ Rules:
 - Be concise. Answer in plain sentences, without preamble or summaries of what you are about to do.
 - If a request is ambiguous, state the interpretation you are using, or ask when you cannot proceed without an answer.`
 
-// systemPrompt assembles the prompt for one run: the base rules, the
-// workspace's context files, and the extra instructions the caller configured.
-// An agent with no workspace gets the chat rules and no context files.
-func (a *Agent) systemPrompt(ctx context.Context) (string, error) {
-	parts := []string{chatPrompt}
+// prompt assembles the system prompt sections of one run: the base prompt,
+// the workspace's context files, and the extra instructions, each present
+// only when it has text. An agent with no workspace reads no context files.
+func (a *Agent) prompt(ctx context.Context) ([]Section, error) {
+	base := ChatPrompt
 	if a.opts.Executor != nil {
-		parts[0] = basePrompt
+		base = WorkspacePrompt
+	}
+	if a.opts.BasePrompt != nil {
+		base = *a.opts.BasePrompt
+	}
+	var sections []Section
+	if text := strings.TrimSpace(base); text != "" {
+		sections = append(sections, newSection(SectionBase, text))
+	}
+	if a.opts.Executor != nil && !a.opts.SkipContextFiles {
 		files, err := contextfile.Discover(ctx, a.opts.Executor, contextfile.Options{Dir: a.opts.ContextDir})
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		if section := contextfile.Section(files); section != "" {
-			parts = append(parts, section)
+		if text := contextfile.Section(files); text != "" {
+			section := newSection(SectionContextFiles, text)
+			for _, f := range files {
+				section.Files = append(section.Files, ContextFile{
+					Path:   f.Path,
+					Text:   f.Content,
+					Tokens: EstimateTokens(f.Content),
+				})
+			}
+			sections = append(sections, section)
 		}
 	}
-	if extra := strings.TrimSpace(a.opts.SystemPrompt); extra != "" {
-		parts = append(parts, extra)
+	if text := strings.TrimSpace(a.opts.Instructions); text != "" {
+		sections = append(sections, newSection(SectionInstructions, text))
 	}
-	return strings.Join(parts, "\n\n"), nil
+	return sections, nil
+}
+
+// newSection returns a section of the system prompt carrying text.
+func newSection(kind SectionKind, text string) Section {
+	return Section{Kind: kind, Text: text, Tokens: EstimateTokens(text)}
 }

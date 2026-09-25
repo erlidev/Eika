@@ -75,6 +75,9 @@ func (s *Store) tx(ctx context.Context, fn func(q querier) error) error {
 // uniqueViolation is the SQLSTATE PostgreSQL reports for a duplicate key.
 const uniqueViolation = "23505"
 
+// foreignKeyViolation is the SQLSTATE for a row that names a missing parent.
+const foreignKeyViolation = "23503"
+
 // wrap names the operation that failed and maps the pgx errors callers act on
 // onto this package's sentinels.
 func wrap(op string, err error) error {

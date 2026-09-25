@@ -4,10 +4,11 @@
  * touches nothing else. The walkthrough is in docs/EXTENDING.md.
  */
 
-import { FileCode, GitCompare, ListTree, Play, SquareTerminal, Wrench } from "lucide-react";
+import { FileCode, GitCompare, Gauge, ListTree, Play, SquareTerminal, Wrench } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { ChangesPanel } from "@/features/changes";
+import { ContextPanel } from "@/features/context";
 import { FilesPanel } from "@/features/files";
 import { RunPanel, SessionTreePanel, ToolsPanel } from "@/features/session";
 import { TerminalPanel } from "@/features/terminal";
@@ -83,6 +84,14 @@ const terminalPanel: Panel = {
   Component: ({ workspaceId }) => <TerminalPanel workspaceId={workspaceId} />,
 };
 
+const contextPanel: Panel = {
+  id: "context",
+  title: "Context",
+  icon: Gauge,
+  available: (context) => context.sessionId !== "",
+  Component: ({ sessionId }) => <ContextPanel sessionId={sessionId} />,
+};
+
 const toolsPanel: Panel = {
   id: "tools",
   title: "Tools",
@@ -107,6 +116,7 @@ const changesPanel: Panel = {
 export const panels: readonly Panel[] = [
   sessionTreePanel,
   runPanel,
+  contextPanel,
   toolsPanel,
   filesPanel,
   terminalPanel,

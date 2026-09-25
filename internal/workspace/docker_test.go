@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/erlidev/eika/internal/eikad"
 	"github.com/erlidev/eika/internal/executor"
+	"github.com/erlidev/eika/internal/executor/sandbox"
 	"github.com/erlidev/eika/internal/workspace"
 	"github.com/erlidev/eika/internal/workspace/hub"
 )
@@ -252,6 +254,24 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		// The shell starts in the workspace root, where the file was written.
 		if !strings.Contains(output.String(), "hei") {
 			t.Errorf("output = %q, want the file's content", output.String())
+		}
+	})
+
+	t.Run("runs a long-lived process in the workspace", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+		p, err := host.Process(ctx, ws, sandbox.ProcessSpec{Command: "sh", Args: []string{"-c", `read line; echo "$line $(cat notes/hello.txt)"`}}, nil)
+		if err != nil {
+			t.Fatalf("process: %v", err)
+		}
+		defer p.Close()
+		if _, err := p.Write([]byte("got\n")); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		out, err := io.ReadAll(p)
+		// The process runs in the workspace root and exits once it answers.
+		if string(out) != "got hei\n" || err == nil || !strings.Contains(err.Error(), "status 0") {
+			t.Errorf("output = %q, %v; want the answer, then the exit status", out, err)
 		}
 	})
 

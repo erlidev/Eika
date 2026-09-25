@@ -51,3 +51,13 @@ export function detail(call: ToolItem, name: string): unknown {
   if (typeof call.details !== "object" || call.details === null) return undefined;
   return (call.details as Record<string, unknown>)[name];
 }
+
+/**
+ * serverTool splits an MCP tool's name into its server and its tool, which
+ * the details say exactly once the call has finished. The name is cut to 64
+ * characters with a hash when it is longer, so before then it is a guess.
+ */
+export function serverTool(name: string): { server: string; tool: string } | undefined {
+  const match = /^mcp__(.+?)__(.+)$/.exec(name);
+  return match ? { server: match[1] ?? "", tool: match[2] ?? "" } : undefined;
+}

@@ -20,6 +20,9 @@ const (
 	// settingDefaultModel names the model a run uses when the request names
 	// none.
 	settingDefaultModel = "default_model"
+	// settingDefaultProfile is the id of the profile a session runs with
+	// when it chose none.
+	settingDefaultProfile = "default_profile"
 	// settingSandboxImage is the image a workspace runs when it names none.
 	settingSandboxImage = "sandbox_image"
 	// settingSubagentDepth is how many levels of children a session may have.
@@ -138,6 +141,20 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		if _, err := s.deps.Store.ModelByName(ctx, name); err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				return invalidf("%s names %q, which is not a configured model", key, name)
+			}
+			return err
+		}
+	case settingDefaultProfile:
+		var id string
+		if err := json.Unmarshal(value, &id); err != nil {
+			return invalidf("%s must be a profile id", key)
+		}
+		if id == "" {
+			return nil
+		}
+		if _, err := s.deps.Store.Profile(ctx, id); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return invalidf("%s names %q, which is not a profile", key, id)
 			}
 			return err
 		}

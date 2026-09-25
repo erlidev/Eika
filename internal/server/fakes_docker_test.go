@@ -7,10 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +21,7 @@ import (
 
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/local"
+	"github.com/erlidev/eika/internal/executor/sandbox"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/server"
 	"github.com/erlidev/eika/internal/workspace"
@@ -89,6 +92,10 @@ type fakeHost struct {
 	// cloneHook runs before Clone answers, which is how a test acts in the
 	// middle of a creation the harness has already got a container out of.
 	cloneHook func()
+	// process starts what Process is asked for, which is how a test puts a
+	// stdio MCP server in a workspace; processes records where.
+	process   func(spec sandbox.ProcessSpec) (io.ReadWriteCloser, error)
+	processes []string
 }
 
 // fakeWorkspace is one workspace of a fakeHost.
@@ -335,6 +342,31 @@ func (h *fakeHost) Executor(ws workspace.Workspace) (executor.Executor, error) {
 // scripted sandbox, that need no database.
 func (h *fakeHost) Terminal(_ context.Context, ws workspace.Workspace, _, _ uint16) (*websocket.Conn, error) {
 	return nil, fmt.Errorf("the fake host has no terminal for %s", ws.ID)
+}
+
+// Process starts what the test scripted, in a workspace the host has.
+func (h *fakeHost) Process(_ context.Context, ws workspace.Workspace, spec sandbox.ProcessSpec, _ func(string)) (io.ReadWriteCloser, error) {
+	h.mu.Lock()
+	_, ok := h.workspaces[ws.ID]
+	start := h.process
+	if ok {
+		h.processes = append(h.processes, ws.ID)
+	}
+	h.mu.Unlock()
+	switch {
+	case !ok:
+		return nil, fmt.Errorf("%w: %s", workspace.ErrNoWorkspace, ws.ID)
+	case start == nil:
+		return nil, fmt.Errorf("the fake host runs no %s", spec.Command)
+	}
+	return start(spec)
+}
+
+// started returns the workspaces a process was started in, in order.
+func (h *fakeHost) started() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.processes)
 }
 
 // update records a new state for a workspace.

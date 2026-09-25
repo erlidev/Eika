@@ -157,20 +157,37 @@ export class EikaDriver {
   async settle(): Promise<void> {
     for (let round = 0; round < 3; round++) {
       await this.mock.idle();
-      await this.page.evaluate(async () => {
+      await this.inPage(async () => {
         await document.fonts.ready;
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       });
     }
     // Dialog and popover enter and exit animations run for up to 200ms; wait
     // for those that end, not for a spinner that never does.
-    await this.page.evaluate(async () => {
+    await this.inPage(async () => {
       const finite = document
         .getAnimations()
         .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity);
       await Promise.all(finite.map((a) => a.finished.catch(() => undefined)));
     });
     await this.mock.idle();
+  }
+
+  /**
+   * inPage runs a script in the page, and again in the next page when a
+   * step navigated away under it, as signing in to an MCP server does: the
+   * browser leaves for the authorization server and comes back to the app.
+   */
+  private async inPage(script: () => Promise<void>): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.page.evaluate(script);
+        return;
+      } catch (err) {
+        if (attempt >= 3 || !String(err).includes("Execution context was destroyed")) throw err;
+        await this.page.waitForLoadState("load");
+      }
+    }
   }
 
   /**

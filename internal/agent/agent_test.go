@@ -625,7 +625,7 @@ func TestContextWindowIsEnforcedBeforeTheProviderCall(t *testing.T) {
 	p := providertest.New(providertest.Text("unreachable"))
 	a := agent.New(p, nil, agent.Options{
 		ContextWindow: 64,
-		MaxTokens:     32,
+		Sampling:      provider.Sampling{MaxOutput: ptr(32)},
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	err := a.Run(context.Background(), agent.NewSession("s1", "w1"), "hello")
@@ -640,7 +640,7 @@ func TestContextWindowIsEnforcedBeforeTheProviderCall(t *testing.T) {
 func TestRunForwardsReasoningConfiguration(t *testing.T) {
 	p := providertest.New(providertest.Text("ok"))
 	a := agent.New(p, nil, agent.Options{
-		ReasoningEffort:  "none",
+		Sampling:         provider.Sampling{ReasoningEffort: ptr("none")},
 		ThinkingSwitch:   provider.SwitchTemplate,
 		PreserveThinking: true,
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -654,9 +654,9 @@ func TestRunForwardsReasoningConfiguration(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	req := p.Requests()[0]
-	if req.ReasoningEffort != "none" || req.ThinkingSwitch != provider.SwitchTemplate || !req.PreserveThinking {
-		t.Errorf("request reasoning = %q switch = %q preserve = %t",
-			req.ReasoningEffort, req.ThinkingSwitch, req.PreserveThinking)
+	if e := req.Sampling.ReasoningEffort; e == nil || *e != "none" || req.ThinkingSwitch != provider.SwitchTemplate || !req.PreserveThinking {
+		t.Errorf("request reasoning = %v switch = %q preserve = %t",
+			e, req.ThinkingSwitch, req.PreserveThinking)
 	}
 	if req.Messages[1].Metrics != nil {
 		t.Errorf("provider received stored UI metrics: %+v", req.Messages[1].Metrics)

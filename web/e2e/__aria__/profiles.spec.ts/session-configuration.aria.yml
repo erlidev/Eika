@@ -1,0 +1,26 @@
+- dialog "This session's configuration":
+  - heading "This session's configuration" [level=2]
+  - paragraph: The profile the session runs with, and what it sets for itself over it. A change applies from the next message.
+  - text: Profile
+  - combobox "Profile": Reviewer
+  - tablist "Settings":
+    - tab "Prompt" [selected]
+    - tab "Tools"
+    - tab "Sampling"
+  - tabpanel "Prompt":
+    - text: Model
+    - combobox "Model": gpt-5, from the default
+    - text: Base prompt of a workspace session
+    - button "Override base prompt of a workspace session"
+    - text: "You are Eika, a coding agent working inside a sandboxed workspace. Rules: - Every file and command action goes through your tools. The workspace root is your working directory and paths are relative to it. - Run the project's own build and test commands to check your work. - Work in small, complete steps: change the code, run the tests, report what happened. - Be concise. Answer in plain sentences, without preamble or summaries of what you are about to do. - If a request is ambiguous, state the interpretation you are using, or ask when you cannot proceed without an answer."
+    - paragraph: "Not set here: falls through from the default."
+    - text: Extra instructions
+    - button "Override extra instructions"
+    - paragraph: Follow the base prompt and the context files.
+    - text: Review the change and report problems. Do not edit files.
+    - paragraph: "Not set here: falls through from the profile."
+    - text: Context files
+    - combobox "Context files": read, from the default
+  - button "Cancel"
+  - button "Save"
+  - button "Close"

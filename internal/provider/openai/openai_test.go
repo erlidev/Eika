@@ -282,17 +282,15 @@ func TestStreamSendsToolsAndModel(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
 	)
 	p := newProvider(t, s.URL)
-	temp := 0.0
 	collect(t, context.Background(), p, provider.Request{
-		System:      "sys",
-		Temperature: &temp,
+		System: "sys",
 		Messages: []provider.Message{
 			provider.UserMessage("hi"),
 			provider.AssistantMessage("", []provider.ToolCall{{ID: "c1", Name: "ls", Arguments: provider.ToolArguments(`{}`)}}),
 			provider.ToolResultMessage("c1", "a.txt", false),
 		},
-		Tools:     []provider.ToolDef{{Name: "ls", Description: "list", Schema: json.RawMessage(`{"type":"object"}`)}},
-		MaxTokens: 100,
+		Tools:    []provider.ToolDef{{Name: "ls", Description: "list", Schema: json.RawMessage(`{"type":"object"}`)}},
+		Sampling: provider.Sampling{Temperature: ptr(0.0), MaxOutput: ptr(100)},
 	})
 
 	var sent struct {
@@ -383,7 +381,7 @@ func TestStreamPreservesCompatibleChatCompletionsReasoning(t *testing.T) {
 	)
 	p := newProvider(t, s.URL)
 	events := collect(t, context.Background(), p, provider.Request{
-		ReasoningEffort:  "high",
+		Sampling:         provider.Sampling{ReasoningEffort: ptr("high")},
 		PreserveThinking: true,
 		Messages: []provider.Message{
 			provider.UserMessage("first"),
@@ -451,9 +449,9 @@ func TestStreamSendsNoneInTheFieldTheThinkingSwitchNames(t *testing.T) {
 			)
 			p := newProvider(t, s.URL)
 			collect(t, context.Background(), p, provider.Request{
-				ReasoningEffort: c.effort,
-				ThinkingSwitch:  c.sw,
-				Messages:        []provider.Message{provider.UserMessage("hi")},
+				Sampling:       provider.Sampling{ReasoningEffort: ptr(c.effort)},
+				ThinkingSwitch: c.sw,
+				Messages:       []provider.Message{provider.UserMessage("hi")},
 			})
 
 			var sent map[string]json.RawMessage
@@ -616,5 +614,84 @@ func TestStreamReportsOneUsageEventWhenTheEndpointReportsOnce(t *testing.T) {
 	}
 	if usage != 1 {
 		t.Errorf("usage events = %d, want exactly one", usage)
+	}
+}
+
+// ptr returns a pointer to v, for the optional fields of a request.
+func ptr[T any](v T) *T { return &v }
+
+func TestStreamSendsEverySamplingParameterThatIsSet(t *testing.T) {
+	// A field that is not set stays out of the body: an endpoint may refuse
+	// a field it does not know, and the endpoint's default is what nil means.
+	fields := []string{
+		"temperature", "top_p", "top_k", "min_p", "frequency_penalty", "presence_penalty",
+		"seed", "stop", "max_completion_tokens", "max_tokens", "reasoning_effort",
+	}
+	cases := []struct {
+		name string
+		req  provider.Request
+		want string
+	}{
+		{"nothing set", provider.Request{}, `{}`},
+		{
+			"every field set",
+			provider.Request{Sampling: provider.Sampling{
+				Temperature:      ptr(0.7),
+				TopP:             ptr(0.9),
+				TopK:             ptr(40),
+				MinP:             ptr(0.05),
+				FrequencyPenalty: ptr(0.5),
+				PresencePenalty:  ptr(-0.5),
+				Seed:             ptr(int64(7)),
+				Stop:             []string{"END", "\n\n"},
+				MaxOutput:        ptr(256),
+				ReasoningEffort:  ptr("high"),
+			}},
+			`{"frequency_penalty":0.5,"max_completion_tokens":256,"min_p":0.05,"presence_penalty":-0.5,` +
+				`"reasoning_effort":"high","seed":7,"stop":["END","\n\n"],"temperature":0.7,"top_k":40,"top_p":0.9}`,
+		},
+		{
+			"zero values are values",
+			provider.Request{Sampling: provider.Sampling{
+				Temperature:      ptr(0.0),
+				TopP:             ptr(0.0),
+				MinP:             ptr(0.0),
+				FrequencyPenalty: ptr(0.0),
+				PresencePenalty:  ptr(0.0),
+				Seed:             ptr(int64(0)),
+			}},
+			`{"frequency_penalty":0,"min_p":0,"presence_penalty":0,"seed":0,"temperature":0,"top_p":0}`,
+		},
+		{"an empty stop list sends none", provider.Request{Sampling: provider.Sampling{Stop: []string{}}}, `{}`},
+		{"an empty effort is the endpoint's", provider.Request{Sampling: provider.Sampling{ReasoningEffort: ptr("")}}, `{}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := newSSEServer(t, http.StatusOK,
+				`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}`,
+			)
+			p := newProvider(t, s.URL)
+			req := c.req
+			req.Messages = []provider.Message{provider.UserMessage("hi")}
+			collect(t, context.Background(), p, req)
+
+			var sent map[string]json.RawMessage
+			if err := json.Unmarshal(<-s.body, &sent); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			got := map[string]json.RawMessage{}
+			for _, field := range fields {
+				if v, ok := sent[field]; ok {
+					got[field] = v
+				}
+			}
+			encoded, err := json.Marshal(got)
+			if err != nil {
+				t.Fatalf("encode fields: %v", err)
+			}
+			if string(encoded) != c.want {
+				t.Errorf("sampling fields = %s, want %s", encoded, c.want)
+			}
+		})
 	}
 }

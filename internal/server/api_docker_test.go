@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/search"
@@ -43,6 +44,7 @@ type api struct {
 	questions *builtin.Questions
 	spawner   *subagent.Spawner
 	secrets   *secret.Box
+	mcp       *mcp.Pool
 	// searxng and marginalia answer web searches; fetched serves every page
 	// web_fetch reads.
 	searxng, marginalia *searchtest.Searcher
@@ -100,6 +102,10 @@ func newAPI(t *testing.T) *api {
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
+	// The pool closes after the server, whose runs call its tools, so its
+	// cleanup is registered first.
+	a.mcp = server.NewMCP(testConfig(), st, secrets, a.host, bus, testLogger())
+	t.Cleanup(a.mcp.Close)
 	a.Server = server.New(testConfig(), testLogger(), server.Deps{
 		Store:      st,
 		Hub:        a.hub,
@@ -111,6 +117,7 @@ func newAPI(t *testing.T) *api {
 		Bus:        bus,
 		Search:     engine,
 		Pages:      pages,
+		MCP:        a.mcp,
 	}, server.Options{})
 	a.Server.UseSubagents(a.spawner, a.spawner.Attach)
 	t.Cleanup(a.Server.Close)

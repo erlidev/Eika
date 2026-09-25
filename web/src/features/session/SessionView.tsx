@@ -18,6 +18,7 @@ import { useSessionStream } from "@/features/session/useSessionStream";
 import { Notice } from "@/components/Notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useSessionConfiguration } from "@/features/profiles";
 import { useModels } from "@/features/providers";
 import { useSettingsDialog } from "@/features/settings";
 import { useWorkspace, useWorkspaceEvents, WorkspaceStateBadge } from "@/features/workspaces";
@@ -30,6 +31,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
   useSessionStream(sessionId);
   const session = useSession(sessionId);
   const models = useModels();
+  const configuration = useSessionConfiguration(sessionId);
   const showSettings = useSettingsDialog((s) => s.show);
   const status = useRunStatus(sessionId);
   const abort = useAbortRun(sessionId);
@@ -62,7 +64,10 @@ export function SessionView({ sessionId }: SessionViewProps) {
     };
   }, [active, run, abort]);
 
-  const chosenModel = model === "" ? (models.data?.default ?? "") : model;
+  // A model chosen in the status bar is this browser's; without one, a run
+  // uses what the session's configuration resolves to.
+  const chosenModel =
+    model === "" ? (configuration.data?.resolved.model ?? models.data?.default ?? "") : model;
   const noModel = models.data?.models.length === 0;
 
   return (
@@ -121,7 +126,13 @@ export function SessionView({ sessionId }: SessionViewProps) {
       {/* The status bar is the pane's footer: the model, the meter, and the
           connection are what the session is running on, not what it is
           composing, so they read under the box rather than over it. */}
-      <RunStatusBar sessionId={sessionId} model={chosenModel} onModelChange={chooseModel} />
+      <RunStatusBar
+        sessionId={sessionId}
+        chat={chat}
+        overridden={session.data?.session.overridden ?? false}
+        model={chosenModel}
+        onModelChange={chooseModel}
+      />
     </section>
   );
 }

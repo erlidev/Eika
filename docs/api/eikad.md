@@ -104,6 +104,34 @@ The client sends `input` and `resize`; the daemon sends `output` and, once the
 shell exits, a final `exit` before closing. A message is at most 1 MiB, so a
 large paste arrives as one `input`.
 
+## GET /process
+
+Upgrades to a WebSocket carrying one long-lived process with its standard
+streams: how the harness runs a stdio MCP server in the workspace. Messages
+are JSON text frames in both directions.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `type` | string | `start`, `stdin`, `stdout`, `stderr`, `exit`, or `error`. |
+| `command` | string | Program to run, on `start`. Required. |
+| `args` | string[] | Its arguments, on `start`. |
+| `dir` | string | Working directory relative to the root, on `start`. Empty means the root. |
+| `env` | string[] | Additional `KEY=VALUE` entries, on `start`. |
+| `data` | base64 string | Bytes for stdin (`stdin`), or output (`stdout`, `stderr`). |
+| `exit_code` | number | The process's exit status on `exit`. Absent means 0. |
+| `error` | string | Why the process could not run, on `error`. |
+
+The client's first message is `start`, within 30 seconds of the handshake;
+after it the client sends `stdin`. The daemon sends `stdout` and `stderr` as
+the process writes them and, last, `exit` when it ran or `error` when it
+could not (a missing program, a `dir` outside the root), then closes. A
+message is at most 24 MiB, room for one whole MCP message on stdin.
+
+Closing the socket stops the process: its stdin closes, and a process still
+running two seconds later is sent SIGTERM, then SIGKILL after two more. It
+leads its own process group, whatever it started goes with it, and
+`EIKAD_TOKEN` is removed from its environment as it is for `/exec`.
+
 ## GET /watch?path=
 
 Upgrades to a WebSocket that reports changes under `path`. The daemon polls

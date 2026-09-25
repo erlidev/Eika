@@ -108,3 +108,40 @@ type PTYMessage struct {
 	// ExitCode is the shell's exit status on an exit message.
 	ExitCode int `json:"exit_code,omitempty"`
 }
+
+// Process message types, used on GET /process.
+const (
+	// ProcessStart is the client's first message, naming the command.
+	ProcessStart = "start"
+	// ProcessStdin carries bytes for the process's standard input.
+	ProcessStdin = "stdin"
+	// ProcessStdout and ProcessStderr carry the process's output.
+	ProcessStdout = "stdout"
+	ProcessStderr = "stderr"
+	// ProcessExit is the daemon's last message when the process ran.
+	ProcessExit = "exit"
+	// ProcessError is the daemon's last message when it could not run the
+	// process at all.
+	ProcessError = "error"
+)
+
+// ProcessMessage is one message on a /process WebSocket. The client sends a
+// start message, then stdin messages; the daemon sends stdout and stderr
+// messages, then one exit or error message.
+type ProcessMessage struct {
+	// Type is one of the Process constants.
+	Type string `json:"type"`
+	// Command, Args, Dir, and Env describe the process on a start message.
+	// Dir is relative to the root; Env holds KEY=VALUE entries added to
+	// the daemon's environment.
+	Command string   `json:"command,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	Dir     string   `json:"dir,omitempty"`
+	Env     []string `json:"env,omitempty"`
+	// Data is input or output, base64 encoded on the wire.
+	Data []byte `json:"data,omitempty"`
+	// ExitCode is the process's exit status on an exit message.
+	ExitCode int `json:"exit_code,omitempty"`
+	// Error says why the process could not run, on an error message.
+	Error string `json:"error,omitempty"`
+}

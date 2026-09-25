@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
+	"github.com/erlidev/eika/internal/executor/sandbox"
+	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/search/fetch"
@@ -55,6 +58,10 @@ type Workspaces interface {
 	// Terminal opens a shell in a running workspace for the person using it.
 	// It is not part of the executor, so no tool can reach a terminal.
 	Terminal(ctx context.Context, ws workspace.Workspace, rows, cols uint16) (*websocket.Conn, error)
+	// Process starts a long-lived process in a running workspace, which is
+	// how a stdio MCP server runs there. Like Terminal, it is not part of
+	// the executor, so no tool can hold a process of its own.
+	Process(ctx context.Context, ws workspace.Workspace, spec sandbox.ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error)
 	HasImage(ctx context.Context, ref string) (bool, error)
 }
 
@@ -111,6 +118,10 @@ type Deps struct {
 	// Subagents is set by UseSubagents rather than by the caller: the spawner
 	// needs the run manager this server owns.
 	Subagents Subagents
+	// MCP holds the connections to the MCP servers the user configured,
+	// whose tools runs offer beside the built-in ones. Without it the MCP
+	// routes are not served. The caller closes it after the server.
+	MCP *mcp.Pool
 }
 
 // Options configures a Server beyond what config.Config carries.

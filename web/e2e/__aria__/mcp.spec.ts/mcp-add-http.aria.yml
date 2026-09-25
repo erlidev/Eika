@@ -1,0 +1,33 @@
+- dialog "Add an MCP server":
+  - heading "Add an MCP server" [level=2]
+  - paragraph: A remote server connects as soon as it is added; a stdio one starts in the workspace of the first session that uses it.
+  - group "Kind":
+    - text: ""
+    - button "Remote (HTTP) A server at a URL. The harness connects to it, and chats can use it too." [pressed]
+    - button "Local command (stdio) A program started in each workspace whose session uses it, such as npx or uvx."
+  - text: Name
+  - textbox "Name":
+    - /placeholder: github
+    - text: notion
+  - paragraph: Tools reach the model as mcp__notion__tool.
+  - text: URL
+  - textbox "URL":
+    - /placeholder: https://mcp.example.com/mcp
+    - text: https://mcp.notion.com/mcp
+  - group "Headers":
+    - text: ""
+    - list:
+      - listitem:
+        - textbox "Header 1 name":
+          - /placeholder: X-Api-Key
+          - text: X-Workspace
+        - textbox "X-Workspace value":
+          - /placeholder: value
+          - text: eng
+        - button "Remove X-Workspace"
+    - paragraph: Sent with every request, such as an API key. An Authorization header replaces OAuth sign-in. Values are encrypted and never shown again.
+    - button "Add header"
+  - button "OAuth client"
+  - button "Cancel"
+  - button "Add server"
+  - button "Close"

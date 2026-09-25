@@ -35,12 +35,12 @@ type ModelInfo struct {
 // MaxReasoningEffortLen bounds one reasoning_effort value.
 const MaxReasoningEffortLen = 32
 
-// ValidReasoningEffort reports whether effort is a value Request accepts for
-// ReasoningEffort. Compatible endpoints disagree on the vocabulary — OpenAI
-// takes minimal through high, others take none, xhigh, max, or a word of
-// their own — so this checks the shape a request field may carry rather than
-// a fixed list, and the user configures which words a model offers. The empty
-// value leaves the choice to the endpoint.
+// ValidReasoningEffort reports whether effort is a value a request accepts as
+// its reasoning effort. Compatible endpoints disagree on the vocabulary —
+// OpenAI takes minimal through high, others take none, xhigh, max, or a word
+// of their own — so this checks the shape a request field may carry rather
+// than a fixed list, and the user configures which words a model offers. The
+// empty value leaves the choice to the endpoint.
 func ValidReasoningEffort(effort string) bool {
 	if len(effort) > MaxReasoningEffortLen {
 		return false
@@ -275,15 +275,9 @@ type Request struct {
 	Messages []Message
 	// Tools are the tools the model may call.
 	Tools []ToolDef
-	// MaxTokens bounds the generated response. Zero leaves it to the model.
-	MaxTokens int
-	// Temperature overrides the model default when it is not nil.
-	Temperature *float64
-	// ReasoningEffort selects how much a reasoning model thinks. Its
-	// vocabulary belongs to the endpoint; ValidReasoningEffort bounds the
-	// shape. Empty leaves it to the model, and EffortNone turns thinking
-	// off through ThinkingSwitch.
-	ReasoningEffort string
+	// Sampling holds the sampling parameters the request sends; a nil field
+	// is left to the endpoint.
+	Sampling Sampling
 	// ThinkingSwitch is the field that carries EffortNone; empty means
 	// SwitchReasoningEffort. Every other effort goes in reasoning_effort.
 	ThinkingSwitch ThinkingSwitch

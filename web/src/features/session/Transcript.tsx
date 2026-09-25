@@ -41,10 +41,10 @@ export function Transcript({ sessionId, empty }: TranscriptProps) {
   const committed = useSessionStore((s) => s.committed);
   const live = useSessionStore((s) => s.live);
   const questions = useSessionStore((s) => s.questions);
+  const elicitations = useSessionStore((s) => s.elicitations);
   const stopReason = useSessionStore((s) => s.stopReason);
 
   const rendered = useMemo(() => [...committed, ...live], [committed, live]);
-  const questionCalls = useMemo(() => new Set(questions.map((q) => q.call_id)), [questions]);
   const announcement = useAnnouncement(rendered);
 
   // Rewinding takes the conversation back to before a message the user sent
@@ -54,6 +54,18 @@ export function Transcript({ sessionId, empty }: TranscriptProps) {
   const status = useRunStatus(sessionId);
   const rewind = useRewind(sessionId);
   const idle = !(status.data?.active ?? false);
+  // A card whose call waits on the user opens by itself: an ask_user
+  // question, or an MCP server asking for input. The run state holds a
+  // request made before this page subscribed.
+  const waitingCalls = useMemo(
+    () =>
+      new Set([
+        ...questions.map((q) => q.call_id),
+        ...elicitations.map((x) => x.call_id),
+        ...(status.data?.elicitations ?? []).map((x) => x.call_id),
+      ]),
+    [questions, elicitations, status.data?.elicitations],
+  );
   const nodes = outline.data?.nodes;
   const rewindable = useMemo(() => {
     const ids = new Set<string>();
@@ -114,7 +126,7 @@ export function Transcript({ sessionId, empty }: TranscriptProps) {
               <Item
                 key={item.key}
                 item={item}
-                openTool={item.kind === "tool" && questionCalls.has(item.callId)}
+                openTool={item.kind === "tool" && waitingCalls.has(item.callId)}
                 onRewind={
                   idle && item.kind === "user" && rewindable.has(item.entryId ?? "")
                     ? onRewind

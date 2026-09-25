@@ -28,13 +28,27 @@ export function useSessionStream(sessionId: string | undefined): void {
 
   useStreamSubscription(sessionId === undefined ? undefined : sessionTopic(sessionId), (e) => {
     apply(e);
-    if (e.type === "turn.end" || e.type === "run.error" || e.type === "question.asked") {
+    if (
+      e.type === "turn.end" ||
+      e.type === "run.error" ||
+      e.type === "question.asked" ||
+      e.type === "mcp.elicitation"
+    ) {
       void client.invalidateQueries({
         queryKey: queryKeys.runStatus(e.topic.slice("session:".length)),
       });
       void client.invalidateQueries({
         queryKey: queryKeys.sessionOutline(e.topic.slice("session:".length)),
       });
+      // A turn that ended changed the next request and recorded its calls.
+      if (e.type === "turn.end" || e.type === "run.error") {
+        void client.invalidateQueries({
+          queryKey: queryKeys.sessionContext(e.topic.slice("session:".length)),
+        });
+        void client.invalidateQueries({
+          queryKey: queryKeys.sessionRequests(e.topic.slice("session:".length)),
+        });
+      }
     }
     // A child agent is a session and a workspace of its own, which the
     // sidebar draws under this session; its start and end are the only word

@@ -40,6 +40,12 @@ const (
 	TypeSubagentFinished = "subagent.finished"
 	// TypeWorkspaceState reports a workspace lifecycle transition.
 	TypeWorkspaceState = "workspace.state"
+	// TypeMCPServer reports that an MCP server's connection, authorization,
+	// or what it serves changed.
+	TypeMCPServer = "mcp.server"
+	// TypeMCPElicitation reports that an MCP server asked the user for input
+	// during a tool call, which waits on the answer.
+	TypeMCPElicitation = "mcp.elicitation"
 	// TypeSessionMessage carries one stored session entry, which is how a
 	// client replays the messages it missed.
 	TypeSessionMessage = "session.message"

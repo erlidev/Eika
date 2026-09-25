@@ -190,6 +190,38 @@ type WorkspaceState struct {
 	State       string `json:"state"`
 }
 
+// MCPServer is the payload of an mcp.server event, on the global topic: an
+// MCP server's state changed, or what it serves did. A client refetches the
+// server's details.
+type MCPServer struct {
+	ServerID string `json:"server_id"`
+	Name     string `json:"name"`
+	// State is disabled, idle, connecting, connected, unauthorized, or
+	// error.
+	State string `json:"state"`
+	Error string `json:"error,omitempty"`
+}
+
+// MCPElicitation is the payload of an mcp.elicitation event, on the session
+// topic: an MCP server asked the user for input during a tool call, which
+// waits until the answer arrives at POST /api/elicitations/{id}/answer or
+// the run ends.
+type MCPElicitation struct {
+	ElicitationID string `json:"elicitation_id"`
+	RunID         string `json:"run_id"`
+	SessionID     string `json:"session_id"`
+	CallID        string `json:"call_id"`
+	// Server is the name of the MCP server that asks.
+	Server string `json:"server"`
+	// Mode is form, for fields to fill in, or url, for a page to visit.
+	Mode    string `json:"mode"`
+	Message string `json:"message"`
+	// RequestedSchema is the form's flat JSON Schema, in form mode.
+	RequestedSchema json.RawMessage `json:"requested_schema,omitempty"`
+	// URL is the page to visit, in url mode.
+	URL string `json:"url,omitempty"`
+}
+
 // SessionMessage is the payload of a session.message event: one entry of a
 // session as it is stored. It is what a replay sends, so that a client which
 // connects late sees the conversation it missed in the same stream as the

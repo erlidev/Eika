@@ -408,7 +408,7 @@ func TestModelTestSendsOneSmallRequest(t *testing.T) {
 		t.Errorf("test = %+v", got)
 	}
 	reqs := p.Requests()
-	if len(reqs) != 1 || reqs[0].Model != "unsaved-model" || reqs[0].ReasoningEffort != "none" ||
+	if len(reqs) != 1 || reqs[0].Model != "unsaved-model" || deref(reqs[0].Sampling.ReasoningEffort) != "none" ||
 		reqs[0].ThinkingSwitch != provider.SwitchThinking || len(reqs[0].Tools) != 0 {
 		t.Errorf("requests = %+v", reqs)
 	}
@@ -441,10 +441,10 @@ func TestARunUsesTheModelsEndpointIdentifierAndLimits(t *testing.T) {
 	if len(reqs) != 1 {
 		t.Fatalf("requests = %d, want 1", len(reqs))
 	}
-	if reqs[0].Model != "vendor/model-7b" || reqs[0].MaxTokens != 777 || reqs[0].ReasoningEffort != "medium" ||
-		reqs[0].ThinkingSwitch != provider.SwitchTemplate {
-		t.Errorf("request = model %q, max %d, effort %q, switch %q",
-			reqs[0].Model, reqs[0].MaxTokens, reqs[0].ReasoningEffort, reqs[0].ThinkingSwitch)
+	if reqs[0].Model != "vendor/model-7b" || deref(reqs[0].Sampling.MaxOutput) != 777 ||
+		deref(reqs[0].Sampling.ReasoningEffort) != "medium" || reqs[0].ThinkingSwitch != provider.SwitchTemplate {
+		t.Errorf("request = model %q, sampling %+v, switch %q",
+			reqs[0].Model, reqs[0].Sampling, reqs[0].ThinkingSwitch)
 	}
 	if e := a.lastEndpoint(); e.BaseURL != "https://second.test/v1" || e.APIKey != "second-key" {
 		t.Errorf("endpoint = %+v, want the default model's provider", e)

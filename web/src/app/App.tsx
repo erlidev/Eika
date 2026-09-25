@@ -7,15 +7,16 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { Navigate, Route, Routes, useParams } from "react-router";
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 
 import { ApiError } from "@/api/client";
 import { resetEventStream } from "@/api/stream";
 import { Workbench } from "@/app/Workbench";
 import { Splash } from "@/components/Splash";
 import { LoadFailedScreen, SignInScreen, useAuthStatus, useConnection } from "@/features/connect";
+import { callbackPath, MCPCallbackScreen, useMCPSelection } from "@/features/mcp";
 import { useSessions } from "@/features/sessions";
-import { setupComplete, useSettings } from "@/features/settings";
+import { setupComplete, useSettings, useSettingsDialog } from "@/features/settings";
 import { SetupWizard } from "@/features/setup";
 
 export function App() {
@@ -82,6 +83,7 @@ function SignedIn() {
       <Route path="/" element={<Workbench />} />
       <Route path="/sessions/:sessionId" element={<Workbench />} />
       <Route path="/workspaces/:workspaceId" element={<WorkspaceRoute />} />
+      <Route path={callbackPath} element={<MCPCallbackRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -98,4 +100,26 @@ function WorkspaceRoute() {
   if (sessions.isPending) return <Workbench />;
   const newest = sessions.data?.[0];
   return newest ? <Navigate to={`/sessions/${newest.id}`} replace /> : <Workbench />;
+}
+
+/**
+ * MCPCallbackRoute is where an OAuth authorization server returns the
+ * browser. Once the harness has the answer, the workbench opens again with
+ * the settings on the server that was signed in to.
+ */
+function MCPCallbackRoute() {
+  const { search } = useLocation();
+  const navigate = useNavigate();
+  const showSettings = useSettingsDialog((s) => s.show);
+  const select = useMCPSelection((s) => s.select);
+  return (
+    <MCPCallbackScreen
+      search={search}
+      onDone={(serverId) => {
+        if (serverId !== undefined) select(serverId);
+        showSettings("mcp");
+        void navigate("/", { replace: true });
+      }}
+    />
+  );
 }

@@ -6,6 +6,7 @@
 
 import { OutputBlock } from "@/components/OutputBlock";
 import { AskUserBody } from "@/features/session/renderers/AskUserRenderer";
+import { MCPToolBody } from "@/features/session/renderers/MCPRenderer";
 import { ResultBlock } from "@/features/session/renderers/parts";
 import { detail, stringArg } from "@/features/session/renderers/registry";
 import type { ToolRenderer, ToolRendererProps } from "@/features/session/renderers/registry";
@@ -76,6 +77,19 @@ const jsonRenderer: ToolRenderer = {
 };
 
 /**
+ * mcpRenderer draws every tool an MCP server offers, and the resource tools:
+ * the arguments, a request of the server for input while one waits, and the
+ * content blocks it sent.
+ */
+const mcpRenderer: ToolRenderer = {
+  summary: (call) => {
+    const uri = stringArg(call, "uri");
+    return uri !== "" ? uri : firstLine(describeArgument(call.arguments), 80);
+  },
+  Body: MCPToolBody,
+};
+
+/**
  * toolRenderers maps a tool name to its renderer. Register a new tool's
  * renderer here and nowhere else.
  */
@@ -86,7 +100,11 @@ export const toolRenderers: Record<string, ToolRenderer> = {
   web_fetch: webFetchRenderer,
 };
 
-/** rendererFor returns a tool's renderer, or the JSON fallback. */
+/**
+ * rendererFor returns a tool's renderer: its own, the MCP renderer for a
+ * name the MCP pool gives its tools (`mcp_` is reserved for it), or the JSON
+ * fallback.
+ */
 export function rendererFor(name: string): ToolRenderer {
-  return toolRenderers[name] ?? jsonRenderer;
+  return toolRenderers[name] ?? (name.startsWith("mcp_") ? mcpRenderer : jsonRenderer);
 }
