@@ -13,6 +13,20 @@ test("tool calls stream and finish", async ({ open, expectShot }) => {
   await expectShot(eika, "agent-tools");
 });
 
+test("an answer says how fast it was produced, once the reader asks", async ({
+  open,
+  expectShot,
+}) => {
+  const eika = await open({ scenario: "agent-tools" });
+  await eika.click("Settings");
+  await eika.click("Appearance");
+  await eika.click("Show how fast each answer was produced");
+  await eika.press("Escape");
+  await eika.send("Run the tests");
+  await expect(eika.page.getByText(/tok\/s/).first()).toBeVisible();
+  await expectShot(eika, "agent-speed");
+});
+
 test("a question waits for an answer", async ({ open, expectShot }) => {
   const eika = await open({ scenario: "agent-question" });
   await eika.send("Change the cap");
@@ -109,7 +123,7 @@ test("the page itself never scrolls under the workbench", async ({ open }) => {
 
 test("a long message grows the box but never pushes the transcript out", async ({ open }) => {
   const eika = await open({ scenario: "workbench" });
-  await eika.page.getByLabel("Message").fill("line\n".repeat(40));
+  await eika.page.getByLabel("Message", { exact: true }).fill("line\n".repeat(40));
   const room = await eika.page
     .getByRole("region", { name: "Session" })
     .evaluate((el) => el.scrollHeight - el.clientHeight);

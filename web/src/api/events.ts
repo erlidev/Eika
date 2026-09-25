@@ -90,6 +90,22 @@ export type Usage = {
 };
 
 /**
+ * Timings is how fast one model call ran: the tokens of each phase and the
+ * milliseconds that phase took, so a reader divides one by the other. Reading
+ * the prompt and generating the answer run at speeds orders of magnitude
+ * apart and are never summed. A phase nobody measured is absent.
+ */
+export type Timings = {
+  /** prompt_tokens and prompt_ms come only from an endpoint that reports them. */
+  prompt_tokens?: number;
+  prompt_ms?: number;
+  decode_tokens?: number;
+  decode_ms?: number;
+  /** source says who timed the generation phase. */
+  source?: "endpoint" | "harness";
+};
+
+/**
  * TurnProgress is the payload of a turn.progress event: the usage the endpoint
  * has reported for the turn so far and the time spent generating it. Both are
  * measured by the harness, so the difference between two of them is a true
@@ -104,6 +120,8 @@ export type TurnProgress = {
   generation_ms: number;
   /** context_window is the configured window of the model that produced the usage. */
   context_window: number;
+  /** timings is how fast the most recent model call ran, when anything measured it. */
+  timings?: Timings;
 };
 
 /** TurnEnd is the payload of a turn.end event. */
@@ -117,6 +135,8 @@ export type TurnEnd = {
   generation_ms: number;
   /** context_window is the configured window of the model that ran the turn. */
   context_window: number;
+  /** timings is how fast the turn's last model call ran. */
+  timings?: Timings;
 };
 
 /** RunError is the payload of a run.error event. */

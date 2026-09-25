@@ -8,6 +8,13 @@
 // compact Outline for the user interface. Path returns the entries from the
 // root to the head, which is what becomes the provider conversation.
 //
+// Not every entry is a place a branch can start. PathResumable is the rule:
+// a run can continue from an entry only when the path down to it leaves no
+// tool call unanswered, because a model that asked for three calls needs all
+// three answered before it is asked anything else. Outline reports it per
+// node and Tree.Resumable for one entry, and the server checks it before
+// moving a head or forking.
+//
 // Store implements agent.Store against the database: it records every message
 // a run produces as one entry, and Load rebuilds an agent.Session from a
 // session's path so a run can resume where it stopped. An assistant entry

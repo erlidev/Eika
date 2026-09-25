@@ -134,6 +134,11 @@ type TurnProgress struct {
 	// ContextWindow is the configured window of the model that produced this
 	// measurement. It keeps the usage bound to the model that reported it.
 	ContextWindow int `json:"context_window"`
+	// Timings is how fast the most recent model call ran, split into reading
+	// the prompt and generating the answer. It is absent until something
+	// measures it, and its prompt half is absent unless the endpoint reports
+	// its own.
+	Timings *provider.Timings `json:"timings,omitempty"`
 }
 
 // TurnEnd is the payload of a turn.end event: the assistant produced no
@@ -150,6 +155,8 @@ type TurnEnd struct {
 	GenerationMS int64 `json:"generation_ms"`
 	// ContextWindow is the configured window of the model that ran the turn.
 	ContextWindow int `json:"context_window"`
+	// Timings is how fast the turn's last model call ran.
+	Timings *provider.Timings `json:"timings,omitempty"`
 }
 
 // Usage reports the tokens a turn cost, summed over every model call it made.

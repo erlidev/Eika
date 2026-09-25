@@ -11,10 +11,14 @@ import {
   getRunStatus,
   getSession,
   getSessionOutline,
+  listTools,
   postMessage,
   setSessionHead,
+  setSessionTools,
 } from "@/api/routes";
-import type { Entry, PostMessage, Run, Session, SessionOutline } from "@/api/types";
+import type { Entry, PostMessage, Run, Session, SessionOutline, Tool } from "@/api/types";
+import { useSessionStore } from "@/features/session/store";
+import { rewindTarget } from "@/features/session/tree";
 
 /** useSession reads a session with the entry its head points at. */
 export function useSession(
@@ -77,14 +81,52 @@ export function useAnswerQuestion(
   });
 }
 
-/** useSetSessionHead moves the head so the next run continues from an entry. */
+/**
+ * useSetSessionHead moves the head so the next run continues from an entry.
+ *
+ * The transcript is rebuilt afterwards. A replay only ever adds entries, so
+ * without discarding it the branch the head just left would stay on screen
+ * and the next turn would read as continuing it.
+ */
 export function useSetSessionHead(sessionId: string): UseMutationResult<Session, Error, string> {
   const client = useQueryClient();
+  const rewound = useSessionStore((s) => s.rewound);
   return useMutation({
     mutationFn: (entryId: string) => setSessionHead(sessionId, entryId),
     onSuccess: async () => {
+      rewound();
       await client.invalidateQueries({ queryKey: queryKeys.session(sessionId) });
       await client.invalidateQueries({ queryKey: queryKeys.sessionOutline(sessionId) });
+    },
+  });
+}
+
+/**
+ * useRewind takes the conversation back to just before a message the user
+ * sent and puts that message back in the composer, which is what editing a
+ * question and asking it again means. The turns after it stay in the tree on
+ * a branch of their own; nothing is deleted.
+ */
+export function useRewind(
+  sessionId: string,
+): UseMutationResult<Session, Error, { entryId: string; text: string }> {
+  const setHead = useSetSessionHead(sessionId);
+  const outline = useSessionOutline(sessionId);
+  const edit = useSessionStore((s) => s.edit);
+  const nodes = outline.data?.nodes ?? [];
+  return useMutation({
+    mutationFn: ({ entryId }) => {
+      const target = rewindTarget(nodes, entryId);
+      if (target === null) {
+        throw new Error("this message cannot be rewound to: the turn before it is unfinished");
+      }
+      return setHead.mutateAsync(target);
+    },
+    // The message goes back in the box only once the head has moved. Filling
+    // it first would leave the text there after a refusal, next to the turns
+    // it was meant to replace.
+    onSuccess: (_session, { text }) => {
+      edit(text);
     },
   });
 }
@@ -97,5 +139,32 @@ export function useForkSession(
   return useMutation({
     mutationFn: ({ entryId, title }) => forkSession(sessionId, entryId, title),
     onSuccess: () => client.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+}
+
+/**
+ * useTools lists every tool a run can offer. The list is the harness's
+ * build, not something the user changes, so it is read once per page.
+ */
+export function useTools(): UseQueryResult<Tool[]> {
+  return useQuery({
+    queryKey: queryKeys.tools(),
+    queryFn: ({ signal }) => listTools(signal),
+    staleTime: Infinity,
+  });
+}
+
+/** useSetSessionTools chooses the tools the session's next run offers the model. */
+export function useSetSessionTools(sessionId: string): UseMutationResult<Session, Error, string[]> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (tools: string[]) => setSessionTools(sessionId, tools),
+    onSuccess: (session) => {
+      client.setQueryData<{ session: Session; head?: Entry }>(
+        queryKeys.session(sessionId),
+        (old) => (old === undefined ? old : { ...old, session }),
+      );
+      return client.invalidateQueries({ queryKey: ["sessions"] });
+    },
   });
 }

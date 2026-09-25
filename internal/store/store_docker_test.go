@@ -55,21 +55,21 @@ func TestRemoteCredentialMigrationSanitizesLegacyURLs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	_, err = conn.Exec(ctx, `
+	// The schema as 0001 left it, from the migration itself rather than a
+	// copy of it here: this database claims 0001 is applied, and a later
+	// migration may touch any table 0001 created, not only the one this test
+	// is about.
+	initial, err := os.ReadFile("migrations/0001_init.sql")
+	if err != nil {
+		_ = conn.Close(ctx)
+		t.Fatalf("read 0001_init.sql: %v", err)
+	}
+	_, err = conn.Exec(ctx, string(initial)+`
 		CREATE TABLE schema_migrations (
 			version text PRIMARY KEY,
 			applied_at timestamptz NOT NULL DEFAULT now()
 		);
 		INSERT INTO schema_migrations (version) VALUES ('0001_init');
-		CREATE TABLE projects (
-			id text PRIMARY KEY,
-			name text NOT NULL UNIQUE,
-			kind text NOT NULL,
-			remote_url text NOT NULL DEFAULT '',
-			host_path text NOT NULL DEFAULT '',
-			default_branch text NOT NULL DEFAULT 'main',
-			created_at timestamptz NOT NULL DEFAULT now()
-		);
 		INSERT INTO projects (id, name, kind, remote_url) VALUES
 			('legacy-userinfo', 'legacy-userinfo', 'remote', 'https://user:private@example.test/userinfo.git'),
 			('legacy-query', 'legacy-query', 'remote', 'https://example.test/query.git?access_token=private'),
@@ -159,9 +159,152 @@ func TestProjectsWorkspacesAndSessions(t *testing.T) {
 	if err := st.SetSessionTitle(ctx, sess.ID, "renamed"); err != nil {
 		t.Fatalf("set session title: %v", err)
 	}
-	sessions, err := st.Sessions(ctx, ws.ID)
+	sessions, err := st.Sessions(ctx, ws.ID, false)
 	if err != nil || len(sessions) != 1 || sessions[0].Title != "renamed" {
 		t.Fatalf("Sessions = %+v, %v", sessions, err)
+	}
+	if sessions[0].Kind != store.SessionUser {
+		t.Errorf("kind = %q, want %q", sessions[0].Kind, store.SessionUser)
+	}
+}
+
+// A fork with a workspace and a subagent both run somewhere else, so the
+// listing of the workspace they came from has to reach them: the user
+// interface draws them under the session that led to them.
+func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+
+	project := newProject(t, st)
+	parentWS, err := st.CreateWorkspace(ctx, store.Workspace{
+		ProjectID: project.ID, Name: "main", Branch: "main", State: "running",
+	})
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	childWS, err := st.CreateWorkspace(ctx, store.Workspace{
+		ProjectID: project.ID, Name: "agent", Branch: "main-agent",
+		State: "running", ParentWorkspaceID: parentWS.ID,
+	})
+	if err != nil {
+		t.Fatalf("create child workspace: %v", err)
+	}
+
+	parent, err := st.CreateSession(ctx, store.Session{WorkspaceID: parentWS.ID, Title: "parent"})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	child, err := st.CreateSession(ctx, store.Session{
+		WorkspaceID: childWS.ID, Title: "child", Kind: store.SessionAgent,
+		ParentSessionID: parent.ID,
+	})
+	if err != nil {
+		t.Fatalf("create child session: %v", err)
+	}
+	grand, err := st.CreateSession(ctx, store.Session{
+		WorkspaceID: childWS.ID, Title: "grandchild", Kind: store.SessionAgent,
+		ParentSessionID: child.ID,
+	})
+	if err != nil {
+		t.Fatalf("create grandchild session: %v", err)
+	}
+
+	flat, err := st.Sessions(ctx, parentWS.ID, false)
+	if err != nil || len(flat) != 1 || flat[0].ID != parent.ID {
+		t.Fatalf("Sessions without descendants = %+v, %v, want the parent alone", flat, err)
+	}
+	tree, err := st.Sessions(ctx, parentWS.ID, true)
+	if err != nil {
+		t.Fatalf("Sessions with descendants: %v", err)
+	}
+	got := map[string]store.SessionKind{}
+	for _, sess := range tree {
+		got[sess.ID] = sess.Kind
+	}
+	want := map[string]store.SessionKind{
+		parent.ID: store.SessionUser,
+		child.ID:  store.SessionAgent,
+		grand.ID:  store.SessionAgent,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Sessions with descendants = %+v, want %d rows", tree, len(want))
+	}
+	for id, kind := range want {
+		if got[id] != kind {
+			t.Errorf("session %s kind = %q, want %q", id, got[id], kind)
+		}
+	}
+}
+
+// A chat is a session with no workspace. It is listed apart from every
+// workspace's sessions, its fork is a chat too, and both keep the tools the
+// user chose.
+func TestChatsHaveNoWorkspaceAndKeepTheirTools(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+
+	project := newProject(t, st)
+	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+		ProjectID: project.ID, Name: "main", Branch: "main", State: "running",
+	})
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	if _, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID, Title: "work"}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	chat, err := st.CreateSession(ctx, store.Session{Title: "question"})
+	if err != nil {
+		t.Fatalf("create chat: %v", err)
+	}
+	if !chat.Chat() || chat.WorkspaceID != "" {
+		t.Errorf("chat = %+v, want no workspace", chat)
+	}
+	if chat.Tools != nil {
+		t.Errorf("new chat tools = %#v, want nil for every tool", chat.Tools)
+	}
+
+	if err := st.SetSessionTools(ctx, chat.ID, []string{"web_search"}); err != nil {
+		t.Fatalf("set tools: %v", err)
+	}
+	entry, err := st.AppendEntry(ctx, chat.ID, store.Entry{Kind: store.KindUser, Payload: json.RawMessage(`{"role":"user","content":"hi"}`)})
+	if err != nil {
+		t.Fatalf("append entry: %v", err)
+	}
+	fork, err := st.ForkSession(ctx, chat.ID, entry.ID, store.ForkOptions{})
+	if err != nil {
+		t.Fatalf("fork chat: %v", err)
+	}
+	if !fork.Chat() || len(fork.Tools) != 1 || fork.Tools[0] != "web_search" {
+		t.Errorf("fork = %+v, want a chat with web_search", fork)
+	}
+
+	chats, err := st.Chats(ctx)
+	if err != nil {
+		t.Fatalf("Chats: %v", err)
+	}
+	if len(chats) != 2 || chats[0].ID != chat.ID || chats[1].ID != fork.ID {
+		t.Fatalf("Chats = %+v, want the chat and its fork", chats)
+	}
+	if all, err := st.Sessions(ctx, "", false); err != nil || len(all) != 3 {
+		t.Errorf("every session = %d rows, %v; want 3", len(all), err)
+	}
+
+	// An empty list is no tools, which is not the same as every tool.
+	if err := st.SetSessionTools(ctx, chat.ID, []string{}); err != nil {
+		t.Fatalf("clear tools: %v", err)
+	}
+	if got, err := st.Session(ctx, chat.ID); err != nil || got.Tools == nil || len(got.Tools) != 0 {
+		t.Errorf("tools after clearing = %#v, %v; want empty, not nil", got.Tools, err)
+	}
+	if err := st.SetSessionTools(ctx, chat.ID, nil); err != nil {
+		t.Fatalf("restore tools: %v", err)
+	}
+	if got, err := st.Session(ctx, chat.ID); err != nil || got.Tools != nil {
+		t.Errorf("tools after restoring = %#v, %v; want nil", got.Tools, err)
+	}
+	if err := st.SetSessionTools(ctx, "missing", nil); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("SetSessionTools on a missing session = %v, want ErrNotFound", err)
 	}
 }
 

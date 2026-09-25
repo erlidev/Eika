@@ -379,16 +379,32 @@ workspace that is not running.
 ## Sessions
 
 A session is a tree of entries in one workspace, with a head the next run
-continues from.
+continues from. A chat is a session with no workspace: its runs have no files
+or commands, and offer the model only the tools that need no workspace.
 
 ### `GET /api/sessions`
 
-`?workspace_id=<id>` narrows the list. `200` with `{"sessions": [Session]}`.
+`?workspace_id=<id>` narrows the list. `?descendants=true` adds the forks and
+child agents those sessions led to, wherever they run: a fork with a workspace
+and a subagent each live in a workspace of their own, and both belong under
+the session they came from. It is ignored without `workspace_id`, which
+already returns every session, chats included. `?chats=true` returns the
+chats alone, forks of chats included; with `workspace_id` it is `400`.
+
+`200` with `{"sessions": [Session]}`, oldest first. The rows are flat; a
+client hangs each one under its `parent_session_id`.
 
 ### `POST /api/sessions`
 
-`{"workspace_id": string, "title": string}`, both required. `201` with the
-`Session`.
+| Field | Type | Meaning |
+|---|---|---|
+| `workspace_id` | string | The workspace the session's runs act in. Required unless `chat` is set. |
+| `chat` | boolean | Open a chat, which has no workspace. |
+| `title` | string, required | What to call it. |
+
+`201` with the `Session`. `400` for an empty title or for `chat` with a
+`workspace_id`; `404` when the workspace does not exist, which is also what
+leaving both out gives: a chat is asked for, never a fallback.
 
 ### `GET /api/sessions/{id}`
 
@@ -403,7 +419,14 @@ Aborts the session's run, then deletes it and its entries. `204`.
 Every entry of the tree, without payloads: what the session tree panel draws.
 
 `200` with `{"session_id": string, "head_entry_id": string, "nodes": [Node]}`,
-where a `Node` is `{id, parent_id?, kind, preview, commit?, created_at}`.
+where a `Node` is
+`{id, parent_id?, kind, preview, commit?, resumable, created_at}`.
+
+`resumable` is whether a run can continue from that entry: the path down to it
+leaves no tool call unanswered. It is false for an assistant entry whose tool
+calls are still out and for a tool result that is not the last of its set. The
+head and fork routes refuse those entries, so a client offers no branch from
+a node that is not resumable.
 
 ### `GET /api/sessions/{id}/path`
 
@@ -417,9 +440,12 @@ same order.
 ### `POST /api/sessions/{id}/head`
 
 `{"entry_id": string}`. Moves the head to one of the session's own entries, so
-the next run continues from there and the tree branches in place. `200` with
-the `Session`. `409` while a run is going; `404` when the entry is not the
-session's.
+the next run continues from there and the tree branches in place. An empty
+`entry_id` clears the head, so the session starts again from its root.
+
+`200` with the `Session`. `409` while a run is going; `404` when the entry is
+not the session's; `400` when the entry is not `resumable`, because a path
+that stops with tool calls unanswered is a conversation no endpoint accepts.
 
 ### `POST /api/sessions/{id}/fork`
 
@@ -438,18 +464,38 @@ workspace in the same project is created and cloned from the hub at the
 commit that entry recorded, on branch `<source branch>-fork-<8 chars of the
 new id>`, and the fork points at it. The files rewind with the conversation.
 
-`201` with the new `Session`. `400` when the entry recorded no commit, so
-there is nothing to clone; `409` when the source workspace is not running.
+`201` with the new `Session`, whose `kind` is `fork` and whose
+`parent_session_id` is the source.
+
+A fork keeps its source's tools, and a fork of a chat is a chat.
+
+`400` when `entry_id` is missing, when the entry is not `resumable`, or, with
+`with_workspace`, when the source is a chat or the entry recorded no commit
+and there is nothing to clone; `409` when the source workspace is not
+running. The resumability check
+runs before anything is created, so a refused fork leaves no workspace
+behind.
+
+### `PUT /api/sessions/{id}/tools`
+
+`{"tools": [string]}`, required; an empty list turns every tool off. Chooses
+the tools the session's next run offers the model; a run already going keeps
+the ones it started with. The names are stored sorted, once each.
+
+`200` with the `Session`. `400` when `tools` is missing, names a tool that
+does not exist, or, for a chat, names a tool that needs a workspace.
 
 ### Session
 
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | string | The session id. |
-| `workspace_id` | string | Where its runs act. |
+| `workspace_id` | string, optional | Where its runs act. Absent for a chat. |
 | `title` | string | What the user calls it. |
+| `kind` | string | `user`, `fork`, or `agent`: who opened it. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
-| `parent_session_id` | string, optional | The session it was forked from. |
+| `parent_session_id` | string, optional | The session it was forked from, or the one whose run spawned it. |
+| `tools` | string array | The tools the next run offers the model, sorted: every tool the session can run until the user chooses, and never one that needs a workspace in a chat. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ### Entry
@@ -468,8 +514,9 @@ A provider message can include `reasoning` on an assistant entry whenever the
 endpoint streamed it. The session view shows it apart from the answer; Eika
 replays it to the provider only when `preserve_thinking` is on. An assistant
 message can also include `metrics` with `run_id`, turn `usage`, last-call
-`context`, `generation_ms`, and `context_window`. This UI metadata restores
-the context view after replay and is never sent to the provider. A tool call's
+`context`, `generation_ms`, `context_window`, and an optional `timings`
+(`docs/api/events.md`). This UI metadata restores the context view and the
+answer's generation speed after replay, and is never sent to the provider. A tool call's
 `arguments` is normally an object. If a model returns malformed JSON, it is a
 string with the exact malformed text, and the tool call has
 `arguments_malformed: true`. The marker is absent for valid JSON, including a
@@ -497,7 +544,8 @@ on the event stream.
 
 `202` with the `Run`. `400` for empty text, an unknown mode, or a model that
 does not exist; `409` when the session's workspace is not running or no model
-is configured.
+is configured. A chat has no workspace to be stopped, so it runs whenever a
+model is configured.
 
 ### `GET /api/sessions/{id}/run`
 
@@ -529,6 +577,19 @@ waiting for it; the run continues at once. `204`.
 `404` when no run waits on that question, which is also what an already
 answered or abandoned question gives. `400` when the answer is empty, or is
 not one of the question's options and the question does not allow free text.
+
+### `GET /api/tools`
+
+Every tool a run can offer the model, sorted by name: what a session's tool
+choice picks from.
+
+`200` with `{"tools": [Tool]}`, where a `Tool` is:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | What the model calls it, and what `PUT /api/sessions/{id}/tools` takes. |
+| `description` | string | What the model is told it does. |
+| `needs_workspace` | boolean | It acts on files or processes, so a chat never offers it. |
 
 ### Run
 

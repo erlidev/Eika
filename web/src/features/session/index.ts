@@ -2,6 +2,7 @@
 export { RunPanel } from "@/features/session/RunPanel";
 export { SessionTreePanel } from "@/features/session/SessionTreePanel";
 export { SessionView } from "@/features/session/SessionView";
+export { ToolsPanel } from "@/features/session/ToolsPanel";
 export { useSession, useSessionOutline, useRunStatus } from "@/features/session/queries";
 export { useSessionStore } from "@/features/session/store";
 export { useTranscriptPreferences } from "@/features/session/preferences";

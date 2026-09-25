@@ -72,6 +72,18 @@ func (r *Registry) List() []Tool {
 	return out
 }
 
+// Filter returns a registry holding the tools keep accepts. It is how one run
+// narrows the registry every run shares to the tools its session may call.
+func (r *Registry) Filter(keep func(Tool) bool) *Registry {
+	out := &Registry{tools: map[string]Tool{}}
+	for _, t := range r.List() {
+		if keep(t) {
+			out.tools[t.Name()] = t
+		}
+	}
+	return out
+}
+
 // Schemas describes every registered tool to a model, ordered by name.
 func (r *Registry) Schemas() []provider.ToolDef {
 	tools := r.List()

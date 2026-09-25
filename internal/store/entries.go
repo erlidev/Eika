@@ -167,8 +167,9 @@ type ForkOptions struct {
 	// Title of the new session. Empty copies the source session's title.
 	Title string
 	// WorkspaceID the fork runs in. Empty keeps the source workspace, which
-	// is a fork of the conversation only; phase 6 and 8 pass a new workspace
-	// cloned at the fork entry's commit.
+	// is a fork of the conversation only, and keeps a chat's fork a chat;
+	// fork-with-workspace passes a new workspace cloned at the fork entry's
+	// commit.
 	WorkspaceID string
 }
 
@@ -176,7 +177,8 @@ type ForkOptions struct {
 // source session's root down to entryID, with its head on the copy of that
 // entry. The copies are rows of their own: a fork shares no entry with the
 // session it came from, so editing or continuing either one cannot disturb
-// the other, and deleting one cannot orphan the other.
+// the other, and deleting one cannot orphan the other. The fork keeps the
+// source's choice of tools.
 func (s *Store) ForkSession(ctx context.Context, sessionID, entryID string, opts ForkOptions) (Session, error) {
 	var out Session
 	err := s.tx(ctx, func(q querier) error {
@@ -196,7 +198,9 @@ func (s *Store) ForkSession(ctx context.Context, sessionID, entryID string, opts
 		fork := Session{
 			WorkspaceID:     cmp.Or(opts.WorkspaceID, src.WorkspaceID),
 			Title:           cmp.Or(opts.Title, src.Title),
+			Kind:            SessionFork,
 			ParentSessionID: sessionID,
+			Tools:           src.Tools,
 		}
 		if fork, err = createSession(ctx, q, fork); err != nil {
 			return wrap("fork session "+sessionID, err)

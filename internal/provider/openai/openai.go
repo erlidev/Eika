@@ -72,12 +72,14 @@ type chunkStream interface {
 
 // relay converts SDK chunks into provider events until the stream ends.
 // Usage is forwarded as soon as a chunk carries it, so an endpoint that
-// reports it per chunk lets the caller measure a decode rate while the
+// reports it per chunk keeps the caller's context view current while the
 // response is still arriving; an endpoint that reports it once still yields
-// exactly one usage event.
+// exactly one usage event. An endpoint that measures its own speed reports it
+// in the chunk that carries the usage, so the two travel together.
 func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 	acc := newToolCalls()
 	var usage, reported provider.Usage
+	var timings, reportedTimings provider.Timings
 	var stop string
 	send := func(e provider.Event) bool {
 		select {
@@ -88,11 +90,16 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 		}
 	}
 	sendUsage := func() bool {
-		if usage == (provider.Usage{}) || usage == reported {
+		// Timings without usage still say something true, and an endpoint
+		// that hangs them off a chunk of its own would otherwise lose them.
+		if usage == (provider.Usage{}) && !timings.Known() {
 			return true
 		}
-		reported = usage
-		return send(provider.Event{Kind: provider.KindUsage, Usage: usage})
+		if usage == reported && timings == reportedTimings {
+			return true
+		}
+		reported, reportedTimings = usage, timings
+		return send(provider.Event{Kind: provider.KindUsage, Usage: usage, Timings: timings})
 	}
 
 	for stream.Next() {
@@ -103,6 +110,9 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 				OutputTokens: int(u.CompletionTokens),
 				TotalTokens:  int(u.TotalTokens),
 			}
+		}
+		if t, ok := parseTimings(chunk.RawJSON(), usage); ok {
+			timings = t
 		}
 		for _, choice := range chunk.Choices {
 			if choice.FinishReason != "" {

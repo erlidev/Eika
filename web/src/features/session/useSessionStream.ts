@@ -36,6 +36,13 @@ export function useSessionStream(sessionId: string | undefined): void {
         queryKey: queryKeys.sessionOutline(e.topic.slice("session:".length)),
       });
     }
+    // A child agent is a session and a workspace of its own, which the
+    // sidebar draws under this session; its start and end are the only word
+    // the client gets of either.
+    if (e.type === "subagent.started" || e.type === "subagent.finished") {
+      void client.invalidateQueries({ queryKey: ["sessions"] });
+      void client.invalidateQueries({ queryKey: ["workspaces"] });
+    }
   });
 
   // Opening a session asks for its whole path; every later replay resumes

@@ -58,7 +58,9 @@ type Options struct {
 	// each attempt.
 	RetryBackoff time.Duration
 	// Executor is what tools act through. A nil executor means the agent has
-	// no workspace: tools that need one fail and no context files are read.
+	// no workspace, as in a chat: tools that need one fail, standalone tools
+	// run with a nil executor, no context files are read, and the system
+	// prompt says there is no workspace.
 	Executor executor.Executor
 	// Emitter receives the run's events. Nil drops them.
 	Emitter event.Emitter
@@ -244,6 +246,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 				Context:       providerUsage(gen.context),
 				GenerationMS:  gen.elapsed.Milliseconds(),
 				ContextWindow: a.opts.ContextWindow,
+				Timings:       gen.reported(),
 			}
 		}
 		appendReply := a.append
@@ -268,6 +271,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, system string, msgs []stri
 				Context:       gen.context,
 				GenerationMS:  gen.elapsed.Milliseconds(),
 				ContextWindow: a.opts.ContextWindow,
+				Timings:       gen.reported(),
 			})
 			a.opts.Logger.Info("turn finished",
 				"session_id", s.ID, "run_id", runID, "total_tokens", gen.usage.TotalTokens)
@@ -327,10 +331,14 @@ type generation struct {
 	// context is the last model call's own usage: the prompt it sent plus
 	// what it produced, which is what fills the model's context window.
 	context event.Usage
+	// timings is how fast the last model call ran. Like context it is the
+	// last call rather than the turn: a rate summed over calls with prompts
+	// of very different sizes describes none of them.
+	timings provider.Timings
 }
 
 // add folds one finished model response into the turn's totals.
-func (g *generation) add(u provider.Usage, elapsed time.Duration) {
+func (g *generation) add(u provider.Usage, elapsed time.Duration, t provider.Timings) {
 	g.usage.InputTokens += u.InputTokens
 	g.usage.OutputTokens += u.OutputTokens
 	g.usage.TotalTokens += u.TotalTokens
@@ -342,6 +350,33 @@ func (g *generation) add(u provider.Usage, elapsed time.Duration) {
 			TotalTokens:  u.TotalTokens,
 		}
 	}
+	if t.Known() {
+		g.timings = t
+	}
+}
+
+// reported returns the last call's timings for a wire payload, and nil when
+// nothing measured them.
+func (g *generation) reported() *provider.Timings {
+	if !g.timings.Known() {
+		return nil
+	}
+	t := g.timings
+	return &t
+}
+
+// withHarnessDecode fills in a generation rate the endpoint did not report,
+// timed from the response's first streamed token. The first token is not
+// counted: the clock starts when it arrives, so the window it opens holds the
+// tokens that came after it. A response of one token measures nothing.
+func withHarnessDecode(t provider.Timings, u provider.Usage, elapsed time.Duration) provider.Timings {
+	if t.HasDecode() || u.OutputTokens < 2 || elapsed <= 0 {
+		return t
+	}
+	t.DecodeTokens = u.OutputTokens - 1
+	t.DecodeMS = float64(elapsed.Microseconds()) / 1000
+	t.Source = provider.TimedByHarness
+	return t
 }
 
 // providerUsage converts the event protocol's usage shape to the provider
@@ -420,6 +455,7 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 	var reasoning strings.Builder
 	var calls []provider.ToolCall
 	var usage provider.Usage
+	var timings provider.Timings
 	var stop string
 	// started is the moment the response began producing tokens; the time
 	// before it is the endpoint's queue and prefill, not its generation time.
@@ -448,8 +484,15 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 		case provider.KindToolCall:
 			calls = append(calls, e.ToolCall)
 		case provider.KindUsage:
-			usage = e.Usage
-			a.emitProgress(ctx, s, runID, gen, usage, started)
+			// A usage event can carry only timings: an endpoint may measure
+			// its own speed in a chunk that repeats no token counts.
+			if e.Usage != (provider.Usage{}) {
+				usage = e.Usage
+			}
+			if e.Timings.Known() {
+				timings = e.Timings
+			}
+			a.emitProgress(ctx, s, runID, gen, usage, timings, started)
 		case provider.KindDone:
 			stop = e.StopReason
 			done = true
@@ -472,7 +515,8 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 		// carries a call with no result makes the next request malformed.
 		calls = nil
 	}
-	gen.add(usage, elapsedSince(started))
+	elapsed := elapsedSince(started)
+	gen.add(usage, elapsed, withHarnessDecode(timings, usage, elapsed))
 	return provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls), stop, nil
 }
 
@@ -491,15 +535,17 @@ func cutOff(stop string) bool {
 // emitProgress reports the turn's usage so far, counting the response in
 // flight. A response that reported usage before it produced a token has no
 // measured generation time yet, which the zero duration says honestly.
-func (a *Agent) emitProgress(ctx context.Context, s *Session, runID string, gen *generation, usage provider.Usage, started time.Time) {
+func (a *Agent) emitProgress(ctx context.Context, s *Session, runID string, gen *generation, usage provider.Usage, timings provider.Timings, started time.Time) {
 	total := *gen
-	total.add(usage, elapsedSince(started))
+	elapsed := elapsedSince(started)
+	total.add(usage, elapsed, withHarnessDecode(timings, usage, elapsed))
 	a.emit(ctx, s, event.TypeTurnProgress, event.TurnProgress{
 		RunID:         runID,
 		Usage:         total.usage,
 		Context:       total.context,
 		GenerationMS:  total.elapsed.Milliseconds(),
 		ContextWindow: a.opts.ContextWindow,
+		Timings:       total.reported(),
 	})
 }
 
@@ -550,7 +596,7 @@ func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provid
 	if !ok {
 		return tool.Errorf("unknown tool %q", c.Name), nil
 	}
-	if a.opts.Executor == nil {
+	if a.opts.Executor == nil && tool.NeedsWorkspace(t) {
 		return tool.Errorf("this session has no workspace, so %s cannot run", c.Name), nil
 	}
 	return t.Call(ctx, tool.CallContext{

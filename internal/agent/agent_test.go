@@ -1066,6 +1066,66 @@ func TestToolsWithoutAWorkspaceFailInsteadOfPanicking(t *testing.T) {
 	}
 }
 
+// standaloneTool is a callTool that runs without a workspace and records
+// whether it was handed an executor.
+type standaloneTool struct {
+	callTool
+	sawExecutor *bool
+}
+
+func (standaloneTool) Standalone() {}
+
+func (s standaloneTool) Call(ctx context.Context, c tool.CallContext, raw json.RawMessage) (tool.Result, error) {
+	*s.sawExecutor = c.Exec != nil
+	return s.callTool.Call(ctx, c, raw)
+}
+
+func TestAStandaloneToolRunsWithoutAWorkspace(t *testing.T) {
+	f := newFixture(t, []providertest.Step{
+		providertest.Calls("", providertest.Call("c1", "lookup", map[string]any{})),
+		providertest.Text("found it"),
+	})
+	sawExecutor := true
+	lookup := standaloneTool{
+		callTool:    callTool{name: "lookup", run: func(context.Context) string { return "the answer" }},
+		sawExecutor: &sawExecutor,
+	}
+	registry, err := tool.NewRegistry(lookup)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	chat := agent.New(f.provider, registry, agent.Options{
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RetryBackoff: time.Millisecond,
+	})
+	if err := chat.Run(context.Background(), agent.NewSession("chat-1", ""), "look it up"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	messages := f.provider.Requests()[1].Messages
+	result := messages[len(messages)-1]
+	if result.IsError || result.Content != "the answer" {
+		t.Errorf("tool message = %+v, want the tool's answer", result)
+	}
+	if sawExecutor {
+		t.Error("a standalone tool in a chat was handed an executor")
+	}
+}
+
+func TestAnAgentWithoutAWorkspaceIsToldItHasNone(t *testing.T) {
+	p := providertest.New(providertest.Text("ok"))
+	chat := agent.New(p, nil, agent.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err := chat.Run(context.Background(), agent.NewSession("chat-1", ""), "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	system := p.Requests()[0].System
+	if !strings.Contains(system, "no workspace") {
+		t.Errorf("system prompt = %q, want the chat rules", system)
+	}
+	if strings.Contains(system, "sandboxed workspace") {
+		t.Errorf("system prompt = %q, still describes a workspace", system)
+	}
+}
+
 func TestRunStreamsReasoningApartFromTheAnswer(t *testing.T) {
 	f := newFixture(t, []providertest.Step{providertest.Stream(
 		provider.Event{Kind: provider.KindReasoningDelta, ReasoningDelta: "weighing "},
@@ -1184,5 +1244,86 @@ func TestTurnSumsGenerationOverEveryModelCall(t *testing.T) {
 	// The window holds one conversation, not the sum of every prompt in it.
 	if end.Context.TotalTokens != 24 {
 		t.Errorf("turn.end context = %+v, want the last call's own usage", end.Context)
+	}
+}
+
+func TestTurnReportsTheEndpointsOwnTimings(t *testing.T) {
+	// An endpoint that measures both of its phases, as llama.cpp and vLLM do.
+	// The harness passes them through untouched: it has nothing better.
+	reported := provider.Timings{
+		PromptTokens: 1200, PromptMS: 300,
+		DecodeTokens: 256, DecodeMS: 3200,
+		Source: provider.TimedByEndpoint,
+	}
+	f := newFixture(t, []providertest.Step{providertest.Stream(
+		provider.TextDelta("answer"),
+		provider.Event{
+			Kind:    provider.KindUsage,
+			Usage:   provider.Usage{InputTokens: 1200, OutputTokens: 256, TotalTokens: 1456},
+			Timings: reported,
+		},
+		provider.Done("stop"),
+	)})
+	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var end event.TurnEnd
+	f.events.payloadOf(t, event.TypeTurnEnd, &end)
+	if end.Timings == nil || *end.Timings != reported {
+		t.Errorf("turn.end timings = %+v, want the endpoint's own %+v", end.Timings, reported)
+	}
+	stored := f.store.Messages(f.session.ID)
+	last := stored[len(stored)-1]
+	if last.Metrics == nil || last.Metrics.Timings == nil || *last.Metrics.Timings != reported {
+		t.Errorf("stored assistant timings = %+v, want them kept for replay", last.Metrics)
+	}
+}
+
+func TestTurnTimesAnEndpointThatReportsNoTimings(t *testing.T) {
+	// OpenAI, Anthropic and OpenRouter measure nothing, so the harness times
+	// the stream itself. It can only see the generation phase, and only from
+	// the first token on, so the first token is not one of the tokens counted.
+	f := newFixture(t, []providertest.Step{providertest.Stream(
+		provider.TextDelta("answer"),
+		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 40, OutputTokens: 9, TotalTokens: 49}},
+		provider.Done("stop"),
+	)})
+	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var end event.TurnEnd
+	f.events.payloadOf(t, event.TypeTurnEnd, &end)
+	if end.Timings == nil {
+		t.Fatal("turn.end carried no timings, want the harness's own measurement")
+	}
+	if end.Timings.Source != provider.TimedByHarness {
+		t.Errorf("timings source = %q, want %q", end.Timings.Source, provider.TimedByHarness)
+	}
+	if end.Timings.DecodeTokens != 8 {
+		t.Errorf("decode tokens = %d, want the 8 that followed the first", end.Timings.DecodeTokens)
+	}
+	if end.Timings.HasPrompt() {
+		t.Errorf("prompt phase = %+v, want it unmeasured: the harness cannot see it",
+			end.Timings)
+	}
+}
+
+func TestTurnTimesNothingWhenTheResponseIsOneToken(t *testing.T) {
+	// One token opens the decode window and closes nothing, so there is no
+	// measured interval and no rate to state.
+	f := newFixture(t, []providertest.Step{providertest.Stream(
+		provider.TextDelta("ok"),
+		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 40, OutputTokens: 1, TotalTokens: 41}},
+		provider.Done("stop"),
+	)})
+	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var end event.TurnEnd
+	f.events.payloadOf(t, event.TypeTurnEnd, &end)
+	if end.Timings != nil {
+		t.Errorf("turn.end timings = %+v, want none", end.Timings)
 	}
 }

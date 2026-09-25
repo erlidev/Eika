@@ -502,3 +502,76 @@ describe("the meter", () => {
     });
   });
 });
+
+describe("generation speed", () => {
+  const timings = {
+    prompt_tokens: 1200,
+    prompt_ms: 300,
+    decode_tokens: 256,
+    decode_ms: 3200,
+    source: "endpoint" as const,
+  };
+
+  /** timed is one turn.progress carrying what measured the call's speed. */
+  function timed(carried: unknown, run = "r1"): EikaEvent {
+    return ev("turn.progress", {
+      run_id: run,
+      usage: { input_tokens: 1200, output_tokens: 256, total_tokens: 1456 },
+      context: { input_tokens: 1200, output_tokens: 256, total_tokens: 1456 },
+      generation_ms: 3200,
+      context_window: 400_000,
+      timings: carried,
+    });
+  }
+
+  it("states the speed under the prose the model is writing", () => {
+    const state = fold([...turn.slice(0, 3), timed(timings)]);
+    const rendered = items(state);
+    expect(rendered.at(-1)).toMatchObject({ kind: "assistant", timings });
+    expect(state.meter?.timings).toEqual(timings);
+  });
+
+  it("leaves a message alone when the call measured nothing", () => {
+    const state = fold([...turn.slice(0, 3), timed(undefined)]);
+    expect(rendered(state)).not.toHaveProperty("timings");
+  });
+
+  it("does not stamp a later call's speed onto prose a tool already closed", () => {
+    // turn.slice(0, 4) ends on the tool call, which seals the prose above it.
+    const state = fold([...turn.slice(0, 4), timed(timings)]);
+    const prose = items(state).find((item) => item.kind === "assistant");
+    expect(prose).not.toHaveProperty("timings");
+  });
+
+  it("restores the speed of a stored answer on replay", () => {
+    const state = fold([
+      ev("session.message", {
+        session_id: sessionID,
+        entry_id: "e-timed",
+        kind: "assistant",
+        created_at: "2026-01-01T00:00:00Z",
+        message: {
+          role: "assistant",
+          content: "done",
+          metrics: {
+            run_id: "r-stored",
+            usage: { input_tokens: 1200, output_tokens: 256, total_tokens: 1456 },
+            context: { input_tokens: 1200, output_tokens: 256, total_tokens: 1456 },
+            generation_ms: 3200,
+            context_window: 400_000,
+            timings,
+          },
+        },
+      }),
+    ]);
+    expect(items(state).at(-1)).toMatchObject({ kind: "assistant", timings });
+    expect(state.meter?.timings).toEqual(timings);
+  });
+
+  /** rendered is the last item of a folded state. */
+  function rendered(state: TranscriptState) {
+    const last = items(state).at(-1);
+    expect(last?.kind).toBe("assistant");
+    return last as object;
+  }
+});

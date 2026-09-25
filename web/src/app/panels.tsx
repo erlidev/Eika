@@ -4,12 +4,12 @@
  * touches nothing else. The walkthrough is in docs/EXTENDING.md.
  */
 
-import { FileCode, GitCompare, ListTree, Play, SquareTerminal } from "lucide-react";
+import { FileCode, GitCompare, ListTree, Play, SquareTerminal, Wrench } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { ChangesPanel } from "@/features/changes";
 import { FilesPanel } from "@/features/files";
-import { RunPanel, SessionTreePanel } from "@/features/session";
+import { RunPanel, SessionTreePanel, ToolsPanel } from "@/features/session";
 import { TerminalPanel } from "@/features/terminal";
 
 /** PanelContext is what the workbench knows when it decides which tabs to show. */
@@ -18,6 +18,12 @@ export type PanelContext = {
   sessionId: string;
   /** workspaceId is that session's workspace, empty when none is open. */
   workspaceId: string;
+  /**
+   * chat is true once the open session is known to be a chat, which has no
+   * workspace. It is false while the session loads, so no tab flashes up
+   * for a workspace session that has not arrived yet.
+   */
+  chat: boolean;
 };
 
 /** PanelProps is what a panel component receives. */
@@ -77,6 +83,14 @@ const terminalPanel: Panel = {
   Component: ({ workspaceId }) => <TerminalPanel workspaceId={workspaceId} />,
 };
 
+const toolsPanel: Panel = {
+  id: "tools",
+  title: "Tools",
+  icon: Wrench,
+  available: (context) => context.chat,
+  Component: ({ sessionId }) => <ToolsPanel sessionId={sessionId} />,
+};
+
 const changesPanel: Panel = {
   id: "changes",
   title: "Changes",
@@ -86,12 +100,14 @@ const changesPanel: Panel = {
 };
 
 /**
- * panels is every tab the context pane can show, in tab-strip order. Phase 6
- * appends its agents panel here.
+ * panels is every tab the context pane can show, in tab-strip order. A chat
+ * has no workspace, so where a workspace session shows its files, terminal,
+ * and changes, a chat shows its tools.
  */
 export const panels: readonly Panel[] = [
   sessionTreePanel,
   runPanel,
+  toolsPanel,
   filesPanel,
   terminalPanel,
   changesPanel,

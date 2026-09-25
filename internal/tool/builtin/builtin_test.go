@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"slices"
 	"testing"
 
 	"github.com/erlidev/eika/internal/event"
@@ -129,5 +130,24 @@ func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
 		if schema["type"] != "object" {
 			t.Errorf("tool %s schema type = %v, want object", def.Name, schema["type"])
 		}
+	}
+}
+
+// A chat offers the standalone tools alone. Every tool that reads or changes
+// files, runs a command, or spawns a child in a workspace must stay out of it.
+func TestOnlyToolsThatNeedNoWorkspaceAreStandalone(t *testing.T) {
+	r, err := builtin.Registry(builtin.Deps{})
+	if err != nil {
+		t.Fatalf("Registry: %v", err)
+	}
+	var standalone []string
+	for _, tl := range r.List() {
+		if !tool.NeedsWorkspace(tl) {
+			standalone = append(standalone, tl.Name())
+		}
+	}
+	want := []string{"ask_user", "web_fetch", "web_search"}
+	if !slices.Equal(standalone, want) {
+		t.Errorf("standalone tools = %v, want %v", standalone, want)
 	}
 }

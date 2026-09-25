@@ -8,19 +8,26 @@
  * message in the session.
  */
 
-import { ArrowDown, Scissors, TriangleAlert } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, Scissors, TriangleAlert, Undo2 } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
+import { useRewind, useSessionOutline, useRunStatus } from "@/features/session/queries";
+import { useTranscriptPreferences } from "@/features/session/preferences";
 import { Reasoning } from "@/features/session/Reasoning";
+import { Speed } from "@/features/session/Speed";
+import { rewindTarget } from "@/features/session/tree";
 import { useSessionStore } from "@/features/session/store";
 import { ToolCard } from "@/features/session/ToolCard";
 import { cutOffText } from "@/features/session/transcript";
-import type { TranscriptItem } from "@/features/session/transcript";
+import type { AssistantItem, TranscriptItem } from "@/features/session/transcript";
 import { cn } from "@/lib/utils";
+import { failureText } from "@/lib/failure";
 
 export type TranscriptProps = {
+  /** sessionId is the session on screen, which a rewind acts on. */
+  sessionId: string;
   /** empty is what the view shows before the session has any entries. */
   empty?: React.ReactNode;
 };
@@ -28,7 +35,7 @@ export type TranscriptProps = {
 /** bottomSlackPx is how far from the bottom still counts as following along. */
 const bottomSlackPx = 100;
 
-export function Transcript({ empty }: TranscriptProps) {
+export function Transcript({ sessionId, empty }: TranscriptProps) {
   // Three selectors rather than the whole store: a panel that only wants the
   // questions should not re-render on every token.
   const committed = useSessionStore((s) => s.committed);
@@ -39,6 +46,30 @@ export function Transcript({ empty }: TranscriptProps) {
   const rendered = useMemo(() => [...committed, ...live], [committed, live]);
   const questionCalls = useMemo(() => new Set(questions.map((q) => q.call_id)), [questions]);
   const announcement = useAnnouncement(rendered);
+
+  // Rewinding takes the conversation back to before a message the user sent
+  // and puts it back in the composer. A run in progress owns the head, so it
+  // is offered only while the session is idle.
+  const outline = useSessionOutline(sessionId);
+  const status = useRunStatus(sessionId);
+  const rewind = useRewind(sessionId);
+  const idle = !(status.data?.active ?? false);
+  const nodes = outline.data?.nodes;
+  const rewindable = useMemo(() => {
+    const ids = new Set<string>();
+    for (const node of nodes ?? []) {
+      if (node.kind === "user" && rewindTarget(nodes ?? [], node.id) !== null) ids.add(node.id);
+    }
+    return ids;
+  }, [nodes]);
+  // A stable callback, so that a row memoised on its item is not re-rendered
+  // by every token of the turn in flight.
+  const onRewind = useCallback(
+    (entryId: string, text: string) => {
+      rewind.mutate({ entryId, text });
+    },
+    [rewind],
+  );
 
   const scroller = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
@@ -84,6 +115,11 @@ export function Transcript({ empty }: TranscriptProps) {
                 key={item.key}
                 item={item}
                 openTool={item.kind === "tool" && questionCalls.has(item.callId)}
+                onRewind={
+                  idle && item.kind === "user" && rewindable.has(item.entryId ?? "")
+                    ? onRewind
+                    : undefined
+                }
               />
             ))}
             <CutOff reason={stopReason} />
@@ -99,6 +135,11 @@ export function Transcript({ empty }: TranscriptProps) {
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
+      {rewind.isError && (
+        <p role="alert" className="text-destructive border-t px-4 py-2 text-xs">
+          {failureText("rewind the conversation", rewind.error)}
+        </p>
+      )}
       {!following && rendered.length > 0 && (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
           <Button
@@ -162,15 +203,63 @@ function useAnnouncement(rendered: TranscriptItem[]): string {
   return announcement;
 }
 
-const Item = memo(function Item({ item, openTool }: { item: TranscriptItem; openTool: boolean }) {
+/**
+ * Assistant is one block of model prose. It reads the speed preference
+ * itself, so that turning the line on or off re-renders the answers and
+ * nothing else.
+ */
+function Assistant({ item }: { item: AssistantItem }) {
+  const speed = useTranscriptPreferences((s) => s.speed);
+  return (
+    <article className="min-w-0">
+      <h3 className="sr-only">Assistant</h3>
+      <Markdown>{item.text}</Markdown>
+      {item.streaming && (
+        <span
+          aria-hidden
+          className="bg-foreground ml-0.5 inline-block h-4 w-1.5 animate-pulse align-text-bottom"
+        />
+      )}
+      {speed && <Speed timings={item.timings} />}
+    </article>
+  );
+}
+
+const Item = memo(function Item({
+  item,
+  openTool,
+  onRewind,
+}: {
+  item: TranscriptItem;
+  openTool: boolean;
+  /** onRewind is absent when this row cannot be rewound to. */
+  onRewind?: (entryId: string, text: string) => void;
+}) {
   switch (item.kind) {
     case "user":
       // A message the user wrote is the one thing on screen that did not come
       // out of the model. It is a bubble against the right edge, narrower than
       // the model's full-width prose, so a glance down the transcript reads as
       // a conversation with two sides rather than one column of blocks.
+      //
+      // The rewind button sits outside the bubble, in the gutter the bubble's
+      // width leaves free, so it never reflows the message it belongs to.
       return (
-        <div className="flex justify-end">
+        <div className="group flex items-start justify-end gap-1">
+          {onRewind !== undefined && item.entryId !== undefined && (
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              className="mt-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+              aria-label="Rewind the conversation to this message and edit it"
+              title="Rewind to this message and edit it"
+              onClick={() => {
+                onRewind(item.entryId ?? "", item.text);
+              }}
+            >
+              <Undo2 aria-hidden className="size-3.5" />
+            </Button>
+          )}
           <article className="bg-primary/10 border-primary/20 max-w-[80%] min-w-0 rounded-md border px-3.5 py-2">
             <h3 className="sr-only">You</h3>
             <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
@@ -182,18 +271,7 @@ const Item = memo(function Item({ item, openTool }: { item: TranscriptItem; open
     case "reasoning":
       return <Reasoning item={item} />;
     case "assistant":
-      return (
-        <article className="min-w-0">
-          <h3 className="sr-only">Assistant</h3>
-          <Markdown>{item.text}</Markdown>
-          {item.streaming && (
-            <span
-              aria-hidden
-              className="bg-foreground ml-0.5 inline-block h-4 w-1.5 animate-pulse align-text-bottom"
-            />
-          )}
-        </article>
-      );
+      return <Assistant item={item} />;
     case "tool":
       return <ToolCard call={item} open={openTool} />;
     case "error":

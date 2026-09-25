@@ -31,6 +31,10 @@ type askUserArgs struct {
 // Name identifies the tool to the model.
 func (askUserTool) Name() string { return "ask_user" }
 
+// Standalone marks ask_user as a tool a chat may offer: it waits on the user,
+// not on a workspace.
+func (askUserTool) Standalone() {}
+
 // Description tells the model what the tool does.
 func (askUserTool) Description() string {
 	return "Ask the user a question and wait for the answer. " +
@@ -114,4 +118,4 @@ func (t askUserTool) Call(ctx context.Context, c tool.CallContext, raw json.RawM
 	}
 }
 
-var _ tool.Tool = askUserTool{}
+var _ tool.Standalone = askUserTool{}

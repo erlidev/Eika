@@ -18,6 +18,7 @@ import { readPersistedString, writePersisted } from "@/lib/persisted";
 export type ReasoningDisplay = "compact" | "expanded";
 
 const reasoningKey = "eika.transcript.reasoning";
+const speedKey = "eika.transcript.speed";
 
 const displays: readonly ReasoningDisplay[] = ["compact", "expanded"];
 
@@ -27,9 +28,21 @@ function storedReasoning(): ReasoningDisplay {
   return displays.includes(value as ReasoningDisplay) ? (value as ReasoningDisplay) : "compact";
 }
 
+/** storedSpeed reads whether the transcript states generation speeds. */
+function storedSpeed(): boolean {
+  return readPersistedString(speedKey, "off") === "on";
+}
+
 type TranscriptPreferences = {
   reasoning: ReasoningDisplay;
   setReasoning: (display: ReasoningDisplay) => void;
+  /**
+   * speed is whether each answer says how fast it was produced. It is off by
+   * default: a rate is of interest while choosing an endpoint or a quant, and
+   * a line under every answer the rest of the time.
+   */
+  speed: boolean;
+  setSpeed: (on: boolean) => void;
 };
 
 /** useTranscriptPreferences is how the session view is rendered here. */
@@ -38,5 +51,10 @@ export const useTranscriptPreferences = create<TranscriptPreferences>((set) => (
   setReasoning: (reasoning) => {
     writePersisted(reasoningKey, reasoning);
     set({ reasoning });
+  },
+  speed: storedSpeed(),
+  setSpeed: (speed) => {
+    writePersisted(speedKey, speed ? "on" : "off");
+    set({ speed });
   },
 }));

@@ -361,23 +361,32 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 		}
 	}()
 
-	ex, err := s.executorFor(ctx, sess.WorkspaceID)
-	if err != nil {
-		return store.Run{}, nil, err
+	// A chat has no workspace: its run gets no executor, records no commit,
+	// and the agent tells the model it has neither files nor commands.
+	var (
+		ex     executor.Executor
+		commit session.CommitFunc
+	)
+	if !sess.Chat() {
+		if ex, err = s.executorFor(ctx, sess.WorkspaceID); err != nil {
+			return store.Run{}, nil, err
+		}
+		commit = workspaceCommit(ex)
 	}
 	m, p, err := s.runModel(ctx, model)
 	if err != nil {
 		return store.Run{}, nil, err
 	}
-	sessionStore := session.NewStore(s.tree, workspaceCommit(ex))
+	sessionStore := session.NewStore(s.tree, commit)
 	loaded, err := sessionStore.Load(ctx, sessionID)
 	if err != nil {
 		return store.Run{}, nil, err
 	}
 	// The tools every run shares hold what they reach beyond the workspace:
-	// the spawner, the search engine, and the page reader. A run adds only
-	// its own executor, which is also where a web_fetch filter runs.
-	ag := agent.New(p, s.deps.Tools, agent.Options{
+	// the spawner, the search engine, and the page reader. A run narrows
+	// them to what its session may offer and adds only its own executor,
+	// which is also where a web_fetch filter runs.
+	ag := agent.New(p, s.sessionTools(sess), agent.Options{
 		Model:            m.Model,
 		MaxTokens:        m.MaxOutput,
 		ContextWindow:    m.ContextWindow,
@@ -556,7 +565,7 @@ func (r *runs) stop(ctx context.Context, sessionID string) {
 // deleting that workspace has to do first: the runs reach it through an
 // executor that is about to go away.
 func (r *runs) stopSessionsOf(ctx context.Context, st *store.Store, workspaceID string) {
-	sessions, err := st.Sessions(ctx, workspaceID)
+	sessions, err := st.Sessions(ctx, workspaceID, false)
 	if err != nil {
 		r.server.log.Error("list sessions of workspace", "workspace_id", workspaceID, "error", err)
 		return

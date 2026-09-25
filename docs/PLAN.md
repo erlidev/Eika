@@ -25,7 +25,8 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Auth | Single user. A password chosen in the guided setup signs a browser in and returns a session token; an optional `EIKA_AUTH_TOKEN` is a fixed API token for scripts |
 | Reasoning is streamed, not just stored | A provider emits reasoning deltas whatever `preserve_thinking` says, and the agent republishes them as `reasoning.delta`. Showing the model think is the client's business; replaying the reasoning to the endpoint is `preserve_thinking`'s, and tying the two would mean a user who wants to watch a model reason has to send its reasoning back to an API that rejects it. The session view shows each block collapsed to one line by default, expanded when the reader asks; the choice is a browser preference, not a harness setting, because two people reading one session can want different things |
 | Reasoning efforts belong to the model row | Compatible endpoints disagree on the vocabulary — OpenAI takes minimal through high, others take none, xhigh, max, or a word of their own — so `models.reasoning_efforts` holds the words a model offers and `provider.ValidReasoningEffort` checks only the shape (at most 32 letters, digits, hyphens, underscores). The session's status bar cycles through the list, which writes the model's `reasoning_effort` and so applies wherever that model next runs |
-| Context and decode rate are measured, never estimated | `turn.progress` carries the usage an endpoint reported, the configured context window of the model that reported it, and the time since a response's first token; `turn.end` repeats them for the whole turn. A client needs two comparable reports from one attempt and divides their differences. One report is not a rate, and a retry starts a new baseline. Counting characters on screen, or timing deltas, would give a number that looks precise and is not, so an endpoint that never reports usage shows no rate at all. `context` is the last model call's own usage, not the turn's sum: one conversation fills the window, not every prompt in the turn added together. The final context measurement is stored with each assistant entry so replay restores the view after a reload |
+| Context and generation speed are measured, never estimated | `turn.progress` carries the usage an endpoint reported, the configured context window of the model that reported it, and the time since a response's first token; `turn.end` repeats them for the whole turn. Counting characters on screen would give a number that looks precise and is not, so an endpoint that never reports usage shows nothing. `context` is the last model call's own usage, not the turn's sum: one conversation fills the window, not every prompt in the turn added together. The final context measurement is stored with each assistant entry so replay restores the view after a reload |
+| Generation speed is two rates from the endpoint's own clock | `turn.progress` and `turn.end` carry an optional `timings` with a token count and a duration for each of the two phases, prompt processing and generation, which run at speeds orders of magnitude apart and are never summed. The pair is carried rather than a rate, so the client divides rather than trusting somebody else's rounding. Providers parse whatever shape their endpoint uses — llama.cpp's `timings`, vLLM's `metrics`, NIM's and LM Studio's `stats`, TabbyAPI's usage rates, Groq's `x_groq`, Ollama's nanosecond durations — into one `provider.Timings`; for an endpoint that reports nothing the harness times the generation phase from the response's first streamed token, excluding that token from the count, and marks the measurement `harness`. The prompt phase is never harness-timed: from outside, prefill cannot be told apart from queueing. Per model call, not per turn, like `context`, and stored with each assistant entry. The transcript states it under the answer it belongs to, off unless the reader turns it on |
 | Compaction | Deferred; the session model must support it later |
 | Context-window enforcement | Before each model call, the agent compares a conservative JSON byte/token upper bound, including requested output, with the model's configured window. It fails before the provider call when the request cannot fit; compaction remains deferred |
 | Skills / templates | Deferred; AGENTS.md is in scope |
@@ -117,10 +118,18 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Local model servers | The harness container maps `host.docker.internal` to the host gateway, so Ollama or LM Studio on the Docker host is reachable on Linux as on Docker Desktop. A connection failure to a loopback base URL says so |
 | Destructive actions confirm in a dialog | `components/ConfirmDialog` wraps shadcn's alert dialog. The browser's `confirm` cannot be styled, cannot say what survives a deletion, and cannot be reached by a test |
 | Terminal is not an executor call | The harness relays a browser WebSocket to eikad `/pty` through `Workspaces.Terminal` (`Host.Terminal`, `sandbox.Client.Terminal`), never through `executor.Executor`, so a tool can run commands but can never hold a PTY. Frames pass through unchanged; the token may ride in `?token=` on this path, as on the event stream |
+| Only a resumable entry can be branched from | A head or a fork may be placed only where the path down to it leaves no tool call unanswered. A model that asked for three calls needs all three answered, so an assistant entry with calls still out, or a tool result that is not the last of its set, is a conversation every endpoint rejects. `session.PathResumable` is the one rule; the outline carries `resumable` per node so the tree greys those rows, and both routes answer `400` rather than creating a session that fails on its next run. The check runs before a fork's workspace is cloned, so a refusal leaves nothing behind |
+| Moving the head rebuilds the transcript | A replay only ever adds entries, so after the head moves back the abandoned branch would stay on screen and the next turn would read as continuing it. `useSetSessionHead` discards the transcript and asks for the path again, which is why the composer's text lives in the session store rather than in the composer: rewinding puts the message back in the box, and the two are not each other's parents |
+| Rewind is in the transcript, forking in the tree | A message the user sent carries a rewind that moves the head to the entry before it and puts its text back in the composer, which is how a question is edited and asked again. Copying a path into a session of its own stays in the tree panel, where the whole shape is visible. Nothing is deleted either way: the turns that were left behind are a branch in the tree |
+| A session's kind is a column | `sessions.kind` is `user`, `fork`, or `agent`, written where the session is created. It is what the session is, not what another row says about it, so a `subagents` row that is gone must not turn a child agent's session back into a fork, and the sidebar needs no join to draw one |
+| Forks and child agents nest under their parent | Both are sessions in their own right and both hang off the session they came from, so the sidebar draws them there as nested lists rather than flat rows with an indent. A fork with a workspace and a subagent run somewhere else, so `GET /api/sessions?descendants=true` reaches them with one recursive query. A workspace that holds sessions and none of the user's is left out of the project's workspace list: it is reached through the session that owns it, and one thing listed twice reads as two things |
 | Workspace edits reuse `workspace.state` | A file saved, a commit, or a push through the API publishes `workspace.state` with the unchanged state instead of a new event type: the payload is the same, and a client refreshes files and changes on either |
-| No decode rate is shown | A Chat Completions endpoint reports its token counts when a response ends, never while one streams, so there is nothing to divide while the model writes. Counting stream deltas instead would be a guess wearing a measurement's clothes — one delta is one token on some endpoints and not on others — so the UI shows what was measured (context, turn cost, generation time) and no tok/s at all |
 | A cut-off response is kept, not discarded | A `length` or `content_filter` stop means the endpoint ended the response early. What it produced is stored and the turn ends on it, rather than the run failing and rolling back: the user watched that text stream, and a turn rolled back takes the user's own message with it, so the next call shows the model a history in which it never answered and it apologises for a turn it did take. The response's tool calls are dropped — one cut off partway through its arguments must not run, and one left without a result makes the next request malformed — and `turn.end` carries the stop reason so the UI says the answer was cut off |
 | Upstream push is from the hub | "Push upstream" pushes the workspace to its hub branch, then the hub pushes that branch to the project's remote with the harness's sealed credentials, so no remote credential enters a sandbox. A pull request is a compare link the UI builds from `remote_url`; there is no forge API |
+| A chat is a session with no workspace | `sessions.workspace_id` is nullable, and a session without one is a chat. It is the same session tree, run manager, transcript, and event protocol as any other session, so a chat needs no second loop, store, or view; what it lacks is everything that reaches a sandbox, and its system prompt says so. A chat is created on purpose (`chat: true`), never by leaving a workspace out, and a fork of a chat is a chat. A workspace's sessions cascade with it, so deleting a workspace never turns them into chats |
+| A tool says it runs without a workspace | `tool.Standalone` is an optional marker interface, and `tool.NeedsWorkspace` is true for every tool that does not implement it, so a new tool stays out of chats until its author says it belongs there. `ask_user`, `web_search`, and `web_fetch` are standalone. web_fetch refuses a filter in a chat, because the model's JavaScript runs only in a sandbox. The agent refuses a workspace tool when it has no executor, and a chat's run is built from a registry that does not hold one, so the model is never offered one |
+| A session's tools are a column | `sessions.tools` is NULL for every tool the session can run, or the names the user chose. A run filters the shared registry by it, so the choice is enforced where the model's tool list is built rather than in the UI, and the API reports the effective list so the client never re-derives the rule. Only a chat offers the choice in the UI; the column and `PUT /api/sessions/{id}/tools` apply to any session |
+| Chats are apart in the UI | The sidebar lists chats in a section of their own below the projects, a chat's header says it is a chat with no workspace where a workspace session's names its workspace, and a chat's context pane has a Tools panel in place of Files, Terminal, and Changes. The transcript, composer, status bar, and tree are the session view as it is, so a chat reads as the same tool |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -142,6 +151,9 @@ Workspace      A sandbox container + volume holding a clone of a Project on a
                creating -> running -> stopped -> archived.
 Session        A tree of entries (user, assistant, tool call, tool result,
                system events) inside one workspace. Has a head pointer.
+Chat           A session with no workspace. Its runs get only the tools that
+               need none (web search, fetch, questions), narrowed to the ones
+               the user turned on.
 Agent run      One execution of the agent loop on a session from its head.
 Subagent       A child agent run in its own Workspace (cloned from the parent's
                workspace at its current commit, on a child branch), with its
@@ -175,6 +187,12 @@ enables:
   the commit recorded for that entry. This gives a true "what if" branch where
   the filesystem also rewinds. Each assistant turn records the workspace's
   HEAD commit so this is possible.
+- **Rewind a message**: a message the user sent can be taken back, which moves
+  the head to the entry before it and puts its text back in the composer. The
+  turns that followed stay in the tree on a branch of their own.
+- **Only where a run can continue**: a head and a fork may be placed only at an
+  entry whose path leaves no tool call unanswered, so no branch is created
+  that the agent loop cannot run from.
 
 ### Working with the user (ergonomics)
 
@@ -397,7 +415,8 @@ parallel.
 - [x] Phase 3: Persistence and sessions
 - [x] Phase 4: Server and event stream
 - [x] Phase 5: Web UI core
-- [x] Phase 6: Subagents (backend; the agent tree panel is UI work)
+- [x] Phase 6: Subagents (child agents are reached in the sidebar, nested
+      under the session whose run spawned them)
 - [x] UI configuration: providers, models, sign-in, and the guided setup
 - [x] Phase 7: Search
 - [x] Phase 8: Terminal, editor, diff
@@ -405,4 +424,10 @@ parallel.
       reasoning efforts, the measured context and decode meter, and a pass
       over the shell's legibility (prose typography, click affordances,
       scrollbars, divider hit targets, a fixed-height settings dialog)
+- [x] Session branching: resumable-only fork and head points, rewind from a
+      user message in the transcript, and forks and child agents nested under
+      the session they came from
+- [x] Chat mode: sessions with no workspace, the standalone tools they may
+      run, a per-session tool choice, and a chat section and Tools panel in
+      the UI
 - [ ] Phase 9: Hardening and docs

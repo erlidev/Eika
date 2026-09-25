@@ -6,6 +6,7 @@ import {
   formatAgo,
   formatDuration,
   formatBytes,
+  formatRate,
   formatTokens,
   shortId,
 } from "@/lib/format";
@@ -30,6 +31,21 @@ describe("formatTokens", () => {
     expect(formatTokens(4200)).toBe("4.2k");
     expect(formatTokens(42_000)).toBe("42k");
     expect(formatTokens(4_200_000)).toBe("4.2M");
+  });
+});
+
+describe("formatRate", () => {
+  it("divides the pair into tokens per second", () => {
+    expect(formatRate(256, 3200)).toBe("80.0 tok/s");
+    expect(formatRate(1200, 300)).toBe("4.0k tok/s");
+    expect(formatRate(512, 2000)).toBe("256 tok/s");
+  });
+
+  it("says nothing about a measurement that cannot make a rate", () => {
+    expect(formatRate(undefined, 3200)).toBe("");
+    expect(formatRate(256, undefined)).toBe("");
+    expect(formatRate(0, 3200)).toBe("");
+    expect(formatRate(256, 0)).toBe("");
   });
 });
 
