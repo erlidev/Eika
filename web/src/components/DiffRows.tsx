@@ -1,10 +1,9 @@
 /**
  * The rows of a unified diff: a line-number gutter, the +/- mark, and the
- * text, tinted by kind. The edit tool's card and the Changes panel both draw
- * diffs with it, so a diff reads the same wherever it appears.
+ * text, tinted by kind, as the Changes panel draws a workspace diff.
  */
 
-import type { DiffLine } from "@/lib/diff";
+import type { DiffLine } from "@/lib/unifiedDiff";
 import { cn } from "@/lib/utils";
 
 export type DiffRowsProps = {

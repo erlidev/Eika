@@ -133,6 +133,7 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | A tool says it runs without a workspace | `tool.Standalone` is an optional marker interface, and `tool.NeedsWorkspace` is true for every tool that does not implement it, so a new tool stays out of chats until its author says it belongs there. `ask_user`, `web_search`, and `web_fetch` are standalone. web_fetch refuses a filter in a chat, because the model's JavaScript runs only in a sandbox. The agent refuses a workspace tool when it has no executor, and a chat's run is built from a registry that does not hold one, so the model is never offered one |
 | A session's tools are a column | `sessions.tools` is NULL for every tool the session can run, or the names the user chose. A run filters the shared registry by it, so the choice is enforced where the model's tool list is built rather than in the UI, and the API reports the effective list so the client never re-derives the rule. Only a chat offers the choice in the UI; the column and `PUT /api/sessions/{id}/tools` apply to any session |
 | Chats are apart in the UI | The sidebar lists chats in a section of their own below the projects, a chat's header says it is a chat with no workspace where a workspace session's names its workspace, and a chat's context pane has a Tools panel in place of Files, Terminal, and Changes. The transcript, composer, status bar, and tree are the session view as it is, so a chat reads as the same tool |
+| Bash is the file tool | There are no `read`, `write`, `edit`, `grep`, `find`, or `ls` tools: the model explores, reads, and edits files through `bash` (rg, cat, sed, heredocs, short scripts), whose description says how in a few lines. Models chain several steps into one shell call, which saves turns, and one tool is less to describe than seven. The web UI has no renderers for the removed tools; their calls in older sessions fall back to the JSON renderer |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -332,7 +333,8 @@ parallel.
   tool calls, usage). Model registry from config.
 - `tool`: interface, registry, built-ins `read`, `write`, `edit`, `bash`,
   `grep`, `find`, `ls` with Pi's semantics (offset/limit reads, old/new
-  string edits, output truncation).
+  string edits, output truncation). All but `bash` were later folded into
+  it; see Decisions.
 - `executor/local` for tests only.
 - `agent`: loop with streaming, tool dispatch, steering and follow-up queues,
   abort, error recovery. In-memory session for now; a `Store` interface that
@@ -440,4 +442,7 @@ parallel.
       the UI
 - [x] Thinking off: the effort `none` and a per-model thinking switch that
       names the request field carrying it
+- [x] Bash as the file tool: `read`, `write`, `edit`, `grep`, `find`, and
+      `ls` removed with their UI renderers, and the `bash` description says
+      how to explore, read, and change files
 - [ ] Phase 9: Hardening and docs

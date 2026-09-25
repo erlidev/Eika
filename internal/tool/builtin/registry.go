@@ -32,13 +32,7 @@ func Registry(d Deps) (*tool.Registry, error) {
 		listAgentsTool{agents: d.Agents},
 		webSearchTool{search: d.Search},
 		webFetchTool{pages: d.Pages},
-		readTool{},
-		writeTool{},
-		editTool{},
 		bashTool{},
-		grepTool{},
-		findTool{},
-		lsTool{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("build built-in tool registry: %w", err)

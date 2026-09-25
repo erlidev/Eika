@@ -23,6 +23,19 @@ func TestBashRunsCommand(t *testing.T) {
 	}
 }
 
+// With no file tools, bash is how a model reads, writes, and edits files.
+func TestBashReadsWritesAndEditsFiles(t *testing.T) {
+	w := newWorkspace(t)
+	res := w.call("bash", map[string]any{"command": "mkdir -p src && cat > src/a.txt <<'EOF'\n" +
+		"one $HOME\ntwo\nEOF\nsed -i 's/two/three/' src/a.txt && cat src/a.txt"})
+	if res.IsError {
+		t.Fatalf("bash failed: %s", res.Content)
+	}
+	if res.Content != "one $HOME\nthree" {
+		t.Errorf("content = %q, want the edited file", res.Content)
+	}
+}
+
 func TestBashCombinesStreams(t *testing.T) {
 	w := newWorkspace(t)
 	res := w.call("bash", map[string]any{"command": "echo out; echo err 1>&2"})

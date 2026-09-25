@@ -94,10 +94,10 @@ The pieces:
   run identifiers. A tool that also implements `tool.Standalone` runs without
   a workspace, with a nil executor; every other tool needs one, and
   `Registry.Filter` narrows the shared registry to what one run may offer.
-  `tool/builtin` implements `read`, `write`, `edit`, `bash`,
-  `grep`, `find`, and `ls` with Pi's semantics, and keeps every output bound in
-  `limits.go`. `ask_user` is the one tool that blocks on a human rather than on
-  the workspace: it registers a question with the `Questions` broker, emits
+  `tool/builtin` implements `bash` and keeps every output bound in
+  `limits.go`. There are no file or search tools: the model explores, reads,
+  and edits files through `bash`. `ask_user` is the one tool that blocks on a
+  human rather than on the workspace: it registers a question with the `Questions` broker, emits
   `question.asked`, and waits for the answer the API delivers.
 - **executor** is the only way a tool reaches files or processes.
   `executor.Resolve` rejects any path that leaves the workspace root; the local
@@ -999,9 +999,7 @@ are collapsed rows that open on a click. Reasoning arrives as its own
 
 A tool call is a collapsible card. `features/session/renderers/renderers.tsx`
 maps a tool name to a renderer: `bash` shows the command, its streamed output,
-and its exit code; `edit` shows a unified diff computed by `lib/diff.ts`;
-`read`, `write`, `grep`, `find`, and `ls` show their arguments and their
-result; `ask_user` renders the question form inline and posts the answer;
+and its exit code; `ask_user` renders the question form inline and posts the answer;
 `web_search` lists its results as links (web URLs only) from the tool's
 details; `web_fetch` shows the page, how it was narrowed, and its content. A
 tool with no renderer falls back to formatted JSON, so a new tool is useful

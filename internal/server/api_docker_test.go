@@ -755,8 +755,8 @@ func TestHeadAndForkRefuseAnUnansweredTurn(t *testing.T) {
 
 	a.script(
 		providertest.Calls("looking",
-			provider.ToolCall{ID: "call_1", Name: "ls", Arguments: provider.ToolArguments(`{"path":"."}`)},
-			provider.ToolCall{ID: "call_2", Name: "ls", Arguments: provider.ToolArguments(`{"path":"."}`)},
+			provider.ToolCall{ID: "call_1", Name: "bash", Arguments: provider.ToolArguments(`{"command":"ls"}`)},
+			provider.ToolCall{ID: "call_2", Name: "bash", Arguments: provider.ToolArguments(`{"command":"ls"}`)},
 		),
 		providertest.Text("both read"),
 	)

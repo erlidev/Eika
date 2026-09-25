@@ -9,16 +9,6 @@ import (
 // Every bound the built-in tools apply lives here, so that one file answers
 // "how much can a tool return".
 const (
-	// maxFileBytes is the most a single read returns.
-	maxFileBytes = 256 * 1024
-	// maxLineRunes is the longest line a read returns before eliding the rest.
-	maxLineRunes = 2000
-	// defaultReadLines is how many lines a read returns without a limit.
-	defaultReadLines = 2000
-	// binarySniffBytes is how much of a file is checked for NUL bytes before
-	// the read refuses it as binary.
-	binarySniffBytes = 8 * 1024
-
 	// maxOutputBytes is the most any command-running tool returns.
 	maxOutputBytes = 32 * 1024
 	// outputHeadBytes is how much of the start of a long output survives
@@ -31,13 +21,6 @@ const (
 	defaultBashTimeout = 2 * time.Minute
 	// maxBashTimeout bounds a command that asks for too much.
 	maxBashTimeout = 10 * time.Minute
-
-	// defaultMatchLimit is how many grep matches a call returns by default.
-	defaultMatchLimit = 100
-	// defaultFindLimit is how many paths a find returns by default.
-	defaultFindLimit = 200
-	// defaultListLimit is how many entries an ls returns by default.
-	defaultListLimit = 500
 )
 
 // output captures a command's combined output, keeping the start and the end

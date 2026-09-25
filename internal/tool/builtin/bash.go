@@ -23,10 +23,18 @@ type bashArgs struct {
 // Name identifies the tool to the model.
 func (bashTool) Name() string { return "bash" }
 
-// Description tells the model what the tool does.
+// Description tells the model what the tool does. There are no separate file
+// tools: bash is how the model reads, writes, and edits files, so the
+// description says how to do that well and leaves the rest to the model.
 func (bashTool) Description() string {
-	return "Run a shell command in the workspace root. Standard output and standard error are " +
-		"combined and returned together with the exit code. Long output is truncated in the middle."
+	return `Run a shell command with sh -c in the workspace root. Standard output and standard error are combined and returned with the exit code; long output is truncated in the middle.
+
+This is also how you explore, read, and edit files:
+- Search with rg (or grep -rn), find files with rg --files or find, and list directories with ls.
+- Read with cat, sed -n, head, or tail; take the range you need rather than a whole large file.
+- Create or rewrite a file with a quoted heredoc (cat > path <<'EOF').
+- Make small edits with sed -i, and larger or multi-line ones with a short script. Read the text you are replacing first, and check the file after a change that matters.
+- Chain related steps with && and pipes in one call, instead of one call per step.`
 }
 
 // Schema describes the parameters of a bash call.

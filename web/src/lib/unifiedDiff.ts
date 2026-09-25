@@ -1,11 +1,30 @@
 /**
  * Reads the text `git diff` and `git status --porcelain` print into the
- * shapes the UI draws: one FileDiff per file, its hunks in the DiffHunk and
- * DiffLine shapes of `diff.ts`, and one StatusEntry per status line. The
+ * shapes the UI draws: one FileDiff per file, its hunks as DiffHunks of
+ * DiffLines, and one StatusEntry per status line. The
  * workspace diff route returns both texts as they are (docs/api/http.md).
  */
 
-import type { DiffHunk, DiffLine } from "@/lib/diff";
+/** DiffLine is one rendered row of a unified diff. */
+export type DiffLine = {
+  kind: "context" | "add" | "remove";
+  text: string;
+  /** oldLine is the 1-based line number in the old text, absent for an addition. */
+  oldLine?: number;
+  /** newLine is the 1-based line number in the new text, absent for a removal. */
+  newLine?: number;
+  /** noNewline marks the last line of a text that does not end in a newline. */
+  noNewline?: boolean;
+};
+
+/** DiffHunk is a run of changed lines with the context around it. */
+export type DiffHunk = {
+  oldStart: number;
+  newStart: number;
+  /** header is what git prints after a hunk's ranges, usually the enclosing function. */
+  header?: string;
+  lines: DiffLine[];
+};
 
 /** FileChange is what happened to a file. */
 export type FileChange = "modified" | "added" | "deleted" | "renamed" | "copied";

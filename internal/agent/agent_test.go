@@ -291,8 +291,8 @@ func TestSteeringAcceptedDuringFinalResponseStartsANewTurn(t *testing.T) {
 
 func TestRunExecutesToolCalls(t *testing.T) {
 	f := newFixture(t, []providertest.Step{
-		providertest.Calls("writing", providertest.Call("c1", "write", map[string]any{"path": "a.txt", "content": "hello"})),
-		providertest.Calls("", providertest.Call("c2", "read", map[string]any{"path": "a.txt"})),
+		providertest.Calls("writing", providertest.Call("c1", "bash", map[string]any{"command": "printf hello > a.txt && wc -c a.txt"})),
+		providertest.Calls("", providertest.Call("c2", "bash", map[string]any{"command": "cat a.txt"})),
 		providertest.Text("the file says hello"),
 	})
 	if err := f.agent.Run(context.Background(), f.session, "write and read a.txt"); err != nil {
@@ -312,12 +312,12 @@ func TestRunExecutesToolCalls(t *testing.T) {
 
 	var call event.ToolCall
 	f.events.payloadOf(t, event.TypeToolCall, &call)
-	if call.Name != "write" || call.CallID != "c1" {
+	if call.Name != "bash" || call.CallID != "c1" {
 		t.Errorf("tool.call payload = %+v", call)
 	}
 	var result event.ToolResult
 	f.events.payloadOf(t, event.TypeToolResult, &result)
-	if result.IsError || !strings.Contains(result.Content, "wrote 5 bytes") {
+	if result.IsError || !strings.Contains(result.Content, "5 a.txt") {
 		t.Errorf("tool.result payload = %+v", result)
 	}
 	// The second model call must see the tool result.
@@ -332,42 +332,22 @@ func TestRunExecutesToolCalls(t *testing.T) {
 
 func TestRunSurfacesToolErrorsToTheModel(t *testing.T) {
 	f := newFixture(t, []providertest.Step{
-		providertest.Calls("", providertest.Call("c1", "edit", map[string]any{
-			"path": "missing.txt", "old_string": "a", "new_string": "b",
-		})),
+		providertest.Calls("", providertest.Call("c1", "bash", map[string]any{"command": "cat missing.txt"})),
 		providertest.Text("that file does not exist"),
 	})
-	if err := f.agent.Run(context.Background(), f.session, "edit missing.txt"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, "read missing.txt"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
 	msgs := f.session.Conversation.Messages()
 	toolMsg := msgs[2]
-	if !toolMsg.IsError || !strings.Contains(toolMsg.Content, "edit missing.txt") {
+	if !toolMsg.IsError || !strings.Contains(toolMsg.Content, "missing.txt") {
 		t.Errorf("tool message = %+v, want a failed result", toolMsg)
 	}
 	var result event.ToolResult
 	f.events.payloadOf(t, event.TypeToolResult, &result)
 	if !result.IsError {
 		t.Errorf("tool.result payload = %+v, want is_error", result)
-	}
-}
-
-func TestRunReportsAmbiguousEdit(t *testing.T) {
-	f := newFixture(t, []providertest.Step{
-		providertest.Calls("", providertest.Call("c1", "edit", map[string]any{
-			"path": "a.txt", "old_string": "same", "new_string": "other",
-		})),
-		providertest.Text("I need more context"),
-	})
-	if err := f.exec.WriteFile(context.Background(), "a.txt", []byte("same\nsame\n")); err != nil {
-		t.Fatalf("write fixture: %v", err)
-	}
-	if err := f.agent.Run(context.Background(), f.session, "edit a.txt"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if got := f.session.Conversation.Messages()[2].Content; !strings.Contains(got, "appears 2 times") {
-		t.Errorf("tool message = %q, want the occurrence count", got)
 	}
 }
 
@@ -607,7 +587,7 @@ func TestRunDropsToolCallsFromAResponseTheEndpointCutOff(t *testing.T) {
 			provider.TextDelta("about to write it"),
 			provider.Event{
 				Kind:     provider.KindToolCall,
-				ToolCall: providertest.Call("call-1", "write", map[string]string{"path": "a.txt"}),
+				ToolCall: providertest.Call("call-1", "bash", map[string]string{"command": "touch a.txt"}),
 			},
 			provider.Done("length"),
 		),
@@ -813,8 +793,8 @@ func TestFailedToolCallAnswersEveryCallInTheBatch(t *testing.T) {
 	f := newFixture(t, []providertest.Step{
 		providertest.Calls("",
 			providertest.Call("c1", "boom", map[string]any{}),
-			providertest.Call("c2", "ls", map[string]any{}),
-			providertest.Call("c3", "ls", map[string]any{}),
+			providertest.Call("c2", "bash", map[string]any{"command": "ls"}),
+			providertest.Call("c3", "bash", map[string]any{"command": "ls"}),
 		),
 	}, failingTool{})
 
@@ -849,7 +829,7 @@ func TestAbortAnswersTheToolCallsItSkips(t *testing.T) {
 	f := newFixture(t, []providertest.Step{
 		providertest.Calls("",
 			providertest.Call("c1", "stop", map[string]any{}),
-			providertest.Call("c2", "ls", map[string]any{}),
+			providertest.Call("c2", "bash", map[string]any{"command": "ls"}),
 		),
 	}, stop)
 
@@ -883,7 +863,7 @@ func TestAbortPersistsATerminalResultForEveryToolCall(t *testing.T) {
 	}
 	p := providertest.New(providertest.Calls("",
 		providertest.Call("c1", "stop_and_cancel", map[string]any{}),
-		providertest.Call("c2", "ls", map[string]any{}),
+		providertest.Call("c2", "bash", map[string]any{"command": "ls"}),
 	))
 	store := &checkingStore{}
 	a := agent.New(p, registry, agent.Options{
@@ -1016,8 +996,8 @@ func assertUserMessageCount(t *testing.T, messages []provider.Message, content s
 func TestMalformedToolArgumentsBecomeARecoverableToolResult(t *testing.T) {
 	call := provider.ToolCall{
 		ID:        "c1",
-		Name:      "read",
-		Arguments: provider.ToolArguments(`{"path":`),
+		Name:      "bash",
+		Arguments: provider.ToolArguments(`{"command":`),
 	}
 	p := providertest.New(providertest.Calls("", call), providertest.Text("recovered"))
 	registry, err := builtin.Registry(builtin.Deps{})
@@ -1048,7 +1028,7 @@ func TestMalformedToolArgumentsBecomeARecoverableToolResult(t *testing.T) {
 
 func TestToolsWithoutAWorkspaceFailInsteadOfPanicking(t *testing.T) {
 	f := newFixture(t, []providertest.Step{
-		providertest.Calls("", providertest.Call("c1", "ls", map[string]any{})),
+		providertest.Calls("", providertest.Call("c1", "bash", map[string]any{"command": "ls"})),
 		providertest.Text("no workspace then"),
 	})
 	registry, err := builtin.Registry(builtin.Deps{})

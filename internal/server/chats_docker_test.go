@@ -93,8 +93,8 @@ func TestChatRoutes(t *testing.T) {
 	if len(inWorkspace.Sessions) != 1 || inWorkspace.Sessions[0].ID != work.ID {
 		t.Errorf("workspace sessions = %+v, want the workspace's own", inWorkspace.Sessions)
 	}
-	if len(inWorkspace.Sessions[0].Tools) != 13 {
-		t.Errorf("workspace session tools = %v, want all 13", inWorkspace.Sessions[0].Tools)
+	if len(inWorkspace.Sessions[0].Tools) != 7 {
+		t.Errorf("workspace session tools = %v, want all 7", inWorkspace.Sessions[0].Tools)
 	}
 
 	tools := decodeBody[toolsWire](t, request(t, a.Server, "GET", "/api/tools", nil), 200)
@@ -107,8 +107,8 @@ func TestChatRoutes(t *testing.T) {
 			free = append(free, tl.Name)
 		}
 	}
-	if len(tools.Tools) != 13 || !slices.Equal(free, standaloneTools) {
-		t.Errorf("tools = %+v, want 13 with %v standalone", tools.Tools, standaloneTools)
+	if len(tools.Tools) != 7 || !slices.Equal(free, standaloneTools) {
+		t.Errorf("tools = %+v, want 7 with %v standalone", tools.Tools, standaloneTools)
 	}
 }
 
@@ -159,8 +159,8 @@ func TestSessionToolsAreChosenAndChecked(t *testing.T) {
 
 	// A workspace session may narrow its tools too, to any of them.
 	work := a.session(t)
-	if got := put(work.ID, []string{"read", "bash"}); got == nil || !slices.Equal(got.Tools, []string{"bash", "read"}) {
-		t.Errorf("workspace session tools = %+v, want bash and read", got)
+	if got := put(work.ID, []string{"spawn_agent", "bash"}); got == nil || !slices.Equal(got.Tools, []string{"bash", "spawn_agent"}) {
+		t.Errorf("workspace session tools = %+v, want bash and spawn_agent", got)
 	}
 }
 

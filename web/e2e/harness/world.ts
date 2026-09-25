@@ -210,13 +210,11 @@ function toolCatalog(): Tool[] {
   });
   return [
     tool("ask_user", "Ask the user a question and wait for the answer.", false),
-    tool("bash", "Run a shell command in the workspace."),
-    tool("edit", "Replace one exact string in a file."),
-    tool("find", "Find files whose path matches a glob."),
-    tool("grep", "Search file contents with a regular expression."),
+    tool(
+      "bash",
+      "Run a shell command in the workspace root. This is also how you explore, read, and edit files.",
+    ),
     tool("list_agents", "List the child agents this session spawned."),
-    tool("ls", "List a directory."),
-    tool("read", "Read a text file."),
     tool("spawn_agent", "Start a child agent in a workspace of its own."),
     tool("wait_agents", "Wait for child agents to finish."),
     tool(
@@ -229,7 +227,6 @@ function toolCatalog(): Tool[] {
       "Search the web, Wikipedia, arXiv or GitHub. Returns titles, URLs and snippets.",
       false,
     ),
-    tool("write", "Write a file, replacing what it held."),
   ];
 }
 

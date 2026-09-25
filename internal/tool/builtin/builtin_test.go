@@ -3,12 +3,10 @@ package builtin_test
 import (
 	"context"
 	"encoding/json"
-	"os/exec"
 	"slices"
 	"testing"
 
 	"github.com/erlidev/eika/internal/event"
-	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/local"
 	"github.com/erlidev/eika/internal/tool"
 	"github.com/erlidev/eika/internal/tool/builtin"
@@ -42,16 +40,6 @@ func (w *workspace) write(path, content string) {
 	if err := w.exec.WriteFile(context.Background(), path, []byte(content)); err != nil {
 		w.t.Fatalf("write %s: %v", path, err)
 	}
-}
-
-// read returns a file from the workspace.
-func (w *workspace) read(path string) string {
-	w.t.Helper()
-	data, err := w.exec.ReadFile(context.Background(), path, executor.ReadOpts{})
-	if err != nil {
-		w.t.Fatalf("read %s: %v", path, err)
-	}
-	return string(data)
 }
 
 // call runs one tool with the given arguments.
@@ -91,21 +79,14 @@ func (w *workspace) record(_ context.Context, e event.Event) {
 	w.outputs = append(w.outputs, payload.Text)
 }
 
-// hasBinary reports whether the test host can run a command the fallback paths
-// need.
-func hasBinary(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
-}
-
 func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
 	r, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("Registry: %v", err)
 	}
 	want := []string{
-		"ask_user", "bash", "edit", "find", "grep", "list_agents", "ls", "read",
-		"spawn_agent", "wait_agents", "web_fetch", "web_search", "write",
+		"ask_user", "bash", "list_agents", "spawn_agent", "wait_agents",
+		"web_fetch", "web_search",
 	}
 	got := make([]string, 0, len(want))
 	for _, tl := range r.List() {

@@ -14,4 +14,4 @@
       - paragraph: Search the web, Wikipedia, arXiv or GitHub.
       - switch "web_search" [checked]
   - heading "Need a workspace" [level=3]
-  - paragraph: "Files, commands, and child agents belong to a workspace session: bash, edit, find, grep, list_agents, ls, read, spawn_agent, wait_agents, write."
+  - paragraph: "Files, commands, and child agents belong to a workspace session: bash, list_agents, spawn_agent, wait_agents."

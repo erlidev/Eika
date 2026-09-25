@@ -75,7 +75,7 @@ Register it in `internal/tool/builtin/registry.go`:
 ```go
 func Registry() (*tool.Registry, error) {
 	r, err := tool.NewRegistry(
-		readTool{},
+		bashTool{},
 		// the other built-ins
 		countLinesTool{},
 	)

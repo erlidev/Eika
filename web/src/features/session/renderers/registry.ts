@@ -40,11 +40,6 @@ export function stringArg(call: ToolItem, name: string): string {
   return typeof value === "string" ? value : "";
 }
 
-/** boolArg reads one boolean argument, false when it is absent or not one. */
-export function boolArg(call: ToolItem, name: string): boolean {
-  return args(call)[name] === true;
-}
-
 /** numberArg reads one numeric argument, undefined when it is absent. */
 export function numberArg(call: ToolItem, name: string): number | undefined {
   const value = args(call)[name];

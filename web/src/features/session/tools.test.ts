@@ -13,12 +13,12 @@ describe("chatTools", () => {
   it("offers only the tools that need no workspace", () => {
     const split = chatTools([
       tool("ask_user", false),
-      tool("write", true),
+      tool("ls", true),
       tool("bash", true),
       tool("web_search", false),
     ]);
     expect(split.offered.map((t) => t.name)).toEqual(["ask_user", "web_search"]);
-    expect(split.unavailable).toEqual(["bash", "write"]);
+    expect(split.unavailable).toEqual(["bash", "ls"]);
   });
 });
 

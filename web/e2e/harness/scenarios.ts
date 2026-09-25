@@ -78,16 +78,19 @@ function workbench(): WorldBuilder {
       tool_calls: [
         {
           id: "c2",
-          name: "edit",
+          name: "bash",
           arguments: {
-            path: "internal/webhook/client.go",
-            old_text: "\t\t// retry immediately\n\t\tcontinue",
-            new_text: "\t\ttime.Sleep(backoff(attempt))\n\t\tcontinue",
+            command:
+              "sed -i 's|// retry immediately|time.Sleep(backoff(attempt))|' internal/webhook/client.go && sed -n 50,52p internal/webhook/client.go",
           },
         },
       ],
     },
-    { role: "tool", tool_call_id: "c2", content: "edited internal/webhook/client.go" },
+    {
+      role: "tool",
+      tool_call_id: "c2",
+      content: "\t\ttime.Sleep(backoff(attempt))\n\t\tcontinue\n\t}",
+    },
     {
       role: "assistant",
       content:
@@ -419,7 +422,7 @@ export const scenarios = {
   },
   "agent-web": {
     description:
-      "Like workbench with an abandoned branch in the session tree; the next message plays a reply that uses web_search, web_fetch, read, grep, find, ls, write, and a tool with no renderer of its own. Expand a card by its summary to see its body.",
+      "Like workbench with an abandoned branch in the session tree; the next message plays a reply that uses web_search, web_fetch, bash to read, search, and write files, and a tool with no renderer of its own. Expand a card by its summary to see its body.",
     path: "/sessions/ses-backoff",
     build: () => {
       const b = workbench();
@@ -488,33 +491,22 @@ export const scenarios = {
           },
         },
         {
-          tool: "read",
-          args: { path: "internal/webhook/client.go", offset: 40, limit: 20 },
-          result:
-            "40\tfunc (c *Client) Send(ctx context.Context, e Event) error {\n41\t\tvar err error",
-        },
-        {
-          tool: "grep",
-          args: { pattern: "maxRetries", path: "internal", ignore_case: true },
-          result: "internal/webhook/client.go:12:const maxRetries = 5",
-        },
-        {
-          tool: "find",
-          args: { pattern: "*_test.go", path: "internal/webhook" },
-          result: "internal/webhook/client_test.go\ninternal/webhook/backoff_test.go",
-        },
-        {
-          tool: "ls",
-          args: { path: "internal/webhook" },
-          result: "backoff.go\nclient.go\nclient_test.go",
-        },
-        {
-          tool: "write",
+          tool: "bash",
           args: {
-            path: "internal/webhook/backoff.go",
-            content: "package webhook\n\n// backoff is full jitter, capped at 30s.\n",
+            command: "rg -n -i maxretries internal && sed -n 40,41p internal/webhook/client.go",
           },
-          result: "wrote internal/webhook/backoff.go",
+          result:
+            "internal/webhook/client.go:12:const maxRetries = 5\nfunc (c *Client) Send(ctx context.Context, e Event) error {\n\tvar err error",
+          details: { exit_code: 0 },
+        },
+        {
+          tool: "bash",
+          args: {
+            command:
+              "cat > internal/webhook/backoff.go <<'EOF'\npackage webhook\n\n// backoff is full jitter, capped at 30s.\nEOF\nls internal/webhook",
+          },
+          result: "backoff.go\nclient.go\nclient_test.go",
+          details: { exit_code: 0 },
         },
         {
           tool: "spawn_agent",
