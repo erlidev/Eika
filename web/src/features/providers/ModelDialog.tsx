@@ -3,7 +3,8 @@
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
 
-import type { Model, ReasoningEffort } from "@/api/types";
+import { effortNone } from "@/api/types";
+import type { Model, ReasoningEffort, ThinkingSwitch } from "@/api/types";
 import { ActionError } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,8 +17,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { commonEfforts, effortProblem } from "@/features/providers/efforts";
+import { commonEfforts, effortProblem, thinkingSwitches } from "@/features/providers/efforts";
 import { FieldProblem, NumberField } from "@/features/providers/ModelPicker";
 import { useModels, useUpdateModel } from "@/features/providers/queries";
 import { cn } from "@/lib/utils";
@@ -66,6 +74,7 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
   const [output, setOutput] = useState(model.max_output);
   const [effort, setEffort] = useState<ReasoningEffort>(model.reasoning_effort ?? endpointDefault);
   const [efforts, setEfforts] = useState<ReasoningEffort[]>(model.reasoning_efforts);
+  const [thinkingSwitch, setThinkingSwitch] = useState<ThinkingSwitch>(model.thinking_switch);
   const [preserve, setPreserve] = useState(model.preserve_thinking);
 
   // Each problem belongs to one field and is shown right under it.
@@ -111,6 +120,7 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
               max_output: output,
               reasoning_effort: effort,
               reasoning_efforts: efforts,
+              thinking_switch: thinkingSwitch,
               preserve_thinking: preserve,
             },
           },
@@ -186,6 +196,8 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
         }}
       />
 
+      <ThinkingSwitchField value={thinkingSwitch} onChange={setThinkingSwitch} />
+
       <div className="flex items-start justify-between gap-4 rounded-md border p-3">
         <div className="space-y-0.5">
           <Label htmlFor="model-preserve" className="text-sm">
@@ -256,7 +268,8 @@ function EffortField({
       <Label htmlFor="model-effort">Reasoning efforts</Label>
       <p className="text-muted-foreground text-xs">
         Sent as reasoning_effort. Add the words this endpoint accepts; the session&apos;s status bar
-        cycles through them in this order. Pick the one a new run starts on.
+        cycles through them in this order. Pick the one a new run starts on. “{effortNone}” turns
+        thinking off.
       </p>
       <div className="flex flex-wrap gap-1.5">
         <EffortChip
@@ -314,6 +327,48 @@ function EffortField({
         </Button>
       </div>
       <FieldProblem id="model-effort-problem" message={problem ?? undefined} />
+    </div>
+  );
+}
+
+/**
+ * ThinkingSwitchField is the request field that turns thinking off when the
+ * effort is "none". Endpoints disagree on it and may reject a field they do
+ * not know, so the model sends only the one chosen here.
+ */
+function ThinkingSwitchField({
+  value,
+  onChange,
+}: {
+  value: ThinkingSwitch;
+  onChange: (value: ThinkingSwitch) => void;
+}) {
+  const chosen = thinkingSwitches.find((s) => s.value === value);
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="model-thinking-switch">Turn thinking off with</Label>
+      <Select
+        value={value}
+        aria-describedby="model-thinking-switch-hint"
+        onValueChange={(next) => {
+          const known = thinkingSwitches.find((s) => s.value === next);
+          if (known) onChange(known.value);
+        }}
+      >
+        <SelectTrigger id="model-thinking-switch" className="w-full font-mono">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {thinkingSwitches.map((s) => (
+            <SelectItem key={s.value} value={s.value} className="font-mono">
+              {s.value}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p id="model-thinking-switch-hint" className="text-muted-foreground text-xs">
+        The field the effort “{effortNone}” is sent in. {chosen && `Taken by ${chosen.endpoints}.`}
+      </p>
     </div>
   );
 }

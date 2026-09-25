@@ -1,0 +1,34 @@
+- dialog "Add a provider":
+  - heading "Add a provider" [level=2]
+  - paragraph: Choose where the models come from. You pick the models next.
+  - group "Provider":
+    - text: ""
+    - button "OpenAI GPT and o-series models" [pressed]
+    - button "Anthropic Claude, through its OpenAI-compatible API"
+    - button "Google Gemini Gemini models from Google AI Studio"
+    - button "OpenRouter Hundreds of models behind one key"
+    - button "DeepSeek DeepSeek chat and reasoning models"
+    - button "Groq Open models on fast inference hardware"
+    - button "Mistral Mistral and Codestral models"
+    - button "Ollama Local models on this machine"
+    - button "LM Studio Local models from LM Studio's server"
+    - button "Other vLLM, llama.cpp, LiteLLM, or any compatible API"
+  - text: Name
+  - textbox "Name":
+    - /placeholder: My provider
+    - text: OpenAI 2
+  - text: Base URL
+  - textbox "Base URL":
+    - /placeholder: https://api.example.com/v1
+    - text: https://api.openai.com/v1
+  - text: API key
+  - link "Get a key":
+    - /url: https://platform.openai.com/api-keys
+  - textbox "API key":
+    - /placeholder: sk-…
+  - paragraph: This provider needs an API key.
+  - paragraph: The key is encrypted before it is stored and never shown again.
+  - button "Cancel"
+  - button "Test connection" [disabled]
+  - button "Add and choose models" [disabled]
+  - button "Close"

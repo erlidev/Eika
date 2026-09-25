@@ -1,0 +1,20 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "General"
+    - tab "Search"
+    - tab "Account"
+    - tab "Appearance" [selected]
+  - tabpanel "Appearance":
+    - text: Theme
+    - combobox "Theme": Light
+    - paragraph: Remembered by this browser only.
+    - text: Show the model's thinking in full
+    - paragraph: Reasoning is streamed either way. Off, each block is one line in the transcript that opens on a click; on, every block starts open.
+    - switch "Show the model's thinking in full"
+    - text: Show how fast each answer was produced
+    - paragraph: "A line of tokens per second under every answer: generation always, and prompt processing for an endpoint that measures its own. llama.cpp, vLLM, TabbyAPI, Groq, LM Studio and NIM report both; for the rest the generation rate is timed here, from the first token, and there is no prompt rate to state."
+    - switch "Show how fast each answer was produced"
+  - button "Close"

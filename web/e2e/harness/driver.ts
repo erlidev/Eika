@@ -29,6 +29,11 @@ export type Problems = {
   pageErrors: string[];
   /** unhandledApi are API calls the mock had no route for. */
   unhandledApi: string[];
+  /**
+   * contractBreaks are requests the harness would refuse and answers or
+   * events it would never send, by docs/api/contract.json.
+   */
+  contractBreaks: string[];
 };
 
 /** ShotOptions narrow a screenshot to an element or widen it to the page. */
@@ -64,7 +69,10 @@ const clickableRoles = [
 export class EikaDriver {
   readonly page: Page;
   readonly mock: MockHarness;
-  private readonly problems: Problems = { consoleErrors: [], pageErrors: [], unhandledApi: [] };
+  private readonly problems: Pick<Problems, "consoleErrors" | "pageErrors"> = {
+    consoleErrors: [],
+    pageErrors: [],
+  };
 
   private constructor(page: Page, mock: MockHarness) {
     this.page = page;
@@ -154,8 +162,14 @@ export class EikaDriver {
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       });
     }
-    // Dialog and popover enter animations run for up to 200ms.
-    await this.page.waitForTimeout(250);
+    // Dialog and popover enter and exit animations run for up to 200ms; wait
+    // for those that end, not for a spinner that never does.
+    await this.page.evaluate(async () => {
+      const finite = document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity);
+      await Promise.all(finite.map((a) => a.finished.catch(() => undefined)));
+    });
     await this.mock.idle();
   }
 
@@ -230,8 +244,17 @@ export class EikaDriver {
     ];
   }
 
+  /**
+   * click scrolls the target into view and lets the page settle before it
+   * clicks. Scrolling can raise an overlay such as "Jump to latest"; a click
+   * that met it mid-render would retry at another scroll position, so the
+   * screenshot after it would depend on timing.
+   */
   async click(target: string): Promise<void> {
-    await (await this.find(target)).click();
+    const found = await this.find(target);
+    await found.scrollIntoViewIfNeeded();
+    await this.settle();
+    await found.click();
     await this.settle();
   }
 
@@ -344,6 +367,7 @@ export class EikaDriver {
       consoleErrors: [...this.problems.consoleErrors],
       pageErrors: [...this.problems.pageErrors],
       unhandledApi: [...this.mock.unhandled],
+      contractBreaks: [...this.mock.contractBreaks],
     };
   }
 

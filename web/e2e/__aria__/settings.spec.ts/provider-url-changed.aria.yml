@@ -1,0 +1,22 @@
+- dialog "Edit OpenAI":
+  - heading "Edit OpenAI" [level=2]
+  - paragraph: Changes apply to the next run; a run already going keeps its connection.
+  - text: Name
+  - textbox "Name":
+    - /placeholder: My provider
+    - text: OpenAI
+  - text: Base URL
+  - textbox "Base URL":
+    - /placeholder: https://api.example.com/v1
+    - text: https://api.openai.com/v2
+  - text: API key
+  - link "Get a key":
+    - /url: https://platform.openai.com/api-keys
+  - textbox "API key":
+    - /placeholder: enter the key for the new base URL
+  - status: "The base URL changed, so saving clears the stored key ending in a1b2: a key is only ever sent to the URL it was entered for. Enter the key for the new URL, or leave the field empty if that endpoint needs none."
+  - paragraph: The key is encrypted before it is stored and never shown again.
+  - button "Cancel"
+  - button "Test connection"
+  - button "Save"
+  - button "Close"

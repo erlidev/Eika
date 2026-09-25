@@ -86,7 +86,7 @@ here in the same change, with a sentence of reasoning.
 - Fakes over mocks. `provider/providertest` ships a scripted fake provider;
   `executor/local` runs against a temp dir. Do not add a mocking framework.
 - Tests that need Docker use the build tag `//go:build docker` and skip
-  with a clear message when the socket is missing.
+  with a clear message when the socket is missing. `make check` runs them.
 - A bug fix includes a test that fails without the fix. Name it after the
   behavior, not the bug number.
 - Keep test files next to the code. Test helpers that are shared across
@@ -222,8 +222,14 @@ never hand-edited; its look changes only through the tokens.
 
 - Vitest for `lib/` and store logic. Component tests only for non-trivial
   interaction logic (queues, tree navigation, forms).
-- Visual tests live in `web/e2e/` and run against the mock harness there.
-  A UI change updates or adds a baseline; see `web/e2e/README.md`.
+- End-to-end specs live in `web/e2e/` and run against the mock harness there;
+  see `web/e2e/README.md`. A spec states its point with locator assertions:
+  what is visible, enabled, focused, or described. Add a screenshot baseline
+  only where pixels are the point (a theme, a phone layout, a rich component)
+  and an ARIA snapshot where the point is what a screen says and offers. A
+  baseline that only repeats a spec's assertions is churn, not coverage.
+- A changed Go wire type means `make contract`, then the matching change in
+  `web/src/api` and the mock harness; their tests say where.
 
 ## 4. Documentation
 
@@ -252,7 +258,8 @@ about to change it. Both need the same thing: accurate, current, short.
   characters, blank line, body explaining why when the diff does not.
   Mention dependency additions with a reason.
 - A commit passes `make check`. Do not commit generated files except the
-  lockfiles and shadcn components.
+  lockfiles, shadcn components, and `docs/api/contract.json`, which a test
+  keeps in step with the Go types.
 - Never commit secrets, tokens, or `.env` files. `.env.example` documents
   every compose variable.
 

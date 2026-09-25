@@ -7,6 +7,9 @@ SANDBOX_IMAGE ?= eika-sandbox:latest
 # Go files of its own.
 GOPKGS := ./cmd/... ./internal/...
 GODIRS := cmd internal
+# GOTAGS includes the tests that need Docker: the handler, store, and
+# workspace tests. Without a Docker daemon they skip, saying why.
+GOTAGS := -tags docker
 # DEV holds the state a harness running on the host keeps: the hub and the
 # key that seals credentials. It is ignored by git.
 DEV := .dev
@@ -15,7 +18,7 @@ DEV_COMPOSE := docker compose -f compose.yaml -f compose.dev.yaml
 
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
-	sandbox web-install clean visual visual-update shot playwright-browser
+	sandbox web-install clean visual visual-update shot playwright-browser contract
 
 all: build
 
@@ -33,7 +36,14 @@ build-web: web-install
 test: test-go test-web
 
 test-go:
-	$(GO) test $(GOPKGS)
+	@docker info >/dev/null 2>&1 || \
+		echo "Docker is not reachable: the handler, store, and workspace tests will skip."
+	$(GO) test $(GOTAGS) $(GOPKGS)
+
+## contract: rewrite docs/api/contract.json from the Go wire types, after a
+## change to one. The mock harness in web/e2e/harness is held to it.
+contract:
+	$(GO) test ./internal/server -run TestContractFile -update
 
 test-web: web-install
 	cd $(WEB) && $(NPM) test
@@ -42,8 +52,8 @@ test-web: web-install
 lint: lint-go lint-web
 
 lint-go:
-	$(GO) vet $(GOPKGS)
-	$(GO) tool staticcheck $(GOPKGS)
+	$(GO) vet $(GOTAGS) $(GOPKGS)
+	$(GO) tool staticcheck $(GOTAGS) $(GOPKGS)
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run $(GOPKGS); \
 	else \
@@ -70,19 +80,21 @@ fmt-check:
 	fi
 	cd $(WEB) && $(NPM) run format:check
 
-## check: every check this project has, the visual suite included. Requires `make
-## web-install` once; the first run also downloads Chromium. It takes about
-## five minutes, four of them the visual suite; while iterating, run the
-## targets it lists one at a time.
-check: fmt-check lint test-go typecheck test-web visual
+## check: every check this project has, the visual suite included. The fast
+## checks run side by side, then the visual suite runs once they pass. The
+## first run also downloads Chromium. About a minute in all; while iterating,
+## run the targets it lists one at a time.
+check: web-install
+	$(MAKE) -j --output-sync=target fmt-check lint-go lint-web test-go typecheck test-web
+	$(MAKE) visual
 
 typecheck: web-install
 	cd $(WEB) && $(NPM) run typecheck
 
-## visual: compare every screen with its baseline in web/e2e/__screenshots__,
-## one browser at a time. About four minutes. It installs the Chromium the
-## pinned Playwright expects when it is missing; a bare machine adds its
-## system libraries with PLAYWRIGHT_DEPS=--with-deps.
+## visual: build the frontend and compare every screen with its baseline in
+## web/e2e/__screenshots__, with a browser per two cores. Under a minute. It
+## installs the Chromium the pinned Playwright expects when it is missing; a
+## bare machine adds its system libraries with PLAYWRIGHT_DEPS=--with-deps.
 visual: web-install playwright-browser
 	cd $(WEB) && $(NPM) run visual
 

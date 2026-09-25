@@ -1,0 +1,41 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "General" [selected]
+    - tab "Search"
+    - tab "Account"
+    - tab "Appearance"
+  - tabpanel "General":
+    - text: Default model
+    - combobox "Default model": gpt-5
+    - paragraph: Used when a message names no model. A session can pick another in its status bar.
+    - text: Sandbox image
+    - textbox "Sandbox image":
+      - /placeholder: eika-sandbox:latest
+    - button "Save" [disabled]
+    - paragraph:
+      - text: The image a new workspace runs when it names none. Leave empty for
+      - code: eika-sandbox:latest
+      - text: ", which the compose stack builds. Any image works: the harness copies its daemon in."
+    - heading "Sandbox" [level=3]
+    - button "Check again"
+    - list:
+      - listitem:
+        - paragraph: Docker
+        - paragraph: "Could not ask the harness: The harness hit an unexpected error. Try again; if it keeps failing, the harness log names the cause. Use Check again to retry."
+      - listitem:
+        - paragraph: Sandbox image
+        - paragraph: Not checked, since the harness did not answer.
+    - heading "Subagents" [level=3]
+    - paragraph: How far the tree of child agents may grow. Each child works in a sandbox of its own.
+    - text: Levels below a session (1–8)
+    - spinbutton "Levels below a session (1–8)": "2"
+    - text: /Children at a time \(1–\d+\)/
+    - spinbutton /Children at a time \(1–\d+\)/: "4"
+    - button "Save"
+    - heading "Guided setup" [level=3]
+    - paragraph: Walk through connecting a provider, checking the sandbox, and adding a project again.
+    - button "Run the setup again"
+  - button "Close"

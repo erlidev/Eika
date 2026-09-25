@@ -41,6 +41,8 @@ type Options struct {
 	Temperature *float64
 	// ReasoningEffort selects how much a reasoning model thinks.
 	ReasoningEffort string
+	// ThinkingSwitch is the request field that carries the effort "none".
+	ThinkingSwitch provider.ThinkingSwitch
 	// PreserveThinking keeps compatible Chat Completions reasoning data in
 	// assistant messages and replays it on later model calls.
 	PreserveThinking bool
@@ -405,6 +407,7 @@ func (a *Agent) call(ctx context.Context, s *Session, runID, system string, gen 
 		MaxTokens:        a.opts.MaxTokens,
 		Temperature:      a.opts.Temperature,
 		ReasoningEffort:  a.opts.ReasoningEffort,
+		ThinkingSwitch:   a.opts.ThinkingSwitch,
 		PreserveThinking: a.opts.PreserveThinking,
 	}
 	if a.tools != nil {

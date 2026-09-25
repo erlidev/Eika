@@ -321,6 +321,16 @@ export type ReasoningEffort = string;
 /** maxReasoningEffortLength is the longest reasoning_effort the harness stores. */
 export const maxReasoningEffortLength = 32;
 
+/** effortNone is the reasoning effort that turns thinking off. */
+export const effortNone = "none";
+
+/**
+ * ThinkingSwitch is the request field that carries the effort "none". The
+ * standard reasoning_effort is what most endpoints take; chat_template_kwargs
+ * and thinking are extensions some need instead, and only one is ever sent.
+ */
+export type ThinkingSwitch = "reasoning_effort" | "chat_template_kwargs" | "thinking";
+
 /** Model is one model the user configured on a provider. */
 export type Model = {
   id: string;
@@ -334,6 +344,8 @@ export type Model = {
   reasoning_effort?: ReasoningEffort;
   /** reasoning_efforts are the values this model offers, in cycling order. */
   reasoning_efforts: ReasoningEffort[];
+  /** thinking_switch is the field that turns thinking off when the effort is "none". */
+  thinking_switch: ThinkingSwitch;
   preserve_thinking: boolean;
   created_at: string;
   updated_at: string;
@@ -356,6 +368,7 @@ export type CreateModel = {
   max_output: number;
   reasoning_effort?: ReasoningEffort;
   reasoning_efforts?: ReasoningEffort[];
+  thinking_switch?: ThinkingSwitch;
   preserve_thinking?: boolean;
 };
 
@@ -367,6 +380,7 @@ export type TestModel = {
   provider_id: string;
   model: string;
   reasoning_effort?: ReasoningEffort;
+  thinking_switch?: ThinkingSwitch;
   preserve_thinking?: boolean;
 };
 

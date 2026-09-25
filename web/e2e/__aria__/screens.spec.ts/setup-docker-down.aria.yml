@@ -1,0 +1,33 @@
+- main:
+  - complementary:
+    - text: Eika setup
+    - list "Setup steps":
+      - listitem: Password
+      - listitem: Provider
+      - listitem: Models
+      - listitem: 4 Sandbox
+      - listitem: 5 Project
+    - paragraph: Everything you choose here can be changed later in Settings.
+  - heading "Check the sandbox" [level=1]
+  - text: Agents work only inside Docker containers, never on this machine directly. Eika checks that it can start them.
+  - heading "Sandbox" [level=3]
+  - button "Check again"
+  - list:
+    - listitem:
+      - paragraph: Docker
+      - paragraph: The harness cannot use the Docker socket.
+      - code: Cannot connect to the Docker daemon at unix:///var/run/docker.sock
+      - text: Check that Docker is running and that
+      - code: /var/run/docker.sock
+      - text: is mounted into the harness container, as
+      - code: compose.yaml
+      - text: does.
+    - listitem:
+      - paragraph: Sandbox image
+      - paragraph: Not checked, since the harness cannot reach Docker.
+  - text: Default model
+  - combobox "Default model": gpt-5
+  - paragraph: Used when a message names no model. A session can pick another in its status bar.
+  - button "Continue"
+  - button "Back"
+  - button "Skip the rest and open Eika"

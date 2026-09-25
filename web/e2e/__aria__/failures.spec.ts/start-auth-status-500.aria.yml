@@ -1,0 +1,24 @@
+- main:
+  - heading "Sign in to Eika" [level=1]
+  - text: Enter the password chosen when this harness was set up.
+  - alert:
+    - text: Eika could not load. The harness hit an unexpected error. Try again; if it keeps failing, the harness log names the cause.
+    - button "Retry"
+  - text: Password
+  - textbox "Password"
+  - button "Advanced" [expanded]
+  - text: API token
+  - textbox "API token":
+    - /placeholder: instead of the password
+  - paragraph:
+    - text: The deployment's
+    - code: EIKA_AUTH_TOKEN
+    - text: ", if it set one."
+  - text: Harness URL
+  - textbox "Harness URL":
+    - /placeholder: this page's origin
+  - paragraph:
+    - text: Leave empty unless the frontend runs somewhere else. The Vite dev server proxies
+    - code: /api
+    - text: ", so leave it empty there too."
+  - button "Sign in"

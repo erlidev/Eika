@@ -1,0 +1,7 @@
+- navigation "Chats":
+  - heading "Chats" [level=2]
+  - button "New chat"
+  - list:
+    - listitem:
+      - button "New chat"
+      - button "Delete New chat"

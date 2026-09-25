@@ -203,7 +203,10 @@ A model row also carries `reasoning_effort`, `reasoning_efforts`, and
 `reasoning_effort` maps to the standard Chat Completions request field;
 `reasoning_efforts` is the list of words the session's status bar cycles
 through, since endpoints disagree on the vocabulary and the harness only
-checks the shape (`provider.ValidReasoningEffort`).
+checks the shape (`provider.ValidReasoningEffort`). The effort
+`provider.EffortNone` turns thinking off, and `Request.ThinkingSwitch` says
+which field carries it; a new provider maps the three switches to its own
+wire format, or to whatever its API uses to disable thinking.
 
 A provider emits `KindReasoningDelta` for reasoning whatever
 `preserve_thinking` says: the agent turns those into `reasoning.delta` events
@@ -496,6 +499,21 @@ Rules that keep the surface one surface:
 - New dependencies belong in `Deps`, as an interface declared in `server` when
   a test has to stand in for them.
 
+Add both routes to `routeWire` in `internal/server/contract_test.go` with
+their status and wire types, then run `make contract` to write them into
+`docs/api/contract.json`. `TestContractCoversEveryRoute` fails until a route
+routes.go registers is in the table, and every handler test checks the
+responses it gets against the contract, so a wrong type there fails too:
+
+```go
+// internal/server/contract_test.go, in routeWire
+"GET /api/sessions/{id}/label": {status: http.StatusOK, response: labelResponse{}},
+"PUT /api/sessions/{id}/label": {status: http.StatusOK, request: setLabelRequest{}, response: labelResponse{}},
+```
+
+A type with a `MarshalJSON` of its own needs a stand-in in `standIns` there,
+since reflection cannot see what it writes.
+
 Tests go in `internal/server/api_docker_test.go` and use the fakes in
 `fakes_docker_test.go`: a real database from `storetest` and a workspace host
 backed by temporary directories.
@@ -503,6 +521,11 @@ backed by temporary directories.
 ```
 go test -tags docker ./internal/server/...
 ```
+
+If the UI calls the route, serve it in the mock harness,
+`web/e2e/harness/mock.ts`, and add a request for it to
+`web/e2e/harness/mock.test.ts`, which checks the mock against the contract
+route by route. A route the UI never calls goes in `unmocked` there instead.
 
 ## Adding an event type
 
@@ -540,6 +563,11 @@ Emit it with `event.New(event.TypeSessionCompacted, event.SessionTopic(id), payl
 and hand the result to an `event.Emitter`. The bus is one, so an event emitted
 anywhere reaches every client subscribed to its topic. Mirror the type name in
 `eventTypes` in `web/src/api/events.ts`, or `parseEvent` rejects it.
+
+Add the type to `eventPayloads` in `internal/server/contract_test.go` and run
+`make contract`. `TestContractCoversEveryEvent` fails until every constant is
+listed there, and the mock harness then holds any event it plays of that type
+to the payload's shape.
 
 ## Adding a UI panel
 

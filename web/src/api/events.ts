@@ -266,7 +266,8 @@ export function sessionTopic(id: string): string {
   return `session:${id}`;
 }
 
-const eventTypes: readonly EventType[] = [
+/** eventTypes lists every EventType, for a check at runtime. */
+export const eventTypes: readonly EventType[] = [
   "turn.start",
   "message.delta",
   "reasoning.delta",

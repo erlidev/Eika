@@ -48,6 +48,7 @@ func rawRequest(t *testing.T, s *server.Server, method, path string, body []byte
 	r.Header.Set("Authorization", "Bearer "+testToken)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, r)
+	checkContract(t, r, rec)
 	return rec
 }
 

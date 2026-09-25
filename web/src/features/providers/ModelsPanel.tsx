@@ -372,6 +372,7 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
                 provider_id: model.provider_id,
                 model: model.model,
                 ...(model.reasoning_effort ? { reasoning_effort: model.reasoning_effort } : {}),
+                thinking_switch: model.thinking_switch,
                 preserve_thinking: model.preserve_thinking,
               });
             }}

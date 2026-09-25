@@ -1,0 +1,35 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models" [selected]
+    - tab "General"
+    - tab "Search"
+    - tab "Account"
+    - tab "Appearance"
+  - tabpanel "Models":
+    - paragraph: "Any OpenAI-compatible endpoint works: hosted APIs, OpenRouter, or a model server on this machine. Keys are encrypted at rest."
+    - button "Add provider"
+    - list:
+      - listitem:
+        - paragraph: OpenAI
+        - paragraph: https://api.openai.com/v1
+        - text: …a1b2
+        - button "Models"
+        - button "Edit OpenAI"
+        - button "Delete OpenAI"
+        - list:
+          - listitem:
+            - paragraph: gpt-5 Default medium
+            - paragraph: /[\d,.]+[bkmBKM]+ context · [\d,.]+[bkmBKM]+ out/
+            - button "Test"
+            - button "Edit gpt-5"
+            - button "Delete gpt-5"
+          - listitem:
+            - paragraph: gpt-5-mini
+            - paragraph: /[\d,.]+[bkmBKM]+ context · [\d,.]+[bkmBKM]+ out/
+            - button "Make default"
+            - button "Test"
+            - button "Edit gpt-5-mini"
+            - button "Delete gpt-5-mini"
+  - button "Close"

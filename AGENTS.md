@@ -18,13 +18,14 @@ human changing the codebase. Read it fully before editing.
   Never add code that lets a tool touch the harness filesystem or shell.
 - Run `make check` before declaring work done. It formats, vets, lints, and
   tests both Go and the frontend, then compares the UI with its visual
-  baselines (about five minutes in all). Fix everything it reports. There is
+  baselines (about a minute in all). Fix everything it reports. There is
   no CI: `make check` is the only gate, so run it locally before every push.
 - New behavior needs tests. A bug fix needs a regression test. See the style
   guide for what a good test looks like here.
 - Keep documentation current in the same change: `PLAN.md` checklist,
   `ARCHITECTURE.md` if structure moved, `EXTENDING.md` if an extension point
-  changed, `docs/api/` if the API or event protocol changed.
+  changed, `docs/api/` if the API or event protocol changed. A changed wire
+  type also means `make contract`, which the tests require.
 - Do not add a dependency without a one-line justification in the commit
   message and confirmation that nothing in the standard library covers it.
 - Do not introduce a second way to do something that already has one way
@@ -53,11 +54,12 @@ imports `workspace`.
 ```
 make local      build and run the whole stack in Docker, as a deployment does
 make dev        run harness + frontend in watch mode against compose services
-make check      fmt, vet, lint, test (Go and web), then visual
+make check      fmt, vet, lint, test (Go and web) side by side, then visual
 make test       tests only
 make build      build harness, eikad, and frontend
 make sandbox    build the eika-sandbox image
-make visual     compare UI screens with their baselines (web/e2e, ~4 min)
+make visual     compare UI screens with their baselines (web/e2e, <1 min)
+make contract   rewrite docs/api/contract.json after a Go wire type changes
 ```
 
 To see the UI, run `cd web && npm run shot -- --help`: it opens a scenario
@@ -75,8 +77,8 @@ there, test it, document it. Full walkthroughs are in `docs/EXTENDING.md`.
 | tool            | `tool.Tool`                  | `internal/tool/builtin/registry.go`|
 | provider        | `provider.Provider`          | `internal/provider/registry.go`    |
 | search backend  | `search.Searcher`            | `internal/search/registry.go`      |
-| API endpoint    | handler in `internal/server` | `internal/server/routes.go`        |
-| event type      | struct in `internal/event`   | `docs/api/events.md` + `web/src/api/events.ts` |
+| API endpoint    | handler in `internal/server` | `internal/server/routes.go` + `routeWire` in `contract_test.go` |
+| event type      | struct in `internal/event`   | `docs/api/events.md` + `web/src/api/events.ts` + `eventPayloads` in `internal/server/contract_test.go` |
 | UI panel        | component in `web/src/`      | `web/src/app/panels.tsx`           |
 
 ## When unsure

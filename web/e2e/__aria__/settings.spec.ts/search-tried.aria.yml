@@ -1,0 +1,102 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "General"
+    - tab "Search" [selected]
+    - tab "Account"
+    - tab "Appearance"
+  - tabpanel "Search":
+    - heading "Web providers" [level=3]
+    - paragraph: "A web search asks one provider: the first here that has its key, quota to spare, and no cooldown. One that fails is left alone for a while, longer each time, and the next one answers."
+    - list:
+      - listitem:
+        - checkbox "Use searxng" [checked]
+        - text: "/searxng ready \\d+ today, unlimited http:\\/\\/searxng:\\d+: up/"
+        - button "Move searxng up" [disabled]
+        - button "Move searxng down"
+      - listitem:
+        - checkbox "Use exa" [checked]
+        - text: /exa no API key 0\/\d+ this month/
+        - button "Move exa up"
+        - button "Move exa down"
+      - listitem:
+        - checkbox "Use tavily" [checked]
+        - text: /tavily no API key 0\/\d+ this month/
+        - button "Move tavily up"
+        - button "Move tavily down"
+      - listitem:
+        - checkbox "Use brave" [checked]
+        - text: /brave no API key 0\/\d+ this month/
+        - button "Move brave up"
+        - button "Move brave down"
+      - listitem:
+        - checkbox "Use marginalia" [checked]
+        - text: /marginalia ready 3\/\d+ today/
+        - button "Move marginalia up"
+        - button "Move marginalia down" [disabled]
+    - button "Save order" [disabled]
+    - button "Reset"
+    - heading "API keys" [level=3]
+    - paragraph: Sealed in the harness and never shown again. Exa, Tavily, and Brave are used only when they have a key. A GitHub token enables code search and raises GitHub's rate limit for the other sources and for reading GitHub pages.
+    - text: Exa
+    - textbox "Exa":
+      - /placeholder: Not set
+    - button "Save" [disabled]
+    - button "Remove" [disabled]
+    - text: Tavily
+    - textbox "Tavily":
+      - /placeholder: Not set
+    - button "Save" [disabled]
+    - button "Remove" [disabled]
+    - text: Brave Search
+    - textbox "Brave Search":
+      - /placeholder: Not set
+    - button "Save" [disabled]
+    - button "Remove" [disabled]
+    - text: GitHub token
+    - textbox "GitHub token":
+      - /placeholder: Not set
+    - button "Save" [disabled]
+    - button "Remove" [disabled]
+    - heading "Quotas" [level=3]
+    - paragraph: /Requests a provider may take per UTC day or month before the chain skips it, to stay inside a free tier\. Enter a whole number from 1 to \d+,\d+,\d+, or leave a field empty for unlimited\. Counts survive a restart\./
+    - text: Per day Per month brave
+    - spinbutton "brave per day"
+    - spinbutton "brave per month": /\d+/
+    - text: exa
+    - spinbutton "exa per day"
+    - spinbutton "exa per month": /\d+/
+    - text: github
+    - spinbutton "github per day"
+    - spinbutton "github per month"
+    - text: marginalia
+    - spinbutton "marginalia per day": /\d+/
+    - spinbutton "marginalia per month"
+    - text: searxng
+    - spinbutton "searxng per day"
+    - spinbutton "searxng per month"
+    - text: tavily
+    - spinbutton "tavily per day"
+    - spinbutton "tavily per month": /\d+/
+    - button "Save quotas"
+    - heading "Sources" [level=3]
+    - paragraph: An agent searches these by name. They rank their own content better than a web search would.
+    - list:
+      - listitem: wikipedia ready
+      - listitem: arxiv ready
+      - listitem: github_code no API key 0 today, unlimited
+      - listitem: github_repos ready 0 today, unlimited
+      - listitem: github_issues ready 0 today, unlimited
+    - paragraph: "/Cached: \\d+ searches, \\d+ pages\\./"
+    - heading "Try a search" [level=3]
+    - paragraph: Runs exactly what an agent's web_search runs, and spends quota like one.
+    - textbox "Query":
+      - /placeholder: tokio runtime
+      - text: tokio runtime
+    - combobox "Source": web
+    - button "Search"
+    - paragraph: /Answered by searxng in \d+ ms\./
+    - text: "1. tokio runtime: official documentation https://docs.example.com/ 2. tokio runtime on GitHub https://github.com/example/project"
+  - button "Close"

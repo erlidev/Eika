@@ -1,0 +1,40 @@
+- navigation "Projects":
+  - heading "Projects" [level=2]
+  - button "New project"
+  - list:
+    - listitem:
+      - button "web-dashboard local"
+      - button "New workspace in web-dashboard"
+      - button "Settings of web-dashboard"
+      - button "Delete web-dashboard"
+    - listitem:
+      - button "payments-api remote" [expanded]
+      - button "New workspace in payments-api"
+      - button "Settings of payments-api"
+      - button "Delete payments-api"
+      - list:
+        - listitem:
+          - 'button "Workspace state: creating upgrade-go eika/upgrade-go"'
+          - button "Start upgrade-go"
+          - button "New session in upgrade-go"
+          - button "Delete upgrade-go"
+        - listitem:
+          - 'button "Workspace state: running fix-retries eika/fix-retries" [expanded]'
+          - button "Stop fix-retries"
+          - button "New session in fix-retries"
+          - button "Delete fix-retries"
+          - list:
+            - listitem:
+              - button "Add exponential backoff to retries"
+              - button "Delete Add exponential backoff to retries"
+              - list:
+                - listitem:
+                  - button "add-backoff-tests (agent)"
+                  - button "Delete add-backoff-tests"
+            - listitem:
+              - button "Investigate flaky test"
+              - button "Delete Investigate flaky test"
+              - list:
+                - listitem:
+                  - button "Investigate flaky test, pinned seed (fork)"
+                  - button "Delete Investigate flaky test, pinned seed"

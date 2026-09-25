@@ -660,7 +660,8 @@ func TestContextWindowIsEnforcedBeforeTheProviderCall(t *testing.T) {
 func TestRunForwardsReasoningConfiguration(t *testing.T) {
 	p := providertest.New(providertest.Text("ok"))
 	a := agent.New(p, nil, agent.Options{
-		ReasoningEffort:  "high",
+		ReasoningEffort:  "none",
+		ThinkingSwitch:   provider.SwitchTemplate,
 		PreserveThinking: true,
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
@@ -673,8 +674,9 @@ func TestRunForwardsReasoningConfiguration(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	req := p.Requests()[0]
-	if req.ReasoningEffort != "high" || !req.PreserveThinking {
-		t.Errorf("request reasoning = %q preserve = %t", req.ReasoningEffort, req.PreserveThinking)
+	if req.ReasoningEffort != "none" || req.ThinkingSwitch != provider.SwitchTemplate || !req.PreserveThinking {
+		t.Errorf("request reasoning = %q switch = %q preserve = %t",
+			req.ReasoningEffort, req.ThinkingSwitch, req.PreserveThinking)
 	}
 	if req.Messages[1].Metrics != nil {
 		t.Errorf("provider received stored UI metrics: %+v", req.Messages[1].Metrics)

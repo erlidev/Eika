@@ -13,6 +13,13 @@ same commit.
   replay requests, topics, the envelope, and one entry per event type.
 - `eikad.md` — the sandbox daemon's API: exec, files, terminal, and the change
   watcher. The harness is its only client.
+- `contract.json` — the shape of every route's request and response, the error
+  body, and every event's payload, written from the Go wire types by
+  `TestContractFile` in `internal/server` (`make contract` rewrites it). The
+  handler tests check every response against it, and the frontend's mock
+  harness refuses a request it would refuse and reports an answer or event
+  it could not send. The Markdown files say what the fields mean; this file
+  says exactly which there are.
 
 ## What exists now
 

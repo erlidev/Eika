@@ -329,6 +329,9 @@ func TestModelRoutes(t *testing.T) {
 	if strings.Join(created.ReasoningEfforts, ",") != "low,high" {
 		t.Errorf("created efforts = %v, want the list as it was given", created.ReasoningEfforts)
 	}
+	if created.ThinkingSwitch != "reasoning_effort" {
+		t.Errorf("created thinking switch = %q, want the standard field", created.ThinkingSwitch)
+	}
 
 	for name, body := range map[string]map[string]any{
 		"a taken name":           {"provider_id": a.testProvider.ID, "model": "gpt-x", "context_window": 10, "max_output": 1},
@@ -340,6 +343,7 @@ func TestModelRoutes(t *testing.T) {
 		"an empty effort choice":   {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "reasoning_efforts": []string{""}},
 		"duplicate effort choices": {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "reasoning_efforts": []string{"low", "low"}},
 		"a provider that is not":   {"provider_id": "absent", "model": "m", "context_window": 10, "max_output": 1},
+		"an unknown switch":        {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "thinking_switch": "enable_thinking"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := request(t, a.Server, "POST", "/api/models", body)
@@ -359,6 +363,17 @@ func TestModelRoutes(t *testing.T) {
 	}
 	if rec := request(t, a.Server, "DELETE", "/api/models/"+custom.ID, nil); rec.Code != 204 {
 		t.Fatalf("delete = %d", rec.Code)
+	}
+
+	// The switch changes on its own, and an unknown one is refused.
+	switched := decodeBody[modelWire](t, request(t, a.Server, "PATCH", "/api/models/"+created.ID,
+		map[string]any{"thinking_switch": "chat_template_kwargs"}), 200)
+	if switched.ThinkingSwitch != "chat_template_kwargs" || switched.ReasoningEffort != "high" {
+		t.Errorf("switched = %+v, want only the switch changed", switched)
+	}
+	if rec := request(t, a.Server, "PATCH", "/api/models/"+created.ID,
+		map[string]any{"thinking_switch": "off"}); rec.Code != 400 {
+		t.Errorf("unknown switch = %d, want 400", rec.Code)
 	}
 
 	// Renaming the default keeps it the default.
@@ -386,13 +401,15 @@ func TestModelTestSendsOneSmallRequest(t *testing.T) {
 		Reply      string `json:"reply"`
 		StopReason string `json:"stop_reason"`
 	}](t, request(t, a.Server, "POST", "/api/models/test", map[string]any{
-		"provider_id": a.testProvider.ID, "model": "unsaved-model", "reasoning_effort": "low",
+		"provider_id": a.testProvider.ID, "model": "unsaved-model", "reasoning_effort": "none",
+		"thinking_switch": "thinking",
 	}), 200)
 	if got.Reply != "ready" || got.StopReason != "stop" {
 		t.Errorf("test = %+v", got)
 	}
 	reqs := p.Requests()
-	if len(reqs) != 1 || reqs[0].Model != "unsaved-model" || reqs[0].ReasoningEffort != "low" || len(reqs[0].Tools) != 0 {
+	if len(reqs) != 1 || reqs[0].Model != "unsaved-model" || reqs[0].ReasoningEffort != "none" ||
+		reqs[0].ThinkingSwitch != provider.SwitchThinking || len(reqs[0].Tools) != 0 {
 		t.Errorf("requests = %+v", reqs)
 	}
 
@@ -411,6 +428,7 @@ func TestARunUsesTheModelsEndpointIdentifierAndLimits(t *testing.T) {
 	decodeBody[modelWire](t, request(t, a.Server, "POST", "/api/models", map[string]any{
 		"provider_id": second.ID, "name": "friendly", "model": "vendor/model-7b",
 		"context_window": 32768, "max_output": 777, "reasoning_effort": "medium",
+		"thinking_switch": "chat_template_kwargs",
 	}), 201)
 	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{"default_model": "friendly"}), 200)
 
@@ -423,8 +441,10 @@ func TestARunUsesTheModelsEndpointIdentifierAndLimits(t *testing.T) {
 	if len(reqs) != 1 {
 		t.Fatalf("requests = %d, want 1", len(reqs))
 	}
-	if reqs[0].Model != "vendor/model-7b" || reqs[0].MaxTokens != 777 || reqs[0].ReasoningEffort != "medium" {
-		t.Errorf("request = model %q, max %d, effort %q", reqs[0].Model, reqs[0].MaxTokens, reqs[0].ReasoningEffort)
+	if reqs[0].Model != "vendor/model-7b" || reqs[0].MaxTokens != 777 || reqs[0].ReasoningEffort != "medium" ||
+		reqs[0].ThinkingSwitch != provider.SwitchTemplate {
+		t.Errorf("request = model %q, max %d, effort %q, switch %q",
+			reqs[0].Model, reqs[0].MaxTokens, reqs[0].ReasoningEffort, reqs[0].ThinkingSwitch)
 	}
 	if e := a.lastEndpoint(); e.BaseURL != "https://second.test/v1" || e.APIKey != "second-key" {
 		t.Errorf("endpoint = %+v, want the default model's provider", e)

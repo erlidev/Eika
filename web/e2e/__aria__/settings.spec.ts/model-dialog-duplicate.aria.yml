@@ -1,0 +1,27 @@
+- dialog "Edit gpt-5-mini":
+  - heading "Edit gpt-5-mini" [level=2]
+  - paragraph: The name is what Eika and its agents call the model; the identifier is what the provider's endpoint calls it.
+  - text: Name in Eika
+  - textbox "Name in Eika" [invalid]: gpt-5
+  - paragraph: Another model is called “gpt-5”; choose a different name.
+  - text: Identifier
+  - textbox "Identifier": gpt-5-mini
+  - text: Context window
+  - spinbutton "Context window": /\d+/
+  - text: Max output
+  - spinbutton "Max output": /\d+/
+  - text: Reasoning efforts
+  - paragraph: Sent as reasoning_effort. Add the words this endpoint accepts; the session's status bar cycles through them in this order. Pick the one a new run starts on. “none” turns thinking off.
+  - button "Endpoint default" [pressed]
+  - combobox "Add a reasoning effort"
+  - button "Add"
+  - text: Turn thinking off with
+  - combobox "Turn thinking off with": reasoning_effort
+  - paragraph: The field the effort “none” is sent in. Taken by OpenAI, Gemini, Groq, OpenRouter, Ollama, LM Studio, recent vLLM and llama.cpp.
+  - text: Preserve reasoning between turns
+  - paragraph: For endpoints that stream reasoning_content and expect it back, such as DeepSeek, Qwen, and many vLLM servers. The official OpenAI API does not accept it.
+  - switch "Preserve reasoning between turns"
+  - paragraph: Fix the field marked above to save.
+  - button "Cancel"
+  - button "Save" [disabled]
+  - button "Close"

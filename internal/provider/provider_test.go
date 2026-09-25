@@ -50,6 +50,19 @@ func TestValidReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestValidThinkingSwitch(t *testing.T) {
+	for _, s := range []provider.ThinkingSwitch{"", provider.SwitchReasoningEffort, provider.SwitchTemplate, provider.SwitchThinking} {
+		if !provider.ValidThinkingSwitch(s) {
+			t.Errorf("ValidThinkingSwitch(%q) = false", s)
+		}
+	}
+	for _, s := range []provider.ThinkingSwitch{"enable_thinking", "Thinking", " thinking"} {
+		if provider.ValidThinkingSwitch(s) {
+			t.Errorf("ValidThinkingSwitch(%q) = true", s)
+		}
+	}
+}
+
 func TestErrorClassification(t *testing.T) {
 	cases := []struct {
 		name          string

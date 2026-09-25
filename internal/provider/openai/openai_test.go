@@ -427,6 +427,56 @@ func TestStreamPreservesCompatibleChatCompletionsReasoning(t *testing.T) {
 	}
 }
 
+func TestStreamSendsNoneInTheFieldTheThinkingSwitchNames(t *testing.T) {
+	// Each switch puts "none" in exactly one field: an endpoint may reject a
+	// field it does not know, so the others must stay out of the request.
+	cases := []struct {
+		name   string
+		effort string
+		sw     provider.ThinkingSwitch
+		want   string
+	}{
+		{"default switch", "none", "", `{"reasoning_effort":"none"}`},
+		{"reasoning_effort", "none", provider.SwitchReasoningEffort, `{"reasoning_effort":"none"}`},
+		{"chat_template_kwargs", "none", provider.SwitchTemplate,
+			`{"chat_template_kwargs":{"enable_thinking":false,"thinking":false}}`},
+		{"thinking", "none", provider.SwitchThinking, `{"thinking":{"type":"disabled"}}`},
+		{"other efforts ignore the switch", "high", provider.SwitchThinking, `{"reasoning_effort":"high"}`},
+		{"endpoint default", "", provider.SwitchTemplate, `{}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := newSSEServer(t, http.StatusOK,
+				`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}`,
+			)
+			p := newProvider(t, s.URL)
+			collect(t, context.Background(), p, provider.Request{
+				ReasoningEffort: c.effort,
+				ThinkingSwitch:  c.sw,
+				Messages:        []provider.Message{provider.UserMessage("hi")},
+			})
+
+			var sent map[string]json.RawMessage
+			if err := json.Unmarshal(<-s.body, &sent); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			got := map[string]json.RawMessage{}
+			for _, field := range []string{"reasoning_effort", "chat_template_kwargs", "thinking"} {
+				if v, ok := sent[field]; ok {
+					got[field] = v
+				}
+			}
+			encoded, err := json.Marshal(got)
+			if err != nil {
+				t.Fatalf("encode fields: %v", err)
+			}
+			if string(encoded) != c.want {
+				t.Errorf("thinking fields = %s, want %s", encoded, c.want)
+			}
+		})
+	}
+}
+
 func TestStreamReadsRetryAfterAsADate(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Retry-After", time.Now().Add(30*time.Second).UTC().Format(http.TimeFormat))

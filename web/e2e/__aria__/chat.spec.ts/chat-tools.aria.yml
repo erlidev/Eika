@@ -1,0 +1,17 @@
+- tabpanel "Tools":
+  - paragraph: A chat has no workspace, so the model can use only the tools below. A change applies from the next message.
+  - list "Tools in this chat":
+    - listitem:
+      - text: ask_user
+      - paragraph: Ask the user a question and wait for the answer.
+      - switch "ask_user" [checked]
+    - listitem:
+      - text: web_fetch
+      - paragraph: Fetch a web page or file by URL and return its content as Markdown.
+      - switch "web_fetch"
+    - listitem:
+      - text: web_search
+      - paragraph: Search the web, Wikipedia, arXiv or GitHub.
+      - switch "web_search" [checked]
+  - heading "Need a workspace" [level=3]
+  - paragraph: "Files, commands, and child agents belong to a workspace session: bash, edit, find, grep, list_agents, ls, read, spawn_agent, wait_agents, write."

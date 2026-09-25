@@ -1,11 +1,15 @@
-/** Dialogs and panels reached from the workbench. */
+/**
+ * Dialogs and panels reached from the workbench. The command palette and
+ * the session tree are compared pixel for pixel; the rest is checked by what
+ * it says and offers.
+ */
 
 import { expect, test } from "../fixtures.ts";
 
-test("new project dialog", async ({ open, expectShot }) => {
+test("new project dialog", async ({ open, expectAria }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("New project");
-  await expectShot(eika, "new-project", "role=dialog");
+  await expectAria(eika, "new-project", "role=dialog");
 });
 
 test("command palette", async ({ open, expectShot }) => {
@@ -14,43 +18,40 @@ test("command palette", async ({ open, expectShot }) => {
   await expectShot(eika, "command-palette");
 });
 
-test("run panel", async ({ open, expectShot }) => {
+test("run panel", async ({ open, expectAria }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("Run");
-  await expectShot(eika, "run-panel", 'role=complementary[name="Context panels"]');
+  await expectAria(eika, "run-panel", 'role=complementary[name="Context panels"]');
 });
 
-test("project tree expanded", async ({ open, expectShot }) => {
+test("project tree expanded", async ({ open, expectAria }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("payments-api remote");
-  await expectShot(eika, "project-tree", 'role=navigation[name="Projects"]');
+  await expectAria(eika, "project-tree", 'role=navigation[name="Projects"]');
 });
 
-for (const theme of ["light", "dark"] as const) {
-  test(`session tree: a tree the keyboard walks (${theme})`, async ({ open, expectShot }) => {
-    const eika = await open({ scenario: "workbench", theme });
-    await eika.click("Tree");
-    const tree = eika.page.getByRole("tree", { name: "Session tree" });
-    const items = tree.getByRole("treeitem");
-    await expect(items.first()).toBeVisible();
-    // One tab stop, on the head.
-    const head = tree.locator('[role="treeitem"][aria-current="true"]');
-    await expect(head).toHaveAttribute("tabindex", "0");
-    await head.focus();
-    await eika.press("Home");
-    await expect(items.first()).toBeFocused();
-    await eika.press("ArrowDown");
-    await expect(items.nth(1)).toBeFocused();
-    await expectShot(eika, `session-tree-${theme}`, 'role=complementary[name="Context panels"]');
-  });
-}
+test("session tree: a tree the keyboard walks", async ({ open, expectShot }) => {
+  const eika = await open({ scenario: "workbench" });
+  await eika.click("Tree");
+  const tree = eika.page.getByRole("tree", { name: "Session tree" });
+  const items = tree.getByRole("treeitem");
+  await expect(items.first()).toBeVisible();
+  // One tab stop, on the head.
+  const head = tree.locator('[role="treeitem"][aria-current="true"]');
+  await expect(head).toHaveAttribute("tabindex", "0");
+  await head.focus();
+  await eika.press("Home");
+  await expect(items.first()).toBeFocused();
+  await eika.press("ArrowDown");
+  await expect(items.nth(1)).toBeFocused();
+  await expectShot(eika, "session-tree-light", 'role=complementary[name="Context panels"]');
+});
 
-test("run status bar: the live connection is labelled", async ({ open, expectShot }) => {
+test("run status bar: the live connection is labelled", async ({ open }) => {
   const eika = await open({ scenario: "workbench" });
   const live = eika.page.getByRole("status", { name: "Live updates: Live" });
   await expect(live).toBeVisible();
   await expect(live).toHaveAttribute("title", "Live updates on");
-  await expectShot(eika, "run-status-bar", 'role=status[name="Live updates: Live"] >> xpath=../..');
 });
 
 test("the reasoning effort cycles through the model's own list", async ({ open }) => {
@@ -62,6 +63,20 @@ test("the reasoning effort cycles through the model's own list", async ({ open }
   await expect(effort).toHaveText(/high/);
   await effort.click();
   await expect(effort).toHaveText(/low/);
+});
+
+test("a model names the field that turns its thinking off", async ({ open }) => {
+  const eika = await open({ scenario: "providers" });
+  await eika.click("Settings");
+  await eika.click("Edit gpt-5-mini");
+  const field = eika.page.getByLabel("Turn thinking off with");
+  await expect(field).toHaveText("reasoning_effort");
+  await field.click();
+  await eika.page.getByRole("option", { name: "chat_template_kwargs" }).click();
+  await expect(eika.page.getByText(/Taken by vLLM, SGLang/)).toBeVisible();
+  await eika.click("Save");
+  const patch = eika.mock.requests.find((r) => r.method === "PATCH");
+  expect(patch?.body).toMatchObject({ thinking_switch: "chat_template_kwargs" });
 });
 
 test("the context meter states what the endpoint measured", async ({ open }) => {

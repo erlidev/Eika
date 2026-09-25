@@ -25,6 +25,10 @@ type Model struct {
 	// ReasoningEfforts are the values this model offers, in the order the UI
 	// cycles through them. Empty means the model's effort is not cycled.
 	ReasoningEfforts []string
+	// ThinkingSwitch is the request field that turns thinking off when the
+	// effort is "none": reasoning_effort, chat_template_kwargs, or thinking.
+	// Empty is stored as reasoning_effort.
+	ThinkingSwitch string
 	// PreserveThinking asks a compatible endpoint for reasoning content and
 	// replays it on later turns.
 	PreserveThinking bool
@@ -35,7 +39,7 @@ type Model struct {
 // modelColumns is the column list every model query selects, in the order
 // scanModel reads them.
 const modelColumns = `id, provider_id, name, model, context_window, max_output,
-	reasoning_effort, reasoning_efforts, preserve_thinking, created_at, updated_at`
+	reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, created_at, updated_at`
 
 // CreateModel inserts m and returns it with the fields the database
 // assigned. An empty ID gets a fresh one; a duplicate name is ErrConflict and
@@ -45,12 +49,12 @@ func (s *Store) CreateModel(ctx context.Context, m Model) (Model, error) {
 		m.ID = NewID()
 	}
 	const q = `INSERT INTO models (id, provider_id, name, model, context_window, max_output,
-			reasoning_effort, reasoning_efforts, preserve_thinking)
-		SELECT $1, id, $3, $4, $5, $6, $7, $8, $9 FROM providers WHERE id = $2
+			reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking)
+		SELECT $1, id, $3, $4, $5, $6, $7, $8, $9, $10 FROM providers WHERE id = $2
 		RETURNING ` + modelColumns
 	out, err := scanModel(s.pool.QueryRow(ctx, q, m.ID, m.ProviderID, m.Name, m.Model,
 		m.ContextWindow, m.MaxOutput, m.ReasoningEffort, efforts(m.ReasoningEfforts),
-		m.PreserveThinking))
+		thinkingSwitch(m.ThinkingSwitch), m.PreserveThinking))
 	if err != nil {
 		return Model{}, wrap("create model "+m.Name, err)
 	}
@@ -102,11 +106,13 @@ func (s *Store) Models(ctx context.Context) ([]Model, error) {
 // ErrConflict.
 func (s *Store) UpdateModel(ctx context.Context, m Model) (Model, error) {
 	const q = `UPDATE models SET name = $2, model = $3, context_window = $4, max_output = $5,
-			reasoning_effort = $6, reasoning_efforts = $7, preserve_thinking = $8, updated_at = now()
+			reasoning_effort = $6, reasoning_efforts = $7, thinking_switch = $8, preserve_thinking = $9,
+			updated_at = now()
 		WHERE id = $1
 		RETURNING ` + modelColumns
 	out, err := scanModel(s.pool.QueryRow(ctx, q, m.ID, m.Name, m.Model, m.ContextWindow,
-		m.MaxOutput, m.ReasoningEffort, efforts(m.ReasoningEfforts), m.PreserveThinking))
+		m.MaxOutput, m.ReasoningEffort, efforts(m.ReasoningEfforts), thinkingSwitch(m.ThinkingSwitch),
+		m.PreserveThinking))
 	if err != nil {
 		return Model{}, wrap("update model "+m.ID, err)
 	}
@@ -134,11 +140,20 @@ func efforts(list []string) []string {
 	return list
 }
 
+// thinkingSwitch is the value a thinking_switch column is written from: the
+// empty switch is the standard field, which the column names explicitly.
+func thinkingSwitch(s string) string {
+	if s == "" {
+		return "reasoning_effort"
+	}
+	return s
+}
+
 // scanModel reads one model row.
 func scanModel(row pgx.Row) (Model, error) {
 	var m Model
 	if err := row.Scan(&m.ID, &m.ProviderID, &m.Name, &m.Model, &m.ContextWindow, &m.MaxOutput,
-		&m.ReasoningEffort, &m.ReasoningEfforts, &m.PreserveThinking, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		&m.ReasoningEffort, &m.ReasoningEfforts, &m.ThinkingSwitch, &m.PreserveThinking, &m.CreatedAt, &m.UpdatedAt); err != nil {
 		return Model{}, err
 	}
 	m.CreatedAt, m.UpdatedAt = m.CreatedAt.UTC(), m.UpdatedAt.UTC()

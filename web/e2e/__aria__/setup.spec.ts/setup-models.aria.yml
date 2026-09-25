@@ -1,0 +1,42 @@
+- main:
+  - complementary:
+    - text: Eika setup
+    - list "Setup steps":
+      - listitem: Password
+      - listitem: Provider
+      - listitem: 3 Models
+      - listitem: 4 Sandbox
+      - listitem: 5 Project
+    - paragraph: Everything you choose here can be changed later in Settings.
+  - heading "Choose models" [level=1]
+  - text: Tick the models agents may use. You can add more, and more providers, in Settings whenever you like.
+  - region "Models OpenAI serves":
+    - heading "Available from OpenAI" [level=3]
+    - button "Refresh"
+    - list:
+      - listitem:
+        - checkbox "gpt-5" [checked]
+        - text: /gpt-5 [\d,.]+[bkmBKM]+/
+      - listitem:
+        - checkbox "gpt-5-mini"
+        - text: /gpt-5-mini [\d,.]+[bkmBKM]+/
+    - textbox "Model identifier":
+      - /placeholder: or type a model identifier, such as gpt-5
+    - button "Add" [disabled]
+  - region "Models to add":
+    - heading "To add" [level=3]
+    - paragraph: The limits are suggestions; check them against the provider's documentation. Runs refuse a request that cannot fit the context window.
+    - list:
+      - listitem:
+        - text: gpt-5
+        - button "Test"
+        - button "Do not add gpt-5"
+        - text: Name in Eika
+        - textbox "Name in Eika": gpt-5
+        - text: Context window
+        - spinbutton "Context window": /\d+/
+        - text: Max output
+        - spinbutton "Max output": /\d+/
+  - button "Add 1 model"
+  - button "Back"
+  - button "Skip the rest and open Eika"

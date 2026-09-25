@@ -43,6 +43,7 @@ func requestOn(t *testing.T, ctx context.Context, s *server.Server, method, path
 	r.Header.Set("Authorization", "Bearer "+testToken)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, r)
+	checkContract(t, r, rec)
 	return rec
 }
 

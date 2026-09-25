@@ -11,6 +11,7 @@ export default tseslint.config(
       "dist",
       "node_modules",
       "src/components/ui",
+      "e2e/dist",
       "e2e/out",
       "e2e/test-results",
       "e2e/report",

@@ -1,0 +1,109 @@
+- tree "Session tree":
+  - 'treeitem "user: The webhook client retries immediately on failure. Add exponential backoff with" [level=1]':
+    - text: ""
+    - button "Set head to user entry"
+    - button "Fork from user entry"
+  - 'treeitem "assistant: A constant one-second delay would do." [level=2]':
+    - text: assistant A constant one-second delay would do.
+    - button "Set head to assistant entry"
+    - button "Fork from assistant entry"
+  - 'treeitem "assistant: I''ll start by finding the retry loop." [level=1]':
+    - text: assistant I'll start by finding the retry loop.
+    - button "Set head to assistant entry"
+    - button "Fork from assistant entry"
+  - 'treeitem "assistant: bash (mid-turn, cannot branch here)" [level=1]':
+    - text: assistant bash
+    - button "Set head to assistant entry" [disabled]
+    - button "Fork from assistant entry" [disabled]
+  - 'treeitem /tool_result: internal\/webhook\/client\.go:\d+: for attempt := 0; attempt < maxRetries; attempt\+\+/ [level=1]':
+    - text: "/tool_result internal\\/webhook\\/client\\.go:\\d+: for attempt := 0; attempt < maxRetries; attempt\\+\\+/"
+    - button "Set head to tool_result entry"
+    - button "Fork from tool_result entry"
+  - 'treeitem "assistant: edit (mid-turn, cannot branch here)" [level=1]':
+    - text: assistant edit
+    - button "Set head to assistant entry" [disabled]
+    - button "Fork from assistant entry" [disabled]
+  - 'treeitem "tool_result: edited internal/webhook/client.go" [level=1]':
+    - text: tool_result edited internal/webhook/client.go
+    - button "Set head to tool_result entry"
+    - button "Fork from tool_result entry"
+  - 'treeitem "assistant: Done. The client now waits `backoff(attempt)` between tries: | attempt | delay" [level=1]':
+    - text: "assistant Done. The client now waits `backoff(attempt)` between tries: | attempt | delay"
+    - button "Set head to assistant entry"
+    - button "Fork from assistant entry"
+  - 'treeitem "user: Check the cap" [level=1]':
+    - text: user Check the cap
+    - button "Set head to user entry"
+    - button "Fork from user entry"
+  - 'treeitem "assistant: Let me check how other clients cap their backoff." [level=1]':
+    - text: assistant Let me check how other clients cap their backoff.
+    - button "Set head to assistant entry"
+    - button "Fork from assistant entry"
+  - 'treeitem "assistant: web_search (mid-turn, cannot branch here)" [level=1]':
+    - text: assistant web_search
+    - button "Set head to assistant entry" [disabled]
+    - button "Fork from assistant entry" [disabled]
+  - 'treeitem "tool_result: 1. Exponential Backoff And Jitter 2. Retry strategies 3. backoff package" [level=1]':
+    - text: tool_result 1. Exponential Backoff And Jitter 2. Retry strategies 3. backoff package
+    - button "Set head to tool_result entry"
+    - button "Fork from tool_result entry"
+  - 'treeitem "assistant: web_fetch (mid-turn, cannot branch here)" [level=1]':
+    - text: assistant web_fetch
+    - button "Set head to assistant entry" [disabled]
+    - button "Fork from assistant entry" [disabled]
+  - 'treeitem "tool_result: ## Full Jitter sleep = random_between(0, min(cap, base * 2 ** attempt)) Full j" [level=1]':
+    - text: "tool_result ## Full Jitter sleep = random_between(0, min(cap, base * 2 ** attempt)) Full j"
+    - button "Set head to tool_result entry"
+    - button "Fork from tool_result entry"
+  - 'treeitem "assistant: read (mid-turn, cannot branch here)" [level=1]':
+    - text: assistant read
+    - button "Set head to assistant entry" [disabled]
+    - button "Fork from assistant entry" [disabled]
+  - 'treeitem /tool_result: \d+ func \(c \*Client\) Send\(ctx context\.Context, e Event\) error \{ \d+ var err error/ [level=1]':
+    - text: "/tool_result \\d+ func \\(c \\*Client\\) Send\\(ctx context\\.Context, e Event\\) error \\{ \\d+ var err error/"
+    - button "Set head to tool_result entry"
+    - button "Fork from tool_result entry"
+  - 'treeitem "assistant: grep (mid-turn, cannot branch here)" [level=1]':
+    - text: assistant grep
+    - button "Set head to assistant entry" [disabled]
+    - button "Fork from assistant entry" [disabled]
+  - 'treeitem /tool_result: internal\/webhook\/client\.go:\d+:const maxRetries = 5/ [level=1]':
+    - text: /tool_result internal\/webhook\/client\.go:\d+:const maxRetries = 5/
+    - button "Set head to tool_result entry"
+    - button "Fork from tool_result entry"
+  - 'treeitem "assistant: find (mid-turn, cannot branch here)" [level=1]':
+    - text: assistant find
+    - button "Set head to assistant entry" [disabled]
+    - button "Fork from assistant entry" [disabled]
+  - 'treeitem "tool_result: internal/webhook/client_test.go internal/webhook/backoff_test.go" [level=1]':
+    - text: tool_result internal/webhook/client_test.go internal/webhook/backoff_test.go
+    - button "Set head to tool_result entry"
+    - button "Fork from tool_result entry"
+  - 'treeitem "assistant: ls (mid-turn, cannot branch here)" [level=1]':
+    - text: assistant ls
+    - button "Set head to assistant entry" [disabled]
+    - button "Fork from assistant entry" [disabled]
+  - 'treeitem "tool_result: backoff.go client.go client_test.go" [level=1]':
+    - text: tool_result backoff.go client.go client_test.go
+    - button "Set head to tool_result entry"
+    - button "Fork from tool_result entry"
+  - 'treeitem "assistant: write (mid-turn, cannot branch here)" [level=1]':
+    - text: assistant write
+    - button "Set head to assistant entry" [disabled]
+    - button "Fork from assistant entry" [disabled]
+  - 'treeitem "tool_result: wrote internal/webhook/backoff.go" [level=1]':
+    - text: tool_result wrote internal/webhook/backoff.go
+    - button "Set head to tool_result entry"
+    - button "Fork from tool_result entry"
+  - 'treeitem "assistant: spawn_agent (mid-turn, cannot branch here)" [level=1]':
+    - text: assistant spawn_agent
+    - button "Set head to assistant entry" [disabled]
+    - button "Fork from assistant entry" [disabled]
+  - 'treeitem "tool_result: {\"status\":\"done\"}" [level=1]':
+    - text: "tool_result {\"status\":\"done\"}"
+    - button "Set head to tool_result entry"
+    - button "Fork from tool_result entry"
+  - 'treeitem /assistant: Full jitter it is: the cap stays at \d+[hmsp]+\. \(head\)/ [level=1]':
+    - text: "/assistant Full jitter it is: the cap stays at \\d+[hmsp]+\\./"
+    - button "Set head to assistant entry"
+    - button "Fork from assistant entry"

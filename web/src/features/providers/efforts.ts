@@ -7,7 +7,7 @@
  */
 
 import { maxReasoningEffortLength } from "@/api/types";
-import type { ReasoningEffort } from "@/api/types";
+import type { ReasoningEffort, ThinkingSwitch } from "@/api/types";
 
 /** maxReasoningEfforts is how many choices one model may offer. */
 export const maxReasoningEfforts = 12;
@@ -60,3 +60,25 @@ export function nextEffort(
   const index = efforts.indexOf(current);
   return efforts[(index + 1) % efforts.length] ?? current;
 }
+
+/**
+ * thinkingSwitches are the fields that can carry the effort "none", in the
+ * order the model form offers them, each with the endpoints that take it.
+ */
+export const thinkingSwitches: readonly {
+  value: ThinkingSwitch;
+  endpoints: string;
+}[] = [
+  {
+    value: "reasoning_effort",
+    endpoints: "OpenAI, Gemini, Groq, OpenRouter, Ollama, LM Studio, recent vLLM and llama.cpp",
+  },
+  {
+    value: "chat_template_kwargs",
+    endpoints: "vLLM, SGLang, and llama.cpp serving Qwen, GLM, or DeepSeek templates",
+  },
+  {
+    value: "thinking",
+    endpoints: "DeepSeek, Z.ai, Moonshot, and Anthropic APIs",
+  },
+];

@@ -1,0 +1,7 @@
+- main:
+  - heading "Sign in to Eika" [level=1]
+  - text: Enter the password chosen when this harness was set up. Password
+  - textbox "Password": wrong
+  - button "Advanced"
+  - alert: That password is not the one this harness was set up with.
+  - button "Sign in"

@@ -362,6 +362,7 @@ type modelWire struct {
 	MaxOutput        int      `json:"max_output"`
 	ReasoningEffort  string   `json:"reasoning_effort"`
 	ReasoningEfforts []string `json:"reasoning_efforts"`
+	ThinkingSwitch   string   `json:"thinking_switch"`
 	PreserveThinking bool     `json:"preserve_thinking"`
 }
 

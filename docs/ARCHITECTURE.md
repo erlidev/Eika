@@ -17,7 +17,7 @@ reading, one frontend, and a three-service compose stack.
 | `config` | `internal/config` | Deployment configuration: defaults for the compose stack, an optional YAML file, `EIKA_*` overrides, validation, redacted `String()` |
 | `secret` | `internal/secret` | Seals the credentials the UI stores, API keys and git passwords, with a key kept apart from the database |
 | `event` | `internal/event` | The event envelope, the type name constants, the payload structs, the `Emitter` interface, and the fan-out `Bus` |
-| `server` | `internal/server` | Composition of the process, the JSON API, the WebSocket event stream, sign-in and bearer auth, provider and model management, and the run manager |
+| `server` | `internal/server` | Composition of the process, the JSON API, the WebSocket event stream, sign-in and bearer auth, provider and model management, and the run manager; `server/servertest` reads the wire types' shapes into `docs/api/contract.json` and checks bodies against it, for tests on both sides of the API |
 | `agent` | `internal/agent` | The agent loop: turns, tool dispatch, steering and follow-up queues, retries, events |
 | `provider` | `internal/provider` | The model interface, message and event types, the kind registry, the OpenAI implementation, the scripted fake |
 | `tool` | `internal/tool` | The tool interface, call context, result type, and registry; `tool/builtin` holds the thirteen built-in tools |
@@ -75,14 +75,17 @@ The pieces:
   official SDK; `provider/providertest` replays scripted responses in tests.
   A model can set `reasoning_effort`, and the words it may take are the
   model's own row rather than a list in the code, because compatible
-  endpoints disagree on the vocabulary. Streamed `reasoning_content` always
-  becomes `KindReasoningDelta`, so a client can show the model thinking; an
-  OpenAI-compatible endpoint can also set `preserve_thinking`, which is what
-  makes Eika send that extension and replay the reasoning with later
-  assistant messages. An endpoint that rejects the extension must set it to
-  false. It is not an OpenAI API field. Usage is relayed as soon as a chunk
-  carries it, so an endpoint with continuous usage statistics keeps the
-  context meter current while the response is still arriving. An endpoint that
+  endpoints disagree on the vocabulary. The effort `none` turns thinking
+  off, sent in the one field the model's `thinking_switch` names:
+  `reasoning_effort`, `chat_template_kwargs`, or `thinking`. Streamed
+  `reasoning_content` always becomes `KindReasoningDelta`, so a client can
+  show the model thinking; an OpenAI-compatible endpoint can also set
+  `preserve_thinking`, which is what makes Eika send that extension and
+  replay the reasoning with later assistant messages. An endpoint that
+  rejects the extension must set it to false. It is not an OpenAI API field.
+  Usage is relayed as soon as a chunk carries it, so an endpoint with
+  continuous usage statistics keeps the context meter current while the
+  response is still arriving. An endpoint that
   measures its own speed (llama.cpp, vLLM, NIM, LM Studio, TabbyAPI, Groq,
   Ollama) reports it in fields outside the OpenAI shape; `openai/timings.go`
   reads them into `provider.Timings` on the usage event.
@@ -159,7 +162,7 @@ a container, and a URL.
 | `subagents` | id, parent_session_id, child_session_id, child_workspace_id, state, result, created_at, finished_at | One child agent and what it reported |
 | `settings` | key (primary), value (jsonb) | What the user changes at runtime |
 | `providers` | id, name (unique), kind, base_url, api_key (sealed), created_at, updated_at | A model provider: an endpoint of one provider kind and its key |
-| `models` | id, provider_id, name (unique), model, context_window, max_output, reasoning_effort, reasoning_efforts, preserve_thinking, created_at, updated_at | A model a run may use; `name` is Eika's, `model` the endpoint's, `reasoning_efforts` the words its effort cycles through |
+| `models` | id, provider_id, name (unique), model, context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, created_at, updated_at | A model a run may use; `name` is Eika's, `model` the endpoint's, `reasoning_efforts` the words its effort cycles through, `thinking_switch` the request field that carries the effort `none` |
 | `auth_password` | id (always 1), hash, updated_at | The sign-in password as a PBKDF2 hash |
 | `auth_sessions` | token_hash, created_at, expires_at | A signed-in browser, by the SHA-256 of its token |
 | `search_keys` | name (primary), key (sealed), updated_at | The API key of a search provider, or the GitHub token |

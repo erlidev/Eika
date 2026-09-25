@@ -55,6 +55,43 @@ func ValidReasoningEffort(effort string) bool {
 	return true
 }
 
+// EffortNone is the reasoning effort that turns thinking off. It is the word
+// the Chat Completions field itself uses for that, and a model's
+// ThinkingSwitch says which request field carries it.
+const EffortNone = "none"
+
+// ThinkingSwitch is the request field that turns a model's thinking off when
+// its reasoning effort is EffortNone. Endpoints disagree on which field that
+// is, and one that does not know a field may reject the whole request, so a
+// model names the one field its endpoint understands.
+type ThinkingSwitch string
+
+// The fields that can turn thinking off.
+const (
+	// SwitchReasoningEffort sends reasoning_effort "none", the standard
+	// field: OpenAI, Gemini, Groq, OpenRouter, Ollama, LM Studio, and recent
+	// vLLM and llama.cpp. It is what the empty value means.
+	SwitchReasoningEffort ThinkingSwitch = "reasoning_effort"
+	// SwitchTemplate sends chat_template_kwargs with enable_thinking and
+	// thinking false instead, which a server that renders the model's own
+	// chat template (vLLM, SGLang, llama.cpp) hands to it. Qwen, GLM, and
+	// Hunyuan templates read the first name, DeepSeek templates the second.
+	SwitchTemplate ThinkingSwitch = "chat_template_kwargs"
+	// SwitchThinking sends thinking {"type": "disabled"} instead, the object
+	// the DeepSeek, Z.ai, Moonshot, and Anthropic compatible APIs take.
+	SwitchThinking ThinkingSwitch = "thinking"
+)
+
+// ValidThinkingSwitch reports whether s is a ThinkingSwitch Request accepts.
+// The empty value means SwitchReasoningEffort.
+func ValidThinkingSwitch(s ThinkingSwitch) bool {
+	switch s {
+	case "", SwitchReasoningEffort, SwitchTemplate, SwitchThinking:
+		return true
+	}
+	return false
+}
+
 // Role is the author of a conversation message.
 type Role string
 
@@ -244,8 +281,12 @@ type Request struct {
 	Temperature *float64
 	// ReasoningEffort selects how much a reasoning model thinks. Its
 	// vocabulary belongs to the endpoint; ValidReasoningEffort bounds the
-	// shape. Empty leaves it to the model.
+	// shape. Empty leaves it to the model, and EffortNone turns thinking
+	// off through ThinkingSwitch.
 	ReasoningEffort string
+	// ThinkingSwitch is the field that carries EffortNone; empty means
+	// SwitchReasoningEffort. Every other effort goes in reasoning_effort.
+	ThinkingSwitch ThinkingSwitch
 	// PreserveThinking asks a compatible Chat Completions endpoint to return
 	// reasoning data and replays that data with later assistant messages.
 	PreserveThinking bool

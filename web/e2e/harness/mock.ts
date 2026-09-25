@@ -20,8 +20,10 @@ import type {
   SearchLimit,
   SearchStatus,
   Session,
+  ThinkingSwitch,
   Workspace,
 } from "../../src/api/types.ts";
+import { check, contract, matchRoute } from "./contract.ts";
 import { entryKind, fixedNow, minutesAgo, pathOf, sessionTools, syncSystem } from "./world.ts";
 import type { ReplyStep, World } from "./world.ts";
 
@@ -31,7 +33,8 @@ export const mockToken = "mock-token";
 /** wrongPassword is the one password sign-in refuses, to show the error. */
 export const wrongPassword = "wrong";
 
-type Reply = { status: number; body?: unknown };
+/** Reply is how the mock answers a request: a status and a JSON body, if any. */
+export type Reply = { status: number; body?: unknown };
 
 type Handler = (req: {
   params: string[];
@@ -120,12 +123,22 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
+/** thinkingSwitch narrows a JSON body field to a switch, standard when absent. */
+function thinkingSwitch(value: unknown): ThinkingSwitch {
+  return value === "chat_template_kwargs" || value === "thinking" ? value : "reasoning_effort";
+}
+
 export class MockHarness {
   readonly world: World;
   /** requests lists every API call in order. */
   readonly requests: RequestLog[] = [];
   /** unhandled lists API calls no route matched: a gap in the mock. */
   readonly unhandled: string[] = [];
+  /**
+   * contractBreaks lists what the page sent, or the mock answered, that
+   * docs/api/contract.json says the harness would refuse or never send.
+   */
+  readonly contractBreaks: string[] = [];
   private readonly sockets = new Set<Socket>();
   private readonly routes: RouteDef[];
   private readonly stepDelayMs: number;
@@ -201,6 +214,7 @@ export class MockHarness {
 
   /** emit publishes an event to every stream subscribed to its topic. */
   emit(event: EikaEvent): void {
+    this.checkEvent(event);
     const frame = JSON.stringify(event);
     for (const socket of this.sockets) {
       if (event.type === "bus.dropped" || socket.topics.has(event.topic)) socket.ws.send(frame);
@@ -210,6 +224,76 @@ export class MockHarness {
   /** event builds an envelope stamped with the fixed clock. */
   event(type: EventType, topic: string, payload?: unknown): EikaEvent {
     return { type, topic, time: fixedNow, payload };
+  }
+
+  /** checkEvent records an event whose payload the harness would never send. */
+  private checkEvent(event: EikaEvent): void {
+    const c = contract();
+    if (!(event.type in c.events)) {
+      this.contractBreaks.push(`event ${event.type}: not in the contract`);
+      return;
+    }
+    const shape = c.events[event.type];
+    const problems = shape
+      ? check(shape, event.payload, { types: c.types })
+      : event.payload === undefined
+        ? []
+        : ["$: a payload, want none"];
+    for (const p of problems) this.contractBreaks.push(`event ${event.type}: ${p}`);
+  }
+
+  /**
+   * checkRequest is how the harness's decoder would answer a request body:
+   * undefined when it accepts it, or the 400 it refuses it with. A refusal is
+   * recorded, since the page sent something the harness does not take.
+   */
+  private checkRequest(key: string, method: string, path: string, raw: string): Reply | undefined {
+    const route = matchRoute(contract(), method, path);
+    if (route === undefined) {
+      this.contractBreaks.push(`${key}: not in the contract`);
+      return undefined;
+    }
+    if (route.route.request === undefined) return undefined;
+    let problems: string[];
+    try {
+      problems =
+        raw === ""
+          ? ["$: no body"]
+          : check(route.route.request, JSON.parse(raw), { request: true });
+    } catch {
+      problems = ["$: not JSON"];
+    }
+    if (problems.length === 0) return undefined;
+    for (const p of problems) this.contractBreaks.push(`${key} request: ${p}`);
+    return fail(400, "invalid_request", `decode request body: ${problems.join("; ")}`);
+  }
+
+  /** checkReply records a reply the harness would never give to method and path. */
+  private checkReply(key: string, method: string, path: string, reply: Reply): void {
+    const c = contract();
+    const route = matchRoute(c, method, path)?.route;
+    if (route === undefined) return;
+    const record = (problems: string[]) => {
+      for (const p of problems) this.contractBreaks.push(`${key} response: ${p}`);
+    };
+    if (reply.status < 300) {
+      if (reply.status !== route.status) {
+        record([`status ${String(reply.status)}, want ${String(route.status)}`]);
+      }
+      if (route.response === undefined) {
+        if (reply.body !== undefined) record(["a body, want none"]);
+      } else {
+        record(check(route.response, reply.body, { types: c.types }));
+      }
+      return;
+    }
+    // A bare failure is a proxy's, not the harness's.
+    if (reply.body === undefined) return;
+    record(check(c.error, reply.body, { types: c.types }));
+    const code = (reply.body as { error?: { code?: unknown } }).error?.code;
+    if (typeof code !== "string" || !c.error_codes.includes(code)) {
+      record([`error code ${String(code)} is not one of ${c.error_codes.join(", ")}`]);
+    }
   }
 
   /** dropStreams closes every event stream, as a harness restart would. */
@@ -238,7 +322,10 @@ export class MockHarness {
     ws.onMessage((data) => {
       this.onFrame(socket, typeof data === "string" ? data : data.toString());
     });
-    for (const e of this.world.eventsOnConnect) ws.send(JSON.stringify(e));
+    for (const e of this.world.eventsOnConnect) {
+      this.checkEvent(e);
+      ws.send(JSON.stringify(e));
+    }
   }
 
   /**
@@ -307,7 +394,9 @@ export class MockHarness {
         path = at < 0 ? path : path.slice(at + 1);
       }
       for (const entry of path) {
-        socket.ws.send(JSON.stringify(this.sessionMessage(session, entry)));
+        const event = this.sessionMessage(session, entry);
+        this.checkEvent(event);
+        socket.ws.send(JSON.stringify(event));
       }
     }
   }
@@ -326,67 +415,19 @@ export class MockHarness {
 
   private async serve(route: Route): Promise<void> {
     const request = route.request();
-    const url = new URL(request.url());
-    const method = request.method();
-    const path = url.pathname;
     this.busy += 1;
     try {
-      let body: Record<string, unknown> = {};
-      const raw = request.postData() ?? undefined;
-      if (raw) {
-        try {
-          body = JSON.parse(raw) as Record<string, unknown>;
-        } catch {
-          body = {};
-        }
+      const reply = await this.answer(
+        request.method(),
+        request.url(),
+        request.headers().authorization,
+        request.postData() ?? "",
+      );
+      if (reply === "hang") return;
+      if (reply === "network") {
+        await route.abort("connectionrefused");
+        return;
       }
-      let reply: Reply | undefined;
-      for (const def of this.routes) {
-        if (def.method !== method) continue;
-        const match = def.pattern.exec(path);
-        if (!match) continue;
-        const failure = this.failing.get(def.key);
-        if (failure === "hang") {
-          // Left unanswered on purpose; the page is waiting, not the mock.
-          this.requests.push({ method, path, status: 0 });
-          return;
-        }
-        if (failure === "network") {
-          this.requests.push({ method, path, status: 0 });
-          await route.abort("connectionrefused");
-          return;
-        }
-        if (failure !== undefined) {
-          reply = failure.bare
-            ? { status: failure.status }
-            : fail(
-                failure.status,
-                failure.code ?? statusCodes[failure.status] ?? "internal",
-                failure.message ??
-                  (failure.status >= 500
-                    ? "internal error"
-                    : `refused by the mock (HTTP ${String(failure.status)})`),
-              );
-          break;
-        }
-        const authorised = request.headers().authorization === `Bearer ${mockToken}`;
-        reply =
-          def.auth && !authorised
-            ? fail(401, "unauthorized", "missing or invalid token")
-            : await def.handle({
-                params: match.slice(1).map(decodeURIComponent),
-                query: url.searchParams,
-                body,
-                raw: raw ?? "",
-              });
-        break;
-      }
-      if (!reply) {
-        this.unhandled.push(`${method} ${path}`);
-        reply = fail(404, "not_found", `mock harness has no route for ${method} ${path}`);
-      }
-      syncSystem(this.world);
-      this.requests.push({ method, path, status: reply.status, body: reply.body });
       await route.fulfill(
         reply.body === undefined
           ? { status: reply.status, body: "" }
@@ -395,6 +436,78 @@ export class MockHarness {
     } finally {
       this.busy -= 1;
     }
+  }
+
+  /**
+   * answer is the mock's reply to one API request, or the failure that
+   * leaves it without one: `hang` never answers, `network` never connects.
+   * The page reaches it through install; a test may call it directly.
+   */
+  async answer(
+    method: string,
+    href: string,
+    authorization: string | undefined,
+    raw: string,
+  ): Promise<Reply | "hang" | "network"> {
+    const url = new URL(href, "http://mock.invalid");
+    const path = url.pathname;
+    let body: Record<string, unknown> = {};
+    if (raw) {
+      try {
+        body = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        body = {};
+      }
+    }
+    let reply: Reply | undefined;
+    for (const def of this.routes) {
+      if (def.method !== method) continue;
+      const match = def.pattern.exec(path);
+      if (!match) continue;
+      const failure = this.failing.get(def.key);
+      if (failure === "hang" || failure === "network") {
+        // Left unanswered on purpose; the page is waiting, not the mock.
+        this.requests.push({ method, path, status: 0 });
+        return failure;
+      }
+      if (failure !== undefined) {
+        reply = failure.bare
+          ? { status: failure.status }
+          : fail(
+              failure.status,
+              failure.code ?? statusCodes[failure.status] ?? "internal",
+              failure.message ??
+                (failure.status >= 500
+                  ? "internal error"
+                  : `refused by the mock (HTTP ${String(failure.status)})`),
+            );
+        break;
+      }
+      reply =
+        def.auth && authorization !== `Bearer ${mockToken}`
+          ? fail(401, "unauthorized", "missing or invalid token")
+          : (this.checkRequest(def.key, method, path, raw) ??
+            (await def.handle({
+              params: match.slice(1).map(decodeURIComponent),
+              query: url.searchParams,
+              body,
+              raw,
+            })));
+      this.checkReply(def.key, method, path, reply);
+      break;
+    }
+    if (!reply) {
+      this.unhandled.push(`${method} ${path}`);
+      reply = fail(404, "not_found", `mock harness has no route for ${method} ${path}`);
+    }
+    syncSystem(this.world);
+    this.requests.push({ method, path, status: reply.status, body: reply.body });
+    return reply;
+  }
+
+  /** routeKeys are the routes the mock serves, each as `METHOD /path`, with whether it needs a token. */
+  routeKeys(): { key: string; auth: boolean }[] {
+    return this.routes.map((r) => ({ key: r.key, auth: r.auth }));
   }
 
   private buildRoutes(): RouteDef[] {
@@ -423,7 +536,7 @@ export class MockHarness {
           return fail(400, "invalid_request", "password must be at least 8 characters");
         }
         w.passwordSet = true;
-        return ok({ token: mockToken, expires_at: "2027-01-01T00:00:00Z" });
+        return ok({ token: mockToken, expires_at: "2027-01-01T00:00:00Z" }, 201);
       },
       false,
     );
@@ -620,6 +733,7 @@ export class MockHarness {
         max_output: Number(body.max_output) || 0,
         reasoning_effort: str(body.reasoning_effort),
         reasoning_efforts: strings(body.reasoning_efforts),
+        thinking_switch: thinkingSwitch(body.thinking_switch),
         preserve_thinking: body.preserve_thinking === true,
         created_at: now(),
         updated_at: now(),
@@ -1002,7 +1116,9 @@ export class MockHarness {
       row.updated_at = now();
       return ok(row);
     });
-    on("GET", "/api/sessions/{id}/agents", () => ok({ agents: [] }));
+    on("GET", "/api/sessions/{id}/agents", ({ params }) =>
+      ok({ session_id: params[0], agents: [] }),
+    );
 
     // Runs, queues, and questions.
     on("GET", "/api/sessions/{id}/run", ({ params }) => {
@@ -1335,7 +1451,7 @@ function midTurn(entries: Entry[], entryId: string): Reply | undefined {
   if (found === undefined || found.resumable) return undefined;
   return fail(
     400,
-    "invalid",
+    "invalid_request",
     `entry ${entryId} leaves tool calls unanswered, so a run cannot continue from it`,
   );
 }

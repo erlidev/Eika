@@ -13,6 +13,7 @@ import (
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/executor"
+	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
@@ -391,6 +392,7 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 		MaxTokens:        m.MaxOutput,
 		ContextWindow:    m.ContextWindow,
 		ReasoningEffort:  m.ReasoningEffort,
+		ThinkingSwitch:   provider.ThinkingSwitch(m.ThinkingSwitch),
 		PreserveThinking: m.PreserveThinking,
 		Executor:         ex,
 		Emitter:          s.deps.Bus,

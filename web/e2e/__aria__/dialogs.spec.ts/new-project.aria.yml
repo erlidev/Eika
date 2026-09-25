@@ -1,0 +1,19 @@
+- dialog "New project":
+  - heading "New project" [level=2]
+  - paragraph: A project is a git repository Eika mirrors in its hub. Workspaces check it out.
+  - group "Where the code is":
+    - text: ""
+    - button "Local directory A repository on this machine" [pressed]
+    - button "Remote repository GitHub, GitLab, or any git URL"
+  - text: Name
+  - textbox "Name":
+    - /placeholder: my-app
+  - text: Default branch
+  - textbox "Default branch": main
+  - text: Path on the Docker host
+  - textbox "Path on the Docker host":
+    - /placeholder: /home/you/code/my-app
+  - paragraph: An absolute path on the machine Docker runs on. Workspaces mount it, so agents edit it in place.
+  - button "Cancel"
+  - button "Add project" [disabled]
+  - button "Close"

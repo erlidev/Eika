@@ -11,7 +11,10 @@
 // It sends the standard reasoning_effort field. For compatible endpoints it
 // also sends preserve_thinking and maps streamed and replayed reasoning to
 // reasoning_content. Those two extension fields are not part of the OpenAI
-// Chat Completions contract.
+// Chat Completions contract. The effort "none" goes in the field the
+// request's ThinkingSwitch names: reasoning_effort, or instead the
+// chat_template_kwargs or thinking extension, never more than one, because an
+// endpoint may reject a field it does not know.
 //
 // The entry point is New, which the provider registry calls for the "openai"
 // kind.

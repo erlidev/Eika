@@ -8,7 +8,7 @@ import { expect, test } from "../fixtures.ts";
 
 test("a fork and a child agent sit under the session they came from", async ({
   open,
-  expectShot,
+  expectAria,
 }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("payments-api remote");
@@ -30,13 +30,10 @@ test("a fork and a child agent sit under the session they came from", async ({
     eika.page.getByRole("button", { name: /Workspace state.*add-backoff-tests/ }),
   ).toBeHidden();
 
-  await expectShot(eika, "session-nesting", 'role=navigation[name="Projects"]');
+  await expectAria(eika, "session-nesting", 'role=navigation[name="Projects"]');
 });
 
-test("rewinding a message takes the conversation back and puts it in the box", async ({
-  open,
-  expectShot,
-}) => {
+test("rewinding a message takes the conversation back and puts it in the box", async ({ open }) => {
   const eika = await open({ scenario: "agent-tools" });
   // The transcript's own rows: the same words are also in the live region
   // that announces a finished turn, and in the session tree's previews.
@@ -57,7 +54,6 @@ test("rewinding a message takes the conversation back and puts it in the box", a
   // Nothing was deleted: the branch is still in the tree.
   await eika.click("Tree");
   await expect(eika.page.getByRole("treeitem", { name: /Tests pass/ })).toBeVisible();
-  await expectShot(eika, "session-rewound");
 });
 
 test("an entry in the middle of a turn offers no branch", async ({ open }) => {

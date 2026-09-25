@@ -1,27 +1,26 @@
 /**
  * Chat mode: sessions with no workspace, listed apart from the projects,
  * marked as chats in their header, and offering only the tools that need no
- * workspace, which the Tools panel turns on and off.
+ * workspace, which the Tools panel turns on and off. A chat is compared pixel
+ * for pixel once; the rest is checked by what the page says and offers.
  */
 
 import { expect, test } from "../fixtures.ts";
 
-for (const theme of ["light", "dark"] as const) {
-  test(`a chat, ${theme} theme`, async ({ open, expectShot }) => {
-    const eika = await open({ scenario: "chat", theme });
-    await expect(eika.page.getByRole("navigation", { name: "Chats" })).toBeVisible();
-    await expectShot(eika, `chat-${theme}`);
-  });
-}
+test("a chat", async ({ open, expectShot }) => {
+  const eika = await open({ scenario: "chat" });
+  await expect(eika.page.getByRole("navigation", { name: "Chats" })).toBeVisible();
+  await expectShot(eika, "chat-light");
+});
 
-test("a new chat says what it cannot do", async ({ open, expectShot }) => {
+test("a new chat says what it cannot do", async ({ open, expectAria }) => {
   const eika = await open({ scenario: "chat-empty" });
-  await expectShot(eika, "chat-empty");
+  await expectAria(eika, "chat-empty", 'role=region[name="Session"]');
 });
 
 test("a chat has a Tools panel where a workspace session has files", async ({
   open,
-  expectShot,
+  expectAria,
 }) => {
   const eika = await open({ scenario: "chat" });
   const tabs = eika.page.getByRole("tablist", { name: "Context panels" });
@@ -33,7 +32,7 @@ test("a chat has a Tools panel where a workspace session has files", async ({
   await expect(fetch).toBeChecked();
   await eika.click("web_fetch");
   await expect(fetch).not.toBeChecked();
-  await expectShot(eika, "chat-tools", 'role=tabpanel[name="Tools"]');
+  await expectAria(eika, "chat-tools", 'role=tabpanel[name="Tools"]');
 
   // The choice is the harness's, so it holds across a reload.
   await eika.page.reload();
@@ -51,11 +50,11 @@ test("a workspace session names its workspace and has no Tools panel", async ({ 
   await expect(tabs.getByRole("tab", { name: "Tools" })).toBeHidden();
 });
 
-test("new chat opens a chat from the sidebar", async ({ open, expectShot }) => {
+test("new chat opens a chat from the sidebar", async ({ open, expectAria }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("New chat");
   await expect(eika.page).toHaveURL(/\/sessions\/chat-/);
   const chats = eika.page.getByRole("navigation", { name: "Chats" });
   await expect(chats.locator('[aria-current="page"]')).toHaveText("New chat");
-  await expectShot(eika, "chat-sidebar", 'role=navigation[name="Chats"]');
+  await expectAria(eika, "chat-sidebar", 'role=navigation[name="Chats"]');
 });

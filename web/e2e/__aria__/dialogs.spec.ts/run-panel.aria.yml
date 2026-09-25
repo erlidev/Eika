@@ -1,0 +1,18 @@
+- complementary "Context panels":
+  - tablist "Context panels":
+    - tab "Tree"
+    - tab "Run" [selected]
+    - tab "Files"
+    - tab "Terminal"
+    - tab "Changes"
+  - tabpanel "Run":
+    - heading "Run" [level=3]
+    - paragraph: This session has not run yet.
+    - heading "Context" [level=3]
+    - paragraph: No model call has reported its usage yet.
+    - heading "Questions (0)" [level=3]
+    - paragraph: Nothing is waiting on you.
+    - heading "Steering queue (0)" [level=3]
+    - paragraph: Empty.
+    - heading "Follow-up queue (0)" [level=3]
+    - paragraph: Empty.

@@ -1,0 +1,16 @@
+- main:
+  - complementary:
+    - text: Eika setup
+    - list "Setup steps":
+      - listitem: Password
+      - listitem: 2 Provider
+      - listitem: 3 Models
+      - listitem: 4 Sandbox
+      - listitem: 5 Project
+    - paragraph: Everything you choose here can be changed later in Settings.
+  - heading "Connect a model provider" [level=1]
+  - text: "Agents need a model to think with. Pick where it comes from: any OpenAI-compatible endpoint works, hosted or on this machine."
+  - alert:
+    - text: "Could not load the providers already configured, so the setup cannot tell which steps are done: the harness could not be reached. Check that it is running and that this browser can reach it, then try again."
+    - button "Retry"
+  - button "Skip the rest and open Eika"

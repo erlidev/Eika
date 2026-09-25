@@ -31,6 +31,7 @@ Each run starts its own Vite server (about two seconds) and prints JSON:
   "consoleErrors": [],
   "pageErrors": [],
   "unhandledApi": [],
+  "contractBreaks": [],
   "url": "..."
 }
 ```
@@ -42,6 +43,8 @@ Each run starts its own Vite server (about two seconds) and prints JSON:
   `failed.png` with `failed.aria.yml` show the page where it stopped.
 - `unhandledApi` lists routes the UI called that the mock does not serve yet;
   add them to `buildRoutes` in `harness/mock.ts`.
+- `contractBreaks` lists what breaks the API contract (see below): a request
+  the harness would refuse, or an answer or event it would never send.
 - `--out <dir>` keeps runs apart; `--url http://localhost:5173` reuses a
   running `npm run dev` instead of starting a server.
 - `--fail "GET /api/providers = 500"` makes a route fail from the first
@@ -116,32 +119,64 @@ reason, `hang` never ends it). A played reply also emits `turn.progress`, so
 the status bar's context meter is on every screenshot of a session that has
 run.
 
-## Regression baselines (`visual`)
+## Specs (`visual`)
 
-`specs/*.spec.ts` compare screens with the PNGs in `__screenshots__/`:
+`specs/*.spec.ts` drive the UI through flows and assert what a person would
+check: what is visible, enabled, focused, or described. Two kinds of
+baseline back the assertions, each where it is the right tool:
+
+- **Screenshots** (`expectShot`, PNGs in `__screenshots__/`) where pixels are
+  the point: both themes of the session, phone layouts, the transcript's
+  cards, the editor, the terminal, the diff. A few stray pixels fail it, so
+  it catches a restyle nobody meant.
+- **ARIA snapshots** (`expectAria`, YAML in `__aria__/`) where the point is
+  what a screen says and offers: its headings, fields, buttons, which are
+  disabled or invalid, and their text. A copy change shows as a readable
+  text diff rather than a picture to squint at, and a restyle leaves it alone.
+
+A baseline that only repeats a spec's assertions is churn, not coverage:
+leave it out.
 
 ```sh
 npm run visual            # compare (make visual)
 npm run visual:update     # accept the current rendering (make visual-update)
+npx playwright test --update-snapshots=missing   # write only new baselines
 ```
 
-A failure writes `-expected`, `-actual`, and `-diff` PNGs under
-`test-results/`; read the diff to see what moved. `npx playwright show-report
-e2e/report` opens the HTML report. Specs use the same driver as `shot`, so a
-flow tried from the command line becomes a spec by copying its steps:
+A failed screenshot writes `-expected`, `-actual`, and `-diff` PNGs under
+`test-results/`; read the diff to see what moved. A failed ARIA snapshot
+prints the text diff. `npx playwright show-report e2e/report` opens the HTML
+report. Specs use the same driver as `shot`, so a flow tried from the command
+line becomes a spec by copying its steps:
 
 ```ts
-test("settings", async ({ open, expectShot }) => {
+test("settings", async ({ open, expectShot, expectAria }) => {
   const eika = await open({ scenario: "workbench", theme: "dark" });
   await eika.click("Settings");
+  await expect(eika.page.getByText("gpt-5-mini")).toBeVisible();
   await expectShot(eika, "settings-dark", "role=dialog");
+  await eika.click("Account");
+  await expectAria(eika, "account", "role=dialog");
 });
 ```
 
-`expectShot` also fails on console errors, page errors, and unmocked routes.
-The threshold is 10 pixels, so a changed word fails.
+Every test also fails, when it ends, on a console error, a page error, a
+route the mock does not serve, or a break of the API contract.
 
-Baselines are rendered by Chromium on Linux and have no platform suffix
+### The API contract
+
+`docs/api/contract.json` is the shape of every route's request and response
+and every event's payload, written from the Go wire types by the server's
+tests. `harness/contract.ts` reads it, and the mock holds itself to it on
+every request: a body with a field the harness does not know, or no body
+where it wants one, gets the 400 the harness would answer, and a reply or
+event the harness could not send is reported. `harness/mock.test.ts` (run by
+`npm test`) calls every route the mock serves, so a route no spec reaches is
+held to the contract too. When the harness's types change, `make contract`
+rewrites the file and these tests say what in the mock, and in
+`src/api/types.ts`, has to follow.
+
+Screenshots are rendered by Chromium on Linux and have no platform suffix
 (`snapshotPathTemplate` in `playwright.config.ts`), so one set serves every
 Linux machine. What keeps them stable across machines:
 
@@ -158,13 +193,14 @@ baselines', the run's report holds the diffs.
 
 ## Checks
 
-`make visual` runs the suite: about four minutes on a laptop, one browser at
-a time. `make check` runs it after the Go and web checks, so it takes about
-five minutes in all. There is no CI, so `make check` locally is the only
-gate. A failed run writes `e2e/report` and `e2e/test-results`: open the diffs
-there, or run `npx playwright show-report` on the report.
+`make visual` runs the suite: under a minute on a laptop. `make check` runs
+the Go and web checks side by side, then the suite once they pass, so it
+takes about a minute in all. There is no CI, so `make check` locally is the
+only gate. A failed run writes `e2e/report` and `e2e/test-results`: open the
+diffs there, or run `npx playwright show-report` on the report.
 
-The specs run one browser at a time (`workers: 1`); pass `--workers=4` where
-memory allows. They start their own Vite server on port 4319 and refuse to
-reuse one already there; set `EIKA_VISUAL_PORT` to move it. The Account tab
+The specs run a browser per two cores (`workers: "50%"`); pass `--workers=1`
+on a machine short of memory. They build the frontend into `e2e/dist` (a few
+seconds) and serve it with `vite preview` on port 4319, refusing to reuse a
+server already there; set `EIKA_VISUAL_PORT` to move it. The Account tab
 shows that URL, so its baselines change with the port.

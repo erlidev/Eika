@@ -765,6 +765,7 @@ none.
 | `max_output` | number, required | The most tokens one response may have; at most `context_window`. |
 | `reasoning_effort` | string | The `reasoning_effort` in force. Compatible endpoints disagree on the vocabulary, so any word of at most 32 letters, digits, hyphens, and underscores is accepted; empty leaves it to the endpoint. |
 | `reasoning_efforts` | string array | The efforts this model offers, in the order the UI cycles through them. At most 12, each a non-empty value of the shape above. |
+| `thinking_switch` | string | The request field that turns thinking off when the effort is `none`, and the only one sent: `reasoning_effort` (the default) sends `"reasoning_effort": "none"`; `chat_template_kwargs` sends `"chat_template_kwargs": {"enable_thinking": false, "thinking": false}` for servers that render the model's chat template (vLLM, SGLang, llama.cpp); `thinking` sends `"thinking": {"type": "disabled"}` (DeepSeek, Z.ai, Moonshot, Anthropic). Any other effort goes in `reasoning_effort` whatever this says. |
 | `preserve_thinking` | boolean | Ask a compatible endpoint for `reasoning_content` and replay it on later turns. Off by default; the official OpenAI API rejects it. Reasoning is streamed to clients either way. |
 
 `201` with the `Model`; `400` for a bad field or an unknown provider; `409`
@@ -783,7 +784,7 @@ the user picks another.
 ### `POST /api/models/test`
 
 `{"provider_id": string, "model": string, "reasoning_effort": string,
-"preserve_thinking": boolean}`: a model on a stored provider, saved or not.
+"thinking_switch": string, "preserve_thinking": boolean}`: a model on a stored provider, saved or not.
 Sends one short request with no tools and answers `200` with
 `{"reply": string, "stop_reason": string, "latency_ms": number}`. A reasoning
 model that spends its budget thinking replies with nothing, which still shows
@@ -797,6 +798,7 @@ the model is there. `400` with what the endpoint answered when it failed.
 | `context_window`, `max_output` | number | Its limits. |
 | `reasoning_effort` | string, optional | As on `POST`. |
 | `reasoning_efforts` | string array | As on `POST`; always present, empty when the model offers no choices. |
+| `thinking_switch` | string | As on `POST`; always present. |
 | `preserve_thinking` | boolean | As on `POST`. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 

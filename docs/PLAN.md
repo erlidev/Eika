@@ -15,7 +15,9 @@ when decisions change. Phase status is tracked in the checklist at the end.
 |---|---|
 | Backend | Go 1.26, stdlib `net/http` router, `log/slog`, official `openai-go` SDK |
 | Frontend | Vite, React 19, TypeScript (strict), Tailwind v4, shadcn/ui |
-| Visual testing | Playwright against a mock harness (`web/e2e/harness`), not the Go server: screens need no Docker or Postgres and every state is scriptable |
+| Visual testing | Playwright against a mock harness (`web/e2e/harness`), not the Go server: screens need no Docker or Postgres and every state is scriptable. The specs load a production build served by `vite preview`, in parallel browsers: a fresh context per test would fetch the dev server's hundreds of unbundled modules each time, and one browser at a time made `make check` five minutes. A spec asserts behaviour with locators; a screenshot baseline is kept only where pixels are the point (themes, phone layouts, the transcript's cards, the editor, terminal, and diff), and an ARIA snapshot pins what a screen says and offers. Baselines on every screen and state failed on each copy edit, so accepting them became a habit rather than a review |
+| API contract | `docs/api/contract.json` holds the shape of every route's request and response and every event's payload, written by `TestContractFile` in `internal/server` from the Go wire types by reflection (`server/servertest`), and committed as a golden file. The handler tests check every response they get against it, which keeps the route table honest; the mock harness refuses a request it would refuse and reports an answer or event it could not send. The mock is typed with the frontend's own types, so without this nothing tied it to the harness. Reflection rather than recorded responses: a type says which fields may be left out or be null, and needs no database |
+| Docker tests in `make check` | The `docker`-tagged tests (handlers, store, workspaces) run in `make check` and skip with a reason when there is no daemon. They take about twenty seconds beside the other checks, and were otherwise never run |
 | Providers | OpenAI-compatible only at launch, behind a `provider.Provider` interface |
 | Docker | Harness mounts `/var/run/docker.sock`; sandboxes are sibling containers |
 | Persistence | PostgreSQL (`pgx`), embedded SQL migrations; no ORM |
@@ -39,6 +41,7 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | OpenAI SDK version | `github.com/openai/openai-go/v3`, pinned at v3.61.0, the latest stable major |
 | Chat Completions, not Responses | Providers are "OpenAI-compatible" endpoints. Every such endpoint implements Chat Completions; few implement the Responses API. The `Provider` interface hides the choice, so a Responses implementation can be added later as another kind |
 | Chat Completions reasoning | `reasoning_effort` uses the standard Chat Completions request field. Streamed `reasoning_content` is always captured and stored as provider-neutral reasoning data. `preserve_thinking` is a per-model switch for compatible endpoints and is off for a new model, because the official OpenAI API rejects it: when on, Eika sends the extension and replays the stored reasoning on later assistant messages. The extension is not part of the OpenAI Chat Completions contract |
+| Turning thinking off | The effort `none` turns thinking off: it is the word the standard `reasoning_effort` field uses, and OpenAI, Gemini, Groq, OpenRouter, Ollama, LM Studio, and recent vLLM and llama.cpp take it there. Older vLLM and llama.cpp builds and SGLang need `chat_template_kwargs` instead (`enable_thinking` for Qwen, GLM, and Hunyuan templates, `thinking` for DeepSeek's, so both are sent), and the DeepSeek, Z.ai, Moonshot, and Anthropic compatible APIs need `thinking: {"type": "disabled"}`. No one request fits all of them, because the official OpenAI API and others reject a field they do not know, and some servers reject `none` in `reasoning_effort`. So `models.thinking_switch` names the one field that carries `none` for that model — `reasoning_effort` (the default), `chat_template_kwargs`, or `thinking` — and only that field is sent. Every other effort still goes in `reasoning_effort`. Trying fields in turn on a 400 was rejected: it doubles the failures a misconfigured model costs and hides the misconfiguration |
 | Malformed tool arguments | Keep the model's exact argument text. Valid arguments keep their JSON shape on the API and in storage. Malformed text is safely quoted and carries `arguments_malformed: true`, then is restored before tool decoding. The explicit marker distinguishes malformed text from a valid top-level JSON string. The tool can report a normal argument error and the session remains resumable |
 | Retries live in the agent loop | The SDK's retries are switched off (`WithMaxRetries(0)`). One place decides, so the scripted fake provider exercises the same retry path as the real one. Retryable means 408, 409, 429, 5xx, or a transport failure |
 | Provider API keys | Entered in the UI, sealed with AES-256-GCM by `internal/secret` before they reach a row, and opened by the server only to build a provider for one run, probe, or test. No package reads a key from the environment; the OpenAI provider sets its key and base URL explicitly so the SDK's `OPENAI_*` defaults never apply. The API returns whether a key is stored and the last four characters of a long one, never the key. A key belongs to the base URL it was entered for: changing a provider's URL without entering a key clears the stored key, and a probe at another URL never carries it, so a typo or a hostile URL cannot collect it |
@@ -393,12 +396,17 @@ parallel.
 
 - Unit tests everywhere with the standard library; `executor/local` and a
   fake provider make the agent loop fully testable without Docker or a model.
-- Docker-dependent tests use build tag `docker` and run only when a socket
-  is available.
-- Frontend: Vitest for logic. Visual tests in `web/e2e/`: Playwright drives the UI
-  against an in-browser mock of the HTTP API and event stream, compares screens
-  with committed baselines (`make visual`), and gives agents a screenshot CLI
-  (`npm run shot`). A Playwright smoke test against compose follows in phase 9.
+- Docker-dependent tests use build tag `docker`; `make check` runs them, and
+  they skip when no socket is available.
+- The API contract, `docs/api/contract.json`, is written from the Go wire
+  types and checked on both sides: by the handler tests against every response,
+  and by the mock harness against every request, response, and event.
+- Frontend: Vitest for logic, and for the mock harness against the contract.
+  End-to-end specs in `web/e2e/`: Playwright drives the UI against an
+  in-browser mock of the HTTP API and event stream, asserts behaviour, and
+  compares screens with committed screenshot and ARIA baselines
+  (`make visual`); it also gives agents a screenshot CLI (`npm run shot`). A
+  Playwright smoke test against compose follows in phase 9.
 
 ## 10. Resolved and open questions
 
@@ -430,4 +438,6 @@ parallel.
 - [x] Chat mode: sessions with no workspace, the standalone tools they may
       run, a per-session tool choice, and a chat section and Tools panel in
       the UI
+- [x] Thinking off: the effort `none` and a per-model thinking switch that
+      names the request field carrying it
 - [ ] Phase 9: Hardening and docs

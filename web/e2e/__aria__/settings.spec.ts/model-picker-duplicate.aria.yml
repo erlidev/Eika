@@ -1,0 +1,35 @@
+- dialog "Add models from Local vLLM":
+  - heading "Add models from Local vLLM" [level=2]
+  - paragraph: Tick the models agents may use, or type one by name.
+  - region "Models Local vLLM serves":
+    - heading "Available from Local vLLM" [level=3]
+    - button "Refresh"
+    - list:
+      - listitem:
+        - checkbox "gpt-5" [checked]
+        - text: /gpt-5 [\d,.]+[bkmBKM]+/
+      - listitem:
+        - checkbox "gpt-5-mini"
+        - text: /gpt-5-mini [\d,.]+[bkmBKM]+/
+    - textbox "Model identifier":
+      - /placeholder: or type a model identifier, such as gpt-5
+    - button "Add" [disabled]
+  - region "Models to add":
+    - heading "To add" [level=3]
+    - paragraph: The limits are suggestions; check them against the provider's documentation. Runs refuse a request that cannot fit the context window.
+    - list:
+      - listitem:
+        - text: gpt-5
+        - button "Test"
+        - button "Do not add gpt-5"
+        - text: Name in Eika
+        - textbox "Name in Eika" [invalid]: gpt-5
+        - paragraph: A model called “gpt-5” already exists; give gpt-5 another name.
+        - text: Context window
+        - spinbutton "Context window": /\d+/
+        - text: Max output
+        - spinbutton "Max output": /\d+/
+  - paragraph: Fix the field marked above to add the models.
+  - button "Cancel"
+  - button "Add 1 model" [disabled]
+  - button "Close"

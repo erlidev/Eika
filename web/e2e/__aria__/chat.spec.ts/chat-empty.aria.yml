@@ -1,0 +1,12 @@
+- region "Session":
+  - heading "New chat" [level=2]
+  - text: Chat · no workspace chat-new Send a message to start the chat. A chat has no workspace, so the model cannot touch files or run commands; the Tools panel says what it can use.
+  - status
+  - textbox "Message":
+    - /placeholder: Send a message…
+  - paragraph: Enter sends · Shift+Enter newline · Esc aborts
+  - button "Send" [disabled]
+  - text: idle
+  - combobox "Model": gpt-5
+  - 'button "Reasoning effort, click to cycle: medium"'
+  - 'status "Live updates: Live"'

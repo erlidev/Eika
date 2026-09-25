@@ -1,0 +1,1976 @@
+{
+  "routes": {
+    "DELETE /api/models/{id}": {
+      "status": 204
+    },
+    "DELETE /api/projects/{id}": {
+      "status": 204
+    },
+    "DELETE /api/providers/{id}": {
+      "status": 204
+    },
+    "DELETE /api/sessions/{id}": {
+      "status": 204
+    },
+    "DELETE /api/workspaces/{id}": {
+      "status": 204
+    },
+    "GET /api/auth/status": {
+      "status": 200,
+      "response": {
+        "object": {
+          "password_set": "boolean"
+        }
+      },
+      "public": true
+    },
+    "GET /api/events": {
+      "websocket": true
+    },
+    "GET /api/healthz": {
+      "status": 200,
+      "response": {
+        "object": {
+          "status": "string"
+        }
+      },
+      "public": true
+    },
+    "GET /api/models": {
+      "status": 200,
+      "response": {
+        "object": {
+          "default": "string",
+          "models": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "context_window": "number",
+                  "created_at": "string",
+                  "id": "string",
+                  "max_output": "number",
+                  "model": "string",
+                  "name": "string",
+                  "preserve_thinking": "boolean",
+                  "provider_id": "string",
+                  "reasoning_effort": "string",
+                  "reasoning_efforts": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "thinking_switch": "string",
+                  "updated_at": "string"
+                },
+                "optional": [
+                  "reasoning_effort"
+                ]
+              }
+            }
+          }
+        },
+        "optional": [
+          "default"
+        ]
+      }
+    },
+    "GET /api/projects": {
+      "status": 200,
+      "response": {
+        "object": {
+          "projects": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "created_at": "string",
+                  "default_branch": "string",
+                  "host_path": "string",
+                  "id": "string",
+                  "kind": "string",
+                  "name": "string",
+                  "remote_password_set": "boolean",
+                  "remote_url": "string",
+                  "remote_username": "string"
+                },
+                "optional": [
+                  "host_path",
+                  "remote_password_set",
+                  "remote_url",
+                  "remote_username"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/projects/{id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "created_at": "string",
+          "default_branch": "string",
+          "host_path": "string",
+          "id": "string",
+          "kind": "string",
+          "name": "string",
+          "remote_password_set": "boolean",
+          "remote_url": "string",
+          "remote_username": "string"
+        },
+        "optional": [
+          "host_path",
+          "remote_password_set",
+          "remote_url",
+          "remote_username"
+        ]
+      }
+    },
+    "GET /api/providers": {
+      "status": 200,
+      "response": {
+        "object": {
+          "kinds": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "providers": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "api_key_hint": "string",
+                  "api_key_set": "boolean",
+                  "base_url": "string",
+                  "created_at": "string",
+                  "id": "string",
+                  "kind": "string",
+                  "name": "string",
+                  "updated_at": "string"
+                },
+                "optional": [
+                  "api_key_hint"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/search/status": {
+      "status": 200,
+      "response": {
+        "object": {
+          "backends": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "bucket": "string",
+                  "key": "string",
+                  "key_required": "boolean",
+                  "key_set": "boolean",
+                  "limit": {
+                    "object": {
+                      "day": "number",
+                      "month": "number"
+                    },
+                    "optional": [
+                      "day",
+                      "month"
+                    ]
+                  },
+                  "name": "string",
+                  "probe": "string",
+                  "state": "string",
+                  "usage": {
+                    "object": {
+                      "cooldown_until": "string",
+                      "day": "string",
+                      "day_used": "number",
+                      "fail_streak": "number",
+                      "month": "string",
+                      "month_used": "number"
+                    },
+                    "optional": [
+                      "cooldown_until",
+                      "fail_streak"
+                    ]
+                  },
+                  "web": "boolean"
+                },
+                "optional": [
+                  "bucket",
+                  "key",
+                  "key_required",
+                  "probe"
+                ]
+              }
+            }
+          },
+          "cached_pages": "number",
+          "cached_searches": "number",
+          "keys": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "hint": "string",
+                  "name": "string",
+                  "set": "boolean",
+                  "updated_at": "string"
+                },
+                "optional": [
+                  "hint",
+                  "updated_at"
+                ]
+              }
+            }
+          },
+          "order": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "searxng_url": "string"
+        }
+      }
+    },
+    "GET /api/sessions": {
+      "status": 200,
+      "response": {
+        "object": {
+          "sessions": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "created_at": "string",
+                  "head_entry_id": "string",
+                  "id": "string",
+                  "kind": "string",
+                  "parent_session_id": "string",
+                  "title": "string",
+                  "tools": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "updated_at": "string",
+                  "workspace_id": "string"
+                },
+                "optional": [
+                  "head_entry_id",
+                  "parent_session_id",
+                  "workspace_id"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/sessions/{id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "head": {
+            "object": {
+              "commit": "string",
+              "created_at": "string",
+              "id": "string",
+              "kind": "string",
+              "message": {
+                "object": {
+                  "content": "string",
+                  "is_error": "boolean",
+                  "metrics": {
+                    "object": {
+                      "context": {
+                        "object": {
+                          "input_tokens": "number",
+                          "output_tokens": "number",
+                          "total_tokens": "number"
+                        }
+                      },
+                      "context_window": "number",
+                      "generation_ms": "number",
+                      "run_id": "string",
+                      "timings": {
+                        "object": {
+                          "decode_ms": "number",
+                          "decode_tokens": "number",
+                          "prompt_ms": "number",
+                          "prompt_tokens": "number",
+                          "source": "string"
+                        },
+                        "optional": [
+                          "decode_ms",
+                          "decode_tokens",
+                          "prompt_ms",
+                          "prompt_tokens",
+                          "source"
+                        ]
+                      },
+                      "usage": {
+                        "object": {
+                          "input_tokens": "number",
+                          "output_tokens": "number",
+                          "total_tokens": "number"
+                        }
+                      }
+                    },
+                    "optional": [
+                      "timings"
+                    ]
+                  },
+                  "reasoning": "string",
+                  "role": "string",
+                  "tool_call_id": "string",
+                  "tool_calls": {
+                    "array": {
+                      "object": {
+                        "arguments": "any",
+                        "arguments_malformed": "boolean",
+                        "id": "string",
+                        "name": "string"
+                      },
+                      "optional": [
+                        "arguments_malformed"
+                      ]
+                    }
+                  }
+                },
+                "optional": [
+                  "content",
+                  "is_error",
+                  "metrics",
+                  "reasoning",
+                  "tool_call_id",
+                  "tool_calls"
+                ]
+              },
+              "parent_id": "string",
+              "seq": "number"
+            },
+            "optional": [
+              "commit",
+              "parent_id"
+            ]
+          },
+          "session": {
+            "object": {
+              "created_at": "string",
+              "head_entry_id": "string",
+              "id": "string",
+              "kind": "string",
+              "parent_session_id": "string",
+              "title": "string",
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "updated_at": "string",
+              "workspace_id": "string"
+            },
+            "optional": [
+              "head_entry_id",
+              "parent_session_id",
+              "workspace_id"
+            ]
+          }
+        },
+        "optional": [
+          "head"
+        ]
+      }
+    },
+    "GET /api/sessions/{id}/agents": {
+      "status": 200,
+      "response": {
+        "object": {
+          "agents": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "agents": {
+                    "nullable": {
+                      "array": {
+                        "ref": "server.agentBody"
+                      }
+                    }
+                  },
+                  "branch": "string",
+                  "created_at": "string",
+                  "finished_at": "string",
+                  "id": "string",
+                  "name": "string",
+                  "parent_session_id": "string",
+                  "result": {
+                    "object": {
+                      "branch": "string",
+                      "commit": "string",
+                      "diff_stat": "string",
+                      "error": "string",
+                      "id": "string",
+                      "name": "string",
+                      "session_id": "string",
+                      "state": "string",
+                      "summary": "string",
+                      "workspace_id": "string"
+                    },
+                    "optional": [
+                      "commit",
+                      "diff_stat",
+                      "error",
+                      "summary"
+                    ]
+                  },
+                  "session_id": "string",
+                  "state": "string",
+                  "workspace_id": "string"
+                },
+                "optional": [
+                  "finished_at",
+                  "result"
+                ]
+              }
+            }
+          },
+          "session_id": "string"
+        }
+      }
+    },
+    "GET /api/sessions/{id}/outline": {
+      "status": 200,
+      "response": {
+        "object": {
+          "head_entry_id": "string",
+          "nodes": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "commit": "string",
+                  "created_at": "string",
+                  "id": "string",
+                  "kind": "string",
+                  "parent_id": "string",
+                  "preview": "string",
+                  "resumable": "boolean"
+                },
+                "optional": [
+                  "commit",
+                  "parent_id"
+                ]
+              }
+            }
+          },
+          "session_id": "string"
+        },
+        "optional": [
+          "head_entry_id"
+        ]
+      }
+    },
+    "GET /api/sessions/{id}/path": {
+      "status": 200,
+      "response": {
+        "object": {
+          "entries": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "commit": "string",
+                  "created_at": "string",
+                  "id": "string",
+                  "kind": "string",
+                  "message": {
+                    "object": {
+                      "content": "string",
+                      "is_error": "boolean",
+                      "metrics": {
+                        "object": {
+                          "context": {
+                            "object": {
+                              "input_tokens": "number",
+                              "output_tokens": "number",
+                              "total_tokens": "number"
+                            }
+                          },
+                          "context_window": "number",
+                          "generation_ms": "number",
+                          "run_id": "string",
+                          "timings": {
+                            "object": {
+                              "decode_ms": "number",
+                              "decode_tokens": "number",
+                              "prompt_ms": "number",
+                              "prompt_tokens": "number",
+                              "source": "string"
+                            },
+                            "optional": [
+                              "decode_ms",
+                              "decode_tokens",
+                              "prompt_ms",
+                              "prompt_tokens",
+                              "source"
+                            ]
+                          },
+                          "usage": {
+                            "object": {
+                              "input_tokens": "number",
+                              "output_tokens": "number",
+                              "total_tokens": "number"
+                            }
+                          }
+                        },
+                        "optional": [
+                          "timings"
+                        ]
+                      },
+                      "reasoning": "string",
+                      "role": "string",
+                      "tool_call_id": "string",
+                      "tool_calls": {
+                        "array": {
+                          "object": {
+                            "arguments": "any",
+                            "arguments_malformed": "boolean",
+                            "id": "string",
+                            "name": "string"
+                          },
+                          "optional": [
+                            "arguments_malformed"
+                          ]
+                        }
+                      }
+                    },
+                    "optional": [
+                      "content",
+                      "is_error",
+                      "metrics",
+                      "reasoning",
+                      "tool_call_id",
+                      "tool_calls"
+                    ]
+                  },
+                  "parent_id": "string",
+                  "seq": "number"
+                },
+                "optional": [
+                  "commit",
+                  "parent_id"
+                ]
+              }
+            }
+          },
+          "messages": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "content": "string",
+                  "is_error": "boolean",
+                  "metrics": {
+                    "object": {
+                      "context": {
+                        "object": {
+                          "input_tokens": "number",
+                          "output_tokens": "number",
+                          "total_tokens": "number"
+                        }
+                      },
+                      "context_window": "number",
+                      "generation_ms": "number",
+                      "run_id": "string",
+                      "timings": {
+                        "object": {
+                          "decode_ms": "number",
+                          "decode_tokens": "number",
+                          "prompt_ms": "number",
+                          "prompt_tokens": "number",
+                          "source": "string"
+                        },
+                        "optional": [
+                          "decode_ms",
+                          "decode_tokens",
+                          "prompt_ms",
+                          "prompt_tokens",
+                          "source"
+                        ]
+                      },
+                      "usage": {
+                        "object": {
+                          "input_tokens": "number",
+                          "output_tokens": "number",
+                          "total_tokens": "number"
+                        }
+                      }
+                    },
+                    "optional": [
+                      "timings"
+                    ]
+                  },
+                  "reasoning": "string",
+                  "role": "string",
+                  "tool_call_id": "string",
+                  "tool_calls": {
+                    "array": {
+                      "object": {
+                        "arguments": "any",
+                        "arguments_malformed": "boolean",
+                        "id": "string",
+                        "name": "string"
+                      },
+                      "optional": [
+                        "arguments_malformed"
+                      ]
+                    }
+                  }
+                },
+                "optional": [
+                  "content",
+                  "is_error",
+                  "metrics",
+                  "reasoning",
+                  "tool_call_id",
+                  "tool_calls"
+                ]
+              }
+            }
+          },
+          "session_id": "string"
+        }
+      }
+    },
+    "GET /api/sessions/{id}/run": {
+      "status": 200,
+      "response": {
+        "object": {
+          "active": "boolean",
+          "pending_follow_ups": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "pending_steering": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "questions": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "allow_free_text": "boolean",
+                  "asked_at": "string",
+                  "call_id": "string",
+                  "id": "string",
+                  "options": {
+                    "array": "string"
+                  },
+                  "question": "string",
+                  "run_id": "string",
+                  "session_id": "string"
+                },
+                "optional": [
+                  "options"
+                ]
+              }
+            }
+          },
+          "run": {
+            "object": {
+              "error": "string",
+              "finished_at": "string",
+              "id": "string",
+              "session_id": "string",
+              "started_at": "string",
+              "state": "string"
+            },
+            "optional": [
+              "error",
+              "finished_at"
+            ]
+          },
+          "session_id": "string"
+        },
+        "optional": [
+          "run"
+        ]
+      }
+    },
+    "GET /api/settings": {
+      "status": 200,
+      "response": {
+        "object": {
+          "defaults": {
+            "object": {
+              "sandbox_image": "string",
+              "search_limits": {
+                "nullable": {
+                  "map": {
+                    "object": {
+                      "day": "number",
+                      "month": "number"
+                    },
+                    "optional": [
+                      "day",
+                      "month"
+                    ]
+                  }
+                }
+              },
+              "search_order": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "subagent_max_children": "number",
+              "subagent_max_depth": "number"
+            }
+          },
+          "settings": {
+            "nullable": {
+              "map": "any"
+            }
+          }
+        }
+      }
+    },
+    "GET /api/system": {
+      "status": 200,
+      "response": {
+        "object": {
+          "docker": {
+            "object": {
+              "error": "string",
+              "reachable": "boolean"
+            },
+            "optional": [
+              "error"
+            ]
+          },
+          "models": "number",
+          "projects": "number",
+          "providers": "number",
+          "sandbox_image": {
+            "object": {
+              "name": "string",
+              "present": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "GET /api/tools": {
+      "status": 200,
+      "response": {
+        "object": {
+          "tools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "description": "string",
+                  "name": "string",
+                  "needs_workspace": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/workspaces": {
+      "status": 200,
+      "response": {
+        "object": {
+          "workspaces": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "base_commit": "string",
+                  "branch": "string",
+                  "container_id": "string",
+                  "created_at": "string",
+                  "id": "string",
+                  "image": "string",
+                  "name": "string",
+                  "parent_workspace_id": "string",
+                  "project_id": "string",
+                  "state": "string",
+                  "updated_at": "string"
+                },
+                "optional": [
+                  "base_commit",
+                  "container_id",
+                  "parent_workspace_id"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/workspaces/{id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "base_commit": "string",
+          "branch": "string",
+          "container_id": "string",
+          "created_at": "string",
+          "id": "string",
+          "image": "string",
+          "name": "string",
+          "parent_workspace_id": "string",
+          "project_id": "string",
+          "state": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "base_commit",
+          "container_id",
+          "parent_workspace_id"
+        ]
+      }
+    },
+    "GET /api/workspaces/{id}/diff": {
+      "status": 200,
+      "response": {
+        "object": {
+          "base_commit": "string",
+          "diff": "string",
+          "status": "string",
+          "workspace_id": "string"
+        },
+        "optional": [
+          "base_commit"
+        ]
+      }
+    },
+    "GET /api/workspaces/{id}/file": {
+      "status": 200,
+      "response": {
+        "object": {
+          "binary": "boolean",
+          "content": "string",
+          "path": "string",
+          "size": "number",
+          "too_large": "boolean"
+        }
+      }
+    },
+    "GET /api/workspaces/{id}/files": {
+      "status": 200,
+      "response": {
+        "object": {
+          "entries": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "is_dir": "boolean",
+                  "mod_time": "string",
+                  "mode": "number",
+                  "name": "string",
+                  "path": "string",
+                  "size": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/workspaces/{id}/terminal": {
+      "websocket": true
+    },
+    "PATCH /api/models/{id}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "context_window": "number",
+          "max_output": "number",
+          "model": "string",
+          "name": "string",
+          "preserve_thinking": "boolean",
+          "reasoning_effort": "string",
+          "reasoning_efforts": {
+            "array": "string"
+          },
+          "thinking_switch": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "context_window": "number",
+          "created_at": "string",
+          "id": "string",
+          "max_output": "number",
+          "model": "string",
+          "name": "string",
+          "preserve_thinking": "boolean",
+          "provider_id": "string",
+          "reasoning_effort": "string",
+          "reasoning_efforts": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "thinking_switch": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "reasoning_effort"
+        ]
+      }
+    },
+    "PATCH /api/projects/{id}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "default_branch": "string",
+          "remote_password": "string",
+          "remote_username": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "created_at": "string",
+          "default_branch": "string",
+          "host_path": "string",
+          "id": "string",
+          "kind": "string",
+          "name": "string",
+          "remote_password_set": "boolean",
+          "remote_url": "string",
+          "remote_username": "string"
+        },
+        "optional": [
+          "host_path",
+          "remote_password_set",
+          "remote_url",
+          "remote_username"
+        ]
+      }
+    },
+    "PATCH /api/providers/{id}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "api_key": "string",
+          "base_url": "string",
+          "name": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "api_key_hint": "string",
+          "api_key_set": "boolean",
+          "base_url": "string",
+          "created_at": "string",
+          "id": "string",
+          "kind": "string",
+          "name": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "api_key_hint"
+        ]
+      }
+    },
+    "POST /api/auth/login": {
+      "status": 200,
+      "request": {
+        "object": {
+          "password": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "expires_at": "string",
+          "token": "string"
+        }
+      },
+      "public": true
+    },
+    "POST /api/auth/logout": {
+      "status": 204
+    },
+    "POST /api/auth/setup": {
+      "status": 201,
+      "request": {
+        "object": {
+          "password": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "expires_at": "string",
+          "token": "string"
+        }
+      },
+      "public": true
+    },
+    "POST /api/models": {
+      "status": 201,
+      "request": {
+        "object": {
+          "context_window": "number",
+          "max_output": "number",
+          "model": "string",
+          "name": "string",
+          "preserve_thinking": "boolean",
+          "provider_id": "string",
+          "reasoning_effort": "string",
+          "reasoning_efforts": {
+            "array": "string"
+          },
+          "thinking_switch": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "context_window": "number",
+          "created_at": "string",
+          "id": "string",
+          "max_output": "number",
+          "model": "string",
+          "name": "string",
+          "preserve_thinking": "boolean",
+          "provider_id": "string",
+          "reasoning_effort": "string",
+          "reasoning_efforts": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "thinking_switch": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "reasoning_effort"
+        ]
+      }
+    },
+    "POST /api/models/test": {
+      "status": 200,
+      "request": {
+        "object": {
+          "model": "string",
+          "preserve_thinking": "boolean",
+          "provider_id": "string",
+          "reasoning_effort": "string",
+          "thinking_switch": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "latency_ms": "number",
+          "reply": "string",
+          "stop_reason": "string"
+        }
+      }
+    },
+    "POST /api/projects": {
+      "status": 201,
+      "request": {
+        "object": {
+          "default_branch": "string",
+          "host_path": "string",
+          "kind": "string",
+          "name": "string",
+          "remote_password": "string",
+          "remote_url": "string",
+          "remote_username": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "created_at": "string",
+          "default_branch": "string",
+          "host_path": "string",
+          "id": "string",
+          "kind": "string",
+          "name": "string",
+          "remote_password_set": "boolean",
+          "remote_url": "string",
+          "remote_username": "string"
+        },
+        "optional": [
+          "host_path",
+          "remote_password_set",
+          "remote_url",
+          "remote_username"
+        ]
+      }
+    },
+    "POST /api/providers": {
+      "status": 201,
+      "request": {
+        "object": {
+          "api_key": "string",
+          "base_url": "string",
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "api_key_hint": "string",
+          "api_key_set": "boolean",
+          "base_url": "string",
+          "created_at": "string",
+          "id": "string",
+          "kind": "string",
+          "name": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "api_key_hint"
+        ]
+      }
+    },
+    "POST /api/providers/probe": {
+      "status": 200,
+      "request": {
+        "object": {
+          "api_key": "string",
+          "base_url": "string",
+          "kind": "string",
+          "provider_id": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "models": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "context_window": "number",
+                  "id": "string",
+                  "max_output": "number"
+                },
+                "optional": [
+                  "context_window",
+                  "max_output"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /api/questions/{id}/answer": {
+      "status": 204,
+      "request": {
+        "object": {
+          "answer": "string"
+        }
+      }
+    },
+    "POST /api/runs/{id}/abort": {
+      "status": 200,
+      "response": {
+        "object": {
+          "error": "string",
+          "finished_at": "string",
+          "id": "string",
+          "session_id": "string",
+          "started_at": "string",
+          "state": "string"
+        },
+        "optional": [
+          "error",
+          "finished_at"
+        ]
+      }
+    },
+    "POST /api/search": {
+      "status": 200,
+      "request": {
+        "object": {
+          "count": "number",
+          "query": "string",
+          "source": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "details": {
+            "object": {
+              "attempts": {
+                "array": {
+                  "object": {
+                    "error": "string",
+                    "provider": "string"
+                  }
+                }
+              },
+              "cached": "boolean",
+              "count": "number",
+              "ms": "number",
+              "pool": "number",
+              "providers": {
+                "array": "string"
+              },
+              "query": "string",
+              "results": {
+                "array": {
+                  "object": {
+                    "description": "string",
+                    "title": "string",
+                    "url": "string"
+                  },
+                  "optional": [
+                    "description"
+                  ]
+                }
+              },
+              "source": "string"
+            },
+            "optional": [
+              "attempts",
+              "cached",
+              "pool",
+              "providers",
+              "results"
+            ]
+          },
+          "is_error": "boolean",
+          "text": "string"
+        }
+      }
+    },
+    "POST /api/sessions": {
+      "status": 201,
+      "request": {
+        "object": {
+          "chat": "boolean",
+          "title": "string",
+          "workspace_id": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "created_at": "string",
+          "head_entry_id": "string",
+          "id": "string",
+          "kind": "string",
+          "parent_session_id": "string",
+          "title": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "updated_at": "string",
+          "workspace_id": "string"
+        },
+        "optional": [
+          "head_entry_id",
+          "parent_session_id",
+          "workspace_id"
+        ]
+      }
+    },
+    "POST /api/sessions/{id}/fork": {
+      "status": 201,
+      "request": {
+        "object": {
+          "entry_id": "string",
+          "title": "string",
+          "with_workspace": "boolean"
+        }
+      },
+      "response": {
+        "object": {
+          "created_at": "string",
+          "head_entry_id": "string",
+          "id": "string",
+          "kind": "string",
+          "parent_session_id": "string",
+          "title": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "updated_at": "string",
+          "workspace_id": "string"
+        },
+        "optional": [
+          "head_entry_id",
+          "parent_session_id",
+          "workspace_id"
+        ]
+      }
+    },
+    "POST /api/sessions/{id}/head": {
+      "status": 200,
+      "request": {
+        "object": {
+          "entry_id": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "created_at": "string",
+          "head_entry_id": "string",
+          "id": "string",
+          "kind": "string",
+          "parent_session_id": "string",
+          "title": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "updated_at": "string",
+          "workspace_id": "string"
+        },
+        "optional": [
+          "head_entry_id",
+          "parent_session_id",
+          "workspace_id"
+        ]
+      }
+    },
+    "POST /api/sessions/{id}/messages": {
+      "status": 202,
+      "request": {
+        "object": {
+          "mode": "string",
+          "model": "string",
+          "text": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "error": "string",
+          "finished_at": "string",
+          "id": "string",
+          "session_id": "string",
+          "started_at": "string",
+          "state": "string"
+        },
+        "optional": [
+          "error",
+          "finished_at"
+        ]
+      }
+    },
+    "POST /api/subagents/{id}/abort": {
+      "status": 200,
+      "response": {
+        "object": {
+          "agents": {
+            "nullable": {
+              "array": {
+                "ref": "server.agentBody"
+              }
+            }
+          },
+          "branch": "string",
+          "created_at": "string",
+          "finished_at": "string",
+          "id": "string",
+          "name": "string",
+          "parent_session_id": "string",
+          "result": {
+            "object": {
+              "branch": "string",
+              "commit": "string",
+              "diff_stat": "string",
+              "error": "string",
+              "id": "string",
+              "name": "string",
+              "session_id": "string",
+              "state": "string",
+              "summary": "string",
+              "workspace_id": "string"
+            },
+            "optional": [
+              "commit",
+              "diff_stat",
+              "error",
+              "summary"
+            ]
+          },
+          "session_id": "string",
+          "state": "string",
+          "workspace_id": "string"
+        },
+        "optional": [
+          "finished_at",
+          "result"
+        ]
+      }
+    },
+    "POST /api/workspaces": {
+      "status": 201,
+      "request": {
+        "object": {
+          "branch": "string",
+          "build_context": "string",
+          "dockerfile": "string",
+          "image": "string",
+          "name": "string",
+          "parent_workspace_id": "string",
+          "project_id": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "base_commit": "string",
+          "branch": "string",
+          "container_id": "string",
+          "created_at": "string",
+          "id": "string",
+          "image": "string",
+          "name": "string",
+          "parent_workspace_id": "string",
+          "project_id": "string",
+          "state": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "base_commit",
+          "container_id",
+          "parent_workspace_id"
+        ]
+      }
+    },
+    "POST /api/workspaces/{id}/commit": {
+      "status": 200,
+      "request": {
+        "object": {
+          "message": "string",
+          "paths": {
+            "array": "string"
+          }
+        }
+      },
+      "response": {
+        "object": {
+          "commit": "string"
+        }
+      }
+    },
+    "POST /api/workspaces/{id}/merge": {
+      "status": 200,
+      "request": {
+        "object": {
+          "branch": "string",
+          "source_workspace_id": "string",
+          "strategy": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "branch": "string",
+          "commit": "string",
+          "conflicts": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "merged": "boolean",
+          "message": "string",
+          "strategy": "string",
+          "workspace_id": "string"
+        },
+        "optional": [
+          "commit"
+        ]
+      }
+    },
+    "POST /api/workspaces/{id}/push": {
+      "status": 200,
+      "request": {
+        "object": {
+          "upstream": "boolean"
+        }
+      },
+      "response": {
+        "object": {
+          "branch": "string",
+          "commit": "string",
+          "upstream_pushed": "boolean"
+        }
+      }
+    },
+    "POST /api/workspaces/{id}/start": {
+      "status": 200,
+      "response": {
+        "object": {
+          "base_commit": "string",
+          "branch": "string",
+          "container_id": "string",
+          "created_at": "string",
+          "id": "string",
+          "image": "string",
+          "name": "string",
+          "parent_workspace_id": "string",
+          "project_id": "string",
+          "state": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "base_commit",
+          "container_id",
+          "parent_workspace_id"
+        ]
+      }
+    },
+    "POST /api/workspaces/{id}/stop": {
+      "status": 200,
+      "response": {
+        "object": {
+          "base_commit": "string",
+          "branch": "string",
+          "container_id": "string",
+          "created_at": "string",
+          "id": "string",
+          "image": "string",
+          "name": "string",
+          "parent_workspace_id": "string",
+          "project_id": "string",
+          "state": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "base_commit",
+          "container_id",
+          "parent_workspace_id"
+        ]
+      }
+    },
+    "PUT /api/auth/password": {
+      "status": 200,
+      "request": {
+        "object": {
+          "current_password": "string",
+          "new_password": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "expires_at": "string",
+          "token": "string"
+        }
+      }
+    },
+    "PUT /api/search/keys/{name}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "key": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "keys": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "hint": "string",
+                  "name": "string",
+                  "set": "boolean",
+                  "updated_at": "string"
+                },
+                "optional": [
+                  "hint",
+                  "updated_at"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "PUT /api/sessions/{id}/tools": {
+      "status": 200,
+      "request": {
+        "object": {
+          "tools": {
+            "array": "string"
+          }
+        }
+      },
+      "response": {
+        "object": {
+          "created_at": "string",
+          "head_entry_id": "string",
+          "id": "string",
+          "kind": "string",
+          "parent_session_id": "string",
+          "title": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "updated_at": "string",
+          "workspace_id": "string"
+        },
+        "optional": [
+          "head_entry_id",
+          "parent_session_id",
+          "workspace_id"
+        ]
+      }
+    },
+    "PUT /api/settings": {
+      "status": 200,
+      "request": {
+        "map": "any"
+      },
+      "response": {
+        "object": {
+          "defaults": {
+            "object": {
+              "sandbox_image": "string",
+              "search_limits": {
+                "nullable": {
+                  "map": {
+                    "object": {
+                      "day": "number",
+                      "month": "number"
+                    },
+                    "optional": [
+                      "day",
+                      "month"
+                    ]
+                  }
+                }
+              },
+              "search_order": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "subagent_max_children": "number",
+              "subagent_max_depth": "number"
+            }
+          },
+          "settings": {
+            "nullable": {
+              "map": "any"
+            }
+          }
+        }
+      }
+    },
+    "PUT /api/workspaces/{id}/file": {
+      "status": 200,
+      "raw_request": true,
+      "response": {
+        "object": {
+          "is_dir": "boolean",
+          "mod_time": "string",
+          "mode": "number",
+          "name": "string",
+          "path": "string",
+          "size": "number"
+        }
+      }
+    }
+  },
+  "error": {
+    "object": {
+      "error": {
+        "object": {
+          "code": "string",
+          "message": "string"
+        }
+      }
+    }
+  },
+  "error_codes": [
+    "conflict",
+    "forbidden",
+    "internal",
+    "invalid_request",
+    "not_found",
+    "too_large",
+    "unauthorized"
+  ],
+  "events": {
+    "bus.dropped": {
+      "object": {
+        "dropped": "number"
+      }
+    },
+    "message.delta": {
+      "object": {
+        "run_id": "string",
+        "text": "string"
+      }
+    },
+    "message.reset": {
+      "object": {
+        "run_id": "string"
+      }
+    },
+    "question.asked": {
+      "object": {
+        "allow_free_text": "boolean",
+        "call_id": "string",
+        "options": {
+          "array": "string"
+        },
+        "question": "string",
+        "question_id": "string",
+        "run_id": "string",
+        "session_id": "string"
+      },
+      "optional": [
+        "options"
+      ]
+    },
+    "reasoning.delta": {
+      "object": {
+        "run_id": "string",
+        "text": "string"
+      }
+    },
+    "run.error": {
+      "object": {
+        "message": "string",
+        "retryable": "boolean",
+        "run_id": "string"
+      }
+    },
+    "session.message": {
+      "object": {
+        "commit": "string",
+        "created_at": "string",
+        "entry_id": "string",
+        "kind": "string",
+        "message": "any",
+        "parent_id": "string",
+        "session_id": "string"
+      },
+      "optional": [
+        "commit",
+        "parent_id"
+      ]
+    },
+    "subagent.finished": {
+      "object": {
+        "branch": "string",
+        "child_session_id": "string",
+        "child_workspace_id": "string",
+        "commit": "string",
+        "diff_stat": "string",
+        "error": "string",
+        "name": "string",
+        "parent_session_id": "string",
+        "state": "string",
+        "subagent_id": "string",
+        "summary": "string"
+      },
+      "optional": [
+        "commit",
+        "diff_stat",
+        "error",
+        "summary"
+      ]
+    },
+    "subagent.started": {
+      "object": {
+        "base_commit": "string",
+        "branch": "string",
+        "child_session_id": "string",
+        "child_workspace_id": "string",
+        "name": "string",
+        "parent_session_id": "string",
+        "subagent_id": "string",
+        "task": "string"
+      },
+      "optional": [
+        "base_commit"
+      ]
+    },
+    "tool.call": {
+      "object": {
+        "arguments": "any",
+        "arguments_malformed": "boolean",
+        "call_id": "string",
+        "name": "string",
+        "run_id": "string"
+      },
+      "optional": [
+        "arguments_malformed"
+      ]
+    },
+    "tool.output": {
+      "object": {
+        "call_id": "string",
+        "run_id": "string",
+        "text": "string"
+      }
+    },
+    "tool.result": {
+      "object": {
+        "call_id": "string",
+        "content": "string",
+        "details": "any",
+        "duration_ms": "number",
+        "is_error": "boolean",
+        "name": "string",
+        "run_id": "string"
+      },
+      "optional": [
+        "details"
+      ]
+    },
+    "turn.end": {
+      "object": {
+        "context": {
+          "object": {
+            "input_tokens": "number",
+            "output_tokens": "number",
+            "total_tokens": "number"
+          }
+        },
+        "context_window": "number",
+        "generation_ms": "number",
+        "run_id": "string",
+        "stop_reason": "string",
+        "timings": {
+          "object": {
+            "decode_ms": "number",
+            "decode_tokens": "number",
+            "prompt_ms": "number",
+            "prompt_tokens": "number",
+            "source": "string"
+          },
+          "optional": [
+            "decode_ms",
+            "decode_tokens",
+            "prompt_ms",
+            "prompt_tokens",
+            "source"
+          ]
+        },
+        "usage": {
+          "object": {
+            "input_tokens": "number",
+            "output_tokens": "number",
+            "total_tokens": "number"
+          }
+        }
+      },
+      "optional": [
+        "stop_reason",
+        "timings"
+      ]
+    },
+    "turn.progress": {
+      "object": {
+        "context": {
+          "object": {
+            "input_tokens": "number",
+            "output_tokens": "number",
+            "total_tokens": "number"
+          }
+        },
+        "context_window": "number",
+        "generation_ms": "number",
+        "run_id": "string",
+        "timings": {
+          "object": {
+            "decode_ms": "number",
+            "decode_tokens": "number",
+            "prompt_ms": "number",
+            "prompt_tokens": "number",
+            "source": "string"
+          },
+          "optional": [
+            "decode_ms",
+            "decode_tokens",
+            "prompt_ms",
+            "prompt_tokens",
+            "source"
+          ]
+        },
+        "usage": {
+          "object": {
+            "input_tokens": "number",
+            "output_tokens": "number",
+            "total_tokens": "number"
+          }
+        }
+      },
+      "optional": [
+        "timings"
+      ]
+    },
+    "turn.start": {
+      "object": {
+        "message": "string",
+        "run_id": "string",
+        "session_id": "string",
+        "workspace_id": "string"
+      },
+      "optional": [
+        "workspace_id"
+      ]
+    },
+    "workspace.state": {
+      "object": {
+        "project_id": "string",
+        "state": "string",
+        "workspace_id": "string"
+      },
+      "optional": [
+        "project_id"
+      ]
+    }
+  },
+  "types": {
+    "server.agentBody": {
+      "object": {
+        "agents": {
+          "nullable": {
+            "array": {
+              "ref": "server.agentBody"
+            }
+          }
+        },
+        "branch": "string",
+        "created_at": "string",
+        "finished_at": "string",
+        "id": "string",
+        "name": "string",
+        "parent_session_id": "string",
+        "result": {
+          "object": {
+            "branch": "string",
+            "commit": "string",
+            "diff_stat": "string",
+            "error": "string",
+            "id": "string",
+            "name": "string",
+            "session_id": "string",
+            "state": "string",
+            "summary": "string",
+            "workspace_id": "string"
+          },
+          "optional": [
+            "commit",
+            "diff_stat",
+            "error",
+            "summary"
+          ]
+        },
+        "session_id": "string",
+        "state": "string",
+        "workspace_id": "string"
+      },
+      "optional": [
+        "finished_at",
+        "result"
+      ]
+    }
+  }
+}

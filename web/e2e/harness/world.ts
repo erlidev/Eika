@@ -278,6 +278,7 @@ export class WorldBuilder {
       context_window: 400000,
       max_output: 128000,
       reasoning_efforts: [],
+      thinking_switch: "reasoning_effort",
       preserve_thinking: false,
       created_at: minutesAgo(590),
       updated_at: minutesAgo(590),

@@ -1,0 +1,24 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "General"
+    - tab "Search"
+    - tab "Account" [selected]
+    - tab "Appearance"
+  - tabpanel "Account":
+    - heading "Password" [level=3]
+    - paragraph: Changing it signs out every other browser.
+    - text: Current password
+    - textbox "Current password"
+    - text: New password
+    - textbox "New password"
+    - text: New password again
+    - textbox "New password again"
+    - button "Change password" [disabled]
+    - heading "This browser" [level=3]
+    - term: Harness
+    - definition: /http:\/\/\d+\.\d+\.0\.1:\d+/
+    - button "Sign out"
+  - button "Close"

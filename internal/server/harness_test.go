@@ -13,6 +13,7 @@ import (
 
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/server"
+	"github.com/erlidev/eika/internal/server/servertest"
 	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
@@ -46,7 +47,27 @@ func requestWith(t *testing.T, s *server.Server, method, path string, body any, 
 	}
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, r)
+	checkContract(t, r, rec)
 	return rec
+}
+
+// apiContract is docs/api/contract.json, read once.
+var apiContract = sync.OnceValues(func() (servertest.Contract, error) {
+	return servertest.Load("../../docs/api/contract.json")
+})
+
+// checkContract fails the test when a response breaks the API's wire
+// contract. Every request helper calls it, so the handler tests also check
+// that each route answers with the types TestContractFile wrote down.
+func checkContract(t *testing.T, r *http.Request, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	c, err := apiContract()
+	if err != nil {
+		t.Fatalf("load contract: %v", err)
+	}
+	for _, problem := range c.CheckResponse(r.Method, r.URL.Path, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Bytes()) {
+		t.Errorf("breaks the API contract: %s", problem)
+	}
 }
 
 // errorOf decodes the API's error body.

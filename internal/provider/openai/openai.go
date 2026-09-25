@@ -224,11 +224,23 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 	if req.Temperature != nil {
 		params.Temperature = param.NewOpt(*req.Temperature)
 	}
-	if req.ReasoningEffort != "" {
+	extra := map[string]any{}
+	switch {
+	case req.ReasoningEffort == "":
+	case req.ReasoningEffort == provider.EffortNone && req.ThinkingSwitch == provider.SwitchTemplate:
+		// Both names, because templates disagree on the one they read and
+		// ignore the other.
+		extra["chat_template_kwargs"] = map[string]any{"enable_thinking": false, "thinking": false}
+	case req.ReasoningEffort == provider.EffortNone && req.ThinkingSwitch == provider.SwitchThinking:
+		extra["thinking"] = map[string]any{"type": "disabled"}
+	default:
 		params.ReasoningEffort = shared.ReasoningEffort(req.ReasoningEffort)
 	}
 	if req.PreserveThinking {
-		params.SetExtraFields(map[string]any{"preserve_thinking": true})
+		extra["preserve_thinking"] = true
+	}
+	if len(extra) > 0 {
+		params.SetExtraFields(extra)
 	}
 	for _, t := range req.Tools {
 		var schema shared.FunctionParameters

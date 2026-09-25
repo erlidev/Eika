@@ -59,6 +59,7 @@ type Report = {
   consoleErrors: string[];
   pageErrors: string[];
   unhandledApi: string[];
+  contractBreaks: string[];
 };
 
 async function main(): Promise<number> {
@@ -120,6 +121,7 @@ async function main(): Promise<number> {
     consoleErrors: [],
     pageErrors: [],
     unhandledApi: [],
+    contractBreaks: [],
   };
 
   let server: ViteDevServer | undefined;

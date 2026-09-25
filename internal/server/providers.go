@@ -116,6 +116,7 @@ type modelBody struct {
 	MaxOutput        int       `json:"max_output"`
 	ReasoningEffort  string    `json:"reasoning_effort,omitempty"`
 	ReasoningEfforts []string  `json:"reasoning_efforts"`
+	ThinkingSwitch   string    `json:"thinking_switch"`
 	PreserveThinking bool      `json:"preserve_thinking"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
@@ -140,6 +141,7 @@ type createModelRequest struct {
 	MaxOutput        int      `json:"max_output"`
 	ReasoningEffort  string   `json:"reasoning_effort"`
 	ReasoningEfforts []string `json:"reasoning_efforts"`
+	ThinkingSwitch   string   `json:"thinking_switch"`
 	PreserveThinking bool     `json:"preserve_thinking"`
 }
 
@@ -152,6 +154,7 @@ type updateModelRequest struct {
 	MaxOutput        *int      `json:"max_output"`
 	ReasoningEffort  *string   `json:"reasoning_effort"`
 	ReasoningEfforts *[]string `json:"reasoning_efforts"`
+	ThinkingSwitch   *string   `json:"thinking_switch"`
 	PreserveThinking *bool     `json:"preserve_thinking"`
 }
 
@@ -161,6 +164,7 @@ type testModelRequest struct {
 	ProviderID       string `json:"provider_id"`
 	Model            string `json:"model"`
 	ReasoningEffort  string `json:"reasoning_effort"`
+	ThinkingSwitch   string `json:"thinking_switch"`
 	PreserveThinking bool   `json:"preserve_thinking"`
 }
 
@@ -393,6 +397,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 		MaxOutput:        req.MaxOutput,
 		ReasoningEffort:  req.ReasoningEffort,
 		ReasoningEfforts: req.ReasoningEfforts,
+		ThinkingSwitch:   req.ThinkingSwitch,
 		PreserveThinking: req.PreserveThinking,
 	}
 	if m.Name == "" {
@@ -449,6 +454,9 @@ func (s *Server) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	if req.ReasoningEfforts != nil {
 		m.ReasoningEfforts = *req.ReasoningEfforts
 	}
+	if req.ThinkingSwitch != nil {
+		m.ThinkingSwitch = *req.ThinkingSwitch
+	}
 	if req.PreserveThinking != nil {
 		m.PreserveThinking = *req.PreserveThinking
 	}
@@ -504,6 +512,10 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, invalidEffort(req.ReasoningEffort))
 		return
 	}
+	if !provider.ValidThinkingSwitch(provider.ThinkingSwitch(req.ThinkingSwitch)) {
+		s.fail(w, r, invalidSwitch(req.ThinkingSwitch))
+		return
+	}
 	p, err := s.deps.Store.Provider(r.Context(), req.ProviderID)
 	if err != nil {
 		s.fail(w, r, err)
@@ -527,6 +539,7 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 		Messages:         []provider.Message{provider.UserMessage(testPrompt)},
 		MaxTokens:        testMaxTokens,
 		ReasoningEffort:  req.ReasoningEffort,
+		ThinkingSwitch:   provider.ThinkingSwitch(req.ThinkingSwitch),
 		PreserveThinking: req.PreserveThinking,
 	})
 	if err != nil {
@@ -669,6 +682,8 @@ func validateModel(m store.Model) error {
 		return invalidf("max_output must be a positive number of tokens no larger than context_window")
 	case !provider.ValidReasoningEffort(m.ReasoningEffort):
 		return invalidEffort(m.ReasoningEffort)
+	case !provider.ValidThinkingSwitch(provider.ThinkingSwitch(m.ThinkingSwitch)):
+		return invalidSwitch(m.ThinkingSwitch)
 	case len(m.ReasoningEfforts) > maxReasoningEfforts:
 		return invalidf("reasoning_efforts holds at most %d values", maxReasoningEfforts)
 	}
@@ -693,6 +708,12 @@ func validateModel(m store.Model) error {
 func invalidEffort(effort string) error {
 	return invalidf("reasoning_effort %q must be at most %d letters, digits, hyphens, or underscores",
 		effort, provider.MaxReasoningEffortLen)
+}
+
+// invalidSwitch reports a thinking_switch the harness cannot send.
+func invalidSwitch(s string) error {
+	return invalidf("thinking_switch %q must be %s, %s, or %s", s,
+		provider.SwitchReasoningEffort, provider.SwitchTemplate, provider.SwitchThinking)
 }
 
 // sealKey trims and seals an API key for a provider row.
@@ -753,6 +774,7 @@ func asModel(m store.Model) modelBody {
 		MaxOutput:        m.MaxOutput,
 		ReasoningEffort:  m.ReasoningEffort,
 		ReasoningEfforts: effortList(m.ReasoningEfforts),
+		ThinkingSwitch:   m.ThinkingSwitch,
 		PreserveThinking: m.PreserveThinking,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,

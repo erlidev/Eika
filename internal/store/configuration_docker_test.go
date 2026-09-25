@@ -49,12 +49,16 @@ func TestProvidersAndModels(t *testing.T) {
 		t.Errorf("model of an unknown provider = %v, want ErrNotFound", err)
 	}
 
-	m.Name, m.MaxOutput, m.PreserveThinking = "gpt-5-high", 64000, true
+	if m.ThinkingSwitch != "reasoning_effort" {
+		t.Errorf("created thinking switch = %q, want the standard field", m.ThinkingSwitch)
+	}
+	m.Name, m.MaxOutput, m.PreserveThinking, m.ThinkingSwitch = "gpt-5-high", 64000, true, "thinking"
 	updated, err := st.UpdateModel(ctx, m)
 	if err != nil {
 		t.Fatalf("UpdateModel: %v", err)
 	}
-	if updated.Name != "gpt-5-high" || updated.MaxOutput != 64000 || !updated.PreserveThinking {
+	if updated.Name != "gpt-5-high" || updated.MaxOutput != 64000 || !updated.PreserveThinking ||
+		updated.ThinkingSwitch != "thinking" {
 		t.Errorf("updated model = %+v", updated)
 	}
 

@@ -1,6 +1,8 @@
 /**
  * The session view while an agent works: streamed tools, a question, a
- * failure, and a run in progress, each driven by a scripted mock reply.
+ * failure, and a run in progress, each driven by a scripted mock reply. The
+ * transcript's cards are what a person reads most, so each kind is compared
+ * pixel for pixel; states that differ only in words are checked by text.
  */
 
 import { expect, test } from "../fixtures.ts";
@@ -13,18 +15,16 @@ test("tool calls stream and finish", async ({ open, expectShot }) => {
   await expectShot(eika, "agent-tools");
 });
 
-test("an answer says how fast it was produced, once the reader asks", async ({
-  open,
-  expectShot,
-}) => {
+test("an answer says how fast it was produced, once the reader asks", async ({ open }) => {
   const eika = await open({ scenario: "agent-tools" });
+  const speed = eika.page.getByText(/tok\/s/);
+  await eika.send("Run the tests");
+  await expect(speed).toHaveCount(0);
   await eika.click("Settings");
   await eika.click("Appearance");
   await eika.click("Show how fast each answer was produced");
   await eika.press("Escape");
-  await eika.send("Run the tests");
-  await expect(eika.page.getByText(/tok\/s/).first()).toBeVisible();
-  await expectShot(eika, "agent-speed");
+  await expect(speed.first()).toBeVisible();
 });
 
 test("a question waits for an answer", async ({ open, expectShot }) => {
@@ -33,7 +33,8 @@ test("a question waits for an answer", async ({ open, expectShot }) => {
   await expectShot(eika, "agent-question");
   await eika.click("30s");
   await expect(eika.page.getByText("Using that cap.").first()).toBeVisible();
-  await expectShot(eika, "agent-question-answered");
+  // Answered, the question offers its options no more.
+  await expect(eika.page.getByRole("button", { name: "30s" })).toHaveCount(0);
 });
 
 test("a failed run shows its error", async ({ open, expectShot }) => {
@@ -67,10 +68,10 @@ test("web search, fetch, and the other tool cards", async ({ open, expectShot })
   await expectShot(eika, "agent-web-cards", "role=main");
 });
 
-test("the session tree indents only a branch", async ({ open, expectShot }) => {
+test("the session tree indents only a branch", async ({ open, expectAria }) => {
   const eika = await open({ scenario: "agent-web" });
   await eika.send("Check the cap");
-  await expectShot(eika, "session-tree-branch", "role=tree");
+  await expectAria(eika, "session-tree-branch", "role=tree");
 });
 
 test("reasoning streams beside the answer", async ({ open, expectShot }) => {
@@ -82,16 +83,13 @@ test("reasoning streams beside the answer", async ({ open, expectShot }) => {
   const thought = eika.page.getByRole("button", { name: /^Thought/ }).last();
   await expect(thought).toBeVisible();
   await expect(thought).toContainText("The cap is 30s");
-  await expectShot(eika, "agent-reasoning-compact");
+  await expect(thought).toHaveAttribute("aria-expanded", "false");
   await thought.click();
   await expect(eika.page.getByText(/Full jitter over the capped delay/).last()).toBeVisible();
   await expectShot(eika, "agent-reasoning-open");
 });
 
-test("an answer the endpoint cut off is kept, and says why it stopped", async ({
-  open,
-  expectShot,
-}) => {
+test("an answer the endpoint cut off is kept, and says why it stopped", async ({ open }) => {
   const eika = await open({ scenario: "agent-cut-off" });
   await eika.send("Write the file");
   // The text stays on screen: throwing it away would leave the reader with a
@@ -102,7 +100,6 @@ test("an answer the endpoint cut off is kept, and says why it stopped", async ({
     eika.page.getByText("Writing the file now. It starts like this:").first(),
   ).toBeVisible();
   await expect(eika.page.getByText(/Cut off at the model's output limit/)).toBeVisible();
-  await expectShot(eika, "agent-cut-off");
 });
 
 test("the page itself never scrolls under the workbench", async ({ open }) => {

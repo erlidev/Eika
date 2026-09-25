@@ -1,0 +1,14 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "General" [selected]
+    - tab "Search"
+    - tab "Account"
+    - tab "Appearance"
+  - tabpanel "General":
+    - alert:
+      - text: "/Could not load the settings: the harness did not answer \\(HTTP \\d+\\); it may be starting or stopped\\. Try again in a moment\\./"
+      - button "Retry"
+  - button "Close"
