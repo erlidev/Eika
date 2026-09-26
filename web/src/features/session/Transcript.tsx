@@ -206,14 +206,13 @@ function useAnnouncement(rendered: TranscriptItem[]): string {
     break;
   }
 
-  // The change is noticed during render, which is where derived state is
-  // adjusted: an effect would commit the stale announcement first.
-  const [previous, setPrevious] = useState(latest);
   const [announcement, setAnnouncement] = useState("");
-  if (latest !== previous) {
-    setPrevious(latest);
+  const previous = useRef(latest);
+  useEffect(() => {
+    if (latest === previous.current) return;
+    previous.current = latest;
     setAnnouncement(latest);
-  }
+  }, [latest]);
   return announcement;
 }
 
