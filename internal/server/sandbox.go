@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/erlidev/eika/internal/egress"
@@ -213,13 +214,20 @@ func (s *Server) EgressPolicy(ctx context.Context, id string) (egress.Policy, er
 	return egress.Policy{Token: token, Mode: egressMode(ws.Sandbox), Allow: ws.Sandbox.Allow}, nil
 }
 
+// proxyTokens holds the egress proxy token of each workspace the proxy was
+// asked about.
+type proxyTokens struct {
+	mu          sync.Mutex
+	byWorkspace map[string]string
+}
+
 // proxyToken returns the token a workspace presents to the egress proxy.
 // A container's hub token never changes and an id is never reused, so a
 // token once read stays right until the workspace is destroyed.
 func (s *Server) proxyToken(ctx context.Context, id string) (string, error) {
-	s.tokensMu.Lock()
-	token, ok := s.tokens[id]
-	s.tokensMu.Unlock()
+	s.proxyTokens.mu.Lock()
+	token, ok := s.proxyTokens.byWorkspace[id]
+	s.proxyTokens.mu.Unlock()
 	if ok {
 		return token, nil
 	}
@@ -230,21 +238,21 @@ func (s *Server) proxyToken(ctx context.Context, id string) (string, error) {
 		}
 		return "", err
 	}
-	s.tokensMu.Lock()
-	defer s.tokensMu.Unlock()
-	if s.tokens == nil {
-		s.tokens = map[string]string{}
+	s.proxyTokens.mu.Lock()
+	defer s.proxyTokens.mu.Unlock()
+	if s.proxyTokens.byWorkspace == nil {
+		s.proxyTokens.byWorkspace = map[string]string{}
 	}
-	s.tokens[id] = host.HubToken
+	s.proxyTokens.byWorkspace[id] = host.HubToken
 	return host.HubToken, nil
 }
 
 // forgetEgress drops what the harness holds about a destroyed workspace's
 // network access.
 func (s *Server) forgetEgress(id string) {
-	s.tokensMu.Lock()
-	delete(s.tokens, id)
-	s.tokensMu.Unlock()
+	s.proxyTokens.mu.Lock()
+	delete(s.proxyTokens.byWorkspace, id)
+	s.proxyTokens.mu.Unlock()
 	if s.deps.Egress != nil {
 		s.deps.Egress.Forget(id)
 	}

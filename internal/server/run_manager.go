@@ -36,11 +36,12 @@ type queuedMessages struct {
 // finishRetries owns final run-state writes that outlive their foreground
 // retry window. It cancels and joins every retry before the store closes.
 type finishRetries struct {
+	wg sync.WaitGroup
+
 	mu      sync.Mutex
 	stopped bool
 	nextID  uint64
 	cancels map[uint64]context.CancelFunc
-	wg      sync.WaitGroup
 }
 
 func newFinishRetries() *finishRetries {
@@ -102,7 +103,8 @@ func (r *finishRetries) stop() {
 // run per session at a time. A run outlives the request that started it, so
 // it has its own context, cancelled by an abort or by shutdown.
 type runs struct {
-	server *Server
+	server   *Server
+	finishes *finishRetries
 
 	mu        sync.Mutex
 	stopped   bool
@@ -110,8 +112,7 @@ type runs struct {
 	byID      map[string]*activeRun
 	// pending keeps accepted messages from a run that stopped before it
 	// delivered them. The next run on the session receives them.
-	pending  map[string]queuedMessages
-	finishes *finishRetries
+	pending map[string]queuedMessages
 }
 
 // activeRun is one execution of the agent loop, from the moment its session

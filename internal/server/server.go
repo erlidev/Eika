@@ -172,11 +172,9 @@ type Server struct {
 	// password can be guessed without locking its owner out.
 	loginMu sync.Mutex
 
-	// tokensMu guards tokens.
-	tokensMu sync.Mutex
-	// tokens caches each workspace's egress proxy token, read from its
+	// proxyTokens caches each workspace's egress proxy token, read from its
 	// container the first time the proxy is asked about it.
-	tokens map[string]string
+	proxyTokens proxyTokens
 
 	// previews holds the tickets and sessions of workspace previews.
 	previews previews
