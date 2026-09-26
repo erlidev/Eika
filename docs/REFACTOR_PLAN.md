@@ -98,7 +98,7 @@ from phase 0 plus a grep, including `web/e2e`, `docs/`, and tests.
       deadcode and U1000 lists. Exported identifiers used only by tests of
       the same package are candidates too; keep ones a `*test` helper
       package or another package's test uses.
-- [ ] Consolidate the HTTP JSON helpers. `writeJSON`/`writeError` exist in
+- [x] Consolidate the HTTP JSON helpers. `writeJSON`/`writeError` exist in
       both `internal/server/json.go` and `internal/eikad/daemon.go`. They may
       stay separate (the packages are separate binaries and must not share
       an import that drags `server` in), but their behavior should match;
@@ -305,6 +305,10 @@ Newest first. One entry per session: date, items done (commit hashes),
     users. Kept `agent.NewSession` (server tests use it),
     `provider.AssistantMessage` (openai tests), and `executor.Rel`
     (`executor/local`, itself test-only).
+  - JSON helpers: `writeJSON` matches except that `server` skips the body
+    for an untyped `nil`, which eikad never passes. The error bodies differ
+    on purpose (eikad's flat `ErrorResponse` is private to
+    `executor/sandbox`); documented both in `eikad/daemon.go`.
 - 2026-09-26, phase 0 (all but the `.golangci.yml` item, which has its own
   commit). Findings below are the input for phases 1 and 2.
   - `make check` on a clean tree: green in 91 s. 35 vitest files, 386

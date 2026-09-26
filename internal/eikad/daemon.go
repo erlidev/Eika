@@ -166,7 +166,8 @@ func (d *Daemon) fileInfo(abs string, fi fs.FileInfo) FileInfo {
 }
 
 // writeJSON writes v as a JSON response. An encoding failure is logged rather
-// than returned because the status line has already been sent.
+// than returned because the status line has already been sent. It mirrors
+// the server package's writeJSON; the daemon cannot import that package.
 func writeJSON(w http.ResponseWriter, log *slog.Logger, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -175,7 +176,9 @@ func writeJSON(w http.ResponseWriter, log *slog.Logger, status int, v any) {
 	}
 }
 
-// writeError reports err to the caller with the given status code.
+// writeError reports err to the caller with the given status code. The body
+// is the daemon's flat ErrorResponse, not the harness API's error shape:
+// only executor/sandbox reads it.
 func writeError(w http.ResponseWriter, log *slog.Logger, status int, err error) {
 	writeJSON(w, log, status, ErrorResponse{Error: err.Error()})
 }
