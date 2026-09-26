@@ -1237,12 +1237,6 @@ export class MockHarness {
         })),
       });
     });
-    on("GET", "/api/sessions/{id}/path", ({ params }) => {
-      const row = find(w.sessions, params[0], "session");
-      if ("status" in row) return row;
-      const entries = pathOf(w, row);
-      return ok({ session_id: row.id, entries, messages: entries.map((e) => e.message) });
-    });
     on("POST", "/api/sessions/{id}/head", ({ params, body }) => {
       const row = find(w.sessions, params[0], "session");
       if ("status" in row) return row;
@@ -1437,10 +1431,6 @@ export class MockHarness {
       }
       return { status: 204 };
     });
-
-    on("GET", "/api/sessions/{id}/agents", ({ params }) =>
-      ok({ session_id: params[0], agents: [] }),
-    );
 
     // Runs, queues, and questions.
     on("GET", "/api/sessions/{id}/run", ({ params }) => {

@@ -21,6 +21,8 @@ import { scenario } from "./scenarios.ts";
 const unmocked: Record<string, string> = {
   "POST /api/workspaces/{id}/merge": "only subagents merge a workspace",
   "POST /api/subagents/{id}/abort": "the UI stops a child agent's run, not the agent",
+  "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
+  "GET /api/sessions/{id}/agents": "the sidebar lists child agents with the sessions",
   "GET /api/events": "a WebSocket, which install routes itself",
   "GET /api/workspaces/{id}/terminal": "a WebSocket, which install routes itself",
 };
@@ -170,11 +172,9 @@ describe("the mock answers as the harness does", () => {
       ["POST /api/sessions", "/api/sessions", { workspace_id: "ws-retries", title: "Try jitter" }],
       ["GET /api/sessions/{id}", "/api/sessions/ses-backoff"],
       ["GET /api/sessions/{id}/outline", "/api/sessions/ses-backoff/outline"],
-      ["GET /api/sessions/{id}/path", "/api/sessions/ses-backoff/path"],
       ["POST /api/sessions/{id}/head", "/api/sessions/ses-backoff/head", { entry_id: head }],
       ["POST /api/sessions/{id}/fork", "/api/sessions/ses-backoff/fork", { entry_id: head }],
       ["PUT /api/sessions/{id}/tools", "/api/sessions/ses-backoff/tools", { tools: ["bash"] }],
-      ["GET /api/sessions/{id}/agents", "/api/sessions/ses-backoff/agents"],
       ["GET /api/sessions/{id}/run", "/api/sessions/ses-backoff/run"],
       ["POST /api/sessions/{id}/messages", "/api/sessions/ses-backoff/messages", { text: "Go on" }],
     ];

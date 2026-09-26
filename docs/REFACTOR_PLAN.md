@@ -131,7 +131,7 @@ from phase 0 plus a grep, including `web/e2e`, `docs/`, and tests.
       the rule without them; otherwise leave a one-line reason on each.
 
 ### Test harness
-- [ ] `web/e2e/harness/mock.ts` (2190 lines) mirrors the Go API. Find
+- [x] `web/e2e/harness/mock.ts` (2190 lines) mirrors the Go API. Find
       handlers for routes the UI no longer calls (compare with
       `web/src/api/routes.ts`) and delete them.
 
@@ -299,6 +299,11 @@ docs match the code after phases 1 to 4.
 Newest first. One entry per session: date, items done (commit hashes),
 `make check` result, anything skipped and why, and findings for later items.
 
+- 2026-09-26, phase 1 (test harness). The owner allowed the
+  `mock.test.ts` edit: deleted the mock's `GET /api/sessions/{id}/path`
+  and `GET /api/sessions/{id}/agents` handlers, dropped their direct calls
+  from the test, and listed both in `unmocked` with why the UI skips them
+ . `make check` green (386 vitest, 127 visual).
 - 2026-09-26, phase 1 (Go). `make check` green before each commit.
   - Dead code: deleted `mcptest.Image` (`1598c49`); moved
     `agent.MemoryStore` into the agent tests as `memoryStore`, the only
@@ -347,7 +352,8 @@ Newest first. One entry per session: date, items done (commit hashes),
     `scroll-area`, `tooltip`); the unused exported types (they name
     wire shapes and props in exported signatures).
   - Dependencies: knip reported none unused, so nothing to delete.
-  - Mock handlers, **left unchecked**: of the 84 contract routes, the UI
+  - Mock handlers, **left unchecked** (since done; see the test harness
+    entry above): of the 84 contract routes, the UI
     never requests `GET /api/sessions/{id}/path` and
     `GET /api/sessions/{id}/agents` (besides the merge and subagent-abort
     routes already in `unmocked`). The mock serves both, and
