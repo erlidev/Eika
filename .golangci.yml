@@ -13,6 +13,10 @@ linters:
     - revive
     - unconvert
   exclusions:
+    # An unchecked Close, Flush, or print is deliberate: the work is done or
+    # already failed, and the error would say nothing a caller can act on.
+    presets:
+      - std-error-handling
     rules:
       - path: _test\.go
         linters:
