@@ -135,7 +135,9 @@ export function Composer({
   );
 }
 
-function Queues({ steering, followUps }: { steering: string[]; followUps: string[] }) {
+type QueuesProps = { steering: string[]; followUps: string[] };
+
+function Queues({ steering, followUps }: QueuesProps) {
   if (steering.length === 0 && followUps.length === 0) return null;
   return (
     <div className="text-muted-foreground mt-2 space-y-1 text-xs">
@@ -146,7 +148,9 @@ function Queues({ steering, followUps }: { steering: string[]; followUps: string
   );
 }
 
-function Queue({ label, messages }: { label: string; messages: string[] }) {
+type QueueProps = { label: string; messages: string[] };
+
+function Queue({ label, messages }: QueueProps) {
   if (messages.length === 0) return null;
   return (
     <div>

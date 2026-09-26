@@ -151,12 +151,14 @@ export function ContextBreakdown({ meter }: ContextBreakdownProps) {
   );
 }
 
+type SpeedRowsProps = { meter: Meter };
+
 /**
  * SpeedRows are the last model call's two rates, for a reader who turned them
  * on. They are rows of the breakdown's list rather than a block of their own,
  * so they read as two more measurements of the same call.
  */
-function SpeedRows({ meter }: { meter: Meter }) {
+function SpeedRows({ meter }: SpeedRowsProps) {
   const decode = formatRate(meter.timings?.decode_tokens, meter.timings?.decode_ms);
   const prompt = formatRate(meter.timings?.prompt_tokens, meter.timings?.prompt_ms);
   return (

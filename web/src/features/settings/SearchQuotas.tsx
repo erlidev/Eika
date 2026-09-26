@@ -20,7 +20,9 @@ type SaveSettings = ReturnType<typeof useSaveSettings>;
 
 type QuotaFields = { day: LimitField; month: LimitField };
 
-export function Quotas({ state, save }: { state: SettingsState; save: SaveSettings }) {
+type QuotasProps = { state: SettingsState; save: SaveSettings };
+
+export function Quotas({ state, save }: QuotasProps) {
   const stored = readLimits(state);
   const [fields, setFields] = useState<Record<string, QuotaFields>>(() =>
     Object.fromEntries(

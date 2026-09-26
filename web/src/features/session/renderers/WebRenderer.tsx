@@ -53,8 +53,10 @@ export function WebSearchBody({ call }: ToolRendererProps) {
   );
 }
 
+type ResultLinkProps = { result: SearchResult };
+
 /** ResultLink is one search result: its title as a link, its URL, and its snippet. */
-function ResultLink({ result }: { result: SearchResult }) {
+function ResultLink({ result }: ResultLinkProps) {
   const href = safeHref(result.url);
   return (
     <li className="min-w-0">

@@ -9,7 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { keyLabels, useSaveSearchKey } from "@/features/search";
 
-export function SearchKeys({ status }: { status: SearchStatus }) {
+type SearchKeysProps = { status: SearchStatus };
+
+export function SearchKeys({ status }: SearchKeysProps) {
   return (
     <div className="space-y-3">
       <div>
@@ -33,7 +35,9 @@ function keyName(name: string): string {
   return name === "github" ? label : `${label} key`;
 }
 
-function KeyForm({ name, set, hint }: { name: string; set: boolean; hint?: string | undefined }) {
+type KeyFormProps = { name: string; set: boolean; hint?: string | undefined };
+
+function KeyForm({ name, set, hint }: KeyFormProps) {
   const save = useSaveSearchKey();
   const [key, setKey] = useState("");
   const id = `search-key-${name}`;

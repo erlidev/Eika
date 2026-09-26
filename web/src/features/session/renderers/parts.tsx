@@ -12,8 +12,10 @@ function callOutput(call: ToolItem): string {
   return call.output === "" ? (call.content ?? "") : call.output;
 }
 
+type ResultBlockProps = { call: ToolItem; label: string };
+
 /** ResultBlock renders a call's output, or says it produced none. */
-export function ResultBlock({ call, label }: { call: ToolItem; label: string }) {
+export function ResultBlock({ call, label }: ResultBlockProps) {
   const text = callOutput(call);
   if (text === "") {
     return (
@@ -29,8 +31,10 @@ export function ResultBlock({ call, label }: { call: ToolItem; label: string }) 
   );
 }
 
+type FieldListProps = { fields: [string, string][] };
+
 /** FieldList is the dense key/value header several renderers share. */
-export function FieldList({ fields }: { fields: [string, string][] }) {
+export function FieldList({ fields }: FieldListProps) {
   const shown = fields.filter(([, value]) => value !== "" && value !== "undefined");
   if (shown.length === 0) return null;
   return (

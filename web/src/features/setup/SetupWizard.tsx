@@ -323,8 +323,10 @@ function WizardFrame({ step, children, onBack, onSkip, finishing, problem }: Wiz
   );
 }
 
+type AccountStepProps = { baseUrl: string };
+
 /** AccountStep chooses the sign-in password and signs this browser in with it. */
-function AccountStep({ baseUrl }: { baseUrl: string }) {
+function AccountStep({ baseUrl }: AccountStepProps) {
   const client = useQueryClient();
   const [password, setPassword] = useState("");
   const [again, setAgain] = useState("");

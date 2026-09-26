@@ -72,7 +72,9 @@ function storedKey(state: SettingsState, key: string): string {
   return JSON.stringify(state.settings[key] ?? null);
 }
 
-function SandboxForm({ state, save }: { state: SettingsState; save: SaveSettings }) {
+type SandboxFormProps = { state: SettingsState; save: SaveSettings };
+
+function SandboxForm({ state, save }: SandboxFormProps) {
   const stored = settingString(state, settingKeys.sandboxImage);
   const [image, setImage] = useState(stored);
   const changed = image.trim() !== stored;
@@ -125,7 +127,9 @@ function SandboxForm({ state, save }: { state: SettingsState; save: SaveSettings
   );
 }
 
-function SubagentForm({ state, save }: { state: SettingsState; save: SaveSettings }) {
+type SubagentFormProps = { state: SettingsState; save: SaveSettings };
+
+function SubagentForm({ state, save }: SubagentFormProps) {
   const [depth, setDepth] = useState(
     settingNumber(state, settingKeys.subagentMaxDepth) ?? state.defaults.subagent_max_depth,
   );

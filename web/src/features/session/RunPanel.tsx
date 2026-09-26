@@ -112,7 +112,9 @@ export function RunPanel({ sessionId }: RunPanelProps) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+type SectionProps = { title: string; children: React.ReactNode };
+
+function Section({ title, children }: SectionProps) {
   return (
     <section>
       <h3 className="text-muted-foreground mb-1 text-2xs font-semibold tracking-wide uppercase">
@@ -123,7 +125,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Queue({ messages }: { messages: string[] }) {
+type QueueProps = { messages: string[] };
+
+function Queue({ messages }: QueueProps) {
   if (messages.length === 0) return <p className="text-muted-foreground">Empty.</p>;
   return (
     <ol className="space-y-1">

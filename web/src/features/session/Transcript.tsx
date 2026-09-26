@@ -170,12 +170,14 @@ export function Transcript({ sessionId, empty }: TranscriptProps) {
   );
 }
 
+type CutOffProps = { reason: string | undefined };
+
 /**
  * CutOff says that the last turn stopped before the model was finished. It
  * belongs in the transcript rather than the status bar: it is about the
  * answer above it, and it is gone as soon as the next turn starts.
  */
-function CutOff({ reason }: { reason: string | undefined }) {
+function CutOff({ reason }: CutOffProps) {
   const text = cutOffText(reason);
   if (text === undefined) return null;
   return (
@@ -215,12 +217,14 @@ function useAnnouncement(rendered: TranscriptItem[]): string {
   return announcement;
 }
 
+type AssistantProps = { item: AssistantItem };
+
 /**
  * Assistant is one block of model prose. It reads the speed preference
  * itself, so that turning the line on or off re-renders the answers and
  * nothing else.
  */
-function Assistant({ item }: { item: AssistantItem }) {
+function Assistant({ item }: AssistantProps) {
   const speed = useTranscriptPreferences((s) => s.speed);
   return (
     <article className="min-w-0">
@@ -237,16 +241,14 @@ function Assistant({ item }: { item: AssistantItem }) {
   );
 }
 
-const Item = memo(function Item({
-  item,
-  openTool,
-  onRewind,
-}: {
+type ItemProps = {
   item: TranscriptItem;
   openTool: boolean;
   /** onRewind is absent when this row cannot be rewound to. */
   onRewind?: (entryId: string, text: string) => void;
-}) {
+};
+
+const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
   switch (item.kind) {
     case "user":
       // A message the user wrote is the one thing on screen that did not come

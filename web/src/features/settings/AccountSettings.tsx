@@ -45,7 +45,9 @@ export function AccountSettings() {
   );
 }
 
-function PasswordForm({ baseUrl }: { baseUrl: string }) {
+type PasswordFormProps = { baseUrl: string };
+
+function PasswordForm({ baseUrl }: PasswordFormProps) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");

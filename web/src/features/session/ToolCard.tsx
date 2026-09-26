@@ -66,7 +66,9 @@ export function ToolCard({ call, open = false }: ToolCardProps) {
   );
 }
 
-function StatusIcon({ call }: { call: ToolItem }) {
+type StatusIconProps = { call: ToolItem };
+
+function StatusIcon({ call }: StatusIconProps) {
   if (!call.done) {
     return (
       <Loader2

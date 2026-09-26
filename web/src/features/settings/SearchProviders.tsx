@@ -21,8 +21,10 @@ import {
 } from "@/features/search";
 import type { useSaveSettings } from "@/features/settings/queries";
 
+type StateBadgeProps = { backend: SearchBackendStatus };
+
 /** StateBadge shows a backend's state: ready, or why not. */
-function StateBadge({ backend }: { backend: SearchBackendStatus }) {
+function StateBadge({ backend }: StateBadgeProps) {
   const ready = backend.state === "ready";
   return (
     <Badge
@@ -157,7 +159,9 @@ export function ProviderOrder({ state, status, save }: ProviderOrderProps) {
   );
 }
 
-export function Sources({ status }: { status: SearchStatus }) {
+type SourcesProps = { status: SearchStatus };
+
+export function Sources({ status }: SourcesProps) {
   const sources = status.backends.filter((b) => !b.web);
   return (
     <div className="space-y-2">

@@ -153,11 +153,13 @@ const liveText: Record<StreamStatus, { label: string; title: string }> = {
   idle: { label: "Not live", title: "No live connection: showing the last load" },
 };
 
+type LiveUpdatesProps = { status: StreamStatus };
+
 /**
  * LiveUpdates shows whether the event stream is connected, which is what
  * keeps a run's output and the rest of the page current.
  */
-function LiveUpdates({ status }: { status: StreamStatus }) {
+function LiveUpdates({ status }: LiveUpdatesProps) {
   const { label, title } = liveText[status];
   const Icon = status === "open" ? Radio : status === "idle" ? WifiOff : Loader2;
   return (
@@ -183,13 +185,15 @@ function LiveUpdates({ status }: { status: StreamStatus }) {
   );
 }
 
+type EffortCycleProps = { model: Model };
+
 /**
  * EffortCycle is how hard the model thinks, and the way to change it without
  * leaving the session: one click moves to the next word in the model's own
  * list. The list is the model's setting, so the change applies to the next
  * run in any session that uses it.
  */
-function EffortCycle({ model }: { model: Model }) {
+function EffortCycle({ model }: EffortCycleProps) {
   const update = useUpdateModel();
   const efforts = model.reasoning_efforts;
   if (efforts.length === 0) return null;

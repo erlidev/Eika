@@ -152,8 +152,10 @@ function ChatBadge() {
   );
 }
 
+type WorkspacePlaceProps = { workspace: Workspace };
+
 /** WorkspacePlace names the workspace a session's runs act in, and its state. */
-function WorkspacePlace({ workspace }: { workspace: Workspace }) {
+function WorkspacePlace({ workspace }: WorkspacePlaceProps) {
   return (
     <span className="text-muted-foreground flex min-w-0 shrink items-center gap-1.5 text-xs">
       <FolderGit2 aria-hidden className="size-3.5 shrink-0" />

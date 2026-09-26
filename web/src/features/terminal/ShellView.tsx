@@ -58,7 +58,9 @@ const statusText: Record<ShellState["status"], string> = {
   failed: "Could not connect to the shell. The workspace may have stopped; try again.",
 };
 
-function ShellBar({ session, state }: { session: ShellSession; state: ShellState }) {
+type ShellBarProps = { session: ShellSession; state: ShellState };
+
+function ShellBar({ session, state }: ShellBarProps) {
   const ended = state.status !== "connecting" && state.status !== "open";
   return (
     <div className="text-muted-foreground flex h-8 shrink-0 items-center gap-2 border-b px-2 text-xs">

@@ -71,7 +71,9 @@ export function SandboxPanel({ workspaceId }: SandboxPanelProps) {
   );
 }
 
-function UsageSection({ workspace }: { workspace: Workspace }) {
+type UsageSectionProps = { workspace: Workspace };
+
+function UsageSection({ workspace }: UsageSectionProps) {
   const usage = useWorkspaceUsage(workspace.id, true);
   if (usage.isPending) return <Notice tone="pending">Sampling the workspace…</Notice>;
   if (usage.isError) {
@@ -100,8 +102,10 @@ function UsageSection({ workspace }: { workspace: Workspace }) {
   );
 }
 
+type UsageMetersProps = { usage: WorkspaceUsage };
+
 /** UsageMeters draws one bar per resource against its limit, or the host's whole. */
-function UsageMeters({ usage }: { usage: WorkspaceUsage }) {
+function UsageMeters({ usage }: UsageMetersProps) {
   const cores = usage.cpus > 0 ? usage.cpus : 1;
   return (
     <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
@@ -176,11 +180,13 @@ function Meter({ label, fraction, text }: MeterProps) {
   );
 }
 
+type BlockedHostsProps = { workspace: Workspace; usage: WorkspaceUsage };
+
 /**
  * BlockedHosts lists the hosts the egress proxy refused the workspace
  * lately. Under an allowlist, each can be added to it at once.
  */
-function BlockedHosts({ workspace, usage }: { workspace: Workspace; usage: WorkspaceUsage }) {
+function BlockedHosts({ workspace, usage }: BlockedHostsProps) {
   const save = useSetSandbox();
   const blocked = usage.blocked ?? [];
   const mode = workspace.sandbox.egress.mode;
@@ -228,8 +234,10 @@ function BlockedHosts({ workspace, usage }: { workspace: Workspace; usage: Works
   );
 }
 
+type PreviewSectionProps = { workspace: Workspace; running: boolean };
+
 /** PreviewSection lists the stored forwarded ports, each opening a preview in a new tab. */
-function PreviewSection({ workspace, running }: { workspace: Workspace; running: boolean }) {
+function PreviewSection({ workspace, running }: PreviewSectionProps) {
   const open = useOpenPreview();
   const ports = workspace.sandbox.ports ?? [];
   if (ports.length === 0) return null;
