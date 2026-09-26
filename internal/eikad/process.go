@@ -102,6 +102,13 @@ func (d *Daemon) handleProcess(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+	// Every path below waits for the process, whose exit closes stdin, and
+	// cancelling ends the read, so the input goroutine is done before this
+	// handler is.
+	defer func() {
+		cancel()
+		<-clientGone
+	}()
 
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
