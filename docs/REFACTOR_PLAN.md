@@ -160,21 +160,21 @@ without a `docs/DECISIONS.md` entry.
       subject and its name says which.
 
 ### Go: practice
-- [ ] Error strings: `git grep -nE 'Errorf\("(failed|unable|could not|error)' internal`
+- [x] Error strings: `git grep -nE 'Errorf\("(failed|unable|could not|error)' internal`
       and fix to the "verb noun: %w" form. Leave strings a test asserts or
       the UI shows as is, and list them in the log.
-- [ ] `%v` wrapping errors where `%w` belongs: errorlint findings.
-- [ ] Context: functions doing I/O without `ctx` first; contexts stored in
+- [x] `%v` wrapping errors where `%w` belongs: errorlint findings.
+- [x] Context: functions doing I/O without `ctx` first; contexts stored in
       structs outside the owned-goroutine exception.
-- [ ] Goroutines without an owner (`git grep -n 'go func' internal`): each
+- [x] Goroutines without an owner (`git grep -n 'go func' internal`): each
       has a `WaitGroup`, `errgroup`, or a documented `Close`.
-- [ ] Mutexes named `mu` sitting above the fields they guard.
-- [ ] Log keys in `snake_case`; logging at boundaries, not every step.
-- [ ] Names: no `Manager`, `Helper`, `Util`, `Impl`, `Data` in type or
+- [x] Mutexes named `mu` sitting above the fields they guard.
+- [x] Log keys in `snake_case`; logging at boundaries, not every step.
+- [x] Names: no `Manager`, `Helper`, `Util`, `Impl`, `Data` in type or
       function names (`git grep -nE 'type \w*(Manager|Helper|Util|Impl|Data)\b'`).
-- [ ] Interfaces declared at the consumer, except the named extension
+- [x] Interfaces declared at the consumer, except the named extension
       points. Remove interfaces with one implementation and no test fake.
-- [ ] Apply the golangci-lint findings from phase 0 that are real; do not
+- [x] Apply the golangci-lint findings from phase 0 that are real; do not
       add `//nolint`.
 
 ### Frontend: split large components
@@ -300,16 +300,56 @@ docs match the code after phases 1 to 4.
 Newest first. One entry per session: date, items done (commit hashes),
 `make check` result, anything skipped and why, and findings for later items.
 
+- 2026-09-26, phase 2 (Go practice). Phase 2 is done. `make check` green
+  after each commit and on the merged tree; `make smoke` green on the
+  final tree (`server.Run` wiring and eikad changed).
+  - Error strings: nothing to change. Kept because the UI or model reads
+    them: `run_manager.go` "run %s failed: %s" (the subagent result), the
+    API's "cannot"/"could not" messages, the pool's status errors.
+  - `%w`: `mcp/elicit.go` now `%w: %w` (same text, `errors.Is` holds),
+    `storetest` (`fee7328`). Server's `%v` are in `invalidf`/`conflictf`
+    messages, and `scrub(err.Error())` on purpose.
+  - Context: dropped `legacysse`'s unread stored ctx; `eikad`'s
+    `processWriter.ctx` documented as the io.Writer exception
+    (`816e90f`). `titles`, `mcp` client/http/pool, `executor/sandbox`
+    already fit the owned-goroutine exception. Open: `hub.Handler()`
+    runs `git --exec-path` without a ctx.
+  - Goroutines: eikad `/process` now waits for its stdin reader
+    (`d0f1244`); `/api/events` waits for its reader before closing the
+    subscription, and `Serve` waits for `srv.Serve` after `Shutdown`
+    (`d2652cd`). All others already had an owner.
+  - Mutexes: WaitGroups and set-once fields moved above `mu`
+    (`9657301`, `57b939c`); `Server.tokensMu`/`tokens` became a
+    `proxyTokens` type. `loginMu` guards no fields; it serializes sign-in.
+  - Log keys: all snake_case (AST scan). `search/usage.go` uses `"err"`
+    where 70 calls use `"error"`; left, optional.
+  - Names: nothing to change.
+  - Interfaces: `server.Egress` and `server.Subagents` had one
+    implementation and no fake; `Deps` now holds `*egress.Proxy` and
+    `*subagent.Spawner`, retiring `egressDep` (`46ea533`). Kept:
+    `provider.Lister`, `search.Prober`, `tool.Standalone` (optional
+    capabilities of extension points), and the faked server interfaces.
+  - golangci-lint: enabled v2's `std-error-handling` preset (`4764022`;
+    42 of 53 errcheck findings were deferred Close or prints); the rest
+    handled with `_ =`, builtin-shadowing locals renamed, gocritic,
+    staticcheck, unconvert, revive fixed (`fbebf37`, `faa2b59`). Non-test
+    code now reports only `executor/sandbox/sandbox.go` 234 and 348,
+    bodyclose on `websocket.Dial`, whose body needs no close. Test-file
+    findings stay (errorlint, bodyclose, revive, QF1008, gofmt `-s` in
+    `agent_test.go`), since tests are not edited here; golangci-lint is
+    still not installed where `make check` runs.
 - 2026-09-26, phase 2 (frontend practice). `make check` green on the
   merged tree. `00c3c7d` had typecheck, eslint, and prettier but no full
   `make check` of its own; it only adds unexported prop types.
   - Inline styles: nothing to change. Every `style=` outside
     `components/ui` is computed (per-depth padding, split width,
     percentage bars, ContextMeter's `left` and `width`).
-  - `useEffect`: `useAnnouncement` in `Transcript.tsx` now adjusts state
-    during render instead of in an effect (`8d761f2`); the live-region
-    text updates one commit sooner, nothing else changes. The rest sync
-    with something external. Borderline, kept: "latest handler" refs in
+  - `useEffect`: `useAnnouncement` in `Transcript.tsx` was moved to
+    render-time derivation (`8d761f2`) and reverted (`9d8a3fa`): the live
+    region then fills in the same render as the message, and
+    `make smoke`'s `getByText("The command printed smoke-ok.")` hits a
+    strict-mode violation on the two matches. `make check` did not catch
+    it. The rest sync with something external. Borderline, kept: "latest handler" refs in
     `useStream`, `CodeEditor`, `MCPCallbackScreen` (`useEffectEvent`
     would be a new mechanism); `ProfilesSettings`'s mount effect calling
     `takeProfile()` (a store side effect, impure in an initializer).
