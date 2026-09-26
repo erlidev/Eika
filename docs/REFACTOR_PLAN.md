@@ -103,15 +103,15 @@ from phase 0 plus a grep, including `web/e2e`, `docs/`, and tests.
       stay separate (the packages are separate binaries and must not share
       an import that drags `server` in), but their behavior should match;
       diff them and align or document the difference in one line.
-- [ ] Review the `http.Client` constructions (`executor/sandbox`,
+- [x] Review the `http.Client` constructions (`executor/sandbox`,
       `server/mcp.go:1358`, `server/wire.go`, `workspace/host.go`,
       `search/fetch/client.go`). Where two build the same client, reuse one.
       Do not change timeouts.
-- [ ] Look for parallel mechanisms the style guide forbids: a second config
+- [x] Look for parallel mechanisms the style guide forbids: a second config
       read (`os.Getenv` outside `cmd/` and `config`), a package-level
       logger, `init()` registration, `panic` outside `main`/`init`.
       `git grep -nE 'os\.Getenv|slog\.New\(|func init\(|panic\(' internal cmd`.
-- [ ] Decide on compatibility shims such as the "is no longer read from the
+- [x] Decide on compatibility shims such as the "is no longer read from the
       file" error in `internal/config/config.go`. Removing one changes
       behavior for old deployments, so do not remove it here; list each shim
       in the log for the owner to decide.
@@ -309,6 +309,29 @@ Newest first. One entry per session: date, items done (commit hashes),
     for an untyped `nil`, which eikad never passes. The error bodies differ
     on purpose (eikad's flat `ErrorResponse` is private to
     `executor/sandbox`); documented both in `eikad/daemon.go`.
+  - `http.Client`: no change. The clients without a timeout
+    (`executor/sandbox`'s default, `server/mcp.go`) have a nil `Transport`,
+    so they already share `http.DefaultTransport` and its pool. The rest
+    differ on purpose: `wire.go` has `search.Timeout`, `workspace/host.go`
+    5 s, `search/fetch` and `egress` a guarded dialer. `mcp.NewPool`
+    defaults to `http.DefaultClient`, equivalent to what `server` passes.
+  - Parallel mechanisms: none. Env reads outside `cmd/` and `config` are in
+    test helpers (`storetest`) or pass the sandbox's own environment to a
+    child (`eikad` `SHELL` and `os.Environ`, `executor/local`, the hub's
+    git). No package-level logger or `init()`. `panic` only in test
+    helpers (`mcptest`, `providertest`). Loggers default to `slog.Default()`
+    (allowed) except `search.Engine`, which defaults to discard; aligning
+    it would change logging, so it stays.
+  - Compatibility shims, for the owner to decide:
+    1. `config.movedToUI` / `checkMovedKeys`: a config file setting
+       `models` or `subagents` fails with a pointer to the UI.
+    2. README "Upgrading from an environment-configured version"
+       (`deploy/eika.yaml`, `deploy/.env`, the `eika-local` project).
+       Phase 5 has an item for it.
+    3. `deploy/.env` in `.gitignore` and `.dockerignore`: keeps an old
+       secrets file out of git and images. Cheap; keep while any old
+       checkout may have one.
+    The MCP "legacy" transports are protocol support, not shims.
 - 2026-09-26, phase 0 (all but the `.golangci.yml` item, which has its own
   commit). Findings below are the input for phases 1 and 2.
   - `make check` on a clean tree: green in 91 s. 35 vitest files, 386
