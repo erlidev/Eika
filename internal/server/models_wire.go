@@ -78,7 +78,6 @@ type testModelResponse struct {
 	LatencyMS  int64  `json:"latency_ms"`
 }
 
-// asModel renders a model on the wire.
 // effortList is how a model's choices go on the wire: always an array, so a
 // client never has to tell an absent list from an empty one.
 func effortList(list []string) []string {
@@ -88,6 +87,7 @@ func effortList(list []string) []string {
 	return list
 }
 
+// asModel renders a model on the wire.
 func asModel(m store.Model) modelBody {
 	return modelBody{
 		ID:               m.ID,

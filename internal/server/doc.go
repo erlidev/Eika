@@ -13,14 +13,14 @@
 // credentials with internal/secret and builds a provider client from a row
 // for one run, probe, or test at a time.
 //
-// Run is the composition of the process: it opens the store, loads the
-// sealing key, builds the hub, the workspace host, the provider registry, the
-// tool registry, and the MCP pool (mcp_pool.go, which starts stdio servers
-// through the host; mcp_store.go backs the pool with sealed rows), and
-// serves. New
-// takes those pieces as Deps instead, which is how the tests run the API
-// against fakes. Handlers live one file per resource and are registered in
-// routes.go; docs/api/http.md documents every route.
+// Run, in composition.go, is the composition of the process: it opens the
+// store, loads the sealing key, builds the hub, the workspace host, the
+// provider registry, the tool registry, and the MCP pool (mcp_pool.go, which
+// starts stdio servers through the host; mcp_store.go backs the pool with
+// sealed rows), and serves. New takes those pieces as Deps instead, which is
+// how the tests run the API against fakes. Handlers live one file per
+// resource and are registered in routes.go; docs/api/http.md documents
+// every route.
 //
 // A run of the agent loop is owned by the run manager in run_manager.go:
 // one goroutine per run, at most one run per session, events emitted into
