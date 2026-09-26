@@ -2,9 +2,4 @@
 export { CreateProjectDialog } from "@/features/projects/CreateProjectDialog";
 export { ProjectForm } from "@/features/projects/ProjectForm";
 export { ProjectSettingsDialog } from "@/features/projects/ProjectSettingsDialog";
-export {
-  useCreateProject,
-  useDeleteProject,
-  useProjects,
-  useUpdateProject,
-} from "@/features/projects/queries";
+export { useDeleteProject, useProjects } from "@/features/projects/queries";

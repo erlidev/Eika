@@ -2,15 +2,4 @@
 export { ModelPicker } from "@/features/providers/ModelPicker";
 export { ModelsPanel } from "@/features/providers/ModelsPanel";
 export { ProviderForm } from "@/features/providers/ProviderForm";
-export {
-  useCreateModel,
-  useCreateProvider,
-  useDeleteModel,
-  useDeleteProvider,
-  useModel,
-  useModels,
-  useProviders,
-  useTestModel,
-  useUpdateModel,
-  useUpdateProvider,
-} from "@/features/providers/queries";
+export { useModel, useModels, useProviders, useUpdateModel } from "@/features/providers/queries";
