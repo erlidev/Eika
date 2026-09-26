@@ -68,7 +68,7 @@ func (statFails) Stat(context.Context, string) (executor.FileInfo, error) {
 // many messages the store held at that moment, which is where the call's
 // conversation ended in the store.
 type callRecorder struct {
-	store *agent.MemoryStore
+	store *memoryStore
 	err   error
 
 	mu     sync.Mutex
@@ -557,7 +557,7 @@ func TestRecorderLearnsEveryModelCallOnce(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			p := providertest.New(c.steps...)
-			store := agent.NewMemoryStore()
+			store := newMemoryStore()
 			calls := &callRecorder{store: store, err: c.recordErr}
 			events := &recorder{}
 			a := agent.New(p, registry(t), agent.Options{

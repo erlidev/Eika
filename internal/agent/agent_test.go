@@ -80,6 +80,29 @@ func (p *gatedProvider) Requests() []provider.Request {
 	return append([]provider.Request(nil), p.requests...)
 }
 
+// memoryStore keeps messages in memory, keyed by session.
+type memoryStore struct {
+	mu       sync.Mutex
+	sessions map[string][]provider.Message
+}
+
+func newMemoryStore() *memoryStore {
+	return &memoryStore{sessions: map[string][]provider.Message{}}
+}
+
+func (s *memoryStore) Append(_ context.Context, sessionID string, m provider.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions[sessionID] = append(s.sessions[sessionID], m)
+	return nil
+}
+
+func (s *memoryStore) Messages(sessionID string) []provider.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]provider.Message(nil), s.sessions[sessionID]...)
+}
+
 // checkingStore rejects cancelled writes and verifies that every message is
 // valid persisted JSON before it records it.
 type checkingStore struct {
@@ -196,7 +219,7 @@ type fixture struct {
 	agent    *agent.Agent
 	provider *providertest.Provider
 	events   *recorder
-	store    *agent.MemoryStore
+	store    *memoryStore
 	session  *agent.Session
 	exec     *local.Executor
 }
@@ -219,7 +242,7 @@ func newFixture(t *testing.T, steps []providertest.Step, extra ...tool.Tool) *fi
 	}
 	p := providertest.New(steps...)
 	rec := &recorder{}
-	store := agent.NewMemoryStore()
+	store := newMemoryStore()
 	a := agent.New(p, r, agent.Options{
 		Executor:      e,
 		Emitter:       rec,
@@ -264,7 +287,7 @@ func TestRunStreamsATextAnswer(t *testing.T) {
 
 func TestSteeringAcceptedDuringFinalResponseStartsANewTurn(t *testing.T) {
 	p := &gatedProvider{started: make(chan struct{}), release: make(chan struct{})}
-	store := agent.NewMemoryStore()
+	store := newMemoryStore()
 	a := agent.New(p, nil, agent.Options{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	s := agent.NewSession("session-1", "workspace-1")
 	done := make(chan error, 1)

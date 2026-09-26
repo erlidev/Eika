@@ -67,40 +67,8 @@ func NewSession(id, workspaceID string) *Session {
 	return &Session{ID: id, WorkspaceID: workspaceID, Conversation: NewConversation()}
 }
 
-// Store persists the messages a run produces. Phase 3 implements it against
-// PostgreSQL; MemoryStore is the implementation the tests and single-process
-// runs use.
+// Store persists the messages a run produces. session.Store implements it
+// against the database.
 type Store interface {
 	Append(ctx context.Context, sessionID string, m provider.Message) error
 }
-
-// MemoryStore keeps messages in memory, keyed by session.
-type MemoryStore struct {
-	mu       sync.Mutex
-	sessions map[string][]provider.Message
-}
-
-// NewMemoryStore returns an empty store.
-func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{sessions: map[string][]provider.Message{}}
-}
-
-// Append records one message.
-func (s *MemoryStore) Append(_ context.Context, sessionID string, m provider.Message) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.sessions == nil {
-		s.sessions = map[string][]provider.Message{}
-	}
-	s.sessions[sessionID] = append(s.sessions[sessionID], m)
-	return nil
-}
-
-// Messages returns the messages recorded for a session.
-func (s *MemoryStore) Messages(sessionID string) []provider.Message {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]provider.Message(nil), s.sessions[sessionID]...)
-}
-
-var _ Store = (*MemoryStore)(nil)

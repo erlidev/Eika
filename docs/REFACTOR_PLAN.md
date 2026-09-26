@@ -94,7 +94,7 @@ Delete what nothing uses. Each deletion is proven dead by the tool output
 from phase 0 plus a grep, including `web/e2e`, `docs/`, and tests.
 
 ### Go
-- [ ] Delete unused functions, types, constants, and fields from the
+- [x] Delete unused functions, types, constants, and fields from the
       deadcode and U1000 lists. Exported identifiers used only by tests of
       the same package are candidates too; keep ones a `*test` helper
       package or another package's test uses.
@@ -299,6 +299,12 @@ docs match the code after phases 1 to 4.
 Newest first. One entry per session: date, items done (commit hashes),
 `make check` result, anything skipped and why, and findings for later items.
 
+- 2026-09-26, phase 1 (Go). `make check` green before each commit.
+  - Dead code: deleted `mcptest.Image` (`1598c49`); moved
+    `agent.MemoryStore` into the agent tests as `memoryStore`, the only
+    users. Kept `agent.NewSession` (server tests use it),
+    `provider.AssistantMessage` (openai tests), and `executor.Rel`
+    (`executor/local`, itself test-only).
 - 2026-09-26, phase 0 (all but the `.golangci.yml` item, which has its own
   commit). Findings below are the input for phases 1 and 2.
   - `make check` on a clean tree: green in 91 s. 35 vitest files, 386
