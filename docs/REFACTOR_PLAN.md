@@ -178,22 +178,23 @@ without a `docs/DECISIONS.md` entry.
       add `//nolint`.
 
 ### Frontend: split large components
-- [ ] `features/context/ContextInspector.tsx` (1036): extract subcomponents
+- [x] `features/context/ContextInspector.tsx` (1036): extract subcomponents
       into sibling files; keep the exported API.
-- [ ] `features/mcp/MCPServerView.tsx` (970): same.
-- [ ] `app/Sidebar.tsx` (670): same.
-- [ ] `features/settings/SearchSettings.tsx` (553) and
+- [x] `features/mcp/MCPServerView.tsx` (970): same.
+- [x] `app/Sidebar.tsx` (670): same.
+- [x] `features/settings/SearchSettings.tsx` (553) and
       `features/profiles/SettingsEditor.tsx` (525): same.
-- [ ] `api/types.ts` (1163): split by domain (`types/mcp.ts`, …) only if
+- [x] `api/types.ts` (1163): split by domain (`types/mcp.ts`, …) only if
       `api/index` keeps every import path working; otherwise leave it.
-- [ ] `e2e/harness/mock.ts` (2190): split handlers by resource like the Go
+- [x] `e2e/harness/mock.ts` (2190): split handlers by resource like the Go
       server files.
 
 ### Frontend: practice
 - [ ] Inline `style={{…}}` objects: keep only computed values (widths,
-      transforms). Files: `app/Sidebar.tsx`, `components/ResizableSplit.tsx`,
-      `context/ContextInspector.tsx`, `context/parts.tsx`,
-      `profiles/SettingsEditor.tsx`, `sandbox/SandboxPanel.tsx`,
+      transforms). Files (after the phase 2 splits): `app/SidebarRow.tsx`,
+      `app/SidebarSession.tsx`, `components/ResizableSplit.tsx`,
+      `context/ToolList.tsx`, `context/Messages.tsx`, `context/parts.tsx`,
+      `profiles/CostStrip.tsx`, `sandbox/SandboxPanel.tsx`,
       `session/ContextMeter.tsx`, `session/SessionTreePanel.tsx`.
 - [ ] `useEffect` audit: `git grep -n useEffect web/src`. Replace effects
       that derive state with render-time derivation.
@@ -220,7 +221,7 @@ Make dependency rules hold everywhere, then make them checked.
   - [ ] `features/profiles/store.ts` → `settings`
   - [ ] `features/profiles/ProfilesSettings.tsx` → `settings`
   - [ ] `features/context/segments.ts`, `parts.tsx`,
-        `ContextInspector.tsx` → `profiles`
+        `Pane.tsx` (was `ContextInspector.tsx`) → `profiles`
 - [ ] Enforce it in `web/eslint.config.js` with `no-restricted-imports`
       (built into ESLint, no new dependency): a file under
       `features/<a>/` may not import `@/features/<b>/<anything but index>`.
@@ -299,6 +300,30 @@ docs match the code after phases 1 to 4.
 Newest first. One entry per session: date, items done (commit hashes),
 `make check` result, anything skipped and why, and findings for later items.
 
+- 2026-09-26, phase 2 (frontend splits). Moves plus the `export` and
+  imports they need; `make check` green after each and on the merged tree.
+  - `ContextInspector.tsx` 1036 → 185 (`b262408`): `Inspection.tsx`,
+    `Pane.tsx`, `ToolList.tsx`, `Messages.tsx`.
+  - `MCPServerView.tsx` → 256 (`ae00161`): `MCPServerConnection.tsx`,
+    `MCPServerTabs.tsx`, `MCPServerAbout.tsx`.
+  - `app/Sidebar.tsx` → 101 (`b3a5c5c`): `SidebarChats`, `SidebarProject`,
+    `SidebarWorkspace`, `SidebarSession`, `SidebarRow`.
+  - `b97d42a`: `settings/` gains `SearchProviders`, `SearchKeys`,
+    `SearchQuotas`, `TrySearch`; `profiles/` gains `CostStrip` and
+    `EditorFields`. `CostStrip` and `SettingsEditor` import each other,
+    but one side is `import type`, so the cycle is erased at build.
+  - `api/types.ts` (`696a6b2`): now `export *` of `api/types/<domain>.ts`,
+    one per Go handler file. No `api/index.ts` exists; `@/api/types`
+    resolves to the file before the folder, so all 99 importers and the
+    e2e harness's `../../src/api/types.ts` keep working.
+  - `e2e/harness/mock.ts` 2180 → 887 (`3ec70b0`): routes per resource in
+    `harness/routes/`, called in the original order so matching is
+    unchanged; `this.X` became `ctx.X` through a `RouteContext`
+    (`routes/context.ts`). Not a pure move; the commit body says so.
+    `EXTENDING.md` and `e2e/README.md` point at `harness/routes/`.
+  - For later: the inline-style and phase 3 file lists above are updated
+    for the new files. No `useEffect` in any split file. Several moved
+    components lack a doc comment (phase 4).
 - 2026-09-26, phase 2 (Go splits). Pure moves, checked by diffing the
   sorted removed and added lines of each move commit. `make check` green
   after each commit and on the merged tree.
