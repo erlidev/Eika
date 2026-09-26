@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -742,11 +741,6 @@ func randomID() string {
 // Text is a tool result holding one text block.
 func Text(text string) map[string]any {
 	return map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}
-}
-
-// Image is a content block holding an image.
-func Image(mime string, data []byte) map[string]any {
-	return map[string]any{"type": "image", "mimeType": mime, "data": base64.StdEncoding.EncodeToString(data)}
 }
 
 // ToolDef is a tool definition with an input schema.
