@@ -347,12 +347,17 @@ Newest first. One entry per session: date, items done (commit hashes),
     `scroll-area`, `tooltip`); the unused exported types (they name
     wire shapes and props in exported signatures).
   - Dependencies: knip reported none unused, so nothing to delete.
-  - The mock test (`e2e/harness/mock.test.ts`) requires the mock to
-    serve every contract route or list it in `unmocked` with a reason.
-    The phase 1 mock item therefore cannot just delete handlers for
-    routes the UI never calls (for example `GET /api/sessions/{id}/path`,
-    whose client function is gone): each deletion needs an `unmocked`
-    entry, which is a test edit beyond a rename. Decide there.
+  - Mock handlers, **left unchecked**: of the 84 contract routes, the UI
+    never requests `GET /api/sessions/{id}/path` and
+    `GET /api/sessions/{id}/agents` (besides the merge and subagent-abort
+    routes already in `unmocked`). The mock serves both, and
+    `e2e/harness/mock.test.ts` calls each directly (lines 173, 177) and
+    requires every contract route to be served or listed in `unmocked`
+    with a reason. Deleting the two handlers means editing that test
+    beyond a rename, which the ground rules forbid. Owner's call: either
+    allow that test edit (drop the two calls, add two `unmocked` entries
+    saying the UI never calls them) or keep the handlers so the mock stays
+    a full stand-in for the API.
   - `cn`: already one path. Outside `components/ui` every file imports
     `@/lib/utils`, which `components.json` names as shadcn's `utils` alias,
     so it stays.
