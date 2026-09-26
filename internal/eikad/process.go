@@ -168,6 +168,7 @@ func (d *Daemon) endProcess(ctx context.Context, conn *websocket.Conn, msg Proce
 // processWriter forwards one of the process's output streams. A client that
 // stops reading fails the write, which ends the copying.
 type processWriter struct {
+	// ctx is the socket's: Write, as an io.Writer, has no context of its own.
 	ctx    context.Context
 	conn   *websocket.Conn
 	stream string

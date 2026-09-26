@@ -23,7 +23,7 @@ type sseTransport struct {
 	headers  HeaderFunc
 	recv     receiver
 
-	ctx  context.Context
+	// stop ends the stream, which runs on a context of its own.
 	stop context.CancelFunc
 	wg   sync.WaitGroup
 }
@@ -36,7 +36,7 @@ func dialSSE(ctx context.Context, streamURL string, client *http.Client, headers
 		return nil, fmt.Errorf("parse %s: %w", streamURL, err)
 	}
 	life, stop := context.WithCancel(context.Background())
-	t := &sseTransport{client: client, headers: headers, recv: recv, ctx: life, stop: stop}
+	t := &sseTransport{client: client, headers: headers, recv: recv, stop: stop}
 	// The stream outlives the dial, so it runs on the transport's context;
 	// the dial only bounds how long the first event may take.
 	req, err := http.NewRequestWithContext(life, http.MethodGet, streamURL, nil)
