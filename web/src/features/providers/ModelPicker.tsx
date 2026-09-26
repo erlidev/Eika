@@ -396,8 +396,10 @@ type NumberFieldProps = {
   onChange: (value: number) => void;
 };
 
+type FieldProblemProps = { id: string; message: string | undefined };
+
 /** FieldProblem is what keeps one field from being used, right below it. */
-export function FieldProblem({ id, message }: { id: string; message: string | undefined }) {
+export function FieldProblem({ id, message }: FieldProblemProps) {
   if (message === undefined) return null;
   return (
     <p id={id} className="text-destructive text-xs">

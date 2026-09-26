@@ -46,7 +46,9 @@ function mediaLine(block: ContentDetail, why: string): string {
   return `${block.type} ${block.mime_type ?? ""}${size}: ${why}`;
 }
 
-function ContentBlock({ block, tone }: { block: ContentDetail; tone: "default" | "error" }) {
+type ContentBlockProps = { block: ContentDetail; tone: "default" | "error" };
+
+function ContentBlock({ block, tone }: ContentBlockProps) {
   switch (block.type) {
     case "text":
       return (
@@ -100,8 +102,10 @@ function ContentBlock({ block, tone }: { block: ContentDetail; tone: "default" |
   }
 }
 
+type OmittedProps = { block: ContentDetail };
+
 /** Omitted says what a block of media or binary data was, when it is not shown. */
-function Omitted({ block }: { block: ContentDetail }) {
+function Omitted({ block }: OmittedProps) {
   return (
     <p className="text-muted-foreground font-mono text-xs">
       {mediaLine(
@@ -114,8 +118,10 @@ function Omitted({ block }: { block: ContentDetail }) {
   );
 }
 
+type ResourceHeaderProps = { block: ContentDetail; link?: boolean };
+
 /** ResourceHeader names a resource: a link to one, or the one embedded below it. */
-function ResourceHeader({ block, link = false }: { block: ContentDetail; link?: boolean }) {
+function ResourceHeader({ block, link = false }: ResourceHeaderProps) {
   const Icon = link ? Link2 : FileText;
   const href = block.uri === undefined ? undefined : safeHref(block.uri);
   const label = block.name ?? block.uri ?? "resource";

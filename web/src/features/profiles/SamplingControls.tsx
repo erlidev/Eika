@@ -51,8 +51,10 @@ function fallback(config: Configuration, field: SamplingField): string {
   return text;
 }
 
+type HintProps = { id: string; hint: string; problem: string | undefined };
+
 /** Hint is the line under a control: what the parameter does, or what is wrong with it. */
-function Hint({ id, hint, problem }: { id: string; hint: string; problem: string | undefined }) {
+function Hint({ id, hint, problem }: HintProps) {
   return (
     <p
       id={id}
@@ -171,7 +173,9 @@ function NumberControl(props: SamplingControlProps) {
   );
 }
 
-function EffortControl(props: SamplingControlProps & { efforts: readonly string[] }) {
+type EffortControlProps = SamplingControlProps & { efforts: readonly string[] };
+
+function EffortControl(props: EffortControlProps) {
   const { id, field, value, inherited, problem, onChange, efforts } = props;
   const below = inherited.sampling.reasoning_effort;
   const labelId = `${id}-label`;

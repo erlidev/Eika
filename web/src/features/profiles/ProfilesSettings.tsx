@@ -159,7 +159,9 @@ function profileSummary(profile: Profile): string {
     : parts.join(" · ");
 }
 
-function DefaultProfileSelect({ data }: { data: Profiles }) {
+type DefaultProfileSelectProps = { data: Profiles };
+
+function DefaultProfileSelect({ data }: DefaultProfileSelectProps) {
   const save = useSaveSettings();
   return (
     <div className="space-y-1.5">

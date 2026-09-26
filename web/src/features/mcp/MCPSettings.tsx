@@ -42,7 +42,9 @@ export function MCPSettings() {
   return <ServerList onOpen={select} />;
 }
 
-function ServerList({ onOpen }: { onOpen: (id: string) => void }) {
+type ServerListProps = { onOpen: (id: string) => void };
+
+function ServerList({ onOpen }: ServerListProps) {
   const servers = useMCPServers();
   const [adding, setAdding] = useState(false);
   const list = servers.data ?? [];
@@ -121,7 +123,9 @@ function ServerList({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
-function ServerRow({ server, onOpen }: { server: MCPServer; onOpen: () => void }) {
+type ServerRowProps = { server: MCPServer; onOpen: () => void };
+
+function ServerRow({ server, onOpen }: ServerRowProps) {
   return (
     <li>
       <button

@@ -22,8 +22,10 @@ import {
 } from "@/features/mcp/queries";
 import { useWorkspaces } from "@/features/workspaces";
 
+type RemoteConnectionProps = { details: MCPServerDetails };
+
 /** RemoteConnection is where an http server's connection and sign-in stand, with what changes them. */
-export function RemoteConnection({ details }: { details: MCPServerDetails }) {
+export function RemoteConnection({ details }: RemoteConnectionProps) {
   const server = details.server;
   const connect = useConnectMCPServer();
   const authorize = useAuthorizeMCPServer();
@@ -158,8 +160,10 @@ export function StdioConnection({ server, workspaceId, onWorkspace }: StdioConne
   );
 }
 
+type StateNoticeProps = { server: MCPServer };
+
 /** StateNotice says why a server is not connected, when there is something to say. */
-function StateNotice({ server }: { server: MCPServer }) {
+function StateNotice({ server }: StateNoticeProps) {
   switch (server.state) {
     case "disabled":
       return <Notice>Off: runs do not offer its tools, and it is not connected.</Notice>;

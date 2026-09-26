@@ -21,15 +21,19 @@ import { useGetMCPPrompt, useReadMCPResource, useUpdateMCPServer } from "@/featu
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+type ListErrorProps = { details: MCPServerDetails; method: string };
+
 /** ListError is a list the server could not give, when it could not. */
-function ListError({ details, method }: { details: MCPServerDetails; method: string }) {
+function ListError({ details, method }: ListErrorProps) {
   const error = details.list_errors?.[method];
   if (error === undefined) return null;
   return <Notice tone="error">{`The server did not list them (${method}): ${error}`}</Notice>;
 }
 
+type NotListedProps = { details: MCPServerDetails; what: string };
+
 /** NotListed is what an empty tab says before anything was listed. */
-function NotListed({ details, what }: { details: MCPServerDetails; what: string }) {
+function NotListed({ details, what }: NotListedProps) {
   return (
     <p className="text-muted-foreground text-xs">
       {details.fetched_at === undefined
@@ -39,7 +43,9 @@ function NotListed({ details, what }: { details: MCPServerDetails; what: string 
   );
 }
 
-export function ToolsTab({ details }: { details: MCPServerDetails }) {
+type ToolsTabProps = { details: MCPServerDetails };
+
+export function ToolsTab({ details }: ToolsTabProps) {
   const server = details.server;
   const update = useUpdateMCPServer();
   const tools = details.tools ?? [];

@@ -81,8 +81,10 @@ export function FieldHeader({ htmlFor, id, label, set, from, children }: FieldHe
   );
 }
 
+type ResetButtonProps = { label: string; onClick: () => void };
+
 /** ResetButton unsets a field, so that it falls through again. */
-export function ResetButton({ label, onClick }: { label: string; onClick: () => void }) {
+export function ResetButton({ label, onClick }: ResetButtonProps) {
   return (
     <Button type="button" size="xs" variant="ghost" onClick={onClick}>
       <RotateCcw aria-hidden />
@@ -91,8 +93,10 @@ export function ResetButton({ label, onClick }: { label: string; onClick: () => 
   );
 }
 
+type InheritedProps = { from: ConfigLayer; children?: React.ReactNode };
+
 /** Inherited says, muted, what an unset field falls through to. */
-export function Inherited({ from, children }: { from: ConfigLayer; children?: React.ReactNode }) {
+export function Inherited({ from, children }: InheritedProps) {
   return (
     <p className="text-muted-foreground text-xs">
       Not set here: {children ?? "falls through"} from {layerName(from)}.

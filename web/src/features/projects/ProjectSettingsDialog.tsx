@@ -50,7 +50,9 @@ export function ProjectSettingsDialog({ project, onOpenChange }: ProjectSettings
   );
 }
 
-function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: () => void }) {
+type ProjectSettingsFormProps = { project: Project; onDone: () => void };
+
+function ProjectSettingsForm({ project, onDone }: ProjectSettingsFormProps) {
   const update = useUpdateProject();
   const [branch, setBranch] = useState(project.default_branch);
   const [username, setUsername] = useState(project.remote_username ?? "");

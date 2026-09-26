@@ -5,8 +5,10 @@ import { Notice } from "@/components/Notice";
 import { OutputBlock } from "@/components/OutputBlock";
 import { eraText, location, transportLabels } from "@/features/mcp/describe";
 
+type FieldsProps = { fields: [string, React.ReactNode][] };
+
 /** Fields is a dense list of what is known, leaving out what is not. */
-function Fields({ fields }: { fields: [string, React.ReactNode][] }) {
+function Fields({ fields }: FieldsProps) {
   const shown = fields.filter(([, v]) => v !== undefined && v !== null && v !== "");
   if (shown.length === 0) return null;
   return (
@@ -21,11 +23,15 @@ function Fields({ fields }: { fields: [string, React.ReactNode][] }) {
   );
 }
 
-function Mono({ children }: { children: React.ReactNode }) {
+type MonoProps = { children: React.ReactNode };
+
+function Mono({ children }: MonoProps) {
   return <span className="font-mono">{children}</span>;
 }
 
-export function AboutTab({ details }: { details: MCPServerDetails }) {
+type AboutTabProps = { details: MCPServerDetails };
+
+export function AboutTab({ details }: AboutTabProps) {
   const c = details.connection;
   const auth = details.auth;
   const server = details.server;

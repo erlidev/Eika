@@ -5,7 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { stateLabels, stateTone } from "@/features/mcp/describe";
 import { cn } from "@/lib/utils";
 
-export function MCPStateBadge({ state }: { state: MCPServerState }) {
+type MCPStateBadgeProps = { state: MCPServerState };
+
+export function MCPStateBadge({ state }: MCPStateBadgeProps) {
   return (
     <Badge
       variant="outline"

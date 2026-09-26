@@ -62,7 +62,9 @@ export function ModelDialog({ model, onOpenChange }: ModelDialogProps) {
   );
 }
 
-function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
+type ModelFormProps = { model: Model; onDone: () => void };
+
+function ModelForm({ model, onDone }: ModelFormProps) {
   const update = useUpdateModel();
   const models = useModels();
   const takenNames = (models.data?.models ?? [])
@@ -228,22 +230,19 @@ function ModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
   );
 }
 
+type EffortFieldProps = {
+  effort: ReasoningEffort;
+  efforts: readonly ReasoningEffort[];
+  onEffortChange: (effort: ReasoningEffort) => void;
+  onEffortsChange: (efforts: ReasoningEffort[]) => void;
+};
+
 /**
  * EffortField is the model's reasoning vocabulary: the words this endpoint
  * accepts, and which of them is in force. The status bar cycles through the
  * list in this order, so the order is the user's.
  */
-function EffortField({
-  effort,
-  efforts,
-  onEffortChange,
-  onEffortsChange,
-}: {
-  effort: ReasoningEffort;
-  efforts: readonly ReasoningEffort[];
-  onEffortChange: (effort: ReasoningEffort) => void;
-  onEffortsChange: (efforts: ReasoningEffort[]) => void;
-}) {
+function EffortField({ effort, efforts, onEffortChange, onEffortsChange }: EffortFieldProps) {
   const [draft, setDraft] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -331,18 +330,17 @@ function EffortField({
   );
 }
 
+type ThinkingSwitchFieldProps = {
+  value: ThinkingSwitch;
+  onChange: (value: ThinkingSwitch) => void;
+};
+
 /**
  * ThinkingSwitchField is the request field that turns thinking off when the
  * effort is "none". Endpoints disagree on it and may reject a field they do
  * not know, so the model sends only the one chosen here.
  */
-function ThinkingSwitchField({
-  value,
-  onChange,
-}: {
-  value: ThinkingSwitch;
-  onChange: (value: ThinkingSwitch) => void;
-}) {
+function ThinkingSwitchField({ value, onChange }: ThinkingSwitchFieldProps) {
   const chosen = thinkingSwitches.find((s) => s.value === value);
   return (
     <div className="space-y-1.5">
@@ -373,20 +371,16 @@ function ThinkingSwitchField({
   );
 }
 
-/** EffortChip is one word in the model's vocabulary, and whether it is in force. */
-function EffortChip({
-  label,
-  chosen,
-  mono = false,
-  onChoose,
-  onRemove,
-}: {
+type EffortChipProps = {
   label: string;
   chosen: boolean;
   mono?: boolean;
   onChoose: () => void;
   onRemove?: () => void;
-}) {
+};
+
+/** EffortChip is one word in the model's vocabulary, and whether it is in force. */
+function EffortChip({ label, chosen, mono = false, onChoose, onRemove }: EffortChipProps) {
   return (
     <span
       className={cn(
