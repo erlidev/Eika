@@ -289,9 +289,9 @@ func (k *Kagi) Search(ctx context.Context, q search.Query) ([]search.Result, err
 ```
 
 Register it with one entry in `Registry`, and add its field to
-`search.Searchers`, which the wiring fills in `internal/server/wire.go`
-(`Kagi: web.NewKagi(client)`), because this package cannot import the
-backends that import it:
+`search.Searchers`, which the wiring fills in
+`internal/server/composition.go` (`Kagi: web.NewKagi(client)`), because
+this package cannot import the backends that import it:
 
 ```go
 {Name: "kagi", Searcher: s.Kagi, Web: true, Key: "kagi", KeyRequired: true, Limit: Limit{Month: 100}},

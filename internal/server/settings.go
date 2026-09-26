@@ -364,3 +364,8 @@ func subagentLimits(st *store.Store, log *slog.Logger) func(context.Context) sub
 		return limits
 	}
 }
+
+// jsonString encodes a string as a JSON value.
+func jsonString(v string) []byte {
+	return fmt.Appendf(nil, "%q", v)
+}

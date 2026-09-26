@@ -355,8 +355,3 @@ func scrub(message, secret string) string {
 	}
 	return strings.ReplaceAll(message, secret, "[REDACTED]")
 }
-
-// jsonString encodes a string as a JSON value.
-func jsonString(v string) []byte {
-	return fmt.Appendf(nil, "%q", v)
-}
