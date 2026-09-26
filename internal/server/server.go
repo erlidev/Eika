@@ -351,7 +351,10 @@ func Serve(ctx context.Context, addr string, h http.Handler, log *slog.Logger) e
 
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+	err = srv.Shutdown(shutdownCtx)
+	// Shutdown makes Serve return at once, so this wait is short.
+	<-serveErr
+	if err != nil {
 		return fmt.Errorf("shut down server on %s: %w", addr, err)
 	}
 	log.Info("http server stopped", "addr", addr)

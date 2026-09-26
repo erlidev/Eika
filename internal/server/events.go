@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -59,13 +60,18 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn.SetReadLimit(maxClientMessage)
-	defer func() { _ = conn.CloseNow() }()
 
 	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-
 	sub := s.deps.Bus.Subscribe(topicsOf(r.URL.Query().Get("topics"))...)
-	defer sub.Close()
+	// Closing the connection ends the reader's read, so the handler can wait
+	// for the reader before dropping the subscription it changes.
+	var reader sync.WaitGroup
+	defer func() {
+		cancel()
+		_ = conn.CloseNow()
+		reader.Wait()
+		sub.Close()
+	}()
 
 	if since := r.URL.Query().Get("since"); since != "" {
 		if err := s.replayFrom(ctx, conn, since); err != nil {
@@ -76,10 +82,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	// The reader owns the connection's requests and the writer owns its
 	// events; whichever stops first cancels the other.
-	go func() {
+	reader.Go(func() {
 		defer cancel()
 		s.readRequests(ctx, conn, sub)
-	}()
+	})
 	for {
 		select {
 		case <-ctx.Done():
