@@ -1,17 +1,16 @@
 # Eika Style Guide
 
-Rules for all code and documentation in Eika. They exist so that many agents
-and humans can change the codebase over time and it still reads as one
-system. Follow them exactly. If a rule is wrong for a case, change the rule
-here in the same change, with a sentence of reasoning.
+Rules for all code and documentation in Eika, so that it reads as one system
+however many hands change it. Follow them exactly. If a rule is wrong for a
+case, change it here in the same change, with a sentence of reasoning.
 
 ## 1. General
 
 - **Correctness first.** A change is not done until `make check` passes and
   the behavior is covered by a test.
 - **Small, whole changes.** One change does one thing completely: code,
-  tests, docs. Do not leave TODOs for the parts you did not finish; either
-  finish them or record them in `docs/PLAN.md`.
+  tests, docs. No TODOs: finish the work, or list it as deferred in
+  `docs/DECISIONS.md`.
 - **One way to do things.** Reuse the existing logger, config loader, HTTP
   client, error helpers, and UI primitives. Do not add parallel mechanisms.
 - **Boring technology.** Standard library over third-party. Well-known
@@ -237,22 +236,22 @@ never hand-edited; its look changes only through the tokens.
 
 ## 4. Documentation
 
-Documentation is for two readers: a human learning the system and an agent
-about to change it. Both need the same thing: accurate, current, short.
+Documentation is read by humans learning the system and by agents about to
+change it, often in a limited context window. Keep it accurate, current, and
+short: every sentence should tell the reader something the code does not
+make obvious.
 
 - **Every package has a `doc.go`. Every feature folder has a README.md**
   of five to twenty lines: purpose, entry points, how to test it.
-- **`docs/ARCHITECTURE.md`** describes the system as it is, not as planned.
-  Diagrams are ASCII. Update it in the same change that changes structure.
+- **`docs/ARCHITECTURE.md`** is how the system works now. ASCII diagrams.
+- **`docs/DECISIONS.md`** is why: one entry per decision, the choice and its
+  reason, including what was rejected. Record decisions, not discussions.
 - **`docs/EXTENDING.md`** has one section per extension point with a
   complete, copy-pasteable minimal example that compiles.
-- **`docs/api/`** is the wire contract: one file for HTTP routes, one for
-  WebSocket events. Each event and endpoint lists its fields with types and
-  a one-line meaning.
-- **`docs/PLAN.md`** holds decisions and phase status. Record decisions, not
-  discussions.
-- Write in plain declarative sentences. Present tense. Second person for
-  instructions ("Register the tool in..."). No marketing language.
+- **`docs/api/`** is the wire contract: each route and event lists its
+  fields with types and a one-line meaning.
+- Plain declarative sentences, present tense, second person for
+  instructions. No marketing language, no history of how it used to be.
 - Keep bug history out of docs. A fixed bug is a test, not a paragraph.
 - Do not duplicate. Link to the one place a thing is explained.
 
@@ -287,6 +286,6 @@ about to change it. Both need the same thing: accurate, current, short.
 1. `make check` passes.
 2. New behavior has tests; fixed bugs have regression tests.
 3. Exported identifiers have doc comments; new packages have `doc.go`.
-4. `docs/` updated where affected (PLAN checklist, ARCHITECTURE, EXTENDING, api).
+4. `docs/` updated where affected (ARCHITECTURE, DECISIONS, EXTENDING, api).
 5. No new dependency without justification.
-6. No TODOs left in code; unfinished work is recorded in `docs/PLAN.md`.
+6. No TODOs left in code.

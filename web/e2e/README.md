@@ -184,6 +184,8 @@ held to the contract too. When the harness's types change, `make contract`
 rewrites the file and these tests say what in the mock, and in
 `src/api/types.ts`, has to follow.
 
+### Stable baselines
+
 Screenshots are rendered by Chromium on Linux and have no platform suffix
 (`snapshotPathTemplate` in `playwright.config.ts`), so one set serves every
 Linux machine. What keeps them stable across machines:
@@ -199,16 +201,25 @@ Font rendering on macOS or Windows differs, so regenerate baselines on Linux
 rather than loosening the threshold. If a machine's rendering drifts from the
 baselines', the run's report holds the diffs.
 
-## Checks
+## Running the suite
 
-`make visual` runs the suite: under a minute on a laptop. `make check` runs
-the Go and web checks side by side, then the suite once they pass, so it
-takes about a minute in all. There is no CI, so `make check` locally is the
-only gate. A failed run writes `e2e/report` and `e2e/test-results`: open the
-diffs there, or run `npx playwright show-report` on the report.
+`make visual` runs the suite in under a minute; `make check` runs it after
+the other checks. The specs run a browser per two cores (`--workers=1` on a
+machine short of memory), build the frontend into `e2e/dist`, and serve it
+with `vite preview` on port 4319 (`EIKA_VISUAL_PORT` moves it; the Account
+tab shows that URL, so its baselines change with the port).
 
-The specs run a browser per two cores (`workers: "50%"`); pass `--workers=1`
-on a machine short of memory. They build the frontend into `e2e/dist` (a few
-seconds) and serve it with `vite preview` on port 4319, refusing to reuse a
-server already there; set `EIKA_VISUAL_PORT` to move it. The Account tab
-shows that URL, so its baselines change with the port.
+## Compose smoke test (`smoke/`)
+
+`make smoke` is the one test against the real stack. It starts compose as
+project `eika-smoke` on port 18080 with `compose.smoke.yaml`, whose `model`
+service runs `smoke/model.ts`, a scripted OpenAI-compatible endpoint: it
+lists one model, `smoke`, answers a user message by calling
+`bash` with `echo smoke-ok`, and answers the tool result with "The command
+printed smoke-ok." `smoke/smoke.spec.ts` (config `playwright.smoke.config.ts`)
+walks the guided setup with that endpoint, adds a local project from a
+temporary git checkout, creates a workspace and a session, sends a message,
+and waits for that answer, which only a real sandbox run produces. It then
+deletes its workspaces, and `make smoke-down` removes the stack, its volumes,
+and any sandbox left on its networks. A first run builds the images and takes
+a few minutes; later runs take well under one.

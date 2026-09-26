@@ -15,10 +15,18 @@ GOTAGS := -tags docker
 DEV := .dev
 COMPOSE := docker compose
 DEV_COMPOSE := docker compose -f compose.yaml -f compose.dev.yaml
+# The smoke stack is its own compose project on its own port, so it runs
+# beside a stack `make local` started. Its token is fixed: the stack lives
+# for one test and listens on loopback.
+SMOKE_PORT ?= 18080
+SMOKE_TOKEN := eika-smoke-token
+SMOKE_COMPOSE := EIKA_PORT=$(SMOKE_PORT) EIKA_AUTH_TOKEN=$(SMOKE_TOKEN) \
+	docker compose -p eika-smoke -f compose.yaml -f compose.smoke.yaml
 
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
-	sandbox web-install clean visual visual-update shot playwright-browser contract
+	sandbox web-install clean visual visual-update shot playwright-browser contract \
+	smoke smoke-down
 
 all: build
 
@@ -109,6 +117,23 @@ visual-update: web-install playwright-browser
 ##   make shot ARGS='-s workbench --step "click Settings"'
 shot: web-install
 	cd $(WEB) && $(NPM) run -s shot -- $(ARGS)
+
+## smoke: build the whole stack as `make local` does, with a scripted model
+## (compose.smoke.yaml), and drive it from the guided setup to a shell
+## command run in a sandbox (web/e2e/smoke). It needs Docker and takes a few
+## minutes on a first build. The stack is removed afterwards, pass or fail.
+smoke: web-install playwright-browser
+	$(SMOKE_COMPOSE) up -d --build
+	cd $(WEB) && EIKA_SMOKE_URL=http://127.0.0.1:$(SMOKE_PORT) EIKA_SMOKE_TOKEN=$(SMOKE_TOKEN) \
+		npx playwright test -c playwright.smoke.config.ts; \
+		status=$$?; cd .. && $(MAKE) smoke-down; exit $$status
+
+## smoke-down: remove the smoke stack, its data, and any sandbox it left.
+smoke-down:
+	@left=$$(docker ps -aq --filter label=eika.workspace --filter network=eika_smoke_sandbox; \
+		docker ps -aq --filter label=eika.workspace --filter network=eika_smoke_sandbox_internal); \
+	if [ -n "$$left" ]; then docker rm -fv $$left; fi
+	$(SMOKE_COMPOSE) down -v
 
 ## dev: run the harness and the Vite dev server against the compose services.
 dev:

@@ -1,12 +1,8 @@
 # Extending Eika
 
-One section per extension point. Each one gets a complete, copy-pasteable
-minimal example when the phase that introduces the extension point lands; see
-`docs/PLAN.md` for phase status. Until then a section states where the code
-goes and where it is registered.
-
-Registration is always explicit, in one registry file per extension point.
-Eika never registers anything from `init()`.
+One section per extension point, each with a minimal example that compiles.
+Registration is always explicit, in one registry file per extension point,
+never from `init()`.
 
 ## Adding a tool
 
@@ -207,47 +203,21 @@ Test a provider against an `httptest` server that serves its wire format, as
 `internal/provider/openai/openai_test.go` does. Test everything that consumes a
 provider with `provider/providertest`, the scripted fake.
 
-The sampling parameters arrive in `Request.Sampling`, resolved by the server
-from the session's overrides, its profile, and the model row: temperature,
-top_p, top_k, min_p, the two penalties, seed, stop sequences, max output
-tokens, and reasoning effort. Each is a pointer, or a nil slice, and nil
-means the endpoint's default, so send a field only when it is set. Map each
-to the endpoint's own field; one the wire format has no field for (Chat
-Completions has none for top_k and min_p) goes in whatever extension the
-endpoint reads, or is left out when it has none.
+What a provider maps from the request:
 
-A model row also carries `reasoning_effort`, `reasoning_efforts`, and
-`preserve_thinking`: the row's effort is the bottom layer of
-`Sampling.ReasoningEffort`, and the switches go in `provider.Request` as they
-are. `reasoning_effort` maps to the standard Chat Completions request field;
-`reasoning_efforts` is the list of words the session's status bar cycles
-through, since endpoints disagree on the vocabulary and the harness only
-checks the shape (`provider.ValidReasoningEffort`). The effort
-`provider.EffortNone` turns thinking off, and `Request.ThinkingSwitch` says
-which field carries it; a new provider maps the three switches to its own
-wire format, or to whatever its API uses to disable thinking.
-
-A provider emits `KindReasoningDelta` for reasoning whatever
-`preserve_thinking` says: the agent turns those into `reasoning.delta` events
-so a client can show the model thinking, and stores the assembled value in
-`Message.Reasoning`. `preserve_thinking` is a compatible-endpoint extension,
-not an OpenAI API field, and is off for a new model; when it is on, the
-OpenAI-compatible provider sends the stored reasoning back as
-`reasoning_content` on later assistant messages. A new provider can map the
-provider-neutral reasoning value to its own wire format.
-
-Emit `KindUsage` as soon as the endpoint reports usage rather than only at the
-end. The agent republishes it as `turn.progress`, so an endpoint that reports
-usage per chunk keeps the context meter current while a response streams.
-
-Set `Event.Timings` on that event when the endpoint measures its own speed.
-Fill each phase with the tokens it moved and the milliseconds it took, in
-`provider.Timings`, converting whatever units the endpoint uses; the shapes
-the OpenAI-compatible provider already reads are listed in
-`docs/api/events.md` and parsed in `internal/provider/openai/timings.go`.
-Leave a phase zero rather than guessing at it: the agent fills a missing
-generation phase by timing the stream from its first token, and a prompt
-phase nobody measured is shown as nothing at all.
+- `Request.Sampling`: temperature, top_p, top_k, min_p, penalties, seed,
+  stop, max output, reasoning effort. Nil means the endpoint's default, so
+  send a field only when set; one the wire format lacks goes in the
+  endpoint's extension or is left out.
+- `provider.EffortNone` turns thinking off, in the field
+  `Request.ThinkingSwitch` names, or however the API disables thinking.
+- Emit `KindReasoningDelta` for reasoning always; the agent streams it and
+  stores it in `Message.Reasoning`. When `preserve_thinking` is on, send
+  stored reasoning back on later assistant messages.
+- Emit `KindUsage` as soon as the endpoint reports usage, with
+  `Event.Timings` when it measures its own speed (token count and
+  milliseconds per phase; see `openai/timings.go`). Leave an unmeasured phase
+  zero: the agent times generation itself.
 
 ## Adding a search backend
 
@@ -353,7 +323,7 @@ context. Any image works: the harness copies its own static `eikad` binary into
 the container at `/usr/local/bin/eikad` before starting it and uses that as the
 entrypoint, so an image needs no Eika-specific content at all.
 
-An image must satisfy three things:
+An image needs:
 
 - a shell at `/bin/sh`, because `exec` with `shell` and the terminal use it,
 - a writable `/workspace`, which is where the volume or the host directory is
@@ -741,7 +711,6 @@ Register it under the tool's name, which is the name the Go tool reports:
 ```ts
 export const toolRenderers: Record<string, ToolRenderer> = {
   bash: bashRenderer,
-  edit: editRenderer,
   // ...
   count_lines: countLinesRenderer,
 };

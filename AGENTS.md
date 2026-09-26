@@ -6,10 +6,10 @@ human changing the codebase. Read it fully before editing.
 
 ## Start here
 
-1. `docs/PLAN.md` for scope, architecture, and phase status.
-2. `docs/STYLE_GUIDE.md` for coding and documentation rules. These are
-   mandatory.
-3. `docs/ARCHITECTURE.md` for how the packages fit together.
+1. `docs/STYLE_GUIDE.md`: coding and documentation rules. Mandatory.
+2. `docs/ARCHITECTURE.md`: how the system works and fits together.
+3. `docs/DECISIONS.md`: why it is built that way. Read the section for the
+   area you change before reversing anything.
 4. `docs/EXTENDING.md` when adding a tool, provider, search backend, or UI panel.
 
 ## Rules that are never optional
@@ -22,10 +22,12 @@ human changing the codebase. Read it fully before editing.
   no CI: `make check` is the only gate, so run it locally before every push.
 - New behavior needs tests. A bug fix needs a regression test. See the style
   guide for what a good test looks like here.
-- Keep documentation current in the same change: `PLAN.md` checklist,
-  `ARCHITECTURE.md` if structure moved, `EXTENDING.md` if an extension point
-  changed, `docs/api/` if the API or event protocol changed. A changed wire
-  type also means `make contract`, which the tests require.
+- Keep documentation current in the same change: `ARCHITECTURE.md` if
+  structure moved, `DECISIONS.md` for a new decision, `EXTENDING.md` if an
+  extension point changed, `docs/api/` if the API or event protocol changed.
+  A changed wire type also means `make contract`, which the tests require.
+- Run `make smoke` after changing a compose file, a Dockerfile, `deploy/`,
+  or how `server.Run` wires the process: `make check` covers none of them.
 - Do not add a dependency without a one-line justification in the commit
   message and confirmation that nothing in the standard library covers it.
 - Do not introduce a second way to do something that already has one way
@@ -42,6 +44,7 @@ internal/search    web search, fetch internal/server    HTTP + WebSocket
 internal/store     Postgres          internal/config    deployment config
 internal/secret    sealed secrets    web/               frontend
 internal/egress    sandbox egress    internal/netguard  public-only dials
+internal/mcp       MCP client        internal/subagent  child agents
 sandbox/           sandbox image     compose.yaml       the whole stack
 deploy/            entrypoint, searxng  docs/           documentation
 ```
@@ -61,6 +64,7 @@ make build      build harness, eikad, and frontend
 make sandbox    build the eika-sandbox image
 make visual     compare UI screens with their baselines (web/e2e, <1 min)
 make contract   rewrite docs/api/contract.json after a Go wire type changes
+make smoke      the real stack in compose, setup to a sandboxed run (minutes)
 ```
 
 To see the UI, run `cd web && npm run shot -- --help`: it opens a scenario
@@ -86,4 +90,4 @@ there, test it, document it. Full walkthroughs are in `docs/EXTENDING.md`.
 
 Prefer the smaller change. Prefer the existing pattern. If a decision is
 architectural (new package, new dependency, new persistence shape, changed
-interface), write it into `docs/PLAN.md` under Decisions before implementing.
+interface), add it to `docs/DECISIONS.md` before implementing.

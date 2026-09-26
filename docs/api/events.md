@@ -8,8 +8,7 @@ all three in the same commit.
 ## Transport
 
 `GET /api/events` upgrades to a WebSocket. It takes the bearer token as the
-`token` query parameter, because a browser cannot set a header on a handshake;
-it is the one route that does.
+`token` query parameter, because a browser cannot set a header on a handshake.
 
 ```
 ws://<harness>/api/events?token=<token>&topics=global,session:<id>&since=<entry_id>

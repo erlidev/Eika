@@ -14,17 +14,12 @@ Every route under `/api` requires a bearer token:
 Authorization: Bearer <token>
 ```
 
-The token is a sign-in session's, from the setup, sign-in, or password
-routes below, or the deployment's optional fixed API token, `EIKA_AUTH_TOKEN`.
-The exceptions are `GET /healthz`, `GET /api/healthz`, the three routes that
-hand out a session (`GET /api/auth/status`, `POST /api/auth/setup`,
-`POST /api/auth/login`), `GET /oauth/client-metadata.json`, which an OAuth
-authorization server fetches, and the git hub under `/git/`, which
-authenticates workspaces itself with per-workspace basic auth. The two WebSocket routes,
-`GET /api/events` and `GET /api/workspaces/{id}/terminal`, also accept the
-token as the `token` query parameter, because a browser cannot set a header on
-a WebSocket handshake; no other route does, so a token never has to appear in
-an ordinary URL.
+The token is a sign-in session's (from the routes below) or the optional
+`EIKA_AUTH_TOKEN`. Exempt: the health routes, `GET /api/auth/status`,
+`POST /api/auth/setup`, `POST /api/auth/login`,
+`GET /oauth/client-metadata.json`, and the git hub (`/git/`, basic auth).
+Only the WebSockets, `GET /api/events` and
+`GET /api/workspaces/{id}/terminal`, also accept `?token=`.
 
 A wrong, missing, or expired token is `401` with a `WWW-Authenticate: Bearer`
 header.
@@ -115,10 +110,8 @@ project also has a host directory its workspaces bind-mount.
 | `host_path` | string | Required for `local`. An absolute path on the Docker host, bind-mounted at the workspace root. |
 | `default_branch` | string | The branch a workspace uses when it names none. Defaults to `main`. |
 
-`remote_url` must not contain userinfo, a query string, or a fragment. These
-URL parts can expose credentials in stored data, API responses, logs, and Git
-arguments. A private HTTPS remote sends its username and password or token in
-their own fields; a public remote omits both.
+`remote_url` must not contain userinfo, a query string, or a fragment;
+credentials go in their own fields.
 
 `201` with the `Project`. `400` for a missing or malformed field, an incomplete
 credential pair, and a remote the hub cannot mirror; `409` when the name is
@@ -1456,14 +1449,8 @@ What the setup screens check before the first workspace. `200` with:
 
 ## Event stream
 
-`GET /api/events` upgrades to a WebSocket. The protocol, the subscription
-requests, and the replay are documented in `events.md`. A replay runs
-alongside the live stream, so an entry written while it is in flight can
-arrive both ways; clients deduplicate by `entry_id`.
-
-The handshake is accepted from the harness's own origin and from any origin
-the deployment lists in `allowed_origins`. Any other `Origin` header is
-refused before the upgrade.
+`GET /api/events` upgrades to a WebSocket; see `events.md`. The handshake
+is accepted from the harness's own origin and from `allowed_origins`.
 
 ## Egress proxy
 

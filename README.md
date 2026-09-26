@@ -2,8 +2,9 @@
 
 Eika is a Docker-native agentic coding harness. Agents work inside sandbox
 containers, never on the host: every file read, file write, and command goes
-through a workspace container. Around that it adds session trees, parallel
-subagents, built-in web search, and a web UI.
+through a workspace container, with CPU, memory, and network limits you set.
+Around that it adds session trees, parallel subagents, chats, web search, MCP
+servers, agent profiles, and a web UI with a terminal, editor, and diff.
 
 The backend is Go, the frontend is React and TypeScript, and the whole stack
 runs from one Docker Compose file.
@@ -61,29 +62,21 @@ keys, and git credentials from `deploy/.env`. After updating:
 ## Development
 
 ```sh
-make web-install   # once, installs frontend dependencies
-make check         # fmt, vet, staticcheck, Go tests, eslint, tsc, vitest
-make dev           # harness on :8080 and Vite on :5173 against compose services
+make check   # fmt, vet, lint, Go and web tests, then the visual suite
+make dev     # harness on :8080 and Vite on :5173 against compose services
+make smoke   # the whole stack in compose, from setup to a sandboxed run
 ```
 
-`make check` needs no Docker and no network once `make web-install` has run.
-`make dev` starts postgres and SearXNG in Docker, published on loopback by
-`compose.dev.yaml`, and runs the harness on the host with its state in
-`.dev/`, so it needs Docker and a free port 5432.
+`make check` runs the Docker-dependent Go tests when a daemon is reachable
+and skips them otherwise. `make dev` starts postgres and SearXNG on loopback
+(`compose.dev.yaml`) and runs the harness on the host with its state in
+`.dev/`. `make smoke` runs beside a `make local` stack, on port 18080.
 
 ## Documentation
 
 - `AGENTS.md` — start here before changing the codebase.
-- `docs/PLAN.md` — scope, decisions, phase status.
 - `docs/ARCHITECTURE.md` — how the pieces fit together.
+- `docs/DECISIONS.md` — why they are built that way, and what is deferred.
 - `docs/EXTENDING.md` — adding a tool, provider, search source, or UI panel.
 - `docs/STYLE_GUIDE.md` — coding and documentation rules.
-- `docs/api/` — HTTP and WebSocket wire contract.
-
-## Status
-
-Phases 0 to 6 are complete: foundations, the agent core, sandboxes and
-workspaces, persistence and session trees, the API and event stream, the web
-UI core, and subagents. Configuration lives in the web UI with a guided
-setup. Search, the terminal and editor, and hardening are next; see
-`docs/PLAN.md`.
+- `docs/api/` — HTTP, WebSocket, and sandbox daemon wire contract.

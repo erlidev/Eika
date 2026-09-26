@@ -20,7 +20,7 @@ one that holds client state of its own.
   `entry_id`, and drops the live items of a turn once its entries arrive.
 - `cutOffText` in `transcript.ts` turns a `length` or `content_filter` stop
   reason into the line the transcript shows under the answer. The harness
-  keeps what a cut-off response produced (`docs/PLAN.md`), so without that
+  keeps what a cut-off response produced (`docs/DECISIONS.md`), so without that
   line the answer would just stop and read as a bug.
 - `Transcript.tsx` renders those items. It owns its scroller so it can tell
   whether the user is still at the bottom — it follows the stream only then,
