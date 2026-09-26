@@ -1,20 +1,18 @@
 /**
  * The editor of one configuration layer: a profile, or what a session sets
- * over its profile. Every field shows what it falls through to, muted, while
- * the layer leaves it unset, and a set field has a reset that unsets it. The
- * Prompt, Tools, and Sampling tabs hold the three kinds of setting.
+ * over its profile. Every field says where its value comes from, set here or
+ * the layer it falls through from, and a set field has a reset that unsets
+ * it. The Model, Prompt, Tools, and Sampling tabs hold the four kinds of
+ * setting; above them, a strip says what the draft costs every request
+ * before the conversation starts.
  */
 
-import { RotateCcw } from "lucide-react";
 import { useState } from "react";
 
-import type { Configuration, ConfigLayer, Model, Tool } from "@/api/types";
+import type { ConfigLayer, Configuration, Model } from "@/api/types";
 import { LoadError, Notice } from "@/components/Notice";
 import { SectionTabs } from "@/components/SectionTabs";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -22,23 +20,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { ChoiceGroup, FieldHeader, Inherited, ResetButton } from "@/features/profiles/fields";
 import {
   choiceSummary,
-  chosen,
   everyTool,
-  inheritedSampling,
   layerName,
-  promptChange,
+  problemSections,
   samplingFields,
-  serverEntry,
   sourceOf,
   toolGroups,
-  withChoice,
+  toolsTokens,
 } from "@/features/profiles/form";
-import type { Draft, SamplingField, SamplingProblem } from "@/features/profiles/form";
+import type { Draft, EditorSection, SamplingProblem, ToolGroups } from "@/features/profiles/form";
+import { PromptEditor } from "@/features/profiles/PromptEditor";
+import { SamplingControl } from "@/features/profiles/SamplingControls";
+import { ToolPicker } from "@/features/profiles/ToolPicker";
 import { useModels } from "@/features/providers";
-import { toolSummary, useTools } from "@/features/session";
+import { useTools } from "@/features/session/queries";
+import { formatTokens } from "@/lib/format";
+import { estimateTokens } from "@/lib/tokens";
 
 /** EditorKind says what the layer configures: a profile serves both kinds of session. */
 export type EditorKind = "profile" | "workspace" | "chat";
@@ -54,13 +54,19 @@ export type SettingsEditorProps = {
   prompts: { workspace: string; chat: string };
   kind: EditorKind;
   problems: readonly SamplingProblem[];
+  /** initialSection is the tab the editor opens on. */
+  initialSection?: EditorSection | undefined;
 };
-
-/** Section is one tab of the editor. */
-type Section = "prompt" | "tools" | "sampling";
 
 /** inheritSelect is the model select's value for "not set here". */
 const inheritSelect = "__inherit";
+
+const sectionTitles: Record<EditorSection, string> = {
+  model: "Model",
+  prompt: "Prompt",
+  tools: "Tools",
+  sampling: "Sampling",
+};
 
 export function SettingsEditor({
   idPrefix,
@@ -70,41 +76,107 @@ export function SettingsEditor({
   prompts,
   kind,
   problems,
+  initialSection = "model",
 }: SettingsEditorProps) {
   const set = (patch: Partial<Draft>) => {
     onChange({ ...draft, ...patch });
   };
   const id = (name: string) => `${idPrefix}-${name}`;
-  const [section, setSection] = useState<Section>("prompt");
-  const panel = (name: Section) => ({
+  const [section, setSection] = useState<EditorSection>(initialSection);
+  const models = useModels();
+  const tools = useTools();
+  const modelList: Model[] = models.data?.models ?? [];
+  const runs = modelList.find((m) => m.id === (draft.model_id || inherited.model_id));
+  const groups = tools.data === undefined ? undefined : toolGroups(tools.data, kind === "chat");
+  const counts = problemSections(problems);
+  const panel = (name: EditorSection) => ({
     role: "tabpanel",
     id: `${idPrefix}-section-${name}`,
     "aria-labelledby": `${idPrefix}-tab-${name}`,
   });
+  const samplingControl = (field: (typeof samplingFields)[number]) => (
+    <SamplingControl
+      key={field.key}
+      id={id(`sampling-${field.key}`)}
+      field={field}
+      value={draft.sampling[field.key]}
+      inherited={inherited}
+      model={runs}
+      problem={problems.find((p) => p.key === field.key)?.message}
+      onChange={(text) => {
+        set({ sampling: { ...draft.sampling, [field.key]: text } });
+      }}
+    />
+  );
 
   return (
     <div className="space-y-3">
+      <CostStrip
+        draft={draft}
+        inherited={inherited}
+        kind={kind}
+        groups={groups}
+        onOpen={setSection}
+      />
       <SectionTabs
         idPrefix={idPrefix}
         label="Settings"
-        tabs={[
-          { id: "prompt", title: "Prompt" },
-          { id: "tools", title: "Tools" },
-          {
-            id: "sampling",
-            title: "Sampling",
-            ...(problems.length > 0 ? { count: problems.length } : {}),
-          },
-        ]}
+        tabs={(["model", "prompt", "tools", "sampling"] as const).map((s) => ({
+          id: s,
+          title: sectionTitles[s],
+          ...(counts[s] === undefined ? {} : { count: counts[s] }),
+        }))}
         value={section}
         onChange={setSection}
       />
 
+      {section === "model" && (
+        <div {...panel("model")} className="space-y-5">
+          <ModelField
+            id={id("model")}
+            draft={draft}
+            inherited={inherited}
+            models={modelList}
+            runs={runs}
+            onChange={set}
+          />
+          {models.isError && (
+            <LoadError
+              what="the models"
+              error={models.error}
+              retrying={models.isFetching}
+              retry={() => void models.refetch()}
+            />
+          )}
+          {inherited.dropped_effort !== undefined && inherited.dropped_effort !== "" && (
+            <Notice>
+              The reasoning effort <span className="font-mono">{inherited.dropped_effort}</span> is
+              not one the model offers, so it is not sent.
+            </Notice>
+          )}
+          {samplingFields.filter((f) => f.section === "model").map(samplingControl)}
+          <SwitchField
+            id={id("preserve-thinking")}
+            label="Preserve thinking"
+            hint="Send the model's earlier reasoning back with the conversation. It costs context; some models reason better across turns with it."
+            options={[
+              { value: "on", label: "Replay" },
+              { value: "off", label: "Leave out" },
+            ]}
+            value={draft.preserve_thinking}
+            inherited={inherited.preserve_thinking}
+            from={sourceOf(inherited, "preserve_thinking")}
+            onChange={(preserve_thinking) => {
+              set({ preserve_thinking });
+            }}
+          />
+        </div>
+      )}
+
       {section === "prompt" && (
         <div {...panel("prompt")} className="space-y-4">
-          <ModelField id={id("model")} draft={draft} inherited={inherited} onChange={set} />
           {kind !== "chat" && (
-            <PromptField
+            <PromptEditor
               id={id("workspace-prompt")}
               label="Base prompt of a workspace session"
               value={draft.workspace_prompt}
@@ -117,7 +189,7 @@ export function SettingsEditor({
             />
           )}
           {kind !== "workspace" && (
-            <PromptField
+            <PromptEditor
               id={id("chat-prompt")}
               label="Base prompt of a chat"
               value={draft.chat_prompt}
@@ -129,10 +201,27 @@ export function SettingsEditor({
               }}
             />
           )}
-          <PromptField
+          {kind !== "chat" && (
+            <SwitchField
+              id={id("context-files")}
+              label="Context files"
+              hint="The workspace's AGENTS.md files, added to the system prompt after the base prompt."
+              options={[
+                { value: "on", label: "Read" },
+                { value: "off", label: "Skip" },
+              ]}
+              value={draft.context_files}
+              inherited={inherited.context_files}
+              from={sourceOf(inherited, "context_files")}
+              onChange={(context_files) => {
+                set({ context_files });
+              }}
+            />
+          )}
+          <PromptEditor
             id={id("instructions")}
             label="Extra instructions"
-            hint="Follow the base prompt and the context files."
+            hint="Added last, after the base prompt and the context files."
             value={draft.instructions}
             inherited={inherited.instructions}
             from={sourceOf(inherited, "instructions")}
@@ -140,59 +229,42 @@ export function SettingsEditor({
               set({ instructions });
             }}
           />
-          {kind !== "chat" && (
-            <ContextFilesField
-              id={id("context-files")}
-              value={draft.context_files}
+        </div>
+      )}
+
+      {section === "tools" && (
+        <div {...panel("tools")}>
+          {tools.isPending && <Notice tone="pending">Loading the tools…</Notice>}
+          {tools.isError && (
+            <LoadError
+              what="the tools"
+              error={tools.error}
+              retrying={tools.isFetching}
+              retry={() => void tools.refetch()}
+            />
+          )}
+          {groups !== undefined && (
+            <ToolsField
+              idPrefix={id("tool")}
+              value={draft.tools}
               inherited={inherited}
-              onChange={(context_files) => {
-                set({ context_files });
+              groups={groups}
+              onChange={(next) => {
+                set({ tools: next });
               }}
             />
           )}
         </div>
       )}
 
-      {section === "tools" && (
-        <div {...panel("tools")}>
-          <ToolsField
-            idPrefix={id("tool")}
-            value={draft.tools}
-            inherited={inherited}
-            chat={kind === "chat"}
-            onChange={(tools) => {
-              set({ tools });
-            }}
-          />
-        </div>
-      )}
-
       {section === "sampling" && (
-        <div {...panel("sampling")} className="space-y-3">
+        <div {...panel("sampling")} className="space-y-4">
           <p className="text-muted-foreground text-xs">
-            A parameter left empty falls through to the value shown in it. What no layer sets is
+            A parameter left unset falls through to the value its input shows; one no layer sets is
             left to the endpoint.
           </p>
-          {inherited.dropped_effort !== undefined && inherited.dropped_effort !== "" && (
-            <Notice>
-              The reasoning effort <span className="font-mono">{inherited.dropped_effort}</span> is
-              not one the model offers, so it is not sent.
-            </Notice>
-          )}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {samplingFields.map((field) => (
-              <SamplingInput
-                key={field.key}
-                id={id(`sampling-${field.key}`)}
-                field={field}
-                value={draft.sampling[field.key]}
-                inherited={inheritedSampling(inherited, field.key)}
-                problem={problems.find((p) => p.key === field.key)?.message}
-                onChange={(text) => {
-                  set({ sampling: { ...draft.sampling, [field.key]: text } });
-                }}
-              />
-            ))}
+          <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+            {samplingFields.filter((f) => f.section === "sampling").map(samplingControl)}
           </div>
         </div>
       )}
@@ -200,22 +272,77 @@ export function SettingsEditor({
   );
 }
 
-/** Inherited says, muted, what an unset field falls through to. */
-function Inherited({ from, children }: { from: ConfigLayer; children?: React.ReactNode }) {
+type CostStripProps = {
+  draft: Draft;
+  inherited: Configuration;
+  kind: EditorKind;
+  groups: ToolGroups | undefined;
+  onOpen: (section: EditorSection) => void;
+};
+
+/**
+ * CostStrip says what the draft sends every request before the conversation:
+ * the system prompt and the tool definitions, each a button to its tab.
+ */
+function CostStrip({ draft, inherited, kind, groups, onOpen }: CostStripProps) {
+  const base =
+    kind === "chat"
+      ? (draft.chat_prompt ?? inherited.chat_prompt)
+      : (draft.workspace_prompt ?? inherited.workspace_prompt);
+  const instructions = draft.instructions ?? inherited.instructions;
+  const prompt = estimateTokens(base.trim()) + estimateTokens(instructions.trim());
+  const toolCost = groups === undefined ? 0 : toolsTokens(groups, draft.tools ?? inherited.tools);
+  const total = prompt + toolCost;
+  const share = (n: number) => (total <= 0 ? 0 : (n / total) * 100);
   return (
-    <p className="text-muted-foreground text-xs">
-      Not set here: {children ?? "falls through"} from {layerName(from)}.
-    </p>
+    <div className="bg-muted/30 space-y-1.5 rounded-md border px-2.5 py-2">
+      <p className="flex flex-wrap items-baseline gap-x-1.5 text-xs">
+        <span className="font-mono text-sm font-semibold tabular-nums">~{formatTokens(total)}</span>
+        <span className="text-muted-foreground">
+          tokens every request sends before the conversation
+          {kind === "chat" ? "" : ", not counting context files"}
+          {kind === "profile" ? ", in a workspace session" : ""}
+        </span>
+      </p>
+      <div className="bg-muted flex h-1.5 overflow-hidden rounded-full" aria-hidden>
+        <span className="bg-chart-1 h-full" style={{ width: `${String(share(prompt))}%` }} />
+        <span className="bg-chart-5 h-full" style={{ width: `${String(share(toolCost))}%` }} />
+      </div>
+      <div className="flex flex-wrap gap-x-3 text-xs">
+        <CostPart
+          color="bg-chart-1"
+          label="System prompt"
+          tokens={prompt}
+          onClick={() => {
+            onOpen("prompt");
+          }}
+        />
+        <CostPart
+          color="bg-chart-5"
+          label="Tools"
+          tokens={toolCost}
+          onClick={() => {
+            onOpen("tools");
+          }}
+        />
+      </div>
+    </div>
   );
 }
 
-/** ResetButton unsets a field, so that it falls through again. */
-function ResetButton({ label, onClick }: { label: string; onClick: () => void }) {
+type CostPartProps = { color: string; label: string; tokens: number; onClick: () => void };
+
+function CostPart({ color, label, tokens, onClick }: CostPartProps) {
   return (
-    <Button type="button" size="xs" variant="ghost" onClick={onClick}>
-      <RotateCcw aria-hidden />
-      Reset<span className="sr-only"> {label}</span>
-    </Button>
+    <button
+      type="button"
+      onClick={onClick}
+      className="hover:bg-accent focus-visible:ring-ring -mx-1 flex items-center gap-1.5 rounded-md px-1 transition-colors focus-visible:ring-1 focus-visible:outline-none"
+    >
+      <span aria-hidden className={`${color} size-2 rounded-full`} />
+      {label}
+      <span className="text-muted-foreground font-mono tabular-nums">~{formatTokens(tokens)}</span>
+    </button>
   );
 }
 
@@ -223,17 +350,22 @@ type ModelFieldProps = {
   id: string;
   draft: Draft;
   inherited: Configuration;
+  models: readonly Model[];
+  /** runs is the model the layer runs: its own choice, or the one it inherits. */
+  runs: Model | undefined;
   onChange: (patch: Partial<Draft>) => void;
 };
 
-function ModelField({ id, draft, inherited, onChange }: ModelFieldProps) {
-  const models = useModels();
-  const list: Model[] = models.data?.models ?? [];
+function ModelField({ id, draft, inherited, models, runs, onChange }: ModelFieldProps) {
   const inheritedName = inherited.model === "" ? "no model" : inherited.model;
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <Label htmlFor={id}>Model</Label>
+      <FieldHeader
+        htmlFor={id}
+        label="Model"
+        set={draft.model_id !== ""}
+        from={sourceOf(inherited, "model")}
+      >
         {draft.model_id !== "" && (
           <ResetButton
             label="the model"
@@ -242,7 +374,7 @@ function ModelField({ id, draft, inherited, onChange }: ModelFieldProps) {
             }}
           />
         )}
-      </div>
+      </FieldHeader>
       <Select
         value={draft.model_id === "" ? inheritSelect : draft.model_id}
         onValueChange={(value) => {
@@ -258,69 +390,65 @@ function ModelField({ id, draft, inherited, onChange }: ModelFieldProps) {
               {inheritedName}, from {layerName(sourceOf(inherited, "model"))}
             </span>
           </SelectItem>
-          {list.map((m) => (
+          {models.map((m) => (
             <SelectItem key={m.id} value={m.id}>
               {m.name}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      {models.isError && (
-        <LoadError
-          what="the models"
-          error={models.error}
-          retrying={models.isFetching}
-          retry={() => void models.refetch()}
-        />
+      {runs !== undefined && (
+        <dl className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
+          <div className="flex gap-1">
+            <dt>Endpoint id</dt>
+            <dd className="text-foreground font-mono">{runs.model}</dd>
+          </div>
+          <div className="flex gap-1">
+            <dt>Context window</dt>
+            <dd className="text-foreground font-mono tabular-nums">
+              {formatTokens(runs.context_window)}
+            </dd>
+          </div>
+          <div className="flex gap-1">
+            <dt>Max output</dt>
+            <dd className="text-foreground font-mono tabular-nums">
+              {formatTokens(runs.max_output)}
+            </dd>
+          </div>
+        </dl>
       )}
     </div>
   );
 }
 
-type PromptFieldProps = {
+type SwitchFieldProps = {
   id: string;
   label: string;
-  hint?: string;
-  value: string | null;
-  inherited: string;
+  hint: string;
+  options: readonly [{ value: "on"; label: string }, { value: "off"; label: string }];
+  value: boolean | null;
+  inherited: boolean;
   from: ConfigLayer;
-  /** builtin is the built-in text a set prompt is compared with. */
-  builtin?: string;
-  onChange: (value: string | null) => void;
+  onChange: (value: boolean | null) => void;
 };
 
-/**
- * PromptField is a text the layer can replace. Unset, it shows the text it
- * falls through to; Override starts from that text, so a small change to
- * the built-in prompt needs no copying.
- */
-function PromptField({
+/** SwitchField is a setting that is on or off, or left to fall through. */
+function SwitchField({
   id,
   label,
   hint,
+  options,
   value,
   inherited,
   from,
-  builtin,
   onChange,
-}: PromptFieldProps) {
-  const change = value !== null && builtin !== undefined ? promptChange(builtin, value) : null;
+}: SwitchFieldProps) {
+  const labelId = `${id}-label`;
+  const fallback = options.find((o) => o.value === (inherited ? "on" : "off"))?.label ?? "";
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <Label htmlFor={id}>{label}</Label>
-        {value === null ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            onClick={() => {
-              onChange(inherited);
-            }}
-          >
-            Override<span className="sr-only"> {label.toLowerCase()}</span>
-          </Button>
-        ) : (
+      <FieldHeader id={labelId} label={label} set={value !== null} from={from}>
+        {value !== null && (
           <ResetButton
             label={label.toLowerCase()}
             onClick={() => {
@@ -328,74 +456,20 @@ function PromptField({
             }}
           />
         )}
-      </div>
-      {hint !== undefined && <p className="text-muted-foreground text-xs">{hint}</p>}
-      {value === null ? (
-        <>
-          <div
-            id={id}
-            className="bg-muted/50 text-muted-foreground max-h-32 overflow-y-auto rounded-md border px-2.5 py-2 font-mono text-xs whitespace-pre-wrap"
-          >
-            {inherited === "" ? <span className="font-sans italic">None</span> : inherited}
-          </div>
-          <Inherited from={from} />
-        </>
-      ) : (
-        <>
-          <Textarea
-            id={id}
-            value={value}
-            rows={6}
-            className="max-h-72 font-mono text-xs"
-            onChange={(e) => {
-              onChange(e.target.value);
-            }}
-          />
-          {change !== null && (
-            <p className="text-muted-foreground text-xs">
-              {change.same
-                ? "The same as the built-in prompt."
-                : `Differs from the built-in prompt: ${String(change.added)} lines added, ${String(change.removed)} removed.`}
-              {value === "" && " An empty prompt sends no base prompt at all."}
-            </p>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-type ContextFilesFieldProps = {
-  id: string;
-  value: boolean | null;
-  inherited: Configuration;
-  onChange: (value: boolean | null) => void;
-};
-
-function ContextFilesField({ id, value, inherited, onChange }: ContextFilesFieldProps) {
-  const fallback = inherited.context_files ? "read" : "not read";
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>Context files</Label>
-      <Select
-        value={value === null ? inheritSelect : value ? "on" : "off"}
-        onValueChange={(next) => {
-          onChange(next === inheritSelect ? null : next === "on");
+      </FieldHeader>
+      <ChoiceGroup
+        labelledBy={labelId}
+        options={options}
+        value={value === null ? null : value ? "on" : "off"}
+        inherited={inherited ? "on" : "off"}
+        onChange={(next) => {
+          onChange(next === null ? null : next === "on");
         }}
-      >
-        <SelectTrigger id={id} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={inheritSelect}>
-            <span className="text-muted-foreground">
-              {fallback}, from {layerName(sourceOf(inherited, "context_files"))}
-            </span>
-          </SelectItem>
-          <SelectItem value="on">Read the workspace&apos;s AGENTS.md files</SelectItem>
-          <SelectItem value="off">Do not read them</SelectItem>
-        </SelectContent>
-      </Select>
+      />
+      <p className="text-muted-foreground text-xs">
+        {hint}
+        {value === null && ` Not set here: ${fallback.toLowerCase()}, from ${layerName(from)}.`}
+      </p>
     </div>
   );
 }
@@ -404,198 +478,48 @@ type ToolsFieldProps = {
   idPrefix: string;
   value: string[] | null;
   inherited: Configuration;
-  chat: boolean;
+  groups: ToolGroups;
   onChange: (value: string[] | null) => void;
 };
 
 /**
- * ToolsField is the layer's tool choice: nothing, which falls through, or a
- * list of tools and whole MCP servers. A server that is chosen whole keeps
- * the tools it adds later.
+ * ToolsField is the layer's tool choice: none, which falls through and shows
+ * the choice it falls through to, or a list of tools and whole MCP servers.
  */
-function ToolsField({ idPrefix, value, inherited, chat, onChange }: ToolsFieldProps) {
-  const tools = useTools();
-  if (tools.isPending) return <Notice tone="pending">Loading the tools…</Notice>;
-  if (tools.isError) {
-    return (
-      <LoadError
-        what="the tools"
-        error={tools.error}
-        retrying={tools.isFetching}
-        retry={() => void tools.refetch()}
-      />
-    );
-  }
-  const groups = toolGroups(tools.data, chat);
-  if (value === null) {
-    return (
-      <div className="space-y-2">
-        <Inherited from={sourceOf(inherited, "tools")}>{choiceSummary(inherited.tools)}</Inherited>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          onClick={() => {
-            onChange(inherited.tools === null ? everyTool(groups) : [...inherited.tools]);
-          }}
-        >
-          Choose the tools
-        </Button>
-      </div>
-    );
-  }
-  const toggle = (entry: string, on: boolean) => {
-    onChange(withChoice(value, entry, on, groups));
-  };
+function ToolsField({ idPrefix, value, inherited, groups, onChange }: ToolsFieldProps) {
+  const from = sourceOf(inherited, "tools");
+  const below = inherited.tools ?? everyTool(groups);
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-muted-foreground text-xs">Chosen here: {choiceSummary(value)}.</p>
-        <ResetButton
-          label="the tools"
-          onClick={() => {
-            onChange(null);
-          }}
-        />
-      </div>
-      <ul className="space-y-1" aria-label="Built-in tools">
-        {groups.builtin.map((t) => (
-          <ToolCheck
-            key={t.name}
-            id={`${idPrefix}-${t.name}`}
-            tool={t}
-            label={t.name}
-            checked={chosen(value, t)}
-            onChange={(on) => {
-              toggle(t.name, on);
-            }}
-          />
-        ))}
-      </ul>
-      {groups.servers.map(({ server, tools: list }) => {
-        const whole = serverEntry(server);
-        return (
-          <section key={server} className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id={`${idPrefix}-${whole}`}
-                checked={value.includes(whole)}
-                onCheckedChange={(on) => {
-                  toggle(whole, on === true);
-                }}
-              />
-              <Label htmlFor={`${idPrefix}-${whole}`} className="text-xs">
-                Every tool of <span className="font-mono">{server}</span>, and any it adds
-              </Label>
-            </div>
-            <ul className="space-y-1 pl-5" aria-label={`Tools of ${server}`}>
-              {list.map((t) => (
-                <ToolCheck
-                  key={t.name}
-                  id={`${idPrefix}-${t.name}`}
-                  tool={t}
-                  label={t.name.replace(`mcp__${server}__`, "")}
-                  checked={chosen(value, t)}
-                  onChange={(on) => {
-                    toggle(t.name, on);
-                  }}
-                />
-              ))}
-            </ul>
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
-type ToolCheckProps = {
-  id: string;
-  tool: Tool;
-  label: string;
-  checked: boolean;
-  onChange: (on: boolean) => void;
-};
-
-function ToolCheck({ id, tool, label, checked, onChange }: ToolCheckProps) {
-  return (
-    <li className="flex items-start gap-2">
-      <Checkbox
-        id={id}
-        checked={checked}
-        className="mt-0.5"
-        onCheckedChange={(on) => {
-          onChange(on === true);
-        }}
-      />
-      <div className="min-w-0">
-        <Label htmlFor={id} className="font-mono text-xs break-all">
-          {label}
-        </Label>
-        <p className="text-muted-foreground truncate text-xs">{toolSummary(tool.description)}</p>
-      </div>
-    </li>
-  );
-}
-
-type SamplingInputProps = {
-  id: string;
-  field: SamplingField;
-  value: string;
-  inherited: string;
-  problem: string | undefined;
-  onChange: (text: string) => void;
-};
-
-function SamplingInput({ id, field, value, inherited, problem, onChange }: SamplingInputProps) {
-  const hintId = `${id}-hint`;
-  const shared = {
-    id,
-    value,
-    placeholder: inherited,
-    "aria-invalid": problem !== undefined,
-    "aria-describedby": hintId,
-    className: "font-mono text-xs",
-  };
-  return (
-    <div className="space-y-1">
-      <div className="flex h-6 items-center justify-between gap-2">
-        <Label htmlFor={id}>{field.label}</Label>
-        {value !== "" && (
-          <ResetButton
-            label={field.label.toLowerCase()}
+      <FieldHeader label="Tools" set={value !== null} from={from}>
+        {value === null ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
             onClick={() => {
-              onChange("");
+              onChange([...below]);
+            }}
+          >
+            Choose the tools here
+          </Button>
+        ) : (
+          <ResetButton
+            label="the tools"
+            onClick={() => {
+              onChange(null);
             }}
           />
         )}
-      </div>
-      {field.kind === "list" ? (
-        <Textarea
-          {...shared}
-          rows={2}
-          onChange={(e) => {
-            onChange(e.target.value);
-          }}
-        />
-      ) : (
-        <Input
-          {...shared}
-          inputMode={field.kind === "text" ? "text" : "decimal"}
-          autoComplete="off"
-          onChange={(e) => {
-            onChange(e.target.value);
-          }}
-        />
-      )}
-      <p
-        id={hintId}
-        className={
-          problem === undefined ? "text-muted-foreground text-xs" : "text-destructive text-xs"
-        }
-      >
-        {problem ?? field.hint}
-      </p>
+      </FieldHeader>
+      {value === null && <Inherited from={from}>{choiceSummary(inherited.tools)}</Inherited>}
+      <ToolPicker
+        idPrefix={idPrefix}
+        groups={groups}
+        choice={value ?? below}
+        readOnly={value === null}
+        onChange={onChange}
+      />
     </div>
   );
 }

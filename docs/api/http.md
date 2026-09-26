@@ -557,11 +557,13 @@ ModelContext that has `request`; `404` for a record of another session.
 | `tools` | array | The tool schemas sent: `{name, description, schema, source, tokens}`, where `source` is `builtin` or `mcp`. |
 | `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` only when the model preserves thinking. |
 | `message_tokens` | number | The estimated size of the messages. |
-| `parameters` | object | `{model, sampling, thinking_switch, preserve_thinking}`: the endpoint's identifier of the model, the sampling parameters sent (a Sampling), and the model's switches. |
+| `message_sizes` | number array | The estimated size of each message, in the order of `messages`. |
+| `parameters` | object | `{model, sampling, thinking_switch, preserve_thinking}`: the endpoint's identifier of the model, the sampling parameters sent (a Sampling), the model's thinking switch, and whether earlier reasoning is replayed. |
 | `sources` | object | The layer each parameter came from, keyed `model`, `thinking_switch`, `preserve_thinking`, and `sampling.<parameter>`. |
 | `dropped_effort` | string, optional | A reasoning effort the configuration chose that the model does not offer, which is not sent. |
 | `context_files_unread` | string, optional | In a preview, why the context files a run would read are missing: the workspace is not running. |
 | `request` | ModelRequest, optional | The record this is; absent for the next request. |
+| `context_window` | number | The context window of the call's model, in tokens: what the request and its answer must fit in. 0 when no model is configured, or a recorded call's model is deleted. |
 | `calibration` | object, optional | `{request_id, input_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
 
 Every `tokens` figure is an estimate, four bytes to a token; only a record's
@@ -690,6 +692,7 @@ choice picks from.
 | `description` | string | What the model is told it does. |
 | `needs_workspace` | boolean | It acts on files or processes, so a chat never offers it. A `stdio` MCP server's tools do. |
 | `server` | string, optional | The MCP server whose tool it is. Absent for a built-in tool and for `mcp_list_resources` and `mcp_read_resource`, which reach every server of a run. |
+| `tokens` | number | The estimated size of its definition in a request, four bytes to a token: what offering it costs every model call. The same figure the context view gives it. |
 
 The list includes the tools each enabled MCP server offered when it was last
 listed, without connecting to any, and the two resource tools when one of
@@ -991,6 +994,7 @@ null, an absent `model_id`, and a sampling parameter left out are not set.
 | `chat_prompt` | string or null | Replaces the built-in base prompt of a chat, likewise. |
 | `instructions` | string or null | Follows the base prompt and the context files. At most 64 KiB. |
 | `context_files` | boolean or null | Whether the workspace's AGENTS.md files are read. |
+| `preserve_thinking` | boolean or null | Whether the model's earlier reasoning is replayed to it, over the model's own `preserve_thinking`. |
 | `sampling` | Sampling | The sampling parameters set here. |
 
 ### Sampling
@@ -1030,10 +1034,11 @@ A resolved configuration, with the layer each value came from.
 | `workspace_prompt`, `chat_prompt` | string | The base prompts. |
 | `instructions` | string | The extra instructions, empty for none. |
 | `context_files` | boolean | Whether context files are read. |
+| `preserve_thinking` | boolean | Whether earlier reasoning is replayed: a layer's choice, else the model's, else off. |
 | `tools` | string array or null | The tool choice; null is every tool the session can run. |
 | `sampling` | Sampling | The sampling parameters sent. |
 | `dropped_effort` | string, optional | An effort chosen above the model that the model does not offer. |
-| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, or `default`, keyed `profile`, `model`, `workspace_prompt`, `chat_prompt`, `instructions`, `context_files`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
+| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, or `default`, keyed `profile`, `model`, `workspace_prompt`, `chat_prompt`, `instructions`, `context_files`, `preserve_thinking`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
 
 ## Settings
 

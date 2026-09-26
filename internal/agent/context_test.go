@@ -403,11 +403,20 @@ func TestPreviewEstimatesEverySection(t *testing.T) {
 			t.Errorf("tool %s tokens = %d, want the estimate of its definition, %d", def.Name, def.Tokens, agent.EstimateTokens(string(data)))
 		}
 	}
+	if def := preview.Tools[0]; def.Tokens != agent.ToolTokens(def.ToolDef) {
+		t.Errorf("ToolTokens(%s) = %d, want the size the preview reports, %d", def.Name, agent.ToolTokens(def.ToolDef), def.Tokens)
+	}
 	want := 0
-	for _, m := range preview.Messages {
+	if len(preview.MessageSizes) != len(preview.Messages) {
+		t.Fatalf("%d message sizes for %d messages", len(preview.MessageSizes), len(preview.Messages))
+	}
+	for i, m := range preview.Messages {
 		data, err := json.Marshal(m)
 		if err != nil {
 			t.Fatalf("encode message: %v", err)
+		}
+		if size := agent.EstimateTokens(string(data)); preview.MessageSizes[i] != size {
+			t.Errorf("message %d size = %d, want the estimate of its JSON, %d", i, preview.MessageSizes[i], size)
 		}
 		want += agent.EstimateTokens(string(data))
 	}
@@ -660,7 +669,7 @@ func TestPreviewOfAnEmptyChatEncodesEmptyLists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview: %v", err)
 	}
-	want := `{"sections":[],"tools":[],"messages":[],"message_tokens":0,` +
+	want := `{"sections":[],"tools":[],"messages":[],"message_tokens":0,"message_sizes":[],` +
 		`"parameters":{"model":"m","sampling":{},"preserve_thinking":false}}`
 	if got := jsonOf(preview); got != want {
 		t.Errorf("preview JSON = %s, want %s", got, want)

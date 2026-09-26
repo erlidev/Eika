@@ -60,6 +60,8 @@ type configurationBody struct {
 	ChatPrompt      string `json:"chat_prompt"`
 	Instructions    string `json:"instructions"`
 	ContextFiles    bool   `json:"context_files"`
+	// PreserveThinking says whether earlier reasoning is replayed.
+	PreserveThinking bool `json:"preserve_thinking"`
 	// Tools is the tool choice, in the shape of a session's; null is every
 	// tool the session can run.
 	Tools []string `json:"tools"`
@@ -70,8 +72,8 @@ type configurationBody struct {
 	DroppedEffort string `json:"dropped_effort,omitempty"`
 	// Sources names the layer each value came from, keyed by the value's
 	// field: profile, model, workspace_prompt, chat_prompt, instructions,
-	// context_files, tools, and sampling.<parameter> for each parameter
-	// sent.
+	// context_files, preserve_thinking, tools, and sampling.<parameter> for
+	// each parameter sent.
 	Sources map[string]string `json:"sources"`
 }
 
@@ -96,10 +98,12 @@ type runConfig struct {
 	chatPrompt      *string
 	instructions    string
 	contextFiles    bool
-	tools           []string
-	sampling        provider.Sampling
-	droppedEffort   string
-	sources         map[string]string
+	// preserveThinking is the model row's switch unless a layer set it.
+	preserveThinking bool
+	tools            []string
+	sampling         provider.Sampling
+	droppedEffort    string
+	sources          map[string]string
 }
 
 // configBase is what resolving a configuration reads from the database:
@@ -209,6 +213,7 @@ func (b configBase) resolve(profile store.Profile, profileSource string, layers 
 			"tools":            layerDefault,
 		},
 	}
+	var preserve *bool
 	c.model, c.modelOK = b.defaultModel, len(b.models) > 0
 	samplings := make([]provider.Sampling, len(layers))
 	// The layers are read bottom first, so that the top one to set a value
@@ -230,6 +235,9 @@ func (b configBase) resolve(profile store.Profile, profileSource string, layers 
 		if set.ContextFiles != nil {
 			c.contextFiles, c.sources["context_files"] = *set.ContextFiles, l.name
 		}
+		if set.PreserveThinking != nil {
+			preserve, c.sources["preserve_thinking"] = set.PreserveThinking, l.name
+		}
 		if l.tools != nil {
 			c.tools, c.sources["tools"] = l.tools, l.name
 		}
@@ -238,6 +246,15 @@ func (b configBase) resolve(profile store.Profile, profileSource string, layers 
 				return runConfig{}, fmt.Errorf("decode the sampling parameters of the %s layer: %w", l.name, err)
 			}
 		}
+	}
+
+	switch {
+	case preserve != nil:
+		c.preserveThinking = *preserve
+	case c.modelOK:
+		c.preserveThinking, c.sources["preserve_thinking"] = c.model.PreserveThinking, layerModel
+	default:
+		c.sources["preserve_thinking"] = layerDefault
 	}
 
 	row := modelSampling(c.model)
@@ -347,16 +364,17 @@ func (c runConfig) basePrompt(chat bool) *string {
 // asConfiguration renders a resolved configuration on the wire.
 func asConfiguration(c runConfig) configurationBody {
 	body := configurationBody{
-		ProfileID:       c.profile.ID,
-		ProfileName:     c.profile.Name,
-		WorkspacePrompt: agent.WorkspacePrompt,
-		ChatPrompt:      agent.ChatPrompt,
-		Instructions:    c.instructions,
-		ContextFiles:    c.contextFiles,
-		Tools:           c.tools,
-		Sampling:        c.sampling,
-		DroppedEffort:   c.droppedEffort,
-		Sources:         maps.Clone(c.sources),
+		ProfileID:        c.profile.ID,
+		ProfileName:      c.profile.Name,
+		WorkspacePrompt:  agent.WorkspacePrompt,
+		ChatPrompt:       agent.ChatPrompt,
+		Instructions:     c.instructions,
+		ContextFiles:     c.contextFiles,
+		PreserveThinking: c.preserveThinking,
+		Tools:            c.tools,
+		Sampling:         c.sampling,
+		DroppedEffort:    c.droppedEffort,
+		Sources:          maps.Clone(c.sources),
 	}
 	if c.modelOK {
 		body.ModelID, body.Model = c.model.ID, c.model.Name
@@ -371,17 +389,17 @@ func asConfiguration(c runConfig) configurationBody {
 }
 
 // parameterSources are the sources of what a request sends beside its
-// content: the model and the sampling parameters, and the model row's own
-// switches.
+// content: the model, the sampling parameters, whether reasoning is
+// replayed, and the model row's own thinking switch.
 func (c runConfig) parameterSources() map[string]string {
-	out := map[string]string{"model": c.sources["model"]}
+	out := map[string]string{"model": c.sources["model"], "preserve_thinking": c.sources["preserve_thinking"]}
 	for key, layer := range c.sources {
 		if strings.HasPrefix(key, samplingSource) {
 			out[key] = layer
 		}
 	}
 	if c.modelOK {
-		out["thinking_switch"], out["preserve_thinking"] = layerModel, layerModel
+		out["thinking_switch"] = layerModel
 	}
 	return out
 }
@@ -397,7 +415,7 @@ func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, 
 	opts.ContextWindow = c.model.ContextWindow
 	opts.Sampling = c.sampling
 	opts.ThinkingSwitch = provider.ThinkingSwitch(c.model.ThinkingSwitch)
-	opts.PreserveThinking = c.model.PreserveThinking
+	opts.PreserveThinking = c.preserveThinking
 	opts.BasePrompt = c.basePrompt(sess.Chat())
 	if opts.BasePrompt == nil && !sess.Chat() {
 		// The agent picks its built-in prompt by whether it has an executor,

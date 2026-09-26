@@ -1,56 +1,41 @@
-- tabpanel "Context":
-  - text: Request
-  - combobox "Request": /#1 · gpt-5 · \d+ in · [\d,.]+[bkmBKM]+ ago/
-  - paragraph: /~\d+ tokens estimated; \d+ measured by the endpoint/
-  - paragraph: Estimates count four bytes to a token. Sent to gpt-5.
-  - group "Tokens by part":
-    - button /Base prompt, about \d+ tokens/
-    - button /Context files, about \d+ tokens/
-    - button /Instructions, about \d+ tokens/
-    - button /Built-in tools, about \d+ tokens/
-    - button /Messages, about \d+ tokens/
-  - list "Legend":
-    - listitem: /Base prompt \d+/
-    - listitem: /Context files \d+/
-    - listitem: /Instructions \d+/
-    - listitem: /Built-in tools \d+/
-    - listitem: /Messages \d+/
-  - text: Raw schemas
-  - switch "Raw schemas"
-  - button /Base prompt ~\d+/
-  - button /Context files ~\d+/
-  - button /Instructions ~\d+/
-  - button /Built-in tools ~\d+/
-  - button /Messages ~\d+/
-  - button "Parameters" [expanded]
+- region "Part detail":
+  - heading "Parameters" [level=3]
+  - paragraph: What the request sends beside its content, and the layer each came from.
   - table:
     - rowgroup:
-      - row "Parameter Value From":
+      - row "Parameter Value From Edit":
         - columnheader "Parameter"
         - columnheader "Value"
         - columnheader "From"
+        - columnheader "Edit"
     - rowgroup:
       - row "model gpt-5 default":
         - cell "model"
         - cell "gpt-5"
         - cell "default"
-      - row /max_output \d+ model/:
+        - cell
+      - row /max_output \d+ from the model/:
         - cell "max_output"
         - cell /\d+/
-        - cell "model"
-      - row "reasoning_effort medium model":
+        - cell "from the model"
+        - cell
+      - row "reasoning_effort medium from the model":
         - cell "reasoning_effort"
         - cell "medium"
-        - cell "model"
-      - row "temperature 0.7 session":
+        - cell "from the model"
+        - cell
+      - row "temperature 0.7 from the session":
         - cell "temperature"
         - cell "0.7"
-        - cell "session"
-      - row "thinking_switch reasoning_effort model":
+        - cell "from the session"
+        - cell
+      - row "thinking_switch reasoning_effort from the model":
         - cell "thinking_switch"
         - cell "reasoning_effort"
-        - cell "model"
-      - row "preserve_thinking false model":
+        - cell "from the model"
+        - cell
+      - row "preserve_thinking false from the model":
         - cell "preserve_thinking"
         - cell "false"
-        - cell "model"
+        - cell "from the model"
+        - cell

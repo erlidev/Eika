@@ -7,7 +7,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/mcp"
+	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool"
 )
@@ -23,6 +25,9 @@ type toolBody struct {
 	// Server names the MCP server whose tool this is; absent for a built-in
 	// tool and for the resource tools, which reach every server of a run.
 	Server string `json:"server,omitempty"`
+	// Tokens is the estimated size of the tool's definition in a request,
+	// which offering it costs every model call.
+	Tokens int `json:"tokens"`
 }
 
 // toolsResponse is the body of GET /api/tools.
@@ -40,8 +45,9 @@ type setToolsRequest struct {
 }
 
 // handleListTools lists every tool a run can offer the model, ordered by
-// name, with whether it needs a workspace: the built-in tools, and those the
-// MCP servers offered when they were last listed.
+// name, with whether it needs a workspace and what it costs a request: the
+// built-in tools, and those the MCP servers offered when they were last
+// listed.
 func (s *Server) handleListTools(w http.ResponseWriter, _ *http.Request) {
 	out := toolsResponse{Tools: []toolBody{}}
 	for _, t := range s.allTools().List() {
@@ -50,6 +56,7 @@ func (s *Server) handleListTools(w http.ResponseWriter, _ *http.Request) {
 			Description:    t.Description(),
 			NeedsWorkspace: tool.NeedsWorkspace(t),
 			Server:         mcp.ServerOf(t),
+			Tokens:         agent.ToolTokens(provider.ToolDef{Name: t.Name(), Description: t.Description(), Schema: t.Schema()}),
 		})
 	}
 	writeJSON(w, s.log, http.StatusOK, out)

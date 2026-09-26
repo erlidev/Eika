@@ -29,30 +29,74 @@ test("a profile's editor shows what each unset field falls through to", async ({
   const eika = await open({ scenario: "profiles" });
   await openProfiles(eika);
   await eika.click("role=button[name=/^Reviewer/]");
+  // The Model tab first: every value falls through, and says from where.
+  await expect(eika.page.getByLabel("Max output tokens", { exact: true })).toHaveAttribute(
+    "placeholder",
+    "128000",
+  );
+  await expect(eika.page.getByRole("radiogroup", { name: "Reasoning effort" })).toBeVisible();
+  await expectShot(eika, "profile-editor", "role=dialog");
+
   // Set: the instructions, with a reset. Unset: the base prompt, shown muted.
-  await expect(eika.page.getByLabel("Extra instructions")).toHaveValue(
+  await eika.click("role=tab[name=Prompt]");
+  await expect(eika.page.getByLabel("Extra instructions", { exact: true })).toHaveValue(
     "Review the change and report problems. Do not edit files.",
   );
   await expect(eika.page.getByRole("button", { name: "Reset extra instructions" })).toBeVisible();
   await expect(
     eika.page.getByRole("button", { name: "Override base prompt of a workspace session" }),
   ).toBeVisible();
-  await expectShot(eika, "profile-editor", "role=dialog");
 
   await eika.click("role=tab[name=Sampling]");
-  await expect(eika.page.getByLabel("Temperature")).toHaveValue("0.2");
-  await expect(eika.page.getByLabel("Max output tokens")).toHaveAttribute(
-    "placeholder",
-    "128000 (the model)",
+  const temperature = eika.page.getByRole("textbox", { name: "Temperature" });
+  await expect(temperature).toHaveValue("0.2");
+  await expect(eika.page.getByRole("slider", { name: "Temperature slider" })).toHaveAttribute(
+    "aria-valuenow",
+    "0.2",
   );
   await eika.click("Reset temperature");
-  await expect(eika.page.getByLabel("Temperature")).toHaveValue("");
+  await expect(temperature).toHaveValue("");
   await eika.click("Save profile");
   await expect(eika.page.getByText("Saved. The next run uses it.")).toBeVisible();
 
   await eika.click("role=tab[name=Tools]");
-  await expect(eika.page.getByRole("checkbox", { name: "bash" })).toBeChecked();
-  await expect(eika.page.getByRole("checkbox", { name: "spawn_agent" })).not.toBeChecked();
+  await expect(eika.page.getByRole("switch", { name: "bash" })).toBeChecked();
+  await expect(eika.page.getByRole("switch", { name: "spawn_agent" })).not.toBeChecked();
+  await eika.fill("Search the tools", "agent");
+  await expect(eika.page.getByRole("switch", { name: "bash" })).toBeHidden();
+  await expect(eika.page.getByRole("switch", { name: "spawn_agent" })).toBeVisible();
+});
+
+test("the editor's controls set and unset each kind of value", async ({ open }) => {
+  const eika = await open({ scenario: "profiles" });
+  await openProfiles(eika);
+  await eika.click("role=button[name=/^Reviewer/]");
+  // A segmented choice: clicking the chosen value again unsets it.
+  await eika.click("role=radio[name=high]");
+  await expect(eika.page.getByRole("radio", { name: "high" })).toBeChecked();
+  await eika.click("role=radio[name=high]");
+  await expect(eika.page.getByRole("radio", { name: "high" })).not.toBeChecked();
+  await eika.click("role=radio[name=Replay]");
+
+  // Stop sequences are chips, added with Enter and removed with their button.
+  await eika.click("role=tab[name=Sampling]");
+  await eika.fill("Stop sequences", "END");
+  await eika.page.keyboard.press("Enter");
+  await expect(
+    eika.page.getByRole("button", { name: "Remove the stop sequence END" }),
+  ).toBeVisible();
+
+  // The cost strip follows the tool choice.
+  await eika.click("role=tab[name=Tools]");
+  const strip = eika.page.getByRole("button", { name: /^Tools ~/ });
+  const before = await strip.textContent();
+  await eika.click("role=button[name='All built-in tools']");
+  await expect(strip).not.toHaveText(before ?? "");
+
+  await eika.click("Save profile");
+  await expect(eika.page.getByText("Saved. The next run uses it.")).toBeVisible();
+  await eika.click("role=tab[name=Model]");
+  await expect(eika.page.getByRole("radio", { name: "Replay" })).toBeChecked();
 });
 
 test("choosing a model shows what that model sets before the profile is saved", async ({
@@ -61,21 +105,19 @@ test("choosing a model shows what that model sets before the profile is saved", 
   const eika = await open({ scenario: "profiles" });
   await openProfiles(eika);
   await eika.click("role=button[name=/^Reviewer/]");
-  await eika.select("Model", "gpt-5-mini");
-  await eika.click("role=tab[name=Sampling]");
-  await expect(eika.page.getByLabel("Max output tokens")).toHaveAttribute(
+  await eika.select("role=combobox[name=Model]", "gpt-5-mini");
+  await expect(eika.page.getByLabel("Max output tokens", { exact: true })).toHaveAttribute(
     "placeholder",
-    "64000 (the model)",
+    "64000",
   );
 
   // The same in a session's editor, for a profile chosen and not saved.
   await eika.page.keyboard.press("Escape");
   await eika.click("role=button[name=/^Profile: Reviewer/]");
   await eika.select("Profile", "Fast");
-  await eika.click("role=tab[name=Sampling]");
-  await expect(eika.page.getByLabel("Max output tokens")).toHaveAttribute(
+  await expect(eika.page.getByLabel("Max output tokens", { exact: true })).toHaveAttribute(
     "placeholder",
-    "4096 (the profile)",
+    "4096",
   );
 });
 
@@ -117,7 +159,7 @@ test("the status bar names the session's profile and edits its overrides", async
   await expectAria(eika, "session-configuration", "role=dialog");
 
   await eika.click("role=tab[name=Sampling]");
-  await expect(eika.page.getByLabel("Temperature")).toHaveValue("0.7");
+  await expect(eika.page.getByRole("textbox", { name: "Temperature" })).toHaveValue("0.7");
   await eika.click("Reset temperature");
   await eika.click("Save");
   await expect(profile).toHaveAccessibleName("Profile: Reviewer");

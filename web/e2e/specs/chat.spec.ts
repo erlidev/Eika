@@ -39,6 +39,10 @@ test("a chat has a Tools panel where a workspace session has files", async ({
   await eika.settle();
   await eika.click("Tools");
   await expect(eika.page.getByRole("switch", { name: "web_fetch" })).not.toBeChecked();
+
+  // Reset gives the choice back to the chat's profile, which offers every tool.
+  await eika.click("role=button[name=/^Reset the chat.s tools/]");
+  await expect(eika.page.getByRole("switch", { name: "web_fetch" })).toBeChecked();
 });
 
 test("a workspace session names its workspace and has no Tools panel", async ({ open }) => {

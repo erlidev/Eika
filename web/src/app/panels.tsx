@@ -89,7 +89,7 @@ const contextPanel: Panel = {
   title: "Context",
   icon: Gauge,
   available: (context) => context.sessionId !== "",
-  Component: ({ sessionId }) => <ContextPanel sessionId={sessionId} />,
+  Component: ({ sessionId, chat }) => <ContextPanel sessionId={sessionId} chat={chat} />,
 };
 
 const toolsPanel: Panel = {

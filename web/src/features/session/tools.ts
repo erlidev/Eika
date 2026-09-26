@@ -1,58 +1,32 @@
 /**
- * The tool choice of a chat, as pure functions: which tools a chat may offer,
- * what turning one on or off sends, and the one line each is described by.
+ * Tools as a chat sees them, as pure functions: what a chat can never offer,
+ * and the one line each tool is described by.
  */
 
 import type { Tool } from "@/api/types";
 
-/** ServerTools are the tools one MCP server offers a chat. */
-export type ServerTools = { server: string; tools: Tool[] };
-
-/** ChatTools splits the harness's tools by whether a chat can offer them. */
-export type ChatTools = {
-  /** offered are the built-in tools that need no workspace: the ones a chat chooses from. */
-  offered: Tool[];
-  /** servers are the MCP servers whose tools a chat can offer, by name, each with its tools. */
-  servers: ServerTools[];
-  /** unavailable are the names of the built-in tools a chat never has, sorted. */
-  unavailable: string[];
-  /** unavailableServers are the MCP servers that run in a workspace, which a chat has none of. */
-  unavailableServers: string[];
+/** OutOfChat names what a chat can never offer, having no workspace. */
+export type OutOfChat = {
+  /** tools are the built-in tools that need a workspace, sorted. */
+  tools: string[];
+  /** servers are the MCP servers that run as a command in a workspace, sorted. */
+  servers: string[];
 };
 
-/** chatTools splits the tool list for a session with no workspace. */
-export function chatTools(tools: Tool[]): ChatTools {
-  const servers = new Map<string, Tool[]>();
-  const unavailableServers = new Set<string>();
-  const offered: Tool[] = [];
-  const unavailable: string[] = [];
-  for (const t of tools) {
-    if (t.server === undefined) {
-      if (t.needs_workspace) unavailable.push(t.name);
-      else offered.push(t);
-    } else if (t.needs_workspace) {
-      unavailableServers.add(t.server);
-    } else {
-      servers.set(t.server, [...(servers.get(t.server) ?? []), t]);
-    }
-  }
-  return {
-    offered,
-    servers: [...servers]
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([server, list]) => ({ server, tools: list })),
-    unavailable: unavailable.sort(),
-    unavailableServers: [...unavailableServers].sort(),
-  };
-}
-
 /**
- * withTool is the tool list to send after turning one tool on or off:
- * sorted, each name once, as the harness stores it.
+ * outOfChat lists the tools a chat can never offer: the built-in ones that
+ * need a workspace, and the servers that run in one. The ones it can offer
+ * are chosen with the ToolPicker, whose groups leave these out.
  */
-export function withTool(current: readonly string[], name: string, on: boolean): string[] {
-  const rest = current.filter((t) => t !== name);
-  return (on ? [...rest, name] : rest).sort();
+export function outOfChat(tools: readonly Tool[]): OutOfChat {
+  const names: string[] = [];
+  const servers = new Set<string>();
+  for (const t of tools) {
+    if (!t.needs_workspace) continue;
+    if (t.server === undefined) names.push(t.name);
+    else servers.add(t.server);
+  }
+  return { tools: names.sort(), servers: [...servers].sort() };
 }
 
 /**

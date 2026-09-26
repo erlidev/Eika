@@ -23,6 +23,7 @@ type configurationWire struct {
 	ChatPrompt      string            `json:"chat_prompt"`
 	Instructions    string            `json:"instructions"`
 	ContextFiles    bool              `json:"context_files"`
+	PreserveThink   bool              `json:"preserve_thinking"`
 	Tools           []string          `json:"tools"`
 	Sampling        provider.Sampling `json:"sampling"`
 	DroppedEffort   string            `json:"dropped_effort"`
@@ -38,6 +39,7 @@ type profileWire struct {
 	ChatPrompt      *string           `json:"chat_prompt"`
 	Instructions    *string           `json:"instructions"`
 	ContextFiles    *bool             `json:"context_files"`
+	PreserveThink   *bool             `json:"preserve_thinking"`
 	Sampling        provider.Sampling `json:"sampling"`
 	Tools           []string          `json:"tools"`
 	Inherited       configurationWire `json:"inherited"`
@@ -93,6 +95,7 @@ type contextWire struct {
 	DroppedEffort string            `json:"dropped_effort"`
 	Unread        string            `json:"context_files_unread"`
 	Request       *modelRequestWire `json:"request"`
+	ContextWindow int               `json:"context_window"`
 	Calibration   *struct {
 		RequestID       string `json:"request_id"`
 		InputTokens     int    `json:"input_tokens"`
@@ -309,6 +312,73 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 		t.Errorf("sources = %v, want the model from the request", named.Sources)
 	}
 	refused(t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/context?model=typo", nil), 400)
+}
+
+func TestAProfileAndASessionChooseWhetherThinkingIsPreserved(t *testing.T) {
+	a := newAPI(t)
+	models := decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200)
+	model := models.Models[0]
+	chat := a.newChat(t, "think")
+
+	profile := a.newProfile(t, map[string]any{"name": "Thinks", "preserve_thinking": true})
+	if profile.PreserveThink == nil || !*profile.PreserveThink || profile.Inherited.PreserveThink ||
+		profile.Inherited.Sources["preserve_thinking"] != "model" {
+		t.Errorf("profile = %+v, want it set over the model's own switch, which is off", profile)
+	}
+	config := a.useProfile(t, chat.ID, profile.ID)
+	if !config.Resolved.PreserveThink || config.Resolved.Sources["preserve_thinking"] != "profile" {
+		t.Errorf("resolved = %+v, want the profile's switch", config.Resolved)
+	}
+	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/context", nil), 200)
+	if !preview.Parameters.PreserveThinking || preview.Sources["preserve_thinking"] != "profile" {
+		t.Errorf("preview parameters = %+v, sources %v; want thinking preserved by the profile", preview.Parameters, preview.Sources)
+	}
+	if preview.ContextWindow != model.ContextWindow || preview.ContextWindow == 0 {
+		t.Errorf("preview context window = %d, want the model's %d", preview.ContextWindow, model.ContextWindow)
+	}
+
+	config = a.override(t, chat.ID, map[string]any{"preserve_thinking": false})
+	if config.Resolved.PreserveThink || config.Resolved.Sources["preserve_thinking"] != "session" {
+		t.Errorf("resolved = %+v, want the session's switch over the profile's", config.Resolved)
+	}
+	p := a.script(providertest.Text("done"))
+	a.postMessage(t, chat.ID, "hi", "", 202)
+	a.waitIdle(t, chat.ID)
+	if p.Requests()[0].PreserveThinking {
+		t.Error("the run preserved thinking the session turned off")
+	}
+	records := decodeBody[requestsWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/requests", nil), 200)
+	recorded := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/requests/"+records.Requests[0].ID, nil), 200)
+	if recorded.ContextWindow != model.ContextWindow || len(recorded.MessageSizes) != len(recorded.Messages) {
+		t.Errorf("recorded = window %d, %d sizes for %d messages; want the model's window and a size per message",
+			recorded.ContextWindow, len(recorded.MessageSizes), len(recorded.Messages))
+	}
+}
+
+func TestEveryToolSaysWhatItCostsARequest(t *testing.T) {
+	a := newAPI(t)
+	listed := decodeBody[struct {
+		Tools []struct {
+			Name   string `json:"name"`
+			Tokens int    `json:"tokens"`
+		} `json:"tools"`
+	}](t, request(t, a.Server, "GET", "/api/tools", nil), 200)
+	chat := a.newChat(t, "sizes")
+	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/context", nil), 200)
+	if len(preview.Tools) == 0 {
+		t.Fatal("the chat's preview offers no tools to compare")
+	}
+	for _, sent := range preview.Tools {
+		i := slices.IndexFunc(listed.Tools, func(l struct {
+			Name   string `json:"name"`
+			Tokens int    `json:"tokens"`
+		}) bool {
+			return l.Name == sent.Name
+		})
+		if i < 0 || listed.Tools[i].Tokens != sent.Tokens || sent.Tokens == 0 {
+			t.Errorf("tool %s costs %d in a request; the list says %+v", sent.Name, sent.Tokens, listed.Tools)
+		}
+	}
 }
 
 func TestAnEffortTheModelDoesNotOfferIsNotSent(t *testing.T) {

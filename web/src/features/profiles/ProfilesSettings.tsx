@@ -5,7 +5,7 @@
  */
 
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { Profile, Profiles } from "@/api/types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { choiceSummary, toDraft, toSettings } from "@/features/profiles/form";
-import type { Draft, SamplingProblem } from "@/features/profiles/form";
+import type { Draft, EditorSection, SamplingProblem } from "@/features/profiles/form";
 import {
   useCreateProfile,
   useDeleteProfile,
@@ -31,6 +31,7 @@ import {
   useUpdateProfile,
 } from "@/features/profiles/queries";
 import { SettingsEditor } from "@/features/profiles/SettingsEditor";
+import { useConfigEditor } from "@/features/profiles/store";
 import { settingKeys, useSaveSettings } from "@/features/settings/queries";
 
 /** newProfile is the editor's selection for a profile not saved yet. */
@@ -38,7 +39,13 @@ const newProfile = "__new";
 
 export function ProfilesSettings() {
   const profiles = useProfiles();
-  const [selected, setSelected] = useState("");
+  // An Edit link elsewhere may have asked for one profile on one tab: the
+  // tab opens on it, once.
+  const [asked] = useState(() => useConfigEditor.getState().profile);
+  const [selected, setSelected] = useState(asked?.id ?? "");
+  useEffect(() => {
+    useConfigEditor.getState().takeProfile();
+  }, []);
 
   if (profiles.isPending) return <Notice tone="pending">Loading the profiles…</Notice>;
   if (profiles.isError) {
@@ -67,6 +74,7 @@ export function ProfilesSettings() {
         key={open.id}
         data={profiles.data}
         profile={open}
+        initialSection={asked?.id === open.id ? asked.section : undefined}
         onBack={back}
         onSaved={setSelected}
       />
@@ -185,6 +193,8 @@ type ProfileViewProps = {
   data: Profiles;
   /** profile is the one edited; absent, the view creates one. */
   profile?: Profile;
+  /** initialSection is the editor's first tab. */
+  initialSection?: EditorSection | undefined;
   onBack: () => void;
   /** onSaved receives the id of the profile saved, which the view shows next. */
   onSaved: (id: string) => void;
@@ -198,13 +208,14 @@ function emptyDraft(): Draft {
       chat_prompt: null,
       instructions: null,
       context_files: null,
+      preserve_thinking: null,
       sampling: {},
     },
     null,
   );
 }
 
-function ProfileView({ data, profile, onBack, onSaved }: ProfileViewProps) {
+function ProfileView({ data, profile, initialSection, onBack, onSaved }: ProfileViewProps) {
   const create = useCreateProfile();
   const update = useUpdateProfile();
   const remove = useDeleteProfile();
@@ -293,11 +304,12 @@ function ProfileView({ data, profile, onBack, onSaved }: ProfileViewProps) {
           prompts={data.prompts}
           kind="profile"
           problems={problems}
+          initialSection={initialSection}
         />
       )}
       {problems.length > 0 && (
         <Notice tone="error">
-          Some sampling parameters are not numbers; see the Sampling tab.
+          Some parameters are not numbers; the tabs marked with a count hold them.
         </Notice>
       )}
       {saveError && (

@@ -1,36 +1,55 @@
 - tabpanel "Tools":
   - paragraph: A chat has no workspace, so the model can use only the tools below. A change applies from the next message.
-  - list "Tools in this chat":
-    - listitem:
-      - text: ask_user
-      - paragraph: Ask the user a question and wait for the answer.
-      - switch "ask_user" [checked]
-    - listitem:
-      - text: mcp_list_resources
-      - paragraph: List the resources the MCP servers of this run offer.
-      - switch "mcp_list_resources" [checked]
-    - listitem:
-      - text: mcp_read_resource
-      - paragraph: Read one resource of an MCP server by its URI.
-      - switch "mcp_read_resource" [checked]
-    - listitem:
-      - text: web_fetch
-      - paragraph: Fetch a web page or file by URL and return its content as Markdown.
-      - switch "web_fetch" [checked]
-    - listitem:
-      - text: web_search
-      - paragraph: Search the web, Wikipedia, arXiv or GitHub.
-      - switch "web_search" [checked]
-  - heading "MCP server github" [level=3]
-  - list "Tools of github":
-    - listitem:
-      - text: create_issue
-      - paragraph: Open an issue in a repository.
-      - switch "mcp__github__create_issue" [checked]
-    - listitem:
-      - text: search_issues
-      - paragraph: Search issues and pull requests across GitHub.
-      - switch "mcp__github__search_issues"
+  - text: Tools in this chat set here
+  - button "Reset the chat's tools to its profile's"
+  - searchbox "Search the tools"
+  - paragraph: /6 of 7 on · ~\d+ tokens a request/
+  - region "Built-in tools":
+    - heading "Built-in" [level=4]
+    - text: 5/5
+    - button "All built-in tools"
+    - button "None of the built-in tools"
+    - list:
+      - listitem:
+        - switch "ask_user" [checked]
+        - text: ask_user
+        - paragraph: Ask the user a question and wait for the answer.
+        - text: /~\d+/
+      - listitem:
+        - switch "mcp_list_resources" [checked]
+        - text: mcp_list_resources
+        - paragraph: List the resources the MCP servers of this run offer.
+        - text: /~\d+/
+      - listitem:
+        - switch "mcp_read_resource" [checked]
+        - text: mcp_read_resource
+        - paragraph: Read one resource of an MCP server by its URI.
+        - text: /~\d+/
+      - listitem:
+        - switch "web_fetch" [checked]
+        - text: web_fetch
+        - paragraph: Fetch a web page or file by URL and return its content as Markdown.
+        - text: /~\d+/
+      - listitem:
+        - switch "web_search" [checked]
+        - text: web_search
+        - paragraph: Search the web, Wikipedia, arXiv or GitHub.
+        - text: /~\d+/
+  - region "Tools of github":
+    - heading "github" [level=4]
+    - text: MCP 1/2 Whole server
+    - switch "Every tool of github, and any it adds"
+    - list:
+      - listitem:
+        - switch "mcp__github__create_issue" [checked]
+        - text: create_issue
+        - paragraph: Open an issue in a repository.
+        - text: /~\d+/
+      - listitem:
+        - switch "mcp__github__search_issues"
+        - text: search_issues
+        - paragraph: Search issues and pull requests across GitHub.
+        - text: /~\d+/
   - heading "Need a workspace" [level=3]
   - paragraph: "Files, commands, and child agents belong to a workspace session: bash, list_agents, spawn_agent, wait_agents."
   - paragraph: "So do the MCP servers that run as a command in the workspace: filesystem."

@@ -172,6 +172,8 @@ export type Tool = {
    * and for the resource tools, which reach every server of a run.
    */
   server?: string;
+  /** tokens is the estimated size of the tool's definition, which offering it costs every request. */
+  tokens: number;
 };
 
 /** CreateSession opens a session in a workspace, or a chat in none. */
@@ -915,6 +917,8 @@ export type ProfileSettings = {
   chat_prompt: string | null;
   instructions: string | null;
   context_files: boolean | null;
+  /** preserve_thinking replays earlier reasoning to the model, over the model's own switch. */
+  preserve_thinking: boolean | null;
   sampling: Sampling;
 };
 
@@ -929,6 +933,7 @@ export type Configuration = {
   chat_prompt: string;
   instructions: string;
   context_files: boolean;
+  preserve_thinking: boolean;
   /** tools is the tool choice; null is every tool the session can run. */
   tools: string[] | null;
   sampling: Sampling;
@@ -936,7 +941,7 @@ export type Configuration = {
   dropped_effort?: string;
   /**
    * sources names the layer of each value: profile, model, workspace_prompt,
-   * chat_prompt, instructions, context_files, tools, and
+   * chat_prompt, instructions, context_files, preserve_thinking, tools, and
    * `sampling.<parameter>` for each parameter sent.
    */
   sources: Record<string, ConfigLayer> | null;
@@ -1048,6 +1053,8 @@ export type ModelContext = {
   tools: ToolSchema[] | null;
   messages: Message[] | null;
   message_tokens: number;
+  /** message_sizes is the estimated size of each message, in order. */
+  message_sizes: number[] | null;
   parameters: RequestParameters;
   /** sources names the layer of each parameter: model, thinking_switch, preserve_thinking, sampling.<name>. */
   sources: Record<string, ConfigLayer> | null;
@@ -1059,6 +1066,8 @@ export type ModelContext = {
   context_files_unread?: string;
   /** request is the record this is; absent for the next request. */
   request?: ModelRequest;
+  /** context_window is the model's window in tokens; 0 when the model is not known. */
+  context_window: number;
   /** calibration is a measured call to scale the estimates to. */
   calibration?: { request_id: string; input_tokens: number; estimated_tokens: number };
 };

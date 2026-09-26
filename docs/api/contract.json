@@ -450,6 +450,7 @@
                       "instructions": "string",
                       "model": "string",
                       "model_id": "string",
+                      "preserve_thinking": "boolean",
                       "profile_id": "string",
                       "profile_name": "string",
                       "sampling": {
@@ -501,6 +502,9 @@
                   },
                   "model_id": "string",
                   "name": "string",
+                  "preserve_thinking": {
+                    "nullable": "boolean"
+                  },
                   "sampling": {
                     "object": {
                       "frequency_penalty": "number",
@@ -564,6 +568,7 @@
           "instructions": "string",
           "model": "string",
           "model_id": "string",
+          "preserve_thinking": "boolean",
           "profile_id": "string",
           "profile_name": "string",
           "sampling": {
@@ -994,6 +999,7 @@
               "instructions": "string",
               "model": "string",
               "model_id": "string",
+              "preserve_thinking": "boolean",
               "profile_id": "string",
               "profile_name": "string",
               "sampling": {
@@ -1052,6 +1058,9 @@
                 "nullable": "string"
               },
               "model_id": "string",
+              "preserve_thinking": {
+                "nullable": "boolean"
+              },
               "sampling": {
                 "object": {
                   "frequency_penalty": "number",
@@ -1097,6 +1106,7 @@
               "instructions": "string",
               "model": "string",
               "model_id": "string",
+              "preserve_thinking": "boolean",
               "profile_id": "string",
               "profile_name": "string",
               "sampling": {
@@ -1167,7 +1177,13 @@
             }
           },
           "context_files_unread": "string",
+          "context_window": "number",
           "dropped_effort": "string",
+          "message_sizes": {
+            "nullable": {
+              "array": "number"
+            }
+          },
           "message_tokens": "number",
           "messages": {
             "nullable": {
@@ -1594,7 +1610,13 @@
             }
           },
           "context_files_unread": "string",
+          "context_window": "number",
           "dropped_effort": "string",
+          "message_sizes": {
+            "nullable": {
+              "array": "number"
+            }
+          },
           "message_tokens": "number",
           "messages": {
             "nullable": {
@@ -1930,7 +1952,8 @@
                   "description": "string",
                   "name": "string",
                   "needs_workspace": "boolean",
-                  "server": "string"
+                  "server": "string",
+                  "tokens": "number"
                 },
                 "optional": [
                   "server"
@@ -2803,6 +2826,7 @@
           "instructions": "string",
           "model_id": "string",
           "name": "string",
+          "preserve_thinking": "boolean",
           "sampling": {
             "object": {
               "frequency_penalty": "number",
@@ -2844,6 +2868,7 @@
               "instructions": "string",
               "model": "string",
               "model_id": "string",
+              "preserve_thinking": "boolean",
               "profile_id": "string",
               "profile_name": "string",
               "sampling": {
@@ -2895,6 +2920,9 @@
           },
           "model_id": "string",
           "name": "string",
+          "preserve_thinking": {
+            "nullable": "boolean"
+          },
           "sampling": {
             "object": {
               "frequency_penalty": "number",
@@ -3446,6 +3474,7 @@
           "instructions": "string",
           "model_id": "string",
           "name": "string",
+          "preserve_thinking": "boolean",
           "sampling": {
             "object": {
               "frequency_penalty": "number",
@@ -3487,6 +3516,7 @@
               "instructions": "string",
               "model": "string",
               "model_id": "string",
+              "preserve_thinking": "boolean",
               "profile_id": "string",
               "profile_name": "string",
               "sampling": {
@@ -3538,6 +3568,9 @@
           },
           "model_id": "string",
           "name": "string",
+          "preserve_thinking": {
+            "nullable": "boolean"
+          },
           "sampling": {
             "object": {
               "frequency_penalty": "number",
@@ -3617,6 +3650,7 @@
           "context_files": "boolean",
           "instructions": "string",
           "model_id": "string",
+          "preserve_thinking": "boolean",
           "sampling": {
             "object": {
               "frequency_penalty": "number",
@@ -3646,6 +3680,7 @@
               "instructions": "string",
               "model": "string",
               "model_id": "string",
+              "preserve_thinking": "boolean",
               "profile_id": "string",
               "profile_name": "string",
               "sampling": {
@@ -3704,6 +3739,9 @@
                 "nullable": "string"
               },
               "model_id": "string",
+              "preserve_thinking": {
+                "nullable": "boolean"
+              },
               "sampling": {
                 "object": {
                   "frequency_penalty": "number",
@@ -3749,6 +3787,7 @@
               "instructions": "string",
               "model": "string",
               "model_id": "string",
+              "preserve_thinking": "boolean",
               "profile_id": "string",
               "profile_name": "string",
               "sampling": {
@@ -3824,6 +3863,7 @@
               "instructions": "string",
               "model": "string",
               "model_id": "string",
+              "preserve_thinking": "boolean",
               "profile_id": "string",
               "profile_name": "string",
               "sampling": {
@@ -3882,6 +3922,9 @@
                 "nullable": "string"
               },
               "model_id": "string",
+              "preserve_thinking": {
+                "nullable": "boolean"
+              },
               "sampling": {
                 "object": {
                   "frequency_penalty": "number",
@@ -3927,6 +3970,7 @@
               "instructions": "string",
               "model": "string",
               "model_id": "string",
+              "preserve_thinking": "boolean",
               "profile_id": "string",
               "profile_name": "string",
               "sampling": {

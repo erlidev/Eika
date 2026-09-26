@@ -118,8 +118,10 @@ type Context struct {
 	// metrics, and reasoning only when PreserveThinking replays it.
 	Messages []provider.Message `json:"messages"`
 	// MessageTokens is the estimated size of Messages.
-	MessageTokens int        `json:"message_tokens"`
-	Parameters    Parameters `json:"parameters"`
+	MessageTokens int `json:"message_tokens"`
+	// MessageSizes is the estimated size of each of Messages, in order.
+	MessageSizes []int      `json:"message_sizes"`
+	Parameters   Parameters `json:"parameters"`
 }
 
 // System returns the system prompt the sections make.
@@ -165,11 +167,12 @@ func (a *Agent) Preview(ctx context.Context, s *Session) (Context, error) {
 }
 
 // WithMessages returns c with msgs as its messages, prepared as a request
-// sends them, and MessageTokens estimated for them. A recorded model call
-// keeps no messages of its own; it is rebuilt with the session's path down
-// to the entry its conversation ended at.
+// sends them, and MessageTokens and MessageSizes estimated for them. A
+// recorded model call keeps no messages of its own; it is rebuilt with the
+// session's path down to the entry its conversation ended at.
 func (c Context) WithMessages(msgs []provider.Message) Context {
 	c.Messages = make([]provider.Message, 0, len(msgs))
+	c.MessageSizes = make([]int, 0, len(msgs))
 	c.MessageTokens = 0
 	for _, m := range msgs {
 		// Metrics belong to session replay, and reasoning goes back to the
@@ -179,8 +182,10 @@ func (c Context) WithMessages(msgs []provider.Message) Context {
 		if !c.Parameters.PreserveThinking {
 			m.Reasoning = ""
 		}
+		size := messageTokens(m)
 		c.Messages = append(c.Messages, m)
-		c.MessageTokens += messageTokens(m)
+		c.MessageSizes = append(c.MessageSizes, size)
+		c.MessageTokens += size
 	}
 	return c
 }
@@ -200,15 +205,16 @@ func (a *Agent) assemble(s *Session, prompt []Section) Context {
 	}
 	if a.tools != nil {
 		for _, def := range a.tools.Schemas() {
-			c.Tools = append(c.Tools, ToolSchema{ToolDef: def, Source: sourceOf(def.Name), Tokens: toolTokens(def)})
+			c.Tools = append(c.Tools, ToolSchema{ToolDef: def, Source: sourceOf(def.Name), Tokens: ToolTokens(def)})
 		}
 	}
 	return c.WithMessages(s.Conversation.Messages())
 }
 
-// toolTokens estimates the size of one tool definition as JSON. A schema
-// that is not valid JSON cannot be encoded; its text is estimated instead.
-func toolTokens(def provider.ToolDef) int {
+// ToolTokens estimates the size of one tool definition as JSON, as a
+// request sends it. A schema that is not valid JSON cannot be encoded; its
+// text is estimated instead.
+func ToolTokens(def provider.ToolDef) int {
 	data, err := json.Marshal(def)
 	if err != nil {
 		return EstimateTokens(def.Name + def.Description + string(def.Schema))

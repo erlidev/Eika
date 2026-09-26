@@ -176,7 +176,7 @@ a container, and a URL.
 | `settings` | key (primary), value (jsonb) | What the user changes at runtime |
 | `providers` | id, name (unique), kind, base_url, api_key (sealed), created_at, updated_at | A model provider: an endpoint of one provider kind and its key |
 | `models` | id, provider_id, name (unique), model, context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, created_at, updated_at | A model a run may use; `name` is Eika's, `model` the endpoint's, `reasoning_efforts` the words its effort cycles through, `thinking_switch` the request field that carries the effort `none` |
-| `profiles` | id, name (unique), description, model_id, workspace_prompt, chat_prompt, instructions, context_files, tools, sampling (jsonb), created_at, updated_at | A named configuration of what a run sends; NULL, and a sampling key left out, is not set |
+| `profiles` | id, name (unique), description, model_id, workspace_prompt, chat_prompt, instructions, context_files, preserve_thinking, tools, sampling (jsonb), created_at, updated_at | A named configuration of what a run sends; NULL, and a sampling key left out, is not set |
 | `model_requests` | id, session_id, run_id, entry_id, model_id, model, sections (jsonb), tools (jsonb), parameters (jsonb), message_tokens, input_tokens, output_tokens, total_tokens, created_at | One model call a run made: what it sent besides the messages, which are the session's path down to entry_id, and what the endpoint measured |
 | `auth_password` | id (always 1), hash, updated_at | The sign-in password as a PBKDF2 hash |
 | `auth_sessions` | token_hash, created_at, expires_at | A signed-in browser, by the SHA-256 of its token |
@@ -1084,15 +1084,27 @@ and the default one (`features/profiles`), the default model, the sandbox
 image, the subagent limits, the MCP servers (`features/mcp`), and the
 password.
 
-A profile's editor (`features/profiles/SettingsEditor`) has Prompt, Tools,
-and Sampling tabs. A field the profile leaves unset shows, muted, what it
-falls through to, from the `inherited` configuration the API returns with
-the layer it came from; a set field has a reset. The session's status bar
-shows its profile beside the model, marked when the session overrides it,
-and opens the same editor over the session's overrides, its profile, and
-its tool choice. Its open state is a small store, so the
-command palette, a session with no model, and the MCP sign-in's return open
-it on the right tab.
+A profile's editor (`features/profiles/SettingsEditor`) has Model, Prompt,
+Tools, and Sampling tabs under a strip that says what the draft costs every
+request before the conversation (the system prompt and the tool
+definitions, estimated as the harness estimates them). Every field's header
+carries a chip that says where its value comes from: set here, or the layer
+it falls through from, from the `inherited` configuration the API returns;
+an unset field shows that value, and a set one has a reset. Bounded
+sampling parameters have a slider beside the input, the reasoning effort and
+the on/off settings are segmented choices that outline the inherited value,
+stop sequences are chips, and a base prompt that differs from the built-in
+one shows the difference line by line. Tools are chosen with
+`features/profiles/ToolPicker`, a searchable switch per tool with its cost,
+grouped by MCP server; a chat's Tools panel uses the same picker over the
+session's own tool choice. The session's status bar shows its profile
+beside the model, marked when the session overrides it, and opens the same
+editor over the session's overrides, its profile, and its tool choice.
+Which editor is open, and on which tab, is a small store
+(`features/profiles/store.ts`), so the Context inspector's Edit links open
+the editor of the layer a value comes from; the settings dialog's open state
+is another, so the command palette, a session with no model, and the MCP
+sign-in's return open it on the right tab.
 
 The MCP tab lists the servers with their state and opens each on a page of
 its own: its connection and sign-in, a switch per tool, its resources and
@@ -1137,10 +1149,16 @@ workspace session adds the files, the terminal, and the changes; a chat has
 none of those and shows its Tools panel instead, the switches for the tools
 its runs may offer. Every session has a Context panel (`features/context`):
 the next model request, previewed live by the harness, or any recorded call,
-as a stacked token bar by part (base prompt, context files, instructions,
-built-in tools, MCP tools, messages) whose segments open their part, the
-schemas raw or pretty-printed, and the parameters sent with the layer each
-came from. The estimates are scaled to the session's last measured call.
+at a glance: how full the model's context window is, a stacked token bar by
+part (base prompt, context files, instructions, built-in tools, MCP tools,
+messages), and the key parameters. A part, or Inspect, opens the Context
+inspector, a large dialog with the parts in a column and the chosen one
+whole beside it: the system prompt section by section as the model reads it,
+each tool's description and parameter table (or its raw schema), every
+message with its size, and the parameters with the layer each came from.
+Each part of the next request links to the setting behind it, and the
+request copies as JSON. The estimates are scaled to the session's last
+measured call.
 The session header says which of the two is open: a
 workspace session names its workspace, branch, and state, and a chat carries a
 "Chat · no workspace" badge.

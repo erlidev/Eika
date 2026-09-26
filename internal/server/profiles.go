@@ -36,6 +36,9 @@ type profileSettingsBody struct {
 	ChatPrompt      *string `json:"chat_prompt"`
 	Instructions    *string `json:"instructions"`
 	ContextFiles    *bool   `json:"context_files"`
+	// PreserveThinking says whether earlier reasoning is replayed to the
+	// model, over the model's own switch.
+	PreserveThinking *bool `json:"preserve_thinking"`
 	// Sampling holds the sampling parameters set here.
 	Sampling provider.Sampling `json:"sampling"`
 }
@@ -439,12 +442,13 @@ func (s *Server) checkSettings(ctx context.Context, b profileSettingsBody) (stor
 		return store.ProfileSettings{}, err
 	}
 	return store.ProfileSettings{
-		ModelID:         b.ModelID,
-		WorkspacePrompt: b.WorkspacePrompt,
-		ChatPrompt:      b.ChatPrompt,
-		Instructions:    b.Instructions,
-		ContextFiles:    b.ContextFiles,
-		Sampling:        sampling,
+		ModelID:          b.ModelID,
+		WorkspacePrompt:  b.WorkspacePrompt,
+		ChatPrompt:       b.ChatPrompt,
+		Instructions:     b.Instructions,
+		ContextFiles:     b.ContextFiles,
+		PreserveThinking: b.PreserveThinking,
+		Sampling:         sampling,
 	}, nil
 }
 
@@ -486,11 +490,12 @@ func asProfile(p store.Profile, base configBase) (profileBody, error) {
 // asSettings renders stored settings on the wire.
 func asSettings(p store.ProfileSettings) (profileSettingsBody, error) {
 	body := profileSettingsBody{
-		ModelID:         p.ModelID,
-		WorkspacePrompt: p.WorkspacePrompt,
-		ChatPrompt:      p.ChatPrompt,
-		Instructions:    p.Instructions,
-		ContextFiles:    p.ContextFiles,
+		ModelID:          p.ModelID,
+		WorkspacePrompt:  p.WorkspacePrompt,
+		ChatPrompt:       p.ChatPrompt,
+		Instructions:     p.Instructions,
+		ContextFiles:     p.ContextFiles,
+		PreserveThinking: p.PreserveThinking,
 	}
 	if len(p.Sampling) > 0 {
 		if err := json.Unmarshal(p.Sampling, &body.Sampling); err != nil {

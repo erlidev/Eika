@@ -56,6 +56,7 @@ export function noSettings(): ProfileSettings {
     chat_prompt: null,
     instructions: null,
     context_files: null,
+    preserve_thinking: null,
     sampling: {},
   };
 }
@@ -76,6 +77,126 @@ export function defaultProfile(): StoredProfile {
 /** estimate is internal/agent's EstimateTokens: four bytes to a token. */
 export function estimate(text: string): number {
   return Math.ceil(new TextEncoder().encode(text).length / 4);
+}
+
+/** builtinSchemas are the parameter schemas of internal/tool/builtin's tools. */
+const builtinSchemas: Record<string, unknown> = {
+  ask_user: {
+    type: "object",
+    properties: {
+      question: { type: "string", description: "The question, as one sentence." },
+      options: {
+        type: "array",
+        items: { type: "string" },
+        description: "The answers to choose from. Omit for an open question.",
+      },
+      allow_free_text: {
+        type: "boolean",
+        description:
+          "Accept an answer outside the options. Defaults to false when options are given.",
+      },
+    },
+    required: ["question"],
+    additionalProperties: false,
+  },
+  bash: {
+    type: "object",
+    properties: {
+      command: { type: "string", description: "The command line to run with sh -c." },
+      timeout: {
+        type: "integer",
+        description: "Seconds to allow the command. Defaults to 120, maximum 600.",
+      },
+    },
+    required: ["command"],
+    additionalProperties: false,
+  },
+  list_agents: { type: "object", properties: {}, additionalProperties: false },
+  spawn_agent: {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "A short name for the child. It names its branch." },
+      task: { type: "string", description: "The whole task, as the child's first message." },
+      model: {
+        type: "string",
+        description: "The model the child runs on. Empty uses the default.",
+      },
+      wait: { type: "boolean", description: "Wait for the child to finish. Defaults to true." },
+    },
+    required: ["name", "task"],
+    additionalProperties: false,
+  },
+  wait_agents: {
+    type: "object",
+    properties: {
+      ids: {
+        type: "array",
+        items: { type: "string" },
+        description: "The agent ids spawn_agent returned.",
+      },
+    },
+    required: ["ids"],
+    additionalProperties: false,
+  },
+  web_fetch: {
+    type: "object",
+    properties: {
+      url: { type: "string", description: "Absolute http(s) URL." },
+      section: { type: "string", description: "Return only this section of the page." },
+      format: {
+        type: "string",
+        enum: ["markdown", "text", "raw"],
+        description: "markdown (default), text (markup stripped), or raw.",
+      },
+    },
+    required: ["url"],
+    additionalProperties: false,
+  },
+  web_search: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "Search query." },
+      source: {
+        type: "string",
+        enum: ["web", "wikipedia", "arxiv", "github_code", "github_repos", "github_issues"],
+        description: "Where to search. Defaults to web.",
+      },
+      count: {
+        type: "integer",
+        minimum: 1,
+        maximum: 25,
+        description: "Results to return, 1-25. Defaults to 10.",
+      },
+    },
+    required: ["query"],
+    additionalProperties: false,
+  },
+  mcp_list_resources: { type: "object", properties: {}, additionalProperties: false },
+  mcp_read_resource: {
+    type: "object",
+    properties: { uri: { type: "string", description: "The resource's URI." } },
+    required: ["uri"],
+    additionalProperties: false,
+  },
+};
+
+/** toolSchemaOf is the parameter schema a request sends for a tool: an MCP server's own, or a built-in one. */
+export function toolSchemaOf(w: World, name: string): unknown {
+  for (const d of w.mcpServers) {
+    const t = (d.tools ?? []).find((x) => x.exposed_name === name);
+    if (t) return t.input_schema;
+  }
+  return builtinSchemas[name] ?? { type: "object", properties: {} };
+}
+
+/** toolTokens is internal/agent's ToolTokens: the estimate of the definition as JSON. */
+export function toolTokens(name: string, description: string, schema: unknown): number {
+  return estimate(JSON.stringify({ name, description, schema }));
+}
+
+/** builtinToolTokens sizes a built-in tool, whose schema is fixed. */
+export function builtinToolTokens(name: string, description: string): number {
+  return toolTokens(name, description, builtinSchemas[name] ?? { type: "object", properties: {} });
 }
 
 type Layer = { name: ConfigLayer; settings: ProfileSettings; tools: string[] | null };
@@ -117,6 +238,7 @@ function resolve(
     chat_prompt: "default",
     instructions: "default",
     context_files: "default",
+    preserve_thinking: "default",
     tools: "default",
   };
   const config: Configuration = {
@@ -128,10 +250,12 @@ function resolve(
     chat_prompt: builtinPrompts.chat,
     instructions: "",
     context_files: true,
+    preserve_thinking: false,
     tools: null,
     sampling: {},
     sources,
   };
+  let preserve: boolean | null = null;
   for (const l of layers.toReversed()) {
     const s = l.settings;
     const named = w.models.find((m) => m.id === s.model_id);
@@ -143,8 +267,13 @@ function resolve(
       [config.instructions, sources.instructions] = [s.instructions, l.name];
     if (s.context_files !== null)
       [config.context_files, sources.context_files] = [s.context_files, l.name];
+    if (s.preserve_thinking !== null)
+      [preserve, sources.preserve_thinking] = [s.preserve_thinking, l.name];
     if (l.tools !== null) [config.tools, sources.tools] = [l.tools, l.name];
   }
+  if (preserve !== null) config.preserve_thinking = preserve;
+  else if (model)
+    [config.preserve_thinking, sources.preserve_thinking] = [model.preserve_thinking, "model"];
   const row: Sampling = {};
   if (model) {
     row.max_output = model.max_output;
@@ -328,6 +457,7 @@ export function settingsOf(body: Record<string, unknown>): ProfileSettings {
     chat_prompt: text(body.chat_prompt),
     instructions: text(body.instructions),
     context_files: typeof body.context_files === "boolean" ? body.context_files : null,
+    preserve_thinking: typeof body.preserve_thinking === "boolean" ? body.preserve_thinking : null,
     sampling,
   };
 }
@@ -382,19 +512,16 @@ export function previewContext(w: World, session: Session, requested: string): M
   const tools: ToolSchema[] = w.tools
     .filter((t) => session.tools.includes(t.name))
     .map((t) => {
-      const schema = {
-        type: "object",
-        properties: t.name === "bash" ? { command: { type: "string" } } : {},
-      };
+      const schema = toolSchemaOf(w, t.name);
       return {
         name: t.name,
         description: t.description,
         schema,
         source: t.name.startsWith("mcp_") ? ("mcp" as const) : ("builtin" as const),
-        tokens: estimate(JSON.stringify({ name: t.name, description: t.description, schema })),
+        tokens: toolTokens(t.name, t.description, schema),
       };
     });
-  const preserve = model?.preserve_thinking ?? false;
+  const preserve = config.preserve_thinking;
   const messages: Message[] = pathOf(w, session)
     .map((e) => e.message)
     .filter((m) => m.role !== "system")
@@ -404,17 +531,22 @@ export function previewContext(w: World, session: Session, requested: string): M
       if (!preserve) delete sent.reasoning;
       return sent;
     });
-  const sources: Record<string, ConfigLayer> = { model: config.sources?.model ?? "default" };
+  const sources: Record<string, ConfigLayer> = {
+    model: config.sources?.model ?? "default",
+    preserve_thinking: config.sources?.preserve_thinking ?? "default",
+  };
   for (const [key, layer] of Object.entries(config.sources ?? {})) {
     if (key.startsWith("sampling.")) sources[key] = layer;
   }
-  if (model) [sources.thinking_switch, sources.preserve_thinking] = ["model", "model"];
+  if (model) sources.thinking_switch = "model";
   const last = (w.requests[session.id] ?? []).findLast((r) => r.record.input_tokens > 0);
+  const sizes = messages.map((m) => estimate(JSON.stringify(m)));
   return {
     sections,
     tools,
     messages,
-    message_tokens: messages.reduce((n, m) => n + estimate(JSON.stringify(m)), 0),
+    message_tokens: sizes.reduce((n, size) => n + size, 0),
+    message_sizes: sizes,
     parameters: {
       model: model?.model ?? "",
       sampling: config.sampling,
@@ -425,6 +557,7 @@ export function previewContext(w: World, session: Session, requested: string): M
     ...(config.dropped_effort === undefined ? {} : { dropped_effort: config.dropped_effort }),
     ...(unread === undefined ? {} : { context_files_unread: unread }),
     ...(last ? { calibration: calibration(last) } : {}),
+    context_window: model?.context_window ?? 0,
   };
 }
 

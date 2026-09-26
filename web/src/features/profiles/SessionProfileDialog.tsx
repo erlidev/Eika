@@ -4,7 +4,7 @@
  * editor the settings use, over what the session sets for itself.
  */
 
-import { SlidersHorizontal } from "lucide-react";
+import { ExternalLink, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 
 import type { SessionConfiguration, Profiles } from "@/api/types";
@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toDraft, toSettings } from "@/features/profiles/form";
-import type { Draft, SamplingProblem } from "@/features/profiles/form";
+import type { Draft, EditorSection, SamplingProblem } from "@/features/profiles/form";
 import {
   useDraftConfiguration,
   useProfiles,
@@ -34,6 +34,7 @@ import {
   useSessionConfiguration,
 } from "@/features/profiles/queries";
 import { SettingsEditor } from "@/features/profiles/SettingsEditor";
+import { useConfigEditor } from "@/features/profiles/store";
 import { cn } from "@/lib/utils";
 
 export type SessionProfileProps = {
@@ -50,7 +51,10 @@ export type SessionProfileProps = {
  */
 export function SessionProfile({ sessionId, chat, overridden }: SessionProfileProps) {
   const config = useSessionConfiguration(sessionId);
-  const [open, setOpen] = useState(false);
+  const target = useConfigEditor((s) => s.session);
+  const editSession = useConfigEditor((s) => s.editSession);
+  const closeSession = useConfigEditor((s) => s.closeSession);
+  const open = target?.id === sessionId;
   const name = config.data?.resolved.profile_name ?? "Profile";
   return (
     <>
@@ -67,14 +71,19 @@ export function SessionProfile({ sessionId, chat, overridden }: SessionProfilePr
           "focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none",
         )}
         onClick={() => {
-          setOpen(true);
+          editSession(sessionId, "model");
         }}
       >
         <SlidersHorizontal aria-hidden className="size-3" />
         <span className="max-w-32 truncate">{name}</span>
         {overridden && <span aria-hidden className="bg-primary size-1.5 rounded-full" />}
       </button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) closeSession();
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>This session&apos;s configuration</DialogTitle>
@@ -87,9 +96,8 @@ export function SessionProfile({ sessionId, chat, overridden }: SessionProfilePr
             <SessionSettings
               sessionId={sessionId}
               chat={chat}
-              onDone={() => {
-                setOpen(false);
-              }}
+              initialSection={target.section}
+              onDone={closeSession}
             />
           )}
         </DialogContent>
@@ -101,10 +109,11 @@ export function SessionProfile({ sessionId, chat, overridden }: SessionProfilePr
 type SessionSettingsProps = {
   sessionId: string;
   chat: boolean;
+  initialSection: EditorSection;
   onDone: () => void;
 };
 
-function SessionSettings({ sessionId, chat, onDone }: SessionSettingsProps) {
+function SessionSettings({ sessionId, chat, initialSection, onDone }: SessionSettingsProps) {
   const config = useSessionConfiguration(sessionId);
   const profiles = useProfiles();
   if (config.isPending || profiles.isPending) {
@@ -130,6 +139,7 @@ function SessionSettings({ sessionId, chat, onDone }: SessionSettingsProps) {
       chat={chat}
       config={config.data}
       profiles={profiles.data}
+      initialSection={initialSection}
       onDone={onDone}
     />
   );
@@ -140,6 +150,7 @@ type SessionSettingsFormProps = {
   chat: boolean;
   config: SessionConfiguration;
   profiles: Profiles;
+  initialSection: EditorSection;
   onDone: () => void;
 };
 
@@ -151,9 +162,11 @@ function SessionSettingsForm({
   chat,
   config,
   profiles,
+  initialSection,
   onDone,
 }: SessionSettingsFormProps) {
   const save = useSaveSessionSettings(sessionId);
+  const editProfile = useConfigEditor((s) => s.editProfile);
   const [profileId, setProfileId] = useState(config.profile_id ?? "");
   const [draft, setDraft] = useState<Draft>(() => toDraft(config.overrides, config.tools));
   const [problems, setProblems] = useState<SamplingProblem[]>([]);
@@ -184,7 +197,20 @@ function SessionSettingsForm({
       }}
     >
       <div className="space-y-1.5">
-        <Label htmlFor="session-profile">Profile</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="session-profile">Profile</Label>
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={() => {
+              editProfile(profileId === "" ? profiles.default : profileId, "model");
+            }}
+          >
+            <ExternalLink aria-hidden />
+            Edit the profile
+          </Button>
+        </div>
         <Select
           value={profileId === "" ? defaultChoice : profileId}
           onValueChange={(value) => {
@@ -214,10 +240,11 @@ function SessionSettingsForm({
         prompts={profiles.prompts}
         kind={chat ? "chat" : "workspace"}
         problems={problems}
+        initialSection={initialSection}
       />
       {problems.length > 0 && (
         <Notice tone="error">
-          Some sampling parameters are not numbers; see the Sampling tab.
+          Some parameters are not numbers; the tabs marked with a count hold them.
         </Notice>
       )}
       {save.isError && <ActionError action="save the session's configuration" error={save.error} />}

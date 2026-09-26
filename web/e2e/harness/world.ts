@@ -6,7 +6,13 @@
  */
 
 import type { EikaEvent } from "../../src/api/events.ts";
-import { defaultProfile, previewContext, record } from "./profiles.ts";
+import {
+  builtinToolTokens,
+  defaultProfile,
+  previewContext,
+  record,
+  toolTokens,
+} from "./profiles.ts";
 import type { RecordedRequest, StoredProfile } from "./profiles.ts";
 import type {
   ContentDetail,
@@ -245,6 +251,7 @@ function toolCatalog(): Tool[] {
     name,
     description,
     needs_workspace: needsWorkspace,
+    tokens: builtinToolTokens(name, description),
   });
   return [
     tool("ask_user", "Ask the user a question and wait for the answer.", false),
@@ -536,6 +543,7 @@ export function syncMCPTools(world: World): void {
           description: t.description ?? "",
           needs_workspace: d.server.kind === "stdio",
           server: d.server.name,
+          tokens: toolTokens(t.exposed_name, t.description ?? "", t.input_schema),
         })),
     );
   const resources = world.mcpServers.some((d) => d.server.enabled && (d.resources ?? []).length > 0)
@@ -544,11 +552,19 @@ export function syncMCPTools(world: World): void {
           name: "mcp_list_resources",
           description: "List the resources the MCP servers of this run offer.",
           needs_workspace: false,
+          tokens: builtinToolTokens(
+            "mcp_list_resources",
+            "List the resources the MCP servers of this run offer.",
+          ),
         },
         {
           name: "mcp_read_resource",
           description: "Read one resource of an MCP server by its URI.",
           needs_workspace: false,
+          tokens: builtinToolTokens(
+            "mcp_read_resource",
+            "Read one resource of an MCP server by its URI.",
+          ),
         },
       ]
     : [];

@@ -31,6 +31,9 @@ type ProfileSettings struct {
 	Instructions *string `json:"instructions,omitempty"`
 	// ContextFiles says whether the workspace's context files are read.
 	ContextFiles *bool `json:"context_files,omitempty"`
+	// PreserveThinking says whether earlier reasoning is replayed to the
+	// model, over the model row's own switch.
+	PreserveThinking *bool `json:"preserve_thinking,omitempty"`
 	// Sampling is the JSON object of a provider.Sampling, whose keys are the
 	// parameters set here. The store keeps it as it is given, except that
 	// an object with no keys reads back as nil: nil sets none.
@@ -40,7 +43,7 @@ type ProfileSettings struct {
 // Empty reports whether the settings set nothing.
 func (p ProfileSettings) Empty() bool {
 	return p.ModelID == "" && p.WorkspacePrompt == nil && p.ChatPrompt == nil && p.Instructions == nil &&
-		p.ContextFiles == nil && (len(p.Sampling) == 0 || string(p.Sampling) == "{}")
+		p.ContextFiles == nil && p.PreserveThinking == nil && (len(p.Sampling) == 0 || string(p.Sampling) == "{}")
 }
 
 // Profile is a named configuration of what a run sends. The migration
@@ -62,7 +65,7 @@ type Profile struct {
 // profileColumns is the column list every profile query selects, in the
 // order scanProfile reads them.
 const profileColumns = `id, name, description, model_id, workspace_prompt, chat_prompt, instructions,
-	context_files, tools, sampling, created_at, updated_at`
+	context_files, preserve_thinking, tools, sampling, created_at, updated_at`
 
 // CreateProfile inserts p and returns it as stored. An empty ID gets a fresh
 // one; a name another profile has is ErrConflict and an unknown model is
@@ -72,11 +75,12 @@ func (s *Store) CreateProfile(ctx context.Context, p Profile) (Profile, error) {
 		p.ID = NewID()
 	}
 	const q = `INSERT INTO profiles (id, name, description, model_id, workspace_prompt, chat_prompt,
-			instructions, context_files, tools, sampling)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			instructions, context_files, preserve_thinking, tools, sampling)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING ` + profileColumns
 	out, err := scanProfile(s.pool.QueryRow(ctx, q, p.ID, p.Name, p.Description, nullable(p.ModelID),
-		p.WorkspacePrompt, p.ChatPrompt, p.Instructions, p.ContextFiles, p.Tools, jsonObject(p.Sampling)))
+		p.WorkspacePrompt, p.ChatPrompt, p.Instructions, p.ContextFiles, p.PreserveThinking, p.Tools,
+		jsonObject(p.Sampling)))
 	if err != nil {
 		return Profile{}, wrapMissing("create profile "+p.Name, err)
 	}
@@ -119,12 +123,13 @@ func (s *Store) Profiles(ctx context.Context) ([]Profile, error) {
 // unknown model is ErrNotFound.
 func (s *Store) UpdateProfile(ctx context.Context, p Profile) (Profile, error) {
 	const q = `UPDATE profiles SET name = $2, description = $3, model_id = $4, workspace_prompt = $5,
-			chat_prompt = $6, instructions = $7, context_files = $8, tools = $9, sampling = $10,
-			updated_at = now()
+			chat_prompt = $6, instructions = $7, context_files = $8, preserve_thinking = $9, tools = $10,
+			sampling = $11, updated_at = now()
 		WHERE id = $1
 		RETURNING ` + profileColumns
 	out, err := scanProfile(s.pool.QueryRow(ctx, q, p.ID, p.Name, p.Description, nullable(p.ModelID),
-		p.WorkspacePrompt, p.ChatPrompt, p.Instructions, p.ContextFiles, p.Tools, jsonObject(p.Sampling)))
+		p.WorkspacePrompt, p.ChatPrompt, p.Instructions, p.ContextFiles, p.PreserveThinking, p.Tools,
+		jsonObject(p.Sampling)))
 	if err != nil {
 		return Profile{}, wrapMissing("update profile "+p.ID, err)
 	}
@@ -259,7 +264,7 @@ func scanProfile(row pgx.Row) (Profile, error) {
 		sampling []byte
 	)
 	err := row.Scan(&p.ID, &p.Name, &p.Description, &model, &p.WorkspacePrompt, &p.ChatPrompt,
-		&p.Instructions, &p.ContextFiles, &p.Tools, &sampling, &p.CreatedAt, &p.UpdatedAt)
+		&p.Instructions, &p.ContextFiles, &p.PreserveThinking, &p.Tools, &sampling, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return Profile{}, err
 	}

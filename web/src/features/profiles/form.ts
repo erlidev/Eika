@@ -13,36 +13,118 @@ import type {
   Tool,
 } from "@/api/types";
 
+/** EditorSection names one tab of the configuration editor. */
+export type EditorSection = "model" | "prompt" | "tools" | "sampling";
+
+/**
+ * SliderRange is the range a bounded parameter's slider covers, the step it
+ * moves by, and where its thumb rests while no layer sets the parameter:
+ * the value endpoints commonly default to.
+ */
+export type SliderRange = { min: number; max: number; step: number; rest: number };
+
 /**
  * SamplingField describes one sampling parameter's control: what kind of
- * number or text it takes and the range the harness accepts.
+ * number or text it takes, the range the harness accepts, and which tab of
+ * the editor shows it.
  */
 export type SamplingField = {
   key: SamplingKey;
   label: string;
   kind: "decimal" | "integer" | "text" | "list";
-  /** hint says what the harness accepts, beside the control. */
+  /** hint says what the harness accepts, or what the parameter does, beside the control. */
   hint: string;
+  /** section is the tab the parameter is edited on. */
+  section: "model" | "sampling";
+  /** range gives a bounded parameter a slider beside its input. */
+  range?: SliderRange;
 };
 
 /** samplingFields are the sampling parameters in the order the editor shows them. */
 export const samplingFields: readonly SamplingField[] = [
-  { key: "temperature", label: "Temperature", kind: "decimal", hint: "0 to 2" },
-  { key: "top_p", label: "Top p", kind: "decimal", hint: "0 to 1" },
-  { key: "top_k", label: "Top k", kind: "integer", hint: "at least 1" },
-  { key: "min_p", label: "Min p", kind: "decimal", hint: "0 to 1" },
-  { key: "frequency_penalty", label: "Frequency penalty", kind: "decimal", hint: "-2 to 2" },
-  { key: "presence_penalty", label: "Presence penalty", kind: "decimal", hint: "-2 to 2" },
-  { key: "seed", label: "Seed", kind: "integer", hint: "any whole number" },
-  { key: "max_output", label: "Max output tokens", kind: "integer", hint: "at least 1" },
+  {
+    key: "temperature",
+    label: "Temperature",
+    kind: "decimal",
+    hint: "Randomness: 0 is nearly deterministic, higher is more varied.",
+    section: "sampling",
+    range: { min: 0, max: 2, step: 0.05, rest: 1 },
+  },
+  {
+    key: "top_p",
+    label: "Top p",
+    kind: "decimal",
+    hint: "Sample only from the likeliest tokens that sum to this probability.",
+    section: "sampling",
+    range: { min: 0, max: 1, step: 0.01, rest: 1 },
+  },
+  {
+    key: "min_p",
+    label: "Min p",
+    kind: "decimal",
+    hint: "Drop tokens less likely than this share of the likeliest one.",
+    section: "sampling",
+    range: { min: 0, max: 1, step: 0.01, rest: 0 },
+  },
+  {
+    key: "frequency_penalty",
+    label: "Frequency penalty",
+    kind: "decimal",
+    hint: "Discourage repeating a token by how often it appeared.",
+    section: "sampling",
+    range: { min: -2, max: 2, step: 0.05, rest: 0 },
+  },
+  {
+    key: "presence_penalty",
+    label: "Presence penalty",
+    kind: "decimal",
+    hint: "Discourage any token that already appeared.",
+    section: "sampling",
+    range: { min: -2, max: 2, step: 0.05, rest: 0 },
+  },
+  {
+    key: "top_k",
+    label: "Top k",
+    kind: "integer",
+    hint: "Sample from this many likeliest tokens; at least 1.",
+    section: "sampling",
+  },
+  {
+    key: "seed",
+    label: "Seed",
+    kind: "integer",
+    hint: "Any whole number, for repeatable samples where the endpoint supports it.",
+    section: "sampling",
+  },
+  {
+    key: "stop",
+    label: "Stop sequences",
+    kind: "list",
+    hint: "Text that ends the answer when the model writes it.",
+    section: "sampling",
+  },
+  {
+    key: "max_output",
+    label: "Max output tokens",
+    kind: "integer",
+    hint: "The most a single answer may be; at least 1.",
+    section: "model",
+  },
   {
     key: "reasoning_effort",
     label: "Reasoning effort",
     kind: "text",
-    hint: "a word the model offers",
+    hint: "How long the model thinks before it answers.",
+    section: "model",
   },
-  { key: "stop", label: "Stop sequences", kind: "list", hint: "one per line" },
 ];
+
+/** samplingField is the field of one parameter. */
+export function samplingField(key: SamplingKey): SamplingField {
+  const field = samplingFields.find((f) => f.key === key);
+  if (field === undefined) throw new Error(`no sampling field ${key}`);
+  return field;
+}
 
 /**
  * Draft is what the editor holds: the layer's settings with each sampling
@@ -54,6 +136,7 @@ export type Draft = {
   chat_prompt: string | null;
   instructions: string | null;
   context_files: boolean | null;
+  preserve_thinking: boolean | null;
   sampling: Record<SamplingKey, string>;
   /** tools is the choice, null for none made at this layer. */
   tools: string[] | null;
@@ -77,6 +160,7 @@ export function toDraft(settings: ProfileSettings, tools: string[] | null): Draf
     chat_prompt: settings.chat_prompt,
     instructions: settings.instructions,
     context_files: settings.context_files,
+    preserve_thinking: settings.preserve_thinking,
     sampling,
     tools: tools === null ? null : [...tools],
   };
@@ -140,6 +224,7 @@ export function toSettings(
       chat_prompt: draft.chat_prompt,
       instructions: draft.instructions,
       context_files: draft.context_files,
+      preserve_thinking: draft.preserve_thinking,
       sampling,
     },
     problems: [],
@@ -187,6 +272,7 @@ export function isSet(draft: Draft): boolean {
     draft.chat_prompt !== null ||
     draft.instructions !== null ||
     draft.context_files !== null ||
+    draft.preserve_thinking !== null ||
     draft.tools !== null ||
     Object.values(draft.sampling).some((text) => text.trim() !== "")
   );
@@ -305,4 +391,62 @@ export function promptChange(builtin: string, text: string): PromptChange {
   const added = after.filter((line) => !before.includes(line)).length;
   const removed = before.filter((line) => !after.includes(line)).length;
   return { same: builtin === text, added, removed };
+}
+
+/**
+ * problemSections are the editor's tabs that hold a problem, with how many
+ * each holds, so a tab can show a count.
+ */
+export function problemSections(
+  problems: readonly SamplingProblem[],
+): Partial<Record<EditorSection, number>> {
+  const out: Partial<Record<EditorSection, number>> = {};
+  for (const p of problems) {
+    const section = samplingField(p.key).section;
+    out[section] = (out[section] ?? 0) + 1;
+  }
+  return out;
+}
+
+/** toolsTokens is what offering the tools a choice takes costs every request. */
+export function toolsTokens(groups: ToolGroups, choice: readonly string[] | null): number {
+  const all = [...groups.builtin, ...groups.servers.flatMap((s) => s.tools)];
+  return all.filter((t) => chosen(choice, t)).reduce((n, t) => n + t.tokens, 0);
+}
+
+/**
+ * matchesTool reports whether a tool matches what a search box holds: its
+ * name or description contains every word, ignoring case.
+ */
+export function matchesTool(tool: Tool, query: string): boolean {
+  const words = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w !== "");
+  const text = `${tool.name} ${tool.description}`.toLowerCase();
+  return words.every((w) => text.includes(w));
+}
+
+/**
+ * sliderPosition is where a bounded parameter's thumb sits: at the value
+ * the control holds, else at the one it falls through to, else at rest;
+ * clamped to the slider's range.
+ */
+export function sliderPosition(
+  range: SliderRange,
+  own: string,
+  inherited: number | undefined,
+): number {
+  const typed = own.trim() === "" ? Number.NaN : Number(own);
+  const value = Number.isFinite(typed) ? typed : (inherited ?? range.rest);
+  return Math.min(range.max, Math.max(range.min, value));
+}
+
+/**
+ * sliderText is a slider's value as its input shows it: rounded to the
+ * slider's step, so floating point noise never reaches the draft.
+ */
+export function sliderText(range: SliderRange, value: number): string {
+  const decimals = Math.max(0, (String(range.step).split(".")[1] ?? "").length);
+  return String(Number(value.toFixed(decimals)));
 }

@@ -64,12 +64,11 @@ one that holds client state of its own.
   entry before the message and then puts the text in the composer, in that
   order, so a refused move leaves nothing in the box.
 - `ToolsPanel.tsx` is a chat's third panel, in place of a workspace's files,
-  terminal, and changes: a switch for each tool that needs no workspace, and
-  the names of the ones a chat never has. `tools.ts` holds the pure parts —
-  which tools a chat can offer, the list a switch sends, and the one-line
-  summary of a description written for the model. The harness reports the
-  tools a session's next run offers, so the panel never works that out
-  itself.
+  terminal, and changes: the profiles feature's `ToolPicker` over the
+  session's own tool choice, with a reset back to its profile's, and the
+  names of the tools a chat never has. `tools.ts` holds the pure parts: what
+  a chat can never offer, and the one-line summary of a description written
+  for the model.
 - `ToolCard.tsx` draws one tool call and delegates to the renderer registry.
 - `renderers/` is that registry: `registry.ts` has the type and the argument
   helpers, `renderers.tsx` maps a tool name to a renderer, `parts.tsx` holds
@@ -95,5 +94,5 @@ title, its outline, its run); the store holds what it is _saying_.
 `npm test -- transcript` folds the scripted event sequences from
 `docs/api/events.md` through the reducer, the meter's arithmetic included. A
 new event type or a new folding rule needs a case there. `npm test -- tree` covers the tree's rows, its
-keyboard movement, and `rewindTarget`. `npm test -- session/tools` covers a
-chat's tool choice.
+keyboard movement, and `rewindTarget`. `npm test -- session/tools` covers what a
+chat cannot offer.

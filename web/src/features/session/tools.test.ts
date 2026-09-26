@@ -1,60 +1,27 @@
 import { describe, expect, it } from "vitest";
 
 import type { Tool } from "@/api/types";
-import { chatTools, toolSummary, withTool } from "@/features/session/tools";
+import { outOfChat, toolSummary } from "@/features/session/tools";
 
 const tool = (name: string, needsWorkspace: boolean): Tool => ({
   name,
   description: `${name} does a thing.`,
   needs_workspace: needsWorkspace,
+  tokens: 10,
 });
 
-describe("chatTools", () => {
-  it("offers only the tools that need no workspace", () => {
-    const split = chatTools([
+describe("outOfChat", () => {
+  it("lists the built-in tools and the servers that need a workspace", () => {
+    const out = outOfChat([
       tool("ask_user", false),
       tool("ls", true),
       tool("bash", true),
-      tool("web_search", false),
-    ]);
-    expect(split.offered.map((t) => t.name)).toEqual(["ask_user", "web_search"]);
-    expect(split.unavailable).toEqual(["bash", "ls"]);
-  });
-
-  it("groups an MCP server's tools under it, and a stdio server's apart", () => {
-    const split = chatTools([
-      tool("ask_user", false),
-      { ...tool("mcp__linear__list_issues", false), server: "linear" },
-      { ...tool("mcp__github__search_issues", false), server: "github" },
       { ...tool("mcp__github__get_file", false), server: "github" },
       { ...tool("mcp__fs__read_file", true), server: "fs" },
+      { ...tool("mcp__fs__write_file", true), server: "fs" },
       tool("mcp_read_resource", false),
     ]);
-    expect(split.offered.map((t) => t.name)).toEqual(["ask_user", "mcp_read_resource"]);
-    expect(split.servers.map((s) => [s.server, s.tools.map((t) => t.name)])).toEqual([
-      ["github", ["mcp__github__search_issues", "mcp__github__get_file"]],
-      ["linear", ["mcp__linear__list_issues"]],
-    ]);
-    expect(split.unavailable).toEqual([]);
-    expect(split.unavailableServers).toEqual(["fs"]);
-  });
-});
-
-describe("withTool", () => {
-  it("adds a tool in sorted order", () => {
-    expect(withTool(["web_search"], "ask_user", true)).toEqual(["ask_user", "web_search"]);
-  });
-
-  it("removes a tool", () => {
-    expect(withTool(["ask_user", "web_search"], "ask_user", false)).toEqual(["web_search"]);
-  });
-
-  it("names a tool once however often it is turned on", () => {
-    expect(withTool(["web_search"], "web_search", true)).toEqual(["web_search"]);
-  });
-
-  it("turns the last tool off into an empty list", () => {
-    expect(withTool(["web_fetch"], "web_fetch", false)).toEqual([]);
+    expect(out).toEqual({ tools: ["bash", "ls"], servers: ["fs"] });
   });
 });
 

@@ -112,24 +112,26 @@ func TestProfileSettingsRoundTrip(t *testing.T) {
 			store.Profile{
 				Description: "for reviews",
 				ProfileSettings: store.ProfileSettings{
-					ModelID:         model.ID,
-					WorkspacePrompt: ptr("Review carefully."),
-					ChatPrompt:      ptr("Chat briefly."),
-					Instructions:    ptr("Cite files."),
-					ContextFiles:    ptr(true),
-					Sampling:        json.RawMessage(`{"temperature":0.2,"stop":["END"],"seed":7}`),
+					ModelID:          model.ID,
+					WorkspacePrompt:  ptr("Review carefully."),
+					ChatPrompt:       ptr("Chat briefly."),
+					Instructions:     ptr("Cite files."),
+					ContextFiles:     ptr(true),
+					PreserveThinking: ptr(true),
+					Sampling:         json.RawMessage(`{"temperature":0.2,"stop":["END"],"seed":7}`),
 				},
 				Tools: []string{"bash", "mcp__docs__*"},
 			},
 		},
 		{
-			"empty prompts, no context files, and no tools are values",
+			"empty prompts, no context files, no thinking, and no tools are values",
 			store.Profile{
 				ProfileSettings: store.ProfileSettings{
-					WorkspacePrompt: ptr(""),
-					ChatPrompt:      ptr(""),
-					Instructions:    ptr(""),
-					ContextFiles:    ptr(false),
+					WorkspacePrompt:  ptr(""),
+					ChatPrompt:       ptr(""),
+					Instructions:     ptr(""),
+					ContextFiles:     ptr(false),
+					PreserveThinking: ptr(false),
 				},
 				Tools: []string{},
 			},
@@ -248,6 +250,7 @@ func TestASessionChoosesAProfileAndOverridesIt(t *testing.T) {
 		{"the default profile and no overrides", "", store.ProfileSettings{}},
 		{"a profile and one override", review.ID, store.ProfileSettings{Instructions: ptr("Be brief.")}},
 		{"an explicitly empty prompt", review.ID, store.ProfileSettings{ChatPrompt: ptr("")}},
+		{"thinking not preserved", review.ID, store.ProfileSettings{PreserveThinking: ptr(false)}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

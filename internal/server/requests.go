@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -68,6 +69,10 @@ type contextResponse struct {
 	DroppedEffort string `json:"dropped_effort,omitempty"`
 	// Request is the record this is, absent for the next call.
 	Request *modelRequestBody `json:"request,omitempty"`
+	// ContextWindow is the context window of the call's model, in tokens:
+	// what the request has to fit in. Zero when the model is not known,
+	// because none is configured or a recorded call's model is deleted.
+	ContextWindow int `json:"context_window"`
 	// ContextFilesUnread says why the preview holds no context files where
 	// a run would read them: the session's workspace is not running, so
 	// they cannot be read until it starts. Absent when they were read, or
@@ -191,6 +196,7 @@ func (s *Server) handleSessionContext(w http.ResponseWriter, r *http.Request) {
 		DroppedEffort:      cfg.droppedEffort,
 		ContextFilesUnread: unread,
 		Calibration:        calibration,
+		ContextWindow:      cfg.model.ContextWindow,
 	})
 }
 
@@ -250,6 +256,16 @@ func (s *Server) handleSessionRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if out.Sources == nil {
 		out.Sources = map[string]string{}
+	}
+	if rec.ModelID != "" {
+		m, err := s.deps.Store.Model(ctx, rec.ModelID)
+		switch {
+		case err == nil:
+			out.ContextWindow = m.ContextWindow
+		case !errors.Is(err, store.ErrNotFound):
+			s.fail(w, r, err)
+			return
+		}
 	}
 	if rec.InputTokens > 0 {
 		out.Calibration = &calibrationBody{RequestID: rec.ID, InputTokens: rec.InputTokens, EstimatedTokens: estimatedTokens(call)}

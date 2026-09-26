@@ -185,17 +185,26 @@ export function useTools(): UseQueryResult<Tool[]> {
   });
 }
 
-/** useSetSessionTools chooses the tools the session's next run offers the model. */
-export function useSetSessionTools(sessionId: string): UseMutationResult<Session, Error, string[]> {
+/**
+ * useSetSessionTools chooses the tools the session's next run offers the
+ * model; null goes back to its profile's choice.
+ */
+export function useSetSessionTools(
+  sessionId: string,
+): UseMutationResult<Session, Error, string[] | null> {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (tools: string[]) => setSessionTools(sessionId, tools),
-    onSuccess: (session) => {
+    mutationFn: (tools: string[] | null) => setSessionTools(sessionId, tools),
+    onSuccess: async (session) => {
       client.setQueryData<{ session: Session; head?: Entry }>(
         queryKeys.session(sessionId),
         (old) => (old === undefined ? old : { ...old, session }),
       );
-      return client.invalidateQueries({ queryKey: ["sessions"] });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.sessionConfiguration(sessionId) }),
+        client.invalidateQueries({ queryKey: queryKeys.sessionContext(sessionId) }),
+        client.invalidateQueries({ queryKey: ["sessions"] }),
+      ]);
     },
   });
 }
