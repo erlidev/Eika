@@ -135,9 +135,17 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 	if err != nil {
 		return nil, err
 	}
-	// A child runs the image its parent runs: the model does not choose one,
-	// because nothing validates an image name it made up.
-	host, err := s.createChild(ctx, project, branch, base, parentWS.Image)
+	// A child runs the image its parent runs, confined as its parent is: the
+	// model chooses neither, because nothing validates an image name it made
+	// up, and a child must not escape its parent's limits or network.
+	var (
+		sandbox     store.WorkspaceSandbox
+		confinement workspace.Confinement
+	)
+	if s.opts.Sandbox != nil {
+		sandbox, confinement = s.opts.Sandbox(parentWS.Sandbox)
+	}
+	host, err := s.createChild(ctx, project, branch, base, parentWS.Image, confinement)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +159,7 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 		State:             string(host.State),
 		ContainerID:       host.ContainerID,
 		ParentWorkspaceID: parentWS.ID,
+		Sandbox:           sandbox,
 	})
 	if err != nil {
 		s.discard(ctx, host)
@@ -424,14 +433,15 @@ func (s *Spawner) handOver(ctx context.Context, parent store.Workspace, project 
 
 // createChild builds the child's sandbox and puts the parent's commit in it
 // on the child's own branch. Nothing it created survives a failure.
-func (s *Spawner) createChild(ctx context.Context, project store.Project, branch, base, image string) (workspace.Workspace, error) {
+func (s *Spawner) createChild(ctx context.Context, project store.Project, branch, base, image string, c workspace.Confinement) (workspace.Workspace, error) {
 	// A child never bind-mounts the host directory of a local project: it
 	// works on a clone of its own, which is what makes parallel children
 	// possible at all.
 	host, err := s.opts.Workspaces.Create(ctx, workspace.Spec{
-		ID:      store.NewID(),
-		Image:   image,
-		Project: project.Name,
+		ID:          store.NewID(),
+		Image:       image,
+		Project:     project.Name,
+		Confinement: c,
 	})
 	if err != nil {
 		return workspace.Workspace{}, err

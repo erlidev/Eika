@@ -25,17 +25,19 @@ const teardownTimeout = 2 * time.Minute
 
 // workspaceBody is one workspace on the wire.
 type workspaceBody struct {
-	ID                string    `json:"id"`
-	ProjectID         string    `json:"project_id"`
-	Name              string    `json:"name"`
-	Branch            string    `json:"branch"`
-	BaseCommit        string    `json:"base_commit,omitempty"`
-	Image             string    `json:"image"`
-	State             string    `json:"state"`
-	ContainerID       string    `json:"container_id,omitempty"`
-	ParentWorkspaceID string    `json:"parent_workspace_id,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                string `json:"id"`
+	ProjectID         string `json:"project_id"`
+	Name              string `json:"name"`
+	Branch            string `json:"branch"`
+	BaseCommit        string `json:"base_commit,omitempty"`
+	Image             string `json:"image"`
+	State             string `json:"state"`
+	ContainerID       string `json:"container_id,omitempty"`
+	ParentWorkspaceID string `json:"parent_workspace_id,omitempty"`
+	// Sandbox is what the container may consume, reach, and expose.
+	Sandbox   sandboxBody `json:"sandbox"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
 }
 
 // createWorkspaceRequest is the body of POST /api/workspaces. Image and
@@ -49,6 +51,9 @@ type createWorkspaceRequest struct {
 	BuildContext      string `json:"build_context"`
 	Dockerfile        string `json:"dockerfile"`
 	ParentWorkspaceID string `json:"parent_workspace_id"`
+	// Sandbox is the new workspace's limits, network, and ports. Left out,
+	// it gets the settings' defaults and no ports.
+	Sandbox *sandboxBody `json:"sandbox"`
 }
 
 // workspacesResponse is the body of GET /api/workspaces.
@@ -148,6 +153,11 @@ func (s *Server) createWorkspace(ctx context.Context, req createWorkspaceRequest
 		}
 	}
 
+	sandbox, err := s.newSandbox(ctx, req.Sandbox)
+	if err != nil {
+		return store.Workspace{}, err
+	}
+
 	image := strings.TrimSpace(req.Image)
 	if image == "" && req.BuildContext == "" {
 		image = s.sandboxImage(ctx)
@@ -159,6 +169,7 @@ func (s *Server) createWorkspace(ctx context.Context, req createWorkspaceRequest
 		Dockerfile:   req.Dockerfile,
 		Project:      project.Name,
 		HostPath:     project.HostPath,
+		Confinement:  confinement(sandbox),
 	}
 	host, err := s.deps.Workspaces.Create(ctx, spec)
 	if err != nil {
@@ -190,6 +201,7 @@ func (s *Server) createWorkspace(ctx context.Context, req createWorkspaceRequest
 		State:             string(host.State),
 		ContainerID:       host.ContainerID,
 		ParentWorkspaceID: req.ParentWorkspaceID,
+		Sandbox:           sandbox,
 	})
 	if err != nil {
 		s.discard(ctx, host)
@@ -208,16 +220,21 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.log, http.StatusOK, asWorkspace(ws))
 }
 
-// handleStartWorkspace starts a stopped workspace's container again.
+// handleStartWorkspace starts a stopped workspace's container again, held
+// to the sandbox its row records: a change that reached the container only
+// in part before it stopped is completed here.
 func (s *Server) handleStartWorkspace(w http.ResponseWriter, r *http.Request) {
-	s.transition(w, r, func(ctx context.Context, host *workspace.Workspace) error {
+	s.transition(w, r, func(ctx context.Context, ws store.Workspace, host *workspace.Workspace) error {
+		if err := s.deps.Workspaces.Confine(ctx, host, confinement(ws.Sandbox)); err != nil {
+			return err
+		}
 		return s.deps.Workspaces.Start(ctx, host)
 	})
 }
 
 // handleStopWorkspace stops a workspace's container, keeping its files.
 func (s *Server) handleStopWorkspace(w http.ResponseWriter, r *http.Request) {
-	s.transition(w, r, func(ctx context.Context, host *workspace.Workspace) error {
+	s.transition(w, r, func(ctx context.Context, _ store.Workspace, host *workspace.Workspace) error {
 		s.stopRunsIn(ctx, host.ID)
 		return s.deps.Workspaces.Stop(ctx, host)
 	})
@@ -225,7 +242,7 @@ func (s *Server) handleStopWorkspace(w http.ResponseWriter, r *http.Request) {
 
 // transition runs one lifecycle operation on a workspace and records the
 // state it reached.
-func (s *Server) transition(w http.ResponseWriter, r *http.Request, op func(context.Context, *workspace.Workspace) error) {
+func (s *Server) transition(w http.ResponseWriter, r *http.Request, op func(context.Context, store.Workspace, *workspace.Workspace) error) {
 	ws, err := s.deps.Store.Workspace(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.fail(w, r, err)
@@ -236,7 +253,7 @@ func (s *Server) transition(w http.ResponseWriter, r *http.Request, op func(cont
 		s.fail(w, r, err)
 		return
 	}
-	if err := op(r.Context(), &host); err != nil {
+	if err := op(r.Context(), ws, &host); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -283,6 +300,7 @@ func (s *Server) destroyWorkspace(ctx context.Context, ws store.Workspace) error
 	if err := s.deps.Store.DeleteWorkspace(ctx, ws.ID); err != nil {
 		return err
 	}
+	s.forgetEgress(ws.ID)
 	s.workspaceState(ctx, ws.ID, ws.ProjectID, string(workspace.StateGone))
 	return nil
 }
@@ -586,6 +604,7 @@ func asWorkspace(ws store.Workspace) workspaceBody {
 		State:             ws.State,
 		ContainerID:       ws.ContainerID,
 		ParentWorkspaceID: ws.ParentWorkspaceID,
+		Sandbox:           asSandbox(ws.Sandbox),
 		CreatedAt:         ws.CreatedAt,
 		UpdatedAt:         ws.UpdatedAt,
 	}

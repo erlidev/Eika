@@ -1,0 +1,44 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "Profiles"
+    - tab "General"
+    - tab "Sandbox" [selected]
+    - tab "Search"
+    - tab "MCP"
+    - tab "Account"
+    - tab "Appearance"
+  - tabpanel "Sandbox":
+    - heading "New workspaces" [level=3]
+    - paragraph: The limits and network a workspace is created with unless it names its own. Forks and child agents take their parent's instead. Change one workspace in its Sandbox panel.
+    - form "New workspaces":
+      - region "Limits":
+        - heading "Limits" [level=4]
+        - text: CPU No limit
+        - slider "CPU limit slider"
+        - textbox "CPU":
+          - /placeholder: none
+        - text: cores
+        - paragraph: How many cores the sandbox's processes may use between them.
+        - text: Memory No limit
+        - slider "Memory limit slider"
+        - textbox "Memory":
+          - /placeholder: none
+        - text: MiB
+        - paragraph: What the processes may hold, with no swap beyond it. Past it, the kernel stops the largest process.
+        - text: Processes
+        - textbox "Processes":
+          - /placeholder: none
+          - text: /\d+/
+        - text: max
+        - paragraph: Processes and threads together. A few thousand stops a fork bomb and leaves room for a parallel build.
+      - text: Network
+      - radiogroup "Network":
+        - radio "Open" [checked]
+        - radio "Allowlist"
+        - radio "None"
+      - paragraph: The sandbox reaches the internet directly, as any container does.
+      - button "Save"
+  - button "Close"

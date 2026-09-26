@@ -174,6 +174,24 @@ func (c *Client) WriteFile(ctx context.Context, path string, data []byte) error 
 	return err
 }
 
+// SetEnvironment replaces the KEY=VALUE entries the daemon adds to the
+// environment of every process it starts from now on: commands, terminals,
+// and stdio processes. Empty clears them. It is not part of the executor, so
+// a tool cannot change what the sandbox's processes inherit.
+func (c *Client) SetEnvironment(ctx context.Context, env []string) error {
+	body, err := json.Marshal(eikad.EnvironmentRequest{Env: env})
+	if err != nil {
+		return fmt.Errorf("encode environment request: %w", err)
+	}
+	resp, err := c.do(ctx, http.MethodPut, "/environment", nil, bytes.NewReader(body), "application/json")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, err = io.Copy(io.Discard, resp.Body)
+	return err
+}
+
 // Stat describes one file in the workspace.
 func (c *Client) Stat(ctx context.Context, path string) (executor.FileInfo, error) {
 	var out eikad.FileInfo

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
@@ -45,6 +46,7 @@ type api struct {
 	spawner   *subagent.Spawner
 	secrets   *secret.Box
 	mcp       *mcp.Pool
+	egress    *egress.Proxy
 	// searxng and marginalia answer web searches; fetched serves every page
 	// web_fetch reads.
 	searxng, marginalia *searchtest.Searcher
@@ -71,6 +73,10 @@ func newAPI(t *testing.T) *api {
 		t.Fatalf("secret.Load: %v", err)
 	}
 	a := &api{store: st, host: newFakeHost(t), hub: newFakeHub(), questions: builtin.NewQuestions(), secrets: secrets}
+	// The proxy asks the server for policies, as it does in the harness.
+	a.egress = egress.New(egress.Options{Policy: func(ctx context.Context, id string) (egress.Policy, error) {
+		return a.Server.EgressPolicy(ctx, id)
+	}}, testLogger())
 	// The bus is built here rather than left to server.New, because the
 	// spawner emits on the same one the stream fans out.
 	bus := event.NewBus(testLogger())
@@ -81,7 +87,8 @@ func newAPI(t *testing.T) *api {
 		Limits: func(context.Context) subagent.Limits {
 			return subagent.Limits{MaxDepth: 2, MaxChildren: 4}
 		},
-		Logger: testLogger(),
+		Sandbox: server.ChildSandbox,
+		Logger:  testLogger(),
 	})
 	a.searxng = searchtest.New(search.Result{Title: "Tokio", URL: "https://tokio.rs/", Description: "An async runtime."})
 	a.marginalia = searchtest.New(search.Result{Title: "Small web", URL: "https://small.example/"})
@@ -117,6 +124,7 @@ func newAPI(t *testing.T) *api {
 		Bus:        bus,
 		Search:     engine,
 		Pages:      pages,
+		Egress:     a.egress,
 		MCP:        a.mcp,
 	}, server.Options{})
 	a.Server.UseSubagents(a.spawner, a.spawner.Attach)
@@ -278,13 +286,14 @@ type projectsWire struct {
 }
 
 type workspaceWire struct {
-	ID         string `json:"id"`
-	ProjectID  string `json:"project_id"`
-	Name       string `json:"name"`
-	Branch     string `json:"branch"`
-	BaseCommit string `json:"base_commit"`
-	Image      string `json:"image"`
-	State      string `json:"state"`
+	ID         string      `json:"id"`
+	ProjectID  string      `json:"project_id"`
+	Name       string      `json:"name"`
+	Branch     string      `json:"branch"`
+	BaseCommit string      `json:"base_commit"`
+	Image      string      `json:"image"`
+	State      string      `json:"state"`
+	Sandbox    sandboxWire `json:"sandbox"`
 }
 
 type workspacesWire struct {

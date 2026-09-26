@@ -41,10 +41,24 @@ const (
 type Limits struct {
 	// CPUs is the number of cores the container may use, as a fraction.
 	CPUs float64
-	// MemoryBytes is the memory limit.
+	// MemoryBytes is the memory limit. The container gets no swap beyond it,
+	// so the limit is what the processes in it can hold.
 	MemoryBytes int64
-	// PIDs is the maximum number of processes.
+	// PIDs is the maximum number of processes and threads.
 	PIDs int64
+}
+
+// Confinement is what a workspace may consume and reach. It is set when the
+// workspace is created and can be changed while it exists, running or not,
+// with Host.Confine.
+type Confinement struct {
+	// Limits bounds the container's resources.
+	Limits Limits
+	// Proxied puts the container on the internal sandbox network, which has
+	// no route out, and points its processes at the harness's egress proxy,
+	// which decides what they may reach. False gives it the open sandbox
+	// network and a direct route to the internet.
+	Proxied bool
 }
 
 // Spec describes a workspace to create.
@@ -74,8 +88,8 @@ type Spec struct {
 	// creating a volume. This is local project mode; the path is resolved by
 	// the Docker daemon, so it is a path on the host, not in the harness.
 	HostPath string
-	// Limits bounds the container's resources.
-	Limits Limits
+	// Confinement bounds what the container may consume and reach.
+	Confinement Confinement
 	// Labels are added to the container alongside the workspace label.
 	Labels map[string]string
 }
@@ -107,6 +121,9 @@ type Workspace struct {
 	// Address is the base URL of the workspace's eikad daemon as the harness
 	// reaches it.
 	Address string
+	// Proxied reports that the container is on the internal sandbox network
+	// and reaches out only through the egress proxy.
+	Proxied bool
 	// CreatedAt is when the container was created, in UTC.
 	CreatedAt time.Time
 }

@@ -96,12 +96,3 @@ func TestEnvValue(t *testing.T) {
 		}
 	}
 }
-
-func TestPidsLimit(t *testing.T) {
-	if pidsLimit(0) != nil || pidsLimit(-1) != nil {
-		t.Error("a non-positive pids limit must mean no limit")
-	}
-	if got := pidsLimit(128); got == nil || *got != 128 {
-		t.Errorf("pidsLimit(128) = %v, want 128", got)
-	}
-}

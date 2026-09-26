@@ -48,7 +48,7 @@ export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern -- Playwright requires a destructuring pattern.
   expectShot: async ({}, provide) => {
     await provide(async (eika, name, target) => {
-      await eika.settle();
+      await eika.settleForShot();
       const subject = target === undefined ? eika.page : await eika.find(target);
       await expect(subject).toHaveScreenshot(`${name}.png`);
     });

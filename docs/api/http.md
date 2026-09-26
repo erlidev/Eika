@@ -185,6 +185,7 @@ a rejected request leaves no container and writes no row.
 | `build_context` | string | A directory on the Docker host holding a Dockerfile and its context; the image is built from it first. |
 | `dockerfile` | string | The Dockerfile's name within `build_context`. Defaults to `Dockerfile`. |
 | `parent_workspace_id` | string | The workspace this one was branched from, recorded for the UI. |
+| `sandbox` | Sandbox | Its limits, network, and forwarded ports. Left out, it gets the `sandbox_limits` and `sandbox_egress` settings and no ports. Checked as `PUT /api/workspaces/{id}/sandbox` checks it. |
 
 `201` with the `Workspace`.
 
@@ -194,7 +195,9 @@ a rejected request leaves no container and writes no row.
 
 ### `POST /api/workspaces/{id}/start`
 
-Starts a stopped container again. `200` with the `Workspace`.
+Starts a stopped container again, held to the `sandbox` its row records, so a
+change the container took only in part is completed. `200` with the
+`Workspace`.
 
 ### `POST /api/workspaces/{id}/stop`
 
@@ -206,6 +209,66 @@ files. `200` with the `Workspace`.
 Aborts every run in the workspace, destroys the container and its volume, and
 deletes the row with its sessions and entries. A container that is already
 gone is not an error. `204`.
+
+### `PUT /api/workspaces/{id}/sandbox`
+
+Records a workspace's `Sandbox` and applies it to the container, running or
+stopped, without restarting it: limits take hold at once, a change between
+open and restricted egress moves the container between the sandbox networks
+(dropping the connections it has open), and the processes it starts from then
+on get the proxy settings that go with its network. The row is written first,
+so a container that took only part of a change gets the rest when it next
+starts. `200` with the `Workspace`, and `workspace.state` is published with
+the unchanged state.
+
+`400` for a limit out of its range, a mode that is not `open`, `allowlist`, or
+`none`, an allowlist entry that is not a host pattern, a port that is out of
+range, listed twice, or `7000` (the sandbox daemon's), and for restricted
+egress on a harness without the internal sandbox network. `409` for a
+workspace that is creating or gone.
+
+### `GET /api/workspaces/{id}/usage`
+
+Samples what a running workspace consumes; it takes about a second, because
+Docker reads the CPU counters twice. `409` for a workspace that is not
+running. `200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `cpu_percent` | number | CPU used over the sample, 100 per core. |
+| `cpus` | number | The cores the container may use: its limit, or every core of the host. |
+| `memory_bytes` | number | Memory held, without the page cache the kernel can reclaim. |
+| `memory_limit_bytes` | number | Its memory limit, or the host's memory. |
+| `pids` | number | Processes and threads. |
+| `pids_limit` | number | Its process limit, 0 for none. |
+| `network_rx_bytes`, `network_tx_bytes` | number | Bytes received and sent since the container started. |
+| `sampled_at` | time | When Docker read the numbers. |
+| `blocked` | array of `{"host", "count", "last"}` | The hosts the egress proxy refused the workspace lately, most recent first, at most 20. Kept in memory since the harness started. |
+
+### `POST /api/workspaces/{id}/ports/{port}/preview`
+
+Hands the UI a link that opens a preview of a forwarded port in the browser.
+`200` with `{"url": string}`: `http://<port>-<workspace id>.<host>/__eika/preview?ticket=<ticket>`,
+where the host is the `public_url`'s, else the host the request reached the
+API on, with an IP address replaced by `localhost`. The ticket works once,
+within two minutes. `404` for a port the workspace does not forward, `409`
+for a workspace that is not running.
+
+A preview host is served by the harness outside `/api` and without the bearer
+token. Its `/__eika/preview?ticket=` trades the ticket for an `eika_preview`
+cookie on that host alone (HttpOnly, SameSite=Lax, twelve hours) and
+redirects to `/`. Every other request with that cookie is forwarded to the
+port in the container, with the preview's host in `Host`, the
+`X-Forwarded-*` headers set, and the cookie removed; WebSocket upgrades pass
+through. The workspace is read on every request, so a port taken off the
+list or a stopped workspace closes the preview at once. The answers the
+harness gives itself are plain text: `401` without a session, `403` for a
+used or expired ticket and for a port no longer forwarded, `503` for a
+stopped workspace, `502` when nothing answers on the port, which a server
+bound to localhost inside the container is the usual reason for. A preview
+has an origin of its own, so the page cannot read the UI's token; for a
+deployment reached by a name other than localhost, the preview hosts need a
+wildcard DNS record.
 
 ### `GET /api/workspaces/{id}/diff`
 
@@ -375,7 +438,19 @@ workspace that is not running.
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 | `container_id` | string, optional | The Docker container id. |
 | `parent_workspace_id` | string, optional | The workspace it was branched from. |
+| `sandbox` | Sandbox | What the container may consume, reach, and expose. A workspace from before sandboxes has no limits, open egress, and no ports. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
+
+### Sandbox
+
+| Field | Type | Meaning |
+|---|---|---|
+| `limits` | `{"cpus": number, "memory_mb": number, "pids": number}` | Zero is no limit. `cpus` is a fraction of cores from 0.01 to the host's; `memory_mb` is MiB from 64 to the host's memory, with no swap beyond it; `pids` counts processes and threads, from 32 to 4194304. |
+| `egress` | `{"mode": string, "allow": [string]}` | `open` reaches the internet directly. `allowlist` puts the container on the internal sandbox network, with no route out, and its processes reach the hosts `allow` names through the harness's egress proxy. `none` is the internal network with nothing allowed: the harness and its git hub only. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
+| `ports` | array of `{"port": number, "label": string}` | At most 20 container ports the harness forwards previews to. `label` is at most 40 characters. |
+
+Forks and child agents are created with their parent's `limits` and `egress`
+and no `ports`.
 
 ## Sessions
 
@@ -1065,6 +1140,8 @@ writes nothing.
 | `sandbox_image` | string | The image a new workspace runs when it names none. |
 | `subagent_max_depth` | number, 1 to 8 | How many levels of children a session may have. |
 | `subagent_max_children` | number, 1 to 16 | How many children of one session may run at a time. |
+| `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The limits a new workspace gets when its request names none, checked as a Sandbox's are. A field the object leaves out is 0, no limit. |
+| `sandbox_egress` | `{"mode", "allow"}` | The egress a new workspace gets when its request names none. A restricted mode is `400` on a harness without the internal sandbox network. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
 | `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
 | `search_limits` | object | Quotas by bucket, `{"exa": {"month": 500}, "marginalia": {"day": 50}}`. Each bucket must exist; `day` and `month` are whole numbers from 1 to 10 000 000, and 0 or an absent field is unlimited. Anything else is `400` naming the bucket and the range. A bucket not named keeps its default. |
@@ -1076,6 +1153,8 @@ writes nothing.
 | `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
 | `subagent_max_depth` | number | 2. |
 | `subagent_max_children` | number | 4. |
+| `sandbox_limits` | object | No CPU or memory limit, and 4096 processes. |
+| `sandbox_egress` | object | `open`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |
 | `search_order` | array of strings | Every web provider in its default order: `searxng`, `exa`, `tavily`, `brave`, `marginalia`. |
 | `search_limits` | object | Every quota bucket's default, as `search_limits` takes it: Exa 900 a month, Tavily 1000, Brave 2000, Marginalia 100 a day, SearXNG and GitHub unlimited. |
 
@@ -1372,6 +1451,7 @@ What the setup screens check before the first workspace. `200` with:
 |---|---|---|
 | `docker` | `{"reachable": boolean, "error": string}` | Whether the harness can use the Docker socket, and the client's reason when it cannot. |
 | `sandbox_image` | `{"name": string, "present": boolean}` | The image new workspaces run and whether the Docker host has it. |
+| `sandbox` | `{"cpus": number, "memory_bytes": number, "egress_control": boolean}` | The Docker host's cores and memory, which bound a sandbox's limits, zero when Docker cannot be asked; and whether a sandbox's egress can be restricted, which a harness outside the compose stack cannot. |
 | `providers`, `models`, `projects` | number | How many of each exist. |
 
 ## Event stream
@@ -1384,6 +1464,18 @@ arrive both ways; clients deduplicate by `entry_id`.
 The handshake is accepted from the harness's own origin and from any origin
 the deployment lists in `allowed_origins`. Any other `Origin` header is
 refused before the upgrade.
+
+## Egress proxy
+
+The harness listens on `egress_listen` (`:3128`) for the sandboxes whose
+egress is restricted: an HTTP proxy that takes `CONNECT` tunnels and plain
+`http://` requests in absolute form. A sandbox signs in with
+`Proxy-Authorization: Basic`, its workspace id and hub token, which the
+harness puts in the proxy URL it gives the sandbox's processes. A request
+without credentials is `407`; one for a host the workspace's mode or
+allowlist does not admit is `403` and is listed in the workspace's usage; the
+proxy connects to public addresses only, so a private one is `403` whatever
+the mode. The body of every refusal is one line saying why.
 
 ## Git hub
 

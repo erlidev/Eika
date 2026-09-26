@@ -94,6 +94,11 @@ type Options struct {
 	// every spawn, so a change the user makes in the settings applies to the
 	// next child. Nil, or a bound below one, means one.
 	Limits func(ctx context.Context) Limits
+	// Sandbox decides a child's sandbox from its parent workspace's: what
+	// the child's row records, and what its container is created with. It
+	// is the server's rule, which a fork follows too. Nil gives a child no
+	// limits and open egress.
+	Sandbox func(parent store.WorkspaceSandbox) (store.WorkspaceSandbox, workspace.Confinement)
 	// Logger receives one line per spawned and finished child.
 	Logger *slog.Logger
 }

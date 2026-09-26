@@ -1,6 +1,6 @@
 # Architecture
 
-This file describes Eika as it is today, at the end of phase 8, terminal, editor, and diff. It is
+This file describes Eika as it is today, after phase 8, terminal, editor, and diff, and the sandbox confinement of phase 9. It is
 updated in the same change that moves structure. Planned work lives in `docs/PLAN.md`.
 
 ## What exists now
@@ -26,7 +26,9 @@ three-service compose stack.
 | `contextfile` | `internal/contextfile` | AGENTS.md discovery and the system prompt section it becomes |
 | `eikad` | `internal/eikad` | The daemon's handlers, path confinement, and wire types |
 | `sandbox` | `internal/executor/sandbox` | The production executor: an HTTP client for one eikad |
-| `workspace` | `internal/workspace` | Container and volume lifecycle on the Docker daemon |
+| `workspace` | `internal/workspace` | Container and volume lifecycle on the Docker daemon, and each container's confinement: its limits, its sandbox network, and its usage |
+| `egress` | `internal/egress` | The egress modes and allowlist patterns, and the HTTP proxy a restricted sandbox reaches the internet through |
+| `netguard` | `internal/netguard` | The dial check that keeps the harness's outbound connections on public addresses, shared by `search/fetch` and the egress proxy |
 | `hub` | `internal/workspace/hub` | Bare git repositories and the Smart HTTP endpoint workspaces clone from |
 | `store` | `internal/store` | The PostgreSQL pool, the embedded migrations, and the queries behind every table |
 | `session` | `internal/session` | The session tree: append, head, branch, fork, outline, and the agent store that records a run |
@@ -458,8 +460,8 @@ Configuration is two things. What the process needs before it can reach its
 database, addresses, paths, and the Docker topology, is deployment
 configuration: `config.Config`, loaded once in `main` and passed down. What a
 user chooses, model providers and models, the default model, the sandbox
-image, the subagent limits, git credentials, and the sign-in password, is
-rows in the database, edited in the web UI. No package reads the environment
+image, the sandbox defaults, the subagent limits, git credentials, and the
+sign-in password, is rows in the database, edited in the web UI. No package reads the environment
 for either.
 
 Deployment configuration's precedence, lowest first:
@@ -474,7 +476,12 @@ and the stack sets only `EIKA_DATABASE_URL`. `Validate` rejects an empty
 `eikad_binary`, `hub_root`, `hub_url`, or `secret_key_file`.
 `sandbox_network` may be empty: that is the development mode where sandboxes
 publish their daemon port on `127.0.0.1` instead of being reached by
-container name. `auth_token` may be empty too: it is an optional fixed API
+container name. `sandbox_internal_network` (`eika_sandbox_internal`) is the
+internal network a sandbox with restricted egress joins instead; it must
+differ from `sandbox_network`, and with it `egress_listen` (`:3128`) must be
+set and `egress_proxy_url` (`http://eika:3128`) must be an http address.
+Either network empty means no sandbox's egress can be restricted, which is
+the case in `make dev`. `auth_token` may be empty too: it is an optional fixed API
 token for scripts, beside password sign-in. A file that still sets `models`
 or `subagents` is refused with a pointer to where the setting went.
 
@@ -521,7 +528,9 @@ against its bare repositories.
  |  mcp.Pool -> Host.Process -+------------->|    /healthz                      |
  |                            |  EIKAD_TOKEN |                                  |
  |  workspace.Host -----------+--- docker ---+-> container + volume eika-ws-<id>|
- |                            |   socket     |    mounted at /workspace         |
+ |    limits, networks, usage |   socket     |    mounted at /workspace         |
+ |  egress.Proxy :3128 <------+--------------+-- HTTP(S)_PROXY, when restricted |
+ |  previews <port>-<id>.* ---+------------->|    a forwarded port             |
  |  hub.Handler  /git/...     |<-------------+--  git clone / push (basic auth, |
  |    bare repos in           |  Smart HTTP  |    per-workspace hub token)      |
  |    /var/lib/eika/hub       |              |                                  |
@@ -663,6 +672,80 @@ a workspace `gone` only when Docker reports that its container does not exist.
 An inspection or daemon failure stops reconciliation and keeps every recorded
 state, so a temporary Docker failure does not become a destructive state
 change.
+
+### Confinement: limits, egress, and previews
+
+A workspace's row records its `sandbox`: CPU, memory, and process limits, an
+egress mode with its allowlist, and the ports the harness forwards to it. The
+row is the desired state. `Host.Create` builds the container with it,
+`PUT /api/workspaces/{id}/sandbox` writes the row and then applies it with
+`Host.Confine`, and every start applies the row again before `Host.Start`, so
+a change the container took only in part is completed. A fork and a child
+agent get their parent's limits and egress and none of its ports
+(`server.ChildSandbox`, which the spawner is given).
+
+Limits are Docker's: `NanoCPUs`, `Memory` with `MemorySwap` equal to it, so
+there is no swap past the limit, and `PidsLimit`. `Confine` changes them on
+the running container with `ContainerUpdate`. Docker reads a zero CPU or
+memory limit in an update as "unchanged" and refuses to lift one, so no limit
+on an existing container is the whole host: every core and all of its memory,
+from `Host.Capacity`. `Host.Usage` samples `docker stats` once;
+`GET /api/workspaces/{id}/usage` adds the hosts the egress proxy refused, and
+the Sandbox panel asks for it every five seconds while it is open.
+
+```
+   open egress                          allowlist or none
+  +-------------+                      +-------------+
+  | eika-ws-a   |                      | eika-ws-b   |  HTTP(S)_PROXY=
+  +------+------+                      +------+------+  http://b:<hub token>@eika:3128
+         | eika_sandbox                       | eika_sandbox_internal (internal: no route out)
+         v                                    v
+  +------+------------------------------------+------+
+  |            eika (on both, and eika_default)      |
+  |   eikad calls, /git hub   egress.Proxy :3128 ----+--> public internet,
+  +------+-------------------------------------------+    allowed hosts only
+         |
+         v  internet, directly
+```
+
+An open sandbox is on `eika_sandbox` and has a route out of its own. A
+restricted one is on `eika_sandbox_internal`, an internal Docker network with
+no route out, which the harness is on as well, so eikad calls and the hub work
+as before. Its only way to the internet is the harness's egress proxy,
+`egress.Proxy`: it takes `CONNECT` tunnels and absolute `http://` requests,
+knows a sandbox by its workspace id and hub token in `Proxy-Authorization`,
+asks `Server.EgressPolicy` for the workspace's mode and allowlist on every
+request, so a change applies to the next connection, and dials through
+`netguard`, so neither the database nor another container is reachable
+through it. A refusal is `403` with a line saying why and is remembered per
+workspace (`Proxy.Blocked`), which the Sandbox panel lists with a button that
+adds the host to the allowlist. The hub token is read from the container the
+first time the proxy is asked about a workspace and cached until it is
+destroyed. The proxy serves only when the host has both sandbox networks
+(`Host.EgressControl`).
+
+Switching between open and restricted moves the container between the two
+networks: `Confine` connects it to the new one before it leaves the old, so
+the harness reaches the daemon by name throughout, and the connections the
+sandbox had open drop. What the sandbox's processes inherit is given to eikad
+with `PUT /environment` rather than set on the container, because a
+container's environment cannot change: the proxy URL under both spellings of
+`HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` (the hub and loopback), and
+`NODE_USE_ENV_PROXY`. `Host.Start` gives it on every start, since eikad
+forgets it when the container stops. A tool that ignores the proxy variables
+reaches nothing, which is the point: the network is what enforces the mode,
+and the proxy is the one door in it.
+
+A preview is how the person reaches a forwarded port from their browser. The
+harness forwards it, since the harness is the only thing on the sandbox
+networks, on a host of its own, `<port>-<workspace id>.<host>`, so the page
+is another origin than the UI and cannot read its token; browsers resolve any
+`*.localhost` name to the machine itself. `Server.Handler` sends a request
+for such a host to the preview before the routes. The UI asks
+`POST /api/workspaces/{id}/ports/{port}/preview` for a link carrying a
+one-time ticket, the preview trades the ticket for a cookie on its own host,
+and every later request is checked against the workspace's row, so taking a
+port off the list closes it at once. Tickets and sessions are in memory.
 
 ### The git hub
 
@@ -1014,7 +1097,10 @@ no configuration: `docker compose up -d` builds and starts it.
 
    sandbox containers eika-ws-<id> join eika_sandbox, which only the harness
    also joins: the harness reaches them by name and they reach the hub at
-   http://eika:8080, but never postgres or searxng
+   http://eika:8080, but never postgres or searxng. A sandbox with restricted
+   egress joins eika_sandbox_internal instead, an internal network with no
+   route out, and reaches the internet only through the harness's egress
+   proxy on eika:3128
 ```
 
 Only the harness publishes a port, on 127.0.0.1. Eika is single-user and
@@ -1145,8 +1231,10 @@ looking at and one worth aiming at. Below 1024px the side panes become drawers.
 `app/panels.tsx` is the panel registry. The right pane's tab strip is that
 array filtered by what is open, so phases 6 and 8 add a panel by writing one
 component and one entry. Phase 5 registers the session tree and the run. A
-workspace session adds the files, the terminal, and the changes; a chat has
-none of those and shows its Tools panel instead, the switches for the tools
+workspace session adds the files, the terminal, the changes, and the
+sandbox (`features/sandbox`: usage against the limits, refused hosts,
+previews, and the editor of the workspace's limits, network, and ports); a
+chat has none of those and shows its Tools panel instead, the switches for the tools
 its runs may offer. Every session has a Context panel (`features/context`):
 the next model request, previewed live by the harness, or any recorded call,
 at a glance: how full the model's context window is, a stacked token bar by
@@ -1283,6 +1371,10 @@ cmd/eikad alone, so the harness binary does not link a JavaScript engine.
 mcp imports tool, for the tools it hands a run, event, and mcp/oauth, and
 never workspace or executor: the server hands it a Store and a Launcher, and
 a stdio server's process reaches the workspace through them.
+egress imports netguard alone, and search/fetch imports netguard too;
+server builds the proxy and answers its policy lookups. workspace imports
+executor/sandbox for eikad's PUT /environment, which is kept off the
+Executor interface like the terminal.
 ```
 
 Rules that reviews enforce:

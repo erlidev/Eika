@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -70,7 +69,7 @@ func (d *Daemon) handleExec(w http.ResponseWriter, r *http.Request) {
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(sanitizedEnv(), req.Env...)
+	cmd.Env = append(d.environ(), req.Env...)
 	if len(req.Stdin) > 0 {
 		cmd.Stdin = bytes.NewReader(req.Stdin)
 	}
@@ -107,18 +106,6 @@ func (d *Daemon) handleExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	frames.send(ExecFrame{ExitCode: &code, TimedOut: timedOut, Truncated: frames.truncated()})
-}
-
-// sanitizedEnv is the daemon's environment without the daemon's own token.
-func sanitizedEnv() []string {
-	env := os.Environ()
-	out := env[:0]
-	for _, kv := range env {
-		if !strings.HasPrefix(kv, TokenEnv+"=") {
-			out = append(out, kv)
-		}
-	}
-	return out
 }
 
 // frameStream serialises the frames of one /exec response. stdout and stderr

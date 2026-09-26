@@ -33,11 +33,13 @@ import type {
   Models,
   OAuthCallback,
   PostMessage,
+  PreviewLink,
   ProbeProvider,
   Profile,
   ProfileInput,
   Profiles,
   ProfileSettings,
+  Sandbox,
   Project,
   Provider,
   Providers,
@@ -66,6 +68,7 @@ import type {
   UpdateProvider,
   Workspace,
   WorkspaceDiff,
+  WorkspaceUsage,
 } from "@/api/types";
 
 /** listProjects lists every project, newest first. */
@@ -132,6 +135,27 @@ export function stopWorkspace(id: string): Promise<Workspace> {
 /** deleteWorkspace destroys the container, its volume, and its sessions. */
 export function deleteWorkspace(id: string): Promise<void> {
   return requestEmpty(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** setWorkspaceSandbox changes a workspace's limits, network, and ports, applied at once. */
+export function setWorkspaceSandbox(id: string, sandbox: Sandbox): Promise<Workspace> {
+  return request<Workspace>(`/api/workspaces/${encodeURIComponent(id)}/sandbox`, {
+    method: "PUT",
+    body: sandbox,
+  });
+}
+
+/** getWorkspaceUsage samples what a running workspace consumes. */
+export function getWorkspaceUsage(id: string, signal?: AbortSignal): Promise<WorkspaceUsage> {
+  return request<WorkspaceUsage>(`/api/workspaces/${encodeURIComponent(id)}/usage`, { signal });
+}
+
+/** openPreview asks for a one-time link to a forwarded port of a running workspace. */
+export function openPreview(id: string, port: number): Promise<PreviewLink> {
+  return request<PreviewLink>(
+    `/api/workspaces/${encodeURIComponent(id)}/ports/${String(port)}/preview`,
+    { method: "POST" },
+  );
 }
 
 /** getWorkspaceDiff reads the workspace's changes against its base commit. */

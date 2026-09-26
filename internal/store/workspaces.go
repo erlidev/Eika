@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -29,14 +31,41 @@ type Workspace struct {
 	// ParentWorkspaceID is the workspace a subagent's workspace was cloned
 	// from, empty for a workspace the user created.
 	ParentWorkspaceID string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// Sandbox is what the container may consume, reach, and expose.
+	Sandbox   WorkspaceSandbox
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// WorkspaceSandbox is what a workspace's container may consume, reach, and
+// expose. The zero value is a workspace with no limits, open egress, and no
+// ports, which is what every workspace was before the column existed.
+type WorkspaceSandbox struct {
+	// CPUs is the number of cores the container may use; zero is no limit.
+	CPUs float64 `json:"cpus,omitempty"`
+	// MemoryMB is the memory limit in MiB; zero is no limit.
+	MemoryMB int64 `json:"memory_mb,omitempty"`
+	// PIDs is the process and thread limit; zero is no limit.
+	PIDs int64 `json:"pids,omitempty"`
+	// Egress is the egress mode, empty for open.
+	Egress string `json:"egress,omitempty"`
+	// Allow is the egress allowlist, used when Egress is allowlist.
+	Allow []string `json:"allow,omitempty"`
+	// Ports are the container's ports the harness forwards previews to.
+	Ports []WorkspacePort `json:"ports,omitempty"`
+}
+
+// WorkspacePort is one port of a workspace that the harness forwards to.
+type WorkspacePort struct {
+	Port int `json:"port"`
+	// Label says what listens there, such as "vite".
+	Label string `json:"label,omitempty"`
 }
 
 // workspaceColumns is the column list every workspace query selects, in the
 // order scanWorkspace reads them.
 const workspaceColumns = `id, project_id, name, branch, base_commit, image, state, container_id,
-	parent_workspace_id, created_at, updated_at`
+	parent_workspace_id, sandbox, created_at, updated_at`
 
 // CreateWorkspace inserts w and returns it with the fields the database
 // assigned. An empty ID gets a fresh one.
@@ -44,12 +73,16 @@ func (s *Store) CreateWorkspace(ctx context.Context, w Workspace) (Workspace, er
 	if w.ID == "" {
 		w.ID = NewID()
 	}
+	sandbox, err := json.Marshal(w.Sandbox)
+	if err != nil {
+		return Workspace{}, fmt.Errorf("encode sandbox of workspace %s: %w", w.ID, err)
+	}
 	const q = `INSERT INTO workspaces
-		(id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		(id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id, sandbox)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING ` + workspaceColumns
 	row := s.pool.QueryRow(ctx, q, w.ID, w.ProjectID, w.Name, w.Branch, w.BaseCommit, w.Image,
-		w.State, w.ContainerID, nullable(w.ParentWorkspaceID))
+		w.State, w.ContainerID, nullable(w.ParentWorkspaceID), sandbox)
 	out, err := scanWorkspace(row)
 	if err != nil {
 		return Workspace{}, wrap("create workspace "+w.ID, err)
@@ -123,6 +156,22 @@ func (s *Store) SetWorkspaceState(ctx context.Context, id, state, containerID st
 	return nil
 }
 
+// SetWorkspaceSandbox records what a workspace's container may consume,
+// reach, and expose, and returns the workspace as it now stands.
+func (s *Store) SetWorkspaceSandbox(ctx context.Context, id string, sandbox WorkspaceSandbox) (Workspace, error) {
+	encoded, err := json.Marshal(sandbox)
+	if err != nil {
+		return Workspace{}, fmt.Errorf("encode sandbox of workspace %s: %w", id, err)
+	}
+	row := s.pool.QueryRow(ctx, `UPDATE workspaces SET sandbox = $2, updated_at = now()
+		WHERE id = $1 RETURNING `+workspaceColumns, id, encoded)
+	w, err := scanWorkspace(row)
+	if err != nil {
+		return Workspace{}, wrap("set sandbox of workspace "+id, err)
+	}
+	return w, nil
+}
+
 // DeleteWorkspace removes a workspace and its sessions.
 func (s *Store) DeleteWorkspace(ctx context.Context, id string) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM workspaces WHERE id = $1`, id)
@@ -138,13 +187,17 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) error {
 // scanWorkspace reads one workspace row.
 func scanWorkspace(row pgx.Row) (Workspace, error) {
 	var (
-		w      Workspace
-		parent *string
+		w       Workspace
+		parent  *string
+		sandbox []byte
 	)
 	err := row.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Branch, &w.BaseCommit, &w.Image,
-		&w.State, &w.ContainerID, &parent, &w.CreatedAt, &w.UpdatedAt)
+		&w.State, &w.ContainerID, &parent, &sandbox, &w.CreatedAt, &w.UpdatedAt)
 	if err != nil {
 		return Workspace{}, err
+	}
+	if err := json.Unmarshal(sandbox, &w.Sandbox); err != nil {
+		return Workspace{}, fmt.Errorf("decode sandbox of workspace %s: %w", w.ID, err)
 	}
 	w.ParentWorkspaceID = text(parent)
 	w.CreatedAt = w.CreatedAt.UTC()

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,9 +10,11 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
+	"github.com/erlidev/eika/internal/workspace"
 )
 
 // The settings keys the harness reads itself. Each is validated when it is
@@ -30,6 +33,12 @@ const (
 	// settingSubagentChildren is how many children of one session may run at
 	// a time.
 	settingSubagentChildren = "subagent_max_children"
+	// settingSandboxLimits are the limits a new workspace gets when the
+	// request that creates it names none.
+	settingSandboxLimits = "sandbox_limits"
+	// settingSandboxEgress is the egress mode and allowlist a new workspace
+	// gets when the request that creates it names none.
+	settingSandboxEgress = "sandbox_egress"
 	// settingSetupComplete records that the user finished or skipped the
 	// guided setup, so the UI stops offering it.
 	settingSetupComplete = "setup_complete"
@@ -61,6 +70,9 @@ type settingsDefaults struct {
 	SandboxImage        string `json:"sandbox_image"`
 	SubagentMaxDepth    int    `json:"subagent_max_depth"`
 	SubagentMaxChildren int    `json:"subagent_max_children"`
+	// SandboxLimits and SandboxEgress are what a new workspace gets.
+	SandboxLimits limitsBody `json:"sandbox_limits"`
+	SandboxEgress egressBody `json:"sandbox_egress"`
 	// SearchOrder is every web provider in its default order.
 	SearchOrder []string `json:"search_order"`
 	// SearchLimits is every quota bucket's default limit.
@@ -107,10 +119,13 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 	for _, row := range rows {
 		out[row.Key] = row.Value
 	}
+	sandbox := builtinSandboxDefaults()
 	defaults := settingsDefaults{
 		SandboxImage:        s.cfg.SandboxImage,
 		SubagentMaxDepth:    defaultSubagentDepth,
 		SubagentMaxChildren: defaultSubagentChildren,
+		SandboxLimits:       sandbox.Limits,
+		SandboxEgress:       sandbox.Egress,
 		SearchOrder:         []string{},
 		SearchLimits:        map[string]search.Limit{},
 	}
@@ -166,6 +181,23 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		if image == "" || len(image) > 255 || strings.IndexFunc(image, unicode.IsSpace) >= 0 {
 			return invalidf("%s must be an image reference such as eika-sandbox:latest", key)
 		}
+	case settingSandboxLimits:
+		var limits limitsBody
+		if err := strictJSON(value, &limits); err != nil {
+			return invalidf("%s must be an object of cpus, memory_mb, and pids", key)
+		}
+		return s.checkLimits(ctx, limits)
+	case settingSandboxEgress:
+		var e egressBody
+		if err := strictJSON(value, &e); err != nil {
+			return invalidf("%s must be an object of mode and allow", key)
+		}
+		if _, err := checkEgress(e); err != nil {
+			return err
+		}
+		if e.Mode != string(egress.ModeOpen) && !s.deps.Workspaces.EgressControl() {
+			return workspace.ErrNoEgressControl
+		}
 	case settingSubagentDepth:
 		return validateCount(key, value, maxSubagentDepth)
 	case settingSubagentChildren:
@@ -185,6 +217,13 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		}
 	}
 	return nil
+}
+
+// strictJSON decodes a setting's value, refusing a field v does not have.
+func strictJSON(value json.RawMessage, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(value))
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
 }
 
 // validateCount accepts a whole number from one to limit.

@@ -4,12 +4,22 @@
  * touches nothing else. The walkthrough is in docs/EXTENDING.md.
  */
 
-import { FileCode, GitCompare, Gauge, ListTree, Play, SquareTerminal, Wrench } from "lucide-react";
+import {
+  Box,
+  FileCode,
+  GitCompare,
+  Gauge,
+  ListTree,
+  Play,
+  SquareTerminal,
+  Wrench,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { ChangesPanel } from "@/features/changes";
 import { ContextPanel } from "@/features/context";
 import { FilesPanel } from "@/features/files";
+import { SandboxPanel } from "@/features/sandbox";
 import { RunPanel, SessionTreePanel, ToolsPanel } from "@/features/session";
 import { TerminalPanel } from "@/features/terminal";
 
@@ -108,10 +118,18 @@ const changesPanel: Panel = {
   Component: ({ workspaceId }) => <ChangesPanel workspaceId={workspaceId} />,
 };
 
+const sandboxPanel: Panel = {
+  id: "sandbox",
+  title: "Sandbox",
+  icon: Box,
+  available: (context) => context.workspaceId !== "",
+  Component: ({ workspaceId }) => <SandboxPanel workspaceId={workspaceId} />,
+};
+
 /**
  * panels is every tab the context pane can show, in tab-strip order. A chat
  * has no workspace, so where a workspace session shows its files, terminal,
- * and changes, a chat shows its tools.
+ * changes, and sandbox, a chat shows its tools.
  */
 export const panels: readonly Panel[] = [
   sessionTreePanel,
@@ -121,6 +139,7 @@ export const panels: readonly Panel[] = [
   filesPanel,
   terminalPanel,
   changesPanel,
+  sandboxPanel,
 ];
 
 /** availablePanels is the tabs that apply to what is open. */

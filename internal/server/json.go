@@ -139,7 +139,7 @@ func statusOf(err error) (int, string) {
 		return http.StatusConflict, codeConflict
 	case errors.Is(err, hub.ErrBadProject), errors.Is(err, workspace.ErrBadBranch),
 		errors.Is(err, builtin.ErrBadAnswer), errors.Is(err, mcp.ErrBadElicitationAnswer),
-		errors.Is(err, mcp.ErrNeedsWorkspace):
+		errors.Is(err, mcp.ErrNeedsWorkspace), errors.Is(err, workspace.ErrNoEgressControl):
 		return http.StatusBadRequest, codeInvalidRequest
 	default:
 		return http.StatusInternalServerError, codeInternal

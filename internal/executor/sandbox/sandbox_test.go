@@ -94,6 +94,23 @@ func TestExecStreamsIntoTheWriters(t *testing.T) {
 	}
 }
 
+func TestSetEnvironmentReachesLaterCommands(t *testing.T) {
+	c, _ := newClient(t)
+	if err := c.SetEnvironment(t.Context(), []string{"HTTP_PROXY=http://proxy:3128"}); err != nil {
+		t.Fatalf("set environment: %v", err)
+	}
+	var stdout bytes.Buffer
+	if _, err := c.Exec(t.Context(), executor.ExecSpec{Command: `printf %s "$HTTP_PROXY"`, Shell: true, Stdout: &stdout}); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	if stdout.String() != "http://proxy:3128" {
+		t.Errorf("stdout = %q, want the entry the client set", stdout.String())
+	}
+	if err := c.SetEnvironment(t.Context(), []string{"NOT AN ENTRY"}); err == nil {
+		t.Error("the daemon accepted an entry with no equals sign")
+	}
+}
+
 func TestExecSendsStdinAndReportsTimeouts(t *testing.T) {
 	c, _ := newClient(t)
 

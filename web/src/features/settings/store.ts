@@ -8,7 +8,7 @@ import { create } from "zustand";
 
 /** SettingsTab names one tab of the settings dialog. */
 export type SettingsTab =
-  "models" | "profiles" | "general" | "search" | "mcp" | "account" | "appearance";
+  "models" | "profiles" | "general" | "sandbox" | "search" | "mcp" | "account" | "appearance";
 
 type SettingsDialogState = {
   open: boolean;

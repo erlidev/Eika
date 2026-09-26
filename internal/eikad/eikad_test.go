@@ -104,6 +104,7 @@ func TestEveryOtherRouteNeedsTheToken(t *testing.T) {
 		{http.MethodGet, "/list?path=."},
 		{http.MethodGet, "/watch"},
 		{http.MethodGet, "/pty"},
+		{http.MethodPut, "/environment"},
 	}
 	for _, c := range cases {
 		t.Run(c.method+" "+c.path, func(t *testing.T) {

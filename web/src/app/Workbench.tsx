@@ -76,11 +76,13 @@ export function Workbench() {
     />
   );
   const contextPane = (
-    <aside aria-label="Context panels" className="flex h-full min-h-0 flex-col border-l">
+    <aside aria-label="Context panels" className="flex h-full min-h-0 min-w-0 flex-col border-l">
+      {/* The tabs wrap rather than widen the pane: a strip wider than the
+          pane would push the panel below it out of view. */}
       <div
         role="tablist"
         aria-label="Context panels"
-        className="flex items-center gap-0.5 border-b px-1 py-1"
+        className="flex flex-wrap items-center gap-0.5 border-b px-1 py-1"
       >
         {tabs.map((tab, index) => (
           <button
@@ -92,7 +94,7 @@ export function Workbench() {
             aria-controls={`panel-${tab.id}`}
             tabIndex={panel?.id === tab.id ? 0 : -1}
             className={cn(
-              "hover:bg-accent focus-visible:ring-ring flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors focus-visible:ring-1 focus-visible:outline-none",
+              "hover:bg-accent focus-visible:ring-ring flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs whitespace-nowrap transition-colors focus-visible:ring-1 focus-visible:outline-none",
               panel?.id === tab.id && "bg-accent font-medium",
             )}
             onClick={() => {

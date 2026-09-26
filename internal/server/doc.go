@@ -34,4 +34,11 @@
 // toolChosen in tools.go. The run manager, the context preview, and the
 // profile and session configuration routes (profiles.go) all use it, and
 // every model call a run makes is recorded in model_requests (requests.go).
+//
+// A workspace's sandbox, its limits, egress, and forwarded ports, is checked
+// and applied in sandbox.go, which also answers the egress proxy's policy
+// lookups (EgressPolicy); Run serves the proxy beside the API when the host
+// can restrict egress. previews.go forwards a preview host,
+// <port>-<workspace id>.<host>, to the port in the sandbox, which is why
+// Handler looks at the Host header before the routes.
 package server

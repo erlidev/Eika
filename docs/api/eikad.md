@@ -148,6 +148,21 @@ reported within about a second of happening.
 The first snapshot is taken before the connection is accepted, so no change
 made after the client connects is missed. At most 100 000 files are watched.
 
+## PUT /environment
+
+Replaces the `KEY=VALUE` entries the daemon adds to the environment of every
+process it starts from now on: `/exec` commands, `/pty` shells, and
+`/process` processes. A request's own `env` still wins for that request. A
+process already running keeps what it had, and the daemon forgets the entries
+when the container stops; the harness sets them again on every start. It is
+how the harness points a restricted sandbox's processes at its egress proxy
+(`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, their lowercase spellings, and
+`NODE_USE_ENV_PROXY`) and stops doing so, without restarting the container.
+
+Request: `{"env": ["KEY=VALUE", ...]}`; an empty list clears them. An entry
+without `=`, with an empty key, or naming `EIKAD_TOKEN` is `400`. Response:
+`204`.
+
 ## `eikad filter` (command)
 
 Not a route: a one-shot mode of the same binary, run through `POST /exec` as

@@ -158,8 +158,8 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	host := newHost(t, testHub(t), "")
 
 	ws, err := host.Create(t.Context(), workspace.Spec{
-		Limits: workspace.Limits{CPUs: 1, MemoryBytes: 512 << 20, PIDs: 256},
-		Labels: map[string]string{"eika.test": "lifecycle"},
+		Confinement: workspace.Confinement{Limits: workspace.Limits{CPUs: 1, MemoryBytes: 512 << 20, PIDs: 256}},
+		Labels:      map[string]string{"eika.test": "lifecycle"},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -198,6 +198,52 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		}
 		if got := run(t, ex, "grep CapEff /proc/self/status"); !strings.HasSuffix(got, "0000000000000000") {
 			t.Errorf("effective capabilities = %q, want none", got)
+		}
+	})
+
+	t.Run("holds its processes to the limits", func(t *testing.T) {
+		limits := run(t, ex, "cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.swap.max /sys/fs/cgroup/pids.max")
+		if want := "100000 100000\n536870912\n0\n256"; limits != want {
+			t.Errorf("cgroup limits = %q, want %q", limits, want)
+		}
+	})
+
+	t.Run("reports what it uses", func(t *testing.T) {
+		usage, err := host.Usage(t.Context(), ws)
+		if err != nil {
+			t.Fatalf("usage: %v", err)
+		}
+		if usage.MemoryBytes <= 0 || usage.MemoryLimitBytes != 512<<20 || usage.PIDs < 1 || usage.SampledAt.IsZero() {
+			t.Errorf("usage = %+v, want memory under a 512 MiB limit and at least one process", usage)
+		}
+	})
+
+	t.Run("changes its limits while it runs", func(t *testing.T) {
+		if err := host.Confine(t.Context(), &ws, workspace.Confinement{Limits: workspace.Limits{CPUs: 0.5, MemoryBytes: 256 << 20}}); err != nil {
+			t.Fatalf("confine: %v", err)
+		}
+		capacity, err := host.Capacity(t.Context())
+		if err != nil {
+			t.Fatalf("capacity: %v", err)
+		}
+		limits := run(t, ex, "cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/pids.max")
+		if want := "50000 100000\n268435456\nmax"; limits != want {
+			t.Errorf("cgroup limits = %q, want %q", limits, want)
+		}
+		// Docker cannot lift a limit from a container, so no limit is the
+		// whole host.
+		if err := host.Confine(t.Context(), &ws, workspace.Confinement{}); err != nil {
+			t.Fatalf("confine: %v", err)
+		}
+		limits = run(t, ex, "cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max")
+		if want := fmt.Sprintf("%d 100000\n%d", capacity.CPUs*100000, capacity.MemoryBytes); limits != want {
+			t.Errorf("cgroup limits = %q, want the host's %q", limits, want)
+		}
+	})
+
+	t.Run("refuses a proxied network outside compose", func(t *testing.T) {
+		if err := host.Confine(t.Context(), &ws, workspace.Confinement{Proxied: true}); !errors.Is(err, workspace.ErrNoEgressControl) {
+			t.Errorf("confine = %v, want ErrNoEgressControl", err)
 		}
 	})
 
@@ -659,5 +705,90 @@ func TestHasImageTellsPresentFromMissing(t *testing.T) {
 	}
 	if ok, err := host.HasImage(t.Context(), "eika-test-absent-"+strings.ToLower(t.Name())+":never"); err != nil || ok {
 		t.Errorf("HasImage of a missing image = %v, %v; want absent", ok, err)
+	}
+}
+
+// testNetwork creates a Docker network for one test and removes it after.
+func testNetwork(t *testing.T, internal bool) string {
+	t.Helper()
+	name := fmt.Sprintf("eika-test-%d-%d", os.Getpid(), time.Now().UnixNano())
+	args := []string{"network", "create"}
+	if internal {
+		args = append(args, "--internal")
+	}
+	if out, err := exec.Command("docker", append(args, name)...).CombinedOutput(); err != nil {
+		t.Fatalf("create network: %v: %s", err, out)
+	}
+	t.Cleanup(func() { exec.Command("docker", "network", "rm", "-f", name).Run() })
+	return name
+}
+
+// networksOf lists the networks a container is attached to.
+func networksOf(t *testing.T, containerID string) []string {
+	t.Helper()
+	out, err := exec.Command("docker", "inspect", "-f", "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}", containerID).Output()
+	if err != nil {
+		t.Fatalf("inspect networks: %v", err)
+	}
+	return strings.Fields(string(out))
+}
+
+func TestConfineMovesAWorkspaceBetweenTheSandboxNetworks(t *testing.T) {
+	requireDocker(t)
+	requireImage(t)
+	open, internal := testNetwork(t, false), testNetwork(t, true)
+	host, err := workspace.NewHost(workspace.Options{
+		DockerSocket:    requireDocker(t),
+		Hub:             testHub(t),
+		Image:           sandboxImage,
+		EikadBinary:     buildEikad(t),
+		Network:         open,
+		InternalNetwork: internal,
+		EgressProxyURL:  "http://eika:3128",
+	}, testLogger())
+	if err != nil {
+		t.Fatalf("new host: %v", err)
+	}
+	t.Cleanup(func() { host.Close() })
+	if !host.EgressControl() {
+		t.Fatal("a host with both networks has no egress control")
+	}
+
+	// The test runs outside both networks, so the container is never
+	// started: joining and leaving networks works on a created one.
+	ws, err := host.Create(t.Context(), workspace.Spec{Confinement: workspace.Confinement{Proxied: true}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() { cleanUp(host, &ws) })
+	if got := networksOf(t, ws.ContainerID); len(got) != 1 || got[0] != internal {
+		t.Fatalf("a proxied workspace is on %v, want only %s", got, internal)
+	}
+	inspected, err := host.Inspect(t.Context(), ws.ID)
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	if !inspected.Proxied {
+		t.Error("Inspect does not report the workspace proxied")
+	}
+
+	if err := host.Confine(t.Context(), &ws, workspace.Confinement{}); err != nil {
+		t.Fatalf("confine: %v", err)
+	}
+	if got := networksOf(t, ws.ContainerID); len(got) != 1 || got[0] != open {
+		t.Errorf("an open workspace is on %v, want only %s", got, open)
+	}
+	if ws.Proxied {
+		t.Error("the workspace is still marked proxied")
+	}
+	// Doing it twice changes nothing.
+	if err := host.Confine(t.Context(), &ws, workspace.Confinement{}); err != nil {
+		t.Fatalf("confine again: %v", err)
+	}
+	if err := host.Confine(t.Context(), &ws, workspace.Confinement{Proxied: true}); err != nil {
+		t.Fatalf("confine back: %v", err)
+	}
+	if got := networksOf(t, ws.ContainerID); len(got) != 1 || got[0] != internal {
+		t.Errorf("the workspace is on %v, want only %s", got, internal)
 	}
 }

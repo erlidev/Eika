@@ -5,7 +5,13 @@ import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 import { queryKeys } from "@/api/keys";
 import { getSettings, getSystem, putSettings } from "@/api/routes";
-import type { Settings, SettingsState, SystemStatus } from "@/api/types";
+import type {
+  SandboxEgress,
+  SandboxLimits,
+  Settings,
+  SettingsState,
+  SystemStatus,
+} from "@/api/types";
 
 /** The settings keys the harness reads itself. Every other key is the UI's own. */
 export const settingKeys = {
@@ -14,6 +20,8 @@ export const settingKeys = {
   sandboxImage: "sandbox_image",
   subagentMaxDepth: "subagent_max_depth",
   subagentMaxChildren: "subagent_max_children",
+  sandboxLimits: "sandbox_limits",
+  sandboxEgress: "sandbox_egress",
   setupComplete: "setup_complete",
 } as const;
 
@@ -68,4 +76,36 @@ export function settingNumber(state: SettingsState | undefined, key: string): nu
 /** setupComplete reports whether the user finished or skipped the guided setup. */
 export function setupComplete(state: SettingsState | undefined): boolean {
   return state?.settings[settingKeys.setupComplete] === true;
+}
+
+/** SandboxDefaults are the limits and network a new workspace gets. */
+export type SandboxDefaults = { limits: SandboxLimits; egress: SandboxEgress };
+
+/**
+ * sandboxDefaults is what the settings store, else the harness's own
+ * defaults. The table holds any JSON, so a stored value is read only when
+ * it has the shape the harness validated it to.
+ */
+export function sandboxDefaults(state: SettingsState): SandboxDefaults {
+  const limits = state.settings[settingKeys.sandboxLimits];
+  const egress = state.settings[settingKeys.sandboxEgress];
+  return {
+    limits: isLimits(limits) ? limits : state.defaults.sandbox_limits,
+    egress: isEgress(egress) ? egress : state.defaults.sandbox_egress,
+  };
+}
+
+function isLimits(value: unknown): value is SandboxLimits {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return ["cpus", "memory_mb", "pids"].every((k) => typeof v[k] === "number");
+}
+
+function isEgress(value: unknown): value is SandboxEgress {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    (v.mode === "open" || v.mode === "allowlist" || v.mode === "none") &&
+    (v.allow === null || (Array.isArray(v.allow) && v.allow.every((h) => typeof h === "string")))
+  );
 }

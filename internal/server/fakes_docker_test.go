@@ -96,6 +96,15 @@ type fakeHost struct {
 	// stdio MCP server in a workspace; processes records where.
 	process   func(spec sandbox.ProcessSpec) (io.ReadWriteCloser, error)
 	processes []string
+	// egressControl is what EgressControl reports: whether the host has an
+	// internal network to put a restricted workspace on.
+	egressControl bool
+	// confined records every confinement a workspace was created or
+	// confined with, in order, by workspace id.
+	confined map[string][]workspace.Confinement
+	// ports are the base URLs PortURL answers with, by port, which is how a
+	// test puts a server behind a workspace's port.
+	ports map[int]string
 }
 
 // fakeWorkspace is one workspace of a fakeHost.
@@ -108,7 +117,10 @@ type fakeWorkspace struct {
 // directory the test owns.
 func newFakeHost(t *testing.T) *fakeHost {
 	t.Helper()
-	return &fakeHost{root: t.TempDir(), hub: t.TempDir(), workspaces: map[string]*fakeWorkspace{}}
+	return &fakeHost{
+		root: t.TempDir(), hub: t.TempDir(), workspaces: map[string]*fakeWorkspace{},
+		confined: map[string][]workspace.Confinement{}, ports: map[int]string{},
+	}
 }
 
 // CloneAt clones the project from the fake hub and puts the workspace on
@@ -234,6 +246,9 @@ func (h *fakeHost) Create(_ context.Context, spec workspace.Spec) (workspace.Wor
 	if h.createErr != nil {
 		return workspace.Workspace{}, h.createErr
 	}
+	if spec.Confinement.Proxied && !h.EgressControl() {
+		return workspace.Workspace{}, workspace.ErrNoEgressControl
+	}
 	dir := spec.HostPath
 	if dir == "" {
 		dir = filepath.Join(h.root, spec.ID)
@@ -248,6 +263,8 @@ func (h *fakeHost) Create(_ context.Context, spec workspace.Spec) (workspace.Wor
 		State:       workspace.StateCreating,
 		Project:     spec.Project,
 		HostPath:    spec.HostPath,
+		HubToken:    "hub-token-" + spec.ID,
+		Proxied:     spec.Confinement.Proxied,
 	}
 	if ws.Image == "" {
 		ws.Image = "eika-sandbox:latest"
@@ -255,7 +272,59 @@ func (h *fakeHost) Create(_ context.Context, spec workspace.Spec) (workspace.Wor
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.workspaces[ws.ID] = &fakeWorkspace{ws: ws, dir: dir}
+	h.confined[ws.ID] = append(h.confined[ws.ID], spec.Confinement)
 	return ws, nil
+}
+
+// Confine records the confinement a workspace was given.
+func (h *fakeHost) Confine(_ context.Context, ws *workspace.Workspace, c workspace.Confinement) error {
+	if c.Proxied && !h.EgressControl() {
+		return workspace.ErrNoEgressControl
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	found, ok := h.workspaces[ws.ID]
+	if !ok {
+		return fmt.Errorf("%w: %s", workspace.ErrNoWorkspace, ws.ID)
+	}
+	found.ws.Proxied, ws.Proxied = c.Proxied, c.Proxied
+	h.confined[ws.ID] = append(h.confined[ws.ID], c)
+	return nil
+}
+
+// confinements returns what a workspace was created and confined with.
+func (h *fakeHost) confinements(id string) []workspace.Confinement {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.confined[id])
+}
+
+// Usage reports a fixed sample of a running workspace.
+func (h *fakeHost) Usage(_ context.Context, ws workspace.Workspace) (workspace.Usage, error) {
+	return workspace.Usage{CPUPercent: 42, MemoryBytes: 256 << 20, MemoryLimitBytes: 1 << 30, PIDs: 7}, nil
+}
+
+// Capacity is a host of four cores and 8 GiB.
+func (h *fakeHost) Capacity(context.Context) (workspace.Capacity, error) {
+	return workspace.Capacity{CPUs: 4, MemoryBytes: 8 << 30}, nil
+}
+
+// EgressControl reports what the test set.
+func (h *fakeHost) EgressControl() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.egressControl
+}
+
+// PortURL answers with the server the test put behind a port.
+func (h *fakeHost) PortURL(_ context.Context, ws workspace.Workspace, port int) (string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	base, ok := h.ports[port]
+	if !ok {
+		return "", fmt.Errorf("workspace %s has nothing on port %d", ws.ID, port)
+	}
+	return base, nil
 }
 
 // Start marks the workspace running.

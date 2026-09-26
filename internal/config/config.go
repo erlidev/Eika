@@ -30,6 +30,19 @@ type Config struct {
 	// sandbox's daemon port on 127.0.0.1 instead, which is what a harness
 	// running outside compose needs.
 	SandboxNetwork string `yaml:"sandbox_network"`
+	// SandboxInternalNetwork is the internal Docker network a sandbox whose
+	// egress is restricted joins instead of SandboxNetwork. It has no route
+	// out, and the harness is on it too, so such a sandbox reaches the
+	// harness and nothing else directly. Empty, or an empty SandboxNetwork,
+	// means no sandbox's egress can be restricted.
+	SandboxInternalNetwork string `yaml:"sandbox_internal_network"`
+	// EgressListen is the address the egress proxy listens on: the one way
+	// out for a sandbox on the internal network. It serves only when the
+	// sandbox networks are configured.
+	EgressListen string `yaml:"egress_listen"`
+	// EgressProxyURL is the egress proxy as a sandbox reaches it, on the
+	// internal network.
+	EgressProxyURL string `yaml:"egress_proxy_url"`
 	// EikadBinary is the path to the static eikad binary in the harness
 	// filesystem. It is copied into every sandbox container.
 	EikadBinary string `yaml:"eikad_binary"`
@@ -84,10 +97,15 @@ func Default() Config {
 		// They can therefore reach the harness and be reached by it, but not
 		// the database or the search service on the default network.
 		SandboxNetwork: "eika_sandbox",
-		EikadBinary:    "/usr/local/share/eika/eikad",
-		HubRoot:        "/var/lib/eika/hub",
-		HubURL:         "http://eika:8080",
-		SecretKeyFile:  "/var/lib/eika/secret.key",
+		// A sandbox with restricted egress is on an internal network
+		// instead, and goes out only through the harness's proxy.
+		SandboxInternalNetwork: "eika_sandbox_internal",
+		EgressListen:           ":3128",
+		EgressProxyURL:         "http://eika:3128",
+		EikadBinary:            "/usr/local/share/eika/eikad",
+		HubRoot:                "/var/lib/eika/hub",
+		HubURL:                 "http://eika:8080",
+		SecretKeyFile:          "/var/lib/eika/secret.key",
 	}
 }
 
@@ -148,18 +166,21 @@ func checkMovedKeys(data []byte) error {
 // applyEnv overlays the EIKA_* environment variables onto c.
 func (c *Config) applyEnv() {
 	overrides := map[string]*string{
-		"EIKA_LISTEN":          &c.Listen,
-		"EIKA_DATABASE_URL":    &c.DatabaseURL,
-		"EIKA_DOCKER_SOCKET":   &c.DockerSocket,
-		"EIKA_SEARXNG_URL":     &c.SearxNGURL,
-		"EIKA_SANDBOX_IMAGE":   &c.SandboxImage,
-		"EIKA_SANDBOX_NETWORK": &c.SandboxNetwork,
-		"EIKA_EIKAD_BINARY":    &c.EikadBinary,
-		"EIKA_HUB_ROOT":        &c.HubRoot,
-		"EIKA_HUB_URL":         &c.HubURL,
-		"EIKA_AUTH_TOKEN":      &c.AuthToken,
-		"EIKA_SECRET_KEY_FILE": &c.SecretKeyFile,
-		"EIKA_PUBLIC_URL":      &c.PublicURL,
+		"EIKA_LISTEN":                   &c.Listen,
+		"EIKA_DATABASE_URL":             &c.DatabaseURL,
+		"EIKA_DOCKER_SOCKET":            &c.DockerSocket,
+		"EIKA_SEARXNG_URL":              &c.SearxNGURL,
+		"EIKA_SANDBOX_IMAGE":            &c.SandboxImage,
+		"EIKA_SANDBOX_NETWORK":          &c.SandboxNetwork,
+		"EIKA_SANDBOX_INTERNAL_NETWORK": &c.SandboxInternalNetwork,
+		"EIKA_EGRESS_LISTEN":            &c.EgressListen,
+		"EIKA_EGRESS_PROXY_URL":         &c.EgressProxyURL,
+		"EIKA_EIKAD_BINARY":             &c.EikadBinary,
+		"EIKA_HUB_ROOT":                 &c.HubRoot,
+		"EIKA_HUB_URL":                  &c.HubURL,
+		"EIKA_AUTH_TOKEN":               &c.AuthToken,
+		"EIKA_SECRET_KEY_FILE":          &c.SecretKeyFile,
+		"EIKA_PUBLIC_URL":               &c.PublicURL,
 	}
 	for name, field := range overrides {
 		if v, ok := os.LookupEnv(name); ok {
@@ -224,7 +245,19 @@ func (c Config) Validate() error {
 		return errors.New("validate config: sandbox_image is empty")
 	}
 	// sandbox_network may be empty: that is the development mode where the
-	// harness reaches sandboxes on published loopback ports.
+	// harness reaches sandboxes on published loopback ports. So may the
+	// internal network, which turns restricted egress off.
+	if c.SandboxNetwork != "" && c.SandboxInternalNetwork == c.SandboxNetwork {
+		return errors.New("validate config: sandbox_internal_network must differ from sandbox_network")
+	}
+	if c.SandboxInternalNetwork != "" && c.SandboxNetwork != "" {
+		if c.EgressListen == "" {
+			return errors.New("validate config: egress_listen is empty, and a sandbox on sandbox_internal_network has no other way out")
+		}
+		if u, err := url.Parse(c.EgressProxyURL); err != nil || u.Scheme != "http" || u.Host == "" {
+			return fmt.Errorf("validate config: egress_proxy_url %q is not an http address such as http://eika:3128", c.EgressProxyURL)
+		}
+	}
 	if c.EikadBinary == "" {
 		return errors.New("validate config: eikad_binary is empty")
 	}
@@ -253,9 +286,10 @@ const redacted = "[REDACTED]"
 // String renders the configuration with secrets replaced by a placeholder so
 // that it is safe to log.
 func (c Config) String() string {
-	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s eikad_binary=%s hub_root=%s hub_url=%s secret_key_file=%s auth_token=%s allowed_origins=%s public_url=%s}",
+	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s sandbox_internal_network=%s egress_listen=%s egress_proxy_url=%s eikad_binary=%s hub_root=%s hub_url=%s secret_key_file=%s auth_token=%s allowed_origins=%s public_url=%s}",
 		c.Listen, redactURL(c.DatabaseURL), c.DockerSocket, c.SearxNGURL, c.SandboxImage,
-		c.SandboxNetwork, c.EikadBinary, c.HubRoot, c.HubURL, c.SecretKeyFile,
+		c.SandboxNetwork, c.SandboxInternalNetwork, c.EgressListen, c.EgressProxyURL,
+		c.EikadBinary, c.HubRoot, c.HubURL, c.SecretKeyFile,
 		redact(c.AuthToken), strings.Join(c.AllowedOrigins, ","), c.PublicURL)
 }
 

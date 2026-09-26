@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/erlidev/eika/internal/config"
+	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
@@ -51,6 +52,10 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Image:        cfg.SandboxImage,
 		Network:      cfg.SandboxNetwork,
 		EikadBinary:  cfg.EikadBinary,
+		// The internal network is used only beside the sandbox network,
+		// which is how a harness outside compose ends up without it.
+		InternalNetwork: cfg.SandboxInternalNetwork,
+		EgressProxyURL:  cfg.EgressProxyURL,
 	}, log)
 	if err != nil {
 		return err
@@ -76,6 +81,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Workspaces: host,
 		Emitter:    bus,
 		Limits:     subagentLimits(st, log),
+		Sandbox:    ChildSandbox,
 		Logger:     log,
 	})
 	tools, err := builtin.Registry(builtin.Deps{Questions: questions, Agents: spawner, Search: engine, Pages: pages})
@@ -86,7 +92,17 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	// before the store it reads.
 	pool := NewMCP(cfg, st, secrets, host, bus, log)
 	defer pool.Close()
-	s := New(cfg, log, Deps{
+	// The proxy asks the server for a workspace's policy, and the server
+	// reports what the proxy refused, so the proxy reaches the server
+	// through a variable set just below.
+	var s *Server
+	var proxy *egress.Proxy
+	if host.EgressControl() {
+		proxy = egress.New(egress.Options{Policy: func(ctx context.Context, id string) (egress.Policy, error) {
+			return s.EgressPolicy(ctx, id)
+		}}, log)
+	}
+	s = New(cfg, log, Deps{
 		Store:      st,
 		Hub:        repos,
 		Workspaces: host,
@@ -97,6 +113,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Bus:        bus,
 		Search:     engine,
 		Pages:      pages,
+		Egress:     egressDep(proxy),
 		MCP:        pool,
 	}, opts)
 	s.UseSubagents(spawner, spawner.Attach)
@@ -112,7 +129,28 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	if err := s.Reconcile(ctx); err != nil {
 		log.Error("reconcile workspaces", "error", err)
 	}
+	if proxy != nil {
+		// A proxy that cannot listen leaves restricted sandboxes with no way
+		// out, which is safe; the API still serves.
+		done := make(chan error, 1)
+		go func() { done <- Serve(ctx, cfg.EgressListen, proxy, log) }()
+		defer func() {
+			proxy.Close()
+			if err := <-done; err != nil {
+				log.Error("serve egress proxy", "error", err)
+			}
+		}()
+	}
 	return s.Run(ctx)
+}
+
+// egressDep hands the server the proxy, or nothing when there is none: a nil
+// *egress.Proxy in the interface would not compare equal to nil.
+func egressDep(p *egress.Proxy) Egress {
+	if p == nil {
+		return nil
+	}
+	return p
 }
 
 // buildSearch builds the search engine over the built-in backends and the

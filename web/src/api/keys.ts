@@ -10,6 +10,7 @@ export const queryKeys = {
   workspaces: (projectId?: string) => ["workspaces", projectId ?? "all"] as const,
   workspace: (id: string) => ["workspace", id] as const,
   workspaceDiff: (id: string) => ["workspace", id, "diff"] as const,
+  workspaceUsage: (id: string) => ["workspace", id, "usage"] as const,
   /** workspaceFiles without a path is the prefix of every listing of the workspace. */
   workspaceFiles: (id: string, path?: string) =>
     path === undefined

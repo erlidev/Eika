@@ -64,7 +64,7 @@ func (d *Daemon) handleProcess(w http.ResponseWriter, r *http.Request) {
 	defer stop()
 	cmd := exec.CommandContext(procCtx, start.Command, start.Args...)
 	cmd.Dir = dir
-	cmd.Env = append(sanitizedEnv(), start.Env...)
+	cmd.Env = append(d.environ(), start.Env...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
 	cmd.WaitDelay = processStopGrace

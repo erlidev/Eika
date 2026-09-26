@@ -975,6 +975,30 @@ export const scenarios = {
     path: "/sessions/ses-backoff",
     build: () => profiles().world,
   },
+  sandbox: {
+    description:
+      "Like workbench, with ws-retries confined: two cores, 4 GiB, an allowlist egress that refused two hosts, and Vite forwarded on 5173. For the Sandbox panel, the settings' Sandbox tab, and the new workspace dialog.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      const ws = b.world.workspaces.find((w) => w.id === "ws-retries");
+      if (ws !== undefined) {
+        ws.sandbox = {
+          limits: { cpus: 2, memory_mb: 4096, pids: 4096 },
+          egress: {
+            mode: "allowlist",
+            allow: ["github.com", "*.githubusercontent.com", "proxy.golang.org"],
+          },
+          ports: [{ port: 5173, label: "vite" }],
+        };
+      }
+      b.world.blocked["ws-retries"] = [
+        { host: "sum.golang.org", count: 4, last: minutesAgo(2) },
+        { host: "registry.npmjs.org", count: 1, last: minutesAgo(9) },
+      ];
+      return b.world;
+    },
+  },
   "chat-empty": {
     description: "A chat with no messages yet, beside the workbench's projects.",
     path: "/sessions/chat-new",

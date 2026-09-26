@@ -152,6 +152,20 @@ describe("the mock answers as the harness does", () => {
         { message: "Back off" },
       ],
       ["POST /api/workspaces/{id}/push", "/api/workspaces/ws-retries/push", { upstream: true }],
+      [
+        "PUT /api/workspaces/{id}/sandbox",
+        "/api/workspaces/ws-retries/sandbox",
+        {
+          limits: { cpus: 2, memory_mb: 4096, pids: 4096 },
+          egress: { mode: "allowlist", allow: ["github.com"] },
+          ports: [{ port: 5173, label: "vite" }],
+        },
+      ],
+      ["GET /api/workspaces/{id}/usage", "/api/workspaces/ws-retries/usage"],
+      [
+        "POST /api/workspaces/{id}/ports/{port}/preview",
+        "/api/workspaces/ws-retries/ports/5173/preview",
+      ],
       ["GET /api/sessions", "/api/sessions?workspace_id=ws-retries&descendants=true"],
       ["POST /api/sessions", "/api/sessions", { workspace_id: "ws-retries", title: "Try jitter" }],
       ["GET /api/sessions/{id}", "/api/sessions/ses-backoff"],

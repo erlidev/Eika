@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/erlidev/eika/internal/config"
+	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/sandbox"
@@ -63,6 +64,26 @@ type Workspaces interface {
 	// the executor, so no tool can hold a process of its own.
 	Process(ctx context.Context, ws workspace.Workspace, spec sandbox.ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error)
 	HasImage(ctx context.Context, ref string) (bool, error)
+	// Confine applies a workspace's limits and network to its container,
+	// running or stopped, without restarting it.
+	Confine(ctx context.Context, ws *workspace.Workspace, c workspace.Confinement) error
+	// Usage samples what a running workspace is consuming.
+	Usage(ctx context.Context, ws workspace.Workspace) (workspace.Usage, error)
+	// Capacity is what the Docker host has to give, which bounds a limit.
+	Capacity(ctx context.Context) (workspace.Capacity, error)
+	// EgressControl reports whether a workspace's egress can be restricted.
+	EgressControl() bool
+	// PortURL is where the harness reaches one of a workspace's ports,
+	// which is where a preview is forwarded.
+	PortURL(ctx context.Context, ws workspace.Workspace, port int) (string, error)
+}
+
+// Egress is the part of the egress proxy the API uses: the hosts a
+// workspace was refused, and forgetting a workspace that is gone.
+// *egress.Proxy is the one implementation.
+type Egress interface {
+	Blocked(workspaceID string) []egress.Blocked
+	Forget(workspaceID string)
 }
 
 // Subagents is the part of the subagent spawner the API uses: the children of
@@ -118,6 +139,9 @@ type Deps struct {
 	// Subagents is set by UseSubagents rather than by the caller: the spawner
 	// needs the run manager this server owns.
 	Subagents Subagents
+	// Egress is the proxy restricted sandboxes reach the internet through.
+	// Nil when the harness cannot restrict a sandbox's egress.
+	Egress Egress
 	// MCP holds the connections to the MCP servers the user configured,
 	// whose tools runs offer beside the built-in ones. Without it the MCP
 	// routes are not served. The caller closes it after the server.
@@ -145,6 +169,15 @@ type Server struct {
 	// loginMu makes sign-in attempts take turns, which bounds how fast a
 	// password can be guessed without locking its owner out.
 	loginMu sync.Mutex
+
+	// tokensMu guards tokens.
+	tokensMu sync.Mutex
+	// tokens caches each workspace's egress proxy token, read from its
+	// container the first time the proxy is asked about it.
+	tokens map[string]string
+
+	// previews holds the tickets and sessions of workspace previews.
+	previews previews
 }
 
 // New builds a Server for the given configuration and dependencies. A zero
@@ -172,8 +205,17 @@ func (s *Server) UseSubagents(sp Subagents, attach func(subagent.Runner)) {
 	attach(s)
 }
 
-// Handler returns the server's root handler.
-func (s *Server) Handler() http.Handler { return s.mux }
+// Handler returns the server's root handler. A request for a workspace
+// preview's host goes to the preview; everything else to the routes.
+func (s *Server) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if id, port, ok := previewHost(r.Host); ok && s.deps.Store != nil && s.deps.Workspaces != nil {
+			s.servePreview(w, r, id, port)
+			return
+		}
+		s.mux.ServeHTTP(w, r)
+	})
+}
 
 // Bus returns the event bus the server fans events out on, which is the
 // emitter every run writes to.
@@ -183,7 +225,7 @@ func (s *Server) Bus() *event.Bus { return s.deps.Bus }
 // the runs that are still going.
 func (s *Server) Run(ctx context.Context) error {
 	defer s.Close()
-	return Serve(ctx, s.cfg.Listen, s.mux, s.log)
+	return Serve(ctx, s.cfg.Listen, s.Handler(), s.log)
 }
 
 // Close aborts every run and every child agent that is still going and

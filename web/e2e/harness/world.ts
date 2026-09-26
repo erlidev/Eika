@@ -26,7 +26,9 @@ import type {
   Project,
   Provider,
   Question,
+  BlockedHost,
   Run,
+  Sandbox,
   SearchStatus,
   Session,
   SettingsState,
@@ -118,6 +120,8 @@ export type World = {
   probeModels: { id: string; context_window?: number; max_output?: number }[];
   /** eventsOnConnect are sent once to every event stream that opens. */
   eventsOnConnect: EikaEvent[];
+  /** blocked are the hosts each workspace's egress was refused lately, by workspace id. */
+  blocked: Record<string, BlockedHost[]>;
   /** profiles are the profiles, oldest first; the default_profile setting names the default. */
   profiles: StoredProfile[];
   /** overrides are what each session sets over its profile, by session id. */
@@ -147,6 +151,8 @@ export function emptyWorld(): World {
         sandbox_image: "eika-sandbox:latest",
         subagent_max_depth: 2,
         subagent_max_children: 4,
+        sandbox_limits: { cpus: 0, memory_mb: 0, pids: 4096 },
+        sandbox_egress: { mode: "open", allow: [...defaultAllowlist] },
         // As the harness documents them in docs/api/http.md.
         search_order: ["searxng", "exa", "tavily", "brave", "marginalia"],
         search_limits: {
@@ -163,6 +169,7 @@ export function emptyWorld(): World {
     system: {
       docker: { reachable: true },
       sandbox_image: { name: "eika-sandbox:latest", present: true },
+      sandbox: { cpus: 8, memory_bytes: 16 * 2 ** 30, egress_control: true },
       providers: 0,
       models: 0,
       projects: 0,
@@ -190,10 +197,35 @@ export function emptyWorld(): World {
       { id: "gpt-5-mini", context_window: 400000, max_output: 128000 },
     ],
     eventsOnConnect: [],
+    blocked: {},
     profiles: [defaultProfile()],
     overrides: {},
     toolChoices: {},
     requests: {},
+  };
+}
+
+/** defaultAllowlist is the allowlist the harness suggests (egress.DefaultAllowlist). */
+export const defaultAllowlist = [
+  "github.com",
+  "*.github.com",
+  "*.githubusercontent.com",
+  "gitlab.com",
+  "registry.npmjs.org",
+  "pypi.org",
+  "files.pythonhosted.org",
+  "proxy.golang.org",
+  "sum.golang.org",
+  "crates.io",
+  "*.crates.io",
+];
+
+/** defaultSandbox is what a workspace gets from the harness's own defaults. */
+export function defaultSandbox(): Sandbox {
+  return {
+    limits: { cpus: 0, memory_mb: 0, pids: 4096 },
+    egress: { mode: "open", allow: [...defaultAllowlist] },
+    ports: [],
   };
 }
 
@@ -353,6 +385,7 @@ export class WorldBuilder {
       image: "eika-sandbox:latest",
       state: "running",
       container_id: "c0ffee",
+      sandbox: defaultSandbox(),
       created_at: minutesAgo(400),
       updated_at: minutesAgo(30),
       ...input,

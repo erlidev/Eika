@@ -74,6 +74,9 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/workspaces/{id}/files", s.handleListFiles)
 	api.HandleFunc("GET /api/workspaces/{id}/file", s.handleReadFile)
 	api.HandleFunc("PUT /api/workspaces/{id}/file", s.handleWriteFile)
+	api.HandleFunc("PUT /api/workspaces/{id}/sandbox", s.handleSetWorkspaceSandbox)
+	api.HandleFunc("GET /api/workspaces/{id}/usage", s.handleWorkspaceUsage)
+	api.HandleFunc("POST /api/workspaces/{id}/ports/{port}/preview", s.handleOpenPreview)
 
 	api.HandleFunc("GET /api/sessions", s.handleListSessions)
 	api.HandleFunc("POST /api/sessions", s.handleCreateSession)

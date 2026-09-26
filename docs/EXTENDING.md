@@ -364,7 +364,11 @@ An image must satisfy three things:
 
 A sandbox container drops all Linux capabilities and runs with
 `no-new-privileges`, so an image that needs to install packages at run time
-will not work; install them at build time.
+will not work; install them at build time. When the workspace's egress is
+restricted, its tools reach the internet only through the harness's proxy,
+which they find in `HTTP_PROXY` and `HTTPS_PROXY`; a tool in the image that
+ignores those variables reaches nothing, and pre-installing what it would
+download is the way around that.
 
 Name an existing image:
 
@@ -602,21 +606,21 @@ open session and its workspace, both empty strings when nothing is open, and
 whether the session is a chat, which has no workspace:
 
 ```tsx
-// web/src/features/workspaces/SandboxPanel.tsx
-/** What the session's sandbox is: its image, its branch, and its state. */
+// web/src/features/workspaces/InfoPanel.tsx
+/** What the session's workspace is: its image, its branch, and its state. */
 
 import { useWorkspace } from "@/features/workspaces/queries";
 import { useWorkspaceEvents } from "@/features/workspaces/useWorkspaceEvents";
 
-export type SandboxPanelProps = {
+export type InfoPanelProps = {
   workspaceId: string;
 };
 
-export function SandboxPanel({ workspaceId }: SandboxPanelProps) {
+export function InfoPanel({ workspaceId }: InfoPanelProps) {
   useWorkspaceEvents(workspaceId);
   const workspace = useWorkspace(workspaceId);
   if (workspace.isPending) {
-    return <p className="text-muted-foreground p-3 text-xs">Loading the sandbox…</p>;
+    return <p className="text-muted-foreground p-3 text-xs">Loading the workspace…</p>;
   }
   if (workspace.isError) {
     return (
@@ -647,7 +651,7 @@ through that file:
 
 ```ts
 // web/src/features/workspaces/index.ts
-export { SandboxPanel } from "@/features/workspaces/SandboxPanel";
+export { InfoPanel } from "@/features/workspaces/InfoPanel";
 ```
 
 Register it. `id` is what the layout remembers, so it never changes once it
@@ -655,19 +659,19 @@ ships. `available` hides the tab when its data cannot exist yet:
 
 ```tsx
 // web/src/app/panels.tsx
-import { Container } from "lucide-react";
+import { Info } from "lucide-react";
 
-import { SandboxPanel } from "@/features/workspaces";
+import { InfoPanel } from "@/features/workspaces";
 
-const sandboxPanel: Panel = {
-  id: "sandbox",
-  title: "Sandbox",
-  icon: Container,
+const infoPanel: Panel = {
+  id: "info",
+  title: "Info",
+  icon: Info,
   available: (context) => context.workspaceId !== "",
-  Component: ({ workspaceId }) => <SandboxPanel workspaceId={workspaceId} />,
+  Component: ({ workspaceId }) => <InfoPanel workspaceId={workspaceId} />,
 };
 
-export const panels: readonly Panel[] = [sessionTreePanel, runPanel, sandboxPanel];
+export const panels: readonly Panel[] = [sessionTreePanel, runPanel, infoPanel];
 ```
 
 The tab strip, the keyboard handling, the remembered active tab, and the narrow

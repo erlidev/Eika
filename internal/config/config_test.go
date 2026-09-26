@@ -149,6 +149,9 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 	t.Setenv("EIKA_SEARXNG_URL", "http://env:8080")
 	t.Setenv("EIKA_SANDBOX_IMAGE", "env-image:2")
 	t.Setenv("EIKA_SANDBOX_NETWORK", "env-net")
+	t.Setenv("EIKA_SANDBOX_INTERNAL_NETWORK", "env-internal")
+	t.Setenv("EIKA_EGRESS_LISTEN", ":4000")
+	t.Setenv("EIKA_EGRESS_PROXY_URL", "http://env:4000")
 	t.Setenv("EIKA_EIKAD_BINARY", "/tmp/eikad")
 	t.Setenv("EIKA_HUB_ROOT", "/tmp/hub")
 	t.Setenv("EIKA_HUB_URL", "http://env:9090")
@@ -159,18 +162,21 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	want := config.Config{
-		Listen:         ":9999",
-		DatabaseURL:    "postgres://x@db/eika",
-		DockerSocket:   "/tmp/docker.sock",
-		SearxNGURL:     "http://env:8080",
-		SandboxImage:   "env-image:2",
-		SandboxNetwork: "env-net",
-		EikadBinary:    "/tmp/eikad",
-		HubRoot:        "/tmp/hub",
-		HubURL:         "http://env:9090",
-		SecretKeyFile:  "/tmp/key",
-		AuthToken:      "from-env",
-		AllowedOrigins: []string{"localhost:9999", "127.0.0.1:9999"},
+		Listen:                 ":9999",
+		DatabaseURL:            "postgres://x@db/eika",
+		DockerSocket:           "/tmp/docker.sock",
+		SearxNGURL:             "http://env:8080",
+		SandboxImage:           "env-image:2",
+		SandboxNetwork:         "env-net",
+		SandboxInternalNetwork: "env-internal",
+		EgressListen:           ":4000",
+		EgressProxyURL:         "http://env:4000",
+		EikadBinary:            "/tmp/eikad",
+		HubRoot:                "/tmp/hub",
+		HubURL:                 "http://env:9090",
+		SecretKeyFile:          "/tmp/key",
+		AuthToken:              "from-env",
+		AllowedOrigins:         []string{"localhost:9999", "127.0.0.1:9999"},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %v, want %v", cfg, want)
@@ -197,6 +203,11 @@ func TestValidate(t *testing.T) {
 		{"empty searxng url", missing(func(c *config.Config) { c.SearxNGURL = "" }), false},
 		{"empty sandbox image", missing(func(c *config.Config) { c.SandboxImage = "" }), false},
 		{"empty sandbox network", missing(func(c *config.Config) { c.SandboxNetwork = "" }), true},
+		{"no internal network, so no restricted egress", missing(func(c *config.Config) { c.SandboxInternalNetwork = "" }), true},
+		{"one network for both kinds of sandbox", missing(func(c *config.Config) { c.SandboxInternalNetwork = c.SandboxNetwork }), false},
+		{"an internal network with no egress proxy", missing(func(c *config.Config) { c.EgressListen = "" }), false},
+		{"an egress proxy url without a scheme", missing(func(c *config.Config) { c.EgressProxyURL = "eika:3128" }), false},
+		{"no egress proxy in development, where nothing is restricted", missing(func(c *config.Config) { c.SandboxNetwork = ""; c.EgressListen = "" }), true},
 		{"empty eikad binary", missing(func(c *config.Config) { c.EikadBinary = "" }), false},
 		{"empty hub root", missing(func(c *config.Config) { c.HubRoot = "" }), false},
 		{"empty hub url", missing(func(c *config.Config) { c.HubURL = "" }), false},

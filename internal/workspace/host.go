@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -73,6 +74,15 @@ type Options struct {
 	// EikadBinary is the path to the static eikad binary in the harness
 	// filesystem. It is copied into every container before it starts.
 	EikadBinary string
+	// InternalNetwork is the Docker network a proxied sandbox joins instead
+	// of Network. It must be internal, so that it has no route out, and the
+	// harness must be on it too. Empty, or an empty Network, means no
+	// sandbox can be proxied.
+	InternalNetwork string
+	// EgressProxyURL is the harness's egress proxy as a proxied sandbox
+	// reaches it, for example http://eika:3128. Empty leaves a proxied
+	// sandbox with no way out at all.
+	EgressProxyURL string
 }
 
 // Host creates and runs workspaces on one Docker daemon.
@@ -92,6 +102,11 @@ func NewHost(opts Options, log *slog.Logger) (*Host, error) {
 		return nil, errors.New("build workspace host: image is empty")
 	case opts.EikadBinary == "":
 		return nil, errors.New("build workspace host: eikad binary path is empty")
+	}
+	if opts.EgressProxyURL != "" {
+		if u, err := url.Parse(opts.EgressProxyURL); err != nil || u.Host == "" {
+			return nil, fmt.Errorf("build workspace host: egress proxy url %q is not an absolute url", opts.EgressProxyURL)
+		}
 	}
 	docker, err := client.NewClientWithOpts(
 		client.WithHost("unix://"+opts.DockerSocket),
@@ -114,7 +129,10 @@ func (h *Host) Close() error { return h.docker.Close() }
 // Create builds the workspace's volume and container. The container is not
 // started; call Start.
 func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
-	ws := Workspace{ID: spec.ID, State: StateCreating, CreatedAt: time.Now().UTC()}
+	if spec.Confinement.Proxied && !h.EgressControl() {
+		return Workspace{}, ErrNoEgressControl
+	}
+	ws := Workspace{ID: spec.ID, State: StateCreating, CreatedAt: time.Now().UTC(), Proxied: spec.Confinement.Proxied}
 	if ws.ID == "" {
 		id, err := newID()
 		if err != nil {
@@ -187,16 +205,12 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 		// cannot gain privileges through a setuid binary.
 		CapDrop:     []string{"ALL"},
 		SecurityOpt: []string{"no-new-privileges"},
-		Resources: container.Resources{
-			NanoCPUs:  int64(spec.Limits.CPUs * 1e9),
-			Memory:    spec.Limits.MemoryBytes,
-			PidsLimit: pidsLimit(spec.Limits.PIDs),
-		},
+		Resources:   createResources(spec.Confinement.Limits),
 	}
 	netCfg := &network.NetworkingConfig{}
 	if h.opts.Network != "" {
 		netCfg.EndpointsConfig = map[string]*network.EndpointSettings{
-			h.opts.Network: {Aliases: []string{ContainerName(ws.ID)}},
+			h.networkFor(ws.Proxied): {Aliases: []string{ContainerName(ws.ID)}},
 		}
 	} else {
 		hostCfg.PortBindings = nat.PortMap{port: []nat.PortBinding{{HostIP: "127.0.0.1", HostPort: "0"}}}
@@ -263,6 +277,11 @@ func (h *Host) Start(ctx context.Context, ws *Workspace) error {
 	ws.Address = addr
 	if err := h.waitReady(ctx, addr); err != nil {
 		return fmt.Errorf("workspace %s did not become ready: %w", ws.ID, err)
+	}
+	// The daemon forgets the environment it was given when the container
+	// stops, so every start gives it again.
+	if err := h.setEnvironment(ctx, *ws); err != nil {
+		return err
 	}
 	ws.State = StateRunning
 	h.log.Info("workspace started", "workspace_id", ws.ID, "address", addr)
@@ -352,6 +371,9 @@ func (h *Host) Inspect(ctx context.Context, id string) (Workspace, error) {
 	}
 	if created, err := time.Parse(time.RFC3339Nano, info.Created); err == nil {
 		ws.CreatedAt = created.UTC()
+	}
+	if info.NetworkSettings != nil && h.EgressControl() {
+		_, ws.Proxied = info.NetworkSettings.Networks[h.opts.InternalNetwork]
 	}
 	for _, m := range info.Mounts {
 		if m.Destination != Root {
@@ -471,15 +493,6 @@ func envValue(env []string, name string) string {
 		}
 	}
 	return ""
-}
-
-// pidsLimit converts a zero limit into "no limit", which Docker expresses as
-// a nil pointer.
-func pidsLimit(n int64) *int64 {
-	if n <= 0 {
-		return nil
-	}
-	return &n
 }
 
 // orDefault returns value, or fallback when value is empty.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/erlidev/eika/internal/store"
@@ -150,6 +151,22 @@ func TestProjectsWorkspacesAndSessions(t *testing.T) {
 	}
 	if got, err = st.Workspace(ctx, ws.ID); err != nil || got.ContainerID != "container-1" {
 		t.Errorf("empty container id overwrote the recorded one: %+v, %v", got, err)
+	}
+	if !reflect.DeepEqual(got.Sandbox, store.WorkspaceSandbox{}) {
+		t.Errorf("a new workspace's sandbox = %+v, want none of its fields set", got.Sandbox)
+	}
+	sandbox := store.WorkspaceSandbox{
+		CPUs: 1.5, MemoryMB: 2048, PIDs: 512, Egress: "allowlist",
+		Allow: []string{"github.com"}, Ports: []store.WorkspacePort{{Port: 5173, Label: "vite"}},
+	}
+	if got, err = st.SetWorkspaceSandbox(ctx, ws.ID, sandbox); err != nil || !reflect.DeepEqual(got.Sandbox, sandbox) {
+		t.Errorf("SetWorkspaceSandbox = %+v, %v; want the sandbox back", got.Sandbox, err)
+	}
+	if got, err = st.Workspace(ctx, ws.ID); err != nil || !reflect.DeepEqual(got.Sandbox, sandbox) {
+		t.Errorf("workspace sandbox = %+v, %v; want what was set", got.Sandbox, err)
+	}
+	if _, err := st.SetWorkspaceSandbox(ctx, "missing", sandbox); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("SetWorkspaceSandbox on a missing workspace = %v, want ErrNotFound", err)
 	}
 
 	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID, Title: "first"})

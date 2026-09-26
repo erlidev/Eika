@@ -58,7 +58,7 @@ func (d *Daemon) handlePTY(w http.ResponseWriter, r *http.Request) {
 
 	cmd := exec.CommandContext(ctx, shellPath(q.Get("shell")))
 	cmd.Dir = dir
-	cmd.Env = append(sanitizedEnv(), "TERM=xterm-256color")
+	cmd.Env = append(d.environ(), "TERM=xterm-256color")
 	// The shell leads the session's process group; cancelling the request
 	// kills the group, so a lingering child cannot keep Wait blocked.
 	cmd.Cancel = func() error { return killGroup(cmd) }

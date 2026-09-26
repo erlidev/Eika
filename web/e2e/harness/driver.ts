@@ -174,6 +174,26 @@ export class EikaDriver {
   }
 
   /**
+   * settleForShot settles, then waits for the editor's scrollbars to fade.
+   * The editor shows them for a moment after it lays out or scrolls and
+   * hides them on a timer, which no animation reports, so a screenshot taken
+   * in that moment differs by the scrollbar alone. It waits for a second at
+   * most: a pointer resting on the editor keeps them shown.
+   */
+  async settleForShot(): Promise<void> {
+    await this.settle();
+    await this.inPage(async () => {
+      const deadline = Date.now() + 1000;
+      while (
+        document.querySelector(".monaco-scrollable-element > .scrollbar.visible") !== null &&
+        Date.now() < deadline
+      ) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    });
+  }
+
+  /**
    * inPage runs a script in the page, and again in the next page when a
    * step navigated away under it, as signing in to an MCP server does: the
    * browser leaves for the authorization server and comes back to the app.
@@ -360,7 +380,7 @@ export class EikaDriver {
 
   /** shot saves a PNG and returns its path. */
   async shot(file: string, options: ShotOptions = {}): Promise<string> {
-    await this.settle();
+    await this.settleForShot();
     const common = { path: file, animations: "disabled", caret: "hide" } as const;
     if (options.target) {
       await (await this.find(options.target)).screenshot(common);

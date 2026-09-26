@@ -153,6 +153,14 @@ when decisions change. Phase status is tracked in the checklist at the end.
 | Profiles in settings, context in a panel | Settings gets a Profiles tab: the list, and an editor with Prompt, Tools, and Sampling tabs, where a field that is not set shows what it falls through to in muted text and a set one has a reset. The composer shows the session's profile beside the model, marked when the session overrides it, and opens the same editor over the session's overrides. The context pane gets a Context panel: a stacked token bar by section (base prompt, context files, instructions, built-in tools, MCP tools, messages) whose segments open their section, the next request live or any recorded one, raw text and pretty-printed schemas, and the parameters sent with the layer each came from |
 | Configuration and context, in depth | The Context panel is a summary: the context window's fill, the parts, and the key parameters; a Context inspector dialog lays one request open whole, and each part of the next request links to the editor of the layer it comes from. The editor gains a Model tab (model, max output, reasoning effort, preserve thinking) and a cost strip; sliders, segmented choices, and chips replace free text where a value is bounded. One `ToolPicker` chooses tools in the editor and in a chat's Tools panel, so a chat's panel edits the session's own tool choice and can reset it. `preserve_thinking` becomes a profile and session setting over the model row's, since whether replaying reasoning helps depends on the task as much as the endpoint; the model row stays the bottom layer, and a profile column holds it (migration 0011). `GET /api/tools` gives each tool's size and the context responses the model's window and each message's size, so the UI never re-estimates what the harness already did |
 | Editors ask before saving | A profile's fall-through values depend only on its model, and a session's on its profile and model. So a profile editor asks `GET /api/profiles/inherited?model_id=` and a session editor `GET /api/sessions/{id}/configuration?profile_id=&model_id=` with what it has chosen and not saved, and shows the values that choice brings rather than those of the saved one. The rule stays on the server |
+| A workspace's sandbox is a row | `workspaces.sandbox` (migration 0012) holds the CPU, memory, and process limits, the egress mode and allowlist, and the forwarded ports, as the desired state. Creation builds the container with it, `PUT /api/workspaces/{id}/sandbox` writes it and then applies it, and every start applies it again, so a change a container took only in part converges. The settings `sandbox_limits` and `sandbox_egress` are what a new workspace gets when its request names none; a fork and a child agent take their parent's limits and egress and none of its ports, so a child cannot escape its parent's confinement. The built-in default is 4096 processes and nothing else: enough to stop a fork bomb and not a parallel build |
+| Limits change without a restart | Docker applies CPU, memory, and process limits to a running container, so `Host.Confine` updates them in place rather than recreating it, which would reset everything outside `/workspace`, the home directory's caches included. Docker cannot lift a CPU or memory limit (zero in an update is "unchanged"), so no limit on an existing container is the whole host, read from `docker info`. Memory swap is set equal to memory, so the limit is what the processes can hold |
+| Egress is enforced by the network, the proxy is the one door | A restricted sandbox (`allowlist` or `none`) is moved to `eika_sandbox_internal`, an internal Docker network with no route out that the harness joins too; its only way to the internet is `internal/egress`, an HTTP proxy in the harness on `:3128`. A proxy alone would be advisory, since a process can ignore `HTTP_PROXY`; the network makes that process reach nothing. DNS filtering or iptables in the sandbox were rejected: the first leaks by address, the second needs a capability the sandbox never gets. The proxy checks host names against the allowlist (exact, or `*.` for every name below one), dials through `netguard` so no private address is reachable through it, and asks for the workspace's policy on every request, so a change applies to the next connection |
+| The proxy knows a sandbox by its hub token | A restricted sandbox's proxy URL carries its workspace id and hub token as credentials. The hub token is already per workspace, secret, and visible to the sandbox's processes, and it is recovered from the container after a restart, so the proxy needs no grant table and no token of its own; the harness reads it from the container once per workspace and caches it until the workspace is destroyed. The eikad token was not used, because commands never see it |
+| The sandbox's proxy settings go through eikad | A container's environment cannot change, and a workspace can move between open and restricted egress while it runs, so the harness gives eikad the variables its processes inherit with `PUT /environment` instead of setting them on the container: both spellings of `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`, and `NODE_USE_ENV_PROXY`. eikad forgets them when the container stops, and `Host.Start` gives them on every start. Setting the proxy on every container, open ones included, was rejected: an open sandbox would lose the private addresses the proxy refuses |
+| Previews are forwarded by the harness, on a host of their own | Ingress to a sandbox is a list of forwarded ports, reached from the browser through the harness at `<port>-<workspace id>.<host>`. Publishing the ports with Docker was rejected: it needs a new container for every change, and Docker does not publish ports on an internal network, so a restricted sandbox could have none. The page gets an origin of its own so it cannot read the UI's token; `*.localhost` resolves to the machine in every browser, and a deployment with a name needs a wildcard DNS record. The browser signs in with a one-time ticket the API hands the signed-in UI, traded for a host-only cookie, and every request checks the row, so taking a port off the list closes it at once |
+| Usage is sampled while it is shown | The Sandbox panel asks for `GET /api/workspaces/{id}/usage` every five seconds while it is open. A sample is a measurement no event announces, so the rule against polling, which is about state events report, does not reach it; streaming stats for every workspace nobody is looking at would cost more |
+| One address guard | `internal/netguard` holds the public-address dial check `search/fetch` had, so web_fetch and the egress proxy refuse the same addresses |
 
 ## 2. Core principle: every agent action runs in a sandbox
 
@@ -162,6 +170,9 @@ commands do so through an `Executor` interface whose only production
 implementation talks to a sandbox. Search and LLM calls run in the harness
 because they are network calls, not filesystem or process actions. A web_fetch
 filter is code the model wrote, so it runs in the sandbox as `eikad filter`.
+The egress proxy relays a restricted sandbox's connections, a network action
+too; it opens nothing on the harness's filesystem and reaches only public
+addresses.
 
 ## 3. Domain model
 
@@ -259,6 +270,8 @@ Eika/
     store/                   Postgres access and migrations
     config/                  Deployment config loading (YAML + env)
     secret/                  Sealing credentials stored in the database
+    egress/                  Egress modes, allowlists, and the proxy restricted sandboxes use
+    netguard/                The public-address dial check
     event/                   Shared event types emitted by the loop and UI
   sandbox/
     Dockerfile               eika-sandbox image
@@ -412,6 +425,8 @@ parallel.
 - End-to-end smoke test in compose.
 - Docs pass: `ARCHITECTURE.md`, `EXTENDING.md`, API docs current.
 - Resource limits for sandboxes (CPU, memory, pids), network policy option.
+  Done ahead of the rest of the phase: limits, egress modes with an
+  allowlist proxy, forwarded-port previews, and usage, all in the UI.
 
 ## 9. Testing strategy
 
@@ -431,7 +446,9 @@ parallel.
 
 ## 10. Resolved and open questions
 
-- Sandbox network policy defaults to open egress, configurable per workspace.
+- Sandbox network policy defaults to open egress, configurable per workspace:
+  resolved as the egress modes open, allowlist, and none, with a harness-wide
+  default in the settings. See the decision table.
 - Resolved in phase 3: the hub mirrors local projects as well, so
   fork-with-workspace and subagents behave the same for both project kinds.
   See the decision table.
@@ -474,4 +491,10 @@ parallel.
       sizes, the Model tab, sliders and segmented choices, one tool picker
       for profiles, sessions, and chats, and preserve thinking per profile
       and session
-- [ ] Phase 9: Hardening and docs
+- [x] Sandbox confinement: CPU, memory, and process limits applied live;
+      egress open, through an allowlist proxy, or none, on an internal
+      network; forwarded ports previewed through the harness; usage and
+      refused hosts in a Sandbox panel; defaults in Settings, Sandbox, and a
+      new workspace's own in its dialog
+- [ ] Phase 9: Hardening and docs (the end-to-end smoke test in compose and
+      the docs pass remain)

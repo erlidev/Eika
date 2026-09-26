@@ -47,6 +47,14 @@ type ExecFrame struct {
 	Error string `json:"error,omitempty"`
 }
 
+// EnvironmentRequest is the body of PUT /environment.
+type EnvironmentRequest struct {
+	// Env holds the KEY=VALUE entries added to the environment of every
+	// process the daemon starts from now on. It replaces what an earlier
+	// request set; empty clears it.
+	Env []string `json:"env"`
+}
+
 // FileInfo describes one file. Path is relative to the workspace root and Mode
 // is the Go file mode bits.
 type FileInfo struct {

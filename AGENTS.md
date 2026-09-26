@@ -41,6 +41,7 @@ internal/workspace containers, hub   internal/session   session trees
 internal/search    web search, fetch internal/server    HTTP + WebSocket
 internal/store     Postgres          internal/config    deployment config
 internal/secret    sealed secrets    web/               frontend
+internal/egress    sandbox egress    internal/netguard  public-only dials
 sandbox/           sandbox image     compose.yaml       the whole stack
 deploy/            entrypoint, searxng  docs/           documentation
 ```

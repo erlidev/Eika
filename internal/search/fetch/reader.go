@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/net/html/charset"
 
+	"github.com/erlidev/eika/internal/netguard"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/search/github"
 	"github.com/erlidev/eika/internal/search/page"
@@ -352,7 +353,7 @@ func validate(rawURL string) (*url.URL, error) {
 	}
 	host := strings.TrimSuffix(u.Hostname(), ".")
 	addr, err := netip.ParseAddr(host)
-	if privateName.MatchString(host) || err == nil && !isPublic(addr) {
+	if privateName.MatchString(host) || err == nil && !netguard.IsPublic(addr) {
 		return nil, search.Errorf("refusing to fetch a private address (%s)", host)
 	}
 	u.Fragment, u.RawFragment = "", ""
@@ -497,7 +498,7 @@ func (r *Reader) get(ctx context.Context, rawURL string, header http.Header) (re
 
 // transportError describes a request that got no answer.
 func transportError(err error) error {
-	if errors.Is(err, ErrPrivateAddress) {
+	if errors.Is(err, netguard.ErrPrivateAddress) {
 		var op *net.OpError
 		if errors.As(err, &op) && op.Addr != nil {
 			host, _, _ := net.SplitHostPort(op.Addr.String())

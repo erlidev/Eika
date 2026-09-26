@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -45,6 +46,12 @@ type Daemon struct {
 	maxRead       int64
 	watchInterval time.Duration
 	mux           *http.ServeMux
+
+	// mu guards env.
+	mu sync.Mutex
+	// env holds the KEY=VALUE entries the harness set with PUT /environment,
+	// added to every process the daemon starts after that.
+	env []string
 }
 
 // New builds a Daemon serving the workspace at opts.Root. It fails when the
@@ -110,6 +117,7 @@ func (d *Daemon) routes() {
 	d.mux.HandleFunc("GET /stat", d.authed(d.handleStat))
 	d.mux.HandleFunc("GET /list", d.authed(d.handleList))
 	d.mux.HandleFunc("GET /watch", d.authed(d.handleWatch))
+	d.mux.HandleFunc("PUT /environment", d.authed(d.handleSetEnvironment))
 }
 
 // handleHealth reports that the daemon is up. It is the only unauthenticated

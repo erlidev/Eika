@@ -16,6 +16,7 @@ const systemCheckTimeout = 5 * time.Second
 type systemResponse struct {
 	Docker       dockerStatus `json:"docker"`
 	SandboxImage imageStatus  `json:"sandbox_image"`
+	Sandbox      sandboxHost  `json:"sandbox"`
 	Providers    int          `json:"providers"`
 	Models       int          `json:"models"`
 	Projects     int          `json:"projects"`
@@ -26,6 +27,17 @@ type dockerStatus struct {
 	Reachable bool `json:"reachable"`
 	// Error is the daemon client's reason when it is not reachable.
 	Error string `json:"error,omitempty"`
+}
+
+// sandboxHost is what the Docker host can give a sandbox, which bounds the
+// limits the UI offers, and whether a sandbox's egress can be restricted.
+type sandboxHost struct {
+	// CPUs and MemoryBytes are the host's; zero when Docker cannot be asked.
+	CPUs        int   `json:"cpus"`
+	MemoryBytes int64 `json:"memory_bytes"`
+	// EgressControl is false for a harness outside the compose stack, which
+	// has no internal network to put a restricted sandbox on.
+	EgressControl bool `json:"egress_control"`
 }
 
 // imageStatus says whether the sandbox image new workspaces run is there.
@@ -48,6 +60,15 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 	} else {
 		body.Docker.Reachable = true
 		body.SandboxImage.Present = present
+	}
+	body.Sandbox.EgressControl = s.deps.Workspaces.EgressControl()
+	if body.Docker.Reachable {
+		checkCtx, cancel := context.WithTimeout(ctx, systemCheckTimeout)
+		capacity, err := s.deps.Workspaces.Capacity(checkCtx)
+		cancel()
+		if err == nil {
+			body.Sandbox.CPUs, body.Sandbox.MemoryBytes = capacity.CPUs, capacity.MemoryBytes
+		}
 	}
 
 	providers, err := s.deps.Store.Providers(ctx)

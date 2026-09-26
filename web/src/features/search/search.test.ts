@@ -19,6 +19,8 @@ function state(settings: Record<string, unknown>): SettingsState {
       sandbox_image: "eika-sandbox:latest",
       subagent_max_depth: 2,
       subagent_max_children: 4,
+      sandbox_limits: { cpus: 0, memory_mb: 0, pids: 4096 },
+      sandbox_egress: { mode: "open", allow: [] },
       search_order: ["searxng", "exa", "marginalia"],
       search_limits: { searxng: {}, exa: { month: 900 }, marginalia: { day: 100 }, github: {} },
     },

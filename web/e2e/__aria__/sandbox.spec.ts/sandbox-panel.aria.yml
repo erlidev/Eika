@@ -1,0 +1,90 @@
+- tabpanel "Sandbox":
+  - region "Usage":
+    - heading "Usage" [level=3]
+    - text: sampled every 5 seconds
+    - term: CPU
+    - definition:
+      - meter "CPU used"
+      - text: /\d+% of 2 cores/
+    - term: Memory
+    - definition:
+      - meter "Memory used"
+      - text: /\d+ MiB of 4\.0 GiB/
+    - term: Processes
+    - definition:
+      - meter "Processes used"
+      - text: /\d+ of \d+,\d+/
+    - term: Network
+    - definition:
+      - img "received"
+      - text: /\d+ MiB/
+      - img "sent"
+      - text: 2.1 MiB
+  - region "Refused lately":
+    - heading "Refused lately" [level=3]
+    - list:
+      - listitem:
+        - text: /sum\.golang\.org 4 times, [\d,.]+[bkmBKM]+ ago/
+        - button "Allow sum.golang.org"
+      - listitem:
+        - text: /registry\.npmjs\.org once, [\d,.]+[bkmBKM]+ ago/
+        - button "Allow registry.npmjs.org"
+  - region "Previews":
+    - heading "Previews" [level=3]
+    - list:
+      - listitem:
+        - text: /\d+ vite/
+        - button /Open port \d+/
+  - form "Sandbox":
+    - text: Forwarded ports
+    - button "Add port"
+    - list:
+      - listitem:
+        - textbox "Port 1":
+          - /placeholder: "5173"
+          - text: /\d+/
+        - textbox "Label of port 1":
+          - /placeholder: What listens there
+          - text: vite
+        - button /Remove port \d+/
+    - paragraph: The harness forwards a listed port to your browser alone, on a preview address of its own. A server there must listen on 0.0.0.0, not localhost.
+    - region "Limits":
+      - heading "Limits" [level=3]
+      - text: CPU 2 cores
+      - slider "CPU limit slider"
+      - textbox "CPU":
+        - /placeholder: none
+        - text: "2"
+      - text: cores
+      - paragraph: How many cores the sandbox's processes may use between them.
+      - text: Memory 4 GiB
+      - slider "Memory limit slider"
+      - textbox "Memory":
+        - /placeholder: none
+        - text: /\d+/
+      - text: MiB
+      - paragraph: What the processes may hold, with no swap beyond it. Past it, the kernel stops the largest process.
+      - text: Processes
+      - textbox "Processes":
+        - /placeholder: none
+        - text: /\d+/
+      - text: max
+      - paragraph: Processes and threads together. A few thousand stops a fork bomb and leaves room for a parallel build.
+    - text: Network
+    - radiogroup "Network":
+      - radio "Open"
+      - radio "Allowlist" [checked]
+      - radio "None"
+    - paragraph: The sandbox reaches only the hosts listed below, through the harness's proxy. Tools that ignore HTTP_PROXY reach nothing.
+    - text: Allowed hosts github.com
+    - button "Remove github.com from the allowlist"
+    - text: "*.githubusercontent.com"
+    - button "Remove *.githubusercontent.com from the allowlist"
+    - text: proxy.golang.org
+    - button "Remove proxy.golang.org from the allowlist"
+    - textbox "Allowed hosts":
+      - /placeholder: Add another
+    - paragraph: A host such as github.com, or *.github.com for every name below it. Git, npm, pip, Go, curl, and Node reach them through the harness's proxy.
+    - button "Apply" [disabled]
+    - button "Revert" [disabled]
+    - paragraph: Applies at once, without a restart. A change of network drops the connections open at that moment.

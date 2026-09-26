@@ -1884,7 +1884,24 @@
         "object": {
           "defaults": {
             "object": {
+              "sandbox_egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
               "sandbox_image": "string",
+              "sandbox_limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              },
               "search_limits": {
                 "nullable": {
                   "map": {
@@ -1932,6 +1949,13 @@
           "models": "number",
           "projects": "number",
           "providers": "number",
+          "sandbox": {
+            "object": {
+              "cpus": "number",
+              "egress_control": "boolean",
+              "memory_bytes": "number"
+            }
+          },
           "sandbox_image": {
             "object": {
               "name": "string",
@@ -1981,6 +2005,40 @@
                   "name": "string",
                   "parent_workspace_id": "string",
                   "project_id": "string",
+                  "sandbox": {
+                    "object": {
+                      "egress": {
+                        "object": {
+                          "allow": {
+                            "nullable": {
+                              "array": "string"
+                            }
+                          },
+                          "mode": "string"
+                        }
+                      },
+                      "limits": {
+                        "object": {
+                          "cpus": "number",
+                          "memory_mb": "number",
+                          "pids": "number"
+                        }
+                      },
+                      "ports": {
+                        "nullable": {
+                          "array": {
+                            "object": {
+                              "label": "string",
+                              "port": "number"
+                            },
+                            "optional": [
+                              "label"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
                   "state": "string",
                   "updated_at": "string"
                 },
@@ -2008,6 +2066,40 @@
           "name": "string",
           "parent_workspace_id": "string",
           "project_id": "string",
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              },
+              "ports": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "label": "string",
+                      "port": "number"
+                    },
+                    "optional": [
+                      "label"
+                    ]
+                  }
+                }
+              }
+            }
+          },
           "state": "string",
           "updated_at": "string"
         },
@@ -2067,6 +2159,33 @@
     },
     "GET /api/workspaces/{id}/terminal": {
       "websocket": true
+    },
+    "GET /api/workspaces/{id}/usage": {
+      "status": 200,
+      "response": {
+        "object": {
+          "blocked": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "count": "number",
+                  "host": "string",
+                  "last": "string"
+                }
+              }
+            }
+          },
+          "cpu_percent": "number",
+          "cpus": "number",
+          "memory_bytes": "number",
+          "memory_limit_bytes": "number",
+          "network_rx_bytes": "number",
+          "network_tx_bytes": "number",
+          "pids": "number",
+          "pids_limit": "number",
+          "sampled_at": "string"
+        }
+      }
     },
     "PATCH /api/mcp/servers/{id}": {
       "status": 200,
@@ -3320,7 +3439,34 @@
           "image": "string",
           "name": "string",
           "parent_workspace_id": "string",
-          "project_id": "string"
+          "project_id": "string",
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "array": "string"
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              },
+              "ports": {
+                "array": {
+                  "object": {
+                    "label": "string",
+                    "port": "number"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "response": {
@@ -3334,6 +3480,40 @@
           "name": "string",
           "parent_workspace_id": "string",
           "project_id": "string",
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              },
+              "ports": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "label": "string",
+                      "port": "number"
+                    },
+                    "optional": [
+                      "label"
+                    ]
+                  }
+                }
+              }
+            }
+          },
           "state": "string",
           "updated_at": "string"
         },
@@ -3388,6 +3568,14 @@
         ]
       }
     },
+    "POST /api/workspaces/{id}/ports/{port}/preview": {
+      "status": 200,
+      "response": {
+        "object": {
+          "url": "string"
+        }
+      }
+    },
     "POST /api/workspaces/{id}/push": {
       "status": 200,
       "request": {
@@ -3416,6 +3604,40 @@
           "name": "string",
           "parent_workspace_id": "string",
           "project_id": "string",
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              },
+              "ports": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "label": "string",
+                      "port": "number"
+                    },
+                    "optional": [
+                      "label"
+                    ]
+                  }
+                }
+              }
+            }
+          },
           "state": "string",
           "updated_at": "string"
         },
@@ -3439,6 +3661,40 @@
           "name": "string",
           "parent_workspace_id": "string",
           "project_id": "string",
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              },
+              "ports": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "label": "string",
+                      "port": "number"
+                    },
+                    "optional": [
+                      "label"
+                    ]
+                  }
+                }
+              }
+            }
+          },
           "state": "string",
           "updated_at": "string"
         },
@@ -4071,7 +4327,24 @@
         "object": {
           "defaults": {
             "object": {
+              "sandbox_egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
               "sandbox_image": "string",
+              "sandbox_limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              },
               "search_limits": {
                 "nullable": {
                   "map": {
@@ -4115,6 +4388,90 @@
           "path": "string",
           "size": "number"
         }
+      }
+    },
+    "PUT /api/workspaces/{id}/sandbox": {
+      "status": 200,
+      "request": {
+        "object": {
+          "egress": {
+            "object": {
+              "allow": {
+                "array": "string"
+              },
+              "mode": "string"
+            }
+          },
+          "limits": {
+            "object": {
+              "cpus": "number",
+              "memory_mb": "number",
+              "pids": "number"
+            }
+          },
+          "ports": {
+            "array": {
+              "object": {
+                "label": "string",
+                "port": "number"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "object": {
+          "base_commit": "string",
+          "branch": "string",
+          "container_id": "string",
+          "created_at": "string",
+          "id": "string",
+          "image": "string",
+          "name": "string",
+          "parent_workspace_id": "string",
+          "project_id": "string",
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              },
+              "ports": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "label": "string",
+                      "port": "number"
+                    },
+                    "optional": [
+                      "label"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "state": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "base_commit",
+          "container_id",
+          "parent_workspace_id"
+        ]
       }
     }
   },

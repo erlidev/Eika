@@ -346,10 +346,13 @@ func (s *Server) forkWorkspace(ctx context.Context, sess store.Session, entryID 
 	// The branch is not a path under the source's branch: git holds either
 	// refs/heads/<branch> or refs/heads/<branch>/<something>, never both.
 	branch := source.Branch + "-fork-" + id[:8]
+	// A fork is confined as its source is, with none of its ports.
+	sandbox := childSandbox(source.Sandbox)
 	host, err := s.deps.Workspaces.Create(ctx, workspace.Spec{
-		ID:      id,
-		Image:   source.Image,
-		Project: project.Name,
+		ID:          id,
+		Image:       source.Image,
+		Project:     project.Name,
+		Confinement: confinement(sandbox),
 	})
 	if err != nil {
 		return store.Workspace{}, err
@@ -373,6 +376,7 @@ func (s *Server) forkWorkspace(ctx context.Context, sess store.Session, entryID 
 		State:             string(host.State),
 		ContainerID:       host.ContainerID,
 		ParentWorkspaceID: source.ID,
+		Sandbox:           sandbox,
 	})
 	if err != nil {
 		s.discard(ctx, host)

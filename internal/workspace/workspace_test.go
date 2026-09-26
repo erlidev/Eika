@@ -37,11 +37,14 @@ func TestNewHostRejectsIncompleteOptions(t *testing.T) {
 	noImage.Image = ""
 	noBinary := complete
 	noBinary.EikadBinary = ""
+	relativeProxy := complete
+	relativeProxy.EgressProxyURL = "eika:3128"
 
 	for name, opts := range map[string]workspace.Options{
-		"no hub":    noHub,
-		"no image":  noImage,
-		"no binary": noBinary,
+		"no hub":               noHub,
+		"no image":             noImage,
+		"no binary":            noBinary,
+		"a relative proxy url": relativeProxy,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := workspace.NewHost(opts, testLogger()); err == nil {
@@ -55,6 +58,9 @@ func TestNewHostRejectsIncompleteOptions(t *testing.T) {
 		t.Fatalf("NewHost rejected complete options: %v", err)
 	}
 	defer h.Close()
+	if h.EgressControl() {
+		t.Error("a host with no sandbox networks reports egress control")
+	}
 
 	// A workspace that is not running has no address to talk to.
 	if _, err := h.Executor(workspace.Workspace{ID: "abc"}); err == nil {

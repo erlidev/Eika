@@ -79,6 +79,10 @@ var routeWire = map[string]wire{
 	"GET /api/workspaces/{id}/files":   {status: http.StatusOK, response: filesResponse{}},
 	"GET /api/workspaces/{id}/file":    {status: http.StatusOK, response: fileResponse{}},
 	"PUT /api/workspaces/{id}/file":    {status: http.StatusOK, raw: true, response: fileEntry{}},
+	"PUT /api/workspaces/{id}/sandbox": {status: http.StatusOK, request: sandboxBody{}, response: workspaceBody{}},
+	"GET /api/workspaces/{id}/usage":   {status: http.StatusOK, response: usageResponse{}},
+
+	"POST /api/workspaces/{id}/ports/{port}/preview": {status: http.StatusOK, response: previewResponse{}},
 
 	"GET /api/sessions":              {status: http.StatusOK, response: sessionsResponse{}},
 	"POST /api/sessions":             {status: http.StatusCreated, request: createSessionRequest{}, response: sessionBody{}},
