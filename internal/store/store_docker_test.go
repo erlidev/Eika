@@ -569,3 +569,54 @@ func TestDuplicateProjectNameIsConflict(t *testing.T) {
 
 // errOf runs a call that only fails or does not, so that a table can hold it.
 func errOf(call func() error) error { return call() }
+
+// A title made in the background goes only to a session that is still
+// untitled, and a fork that copies the placeholder stays untitled.
+func TestUntitledSessions(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+
+	untitled, err := st.CreateSession(ctx, store.Session{Title: "New chat", Untitled: true})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if !untitled.Untitled {
+		t.Fatalf("session = %+v, want untitled", untitled)
+	}
+	entry, err := st.AppendEntry(ctx, untitled.ID, store.Entry{
+		Kind: store.KindUser, Payload: json.RawMessage(`{"role":"user","content":"one"}`),
+	})
+	if err != nil {
+		t.Fatalf("append entry: %v", err)
+	}
+	fork, err := st.ForkSession(ctx, untitled.ID, entry.ID, store.ForkOptions{})
+	if err != nil || !fork.Untitled || fork.Title != "New chat" {
+		t.Errorf("fork copying the placeholder = %+v, %v; want untitled", fork, err)
+	}
+	named, err := st.ForkSession(ctx, untitled.ID, entry.ID, store.ForkOptions{Title: "Named"})
+	if err != nil || named.Untitled {
+		t.Errorf("fork with a title = %+v, %v; want titled", named, err)
+	}
+
+	if ok, err := st.TitleUntitledSession(ctx, untitled.ID, "Generated"); err != nil || !ok {
+		t.Fatalf("TitleUntitledSession = %v, %v; want it titled", ok, err)
+	}
+	got, err := st.Session(ctx, untitled.ID)
+	if err != nil || got.Title != "Generated" || got.Untitled {
+		t.Fatalf("session = %+v, %v; want titled Generated", got, err)
+	}
+	if ok, err := st.TitleUntitledSession(ctx, untitled.ID, "Again"); err != nil || ok {
+		t.Errorf("second TitleUntitledSession = %v, %v; want the first title kept", ok, err)
+	}
+
+	// A title someone set is final, even over the placeholder.
+	if err := st.SetSessionTitle(ctx, fork.ID, "Chosen"); err != nil {
+		t.Fatalf("set session title: %v", err)
+	}
+	if ok, err := st.TitleUntitledSession(ctx, fork.ID, "Generated"); err != nil || ok {
+		t.Errorf("TitleUntitledSession after a rename = %v, %v; want the chosen title kept", ok, err)
+	}
+	if ok, err := st.TitleUntitledSession(ctx, "missing", "Generated"); err != nil || ok {
+		t.Errorf("TitleUntitledSession on a missing session = %v, %v; want false", ok, err)
+	}
+}

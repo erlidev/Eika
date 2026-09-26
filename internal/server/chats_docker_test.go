@@ -73,7 +73,6 @@ func TestChatRoutes(t *testing.T) {
 		status int
 	}{
 		{"a chat in a workspace", map[string]any{"chat": true, "workspace_id": ws.ID, "title": "x"}, 400},
-		{"a chat without a title", map[string]any{"chat": true, "title": " "}, 400},
 		// Leaving the workspace out is a missing workspace, never a chat
 		// nobody asked for.
 		{"neither a chat nor a workspace", map[string]any{"title": "x"}, 404},

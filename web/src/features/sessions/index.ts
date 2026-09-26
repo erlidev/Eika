@@ -4,6 +4,7 @@ export {
   useCreateSession,
   useDeleteSession,
   useSessions,
+  useSessionTitles,
 } from "@/features/sessions/queries";
 export { agentWorkspaces, sessionTree } from "@/features/sessions/tree";
 export type { SessionNode } from "@/features/sessions/tree";

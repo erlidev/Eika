@@ -270,6 +270,32 @@ export class MockHarness {
     }
   }
 
+  /**
+   * nameSession titles an untitled session after its first message, as the
+   * harness does when the settings assign the session title task a model.
+   * The mock's model titles a message with its first six words.
+   */
+  private nameSession(session: Session, text: string): void {
+    const w = this.world;
+    const assigned = w.settings.settings.utility_models;
+    const model =
+      typeof assigned === "object" && assigned !== null && "session_title" in assigned
+        ? assigned.session_title
+        : undefined;
+    if (!w.untitled.includes(session.id) || !w.models.some((m) => m.name === model)) return;
+    const first = (w.entries[session.id] ?? []).find((e) => e.kind === "user")?.message.content;
+    session.title = (first ?? text).split(/\s+/).slice(0, 6).join(" ");
+    session.updated_at = fixedNow;
+    w.untitled = w.untitled.filter((id) => id !== session.id);
+    this.emit(
+      this.event("session.title", "global", {
+        session_id: session.id,
+        ...(session.workspace_id === undefined ? {} : { workspace_id: session.workspace_id }),
+        title: session.title,
+      }),
+    );
+  }
+
   /** event builds an envelope stamped with the fixed clock. */
   event(type: EventType, topic: string, payload?: unknown): EikaEvent {
     return { type, topic, time: fixedNow, payload };
@@ -615,6 +641,23 @@ export class MockHarness {
           "invalid_request",
           `default_profile names "${named}", which is not a profile`,
         );
+      }
+      const utility = body.utility_models;
+      if (utility !== undefined && utility !== null) {
+        const names: unknown[] =
+          typeof utility === "object"
+            ? Object.values(utility as Record<string, unknown>)
+            : [utility];
+        const unknown = names.find(
+          (n) => typeof n !== "string" || (n !== "" && !w.models.some((m) => m.name === n)),
+        );
+        if (unknown !== undefined) {
+          return fail(
+            400,
+            "invalid_request",
+            `utility_models names ${JSON.stringify(unknown)}, which is not a configured model`,
+          );
+        }
       }
       for (const [key, value] of Object.entries(body)) {
         if (value === null) Reflect.deleteProperty(w.settings.settings, key);
@@ -1164,6 +1207,7 @@ export class MockHarness {
       syncSession(w, row);
       w.sessions.unshift(row);
       w.entries[row.id] = [];
+      if (str(body.title) === "") w.untitled.push(row.id);
       return ok(row, 201);
     });
     on("GET", "/api/sessions/{id}", ({ params }) => {
@@ -1440,6 +1484,7 @@ export class MockHarness {
       };
       w.runs[run.id] = run;
       w.activeRuns[session.id] = run.id;
+      this.nameSession(session, text);
       void this.play(session, run, text);
       return ok(run, 202);
     });

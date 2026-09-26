@@ -7,7 +7,10 @@ The session that is open is the `session` feature, not this one.
 - `queries.ts` wraps `/api/sessions`. `useSessions(workspaceId?, descendants?)`
   lists them; `descendants` also brings back the forks and child agents those
   sessions led to, which run in workspaces of their own. `useChats()` lists
-  the chats with their forks, and `useCreateSession` opens either kind.
+  the chats with their forks, and `useCreateSession` opens either kind,
+  untitled unless given a title. `useSessionTitles`, called once by the
+  workbench, refetches the lists when a `session.title` event says an
+  untitled session was named.
 - `tree.ts` is the shape. `sessionTree` nests each session's forks and child
   agents under it, so the sidebar draws nested lists and the relationship is
   in the markup rather than only in the indent. `agentWorkspaces` names the

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
+	"github.com/erlidev/eika/internal/utility"
 	"github.com/erlidev/eika/internal/workspace"
 )
 
@@ -42,6 +44,9 @@ const (
 	// settingSetupComplete records that the user finished or skipped the
 	// guided setup, so the UI stops offering it.
 	settingSetupComplete = "setup_complete"
+	// settingUtilityModels assigns the harness's own tasks the names of the
+	// models they are sent to; a task it assigns none does not run.
+	settingUtilityModels = "utility_models"
 )
 
 // The subagent limits until the user sets them, and the most the settings
@@ -150,14 +155,19 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		if err := json.Unmarshal(value, &name); err != nil {
 			return invalidf("%s must be a model name", key)
 		}
-		if name == "" {
-			return nil
+		return s.checkModelName(ctx, key, name)
+	case settingUtilityModels:
+		var assigned map[utility.Task]string
+		if err := json.Unmarshal(value, &assigned); err != nil {
+			return invalidf("%s must be an object of task names to model names", key)
 		}
-		if _, err := s.deps.Store.ModelByName(ctx, name); err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				return invalidf("%s names %q, which is not a configured model", key, name)
+		for task, name := range assigned {
+			if !utility.Known(task) {
+				return invalidf("%s names %q, which is not a task", key, task)
 			}
-			return err
+			if err := s.checkModelName(ctx, key, name); err != nil {
+				return err
+			}
 		}
 	case settingDefaultProfile:
 		var id string
@@ -219,6 +229,21 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 	return nil
 }
 
+// checkModelName accepts the name of a configured model, or the empty name
+// for none.
+func (s *Server) checkModelName(ctx context.Context, key, name string) error {
+	if name == "" {
+		return nil
+	}
+	if _, err := s.deps.Store.ModelByName(ctx, name); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return invalidf("%s names %q, which is not a configured model", key, name)
+		}
+		return err
+	}
+	return nil
+}
+
 // strictJSON decodes a setting's value, refusing a field v does not have.
 func strictJSON(value json.RawMessage, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(value))
@@ -262,6 +287,56 @@ func (s *Server) defaultModelSetting(ctx context.Context) string {
 	var name string
 	readSetting(ctx, s.deps.Store, s.log, settingDefaultModel, &name)
 	return name
+}
+
+// utilityModel returns the model the settings assign task, and false when
+// they assign none or name a model that no longer exists.
+func (s *Server) utilityModel(ctx context.Context, task utility.Task) (store.Model, bool, error) {
+	var assigned map[utility.Task]string
+	readSetting(ctx, s.deps.Store, s.log, settingUtilityModels, &assigned)
+	name := assigned[task]
+	if name == "" {
+		return store.Model{}, false, nil
+	}
+	m, err := s.deps.Store.ModelByName(ctx, name)
+	if errors.Is(err, store.ErrNotFound) {
+		s.log.Warn("utility model setting names no model", "task", task, "model", name)
+		return store.Model{}, false, nil
+	}
+	if err != nil {
+		return store.Model{}, false, err
+	}
+	return m, true, nil
+}
+
+// renameModelSettings makes the settings that name a model by oldName name
+// it by newName, so that renaming a model keeps it the default and keeps the
+// tasks assigned to it.
+func (s *Server) renameModelSettings(ctx context.Context, oldName, newName string) error {
+	writes := map[string]json.RawMessage{}
+	if s.defaultModelSetting(ctx) == oldName {
+		writes[settingDefaultModel] = jsonString(newName)
+	}
+	var assigned map[utility.Task]string
+	if readSetting(ctx, s.deps.Store, s.log, settingUtilityModels, &assigned) {
+		renamed := false
+		for task, name := range assigned {
+			if name == oldName {
+				assigned[task], renamed = newName, true
+			}
+		}
+		if renamed {
+			value, err := json.Marshal(assigned)
+			if err != nil {
+				return fmt.Errorf("encode %s: %w", settingUtilityModels, err)
+			}
+			writes[settingUtilityModels] = value
+		}
+	}
+	if len(writes) == 0 {
+		return nil
+	}
+	return s.deps.Store.SetSettings(ctx, writes)
 }
 
 // sandboxImage returns the image a new workspace runs when the request names

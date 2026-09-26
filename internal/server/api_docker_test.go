@@ -57,6 +57,9 @@ type api struct {
 
 	mu       sync.Mutex
 	provider provider.Provider
+	// at holds the providers served at particular base URLs instead, which
+	// is how a test tells a utility model's calls from a run's.
+	at map[string]provider.Provider
 	// endpoint is the endpoint the last provider was built on.
 	endpoint provider.Endpoint
 	// delay holds up building a run's provider, which is how a test widens
@@ -167,6 +170,9 @@ func (a *api) script(steps ...providertest.Step) *providertest.Provider {
 func (a *api) buildProvider(kind string, e provider.Endpoint) (provider.Provider, error) {
 	a.mu.Lock()
 	p, delay := a.provider, a.delay
+	if served, ok := a.at[e.BaseURL]; ok {
+		p = served
+	}
 	a.endpoint = e
 	a.mu.Unlock()
 	time.Sleep(delay)
@@ -181,6 +187,16 @@ func (a *api) use(p provider.Provider) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.provider = p
+}
+
+// serveAt makes p the provider every build on baseURL hands out.
+func (a *api) serveAt(baseURL string, p provider.Provider) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.at == nil {
+		a.at = make(map[string]provider.Provider)
+	}
+	a.at[baseURL] = p
 }
 
 // lastEndpoint returns the endpoint the last provider was built on.
@@ -922,16 +938,19 @@ func TestSettingsAndModels(t *testing.T) {
 
 	// The keys the harness reads are checked; one bad value writes nothing.
 	for name, body := range map[string]map[string]any{
-		"a default model that does not exist": {"default_model": "gone"},
-		"a default model that is not a name":  {"default_model": 7},
-		"an empty sandbox image":              {"sandbox_image": ""},
-		"a sandbox image with a space":        {"sandbox_image": "eika sandbox"},
-		"a subagent depth of zero":            {"subagent_max_depth": 0},
-		"a subagent depth past the limit":     {"subagent_max_depth": 9},
-		"a child count that is not a number":  {"subagent_max_children": "two"},
-		"a setup flag that is not a boolean":  {"setup_complete": "yes"},
-		"a key that is too long":              {strings.Repeat("k", 65): true},
-		"a good key beside a bad one":         {"theme": "light", "subagent_max_depth": 0},
+		"a default model that does not exist":   {"default_model": "gone"},
+		"a default model that is not a name":    {"default_model": 7},
+		"an empty sandbox image":                {"sandbox_image": ""},
+		"a sandbox image with a space":          {"sandbox_image": "eika sandbox"},
+		"a subagent depth of zero":              {"subagent_max_depth": 0},
+		"a subagent depth past the limit":       {"subagent_max_depth": 9},
+		"a child count that is not a number":    {"subagent_max_children": "two"},
+		"a setup flag that is not a boolean":    {"setup_complete": "yes"},
+		"utility models that are not an object": {"utility_models": "test-model"},
+		"a utility model for an unknown task":   {"utility_models": map[string]any{"summarise": "test-model"}},
+		"a utility model that does not exist":   {"utility_models": map[string]any{"session_title": "gone"}},
+		"a key that is too long":                {strings.Repeat("k", 65): true},
+		"a good key beside a bad one":           {"theme": "light", "subagent_max_depth": 0},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if rec := request(t, a.Server, "PUT", "/api/settings", body); rec.Code != 400 {

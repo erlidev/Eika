@@ -427,6 +427,11 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 	r.mu.Unlock()
 
 	started = true
+	// The title comes from the conversation as it stood before the run, so
+	// it is read before the loop starts adding to it.
+	if sess.Untitled {
+		s.titles.start(sess, firstMessage(loaded.Conversation.Messages(), text))
+	}
 	go r.drive(runCtx, active, loaded, text)
 	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", cfg.model.Name,
 		"profile_id", cfg.profile.ID)

@@ -165,7 +165,7 @@ function ChatList({ sessionId, onNavigate }: { sessionId?: string; onNavigate?: 
           disabled={create.isPending}
           onClick={() => {
             create.mutate(
-              { chat: true, title: "New chat" },
+              { chat: true },
               {
                 onSuccess: (chat) => {
                   onNavigate?.();
@@ -395,7 +395,7 @@ function WorkspaceRow({ workspace, open, onToggle, sessionId, onNavigate }: Work
               label={`New session in ${workspace.name}`}
               onClick={() => {
                 create.mutate(
-                  { workspace_id: workspace.id, title: "New session" },
+                  { workspace_id: workspace.id },
                   {
                     onSuccess: (session) => {
                       onNavigate?.();

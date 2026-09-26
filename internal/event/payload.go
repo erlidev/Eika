@@ -222,6 +222,16 @@ type MCPElicitation struct {
 	URL string `json:"url,omitempty"`
 }
 
+// SessionTitle is the payload of a session.title event, on the global
+// topic: an untitled session was named after its first message. Every
+// sidebar lists every session, so the event goes to all of them.
+type SessionTitle struct {
+	SessionID string `json:"session_id"`
+	// WorkspaceID is the session's workspace, absent for a chat.
+	WorkspaceID string `json:"workspace_id,omitempty"`
+	Title       string `json:"title"`
+}
+
 // SessionMessage is the payload of a session.message event: one entry of a
 // session as it is stored. It is what a replay sends, so that a client which
 // connects late sees the conversation it missed in the same stream as the

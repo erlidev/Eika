@@ -196,8 +196,10 @@ func (s *Store) ForkSession(ctx context.Context, sessionID, entryID string, opts
 		}
 
 		fork := Session{
-			WorkspaceID:     cmp.Or(opts.WorkspaceID, src.WorkspaceID),
-			Title:           cmp.Or(opts.Title, src.Title),
+			WorkspaceID: cmp.Or(opts.WorkspaceID, src.WorkspaceID),
+			Title:       cmp.Or(opts.Title, src.Title),
+			// A fork that copies a placeholder is as untitled as its source.
+			Untitled:        opts.Title == "" && src.Untitled,
 			Kind:            SessionFork,
 			ParentSessionID: sessionID,
 			Tools:           src.Tools,

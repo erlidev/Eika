@@ -62,3 +62,22 @@ test("new chat opens a chat from the sidebar", async ({ open, expectAria }) => {
   await expect(chats.locator('[aria-current="page"]')).toHaveText("New chat");
   await expectAria(eika, "chat-sidebar", 'role=navigation[name="Chats"]');
 });
+
+test("a new chat is named after its first message once a utility model is chosen", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "workbench" });
+  await eika.click("Settings");
+  await eika.click("General");
+  const titles = eika.page.getByRole("combobox", { name: "Session titles" });
+  await expect(titles).toHaveText("Off");
+  await eika.select("role=combobox[name='Session titles']", "gpt-5-mini");
+  await expect(titles).toHaveText("gpt-5-mini");
+  await eika.page.keyboard.press("Escape");
+
+  await eika.click("New chat");
+  const chats = eika.page.getByRole("navigation", { name: "Chats" });
+  await expect(chats.locator('[aria-current="page"]')).toHaveText("New chat");
+  await eika.send("Why does the retry loop never back off?");
+  await expect(chats.locator('[aria-current="page"]')).toHaveText("Why does the retry loop never");
+});

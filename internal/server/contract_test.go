@@ -163,6 +163,7 @@ var eventPayloads = map[string]any{
 	event.TypeWorkspaceState:   event.WorkspaceState{},
 	event.TypeMCPServer:        event.MCPServer{},
 	event.TypeMCPElicitation:   event.MCPElicitation{},
+	event.TypeSessionTitle:     event.SessionTitle{},
 	event.TypeSessionMessage:   event.SessionMessage{},
 	event.TypeBusDropped:       event.BusDropped{},
 }

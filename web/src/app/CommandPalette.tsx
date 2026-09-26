@@ -105,7 +105,7 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
                   onSelect={() => {
                     run(() => {
                       createSession.mutate(
-                        { workspace_id: workspaceId, title: "New session" },
+                        { workspace_id: workspaceId },
                         { onSuccess: (created) => void navigate(`/sessions/${created.id}`) },
                       );
                     });
@@ -118,7 +118,7 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
                 onSelect={() => {
                   run(() => {
                     createSession.mutate(
-                      { chat: true, title: "New chat" },
+                      { chat: true },
                       { onSuccess: (created) => void navigate(`/sessions/${created.id}`) },
                     );
                   });

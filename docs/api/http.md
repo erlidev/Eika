@@ -469,10 +469,9 @@ client hangs each one under its `parent_session_id`.
 |---|---|---|
 | `workspace_id` | string | The workspace the session's runs act in. Required unless `chat` is set. |
 | `chat` | boolean | Open a chat, which has no workspace. |
-| `title` | string, required | What to call it. |
+| `title` | string | What to call it. Empty or absent leaves it untitled: it is called `New session` (`New chat` for a chat) until its first run names it after the first message, when the `utility_models` setting assigns `session_title` a model. |
 
-`201` with the `Session`. `400` for an empty title or for `chat` with a
-`workspace_id`; `404` when the workspace does not exist, which is also what
+`201` with the `Session`. `400` for `chat` with a `workspace_id`; `404` when the workspace does not exist, which is also what
 leaving both out gives: a chat is asked for, never a fallback.
 
 ### `GET /api/sessions/{id}`
@@ -657,7 +656,7 @@ Every `tokens` figure is an estimate, four bytes to a token; only a record's
 |---|---|---|
 | `id` | string | The session id. |
 | `workspace_id` | string, optional | Where its runs act. Absent for a chat. |
-| `title` | string | What the user calls it. |
+| `title` | string | What the user calls it, or the placeholder of an untitled session until its first run names it. |
 | `kind` | string | `user`, `fork`, or `agent`: who opened it. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
 | `parent_session_id` | string, optional | The session it was forked from, or the one whose run spawned it. |
@@ -1136,6 +1135,7 @@ writes nothing.
 | `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The limits a new workspace gets when its request names none, checked as a Sandbox's are. A field the object leaves out is 0, no limit. |
 | `sandbox_egress` | `{"mode", "allow"}` | The egress a new workspace gets when its request names none. A restricted mode is `400` on a harness without the internal sandbox network. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
+| `utility_models` | object | The model each of the harness's own tasks is sent to, by task, `{"session_title": "gpt-5-mini"}`. Each key must be a task and each value the name of a model or `""` for none; a task with none does not run. Renaming a model renames it here. Tasks: `session_title` names an untitled session after its first message (see `session.title` in `events.md`). |
 | `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
 | `search_limits` | object | Quotas by bucket, `{"exa": {"month": 500}, "marginalia": {"day": 50}}`. Each bucket must exist; `day` and `month` are whole numbers from 1 to 10 000 000, and 0 or an absent field is unlimited. Anything else is `400` naming the bucket and the range. A bucket not named keeps its default. |
 

@@ -422,8 +422,8 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.log, http.StatusCreated, asModel(created))
 }
 
-// handleUpdateModel changes a model. Renaming the default model keeps it the
-// default.
+// handleUpdateModel changes a model. Renaming a model keeps it the default
+// and keeps the utility tasks assigned to it.
 func (s *Server) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[updateModelRequest](r)
 	if err != nil {
@@ -472,8 +472,8 @@ func (s *Server) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if updated.Name != oldName && s.defaultModelSetting(r.Context()) == oldName {
-		if err := s.deps.Store.SetSetting(r.Context(), settingDefaultModel, jsonString(updated.Name)); err != nil {
+	if updated.Name != oldName {
+		if err := s.renameModelSettings(r.Context(), oldName, updated.Name); err != nil {
 			s.fail(w, r, err)
 			return
 		}
@@ -538,7 +538,7 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 		sampling.ReasoningEffort = &req.ReasoningEffort
 	}
 	started := time.Now()
-	reply, stop, err := complete(ctx, client, provider.Request{
+	reply, stop, err := provider.Complete(ctx, client, provider.Request{
 		Model:            model,
 		Messages:         []provider.Message{provider.UserMessage(testPrompt)},
 		Sampling:         sampling,
@@ -556,29 +556,6 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// complete runs one request to the end and returns its text and stop reason.
-func complete(ctx context.Context, p provider.Provider, req provider.Request) (string, string, error) {
-	events, err := p.Stream(ctx, req)
-	if err != nil {
-		return "", "", err
-	}
-	var text strings.Builder
-	for e := range events {
-		switch e.Kind {
-		case provider.KindTextDelta:
-			text.WriteString(e.Text)
-		case provider.KindError:
-			return "", "", e.Err
-		case provider.KindDone:
-			return text.String(), e.StopReason, nil
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		return "", "", err
-	}
-	return "", "", errors.New("the response ended without finishing")
-}
-
 // providerFor builds a provider on the endpoint of the model a run's
 // configuration resolved to. A deployment with no model has nothing to run
 // on.
@@ -586,7 +563,12 @@ func (s *Server) providerFor(ctx context.Context, cfg runConfig) (provider.Provi
 	if !cfg.modelOK {
 		return nil, conflictf("no model is configured; add one under Settings, Models")
 	}
-	p, err := s.deps.Store.Provider(ctx, cfg.model.ProviderID)
+	return s.providerOf(ctx, cfg.model)
+}
+
+// providerOf builds a provider on the endpoint of model m.
+func (s *Server) providerOf(ctx context.Context, m store.Model) (provider.Provider, error) {
+	p, err := s.deps.Store.Provider(ctx, m.ProviderID)
 	if err != nil {
 		return nil, err
 	}

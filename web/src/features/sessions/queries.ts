@@ -3,9 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
+import { globalTopic, payloadOf } from "@/api/events";
 import { queryKeys } from "@/api/keys";
 import { createSession, deleteSession, listChats, listSessions } from "@/api/routes";
 import type { CreateSession, Session } from "@/api/types";
+import { useStreamSubscription } from "@/api/useStream";
 
 /**
  * useSessions lists the sessions of one workspace, or all of them.
@@ -48,5 +50,21 @@ export function useDeleteSession(): UseMutationResult<void, Error, string> {
   return useMutation({
     mutationFn: deleteSession,
     onSuccess: () => client.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+}
+
+/**
+ * useSessionTitles keeps every session list current as untitled sessions are
+ * named: a `session.title` event on the global topic says one was. The
+ * workbench calls it once, so a title arrives in the sidebar whichever
+ * session is open.
+ */
+export function useSessionTitles(): void {
+  const client = useQueryClient();
+  useStreamSubscription(globalTopic, (e) => {
+    const payload = payloadOf(e, "session.title");
+    if (!payload) return;
+    void client.invalidateQueries({ queryKey: ["sessions"] });
+    void client.invalidateQueries({ queryKey: queryKeys.session(payload.session_id), exact: true });
   });
 }

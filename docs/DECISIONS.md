@@ -179,6 +179,28 @@ this file says why, so neither repeats the other.
 - Model names are unique across providers, because runs and `spawn_agent`
   name a model alone.
 
+## Utility models
+
+- **A utility model is a model row the user assigns to a harness task**
+  (`utility_models`, task → model name), not a new kind of model, so it
+  reuses the provider, key, and thinking switch already configured. The tasks
+  are fixed in `internal/utility`. A task with no model does not run, so the
+  harness never makes a call the user did not choose; falling back to the
+  default model was rejected because that is often a large reasoning model,
+  and a hidden call to it per session costs more than a title is worth.
+- A utility call is one request outside any run: no tools, no history,
+  thinking off through the model's `thinking_switch` (effort `none`). It is
+  not a `model_requests` row, which records what a session's runs sent.
+- **Session titles**: a session created without a title is `untitled` (a
+  column) and shows a placeholder; the first run on it titles it in the
+  background from the first user message. The flag is a column because
+  creating a session and sending its first message are separate requests,
+  and a title a client chose must never be replaced. The title is written
+  only while the flag is set, and a failed or unconfigured attempt leaves it
+  set, so a later run tries again.
+- Titles arrive as `session.title` on `global`, since every sidebar shows
+  every session, not only the one open.
+
 ## Tools
 
 - **bash is the only file tool.** Models chain steps in one shell call, and

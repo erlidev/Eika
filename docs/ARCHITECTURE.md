@@ -34,7 +34,8 @@ egress proxy are network calls and run in the harness.
 | `event` | Envelope, type constants, payload structs, `Emitter`, fan-out `Bus` |
 | `server` | Composition, JSON API, event stream, auth, run manager; `server/servertest` builds and checks `docs/api/contract.json` |
 | `agent` | The loop: turns, tool dispatch, queues, retries, context assembly |
-| `provider` | Model interface, kind registry; `openai` implementation; `providertest` scripted fake |
+| `provider` | Model interface, kind registry, `Complete`; `openai` implementation; `providertest` scripted fake |
+| `utility` | The harness's own one-shot model tasks (session titles), sent to the model a task is assigned |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
 | `executor` | The interface every agent action uses, path validation; `local` (tests only), `sandbox` (eikad client) |
 | `contextfile` | AGENTS.md discovery and its system prompt section |
@@ -105,7 +106,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 |---|---|
 | `projects` | name (unique), kind (remote/local), remote_url, remote_username, remote_password (sealed), host_path, default_branch |
 | `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, sandbox (jsonb: limits, egress, ports) |
-| `sessions` | workspace_id (NULL for a chat), title, kind (user/fork/agent), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb) |
+| `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork/agent), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb) |
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb), commit_sha |
 | `runs` | session, state, started/finished, error |
 | `subagents` | parent/child session, child workspace, state, result |
@@ -200,9 +201,20 @@ POST /api/sessions/{id}/messages          GET /api/events
   the registry and MCP pool. `newAgent` turns a configuration into
   `agent.Options`, used by runs and the context preview alike.
 - **Settings** the harness reads (`default_model`, `default_profile`,
-  `sandbox_image`, `sandbox_limits`, `sandbox_egress`, `subagent_max_*`,
-  `search_order`, `search_limits`, `setup_complete`) are validated on write
-  and fall back to defaults on read.
+  `utility_models`, `sandbox_image`, `sandbox_limits`, `sandbox_egress`,
+  `subagent_max_*`, `search_order`, `search_limits`, `setup_complete`) are
+  validated on write and fall back to defaults on read. Renaming a model
+  rewrites the settings that name it.
+- **Utility models** (`titles.go`): a session created without a title is
+  `untitled` and called `New session` or `New chat`. When a run begins on
+  one, `titles` starts a goroutine (at most one per session, cancelled and
+  joined by `Close`) that reads the model `utility_models` assigns
+  `session_title`, builds its provider, and calls `utility.Title` with the
+  first user message: one request, no tools, effort `none` in the model's
+  thinking switch when it offers `none`. `TitleUntitledSession` writes the
+  title only if the session is still untitled, then `session.title` goes out
+  on `global`. No model, a failure, or a timeout leaves the session untitled
+  for the next run.
 - **Errors**: one shape, `{"error":{"code","message"}}`. `statusOf` maps
   package sentinels to 404/409/400; `mcpFailure` reports MCP server failures
   as 400. Anything unmapped is logged and returned as `internal error`.
@@ -490,7 +502,7 @@ web/src/
   (`features/setup`) or sign-in (`features/connect`). With a token the setup
   shows until a password exists and `setup_complete` is true.
 - **Settings** (`features/settings`): providers and models, profiles,
-  defaults, sandbox, search, MCP, password. The profile editor
+  defaults and utility models, sandbox, search, MCP, password. The profile editor
   (`features/profiles/SettingsEditor`) has Model, Prompt, Tools, and Sampling
   tabs, a cost strip, and a chip per field naming where its value comes from.
   `ToolPicker` is shared by profiles, sessions, and chats. Small stores hold
@@ -504,7 +516,8 @@ web/src/
   behind each part). `ResizableSplit` remembers widths; below 1024px side
   panes become drawers. Heavy panels (Monaco, xterm) load lazily.
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
-  events (`useWorkspaceEvents`, `useSessionStream`, `useMCPEvents`).
+  events (`useWorkspaceEvents`, `useSessionStream`, `useMCPEvents`,
+  `useSessionTitles`).
 - **Stream state**: `features/session/store.ts` wraps the pure reducer
   `transcript.ts`, fed by run events (`run_id`) and replayed
   `session.message`s (`entry_id`). It also tracks pending questions and
@@ -527,8 +540,10 @@ An arrow means "may import".
 
 ```
  cmd/eika -> server                     cmd/eikad -> eikad, search/filter
- server -> agent, session, store, workspace, subagent, search, mcp, egress
+ server -> agent, session, store, workspace, subagent, search, mcp, egress,
+           utility
  agent -> tool, provider, contextfile     session -> agent, store
+ utility -> provider
  tool -> executor                         contextfile -> executor
  executor/sandbox -> eikad (wire types)   workspace -> executor, executor/sandbox, hub
  subagent -> workspace, session, store, tool/builtin

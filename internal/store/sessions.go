@@ -29,6 +29,9 @@ type Session struct {
 	// chat.
 	WorkspaceID string
 	Title       string
+	// Untitled reports that Title is a placeholder, which the first run
+	// replaces with a title made from the first message.
+	Untitled bool
 	// Kind is who opened the session. An empty kind on input is SessionUser.
 	Kind SessionKind
 	// HeadEntryID is the entry a run continues from, empty in a session that
@@ -56,7 +59,7 @@ func (s Session) Chat() bool { return s.WorkspaceID == "" }
 
 // sessionColumns is the column list every session query selects, in the order
 // scanSession reads them.
-const sessionColumns = `id, workspace_id, title, kind, head_entry_id, parent_session_id, tools,
+const sessionColumns = `id, workspace_id, title, untitled, kind, head_entry_id, parent_session_id, tools,
 	profile_id, overrides, created_at, updated_at`
 
 // CreateSession inserts sess and returns it with the fields the database
@@ -81,11 +84,11 @@ func createSession(ctx context.Context, q querier, sess Session) (Session, error
 	if err != nil {
 		return Session{}, err
 	}
-	const insert = `INSERT INTO sessions (id, workspace_id, title, kind, head_entry_id, parent_session_id, tools,
-			profile_id, overrides)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	const insert = `INSERT INTO sessions (id, workspace_id, title, untitled, kind, head_entry_id, parent_session_id,
+			tools, profile_id, overrides)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING ` + sessionColumns
-	row := q.QueryRow(ctx, insert, sess.ID, nullable(sess.WorkspaceID), sess.Title, sess.Kind,
+	row := q.QueryRow(ctx, insert, sess.ID, nullable(sess.WorkspaceID), sess.Title, sess.Untitled, sess.Kind,
 		nullable(sess.HeadEntryID), nullable(sess.ParentSessionID), sess.Tools,
 		nullable(sess.ProfileID), overrides)
 	return scanSession(row)
@@ -122,7 +125,7 @@ func (s *Store) Sessions(ctx context.Context, workspaceID string, withDescendant
 		tree = `WITH RECURSIVE reachable AS (
 				SELECT ` + sessionColumns + ` FROM sessions WHERE workspace_id = $1
 				UNION
-				SELECT s.id, s.workspace_id, s.title, s.kind, s.head_entry_id,
+				SELECT s.id, s.workspace_id, s.title, s.untitled, s.kind, s.head_entry_id,
 					s.parent_session_id, s.tools, s.profile_id, s.overrides, s.created_at, s.updated_at
 				FROM sessions s JOIN reachable r ON s.parent_session_id = r.id
 			)
@@ -175,9 +178,11 @@ func collectSessions(op string, rows pgx.Rows) ([]Session, error) {
 	return out, nil
 }
 
-// SetSessionTitle renames a session.
+// SetSessionTitle renames a session. A title set this way is final: the
+// session is no longer untitled.
 func (s *Store) SetSessionTitle(ctx context.Context, id, title string) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE sessions SET title = $2, updated_at = now() WHERE id = $1`, id, title)
+	tag, err := s.pool.Exec(ctx, `UPDATE sessions SET title = $2, untitled = false, updated_at = now()
+		WHERE id = $1`, id, title)
 	if err != nil {
 		return wrap("set session title "+id, err)
 	}
@@ -185,6 +190,18 @@ func (s *Store) SetSessionTitle(ctx context.Context, id, title string) error {
 		return wrap("set session title "+id, pgx.ErrNoRows)
 	}
 	return nil
+}
+
+// TitleUntitledSession gives an untitled session its title and reports
+// whether it did. A session that was titled meanwhile keeps its title, so a
+// title made in the background never replaces one someone chose.
+func (s *Store) TitleUntitledSession(ctx context.Context, id, title string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE sessions SET title = $2, untitled = false, updated_at = now()
+		WHERE id = $1 AND untitled`, id, title)
+	if err != nil {
+		return false, wrap("title session "+id, err)
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // SetSessionTools chooses the tools a session's runs may offer the model. Nil
@@ -222,7 +239,7 @@ func scanSession(row pgx.Row) (Session, error) {
 		profile   *string
 		overrides []byte
 	)
-	err := row.Scan(&sess.ID, &workspace, &sess.Title, &sess.Kind, &head, &parent, &sess.Tools,
+	err := row.Scan(&sess.ID, &workspace, &sess.Title, &sess.Untitled, &sess.Kind, &head, &parent, &sess.Tools,
 		&profile, &overrides, &sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
 		return Session{}, err

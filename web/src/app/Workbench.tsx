@@ -17,7 +17,7 @@ import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
 import { useMCPEvents } from "@/features/mcp";
 import { SessionView, useSession } from "@/features/session";
-import { useCreateSession } from "@/features/sessions";
+import { useCreateSession, useSessionTitles } from "@/features/sessions";
 import { SettingsDialog, useSettingsDialog } from "@/features/settings";
 import { usePersistedNumber, usePersistedString } from "@/lib/persisted";
 import { nextTabIndex } from "@/lib/tablist";
@@ -48,6 +48,9 @@ export function Workbench() {
   // new tools; one subscription for the whole workbench keeps the settings
   // and the tool lists current.
   useMCPEvents();
+  // Untitled sessions are named in the background; the sidebar shows every
+  // session, so the titles are followed here rather than in one session.
+  useSessionTitles();
 
   const tabs = availablePanels({ sessionId, workspaceId, chat });
   const panel = tabs.find((tab) => tab.id === activePanel) ?? tabs[0];
@@ -250,7 +253,7 @@ function NothingOpen({ onOpened }: { onOpened: () => void }) {
         disabled={create.isPending}
         onClick={() => {
           create.mutate(
-            { chat: true, title: "New chat" },
+            { chat: true },
             {
               onSuccess: (created) => {
                 onOpened();

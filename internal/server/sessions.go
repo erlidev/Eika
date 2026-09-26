@@ -53,7 +53,9 @@ type entryBody struct {
 type createSessionRequest struct {
 	WorkspaceID string `json:"workspace_id"`
 	Chat        bool   `json:"chat"`
-	Title       string `json:"title"`
+	// Title is what to call the session. Empty leaves it untitled until its
+	// first run names it.
+	Title string `json:"title"`
 }
 
 // setHeadRequest is the body of POST /api/sessions/{id}/head.
@@ -143,7 +145,9 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateSession opens a session in a workspace, or a chat in none. A
 // chat is asked for by name rather than by leaving the workspace out, so a
-// client that forgets a workspace gets an error, not a chat.
+// client that forgets a workspace gets an error, not a chat. A session
+// created without a title shows a placeholder and is named after its first
+// message.
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[createSessionRequest](r)
 	if err != nil {
@@ -151,9 +155,12 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title := strings.TrimSpace(req.Title)
-	if title == "" {
-		s.fail(w, r, invalidf("title is required"))
-		return
+	untitled := title == ""
+	if untitled {
+		title = untitledSession
+		if req.Chat {
+			title = untitledChat
+		}
 	}
 	switch {
 	case req.Chat && req.WorkspaceID != "":
@@ -168,6 +175,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	sess, err := s.deps.Store.CreateSession(r.Context(), store.Session{
 		WorkspaceID: req.WorkspaceID,
 		Title:       title,
+		Untitled:    untitled,
 	})
 	if err != nil {
 		s.fail(w, r, err)

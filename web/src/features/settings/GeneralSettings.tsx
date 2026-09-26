@@ -1,6 +1,7 @@
 /**
- * The harness-wide choices: the default model, the image new workspaces run,
- * how far subagents may spread, and a way back into the guided setup.
+ * The harness-wide choices: the default model, the utility models, the image
+ * new workspaces run, how far subagents may spread, and a way back into the
+ * guided setup.
  */
 
 import { useState } from "react";
@@ -20,6 +21,7 @@ import {
   useSettings,
 } from "@/features/settings/queries";
 import { SystemCheck } from "@/features/settings/SystemCheck";
+import { UtilityModels } from "@/features/settings/UtilityModels";
 
 export function GeneralSettings() {
   const settings = useSettings();
@@ -41,6 +43,7 @@ export function GeneralSettings() {
   return (
     <div className="space-y-6">
       <DefaultModelSelect />
+      <UtilityModels state={settings.data} />
       <Separator />
       {/* Keyed by the stored values, so a form starts from what is stored
           now and a save or refetch elsewhere leaves its unsaved edits alone. */}

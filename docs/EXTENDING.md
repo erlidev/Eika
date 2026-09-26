@@ -314,6 +314,48 @@ and records them; `internal/search/web/example_test.go` holds this example
 and its test. `searchtest.New` is a scripted searcher for testing whatever
 consumes one.
 
+## Adding a utility task
+
+A utility task is a small job the harness gives a model for itself, outside
+any run: naming a session is one. The user assigns each task a model in
+Settings, General (the `utility_models` setting); a task with no model does
+not run. A task is a `utility.Task` in `internal/utility/utility.go`, listed
+in `Known`, and a function in its own file of that package that sends one
+request with `Model.request`, which turns thinking off the way a run does:
+
+```go
+package utility
+
+import (
+	"context"
+	"strings"
+
+	"github.com/erlidev/eika/internal/provider"
+)
+
+// SummaryPrompt is the system prompt of the run summary task.
+const SummaryPrompt = "Summarise what the assistant did in one sentence. Respond with only the summary."
+
+// Summary asks m for a one-sentence summary of a run's last answer.
+func Summary(ctx context.Context, m Model, answer string) (string, error) {
+	reply, _, err := provider.Complete(ctx, m.Provider, m.request(SummaryPrompt, truncate(answer, 8000), 256))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(reply), nil
+}
+```
+
+The server calls it where its trigger happens: `s.utilityModel(ctx, task)`
+reads the assigned model (false for none), and `s.utilityClient` builds it.
+A task that must not hold up a request runs in a goroutine with an owner that
+`Server.Close` stops, as `titles` in `internal/server/titles.go` does. Test
+the function with `providertest`, as `internal/utility/title_test.go` does,
+and the trigger with a `docker`-tagged server test. Give the task a label in
+`utilityTasks` in `web/src/features/settings/UtilityModels.tsx`, add it to
+the `utility_models` row in `docs/api/http.md`, and mirror it in the mock
+harness.
+
 ## Using a custom sandbox image
 
 A workspace runs the image the sandbox image setting names (Settings,

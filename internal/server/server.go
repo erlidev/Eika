@@ -165,6 +165,8 @@ type Server struct {
 	deps Deps
 	tree *session.Tree
 	runs *runs
+	// titles names untitled sessions after their first message.
+	titles *titles
 
 	// loginMu makes sign-in attempts take turns, which bounds how fast a
 	// password can be guessed without locking its owner out.
@@ -192,6 +194,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		s.tree = session.NewTree(deps.Store)
 	}
 	s.runs = newRuns(s)
+	s.titles = newTitles(s)
 	s.routes()
 	return s
 }
@@ -228,16 +231,18 @@ func (s *Server) Run(ctx context.Context) error {
 	return Serve(ctx, s.cfg.Listen, s.Handler(), s.log)
 }
 
-// Close aborts every run and every child agent that is still going and
-// returns once they have stopped. Run calls it on shutdown; a caller that
+// Close aborts every run, session title, and child agent that is still going
+// and returns once they have stopped. Run calls it on shutdown; a caller that
 // serves Handler itself calls it when it is done, before the store it gave
 // the server closes.
 //
 // The children come after the runs: a child whose parent spawned it without
 // waiting outlives that run, so aborting the runs alone leaves it writing to
-// a database that is about to close.
+// a database that is about to close. Titles come after the runs too, since
+// no run is left to start one.
 func (s *Server) Close() {
 	s.runs.stopAll()
+	s.titles.stop()
 	if s.deps.Subagents == nil {
 		return
 	}

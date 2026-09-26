@@ -21,6 +21,7 @@ export type EventType =
   | "workspace.state"
   | "mcp.server"
   | "mcp.elicitation"
+  | "session.title"
   | "session.message"
   | "bus.dropped";
 
@@ -215,6 +216,14 @@ export type MCPElicitation = {
   url?: string;
 };
 
+/** SessionTitle is the payload of a session.title event: an untitled session was named. */
+export type SessionTitle = {
+  session_id: string;
+  /** workspace_id is absent for a chat. */
+  workspace_id?: string;
+  title: string;
+};
+
 /** EntryKind is what one session entry holds. */
 export type EntryKind = "user" | "assistant" | "tool_call" | "tool_result" | "system" | "event";
 
@@ -256,6 +265,7 @@ export type EventPayloads = {
   "workspace.state": WorkspaceState;
   "mcp.server": MCPServerChanged;
   "mcp.elicitation": MCPElicitation;
+  "session.title": SessionTitle;
   "session.message": SessionMessage;
   "bus.dropped": BusDropped;
 };
@@ -310,6 +320,7 @@ export const eventTypes: readonly EventType[] = [
   "workspace.state",
   "mcp.server",
   "mcp.elicitation",
+  "session.title",
   "session.message",
   "bus.dropped",
 ];

@@ -2,16 +2,9 @@
 
 import { LoadError } from "@/components/Notice";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useModels, useProviders } from "@/features/providers";
+import { ModelSelectItems } from "@/features/settings/ModelSelectItems";
 import { settingKeys, useSaveSettings } from "@/features/settings/queries";
 import { failureText } from "@/lib/failure";
 
@@ -21,9 +14,6 @@ export function DefaultModelSelect() {
   const save = useSaveSettings();
   const all = models.data?.models ?? [];
   const loadFailed = models.error ?? providers.error;
-  // A model whose provider is missing from the list still gets offered.
-  const grouped = new Set((providers.data?.providers ?? []).map((p) => p.id));
-  const ungrouped = all.filter((m) => !grouped.has(m.provider_id));
 
   return (
     <div className="space-y-1.5">
@@ -48,25 +38,7 @@ export function DefaultModelSelect() {
           />
         </SelectTrigger>
         <SelectContent>
-          {(providers.data?.providers ?? []).map((provider) => {
-            const own = all.filter((m) => m.provider_id === provider.id);
-            if (own.length === 0) return null;
-            return (
-              <SelectGroup key={provider.id}>
-                <SelectLabel>{provider.name}</SelectLabel>
-                {own.map((model) => (
-                  <SelectItem key={model.id} value={model.name}>
-                    {model.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            );
-          })}
-          {ungrouped.map((model) => (
-            <SelectItem key={model.id} value={model.name}>
-              {model.name}
-            </SelectItem>
-          ))}
+          <ModelSelectItems models={all} providers={providers.data?.providers ?? []} />
         </SelectContent>
       </Select>
       <p id="default-model-hint" className="text-muted-foreground text-xs">

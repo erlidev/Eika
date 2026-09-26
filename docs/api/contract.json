@@ -4583,6 +4583,16 @@
         "parent_id"
       ]
     },
+    "session.title": {
+      "object": {
+        "session_id": "string",
+        "title": "string",
+        "workspace_id": "string"
+      },
+      "optional": [
+        "workspace_id"
+      ]
+    },
     "subagent.finished": {
       "object": {
         "branch": "string",

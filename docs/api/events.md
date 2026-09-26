@@ -73,7 +73,7 @@ it needs with `session.replay`.
 There are three kinds of topic: `global`, `workspace:<id>`, and
 `session:<id>`. Agent run events, question and elicitation events, and replay
 events are published on `session:<id>`; workspace lifecycle events on
-`workspace:<id>`; MCP server state on `global`. A
+`workspace:<id>`; MCP server state and session titles on `global`. A
 `bus.dropped` event reaches one connection only and carries the topic
 `global`, whatever that connection subscribed to.
 
@@ -347,6 +347,21 @@ page stays current without polling.
 | `name` | string | Its name. |
 | `state` | string | `disabled`, `idle`, `connecting`, `connected`, `unauthorized`, `error`, or `removed` for a server that was deleted. |
 | `error` | string, optional | Why it is `unauthorized` or in `error`. |
+
+## Session events
+
+### `session.title`
+
+Published on `global` when an untitled session is named after its first
+message by the model the `utility_models` setting assigns `session_title`.
+It goes to every client, since every sidebar lists every session; a client
+refetches its session lists.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `session_id` | string | The session. |
+| `workspace_id` | string, optional | Its workspace, absent for a chat. |
+| `title` | string | The title it now has. |
 
 ## Stream events
 

@@ -248,8 +248,12 @@ export type Tool = {
   tokens: number;
 };
 
-/** CreateSession opens a session in a workspace, or a chat in none. */
-export type CreateSession = { workspace_id: string; title: string } | { chat: true; title: string };
+/**
+ * CreateSession opens a session in a workspace, or a chat in none. Without a
+ * title it is untitled: it shows a placeholder until its first run names it.
+ */
+export type CreateSession =
+  { workspace_id: string; title?: string } | { chat: true; title?: string };
 
 /** Role is the author of one provider message. */
 export type Role = "system" | "user" | "assistant" | "tool";

@@ -6,7 +6,9 @@ Everything the user configures after setup, in one dialog of tabs.
   `store.ts`, so the workbench, the command palette, and a session's "no
   model" notice can all open it on the right tab.
 - Models is `features/providers/ModelsPanel`. General is `GeneralSettings.tsx`:
-  `DefaultModelSelect.tsx`, the sandbox image with `SystemCheck.tsx`, the
+  `DefaultModelSelect.tsx`, `UtilityModels.tsx` (a model per utility task,
+  or off; both list models with `ModelSelectItems.tsx`), the sandbox image
+  with `SystemCheck.tsx`, the
   subagent limits, and a way back into the guided setup. Sandbox is
   `SandboxSettings.tsx`: the limits and network a new workspace gets, with
   the fields from `features/sandbox`; `sandboxDefaults` in `queries.ts` reads

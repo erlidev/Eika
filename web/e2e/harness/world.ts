@@ -100,6 +100,8 @@ export type World = {
    */
   files: Record<string, Record<string, string>>;
   sessions: Session[];
+  /** untitled are the sessions created without a title, which their first run names. */
+  untitled: string[];
   /** tools is GET /api/tools: every tool a run can offer, sorted by name. */
   tools: Tool[];
   /** entries holds each session's tree, keyed by session id, in insertion order. */
@@ -182,6 +184,7 @@ export function emptyWorld(): World {
     diffs: {},
     files: {},
     sessions: [],
+    untitled: [],
     tools: toolCatalog(),
     entries: {},
     runs: {},

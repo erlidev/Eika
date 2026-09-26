@@ -46,6 +46,9 @@ const (
 	// TypeMCPElicitation reports that an MCP server asked the user for input
 	// during a tool call, which waits on the answer.
 	TypeMCPElicitation = "mcp.elicitation"
+	// TypeSessionTitle reports that a session was given the title made
+	// from its first message.
+	TypeSessionTitle = "session.title"
 	// TypeSessionMessage carries one stored session entry, which is how a
 	// client replays the messages it missed.
 	TypeSessionMessage = "session.message"
