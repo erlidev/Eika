@@ -145,18 +145,18 @@ so a reviewer can see a move changed nothing.
 Split by resource or concern within the same package. No new packages
 without a `docs/DECISIONS.md` entry.
 
-- [ ] `internal/server/mcp.go` (1367): wire types, validation, handlers,
+- [x] `internal/server/mcp.go` (1367): wire types, validation, handlers,
       and OAuth routes into separate files (for example `mcp_wire.go`,
       `mcp_auth.go`).
-- [ ] `internal/mcp/pool.go` (957): connection lifecycle vs. per-workspace
+- [x] `internal/mcp/pool.go` (957): connection lifecycle vs. per-workspace
       bookkeeping.
-- [ ] `internal/server/providers.go` (789) and `internal/server/runs.go`
+- [x] `internal/server/providers.go` (789) and `internal/server/runs.go`
       (762): wire types vs. handlers.
-- [ ] `internal/agent/agent.go` (743): move the turn-restoration and
+- [x] `internal/agent/agent.go` (743): move the turn-restoration and
       response-assembly helpers into their own file.
-- [ ] `internal/mcp/mcptest/server.go` (755): only if it helps readers; it
+- [x] `internal/mcp/mcptest/server.go` (755): only if it helps readers; it
       is test support.
-- [ ] After the splits, check each file in `internal/server` has one
+- [x] After the splits, check each file in `internal/server` has one
       subject and its name says which.
 
 ### Go: practice
@@ -299,6 +299,38 @@ docs match the code after phases 1 to 4.
 Newest first. One entry per session: date, items done (commit hashes),
 `make check` result, anything skipped and why, and findings for later items.
 
+- 2026-09-26, phase 2 (Go splits). Pure moves, checked by diffing the
+  sorted removed and added lines of each move commit. `make check` green
+  after each commit and on the merged tree.
+  - `mcp/pool.go`: characterization tests first for `Start`, `notified`,
+    `relist`, `dropped`, which were at 0% (`451618f`, `pool_conn_test.go`).
+    Then split (`cdd4988`): `pool.go` keeps the public API, `conn.go` the
+    connection lifecycle, `server.go` the per-server bookkeeping (named
+    after the unexported `server` type, not `internal/server`).
+  - `agent/agent.go` 743 → 482: response assembly moved to `response.go`
+    (`7b552b5`). Turn restoration is the `restoreFrom` closure in `turn`,
+    sharing five locals with it, so extracting it is an edit, not a move;
+    left. `abandonToolCalls`, `callTool`, `dispatch`, `appendTerminal`
+    (~110 lines) could move later.
+  - `mcptest/server.go`: skipped. One scripted server whose transports all
+    run through one `handle`; splitting would scatter it. The natural cut
+    if wanted: `legacy.go` (HTTP and HTTP+SSE sessions), `stdio.go`.
+  - `server/mcp.go` → `mcp.go` (handlers), `mcp_wire.go`,
+    `mcp_validation.go`, `mcp_auth.go`, `mcp_store.go`, `mcp_pool.go`
+    (`c082de5`). `providers.go` → `providers.go`, `providers_wire.go`,
+    `models.go`, `models_wire.go` (`3d1f68a`). `runs.go` → `runs.go`,
+    `runs_wire.go`, `run_manager.go` (`256f338`).
+  - Server file names (`aca945a`): `wire.go` renamed `composition.go`,
+    since `*_wire.go` now means JSON types (references to `server/wire.go`
+    above predate this); `jsonString` moved to `settings.go`, its only
+    user. `a617887` fixes comments the splits exposed (`asModel` had lost
+    its doc comment).
+  - Left for later, not required: `workspaces.go` (611) also holds the git
+    change routes, a candidate `changes.go` pure move; `profiles.go` holds
+    the session configuration routes on purpose (`doc.go` says so);
+    `scrub` in `providers.go` is used by `projects.go` and `workspaces.go`;
+    `mcp/tools.go` (553) mixes the pool's call and recover logic with the
+    `tool.Tool` adapters.
 - 2026-09-26, phase 1 (test harness). The owner allowed the
   `mock.test.ts` edit: deleted the mock's `GET /api/sessions/{id}/path`
   and `GET /api/sessions/{id}/agents` handlers, dropped their direct calls
