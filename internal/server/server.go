@@ -78,24 +78,6 @@ type Workspaces interface {
 	PortURL(ctx context.Context, ws workspace.Workspace, port int) (string, error)
 }
 
-// Egress is the part of the egress proxy the API uses: the hosts a
-// workspace was refused, and forgetting a workspace that is gone.
-// *egress.Proxy is the one implementation.
-type Egress interface {
-	Blocked(workspaceID string) []egress.Blocked
-	Forget(workspaceID string)
-}
-
-// Subagents is the part of the subagent spawner the API uses: the children of
-// a session, and stopping one or all of them. *subagent.Spawner is the one
-// implementation; UseSubagents gives it to the server once it exists.
-type Subagents interface {
-	List(ctx context.Context, parentSessionID string) ([]builtin.AgentResult, error)
-	Abort(ctx context.Context, id string) error
-	AbortChildren(parentSessionID string)
-	Shutdown(ctx context.Context)
-}
-
 // Hub is the part of the git hub the API uses: creating a project's
 // repository, mirroring a remote into it, pushing a branch back to that
 // remote, and serving git over HTTP.
@@ -138,10 +120,10 @@ type Deps struct {
 	Pages  *fetch.Reader
 	// Subagents is set by UseSubagents rather than by the caller: the spawner
 	// needs the run manager this server owns.
-	Subagents Subagents
+	Subagents *subagent.Spawner
 	// Egress is the proxy restricted sandboxes reach the internet through.
 	// Nil when the harness cannot restrict a sandbox's egress.
-	Egress Egress
+	Egress *egress.Proxy
 	// MCP holds the connections to the MCP servers the user configured,
 	// whose tools runs offer beside the built-in ones. Without it the MCP
 	// routes are not served. The caller closes it after the server.
@@ -201,7 +183,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 // the spawner the run manager it drives them with. The wiring calls it once,
 // before serving: the spawner cannot be built before the server, because the
 // tool registry every run shares holds the spawn_agent tool it backs.
-func (s *Server) UseSubagents(sp Subagents, attach func(subagent.Runner)) {
+func (s *Server) UseSubagents(sp *subagent.Spawner, attach func(subagent.Runner)) {
 	s.deps.Subagents = sp
 	attach(s)
 }

@@ -113,7 +113,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Bus:        bus,
 		Search:     engine,
 		Pages:      pages,
-		Egress:     egressDep(proxy),
+		Egress:     proxy,
 		MCP:        pool,
 	}, opts)
 	s.UseSubagents(spawner, spawner.Attach)
@@ -142,15 +142,6 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		}()
 	}
 	return s.Run(ctx)
-}
-
-// egressDep hands the server the proxy, or nothing when there is none: a nil
-// *egress.Proxy in the interface would not compare equal to nil.
-func egressDep(p *egress.Proxy) Egress {
-	if p == nil {
-		return nil
-	}
-	return p
 }
 
 // buildSearch builds the search engine over the built-in backends and the
@@ -203,7 +194,6 @@ var (
 	_ Providers           = (*provider.Registry)(nil)
 	_ Workspaces          = (*workspace.Host)(nil)
 	_ Hub                 = (*hub.Hub)(nil)
-	_ Subagents           = (*subagent.Spawner)(nil)
 	_ subagent.Runner     = (*Server)(nil)
 	_ builtin.Subagents   = (*subagent.Spawner)(nil)
 	_ subagent.Store      = (*store.Store)(nil)
