@@ -15,8 +15,9 @@
 //
 // Run is the composition of the process: it opens the store, loads the
 // sealing key, builds the hub, the workspace host, the provider registry, the
-// tool registry, and the MCP pool (mcp.go, which also backs the pool with
-// sealed rows and starts stdio servers through the host), and serves. New
+// tool registry, and the MCP pool (mcp_pool.go, which starts stdio servers
+// through the host; mcp_store.go backs the pool with sealed rows), and
+// serves. New
 // takes those pieces as Deps instead, which is how the tests run the API
 // against fakes. Handlers live one file per resource and are registered in
 // routes.go; docs/api/http.md documents every route.
