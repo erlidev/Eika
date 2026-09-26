@@ -17,10 +17,10 @@ import (
 type stdioTransport struct {
 	rw   io.ReadWriteCloser
 	recv receiver
+	wg   sync.WaitGroup
 
 	// mu keeps one message from interleaving with another on stdin.
 	mu sync.Mutex
-	wg sync.WaitGroup
 }
 
 // newStdioTransport returns a transport over rw; start begins reading.

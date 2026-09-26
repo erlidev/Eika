@@ -140,9 +140,9 @@ func (p *Pool) Tools(ctx context.Context, workspaceID string) []tool.Tool {
 	waitCtx, cancel := context.WithTimeout(ctx, connectWait)
 	defer cancel()
 	var (
+		wg    sync.WaitGroup
 		mu    sync.Mutex
 		found []listedServer
-		wg    sync.WaitGroup
 	)
 	for _, cfg := range cfgs {
 		if !cfg.Enabled || (cfg.Kind == KindStdio && workspaceID == "") {
