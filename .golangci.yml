@@ -1,5 +1,6 @@
-# Used by `make lint` when golangci-lint is installed. CI does not depend on
-# it: go vet and staticcheck run through `go tool` and are always available.
+# Used by `make lint` when golangci-lint is installed. `make check` does not
+# depend on it: go vet and staticcheck run through `go tool` and are always
+# available.
 version: "2"
 
 linters:

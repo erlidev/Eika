@@ -82,7 +82,7 @@ Make the gate trustworthy and gather the lists later phases work from.
       `.golangci.yml` never run; note this, and run it once via
       `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run ./cmd/... ./internal/...`
       to collect findings for phase 2.
-- [ ] Fix the stale header of `.golangci.yml`: it mentions CI, and
+- [x] Fix the stale header of `.golangci.yml`: it mentions CI, and
       `AGENTS.md` says there is none.
 - [x] Run `go mod tidy`. `github.com/jackc/pgx/v5` is a direct dependency
       sitting in an indirect `require` block; tidy regroups it. Commit only
