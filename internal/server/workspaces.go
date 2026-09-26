@@ -288,13 +288,14 @@ func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 func (s *Server) destroyWorkspace(ctx context.Context, ws store.Workspace) error {
 	s.stopRunsIn(ctx, ws.ID)
 	host, err := s.deps.Workspaces.Inspect(ctx, ws.ID)
-	if err == nil {
+	switch {
+	case err == nil:
 		if err := s.deps.Workspaces.Destroy(ctx, &host); err != nil {
 			return err
 		}
-	} else if errors.Is(err, workspace.ErrNoWorkspace) {
+	case errors.Is(err, workspace.ErrNoWorkspace):
 		s.log.Warn("workspace container is already gone", "workspace_id", ws.ID, "error", err)
-	} else {
+	default:
 		return err
 	}
 	if err := s.deps.Store.DeleteWorkspace(ctx, ws.ID); err != nil {

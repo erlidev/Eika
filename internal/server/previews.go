@@ -169,7 +169,7 @@ func (s *Server) servePreview(w http.ResponseWriter, r *http.Request, id string,
 			pr.SetXForwarded()
 			withoutPreviewCookie(pr.Out)
 		},
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
 			previewError(w, http.StatusBadGateway, "Nothing answered on port "+strconv.Itoa(port)+
 				" of the workspace. A server there must listen on 0.0.0.0, not on localhost, for the harness to reach it.")
 		},
@@ -276,5 +276,5 @@ func previewError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	io.WriteString(w, "Eika preview: "+msg+"\n")
+	_, _ = io.WriteString(w, "Eika preview: "+msg+"\n")
 }
