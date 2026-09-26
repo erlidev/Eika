@@ -58,7 +58,7 @@ import type { ReplyStep, World } from "./world.ts";
 export const mockToken = "mock-token";
 
 /** wrongPassword is the one password sign-in refuses, to show the error. */
-export const wrongPassword = "wrong";
+const wrongPassword = "wrong";
 
 /** Reply is how the mock answers a request: a status and a JSON body, if any. */
 export type Reply = { status: number; body?: unknown };

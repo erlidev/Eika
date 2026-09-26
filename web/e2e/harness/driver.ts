@@ -44,7 +44,7 @@ export type ShotOptions = {
 };
 
 /** defaultViewport is a laptop screen; every committed baseline uses it. */
-export const defaultViewport = { width: 1440, height: 900 };
+const defaultViewport = { width: 1440, height: 900 };
 
 /**
  * selectorPrefixes mark a target as a Playwright selector. Anything else is

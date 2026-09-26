@@ -117,9 +117,9 @@ from phase 0 plus a grep, including `web/e2e`, `docs/`, and tests.
       in the log for the owner to decide.
 
 ### Frontend
-- [ ] Delete unused files and exports from the knip list. Re-run
+- [x] Delete unused files and exports from the knip list. Re-run
       `npm run typecheck` and `npm test` after each feature folder.
-- [ ] Delete unused `package.json` dependencies knip reports, after a grep
+- [x] Delete unused `package.json` dependencies knip reports, after a grep
       over `web/src`, `web/e2e`, `index.css`, and the Vite and ESLint configs
       (`shadcn` and `tw-animate-css` are imported from `index.css`, not TS).
 - [ ] `web/src/lib/utils.ts` only re-exports `cn` from the `cn` package,
@@ -332,6 +332,27 @@ Newest first. One entry per session: date, items done (commit hashes),
        secrets file out of git and images. Cheap; keep while any old
        checkout may have one.
     The MCP "legacy" transports are protocol support, not shims.
+- 2026-09-26, phase 1 (frontend). `make check` green before each commit.
+  - knip exports: deleted `isConnected`, `apiUrl`, `getProject`,
+    `getSessionPath` and its `SessionPath` type, and `stream.ts`'s
+    `globalTopic` re-export (`9af1e8c`); trimmed feature index
+    re-exports nothing imports (`051e3f6`); dropped `export` from
+    symbols used only in their own file (e2e harness, `context/queries`,
+    `mcp/form` `urlProblem`, `lib/persisted` `readPersistedNumber`).
+  - Kept on purpose, so knip still lists them: `panels`, `toolRenderers`,
+    and the renderer helper `args` (the extension points `EXTENDING.md`
+    documents); `session`'s `useTools` and `toolSummary` re-exports
+    (phase 3 routes `profiles` through them); the smoke files (false
+    positives); `components/ui` (shadcn, including the unused `card`,
+    `scroll-area`, `tooltip`); the unused exported types (they name
+    wire shapes and props in exported signatures).
+  - Dependencies: knip reported none unused, so nothing to delete.
+  - The mock test (`e2e/harness/mock.test.ts`) requires the mock to
+    serve every contract route or list it in `unmocked` with a reason.
+    The phase 1 mock item therefore cannot just delete handlers for
+    routes the UI never calls (for example `GET /api/sessions/{id}/path`,
+    whose client function is gone): each deletion needs an `unmocked`
+    entry, which is a test edit beyond a rename. Decide there.
 - 2026-09-26, phase 0 (all but the `.golangci.yml` item, which has its own
   commit). Findings below are the input for phases 1 and 2.
   - `make check` on a clean tree: green in 91 s. 35 vitest files, 386

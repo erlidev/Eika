@@ -209,7 +209,7 @@ export function emptyWorld(): World {
 }
 
 /** defaultAllowlist is the allowlist the harness suggests (egress.DefaultAllowlist). */
-export const defaultAllowlist = [
+const defaultAllowlist = [
   "github.com",
   "*.github.com",
   "*.githubusercontent.com",

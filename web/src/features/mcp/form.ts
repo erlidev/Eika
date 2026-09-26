@@ -116,7 +116,7 @@ export function urlWillDropSecrets(server: MCPServer | undefined, form: MCPFormS
 }
 
 /** urlProblem mirrors the harness's check of a server URL. */
-export function urlProblem(raw: string): string | null {
+function urlProblem(raw: string): string | null {
   const text = raw.trim();
   if (text === "") return "Enter the server's URL, such as https://mcp.example.com/mcp.";
   let url: URL;

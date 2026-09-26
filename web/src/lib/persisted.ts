@@ -7,7 +7,7 @@
 import { useCallback, useState } from "react";
 
 /** readPersisted reads a stored number, falling back when it is not one. */
-export function readPersistedNumber(key: string, fallback: number): number {
+function readPersistedNumber(key: string, fallback: number): number {
   try {
     const raw = localStorage.getItem(key);
     if (raw === null) return fallback;

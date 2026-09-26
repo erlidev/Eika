@@ -31,7 +31,7 @@ export type StoredProfile = Omit<Profile, "inherited">;
 export type RecordedRequest = { record: ModelRequest; context: ModelContext };
 
 /** builtinPrompts are internal/agent's WorkspacePrompt and ChatPrompt. */
-export const builtinPrompts = {
+const builtinPrompts = {
   workspace: `You are Eika, a coding agent working inside a sandboxed workspace.
 
 Rules:
@@ -75,7 +75,7 @@ export function defaultProfile(): StoredProfile {
 }
 
 /** estimate is internal/agent's EstimateTokens: four bytes to a token. */
-export function estimate(text: string): number {
+function estimate(text: string): number {
   return Math.ceil(new TextEncoder().encode(text).length / 4);
 }
 
@@ -181,7 +181,7 @@ const builtinSchemas: Record<string, unknown> = {
 };
 
 /** toolSchemaOf is the parameter schema a request sends for a tool: an MCP server's own, or a built-in one. */
-export function toolSchemaOf(w: World, name: string): unknown {
+function toolSchemaOf(w: World, name: string): unknown {
   for (const d of w.mcpServers) {
     const t = (d.tools ?? []).find((x) => x.exposed_name === name);
     if (t) return t.input_schema;
@@ -205,7 +205,7 @@ type Layer = { name: ConfigLayer; settings: ProfileSettings; tools: string[] | n
 type Resolved = { config: Configuration; model: Model | undefined };
 
 /** defaultProfileOf is the profile a session that chose none runs with. */
-export function defaultProfileOf(w: World): StoredProfile {
+function defaultProfileOf(w: World): StoredProfile {
   const id = w.settings.settings.default_profile;
   return w.profiles.find((p) => p.id === id) ?? w.profiles[0] ?? defaultProfile();
 }
