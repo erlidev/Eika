@@ -22,11 +22,11 @@
 // against fakes. Handlers live one file per resource and are registered in
 // routes.go; docs/api/http.md documents every route.
 //
-// A run of the agent loop is owned by the run manager in runs.go: one
-// goroutine per run, at most one run per session, events emitted into the
-// event.Bus that the event stream fans out. A run outlives the request that
-// started it and ends when it finishes, when it is aborted, or when the
-// harness shuts down.
+// A run of the agent loop is owned by the run manager in run_manager.go:
+// one goroutine per run, at most one run per session, events emitted into
+// the event.Bus that the event stream fans out. A run outlives the request
+// that started it and ends when it finishes, when it is aborted, or when
+// the harness shuts down.
 //
 // What a run sends is resolved in configuration.go, the one place the rule
 // lives: the model a run request names, the session's overrides, its
