@@ -46,11 +46,6 @@ export function getConnection(): Connection {
   return current;
 }
 
-/** isConnected reports whether a token has been entered. */
-export function isConnected(): boolean {
-  return current.token !== "";
-}
-
 /** subscribeConnection registers a listener and returns its unsubscribe. */
 export function subscribeConnection(listener: () => void): () => void {
   listeners.add(listener);
@@ -86,11 +81,6 @@ export function disconnect(): void {
 /** resolveUrl resolves an API path against a base URL, which may be empty. */
 export function resolveUrl(baseUrl: string, path: string): string {
   return baseUrl === "" ? path : `${baseUrl.replace(/\/+$/, "")}${path}`;
-}
-
-/** apiUrl resolves an API path against the configured base URL. */
-export function apiUrl(path: string): string {
-  return resolveUrl(current.baseUrl, path);
 }
 
 /**

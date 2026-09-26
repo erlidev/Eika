@@ -325,13 +325,6 @@ export type SessionOutline = {
   nodes: Node[];
 };
 
-/** SessionPath is the body of GET /api/sessions/{id}/path. */
-export type SessionPath = {
-  session_id: string;
-  entries: Entry[];
-  messages: Message[];
-};
-
 /** RunState is where an agent run ended up. */
 export type RunState = "running" | "done" | "error" | "aborted";
 

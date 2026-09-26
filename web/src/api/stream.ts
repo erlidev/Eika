@@ -8,7 +8,7 @@
  */
 
 import { eventStreamUrl } from "@/api/connection";
-import { globalTopic, parseEvent } from "@/api/events";
+import { parseEvent } from "@/api/events";
 import type { EikaEvent, StreamRequest } from "@/api/events";
 
 /** StreamStatus is what the single connection is doing. */
@@ -273,5 +273,3 @@ export function resetEventStream(): void {
   shared?.close();
   shared = null;
 }
-
-export { globalTopic };

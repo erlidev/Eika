@@ -54,7 +54,6 @@ import type {
   Session,
   SessionConfiguration,
   SessionOutline,
-  SessionPath,
   Settings,
   SettingsState,
   SignIn,
@@ -80,11 +79,6 @@ export async function listProjects(signal?: AbortSignal): Promise<Project[]> {
 /** createProject registers a repository with Eika. */
 export function createProject(input: CreateProject): Promise<Project> {
   return request<Project>("/api/projects", { method: "POST", body: input });
-}
-
-/** getProject reads one project. */
-export function getProject(id: string, signal?: AbortSignal): Promise<Project> {
-  return request<Project>(`/api/projects/${encodeURIComponent(id)}`, { signal });
 }
 
 /** updateProject changes a project's remote credentials or default branch. */
@@ -280,11 +274,6 @@ export function deleteSession(id: string): Promise<void> {
 /** getSessionOutline reads the whole tree without payloads. */
 export function getSessionOutline(id: string, signal?: AbortSignal): Promise<SessionOutline> {
   return request<SessionOutline>(`/api/sessions/${encodeURIComponent(id)}/outline`, { signal });
-}
-
-/** getSessionPath reads the branch from the root to the head. */
-export function getSessionPath(id: string, signal?: AbortSignal): Promise<SessionPath> {
-  return request<SessionPath>(`/api/sessions/${encodeURIComponent(id)}/path`, { signal });
 }
 
 /** setSessionHead moves the head so the next run continues from an entry. */
