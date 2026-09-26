@@ -122,11 +122,11 @@ from phase 0 plus a grep, including `web/e2e`, `docs/`, and tests.
 - [x] Delete unused `package.json` dependencies knip reports, after a grep
       over `web/src`, `web/e2e`, `index.css`, and the Vite and ESLint configs
       (`shadcn` and `tw-animate-css` are imported from `index.css`, not TS).
-- [ ] `web/src/lib/utils.ts` only re-exports `cn` from the `cn` package,
+- [x] `web/src/lib/utils.ts` only re-exports `cn` from the `cn` package,
       and `components/ui` imports `cn` directly. Leave `components/ui` alone
       (shadcn-generated); make the rest of `web/src` pick one import path
       and use it everywhere.
-- [ ] Remove the two `eslint-disable` comments in `web/e2e/fixtures.ts` and
+- [x] Remove the two `eslint-disable` comments in `web/e2e/fixtures.ts` and
       the one in `features/session/Transcript.tsx` if the code can satisfy
       the rule without them; otherwise leave a one-line reason on each.
 
@@ -353,6 +353,13 @@ Newest first. One entry per session: date, items done (commit hashes),
     routes the UI never calls (for example `GET /api/sessions/{id}/path`,
     whose client function is gone): each deletion needs an `unmocked`
     entry, which is a test edit beyond a rename. Decide there.
+  - `cn`: already one path. Outside `components/ui` every file imports
+    `@/lib/utils`, which `components.json` names as shadcn's `utils` alias,
+    so it stays.
+  - `eslint-disable`: all three stay. Playwright rejects a fixture whose
+    first argument is not a destructuring pattern (`fixtures.ts`, reasons
+    already inline). Transcript's "Jump to latest" floats, which the shadow
+    rule's own message allows; its reason moved onto the directive line.
 - 2026-09-26, phase 0 (all but the `.golangci.yml` item, which has its own
   commit). Findings below are the input for phases 1 and 2.
   - `make check` on a clean tree: green in 91 s. 35 vitest files, 386
