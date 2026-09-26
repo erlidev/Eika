@@ -114,7 +114,7 @@ func startPostgres() (func(), error) {
 		"--publish", "127.0.0.1::5432",
 		image).CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("run %s: %v: %s", image, err, out)
+		return nil, fmt.Errorf("run %s: %w: %s", image, err, out)
 	}
 	id := strings.TrimSpace(string(out))
 	remove := func() { _ = exec.Command("docker", "rm", "--force", "--volumes", id).Run() }

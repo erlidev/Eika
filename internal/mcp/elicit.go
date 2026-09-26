@@ -125,7 +125,7 @@ func (e *Elicitations) Answer(id string, res ElicitResult) error {
 		return fmt.Errorf("answer elicitation %s: %w", id, ErrNoElicitation)
 	}
 	if err := p.accepts(res); err != nil {
-		return fmt.Errorf("answer elicitation %s: %w: %v", id, ErrBadElicitationAnswer, err)
+		return fmt.Errorf("answer elicitation %s: %w: %w", id, ErrBadElicitationAnswer, err)
 	}
 	delete(e.pending, id)
 	p.answer <- res
