@@ -190,16 +190,16 @@ without a `docs/DECISIONS.md` entry.
       server files.
 
 ### Frontend: practice
-- [ ] Inline `style={{…}}` objects: keep only computed values (widths,
+- [x] Inline `style={{…}}` objects: keep only computed values (widths,
       transforms). Files (after the phase 2 splits): `app/SidebarRow.tsx`,
       `app/SidebarSession.tsx`, `components/ResizableSplit.tsx`,
       `context/ToolList.tsx`, `context/Messages.tsx`, `context/parts.tsx`,
       `profiles/CostStrip.tsx`, `sandbox/SandboxPanel.tsx`,
       `session/ContextMeter.tsx`, `session/SessionTreePanel.tsx`.
-- [ ] `useEffect` audit: `git grep -n useEffect web/src`. Replace effects
+- [x] `useEffect` audit: `git grep -n useEffect web/src`. Replace effects
       that derive state with render-time derivation.
-- [ ] Props typed as named `type XProps`, no `React.FC`, named exports only.
-- [ ] Server state in TanStack Query, UI state in feature Zustand stores;
+- [x] Props typed as named `type XProps`, no `React.FC`, named exports only.
+- [x] Server state in TanStack Query, UI state in feature Zustand stores;
       no React context carrying data.
 
 ## Phase 3: Boundaries
@@ -300,6 +300,26 @@ docs match the code after phases 1 to 4.
 Newest first. One entry per session: date, items done (commit hashes),
 `make check` result, anything skipped and why, and findings for later items.
 
+- 2026-09-26, phase 2 (frontend practice). `make check` green on the
+  merged tree. `00c3c7d` had typecheck, eslint, and prettier but no full
+  `make check` of its own; it only adds unexported prop types.
+  - Inline styles: nothing to change. Every `style=` outside
+    `components/ui` is computed (per-depth padding, split width,
+    percentage bars, ContextMeter's `left` and `width`).
+  - `useEffect`: `useAnnouncement` in `Transcript.tsx` now adjusts state
+    during render instead of in an effect (`8d761f2`); the live-region
+    text updates one commit sooner, nothing else changes. The rest sync
+    with something external. Borderline, kept: "latest handler" refs in
+    `useStream`, `CodeEditor`, `MCPCallbackScreen` (`useEffectEvent`
+    would be a new mechanism); `ProfilesSettings`'s mount effect calling
+    `takeProfile()` (a store side effect, impure in an initializer).
+  - Props: no `React.FC`, default exports only in tool configs. 73
+    components with inline prop types now use an unexported
+    `type XProps` (`9daf477`, `00c3c7d`, `d9571ec`).
+  - State: no React context anywhere outside `components/ui`; Zustand
+    stores hold UI and stream state; `useState` copies of server data are
+    form drafts. `api/connection.ts` and `app/theme.ts` are
+    `useSyncExternalStore` module stores over browser storage; left.
 - 2026-09-26, phase 2 (frontend splits). Moves plus the `export` and
   imports they need; `make check` green after each and on the merged tree.
   - `ContextInspector.tsx` 1036 → 185 (`b262408`): `Inspection.tsx`,
