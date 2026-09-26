@@ -60,12 +60,12 @@ func newProvider(t *testing.T, baseURL string) provider.Provider {
 
 // collect drains a provider stream. A request that names no model gets the
 // one every test server stands in for.
-func collect(t *testing.T, ctx context.Context, p provider.Provider, req provider.Request) []provider.Event {
+func collect(t *testing.T, p provider.Provider, req provider.Request) []provider.Event {
 	t.Helper()
 	if req.Model == "" {
 		req.Model = "test-model"
 	}
-	ch, err := p.Stream(ctx, req)
+	ch, err := p.Stream(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestStreamSendsTheKeyAndNotTheEnvironmentOne(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		collect(t, context.Background(), p, provider.Request{Messages: []provider.Message{provider.UserMessage("hi")}})
+		collect(t, p, provider.Request{Messages: []provider.Message{provider.UserMessage("hi")}})
 		if strings.Contains(got, "from-the-environment") {
 			t.Errorf("key %q: Authorization = %q, want the configured key", key, got)
 		}
@@ -175,7 +175,7 @@ func TestStreamText(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`,
 	)
 	p := newProvider(t, s.URL)
-	events := collect(t, context.Background(), p, provider.Request{
+	events := collect(t, p, provider.Request{
 		System:   "be brief",
 		Messages: []provider.Message{provider.UserMessage("hi")},
 	})
@@ -208,7 +208,7 @@ func TestStreamRejectsMissingFinishReason(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"partial"}}]}`,
 	)
 	p := newProvider(t, s.URL)
-	events := collect(t, context.Background(), p, provider.Request{
+	events := collect(t, p, provider.Request{
 		Messages: []provider.Message{provider.UserMessage("hi")},
 	})
 	last := events[len(events)-1]
@@ -229,7 +229,7 @@ func TestStreamAssemblesToolCall(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\":\"a.txt\"}"}}]},"finish_reason":"tool_calls"}]}`,
 	)
 	p := newProvider(t, s.URL)
-	events := collect(t, context.Background(), p, provider.Request{
+	events := collect(t, p, provider.Request{
 		Messages: []provider.Message{provider.UserMessage("read a.txt")},
 		Tools: []provider.ToolDef{{
 			Name:        "read",
@@ -262,7 +262,7 @@ func TestStreamDropsToolCallsCutOffByTheTokenLimit(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}`,
 	)
 	p := newProvider(t, s.URL)
-	events := collect(t, context.Background(), p, provider.Request{
+	events := collect(t, p, provider.Request{
 		Messages: []provider.Message{provider.UserMessage("read a.txt")},
 	})
 
@@ -282,7 +282,7 @@ func TestStreamSendsToolsAndModel(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
 	)
 	p := newProvider(t, s.URL)
-	collect(t, context.Background(), p, provider.Request{
+	collect(t, p, provider.Request{
 		System: "sys",
 		Messages: []provider.Message{
 			provider.UserMessage("hi"),
@@ -338,7 +338,7 @@ func TestStreamReplaysExactToolArgumentText(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
 	)
 	p := newProvider(t, s.URL)
-	collect(t, context.Background(), p, provider.Request{
+	collect(t, p, provider.Request{
 		Messages: []provider.Message{
 			provider.UserMessage("use both"),
 			provider.AssistantMessage("", []provider.ToolCall{
@@ -380,7 +380,7 @@ func TestStreamPreservesCompatibleChatCompletionsReasoning(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"carefully","content":"done"},"finish_reason":"stop"}]}`,
 	)
 	p := newProvider(t, s.URL)
-	events := collect(t, context.Background(), p, provider.Request{
+	events := collect(t, p, provider.Request{
 		Sampling:         provider.Sampling{ReasoningEffort: ptr("high")},
 		PreserveThinking: true,
 		Messages: []provider.Message{
@@ -448,7 +448,7 @@ func TestStreamSendsNoneInTheFieldTheThinkingSwitchNames(t *testing.T) {
 				`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}`,
 			)
 			p := newProvider(t, s.URL)
-			collect(t, context.Background(), p, provider.Request{
+			collect(t, p, provider.Request{
 				Sampling:       provider.Sampling{ReasoningEffort: ptr(c.effort)},
 				ThinkingSwitch: c.sw,
 				Messages:       []provider.Message{provider.UserMessage("hi")},
@@ -484,7 +484,7 @@ func TestStreamReadsRetryAfterAsADate(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	p := newProvider(t, server.URL)
-	events := collect(t, context.Background(), p, provider.Request{
+	events := collect(t, p, provider.Request{
 		Messages: []provider.Message{provider.UserMessage("hi")},
 	})
 	if len(events) != 1 || events[0].Kind != provider.KindError {
@@ -510,7 +510,7 @@ func TestStreamClassifiesErrors(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			s := newSSEServer(t, c.status)
 			p := newProvider(t, s.URL)
-			events := collect(t, context.Background(), p, provider.Request{
+			events := collect(t, p, provider.Request{
 				Messages: []provider.Message{provider.UserMessage("hi")},
 			})
 			if len(events) != 1 || events[0].Kind != provider.KindError {
@@ -535,7 +535,7 @@ func TestStreamRelaysReasoningWithoutPreserveThinking(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":"stop"}]}`,
 	)
 	p := newProvider(t, s.URL)
-	events := collect(t, context.Background(), p, provider.Request{
+	events := collect(t, p, provider.Request{
 		Messages: []provider.Message{
 			provider.UserMessage("first"),
 			provider.AssistantMessageWithReasoning("answer", "prior thought", nil),
@@ -580,7 +580,7 @@ func TestStreamRelaysUsageAsSoonAsAChunkReportsIt(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}`,
 	)
 	p := newProvider(t, s.URL)
-	events := collect(t, context.Background(), p, provider.Request{
+	events := collect(t, p, provider.Request{
 		Messages: []provider.Message{provider.UserMessage("hi")},
 	})
 
@@ -602,7 +602,7 @@ func TestStreamReportsOneUsageEventWhenTheEndpointReportsOnce(t *testing.T) {
 		`{"id":"1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}`,
 	)
 	p := newProvider(t, s.URL)
-	events := collect(t, context.Background(), p, provider.Request{
+	events := collect(t, p, provider.Request{
 		Messages: []provider.Message{provider.UserMessage("hi")},
 	})
 
@@ -673,7 +673,7 @@ func TestStreamSendsEverySamplingParameterThatIsSet(t *testing.T) {
 			p := newProvider(t, s.URL)
 			req := c.req
 			req.Messages = []provider.Message{provider.UserMessage("hi")}
-			collect(t, context.Background(), p, req)
+			collect(t, p, req)
 
 			var sent map[string]json.RawMessage
 			if err := json.Unmarshal(<-s.body, &sent); err != nil {

@@ -3,6 +3,7 @@
 package server_test
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -236,14 +237,14 @@ func TestEgressPolicyKnowsAWorkspaceByItsHubToken(t *testing.T) {
 	ws := a.newWorkspace(t, project.ID)
 	request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(0, 0, 0, "allowlist", []string{"github.com"}))
 
-	policy, err := a.Server.EgressPolicy(t.Context(), ws.ID)
+	policy, err := a.EgressPolicy(t.Context(), ws.ID)
 	if err != nil {
 		t.Fatalf("policy: %v", err)
 	}
 	if policy.Token != "hub-token-"+ws.ID || policy.Mode != egress.ModeAllowlist || !slices.Equal(policy.Allow, []string{"github.com"}) {
 		t.Errorf("policy = %+v", policy)
 	}
-	if _, err := a.Server.EgressPolicy(t.Context(), "missing"); err != egress.ErrUnknownWorkspace {
+	if _, err := a.EgressPolicy(t.Context(), "missing"); !errors.Is(err, egress.ErrUnknownWorkspace) {
 		t.Errorf("policy of a missing workspace = %v, want ErrUnknownWorkspace", err)
 	}
 }

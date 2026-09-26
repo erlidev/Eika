@@ -305,7 +305,7 @@ func TestMCPServerDetailsAndTools(t *testing.T) {
 			return map[string]any{"contents": []map[string]any{{"uri": uri, "mimeType": "text/markdown", "text": "# Readme"}}}, nil
 		},
 		Prompts: []json.RawMessage{json.RawMessage(`{"name":"review","arguments":[{"name":"file","required":true}]}`)},
-		GetPrompt: func(name string, args map[string]string) (any, *mcptest.Error) {
+		GetPrompt: func(_ string, args map[string]string) (any, *mcptest.Error) {
 			return map[string]any{"description": "A review", "messages": []map[string]any{
 				{"role": "user", "content": map[string]any{"type": "text", "text": "Review " + args["file"]}},
 			}}, nil

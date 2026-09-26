@@ -36,7 +36,7 @@ func request(t *testing.T, s *server.Server, method, path string, body any) *htt
 
 // requestOn sends one API request on a context of the caller's choosing,
 // which is how a test stands in for a client that gave up.
-func requestOn(t *testing.T, ctx context.Context, s *server.Server, method, path string, body any) *httptest.ResponseRecorder {
+func requestOn(ctx context.Context, t *testing.T, s *server.Server, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -236,7 +236,7 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git %s in %s: %v: %s", args[0], dir, err, out)
+		return "", fmt.Errorf("git %s in %s: %w: %s", args[0], dir, err, out)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -300,7 +300,7 @@ func (h *fakeHost) confinements(id string) []workspace.Confinement {
 }
 
 // Usage reports a fixed sample of a running workspace.
-func (h *fakeHost) Usage(_ context.Context, ws workspace.Workspace) (workspace.Usage, error) {
+func (h *fakeHost) Usage(context.Context, workspace.Workspace) (workspace.Usage, error) {
 	return workspace.Usage{CPUPercent: 42, MemoryBytes: 256 << 20, MemoryLimitBytes: 1 << 30, PIDs: 7}, nil
 }
 

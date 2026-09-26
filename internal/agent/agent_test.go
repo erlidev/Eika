@@ -1228,8 +1228,8 @@ func TestTurnSumsGenerationOverEveryModelCall(t *testing.T) {
 	f := newFixture(t, []providertest.Step{
 		{Events: []provider.Event{
 			provider.TextDelta("running it"),
-			provider.Event{Kind: provider.KindToolCall, ToolCall: providertest.Call("c1", "read_file", map[string]any{"path": "missing.txt"})},
-			provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 10, OutputTokens: 3, TotalTokens: 13}},
+			{Kind: provider.KindToolCall, ToolCall: providertest.Call("c1", "read_file", map[string]any{"path": "missing.txt"})},
+			{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 10, OutputTokens: 3, TotalTokens: 13}},
 			provider.Done("tool_calls"),
 		}},
 		providertest.Stream(

@@ -114,7 +114,7 @@ func through(t *testing.T, base *http.Client, proxy, user, password string) *htt
 }
 
 func TestTheProxyTunnelsToAnAllowedHost(t *testing.T) {
-	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, "hello over tls")
 	}))
 	defer target.Close()
@@ -155,7 +155,7 @@ func TestTheProxyForwardsPlainHTTP(t *testing.T) {
 }
 
 func TestTheProxyRefuses(t *testing.T) {
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer target.Close()
 	table := policies{
 		"listed": {Token: "tok", Mode: egress.ModeAllowlist, Allow: []string{"example.com"}},

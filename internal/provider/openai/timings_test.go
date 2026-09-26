@@ -1,7 +1,6 @@
 package openai_test
 
 import (
-	"context"
 	"math"
 	"testing"
 
@@ -151,7 +150,7 @@ func TestStreamReadsEndpointTimings(t *testing.T) {
 				`{"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
 				tc.chunk,
 			)
-			got := usageOf(t, collect(t, context.Background(), newProvider(t, s.URL), provider.Request{})).Timings
+			got := usageOf(t, collect(t, newProvider(t, s.URL), provider.Request{})).Timings
 			if got.PromptTokens != tc.want.PromptTokens || got.DecodeTokens != tc.want.DecodeTokens {
 				t.Errorf("tokens = %d prompt, %d decode; want %d and %d",
 					got.PromptTokens, got.DecodeTokens, tc.want.PromptTokens, tc.want.DecodeTokens)
@@ -178,7 +177,7 @@ func TestStreamKeepsTheFirstEngineToMeasureAPhase(t *testing.T) {
 			`"prompt_tokens_per_sec":10.0,"completion_tokens_per_sec":10.0},`+
 			`"timings":{"prompt_n":100,"prompt_ms":50.0,"predicted_n":50,"predicted_ms":500.0}}`,
 	)
-	got := usageOf(t, collect(t, context.Background(), newProvider(t, s.URL), provider.Request{})).Timings
+	got := usageOf(t, collect(t, newProvider(t, s.URL), provider.Request{})).Timings
 	if got.PromptMS != 50 || got.DecodeMS != 500 {
 		t.Errorf("timings = %+v, want llama.cpp's 50ms prompt and 500ms decode", got)
 	}
@@ -194,7 +193,7 @@ func TestStreamIgnoresAnImpossibleMeasurement(t *testing.T) {
 			`"usage":{"prompt_tokens":8,"completion_tokens":1,"total_tokens":9},`+
 			`"timings":{"prompt_n":8,"prompt_ms":0.0,"predicted_n":1,"predicted_ms":40.0}}`,
 	)
-	got := usageOf(t, collect(t, context.Background(), newProvider(t, s.URL), provider.Request{})).Timings
+	got := usageOf(t, collect(t, newProvider(t, s.URL), provider.Request{})).Timings
 	if got.HasPrompt() {
 		t.Errorf("prompt phase = %d tokens in %.2fms, want it left unmeasured", got.PromptTokens, got.PromptMS)
 	}

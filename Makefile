@@ -65,7 +65,7 @@ lint-go:
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run $(GOPKGS); \
 	else \
-		echo "golangci-lint not installed, skipping"; \
+		echo "golangci-lint not installed, skipping; install: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; \
 	fi
 
 lint-web: web-install

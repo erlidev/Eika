@@ -325,7 +325,7 @@ func TestNoRunStartsAfterTheHarnessStops(t *testing.T) {
 	sess := a.session(t)
 	a.script(providertest.Text("never asked for"))
 
-	a.Server.Close()
+	a.Close()
 	rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages", map[string]any{"text": "hi"})
 	if rec.Code != 409 {
 		t.Fatalf("status = %d, want 409: %s", rec.Code, rec.Body.String())

@@ -78,7 +78,7 @@ func newAPI(t *testing.T) *api {
 	a := &api{store: st, host: newFakeHost(t), hub: newFakeHub(), questions: builtin.NewQuestions(), secrets: secrets}
 	// The proxy asks the server for policies, as it does in the harness.
 	a.egress = egress.New(egress.Options{Policy: func(ctx context.Context, id string) (egress.Policy, error) {
-		return a.Server.EgressPolicy(ctx, id)
+		return a.EgressPolicy(ctx, id)
 	}}, testLogger())
 	// The bus is built here rather than left to server.New, because the
 	// spawner emits on the same one the stream fans out.
@@ -130,8 +130,8 @@ func newAPI(t *testing.T) *api {
 		Egress:     a.egress,
 		MCP:        a.mcp,
 	}, server.Options{})
-	a.Server.UseSubagents(a.spawner, a.spawner.Attach)
-	t.Cleanup(a.Server.Close)
+	a.UseSubagents(a.spawner, a.spawner.Attach)
+	t.Cleanup(a.Close)
 
 	// Every run uses test-model unless it names another. Its window is wide
 	// enough for the whole tool registry: the agent loop refuses a request
@@ -714,7 +714,7 @@ func TestReconcileRecordsWhatTheHostActuallyHas(t *testing.T) {
 	if err := a.host.Destroy(t.Context(), &host); err != nil {
 		t.Fatalf("destroy: %v", err)
 	}
-	if err := a.Server.Reconcile(t.Context()); err != nil {
+	if err := a.Reconcile(t.Context()); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID, nil), 200)
@@ -730,7 +730,7 @@ func TestReconcileAbortsRunsLeftByAnEarlierProcess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start stale run: %v", err)
 	}
-	if err := a.Server.Reconcile(t.Context()); err != nil {
+	if err := a.Reconcile(t.Context()); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	got, err := a.store.Run(t.Context(), run.ID)
@@ -748,7 +748,7 @@ func TestReconcilePreservesStateWhenInspectFails(t *testing.T) {
 	ws := a.newWorkspace(t, project.ID)
 	a.host.inspectErr = fmt.Errorf("docker daemon unavailable")
 
-	if err := a.Server.Reconcile(t.Context()); err == nil {
+	if err := a.Reconcile(t.Context()); err == nil {
 		t.Fatal("Reconcile succeeded when inspection failed")
 	}
 	stored, err := a.store.Workspace(t.Context(), ws.ID)
@@ -1034,7 +1034,7 @@ func TestWorkspaceCreationCleansUpEvenWhenTheRequestIsGone(t *testing.T) {
 	a.host.cloneHook = cancel
 	a.host.cloneErr = fmt.Errorf("the hub is unreachable")
 
-	rec := requestOn(t, ctx, a.Server, "POST", "/api/workspaces",
+	rec := requestOn(ctx, t, a.Server, "POST", "/api/workspaces",
 		map[string]any{"project_id": project.ID, "name": "work"})
 	if rec.Code == 201 {
 		t.Fatalf("the workspace was created despite the clone failing: %s", rec.Body.String())

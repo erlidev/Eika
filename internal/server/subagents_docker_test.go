@@ -517,7 +517,7 @@ func TestShutdownStopsAChildWhoseParentIsLongDone(t *testing.T) {
 		t.Fatalf("parent run = %+v, want done while the child runs on", state.Run)
 	}
 
-	a.Server.Close()
+	a.Close()
 
 	// The row is final by the time Close returns: the store is about to go.
 	stopped := a.agents(t, sess.ID)

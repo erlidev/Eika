@@ -1,7 +1,11 @@
-# Used by `make lint` when golangci-lint is installed. `make check` does not
-# depend on it: go vet and staticcheck run through `go tool` and are always
-# available.
+# Used by `make lint` and `make check` when golangci-lint is installed; both
+# skip it otherwise, and go vet and staticcheck run through `go tool` either way.
 version: "2"
+
+# Lint what `make test` compiles, as go vet and staticcheck do.
+run:
+  build-tags:
+    - docker
 
 linters:
   default: standard
@@ -18,9 +22,18 @@ linters:
     presets:
       - std-error-handling
     rules:
+      # Tests read responses through helpers and dial websockets whose
+      # response needs no close; a leaked body ends with the test.
       - path: _test\.go
         linters:
+          - bodyclose
           - errcheck
+      # False positives: websocket.Dial's response needs no close once the
+      # handshake is done, drain closes the DELETE's body, and legacysse hands
+      # its response over a channel to a receiver that closes it.
+      - path: internal/(executor/sandbox/sandbox|mcp/http|mcp/legacysse)\.go
+        linters:
+          - bodyclose
 
 formatters:
   enable:

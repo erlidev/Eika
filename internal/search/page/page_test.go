@@ -49,7 +49,11 @@ func reference() string {
 
 func TestNoticesStayBounded(t *testing.T) {
 	out := budget(reference(), 100)
-	notice := out.Text[strings.Index(out.Text, "Sections not shown:"):]
+	start := strings.Index(out.Text, "Sections not shown:")
+	if start < 0 {
+		t.Fatalf("no budget notice:\n%s", out.Text)
+	}
+	notice := out.Text[start:]
 	if len(notice) > 1200 || !regexp.MustCompile(`(?m)\+380 more$`).MatchString(notice) || strings.Contains(notice, "https://") {
 		t.Errorf("budget notice (%d bytes):\n%s", len(notice), notice)
 	}

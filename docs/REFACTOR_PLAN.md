@@ -336,8 +336,13 @@ Newest first. One entry per session: date, items done (commit hashes),
     code now reports only `executor/sandbox/sandbox.go` 234 and 348,
     bodyclose on `websocket.Dial`, whose body needs no close. Test-file
     findings stay (errorlint, bodyclose, revive, QF1008, gofmt `-s` in
-    `agent_test.go`), since tests are not edited here; golangci-lint is
-    still not installed where `make check` runs.
+    `agent_test.go`), since tests are not edited here.
+  - Afterwards the owner had golangci-lint installed (v2.14.0 via
+    `go install`, into `~/.local/bin`), so `make check` now runs it.
+    `.golangci.yml` lints with the `docker` tag like vet and staticcheck,
+    and exempts tests from bodyclose, plus the three non-test false
+    positives by path. The remaining test findings were fixed with renames
+    and formatting only; no assertion changed.
 - 2026-09-26, phase 2 (frontend practice). `make check` green on the
   merged tree. `00c3c7d` had typecheck, eslint, and prettier but no full
   `make check` of its own; it only adds unexported prop types.

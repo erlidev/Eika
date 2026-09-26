@@ -184,9 +184,9 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	missing := func(clear func(c *config.Config)) config.Config {
+	missing := func(unset func(c *config.Config)) config.Config {
 		c := valid()
-		clear(&c)
+		unset(&c)
 		return c
 	}
 
