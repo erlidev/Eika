@@ -103,21 +103,19 @@ export function WorkspaceRow({
   );
 }
 
+type SessionListProps = {
+  workspaceId: string;
+  sessionId?: string;
+  onNavigate?: () => void;
+};
+
 /**
  * SessionList holds the session query, for the same reason WorkspaceList
  * does. It asks for the descendants as well, because a fork with a workspace
  * and a child agent both live somewhere else and still belong under the
  * session they came from.
  */
-function SessionList({
-  workspaceId,
-  sessionId,
-  onNavigate,
-}: {
-  workspaceId: string;
-  sessionId?: string;
-  onNavigate?: () => void;
-}) {
+function SessionList({ workspaceId, sessionId, onNavigate }: SessionListProps) {
   const sessions = useSessions(workspaceId, true);
   const tree = useMemo(() => sessionTree(sessions.data ?? []), [sessions.data]);
   return (

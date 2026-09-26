@@ -38,7 +38,9 @@ export function FilesPanel({ workspaceId }: FilesPanelProps) {
   );
 }
 
-function FilesView({ workspaceId }: { workspaceId: string }) {
+type FilesViewProps = { workspaceId: string };
+
+function FilesView({ workspaceId }: FilesViewProps) {
   const [files, update] = useWorkspaceFiles(workspaceId);
   const { open, pending, expanded } = files;
   const content = useFileContent(workspaceId, open?.path);

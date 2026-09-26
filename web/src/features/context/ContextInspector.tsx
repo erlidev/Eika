@@ -149,8 +149,10 @@ function requestLabel(r: ModelRequest, n: number): string {
   return `#${String(n)} · ${r.model}${measured} · ${formatAgo(r.created_at)}`;
 }
 
+type CopyButtonProps = { context: ModelContext };
+
 /** CopyButton copies the request as one JSON document. */
-function CopyButton({ context }: { context: ModelContext }) {
+function CopyButton({ context }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   return (

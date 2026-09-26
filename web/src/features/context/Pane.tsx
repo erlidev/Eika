@@ -245,8 +245,10 @@ function SectionBlock({ section, chat, edit, bare = false }: SectionBlockProps) 
   );
 }
 
+type TextBlockProps = { label: string; children: string };
+
 /** TextBlock is prompt text as the model reads it: wrapped, monospace, whole. */
-function TextBlock({ label, children }: { label: string; children: string }) {
+function TextBlock({ label, children }: TextBlockProps) {
   return (
     <OutputBlock label={label} maxHeightClass="max-h-none" className="whitespace-pre-wrap">
       {children}
@@ -254,8 +256,10 @@ function TextBlock({ label, children }: { label: string; children: string }) {
   );
 }
 
+type ParametersProps = { context: ModelContext; edit: Edit };
+
 /** Parameters is what the request sends beside its content, and where each came from. */
-function Parameters({ context, edit }: { context: ModelContext; edit: Edit }) {
+function Parameters({ context, edit }: ParametersProps) {
   const p = context.parameters;
   const rows: { name: string; value: string; key: string }[] = [
     { name: "model", value: p.model, key: "model" },

@@ -235,11 +235,13 @@ export function Workbench() {
   );
 }
 
+type NothingOpenProps = { onOpened: () => void };
+
 /**
  * NothingOpen is the centre pane before a session is picked: where to find
  * one, and the one action that needs no project, starting a chat.
  */
-function NothingOpen({ onOpened }: { onOpened: () => void }) {
+function NothingOpen({ onOpened }: NothingOpenProps) {
   const create = useCreateSession();
   const navigate = useNavigate();
   return (

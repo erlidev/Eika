@@ -36,7 +36,9 @@ export function ChangesPanel({ workspaceId }: ChangesPanelProps) {
   );
 }
 
-function ChangesView({ workspaceId }: { workspaceId: string }) {
+type ChangesViewProps = { workspaceId: string };
+
+function ChangesView({ workspaceId }: ChangesViewProps) {
   const diff = useWorkspaceDiff(workspaceId);
 
   if (diff.isPending) {
@@ -127,7 +129,9 @@ const badges: Record<FileChange | "untracked", { letter: string; label: string; 
   untracked: { letter: "U", label: "untracked", tone: "text-success" },
 };
 
-function ChangeBadge({ change }: { change: FileChange | "untracked" }) {
+type ChangeBadgeProps = { change: FileChange | "untracked" };
+
+function ChangeBadge({ change }: ChangeBadgeProps) {
   const badge = badges[change];
   return (
     <span
@@ -140,7 +144,9 @@ function ChangeBadge({ change }: { change: FileChange | "untracked" }) {
   );
 }
 
-function FileChanges({ file }: { file: FileDiff }) {
+type FileChangesProps = { file: FileDiff };
+
+function FileChanges({ file }: FileChangesProps) {
   const [open, setOpen] = useState(true);
   const Chevron = open ? ChevronDown : ChevronRight;
   const name = file.oldPath !== file.path ? `${file.oldPath} -> ${file.path}` : file.path;
@@ -189,7 +195,9 @@ function FileChanges({ file }: { file: FileDiff }) {
   );
 }
 
-function CommitForm({ workspaceId }: { workspaceId: string }) {
+type CommitFormProps = { workspaceId: string };
+
+function CommitForm({ workspaceId }: CommitFormProps) {
   const commit = useCommit(workspaceId);
   const [message, setMessage] = useState("");
   // A stopped workspace is a 409 too, so the message tells them apart.
@@ -251,7 +259,9 @@ function CommitForm({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function PushActions({ workspaceId }: { workspaceId: string }) {
+type PushActionsProps = { workspaceId: string };
+
+function PushActions({ workspaceId }: PushActionsProps) {
   const push = usePush(workspaceId);
   const workspace = useWorkspace(workspaceId);
   const projects = useProjects();
@@ -296,7 +306,9 @@ function PushActions({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function PushNotice({ result, remoteUrl }: { result: PushResult; remoteUrl: string | undefined }) {
+type PushNoticeProps = { result: PushResult; remoteUrl: string | undefined };
+
+function PushNotice({ result, remoteUrl }: PushNoticeProps) {
   const link = result.upstream_pushed ? compareUrl(remoteUrl, result.branch) : undefined;
   return (
     <Notice tone="success">

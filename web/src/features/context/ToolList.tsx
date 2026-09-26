@@ -62,8 +62,10 @@ export function ToolSizes({ groups, onView }: ToolSizesProps) {
   );
 }
 
+type ToolListProps = { groups: readonly ToolGroup[] };
+
 /** ToolList is every tool of the groups, with a search over them. */
-export function ToolList({ groups }: { groups: readonly ToolGroup[] }) {
+export function ToolList({ groups }: ToolListProps) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const match = (t: ToolSchema) =>
@@ -117,8 +119,10 @@ export function ToolList({ groups }: { groups: readonly ToolGroup[] }) {
   );
 }
 
+type ToolCardProps = { tool: ToolSchema; server: string | undefined };
+
 /** ToolCard is one tool definition: its name, description, and parameters, or its raw schema. */
-function ToolCard({ tool, server }: { tool: ToolSchema; server: string | undefined }) {
+function ToolCard({ tool, server }: ToolCardProps) {
   const [raw, setRaw] = useState(false);
   const params = schemaParameters(tool.schema);
   const short = server === undefined ? tool.name : tool.name.replace(`mcp__${server}__`, "");

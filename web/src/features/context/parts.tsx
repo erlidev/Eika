@@ -14,8 +14,10 @@ import { useConfigEditor } from "@/features/profiles/store";
 import { formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+type DotProps = { kind: SegmentKind; className?: string };
+
 /** Dot is a part's colour, beside its name. */
-export function Dot({ kind, className }: { kind: SegmentKind; className?: string }) {
+export function Dot({ kind, className }: DotProps) {
   return (
     <span
       aria-hidden

@@ -43,19 +43,15 @@ export function Row({ depth, open, onToggle, icon, label, meta, actions }: RowPr
   );
 }
 
-export function IconButton({
-  label,
-  children,
-  onClick,
-  disabled,
-  destructive,
-}: {
+type IconButtonProps = {
   label: string;
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
   destructive?: boolean;
-}) {
+};
+
+export function IconButton({ label, children, onClick, disabled, destructive }: IconButtonProps) {
   return (
     <Button
       size="icon-xs"

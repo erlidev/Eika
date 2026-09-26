@@ -44,12 +44,14 @@ function languageOf(node: React.ReactNode): string {
   return "";
 }
 
+type CodeBlockProps = { children: React.ReactNode };
+
 /**
  * CodeBlock is a fenced block: its language, a way to copy it, and the code.
  * The copy button is the reason this is a component rather than a class list:
  * code in a transcript is meant to be taken somewhere else.
  */
-function CodeBlock({ children }: { children: React.ReactNode }) {
+function CodeBlock({ children }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
   const language = languageOf(children);
   const code = textOf(children);

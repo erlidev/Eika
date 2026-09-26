@@ -54,18 +54,7 @@ function sessionKindLabel(kind: Session["kind"]): string {
   }
 }
 
-/**
- * SessionRow draws one session and, in a list of its own, the forks and child
- * agents that came out of it. The nesting is in the markup rather than only
- * in the indent, so the shape is there for a screen reader too.
- */
-export function SessionRow({
-  node,
-  depth,
-  indent,
-  sessionId,
-  onNavigate,
-}: {
+type SessionRowProps = {
   node: SessionNode;
   /** depth is how many sessions this one hangs under; 0 is the user's own. */
   depth: number;
@@ -73,7 +62,14 @@ export function SessionRow({
   indent: number;
   sessionId?: string;
   onNavigate?: () => void;
-}) {
+};
+
+/**
+ * SessionRow draws one session and, in a list of its own, the forks and child
+ * agents that came out of it. The nesting is in the markup rather than only
+ * in the indent, so the shape is there for a screen reader too.
+ */
+export function SessionRow({ node, depth, indent, sessionId, onNavigate }: SessionRowProps) {
   const { session } = node;
   const current = session.id === sessionId;
   const remove = useDeleteSession();

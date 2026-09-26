@@ -18,19 +18,18 @@ function newestFirst(chats: Session[]): Session[] {
   return [...chats].sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
+type ChatListProps = {
+  sessionId?: string;
+  onNavigate?: () => void;
+};
+
 /**
  * ChatList is the sidebar's second section: the sessions with no workspace,
  * each with the forks made of it. It is apart from the projects, under a
  * heading of its own, so that a chat is never mistaken for work in a
  * workspace. It takes at most two fifths of the pane and scrolls inside that.
  */
-export function ChatList({
-  sessionId,
-  onNavigate,
-}: {
-  sessionId?: string;
-  onNavigate?: () => void;
-}) {
+export function ChatList({ sessionId, onNavigate }: ChatListProps) {
   const chats = useChats();
   const create = useCreateSession();
   const navigate = useNavigate();
