@@ -182,7 +182,7 @@ event the harness could not send is reported. `harness/mock.test.ts` (run by
 `npm test`) calls every route the mock serves, so a route no spec reaches is
 held to the contract too. When the harness's types change, `make contract`
 rewrites the file and these tests say what in the mock, and in
-`src/api/types.ts`, has to follow.
+`src/api/types/`, has to follow.
 
 ### Stable baselines
 
