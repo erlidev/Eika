@@ -42,7 +42,7 @@ Each run starts its own Vite server (about two seconds) and prints JSON:
 - On a failed step `ok` is false, `failedStep` and `error` say why, and
   `failed.png` with `failed.aria.yml` show the page where it stopped.
 - `unhandledApi` lists routes the UI called that the mock does not serve yet;
-  add them to `buildRoutes` in `harness/mock.ts`.
+  add them to the resource's file in `harness/routes/`.
 - `contractBreaks` lists what breaks the API contract (see below): a request
   the harness would refuse, or an answer or event it would never send.
 - `--out <dir>` keeps runs apart; `--url http://localhost:5173` reuses a

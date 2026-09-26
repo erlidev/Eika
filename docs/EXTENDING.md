@@ -560,8 +560,8 @@ how `mcp_docker_test.go` runs a scripted stdio MCP server
 go test -tags docker ./internal/server/...
 ```
 
-If the UI calls the route, serve it in the mock harness,
-`web/e2e/harness/mock.ts`, and add a request for it to
+If the UI calls the route, serve it in the mock harness, in the resource's
+file under `web/e2e/harness/routes/`, and add a request for it to
 `web/e2e/harness/mock.test.ts`, which checks the mock against the contract
 route by route. A route the UI never calls goes in `unmocked` there instead.
 
