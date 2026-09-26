@@ -41,7 +41,7 @@ func (d *Daemon) handleProcess(w http.ResponseWriter, r *http.Request) {
 		d.log.Error("accept process websocket", "error", err)
 		return
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	conn.SetReadLimit(MaxProcessMessage)
 
 	ctx, cancel := context.WithCancel(r.Context())

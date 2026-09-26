@@ -219,18 +219,18 @@ func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request) {
 	// Bytes the client sent after its request line are already read into
 	// the server's buffer.
 	if n := buffered.Reader.Buffered(); n > 0 {
-		head, _ := buffered.Reader.Peek(n)
+		head, _ := buffered.Peek(n)
 		if _, err := upstream.Write(head); err != nil {
 			return
 		}
 	}
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		io.Copy(upstream, client)
+		_, _ = io.Copy(upstream, client)
 		closeWrite(upstream)
 	})
 	wg.Go(func() {
-		io.Copy(client, upstream)
+		_, _ = io.Copy(client, upstream)
 		closeWrite(client)
 	})
 	wg.Wait()
@@ -305,7 +305,7 @@ func challenge(w http.ResponseWriter, msg string) {
 func refuse(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(status)
-	io.WriteString(w, "eika egress: "+msg+"\n")
+	_, _ = io.WriteString(w, "eika egress: "+msg+"\n")
 }
 
 // dialStatus is the status a failed connection is answered with: 403 for a
@@ -322,7 +322,7 @@ func dialStatus(err error) int {
 // are coming while the other direction finishes.
 func closeWrite(c net.Conn) {
 	if tcp, ok := c.(interface{ CloseWrite() error }); ok {
-		tcp.CloseWrite()
+		_ = tcp.CloseWrite()
 		return
 	}
 	c.Close()

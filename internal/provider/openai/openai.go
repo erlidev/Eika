@@ -214,7 +214,7 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 		return openai.ChatCompletionNewParams{}, errors.New("build chat completion: request names no model")
 	}
 	params := openai.ChatCompletionNewParams{
-		Model:         shared.ChatModel(req.Model),
+		Model:         req.Model,
 		Messages:      messages,
 		StreamOptions: openai.ChatCompletionStreamOptionsParam{IncludeUsage: param.NewOpt(true)},
 	}

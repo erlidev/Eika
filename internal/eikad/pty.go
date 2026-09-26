@@ -50,7 +50,7 @@ func (d *Daemon) handlePTY(w http.ResponseWriter, r *http.Request) {
 		d.log.Error("accept pty websocket", "error", err)
 		return
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	conn.SetReadLimit(MaxPTYMessage)
 
 	ctx, cancel := context.WithCancel(r.Context())

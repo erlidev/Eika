@@ -21,16 +21,16 @@ func (d *Daemon) resolve(path string) (string, error) {
 		return "", err
 	}
 	full := filepath.Join(d.root, rel)
-	real, err := resolveExisting(full)
+	resolved, err := resolveExisting(full)
 	if err != nil {
 		return "", fmt.Errorf("resolve %s: %w", path, err)
 	}
-	if !within(d.root, real) {
+	if !within(d.root, resolved) {
 		return "", ErrOutsideRoot
 	}
 	// The canonical path is what the caller gets, so that the path that was
 	// checked is the path that is opened.
-	return real, nil
+	return resolved, nil
 }
 
 // relativeTo turns a request path into a clean path relative to root.

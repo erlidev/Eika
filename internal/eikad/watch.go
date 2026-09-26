@@ -44,7 +44,7 @@ func (d *Daemon) handleWatch(w http.ResponseWriter, r *http.Request) {
 		d.log.Error("accept watch websocket", "error", err)
 		return
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 
 	ctx := r.Context()
 	ticker := time.NewTicker(d.watchInterval)

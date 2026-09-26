@@ -295,7 +295,7 @@ func (s *Server) handle(ctx context.Context, m *message, h http.Header, progress
 		}
 		start := 0
 		if params.Cursor != "" {
-			fmt.Sscan(params.Cursor, &start)
+			_, _ = fmt.Sscan(params.Cursor, &start)
 		}
 		out := map[string]any{"resultType": "complete", "ttlMs": 0, "cacheScope": "public"}
 		end := len(defs)

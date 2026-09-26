@@ -33,18 +33,18 @@ func New(dir string) (*Executor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve root %q: %w", dir, err)
 	}
-	real, err := filepath.EvalSymlinks(abs)
+	resolved, err := filepath.EvalSymlinks(abs)
 	if err != nil {
 		return nil, fmt.Errorf("resolve root %q: %w", dir, err)
 	}
-	info, err := os.Stat(real)
+	info, err := os.Stat(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("stat root %q: %w", dir, err)
 	}
 	if !info.IsDir() {
 		return nil, fmt.Errorf("root %q is not a directory", dir)
 	}
-	return &Executor{root: real}, nil
+	return &Executor{root: resolved}, nil
 }
 
 // Root reports the directory that acts as the workspace root.
@@ -207,11 +207,11 @@ func (e *Executor) resolve(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	real, err := evalExisting(abs)
+	resolved, err := evalExisting(abs)
 	if err != nil {
 		return "", err
 	}
-	if _, err := executor.Resolve(e.root, real); err != nil {
+	if _, err := executor.Resolve(e.root, resolved); err != nil {
 		return "", fmt.Errorf("resolve path %q: %w", path, executor.ErrPathOutsideRoot)
 	}
 	return abs, nil
@@ -223,9 +223,9 @@ func (e *Executor) resolve(path string) (string, error) {
 func evalExisting(abs string) (string, error) {
 	rest := ""
 	for p := abs; ; {
-		real, err := filepath.EvalSymlinks(p)
+		resolved, err := filepath.EvalSymlinks(p)
 		if err == nil {
-			return filepath.Join(real, rest), nil
+			return filepath.Join(resolved, rest), nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("resolve symlinks in %q: %w", abs, err)

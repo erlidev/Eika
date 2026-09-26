@@ -360,11 +360,11 @@ func (c *Client) Process(ctx context.Context, spec ProcessSpec, stderr func(stri
 	conn.SetReadLimit(eikad.MaxProcessMessage)
 	start, err := json.Marshal(eikad.ProcessMessage{Type: eikad.ProcessStart, Command: spec.Command, Args: spec.Args, Dir: spec.Dir, Env: spec.Env})
 	if err != nil {
-		conn.CloseNow()
+		_ = conn.CloseNow()
 		return nil, fmt.Errorf("encode process start: %w", err)
 	}
 	if err := conn.Write(ctx, websocket.MessageText, start); err != nil {
-		conn.CloseNow()
+		_ = conn.CloseNow()
 		return nil, fmt.Errorf("start process: %w", err)
 	}
 	p := &process{conn: conn, stderr: stderr, done: make(chan struct{})}

@@ -25,7 +25,7 @@ func (d *Daemon) handleReadFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, d.log, statusFor(err), err)
 		return
 	}
-	max, err := d.readLimit(r.URL.Query().Get("max_bytes"))
+	limit, err := d.readLimit(r.URL.Query().Get("max_bytes"))
 	if err != nil {
 		writeError(w, d.log, http.StatusBadRequest, err)
 		return
@@ -47,7 +47,7 @@ func (d *Daemon) handleReadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	if _, err := io.Copy(w, io.LimitReader(f, max)); err != nil {
+	if _, err := io.Copy(w, io.LimitReader(f, limit)); err != nil {
 		d.log.Error("stream file", "path", d.rel(path), "error", err)
 	}
 }

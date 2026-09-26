@@ -13,10 +13,15 @@ import (
 // is when it is plain visible ASCII, and in the base64 sentinel form when it
 // is not, or when it would read as one.
 func headerValue(v string) string {
-	if plainHeaderValue(v) && !(strings.HasPrefix(v, "=?base64?") && strings.HasSuffix(v, "?=")) {
+	if plainHeaderValue(v) && !sentinelForm(v) {
 		return v
 	}
 	return "=?base64?" + base64.StdEncoding.EncodeToString([]byte(v)) + "?="
+}
+
+// sentinelForm reports whether v reads as a base64 sentinel-encoded value.
+func sentinelForm(v string) bool {
+	return strings.HasPrefix(v, "=?base64?") && strings.HasSuffix(v, "?=")
 }
 
 // plainHeaderValue reports whether v can travel in a header unencoded:

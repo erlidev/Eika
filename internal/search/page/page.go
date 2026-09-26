@@ -88,10 +88,10 @@ func HeadingText(heading string) string {
 	return strings.Join(strings.Fields(heading), " ")
 }
 
-// comparable is a heading reduced to what matching compares: HeadingText,
+// matchable is a heading reduced to what matching compares: HeadingText,
 // lowercased, with dashes and underscores folded to spaces so that a slug
 // taken off a link matches the heading it points at.
-func comparable(heading string) string {
+func matchable(heading string) string {
 	heading = headingMark.ReplaceAllString(heading, "")
 	heading = inlineLink.ReplaceAllString(heading, "$1")
 	heading = strings.NewReplacer("`", "", "*", "").Replace(heading)
@@ -133,7 +133,7 @@ func Select(markdown, wanted string) Pick {
 			sections = append(sections, s)
 		}
 	}
-	target := comparable(wanted)
+	target := matchable(wanted)
 	index := -1
 	if target != "" {
 		for _, match := range []func(h string) bool{
@@ -142,7 +142,7 @@ func Select(markdown, wanted string) Pick {
 			func(h string) bool { return strings.Contains(h, target) },
 		} {
 			for i, s := range sections {
-				if match(comparable(s.Heading)) {
+				if match(matchable(s.Heading)) {
 					index = i
 					break
 				}

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -409,16 +410,16 @@ func codeSpan(text string) string {
 	return fence + text + fence
 }
 
-// wrap puts open and close around the text of s, keeping its surrounding
+// wrap puts before and after around the text of s, keeping its surrounding
 // spaces outside them, so that "a <b> b </b>c" becomes "a **b** c".
-func wrap(s, open, close string) string {
+func wrap(s, before, after string) string {
 	text := strings.TrimSpace(s)
 	if text == "" {
 		return s
 	}
-	lead := s[:strings.Index(s, text)]
+	lead := s[:len(s)-len(strings.TrimLeftFunc(s, unicode.IsSpace))]
 	trail := s[len(lead)+len(text):]
-	return lead + open + text + close + trail
+	return lead + before + text + after + trail
 }
 
 // paragraph tidies a run of inline markdown: single spaces, no blank lines
