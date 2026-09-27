@@ -1219,6 +1219,7 @@ writes nothing.
 | `sandbox_image` | string | The image a new workspace runs when it names none. |
 | `subagent_max_depth` | number, 1 to 8 | How many levels of children a session may have. |
 | `subagent_max_children` | number, 1 to 16 | How many children of one session may run at a time. |
+| `workspace_idle_minutes` | number, 0 to 10080 | How long a running workspace may go without a run, in it or a worktree it holds, before the harness stops it as `POST /api/workspaces/{id}/stop` does. 0 never stops one. Checked once a minute. |
 | `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The limits a new workspace gets when its request names none, checked as a Sandbox's are. A field the object leaves out is 0, no limit. |
 | `sandbox_egress` | `{"mode", "allow"}` | The egress a new workspace gets when its request names none. A restricted mode is `400` on a harness without the internal sandbox network. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
@@ -1234,6 +1235,7 @@ writes nothing.
 | `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
 | `subagent_max_depth` | number | 2. |
 | `subagent_max_children` | number | 4. |
+| `workspace_idle_minutes` | number | 15. |
 | `sandbox_limits` | object | No CPU or memory limit, and 4096 processes. |
 | `sandbox_egress` | object | `open`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |
 | `search_order` | array of strings | Every web provider in its default order: `searxng`, `exa`, `tavily`, `brave`, `marginalia`. |

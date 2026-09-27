@@ -1,7 +1,8 @@
 /**
  * The sidebar's rows. Every project, workspace, and session is one `Row`:
  * a label that opens or folds it, a button or two for what is done most,
- * and a menu with everything else, which a right-click opens as well. A row
+ * and a menu with everything else, which a right-click opens as well. The
+ * buttons always show, so what a row offers is visible without a hover. A row
  * that can be renamed swaps its label for a field in place.
  */
 
@@ -115,7 +116,7 @@ export function Row({
     <RowContextMenu label={label} actions={menu}>
       <div
         className={cn(
-          "group hover:bg-accent flex items-center gap-1 rounded-md pr-1 transition-colors",
+          "hover:bg-accent flex items-center gap-1 rounded-md pr-1 transition-colors",
           current && "bg-accent",
         )}
       >
@@ -154,9 +155,7 @@ export function Row({
             </span>
           )}
         </button>
-        {/* The buttons show on hover and focus, and stay while the menu they
-            opened is open, so the menu never hangs off nothing. */}
-        <span className="flex shrink-0 gap-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 has-[[data-state=open]]:opacity-100">
+        <span className="flex shrink-0 gap-0.5">
           {quick}
           <RowMenu label={label} actions={menu} />
         </span>

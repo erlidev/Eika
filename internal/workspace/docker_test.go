@@ -890,3 +890,74 @@ func TestConfineMovesAWorkspaceBetweenTheSandboxNetworks(t *testing.T) {
 		t.Errorf("the workspace is on %v, want only %s", got, internal)
 	}
 }
+
+// recreateNetwork removes a network and creates another of the same name, as
+// `docker compose down` and `up` do to the sandbox networks.
+func recreateNetwork(t *testing.T, name string) {
+	t.Helper()
+	if out, err := exec.Command("docker", "network", "rm", name).CombinedOutput(); err != nil {
+		t.Fatalf("remove network: %v: %s", err, out)
+	}
+	if out, err := exec.Command("docker", "network", "create", name).CombinedOutput(); err != nil {
+		t.Fatalf("create network: %v: %s", err, out)
+	}
+}
+
+// running reports whether a container is running.
+func running(t *testing.T, containerID string) bool {
+	t.Helper()
+	out, err := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", containerID).Output()
+	if err != nil {
+		t.Fatalf("inspect state: %v", err)
+	}
+	return strings.TrimSpace(string(out)) == "true"
+}
+
+func TestStartRejoinsARecreatedSandboxNetwork(t *testing.T) {
+	requireDocker(t)
+	requireImage(t)
+	open := testNetwork(t, false)
+	host, err := workspace.NewHost(workspace.Options{
+		DockerSocket: requireDocker(t),
+		Hub:          testHub(t),
+		Image:        sandboxImage,
+		EikadBinary:  buildEikad(t),
+		Network:      open,
+	}, testLogger())
+	if err != nil {
+		t.Fatalf("new host: %v", err)
+	}
+	t.Cleanup(func() { host.Close() })
+	ws, err := host.Create(t.Context(), workspace.Spec{})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() { cleanUp(host, &ws) })
+
+	// A container records its network's id only once it has run, so run it
+	// before the network goes away.
+	for _, args := range [][]string{{"start", ws.ContainerID}, {"stop", ws.ContainerID}} {
+		if out, err := exec.Command("docker", args...).CombinedOutput(); err != nil {
+			t.Fatalf("docker %s: %v: %s", args[0], err, out)
+		}
+	}
+	recreateNetwork(t, open)
+	if err := exec.Command("docker", "start", ws.ContainerID).Run(); err == nil {
+		t.Fatal("a container on a recreated network started without repair; the test no longer reproduces the fault")
+	}
+
+	// The test runs outside the network, so the daemon is never reachable
+	// and Start fails its readiness wait; the container must be running.
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	err = host.Start(ctx, &ws)
+	if err != nil && strings.Contains(err.Error(), "not found") {
+		t.Fatalf("start: %v", err)
+	}
+	if !running(t, ws.ContainerID) {
+		t.Errorf("the workspace is not running after Start: %v", err)
+	}
+	if got := networksOf(t, ws.ContainerID); len(got) != 1 || got[0] != open {
+		t.Errorf("the workspace is on %v, want only %s", got, open)
+	}
+}

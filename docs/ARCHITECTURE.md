@@ -353,6 +353,13 @@ static eikad to `/usr/local/bin/eikad` as the entrypoint. `Start` waits for
 `/healthz`. `Stop` keeps the volume; `Destroy` removes container, volume, and
 a per-workspace image. The harness reaches eikad at `http://eika-ws-<id>:7000`.
 
+The server's idle stopper (`server/idle.go`) sweeps once a minute while
+`Server.Run` serves and stops, as `POST .../stop` does, every running holder
+that neither it nor any of its worktrees has had a run in for
+`workspace_idle_minutes` (default 15, 0 for never). Last use is in memory:
+a run's end, a start, or a sweep that sees a run going; after a restart a
+running workspace gets the whole timeout again.
+
 `List` finds containers by label and `Inspect` recovers tokens from the
 container's environment. `Reconcile` updates recorded states at startup and
 marks a workspace `gone` only when Docker says the container does not exist;

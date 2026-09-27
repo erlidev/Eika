@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/erlidev/eika/internal/egress"
@@ -47,6 +48,16 @@ const (
 	// settingUtilityModels assigns the harness's own tasks the names of the
 	// models they are sent to; a task it assigns none does not run.
 	settingUtilityModels = "utility_models"
+	// settingIdleMinutes is how long a running workspace may go without a
+	// run before the harness stops it; 0 never stops one.
+	settingIdleMinutes = "workspace_idle_minutes"
+)
+
+// The idle timeout until the user sets one, and the longest the settings
+// accept: a week, past which a timeout is the same as none.
+const (
+	defaultIdleMinutes = 15
+	maxIdleMinutes     = 7 * 24 * 60
 )
 
 // The subagent limits until the user sets them, and the most the settings
@@ -84,6 +95,9 @@ type settingsDefaults struct {
 	SearchLimits map[string]search.Limit `json:"search_limits"`
 	// Compaction is the compaction setting, with the built-in prompts.
 	Compaction compactionBody `json:"compaction"`
+	// WorkspaceIdleMinutes is how long a running workspace may go without a
+	// run before the harness stops it.
+	WorkspaceIdleMinutes int `json:"workspace_idle_minutes"`
 }
 
 // handleSettings returns every setting.
@@ -136,6 +150,8 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 		SearchOrder:         []string{},
 		SearchLimits:        map[string]search.Limit{},
 		Compaction:          compactionDefaults(),
+		// The idle timeout is the harness's own, not the deployment's.
+		WorkspaceIdleMinutes: defaultIdleMinutes,
 	}
 	if s.deps.Search != nil {
 		defaults.SearchOrder, defaults.SearchLimits = s.deps.Search.Web(), s.deps.Search.DefaultLimits()
@@ -215,6 +231,11 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		return validateCount(key, value, maxSubagentDepth)
 	case settingSubagentChildren:
 		return validateCount(key, value, maxSubagentChildren)
+	case settingIdleMinutes:
+		var n int
+		if err := json.Unmarshal(value, &n); err != nil || n < 0 || n > maxIdleMinutes {
+			return invalidf("%s must be a whole number of minutes from 0 to %d", key, maxIdleMinutes)
+		}
 	case settingSearchOrder, settingSearchLimits:
 		if s.deps.Search == nil {
 			return nil
@@ -352,6 +373,17 @@ func (s *Server) sandboxImage(ctx context.Context) string {
 		return image
 	}
 	return s.cfg.SandboxImage
+}
+
+// idleTimeout returns how long a running workspace may go without a run
+// before the harness stops it, and 0 when the settings say never.
+func (s *Server) idleTimeout(ctx context.Context) time.Duration {
+	minutes := defaultIdleMinutes
+	var n int
+	if readSetting(ctx, s.deps.Store, s.log, settingIdleMinutes, &n) && n >= 0 {
+		minutes = min(n, maxIdleMinutes)
+	}
+	return time.Duration(minutes) * time.Minute
 }
 
 // subagentLimits returns the function the spawner reads its limits with,

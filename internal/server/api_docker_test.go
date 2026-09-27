@@ -391,7 +391,9 @@ type settingsWire struct {
 		SandboxImage        string `json:"sandbox_image"`
 		SubagentMaxDepth    int    `json:"subagent_max_depth"`
 		SubagentMaxChildren int    `json:"subagent_max_children"`
-		Compaction          struct {
+		// WorkspaceIdleMinutes is how long a workspace may go unused.
+		WorkspaceIdleMinutes int `json:"workspace_idle_minutes"`
+		Compaction           struct {
 			Auto             bool `json:"auto"`
 			ReserveTokens    int  `json:"reserve_tokens"`
 			KeepRecentTokens int  `json:"keep_recent_tokens"`

@@ -95,6 +95,13 @@ this file says why, so neither repeats the other.
   internal network. A separate origin keeps the page from reading the UI
   token; a one-time ticket becomes a host-only cookie, and every request is
   checked against the row.
+- **Idle workspaces stop after `workspace_idle_minutes` (default 15)
+  without a run.** A run is what a sandbox is for; a terminal or a preview
+  does not count, since an open tab would keep a forgotten sandbox up
+  forever. One harness-wide setting, not a per-workspace column: nothing
+  yet needs two timeouts. Last use lives in memory rather than a row, so a
+  restart only ever delays a stop. Rejected: Docker's own restart policies
+  and a timer in eikad, which see processes, not runs.
 - Usage is sampled every 5 s while the Sandbox panel is open: a measurement
   no event announces, so the no-polling rule does not apply.
 - One address guard, `internal/netguard`, for web_fetch and the proxy.
@@ -479,6 +486,9 @@ this file says why, so neither repeats the other.
 - Rewind is in the transcript, forking in the tree panel. Nothing is deleted.
 - Forks and child agents nest under their parent session in the sidebar.
 - Destructive actions confirm in `ConfirmDialog`, not `window.confirm`.
+- A sidebar row's quick buttons (a workspace's start or stop and new
+  session) always show; hiding them until hover made starting a workspace a
+  hunt, and touch screens have no hover.
 - Transcript display preferences are per browser, not harness settings.
 
 ## Testing

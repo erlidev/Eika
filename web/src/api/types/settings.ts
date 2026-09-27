@@ -20,6 +20,8 @@ export type SettingsDefaults = {
   search_limits: Record<string, SearchLimit>;
   /** compaction is the compaction setting's default, with the built-in prompts. */
   compaction: CompactionSettings;
+  /** workspace_idle_minutes is how long a running workspace may go without a run. */
+  workspace_idle_minutes: number;
 };
 
 /**

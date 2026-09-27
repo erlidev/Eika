@@ -273,21 +273,29 @@ func (s *Server) handleStartWorkspace(w http.ResponseWriter, r *http.Request) {
 		if err := s.deps.Workspaces.Confine(ctx, host, confinement(ws.Sandbox)); err != nil {
 			return err
 		}
-		return s.deps.Workspaces.Start(ctx, host)
+		if err := s.deps.Workspaces.Start(ctx, host); err != nil {
+			return err
+		}
+		// A workspace started by hand gets the whole idle timeout, however
+		// long it sat unused before it stopped.
+		s.idle.used(ws.ID, time.Now())
+		return nil
 	})
 }
 
 // handleStopWorkspace stops a workspace's container, keeping its files.
 func (s *Server) handleStopWorkspace(w http.ResponseWriter, r *http.Request) {
-	s.transition(w, r, func(ctx context.Context, ws store.Workspace, host *workspace.Workspace) error {
-		s.stopRunsIn(ctx, ws)
-		return s.deps.Workspaces.Stop(ctx, host)
-	})
+	s.transition(w, r, s.stopWorkspace)
 }
 
-// transition runs one lifecycle operation on a workspace and records the
-// state it reached, for the worktrees it holds as well: they live in its
-// container. A worktree workspace has no container to start or stop.
+// stopWorkspace stops the runs in a workspace and then its container.
+func (s *Server) stopWorkspace(ctx context.Context, ws store.Workspace, host *workspace.Workspace) error {
+	s.stopRunsIn(ctx, ws)
+	return s.deps.Workspaces.Stop(ctx, host)
+}
+
+// transition answers a request for one lifecycle operation on a workspace.
+// A worktree workspace has no container to start or stop.
 func (s *Server) transition(w http.ResponseWriter, r *http.Request, op func(context.Context, store.Workspace, *workspace.Workspace) error) {
 	ws, err := s.deps.Store.Workspace(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -298,29 +306,36 @@ func (s *Server) transition(w http.ResponseWriter, r *http.Request, op func(cont
 		s.fail(w, r, conflictf("workspace %s is a worktree in workspace %s: start or stop that one", ws.ID, ws.WorktreeOf))
 		return
 	}
-	host, err := s.deps.Workspaces.Inspect(r.Context(), ws.ID)
-	if err != nil {
+	if ws, err = s.changeState(r.Context(), ws, op); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if err := op(r.Context(), ws, &host); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	worktrees, err := s.worktreesOf(r.Context(), ws)
+	writeJSON(w, s.log, http.StatusOK, asWorkspace(ws))
+}
+
+// changeState runs one lifecycle operation on a workspace that holds its own
+// container and records the state it reached, for the worktrees it holds as
+// well: they live in its container.
+func (s *Server) changeState(ctx context.Context, ws store.Workspace, op func(context.Context, store.Workspace, *workspace.Workspace) error) (store.Workspace, error) {
+	host, err := s.deps.Workspaces.Inspect(ctx, ws.ID)
 	if err != nil {
-		s.fail(w, r, err)
-		return
+		return store.Workspace{}, err
+	}
+	if err := op(ctx, ws, &host); err != nil {
+		return store.Workspace{}, err
+	}
+	worktrees, err := s.worktreesOf(ctx, ws)
+	if err != nil {
+		return store.Workspace{}, err
 	}
 	for _, held := range append([]store.Workspace{ws}, worktrees...) {
-		if err := s.deps.Store.SetWorkspaceState(r.Context(), held.ID, string(host.State), host.ContainerID); err != nil {
-			s.fail(w, r, err)
-			return
+		if err := s.deps.Store.SetWorkspaceState(ctx, held.ID, string(host.State), host.ContainerID); err != nil {
+			return store.Workspace{}, err
 		}
-		s.workspaceState(r.Context(), held.ID, held.ProjectID, string(host.State))
+		s.workspaceState(ctx, held.ID, held.ProjectID, string(host.State))
 	}
 	ws.State = string(host.State)
-	writeJSON(w, s.log, http.StatusOK, asWorkspace(ws))
+	return ws, nil
 }
 
 // worktreesOf lists the worktree workspaces a workspace holds.
