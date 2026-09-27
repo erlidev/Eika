@@ -258,7 +258,11 @@ function chats(): WorldBuilder {
   });
   const main = b.chat({ id: "chat-jitter", title: "What is full jitter?" });
   b.conversation(main, [
-    { role: "user", content: "What is full jitter, and why do retry clients use it?" },
+    {
+      role: "user",
+      content:
+        "What is **full jitter**, and why do retry clients use it?\nOurs sleeps `base * 2 ** attempt` today.",
+    },
     {
       role: "assistant",
       tool_calls: [

@@ -28,7 +28,9 @@ one that holds client state of its own.
   whether the user is still at the bottom — it follows the stream only then,
   and offers "Jump to latest" otherwise — and every row is memoised on the
   item the reducer produced, so one delta re-renders one bubble. A message
-  the user sent carries a rewind: it moves the head to the entry before it
+  the user sent is rendered as markdown, as an answer is, but keeps every
+  newline typed into the composer (`lib/lineBreaks.ts`); the composer only
+  ever holds the source, so what is typed is what is sent. It carries a rewind: it moves the head to the entry before it
   and puts its text back in the composer, which is how a question is edited
   and asked again. It is offered only while the session is idle and only
   where `rewindTarget` finds a resumable entry to land on.
@@ -63,6 +65,16 @@ one that holds client state of its own.
   attach button, a paste, or a drop, only when the model accepts images;
   `attachments.ts` holds what it takes (format, size, count) and how a queued
   message with images reads. The harness fits each within 1080p.
+- `MarkdownField.tsx` is the composer's text: a textarea with the markdown in
+  it marked up as it is typed, by a styled copy of the text drawn under the
+  textarea's transparent text. `lib/markdownSource.ts` splits the source into
+  those runs, colouring a fenced block that names its language with the
+  transcript's grammars. What its keys do is the composer mode in
+  `preferences.ts`: `chat` sends on Enter; `markdown` makes Enter carry a list
+  or quotation on, Tab nest a list item or indent code by the block's own
+  step, and a typed fence close itself
+  (`lib/markdownEditing.ts`), and sends on Ctrl+Enter. Its edits go through
+  `execCommand`, so the browser's undo takes each back like typing.
 - `queries.ts` wraps the session, outline, run, message, head, and fork
   routes. `useSetSessionHead` rebuilds the transcript afterwards, and
   `useRewind` is the one a message's rewind calls: it lands the head on the

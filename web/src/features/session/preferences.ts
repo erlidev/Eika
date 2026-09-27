@@ -1,8 +1,8 @@
 /**
- * How the transcript renders, remembered by this browser. These are not
- * harness settings: two people reading the same session can want different
- * things from it, and the choice has to survive a reload, so it is
- * localStorage behind a small store.
+ * How the transcript renders and the composer behaves, remembered by this
+ * browser. These are not harness settings: two people in the same session
+ * can want different things from it, and the choice has to survive a reload,
+ * so it is localStorage behind a small store.
  */
 
 import { create } from "zustand";
@@ -17,8 +17,17 @@ import { readPersistedString, writePersisted } from "@/lib/persisted";
  */
 export type ReasoningDisplay = "compact" | "expanded";
 
+/**
+ * ComposerMode is what the message box's keys do. `chat` is a chat app's:
+ * Enter sends. `markdown` is an editor's: Enter starts a line, carrying a
+ * list or quotation on, Tab nests a list item, a code fence closes itself,
+ * and Ctrl+Enter sends.
+ */
+export type ComposerMode = "chat" | "markdown";
+
 const reasoningKey = "eika.transcript.reasoning";
 const speedKey = "eika.transcript.speed";
+const composerKey = "eika.composer.mode";
 
 const displays: readonly ReasoningDisplay[] = ["compact", "expanded"];
 
@@ -33,6 +42,11 @@ function storedSpeed(): boolean {
   return readPersistedString(speedKey, "off") === "on";
 }
 
+/** storedComposer reads the remembered composer mode, defaulting to chat. */
+function storedComposer(): ComposerMode {
+  return readPersistedString(composerKey, "chat") === "markdown" ? "markdown" : "chat";
+}
+
 type TranscriptPreferences = {
   reasoning: ReasoningDisplay;
   setReasoning: (display: ReasoningDisplay) => void;
@@ -43,9 +57,11 @@ type TranscriptPreferences = {
    */
   speed: boolean;
   setSpeed: (on: boolean) => void;
+  composer: ComposerMode;
+  setComposer: (mode: ComposerMode) => void;
 };
 
-/** useTranscriptPreferences is how the session view is rendered here. */
+/** useTranscriptPreferences is how the session view renders and behaves here. */
 export const useTranscriptPreferences = create<TranscriptPreferences>((set) => ({
   reasoning: storedReasoning(),
   setReasoning: (reasoning) => {
@@ -56,5 +72,10 @@ export const useTranscriptPreferences = create<TranscriptPreferences>((set) => (
   setSpeed: (speed) => {
     writePersisted(speedKey, speed ? "on" : "off");
     set({ speed });
+  },
+  composer: storedComposer(),
+  setComposer: (composer) => {
+    writePersisted(composerKey, composer);
+    set({ composer });
   },
 }));
