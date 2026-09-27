@@ -43,7 +43,11 @@ this file says why, so neither repeats the other.
 - MCP without an SDK: the official one brings oauth2 and a schema library
   and still leaves transport-in-sandbox, sealed storage, and UI to us.
 - Frontend: `react-router`, `zustand`, `react-markdown` + `remark-gfm` +
-  `rehype-highlight`, `cmdk`. The resizable split is ~80 lines of our own.
+  `rehype-highlight`, `cmdk`. The resizable split is ~80 lines of our own,
+  and so is `remarkLineBreaks` (~30), which keeps the newlines in a user's
+  markdown message where `remark-breaks` would be a dependency. `lowlight`,
+  which `rehype-highlight` already brings, is a direct dependency so that the
+  composer colours code with the same grammars as the transcript.
 - `staticcheck` and `goimports` pinned by `tool` directives in `go.mod`.
 - Deployment config is YAML (`gopkg.in/yaml.v3`) plus `EIKA_*` env, with the
   compose stack's values as defaults. Everything a user chooses is a
@@ -490,6 +494,25 @@ this file says why, so neither repeats the other.
   session) always show; hiding them until hover made starting a workspace a
   hunt, and touch screens have no hover.
 - Transcript display preferences are per browser, not harness settings.
+- **A message is written as markdown source and shown rendered once sent.**
+  The composer marks the source up as it is typed with a styled copy drawn
+  under a transparent textarea, not with a rich editor: `contenteditable`
+  and CodeMirror each bring their own caret, undo, and input-method handling,
+  and the textarea keeps the browser's. The cost is that the markup may only
+  change colour, background, decoration, stroke, or a synthesised slant,
+  never a glyph's width: a code block is coloured, not set in mono, and the
+  composer spec fails on any run that moves. Italic stays only while no
+  italic face is loaded.
+- **The composer's keys are a browser preference, `chat` by default.** Enter
+  sends, as every chat app does; the `markdown` mode trades that for an
+  editor's Enter (list and quotation continuation) and sends on Ctrl+Enter.
+  Its Tab nests list items and indents code, and elsewhere moves focus as
+  usual; Shift+Tab with nothing to outdent does too, so the keyboard can
+  always leave the box.
+  Its edits are made with the deprecated `execCommand`, the only way to edit
+  a textarea that its undo history records. Guessing an unlabelled code
+  block's language costs tens of milliseconds a keystroke, so the composer
+  colours only a block that names one.
 
 ## Testing
 

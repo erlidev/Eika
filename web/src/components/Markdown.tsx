@@ -1,5 +1,5 @@
 /**
- * Assistant prose. Markdown with GitHub tables and task lists, syntax
+ * Transcript prose, from the model or from the person. Markdown with GitHub tables and task lists, syntax
  * highlighting applied to fenced code at render time, and a typographic scale
  * of its own: a transcript is read for minutes at a time, so its text is
  * larger and its blocks are more strongly separated than the chrome around
@@ -14,11 +14,17 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
+import { remarkLineBreaks } from "@/lib/lineBreaks";
 import { cn } from "@/lib/utils";
 
 export type MarkdownProps = {
   children: string;
   className?: string;
+  /**
+   * lineBreaks keeps every newline in the source, for text a person typed
+   * into a box: they pressed Enter to start a line, not to reflow one.
+   */
+  lineBreaks?: boolean;
 };
 
 /** textOf flattens a rendered node back to the source text it was built from. */
@@ -107,6 +113,7 @@ const components: Options["components"] = {
 
 /** plugins are built once: they hold no per-render state. */
 const remarkPlugins: Options["remarkPlugins"] = [remarkGfm];
+const typedRemarkPlugins: Options["remarkPlugins"] = [remarkGfm, remarkLineBreaks];
 const rehypePlugins: Options["rehypePlugins"] = [
   [rehypeHighlight, { detect: true, ignoreMissing: true }],
 ];
@@ -149,11 +156,11 @@ const prose = [
   "[&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-md [&_img]:border",
 ].join(" ");
 
-export function Markdown({ children, className }: MarkdownProps) {
+export function Markdown({ children, className, lineBreaks = false }: MarkdownProps) {
   return (
     <div className={cn(prose, className)}>
       <ReactMarkdown
-        remarkPlugins={remarkPlugins}
+        remarkPlugins={lineBreaks ? typedRemarkPlugins : remarkPlugins}
         rehypePlugins={rehypePlugins}
         components={components}
       >

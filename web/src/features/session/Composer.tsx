@@ -16,7 +16,6 @@ import { useRef, useState } from "react";
 import { ArrowUp, ImagePlus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   acceptedTypes,
   attachProblem,
@@ -26,6 +25,8 @@ import {
 } from "@/features/session/attachments";
 import type { DraftImage } from "@/features/session/attachments";
 import { compactCommand } from "@/features/session/commands";
+import { MarkdownField } from "@/features/session/MarkdownField";
+import { useTranscriptPreferences } from "@/features/session/preferences";
 import { useCompact, usePostMessage, useRunStatus } from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
 import type { MessageMode, QueuedMessage } from "@/api/types";
@@ -66,6 +67,7 @@ export function Composer({
   const picker = useRef<HTMLInputElement>(null);
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
+  const mode = useTranscriptPreferences((s) => s.composer);
   const status = useRunStatus(sessionId);
   const post = usePostMessage(sessionId);
   const compact = useCompact(sessionId);
@@ -179,7 +181,7 @@ export function Composer({
               }}
             />
           )}
-          <Textarea
+          <MarkdownField
             ref={box}
             value={text}
             disabled={disabled}
@@ -188,7 +190,7 @@ export function Composer({
             rows={2}
             // field-sizing grows the box with the text, which without a cap
             // would push the transcript out of the pane on a long message.
-            className="max-h-64 min-h-0 resize-none border-0 bg-transparent px-2.5 py-2 text-sm focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
+            className="max-h-64 min-h-0 resize-none border-0 bg-transparent focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
             onChange={(e) => {
               setText(e.target.value);
             }}
@@ -200,11 +202,8 @@ export function Composer({
               e.preventDefault();
               void attach(pasted);
             }}
-            onKeyDown={(e) => {
-              // An input method ends its composition with Enter. Sending on it
-              // would swallow the word the user was still typing.
-              if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
-              e.preventDefault();
+            mode={mode}
+            onSend={() => {
               send(active ? "steer" : "run");
             }}
           />
@@ -243,8 +242,10 @@ export function Composer({
               {disabled
                 ? disabledReason
                 : focus !== null
-                  ? "Enter compacts the conversation · text after /compact is what the summary focuses on"
-                  : "Enter sends · Shift+Enter newline · Esc aborts"}
+                  ? `${mode === "markdown" ? "Ctrl+Enter" : "Enter"} compacts the conversation · text after /compact is what the summary focuses on`
+                  : mode === "markdown"
+                    ? "Ctrl+Enter sends · Enter newline · Esc aborts"
+                    : "Enter sends · Shift+Enter newline · Esc aborts"}
             </p>
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {active && (

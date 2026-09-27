@@ -34,7 +34,7 @@ import { MCPSettings } from "@/features/mcp";
 import { ProfilesSettings } from "@/features/profiles";
 import { ModelsPanel } from "@/features/providers";
 import { useTranscriptPreferences } from "@/features/session";
-import type { ReasoningDisplay } from "@/features/session";
+import type { ComposerMode, ReasoningDisplay } from "@/features/session";
 import { AccountSettings } from "@/features/settings/AccountSettings";
 import { CompactionSettings } from "@/features/settings/CompactionSettings";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
@@ -161,6 +161,8 @@ function AppearanceSettings() {
   const setReasoning = useTranscriptPreferences((s) => s.setReasoning);
   const speed = useTranscriptPreferences((s) => s.speed);
   const setSpeed = useTranscriptPreferences((s) => s.setSpeed);
+  const composer = useTranscriptPreferences((s) => s.composer);
+  const setComposer = useTranscriptPreferences((s) => s.setComposer);
   return (
     <div className="space-y-6">
       <ThemeSelect />
@@ -195,6 +197,26 @@ function AppearanceSettings() {
           </p>
         </div>
         <Switch id="transcript-speed" checked={speed} onCheckedChange={setSpeed} />
+      </div>
+      <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+        <div className="space-y-0.5">
+          <Label htmlFor="composer-markdown" className="text-sm">
+            Edit messages as markdown
+          </Label>
+          <p className="text-muted-foreground text-xs">
+            On, the message box behaves like an editor: Enter starts a new line and carries a list
+            or quotation on, Tab and Shift+Tab nest a list item or indent code, typing ``` closes
+            the code block, and Ctrl+Enter sends. Off, Enter sends and Shift+Enter starts a new
+            line.
+          </p>
+        </div>
+        <Switch
+          id="composer-markdown"
+          checked={composer === "markdown"}
+          onCheckedChange={(on) => {
+            setComposer((on ? "markdown" : "chat") satisfies ComposerMode);
+          }}
+        />
       </div>
     </div>
   );

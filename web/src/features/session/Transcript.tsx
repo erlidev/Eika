@@ -258,6 +258,9 @@ const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
       // the model's full-width prose, so a glance down the transcript reads as
       // a conversation with two sides rather than one column of blocks.
       //
+      // It is written in markdown and shown rendered, as the model's answers
+      // are; the composer and a rewind hand back the source to edit.
+      //
       // The rewind button sits outside the bubble, in the gutter the bubble's
       // width leaves free, so it never reflows the message it belongs to.
       return (
@@ -280,9 +283,14 @@ const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
             <h3 className="sr-only">You</h3>
             <MessageImages images={item.images} className={item.text === "" ? "" : "mb-2"} />
             {item.text !== "" && (
-              <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
+              // A table's header and stripes are shades of muted, which the
+              // bubble's tint swallows; on the page's own background they show.
+              <Markdown
+                lineBreaks
+                className="text-foreground [&_table]:bg-background text-sm leading-relaxed"
+              >
                 {item.text}
-              </p>
+              </Markdown>
             )}
           </article>
         </div>
