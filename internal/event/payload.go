@@ -166,6 +166,47 @@ type Usage struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
+// The reasons a compaction happens.
+const (
+	// CompactManual is a compaction the user asked for.
+	CompactManual = "manual"
+	// CompactThreshold is a compaction before a model call whose request
+	// would leave less of the window free than the reserve.
+	CompactThreshold = "threshold"
+	// CompactOverflow is a compaction after the endpoint refused a request
+	// as larger than the window; the request is sent again after it.
+	CompactOverflow = "overflow"
+)
+
+// CompactionStart is the payload of a compaction.start event: the oldest part
+// of the conversation is being summarized.
+type CompactionStart struct {
+	RunID string `json:"run_id"`
+	// Reason is manual, threshold, or overflow.
+	Reason string `json:"reason"`
+	// TokensBefore is the estimated size of the context being compacted.
+	TokensBefore int `json:"tokens_before"`
+}
+
+// CompactionEnd is the payload of a compaction.end event. A compaction that
+// failed carries Error and changed nothing; one that succeeded is stored as
+// a session entry of kind compaction.
+type CompactionEnd struct {
+	RunID        string `json:"run_id"`
+	Reason       string `json:"reason"`
+	TokensBefore int    `json:"tokens_before"`
+	// TokensAfter is the estimated size of the context that replaced it.
+	TokensAfter int `json:"tokens_after,omitempty"`
+	// Summary is the summary that now begins the context.
+	Summary string `json:"summary,omitempty"`
+	// Kept is how many messages of the context before it stay after the
+	// summary.
+	Kept int `json:"kept,omitempty"`
+	// Usage is what making the summary cost.
+	Usage Usage  `json:"usage"`
+	Error string `json:"error,omitempty"`
+}
+
 // QuestionAsked is the payload of a question.asked event: a run called the
 // ask_user tool and waits until the answer arrives at
 // POST /api/questions/{id}/answer or the run is aborted.

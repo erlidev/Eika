@@ -23,6 +23,12 @@ function state(settings: Record<string, unknown>): SettingsState {
       sandbox_egress: { mode: "open", allow: [] },
       search_order: ["searxng", "exa", "marginalia"],
       search_limits: { searxng: {}, exa: { month: 900 }, marginalia: { day: 100 }, github: {} },
+      compaction: {
+        auto: true,
+        reserve_tokens: 16384,
+        keep_recent_tokens: 20000,
+        prompts: { summary: "Summarize.", update: "Update.", turn_prefix: "Summarize the turn." },
+      },
     },
   };
 }

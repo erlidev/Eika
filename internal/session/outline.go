@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -61,6 +62,11 @@ func (t *Tree) Outline(ctx context.Context, sessionID string) ([]Node, error) {
 // preview renders the start of an entry's content on one line. An assistant
 // turn that only asked for tools is described by the tools it asked for.
 func preview(e store.Entry) string {
+	if e.Kind == store.KindCompaction {
+		if c, err := CompactionOf(e); err == nil {
+			return fmt.Sprintf("compacted about %d tokens into a summary", c.TokensBefore)
+		}
+	}
 	if m, ok, err := Message(e); err == nil && ok {
 		if text := strings.TrimSpace(m.Content); text != "" {
 			return shorten(text)

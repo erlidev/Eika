@@ -13,7 +13,8 @@ import { ArrowUp } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { usePostMessage, useRunStatus } from "@/features/session/queries";
+import { compactCommand } from "@/features/session/commands";
+import { useCompact, usePostMessage, useRunStatus } from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
 import type { MessageMode } from "@/api/types";
 import { failureText } from "@/lib/failure";
@@ -45,12 +46,27 @@ export function Composer({
   const box = useRef<HTMLTextAreaElement>(null);
   const status = useRunStatus(sessionId);
   const post = usePostMessage(sessionId);
+  const compact = useCompact(sessionId);
   const active = status.data?.active ?? false;
   const empty = text.trim() === "";
+  // While no run is going, /compact asks for a compaction instead of a turn.
+  const focus = active ? null : compactCommand(text);
+  const pending = post.isPending || compact.isPending;
 
   const send = (mode: MessageMode) => {
     const trimmed = text.trim();
     if (trimmed === "" || disabled) return;
+    if (focus !== null) {
+      compact.mutate(
+        { ...(focus === "" ? {} : { instructions: focus }), ...(model === "" ? {} : { model }) },
+        {
+          onSuccess: () => {
+            setText("");
+          },
+        },
+      );
+      return;
+    }
     post.mutate(
       { text: trimmed, mode, ...(model === "" ? {} : { model }) },
       {
@@ -93,14 +109,18 @@ export function Composer({
           />
           <div className="flex items-center gap-2 px-2 pb-1.5">
             <p className="text-muted-foreground min-w-0 truncate text-2xs">
-              {disabled ? disabledReason : "Enter sends · Shift+Enter newline · Esc aborts"}
+              {disabled
+                ? disabledReason
+                : focus !== null
+                  ? "Enter compacts the conversation · text after /compact is what the summary focuses on"
+                  : "Enter sends · Shift+Enter newline · Esc aborts"}
             </p>
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {active && (
                 <Button
                   size="xs"
                   variant="secondary"
-                  disabled={disabled || empty || post.isPending}
+                  disabled={disabled || empty || pending}
                   onClick={() => {
                     send("follow_up");
                   }}
@@ -110,12 +130,12 @@ export function Composer({
               )}
               <Button
                 size="xs"
-                disabled={disabled || empty || post.isPending}
+                disabled={disabled || empty || pending}
                 onClick={() => {
                   send(active ? "steer" : "run");
                 }}
               >
-                {active ? "Steer" : "Send"}
+                {active ? "Steer" : focus !== null ? "Compact" : "Send"}
                 <ArrowUp aria-hidden className="size-3" />
               </Button>
             </span>
@@ -124,6 +144,11 @@ export function Composer({
         {post.isError && (
           <p role="alert" className="text-destructive mt-2 text-xs">
             {failureText("send the message", post.error)}
+          </p>
+        )}
+        {compact.isError && (
+          <p role="alert" className="text-destructive mt-2 text-xs">
+            {failureText("compact the conversation", compact.error)}
           </p>
         )}
         <Queues

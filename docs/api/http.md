@@ -502,8 +502,9 @@ The branch from the root to the head, which is the conversation the model
 sees.
 
 `200` with `{"session_id": string, "entries": [Entry], "messages": [Message]}`.
-`messages` holds the provider messages of the entries that carry one, in the
-same order.
+`messages` is the conversation the entries stand for, in order: each
+`compaction` entry replaces the messages before it with a user message that
+carries its summary and has `"summary": true`, followed by the ones it kept.
 
 ### `POST /api/sessions/{id}/head`
 
@@ -672,10 +673,11 @@ Every `tokens` figure is an estimate, four bytes to a token; only a record's
 | `id` | string | The entry id. |
 | `parent_id` | string, optional | The entry it follows. |
 | `seq` | number | Write order within the session. |
-| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, or `event`. |
+| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, or `compaction`. |
 | `commit` | string, optional | The workspace HEAD commit the entry was produced at. |
 | `created_at` | time | When it was written. |
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
+| `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `threshold`, or `overflow`), and `usage`. The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
 
 A provider message can include `reasoning` on an assistant entry whenever the
 endpoint streamed it. The session view shows it apart from the answer; Eika
@@ -730,6 +732,24 @@ What the session is doing and what is waiting for it.
 
 Accepted queue messages remain in these arrays after a run aborts or fails.
 The next run on the session receives them.
+
+### `POST /api/sessions/{id}/compact`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `instructions` | string | What the summary should focus on, added to the prompt as `Additional focus:`. At most 64 KiB. |
+| `model` | string | The name of the model that writes the summary, as for a message. |
+
+Summarizes the older part of the conversation now, as Pi's `/compact` does,
+whatever its size: about `keep_recent_tokens` of the newest messages stay and
+the rest is replaced by a summary (the `compaction` setting). It is a run of
+its own, which the event stream reports with `compaction.start` and
+`compaction.end` and no turn events; queued messages wait for the next run.
+
+`202` with the `Run`. `409` when a run is going, when the workspace is not
+running, or when the conversation has nothing older than what a compaction
+keeps. A compaction that fails ends the run in `error`, with the conversation
+as it was.
 
 ### `POST /api/runs/{id}/abort`
 
@@ -1138,6 +1158,7 @@ writes nothing.
 | `utility_models` | object | The model each of the harness's own tasks is sent to, by task, `{"session_title": "gpt-5-mini"}`. Each key must be a task and each value the name of a model or `""` for none; a task with none does not run. Renaming a model renames it here. Tasks: `session_title` names an untitled session after its first message (see `session.title` in `events.md`). |
 | `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
 | `search_limits` | object | Quotas by bucket, `{"exa": {"month": 500}, "marginalia": {"day": 50}}`. Each bucket must exist; `day` and `month` are whole numbers from 1 to 10 000 000, and 0 or an absent field is unlimited. Anything else is `400` naming the bucket and the range. A bucket not named keeps its default. |
+| `compaction` | object | How a conversation that outgrows its model's context window is summarized: `{"auto", "reserve_tokens", "keep_recent_tokens", "prompts": {"summary", "update", "turn_prefix"}}`. `auto` compacts before a request that would leave less than `reserve_tokens` of the window free, and once after an endpoint refuses a request as too large. `reserve_tokens` and `keep_recent_tokens` are whole numbers from 1024 to 1048576, each capped at run time to a quarter of the model's window. A prompt is at most 64 KiB, and an empty one is the built-in prompt. A field left out keeps its default; an unknown field is `400`. |
 
 ### Defaults
 
@@ -1150,6 +1171,7 @@ writes nothing.
 | `sandbox_egress` | object | `open`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |
 | `search_order` | array of strings | Every web provider in its default order: `searxng`, `exa`, `tavily`, `brave`, `marginalia`. |
 | `search_limits` | object | Every quota bucket's default, as `search_limits` takes it: Exa 900 a month, Tavily 1000, Brave 2000, Marginalia 100 a day, SearXNG and GitHub unlimited. |
+| `compaction` | object | `auto` on, `reserve_tokens` 16384, `keep_recent_tokens` 20000, and the built-in prompts spelled out. |
 
 ## Search
 

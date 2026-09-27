@@ -32,7 +32,9 @@ export function useSessionStream(sessionId: string | undefined): void {
       e.type === "turn.end" ||
       e.type === "run.error" ||
       e.type === "question.asked" ||
-      e.type === "mcp.elicitation"
+      e.type === "mcp.elicitation" ||
+      e.type === "compaction.start" ||
+      e.type === "compaction.end"
     ) {
       void client.invalidateQueries({
         queryKey: queryKeys.runStatus(e.topic.slice("session:".length)),
@@ -40,8 +42,9 @@ export function useSessionStream(sessionId: string | undefined): void {
       void client.invalidateQueries({
         queryKey: queryKeys.sessionOutline(e.topic.slice("session:".length)),
       });
-      // A turn that ended changed the next request and recorded its calls.
-      if (e.type === "turn.end" || e.type === "run.error") {
+      // A turn that ended changed the next request and recorded its calls,
+      // and a compaction changed the next request.
+      if (e.type === "turn.end" || e.type === "run.error" || e.type === "compaction.end") {
         void client.invalidateQueries({
           queryKey: queryKeys.sessionContext(e.topic.slice("session:".length)),
         });

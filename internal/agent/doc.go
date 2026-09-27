@@ -15,10 +15,15 @@
 // next call without sending it, and a Recorder learns about every call a run
 // makes.
 //
+// A conversation that outgrows the model's context window is compacted as Pi
+// does it (compaction.go, summary.go): its older part is replaced by a summary
+// the model writes, before a call that would pass the threshold, after an
+// endpoint refuses a call as too large, or when Agent.Compact asks.
+//
 // The loop reports progress as event.Event values through an event.Emitter and
 // persists every message through a Store. It depends on provider, tool,
 // executor, contextfile, and event, and on nothing above it.
 //
-// The entry points are New, Agent.Run, Agent.Preview, Agent.Steer, and
-// Agent.FollowUp.
+// The entry points are New, Agent.Run, Agent.Compact, Agent.Preview,
+// Agent.Steer, and Agent.FollowUp.
 package agent

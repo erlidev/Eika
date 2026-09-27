@@ -11,8 +11,7 @@ this file says why, so neither repeats the other.
 - **Origin.** A Go port of the [Pi coding agent](https://github.com/badlogic/pi-mono)
   core (loop, tools, session trees, context files) plus sandboxed workspaces,
   subagents, web search, MCP, and a web UI, built so agents can modify Eika.
-- **Deferred:** automatic compaction (the session model must allow it),
-  skills and templates, a Responses API provider, a forge API for pull
+- **Deferred:** skills and templates, a Responses API provider, a forge API for pull
   requests (the UI builds a compare link from `remote_url`).
 - **Extensibility is source-level.** Implement an interface, register it in
   one registry file, rebuild. No runtime plugin loader, no `init()`
@@ -148,8 +147,13 @@ this file says why, so neither repeats the other.
 - **Retries live in the agent loop**; the SDK's are off
   (`WithMaxRetries(0)`), so the fake provider exercises the same path.
   Retryable: 408, 409, 429, 5xx, transport errors.
-- The context window is a preflight bound (a conservative byte estimate plus
-  requested output), failing before the call. Compaction is deferred.
+- **The context window is judged by measurement.** The next request's size
+  is the last call's measured context plus a 4-bytes-per-token estimate of
+  what was added since (Pi's rule). A request whose estimate reaches the
+  window fails before the call; one that fits but leaves less than the
+  requested max output gets max output lowered to what is left, since an
+  endpoint refuses input plus max output over its window. The earlier byte
+  bound (a token per byte) failed sessions at a quarter of their window.
 - Reasoning is always streamed as `reasoning.delta`; `preserve_thinking`
   only controls replaying it to the endpoint. Tying the two would force
   users who want to watch reasoning to send it to APIs that reject it.
@@ -178,6 +182,63 @@ this file says why, so neither repeats the other.
   to the next run and a key is in memory only while used.
 - Model names are unique across providers, because runs and `spawn_agent`
   name a model alone.
+
+## Compaction
+
+- **Pi's compaction, ported whole**: when the next request would leave less
+  than `reserve_tokens` (16384) of the window, the oldest part of the context
+  is summarized and replaced; roughly the newest `keep_recent_tokens` (20000)
+  stay verbatim. The cut is at a user or assistant message, never a tool
+  result; a turn too large to keep is split, its start summarized apart.
+  A later compaction updates the previous summary rather than summarizing a
+  summary. The summary format, prompts, 2000-character tool results in
+  transcripts, split-turn merge, and one compact-and-retry after an
+  overflow error are Pi's. Both token settings shrink to a quarter of a
+  small window, or a model whose window is near the settings would compact
+  on every call.
+- **Checked before every model call**, not only after a run as in Pi: a
+  subagent's single turn can outgrow the window, and compacting before the
+  call is cheaper than an overflow error and a retry.
+- **The summary request keeps the prefix cache.** It is the run's own
+  request (system prompt, tools, parameters, and messages up to the cut,
+  exactly as they were last sent) with the summary prompt appended as a user
+  message, so the endpoint reuses the cached prefix and only prefills the
+  prompt. Pi sends the conversation as one serialized transcript instead,
+  which re-reads the whole context uncached. The transcript form remains the
+  fallback for a prefix that no longer fits the window and for a model that
+  answers with tool calls instead of a summary. The kept tail is not in the
+  request, so the reserve need not hold the summary's output as well.
+- **Thinking stays as the run set it**, because some chat templates (gpt-oss)
+  render the effort into the system prompt and a different effort would
+  miss the cache. A summary whose thinking used up its budget (cut off, or no
+  text) is asked for again with thinking off (`none`, or the lowest effort
+  the model offers).
+- **A compaction is an entry** (kind `compaction`) holding the summary and
+  how many context messages before it are kept, not the first kept entry's
+  id: a fork copies entries under new ids, and a count survives the copy.
+  The context is a fold over the path: messages append, a compaction
+  replaces what came before with the summary and the kept messages. Earlier
+  entries stay in the tree, so moving the head above a compaction undoes it.
+- **Where Eika departs from Pi's cut and merge.** When only tool output
+  would fit in `keep_recent_tokens`, the cut goes to the newest user or
+  assistant message instead of keeping everything, which is what Pi does
+  and which leaves an over-threshold context uncompacted. When a split
+  turn leaves no complete turns to summarize, the previous summary is kept
+  verbatim; Pi drops it. A summary still cut off on its last attempt is
+  used as far as it goes rather than failing the run.
+- **An overflow is recognized by its wording**, with Pi's patterns, since
+  endpoints report it only in prose. They match anywhere in the error
+  (Eika's errors name the failed operation first), and a throttling error
+  that mentions tokens ("please wait", "rate limit") is never one.
+- Pi's list of read and modified files is not ported: it comes from `read`,
+  `write`, and `edit` tool calls, and Eika's files change through bash.
+- **Settings are one global key** (`compaction`: auto, both token budgets,
+  and the three prompts), not profile fields: they describe the harness's
+  memory management rather than what a run sends. A manual compaction
+  (`POST .../compact`) is a run of its own, so the one-run-per-session rule,
+  abort, and events apply unchanged.
+- The summary call uses the run's model. A utility model was rejected for
+  now: it has no cache of the conversation, so it would re-read all of it.
 
 ## Utility models
 

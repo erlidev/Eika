@@ -449,6 +449,24 @@ describe("the mock answers as the harness does", () => {
     expect(mock.contractBreaks).toEqual([]);
   });
 
+  it("compacts a session as the harness does, and replays the compaction", async () => {
+    const mock = open("workbench");
+    const reply = await call(mock, "POST", "/api/sessions/ses-backoff/compact", {
+      instructions: "the retry tests",
+    });
+    expect(reply.status).toBe(statusOf("POST /api/sessions/{id}/compact"));
+    await mock.idle();
+    const entries = mock.world.entries["ses-backoff"] ?? [];
+    expect(entries.at(-1)).toMatchObject({ kind: "compaction", compaction: { kept: 2 } });
+    const session = await call(mock, "GET", "/api/sessions/ses-backoff");
+    expect(session.body).toMatchObject({ head: { kind: "compaction" } });
+    expect(mock.contractBreaks).toEqual([]);
+
+    // What the compaction kept is all there is, so a second one has nothing to do.
+    const again = await call(mock, "POST", "/api/sessions/ses-backoff/compact", {});
+    expect(again.status).toBe(409);
+  });
+
   it("refuses what the harness refuses, the way it refuses it", async () => {
     const mock = open("workbench");
     const refusals: [string, string, unknown?][] = [

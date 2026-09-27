@@ -8,6 +8,7 @@ import {
   abortRun,
   answerElicitation,
   answerQuestion,
+  compactSession,
   forkSession,
   getRunStatus,
   getSession,
@@ -18,6 +19,7 @@ import {
   setSessionTools,
 } from "@/api/routes";
 import type {
+  CompactRequest,
   ElicitationAnswer,
   Entry,
   PostMessage,
@@ -67,6 +69,15 @@ export function usePostMessage(sessionId: string): UseMutationResult<Run, Error,
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: PostMessage) => postMessage(sessionId, input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.runStatus(sessionId) }),
+  });
+}
+
+/** useCompact summarizes the older part of the conversation now. */
+export function useCompact(sessionId: string): UseMutationResult<Run, Error, CompactRequest> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CompactRequest) => compactSession(sessionId, input),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.runStatus(sessionId) }),
   });
 }

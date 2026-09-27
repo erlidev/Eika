@@ -1,0 +1,45 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "Profiles"
+    - tab "General"
+    - tab "Compaction" [selected]
+    - tab "Sandbox"
+    - tab "Search"
+    - tab "MCP"
+    - tab "Account"
+    - tab "Appearance"
+  - tabpanel "Compaction":
+    - heading "Compaction" [level=3]
+    - paragraph: When a conversation outgrows its model's context window, its older part is summarized by the same model and the summary takes its place; the newest messages stay as they are. The whole conversation stays in the session. Compact a session yourself with the Compact button under the message box, or type /compact and what the summary should focus on.
+    - form "Compaction":
+      - text: Compact automatically
+      - paragraph: Before a request that would leave less of the window free than the reserve, and once after an endpoint refuses a request as too large, which is then sent again. Off, a conversation that outgrows the window fails its run until it is compacted by hand.
+      - switch "Compact automatically" [checked]
+      - text: Reserve (tokens)
+      - spinbutton "Reserve (tokens)": /\d+/
+      - paragraph: /How much of the window stays free for the reply\. The summary is asked for with \d+% of it as its budget\./
+      - text: Keep recent (tokens)
+      - spinbutton "Keep recent (tokens)": /\d+/
+      - paragraph: Roughly how much of the newest conversation stays verbatim after a compaction.
+      - paragraph: A model with a small window uses at most a quarter of it for either, so that what a compaction leaves fits well below the point where it compacts again.
+      - text: Summary prompt
+      - button "Edit the built-in prompt"
+      - textbox "Summary prompt":
+        - /placeholder: The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+      - paragraph: Asks for the first summary of a conversation. Empty uses the built-in prompt. A focus given with /compact is added after it.
+      - text: Update prompt
+      - button "Edit the built-in prompt"
+      - textbox "Update prompt":
+        - /placeholder: The conversation above begins with an existing summary of earlier work, in <summary> tags; the messages after it are NEW. Update the existing summary with the new messages.
+      - paragraph: Asks for a new summary that folds the newer messages into the one the conversation already begins with. Empty uses the built-in prompt. A focus given with /compact is added after it.
+      - text: Split turn prompt
+      - button "Edit the built-in prompt"
+      - textbox "Split turn prompt":
+        - /placeholder: The most recent user request above began a turn that is too large to keep whole. Reply with a summary of the prefix alone, as context for the retained suffix.
+      - paragraph: Asks for a summary of the start of a turn too large to keep whole, when the cut falls inside it. Empty uses the built-in prompt.
+      - button "Save"
+      - button "Restore the defaults"
+  - button "Close"

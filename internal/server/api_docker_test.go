@@ -382,6 +382,14 @@ type settingsWire struct {
 		SandboxImage        string `json:"sandbox_image"`
 		SubagentMaxDepth    int    `json:"subagent_max_depth"`
 		SubagentMaxChildren int    `json:"subagent_max_children"`
+		Compaction          struct {
+			Auto             bool `json:"auto"`
+			ReserveTokens    int  `json:"reserve_tokens"`
+			KeepRecentTokens int  `json:"keep_recent_tokens"`
+			Prompts          struct {
+				Summary string `json:"summary"`
+			} `json:"prompts"`
+		} `json:"compaction"`
 	} `json:"defaults"`
 }
 
@@ -935,22 +943,35 @@ func TestSettingsAndModels(t *testing.T) {
 	if got.Defaults.SandboxImage != "eika-sandbox:latest" || got.Defaults.SubagentMaxDepth != 2 || got.Defaults.SubagentMaxChildren != 4 {
 		t.Errorf("defaults = %+v", got.Defaults)
 	}
+	if c := got.Defaults.Compaction; !c.Auto || c.ReserveTokens != 16384 || c.KeepRecentTokens != 20000 || !strings.HasPrefix(c.Prompts.Summary, "The messages above") {
+		t.Errorf("compaction defaults = %+v", c)
+	}
+	if rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{
+		"compaction": map[string]any{"auto": false, "keep_recent_tokens": 4096, "prompts": map[string]any{"summary": "Be brief."}},
+	}); rec.Code != 200 {
+		t.Errorf("a good compaction setting = %d: %s", rec.Code, rec.Body.String())
+	}
 
 	// The keys the harness reads are checked; one bad value writes nothing.
 	for name, body := range map[string]map[string]any{
-		"a default model that does not exist":   {"default_model": "gone"},
-		"a default model that is not a name":    {"default_model": 7},
-		"an empty sandbox image":                {"sandbox_image": ""},
-		"a sandbox image with a space":          {"sandbox_image": "eika sandbox"},
-		"a subagent depth of zero":              {"subagent_max_depth": 0},
-		"a subagent depth past the limit":       {"subagent_max_depth": 9},
-		"a child count that is not a number":    {"subagent_max_children": "two"},
-		"a setup flag that is not a boolean":    {"setup_complete": "yes"},
-		"utility models that are not an object": {"utility_models": "test-model"},
-		"a utility model for an unknown task":   {"utility_models": map[string]any{"summarise": "test-model"}},
-		"a utility model that does not exist":   {"utility_models": map[string]any{"session_title": "gone"}},
-		"a key that is too long":                {strings.Repeat("k", 65): true},
-		"a good key beside a bad one":           {"theme": "light", "subagent_max_depth": 0},
+		"a default model that does not exist":    {"default_model": "gone"},
+		"a default model that is not a name":     {"default_model": 7},
+		"an empty sandbox image":                 {"sandbox_image": ""},
+		"a sandbox image with a space":           {"sandbox_image": "eika sandbox"},
+		"a subagent depth of zero":               {"subagent_max_depth": 0},
+		"a subagent depth past the limit":        {"subagent_max_depth": 9},
+		"a child count that is not a number":     {"subagent_max_children": "two"},
+		"a setup flag that is not a boolean":     {"setup_complete": "yes"},
+		"utility models that are not an object":  {"utility_models": "test-model"},
+		"a utility model for an unknown task":    {"utility_models": map[string]any{"summarise": "test-model"}},
+		"a utility model that does not exist":    {"utility_models": map[string]any{"session_title": "gone"}},
+		"a compaction that is not an object":     {"compaction": true},
+		"a compaction with an unknown field":     {"compaction": map[string]any{"auto": true, "reserve": 1}},
+		"a compaction reserve that is too small": {"compaction": map[string]any{"reserve_tokens": 10}},
+		"a compaction keep that is too large":    {"compaction": map[string]any{"keep_recent_tokens": 1 << 30}},
+		"a compaction prompt that is too long":   {"compaction": map[string]any{"prompts": map[string]any{"update": strings.Repeat("p", 65<<10)}}},
+		"a key that is too long":                 {strings.Repeat("k", 65): true},
+		"a good key beside a bad one":            {"theme": "light", "subagent_max_depth": 0},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if rec := request(t, a.Server, "PUT", "/api/settings", body); rec.Code != 400 {

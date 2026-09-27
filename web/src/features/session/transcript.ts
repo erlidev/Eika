@@ -12,8 +12,15 @@
  */
 
 import { payloadOf } from "@/api/events";
-import type { EikaEvent, SessionMessage, Timings, TurnProgress, Usage } from "@/api/events";
-import type { Elicitation, Message, Question } from "@/api/types";
+import type {
+  CompactionReason,
+  EikaEvent,
+  SessionMessage,
+  Timings,
+  TurnProgress,
+  Usage,
+} from "@/api/events";
+import type { Compaction, Elicitation, Message, Question } from "@/api/types";
 
 /** UserItem is a message the user sent. */
 export type UserItem = {
@@ -90,9 +97,31 @@ export type NoticeItem = {
   text: string;
 };
 
+/**
+ * CompactionItem is a compaction: the conversation above it was summarized,
+ * and from here on the model reads the summary in its place. It stays on
+ * screen as a divider, so the reader keeps the history the model no longer
+ * sees.
+ */
+export type CompactionItem = {
+  kind: "compaction";
+  key: string;
+  runId: string;
+  entryId?: string;
+  reason: CompactionReason;
+  /** tokensBefore and tokensAfter are the context's estimated size. */
+  tokensBefore: number;
+  tokensAfter?: number;
+  summary: string;
+  /** running is whether the summary is still being written. */
+  running: boolean;
+  /** error says why a compaction failed, which leaves the conversation as it was. */
+  error?: string;
+};
+
 /** TranscriptItem is one renderable row of the session view. */
 export type TranscriptItem =
-  UserItem | AssistantItem | ReasoningItem | ToolItem | ErrorItem | NoticeItem;
+  UserItem | AssistantItem | ReasoningItem | ToolItem | ErrorItem | NoticeItem | CompactionItem;
 
 /**
  * Meter is what the status bar states about the turn: how much of the model's
@@ -270,6 +299,10 @@ export function applyEvent(state: TranscriptState, e: EikaEvent): TranscriptStat
       return applyElicitation(state, e);
     case "session.message":
       return applySessionMessage(state, e);
+    case "compaction.start":
+      return applyCompactionStart(state, e);
+    case "compaction.end":
+      return applyCompactionEnd(state, e);
     case "bus.dropped":
       return applyDropped(state, e);
     default:
@@ -562,6 +595,69 @@ function applyElicitation(state: TranscriptState, e: EikaEvent): TranscriptState
   return { ...state, elicitations: [...state.elicitations, elicitation] };
 }
 
+function applyCompactionStart(state: TranscriptState, e: EikaEvent): TranscriptState {
+  const p = payloadOf(e, "compaction.start");
+  if (!p) return state;
+  const live = seal(state.live);
+  const item: CompactionItem = {
+    kind: "compaction",
+    key: `${p.run_id}:compaction:${String(live.length)}`,
+    runId: p.run_id,
+    reason: p.reason,
+    tokensBefore: p.tokens_before,
+    summary: "",
+    running: true,
+  };
+  return { ...state, live: [...live, item] };
+}
+
+/**
+ * applyCompactionEnd finishes the compaction the run started. One that
+ * succeeded is stored: a compaction that is a run of its own is sealed so the
+ * replay brings its entry, and one inside a turn arrives with the turn's
+ * entries when the turn ends. The meter goes, because what it measured is a
+ * context the next request no longer sends.
+ */
+function applyCompactionEnd(state: TranscriptState, e: EikaEvent): TranscriptState {
+  const p = payloadOf(e, "compaction.end");
+  if (!p) return state;
+  let index = -1;
+  for (let i = state.live.length - 1; i >= 0; i -= 1) {
+    const item = state.live[i];
+    if (item?.kind === "compaction" && item.runId === p.run_id && item.running) {
+      index = i;
+      break;
+    }
+  }
+  const current = state.live[index];
+  if (index < 0 || current?.kind !== "compaction") return state;
+  const failed = p.error !== undefined && p.error !== "";
+  const done: CompactionItem = {
+    ...current,
+    running: false,
+    summary: p.summary ?? "",
+    ...(p.tokens_after === undefined ? {} : { tokensAfter: p.tokens_after }),
+    ...(failed ? { error: p.error } : {}),
+  };
+  const next = { ...state, live: replaceAt(state.live, index, done) };
+  if (failed) return next;
+  delete next.meter;
+  if (state.activeTurnId === p.run_id) return next;
+  return {
+    ...next,
+    sealedTurns: state.sealedTurns.includes(p.run_id)
+      ? state.sealedTurns
+      : [...state.sealedTurns, p.run_id],
+    needsReplay: true,
+  };
+}
+
+/** asCompaction narrows a stored compaction entry's payload. */
+function asCompaction(payload: unknown): Compaction | null {
+  if (!isRecord(payload) || typeof payload.summary !== "string") return null;
+  return payload as Compaction;
+}
+
 /** entryItems turns one stored entry into the items it renders as. */
 function entryItems(p: SessionMessage): TranscriptItem[] {
   const message = asMessage(p.message);
@@ -613,6 +709,22 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         });
       }
       return out;
+    }
+    case "compaction": {
+      const c = asCompaction(p.message);
+      return [
+        {
+          kind: "compaction",
+          key: p.entry_id,
+          runId: "",
+          entryId: p.entry_id,
+          reason: c?.reason ?? "manual",
+          tokensBefore: c?.tokens_before ?? 0,
+          ...(c === null ? {} : { tokensAfter: c.tokens_after }),
+          summary: c?.summary ?? "",
+          running: false,
+        },
+      ];
     }
     default:
       return [
@@ -669,6 +781,9 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
     needsReplay: false,
     ...(storedMeter === undefined ? {} : { meter: storedMeter }),
   };
+  // A measurement replayed from before a compaction is of a context the next
+  // request no longer sends.
+  if (p.kind === "compaction" && base.meter?.source === "replay") delete base.meter;
 
   // A tool result completes the call its assistant entry already introduced
   // rather than adding a row of its own.

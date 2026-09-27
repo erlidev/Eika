@@ -30,6 +30,11 @@ const (
 	TypeTurnProgress = "turn.progress"
 	// TypeTurnEnd reports that an assistant turn finished.
 	TypeTurnEnd = "turn.end"
+	// TypeCompactionStart reports that the conversation is being compacted:
+	// its oldest part summarized to free the model's context window.
+	TypeCompactionStart = "compaction.start"
+	// TypeCompactionEnd reports how a compaction ended.
+	TypeCompactionEnd = "compaction.end"
 	// TypeRunError reports that an agent run failed.
 	TypeRunError = "run.error"
 	// TypeQuestionAsked reports that the agent is waiting on a user answer.

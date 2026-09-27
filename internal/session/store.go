@@ -43,6 +43,16 @@ func (s *Store) Append(ctx context.Context, sessionID string, m provider.Message
 	return nil
 }
 
+// AppendCompaction records a compaction of a run.
+func (s *Store) AppendCompaction(ctx context.Context, sessionID string, c agent.Compaction) error {
+	e, err := CompactionEntry(c)
+	if err != nil {
+		return err
+	}
+	_, err = s.tree.Append(ctx, sessionID, e)
+	return err
+}
+
 // Load rebuilds the session a run works on from the database: the workspace
 // it belongs to and the conversation on its current branch. A run started
 // from a loaded session continues where the last one stopped, and a run

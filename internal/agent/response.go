@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -91,36 +90,101 @@ type response struct {
 // call sends the conversation to the model, streaming the response as
 // message.delta events, and retries a retryable failure with backoff. It
 // returns the response and the request it answered.
-func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Section, gen *generation) (response, Context, error) {
-	sent := a.assemble(s, prompt)
-	req := sent.Request()
-	if err := withinContextWindow(req, a.opts.ContextWindow); err != nil {
-		return response{}, Context{}, err
-	}
-
-	backoff := a.opts.RetryBackoff
-	for attempt := 0; ; attempt++ {
-		resp, err := a.stream(ctx, s, runID, req, gen)
+//
+// With automatic compaction on, a request that would leave less of the
+// window free than the reserve is compacted before it is sent, and a request
+// the endpoint refuses as too large is compacted and sent again, once each.
+// pendingMark is the turn's index of its first undelivered message, or -1;
+// a compaction moves it.
+func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Section, gen *generation, pendingMark *int) (response, Context, error) {
+	compacted, recovered := false, false
+	for {
+		msgs := s.Conversation.Messages()
+		sent := a.base(prompt).WithMessages(msgs)
+		tokens := estimateContext(sent, msgs)
+		if !compacted && a.shouldCompact(tokens) {
+			compacted = true
+			// A compaction that fails leaves the conversation as it was,
+			// which may still fit: the window bound decides.
+			if err := a.autoCompact(ctx, s, runID, prompt, pendingMark, event.CompactThreshold); err != nil && ctx.Err() != nil {
+				return response{}, Context{}, fmt.Errorf("call model: %w", ctx.Err())
+			}
+			continue
+		}
+		sent, err := fit(sent, tokens, a.opts.ContextWindow)
+		if err != nil {
+			return response{}, Context{}, err
+		}
+		resp, err := a.retrying(ctx, s, runID, true, func() (response, error) {
+			return a.stream(ctx, s, runID, sent.Request(), gen)
+		})
+		auto := a.opts.Compaction.Auto && !recovered
+		if err == nil && auto && silentOverflow(resp, a.opts.ContextWindow) {
+			err = errSilentOverflow
+		}
 		if err == nil {
 			return resp, sent, nil
 		}
-		if ctx.Err() != nil {
-			return response{}, Context{}, fmt.Errorf("call model: %w", ctx.Err())
-		}
-		if !provider.Retryable(err) || attempt >= a.opts.MaxRetries {
+		overflowed := provider.ContextOverflow(err) || errors.Is(err, errSilentOverflow)
+		if !auto || ctx.Err() != nil || !overflowed {
 			return response{}, Context{}, err
 		}
+		recovered, compacted = true, true
 		a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
+		if cerr := a.autoCompact(ctx, s, runID, prompt, pendingMark, event.CompactOverflow); cerr != nil {
+			return response{}, Context{}, errors.Join(err, cerr)
+		}
+	}
+}
+
+// autoCompact compacts the conversation in the middle of a turn, whose
+// undelivered messages begin at *pendingMark, or -1 for none. They stay
+// after the kept messages, and *pendingMark moves with them.
+func (a *Agent) autoCompact(ctx context.Context, s *Session, runID string, prompt []Section, pendingMark *int, reason string) error {
+	stored := s.Conversation.Len()
+	if *pendingMark >= 0 {
+		stored = *pendingMark
+	}
+	n, err := a.compact(ctx, s, runID, prompt, stored, reason, "")
+	if err != nil {
+		return err
+	}
+	if *pendingMark >= 0 {
+		*pendingMark = n
+	}
+	return nil
+}
+
+// retrying runs attempt, and again after each retryable failure up to the
+// retry budget, backing off in between. reset announces each retry with
+// message.reset, for an attempt that streams to the client. An overflow is
+// never retried: the same request fails the same way.
+func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bool, attempt func() (response, error)) (response, error) {
+	backoff := a.opts.RetryBackoff
+	for n := 0; ; n++ {
+		resp, err := attempt()
+		if err == nil {
+			return resp, nil
+		}
+		if ctx.Err() != nil {
+			return response{}, fmt.Errorf("call model: %w", ctx.Err())
+		}
+		if !provider.Retryable(err) || provider.ContextOverflow(err) || n >= a.opts.MaxRetries {
+			return response{}, err
+		}
+		if reset {
+			a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
+		}
 		wait := min(backoff, maxRetryBackoff)
 		if after := provider.RetryAfter(err); after > wait {
 			wait = min(after, maxRetryBackoff)
 		}
 		a.opts.Logger.Warn("model call failed, retrying",
-			"session_id", s.ID, "run_id", runID, "attempt", attempt+1, "wait", wait, "error", err)
+			"session_id", s.ID, "run_id", runID, "attempt", n+1, "wait", wait, "error", err)
 		select {
 		case <-time.After(wait):
 		case <-ctx.Done():
-			return response{}, Context{}, fmt.Errorf("call model: %w", ctx.Err())
+			return response{}, fmt.Errorf("call model: %w", ctx.Err())
 		}
 		backoff *= 2
 	}
@@ -129,7 +193,9 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 // stream consumes one provider response. It emits the answer and the model's
 // reasoning as they arrive, and a turn.progress event each time the endpoint
 // reports usage, timed from the response's first token so that what a client
-// derives from it is measured rather than estimated.
+// derives from it is measured rather than estimated. A nil gen reads the
+// response quietly, emitting and measuring nothing, which is how a summary
+// is read.
 func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation) (response, error) {
 	events, err := a.provider.Stream(ctx, req)
 	if err != nil {
@@ -158,11 +224,15 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 		case provider.KindTextDelta:
 			begin()
 			text.WriteString(e.Text)
-			a.emit(ctx, s, event.TypeMessageDelta, event.MessageDelta{RunID: runID, Text: e.Text})
+			if gen != nil {
+				a.emit(ctx, s, event.TypeMessageDelta, event.MessageDelta{RunID: runID, Text: e.Text})
+			}
 		case provider.KindReasoningDelta:
 			begin()
 			reasoning.WriteString(e.ReasoningDelta)
-			a.emit(ctx, s, event.TypeReasoningDelta, event.ReasoningDelta{RunID: runID, Text: e.ReasoningDelta})
+			if gen != nil {
+				a.emit(ctx, s, event.TypeReasoningDelta, event.ReasoningDelta{RunID: runID, Text: e.ReasoningDelta})
+			}
 		case provider.KindToolCallDelta:
 			begin()
 		case provider.KindToolCall:
@@ -176,7 +246,9 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 			if e.Timings.Known() {
 				timings = e.Timings
 			}
-			a.emitProgress(ctx, s, runID, gen, usage, timings, started)
+			if gen != nil {
+				a.emitProgress(ctx, s, runID, gen, usage, timings, started)
+			}
 		case provider.KindDone:
 			stop = e.StopReason
 			done = true
@@ -199,8 +271,10 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 		// carries a call with no result makes the next request malformed.
 		calls = nil
 	}
-	elapsed := elapsedSince(started)
-	gen.add(usage, elapsed, withHarnessDecode(timings, usage, elapsed))
+	if gen != nil {
+		elapsed := elapsedSince(started)
+		gen.add(usage, elapsed, withHarnessDecode(timings, usage, elapsed))
+	}
 	return response{
 		message: provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls),
 		stop:    stop,
@@ -244,31 +318,4 @@ func elapsedSince(start time.Time) time.Duration {
 		return 0
 	}
 	return time.Since(start)
-}
-
-// withinContextWindow applies a conservative token upper bound. Chat
-// Completions tokenizers encode UTF-8 bytes into no more tokens than bytes;
-// using the JSON wire size also includes message and tool framing. The
-// request's messages are the ones assemble prepared, which carry nothing the
-// provider does not receive.
-func withinContextWindow(req provider.Request, limit int) error {
-	if limit <= 0 {
-		return nil
-	}
-	data, err := json.Marshal(struct {
-		System   string             `json:"system"`
-		Messages []provider.Message `json:"messages"`
-		Tools    []provider.ToolDef `json:"tools"`
-	}{req.System, req.Messages, req.Tools})
-	if err != nil {
-		return fmt.Errorf("call model: estimate context: %w", err)
-	}
-	estimated := len(data)
-	if m := req.Sampling.MaxOutput; m != nil {
-		estimated += *m
-	}
-	if estimated > limit {
-		return fmt.Errorf("call model: context upper bound %d exceeds configured window %d", estimated, limit)
-	}
-	return nil
 }

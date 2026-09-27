@@ -165,6 +165,20 @@ export function emptyWorld(): World {
           marginalia: { day: 100 },
           github: {},
         },
+        compaction: {
+          auto: true,
+          reserve_tokens: 16384,
+          keep_recent_tokens: 20000,
+          // The start of each built-in prompt; the harness sends them whole.
+          prompts: {
+            summary:
+              "The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.",
+            update:
+              "The conversation above begins with an existing summary of earlier work, in <summary> tags; the messages after it are NEW. Update the existing summary with the new messages.",
+            turn_prefix:
+              "The most recent user request above began a turn that is too large to keep whole. Reply with a summary of the prefix alone, as context for the retained suffix.",
+          },
+        },
       },
     },
     search: searchStatus(),

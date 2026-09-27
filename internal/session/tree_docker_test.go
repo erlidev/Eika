@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
@@ -325,6 +326,51 @@ func TestLoadFollowsTheHead(t *testing.T) {
 	}
 	if _, err := st.Load(ctx, store.NewID()); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Load of a missing session = %v, want ErrNotFound", err)
+	}
+}
+
+func TestLoadFoldsACompaction(t *testing.T) {
+	tree, sess := newTree(t)
+	ctx := t.Context()
+	st := session.NewStore(tree, nil)
+
+	appendText(t, tree, sess.ID, provider.UserMessage("one"), "")
+	before := appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil), "")
+	appendText(t, tree, sess.ID, provider.UserMessage("three"), "")
+	if err := st.AppendCompaction(ctx, sess.ID, agent.Compaction{Summary: "one and two", Kept: 1, TokensBefore: 1234, Reason: "manual"}); err != nil {
+		t.Fatalf("AppendCompaction: %v", err)
+	}
+	appendText(t, tree, sess.ID, provider.AssistantMessage("four", nil), "")
+
+	loaded, err := st.Load(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := loaded.Conversation.Messages()
+	if len(got) != 3 || !got[0].Summary || got[0].Content != agent.SummaryMessage("one and two").Content ||
+		got[1].Content != "three" || got[2].Content != "four" {
+		t.Errorf("loaded conversation = %+v, want the summary, three, and four", got)
+	}
+
+	// A fork from before the compaction has the whole conversation.
+	fork, err := tree.Fork(ctx, sess.ID, before.ID, store.ForkOptions{Title: "earlier"})
+	if err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+	forked, err := st.Load(ctx, fork.ID)
+	if err != nil {
+		t.Fatalf("Load fork: %v", err)
+	}
+	if got := forked.Conversation.Messages(); len(got) != 2 || got[0].Content != "one" {
+		t.Errorf("forked conversation = %+v, want one and two", got)
+	}
+
+	nodes, err := tree.Outline(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Outline: %v", err)
+	}
+	if nodes[3].Kind != store.KindCompaction || nodes[3].Preview != "compacted about 1234 tokens into a summary" || !nodes[3].Resumable {
+		t.Errorf("compaction node = %+v", nodes[3])
 	}
 }
 

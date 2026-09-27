@@ -20,4 +20,9 @@
 // session's path so a run can resume where it stopped. An assistant entry
 // also records the workspace HEAD commit the response was produced at, which
 // is what forking with a workspace clones at.
+//
+// A compaction is an entry too. Messages folds a path into the conversation
+// it stands for, where each compaction entry replaces what came before it
+// with its summary and the messages it kept; the entries it covers stay, so
+// a branch from before it has the whole conversation.
 package session

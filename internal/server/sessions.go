@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
@@ -46,6 +47,9 @@ type entryBody struct {
 	Commit    string           `json:"commit,omitempty"`
 	CreatedAt time.Time        `json:"created_at"`
 	Message   provider.Message `json:"message"`
+	// Compaction is what a compaction entry records, and absent on the
+	// others.
+	Compaction *agent.Compaction `json:"compaction,omitempty"`
 }
 
 // createSessionRequest is the body of POST /api/sessions: a session in a
@@ -257,7 +261,6 @@ func (s *Server) handleSessionPath(w http.ResponseWriter, r *http.Request) {
 	body := pathResponse{
 		SessionID: id,
 		Entries:   make([]entryBody, 0, len(entries)),
-		Messages:  make([]provider.Message, 0, len(entries)),
 	}
 	for _, e := range entries {
 		entry, err := asEntry(e)
@@ -266,9 +269,10 @@ func (s *Server) handleSessionPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		body.Entries = append(body.Entries, entry)
-		if m, ok, err := session.Message(e); err == nil && ok {
-			body.Messages = append(body.Messages, m)
-		}
+	}
+	if body.Messages, err = session.Messages(entries); err != nil {
+		s.fail(w, r, err)
+		return
 	}
 	writeJSON(w, s.log, http.StatusOK, body)
 }
@@ -451,6 +455,13 @@ func asEntry(e store.Entry) (entryBody, error) {
 	}
 	if ok {
 		body.Message = m
+	}
+	if e.Kind == store.KindCompaction {
+		c, err := session.CompactionOf(e)
+		if err != nil {
+			return entryBody{}, err
+		}
+		body.Compaction = &c
 	}
 	return body, nil
 }

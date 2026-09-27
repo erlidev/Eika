@@ -575,3 +575,114 @@ describe("generation speed", () => {
     return last as object;
   }
 });
+
+describe("compaction", () => {
+  const usage = { input_tokens: 600, output_tokens: 400, total_tokens: 1000 };
+  const start = (runId: string, reason = "manual") =>
+    ev("compaction.start", { run_id: runId, reason, tokens_before: 48_000 });
+  const end = (runId: string, extra: Record<string, unknown> = {}) =>
+    ev("compaction.end", {
+      run_id: runId,
+      reason: "manual",
+      tokens_before: 48_000,
+      tokens_after: 6_000,
+      summary: "## Goal\nShip it.",
+      kept: 2,
+      usage,
+      ...extra,
+    });
+  const entry = (id: string, summary: string) =>
+    ev("session.message", {
+      session_id: sessionID,
+      entry_id: id,
+      kind: "compaction",
+      created_at: "2026-01-01T00:00:00Z",
+      message: {
+        summary,
+        kept: 2,
+        tokens_before: 48_000,
+        tokens_after: 6_000,
+        reason: "manual",
+        usage,
+      },
+    });
+
+  it("shows a compaction in progress, then its summary", () => {
+    const running = fold([start("k1")]);
+    expect(items(running).at(-1)).toMatchObject({
+      kind: "compaction",
+      running: true,
+      tokensBefore: 48_000,
+    });
+    const done = fold([end("k1")], running);
+    expect(items(done).at(-1)).toMatchObject({
+      kind: "compaction",
+      running: false,
+      tokensAfter: 6_000,
+      summary: "## Goal\nShip it.",
+    });
+  });
+
+  it("asks for the stored entry of a compaction that is a run of its own", () => {
+    const state = fold([start("k1"), end("k1")]);
+    expect(state.needsReplay).toBe(true);
+    const replayed = fold([entry("e9", "## Goal\nShip it.")], state);
+    expect(replayed.live).toHaveLength(0);
+    expect(items(replayed)).toHaveLength(1);
+    expect(items(replayed)[0]).toMatchObject({
+      kind: "compaction",
+      entryId: "e9",
+      summary: "## Goal\nShip it.",
+      running: false,
+    });
+  });
+
+  it("leaves a compaction inside a turn to the turn's own replay", () => {
+    const state = fold([...turn.slice(0, 1), start("r1", "threshold"), end("r1")]);
+    expect(state.needsReplay).toBe(false);
+    expect(state.sealedTurns).toEqual([]);
+    expect(items(state).map((item) => item.kind)).toEqual(["user", "compaction"]);
+  });
+
+  it("keeps a failed compaction on screen and asks for nothing", () => {
+    const state = fold([start("k1"), end("k1", { error: "the endpoint is down", summary: "" })]);
+    expect(state.needsReplay).toBe(false);
+    expect(items(state).at(-1)).toMatchObject({
+      kind: "compaction",
+      running: false,
+      error: "the endpoint is down",
+    });
+  });
+
+  it("drops the meter, whose context the next request no longer sends", () => {
+    const measured = fold(turn);
+    expect(measured.meter).toBeDefined();
+    expect(fold([start("k1"), end("k1")], measured).meter).toBeUndefined();
+    const failed = fold([start("k1"), end("k1", { error: "down" })], measured);
+    expect(failed.meter).toBeDefined();
+  });
+
+  it("does not restore a measurement from before a stored compaction", () => {
+    const state = fold([
+      ev("session.message", {
+        session_id: sessionID,
+        entry_id: "e1",
+        kind: "assistant",
+        created_at: "2026-01-01T00:00:00Z",
+        message: {
+          role: "assistant",
+          content: "done",
+          metrics: {
+            run_id: "r-old",
+            usage,
+            context: usage,
+            generation_ms: 100,
+            context_window: 8192,
+          },
+        },
+      }),
+      entry("e2", "## Goal"),
+    ]);
+    expect(state.meter).toBeUndefined();
+  });
+});

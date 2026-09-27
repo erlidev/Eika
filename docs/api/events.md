@@ -87,6 +87,9 @@ tool call, `tool.call`, any number of `tool.output`, and `tool.result`. A turn
 that asked for tools calls the model again, so these repeat. Whenever the
 endpoint reports token usage, the turn emits `turn.progress`. The turn ends
 with `turn.end`, or with `run.error` if it failed.
+Before a model call the turn may compact the conversation, which emits
+`compaction.start` and `compaction.end`; after an endpoint refused a call as
+too large, `message.reset` comes first.
 
 `run_id` identifies one turn and appears on every event of that turn.
 
@@ -233,6 +236,39 @@ and reports no `timings`.
 | `message` | string | What failed. |
 | `retryable` | boolean | The failure was of a retryable kind, so the run exhausted its retry budget. |
 
+### `compaction.start`
+
+The oldest part of the conversation is being summarized. It comes inside a
+turn, between `turn.start` and the model call it makes room for, or alone,
+from a run that `POST /api/sessions/{id}/compact` started and that has no
+`turn.start` or `turn.end`. Nothing streams while the summary is written.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `run_id` | string | The turn, or the compaction's own id when it is a run of its own. |
+| `reason` | string | `manual` (asked for), `threshold` (the next request would leave less of the window free than the reserve), or `overflow` (the endpoint refused a request as larger than its window; it is sent again after). |
+| `tokens_before` | number | The estimated size of the context being compacted. |
+
+### `compaction.end`
+
+The compaction finished. One that succeeded is stored as an entry of kind
+`compaction`, which a replay delivers: a compaction inside a turn with the
+turn's entries, and one that is a run of its own at once. The context the
+client last measured is no longer what the next request sends. One that
+failed carries `error` and changed nothing; a failed `threshold` compaction
+lets the turn go on with the conversation as it was.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `run_id` | string | As in `compaction.start`. |
+| `reason` | string | As in `compaction.start`. |
+| `tokens_before` | number | As in `compaction.start`. |
+| `tokens_after` | number, optional | The estimated size of the context that replaced it. |
+| `summary` | string, optional | The summary the context now begins with. |
+| `kept` | number, optional | How many messages of the context before stay after the summary. |
+| `usage` | object | What writing the summary cost, in the shape of `turn.end`'s `usage`. |
+| `error` | string, optional | Why the compaction failed. |
+
 ### `question.asked`
 
 The run called `ask_user` and is blocked until
@@ -377,10 +413,10 @@ renders a message it watched arrive live.
 | `session_id` | string | The session replayed. |
 | `entry_id` | string | The entry. Pass the last one you saw as `since` to resume. |
 | `parent_id` | string, optional | The entry it follows. |
-| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, or `event`. |
+| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, or `compaction`. |
 | `commit` | string, optional | The workspace HEAD commit the entry was produced at. |
 | `created_at` | time | When the entry was written. |
-| `message` | object | The entry's stored payload: a provider message for the conversation kinds. An assistant message can include `reasoning` and `metrics`; `metrics` holds `run_id`, turn `usage`, last-call `context`, `generation_ms`, `context_window`, and optional `timings`, so replay restores the context view and the speed the answer was produced at. Metrics are not sent to the provider. |
+| `message` | object | The entry's stored payload: a provider message for the conversation kinds. An assistant message can include `reasoning` and `metrics`; `metrics` holds `run_id`, turn `usage`, last-call `context`, `generation_ms`, `context_window`, and optional `timings`, so replay restores the context view and the speed the answer was produced at. Metrics are not sent to the provider. For a `compaction` entry it is the compaction: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason`, and `usage`. It stands for the conversation before it, which stays in the path; the model reads the summary and the last `kept` messages in its place. |
 
 ### `bus.dropped`
 

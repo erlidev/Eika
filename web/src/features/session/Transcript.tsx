@@ -13,6 +13,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
+import { Compaction } from "@/features/session/Compaction";
 import { useRewind, useSessionOutline, useRunStatus } from "@/features/session/queries";
 import { useTranscriptPreferences } from "@/features/session/preferences";
 import { Reasoning } from "@/features/session/Reasoning";
@@ -287,6 +288,8 @@ const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
       return <Assistant item={item} />;
     case "tool":
       return <ToolCard call={item} open={openTool} />;
+    case "compaction":
+      return <Compaction item={item} />;
     case "error":
       return (
         <div

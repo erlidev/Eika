@@ -1,6 +1,6 @@
 /**
- * The settings: models and providers, profiles, the harness-wide choices, the sandbox
- * defaults, web search,
+ * The settings: models and providers, profiles, the harness-wide choices,
+ * compaction, the sandbox defaults, web search,
  * MCP servers, the account, and how the app looks. Everything but the appearance is stored
  * in the harness. Its open state is `store.ts`, so anything can open it on a
  * tab.
@@ -36,6 +36,7 @@ import { ModelsPanel } from "@/features/providers";
 import { useTranscriptPreferences } from "@/features/session";
 import type { ReasoningDisplay } from "@/features/session";
 import { AccountSettings } from "@/features/settings/AccountSettings";
+import { CompactionSettings } from "@/features/settings/CompactionSettings";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
 import { settingKeys, useSaveSettings } from "@/features/settings/queries";
 import { SandboxSettings } from "@/features/settings/SandboxSettings";
@@ -52,6 +53,7 @@ const tabs: readonly { value: SettingsTab; label: string }[] = [
   { value: "models", label: "Models" },
   { value: "profiles", label: "Profiles" },
   { value: "general", label: "General" },
+  { value: "compaction", label: "Compaction" },
   { value: "sandbox", label: "Sandbox" },
   { value: "search", label: "Search" },
   { value: "mcp", label: "MCP" },
@@ -127,6 +129,9 @@ export function SettingsDialog() {
             </TabsContent>
             <TabsContent value="general">
               <GeneralSettings />
+            </TabsContent>
+            <TabsContent value="compaction">
+              <CompactionSettings />
             </TabsContent>
             <TabsContent value="sandbox">
               <SandboxSettings />

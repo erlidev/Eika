@@ -10,6 +10,7 @@ import type {
   AuthStatus,
   CommitRequest,
   CommitResult,
+  CompactRequest,
   Configuration,
   ContentDetail,
   CreateMCPServer,
@@ -303,6 +304,17 @@ export function postMessage(id: string, input: PostMessage): Promise<Run> {
 /** getRunStatus reads what the session is doing and what waits for it. */
 export function getRunStatus(id: string, signal?: AbortSignal): Promise<RunStatus> {
   return request<RunStatus>(`/api/sessions/${encodeURIComponent(id)}/run`, { signal });
+}
+
+/**
+ * compactSession summarizes the older part of a session's conversation, as a
+ * run of its own that the event stream reports on.
+ */
+export function compactSession(id: string, input: CompactRequest): Promise<Run> {
+  return request<Run>(`/api/sessions/${encodeURIComponent(id)}/compact`, {
+    method: "POST",
+    body: input,
+  });
 }
 
 /** abortRun cancels a run and waits for it to stop. */

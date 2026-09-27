@@ -4,6 +4,7 @@ package server_test
 
 import (
 	"errors"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -261,6 +262,53 @@ func TestRunRecordsAProviderFailure(t *testing.T) {
 	}
 	if !strings.Contains(state.Run.Error, errNoModel.Error()) {
 		t.Errorf("error = %q, want the provider's message", state.Run.Error)
+	}
+}
+
+func TestCompactRunsAsARunOfItsOwn(t *testing.T) {
+	a := newAPI(t)
+	sess := a.session(t)
+	p := a.script(providertest.Text("first answer"), providertest.Text("second answer"),
+		providertest.Text("SUMMARY"), providertest.Text("after"))
+	for _, text := range []string{"one", "two"} {
+		a.postMessage(t, sess.ID, text+" "+strings.Repeat("x", 8000), "", 202)
+		a.waitIdle(t, sess.ID)
+	}
+
+	// The default keeps 20,000 tokens, which is all of the conversation.
+	compact := func(body map[string]any) *httptest.ResponseRecorder {
+		return request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/compact", body)
+	}
+	if rec := compact(nil); rec.Code != 409 {
+		t.Fatalf("compact with nothing to summarize = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{
+		"compaction": map[string]any{"keep_recent_tokens": 1024},
+	}); rec.Code != 200 {
+		t.Fatalf("set compaction = %d: %s", rec.Code, rec.Body.String())
+	}
+	run := decodeBody[runWire](t, compact(map[string]any{"instructions": "the plan"}), 202)
+	state := a.waitIdle(t, sess.ID)
+	if state.Run == nil || state.Run.ID != run.ID || state.Run.State != "done" {
+		t.Fatalf("run = %+v, want the compaction done", state.Run)
+	}
+	summary := p.Requests()[2]
+	if got := summary.Messages[len(summary.Messages)-1].Content; !strings.HasSuffix(got, "\n\nAdditional focus: the plan") {
+		t.Errorf("summary prompt = %q, want the instructions as its focus", got)
+	}
+
+	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
+	if last := path.Entries[len(path.Entries)-1]; last.Kind != "compaction" {
+		t.Errorf("last entry = %+v, want the compaction", last)
+	}
+	if len(path.Messages) != 3 || !path.Messages[0].Summary || !strings.HasPrefix(path.Messages[1].Content, "two") {
+		t.Errorf("path messages = %+v, want the summary and the second turn", path.Messages)
+	}
+
+	a.postMessage(t, sess.ID, "three", "", 202)
+	a.waitIdle(t, sess.ID)
+	if got := p.Requests()[3].Messages[0].Content; !strings.Contains(got, "<summary>\nSUMMARY\n</summary>") {
+		t.Errorf("the run after the compaction began with %q, want the summary", got)
 	}
 }
 

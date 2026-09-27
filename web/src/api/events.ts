@@ -23,6 +23,8 @@ export type EventType =
   | "mcp.elicitation"
   | "session.title"
   | "session.message"
+  | "compaction.start"
+  | "compaction.end"
   | "bus.dropped";
 
 /** EikaEvent is the envelope every streamed event uses. */
@@ -225,7 +227,8 @@ export type SessionTitle = {
 };
 
 /** EntryKind is what one session entry holds. */
-export type EntryKind = "user" | "assistant" | "tool_call" | "tool_result" | "system" | "event";
+export type EntryKind =
+  "user" | "assistant" | "tool_call" | "tool_result" | "system" | "event" | "compaction";
 
 /** SessionMessage is the payload of a session.message event, which a replay sends. */
 export type SessionMessage = {
@@ -236,6 +239,44 @@ export type SessionMessage = {
   commit?: string;
   created_at: string;
   message: unknown;
+};
+
+/**
+ * CompactionReason is why a conversation was compacted: the user asked, the
+ * next request would have left less of the window free than the reserve, or
+ * the endpoint refused a request as larger than its window.
+ */
+export type CompactionReason = "manual" | "threshold" | "overflow";
+
+/**
+ * CompactionStart is the payload of a compaction.start event: the oldest part
+ * of the conversation is being summarized.
+ */
+export type CompactionStart = {
+  run_id: string;
+  reason: CompactionReason;
+  /** tokens_before is the estimated size of the context being compacted. */
+  tokens_before: number;
+};
+
+/**
+ * CompactionEnd is the payload of a compaction.end event. One that failed
+ * carries error and changed nothing; one that succeeded is stored as an entry
+ * of kind compaction.
+ */
+export type CompactionEnd = {
+  run_id: string;
+  reason: CompactionReason;
+  tokens_before: number;
+  /** tokens_after is the estimated size of the context that replaced it. */
+  tokens_after?: number;
+  /** summary now begins the context. */
+  summary?: string;
+  /** kept is how many messages stay after the summary. */
+  kept?: number;
+  /** usage is what making the summary cost. */
+  usage: Usage;
+  error?: string;
 };
 
 /** BusDropped is the payload of a bus.dropped event: this client lost events. */
@@ -267,6 +308,8 @@ export type EventPayloads = {
   "mcp.elicitation": MCPElicitation;
   "session.title": SessionTitle;
   "session.message": SessionMessage;
+  "compaction.start": CompactionStart;
+  "compaction.end": CompactionEnd;
   "bus.dropped": BusDropped;
 };
 
@@ -322,6 +365,8 @@ export const eventTypes: readonly EventType[] = [
   "mcp.elicitation",
   "session.title",
   "session.message",
+  "compaction.start",
+  "compaction.end",
   "bus.dropped",
 ];
 

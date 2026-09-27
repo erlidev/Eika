@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
@@ -165,6 +166,62 @@ func TestMessageSkipsNonConversationEntries(t *testing.T) {
 				t.Fatalf("Message(%s) = ok %v, err %v; want ok false", kind, ok, err)
 			}
 		})
+	}
+}
+
+func TestMessagesFoldCompactions(t *testing.T) {
+	t.Parallel()
+	entry := func(m provider.Message) store.Entry {
+		e, err := session.MessageEntry(m, "")
+		if err != nil {
+			t.Fatalf("MessageEntry: %v", err)
+		}
+		return e
+	}
+	compaction := func(summary string, kept int) store.Entry {
+		e, err := session.CompactionEntry(agent.Compaction{Summary: summary, Kept: kept, TokensBefore: 9000, Reason: "threshold"})
+		if err != nil {
+			t.Fatalf("CompactionEntry: %v", err)
+		}
+		return e
+	}
+	path := []store.Entry{
+		entry(provider.UserMessage("one")),
+		entry(provider.AssistantMessage("two", nil)),
+		{Kind: store.KindSystem, Payload: json.RawMessage(`{"text":"a note"}`)},
+		entry(provider.UserMessage("three")),
+		compaction("first", 1),
+		entry(provider.AssistantMessage("four", nil)),
+		entry(provider.UserMessage("five")),
+		compaction("second", 2),
+		entry(provider.AssistantMessage("six", nil)),
+	}
+	got, err := session.Messages(path)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	// The second compaction summarizes the first summary and three, and
+	// keeps four and five.
+	want := []provider.Message{
+		agent.SummaryMessage("second"),
+		provider.AssistantMessage("four", nil),
+		provider.UserMessage("five"),
+		provider.AssistantMessage("six", nil),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Messages = %d messages, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if !sameMessage(got[i], want[i]) || got[i].Summary != want[i].Summary {
+			t.Errorf("message %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	if _, ok, err := session.Message(path[4]); ok || err != nil {
+		t.Errorf("Message(compaction) = ok %v, err %v; want it outside the conversation", ok, err)
+	}
+	c, err := session.CompactionOf(path[7])
+	if err != nil || c.Summary != "second" || c.Kept != 2 || c.TokensBefore != 9000 {
+		t.Errorf("CompactionOf = %+v, %v", c, err)
 	}
 }
 

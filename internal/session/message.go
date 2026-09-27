@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -69,10 +70,20 @@ func Message(e store.Entry) (provider.Message, bool, error) {
 	return m, true, nil
 }
 
-// Messages returns the conversation a path of entries stands for.
+// Messages returns the conversation a path of entries stands for: its
+// messages in order, where each compaction replaces what came before it with
+// its summary and the messages it kept.
 func Messages(entries []store.Entry) ([]provider.Message, error) {
 	out := make([]provider.Message, 0, len(entries))
 	for _, e := range entries {
+		if e.Kind == store.KindCompaction {
+			c, err := CompactionOf(e)
+			if err != nil {
+				return nil, err
+			}
+			out = agent.Compacted(out, c)
+			continue
+		}
 		m, ok, err := Message(e)
 		if err != nil {
 			return nil, err
@@ -82,6 +93,24 @@ func Messages(entries []store.Entry) ([]provider.Message, error) {
 		}
 	}
 	return out, nil
+}
+
+// CompactionEntry returns the entry that records a compaction.
+func CompactionEntry(c agent.Compaction) (store.Entry, error) {
+	payload, err := json.Marshal(c)
+	if err != nil {
+		return store.Entry{}, fmt.Errorf("encode compaction: %w", err)
+	}
+	return store.Entry{Kind: store.KindCompaction, Payload: payload}, nil
+}
+
+// CompactionOf returns the compaction a compaction entry records.
+func CompactionOf(e store.Entry) (agent.Compaction, error) {
+	var c agent.Compaction
+	if err := json.Unmarshal(e.Payload, &c); err != nil {
+		return agent.Compaction{}, fmt.Errorf("decode compaction entry %s: %w", e.ID, err)
+	}
+	return c, nil
 }
 
 // kindOf maps a message role onto the entry kind that records it.
