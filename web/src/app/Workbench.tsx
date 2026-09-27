@@ -17,7 +17,7 @@ import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
 import { useMCPEvents } from "@/features/mcp";
 import { SessionView, useSession } from "@/features/session";
-import { useCreateSession, useSessionTitles } from "@/features/sessions";
+import { useCreateSession, useSessionUpdates } from "@/features/sessions";
 import { SettingsDialog, useSettingsDialog } from "@/features/settings";
 import { usePersistedNumber, usePersistedString } from "@/lib/persisted";
 import { nextTabIndex } from "@/lib/tablist";
@@ -50,7 +50,7 @@ export function Workbench() {
   useMCPEvents();
   // Untitled sessions are named in the background; the sidebar shows every
   // session, so the titles are followed here rather than in one session.
-  useSessionTitles();
+  useSessionUpdates();
 
   const tabs = availablePanels({ sessionId, workspaceId, chat });
   const panel = tabs.find((tab) => tab.id === activePanel) ?? tabs[0];

@@ -1,13 +1,17 @@
-/** The sidebar's Chats section: the sessions in no workspace, newest first. */
+/**
+ * The sidebar's Chats section: the sessions in no workspace, pinned ones
+ * first, then newest first, with the archived ones folded at the end.
+ */
 
 import { Plus } from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate } from "react-router";
 
 import type { Session } from "@/api/types";
+import { ArchivedGroup } from "@/app/SidebarRow";
 import { SessionRow } from "@/app/SidebarSession";
 import { Button } from "@/components/ui/button";
-import { sessionTree, useChats, useCreateSession } from "@/features/sessions";
+import { sessionTree, splitArchived, useChats, useCreateSession } from "@/features/sessions";
 import { failureText } from "@/lib/failure";
 
 /**
@@ -33,7 +37,20 @@ export function ChatList({ sessionId, onNavigate }: ChatListProps) {
   const chats = useChats();
   const create = useCreateSession();
   const navigate = useNavigate();
-  const tree = useMemo(() => sessionTree(newestFirst(chats.data ?? [])), [chats.data]);
+  const { active, archived } = useMemo(
+    () => splitArchived(sessionTree(newestFirst(chats.data ?? []))),
+    [chats.data],
+  );
+  const row = (node: (typeof active)[number], indent: number) => (
+    <SessionRow
+      key={node.session.id}
+      node={node}
+      depth={0}
+      indent={indent}
+      sessionId={sessionId}
+      onNavigate={onNavigate}
+    />
+  );
   return (
     <nav aria-label="Chats" className="flex max-h-2/5 shrink-0 flex-col border-t">
       <header className="flex items-center gap-1 border-b px-2 py-1.5">
@@ -77,16 +94,10 @@ export function ChatList({ sessionId, onNavigate }: ChatListProps) {
           </p>
         )}
         <ul>
-          {tree.map((node) => (
-            <SessionRow
-              key={node.session.id}
-              node={node}
-              depth={0}
-              indent={8}
-              sessionId={sessionId}
-              onNavigate={onNavigate}
-            />
-          ))}
+          {active.map((node) => row(node, 8))}
+          <ArchivedGroup count={archived.length} indent={8} what="chats">
+            {archived.map((node) => row(node, 20))}
+          </ArchivedGroup>
         </ul>
       </div>
     </nav>

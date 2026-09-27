@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Session } from "@/api/types";
-import { agentWorkspaces, sessionTree } from "@/features/sessions/tree";
+import { agentWorkspaces, sessionTree, splitArchived } from "@/features/sessions/tree";
 
 function session(id: string, over: Partial<Session> = {}): Session {
   return {
@@ -11,6 +11,8 @@ function session(id: string, over: Partial<Session> = {}): Session {
     kind: "user",
     tools: [],
     overridden: false,
+    pinned: false,
+    archived: false,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...over,
@@ -96,5 +98,43 @@ describe("agentWorkspaces", () => {
       parent_session_id: "chat",
     });
     expect([...agentWorkspaces([chat, fork])]).toEqual([]);
+  });
+});
+
+describe("pinning", () => {
+  it("puts pinned sessions first among their siblings and keeps the order otherwise", () => {
+    const tree = sessionTree([
+      session("a"),
+      session("b", { pinned: true }),
+      session("c"),
+      session("a1", { kind: "fork", parent_session_id: "a" }),
+      session("a2", { kind: "fork", parent_session_id: "a", pinned: true }),
+      session("d", { pinned: true }),
+    ]);
+    expect(shape(tree)).toBe("b, d, a(a2, a1), c");
+  });
+});
+
+describe("splitArchived", () => {
+  it("takes archived sessions out with what hangs under them", () => {
+    const { active, archived } = splitArchived(
+      sessionTree([
+        session("kept"),
+        session("gone", { archived: true }),
+        session("gone-fork", { kind: "fork", parent_session_id: "gone" }),
+        session("kept-fork", { kind: "fork", parent_session_id: "kept" }),
+        session("set-aside-fork", { kind: "fork", parent_session_id: "kept", archived: true }),
+      ]),
+    );
+    expect(shape(active)).toBe("kept(kept-fork)");
+    expect(shape(archived)).toBe("set-aside-fork, gone(gone-fork)");
+  });
+
+  it("leaves a tree with nothing archived as it was", () => {
+    const tree = sessionTree([
+      session("a"),
+      session("b", { kind: "fork", parent_session_id: "a" }),
+    ]);
+    expect(splitArchived(tree)).toEqual({ active: tree, archived: [] });
   });
 });

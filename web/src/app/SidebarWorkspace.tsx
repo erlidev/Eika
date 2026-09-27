@@ -1,18 +1,40 @@
 /** A workspace in the sidebar, with its actions and, when open, its sessions. */
 
-import { Play, Plus, Square, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Pencil,
+  Pin,
+  PinOff,
+  Play,
+  Plus,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import type { Workspace } from "@/api/types";
-import { IconButton, Row } from "@/app/SidebarRow";
 import { SessionRow } from "@/app/SidebarSession";
+import { ArchivedGroup, IconButton, Row, RowFailure } from "@/app/SidebarRow";
+import { useRenaming } from "@/app/useRenaming";
+import type { RowAction } from "@/app/SidebarRow";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { sessionTree, useCreateSession, useSessions } from "@/features/sessions";
-import { useDeleteWorkspace, useWorkspaceAction, WorkspaceStateBadge } from "@/features/workspaces";
+import { sessionTree, splitArchived, useCreateSession, useSessions } from "@/features/sessions";
+import {
+  useDeleteWorkspace,
+  useUpdateWorkspace,
+  useWorkspaceAction,
+  WorkspaceStateBadge,
+} from "@/features/workspaces";
+
+/** archivedStep is how much further in the rows under an Archived heading sit. */
+const archivedStep = 12;
 
 type WorkspaceRowProps = {
   workspace: Workspace;
+  /** indent is the row's left padding, in pixels. */
+  indent: number;
   open: boolean;
   onToggle: () => void;
   sessionId?: string;
@@ -21,71 +43,106 @@ type WorkspaceRowProps = {
 
 export function WorkspaceRow({
   workspace,
+  indent,
   open,
   onToggle,
   sessionId,
   onNavigate,
 }: WorkspaceRowProps) {
   const action = useWorkspaceAction();
+  const update = useUpdateWorkspace();
   const remove = useDeleteWorkspace();
   const create = useCreateSession();
   const navigate = useNavigate();
+  const renaming = useRenaming();
   const [confirming, setConfirming] = useState(false);
 
   const running = workspace.state === "running";
+  const menu: RowAction[] = [
+    {
+      label: running ? "Stop" : "Start",
+      icon: running ? Square : Play,
+      disabled: action.isPending || workspace.state === "creating" || workspace.state === "gone",
+      onSelect: () => {
+        action.mutate({ id: workspace.id, action: running ? "stop" : "start" });
+      },
+    },
+    {
+      label: "Rename",
+      icon: Pencil,
+      shortcut: "F2",
+      takesFocus: true,
+      separated: true,
+      onSelect: renaming.start,
+    },
+    {
+      label: workspace.pinned ? "Unpin" : "Pin",
+      icon: workspace.pinned ? PinOff : Pin,
+      onSelect: () => {
+        update.mutate({ id: workspace.id, changes: { pinned: !workspace.pinned } });
+      },
+    },
+    {
+      label: workspace.archived ? "Unarchive" : "Archive",
+      icon: workspace.archived ? ArchiveRestore : Archive,
+      onSelect: () => {
+        update.mutate({ id: workspace.id, changes: { archived: !workspace.archived } });
+      },
+    },
+    {
+      label: "Delete",
+      icon: Trash2,
+      destructive: true,
+      separated: true,
+      onSelect: () => {
+        setConfirming(true);
+      },
+    },
+  ];
 
   return (
     <li>
       <Row
-        depth={1}
-        open={open}
-        onToggle={onToggle}
+        indent={indent}
+        expanded={open}
+        onClick={onToggle}
         icon={<WorkspaceStateBadge workspaceId={workspace.id} state={workspace.state} />}
         label={workspace.name}
         meta={workspace.branch}
-        actions={
-          <>
-            <IconButton
-              label={running ? `Stop ${workspace.name}` : `Start ${workspace.name}`}
-              disabled={action.isPending}
-              onClick={() => {
-                action.mutate({ id: workspace.id, action: running ? "stop" : "start" });
-              }}
-            >
-              {running ? (
-                <Square aria-hidden className="size-3" />
-              ) : (
-                <Play aria-hidden className="size-3" />
-              )}
-            </IconButton>
-            <IconButton
-              label={`New session in ${workspace.name}`}
-              onClick={() => {
-                create.mutate(
-                  { workspace_id: workspace.id },
-                  {
-                    onSuccess: (session) => {
-                      onNavigate?.();
-                      void navigate(`/sessions/${session.id}`);
-                    },
+        pinned={workspace.pinned}
+        quick={
+          <IconButton
+            label={`New session in ${workspace.name}`}
+            disabled={create.isPending}
+            onClick={() => {
+              create.mutate(
+                { workspace_id: workspace.id },
+                {
+                  onSuccess: (session) => {
+                    onNavigate?.();
+                    void navigate(`/sessions/${session.id}`);
                   },
-                );
-              }}
-            >
-              <Plus aria-hidden className="size-3" />
-            </IconButton>
-            <IconButton
-              label={`Delete ${workspace.name}`}
-              destructive
-              onClick={() => {
-                setConfirming(true);
-              }}
-            >
-              <Trash2 aria-hidden className="size-3" />
-            </IconButton>
-          </>
+                },
+              );
+            }}
+          >
+            <Plus aria-hidden className="size-3" />
+          </IconButton>
         }
+        menu={menu}
+        renaming={renaming}
+        onRename={(name) => {
+          update.mutate({ id: workspace.id, changes: { name } });
+        }}
       />
+      <RowFailure
+        indent={indent}
+        action={running ? "stop the workspace" : "start the workspace"}
+        error={action.error}
+      />
+      <RowFailure indent={indent} action="change the workspace" error={update.error} />
+      <RowFailure indent={indent} action="destroy the workspace" error={remove.error} />
+      <RowFailure indent={indent} action="start a session" error={create.error} />
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
@@ -97,7 +154,12 @@ export function WorkspaceRow({
         }}
       />
       {open && (
-        <SessionList workspaceId={workspace.id} sessionId={sessionId} onNavigate={onNavigate} />
+        <SessionList
+          workspaceId={workspace.id}
+          indent={indent + 24}
+          sessionId={sessionId}
+          onNavigate={onNavigate}
+        />
       )}
     </li>
   );
@@ -105,6 +167,8 @@ export function WorkspaceRow({
 
 type SessionListProps = {
   workspaceId: string;
+  /** indent is the left padding of a session row directly under the workspace. */
+  indent: number;
   sessionId?: string;
   onNavigate?: () => void;
 };
@@ -113,27 +177,46 @@ type SessionListProps = {
  * SessionList holds the session query, for the same reason WorkspaceList
  * does. It asks for the descendants as well, because a fork with a workspace
  * and a child agent both live somewhere else and still belong under the
- * session they came from.
+ * session they came from. Archived sessions fold under a heading at the end.
  */
-function SessionList({ workspaceId, sessionId, onNavigate }: SessionListProps) {
+function SessionList({ workspaceId, indent, sessionId, onNavigate }: SessionListProps) {
   const sessions = useSessions(workspaceId, true);
-  const tree = useMemo(() => sessionTree(sessions.data ?? []), [sessions.data]);
+  const { active, archived } = useMemo(
+    () => splitArchived(sessionTree(sessions.data ?? [])),
+    [sessions.data],
+  );
+  const row = (node: (typeof active)[number], at: number) => (
+    <SessionRow
+      key={node.session.id}
+      node={node}
+      depth={0}
+      indent={at}
+      sessionId={sessionId}
+      onNavigate={onNavigate}
+    />
+  );
   return (
     <ul>
-      {sessions.isPending && <li className="text-muted-foreground py-1 pl-12 text-xs">Loading…</li>}
-      {tree.map((node) => (
-        <SessionRow
-          key={node.session.id}
-          node={node}
-          depth={0}
-          indent={40}
-          sessionId={sessionId}
-          onNavigate={onNavigate}
-        />
-      ))}
-      {sessions.data?.length === 0 && (
-        <li className="text-muted-foreground py-1 pl-12 text-xs">No sessions.</li>
+      {sessions.isPending && (
+        <li
+          className="text-muted-foreground py-1 text-xs"
+          style={{ paddingLeft: `${String(indent)}px` }}
+        >
+          Loading…
+        </li>
       )}
+      {active.map((node) => row(node, indent))}
+      {sessions.data !== undefined && active.length === 0 && (
+        <li
+          className="text-muted-foreground py-1 text-xs"
+          style={{ paddingLeft: `${String(indent)}px` }}
+        >
+          No sessions.
+        </li>
+      )}
+      <ArchivedGroup count={archived.length} indent={indent} what="sessions">
+        {archived.map((node) => row(node, indent + archivedStep))}
+      </ArchivedGroup>
     </ul>
   );
 }

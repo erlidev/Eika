@@ -1,11 +1,12 @@
 # workspaces
 
 A workspace is one sandbox container holding a checkout of a project. This
-feature creates them, starts and stops them, destroys them, and shows their
-lifecycle state.
+feature creates them, starts and stops them, renames, pins, and archives
+them, destroys them, and shows their lifecycle state.
 
-- `queries.ts` wraps `/api/workspaces`. `useWorkspaces(projectId?)` lists, and
-  `useWorkspace(id)` reads the one a session belongs to.
+- `queries.ts` wraps `/api/workspaces`. `useWorkspaces(projectId?)` lists,
+  `useWorkspace(id)` reads the one a session belongs to, and
+  `useUpdateWorkspace` renames, pins, or archives one.
 - `useWorkspaceEvents.ts` subscribes to `workspace:<id>` and invalidates the
   cached workspace when the harness reports a new state. Nothing polls.
 - `WorkspaceStateBadge.tsx` is that state as a badge.

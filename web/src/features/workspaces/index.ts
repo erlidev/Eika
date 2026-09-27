@@ -2,6 +2,7 @@
 export { CreateWorkspaceDialog } from "@/features/workspaces/CreateWorkspaceDialog";
 export {
   useDeleteWorkspace,
+  useUpdateWorkspace,
   useWorkspace,
   useWorkspaceAction,
   useWorkspaces,

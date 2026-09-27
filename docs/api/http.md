@@ -172,7 +172,7 @@ a rejected request leaves no container and writes no row.
 | Field | Type | Meaning |
 |---|---|---|
 | `project_id` | string, required | The project to check out. |
-| `name` | string, required | What the user calls this workspace. |
+| `name` | string, required | What the user calls this workspace, at most 200 characters. |
 | `branch` | string | The branch to work on. Defaults to the project's `default_branch`. |
 | `image` | string | The container image. Defaults to the `sandbox_image` setting, or the deployment's `eika-sandbox:latest`. Ignored when `build_context` is set. |
 | `build_context` | string | A directory on the Docker host holding a Dockerfile and its context; the image is built from it first. |
@@ -185,6 +185,21 @@ a rejected request leaves no container and writes no row.
 ### `GET /api/workspaces/{id}`
 
 `200` with the `Workspace`.
+
+### `PATCH /api/workspaces/{id}`
+
+Renames, pins, or archives a workspace. It is filing only: the branch, the
+container, and its state are left as they are.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | Renames it. Trimmed; empty or past 200 characters is `400`. |
+| `pinned` | boolean | Lists it before the other workspaces of its project. |
+| `archived` | boolean | Sets it aside under an Archived heading. |
+
+An absent field is left alone. `200` with the `Workspace`, `404` when there is
+none. It publishes `workspace.state` with the state unchanged, so the views
+of the workspace refresh.
 
 ### `POST /api/workspaces/{id}/start`
 
@@ -432,6 +447,8 @@ workspace that is not running.
 | `container_id` | string, optional | The Docker container id. |
 | `parent_workspace_id` | string, optional | The workspace it was branched from. |
 | `sandbox` | Sandbox | What the container may consume, reach, and expose. A workspace from before sandboxes has no limits, open egress, and no ports. |
+| `pinned` | boolean | Listed before the other workspaces of its project. |
+| `archived` | boolean | Set aside under an Archived heading; the container is left as it is. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ### Sandbox
@@ -469,7 +486,7 @@ client hangs each one under its `parent_session_id`.
 |---|---|---|
 | `workspace_id` | string | The workspace the session's runs act in. Required unless `chat` is set. |
 | `chat` | boolean | Open a chat, which has no workspace. |
-| `title` | string | What to call it. Empty or absent leaves it untitled: it is called `New session` (`New chat` for a chat) until its first run names it after the first message, when the `utility_models` setting assigns `session_title` a model. |
+| `title` | string | What to call it, at most 200 characters. Empty or absent leaves it untitled: it is called `New session` (`New chat` for a chat) until its first run names it after the first message, when the `utility_models` setting assigns `session_title` a model. |
 
 `201` with the `Session`. `400` for `chat` with a `workspace_id`; `404` when the workspace does not exist, which is also what
 leaving both out gives: a chat is asked for, never a fallback.
@@ -477,6 +494,20 @@ leaving both out gives: a chat is asked for, never a fallback.
 ### `GET /api/sessions/{id}`
 
 `200` with `{"session": Session, "head": Entry | absent}`.
+
+### `PATCH /api/sessions/{id}`
+
+Renames, pins, or archives a session. An archived session runs like any
+other; archiving is filing only.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `title` | string | Renames it. Trimmed; empty or past 200 characters is `400`. A session renamed while untitled is no longer named after its first message. |
+| `pinned` | boolean | Lists it before its siblings. |
+| `archived` | boolean | Sets it aside under an Archived heading. |
+
+An absent field is left alone. `200` with the `Session`, `404` when there is
+none. It publishes `session.updated` on `global`.
 
 ### `DELETE /api/sessions/{id}`
 
@@ -663,6 +694,8 @@ Every `tokens` figure is an estimate, four bytes to a token; only a record's
 | `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a workspace in a chat. |
 | `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. A fork and a child agent start with their parent's. |
 | `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. |
+| `pinned` | boolean | Listed before its siblings. |
+| `archived` | boolean | Set aside under an Archived heading; it runs like any other. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ### Entry

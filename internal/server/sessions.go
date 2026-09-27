@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
@@ -32,9 +34,14 @@ type sessionBody struct {
 	ProfileID string `json:"profile_id,omitempty"`
 	// Overridden reports whether the session sets anything of its own over
 	// its profile: its overrides or its tool choice.
-	Overridden bool      `json:"overridden"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	Overridden bool `json:"overridden"`
+	// Pinned sessions are listed before the others.
+	Pinned bool `json:"pinned"`
+	// Archived sessions are set aside under a heading of their own; they
+	// run like any other.
+	Archived  bool      `json:"archived"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // entryBody is one session entry on the wire, payload included.
@@ -56,6 +63,32 @@ type createSessionRequest struct {
 	// Title is what to call the session. Empty leaves it untitled until its
 	// first run names it.
 	Title string `json:"title"`
+}
+
+// updateSessionRequest is the body of PATCH /api/sessions/{id}. An absent
+// field is left alone.
+type updateSessionRequest struct {
+	// Title renames the session. A session renamed while untitled is no
+	// longer named after its first message.
+	Title    *string `json:"title"`
+	Pinned   *bool   `json:"pinned"`
+	Archived *bool   `json:"archived"`
+}
+
+// maxName is the most characters a session title or a workspace name holds.
+const maxName = 200
+
+// checkName trims a title or name the user chose and refuses one that is
+// empty or longer than maxName.
+func checkName(field, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	switch {
+	case value == "":
+		return "", invalidf("%s must not be empty", field)
+	case utf8.RuneCountInString(value) > maxName:
+		return "", invalidf("%s is longer than %d characters", field, maxName)
+	}
+	return value, nil
 }
 
 // setHeadRequest is the body of POST /api/sessions/{id}/head.
@@ -161,6 +194,9 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		if req.Chat {
 			title = untitledChat
 		}
+	} else if title, err = checkName("title", title); err != nil {
+		s.fail(w, r, err)
+		return
 	}
 	switch {
 	case req.Chat && req.WorkspaceID != "":
@@ -217,6 +253,41 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		body.Head = &entry
 	}
 	writeJSON(w, s.log, http.StatusOK, body)
+}
+
+// handleUpdateSession renames, pins, or archives a session, and tells every
+// client so that each sidebar redraws it.
+func (s *Server) handleUpdateSession(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[updateSessionRequest](r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	changes := store.SessionChanges{Pinned: req.Pinned, Archived: req.Archived}
+	if req.Title != nil {
+		title, err := checkName("title", *req.Title)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		changes.Title = &title
+	}
+	sess, err := s.deps.Store.UpdateSession(r.Context(), r.PathValue("id"), changes)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	e, err := event.New(event.TypeSessionUpdated, event.TopicGlobal, event.SessionUpdated{
+		SessionID:   sess.ID,
+		WorkspaceID: sess.WorkspaceID,
+	})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.deps.Bus.Emit(r.Context(), e)
+	s.log.Info("session updated", "session_id", sess.ID)
+	s.writeSession(w, r, http.StatusOK, sess)
 }
 
 // handleSessionOutline returns every entry of the tree without its payloads,
@@ -429,6 +500,8 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 		Tools:           s.sessionToolNames(sess, c.tools),
 		ProfileID:       sess.ProfileID,
 		Overridden:      !sess.Overrides.Empty() || sess.Tools != nil,
+		Pinned:          sess.Pinned,
+		Archived:        sess.Archived,
 		CreatedAt:       sess.CreatedAt,
 		UpdatedAt:       sess.UpdatedAt,
 	}, nil

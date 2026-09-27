@@ -173,8 +173,9 @@ func TestProjectsWorkspacesAndSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := st.SetSessionTitle(ctx, sess.ID, "renamed"); err != nil {
-		t.Fatalf("set session title: %v", err)
+	renamed := "renamed"
+	if _, err := st.UpdateSession(ctx, sess.ID, store.SessionChanges{Title: &renamed}); err != nil {
+		t.Fatalf("rename session: %v", err)
 	}
 	sessions, err := st.Sessions(ctx, ws.ID, false)
 	if err != nil || len(sessions) != 1 || sessions[0].Title != "renamed" {
@@ -490,20 +491,27 @@ func TestErrNotFound(t *testing.T) {
 
 	missing := store.NewID()
 	cases := map[string]error{
-		"project":       errOf(func() error { _, err := st.Project(ctx, missing); return err }),
-		"project name":  errOf(func() error { _, err := st.ProjectByName(ctx, missing); return err }),
-		"workspace":     errOf(func() error { _, err := st.Workspace(ctx, missing); return err }),
-		"session":       errOf(func() error { _, err := st.Session(ctx, missing); return err }),
-		"entry":         errOf(func() error { _, err := st.Entry(ctx, missing); return err }),
-		"run":           errOf(func() error { _, err := st.Run(ctx, missing); return err }),
-		"subagent":      errOf(func() error { _, err := st.Subagent(ctx, missing); return err }),
-		"setting":       errOf(func() error { _, err := st.Setting(ctx, missing); return err }),
-		"append":        errOf(func() error { _, err := st.AppendEntry(ctx, missing, store.Entry{Kind: store.KindUser}); return err }),
-		"set head":      st.SetSessionHead(ctx, sess.ID, missing),
-		"fork":          errOf(func() error { _, err := st.ForkSession(ctx, sess.ID, missing, store.ForkOptions{}); return err }),
-		"finish run":    st.FinishRun(ctx, missing, store.RunDone, ""),
-		"delete":        st.DeleteProject(ctx, missing),
-		"session title": st.SetSessionTitle(ctx, missing, "x"),
+		"project":      errOf(func() error { _, err := st.Project(ctx, missing); return err }),
+		"project name": errOf(func() error { _, err := st.ProjectByName(ctx, missing); return err }),
+		"workspace":    errOf(func() error { _, err := st.Workspace(ctx, missing); return err }),
+		"session":      errOf(func() error { _, err := st.Session(ctx, missing); return err }),
+		"entry":        errOf(func() error { _, err := st.Entry(ctx, missing); return err }),
+		"run":          errOf(func() error { _, err := st.Run(ctx, missing); return err }),
+		"subagent":     errOf(func() error { _, err := st.Subagent(ctx, missing); return err }),
+		"setting":      errOf(func() error { _, err := st.Setting(ctx, missing); return err }),
+		"append":       errOf(func() error { _, err := st.AppendEntry(ctx, missing, store.Entry{Kind: store.KindUser}); return err }),
+		"set head":     st.SetSessionHead(ctx, sess.ID, missing),
+		"fork":         errOf(func() error { _, err := st.ForkSession(ctx, sess.ID, missing, store.ForkOptions{}); return err }),
+		"finish run":   st.FinishRun(ctx, missing, store.RunDone, ""),
+		"delete":       st.DeleteProject(ctx, missing),
+		"update session": errOf(func() error {
+			_, err := st.UpdateSession(ctx, missing, store.SessionChanges{})
+			return err
+		}),
+		"update workspace": errOf(func() error {
+			_, err := st.UpdateWorkspace(ctx, missing, store.WorkspaceChanges{})
+			return err
+		}),
 	}
 	for name, err := range cases {
 		if !errors.Is(err, store.ErrNotFound) {
@@ -610,13 +618,64 @@ func TestUntitledSessions(t *testing.T) {
 	}
 
 	// A title someone set is final, even over the placeholder.
-	if err := st.SetSessionTitle(ctx, fork.ID, "Chosen"); err != nil {
-		t.Fatalf("set session title: %v", err)
+	chosen := "Chosen"
+	if _, err := st.UpdateSession(ctx, fork.ID, store.SessionChanges{Title: &chosen}); err != nil {
+		t.Fatalf("rename session: %v", err)
 	}
 	if ok, err := st.TitleUntitledSession(ctx, fork.ID, "Generated"); err != nil || ok {
 		t.Errorf("TitleUntitledSession after a rename = %v, %v; want the chosen title kept", ok, err)
 	}
 	if ok, err := st.TitleUntitledSession(ctx, "missing", "Generated"); err != nil || ok {
 		t.Errorf("TitleUntitledSession on a missing session = %v, %v; want false", ok, err)
+	}
+}
+
+// An edit changes the fields it names and leaves the rest, so renaming a
+// session does not unpin it and archiving a workspace does not rename it.
+func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+
+	project := newProject(t, st)
+	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+		ProjectID: project.ID, Name: "main", Branch: "main", State: "running",
+	})
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID, Title: "New session", Untitled: true})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	yes, no := true, false
+
+	got, err := st.UpdateSession(ctx, sess.ID, store.SessionChanges{Pinned: &yes})
+	if err != nil || !got.Pinned || got.Archived || got.Title != "New session" || !got.Untitled {
+		t.Fatalf("pin = %+v, %v; want pinned and otherwise unchanged", got, err)
+	}
+	title := "Named"
+	got, err = st.UpdateSession(ctx, sess.ID, store.SessionChanges{Title: &title, Archived: &yes})
+	if err != nil || !got.Pinned || !got.Archived || got.Title != "Named" || got.Untitled {
+		t.Fatalf("rename and archive = %+v, %v; want renamed, titled, archived, still pinned", got, err)
+	}
+	got, err = st.UpdateSession(ctx, sess.ID, store.SessionChanges{Pinned: &no, Archived: &no})
+	if err != nil || got.Pinned || got.Archived || got.Title != "Named" {
+		t.Fatalf("unpin and unarchive = %+v, %v", got, err)
+	}
+	if listed, err := st.Sessions(ctx, ws.ID, true); err != nil || len(listed) != 1 || listed[0].Title != "Named" {
+		t.Errorf("Sessions = %+v, %v; want the edited session", listed, err)
+	}
+
+	name := "renamed"
+	w, err := st.UpdateWorkspace(ctx, ws.ID, store.WorkspaceChanges{Archived: &yes})
+	if err != nil || !w.Archived || w.Pinned || w.Name != "main" {
+		t.Fatalf("archive workspace = %+v, %v; want archived and otherwise unchanged", w, err)
+	}
+	w, err = st.UpdateWorkspace(ctx, ws.ID, store.WorkspaceChanges{Name: &name, Pinned: &yes})
+	if err != nil || !w.Archived || !w.Pinned || w.Name != "renamed" || w.State != "running" {
+		t.Fatalf("rename and pin workspace = %+v, %v", w, err)
+	}
+	if w, err = st.Workspace(ctx, ws.ID); err != nil || !w.Pinned || !w.Archived || w.Name != "renamed" {
+		t.Errorf("Workspace = %+v, %v; want what was set", w, err)
 	}
 }

@@ -143,6 +143,11 @@ describe("the mock answers as the harness does", () => {
       ["GET /api/workspaces", "/api/workspaces?project_id=proj-api"],
       ["POST /api/workspaces", "/api/workspaces", { project_id: "proj-api", name: "try-jitter" }],
       ["GET /api/workspaces/{id}", "/api/workspaces/ws-retries"],
+      [
+        "PATCH /api/workspaces/{id}",
+        "/api/workspaces/ws-retries",
+        { name: "retries", pinned: true, archived: false },
+      ],
       ["POST /api/workspaces/{id}/stop", "/api/workspaces/ws-retries/stop"],
       ["POST /api/workspaces/{id}/start", "/api/workspaces/ws-retries/start"],
       ["GET /api/workspaces/{id}/diff", "/api/workspaces/ws-retries/diff"],
@@ -171,6 +176,11 @@ describe("the mock answers as the harness does", () => {
       ["GET /api/sessions", "/api/sessions?workspace_id=ws-retries&descendants=true"],
       ["POST /api/sessions", "/api/sessions", { workspace_id: "ws-retries", title: "Try jitter" }],
       ["GET /api/sessions/{id}", "/api/sessions/ses-backoff"],
+      [
+        "PATCH /api/sessions/{id}",
+        "/api/sessions/ses-backoff",
+        { title: "Back off", pinned: true, archived: true },
+      ],
       ["GET /api/sessions/{id}/outline", "/api/sessions/ses-backoff/outline"],
       ["POST /api/sessions/{id}/head", "/api/sessions/ses-backoff/head", { entry_id: head }],
       ["POST /api/sessions/{id}/fork", "/api/sessions/ses-backoff/fork", { entry_id: head }],

@@ -310,6 +310,8 @@ type workspaceWire struct {
 	Image      string      `json:"image"`
 	State      string      `json:"state"`
 	Sandbox    sandboxWire `json:"sandbox"`
+	Pinned     bool        `json:"pinned"`
+	Archived   bool        `json:"archived"`
 }
 
 type workspacesWire struct {
@@ -330,6 +332,8 @@ type sessionWire struct {
 	Kind            string `json:"kind"`
 	HeadEntryID     string `json:"head_entry_id"`
 	ParentSessionID string `json:"parent_session_id"`
+	Pinned          bool   `json:"pinned"`
+	Archived        bool   `json:"archived"`
 }
 
 type sessionsWire struct {
@@ -908,6 +912,87 @@ func TestSessionRoutes(t *testing.T) {
 	}
 	if rec := request(t, a.Server, "GET", "/api/sessions/"+fork.ID, nil); rec.Code != 404 {
 		t.Errorf("get after delete = %d, want 404", rec.Code)
+	}
+}
+
+// Renaming, pinning, and archiving are partial edits: each changes what the
+// request names, is refused when the name is blank, and tells the clients
+// that list the thing.
+func TestRenamePinAndArchive(t *testing.T) {
+	a := newAPI(t)
+	project, dir := a.newProject(t, "demo")
+	initRepo(t, dir)
+	ws := a.newWorkspace(t, project.ID)
+	sess := a.newSession(t, ws.ID)
+	global := a.Bus().Subscribe(event.TopicGlobal)
+	defer global.Close()
+	wsEvents := a.Bus().Subscribe(event.WorkspaceTopic(ws.ID))
+	defer wsEvents.Close()
+
+	pinned := decodeBody[sessionWire](t, request(t, a.Server, "PATCH", "/api/sessions/"+sess.ID,
+		map[string]any{"pinned": true}), 200)
+	if !pinned.Pinned || pinned.Archived || pinned.Title != sess.Title {
+		t.Errorf("pinned session = %+v, want pinned and otherwise unchanged", pinned)
+	}
+	renamed := decodeBody[sessionWire](t, request(t, a.Server, "PATCH", "/api/sessions/"+sess.ID,
+		map[string]any{"title": "  Login loop  ", "archived": true}), 200)
+	if renamed.Title != "Login loop" || !renamed.Archived || !renamed.Pinned {
+		t.Errorf("renamed session = %+v, want the trimmed title, archived, still pinned", renamed)
+	}
+	waitFor(t, "a session.updated event", func() bool {
+		select {
+		case e := <-global.Events():
+			var got event.SessionUpdated
+			if e.Type != event.TypeSessionUpdated {
+				return false
+			}
+			if err := e.DecodePayload(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got != (event.SessionUpdated{SessionID: sess.ID, WorkspaceID: ws.ID}) {
+				t.Errorf("session.updated = %+v", got)
+			}
+			return true
+		default:
+			return false
+		}
+	})
+
+	named := decodeBody[workspaceWire](t, request(t, a.Server, "PATCH", "/api/workspaces/"+ws.ID,
+		map[string]any{"name": "login fix", "archived": true}), 200)
+	if named.Name != "login fix" || !named.Archived || named.Pinned || named.State != "running" {
+		t.Errorf("updated workspace = %+v, want renamed and archived, still running", named)
+	}
+	waitFor(t, "a workspace.state event", func() bool {
+		select {
+		case e := <-wsEvents.Events():
+			return e.Type == event.TypeWorkspaceState
+		default:
+			return false
+		}
+	})
+	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID, nil), 200)
+	if got.Name != "login fix" || !got.Archived {
+		t.Errorf("workspace = %+v, want the edit kept", got)
+	}
+
+	refused := []struct {
+		name, path string
+		body       map[string]any
+		status     int
+	}{
+		{"blank title", "/api/sessions/" + sess.ID, map[string]any{"title": "  "}, 400},
+		{"long title", "/api/sessions/" + sess.ID, map[string]any{"title": strings.Repeat("x", 201)}, 400},
+		{"blank name", "/api/workspaces/" + ws.ID, map[string]any{"name": ""}, 400},
+		{"missing session", "/api/sessions/missing", map[string]any{"pinned": true}, 404},
+		{"missing workspace", "/api/workspaces/missing", map[string]any{"pinned": true}, 404},
+	}
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			if rec := request(t, a.Server, "PATCH", tc.path, tc.body); rec.Code != tc.status {
+				t.Errorf("PATCH %s = %d, want %d: %s", tc.path, rec.Code, tc.status, rec.Body.String())
+			}
+		})
 	}
 }
 

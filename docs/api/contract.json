@@ -784,12 +784,14 @@
             "nullable": {
               "array": {
                 "object": {
+                  "archived": "boolean",
                   "created_at": "string",
                   "head_entry_id": "string",
                   "id": "string",
                   "kind": "string",
                   "overridden": "boolean",
                   "parent_session_id": "string",
+                  "pinned": "boolean",
                   "profile_id": "string",
                   "title": "string",
                   "tools": {
@@ -902,12 +904,14 @@
           },
           "session": {
             "object": {
+              "archived": "boolean",
               "created_at": "string",
               "head_entry_id": "string",
               "id": "string",
               "kind": "string",
               "overridden": "boolean",
               "parent_session_id": "string",
+              "pinned": "boolean",
               "profile_id": "string",
               "title": "string",
               "tools": {
@@ -1996,6 +2000,7 @@
             "nullable": {
               "array": {
                 "object": {
+                  "archived": "boolean",
                   "base_commit": "string",
                   "branch": "string",
                   "container_id": "string",
@@ -2004,6 +2009,7 @@
                   "image": "string",
                   "name": "string",
                   "parent_workspace_id": "string",
+                  "pinned": "boolean",
                   "project_id": "string",
                   "sandbox": {
                     "object": {
@@ -2057,6 +2063,7 @@
       "status": 200,
       "response": {
         "object": {
+          "archived": "boolean",
           "base_commit": "string",
           "branch": "string",
           "container_id": "string",
@@ -2065,6 +2072,7 @@
           "image": "string",
           "name": "string",
           "parent_workspace_id": "string",
+          "pinned": "boolean",
           "project_id": "string",
           "sandbox": {
             "object": {
@@ -2347,6 +2355,109 @@
         },
         "optional": [
           "api_key_hint"
+        ]
+      }
+    },
+    "PATCH /api/sessions/{id}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "archived": "boolean",
+          "pinned": "boolean",
+          "title": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "archived": "boolean",
+          "created_at": "string",
+          "head_entry_id": "string",
+          "id": "string",
+          "kind": "string",
+          "overridden": "boolean",
+          "parent_session_id": "string",
+          "pinned": "boolean",
+          "profile_id": "string",
+          "title": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "updated_at": "string",
+          "workspace_id": "string"
+        },
+        "optional": [
+          "head_entry_id",
+          "parent_session_id",
+          "profile_id",
+          "workspace_id"
+        ]
+      }
+    },
+    "PATCH /api/workspaces/{id}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "archived": "boolean",
+          "name": "string",
+          "pinned": "boolean"
+        }
+      },
+      "response": {
+        "object": {
+          "archived": "boolean",
+          "base_commit": "string",
+          "branch": "string",
+          "container_id": "string",
+          "created_at": "string",
+          "id": "string",
+          "image": "string",
+          "name": "string",
+          "parent_workspace_id": "string",
+          "pinned": "boolean",
+          "project_id": "string",
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              },
+              "ports": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "label": "string",
+                      "port": "number"
+                    },
+                    "optional": [
+                      "label"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "state": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "base_commit",
+          "container_id",
+          "parent_workspace_id"
         ]
       }
     },
@@ -3266,12 +3377,14 @@
       },
       "response": {
         "object": {
+          "archived": "boolean",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
           "parent_session_id": "string",
+          "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
           "tools": {
@@ -3301,12 +3414,14 @@
       },
       "response": {
         "object": {
+          "archived": "boolean",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
           "parent_session_id": "string",
+          "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
           "tools": {
@@ -3334,12 +3449,14 @@
       },
       "response": {
         "object": {
+          "archived": "boolean",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
           "parent_session_id": "string",
+          "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
           "tools": {
@@ -3471,6 +3588,7 @@
       },
       "response": {
         "object": {
+          "archived": "boolean",
           "base_commit": "string",
           "branch": "string",
           "container_id": "string",
@@ -3479,6 +3597,7 @@
           "image": "string",
           "name": "string",
           "parent_workspace_id": "string",
+          "pinned": "boolean",
           "project_id": "string",
           "sandbox": {
             "object": {
@@ -3595,6 +3714,7 @@
       "status": 200,
       "response": {
         "object": {
+          "archived": "boolean",
           "base_commit": "string",
           "branch": "string",
           "container_id": "string",
@@ -3603,6 +3723,7 @@
           "image": "string",
           "name": "string",
           "parent_workspace_id": "string",
+          "pinned": "boolean",
           "project_id": "string",
           "sandbox": {
             "object": {
@@ -3652,6 +3773,7 @@
       "status": 200,
       "response": {
         "object": {
+          "archived": "boolean",
           "base_commit": "string",
           "branch": "string",
           "container_id": "string",
@@ -3660,6 +3782,7 @@
           "image": "string",
           "name": "string",
           "parent_workspace_id": "string",
+          "pinned": "boolean",
           "project_id": "string",
           "sandbox": {
             "object": {
@@ -4294,12 +4417,14 @@
       },
       "response": {
         "object": {
+          "archived": "boolean",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
           "parent_session_id": "string",
+          "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
           "tools": {
@@ -4421,6 +4546,7 @@
       },
       "response": {
         "object": {
+          "archived": "boolean",
           "base_commit": "string",
           "branch": "string",
           "container_id": "string",
@@ -4429,6 +4555,7 @@
           "image": "string",
           "name": "string",
           "parent_workspace_id": "string",
+          "pinned": "boolean",
           "project_id": "string",
           "sandbox": {
             "object": {
@@ -4587,6 +4714,15 @@
       "object": {
         "session_id": "string",
         "title": "string",
+        "workspace_id": "string"
+      },
+      "optional": [
+        "workspace_id"
+      ]
+    },
+    "session.updated": {
+      "object": {
+        "session_id": "string",
         "workspace_id": "string"
       },
       "optional": [

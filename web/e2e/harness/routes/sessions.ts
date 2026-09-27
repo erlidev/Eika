@@ -11,7 +11,7 @@ import {
 } from "../profiles.ts";
 import type { ConfigurationDraft } from "../profiles.ts";
 import { sessionTools } from "../world.ts";
-import { fail, ok, str } from "./context.ts";
+import { checkName, fail, ok, str } from "./context.ts";
 import type { Reply, RouteContext } from "./context.ts";
 
 function preview(message: Message): string {
@@ -97,6 +97,8 @@ export function sessionRoutes(ctx: RouteContext): void {
       kind: "user",
       tools: sessionTools(w, chat),
       overridden: false,
+      pinned: false,
+      archived: false,
       created_at: now(),
       updated_at: now(),
     };
@@ -111,6 +113,27 @@ export function sessionRoutes(ctx: RouteContext): void {
     if ("status" in row) return row;
     const head = (w.entries[row.id] ?? []).find((e) => e.id === row.head_entry_id);
     return ok({ session: row, ...(head ? { head } : {}) });
+  });
+  on("PATCH", "/api/sessions/{id}", ({ params, body }) => {
+    const row = find(w.sessions, params[0], "session");
+    if ("status" in row) return row;
+    if (body.title !== undefined) {
+      const title = checkName("title", body.title);
+      if (typeof title !== "string") return title;
+      row.title = title;
+      // A title someone chose is final: the first run no longer names it.
+      w.untitled = w.untitled.filter((id) => id !== row.id);
+    }
+    if (typeof body.pinned === "boolean") row.pinned = body.pinned;
+    if (typeof body.archived === "boolean") row.archived = body.archived;
+    row.updated_at = now();
+    ctx.emit(
+      ctx.event("session.updated", "global", {
+        session_id: row.id,
+        ...(row.workspace_id === undefined ? {} : { workspace_id: row.workspace_id }),
+      }),
+    );
+    return ok(row);
   });
   on("DELETE", "/api/sessions/{id}", ({ params }) => {
     w.sessions = w.sessions.filter((s) => s.id !== params[0]);
@@ -164,6 +187,8 @@ export function sessionRoutes(ctx: RouteContext): void {
       ...(source.profile_id === undefined ? {} : { profile_id: source.profile_id }),
       parent_session_id: source.id,
       head_entry_id: str(body.entry_id),
+      pinned: false,
+      archived: false,
       created_at: now(),
       updated_at: now(),
     };

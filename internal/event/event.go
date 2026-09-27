@@ -49,6 +49,9 @@ const (
 	// TypeSessionTitle reports that a session was given the title made
 	// from its first message.
 	TypeSessionTitle = "session.title"
+	// TypeSessionUpdated reports that the user renamed, pinned, unpinned,
+	// archived, or unarchived a session.
+	TypeSessionUpdated = "session.updated"
 	// TypeSessionMessage carries one stored session entry, which is how a
 	// client replays the messages it missed.
 	TypeSessionMessage = "session.message"

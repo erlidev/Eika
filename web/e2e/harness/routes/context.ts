@@ -51,6 +51,19 @@ export function fail(status: number, code: string, message: string): Reply {
   return { status, body: { error: { code, message } } };
 }
 
+/**
+ * checkName trims a title or a name the user chose, or answers the refusal
+ * the harness gives an empty one or one past 200 characters.
+ */
+export function checkName(field: string, value: unknown): string | Reply {
+  const name = str(value).trim();
+  if (name === "") return fail(400, "invalid_request", `${field} must not be empty`);
+  if (Array.from(name).length > 200) {
+    return fail(400, "invalid_request", `${field} is longer than 200 characters`);
+  }
+  return name;
+}
+
 export function str(value: unknown): string {
   return typeof value === "string" ? value : "";
 }

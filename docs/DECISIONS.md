@@ -200,6 +200,16 @@ this file says why, so neither repeats the other.
   set, so a later run tries again.
 - Titles arrive as `session.title` on `global`, since every sidebar shows
   every session, not only the one open.
+- **Pinning and archiving are filing, not state.** They are two boolean
+  columns on `sessions` and `workspaces`, edited with `PATCH` on the
+  resource, and change nothing else: an archived session still runs, and an
+  archived workspace's container is neither stopped nor started. Stopping on
+  archive was rejected because it would abort runs as a side effect of
+  tidying the sidebar; Stop is one menu item away. The listings return
+  archived rows with the rest and the client splits them off, so one request
+  still returns a workspace's whole session tree. A user's rename or filing
+  goes out as `session.updated` rather than as `session.title`, which means
+  "the harness named an untitled session".
 
 ## Tools
 
