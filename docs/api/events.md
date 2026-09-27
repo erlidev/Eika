@@ -100,7 +100,8 @@ too large, `message.reset` comes first.
 | `run_id` | string | Identifies the turn. |
 | `session_id` | string | The session the turn runs in. |
 | `workspace_id` | string, optional | The workspace the session belongs to. Absent in a chat. |
-| `message` | string | The user message that started the turn. Empty when the turn was started by tools alone. |
+| `message` | string | The user message that started the turn. Empty when the turn was started by tools alone, or by images alone. |
+| `images` | array, optional | The images the message carries, as `session.message` stores them: `media_type`, base64 `data`, `width`, `height`. |
 
 ### `message.delta`
 

@@ -18,6 +18,7 @@ type modelBody struct {
 	ReasoningEfforts []string  `json:"reasoning_efforts"`
 	ThinkingSwitch   string    `json:"thinking_switch"`
 	PreserveThinking bool      `json:"preserve_thinking"`
+	ImageInput       bool      `json:"image_input"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
@@ -43,6 +44,7 @@ type createModelRequest struct {
 	ReasoningEfforts []string `json:"reasoning_efforts"`
 	ThinkingSwitch   string   `json:"thinking_switch"`
 	PreserveThinking bool     `json:"preserve_thinking"`
+	ImageInput       bool     `json:"image_input"`
 }
 
 // updateModelRequest is the body of PATCH /api/models/{id}. An absent field
@@ -56,6 +58,7 @@ type updateModelRequest struct {
 	ReasoningEfforts *[]string `json:"reasoning_efforts"`
 	ThinkingSwitch   *string   `json:"thinking_switch"`
 	PreserveThinking *bool     `json:"preserve_thinking"`
+	ImageInput       *bool     `json:"image_input"`
 }
 
 // testModelRequest is the body of POST /api/models/test: a model on a stored
@@ -66,6 +69,9 @@ type testModelRequest struct {
 	ReasoningEffort  string `json:"reasoning_effort"`
 	ThinkingSwitch   string `json:"thinking_switch"`
 	PreserveThinking bool   `json:"preserve_thinking"`
+	// ImageInput sends a small picture with the question, which proves the
+	// endpoint takes images for the model.
+	ImageInput bool `json:"image_input"`
 }
 
 // testModelResponse is the body of POST /api/models/test.
@@ -100,6 +106,7 @@ func asModel(m store.Model) modelBody {
 		ReasoningEfforts: effortList(m.ReasoningEfforts),
 		ThinkingSwitch:   m.ThinkingSwitch,
 		PreserveThinking: m.PreserveThinking,
+		ImageInput:       m.ImageInput,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
 	}

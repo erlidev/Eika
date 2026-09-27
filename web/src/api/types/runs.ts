@@ -27,13 +27,20 @@ export type Question = {
   asked_at: string;
 };
 
+/** QueuedMessage is a message waiting in a run's queue. */
+export type QueuedMessage = {
+  text: string;
+  /** images is how many images the message carries. */
+  images: number;
+};
+
 /** RunStatus is the body of GET /api/sessions/{id}/run. */
 export type RunStatus = {
   session_id: string;
   active: boolean;
   run?: Run;
-  pending_steering: string[];
-  pending_follow_ups: string[];
+  pending_steering: QueuedMessage[];
+  pending_follow_ups: QueuedMessage[];
   questions: Question[];
   /** elicitations are what MCP servers asked the user during this session's tool calls. */
   elicitations: Elicitation[];
@@ -50,9 +57,16 @@ export type CompactRequest = {
   model?: string;
 };
 
+/** PostImage is one image attached to a posted message: the base64 file. */
+export type PostImage = {
+  data: string;
+};
+
 /** PostMessage is the body of POST /api/sessions/{id}/messages. */
 export type PostMessage = {
+  /** text may be empty when images carries at least one image. */
   text: string;
+  images?: PostImage[];
   mode?: MessageMode;
   model?: string;
 };

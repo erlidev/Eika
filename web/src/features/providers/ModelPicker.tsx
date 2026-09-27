@@ -61,7 +61,12 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
     if (chosen.some((c) => c.id === id)) return;
     setChosen([
       ...chosen,
-      { id, name: suggestModelName(id, provider.name, takenNames), ...suggestLimits(id, info) },
+      {
+        id,
+        name: suggestModelName(id, provider.name, takenNames),
+        ...suggestLimits(id, info),
+        image_input: info?.image_input ?? false,
+      },
     ]);
   };
   const drop = (id: string) => {
@@ -103,6 +108,7 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
             model: choice.id,
             context_window: choice.context_window,
             max_output: choice.max_output,
+            image_input: choice.image_input,
           }),
         );
       } catch (error) {
@@ -322,7 +328,11 @@ function ChoiceRow({ provider, choice, problem, onChange, onRemove }: ChoiceRowP
           variant="outline"
           disabled={test.isPending}
           onClick={() => {
-            test.mutate({ provider_id: provider.id, model: choice.id });
+            test.mutate({
+              provider_id: provider.id,
+              model: choice.id,
+              image_input: choice.image_input,
+            });
           }}
         >
           {test.isPending ? "Testing…" : "Test"}
@@ -371,6 +381,18 @@ function ChoiceRow({ provider, choice, problem, onChange, onRemove }: ChoiceRowP
             onChange({ max_output });
           }}
         />
+      </div>
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={`${base}-images`}
+          checked={choice.image_input}
+          onCheckedChange={(checked) => {
+            onChange({ image_input: checked === true });
+          }}
+        />
+        <Label htmlFor={`${base}-images`} className="text-xs font-normal">
+          Accepts images
+        </Label>
       </div>
       {test.isSuccess && (
         <Notice tone="success">

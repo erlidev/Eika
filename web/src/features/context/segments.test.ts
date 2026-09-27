@@ -29,7 +29,7 @@ function request(over: Partial<ModelContext> = {}): ModelContext {
     messages: [{ role: "user", content: "hi" }],
     message_tokens: 10,
     message_sizes: [10],
-    parameters: { model: "m", sampling: {}, preserve_thinking: false },
+    parameters: { model: "m", sampling: {}, preserve_thinking: false, image_input: false },
     sources: {},
     context_window: 0,
     ...over,
@@ -178,6 +178,7 @@ describe("requestJSON", () => {
           sampling: { temperature: 0.2 },
           thinking_switch: "reasoning_effort",
           preserve_thinking: true,
+          image_input: false,
         },
       }),
     );
@@ -187,6 +188,7 @@ describe("requestJSON", () => {
       temperature: 0.2,
       thinking_switch: "reasoning_effort",
       preserve_thinking: true,
+      image_input: false,
       messages: [{ role: "user", content: "hi" }],
     });
     expect(out.tools).toEqual([

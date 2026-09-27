@@ -50,8 +50,8 @@ one that holds client state of its own.
 - `store.ts` is a thin Zustand shell around that reducer. It owns which
   session is open, which model its next run uses — the status bar sets that
   and the run panel reads it, so neither can own it — and the composer's
-  draft, which is here because rewinding a message puts it back in the box
-  and the two components are not each other's parents. `rewound` discards the
+  draft and its images, which are here because rewinding a message puts both
+  back in the box and the two components are not each other's parents. `rewound` discards the
   transcript and asks for the path again: a replay only ever adds, so without
   it the branch the head just left would stay on screen.
 - `RunStatusBar.tsx` is the pane's footer, under the composer: the run's
@@ -59,7 +59,10 @@ one that holds client state of its own.
   model's own list), the context meter, and the abort.
 - `Composer.tsx` is the message box. Its buttons and key hints sit inside the
   box, and the box grows with the text up to a cap — without one a long
-  message pushes the transcript out of the pane.
+  message pushes the transcript out of the pane. Images join a message by the
+  attach button, a paste, or a drop, only when the model accepts images;
+  `attachments.ts` holds what it takes (format, size, count) and how a queued
+  message with images reads. The harness fits each within 1080p.
 - `queries.ts` wraps the session, outline, run, message, head, and fork
   routes. `useSetSessionHead` rebuilds the transcript afterwards, and
   `useRewind` is the one a message's rewind calls: it lands the head on the
@@ -93,6 +96,7 @@ title, its outline, its run); the store holds what it is _saying_.
 
 ## Test it
 
+`npm test -- attachments` covers what the composer attaches.
 `npm test -- transcript` folds the scripted event sequences from
 `docs/api/events.md` through the reducer, the meter's arithmetic included. A
 new event type or a new folding rule needs a case there. `npm test -- tree` covers the tree's rows, its

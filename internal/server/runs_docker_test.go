@@ -79,10 +79,10 @@ func TestRunDeliversSteeringAndFollowUpMessages(t *testing.T) {
 	a.postMessage(t, sess.ID, "then write it up", "follow_up", 202)
 
 	state := a.runState(t, sess.ID)
-	if len(state.PendingSteering) != 1 || state.PendingSteering[0] != "also check the tests" {
+	if len(state.PendingSteering) != 1 || state.PendingSteering[0].Text != "also check the tests" {
 		t.Errorf("pending steering = %v", state.PendingSteering)
 	}
-	if len(state.PendingFollowUps) != 1 || state.PendingFollowUps[0] != "then write it up" {
+	if len(state.PendingFollowUps) != 1 || state.PendingFollowUps[0].Text != "then write it up" {
 		t.Errorf("pending follow-ups = %v", state.PendingFollowUps)
 	}
 
@@ -192,7 +192,7 @@ func TestAbortKeepsAcceptedMessagesForTheNextRun(t *testing.T) {
 	decodeBody[runWire](t, request(t, a.Server, "POST", "/api/runs/"+run.ID+"/abort", nil), 200)
 
 	state := a.runState(t, sess.ID)
-	if len(state.PendingFollowUps) != 1 || state.PendingFollowUps[0] != "still do this" {
+	if len(state.PendingFollowUps) != 1 || state.PendingFollowUps[0].Text != "still do this" {
 		t.Fatalf("pending follow-ups = %v, want the accepted message", state.PendingFollowUps)
 	}
 	p := a.script(providertest.Text("new answer"), providertest.Text("queued answer"))

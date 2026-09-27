@@ -5,7 +5,9 @@
  * status bar's context meter explains itself.
  */
 
+import type { QueuedMessage } from "@/api/types";
 import { LoadError, Notice } from "@/components/Notice";
+import { queuedText } from "@/features/session/attachments";
 import { ContextBreakdown } from "@/features/session/ContextMeter";
 import { AskUserBody } from "@/features/session/renderers/AskUserRenderer";
 import { useRunStatus } from "@/features/session/queries";
@@ -125,15 +127,15 @@ function Section({ title, children }: SectionProps) {
   );
 }
 
-type QueueProps = { messages: string[] };
+type QueueProps = { messages: QueuedMessage[] };
 
 function Queue({ messages }: QueueProps) {
   if (messages.length === 0) return <p className="text-muted-foreground">Empty.</p>;
   return (
     <ol className="space-y-1">
       {messages.map((message, index) => (
-        <li key={`${String(index)}:${message}`} className="bg-muted rounded-md px-2 py-1">
-          {message}
+        <li key={`${String(index)}:${message.text}`} className="bg-muted rounded-md px-2 py-1">
+          {queuedText(message)}
         </li>
       ))}
     </ol>

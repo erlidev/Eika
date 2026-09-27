@@ -4,18 +4,45 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/mcp"
+	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
 )
 
 // messageRequest is the body of POST /api/sessions/{id}/messages.
 type messageRequest struct {
+	// Text is required unless Images carries at least one image.
 	Text string `json:"text"`
+	// Images are pictures attached to the message, for a model with image
+	// input. Each is fitted within 1920 by 1080 pixels before it is stored.
+	Images []messageImage `json:"images"`
 	// Mode is run, steer, or follow_up. Empty means run.
 	Mode string `json:"mode"`
 	// Model names the model this run uses. Empty uses the default from the
 	// settings, or the first model.
 	Model string `json:"model"`
+}
+
+// messageImage is one image attached to a posted message.
+type messageImage struct {
+	// Data is the image file, base64 in JSON: PNG, JPEG, GIF, or WebP.
+	Data []byte `json:"data"`
+}
+
+// queuedMessage is a message waiting in a run's queue.
+type queuedMessage struct {
+	Text string `json:"text"`
+	// Images is how many images the message carries.
+	Images int `json:"images"`
+}
+
+// asQueued renders queued messages on the wire, oldest first.
+func asQueued(messages []provider.Message) []queuedMessage {
+	out := make([]queuedMessage, 0, len(messages))
+	for _, m := range messages {
+		out = append(out, queuedMessage{Text: m.Content, Images: len(m.Images)})
+	}
+	return out
 }
 
 // runBody is one agent run on the wire.
@@ -37,8 +64,8 @@ type runStateResponse struct {
 	Active bool     `json:"active"`
 	Run    *runBody `json:"run,omitempty"`
 	// Queued messages, oldest first, that the run has not delivered yet.
-	PendingSteering  []string `json:"pending_steering"`
-	PendingFollowUps []string `json:"pending_follow_ups"`
+	PendingSteering  []queuedMessage `json:"pending_steering"`
+	PendingFollowUps []queuedMessage `json:"pending_follow_ups"`
 	// Questions the run is waiting on an answer for.
 	Questions []builtin.Question `json:"questions"`
 	// Elicitations are what MCP servers asked the user during the run's

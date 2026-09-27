@@ -123,6 +123,7 @@ export function providerRoutes(ctx: RouteContext): void {
       reasoning_efforts: strings(body.reasoning_efforts),
       thinking_switch: thinkingSwitch(body.thinking_switch),
       preserve_thinking: body.preserve_thinking === true,
+      image_input: body.image_input === true,
       created_at: now(),
       updated_at: now(),
     };

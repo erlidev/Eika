@@ -105,6 +105,9 @@ type Parameters struct {
 	ThinkingSwitch provider.ThinkingSwitch `json:"thinking_switch,omitempty"`
 	// PreserveThinking says whether earlier reasoning is replayed.
 	PreserveThinking bool `json:"preserve_thinking"`
+	// ImageInput says whether the images in the conversation are sent. When
+	// it is false each message says in words that its images were left out.
+	ImageInput bool `json:"image_input"`
 }
 
 // Context is one model request as the agent assembles it: the system prompt
@@ -182,6 +185,9 @@ func (c Context) WithMessages(msgs []provider.Message) Context {
 		if !c.Parameters.PreserveThinking {
 			m.Reasoning = ""
 		}
+		if !c.Parameters.ImageInput {
+			m = withoutImages(m)
+		}
 		size := messageTokens(m)
 		c.Messages = append(c.Messages, m)
 		c.MessageSizes = append(c.MessageSizes, size)
@@ -207,6 +213,7 @@ func (a *Agent) base(prompt []Section) Context {
 			Sampling:         a.opts.Sampling,
 			ThinkingSwitch:   a.opts.ThinkingSwitch,
 			PreserveThinking: a.opts.PreserveThinking,
+			ImageInput:       a.opts.ImageInput,
 		},
 	}
 	if a.tools != nil {
@@ -228,13 +235,56 @@ func ToolTokens(def provider.ToolDef) int {
 	return EstimateTokens(string(data))
 }
 
-// messageTokens estimates the size of one message as JSON.
+// messageTokens estimates the size of one message: its JSON without the
+// images, and each image at what a model reads it as. The base64 an image
+// travels in is no measure of that.
 func messageTokens(m provider.Message) int {
+	images := m.Images
+	m.Images = nil
+	tokens := 0
+	for _, img := range images {
+		tokens += ImageTokens(img.Width, img.Height)
+	}
 	data, err := json.Marshal(m)
 	if err != nil {
-		return EstimateTokens(m.Content + m.Reasoning)
+		return tokens + EstimateTokens(m.Content+m.Reasoning)
 	}
-	return EstimateTokens(string(data))
+	return tokens + EstimateTokens(string(data))
+}
+
+// pixelsPerToken is how many pixels ImageTokens counts as one token. Vision
+// models cut an image into patches of 28 by 28 pixels, or into tiles they
+// charge a few hundred tokens each; one token per 750 pixels is near what
+// hosted models charge for an image of the size Eika sends.
+const pixelsPerToken = 750
+
+// ImageTokens estimates what an image of w by h pixels costs a model. One
+// whose size is not known is taken to be as large as the harness sends.
+func ImageTokens(w, h int) int {
+	if w <= 0 || h <= 0 {
+		w, h = 1920, 1080
+	}
+	return (w*h + pixelsPerToken - 1) / pixelsPerToken
+}
+
+// withoutImages returns m with its images replaced by a note, which is how a
+// model that does not read images is sent a message that carried some: it
+// learns there were pictures it cannot see rather than nothing at all.
+func withoutImages(m provider.Message) provider.Message {
+	if len(m.Images) == 0 {
+		return m
+	}
+	note := "[1 image omitted: the model in use does not accept images]"
+	if n := len(m.Images); n > 1 {
+		note = fmt.Sprintf("[%d images omitted: the model in use does not accept images]", n)
+	}
+	m.Images = nil
+	if m.Content == "" {
+		m.Content = note
+	} else {
+		m.Content += "\n\n" + note
+	}
+	return m
 }
 
 // Recorder keeps a record of the model calls a run makes, so a client can

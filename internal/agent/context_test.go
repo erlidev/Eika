@@ -154,7 +154,7 @@ func TestPreviewIsTheRequestARunSends(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Preview: %v", err)
 			}
-			if err := a.Run(ctx, s, c.message); err != nil {
+			if err := a.Run(ctx, s, provider.UserMessage(c.message)); err != nil {
 				t.Fatalf("Run: %v", err)
 			}
 
@@ -268,7 +268,7 @@ func TestTheBasePromptCanBeReplaced(t *testing.T) {
 			if c.wantBase != agent.ChatPrompt && strings.Contains(system, "no workspace") {
 				t.Errorf("system prompt = %q, still carries the chat prompt", system)
 			}
-			if err := a.Run(ctx, s, "hi"); err != nil {
+			if err := a.Run(ctx, s, provider.UserMessage("hi")); err != nil {
 				t.Fatalf("Run: %v", err)
 			}
 			if sent := p.Requests()[0].System; sent != system {
@@ -483,7 +483,7 @@ func TestRequestMessagesAreWhatTheProviderReceives(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Preview: %v", err)
 			}
-			if err := a.Run(context.Background(), s, "hi"); err != nil {
+			if err := a.Run(context.Background(), s, provider.UserMessage("hi")); err != nil {
 				t.Fatalf("Run: %v", err)
 			}
 			for name, messages := range map[string][]provider.Message{
@@ -569,7 +569,7 @@ func TestRecorderLearnsEveryModelCallOnce(t *testing.T) {
 				RetryBackoff: time.Millisecond,
 				Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 			})
-			err := a.Run(context.Background(), agent.NewSession("s1", "w1"), "go")
+			err := a.Run(context.Background(), agent.NewSession("s1", "w1"), provider.UserMessage("go"))
 			if (err != nil) != c.wantRunErr {
 				t.Fatalf("Run error = %v, want an error %t", err, c.wantRunErr)
 			}
@@ -648,7 +648,7 @@ func TestRunSendsTheSamplingParameters(t *testing.T) {
 			if !reflect.DeepEqual(preview.Parameters.Sampling, c.want) {
 				t.Errorf("preview sampling = %s, want %s", jsonOf(preview.Parameters.Sampling), jsonOf(c.want))
 			}
-			if err := a.Run(context.Background(), agent.NewSession("s1", ""), "hi"); err != nil {
+			if err := a.Run(context.Background(), agent.NewSession("s1", ""), provider.UserMessage("hi")); err != nil {
 				t.Fatalf("Run: %v", err)
 			}
 			req := p.Requests()[0]
@@ -670,7 +670,7 @@ func TestPreviewOfAnEmptyChatEncodesEmptyLists(t *testing.T) {
 		t.Fatalf("Preview: %v", err)
 	}
 	want := `{"sections":[],"tools":[],"messages":[],"message_tokens":0,"message_sizes":[],` +
-		`"parameters":{"model":"m","sampling":{},"preserve_thinking":false}}`
+		`"parameters":{"model":"m","sampling":{},"preserve_thinking":false,"image_input":false}}`
 	if got := jsonOf(preview); got != want {
 		t.Errorf("preview JSON = %s, want %s", got, want)
 	}
@@ -680,5 +680,106 @@ func TestPreviewRejectsASessionWithoutAConversation(t *testing.T) {
 	a := agent.New(providertest.New(), nil, agent.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if _, err := a.Preview(context.Background(), &agent.Session{ID: "x"}); err == nil {
 		t.Fatal("Preview returned no error")
+	}
+}
+
+// screenshot is an image message of the size the harness sends, with data far
+// larger than the tokens a model reads it as.
+func screenshot(text string) provider.Message {
+	return provider.Message{Role: provider.RoleUser, Content: text, Images: []provider.Image{
+		{MediaType: "image/png", Data: make([]byte, 3_000_000), Width: 1920, Height: 1080},
+	}}
+}
+
+func TestImagesAreSentOnlyToAModelThatAcceptsThem(t *testing.T) {
+	cases := []struct {
+		name        string
+		imageInput  bool
+		wantImages  int
+		wantContent string
+	}{
+		{"a vision model gets the images", true, 1, "what is wrong here?"},
+		{
+			"any other model gets a note in their place", false, 0,
+			"what is wrong here?\n\n[1 image omitted: the model in use does not accept images]",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := providertest.New(providertest.Text("ok"))
+			store := newMemoryStore()
+			a := agent.New(p, nil, agent.Options{
+				ImageInput: c.imageInput,
+				Store:      store,
+				Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+			})
+			s := agent.NewSession("s1", "")
+			if err := a.Run(context.Background(), s, screenshot("what is wrong here?")); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			sent := p.Requests()[0].Messages[0]
+			if len(sent.Images) != c.wantImages || sent.Content != c.wantContent {
+				t.Errorf("sent %q with %d images, want %q with %d", sent.Content, len(sent.Images), c.wantContent, c.wantImages)
+			}
+			// What is stored is what the user sent, whatever this model
+			// reads: a later run on a vision model sees the picture.
+			if kept := store.Messages("s1")[0]; len(kept.Images) != 1 || kept.Content != "what is wrong here?" {
+				t.Errorf("stored %q with %d images, want the message as sent", kept.Content, len(kept.Images))
+			}
+		})
+	}
+}
+
+func TestAMessageOfImagesAloneStartsATurn(t *testing.T) {
+	cases := []struct {
+		name       string
+		imageInput bool
+		want       string
+	}{
+		{"a vision model", true, ""},
+		{"any other model", false, "[1 image omitted: the model in use does not accept images]"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := providertest.New(providertest.Text("a cat"))
+			events := &recorder{}
+			a := agent.New(p, nil, agent.Options{
+				ImageInput: c.imageInput,
+				Emitter:    events,
+				Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+			})
+			if err := a.Run(context.Background(), agent.NewSession("s1", ""), screenshot("")); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			requests := p.Requests()
+			if len(requests) != 1 || len(requests[0].Messages) != 1 || requests[0].Messages[0].Content != c.want {
+				t.Fatalf("requests = %s, want one message saying %q", jsonOf(requests), c.want)
+			}
+			var start event.TurnStart
+			events.payloadOf(t, event.TypeTurnStart, &start)
+			if start.Message != "" || len(start.Images) != 1 || start.Images[0].Width != 1920 {
+				t.Errorf("turn.start = %q with %d images, want the image alone", start.Message, len(start.Images))
+			}
+		})
+	}
+}
+
+func TestImagesAreEstimatedByTheirSizeNotTheirData(t *testing.T) {
+	a := agent.New(providertest.New(), nil, agent.Options{
+		ImageInput: true,
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	s := agent.NewSession("s1", "")
+	s.Conversation.Append(screenshot("look"))
+	preview, err := a.Preview(context.Background(), s)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	image := agent.ImageTokens(1920, 1080)
+	if got := preview.MessageSizes[0]; got < image || got > image+50 {
+		t.Errorf("an image message is estimated at %d tokens, want about %d for the image", got, image)
+	}
+	if image < 1000 || image > 4000 {
+		t.Errorf("a 1080p image is estimated at %d tokens, want what vision models charge, 1,000 to 4,000", image)
 	}
 }

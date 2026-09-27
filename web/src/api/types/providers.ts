@@ -37,6 +37,8 @@ export type Model = {
   /** thinking_switch is the field that turns thinking off when the effort is "none". */
   thinking_switch: ThinkingSwitch;
   preserve_thinking: boolean;
+  /** image_input says the model reads images; a request sends it the conversation's images. */
+  image_input: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -60,6 +62,7 @@ export type CreateModel = {
   reasoning_efforts?: ReasoningEffort[];
   thinking_switch?: ThinkingSwitch;
   preserve_thinking?: boolean;
+  image_input?: boolean;
 };
 
 /** UpdateModel is the body of PATCH /api/models/{id}; an absent field is left alone. */
@@ -72,6 +75,8 @@ export type TestModel = {
   reasoning_effort?: ReasoningEffort;
   thinking_switch?: ThinkingSwitch;
   preserve_thinking?: boolean;
+  /** image_input sends a small picture with the question, proving the endpoint takes images. */
+  image_input?: boolean;
 };
 
 /** TestModelResult is what one small request to a model came back with. */
@@ -132,4 +137,6 @@ export type ModelInfo = {
   id: string;
   context_window?: number;
   max_output?: number;
+  /** image_input is true when the endpoint says the model reads images. */
+  image_input?: boolean;
 };

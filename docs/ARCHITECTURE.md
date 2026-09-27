@@ -38,6 +38,7 @@ egress proxy are network calls and run in the harness.
 | `agent` | The loop: turns, tool dispatch, queues, retries, context assembly |
 | `provider` | Model interface, kind registry, `Complete`; `openai` implementation; `providertest` scripted fake |
 | `utility` | The harness's own one-shot model tasks (session titles), sent to the model a task is assigned |
+| `imaging` | Prepares attached images: decode, EXIF orientation, fit within 1080p (Catmull-Rom), PNG or JPEG without metadata |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
 | `executor` | The interface every agent action uses, path validation; `local` (tests only), `sandbox` (eikad client) |
 | `contextfile` | AGENTS.md discovery and its system prompt section |
@@ -100,6 +101,15 @@ last measured context plus 4-byte tokens for each message after it. A request
 of the whole window or more fails before the call; one that fits with less
 room than its max output gets max output lowered to the room left.
 
+**Images** are `provider.Message.Images` on a user message.
+`POST .../messages` runs each through `imaging.Prepare` before the run is
+claimed; `runs.begin` refuses images for a model without `image_input`, and
+`enqueue` checks the running model's. `Options.ImageInput` decides whether
+`Context.WithMessages` sends them or a note in their place, `messageTokens`
+counts each at `ImageTokens` (one token per 750 pixels) rather than its
+base64, and the OpenAI provider sends them as `image_url` data-URL parts
+before the text. `turn.start` carries them for the live transcript.
+
 **Compaction** (`agent/compaction.go`, `agent/summary.go`) is Pi's. With
 `CompactionSettings.Auto`, a call whose estimate passes `window - reserve`
 compacts first, and a call the endpoint refuses as too large
@@ -131,7 +141,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `subagents` | parent/child session, child workspace, state, result |
 | `settings` | key → jsonb value |
 | `providers` | name (unique), kind, base_url, api_key (sealed) |
-| `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking |
+| `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `profiles` | name, description, model_id, workspace_prompt, chat_prompt, instructions, context_files, preserve_thinking, tools, sampling (jsonb); NULL = not set |
 | `model_requests` | session, run, entry, model, sections, tools, parameters (jsonb), token counts |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
@@ -157,7 +167,8 @@ and `event` entries are shown but not sent. A `compaction` entry holds an
 `agent.Compaction`: `session.Messages` folds the path, so each one replaces
 the conversation before it with its summary and the last `kept` messages.
 The entries it covers stay in the tree, so a fork or a head moved above it
-has the whole conversation. An assistant entry holds the
+has the whole conversation. A user entry may hold `images` (base64 PNG or
+JPEG with their size), stored inline as the model is sent them. An assistant entry holds the
 message JSON (with tool calls, reasoning, and measured `metrics`) and the
 workspace HEAD commit it was produced at.
 
@@ -594,6 +605,12 @@ web/src/
 - **API**: `api/client.ts` is the only `fetch` caller (token, `ApiError`,
   forgets the token on 401); `api/connection.ts` stores token and URL;
   `api/stream.ts` is the one WebSocket with reference-counted topics.
+- **Images**: the composer attaches PNG, JPEG, GIF, and WebP files by button,
+  paste, or drop (`features/session/attachments.ts` checks them), only for a
+  model with `image_input`; the store keeps them beside the draft so a rewind
+  restores them. `components/MessageImages.tsx` draws a message's thumbnails
+  in the transcript and the context inspector and opens one in the single
+  `ImageViewer` the workbench mounts.
 - **Tool cards**: `features/session/renderers/renderers.tsx` maps tool names
   to a summary and a body (`bash`, `ask_user`, `web_search`, `web_fetch`,
   `mcp_*`); unknown tools render as JSON.
@@ -608,9 +625,9 @@ An arrow means "may import".
 ```
  cmd/eika -> server                     cmd/eikad -> eikad, search/filter
  server -> agent, session, store, workspace, subagent, search, mcp, egress,
-           utility
+           utility, imaging
  agent -> tool, provider, contextfile     session -> agent, store
- utility -> provider
+ utility -> provider                      imaging -> provider
  tool -> executor                         contextfile -> executor
  executor/sandbox -> eikad (wire types)   workspace -> executor, executor/sandbox, hub
  subagent -> workspace, session, store, tool/builtin

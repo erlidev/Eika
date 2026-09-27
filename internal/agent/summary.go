@@ -329,6 +329,12 @@ func transcript(msgs []provider.Message) string {
 			if m.Content != "" {
 				parts = append(parts, "[User]: "+m.Content)
 			}
+			switch n := len(m.Images); {
+			case n == 1:
+				parts = append(parts, "[User attached an image]")
+			case n > 1:
+				parts = append(parts, fmt.Sprintf("[User attached %d images]", n))
+			}
 		case provider.RoleAssistant:
 			if m.Reasoning != "" {
 				parts = append(parts, "[Assistant thinking]: "+m.Reasoning)

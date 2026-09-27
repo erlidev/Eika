@@ -23,6 +23,14 @@ func TestMessageEntryRoundTrip(t *testing.T) {
 			kind: store.KindUser,
 		},
 		{
+			name: "user text with images",
+			msg: provider.Message{Role: provider.RoleUser, Content: "what broke?", Images: []provider.Image{
+				{MediaType: "image/png", Data: []byte("\x89PNG\x00\xff"), Width: 1920, Height: 1080},
+				{MediaType: "image/jpeg", Data: []byte{0xff, 0xd8, 0xff}, Width: 640, Height: 480},
+			}},
+			kind: store.KindUser,
+		},
+		{
 			name: "assistant text",
 			msg: func() provider.Message {
 				m := provider.AssistantMessageWithReasoning("on it", "private analysis", nil)

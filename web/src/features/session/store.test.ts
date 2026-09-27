@@ -12,6 +12,9 @@ import type { EikaEvent } from "@/api/events";
 import { useSessionStore } from "@/features/session/store";
 import { newTranscript } from "@/features/session/transcript";
 
+/** image is an attachment in the composer. */
+const image = { id: "i1", name: "a.png", mediaType: "image/png", data: "AAAA", size: 3 };
+
 /** ended is the turn.end of a turn that measured something and stopped short. */
 const ended: EikaEvent = {
   type: "turn.end",
@@ -29,7 +32,7 @@ const ended: EikaEvent = {
 
 describe("opening a session", () => {
   beforeEach(() => {
-    useSessionStore.setState({ ...newTranscript(""), model: "", draft: "" });
+    useSessionStore.setState({ ...newTranscript(""), model: "", draft: "", draftImages: [] });
   });
 
   it("leaves nothing of the session that was open", () => {
@@ -37,6 +40,7 @@ describe("opening a session", () => {
     store.open("s1");
     store.apply(ended);
     store.chooseModel("gpt-5");
+    store.editImages([image]);
     expect(useSessionStore.getState().meter?.runId).toBe("r1");
 
     store.open("s2");
@@ -49,6 +53,7 @@ describe("opening a session", () => {
     expect(after.stopReason).toBeUndefined();
     expect(after.model).toBe("");
     expect(after.draft).toBe("");
+    expect(after.draftImages).toEqual([]);
   });
 
   it("keeps the transcript when the session that is open opens again", () => {
@@ -62,7 +67,7 @@ describe("opening a session", () => {
 
 describe("rewinding", () => {
   beforeEach(() => {
-    useSessionStore.setState({ ...newTranscript(""), model: "", draft: "" });
+    useSessionStore.setState({ ...newTranscript(""), model: "", draft: "", draftImages: [] });
   });
 
   it("drops the transcript and asks for the path again", () => {
@@ -71,6 +76,7 @@ describe("rewinding", () => {
     store.apply(ended);
     store.chooseModel("gpt-5");
     store.edit("the message being rewound");
+    store.editImages([image]);
 
     useSessionStore.getState().rewound();
 
@@ -85,6 +91,7 @@ describe("rewinding", () => {
     // What the user is about to send, and the model they chose, are not the
     // transcript and stay.
     expect(after.draft).toBe("the message being rewound");
+    expect(after.draftImages).toEqual([image]);
     expect(after.model).toBe("gpt-5");
   });
 });

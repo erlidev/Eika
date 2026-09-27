@@ -390,7 +390,7 @@ func asConfiguration(c runConfig) configurationBody {
 
 // parameterSources are the sources of what a request sends beside its
 // content: the model, the sampling parameters, whether reasoning is
-// replayed, and the model row's own thinking switch.
+// replayed, and the model row's own thinking switch and image input.
 func (c runConfig) parameterSources() map[string]string {
 	out := map[string]string{"model": c.sources["model"], "preserve_thinking": c.sources["preserve_thinking"]}
 	for key, layer := range c.sources {
@@ -400,6 +400,7 @@ func (c runConfig) parameterSources() map[string]string {
 	}
 	if c.modelOK {
 		out["thinking_switch"] = layerModel
+		out["image_input"] = layerModel
 	}
 	return out
 }
@@ -416,6 +417,7 @@ func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, 
 	opts.Sampling = c.sampling
 	opts.ThinkingSwitch = provider.ThinkingSwitch(c.model.ThinkingSwitch)
 	opts.PreserveThinking = c.preserveThinking
+	opts.ImageInput = c.model.ImageInput
 	opts.BasePrompt = c.basePrompt(sess.Chat())
 	if opts.BasePrompt == nil && !sess.Chat() {
 		// The agent picks its built-in prompt by whether it has an executor,

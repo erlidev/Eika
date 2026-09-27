@@ -5,7 +5,13 @@
  */
 
 import type { EikaEvent, EventType } from "../../../src/api/events.ts";
-import type { ElicitationAnswer, Run, Session, Workspace } from "../../../src/api/types.ts";
+import type {
+  ElicitationAnswer,
+  MessageImage,
+  Run,
+  Session,
+  Workspace,
+} from "../../../src/api/types.ts";
 import type { World } from "../world.ts";
 
 /** Reply is how the mock answers a request: a status and a JSON body, if any. */
@@ -36,7 +42,7 @@ export type RouteContext = {
   event: (type: EventType, topic: string, payload?: unknown) => EikaEvent;
   nameSession: (session: Session, text: string) => void;
   finish: (run: Run, state: Run["state"], error?: string) => void;
-  play: (session: Session, run: Run, text: string) => Promise<void>;
+  play: (session: Session, run: Run, text: string, images: MessageImage[]) => Promise<void>;
   /** compact summarizes a session's conversation as a run of its own. */
   compact: (session: Session, run: Run, instructions: string) => Promise<void>;
   answers: Map<string, (answer: string) => void>;

@@ -12,6 +12,7 @@ import (
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/executor"
+	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -31,16 +32,16 @@ const childStopTimeout = 60 * time.Second
 // job is what a run does: answer a message, or compact the conversation and
 // stop.
 type job struct {
-	// text is the message the run answers.
-	text string
+	// message is the user message the run answers.
+	message provider.Message
 	// compact makes the run a compaction, which instructions focus.
 	compact      bool
 	instructions string
 }
 
 type queuedMessages struct {
-	steering  []string
-	followUps []string
+	steering  []provider.Message
+	followUps []provider.Message
 }
 
 // finishRetries owns final run-state writes that outlive their foreground
@@ -138,6 +139,9 @@ type activeRun struct {
 	mu    sync.Mutex
 	id    string
 	agent *agent.Agent
+	// model is the run's model, whose image input decides whether a
+	// steering or follow-up message may carry images.
+	model store.Model
 	// aborted separates a run the user stopped from one that failed; both
 	// end with a cancelled context.
 	aborted bool
@@ -156,8 +160,8 @@ func newRuns(s *Server) *runs {
 
 // start begins a run on a session and returns its row. A session that is
 // already running one is a conflict: the message belongs in a queue instead.
-func (r *runs) start(ctx context.Context, sessionID, text, model string) (store.Run, error) {
-	row, _, err := r.begin(ctx, sessionID, model, job{text: text}, true)
+func (r *runs) start(ctx context.Context, sessionID string, message provider.Message, model string) (store.Run, error) {
+	row, _, err := r.begin(ctx, sessionID, model, job{message: message}, true)
 	return row, err
 }
 
@@ -174,7 +178,7 @@ func (r *runs) compact(ctx context.Context, sessionID, instructions, model strin
 // it is bound to the caller's context, so that a parent whose run is aborted
 // takes its children with it.
 func (r *runs) runChild(ctx context.Context, sessionID, text, model string) error {
-	row, active, err := r.begin(ctx, sessionID, model, job{text: text}, false)
+	row, active, err := r.begin(ctx, sessionID, model, job{message: provider.UserMessage(text)}, false)
 	if err != nil {
 		return err
 	}
@@ -253,6 +257,9 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job, det
 	if err != nil {
 		return store.Run{}, nil, err
 	}
+	if len(work.message.Images) > 0 && !cfg.model.ImageInput {
+		return store.Run{}, nil, noImageInput(cfg.model.Name)
+	}
 	p, err := s.providerFor(ctx, cfg)
 	if err != nil {
 		return store.Run{}, nil, err
@@ -293,7 +300,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job, det
 			ag.FollowUp(message)
 		}
 	}
-	active.begin(row.ID, ag)
+	active.begin(row.ID, ag, cfg.model)
 	r.mu.Lock()
 	r.byID[row.ID] = active
 	r.mu.Unlock()
@@ -302,7 +309,9 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job, det
 	// The title comes from the conversation as it stood before the run, so
 	// it is read before the loop starts adding to it.
 	if sess.Untitled && !work.compact {
-		s.titles.start(sess, firstMessage(loaded.Conversation.Messages(), work.text))
+		if first := firstMessage(loaded.Conversation.Messages(), work.message.Content); first != "" {
+			s.titles.start(sess, first)
+		}
 	}
 	go r.drive(runCtx, active, loaded, work)
 	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", cfg.model.Name,
@@ -352,7 +361,7 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 	if work.compact {
 		err = loop.Compact(ctx, loaded, work.instructions)
 	} else {
-		err = loop.Run(ctx, loaded, work.text)
+		err = loop.Run(ctx, loaded, work.message)
 	}
 
 	state, message := store.RunDone, ""
@@ -386,7 +395,7 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 // enqueue delivers a steering or follow-up message to the run in progress. A
 // run that is still being built has no queue to take it yet, so it counts as
 // no run: the client retries once the run it started reports itself.
-func (r *runs) enqueue(ctx context.Context, sessionID, text, mode string) (store.Run, error) {
+func (r *runs) enqueue(ctx context.Context, sessionID string, message provider.Message, mode string) (store.Run, error) {
 	active := r.active(sessionID)
 	var loop *agent.Agent
 	if active != nil {
@@ -398,15 +407,18 @@ func (r *runs) enqueue(ctx context.Context, sessionID, text, mode string) (store
 		}
 		return store.Run{}, conflictf("session %s has no run in progress to %s", sessionID, mode)
 	}
+	if model := active.runModel(); len(message.Images) > 0 && !model.ImageInput {
+		return store.Run{}, noImageInput(model.Name)
+	}
 	row, err := r.server.deps.Store.Run(ctx, active.runID())
 	if err != nil {
 		return store.Run{}, err
 	}
 	accepted := false
 	if mode == modeSteer {
-		accepted = loop.Steer(text)
+		accepted = loop.Steer(message)
 	} else {
-		accepted = loop.FollowUp(text)
+		accepted = loop.FollowUp(message)
 	}
 	if !accepted {
 		return store.Run{}, conflictf("session %s has no run in progress to %s", sessionID, mode)
@@ -538,8 +550,8 @@ func (r *runs) pendingFor(sessionID string) queuedMessages {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	queued := r.pending[sessionID]
-	queued.steering = append([]string(nil), queued.steering...)
-	queued.followUps = append([]string(nil), queued.followUps...)
+	queued.steering = append([]provider.Message(nil), queued.steering...)
+	queued.followUps = append([]provider.Message(nil), queued.followUps...)
 	return queued
 }
 
@@ -570,12 +582,20 @@ func retryFinish(ctx context.Context, backoff time.Duration, finish func(context
 	}
 }
 
-// begin records the run row and the loop on a reservation, which is what
-// turns it into a run the other handlers can report on and steer.
-func (a *activeRun) begin(id string, loop *agent.Agent) {
+// begin records the run row, the loop, and its model on a reservation, which
+// is what turns it into a run the other handlers can report on and steer.
+func (a *activeRun) begin(id string, loop *agent.Agent, model store.Model) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.id, a.agent = id, loop
+	a.id, a.agent, a.model = id, loop, model
+}
+
+// runModel returns the model of the run, the zero model while it is still
+// being built.
+func (a *activeRun) runModel() store.Model {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.model
 }
 
 // runID returns the id of the run's row, empty while it is still being built.

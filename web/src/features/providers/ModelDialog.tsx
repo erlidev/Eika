@@ -78,6 +78,7 @@ function ModelForm({ model, onDone }: ModelFormProps) {
   const [efforts, setEfforts] = useState<ReasoningEffort[]>(model.reasoning_efforts);
   const [thinkingSwitch, setThinkingSwitch] = useState<ThinkingSwitch>(model.thinking_switch);
   const [preserve, setPreserve] = useState(model.preserve_thinking);
+  const [images, setImages] = useState(model.image_input);
 
   // Each problem belongs to one field and is shown right under it.
   type Field = "name" | "id" | "window" | "output";
@@ -124,6 +125,7 @@ function ModelForm({ model, onDone }: ModelFormProps) {
               reasoning_efforts: efforts,
               thinking_switch: thinkingSwitch,
               preserve_thinking: preserve,
+              image_input: images,
             },
           },
           { onSuccess: onDone },
@@ -211,6 +213,20 @@ function ModelForm({ model, onDone }: ModelFormProps) {
           </p>
         </div>
         <Switch id="model-preserve" checked={preserve} onCheckedChange={setPreserve} />
+      </div>
+
+      <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+        <div className="space-y-0.5">
+          <Label htmlFor="model-images" className="text-sm">
+            Accepts images
+          </Label>
+          <p className="text-muted-foreground text-xs">
+            Turn on for a vision model: images attached to a message are sent to it. Any other model
+            is told in words that an image was left out, since an endpoint may refuse the request.
+            Test the model after turning this on.
+          </p>
+        </div>
+        <Switch id="model-images" checked={images} onCheckedChange={setImages} />
       </div>
 
       {problem !== null && (

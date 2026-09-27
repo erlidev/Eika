@@ -127,7 +127,7 @@ func TestCompactReusesTheRunsRequestAsItsPrefix(t *testing.T) {
 	})
 	s := agent.NewSession("s1", "w1")
 	for i := range 4 {
-		if err := c.agent.Run(context.Background(), s, filler(fmt.Sprintf("u%d", 2*i), 1000)); err != nil {
+		if err := c.agent.Run(context.Background(), s, provider.UserMessage(filler(fmt.Sprintf("u%d", 2*i), 1000))); err != nil {
 			t.Fatalf("Run %d: %v", i, err)
 		}
 	}
@@ -157,7 +157,7 @@ func TestCompactReusesTheRunsRequestAsItsPrefix(t *testing.T) {
 
 	// The next run sends the summary in place of what it covers, and a
 	// second compaction updates the summary, focused as it was asked.
-	if err := c.agent.Run(context.Background(), s, filler("u8", 1000)); err != nil {
+	if err := c.agent.Run(context.Background(), s, provider.UserMessage(filler("u8", 1000))); err != nil {
 		t.Fatalf("Run after compaction: %v", err)
 	}
 	if got, want := tags(p.Requests()[5].Messages), []string{"summary", "u6", "a7", "u8"}; !reflect.DeepEqual(got, want) {
@@ -424,7 +424,7 @@ func TestRunCompactsBeforeACallThatWouldPassTheThreshold(t *testing.T) {
 	p := providertest.New(providertest.Text("SUMMARY"), providertest.Text("answer"))
 	c := newCompactor(p, compactorOptions{window: 12_000, compaction: agent.CompactionSettings{Auto: true, KeepRecentTokens: 2000}})
 	s := sessionOf(history(10, 1000))
-	if err := c.agent.Run(context.Background(), s, "next"); err != nil {
+	if err := c.agent.Run(context.Background(), s, provider.UserMessage("next")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	requests := p.Requests()
@@ -457,7 +457,7 @@ func TestRunGoesOnWhenAThresholdCompactionFails(t *testing.T) {
 	p := providertest.New(providertest.Fail(errors.New("the endpoint is down")), providertest.Text("answer"))
 	c := newCompactor(p, compactorOptions{window: 12_000, compaction: agent.CompactionSettings{Auto: true, KeepRecentTokens: 2000}})
 	s := sessionOf(history(10, 1000))
-	if err := c.agent.Run(context.Background(), s, "next"); err != nil {
+	if err := c.agent.Run(context.Background(), s, provider.UserMessage("next")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if got := len(p.Requests()[1].Messages); got != 11 {
@@ -488,7 +488,7 @@ func TestRunRecoversFromAContextOverflow(t *testing.T) {
 			p := providertest.New(tc.steps...)
 			c := newCompactor(p, compactorOptions{window: 100_000, compaction: agent.CompactionSettings{Auto: tc.auto, KeepRecentTokens: 2000}})
 			s := sessionOf(history(10, 1000))
-			err := c.agent.Run(context.Background(), s, "next")
+			err := c.agent.Run(context.Background(), s, provider.UserMessage("next"))
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("Run error = %v, want an error %t", err, tc.wantErr)
 			}
@@ -512,7 +512,7 @@ func TestRunLowersMaxOutputToTheRoomLeft(t *testing.T) {
 	p := providertest.New(providertest.Text("answer"))
 	c := newCompactor(p, compactorOptions{window: 5000, sampling: provider.Sampling{MaxOutput: ptr(4000)}})
 	s := sessionOf(history(2, 1000))
-	if err := c.agent.Run(context.Background(), s, "next"); err != nil {
+	if err := c.agent.Run(context.Background(), s, provider.UserMessage("next")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	m := p.Requests()[0].Sampling.MaxOutput
@@ -544,7 +544,7 @@ func TestRunCompactsInTheMiddleOfATurn(t *testing.T) {
 	// threshold of 9,000, while a steering message waits to be delivered.
 	var c compactor
 	big := callTool{name: "big", run: func(context.Context) string {
-		if !c.agent.Steer("steer") {
+		if !c.agent.Steer(provider.UserMessage("steer")) {
 			t.Error("Steer rejected a message during a tool call")
 		}
 		return filler("r", 3000)
@@ -561,7 +561,7 @@ func TestRunCompactsInTheMiddleOfATurn(t *testing.T) {
 	)
 	c = newCompactor(p, compactorOptions{window: 12_000, tools: tools, executor: workspace(t, nil), compaction: agent.CompactionSettings{Auto: true, KeepRecentTokens: 2000}})
 	s := sessionOf(history(6, 1000))
-	if err := c.agent.Run(context.Background(), s, "next"); err != nil {
+	if err := c.agent.Run(context.Background(), s, provider.UserMessage("next")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	requests := p.Requests()
@@ -578,5 +578,19 @@ func TestRunCompactsInTheMiddleOfATurn(t *testing.T) {
 	}
 	if got := c.store.compactions["s1"]; len(got) != 1 || got[0].Kept != 2 {
 		t.Errorf("stored compactions = %+v", got)
+	}
+}
+
+func TestATranscriptSaysWhereTheUserAttachedImages(t *testing.T) {
+	msgs := history(6, 1000)
+	msgs[0].Images = screenshot("").Images
+	p := providertest.New(providertest.Calls("", providertest.Call("c1", "read", nil)), providertest.Text("SUMMARY"))
+	c := newCompactor(p, compactorOptions{compaction: agent.CompactionSettings{KeepRecentTokens: 2000}})
+	if err := c.agent.Compact(context.Background(), sessionOf(msgs), ""); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	transcript := p.Requests()[1].Messages[0].Content
+	if !strings.Contains(transcript, "[User]: "+msgs[0].Content+"\n\n[User attached an image]") {
+		t.Errorf("transcript = %.200q, want the image noted after the first message", transcript)
 	}
 }

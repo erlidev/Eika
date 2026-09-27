@@ -214,6 +214,11 @@ What a provider maps from the request:
 - Emit `KindReasoningDelta` for reasoning always; the agent streams it and
   stores it in `Message.Reasoning`. When `preserve_thinking` is on, send
   stored reasoning back on later assistant messages.
+- `Message.Images` on a user message: PNG or JPEG data with its size, sent
+  only to a model with image input (the agent replaces them with a note for
+  any other). Send them the way the API takes pictures, before the text.
+  `ModelInfo.ImageInput` says a listed model reads images, when the endpoint
+  says so.
 - Emit `KindUsage` as soon as the endpoint reports usage, with
   `Event.Timings` when it measures its own speed (token count and
   milliseconds per phase; see `openai/timings.go`). Leave an unmeasured phase

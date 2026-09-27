@@ -669,16 +669,16 @@ ModelContext that has `request`; `404` for a record of another session.
 | `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` only when the model preserves thinking. |
 | `message_tokens` | number | The estimated size of the messages. |
 | `message_sizes` | number array | The estimated size of each message, in the order of `messages`. |
-| `parameters` | object | `{model, sampling, thinking_switch, preserve_thinking}`: the endpoint's identifier of the model, the sampling parameters sent (a Sampling), the model's thinking switch, and whether earlier reasoning is replayed. |
-| `sources` | object | The layer each parameter came from, keyed `model`, `thinking_switch`, `preserve_thinking`, and `sampling.<parameter>`. |
+| `parameters` | object | `{model, sampling, thinking_switch, preserve_thinking, image_input}`: the endpoint's identifier of the model, the sampling parameters sent (a Sampling), the model's thinking switch, whether earlier reasoning is replayed, and whether images are sent (without it each message's images are a note in its text). |
+| `sources` | object | The layer each parameter came from, keyed `model`, `thinking_switch`, `preserve_thinking`, `image_input`, and `sampling.<parameter>`. |
 | `dropped_effort` | string, optional | A reasoning effort the configuration chose that the model does not offer, which is not sent. |
 | `context_files_unread` | string, optional | In a preview, why the context files a run would read are missing: the workspace is not running. |
 | `request` | ModelRequest, optional | The record this is; absent for the next request. |
 | `context_window` | number | The context window of the call's model, in tokens: what the request and its answer must fit in. 0 when no model is configured, or a recorded call's model is deleted. |
 | `calibration` | object, optional | `{request_id, input_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
 
-Every `tokens` figure is an estimate, four bytes to a token; only a record's
-`input_tokens` is measured.
+Every `tokens` figure is an estimate, four bytes to a token and an image one
+token per 750 pixels; only a record's `input_tokens` is measured.
 
 ### ModelRequest
 
@@ -734,7 +734,11 @@ answer's generation speed after replay, and is never sent to the provider. A too
 `arguments` is normally an object. If a model returns malformed JSON, it is a
 string with the exact malformed text, and the tool call has
 `arguments_malformed: true`. The marker is absent for valid JSON, including a
-valid top-level JSON string.
+valid top-level JSON string. A user message can include `images`, each
+`{"media_type": string, "data": string, "width": number, "height": number}`:
+the picture as the model is sent it, `image/png` or `image/jpeg`, base64
+encoded, with its size in pixels. `content` is absent on a message of images
+alone.
 
 ## Runs, queues, and questions
 
@@ -746,7 +750,8 @@ on the event stream.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `text` | string, required | The message. |
+| `text` | string | The message. Required unless `images` holds at least one image. |
+| `images` | array | Pictures attached to the message, each `{"data": string}`: a PNG, JPEG, GIF, or WebP file, base64 encoded, of at most 20 MiB and 50 megapixels. At most 10. |
 | `mode` | `run`, `steer`, or `follow_up` | What to do with it. Empty means `run`. |
 | `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first model. |
 
@@ -756,10 +761,19 @@ on the event stream.
 - `follow_up` waits until the current turn ends and then starts the next one.
 - `steer` and `follow_up` are `409` when the session has no run in progress.
 
-`202` with the `Run`. `400` for empty text, an unknown mode, or a model that
-does not exist; `409` when the session's workspace is not running or no model
-is configured. A chat has no workspace to be stopped, so it runs whenever a
-model is configured.
+Each image is turned upright by its EXIF orientation, fitted within 1920 by
+1080 pixels (1080 by 1920 upright) with a Catmull-Rom filter, stripped of its
+metadata, and stored as a PNG, or a JPEG for a photo; a JPEG that needs none
+of that keeps its compressed data. An animated GIF is its first frame. Only a
+model with `image_input` takes images: steering or a follow-up is checked
+against the running model.
+
+`202` with the `Run`. `400` for no text and no images, an unknown mode, a
+model that does not exist, an image the harness cannot read (the message names
+which, counting from 1), more than 10 images, or images for a model without
+`image_input`; `413` for a body over 64 MiB; `409` when the session's
+workspace is not running or no model is configured. A chat has no workspace to
+be stopped, so it runs whenever a model is configured.
 
 ### `GET /api/sessions/{id}/run`
 
@@ -770,13 +784,14 @@ What the session is doing and what is waiting for it.
 | `session_id` | string | The session. |
 | `active` | boolean | A run is going right now. When false, `run` is the last one that finished, if there was one. |
 | `run` | Run, optional | The run. |
-| `pending_steering` | string array | Steering messages the run has not delivered yet, oldest first. |
-| `pending_follow_ups` | string array | Follow-up messages waiting for the turn to end. |
+| `pending_steering` | QueuedMessage array | Steering messages the run has not delivered yet, oldest first. |
+| `pending_follow_ups` | QueuedMessage array | Follow-up messages waiting for the turn to end. |
 | `questions` | Question array | Questions of this session that a run is blocked on. |
 | `elicitations` | Elicitation array | What MCP servers asked the user during this session's tool calls, which wait on an answer, oldest first. |
 
 Accepted queue messages remain in these arrays after a run aborts or fails.
-The next run on the session receives them.
+The next run on the session receives them. A QueuedMessage is `{"text":
+string, "images": number}`: its text and how many images it carries.
 
 ### `POST /api/sessions/{id}/compact`
 
@@ -998,6 +1013,7 @@ the harness runs in a container. `400` too for a kind that cannot list.
 | `id` | string | The endpoint's identifier for the model. |
 | `context_window` | number, optional | The context size the endpoint reports. |
 | `max_output` | number, optional | The output limit the endpoint reports. |
+| `image_input` | boolean, optional | True when the endpoint says the model reads images (OpenRouter's `architecture`). |
 
 ## Models
 
@@ -1023,6 +1039,7 @@ none.
 | `reasoning_efforts` | string array | The efforts this model offers, in the order the UI cycles through them. At most 12, each a non-empty value of the shape above. |
 | `thinking_switch` | string | The request field that turns thinking off when the effort is `none`, and the only one sent: `reasoning_effort` (the default) sends `"reasoning_effort": "none"`; `chat_template_kwargs` sends `"chat_template_kwargs": {"enable_thinking": false, "thinking": false}` for servers that render the model's chat template (vLLM, SGLang, llama.cpp); `thinking` sends `"thinking": {"type": "disabled"}` (DeepSeek, Z.ai, Moonshot, Anthropic). Any other effort goes in `reasoning_effort` whatever this says. |
 | `preserve_thinking` | boolean | Ask a compatible endpoint for `reasoning_content` and replay it on later turns. Off by default; the official OpenAI API rejects it. Reasoning is streamed to clients either way. |
+| `image_input` | boolean | The model reads images: a request sends it the images in the conversation, and a message may carry them. Off by default; a model without it is sent a note such as `[1 image omitted: the model in use does not accept images]` in their place. |
 
 `201` with the `Model`; `400` for a bad field or an unknown provider; `409`
 when the name is taken.
@@ -1040,7 +1057,10 @@ the user picks another.
 ### `POST /api/models/test`
 
 `{"provider_id": string, "model": string, "reasoning_effort": string,
-"thinking_switch": string, "preserve_thinking": boolean}`: a model on a stored provider, saved or not.
+"thinking_switch": string, "preserve_thinking": boolean, "image_input":
+boolean}`: a model on a stored provider, saved or not. With `image_input` the
+question carries a 16 by 16 pixel PNG, which proves the endpoint takes images
+for the model.
 Sends one short request with no tools and answers `200` with
 `{"reply": string, "stop_reason": string, "latency_ms": number}`. A reasoning
 model that spends its budget thinking replies with nothing, which still shows
@@ -1056,6 +1076,7 @@ the model is there. `400` with what the endpoint answered when it failed.
 | `reasoning_efforts` | string array | As on `POST`; always present, empty when the model offers no choices. |
 | `thinking_switch` | string | As on `POST`; always present. |
 | `preserve_thinking` | boolean | As on `POST`. |
+| `image_input` | boolean | As on `POST`. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ## Profiles

@@ -7,6 +7,7 @@
 import { create } from "zustand";
 
 import type { EikaEvent } from "@/api/events";
+import type { DraftImage } from "@/features/session/attachments";
 import { applyEvent, newTranscript } from "@/features/session/transcript";
 import type { TranscriptState } from "@/features/session/transcript";
 
@@ -24,10 +25,14 @@ export type SessionStore = TranscriptState & {
    * for editing, and the two are not each other's parents.
    */
   draft: string;
+  /** draftImages are the images attached in the composer, kept beside draft for the same reason. */
+  draftImages: DraftImage[];
   /** open points the store at a session, discarding the previous one. */
   open: (sessionId: string) => void;
   /** edit replaces the composer's text. */
   edit: (draft: string) => void;
+  /** editImages replaces the composer's images. */
+  editImages: (images: DraftImage[]) => void;
   /**
    * rewound discards the transcript and asks for the session's path again.
    * Moving the head makes the entries after it no longer part of the
@@ -53,19 +58,26 @@ export const useSessionStore = create<SessionStore>((set) => ({
   ...newTranscript(""),
   model: "",
   draft: "",
+  draftImages: [],
   open: (sessionId) => {
     set((state) =>
-      state.sessionId === sessionId ? state : { ...newTranscript(sessionId), model: "", draft: "" },
+      state.sessionId === sessionId
+        ? state
+        : { ...newTranscript(sessionId), model: "", draft: "", draftImages: [] },
     );
   },
   edit: (draft) => {
     set({ draft });
+  },
+  editImages: (draftImages) => {
+    set({ draftImages });
   },
   rewound: () => {
     set((state) => ({
       ...newTranscript(state.sessionId),
       model: state.model,
       draft: state.draft,
+      draftImages: state.draftImages,
       needsReplay: true,
     }));
   },

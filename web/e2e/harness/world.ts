@@ -23,6 +23,7 @@ import type {
   Message,
   Model,
   ProfileSettings,
+  QueuedMessage,
   Project,
   Provider,
   Question,
@@ -114,8 +115,8 @@ export type World = {
   elicitations: Elicitation[];
   /** mcpServers are the configured MCP servers, each with all the harness knows of it. */
   mcpServers: MCPServerDetails[];
-  pendingSteering: Record<string, string[]>;
-  pendingFollowUps: Record<string, string[]>;
+  pendingSteering: Record<string, QueuedMessage[]>;
+  pendingFollowUps: Record<string, QueuedMessage[]>;
   /** replies are consumed one per run, oldest first; an empty list echoes. */
   replies: ReplyStep[][];
   /** probeModels is what "detect models" on any endpoint answers. */
@@ -371,6 +372,7 @@ export class WorldBuilder {
       reasoning_efforts: [],
       thinking_switch: "reasoning_effort",
       preserve_thinking: false,
+      image_input: false,
       created_at: minutesAgo(590),
       updated_at: minutesAgo(590),
       ...input,
