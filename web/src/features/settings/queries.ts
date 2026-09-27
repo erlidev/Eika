@@ -24,6 +24,7 @@ export const settingKeys = {
   sandboxEgress: "sandbox_egress",
   setupComplete: "setup_complete",
   utilityModels: "utility_models",
+  workspaceIdleMinutes: "workspace_idle_minutes",
 } as const;
 
 /** useSettings reads the settings table and the harness's defaults. */

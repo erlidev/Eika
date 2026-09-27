@@ -61,21 +61,18 @@ export function WorkspaceRow({
   // A worktree runs in the container of the workspace holding it, which is
   // the one that starts and stops.
   const worktree = workspace.worktree_of !== undefined;
-  const lifecycle: RowAction[] = worktree
-    ? []
-    : [
-        {
-          label: running ? "Stop" : "Start",
-          icon: running ? Square : Play,
-          disabled:
-            action.isPending || workspace.state === "creating" || workspace.state === "gone",
-          onSelect: () => {
-            action.mutate({ id: workspace.id, action: running ? "stop" : "start" });
-          },
+  const lifecycle: RowAction | null = worktree
+    ? null
+    : {
+        label: running ? "Stop" : "Start",
+        icon: running ? Square : Play,
+        disabled: action.isPending || workspace.state === "creating" || workspace.state === "gone",
+        onSelect: () => {
+          action.mutate({ id: workspace.id, action: running ? "stop" : "start" });
         },
-      ];
+      };
   const menu: RowAction[] = [
-    ...lifecycle,
+    ...(lifecycle ? [lifecycle] : []),
     {
       label: "Rename",
       icon: Pencil,
@@ -120,23 +117,34 @@ export function WorkspaceRow({
         meta={workspace.branch}
         pinned={workspace.pinned}
         quick={
-          <IconButton
-            label={`New session in ${workspace.name}`}
-            disabled={create.isPending}
-            onClick={() => {
-              create.mutate(
-                { workspace_id: workspace.id },
-                {
-                  onSuccess: (session) => {
-                    onNavigate?.();
-                    void navigate(`/sessions/${session.id}`);
+          <>
+            {lifecycle && (
+              <IconButton
+                label={`${lifecycle.label} ${workspace.name}`}
+                disabled={lifecycle.disabled}
+                onClick={lifecycle.onSelect}
+              >
+                <lifecycle.icon aria-hidden className="size-3" />
+              </IconButton>
+            )}
+            <IconButton
+              label={`New session in ${workspace.name}`}
+              disabled={create.isPending}
+              onClick={() => {
+                create.mutate(
+                  { workspace_id: workspace.id },
+                  {
+                    onSuccess: (session) => {
+                      onNavigate?.();
+                      void navigate(`/sessions/${session.id}`);
+                    },
                   },
-                },
-              );
-            }}
-          >
-            <Plus aria-hidden className="size-3" />
-          </IconButton>
+                );
+              }}
+            >
+              <Plus aria-hidden className="size-3" />
+            </IconButton>
+          </>
         }
         menu={menu}
         renaming={renaming}

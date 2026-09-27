@@ -109,5 +109,8 @@ test("setup, a workspace, and a run that executes in the sandbox", async ({ page
   await page.getByLabel("Message").fill("Say hello from the sandbox");
   await page.getByLabel("Message").press("Enter");
 
-  await expect(page.getByText("The command printed smoke-ok.")).toBeVisible({ timeout: 60_000 });
+  // The transcript's paragraph, not the live region that reads it out.
+  await expect(
+    page.getByRole("paragraph").filter({ hasText: "The command printed smoke-ok." }),
+  ).toBeVisible({ timeout: 60_000 });
 });

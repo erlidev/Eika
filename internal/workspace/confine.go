@@ -145,6 +145,11 @@ func (h *Host) networkFor(proxied bool) string {
 // moveTo attaches a workspace's container to one sandbox network and
 // detaches it from the other. It connects first, so the harness can reach
 // the daemon by name throughout, and does nothing that is already so.
+//
+// A container remembers a network by its id, so one created before its
+// network was recreated, as `docker compose down` and `up` do, still names
+// the old network and cannot start. Connecting again to the network of that
+// name replaces the stale entry, and a forced disconnect removes one.
 func (h *Host) moveTo(ctx context.Context, ws Workspace, target string) error {
 	info, err := h.docker.ContainerInspect(ctx, ws.ContainerID)
 	if err != nil {
@@ -154,7 +159,11 @@ func (h *Host) moveTo(ctx context.Context, ws Workspace, target string) error {
 	if info.NetworkSettings != nil {
 		attached = info.NetworkSettings.Networks
 	}
-	if _, ok := attached[target]; !ok {
+	current, err := h.docker.NetworkInspect(ctx, target, network.InspectOptions{})
+	if err != nil {
+		return fmt.Errorf("inspect network %s: %w", target, err)
+	}
+	if ep, ok := attached[target]; !ok || ep == nil || ep.NetworkID != current.ID {
 		if err := h.docker.NetworkConnect(ctx, target, ws.ContainerID, &network.EndpointSettings{
 			Aliases: []string{ContainerName(ws.ID)},
 		}); err != nil {

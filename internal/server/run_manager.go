@@ -517,8 +517,23 @@ func (r *runs) active(sessionID string) *activeRun {
 	return r.bySession[sessionID]
 }
 
+// workspacesInUse reports the workspaces that have a run going, or one being
+// built, which the idle stopper leaves running.
+func (r *runs) workspacesInUse() map[string]bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	inUse := make(map[string]bool, len(r.bySession))
+	for _, a := range r.bySession {
+		if a.workspaceID != "" {
+			inUse[a.workspaceID] = true
+		}
+	}
+	return inUse
+}
+
 // forget drops a finished run.
 func (r *runs) forget(a *activeRun) {
+	r.server.idle.used(a.workspaceID, time.Now())
 	id := a.runID()
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -533,6 +548,9 @@ func (r *runs) forget(a *activeRun) {
 // finish keeps undelivered accepted messages for the next run and drops the
 // active run under one lock.
 func (r *runs) finish(a *activeRun, queued queuedMessages) {
+	// A run shorter than the idle stopper's sweep is never seen going, so
+	// its end is what counts as the workspace's last use.
+	r.server.idle.used(a.workspaceID, time.Now())
 	id := a.runID()
 	r.mu.Lock()
 	defer r.mu.Unlock()

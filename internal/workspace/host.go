@@ -265,8 +265,15 @@ func (h *Host) discard(ctx context.Context, ws Workspace, builtImage bool) {
 }
 
 // Start starts the workspace's container and waits until its daemon answers,
-// filling in the address the harness reaches it on.
+// filling in the address the harness reaches it on. It first puts the
+// container back on its sandbox network, in case that network was recreated
+// since the container last ran.
 func (h *Host) Start(ctx context.Context, ws *Workspace) error {
+	if h.opts.Network != "" {
+		if err := h.moveTo(ctx, *ws, h.networkFor(ws.Proxied)); err != nil {
+			return err
+		}
+	}
 	if err := h.docker.ContainerStart(ctx, ws.ContainerID, container.StartOptions{}); err != nil {
 		return fmt.Errorf("start workspace %s: %w", ws.ID, err)
 	}

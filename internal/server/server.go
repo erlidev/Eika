@@ -149,6 +149,8 @@ type Server struct {
 	runs *runs
 	// titles names untitled sessions after their first message.
 	titles *titles
+	// idle stops the running workspaces no run has used for a while.
+	idle *idleWorkspaces
 
 	// loginMu makes sign-in attempts take turns, which bounds how fast a
 	// password can be guessed without locking its owner out.
@@ -175,6 +177,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	}
 	s.runs = newRuns(s)
 	s.titles = newTitles(s)
+	s.idle = newIdleWorkspaces(s)
 	s.routes()
 	return s
 }
@@ -205,9 +208,18 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) Bus() *event.Bus { return s.deps.Bus }
 
 // Run serves until ctx is cancelled, then drains in-flight requests and stops
-// the runs that are still going.
+// the runs that are still going. While it serves, it stops the workspaces
+// that go unused for the idle timeout.
 func (s *Server) Run(ctx context.Context) error {
 	defer s.Close()
+	if s.deps.Store != nil && s.deps.Workspaces != nil {
+		watchCtx, cancel := context.WithCancel(ctx)
+		var wg sync.WaitGroup
+		wg.Go(func() { s.idle.watch(watchCtx) })
+		// The sweep stops before Close, whose runs it would otherwise race.
+		defer wg.Wait()
+		defer cancel()
+	}
 	return Serve(ctx, s.cfg.Listen, s.Handler(), s.log)
 }
 

@@ -2062,7 +2062,8 @@
                 }
               },
               "subagent_max_children": "number",
-              "subagent_max_depth": "number"
+              "subagent_max_depth": "number",
+              "workspace_idle_minutes": "number"
             }
           },
           "settings": {
@@ -4689,7 +4690,8 @@
                 }
               },
               "subagent_max_children": "number",
-              "subagent_max_depth": "number"
+              "subagent_max_depth": "number",
+              "workspace_idle_minutes": "number"
             }
           },
           "settings": {

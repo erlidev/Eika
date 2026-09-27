@@ -143,3 +143,22 @@ test("a change the harness refuses says why beside the row", async ({ open }) =>
     eika.page.getByRole("navigation", { name: "Projects" }).getByRole("alert"),
   ).toHaveText(/^Could not change the session: /);
 });
+
+test("a workspace starts and stops from its row without the menu", async ({ open }) => {
+  const eika = await open({ scenario: "workbench" });
+  await eika.click("web-dashboard local");
+  const projects = eika.page.getByRole("navigation", { name: "Projects" });
+
+  // The quick buttons show without a hover, so nothing is under the pointer.
+  await eika.page.mouse.move(0, 0);
+  const start = projects.getByRole("button", { name: "Start dark-mode" });
+  // Playwright counts a transparent element as visible, so the opacity of
+  // the buttons' group is what says they show.
+  await expect(start.locator("..")).toHaveCSS("opacity", "1");
+  await start.click();
+  await expect(projects.getByRole("button", { name: /running dark-mode/ })).toBeVisible();
+
+  await eika.page.mouse.move(0, 0);
+  await projects.getByRole("button", { name: "Stop dark-mode" }).click();
+  await expect(projects.getByRole("button", { name: /stopped dark-mode/ })).toBeVisible();
+});
