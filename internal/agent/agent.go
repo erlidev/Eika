@@ -45,6 +45,9 @@ type Options struct {
 	// PreserveThinking keeps compatible Chat Completions reasoning data in
 	// assistant messages and replays it on later model calls.
 	PreserveThinking bool
+	// ImageInput says the model reads images. Without it, the images in the
+	// conversation are replaced by a note saying they were left out.
+	ImageInput bool
 	// BasePrompt replaces the built-in base prompt when it is not nil, the
 	// empty string included. The built-in one is WorkspacePrompt for an
 	// agent with an Executor and ChatPrompt for one without, so the caller
@@ -118,9 +121,9 @@ func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
 	return &Agent{provider: p, tools: r, opts: opts, accepting: true}
 }
 
-// Steer queues a message to be delivered as soon as the tool call that is
-// running finishes, before the next model call.
-func (a *Agent) Steer(msg string) bool {
+// Steer queues a user message to be delivered as soon as the tool call that
+// is running finishes, before the next model call.
+func (a *Agent) Steer(msg provider.Message) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.accepting {
@@ -130,8 +133,9 @@ func (a *Agent) Steer(msg string) bool {
 	return true
 }
 
-// FollowUp queues a message to be delivered after the current turn ends.
-func (a *Agent) FollowUp(msg string) bool {
+// FollowUp queues a user message to be delivered after the current turn
+// ends.
+func (a *Agent) FollowUp(msg provider.Message) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.accepting {
@@ -142,16 +146,17 @@ func (a *Agent) FollowUp(msg string) bool {
 }
 
 // PendingSteering returns the steering messages that have not been delivered.
-func (a *Agent) PendingSteering() []string { return a.steering.pending() }
+func (a *Agent) PendingSteering() []provider.Message { return a.steering.pending() }
 
 // PendingFollowUps returns the follow-up messages that have not been
 // delivered.
-func (a *Agent) PendingFollowUps() []string { return a.followUps.pending() }
+func (a *Agent) PendingFollowUps() []provider.Message { return a.followUps.pending() }
 
 // Run appends userMessage to the session and drives turns until the model asks
-// for no more tools and no follow-up message is queued. Cancelling ctx aborts
-// the run and puts the messages it had taken from a queue back.
-func (a *Agent) Run(ctx context.Context, s *Session, userMessage string) error {
+// for no more tools and no follow-up message is queued. An empty userMessage
+// sends nothing new and answers the conversation as it stands. Cancelling ctx
+// aborts the run and puts the messages it had taken from a queue back.
+func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Message) error {
 	if s == nil || s.Conversation == nil {
 		return errors.New("run agent: session has no conversation")
 	}
@@ -164,8 +169,8 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage string) error {
 	a.mu.Unlock()
 	defer a.closeQueues()
 
-	msgs, origin := []string{userMessage}, (*queue)(nil)
-	if userMessage == "" {
+	msgs, origin := []provider.Message{userMessage}, (*queue)(nil)
+	if userMessage.Empty() {
 		msgs = nil
 	}
 	for {
@@ -183,7 +188,7 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage string) error {
 // tool calls until the model stops asking for tools. prompt is the run's
 // system prompt by section. origin is the queue msgs came from, so that an
 // aborted turn can put them back.
-func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []string, origin *queue) error {
+func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []provider.Message, origin *queue) error {
 	runID := newRunID()
 	// Undelivered messages are in the conversation, because the model call
 	// needs them, but not yet in the store. A turn that never gets a response
@@ -197,17 +202,24 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []s
 		s.Conversation.Append(m)
 		pending = append(pending, m)
 	}
+	texts := make([]string, 0, len(msgs))
+	var images []provider.Image
 	for _, m := range msgs {
-		addPending(provider.UserMessage(m))
+		addPending(m)
+		if m.Content != "" {
+			texts = append(texts, m.Content)
+		}
+		images = append(images, m.Images...)
 	}
 	a.emit(ctx, s, event.TypeTurnStart, event.TurnStart{
 		RunID:       runID,
 		SessionID:   s.ID,
 		WorkspaceID: s.WorkspaceID,
-		Message:     strings.Join(msgs, "\n\n"),
+		Message:     strings.Join(texts, "\n\n"),
+		Images:      images,
 	})
 
-	var steered []string
+	var steered []provider.Message
 	var gen generation
 	// restoreFrom keeps the durably stored prefix and takes back the suffix.
 	// Queue messages in the suffix return to the queue they came from.
@@ -229,7 +241,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []s
 
 	for {
 		for _, m := range a.drainSteering() {
-			addPending(provider.UserMessage(m))
+			addPending(m)
 			steered = append(steered, m)
 		}
 		if err := ctx.Err(); err != nil {
@@ -398,7 +410,7 @@ func (a *Agent) appendTerminal(ctx context.Context, s *Session, m provider.Messa
 }
 
 // drainSteering atomically takes the steering accepted before this check.
-func (a *Agent) drainSteering() []string {
+func (a *Agent) drainSteering() []provider.Message {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.steering.drain()
@@ -407,7 +419,7 @@ func (a *Agent) drainSteering() []string {
 // nextQueued selects the next user turn. Steering accepted while the final
 // model response streamed becomes a new turn. If both queues are empty, this
 // closes acceptance atomically with the final check.
-func (a *Agent) nextQueued() ([]string, *queue) {
+func (a *Agent) nextQueued() ([]provider.Message, *queue) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if msgs := a.steering.drain(); len(msgs) != 0 {

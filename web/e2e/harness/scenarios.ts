@@ -657,6 +657,17 @@ export const scenarios = {
       return b.world;
     },
   },
+  "agent-images": {
+    description:
+      "Like workbench, but gpt-5 accepts images, so the composer attaches them and the transcript shows them.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      for (const m of b.world.models) m.image_input = m.name === "gpt-5";
+      b.world.replies.push([{ say: "The left half is teal and the right half is orange." }]);
+      return b.world;
+    },
+  },
   "agent-question": {
     description:
       "Like workbench, but the next message makes the agent ask a multiple-choice question and wait.",

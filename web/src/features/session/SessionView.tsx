@@ -70,6 +70,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
   const chosenModel =
     model === "" ? (configuration.data?.resolved.model ?? models.data?.default ?? "") : model;
   const noModel = models.data?.models.length === 0;
+  const imageInput = models.data?.models.find((m) => m.name === chosenModel)?.image_input ?? false;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Session">
@@ -114,6 +115,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
       <Composer
         sessionId={sessionId}
         model={chosenModel}
+        imageInput={imageInput}
         {...(chat ? { placeholder: "Send a message…" } : {})}
         disabled={!running || noModel}
         disabledReason={

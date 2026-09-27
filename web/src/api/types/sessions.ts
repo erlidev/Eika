@@ -82,10 +82,23 @@ export type MessageMetrics = {
   timings?: Timings;
 };
 
+/**
+ * MessageImage is one picture a user message carries, as the model is sent
+ * it: `data` is the base64 file in `media_type`, image/png or image/jpeg.
+ */
+export type MessageImage = {
+  media_type: string;
+  data: string;
+  width: number;
+  height: number;
+};
+
 /** Message is one entry of a conversation, as the provider package stores it. */
 export type Message = {
   role: Role;
   content?: string;
+  /** images are the pictures a user message carries beside its text. */
+  images?: MessageImage[];
   /** reasoning is the model's thinking for this message, shown apart from its answer. */
   reasoning?: string;
   tool_calls?: MessageToolCall[];

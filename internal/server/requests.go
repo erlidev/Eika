@@ -62,7 +62,8 @@ type calibrationBody struct {
 type contextResponse struct {
 	agent.Context
 	// Sources names the layer each parameter came from, keyed model,
-	// thinking_switch, preserve_thinking, and sampling.<parameter>.
+	// thinking_switch, preserve_thinking, image_input, and
+	// sampling.<parameter>.
 	Sources map[string]string `json:"sources"`
 	// DroppedEffort is a reasoning effort the configuration chose that the
 	// model does not offer, which is not sent.

@@ -11,7 +11,9 @@
 import { ArrowDown, Scissors, TriangleAlert, Undo2 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import type { MessageImage } from "@/api/types";
 import { Markdown } from "@/components/Markdown";
+import { MessageImages } from "@/components/MessageImages";
 import { Button } from "@/components/ui/button";
 import { Compaction } from "@/features/session/Compaction";
 import { useRewind, useSessionOutline, useRunStatus } from "@/features/session/queries";
@@ -78,8 +80,8 @@ export function Transcript({ sessionId, empty }: TranscriptProps) {
   // A stable callback, so that a row memoised on its item is not re-rendered
   // by every token of the turn in flight.
   const onRewind = useCallback(
-    (entryId: string, text: string) => {
-      rewind.mutate({ entryId, text });
+    (entryId: string, text: string, images: MessageImage[]) => {
+      rewind.mutate({ entryId, text, images });
     },
     [rewind],
   );
@@ -245,7 +247,7 @@ type ItemProps = {
   item: TranscriptItem;
   openTool: boolean;
   /** onRewind is absent when this row cannot be rewound to. */
-  onRewind?: (entryId: string, text: string) => void;
+  onRewind?: (entryId: string, text: string, images: MessageImage[]) => void;
 };
 
 const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
@@ -268,7 +270,7 @@ const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
               aria-label="Rewind the conversation to this message and edit it"
               title="Rewind to this message and edit it"
               onClick={() => {
-                onRewind(item.entryId ?? "", item.text);
+                onRewind(item.entryId ?? "", item.text, item.images);
               }}
             >
               <Undo2 aria-hidden className="size-3.5" />
@@ -276,9 +278,12 @@ const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
           )}
           <article className="bg-primary/10 border-primary/20 max-w-[80%] min-w-0 rounded-md border px-3.5 py-2">
             <h3 className="sr-only">You</h3>
-            <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
-              {item.text}
-            </p>
+            <MessageImages images={item.images} className={item.text === "" ? "" : "mb-2"} />
+            {item.text !== "" && (
+              <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
+                {item.text}
+              </p>
+            )}
           </article>
         </div>
       );

@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import type { Message } from "@/api/types";
+import { MessageImages } from "@/components/MessageImages";
 import { OutputBlock } from "@/components/OutputBlock";
 import { Button } from "@/components/ui/button";
 import { formatTokens } from "@/lib/format";
@@ -130,6 +131,7 @@ function MessageCard({ n, message: m, size, largest, toolName }: MessageCardProp
             </p>
           </div>
         )}
+        <MessageImages images={m.images ?? []} />
         {content !== "" && (
           <p
             className={cn(

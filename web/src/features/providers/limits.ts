@@ -78,6 +78,8 @@ export type ModelChoice = {
   name: string;
   context_window: number;
   max_output: number;
+  /** image_input starts as what the endpoint says, and off when it says nothing. */
+  image_input: boolean;
 };
 
 /** ChosenProblem is what keeps one chosen model from being added, and the field at fault. */

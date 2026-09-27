@@ -272,6 +272,7 @@ function Parameters({ context, edit }: ParametersProps) {
       ? []
       : [{ name: "thinking_switch", value: p.thinking_switch, key: "thinking_switch" }]),
     { name: "preserve_thinking", value: String(p.preserve_thinking), key: "preserve_thinking" },
+    { name: "image_input", value: String(p.image_input), key: "image_input" },
   ];
   return (
     <table className="w-full text-sm">

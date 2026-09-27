@@ -4,7 +4,7 @@
  * It is the Models tab of the settings dialog.
  */
 
-import { KeyRound, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { Image as ImageIcon, KeyRound, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import type { Model, Provider } from "@/api/types";
@@ -350,6 +350,12 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
                 {model.reasoning_effort}
               </Badge>
             )}
+            {model.image_input && (
+              <Badge variant="outline" className="shrink-0" title="Accepts images">
+                <ImageIcon aria-hidden />
+                Images
+              </Badge>
+            )}
           </p>
           <p className="text-muted-foreground truncate font-mono text-xs">
             {model.model !== model.name && `${model.model} · `}
@@ -374,6 +380,7 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
                 ...(model.reasoning_effort ? { reasoning_effort: model.reasoning_effort } : {}),
                 thinking_switch: model.thinking_switch,
                 preserve_thinking: model.preserve_thinking,
+                image_input: model.image_input,
               });
             }}
           >

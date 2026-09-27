@@ -12,12 +12,15 @@ import (
 // docs/api/events.md and mirrored in web/src/api/events.ts.
 
 // TurnStart is the payload of a turn.start event: one assistant turn has
-// begun, triggered by the user message in Message.
+// begun, triggered by the user message in Message and Images.
 type TurnStart struct {
 	RunID       string `json:"run_id"`
 	SessionID   string `json:"session_id"`
 	WorkspaceID string `json:"workspace_id,omitempty"`
 	Message     string `json:"message"`
+	// Images are the pictures the message carries, as the model is sent
+	// them.
+	Images []provider.Image `json:"images,omitempty"`
 }
 
 // MessageDelta is the payload of a message.delta event: the next piece of

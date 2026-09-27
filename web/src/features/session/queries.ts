@@ -22,6 +22,7 @@ import type {
   CompactRequest,
   ElicitationAnswer,
   Entry,
+  MessageImage,
   PostMessage,
   Run,
   RunStatus,
@@ -29,6 +30,7 @@ import type {
   SessionOutline,
   Tool,
 } from "@/api/types";
+import { draftsOf } from "@/features/session/attachments";
 import { useSessionStore } from "@/features/session/store";
 import { rewindTarget } from "@/features/session/tree";
 
@@ -144,16 +146,17 @@ export function useSetSessionHead(sessionId: string): UseMutationResult<Session,
 
 /**
  * useRewind takes the conversation back to just before a message the user
- * sent and puts that message back in the composer, which is what editing a
- * question and asking it again means. The turns after it stay in the tree on
- * a branch of their own; nothing is deleted.
+ * sent and puts that message back in the composer, its images included,
+ * which is what editing a question and asking it again means. The turns after
+ * it stay in the tree on a branch of their own; nothing is deleted.
  */
 export function useRewind(
   sessionId: string,
-): UseMutationResult<Session, Error, { entryId: string; text: string }> {
+): UseMutationResult<Session, Error, { entryId: string; text: string; images: MessageImage[] }> {
   const setHead = useSetSessionHead(sessionId);
   const outline = useSessionOutline(sessionId);
   const edit = useSessionStore((s) => s.edit);
+  const editImages = useSessionStore((s) => s.editImages);
   const nodes = outline.data?.nodes ?? [];
   return useMutation({
     mutationFn: ({ entryId }) => {
@@ -166,8 +169,9 @@ export function useRewind(
     // The message goes back in the box only once the head has moved. Filling
     // it first would leave the text there after a refusal, next to the turns
     // it was meant to replace.
-    onSuccess: (_session, { text }) => {
+    onSuccess: (_session, { text, images }) => {
       edit(text);
+      editImages(draftsOf(images));
     },
   });
 }

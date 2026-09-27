@@ -31,6 +31,8 @@ export type RequestParameters = {
   sampling: Sampling;
   thinking_switch?: ThinkingSwitch;
   preserve_thinking: boolean;
+  /** image_input says the images are sent; without it each message notes they were left out. */
+  image_input: boolean;
 };
 
 /** ModelRequest is the record of one model call, without what it sent. */

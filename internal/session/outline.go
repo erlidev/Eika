@@ -59,8 +59,9 @@ func (t *Tree) Outline(ctx context.Context, sessionID string) ([]Node, error) {
 	return nodes, nil
 }
 
-// preview renders the start of an entry's content on one line. An assistant
-// turn that only asked for tools is described by the tools it asked for.
+// preview renders the start of an entry's content on one line. A message of
+// images alone is described by how many, and an assistant turn that only
+// asked for tools by the tools it asked for.
 func preview(e store.Entry) string {
 	if e.Kind == store.KindCompaction {
 		if c, err := CompactionOf(e); err == nil {
@@ -70,6 +71,12 @@ func preview(e store.Entry) string {
 	if m, ok, err := Message(e); err == nil && ok {
 		if text := strings.TrimSpace(m.Content); text != "" {
 			return shorten(text)
+		}
+		switch n := len(m.Images); {
+		case n == 1:
+			return "1 image"
+		case n > 1:
+			return fmt.Sprintf("%d images", n)
 		}
 		if len(m.ToolCalls) > 0 {
 			names := make([]string, 0, len(m.ToolCalls))

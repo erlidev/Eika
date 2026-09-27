@@ -138,11 +138,12 @@ func (s *Server) utilityClient(ctx context.Context, m store.Model) (utility.Mode
 	}, nil
 }
 
-// firstMessage returns the first user message of a conversation, or text
-// when it has none yet: text is then the message the run starts with.
+// firstMessage returns the text of the first user message of a
+// conversation that has any, or text when none has yet: text is then the
+// message the run starts with. A message of images alone names nothing.
 func firstMessage(messages []provider.Message, text string) string {
 	for _, m := range messages {
-		if m.Role == provider.RoleUser {
+		if m.Role == provider.RoleUser && m.Content != "" {
 			return m.Content
 		}
 	}

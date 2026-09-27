@@ -375,9 +375,14 @@ type runStateWire struct {
 	SessionID        string             `json:"session_id"`
 	Active           bool               `json:"active"`
 	Run              *runWire           `json:"run"`
-	PendingSteering  []string           `json:"pending_steering"`
-	PendingFollowUps []string           `json:"pending_follow_ups"`
+	PendingSteering  []queuedWire       `json:"pending_steering"`
+	PendingFollowUps []queuedWire       `json:"pending_follow_ups"`
 	Questions        []builtin.Question `json:"questions"`
+}
+
+type queuedWire struct {
+	Text   string `json:"text"`
+	Images int    `json:"images"`
 }
 
 type settingsWire struct {
@@ -408,6 +413,7 @@ type modelWire struct {
 	ReasoningEfforts []string `json:"reasoning_efforts"`
 	ThinkingSwitch   string   `json:"thinking_switch"`
 	PreserveThinking bool     `json:"preserve_thinking"`
+	ImageInput       bool     `json:"image_input"`
 }
 
 type modelsWire struct {

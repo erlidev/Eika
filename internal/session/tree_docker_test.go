@@ -206,6 +206,25 @@ func TestForkCopiesThePathAndRunsOn(t *testing.T) {
 	}
 }
 
+func TestOutlineCountsTheImagesOfAMessageWithoutText(t *testing.T) {
+	tree, sess := newTree(t)
+	image := provider.Image{MediaType: "image/png", Data: []byte("png"), Width: 1, Height: 1}
+	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Images: []provider.Image{image}}, "")
+	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Images: []provider.Image{image, image}}, "")
+	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Content: "see this", Images: []provider.Image{image}}, "")
+
+	nodes, err := tree.Outline(t.Context(), sess.ID)
+	if err != nil {
+		t.Fatalf("Outline: %v", err)
+	}
+	want := []string{"1 image", "2 images", "see this"}
+	for i, w := range want {
+		if nodes[i].Preview != w {
+			t.Errorf("preview %d = %q, want %q", i, nodes[i].Preview, w)
+		}
+	}
+}
+
 func TestOutlineDescribesTheWholeTree(t *testing.T) {
 	tree, sess := newTree(t)
 	ctx := t.Context()

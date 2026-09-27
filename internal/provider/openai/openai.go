@@ -2,12 +2,15 @@ package openai
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/openai/openai-go/v3"
@@ -292,7 +295,10 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 func message(m provider.Message, preserveThinking bool) (openai.ChatCompletionMessageParamUnion, error) {
 	switch m.Role {
 	case provider.RoleUser:
-		return openai.UserMessage(m.Content), nil
+		if len(m.Images) == 0 {
+			return openai.UserMessage(m.Content), nil
+		}
+		return openai.UserMessage(userParts(m)), nil
 	case provider.RoleTool:
 		return openai.ToolMessage(m.Content, m.ToolCallID), nil
 	case provider.RoleAssistant:
@@ -320,6 +326,22 @@ func message(m provider.Message, preserveThinking bool) (openai.ChatCompletionMe
 	}
 }
 
+// userParts renders a user message that carries images as content parts:
+// the images first, each as a data URL, then the text. Vision models read a
+// question about a picture best when it follows the picture.
+func userParts(m provider.Message) []openai.ChatCompletionContentPartUnionParam {
+	parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(m.Images)+1)
+	for _, img := range m.Images {
+		parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
+			URL: "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data),
+		}))
+	}
+	if m.Content != "" {
+		parts = append(parts, openai.TextContentPart(m.Content))
+	}
+	return parts
+}
+
 // Models lists the models the endpoint serves, sorted by id. Compatible
 // endpoints add fields of their own to each model; the ones that say how
 // large its context is are read when present, so the setup screens can
@@ -331,6 +353,7 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		m := pages.Current()
 		info := provider.ModelInfo{ID: m.ID}
 		info.ContextWindow, info.MaxOutput = modelLimits(m.RawJSON())
+		info.ImageInput = readsImages(m.RawJSON())
 		out = append(out, info)
 	}
 	if err := pages.Err(); err != nil {
@@ -361,6 +384,26 @@ func modelLimits(raw string) (contextWindow, maxOutput int) {
 	contextWindow = firstPositive(fields.ContextLength, fields.ContextWindow, fields.MaxModelLen, fields.TopProvider.ContextLength)
 	maxOutput = firstPositive(fields.TopProvider.MaxCompletionTokens, fields.MaxCompletionTokens)
 	return contextWindow, maxOutput
+}
+
+// readsImages reports whether a model's entry in the list says it takes
+// images. OpenRouter lists architecture.input_modalities, and before that
+// said architecture.modality as "text+image->text".
+func readsImages(raw string) bool {
+	var fields struct {
+		Architecture struct {
+			InputModalities []string `json:"input_modalities"`
+			Modality        string   `json:"modality"`
+		} `json:"architecture"`
+	}
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		return false
+	}
+	if slices.Contains(fields.Architecture.InputModalities, "image") {
+		return true
+	}
+	input, _, _ := strings.Cut(fields.Architecture.Modality, "->")
+	return slices.Contains(strings.Split(input, "+"), "image")
 }
 
 // firstPositive returns the first value above zero, or zero.

@@ -398,6 +398,7 @@
                   "context_window": "number",
                   "created_at": "string",
                   "id": "string",
+                  "image_input": "boolean",
                   "max_output": "number",
                   "model": "string",
                   "name": "string",
@@ -843,6 +844,18 @@
               "message": {
                 "object": {
                   "content": "string",
+                  "images": {
+                    "array": {
+                      "object": {
+                        "data": {
+                          "nullable": "string"
+                        },
+                        "height": "number",
+                        "media_type": "string",
+                        "width": "number"
+                      }
+                    }
+                  },
                   "is_error": "boolean",
                   "metrics": {
                     "object": {
@@ -904,6 +917,7 @@
                 },
                 "optional": [
                   "content",
+                  "images",
                   "is_error",
                   "metrics",
                   "reasoning",
@@ -1213,6 +1227,18 @@
               "array": {
                 "object": {
                   "content": "string",
+                  "images": {
+                    "array": {
+                      "object": {
+                        "data": {
+                          "nullable": "string"
+                        },
+                        "height": "number",
+                        "media_type": "string",
+                        "width": "number"
+                      }
+                    }
+                  },
                   "is_error": "boolean",
                   "metrics": {
                     "object": {
@@ -1274,6 +1300,7 @@
                 },
                 "optional": [
                   "content",
+                  "images",
                   "is_error",
                   "metrics",
                   "reasoning",
@@ -1286,6 +1313,7 @@
           },
           "parameters": {
             "object": {
+              "image_input": "boolean",
               "model": "string",
               "preserve_thinking": "boolean",
               "sampling": {
@@ -1453,6 +1481,18 @@
                   "message": {
                     "object": {
                       "content": "string",
+                      "images": {
+                        "array": {
+                          "object": {
+                            "data": {
+                              "nullable": "string"
+                            },
+                            "height": "number",
+                            "media_type": "string",
+                            "width": "number"
+                          }
+                        }
+                      },
                       "is_error": "boolean",
                       "metrics": {
                         "object": {
@@ -1514,6 +1554,7 @@
                     },
                     "optional": [
                       "content",
+                      "images",
                       "is_error",
                       "metrics",
                       "reasoning",
@@ -1538,6 +1579,18 @@
               "array": {
                 "object": {
                   "content": "string",
+                  "images": {
+                    "array": {
+                      "object": {
+                        "data": {
+                          "nullable": "string"
+                        },
+                        "height": "number",
+                        "media_type": "string",
+                        "width": "number"
+                      }
+                    }
+                  },
                   "is_error": "boolean",
                   "metrics": {
                     "object": {
@@ -1599,6 +1652,7 @@
                 },
                 "optional": [
                   "content",
+                  "images",
                   "is_error",
                   "metrics",
                   "reasoning",
@@ -1669,6 +1723,18 @@
               "array": {
                 "object": {
                   "content": "string",
+                  "images": {
+                    "array": {
+                      "object": {
+                        "data": {
+                          "nullable": "string"
+                        },
+                        "height": "number",
+                        "media_type": "string",
+                        "width": "number"
+                      }
+                    }
+                  },
                   "is_error": "boolean",
                   "metrics": {
                     "object": {
@@ -1730,6 +1796,7 @@
                 },
                 "optional": [
                   "content",
+                  "images",
                   "is_error",
                   "metrics",
                   "reasoning",
@@ -1742,6 +1809,7 @@
           },
           "parameters": {
             "object": {
+              "image_input": "boolean",
               "model": "string",
               "preserve_thinking": "boolean",
               "sampling": {
@@ -1876,12 +1944,22 @@
           },
           "pending_follow_ups": {
             "nullable": {
-              "array": "string"
+              "array": {
+                "object": {
+                  "images": "number",
+                  "text": "string"
+                }
+              }
             }
           },
           "pending_steering": {
             "nullable": {
-              "array": "string"
+              "array": {
+                "object": {
+                  "images": "number",
+                  "text": "string"
+                }
+              }
             }
           },
           "questions": {
@@ -2331,6 +2409,7 @@
       "request": {
         "object": {
           "context_window": "number",
+          "image_input": "boolean",
           "max_output": "number",
           "model": "string",
           "name": "string",
@@ -2347,6 +2426,7 @@
           "context_window": "number",
           "created_at": "string",
           "id": "string",
+          "image_input": "boolean",
           "max_output": "number",
           "model": "string",
           "name": "string",
@@ -3055,6 +3135,7 @@
       "request": {
         "object": {
           "context_window": "number",
+          "image_input": "boolean",
           "max_output": "number",
           "model": "string",
           "name": "string",
@@ -3072,6 +3153,7 @@
           "context_window": "number",
           "created_at": "string",
           "id": "string",
+          "image_input": "boolean",
           "max_output": "number",
           "model": "string",
           "name": "string",
@@ -3095,6 +3177,7 @@
       "status": 200,
       "request": {
         "object": {
+          "image_input": "boolean",
           "model": "string",
           "preserve_thinking": "boolean",
           "provider_id": "string",
@@ -3337,10 +3420,12 @@
                 "object": {
                   "context_window": "number",
                   "id": "string",
+                  "image_input": "boolean",
                   "max_output": "number"
                 },
                 "optional": [
                   "context_window",
+                  "image_input",
                   "max_output"
                 ]
               }
@@ -3566,6 +3651,13 @@
       "status": 202,
       "request": {
         "object": {
+          "images": {
+            "array": {
+              "object": {
+                "data": "string"
+              }
+            }
+          },
           "mode": "string",
           "model": "string",
           "text": "string"
@@ -5022,12 +5114,25 @@
     },
     "turn.start": {
       "object": {
+        "images": {
+          "array": {
+            "object": {
+              "data": {
+                "nullable": "string"
+              },
+              "height": "number",
+              "media_type": "string",
+              "width": "number"
+            }
+          }
+        },
         "message": "string",
         "run_id": "string",
         "session_id": "string",
         "workspace_id": "string"
       },
       "optional": [
+        "images",
         "workspace_id"
       ]
     },

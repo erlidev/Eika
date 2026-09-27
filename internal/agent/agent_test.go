@@ -286,7 +286,7 @@ func roles(msgs []provider.Message) []string {
 
 func TestRunStreamsATextAnswer(t *testing.T) {
 	f := newFixture(t, []providertest.Step{providertest.Text("hello there")})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -312,9 +312,9 @@ func TestSteeringAcceptedDuringFinalResponseStartsANewTurn(t *testing.T) {
 	a := agent.New(p, nil, agent.Options{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	s := agent.NewSession("session-1", "workspace-1")
 	done := make(chan error, 1)
-	go func() { done <- a.Run(context.Background(), s, "first question") }()
+	go func() { done <- a.Run(context.Background(), s, provider.UserMessage("first question")) }()
 	<-p.started
-	if accepted := a.Steer("late steering"); !accepted {
+	if accepted := a.Steer(provider.UserMessage("late steering")); !accepted {
 		t.Fatal("Steer rejected a message while the model response was active")
 	}
 	close(p.release)
@@ -328,7 +328,7 @@ func TestSteeringAcceptedDuringFinalResponseStartsANewTurn(t *testing.T) {
 	if got := requests[1].Messages[len(requests[1].Messages)-1].Content; got != "late steering" {
 		t.Errorf("second call ends with %q, want late steering", got)
 	}
-	if accepted := a.FollowUp("too late"); accepted {
+	if accepted := a.FollowUp(provider.UserMessage("too late")); accepted {
 		t.Error("FollowUp accepted a message after the run closed its queues")
 	}
 }
@@ -339,7 +339,7 @@ func TestRunExecutesToolCalls(t *testing.T) {
 		providertest.Calls("", providertest.Call("c2", "bash", map[string]any{"command": "cat a.txt"})),
 		providertest.Text("the file says hello"),
 	})
-	if err := f.agent.Run(context.Background(), f.session, "write and read a.txt"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("write and read a.txt")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -379,7 +379,7 @@ func TestRunSurfacesToolErrorsToTheModel(t *testing.T) {
 		providertest.Calls("", providertest.Call("c1", "bash", map[string]any{"command": "cat missing.txt"})),
 		providertest.Text("that file does not exist"),
 	})
-	if err := f.agent.Run(context.Background(), f.session, "read missing.txt"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("read missing.txt")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -400,7 +400,7 @@ func TestRunRejectsUnknownTool(t *testing.T) {
 		providertest.Calls("", providertest.Call("c1", "teleport", map[string]any{})),
 		providertest.Text("sorry"),
 	})
-	if err := f.agent.Run(context.Background(), f.session, "teleport"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("teleport")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if got := f.session.Conversation.Messages()[2].Content; !strings.Contains(got, `unknown tool "teleport"`) {
@@ -411,7 +411,7 @@ func TestRunRejectsUnknownTool(t *testing.T) {
 func TestSteeringIsDeliveredAfterTheRunningTool(t *testing.T) {
 	var f *fixture
 	poke := callTool{name: "poke", run: func(context.Context) string {
-		f.agent.Steer("stop and explain")
+		f.agent.Steer(screenshot("stop and explain"))
 		return "poked"
 	}}
 	f = newFixture(t, []providertest.Step{
@@ -419,14 +419,14 @@ func TestSteeringIsDeliveredAfterTheRunningTool(t *testing.T) {
 		providertest.Text("explaining"),
 	}, poke)
 
-	if err := f.agent.Run(context.Background(), f.session, "poke"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("poke")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if got := roles(f.session.Conversation.Messages()); strings.Join(got, ",") != "user,assistant,tool,user,assistant" {
 		t.Fatalf("roles = %v, want the steering message after the tool result", got)
 	}
-	if got := f.session.Conversation.Messages()[3].Content; got != "stop and explain" {
-		t.Errorf("steering message = %q", got)
+	if got := f.session.Conversation.Messages()[3]; got.Content != "stop and explain" || len(got.Images) != 1 {
+		t.Errorf("steering message = %q with %d images, want the text and its image", got.Content, len(got.Images))
 	}
 	if pending := f.agent.PendingSteering(); len(pending) != 0 {
 		t.Errorf("pending steering = %v, want it delivered", pending)
@@ -436,7 +436,7 @@ func TestSteeringIsDeliveredAfterTheRunningTool(t *testing.T) {
 func TestFollowUpIsDeliveredAfterTheTurn(t *testing.T) {
 	var f *fixture
 	queueUp := callTool{name: "queue_up", run: func(context.Context) string {
-		f.agent.FollowUp("and now the tests")
+		f.agent.FollowUp(provider.UserMessage("and now the tests"))
 		return "queued"
 	}}
 	f = newFixture(t, []providertest.Step{
@@ -445,7 +445,7 @@ func TestFollowUpIsDeliveredAfterTheTurn(t *testing.T) {
 		providertest.Text("done with the tests"),
 	}, queueUp)
 
-	if err := f.agent.Run(context.Background(), f.session, "first task"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("first task")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if got := roles(f.session.Conversation.Messages()); strings.Join(got, ",") != "user,assistant,tool,assistant,user,assistant" {
@@ -473,10 +473,10 @@ func TestQueueModeAllDeliversEveryFollowUp(t *testing.T) {
 		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RetryBackoff: time.Millisecond,
 	})
-	all.FollowUp("second")
-	all.FollowUp("third")
+	all.FollowUp(provider.UserMessage("second"))
+	all.FollowUp(provider.UserMessage("third"))
 
-	if err := all.Run(context.Background(), f.session, "first"); err != nil {
+	if err := all.Run(context.Background(), f.session, provider.UserMessage("first")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if got := roles(f.session.Conversation.Messages()); strings.Join(got, ",") != "user,assistant,user,user,assistant" {
@@ -498,13 +498,13 @@ func TestAbortLeavesQueuedMessagesInPlace(t *testing.T) {
 		providertest.Calls("", providertest.Call("c1", "stop", map[string]any{})),
 		providertest.Text("never reached"),
 	}, stop)
-	f.agent.FollowUp("later")
+	f.agent.FollowUp(provider.UserMessage("later"))
 
-	err := f.agent.Run(ctx, f.session, "start")
+	err := f.agent.Run(ctx, f.session, provider.UserMessage("start"))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
 	}
-	if pending := f.agent.PendingFollowUps(); len(pending) != 1 || pending[0] != "later" {
+	if pending := f.agent.PendingFollowUps(); len(pending) != 1 || pending[0].Content != "later" {
 		t.Errorf("pending follow-ups = %v, want [later]", pending)
 	}
 	if f.provider.Calls() != 1 {
@@ -522,13 +522,13 @@ func TestFailedTurnReturnsTheFollowUpToTheQueue(t *testing.T) {
 		providertest.Text("first answer"),
 		providertest.Fail(errors.New("provider is down")),
 	})
-	f.agent.FollowUp("second question")
+	f.agent.FollowUp(provider.UserMessage("second question"))
 
-	err := f.agent.Run(context.Background(), f.session, "first question")
+	err := f.agent.Run(context.Background(), f.session, provider.UserMessage("first question"))
 	if err == nil {
 		t.Fatal("Run returned no error")
 	}
-	if pending := f.agent.PendingFollowUps(); len(pending) != 1 || pending[0] != "second question" {
+	if pending := f.agent.PendingFollowUps(); len(pending) != 1 || pending[0].Content != "second question" {
 		t.Errorf("pending follow-ups = %v, want the message back in the queue", pending)
 	}
 }
@@ -540,7 +540,7 @@ func TestRetriesRetryableFailures(t *testing.T) {
 		providertest.Fail(rateLimited),
 		providertest.Text("finally"),
 	})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if f.provider.Calls() != 3 {
@@ -557,7 +557,7 @@ func TestRetryResetsTextFromTheFailedAttempt(t *testing.T) {
 		providertest.Stream(provider.TextDelta("discard me"), provider.Errorf(rateLimited)),
 		providertest.Text("keep me"),
 	})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	want := []string{event.TypeTurnStart, event.TypeMessageDelta, event.TypeMessageReset, event.TypeMessageDelta, event.TypeTurnEnd}
@@ -571,7 +571,7 @@ func TestRetryResetsTextFromTheFailedAttempt(t *testing.T) {
 
 func TestRunRejectsAStreamWithoutACompletionEvent(t *testing.T) {
 	f := newFixture(t, []providertest.Step{providertest.Stream(provider.TextDelta("partial"))})
-	err := f.agent.Run(context.Background(), f.session, "hi")
+	err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi"))
 	if err == nil || !strings.Contains(err.Error(), "without a completion event") {
 		t.Fatalf("Run error = %v, want missing completion event", err)
 	}
@@ -584,7 +584,7 @@ func TestRunRejectsACompletionWithoutAStopReason(t *testing.T) {
 	f := newFixture(t, []providertest.Step{
 		providertest.Stream(provider.TextDelta("partial"), provider.Done("")),
 	})
-	err := f.agent.Run(context.Background(), f.session, "hi")
+	err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi"))
 	if err == nil || !strings.Contains(err.Error(), "no stop reason") {
 		t.Fatalf("Run error = %v, want missing stop reason", err)
 	}
@@ -599,7 +599,7 @@ func TestRunKeepsAResponseTheEndpointCutOff(t *testing.T) {
 			f := newFixture(t, []providertest.Step{
 				providertest.Stream(provider.TextDelta("partial"), provider.Done(reason)),
 			})
-			if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+			if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 				t.Fatalf("Run: %v", err)
 			}
 			msgs := f.session.Conversation.Messages()
@@ -636,7 +636,7 @@ func TestRunDropsToolCallsFromAResponseTheEndpointCutOff(t *testing.T) {
 			provider.Done("length"),
 		),
 	})
-	if err := f.agent.Run(context.Background(), f.session, "write the file"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("write the file")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	msgs := f.session.Conversation.Messages()
@@ -656,7 +656,7 @@ func TestRunDropsToolCallsFromAResponseTheEndpointCutOff(t *testing.T) {
 
 func TestRunStoresNothingForACutOffResponseThatProducedNothing(t *testing.T) {
 	f := newFixture(t, []providertest.Step{providertest.Stream(provider.Done("length"))})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	msgs := f.session.Conversation.Messages()
@@ -672,7 +672,7 @@ func TestContextWindowIsEnforcedBeforeTheProviderCall(t *testing.T) {
 		Sampling:      provider.Sampling{MaxOutput: ptr(32)},
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	err := a.Run(context.Background(), agent.NewSession("s1", "w1"), "hello")
+	err := a.Run(context.Background(), agent.NewSession("s1", "w1"), provider.UserMessage("hello"))
 	if err == nil || !strings.Contains(err.Error(), "configured window") {
 		t.Fatalf("Run error = %v, want context window error", err)
 	}
@@ -694,7 +694,7 @@ func TestRunForwardsReasoningConfiguration(t *testing.T) {
 	prior := provider.AssistantMessage("answer", nil)
 	prior.Metrics = &provider.MessageMetrics{RunID: "prior", ContextWindow: 8192}
 	s.Conversation.Append(prior)
-	if err := a.Run(context.Background(), s, "hello"); err != nil {
+	if err := a.Run(context.Background(), s, provider.UserMessage("hello")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	req := p.Requests()[0]
@@ -713,7 +713,7 @@ func TestGivesUpAfterTheRetryBudget(t *testing.T) {
 		providertest.Fail(rateLimited), providertest.Fail(rateLimited),
 		providertest.Fail(rateLimited), providertest.Fail(rateLimited),
 	})
-	err := f.agent.Run(context.Background(), f.session, "hi")
+	err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi"))
 	if err == nil {
 		t.Fatal("Run returned no error")
 	}
@@ -729,7 +729,7 @@ func TestGivesUpAfterTheRetryBudget(t *testing.T) {
 
 func TestDoesNotRetryPermanentFailures(t *testing.T) {
 	f := newFixture(t, []providertest.Step{providertest.Fail(errors.New("bad request"))})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err == nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err == nil {
 		t.Fatal("Run returned no error")
 	}
 	if f.provider.Calls() != 1 {
@@ -742,7 +742,7 @@ func TestSystemPromptCarriesWorkspaceInstructions(t *testing.T) {
 	if err := f.exec.WriteFile(context.Background(), "AGENTS.md", []byte("always run make check")); err != nil {
 		t.Fatalf("write AGENTS.md: %v", err)
 	}
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	system := f.provider.Requests()[0].System
@@ -759,7 +759,7 @@ func TestSystemPromptCarriesWorkspaceInstructions(t *testing.T) {
 
 func TestRunRejectsASessionWithoutAConversation(t *testing.T) {
 	f := newFixture(t, nil)
-	if err := f.agent.Run(context.Background(), &agent.Session{ID: "x"}, "hi"); err == nil {
+	if err := f.agent.Run(context.Background(), &agent.Session{ID: "x"}, provider.UserMessage("hi")); err == nil {
 		t.Fatal("Run returned no error")
 	}
 }
@@ -782,7 +782,7 @@ func TestAbortDoesNotDuplicateTheMessageOnTheNextRun(t *testing.T) {
 	cancel()
 	f := newFixture(t, []providertest.Step{providertest.Text("answering now")})
 
-	if err := f.agent.Run(ctx, f.session, "count once"); err == nil {
+	if err := f.agent.Run(ctx, f.session, provider.UserMessage("count once")); err == nil {
 		t.Fatal("Run returned no error")
 	}
 	if got := f.session.Conversation.Len(); got != 0 {
@@ -792,7 +792,7 @@ func TestAbortDoesNotDuplicateTheMessageOnTheNextRun(t *testing.T) {
 		t.Fatalf("stored %d messages after the abort, want 0", got)
 	}
 
-	if err := f.agent.Run(context.Background(), f.session, "count once"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("count once")); err != nil {
 		t.Fatalf("second Run: %v", err)
 	}
 	seen := 0
@@ -811,7 +811,7 @@ func TestSteeringIsNotReplayedAfterAnAbort(t *testing.T) {
 	defer cancel()
 	var f *fixture
 	poke := callTool{name: "poke", run: func(context.Context) string {
-		f.agent.Steer("also check the tests")
+		f.agent.Steer(provider.UserMessage("also check the tests"))
 		cancel()
 		return "poked"
 	}}
@@ -820,10 +820,10 @@ func TestSteeringIsNotReplayedAfterAnAbort(t *testing.T) {
 		providertest.Text("never reached"),
 	}, poke)
 
-	if err := f.agent.Run(ctx, f.session, "start"); !errors.Is(err, context.Canceled) {
+	if err := f.agent.Run(ctx, f.session, provider.UserMessage("start")); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
 	}
-	if pending := f.agent.PendingSteering(); len(pending) != 1 || pending[0] != "also check the tests" {
+	if pending := f.agent.PendingSteering(); len(pending) != 1 || pending[0].Content != "also check the tests" {
 		t.Fatalf("pending steering = %v, want the message back in the queue", pending)
 	}
 	for _, m := range f.session.Conversation.Messages() {
@@ -842,7 +842,7 @@ func TestFailedToolCallAnswersEveryCallInTheBatch(t *testing.T) {
 		),
 	}, failingTool{})
 
-	if err := f.agent.Run(context.Background(), f.session, "run three tools"); err == nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("run three tools")); err == nil {
 		t.Fatal("Run returned no error")
 	}
 	msgs := f.session.Conversation.Messages()
@@ -877,7 +877,7 @@ func TestAbortAnswersTheToolCallsItSkips(t *testing.T) {
 		),
 	}, stop)
 
-	if err := f.agent.Run(ctx, f.session, "start"); !errors.Is(err, context.Canceled) {
+	if err := f.agent.Run(ctx, f.session, provider.UserMessage("start")); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
 	}
 	results := 0
@@ -915,7 +915,7 @@ func TestAbortPersistsATerminalResultForEveryToolCall(t *testing.T) {
 		Store:    store,
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	if err := a.Run(ctx, agent.NewSession("s1", "w1"), "start"); !errors.Is(err, context.Canceled) {
+	if err := a.Run(ctx, agent.NewSession("s1", "w1"), provider.UserMessage("start")); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
 	}
 	results := map[string]bool{}
@@ -947,7 +947,7 @@ func TestCompletedToolResultStoreFailurePersistsATerminalResult(t *testing.T) {
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	s := agent.NewSession("s1", "w1")
-	if err := a.Run(context.Background(), s, "run it"); err == nil {
+	if err := a.Run(context.Background(), s, provider.UserMessage("run it")); err == nil {
 		t.Fatal("Run returned no error")
 	}
 
@@ -967,8 +967,8 @@ func TestCompletedToolResultStoreFailurePersistsATerminalResult(t *testing.T) {
 func TestSteeringStoreFailureRestoresOnlyTheUnstoredMessages(t *testing.T) {
 	var a *agent.Agent
 	queue := callTool{name: "queue_steering", run: func(context.Context) string {
-		a.Steer("stored steering")
-		a.Steer("retry steering")
+		a.Steer(provider.UserMessage("stored steering"))
+		a.Steer(provider.UserMessage("retry steering"))
 		return "queued"
 	}}
 	registry, err := builtin.Registry(builtin.Deps{})
@@ -989,10 +989,10 @@ func TestSteeringStoreFailureRestoresOnlyTheUnstoredMessages(t *testing.T) {
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	s := agent.NewSession("s1", "w1")
-	if err := a.Run(context.Background(), s, "start"); err == nil {
+	if err := a.Run(context.Background(), s, provider.UserMessage("start")); err == nil {
 		t.Fatal("Run returned no error")
 	}
-	if pending := a.PendingSteering(); len(pending) != 1 || pending[0] != "retry steering" {
+	if pending := a.PendingSteering(); len(pending) != 1 || pending[0].Content != "retry steering" {
 		t.Fatalf("pending steering = %v, want only retry steering", pending)
 	}
 	assertUserMessageCount(t, store.Messages(), "stored steering", 1)
@@ -1009,13 +1009,13 @@ func TestFollowUpStoreFailureRestoresOnlyTheUnstoredMessages(t *testing.T) {
 		Store:  store,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	a.FollowUp("stored follow-up")
-	a.FollowUp("retry follow-up")
+	a.FollowUp(provider.UserMessage("stored follow-up"))
+	a.FollowUp(provider.UserMessage("retry follow-up"))
 	s := agent.NewSession("s1", "w1")
-	if err := a.Run(context.Background(), s, "start"); err == nil {
+	if err := a.Run(context.Background(), s, provider.UserMessage("start")); err == nil {
 		t.Fatal("Run returned no error")
 	}
-	if pending := a.PendingFollowUps(); len(pending) != 1 || pending[0] != "retry follow-up" {
+	if pending := a.PendingFollowUps(); len(pending) != 1 || pending[0].Content != "retry follow-up" {
 		t.Fatalf("pending follow-ups = %v, want only retry follow-up", pending)
 	}
 	assertUserMessageCount(t, store.Messages(), "stored follow-up", 1)
@@ -1055,7 +1055,7 @@ func TestMalformedToolArgumentsBecomeARecoverableToolResult(t *testing.T) {
 		Store:    store,
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	if err := a.Run(context.Background(), agent.NewSession("s1", "w1"), "read it"); err != nil {
+	if err := a.Run(context.Background(), agent.NewSession("s1", "w1"), provider.UserMessage("read it")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	messages := store.Messages()
@@ -1083,7 +1083,7 @@ func TestToolsWithoutAWorkspaceFailInsteadOfPanicking(t *testing.T) {
 		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RetryBackoff: time.Millisecond,
 	})
-	if err := noWorkspace.Run(context.Background(), f.session, "list files"); err != nil {
+	if err := noWorkspace.Run(context.Background(), f.session, provider.UserMessage("list files")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	result := f.session.Conversation.Messages()[2]
@@ -1124,7 +1124,7 @@ func TestAStandaloneToolRunsWithoutAWorkspace(t *testing.T) {
 		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RetryBackoff: time.Millisecond,
 	})
-	if err := chat.Run(context.Background(), agent.NewSession("chat-1", ""), "look it up"); err != nil {
+	if err := chat.Run(context.Background(), agent.NewSession("chat-1", ""), provider.UserMessage("look it up")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	messages := f.provider.Requests()[1].Messages
@@ -1140,7 +1140,7 @@ func TestAStandaloneToolRunsWithoutAWorkspace(t *testing.T) {
 func TestAnAgentWithoutAWorkspaceIsToldItHasNone(t *testing.T) {
 	p := providertest.New(providertest.Text("ok"))
 	chat := agent.New(p, nil, agent.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	if err := chat.Run(context.Background(), agent.NewSession("chat-1", ""), "hi"); err != nil {
+	if err := chat.Run(context.Background(), agent.NewSession("chat-1", ""), provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	system := p.Requests()[0].System
@@ -1159,7 +1159,7 @@ func TestRunStreamsReasoningApartFromTheAnswer(t *testing.T) {
 		provider.TextDelta("the answer"),
 		provider.Done("stop"),
 	)})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -1195,7 +1195,7 @@ func TestTurnReportsMeasuredUsageWhileItStreams(t *testing.T) {
 		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 100, OutputTokens: 2, TotalTokens: 102}},
 		provider.Done("stop"),
 	)})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -1259,7 +1259,7 @@ func TestTurnSumsGenerationOverEveryModelCall(t *testing.T) {
 			provider.Done("stop"),
 		),
 	})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	var end event.TurnEnd
@@ -1290,7 +1290,7 @@ func TestTurnReportsTheEndpointsOwnTimings(t *testing.T) {
 		},
 		provider.Done("stop"),
 	)})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -1315,7 +1315,7 @@ func TestTurnTimesAnEndpointThatReportsNoTimings(t *testing.T) {
 		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 40, OutputTokens: 9, TotalTokens: 49}},
 		provider.Done("stop"),
 	)})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -1344,7 +1344,7 @@ func TestTurnTimesNothingWhenTheResponseIsOneToken(t *testing.T) {
 		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 40, OutputTokens: 1, TotalTokens: 41}},
 		provider.Done("stop"),
 	)})
-	if err := f.agent.Run(context.Background(), f.session, "hi"); err != nil {
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	var end event.TurnEnd

@@ -10,6 +10,7 @@ require (
 	github.com/docker/go-connections v0.8.1
 	github.com/dop251/goja v0.0.0-20260917113740-793a2a65c13b
 	github.com/openai/openai-go/v3 v3.61.0
+	golang.org/x/image v0.45.0
 	golang.org/x/net v0.58.0
 	gopkg.in/yaml.v3 v3.0.1
 )

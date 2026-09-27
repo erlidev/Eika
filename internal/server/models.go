@@ -1,19 +1,37 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"net/http"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/erlidev/eika/internal/imaging"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
 )
 
 // testPrompt is the message a model test sends.
 const testPrompt = "Reply with the single word: ready"
+
+// testImage is the picture a model test for image input sends with its
+// question: a 16 by 16 pixel teal square as a PNG, which every endpoint that
+// reads images accepts.
+var testImage = func() provider.Image {
+	img := image.NewNRGBA(image.Rect(0, 0, 16, 16))
+	draw.Draw(img, img.Bounds(), &image.Uniform{C: color.NRGBA{G: 128, B: 128, A: 255}}, image.Point{}, draw.Src)
+	var buf bytes.Buffer
+	// Encoding into memory cannot fail.
+	_ = png.Encode(&buf, img)
+	return provider.Image{MediaType: imaging.MediaPNG, Data: buf.Bytes(), Width: 16, Height: 16}
+}()
 
 // handleListModels lists every model and the one a run uses by default.
 func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +65,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 		ReasoningEfforts: req.ReasoningEfforts,
 		ThinkingSwitch:   req.ThinkingSwitch,
 		PreserveThinking: req.PreserveThinking,
+		ImageInput:       req.ImageInput,
 	}
 	if m.Name == "" {
 		m.Name = m.Model
@@ -107,6 +126,9 @@ func (s *Server) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.PreserveThinking != nil {
 		m.PreserveThinking = *req.PreserveThinking
+	}
+	if req.ImageInput != nil {
+		m.ImageInput = *req.ImageInput
 	}
 	if err := validateModel(m); err != nil {
 		s.fail(w, r, err)
@@ -185,10 +207,14 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 	if req.ReasoningEffort != "" {
 		sampling.ReasoningEffort = &req.ReasoningEffort
 	}
+	question := provider.UserMessage(testPrompt)
+	if req.ImageInput {
+		question.Images = []provider.Image{testImage}
+	}
 	started := time.Now()
 	reply, stop, err := provider.Complete(ctx, client, provider.Request{
 		Model:            model,
-		Messages:         []provider.Message{provider.UserMessage(testPrompt)},
+		Messages:         []provider.Message{question},
 		Sampling:         sampling,
 		ThinkingSwitch:   provider.ThinkingSwitch(req.ThinkingSwitch),
 		PreserveThinking: req.PreserveThinking,

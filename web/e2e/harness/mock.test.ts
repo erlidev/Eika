@@ -449,6 +449,37 @@ describe("the mock answers as the harness does", () => {
     expect(mock.contractBreaks).toEqual([]);
   });
 
+  it("takes images for a model that accepts them, and refuses them otherwise", async () => {
+    const mock = open("agent-question");
+    const session = mock.world.sessions[0]?.id ?? "";
+    // A one-pixel PNG: the signature and a header saying 1 by 1.
+    const png = btoa("\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01");
+    const message = { text: "", images: [{ data: png }] };
+    const refused = await call(mock, "POST", `/api/sessions/${session}/messages`, message);
+    expect(refused.status).toBe(400);
+
+    for (const m of mock.world.models) m.image_input = true;
+    const started = await call(mock, "POST", `/api/sessions/${session}/messages`, message);
+    expect(started.status).toBe(statusOf("POST /api/sessions/{id}/messages"));
+    const user = (mock.world.entries[session] ?? []).findLast((e) => e.kind === "user");
+    expect(user?.message).toEqual({
+      role: "user",
+      images: [{ media_type: "image/png", data: png, width: 1, height: 1 }],
+    });
+    const junk = await call(mock, "POST", `/api/sessions/${session}/messages`, {
+      text: "x",
+      mode: "steer",
+      images: [{ data: btoa("not an image") }],
+    });
+    expect(junk.status).toBe(400);
+    await expect.poll(() => mock.world.questions.length).toBe(1);
+    await call(mock, "POST", `/api/questions/${mock.world.questions[0]?.id ?? ""}/answer`, {
+      answer: "30s",
+    });
+    await mock.idle();
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
   it("aborts a run as the harness does", async () => {
     const mock = open("agent-running");
     const session = mock.world.sessions[0]?.id ?? "";

@@ -52,13 +52,17 @@ func TestProvidersAndModels(t *testing.T) {
 	if m.ThinkingSwitch != "reasoning_effort" {
 		t.Errorf("created thinking switch = %q, want the standard field", m.ThinkingSwitch)
 	}
+	if m.ImageInput {
+		t.Error("a model reads images before anyone said it does")
+	}
 	m.Name, m.MaxOutput, m.PreserveThinking, m.ThinkingSwitch = "gpt-5-high", 64000, true, "thinking"
+	m.ImageInput = true
 	updated, err := st.UpdateModel(ctx, m)
 	if err != nil {
 		t.Fatalf("UpdateModel: %v", err)
 	}
 	if updated.Name != "gpt-5-high" || updated.MaxOutput != 64000 || !updated.PreserveThinking ||
-		updated.ThinkingSwitch != "thinking" {
+		updated.ThinkingSwitch != "thinking" || !updated.ImageInput {
 		t.Errorf("updated model = %+v", updated)
 	}
 

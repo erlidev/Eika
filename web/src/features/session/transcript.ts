@@ -20,7 +20,7 @@ import type {
   TurnProgress,
   Usage,
 } from "@/api/events";
-import type { Compaction, Elicitation, Message, Question } from "@/api/types";
+import type { Compaction, Elicitation, Message, MessageImage, Question } from "@/api/types";
 
 /** UserItem is a message the user sent. */
 export type UserItem = {
@@ -29,6 +29,8 @@ export type UserItem = {
   runId: string;
   entryId?: string;
   text: string;
+  /** images are the pictures the message carries, as the model is sent them. */
+  images: MessageImage[];
 };
 
 /** AssistantItem is model prose, accumulated from deltas while it streams. */
@@ -314,8 +316,9 @@ function applyTurnStart(state: TranscriptState, e: EikaEvent): TranscriptState {
   const p = payloadOf(e, "turn.start");
   if (!p) return state;
   const live = state.live.slice();
-  if (p.message !== "") {
-    live.push({ kind: "user", key: `${p.run_id}:user`, runId: p.run_id, text: p.message });
+  const images = p.images ?? [];
+  if (p.message !== "" || images.length > 0) {
+    live.push({ kind: "user", key: `${p.run_id}:user`, runId: p.run_id, text: p.message, images });
   }
   return { ...state, live, activeTurnId: p.run_id, stopReason: undefined };
 }
@@ -670,6 +673,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
           runId: "",
           entryId: p.entry_id,
           text: message?.content ?? "",
+          images: message?.images ?? [],
         },
       ];
     case "assistant": {

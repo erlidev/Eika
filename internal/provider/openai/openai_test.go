@@ -122,7 +122,9 @@ func TestModelsListsWhatTheEndpointServes(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"object":"list","data":[
 			{"id":"zeta","object":"model","created":1,"owned_by":"x"},
-			{"id":"router/alpha","object":"model","created":1,"owned_by":"x","context_length":200000,"top_provider":{"max_completion_tokens":64000}},
+			{"id":"router/alpha","object":"model","created":1,"owned_by":"x","context_length":200000,"top_provider":{"max_completion_tokens":64000},"architecture":{"input_modalities":["text","image"]}},
+			{"id":"router/beta","object":"model","created":1,"owned_by":"x","architecture":{"modality":"text+image->text"}},
+			{"id":"router/gamma","object":"model","created":1,"owned_by":"x","architecture":{"input_modalities":["text"],"modality":"text->text+image"}},
 			{"id":"served","object":"model","created":1,"owned_by":"x","max_model_len":32768}
 		]}`)
 	}))
@@ -137,7 +139,9 @@ func TestModelsListsWhatTheEndpointServes(t *testing.T) {
 		t.Fatalf("Models: %v", err)
 	}
 	want := []provider.ModelInfo{
-		{ID: "router/alpha", ContextWindow: 200000, MaxOutput: 64000},
+		{ID: "router/alpha", ContextWindow: 200000, MaxOutput: 64000, ImageInput: true},
+		{ID: "router/beta", ImageInput: true},
+		{ID: "router/gamma"},
 		{ID: "served", ContextWindow: 32768},
 		{ID: "zeta"},
 	}
@@ -693,5 +697,40 @@ func TestStreamSendsEverySamplingParameterThatIsSet(t *testing.T) {
 				t.Errorf("sampling fields = %s, want %s", encoded, c.want)
 			}
 		})
+	}
+}
+
+func TestStreamSendsImagesAsDataURLsBeforeTheText(t *testing.T) {
+	s := newSSEServer(t, http.StatusOK,
+		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"a cat"},"finish_reason":"stop"}]}`,
+	)
+	image := provider.Image{MediaType: "image/png", Data: []byte("\x89PNG fake"), Width: 2, Height: 1}
+	collect(t, newProvider(t, s.URL), provider.Request{Messages: []provider.Message{
+		{Role: provider.RoleUser, Content: "what is this?", Images: []provider.Image{image}},
+		{Role: provider.RoleUser, Images: []provider.Image{image}},
+		provider.UserMessage("plain"),
+	}})
+
+	var sent struct {
+		Messages []struct {
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(<-s.body, &sent); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	const url = "data:image/png;base64,iVBORyBmYWtl"
+	want := []string{
+		`[{"image_url":{"url":"` + url + `"},"type":"image_url"},{"text":"what is this?","type":"text"}]`,
+		`[{"image_url":{"url":"` + url + `"},"type":"image_url"}]`,
+		`"plain"`,
+	}
+	if len(sent.Messages) != len(want) {
+		t.Fatalf("sent %d messages, want %d", len(sent.Messages), len(want))
+	}
+	for i, w := range want {
+		if got := string(sent.Messages[i].Content); got != w {
+			t.Errorf("message %d content = %s, want %s", i, got, w)
+		}
 	}
 }

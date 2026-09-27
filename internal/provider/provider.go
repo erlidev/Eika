@@ -30,6 +30,9 @@ type ModelInfo struct {
 	// MaxOutput is the most tokens one response may have, zero when the
 	// endpoint does not say.
 	MaxOutput int `json:"max_output,omitempty"`
+	// ImageInput reports that the endpoint says the model reads images. It
+	// is false when the endpoint does not say.
+	ImageInput bool `json:"image_input,omitempty"`
 }
 
 // MaxReasoningEffortLen bounds one reasoning_effort value.
@@ -111,6 +114,10 @@ const (
 type Message struct {
 	Role    Role   `json:"role"`
 	Content string `json:"content,omitempty"`
+	// Images are the pictures a user message carries beside Content. A
+	// request carries them only to a model that accepts images; the agent
+	// replaces them with a note for any other.
+	Images []Image `json:"images,omitempty"`
 	// Reasoning is the model's reasoning for this message. It is kept apart
 	// from Content because it is not the assistant's answer: a client shows
 	// it as its own block, and only a provider configured to preserve
@@ -126,6 +133,23 @@ type Message struct {
 	// conversation a compaction summarized. It is never stored: the session
 	// rebuilds it from the compaction. Providers send it as a user message.
 	Summary bool `json:"summary,omitempty"`
+}
+
+// Image is one picture a user attached to a message, prepared for a model:
+// Data is the encoded file, image/png or image/jpeg as MediaType says, and
+// Width and Height are its size in pixels, which estimating its cost needs
+// without decoding it.
+type Image struct {
+	MediaType string `json:"media_type"`
+	Data      []byte `json:"data"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+}
+
+// Empty reports whether m says nothing: no text and no images. Such a user
+// message is not sent.
+func (m Message) Empty() bool {
+	return m.Content == "" && len(m.Images) == 0
 }
 
 // MessageMetrics is the measured state after one assistant response. It is

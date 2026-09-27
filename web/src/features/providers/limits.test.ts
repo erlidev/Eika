@@ -71,7 +71,13 @@ describe("presets", () => {
 
 describe("chosenProblem", () => {
   const existing = [{ name: "gpt-5" } as Model];
-  const choice = { id: "gpt-5-mini", name: "mini", context_window: 400_000, max_output: 128_000 };
+  const choice = {
+    id: "gpt-5-mini",
+    name: "mini",
+    context_window: 400_000,
+    max_output: 128_000,
+    image_input: false,
+  };
 
   it("accepts models that can be added", () => {
     expect(chosenProblem([choice], existing)).toBeNull();

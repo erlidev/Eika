@@ -189,6 +189,35 @@ describe("applyEvent", () => {
     });
   });
 
+  it("shows the images a message carries, live and replayed", () => {
+    const image = { media_type: "image/png", data: "AAAA", width: 1920, height: 1080 };
+    const live = fold([
+      ev("turn.start", { run_id: "r1", session_id: sessionID, message: "", images: [image] }),
+    ]);
+    expect(items(live)).toEqual([
+      expect.objectContaining({ kind: "user", text: "", images: [image] }),
+    ]);
+    const replayed = fold([
+      ev("session.message", {
+        session_id: sessionID,
+        entry_id: "e1",
+        kind: "user",
+        created_at: "2026-01-01T00:00:00Z",
+        message: { role: "user", content: "what is this?", images: [image] },
+      }),
+    ]);
+    expect(items(replayed)[0]).toMatchObject({
+      kind: "user",
+      text: "what is this?",
+      images: [image],
+    });
+  });
+
+  it("adds no row for a turn that starts with nothing new", () => {
+    const state = fold([ev("turn.start", { run_id: "r1", session_id: sessionID, message: "" })]);
+    expect(items(state)).toHaveLength(0);
+  });
+
   it("ignores an entry it already holds", () => {
     const message = ev("session.message", {
       session_id: sessionID,

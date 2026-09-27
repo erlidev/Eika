@@ -233,6 +233,7 @@ export function requestJSON(c: ModelContext): Record<string, unknown> {
     ...p.sampling,
     ...(p.thinking_switch === undefined ? {} : { thinking_switch: p.thinking_switch }),
     preserve_thinking: p.preserve_thinking,
+    image_input: p.image_input,
   };
 }
 

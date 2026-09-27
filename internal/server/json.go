@@ -37,10 +37,20 @@ func writeJSON(w http.ResponseWriter, log *slog.Logger, status int, v any) {
 // not something to ignore: it usually means the client and this version of
 // the API disagree.
 func decodeJSON[T any](r *http.Request) (T, error) {
+	return decodeJSONWithin[T](r, maxRequestBytes)
+}
+
+// decodeJSONWithin reads a JSON request body of at most limit bytes, for the
+// one route whose body carries files.
+func decodeJSONWithin[T any](r *http.Request, limit int64) (T, error) {
 	var v T
-	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxRequestBytes))
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&v); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return v, tooLargef("the request body is over the limit of %d bytes", limit)
+		}
 		return v, invalidf("decode request body: %v", err)
 	}
 	return v, nil

@@ -3,6 +3,8 @@
  * docs/api/events.md and owned by internal/event; change both in one commit.
  */
 
+import type { MessageImage } from "@/api/types/sessions";
+
 /** EventType is the name of an event Eika streams. */
 export type EventType =
   | "turn.start"
@@ -42,6 +44,8 @@ export type TurnStart = {
   session_id: string;
   workspace_id?: string;
   message: string;
+  /** images are the pictures the message carries, as the model is sent them. */
+  images?: MessageImage[];
 };
 
 /** MessageDelta is the payload of a message.delta event. */

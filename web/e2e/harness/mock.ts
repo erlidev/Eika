@@ -17,6 +17,7 @@ import type {
   ElicitationAnswer,
   Entry,
   Message,
+  MessageImage,
   Run,
   Session,
 } from "../../src/api/types.ts";
@@ -547,7 +548,7 @@ export class MockHarness {
       finish: (run, state, error) => {
         this.finish(run, state, error);
       },
-      play: (session, run, text) => this.play(session, run, text),
+      play: (session, run, text, images) => this.play(session, run, text, images),
       compact: (session, run, instructions) => this.compact(session, run, instructions),
       answers: this.answers,
       elicitAnswers: this.elicitAnswers,
@@ -630,7 +631,12 @@ export class MockHarness {
   }
 
   /** play streams one scripted reply as a run's events and stores its entries. */
-  private async play(session: Session, run: Run, text: string): Promise<void> {
+  private async play(
+    session: Session,
+    run: Run,
+    text: string,
+    images: MessageImage[],
+  ): Promise<void> {
     this.busy += 1;
     const topic = `session:${session.id}`;
     const turn = this.nextId("turn");
@@ -676,7 +682,11 @@ export class MockHarness {
     // the model's own "stop" to the reason it ran out of room.
     let stopReason = "stop";
     try {
-      this.append(session, { role: "user", content: text });
+      this.append(session, {
+        role: "user",
+        ...(text === "" ? {} : { content: text }),
+        ...(images.length === 0 ? {} : { images }),
+      });
       // What the model call is sent, which the harness records once the
       // response is in.
       const sent = previewContext(this.world, session, "");
@@ -685,6 +695,7 @@ export class MockHarness {
         session_id: session.id,
         workspace_id: session.workspace_id,
         message: text,
+        ...(images.length === 0 ? {} : { images }),
       });
       for (const step of steps) {
         await pause();

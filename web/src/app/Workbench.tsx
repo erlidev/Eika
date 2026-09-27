@@ -12,6 +12,7 @@ import { CommandPalette } from "@/app/CommandPalette";
 import { availablePanels } from "@/app/panels";
 import { Sidebar } from "@/app/Sidebar";
 import { ThemeToggle } from "@/app/ThemeToggle";
+import { ImageViewer } from "@/components/MessageImages";
 import { ActionError } from "@/components/Notice";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
@@ -231,6 +232,7 @@ export function Workbench() {
       )}
 
       <SettingsDialog />
+      <ImageViewer />
     </div>
   );
 }

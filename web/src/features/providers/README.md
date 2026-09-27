@@ -14,12 +14,15 @@ serves, with the limits and reasoning settings a run uses.
   stored key goes only to the base URL it was entered for, so changing the
   URL asks for the key again.
 - `ModelPicker.tsx` lists what the endpoint serves, lets the user tick models
-  or type one, suggests limits with `limits.ts`, and adds them.
+  or type one, suggests limits with `limits.ts`, and adds them. Image input
+  starts ticked for a model the endpoint says reads images.
 - `ModelDialog.tsx` changes one model, its reasoning vocabulary included:
   endpoints disagree on the words `reasoning_effort` takes, so the model
   carries the list and `efforts.ts` holds the rules for editing and cycling
-  through it. `ModelsPanel.tsx` is the whole list, the Models tab of the
-  settings dialog.
+  through it. It is also where image input is turned on, which lets messages
+  to the model carry images; a test then sends one. `ModelsPanel.tsx` is the
+  whole list, the Models tab of the settings dialog, with an Images badge on
+  the models that take them.
 
 The setup wizard (`features/setup`) uses the form and the picker for its
 first provider.

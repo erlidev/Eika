@@ -538,7 +538,10 @@ export function previewContext(w: World, session: Session, requested: string): M
   for (const [key, layer] of Object.entries(config.sources ?? {})) {
     if (key.startsWith("sampling.")) sources[key] = layer;
   }
-  if (model) sources.thinking_switch = "model";
+  if (model) {
+    sources.thinking_switch = "model";
+    sources.image_input = "model";
+  }
   const last = (w.requests[session.id] ?? []).findLast((r) => r.record.input_tokens > 0);
   const sizes = messages.map((m) => estimate(JSON.stringify(m)));
   return {
@@ -552,6 +555,7 @@ export function previewContext(w: World, session: Session, requested: string): M
       sampling: config.sampling,
       ...(model ? { thinking_switch: model.thinking_switch } : {}),
       preserve_thinking: preserve,
+      image_input: model?.image_input ?? false,
     },
     sources,
     ...(config.dropped_effort === undefined ? {} : { dropped_effort: config.dropped_effort }),

@@ -35,6 +35,9 @@ this file says why, so neither repeats the other.
   fsnotify: trees are small and polling behaves the same on bind mounts.
 - `golang.org/x/net/html`: the standard library has no HTML parser; a
   Markdown library would still need our container and sanitising rules.
+- `golang.org/x/image`, the Go project's own supplement to the standard
+  library, for the Catmull-Rom resampler (`image/draw` has none) and the
+  WebP decoder images are attached in.
 - `dop251/goja`, imported by eikad alone, for web_fetch filters: the model's
   regular expressions need a real JavaScript engine. The harness never links it.
 - MCP without an SDK: the official one brings oauth2 and a schema library
@@ -183,6 +186,52 @@ this file says why, so neither repeats the other.
   to the next run and a key is in memory only while used.
 - Model names are unique across providers, because runs and `spawn_agent`
   name a model alone.
+
+## Image input
+
+- **Images are prepared once, in the harness** (`internal/imaging`), when a
+  message is posted, not in the browser: every client gets the same result,
+  the API refuses what it cannot read before a run starts, and a browser's
+  canvas resampling differs by engine. What is stored is what every later
+  request sends.
+- **Fitted within 1080p** (1920 by 1080, either way up), never enlarged. It is
+  about what hosted vision models downscale to anyway (Anthropic's 1568 long
+  edge, OpenAI's 2048 box), so more pixels would be paid for and thrown away.
+  A full-page screenshot comes out narrow; tiling one was rejected as the
+  model's job, not the upload's.
+- **Catmull-Rom** (`x/image/draw`), whose kernel widens when shrinking so
+  fine detail averages instead of aliasing, and which keeps small text sharp.
+  Resampling is in sRGB like Pillow and libvips: linear light was rejected as
+  a cost with no visible gain for screenshots.
+- **PNG unless it is a photo.** A JPEG, or a lossy WebP, becomes a JPEG at
+  quality 90; anything else a PNG, falling back to JPEG on white only when the
+  PNG is over 3.5 MB (under the 5 MB base64 limit of the strictest hosted
+  API). A JPEG that needs no fitting and no turning keeps its compressed data
+  with its metadata stripped, so it loses nothing to a second compression.
+  Output is PNG or JPEG only, the formats every endpoint reads (llama.cpp does
+  not read WebP).
+- **EXIF is applied, then dropped.** Orientation is applied because endpoints
+  disagree on honouring it; the rest (location above all) is not sent to a
+  third party. Data a phone appends after the image (motion photo video,
+  depth maps) is cut.
+- **Images live inline in the entry**, as base64 in the stored message, like
+  MCP images in `tool.result` details. A table of attachments with ids was
+  rejected: forks copy entries, and shared rows would need reference counting
+  for no gain at 1080p sizes.
+- **Image input is a model fact, off by default** (`models.image_input`), not
+  a profile setting. An endpoint may refuse a request with images for a model
+  that cannot read them; the harness refuses to start or steer a run with
+  images on such a model, and a conversation that already holds images is
+  sent to it with a note in their place, so switching models never breaks a
+  session. OpenRouter's listing says which models read images and the picker
+  starts from that.
+- **An image is estimated at one token per 750 pixels**, not by its base64
+  size, which would count a screenshot as hundreds of thousands of tokens and
+  compact every conversation that holds one.
+- **Deferred:** images a tool returns (an MCP screenshot) reaching the model,
+  and a tool that shows the model an image file in the workspace. Chat
+  Completions takes images only in user messages, so both need a user message
+  after the tool result, which is its own decision.
 
 ## Compaction
 
