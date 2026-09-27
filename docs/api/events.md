@@ -73,7 +73,7 @@ it needs with `session.replay`.
 There are three kinds of topic: `global`, `workspace:<id>`, and
 `session:<id>`. Agent run events, question and elicitation events, and replay
 events are published on `session:<id>`; workspace lifecycle events on
-`workspace:<id>`; MCP server state and session titles on `global`. A
+`workspace:<id>`; MCP server state and session titles and edits on `global`. A
 `bus.dropped` event reaches one connection only and carries the topic
 `global`, whatever that connection subscribed to.
 
@@ -357,9 +357,9 @@ The same fields make up the tool result the parent's model sees.
 
 Published on `workspace:<id>` whenever a workspace reaches a new lifecycle
 state, including the reconciliation a harness does at startup. It is also
-published, with the state unchanged, after a file is saved, a commit, or a
-push through the API, so that views of the workspace's files and changes
-refresh.
+published, with the state unchanged, after a file is saved, a commit, a
+push, or a rename, pin, or archive through the API, so that views of the
+workspace refresh.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -398,6 +398,17 @@ refetches its session lists.
 | `session_id` | string | The session. |
 | `workspace_id` | string, optional | Its workspace, absent for a chat. |
 | `title` | string | The title it now has. |
+
+### `session.updated`
+
+Published on `global` when `PATCH /api/sessions/{id}` renames, pins, or
+archives a session. Like `session.title` it goes to every client, which
+refetches its session lists.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `session_id` | string | The session. |
+| `workspace_id` | string, optional | Its workspace, absent for a chat. |
 
 ## Stream events
 

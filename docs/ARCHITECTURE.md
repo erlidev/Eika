@@ -124,8 +124,8 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | Table | Holds |
 |---|---|
 | `projects` | name (unique), kind (remote/local), remote_url, remote_username, remote_password (sealed), host_path, default_branch |
-| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, worktree_of (cascades), sandbox (jsonb: limits, egress, ports) |
-| `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork/agent), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb) |
+| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, worktree_of (cascades), sandbox (jsonb: limits, egress, ports), pinned, archived |
+| `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork/agent), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb), pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb), commit_sha |
 | `runs` | session, state, started/finished, error |
 | `subagents` | parent/child session, child workspace, state, result |
@@ -573,7 +573,9 @@ web/src/
   `ToolPicker` is shared by profiles, sessions, and chats. Small stores hold
   which editor and settings tab are open, so links elsewhere can open them.
 - **Workbench**: sidebar (projects → workspaces → sessions, forks and child
-  agents nested; chats below), session (transcript, status bar, composer),
+  agents nested; chats below; pinned rows first, archived ones folded under an
+  Archived heading at the end of their list; every row's actions in a menu
+  that a right-click also opens, renaming in place), session (transcript, status bar, composer),
   and a tab strip of panels from `app/panels.tsx`. Workspace sessions get
   Files, Terminal, Changes, and Sandbox; chats get Tools; every session gets
   Tree, Run, and Context (window fill, token bar by part, key parameters; the
@@ -582,7 +584,7 @@ web/src/
   panes become drawers. Heavy panels (Monaco, xterm) load lazily.
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
   events (`useWorkspaceEvents`, `useSessionStream`, `useMCPEvents`,
-  `useSessionTitles`).
+  `useSessionUpdates`).
 - **Stream state**: `features/session/store.ts` wraps the pure reducer
   `transcript.ts`, fed by run events (`run_id`) and replayed
   `session.message`s (`entry_id`). It also tracks pending questions and

@@ -66,6 +66,8 @@ import type {
   UpdateModel,
   UpdateProject,
   UpdateProvider,
+  UpdateSession,
+  UpdateWorkspace,
   Workspace,
   WorkspaceDiff,
   WorkspaceUsage,
@@ -115,6 +117,14 @@ export function createWorkspace(input: CreateWorkspace): Promise<Workspace> {
 /** getWorkspace reads one workspace. */
 export function getWorkspace(id: string, signal?: AbortSignal): Promise<Workspace> {
   return request<Workspace>(`/api/workspaces/${encodeURIComponent(id)}`, { signal });
+}
+
+/** updateWorkspace renames, pins, or archives a workspace. */
+export function updateWorkspace(id: string, input: UpdateWorkspace): Promise<Workspace> {
+  return request<Workspace>(`/api/workspaces/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: input,
+  });
 }
 
 /** startWorkspace starts a stopped container again. */
@@ -264,6 +274,14 @@ export function getSession(
 ): Promise<{ session: Session; head?: Entry }> {
   return request<{ session: Session; head?: Entry }>(`/api/sessions/${encodeURIComponent(id)}`, {
     signal,
+  });
+}
+
+/** updateSession renames, pins, or archives a session. */
+export function updateSession(id: string, input: UpdateSession): Promise<Session> {
+  return request<Session>(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: input,
   });
 }
 

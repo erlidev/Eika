@@ -21,16 +21,18 @@
           - button "Actions for fix-retries"
           - list:
             - listitem:
-              - button "Add exponential backoff to retries"
-              - button "Actions for Add exponential backoff to retries"
-              - list:
-                - listitem:
-                  - button "add-backoff-tests (agent)"
-                  - button "Actions for add-backoff-tests"
-            - listitem:
-              - button "Investigate flaky test"
+              - button "Investigate flaky test (pinned)"
               - button "Actions for Investigate flaky test"
               - list:
                 - listitem:
                   - button "Investigate flaky test, pinned seed (fork)"
                   - button "Actions for Investigate flaky test, pinned seed"
+            - listitem:
+              - button "Add exponential backoff to retries"
+              - button "Actions for Add exponential backoff to retries"
+            - listitem:
+              - button "Archived sessions (1)" [expanded]
+              - list:
+                - listitem:
+                  - button "add-backoff-tests (agent)"
+                  - button "Actions for add-backoff-tests"

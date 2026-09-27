@@ -24,6 +24,9 @@ const maxSessionDepth = 8;
  * child agents that came out of it, oldest first. The sidebar draws it as
  * nested lists, so the shape is in the markup and not only in the indent.
  *
+ * Pinned sessions come first among their siblings; otherwise the order of
+ * the list is kept.
+ *
  * A session whose parent is not in the list is a root. That is what a child
  * of a session in another workspace looks like from here, and what is left of
  * a fork whose parent was deleted, since deleting a session clears the
@@ -47,9 +50,39 @@ export function sessionTree(sessions: Session[]): SessionNode[] {
     children:
       depth >= maxSessionDepth
         ? []
-        : (children.get(session.id) ?? []).map((child) => build(child, depth + 1)),
+        : pinnedFirst(children.get(session.id) ?? []).map((child) => build(child, depth + 1)),
   });
-  return roots.map((root) => build(root, 0));
+  return pinnedFirst(roots).map((root) => build(root, 0));
+}
+
+/**
+ * pinnedFirst moves the pinned rows ahead of the others and keeps the order
+ * within each group. Sessions and workspaces both sort this way.
+ */
+export function pinnedFirst<T extends { pinned: boolean }>(rows: readonly T[]): T[] {
+  return [...rows.filter((r) => r.pinned), ...rows.filter((r) => !r.pinned)];
+}
+
+/**
+ * splitArchived takes the archived sessions out of a tree for a section of
+ * their own. An archived session leaves with everything under it, since a
+ * fork of set-aside work is set aside too; one whose parent is still active
+ * becomes a root of the archived list.
+ */
+export function splitArchived(nodes: SessionNode[]): {
+  active: SessionNode[];
+  archived: SessionNode[];
+} {
+  const archived: SessionNode[] = [];
+  const keep = (list: SessionNode[]): SessionNode[] =>
+    list.flatMap((node) => {
+      if (node.session.archived) {
+        archived.push(node);
+        return [];
+      }
+      return [{ ...node, children: keep(node.children) }];
+    });
+  return { active: keep(nodes), archived };
 }
 
 /**

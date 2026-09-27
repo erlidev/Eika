@@ -10,6 +10,8 @@ one that holds client state of its own.
 
 - `SessionView.tsx` is the centre pane. It owns the stream subscription and
   composes the transcript, the composer, and the run status bar under it.
+- `SessionHeading.tsx` is the header's title: a click on it renames the
+  session in place, and an archived session shows a badge with Unarchive.
 - `useSessionStream.ts` folds every event of `session:<id>` into the store and
   asks for the replay that fills the transcript. A turn that ended, events the
   bus dropped, and a socket that reconnected all ask for the same catch-up:

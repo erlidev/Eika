@@ -11,8 +11,9 @@ import {
   listWorkspaces,
   startWorkspace,
   stopWorkspace,
+  updateWorkspace,
 } from "@/api/routes";
-import type { CreateWorkspace, Workspace } from "@/api/types";
+import type { CreateWorkspace, UpdateWorkspace, Workspace } from "@/api/types";
 
 /** useWorkspaces lists the workspaces of one project, or all of them. */
 export function useWorkspaces(projectId?: string): UseQueryResult<Workspace[]> {
@@ -54,6 +55,22 @@ export function useWorkspaceAction(): UseMutationResult<
     mutationFn: ({ id, action }) => (action === "start" ? startWorkspace(id) : stopWorkspace(id)),
     // The workspace.state event refreshes the list too, but an action taken
     // here must not wait for the stream to come back.
+    onSuccess: async (workspace) => {
+      client.setQueryData(queryKeys.workspace(workspace.id), workspace);
+      await client.invalidateQueries({ queryKey: ["workspaces"] });
+    },
+  });
+}
+
+/** useUpdateWorkspace renames, pins, or archives a workspace. */
+export function useUpdateWorkspace(): UseMutationResult<
+  Workspace,
+  Error,
+  { id: string; changes: UpdateWorkspace }
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changes }) => updateWorkspace(id, changes),
     onSuccess: async (workspace) => {
       client.setQueryData(queryKeys.workspace(workspace.id), workspace);
       await client.invalidateQueries({ queryKey: ["workspaces"] });

@@ -12,6 +12,7 @@ import { Composer } from "@/features/session/Composer";
 import { abortsRun } from "@/features/session/escape";
 import { useAbortRun, useRunStatus, useSession } from "@/features/session/queries";
 import { RunStatusBar } from "@/features/session/RunStatusBar";
+import { SessionHeading } from "@/features/session/SessionHeading";
 import { Transcript } from "@/features/session/Transcript";
 import { useSessionStore } from "@/features/session/store";
 import { useSessionStream } from "@/features/session/useSessionStream";
@@ -73,9 +74,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Session">
       <header className="flex items-center gap-2 border-b px-3 py-2">
-        <h2 className="truncate text-sm font-semibold">
-          {session.data?.session.title ?? "Session"}
-        </h2>
+        <SessionHeading session={session.data?.session} />
         {chat && <ChatBadge />}
         {workspace.data && <WorkspacePlace workspace={workspace.data} />}
         {/* On a phone the id gives way: the title and where the session

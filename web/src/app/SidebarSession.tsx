@@ -1,15 +1,27 @@
 /** A session in the sidebar, with the forks and child agents that came out of it. */
 
-import { Bot, GitBranch, MessageCircle, MessageSquare, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Bot,
+  GitBranch,
+  MessageCircle,
+  MessageSquare,
+  Pencil,
+  Pin,
+  PinOff,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
 import type { Session } from "@/api/types";
-import { IconButton } from "@/app/SidebarRow";
+import { Row, RowFailure } from "@/app/SidebarRow";
+import { useRenaming } from "@/app/useRenaming";
+import type { RowAction } from "@/app/SidebarRow";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { useDeleteSession } from "@/features/sessions";
+import { useDeleteSession, useUpdateSession } from "@/features/sessions";
 import type { SessionNode } from "@/features/sessions";
-import { cn } from "@/lib/utils";
 
 /**
  * sessionIcon marks what a session is. A fork and a child agent are both
@@ -71,44 +83,68 @@ type SessionRowProps = {
  */
 export function SessionRow({ node, depth, indent, sessionId, onNavigate }: SessionRowProps) {
   const { session } = node;
-  const current = session.id === sessionId;
   const remove = useDeleteSession();
+  const update = useUpdateSession();
   const navigate = useNavigate();
+  const renaming = useRenaming();
   const [confirming, setConfirming] = useState(false);
+  const rowIndent = indent + depth * 12;
+  const noun = session.workspace_id === undefined ? "chat" : "session";
+
+  const menu: RowAction[] = [
+    {
+      label: "Rename",
+      icon: Pencil,
+      shortcut: "F2",
+      takesFocus: true,
+      onSelect: renaming.start,
+    },
+    {
+      label: session.pinned ? "Unpin" : "Pin",
+      icon: session.pinned ? PinOff : Pin,
+      onSelect: () => {
+        update.mutate({ id: session.id, changes: { pinned: !session.pinned } });
+      },
+    },
+    {
+      label: session.archived ? "Unarchive" : "Archive",
+      icon: session.archived ? ArchiveRestore : Archive,
+      onSelect: () => {
+        update.mutate({ id: session.id, changes: { archived: !session.archived } });
+      },
+    },
+    {
+      label: "Delete",
+      icon: Trash2,
+      destructive: true,
+      separated: true,
+      onSelect: () => {
+        setConfirming(true);
+      },
+    },
+  ];
+
   return (
     <li>
-      <div
-        className={cn(
-          "group hover:bg-accent flex items-center gap-1 rounded-md pr-1 transition-colors",
-          current && "bg-accent",
-        )}
-      >
-        <button
-          type="button"
-          aria-current={current ? "page" : undefined}
-          className="focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs focus-visible:ring-1 focus-visible:outline-none"
-          style={{ paddingLeft: `${String(indent + depth * 12)}px` }}
-          onClick={() => {
-            onNavigate?.();
-            void navigate(`/sessions/${session.id}`);
-          }}
-        >
-          {sessionIcon(session)}
-          <span className="truncate">{session.title}</span>
-          {session.kind !== "user" && (
-            <span className="sr-only">{` (${sessionKindLabel(session.kind)})`}</span>
-          )}
-        </button>
-        <IconButton
-          label={`Delete ${session.title}`}
-          destructive
-          onClick={() => {
-            setConfirming(true);
-          }}
-        >
-          <Trash2 aria-hidden className="size-3" />
-        </IconButton>
-      </div>
+      <Row
+        indent={rowIndent}
+        icon={sessionIcon(session)}
+        label={session.title}
+        labelNote={session.kind === "user" ? undefined : ` (${sessionKindLabel(session.kind)})`}
+        current={session.id === sessionId}
+        pinned={session.pinned}
+        onClick={() => {
+          onNavigate?.();
+          void navigate(`/sessions/${session.id}`);
+        }}
+        menu={menu}
+        renaming={renaming}
+        onRename={(title) => {
+          update.mutate({ id: session.id, changes: { title } });
+        }}
+      />
+      <RowFailure indent={rowIndent} action={`change the ${noun}`} error={update.error} />
+      <RowFailure indent={rowIndent} action={`delete the ${noun}`} error={remove.error} />
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}

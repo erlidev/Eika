@@ -49,6 +49,11 @@ type Session struct {
 	// Overrides are the profile settings the session sets for itself; what
 	// they leave unset comes from the profile.
 	Overrides ProfileSettings
+	// Pinned sessions are listed before the others.
+	Pinned bool
+	// Archived sessions are set aside under a heading of their own. It is
+	// filing only: an archived session runs like any other.
+	Archived  bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -60,7 +65,7 @@ func (s Session) Chat() bool { return s.WorkspaceID == "" }
 // sessionColumns is the column list every session query selects, in the order
 // scanSession reads them.
 const sessionColumns = `id, workspace_id, title, untitled, kind, head_entry_id, parent_session_id, tools,
-	profile_id, overrides, created_at, updated_at`
+	profile_id, overrides, pinned, archived, created_at, updated_at`
 
 // CreateSession inserts sess and returns it with the fields the database
 // assigned. An empty ID gets a fresh one; an unknown profile is ErrNotFound.
@@ -85,12 +90,12 @@ func createSession(ctx context.Context, q querier, sess Session) (Session, error
 		return Session{}, err
 	}
 	const insert = `INSERT INTO sessions (id, workspace_id, title, untitled, kind, head_entry_id, parent_session_id,
-			tools, profile_id, overrides)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			tools, profile_id, overrides, pinned, archived)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING ` + sessionColumns
 	row := q.QueryRow(ctx, insert, sess.ID, nullable(sess.WorkspaceID), sess.Title, sess.Untitled, sess.Kind,
 		nullable(sess.HeadEntryID), nullable(sess.ParentSessionID), sess.Tools,
-		nullable(sess.ProfileID), overrides)
+		nullable(sess.ProfileID), overrides, sess.Pinned, sess.Archived)
 	return scanSession(row)
 }
 
@@ -126,7 +131,8 @@ func (s *Store) Sessions(ctx context.Context, workspaceID string, withDescendant
 				SELECT ` + sessionColumns + ` FROM sessions WHERE workspace_id = $1
 				UNION
 				SELECT s.id, s.workspace_id, s.title, s.untitled, s.kind, s.head_entry_id,
-					s.parent_session_id, s.tools, s.profile_id, s.overrides, s.created_at, s.updated_at
+					s.parent_session_id, s.tools, s.profile_id, s.overrides, s.pinned, s.archived,
+					s.created_at, s.updated_at
 				FROM sessions s JOIN reachable r ON s.parent_session_id = r.id
 			)
 			SELECT ` + sessionColumns + ` FROM reachable ORDER BY created_at, id`
@@ -178,18 +184,32 @@ func collectSessions(op string, rows pgx.Rows) ([]Session, error) {
 	return out, nil
 }
 
-// SetSessionTitle renames a session. A title set this way is final: the
-// session is no longer untitled.
-func (s *Store) SetSessionTitle(ctx context.Context, id, title string) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE sessions SET title = $2, untitled = false, updated_at = now()
-		WHERE id = $1`, id, title)
+// SessionChanges are the edits a user makes to a session's title and
+// filing. A nil field is left as it is.
+type SessionChanges struct {
+	// Title renames the session. A title set this way is final: the session
+	// is no longer untitled.
+	Title    *string
+	Pinned   *bool
+	Archived *bool
+}
+
+// UpdateSession applies changes to a session and returns it as it now stands.
+func (s *Store) UpdateSession(ctx context.Context, id string, changes SessionChanges) (Session, error) {
+	const q = `UPDATE sessions
+		SET title = COALESCE($2, title),
+		    untitled = untitled AND $2::text IS NULL,
+		    pinned = COALESCE($3, pinned),
+		    archived = COALESCE($4, archived),
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING ` + sessionColumns
+	row := s.pool.QueryRow(ctx, q, id, changes.Title, changes.Pinned, changes.Archived)
+	sess, err := scanSession(row)
 	if err != nil {
-		return wrap("set session title "+id, err)
+		return Session{}, wrap("update session "+id, err)
 	}
-	if tag.RowsAffected() == 0 {
-		return wrap("set session title "+id, pgx.ErrNoRows)
-	}
-	return nil
+	return sess, nil
 }
 
 // TitleUntitledSession gives an untitled session its title and reports
@@ -240,7 +260,7 @@ func scanSession(row pgx.Row) (Session, error) {
 		overrides []byte
 	)
 	err := row.Scan(&sess.ID, &workspace, &sess.Title, &sess.Untitled, &sess.Kind, &head, &parent, &sess.Tools,
-		&profile, &overrides, &sess.CreatedAt, &sess.UpdatedAt)
+		&profile, &overrides, &sess.Pinned, &sess.Archived, &sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
 		return Session{}, err
 	}

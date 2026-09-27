@@ -39,9 +39,14 @@ type workspaceBody struct {
 	// holder, whose sandbox it shares; its own sandbox is empty.
 	WorktreeOf string `json:"worktree_of,omitempty"`
 	// Sandbox is what the container may consume, reach, and expose.
-	Sandbox   sandboxBody `json:"sandbox"`
-	CreatedAt time.Time   `json:"created_at"`
-	UpdatedAt time.Time   `json:"updated_at"`
+	Sandbox sandboxBody `json:"sandbox"`
+	// Pinned workspaces are listed before the others.
+	Pinned bool `json:"pinned"`
+	// Archived workspaces are set aside under a heading of their own; the
+	// container is left as it is.
+	Archived  bool      `json:"archived"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // createWorkspaceRequest is the body of POST /api/workspaces. Image and
@@ -58,6 +63,14 @@ type createWorkspaceRequest struct {
 	// Sandbox is the new workspace's limits, network, and ports. Left out,
 	// it gets the settings' defaults and no ports.
 	Sandbox *sandboxBody `json:"sandbox"`
+}
+
+// updateWorkspaceRequest is the body of PATCH /api/workspaces/{id}. An
+// absent field is left alone. The branch and the container do not change.
+type updateWorkspaceRequest struct {
+	Name     *string `json:"name"`
+	Pinned   *bool   `json:"pinned"`
+	Archived *bool   `json:"archived"`
 }
 
 // workspacesResponse is the body of GET /api/workspaces.
@@ -139,9 +152,9 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 // created is destroyed again when a later step fails, so a failed request
 // leaves no container behind and writes no row.
 func (s *Server) createWorkspace(ctx context.Context, req createWorkspaceRequest) (store.Workspace, error) {
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		return store.Workspace{}, invalidf("name is required")
+	name, err := checkName("name", req.Name)
+	if err != nil {
+		return store.Workspace{}, err
 	}
 	project, err := s.deps.Store.Project(ctx, req.ProjectID)
 	if err != nil {
@@ -221,6 +234,34 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	writeJSON(w, s.log, http.StatusOK, asWorkspace(ws))
+}
+
+// handleUpdateWorkspace renames, pins, or archives a workspace. The state
+// event it publishes, with the state unchanged, is how the sidebars that
+// show the workspace learn of it.
+func (s *Server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[updateWorkspaceRequest](r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	changes := store.WorkspaceChanges{Pinned: req.Pinned, Archived: req.Archived}
+	if req.Name != nil {
+		name, err := checkName("name", *req.Name)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		changes.Name = &name
+	}
+	ws, err := s.deps.Store.UpdateWorkspace(r.Context(), r.PathValue("id"), changes)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.workspaceState(r.Context(), ws.ID, ws.ProjectID, ws.State)
+	s.log.Info("workspace updated", "workspace_id", ws.ID)
 	writeJSON(w, s.log, http.StatusOK, asWorkspace(ws))
 }
 
@@ -709,6 +750,8 @@ func asWorkspace(ws store.Workspace) workspaceBody {
 		ParentWorkspaceID: ws.ParentWorkspaceID,
 		WorktreeOf:        ws.WorktreeOf,
 		Sandbox:           asSandbox(ws.Sandbox),
+		Pinned:            ws.Pinned,
+		Archived:          ws.Archived,
 		CreatedAt:         ws.CreatedAt,
 		UpdatedAt:         ws.UpdatedAt,
 	}

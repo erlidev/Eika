@@ -21,8 +21,19 @@ export type Session = {
   profile_id?: string;
   /** overridden says the session sets something of its own over its profile. */
   overridden: boolean;
+  /** pinned sessions are listed before the others. */
+  pinned: boolean;
+  /** archived sessions are set aside under an Archived heading; they run like any other. */
+  archived: boolean;
   created_at: string;
   updated_at: string;
+};
+
+/** UpdateSession is the body of PATCH /api/sessions/{id}; an absent field is left alone. */
+export type UpdateSession = {
+  title?: string;
+  pinned?: boolean;
+  archived?: boolean;
 };
 
 /** Tool is one tool a run can offer the model, from GET /api/tools. */

@@ -273,6 +273,15 @@ type SessionTitle struct {
 	Title       string `json:"title"`
 }
 
+// SessionUpdated is the payload of a session.updated event, on the global
+// topic: the user changed a session's title, pin, or archive. Every sidebar
+// lists every session, so the event goes to all of them.
+type SessionUpdated struct {
+	SessionID string `json:"session_id"`
+	// WorkspaceID is the session's workspace, absent for a chat.
+	WorkspaceID string `json:"workspace_id,omitempty"`
+}
+
 // SessionMessage is the payload of a session.message event: one entry of a
 // session as it is stored. It is what a replay sends, so that a client which
 // connects late sees the conversation it missed in the same stream as the

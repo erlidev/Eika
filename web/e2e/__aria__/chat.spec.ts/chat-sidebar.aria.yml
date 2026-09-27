@@ -4,4 +4,4 @@
   - list:
     - listitem:
       - button "New chat"
-      - button "Delete New chat"
+      - button "Actions for New chat"

@@ -36,7 +36,12 @@ type Workspace struct {
 	// names a worktree workspace: a worktree's worktrees share its holder.
 	WorktreeOf string
 	// Sandbox is what the container may consume, reach, and expose.
-	Sandbox   WorkspaceSandbox
+	Sandbox WorkspaceSandbox
+	// Pinned workspaces are listed before the others.
+	Pinned bool
+	// Archived workspaces are set aside under a heading of their own. It is
+	// filing only: the container is neither stopped nor started by it.
+	Archived  bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -69,7 +74,7 @@ type WorkspacePort struct {
 // workspaceColumns is the column list every workspace query selects, in the
 // order scanWorkspace reads them.
 const workspaceColumns = `id, project_id, name, branch, base_commit, image, state, container_id,
-	parent_workspace_id, worktree_of, sandbox, created_at, updated_at`
+	parent_workspace_id, worktree_of, sandbox, pinned, archived, created_at, updated_at`
 
 // CreateWorkspace inserts w and returns it with the fields the database
 // assigned. An empty ID gets a fresh one.
@@ -83,11 +88,11 @@ func (s *Store) CreateWorkspace(ctx context.Context, w Workspace) (Workspace, er
 	}
 	const q = `INSERT INTO workspaces
 		(id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id,
-		 worktree_of, sandbox)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		 worktree_of, sandbox, pinned, archived)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING ` + workspaceColumns
 	row := s.pool.QueryRow(ctx, q, w.ID, w.ProjectID, w.Name, w.Branch, w.BaseCommit, w.Image,
-		w.State, w.ContainerID, nullable(w.ParentWorkspaceID), nullable(w.WorktreeOf), sandbox)
+		w.State, w.ContainerID, nullable(w.ParentWorkspaceID), nullable(w.WorktreeOf), sandbox, w.Pinned, w.Archived)
 	out, err := scanWorkspace(row)
 	if err != nil {
 		return Workspace{}, wrap("create workspace "+w.ID, err)
@@ -177,6 +182,31 @@ func (s *Store) SetWorkspaceSandbox(ctx context.Context, id string, sandbox Work
 	return w, nil
 }
 
+// WorkspaceChanges are the edits a user makes to a workspace's name and
+// filing. A nil field is left as it is.
+type WorkspaceChanges struct {
+	Name     *string
+	Pinned   *bool
+	Archived *bool
+}
+
+// UpdateWorkspace applies changes to a workspace and returns it as it now
+// stands.
+func (s *Store) UpdateWorkspace(ctx context.Context, id string, changes WorkspaceChanges) (Workspace, error) {
+	const q = `UPDATE workspaces
+		SET name = COALESCE($2, name),
+		    pinned = COALESCE($3, pinned),
+		    archived = COALESCE($4, archived),
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING ` + workspaceColumns
+	w, err := scanWorkspace(s.pool.QueryRow(ctx, q, id, changes.Name, changes.Pinned, changes.Archived))
+	if err != nil {
+		return Workspace{}, wrap("update workspace "+id, err)
+	}
+	return w, nil
+}
+
 // DeleteWorkspace removes a workspace and its sessions.
 func (s *Store) DeleteWorkspace(ctx context.Context, id string) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM workspaces WHERE id = $1`, id)
@@ -198,7 +228,7 @@ func scanWorkspace(row pgx.Row) (Workspace, error) {
 		sandbox  []byte
 	)
 	err := row.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Branch, &w.BaseCommit, &w.Image,
-		&w.State, &w.ContainerID, &parent, &worktree, &sandbox, &w.CreatedAt, &w.UpdatedAt)
+		&w.State, &w.ContainerID, &parent, &worktree, &sandbox, &w.Pinned, &w.Archived, &w.CreatedAt, &w.UpdatedAt)
 	if err != nil {
 		return Workspace{}, err
 	}

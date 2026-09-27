@@ -5,21 +5,17 @@
     - listitem:
       - button "web-dashboard local"
       - button "New workspace in web-dashboard"
-      - button "Settings of web-dashboard"
-      - button "Delete web-dashboard"
+      - button "Actions for web-dashboard"
     - listitem:
       - button "payments-api remote" [expanded]
       - button "New workspace in payments-api"
-      - button "Settings of payments-api"
-      - button "Delete payments-api"
+      - button "Actions for payments-api"
       - list:
         - listitem:
           - 'button "Workspace state: creating upgrade-go eika/upgrade-go"'
-          - button "Start upgrade-go"
           - button "New session in upgrade-go"
-          - button "Delete upgrade-go"
+          - button "Actions for upgrade-go"
         - listitem:
           - 'button "Workspace state: running fix-retries eika/fix-retries"'
-          - button "Stop fix-retries"
           - button "New session in fix-retries"
-          - button "Delete fix-retries"
+          - button "Actions for fix-retries"

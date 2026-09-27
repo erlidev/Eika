@@ -25,8 +25,19 @@ export type Workspace = {
   worktree_of?: string;
   /** sandbox is what the container may consume, reach, and expose. */
   sandbox: Sandbox;
+  /** pinned workspaces are listed before the others. */
+  pinned: boolean;
+  /** archived workspaces are set aside under an Archived heading; the container is left as it is. */
+  archived: boolean;
   created_at: string;
   updated_at: string;
+};
+
+/** UpdateWorkspace is the body of PATCH /api/workspaces/{id}; an absent field is left alone. */
+export type UpdateWorkspace = {
+  name?: string;
+  pinned?: boolean;
+  archived?: boolean;
 };
 
 /** SandboxLimits bound a container's resources. Zero is no limit. */

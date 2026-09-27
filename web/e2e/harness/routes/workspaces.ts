@@ -2,7 +2,7 @@
 
 import type { Sandbox, Workspace } from "../../../src/api/types.ts";
 import { defaultSandbox } from "../world.ts";
-import { fail, ok, str } from "./context.ts";
+import { checkName, fail, ok, str } from "./context.ts";
 import type { RouteContext } from "./context.ts";
 
 /** noEgressControl is the harness's refusal of restricted egress it cannot give. */
@@ -45,6 +45,8 @@ export function workspaceRoutes(ctx: RouteContext): void {
       image: str(body.image) || w.settings.defaults.sandbox_image,
       state: "running",
       sandbox: isSandbox(body.sandbox) ? body.sandbox : newSandbox(),
+      pinned: false,
+      archived: false,
       created_at: now(),
       updated_at: now(),
     };
@@ -76,6 +78,26 @@ export function workspaceRoutes(ctx: RouteContext): void {
       "conflict",
       `workspace ${row.id} is a worktree in workspace ${row.worktree_of ?? ""}: ${what}`,
     );
+  on("PATCH", "/api/workspaces/{id}", ({ params, body }) => {
+    const row = find(w.workspaces, params[0], "workspace");
+    if ("status" in row) return row;
+    if (body.name !== undefined) {
+      const name = checkName("name", body.name);
+      if (typeof name !== "string") return name;
+      row.name = name;
+    }
+    if (typeof body.pinned === "boolean") row.pinned = body.pinned;
+    if (typeof body.archived === "boolean") row.archived = body.archived;
+    row.updated_at = now();
+    ctx.emit(
+      ctx.event("workspace.state", `workspace:${row.id}`, {
+        workspace_id: row.id,
+        project_id: row.project_id,
+        state: row.state,
+      }),
+    );
+    return ok(row);
+  });
   on("PUT", "/api/workspaces/{id}/sandbox", ({ params, body }) => {
     const row = find(w.workspaces, params[0], "workspace");
     if ("status" in row) return row;
