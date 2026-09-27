@@ -28,9 +28,13 @@ type Workspace struct {
 	// ContainerID is the Docker container id, empty before the container
 	// exists.
 	ContainerID string
-	// ParentWorkspaceID is the workspace a subagent's workspace was cloned
-	// from, empty for a workspace the user created.
+	// ParentWorkspaceID is the workspace a subagent's or a fork's workspace
+	// was made from, empty for a workspace the user created.
 	ParentWorkspaceID string
+	// WorktreeOf is the workspace whose container holds this one as a git
+	// worktree, empty for a workspace with a container of its own. It never
+	// names a worktree workspace: a worktree's worktrees share its holder.
+	WorktreeOf string
 	// Sandbox is what the container may consume, reach, and expose.
 	Sandbox   WorkspaceSandbox
 	CreatedAt time.Time
@@ -65,7 +69,7 @@ type WorkspacePort struct {
 // workspaceColumns is the column list every workspace query selects, in the
 // order scanWorkspace reads them.
 const workspaceColumns = `id, project_id, name, branch, base_commit, image, state, container_id,
-	parent_workspace_id, sandbox, created_at, updated_at`
+	parent_workspace_id, worktree_of, sandbox, created_at, updated_at`
 
 // CreateWorkspace inserts w and returns it with the fields the database
 // assigned. An empty ID gets a fresh one.
@@ -78,11 +82,12 @@ func (s *Store) CreateWorkspace(ctx context.Context, w Workspace) (Workspace, er
 		return Workspace{}, fmt.Errorf("encode sandbox of workspace %s: %w", w.ID, err)
 	}
 	const q = `INSERT INTO workspaces
-		(id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id, sandbox)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		(id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id,
+		 worktree_of, sandbox)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING ` + workspaceColumns
 	row := s.pool.QueryRow(ctx, q, w.ID, w.ProjectID, w.Name, w.Branch, w.BaseCommit, w.Image,
-		w.State, w.ContainerID, nullable(w.ParentWorkspaceID), sandbox)
+		w.State, w.ContainerID, nullable(w.ParentWorkspaceID), nullable(w.WorktreeOf), sandbox)
 	out, err := scanWorkspace(row)
 	if err != nil {
 		return Workspace{}, wrap("create workspace "+w.ID, err)
@@ -187,12 +192,13 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) error {
 // scanWorkspace reads one workspace row.
 func scanWorkspace(row pgx.Row) (Workspace, error) {
 	var (
-		w       Workspace
-		parent  *string
-		sandbox []byte
+		w        Workspace
+		parent   *string
+		worktree *string
+		sandbox  []byte
 	)
 	err := row.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Branch, &w.BaseCommit, &w.Image,
-		&w.State, &w.ContainerID, &parent, &sandbox, &w.CreatedAt, &w.UpdatedAt)
+		&w.State, &w.ContainerID, &parent, &worktree, &sandbox, &w.CreatedAt, &w.UpdatedAt)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -200,6 +206,7 @@ func scanWorkspace(row pgx.Row) (Workspace, error) {
 		return Workspace{}, fmt.Errorf("decode sandbox of workspace %s: %w", w.ID, err)
 	}
 	w.ParentWorkspaceID = text(parent)
+	w.WorktreeOf = text(worktree)
 	w.CreatedAt = w.CreatedAt.UTC()
 	w.UpdatedAt = w.UpdatedAt.UTC()
 	return w, nil

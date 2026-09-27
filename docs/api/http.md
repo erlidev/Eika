@@ -189,19 +189,27 @@ a rejected request leaves no container and writes no row.
 ### `POST /api/workspaces/{id}/start`
 
 Starts a stopped container again, held to the `sandbox` its row records, so a
-change the container took only in part is completed. `200` with the
-`Workspace`.
+change the container took only in part is completed. The worktree workspaces
+it holds start with it and publish `workspace.state` too. `200` with the
+`Workspace`. `409` for a worktree workspace, which starts with its holder.
 
 ### `POST /api/workspaces/{id}/stop`
 
-Aborts every run in the workspace, then stops the container and keeps its
-files. `200` with the `Workspace`.
+Aborts every run in the workspace and in the worktree workspaces it holds,
+then stops the container and keeps its files; the worktree workspaces stop
+with it. `200` with the `Workspace`. `409` for a worktree workspace.
 
 ### `DELETE /api/workspaces/{id}`
 
 Aborts every run in the workspace, destroys the container and its volume, and
-deletes the row with its sessions and entries. A container that is already
-gone is not an error. `204`.
+deletes the row with its sessions and entries, and with the worktree
+workspaces it holds, whose files were in that volume. A container that is
+already gone is not an error. `204`.
+
+For a worktree workspace, it aborts the runs in it, removes the worktree with
+its files, uncommitted ones included, and deletes the row; the branch and its
+commits stay in the holder's repository. `409` while the holder is stopped,
+since its files cannot be removed then.
 
 ### `PUT /api/workspaces/{id}/sandbox`
 
@@ -218,13 +226,15 @@ the unchanged state.
 `none`, an allowlist entry that is not a host pattern, a port that is out of
 range, listed twice, or `7000` (the sandbox daemon's), and for restricted
 egress on a harness without the internal sandbox network. `409` for a
-workspace that is creating or gone.
+workspace that is creating or gone, and for a worktree workspace: its
+container, and so its sandbox, is its holder's.
 
 ### `GET /api/workspaces/{id}/usage`
 
 Samples what a running workspace consumes; it takes about a second, because
-Docker reads the CPU counters twice. `409` for a workspace that is not
-running. `200` with:
+Docker reads the CPU counters twice. A worktree workspace reports its
+holder's container, against the holder's limits. `409` for a workspace that
+is not running. `200` with:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -431,7 +441,8 @@ workspace that is not running.
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 | `container_id` | string, optional | The Docker container id. |
 | `parent_workspace_id` | string, optional | The workspace it was branched from. |
-| `sandbox` | Sandbox | What the container may consume, reach, and expose. A workspace from before sandboxes has no limits, open egress, and no ports. |
+| `worktree_of` | string, optional | The workspace whose container it is a git worktree in, at `/workspace/.eika/worktrees/<id>`: a child agent's workspace. It has no container of its own, so it starts, stops, and is confined with that workspace; its paths, commands, and terminal are its worktree's. |
+| `sandbox` | Sandbox | What the container may consume, reach, and expose. A workspace from before sandboxes has no limits, open egress, and no ports. A worktree workspace's is empty: its holder's applies. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ### Sandbox
@@ -442,8 +453,9 @@ workspace that is not running.
 | `egress` | `{"mode": string, "allow": [string]}` | `open` reaches the internet directly. `allowlist` puts the container on the internal sandbox network, with no route out, and its processes reach the hosts `allow` names through the harness's egress proxy. `none` is the internal network with nothing allowed: the harness and its git hub only. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
 | `ports` | array of `{"port": number, "label": string}` | At most 20 container ports the harness forwards previews to. `label` is at most 40 characters. |
 
-Forks and child agents are created with their parent's `limits` and `egress`
-and no `ports`.
+Forks are created with their parent's `limits` and `egress` and no `ports`;
+a fork of a worktree workspace takes its holder's. Child agents share their
+parent's container, and so its sandbox.
 
 ## Sessions
 
@@ -455,8 +467,8 @@ or commands, and offer the model only the tools that need no workspace.
 
 `?workspace_id=<id>` narrows the list. `?descendants=true` adds the forks and
 child agents those sessions led to, wherever they run: a fork with a workspace
-and a subagent each live in a workspace of their own, and both belong under
-the session they came from. It is ignored without `workspace_id`, which
+and a subagent each have a workspace of their own, and both belong under the
+session they came from. It is ignored without `workspace_id`, which
 already returns every session, chats included. `?chats=true` returns the
 chats alone, forks of chats included; with `workspace_id` it is `400`.
 
@@ -805,10 +817,11 @@ its tools out of that run.
 
 ## Subagents
 
-A subagent is a child agent run: its own workspace, cloned from its parent's
-at the commit the parent stood on and running its parent's image, its own
-session, and its own branch, `<parent branch>-<name>-<6 characters of the
-subagent id>`. The `spawn_agent`, `wait_agents`, and `list_agents` tools are
+A subagent is a child agent run: its own workspace, a git worktree at the
+commit the parent stood on in the container the parent's files are in (see
+`worktree_of`), its own session, and its own branch, `<parent branch>-<name>-<6
+characters of the subagent id>`. The parent's changes are committed first, and
+the branch is in the parent's repository as soon as the child commits. The `spawn_agent`, `wait_agents`, and `list_agents` tools are
 how a run makes and waits for them; these routes are how the UI watches and
 stops them. The lifecycle is on the stream as `subagent.started` and
 `subagent.finished`.
@@ -828,7 +841,7 @@ spawned in turn, oldest first.
 
 Stops a running child and waits for it to record how it ended. The child still
 commits and pushes what it left in its tree, so aborted work is not lost, and
-its workspace is stopped rather than destroyed.
+its worktree is kept.
 
 `200` with the `Agent`. `409` when the child is already finished; `404` when
 there is no such subagent.

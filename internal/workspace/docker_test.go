@@ -586,10 +586,10 @@ func TestWorkspaceFromADockerfileAndAHostPath(t *testing.T) {
 	}
 }
 
-// TestWorkspaceHandsWorkToAChildClone is the git half of a subagent spawn
-// against real containers and the real hub: a parent pushes its branch, a
-// child clones the project at that commit on a branch of its own, and the
-// parent fetches the child's branch back.
+// TestWorkspaceHandsWorkToAChildClone is the git half of a fork with a
+// workspace, and of a merge, against real containers and the real hub: a
+// parent pushes its branch, a child clones the project at that commit on a
+// branch of its own, and the parent fetches the child's branch back.
 func TestWorkspaceHandsWorkToAChildClone(t *testing.T) {
 	requireDocker(t)
 	requireImage(t)
@@ -691,6 +691,104 @@ func TestWorkspaceHandsWorkToAChildClone(t *testing.T) {
 			t.Error("the branch name ran as a command")
 		}
 	})
+}
+
+// TestAWorktreeWorksInItsHoldersContainer is the git half of a subagent
+// spawn against a real container: the child is a worktree of the parent's
+// repository, served by the parent's daemon narrowed to the worktree, and its
+// branch is the parent's the moment it commits.
+func TestAWorktreeWorksInItsHoldersContainer(t *testing.T) {
+	requireDocker(t)
+	requireImage(t)
+	h := testHub(t)
+	port := serveHub(t, h)
+
+	probe := newHost(t, h, "")
+	parent, err := probe.Create(t.Context(), workspace.Spec{Project: "demo"})
+	if err != nil {
+		t.Fatalf("create the parent: %v", err)
+	}
+	t.Cleanup(func() { cleanUp(probe, &parent) })
+	if err := probe.Start(t.Context(), &parent); err != nil {
+		t.Fatalf("start the parent: %v", err)
+	}
+	parentEx, err := probe.Executor(parent)
+	if err != nil {
+		t.Fatalf("parent executor: %v", err)
+	}
+	host := newHost(t, h, fmt.Sprintf("http://%s:%d", containerGateway(t, parentEx), port))
+	if _, err := host.Clone(t.Context(), parent, "demo", "work"); err != nil {
+		t.Fatalf("clone the parent: %v", err)
+	}
+	run(t, parentEx, "echo from the parent > shared.txt && git add -A && git commit -m 'the parent'")
+	base := run(t, parentEx, "git rev-parse HEAD")
+
+	if err := workspace.AddWorktree(t.Context(), parentEx, "child1", "work-worker", base); err != nil {
+		t.Fatalf("add the child's worktree: %v", err)
+	}
+	child, err := workspace.Locate(t.Context(), host, "child1", parent.ID)
+	if err != nil {
+		t.Fatalf("locate the child: %v", err)
+	}
+	childEx, err := host.Executor(child)
+	if err != nil {
+		t.Fatalf("child executor: %v", err)
+	}
+	if want := "/workspace/.eika/worktrees/child1"; childEx.Root() != want || run(t, childEx, "pwd") != want {
+		t.Errorf("child root = %q, want commands and paths at %s", childEx.Root(), want)
+	}
+	if got := run(t, childEx, "cat shared.txt"); got != "from the parent" {
+		t.Errorf("child shared.txt = %q, want the parent's content", got)
+	}
+	if got := run(t, childEx, "git rev-parse --abbrev-ref HEAD"); got != "work-worker" {
+		t.Errorf("child branch = %q, want work-worker", got)
+	}
+	if _, err := childEx.ReadFile(t.Context(), "../../../shared.txt", executor.ReadOpts{}); !errors.Is(err, executor.ErrPathOutsideRoot) {
+		t.Errorf("reading past the worktree: %v, want ErrPathOutsideRoot", err)
+	}
+
+	if err := childEx.WriteFile(t.Context(), "notes.txt", []byte("from the child\n")); err != nil {
+		t.Fatalf("write in the worktree: %v", err)
+	}
+	run(t, childEx, "git add -A && git commit -m 'the child'")
+	if got := run(t, parentEx, "git show work-worker:notes.txt"); got != "from the child" {
+		t.Errorf("the parent reads %q from the child's branch, want its commit", got)
+	}
+	if status := run(t, parentEx, "git status --porcelain --untracked-files=all"); status != "" {
+		t.Errorf("parent status = %q, want the worktree kept out of it", status)
+	}
+	// The child pushes through the parent's container and grant.
+	if err := host.Push(t.Context(), child, "demo", "work-worker"); err != nil {
+		t.Fatalf("push the child's branch: %v", err)
+	}
+	path, err := h.Path("demo")
+	if err != nil {
+		t.Fatalf("hub path: %v", err)
+	}
+	if out, err := exec.CommandContext(t.Context(), "git", "-C", path, "show", "work-worker:notes.txt").Output(); err != nil || strings.TrimSpace(string(out)) != "from the child" {
+		t.Errorf("hub work-worker:notes.txt = %q, %v, want the child's commit", out, err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	p, err := host.Process(ctx, child, sandbox.ProcessSpec{Command: "cat", Args: []string{"notes.txt"}}, nil)
+	if err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	defer p.Close()
+	if out, _ := io.ReadAll(p); string(out) != "from the child\n" {
+		t.Errorf("a process in the child read %q, want it to start in the worktree", out)
+	}
+
+	if err := workspace.RemoveWorktree(t.Context(), parentEx, "child1"); err != nil {
+		t.Fatalf("remove the worktree: %v", err)
+	}
+	if got := run(t, parentEx, "test -e .eika/worktrees/child1 && echo there || echo gone"); got != "gone" {
+		t.Errorf("worktree directory after removal is %s", got)
+	}
+	if got := run(t, parentEx, "git show work-worker:notes.txt"); got != "from the child" {
+		t.Errorf("branch after removal reads %q, want the child's commit kept", got)
+	}
 }
 
 func TestHasImageTellsPresentFromMissing(t *testing.T) {

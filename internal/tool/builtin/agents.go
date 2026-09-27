@@ -115,9 +115,10 @@ func (spawnAgentTool) Name() string { return "spawn_agent" }
 // Description tells the model what the tool does.
 func (spawnAgentTool) Description() string {
 	return "Hand a self-contained task to a child agent. " +
-		"The child works in its own sandbox, on the same image as this one, cloned from this " +
-		"workspace at its current commit, " +
-		"on its own branch, and reports back a summary, its branch, its commit, and a diffstat. " +
+		"This workspace's changes are committed first; the child then works beside you in this sandbox, " +
+		"in a git worktree of this repository at that commit, on its own branch, " +
+		"and reports back a summary, its branch, its commit, and a diffstat. " +
+		"Its branch is in this repository, so you can merge it directly. " +
 		"Use it for work that can be described once and checked afterwards. " +
 		"Set wait to false to start several children and then call wait_agents."
 }

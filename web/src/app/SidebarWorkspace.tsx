@@ -33,6 +33,9 @@ export function WorkspaceRow({
   const [confirming, setConfirming] = useState(false);
 
   const running = workspace.state === "running";
+  // A worktree runs in the container of the workspace holding it, which is
+  // the one that starts and stops.
+  const worktree = workspace.worktree_of !== undefined;
 
   return (
     <li>
@@ -45,19 +48,21 @@ export function WorkspaceRow({
         meta={workspace.branch}
         actions={
           <>
-            <IconButton
-              label={running ? `Stop ${workspace.name}` : `Start ${workspace.name}`}
-              disabled={action.isPending}
-              onClick={() => {
-                action.mutate({ id: workspace.id, action: running ? "stop" : "start" });
-              }}
-            >
-              {running ? (
-                <Square aria-hidden className="size-3" />
-              ) : (
-                <Play aria-hidden className="size-3" />
-              )}
-            </IconButton>
+            {!worktree && (
+              <IconButton
+                label={running ? `Stop ${workspace.name}` : `Start ${workspace.name}`}
+                disabled={action.isPending}
+                onClick={() => {
+                  action.mutate({ id: workspace.id, action: running ? "stop" : "start" });
+                }}
+              >
+                {running ? (
+                  <Square aria-hidden className="size-3" />
+                ) : (
+                  <Play aria-hidden className="size-3" />
+                )}
+              </IconButton>
+            )}
             <IconButton
               label={`New session in ${workspace.name}`}
               onClick={() => {
@@ -90,7 +95,11 @@ export function WorkspaceRow({
         open={confirming}
         onOpenChange={setConfirming}
         title={`Destroy ${workspace.name}?`}
-        description="The container and its volume go, and so do the workspace's sessions and their entries. Work that was not pushed to the hub is lost."
+        description={
+          worktree
+            ? "The worktree goes with its uncommitted changes, and so do the workspace's sessions and their entries. Its branch and commits stay in the repository it shares."
+            : "The container and its volume go, and so do the workspace's sessions and their entries, and any worktrees of agents working in it. Work that was not pushed to the hub is lost."
+        }
         confirmLabel="Destroy workspace"
         onConfirm={() => {
           remove.mutate(workspace.id);

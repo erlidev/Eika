@@ -253,6 +253,52 @@ func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
 	}
 }
 
+// A worktree workspace lives in its holder's volume, so its row, and the
+// sessions in it, go when the holder's does.
+func TestAWorktreeWorkspaceGoesWithItsHolder(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+
+	project := newProject(t, st)
+	holder, err := st.CreateWorkspace(ctx, store.Workspace{
+		ProjectID: project.ID, Name: "main", Branch: "main", State: "running",
+	})
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	tree, err := st.CreateWorkspace(ctx, store.Workspace{
+		ProjectID: project.ID, Name: "agent", Branch: "main-agent", State: "running",
+		ParentWorkspaceID: holder.ID, WorktreeOf: holder.ID,
+	})
+	if err != nil {
+		t.Fatalf("create worktree workspace: %v", err)
+	}
+	if tree.WorktreeOf != holder.ID {
+		t.Errorf("created worktree_of = %q, want %q", tree.WorktreeOf, holder.ID)
+	}
+	read, err := st.Workspace(ctx, tree.ID)
+	if err != nil || read.WorktreeOf != holder.ID || read.ParentWorkspaceID != holder.ID {
+		t.Fatalf("read worktree workspace = %+v, %v, want it held by %s", read, err, holder.ID)
+	}
+	if again, err := st.Workspace(ctx, holder.ID); err != nil || again.WorktreeOf != "" {
+		t.Errorf("holder = %+v, %v, want no worktree_of", again, err)
+	}
+	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: tree.ID, Title: "child", Kind: store.SessionAgent})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if err := st.DeleteWorkspace(ctx, holder.ID); err != nil {
+		t.Fatalf("delete holder: %v", err)
+	}
+	if _, err := st.Workspace(ctx, tree.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("worktree workspace after its holder went: %v, want ErrNotFound", err)
+	}
+	if _, err := st.Session(ctx, sess.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("session in the worktree after its holder went: %v, want ErrNotFound", err)
+	}
+}
+
 // A chat is a session with no workspace. It is listed apart from every
 // workspace's sessions, its fork is a chat too, and both keep the tools the
 // user chose.

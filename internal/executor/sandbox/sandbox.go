@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -36,8 +37,13 @@ type Options struct {
 	BaseURL string
 	// Token is the workspace's eikad token.
 	Token string
-	// Root is the workspace root inside the sandbox. Empty means DefaultRoot.
+	// Root is the daemon's root inside the sandbox. Empty means DefaultRoot.
 	Root string
+	// Dir narrows the client to a directory below Root, given relative to
+	// it: paths are relative to Dir, commands and terminals start in it, and
+	// the client refuses any path outside it. Empty is Root itself. It is how
+	// a worktree workspace shares a container with the workspace holding it.
+	Dir string
 	// HTTPClient is used for every request. Nil means a client with no
 	// overall timeout, because an exec streams for as long as it runs.
 	HTTPClient *http.Client
@@ -48,6 +54,7 @@ type Client struct {
 	base  string
 	token string
 	root  string
+	dir   string
 	http  *http.Client
 }
 
@@ -71,23 +78,67 @@ func New(opts Options) (*Client, error) {
 	if c.root == "" {
 		c.root = DefaultRoot
 	}
+	if opts.Dir != "" {
+		dir, err := executor.Resolve(c.root, opts.Dir)
+		if err != nil {
+			return nil, fmt.Errorf("narrow sandbox client to %s: %w", opts.Dir, err)
+		}
+		if c.dir, err = executor.Rel(c.root, dir); err != nil {
+			return nil, err
+		}
+		if c.dir == "." {
+			c.dir = ""
+		}
+	}
 	if c.http == nil {
 		c.http = &http.Client{}
 	}
 	return c, nil
 }
 
-// Root is the absolute path of the workspace inside the sandbox.
-func (c *Client) Root() string { return c.root }
+// Root is the absolute path of the workspace inside the sandbox: the
+// daemon's root, or the directory the client is narrowed to.
+func (c *Client) Root() string { return filepath.Join(c.root, c.dir) }
+
+// daemonPath turns a path relative to the client's root, or absolute inside
+// it, into one relative to the daemon's root, which is what the daemon reads.
+// A client that is not narrowed passes paths through for the daemon to check.
+func (c *Client) daemonPath(path string) (string, error) {
+	if c.dir == "" {
+		return path, nil
+	}
+	abs, err := executor.Resolve(c.Root(), path)
+	if err != nil {
+		return "", err
+	}
+	return executor.Rel(c.root, abs)
+}
+
+// clientPath turns a path the daemon reported, relative to its root, into one
+// relative to the client's root.
+func (c *Client) clientPath(path string) string {
+	if c.dir == "" {
+		return path
+	}
+	rel, err := executor.Rel(c.Root(), filepath.Join(c.root, filepath.FromSlash(path)))
+	if err != nil {
+		return path
+	}
+	return rel
+}
 
 // Exec runs a command in the sandbox, streaming its output into the spec's
 // writers as the daemon produces it.
 func (c *Client) Exec(ctx context.Context, spec executor.ExecSpec) (executor.ExecResult, error) {
+	dir, err := c.daemonPath(spec.Dir)
+	if err != nil {
+		return executor.ExecResult{}, err
+	}
 	req := eikad.ExecRequest{
 		Command:   spec.Command,
 		Args:      spec.Args,
 		Shell:     spec.Shell,
-		Dir:       spec.Dir,
+		Dir:       dir,
 		Env:       spec.Env,
 		TimeoutMS: spec.Timeout.Milliseconds(),
 	}
@@ -146,7 +197,11 @@ func readFrames(r io.Reader, stdout, stderr io.Writer) (executor.ExecResult, err
 
 // ReadFile returns the contents of path, truncated at opts.MaxBytes.
 func (c *Client) ReadFile(ctx context.Context, path string, opts executor.ReadOpts) ([]byte, error) {
-	q := url.Values{"path": {path}}
+	target, err := c.daemonPath(path)
+	if err != nil {
+		return nil, err
+	}
+	q := url.Values{"path": {target}}
 	if opts.MaxBytes > 0 {
 		q.Set("max_bytes", strconv.FormatInt(opts.MaxBytes, 10))
 	}
@@ -164,7 +219,11 @@ func (c *Client) ReadFile(ctx context.Context, path string, opts executor.ReadOp
 
 // WriteFile writes data to path, creating parent directories.
 func (c *Client) WriteFile(ctx context.Context, path string, data []byte) error {
-	resp, err := c.do(ctx, http.MethodPut, "/files", url.Values{"path": {path}},
+	target, err := c.daemonPath(path)
+	if err != nil {
+		return err
+	}
+	resp, err := c.do(ctx, http.MethodPut, "/files", url.Values{"path": {target}},
 		bytes.NewReader(data), "application/octet-stream")
 	if err != nil {
 		return err
@@ -194,22 +253,30 @@ func (c *Client) SetEnvironment(ctx context.Context, env []string) error {
 
 // Stat describes one file in the workspace.
 func (c *Client) Stat(ctx context.Context, path string) (executor.FileInfo, error) {
-	var out eikad.FileInfo
-	if err := c.getJSON(ctx, "/stat", url.Values{"path": {path}}, &out); err != nil {
+	target, err := c.daemonPath(path)
+	if err != nil {
 		return executor.FileInfo{}, err
 	}
-	return fileInfo(out), nil
+	var out eikad.FileInfo
+	if err := c.getJSON(ctx, "/stat", url.Values{"path": {target}}, &out); err != nil {
+		return executor.FileInfo{}, err
+	}
+	return c.fileInfo(out), nil
 }
 
 // List describes the direct children of a directory in the workspace.
 func (c *Client) List(ctx context.Context, path string) ([]executor.FileInfo, error) {
+	target, err := c.daemonPath(path)
+	if err != nil {
+		return nil, err
+	}
 	var out eikad.ListResponse
-	if err := c.getJSON(ctx, "/list", url.Values{"path": {path}}, &out); err != nil {
+	if err := c.getJSON(ctx, "/list", url.Values{"path": {target}}, &out); err != nil {
 		return nil, err
 	}
 	entries := make([]executor.FileInfo, len(out.Entries))
 	for i, e := range out.Entries {
-		entries[i] = fileInfo(e)
+		entries[i] = c.fileInfo(e)
 	}
 	return entries, nil
 }
@@ -226,6 +293,9 @@ func (c *Client) Terminal(ctx context.Context, rows, cols uint16) (*websocket.Co
 	}
 	if cols > 0 {
 		q.Set("cols", strconv.FormatUint(uint64(cols), 10))
+	}
+	if c.dir != "" {
+		q.Set("dir", c.dir)
 	}
 	u := c.base + "/pty"
 	if len(q) > 0 {
@@ -246,10 +316,10 @@ func (c *Client) Terminal(ctx context.Context, rows, cols uint16) (*websocket.Co
 }
 
 // fileInfo converts the wire type into the executor type.
-func fileInfo(f eikad.FileInfo) executor.FileInfo {
+func (c *Client) fileInfo(f eikad.FileInfo) executor.FileInfo {
 	return executor.FileInfo{
 		Name:    f.Name,
-		Path:    f.Path,
+		Path:    c.clientPath(f.Path),
 		Size:    f.Size,
 		Mode:    fs.FileMode(f.Mode),
 		ModTime: f.ModTime.UTC(),
@@ -327,7 +397,7 @@ var _ executor.Executor = (*Client)(nil)
 type ProcessSpec struct {
 	Command string
 	Args    []string
-	// Dir is relative to the workspace root; empty is the root.
+	// Dir is relative to the client's root; empty is the root.
 	Dir string
 	// Env holds KEY=VALUE entries added to the sandbox's environment.
 	Env []string
@@ -345,6 +415,10 @@ const maxStderrLine = 4096
 // Like Terminal, it is not part of executor.Executor: it is how the harness
 // runs a stdio MCP server the user configured, not something a tool calls.
 func (c *Client) Process(ctx context.Context, spec ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error) {
+	dir, err := c.daemonPath(spec.Dir)
+	if err != nil {
+		return nil, err
+	}
 	conn, resp, err := websocket.Dial(ctx, c.base+"/process", &websocket.DialOptions{
 		HTTPClient: c.http,
 		HTTPHeader: http.Header{"Authorization": {"Bearer " + c.token}},
@@ -358,7 +432,7 @@ func (c *Client) Process(ctx context.Context, spec ProcessSpec, stderr func(stri
 	// Past the bound, the caller's reader has more than one whole message
 	// to take; the daemon's output chunks are far smaller.
 	conn.SetReadLimit(eikad.MaxProcessMessage)
-	start, err := json.Marshal(eikad.ProcessMessage{Type: eikad.ProcessStart, Command: spec.Command, Args: spec.Args, Dir: spec.Dir, Env: spec.Env})
+	start, err := json.Marshal(eikad.ProcessMessage{Type: eikad.ProcessStart, Command: spec.Command, Args: spec.Args, Dir: dir, Env: spec.Env})
 	if err != nil {
 		_ = conn.CloseNow()
 		return nil, fmt.Errorf("encode process start: %w", err)

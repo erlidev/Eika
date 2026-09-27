@@ -249,7 +249,10 @@ func TestEgressPolicyKnowsAWorkspaceByItsHubToken(t *testing.T) {
 	}
 }
 
-func TestForksAndChildrenKeepTheSandboxButNotThePorts(t *testing.T) {
+// A child agent works in its parent's container, so it is confined by the
+// parent's sandbox rather than a copy; a fork, of the parent's session or of
+// the child's, gets a container of its own, confined as that container is.
+func TestChildrenShareTheSandboxAndForksKeepItButNotThePorts(t *testing.T) {
 	a := newAPI(t)
 	a.host.egressControl = true
 	project, dir := a.newProject(t, "demo")
@@ -269,18 +272,41 @@ func TestForksAndChildrenKeepTheSandboxButNotThePorts(t *testing.T) {
 	a.waitIdle(t, sess.ID)
 	child := a.waitAgent(t, sess.ID)
 
-	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	last := path.Entries[len(path.Entries)-1]
-	fork := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork",
-		map[string]any{"entry_id": last.ID, "with_workspace": true}), 201)
+	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+child.WorkspaceID, nil), 200)
+	if got.WorktreeOf != ws.ID || got.Sandbox.Limits.MemoryMB != 0 || len(got.Sandbox.Ports) != 0 {
+		t.Errorf("child = %+v, want a worktree of %s with no sandbox of its own", got, ws.ID)
+	}
+	if confined := a.host.confinements(child.WorkspaceID); len(confined) != 0 {
+		t.Errorf("child confined with %+v, want no container of its own", confined)
+	}
+	if rec := request(t, a.Server, "PUT", "/api/workspaces/"+child.WorkspaceID+"/sandbox",
+		sandboxOf(0, 0, 0, "open", nil)); rec.Code != 409 {
+		t.Errorf("changing a child's sandbox = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	// The child's usage is its holder's container, under the holder's limits.
+	usage := decodeBody[usageWire](t, request(t, a.Server, "GET", "/api/workspaces/"+child.WorkspaceID+"/usage", nil), 200)
+	if usage.PIDsLimit != 64 || usage.CPUs != 1 {
+		t.Errorf("child usage = %+v, want the holder's limits", usage)
+	}
 
-	for name, id := range map[string]string{"child": child.WorkspaceID, "fork": fork.WorkspaceID} {
+	forks := map[string]string{}
+	for name, from := range map[string]string{"fork": sess.ID, "child's fork": child.SessionID} {
+		path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+from+"/path", nil), 200)
+		last := path.Entries[len(path.Entries)-1]
+		fork := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions/"+from+"/fork",
+			map[string]any{"entry_id": last.ID, "with_workspace": true}), 201)
+		forks[name] = fork.WorkspaceID
+	}
+	for name, id := range forks {
 		got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+id, nil), 200)
+		if got.WorktreeOf != "" {
+			t.Errorf("%s = %+v, want a container of its own", name, got)
+		}
 		if got.Sandbox.Limits.MemoryMB != 512 || got.Sandbox.Egress.Mode != "allowlist" || len(got.Sandbox.Ports) != 0 {
-			t.Errorf("%s sandbox = %+v, want the parent's limits and egress and no ports", name, got.Sandbox)
+			t.Errorf("%s sandbox = %+v, want the holder's limits and egress and no ports", name, got.Sandbox)
 		}
 		if confined := a.host.confinements(id); len(confined) != 1 || !confined[0].Proxied || confined[0].Limits.PIDs != 64 {
-			t.Errorf("%s created with %+v, want the parent's confinement", name, confined)
+			t.Errorf("%s created with %+v, want the holder's confinement", name, confined)
 		}
 	}
 }

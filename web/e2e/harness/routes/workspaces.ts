@@ -69,9 +69,17 @@ export function workspaceRoutes(ctx: RouteContext): void {
       ports: base.ports,
     };
   };
+  /** heldBy refuses what a worktree workspace cannot do alone, as the harness does. */
+  const heldBy = (row: Workspace, what: string) =>
+    fail(
+      409,
+      "conflict",
+      `workspace ${row.id} is a worktree in workspace ${row.worktree_of ?? ""}: ${what}`,
+    );
   on("PUT", "/api/workspaces/{id}/sandbox", ({ params, body }) => {
     const row = find(w.workspaces, params[0], "workspace");
     if ("status" in row) return row;
+    if (row.worktree_of) return heldBy(row, "change that one's sandbox");
     if (!isSandbox(body))
       return fail(400, "invalid_request", "a sandbox has limits, egress, and ports");
     if (restricted(body) && !w.system.sandbox.egress_control) {
@@ -89,7 +97,10 @@ export function workspaceRoutes(ctx: RouteContext): void {
     return ok(row);
   });
   on("GET", "/api/workspaces/{id}/usage", ({ params }) => {
-    const row = find(w.workspaces, params[0], "workspace");
+    // A worktree's container, and so its usage, is its holder's.
+    const asked = find(w.workspaces, params[0], "workspace");
+    if ("status" in asked) return asked;
+    const row = asked.worktree_of ? find(w.workspaces, asked.worktree_of, "workspace") : asked;
     if ("status" in row) return row;
     if (row.state !== "running") {
       return fail(409, "conflict", `workspace ${row.id} is ${row.state}, not running`);
@@ -128,25 +139,35 @@ export function workspaceRoutes(ctx: RouteContext): void {
     const row = find(w.workspaces, params[0], "workspace");
     return "status" in row ? row : ok(row);
   });
+  // A holder starts and stops with the worktrees in its container.
   const setState = (id: string | undefined, state: Workspace["state"]) => {
     const row = find(w.workspaces, id, "workspace");
     if ("status" in row) return row;
-    row.state = state;
-    row.updated_at = now();
-    ctx.emit(
-      ctx.event("workspace.state", `workspace:${row.id}`, {
-        workspace_id: row.id,
-        project_id: row.project_id,
-        state,
-      }),
-    );
+    if (row.worktree_of) return heldBy(row, "start or stop that one");
+    for (const held of w.workspaces.filter((x) => x.id === row.id || x.worktree_of === row.id)) {
+      held.state = state;
+      held.updated_at = now();
+      ctx.emit(
+        ctx.event("workspace.state", `workspace:${held.id}`, {
+          workspace_id: held.id,
+          project_id: held.project_id,
+          state,
+        }),
+      );
+    }
     return ok(row);
   };
   on("POST", "/api/workspaces/{id}/start", ({ params }) => setState(params[0], "running"));
   on("POST", "/api/workspaces/{id}/stop", ({ params }) => setState(params[0], "stopped"));
   on("DELETE", "/api/workspaces/{id}", ({ params }) => {
-    w.workspaces = w.workspaces.filter((x) => x.id !== params[0]);
-    w.sessions = w.sessions.filter((s) => s.workspace_id !== params[0]);
+    // The worktrees a workspace holds go with it.
+    const gone = new Set(
+      w.workspaces
+        .filter((x) => x.id === params[0] || x.worktree_of === params[0])
+        .map((x) => x.id),
+    );
+    w.workspaces = w.workspaces.filter((x) => !gone.has(x.id));
+    w.sessions = w.sessions.filter((s) => !gone.has(s.workspace_id ?? ""));
     return { status: 204 };
   });
   on("GET", "/api/workspaces/{id}/diff", ({ params }) => {

@@ -121,6 +121,10 @@ type Workspace struct {
 	// Address is the base URL of the workspace's eikad daemon as the harness
 	// reaches it.
 	Address string
+	// Dir is where the workspace's files are inside the container, relative
+	// to Root. Empty is Root itself; a worktree workspace's is its worktree,
+	// in the container of the workspace that holds it.
+	Dir string
 	// Proxied reports that the container is on the internal sandbox network
 	// and reaches out only through the egress proxy.
 	Proxied bool

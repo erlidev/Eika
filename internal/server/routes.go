@@ -18,8 +18,8 @@ func (s *Server) routes() {
 	// harness that has no database; every other route reads or writes rows.
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/events", s.handleEvents)
-	// A terminal reaches the workspace host and nothing else, so it is served
-	// whenever there is a host.
+	// A terminal reaches the workspace host, and the database only to find a
+	// worktree workspace's holder, so it is served whenever there is a host.
 	if s.deps.Workspaces != nil {
 		api.HandleFunc("GET /api/workspaces/{id}/terminal", s.handleTerminal)
 	}

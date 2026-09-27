@@ -70,9 +70,9 @@ this file says why, so neither repeats the other.
   publishes eikad on loopback for `make dev`.
 - **The sandbox config is a row** (`workspaces.sandbox`): desired state,
   applied at create, on `PUT .../sandbox`, and on every start, so partial
-  applies converge. Forks and children inherit limits and egress but not
-  ports, so a child cannot escape its parent's confinement. Default: 4096
-  processes, nothing else.
+  applies converge. Forks inherit limits and egress but not ports, so a fork
+  cannot escape its parent's confinement; children share the parent's
+  container, so they cannot either. Default: 4096 processes, nothing else.
 - **Limits change live** with `ContainerUpdate`: recreating would reset
   everything outside `/workspace`. Docker cannot lift a CPU or memory limit,
   so "no limit" on an existing container means the whole host. Swap equals
@@ -99,9 +99,10 @@ this file says why, so neither repeats the other.
 
 ## Git and the hub
 
-- The hub is the single exchange point: bare repos served over Smart HTTP.
-  It mirrors local projects too, so forks and subagents work the same for
-  both kinds.
+- The hub is the single exchange point between containers: bare repos served
+  over Smart HTTP. It mirrors local projects too, so forks and merges work
+  the same for both kinds. A child agent shares its parent's repository and
+  needs the hub only to publish its branch.
 - A hub grant covers one project per workspace; a stopped workspace holds none.
 - The hub lives in `internal/workspace/hub`: `workspace` is its only importer.
 - Remote credentials are sealed, never in URLs, passed to git by a
@@ -229,14 +230,39 @@ this file says why, so neither repeats the other.
 - Branch: `<parent>-<name>-<6 id chars>`. Git cannot hold both
   `refs/heads/main` and `refs/heads/main/x`, and the id tag keeps same-named
   children apart. Names match `^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$`.
-- A child runs its parent's image; `spawn_agent` has no image parameter,
-  since nothing validates a name a model invents.
+- **A child is a git worktree in its parent's container**, not a container of
+  its own: a container per child cost a container, a volume, a full clone,
+  and a push and fetch through the hub before it could start. A worktree
+  shares the object store, starts in the time `git worktree add` takes, and
+  puts the child's branch in the parent's repository the moment it commits.
+  The cost is isolation between agents of one tree: they share processes,
+  ports, limits, and (through bash) each other's files. They were already one
+  user's agents under one confinement, and the parent's own files were
+  already the child's starting point.
+- A child is a **workspace row with `worktree_of`**, not a session with a
+  directory: files, changes, terminal, merge, fork, and MCP keep working per
+  workspace, and one function, `workspace.Locate`, maps a row to a container
+  and directory. `worktree_of` names the container's workspace, never a
+  worktree, so a tree is always one container deep.
+- Worktrees live at `/workspace/.eika/worktrees/<id>`: eikad serves nothing
+  outside `/workspace`, and a directory in the container's own layer would
+  not survive a recreated container. The directory ignores itself rather than
+  being added to `.git/info/exclude`, which in a local project is the user's.
+  `worktree.useRelativePaths` keeps a local project's worktrees usable from
+  the host where git supports it.
+- A worktree workspace starts, stops, and is confined only through its
+  holder; its own start, stop, and sandbox routes are refused rather than
+  forwarded, so no request on a child quietly changes its parent. Deleting
+  one while the holder is stopped is refused, since its files could not be
+  removed and nothing would account for them.
+- A child runs its parent's image by sharing its container; `spawn_agent` has
+  no image parameter, since nothing validates a name a model invents.
 - Limits are settings (`subagent_max_depth` 2, max 8;
   `subagent_max_children` 4, max 16), at least 1, read per spawn. A spawn
   reserves its slot under the counting lock before any slow work.
-- A finished child's workspace is stopped, not destroyed: the user looks
-  at what it did. An aborted child still commits, pushes, and reports, on a
-  context of its own bounded to five minutes.
+- A finished child's worktree is kept: the user looks at what it did. An
+  aborted child still commits, pushes, and reports, on a context of its own
+  bounded to five minutes.
 - `Server.Close` aborts runs, then `Spawner.Shutdown` aborts children that
   outlive their parent (`wait: false`) before the pool closes.
 

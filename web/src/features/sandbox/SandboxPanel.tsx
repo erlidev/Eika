@@ -3,7 +3,8 @@
  * limits, sampled every few seconds while it runs; the hosts its egress was
  * refused lately, each a click from the allowlist; its forwarded ports, each
  * opening a preview; and the editor of its limits, network, and ports, which
- * apply at once without a restart.
+ * apply at once without a restart. A worktree workspace shows its holder's,
+ * whose container it runs in.
  */
 
 import { ArrowDown, ArrowUp, ExternalLink } from "lucide-react";
@@ -29,7 +30,6 @@ export type SandboxPanelProps = {
 export function SandboxPanel({ workspaceId }: SandboxPanelProps) {
   useWorkspaceEvents(workspaceId);
   const workspace = useWorkspace(workspaceId);
-  const system = useSystem();
 
   if (workspace.isPending) {
     return (
@@ -51,9 +51,62 @@ export function SandboxPanel({ workspaceId }: SandboxPanelProps) {
     );
   }
   const ws = workspace.data;
-  const running = ws.state === "running";
+  if (ws.worktree_of) return <SharedSandbox worktree={ws} holderId={ws.worktree_of} />;
   return (
     <div className="space-y-4 p-3">
+      <SandboxContents workspace={ws} />
+    </div>
+  );
+}
+
+type SharedSandboxProps = { worktree: Workspace; holderId: string };
+
+/**
+ * SharedSandbox is a worktree workspace's panel. A worktree runs in the
+ * container of the workspace holding it, so the sandbox it shows and edits
+ * is the holder's.
+ */
+function SharedSandbox({ worktree, holderId }: SharedSandboxProps) {
+  useWorkspaceEvents(holderId);
+  const holder = useWorkspace(holderId);
+  if (holder.isPending) {
+    return (
+      <div className="p-3">
+        <Notice tone="pending">Loading the workspace that holds it…</Notice>
+      </div>
+    );
+  }
+  if (holder.isError) {
+    return (
+      <div className="p-3">
+        <LoadError
+          what="the workspace that holds it"
+          error={holder.error}
+          retrying={holder.isFetching}
+          retry={() => void holder.refetch()}
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4 p-3">
+      <Notice>
+        {worktree.name} is a worktree in the container of {holder.data.name} and shares its sandbox.
+        What you change here changes {holder.data.name}.
+      </Notice>
+      <SandboxContents workspace={holder.data} />
+    </div>
+  );
+}
+
+type SandboxContentsProps = { workspace: Workspace };
+
+/** SandboxContents is the usage, previews, and editor of one container's sandbox. */
+function SandboxContents({ workspace: ws }: SandboxContentsProps) {
+  const system = useSystem();
+  const running = ws.state === "running";
+  return (
+    <>
       {running ? (
         <UsageSection workspace={ws} />
       ) : (
@@ -67,7 +120,7 @@ export function SandboxPanel({ workspaceId }: SandboxPanelProps) {
       {/* Keyed by what is stored, so the editor starts from it again after a save
           or a change made elsewhere, and keeps unsaved edits otherwise. */}
       <SandboxEditor key={JSON.stringify(ws.sandbox)} workspace={ws} host={system.data?.sandbox} />
-    </div>
+    </>
   );
 }
 

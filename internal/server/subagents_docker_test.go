@@ -3,11 +3,16 @@
 package server_test
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider/providertest"
+	"github.com/erlidev/eika/internal/workspace"
 )
 
 // The wire shapes the subagent routes answer with, written out so that a
@@ -221,18 +226,157 @@ func TestSpawnAgentRunsAChildAndReportsBack(t *testing.T) {
 		}
 	}
 
-	// A finished child's workspace is stopped, not destroyed: the user opens
-	// it to see what the child did.
-	host, err := a.host.Inspect(t.Context(), child.WorkspaceID)
-	if err != nil {
-		t.Fatalf("inspect the child workspace: %v", err)
-	}
-	if string(host.State) != "stopped" {
-		t.Errorf("child workspace state = %q, want stopped", host.State)
+	// The child worked in a worktree in the parent's container, not a
+	// container of its own, and the worktree stays for the user to look at.
+	if _, err := a.host.Inspect(t.Context(), child.WorkspaceID); err == nil {
+		t.Error("the child has a container of its own")
 	}
 	workspaces := decodeBody[workspacesWire](t, request(t, a.Server, "GET", "/api/workspaces", nil), 200)
 	if len(workspaces.Workspaces) != 2 {
-		t.Errorf("workspaces = %+v, want the parent's and the child's", workspaces.Workspaces)
+		t.Fatalf("workspaces = %+v, want the parent's and the child's", workspaces.Workspaces)
+	}
+	childWS := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+child.WorkspaceID, nil), 200)
+	if childWS.WorktreeOf != ws.ID || childWS.State != "running" || childWS.Branch != child.Branch {
+		t.Errorf("child workspace = %+v, want a running worktree of %s on %s", childWS, ws.ID, child.Branch)
+	}
+	// The project is local, so the parent's container holds the project's
+	// own directory.
+	tree := filepath.Join(dir, filepath.FromSlash(workspace.WorktreeDir(child.WorkspaceID)))
+	if data, err := os.ReadFile(filepath.Join(tree, "notes.txt")); err != nil || strings.TrimSpace(string(data)) != "from the child" {
+		t.Errorf("notes.txt in the child's worktree = %q, %v, want what the child wrote", data, err)
+	}
+	// The branch is in the parent's own repository, so its agent can merge it
+	// without going through the hub, and the parent's tree does not list the
+	// worktree as a change of its own.
+	if content, err := git(t.Context(), dir, "show", child.Branch+":notes.txt"); err != nil || content != "from the child" {
+		t.Errorf("the parent's repository reads %q, %v from the child's branch", content, err)
+	}
+	diff := decodeBody[diffWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID+"/diff", nil), 200)
+	if strings.Contains(diff.Status, ".eika") || strings.Contains(diff.Status, "notes.txt") {
+		t.Errorf("parent status = %q, want the child's worktree kept out of it", diff.Status)
+	}
+}
+
+// TestAChildWorkspaceLivesInItsParentsContainer checks what the API does with
+// a worktree workspace: its files and changes are its worktree's, it starts
+// and stops with its holder, and deleting it takes the worktree but keeps
+// the branch.
+func TestAChildWorkspaceLivesInItsParentsContainer(t *testing.T) {
+	a := newAPI(t)
+	parent, child := spawnChild(t, a, "echo from the child > notes.txt")
+	childWS := "/api/workspaces/" + child.WorkspaceID
+
+	files := decodeBody[filesWire](t, request(t, a.Server, "GET", childWS+"/files?path=.", nil), 200)
+	if !slices.ContainsFunc(files.Entries, func(e fileEntryWire) bool { return e.Path == "notes.txt" }) {
+		t.Errorf("child files = %+v, want notes.txt at the worktree's root", files.Entries)
+	}
+	diff := decodeBody[diffWire](t, request(t, a.Server, "GET", childWS+"/diff", nil), 200)
+	if !strings.Contains(diff.Diff, "from the child") {
+		t.Errorf("child diff = %q, want the child's change against where it started", diff.Diff)
+	}
+	if rec := request(t, a.Server, "GET", childWS+"/files?path=../../README.md", nil); rec.Code != 403 {
+		t.Errorf("reading past the worktree = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+
+	for _, action := range []string{"stop", "start"} {
+		if rec := request(t, a.Server, "POST", childWS+"/"+action, nil); rec.Code != 409 {
+			t.Errorf("%s on the child = %d, want 409: %s", action, rec.Code, rec.Body.String())
+		}
+	}
+	decodeBody[workspaceWire](t, request(t, a.Server, "POST", "/api/workspaces/"+parent.ID+"/stop", nil), 200)
+	if got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", childWS, nil), 200); got.State != "stopped" {
+		t.Errorf("child state after its holder stopped = %q, want stopped", got.State)
+	}
+	rec := request(t, a.Server, "GET", childWS+"/files?path=.", nil)
+	if rec.Code != 409 || !strings.Contains(rec.Body.String(), parent.ID) {
+		t.Errorf("child files with its holder stopped = %d %s, want 409 naming the holder", rec.Code, rec.Body.String())
+	}
+	if rec := request(t, a.Server, "DELETE", childWS, nil); rec.Code != 409 {
+		t.Errorf("deleting the child with its holder stopped = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	decodeBody[workspaceWire](t, request(t, a.Server, "POST", "/api/workspaces/"+parent.ID+"/start", nil), 200)
+	if got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", childWS, nil), 200); got.State != "running" {
+		t.Errorf("child state after its holder started = %q, want running", got.State)
+	}
+
+	if rec := request(t, a.Server, "DELETE", childWS, nil); rec.Code != 204 {
+		t.Fatalf("delete the child = %d: %s", rec.Code, rec.Body.String())
+	}
+	dir, err := a.host.dirOf(parent.ID)
+	if err != nil {
+		t.Fatalf("parent workspace directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(workspace.WorktreeDir(child.WorkspaceID)))); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the child's worktree after deleting it: %v, want it gone", err)
+	}
+	if content, err := git(t.Context(), dir, "show", child.Branch+":notes.txt"); err != nil || content != "from the child" {
+		t.Errorf("the child's branch after deleting it reads %q, %v, want its work kept", content, err)
+	}
+	if _, err := a.host.Inspect(t.Context(), parent.ID); err != nil {
+		t.Errorf("the parent's container after deleting the child: %v", err)
+	}
+}
+
+// TestDeletingAParentTakesItsChildWorkspaces checks that worktree workspaces
+// go with the container they live in.
+func TestDeletingAParentTakesItsChildWorkspaces(t *testing.T) {
+	a := newAPI(t)
+	parent, child := spawnChild(t, a, "echo from the child > notes.txt")
+	if rec := request(t, a.Server, "DELETE", "/api/workspaces/"+parent.ID, nil); rec.Code != 204 {
+		t.Fatalf("delete the parent = %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := request(t, a.Server, "GET", "/api/workspaces/"+child.WorkspaceID, nil); rec.Code != 404 {
+		t.Errorf("child workspace after its holder went = %d, want 404", rec.Code)
+	}
+	if rec := request(t, a.Server, "GET", "/api/sessions/"+child.SessionID, nil); rec.Code != 404 {
+		t.Errorf("child session after its holder went = %d, want 404", rec.Code)
+	}
+}
+
+// TestAGrandchildSharesTheRootContainer checks that a child's child works in
+// the container its grandparent's workspace has, starting from the child's
+// work.
+func TestAGrandchildSharesTheRootContainer(t *testing.T) {
+	a := newAPI(t)
+	project, dir := a.newProject(t, "demo")
+	initRepo(t, dir)
+	ws := a.newWorkspace(t, project.ID)
+	sess := a.newSession(t, ws.ID)
+
+	// Each spawn waits, so the calls reach the provider in this order: the
+	// parent spawns, the child writes and spawns, the grandchild writes and
+	// ends, then the child and the parent end.
+	a.script(
+		spawnStep("c1", "worker", "write and delegate", true),
+		providertest.Calls("", providertest.Call("c2", "bash", map[string]any{"command": "echo child > child.txt"})),
+		spawnStep("c3", "helper", "write the rest", true),
+		providertest.Calls("", providertest.Call("c4", "bash", map[string]any{"command": "echo grandchild > grand.txt"})),
+		providertest.Text("wrote grand.txt"),
+		providertest.Text("wrote child.txt"),
+		providertest.Text("all done"),
+	)
+	a.postMessage(t, sess.ID, "hand it down", "", 202)
+	if state := a.waitIdle(t, sess.ID); state.Run == nil || state.Run.State != "done" {
+		t.Fatalf("parent run = %+v, want done", state.Run)
+	}
+	child := a.waitAgent(t, sess.ID)
+	grand := a.waitAgent(t, child.SessionID)
+	if grand.State != "done" || !strings.HasPrefix(grand.Branch, child.Branch+"-helper-") {
+		t.Fatalf("grandchild = %+v, want done on a branch of %s", grand, child.Branch)
+	}
+	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+grand.WorkspaceID, nil), 200)
+	if got.WorktreeOf != ws.ID {
+		t.Errorf("grandchild worktree_of = %q, want the root workspace %s", got.WorktreeOf, ws.ID)
+	}
+	root, err := a.host.dirOf(ws.ID)
+	if err != nil {
+		t.Fatalf("root workspace directory: %v", err)
+	}
+	// The grandchild started from the child's work in progress.
+	for file, want := range map[string]string{"child.txt": "child", "grand.txt": "grandchild"} {
+		if content, err := git(t.Context(), root, "show", grand.Branch+":"+file); err != nil || content != want {
+			t.Errorf("%s on the grandchild's branch = %q, %v, want %q", file, content, err, want)
+		}
 	}
 }
 
@@ -583,9 +727,6 @@ func TestMergePushesTheSourcesOwnBranch(t *testing.T) {
 
 	// The child's workspace becomes the target, and the parent, still on
 	// main, the source. The parent has a commit the hub has not seen.
-	if rec := request(t, a.Server, "POST", "/api/workspaces/"+child.WorkspaceID+"/start", nil); rec.Code != 200 {
-		t.Fatalf("start the child workspace = %d: %s", rec.Code, rec.Body.String())
-	}
 	dir, err := a.host.dirOf(parent.ID)
 	if err != nil {
 		t.Fatalf("parent workspace directory: %v", err)

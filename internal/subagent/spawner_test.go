@@ -23,8 +23,9 @@ func testLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard,
 
 // rows is a store holding the rows a spawner reads before it touches a
 // workspace: the session it spawns from, and the subagents already there. A
-// test that gets past those checks would need a Docker daemon, so these tests
-// stop where the limits do.
+// test that gets past those checks would need a workspace with a repository,
+// which the server's docker-tagged tests supply, so these tests stop where the
+// limits do.
 type rows struct {
 	mu        sync.Mutex
 	sessions  map[string]store.Session
@@ -105,8 +106,6 @@ func (r *rows) DeleteWorkspace(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *rows) SetWorkspaceState(context.Context, string, string, string) error { return nil }
-
 func (r *rows) Project(_ context.Context, id string) (store.Project, error) {
 	return store.Project{ID: id, Name: "demo", Kind: store.ProjectLocal, DefaultBranch: "main"}, nil
 }
@@ -162,8 +161,8 @@ type runner struct{}
 func (runner) RunChild(context.Context, string, string, string) error { return nil }
 
 // errReachedWorkspaces is what a spawn that got past the name and the limits
-// fails with: everything after them needs a Docker daemon, which the
-// docker-tagged tests supply and these do not.
+// fails with: everything after them needs a workspace with a repository,
+// which the server's docker-tagged tests supply and these do not.
 var errReachedWorkspaces = errors.New("reached the workspace host")
 
 // haltingHost is a workspace host that refuses the first call a spawn makes

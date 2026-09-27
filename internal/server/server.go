@@ -258,6 +258,11 @@ func (s *Server) Reconcile(ctx context.Context) error {
 	}
 	observed := make(map[string]observedWorkspace, len(recorded))
 	for _, w := range recorded {
+		// A worktree has no container of its own: it is in whatever state
+		// its holder's is, which the second loop reads.
+		if w.WorktreeOf != "" {
+			continue
+		}
 		host, err := s.deps.Workspaces.Inspect(ctx, w.ID)
 		if err == nil {
 			observed[w.ID] = observedWorkspace{state: host.State, containerID: host.ContainerID}
@@ -271,6 +276,9 @@ func (s *Server) Reconcile(ctx context.Context) error {
 	}
 	for _, w := range recorded {
 		actual := observed[w.ID]
+		if w.WorktreeOf != "" {
+			actual = observed[w.WorktreeOf]
+		}
 		state := string(actual.state)
 		if state == w.State {
 			continue

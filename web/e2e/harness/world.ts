@@ -295,7 +295,7 @@ function toolCatalog(): Tool[] {
       "Run a shell command in the workspace root. This is also how you explore, read, and edit files.",
     ),
     tool("list_agents", "List the child agents this session spawned."),
-    tool("spawn_agent", "Start a child agent in a workspace of its own."),
+    tool("spawn_agent", "Start a child agent in a worktree beside this one."),
     tool("wait_agents", "Wait for child agents to finish."),
     tool(
       "web_fetch",

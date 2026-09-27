@@ -243,6 +243,107 @@ func TestASymlinkOutOfTheRootIsAPermissionError(t *testing.T) {
 	}
 }
 
+// TestADirNarrowsTheClient checks the client a worktree workspace gets: one
+// daemon, one directory below its root, and nothing outside that directory.
+func TestADirNarrowsTheClient(t *testing.T) {
+	root := t.TempDir()
+	d, err := eikad.New(eikad.Options{Root: root, Token: testToken},
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("new daemon: %v", err)
+	}
+	srv := httptest.NewServer(d.Handler())
+	t.Cleanup(srv.Close)
+	if err := os.WriteFile(filepath.Join(root, "outside.txt"), []byte("the holder's"), 0o644); err != nil {
+		t.Fatalf("write outside the directory: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "trees", "a"), 0o755); err != nil {
+		t.Fatalf("make the directory: %v", err)
+	}
+	c, err := sandbox.New(sandbox.Options{BaseURL: srv.URL, Token: testToken, Root: d.Root(), Dir: "trees/a"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	ctx := t.Context()
+	if want := filepath.Join(d.Root(), "trees", "a"); c.Root() != want {
+		t.Errorf("Root() = %q, want %q", c.Root(), want)
+	}
+
+	if err := c.WriteFile(ctx, "notes/a.txt", []byte("inside")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "trees", "a", "notes", "a.txt")); err != nil || string(data) != "inside" {
+		t.Errorf("file under the directory = %q, %v, want what the client wrote", data, err)
+	}
+	entries, err := c.List(ctx, "notes")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Path != "notes/a.txt" {
+		t.Errorf("entries = %+v, want notes/a.txt relative to the directory", entries)
+	}
+	if info, err := c.Stat(ctx, c.Root()); err != nil || info.Path != "." {
+		t.Errorf("stat of the root = %+v, %v, want path .", info, err)
+	}
+
+	var stdout bytes.Buffer
+	if _, err := c.Exec(ctx, executor.ExecSpec{Command: "cat notes/a.txt", Shell: true, Stdout: &stdout}); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	if stdout.String() != "inside" {
+		t.Errorf("a command ran with stdout %q, want it to start in the directory", stdout.String())
+	}
+
+	termCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	conn, err := c.Terminal(termCtx, 0, 0)
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	defer conn.CloseNow()
+	input, err := json.Marshal(eikad.PTYMessage{Type: eikad.PTYInput, Data: []byte("cat notes/a.txt; exit\n")})
+	if err != nil {
+		t.Fatalf("encode input: %v", err)
+	}
+	if err := conn.Write(termCtx, websocket.MessageText, input); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	var output strings.Builder
+	for {
+		_, data, err := conn.Read(termCtx)
+		if err != nil {
+			t.Fatalf("read: %v, output so far %q", err, output.String())
+		}
+		var msg eikad.PTYMessage
+		if err := json.Unmarshal(data, &msg); err != nil {
+			t.Fatalf("decode %q: %v", data, err)
+		}
+		if msg.Type != eikad.PTYOutput {
+			break
+		}
+		output.Write(msg.Data)
+	}
+	if !strings.Contains(output.String(), "inside") {
+		t.Errorf("terminal output = %q, want the shell to start in the directory", output.String())
+	}
+
+	for name, path := range map[string]string{
+		"a relative escape":          "../../outside.txt",
+		"an absolute path outside":   filepath.Join(d.Root(), "outside.txt"),
+		"the daemon's root":          d.Root(),
+		"a sibling directory prefix": filepath.Join(d.Root(), "trees", "ab"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := c.ReadFile(ctx, path, executor.ReadOpts{}); !errors.Is(err, executor.ErrPathOutsideRoot) {
+				t.Errorf("read error = %v, want ErrPathOutsideRoot", err)
+			}
+			if _, err := c.Exec(ctx, executor.ExecSpec{Command: "true", Dir: path}); !errors.Is(err, executor.ErrPathOutsideRoot) {
+				t.Errorf("exec error = %v, want ErrPathOutsideRoot", err)
+			}
+		})
+	}
+}
+
 func TestTerminalRunsAShell(t *testing.T) {
 	c, _ := newClient(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)

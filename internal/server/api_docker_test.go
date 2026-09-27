@@ -90,8 +90,7 @@ func newAPI(t *testing.T) *api {
 		Limits: func(context.Context) subagent.Limits {
 			return subagent.Limits{MaxDepth: 2, MaxChildren: 4}
 		},
-		Sandbox: server.ChildSandbox,
-		Logger:  testLogger(),
+		Logger: testLogger(),
 	})
 	a.searxng = searchtest.New(search.Result{Title: "Tokio", URL: "https://tokio.rs/", Description: "An async runtime."})
 	a.marginalia = searchtest.New(search.Result{Title: "Small web", URL: "https://small.example/"})
@@ -309,6 +308,7 @@ type workspaceWire struct {
 	BaseCommit string      `json:"base_commit"`
 	Image      string      `json:"image"`
 	State      string      `json:"state"`
+	WorktreeOf string      `json:"worktree_of"`
 	Sandbox    sandboxWire `json:"sandbox"`
 }
 
@@ -720,6 +720,40 @@ func TestReconcileRecordsWhatTheHostActuallyHas(t *testing.T) {
 	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID, nil), 200)
 	if got.State != "gone" {
 		t.Errorf("state = %q, want gone", got.State)
+	}
+}
+
+// A worktree workspace has no container for the host to report, so it takes
+// its holder's state rather than being marked gone.
+func TestReconcileGivesAWorktreeItsHoldersState(t *testing.T) {
+	a := newAPI(t)
+	project, _ := a.newProject(t, "demo")
+	holder := a.newWorkspace(t, project.ID)
+	tree, err := a.store.CreateWorkspace(t.Context(), store.Workspace{
+		ProjectID: project.ID, Name: "worker", Branch: "main-worker", State: "running",
+		ParentWorkspaceID: holder.ID, WorktreeOf: holder.ID,
+	})
+	if err != nil {
+		t.Fatalf("create worktree workspace: %v", err)
+	}
+	for _, want := range []string{"running", "stopped"} {
+		if want == "stopped" {
+			host, err := a.host.Inspect(t.Context(), holder.ID)
+			if err != nil {
+				t.Fatalf("inspect: %v", err)
+			}
+			// The holder stopped while the harness was down.
+			if err := a.host.Stop(t.Context(), &host); err != nil {
+				t.Fatalf("stop: %v", err)
+			}
+		}
+		if err := a.Reconcile(t.Context()); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+tree.ID, nil), 200)
+		if got.State != want {
+			t.Errorf("worktree state = %q, want its holder's %q", got.State, want)
+		}
 	}
 }
 

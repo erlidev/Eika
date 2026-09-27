@@ -34,6 +34,10 @@ type workspaceBody struct {
 	State             string `json:"state"`
 	ContainerID       string `json:"container_id,omitempty"`
 	ParentWorkspaceID string `json:"parent_workspace_id,omitempty"`
+	// WorktreeOf names the workspace whose container this one is a git
+	// worktree in. Such a workspace starts, stops, and is confined with its
+	// holder, whose sandbox it shares; its own sandbox is empty.
+	WorktreeOf string `json:"worktree_of,omitempty"`
 	// Sandbox is what the container may consume, reach, and expose.
 	Sandbox   sandboxBody `json:"sandbox"`
 	CreatedAt time.Time   `json:"created_at"`
@@ -234,18 +238,23 @@ func (s *Server) handleStartWorkspace(w http.ResponseWriter, r *http.Request) {
 
 // handleStopWorkspace stops a workspace's container, keeping its files.
 func (s *Server) handleStopWorkspace(w http.ResponseWriter, r *http.Request) {
-	s.transition(w, r, func(ctx context.Context, _ store.Workspace, host *workspace.Workspace) error {
-		s.stopRunsIn(ctx, host.ID)
+	s.transition(w, r, func(ctx context.Context, ws store.Workspace, host *workspace.Workspace) error {
+		s.stopRunsIn(ctx, ws)
 		return s.deps.Workspaces.Stop(ctx, host)
 	})
 }
 
 // transition runs one lifecycle operation on a workspace and records the
-// state it reached.
+// state it reached, for the worktrees it holds as well: they live in its
+// container. A worktree workspace has no container to start or stop.
 func (s *Server) transition(w http.ResponseWriter, r *http.Request, op func(context.Context, store.Workspace, *workspace.Workspace) error) {
 	ws, err := s.deps.Store.Workspace(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	if ws.WorktreeOf != "" {
+		s.fail(w, r, conflictf("workspace %s is a worktree in workspace %s: start or stop that one", ws.ID, ws.WorktreeOf))
 		return
 	}
 	host, err := s.deps.Workspaces.Inspect(r.Context(), ws.ID)
@@ -257,13 +266,54 @@ func (s *Server) transition(w http.ResponseWriter, r *http.Request, op func(cont
 		s.fail(w, r, err)
 		return
 	}
-	if err := s.deps.Store.SetWorkspaceState(r.Context(), ws.ID, string(host.State), host.ContainerID); err != nil {
+	worktrees, err := s.worktreesOf(r.Context(), ws)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	for _, held := range append([]store.Workspace{ws}, worktrees...) {
+		if err := s.deps.Store.SetWorkspaceState(r.Context(), held.ID, string(host.State), host.ContainerID); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		s.workspaceState(r.Context(), held.ID, held.ProjectID, string(host.State))
+	}
 	ws.State = string(host.State)
-	s.workspaceState(r.Context(), ws.ID, ws.ProjectID, ws.State)
 	writeJSON(w, s.log, http.StatusOK, asWorkspace(ws))
+}
+
+// worktreesOf lists the worktree workspaces a workspace holds.
+func (s *Server) worktreesOf(ctx context.Context, holder store.Workspace) ([]store.Workspace, error) {
+	if holder.WorktreeOf != "" {
+		return nil, nil
+	}
+	all, err := s.deps.Store.Workspaces(ctx, holder.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	var held []store.Workspace
+	for _, ws := range all {
+		if ws.WorktreeOf == holder.ID {
+			held = append(held, ws)
+		}
+	}
+	return held, nil
+}
+
+// locate finds where a workspace's files are: its own container, or, for a
+// worktree workspace, its worktree in its holder's container.
+func (s *Server) locate(ctx context.Context, ws store.Workspace) (workspace.Workspace, error) {
+	return workspace.Locate(ctx, s.deps.Workspaces, ws.ID, ws.WorktreeOf)
+}
+
+// notRunning is the conflict a workspace whose container is not running
+// answers with. A worktree workspace's container is its holder's, which is
+// the one to start.
+func notRunning(ws store.Workspace, state workspace.State) error {
+	if ws.WorktreeOf != "" {
+		return conflictf("workspace %s is %s, not running: start workspace %s, which holds it", ws.ID, state, ws.WorktreeOf)
+	}
+	return conflictf("workspace %s is %s, not running", ws.ID, state)
 }
 
 // handleDeleteWorkspace destroys a workspace's container and volume and
@@ -283,10 +333,18 @@ func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 }
 
 // destroyWorkspace stops the runs in a workspace, removes its container, and
-// deletes its rows. A container that is already gone is not an error: the row
-// is what the user asked to be rid of.
+// deletes its rows, with the worktree workspaces it holds, whose files are in
+// its volume. A container that is already gone is not an error: the row is
+// what the user asked to be rid of.
 func (s *Server) destroyWorkspace(ctx context.Context, ws store.Workspace) error {
-	s.stopRunsIn(ctx, ws.ID)
+	if ws.WorktreeOf != "" {
+		return s.destroyWorktree(ctx, ws)
+	}
+	worktrees, err := s.worktreesOf(ctx, ws)
+	if err != nil {
+		return err
+	}
+	s.stopRunsIn(ctx, ws)
 	host, err := s.deps.Workspaces.Inspect(ctx, ws.ID)
 	switch {
 	case err == nil:
@@ -302,21 +360,60 @@ func (s *Server) destroyWorkspace(ctx context.Context, ws store.Workspace) error
 		return err
 	}
 	s.forgetEgress(ws.ID)
+	for _, held := range append(worktrees, ws) {
+		s.workspaceState(ctx, held.ID, held.ProjectID, string(workspace.StateGone))
+	}
+	return nil
+}
+
+// destroyWorktree removes a worktree workspace's worktree, its files and all,
+// and its rows. Its branch stays in the holder's repository and in the hub.
+// A holder that is stopped keeps the files until it runs again, so it is
+// refused rather than left with a directory no row accounts for.
+func (s *Server) destroyWorktree(ctx context.Context, ws store.Workspace) error {
+	host, err := s.locate(ctx, ws)
+	switch {
+	case errors.Is(err, workspace.ErrNoWorkspace):
+		s.log.Warn("worktree's holder container is already gone", "workspace_id", ws.ID, "holder_id", ws.WorktreeOf)
+	case err != nil:
+		return err
+	case host.State != workspace.StateRunning:
+		return notRunning(ws, host.State)
+	default:
+		s.stopRunsIn(ctx, ws)
+		host.Dir = ""
+		ex, err := s.deps.Workspaces.Executor(host)
+		if err != nil {
+			return err
+		}
+		if err := workspace.RemoveWorktree(ctx, ex, ws.ID); err != nil {
+			return err
+		}
+	}
+	if err := s.deps.Store.DeleteWorkspace(ctx, ws.ID); err != nil {
+		return err
+	}
 	s.workspaceState(ctx, ws.ID, ws.ProjectID, string(workspace.StateGone))
 	return nil
 }
 
-// stopRunsIn aborts every run in a workspace, then ends the stdio MCP
-// servers running there, before the workspace goes away under them. It
-// detaches from the request for the same reason discard does: a run left
-// going would keep writing through an executor that no longer has a
-// container behind it.
-func (s *Server) stopRunsIn(ctx context.Context, workspaceID string) {
+// stopRunsIn aborts every run in a workspace and in the worktrees it holds,
+// then ends the stdio MCP servers running there, before the container goes
+// away under them. It detaches from the request for the same reason discard
+// does: a run left going would keep writing through an executor that no
+// longer has a container behind it.
+func (s *Server) stopRunsIn(ctx context.Context, ws store.Workspace) {
 	ctx, cancel := teardown(ctx)
 	defer cancel()
-	s.runs.stopSessionsOf(ctx, s.deps.Store, workspaceID)
-	if s.deps.MCP != nil {
-		s.deps.MCP.StopWorkspace(workspaceID)
+	worktrees, err := s.worktreesOf(ctx, ws)
+	if err != nil {
+		s.log.Error("list worktrees of workspace", "workspace_id", ws.ID, "error", err)
+	}
+	for _, held := range append(worktrees, ws) {
+		s.runs.stopSessionsOf(ctx, s.deps.Store, held.ID)
+		if s.deps.MCP != nil {
+			s.deps.MCP.StopWorkspace(held.ID)
+		}
 	}
 }
 
@@ -461,13 +558,13 @@ func (s *Server) handlePushWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, invalidf("project %s has no remote to push to", project.Name))
 		return
 	}
-	host, err := s.deps.Workspaces.Inspect(r.Context(), ws.ID)
+	host, err := s.locate(r.Context(), ws)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	if host.State != workspace.StateRunning {
-		s.fail(w, r, conflictf("workspace %s is %s, not running", ws.ID, host.State))
+		s.fail(w, r, notRunning(ws, host.State))
 		return
 	}
 	if err := s.deps.Workspaces.Push(r.Context(), host, project.Name, ws.Branch); err != nil {
@@ -511,14 +608,19 @@ func (s *Server) pushUpstream(ctx context.Context, p store.Project, branch strin
 	return nil
 }
 
-// executorFor returns the executor of a running workspace.
+// executorFor returns the executor of a running workspace, rooted where its
+// files are.
 func (s *Server) executorFor(ctx context.Context, id string) (executor.Executor, error) {
-	host, err := s.deps.Workspaces.Inspect(ctx, id)
+	ws, err := s.deps.Store.Workspace(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	host, err := s.locate(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
 	if host.State != workspace.StateRunning {
-		return nil, conflictf("workspace %s is %s, not running", id, host.State)
+		return nil, notRunning(ws, host.State)
 	}
 	return s.deps.Workspaces.Executor(host)
 }
@@ -605,6 +707,7 @@ func asWorkspace(ws store.Workspace) workspaceBody {
 		State:             ws.State,
 		ContainerID:       ws.ContainerID,
 		ParentWorkspaceID: ws.ParentWorkspaceID,
+		WorktreeOf:        ws.WorktreeOf,
 		Sandbox:           asSandbox(ws.Sandbox),
 		CreatedAt:         ws.CreatedAt,
 		UpdatedAt:         ws.UpdatedAt,

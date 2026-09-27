@@ -118,6 +118,10 @@ func (s *Server) handleSetWorkspaceSandbox(w http.ResponseWriter, r *http.Reques
 		s.fail(w, r, err)
 		return
 	}
+	if ws.WorktreeOf != "" {
+		s.fail(w, r, conflictf("workspace %s is a worktree in workspace %s, whose sandbox it shares: change that one", ws.ID, ws.WorktreeOf))
+		return
+	}
 	sandbox, err := s.checkSandbox(r.Context(), req)
 	if err != nil {
 		s.fail(w, r, err)
@@ -156,13 +160,20 @@ func (s *Server) handleWorkspaceUsage(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	host, err := s.deps.Workspaces.Inspect(r.Context(), ws.ID)
+	// A worktree's container is its holder's, so the sample and the limits
+	// are the holder's too.
+	host, err := s.locate(r.Context(), ws)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	if host.State != workspace.StateRunning {
-		s.fail(w, r, conflictf("workspace %s is %s, not running", ws.ID, host.State))
+		s.fail(w, r, notRunning(ws, host.State))
+		return
+	}
+	sandbox, err := s.sandboxOf(r.Context(), ws)
+	if err != nil {
+		s.fail(w, r, err)
 		return
 	}
 	usage, err := s.deps.Workspaces.Usage(r.Context(), host)
@@ -172,11 +183,11 @@ func (s *Server) handleWorkspaceUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	body := usageResponse{
 		CPUPercent:       usage.CPUPercent,
-		CPUs:             ws.Sandbox.CPUs,
+		CPUs:             sandbox.CPUs,
 		MemoryBytes:      usage.MemoryBytes,
 		MemoryLimitBytes: usage.MemoryLimitBytes,
 		PIDs:             usage.PIDs,
-		PIDsLimit:        ws.Sandbox.PIDs,
+		PIDsLimit:        sandbox.PIDs,
 		NetworkRxBytes:   usage.NetworkRxBytes,
 		NetworkTxBytes:   usage.NetworkTxBytes,
 		SampledAt:        usage.SampledAt,
@@ -188,7 +199,7 @@ func (s *Server) handleWorkspaceUsage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.deps.Egress != nil {
-		for _, b := range s.deps.Egress.Blocked(ws.ID) {
+		for _, b := range s.deps.Egress.Blocked(host.ID) {
 			body.Blocked = append(body.Blocked, blockedBody{Host: b.Host, Count: b.Count, Last: b.Last})
 		}
 	}
@@ -385,9 +396,9 @@ func builtinSandboxDefaults() sandboxDefaults {
 	}
 }
 
-// childSandbox is the sandbox of a workspace made from another, a fork or a
-// child agent's: the same limits and egress, and none of its ports, which
-// belong to whatever the original was running.
+// childSandbox is the sandbox of a fork: the same limits and egress as the
+// workspace it was made from, and none of its ports, which belong to
+// whatever the original was running.
 func childSandbox(parent store.WorkspaceSandbox) store.WorkspaceSandbox {
 	child := parent
 	child.Allow = slices.Clone(parent.Allow)
@@ -395,12 +406,17 @@ func childSandbox(parent store.WorkspaceSandbox) store.WorkspaceSandbox {
 	return child
 }
 
-// ChildSandbox is how a child agent's workspace is confined, which is the
-// rule a fork follows too: the row its parent's sandbox gives, and the
-// container that row asks for. The spawner is given it.
-func ChildSandbox(parent store.WorkspaceSandbox) (store.WorkspaceSandbox, workspace.Confinement) {
-	child := childSandbox(parent)
-	return child, confinement(child)
+// sandboxOf is what confines a workspace's container: its own sandbox, or,
+// for a worktree workspace, which has none, its holder's.
+func (s *Server) sandboxOf(ctx context.Context, ws store.Workspace) (store.WorkspaceSandbox, error) {
+	if ws.WorktreeOf == "" {
+		return ws.Sandbox, nil
+	}
+	holder, err := s.deps.Store.Workspace(ctx, ws.WorktreeOf)
+	if err != nil {
+		return store.WorkspaceSandbox{}, err
+	}
+	return holder.Sandbox, nil
 }
 
 // confinement is what a workspace's container is created and confined with.

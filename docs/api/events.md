@@ -282,8 +282,8 @@ like any other run's.
 
 ### `subagent.started`
 
-A run called `spawn_agent`. The child's workspace exists and is cloned from
-the hub at `base_commit`; its run is about to start.
+A run called `spawn_agent`. The child's workspace exists, a worktree at
+`base_commit` in its parent's container; its run is about to start.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -293,7 +293,7 @@ the hub at `base_commit`; its run is about to start.
 | `child_workspace_id` | string | The child's workspace. |
 | `name` | string | What the parent called the child. |
 | `branch` | string | The branch the child works on. |
-| `base_commit` | string, optional | The parent commit the child was cloned at. Empty for a project with no commits. |
+| `base_commit` | string, optional | The parent commit the child's worktree starts at. |
 | `task` | string | The child's first user message. |
 
 ### `subagent.finished`
@@ -306,7 +306,7 @@ The same fields make up the tool result the parent's model sees.
 | `subagent_id` | string | The `subagents` row. |
 | `parent_session_id` | string | The session that spawned the child. |
 | `child_session_id` | string | The child's session. |
-| `child_workspace_id` | string | The child's workspace. It is stopped, not destroyed. |
+| `child_workspace_id` | string | The child's workspace. Its worktree is kept. |
 | `name` | string | What the parent called the child. |
 | `branch` | string | The branch the child pushed to the hub. |
 | `state` | string | `done`, `error`, or `aborted`. |

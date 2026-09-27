@@ -3,7 +3,10 @@
 /** WorkspaceLifecycle is a workspace's lifecycle state. */
 export type WorkspaceLifecycle = "creating" | "running" | "stopped" | "gone";
 
-/** Workspace is one sandbox container holding a checkout of a project. */
+/**
+ * Workspace is a checkout of a project: one sandbox container holding it, or
+ * a git worktree in another workspace's container (worktree_of).
+ */
 export type Workspace = {
   id: string;
   project_id: string;
@@ -14,6 +17,12 @@ export type Workspace = {
   state: WorkspaceLifecycle;
   container_id?: string;
   parent_workspace_id?: string;
+  /**
+   * worktree_of names the workspace whose container this one is a git
+   * worktree in. It starts, stops, and is confined with that workspace, and
+   * its own sandbox is empty.
+   */
+  worktree_of?: string;
   /** sandbox is what the container may consume, reach, and expose. */
   sandbox: Sandbox;
   created_at: string;

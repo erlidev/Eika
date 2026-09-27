@@ -8,7 +8,8 @@ consumes now.
   while the workspace runs; the hosts its egress was refused lately, each
   one click from the allowlist; its forwarded ports, each opening a preview
   in a new tab; and the editor, which applies a change at once without a
-  restart.
+  restart. A child agent's worktree workspace runs in its holder's container,
+  so its panel says so and shows and edits the holder's sandbox.
 - `SandboxFields.tsx` holds the fields: `LimitsFields` (sliders from no
   limit to the Docker host's capacity beside exact inputs), `EgressFields`
   (open, allowlist, or none, and the allowlist's chips), and `PortsFields`.

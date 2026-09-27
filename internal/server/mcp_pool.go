@@ -20,17 +20,24 @@ import (
 // /process route: a stdio server is a process an agent's session asked
 // for, so it runs where the agent's processes do.
 type mcpLauncher struct {
+	store      *store.Store
 	workspaces Workspaces
 }
 
-// Launch starts cmd in a running workspace.
+// Launch starts cmd in a running workspace, in the directory its files are
+// in: a worktree workspace's server runs in its worktree, in the holder's
+// container.
 func (l mcpLauncher) Launch(ctx context.Context, workspaceID string, cmd mcp.Command, stderr func(string)) (io.ReadWriteCloser, error) {
-	ws, err := l.workspaces.Inspect(ctx, workspaceID)
+	row, err := l.store.Workspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	ws, err := workspace.Locate(ctx, l.workspaces, row.ID, row.WorktreeOf)
 	if err != nil {
 		return nil, err
 	}
 	if ws.State != workspace.StateRunning {
-		return nil, conflictf("workspace %s is %s, not running", workspaceID, ws.State)
+		return nil, notRunning(row, ws.State)
 	}
 	return l.workspaces.Process(ctx, ws, sandbox.ProcessSpec{Command: cmd.Name, Args: cmd.Args, Env: cmd.Env}, stderr)
 }
@@ -63,7 +70,7 @@ func NewMCP(cfg config.Config, st *store.Store, secrets *secret.Box, host Worksp
 		Logger:     log,
 	}
 	if host != nil {
-		opts.Launcher = mcpLauncher{workspaces: host}
+		opts.Launcher = mcpLauncher{store: st, workspaces: host}
 	}
 	return mcp.NewPool(opts)
 }

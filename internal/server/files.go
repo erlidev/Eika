@@ -171,9 +171,6 @@ func (s *Server) workspaceFile(r *http.Request, required bool) (executor.Executo
 		}
 		path = "."
 	}
-	if _, err := s.deps.Store.Workspace(r.Context(), r.PathValue("id")); err != nil {
-		return nil, "", err
-	}
 	ex, err := s.executorFor(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return nil, "", err

@@ -80,9 +80,9 @@ func (c *child) wasAborted() bool {
 }
 
 // start does everything up to and including starting the child's run: it
-// claims the child's slot, commits and pushes the parent's work, clones a
-// child workspace from the hub at that commit, opens the child's session, and
-// records the subagent.
+// claims the child's slot, commits the parent's work, adds a worktree for the
+// child at that commit in the parent's container, opens the child's session,
+// and records the subagent.
 func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, error) {
 	runner := s.runnerOf()
 	if runner == nil {
@@ -115,14 +115,14 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 		return nil, err
 	}
 	// The child's id exists before its row does, because its branch is named
-	// after it and the branch is what the clone needs.
+	// after it and the branch is what the worktree needs.
 	c, runCtx, err := s.reserve(ctx, parent.ID, store.NewID(), req.Name)
 	if err != nil {
 		return nil, err
 	}
-	// Building a child takes a commit, a push, a container, and a clone.
-	// Until its run is going, the reservation is what holds its slot, and
-	// every way out of here releases it.
+	// Building a child takes a commit and a worktree. Until its run is
+	// going, the reservation is what holds its slot, and every way out of
+	// here releases it.
 	started := false
 	defer func() {
 		if !started {
@@ -131,43 +131,21 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 	}()
 	branch := childBranch(parentWS.Branch, suffix, c.id)
 
-	base, err := s.handOver(ctx, parentWS, project, req.Name)
+	parentHost, err := workspace.Locate(ctx, s.opts.Workspaces, parentWS.ID, parentWS.WorktreeOf)
 	if err != nil {
 		return nil, err
 	}
-	// A child runs the image its parent runs, confined as its parent is: the
-	// model chooses neither, because nothing validates an image name it made
-	// up, and a child must not escape its parent's limits or network.
-	var (
-		sandbox     store.WorkspaceSandbox
-		confinement workspace.Confinement
-	)
-	if s.opts.Sandbox != nil {
-		sandbox, confinement = s.opts.Sandbox(parentWS.Sandbox)
-	}
-	host, err := s.createChild(ctx, project, branch, base, parentWS.Image, confinement)
+	base, err := s.handOver(ctx, parentHost, req.Name)
 	if err != nil {
 		return nil, err
 	}
-	childWS, err := s.opts.Store.CreateWorkspace(ctx, store.Workspace{
-		ID:                host.ID,
-		ProjectID:         project.ID,
-		Name:              req.Name,
-		Branch:            branch,
-		BaseCommit:        base,
-		Image:             host.Image,
-		State:             string(host.State),
-		ContainerID:       host.ContainerID,
-		ParentWorkspaceID: parentWS.ID,
-		Sandbox:           sandbox,
-	})
+	childWS, err := s.addChild(ctx, parentWS, parentHost, req.Name, branch, base)
 	if err != nil {
-		s.discard(ctx, host)
 		return nil, err
 	}
-	// From here the child's sandbox has a row of its own, so a failure has
-	// both to remove. The child runs as its parent is configured to: the
-	// same profile, with the parent's overrides of it.
+	// From here the child has a worktree and a row, so a failure has both to
+	// remove. The child runs as its parent is configured to: the same
+	// profile, with the parent's overrides of it.
 	sess, err := s.opts.Store.CreateSession(ctx, store.Session{
 		WorkspaceID:     childWS.ID,
 		Title:           req.Name,
@@ -177,7 +155,7 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 		Overrides:       parent.Overrides,
 	})
 	if err != nil {
-		s.discardRecorded(ctx, host)
+		s.discard(ctx, parentHost, childWS.ID)
 		return nil, err
 	}
 	row, err := s.opts.Store.StartSubagent(ctx, store.Subagent{
@@ -187,7 +165,7 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 		ChildWorkspaceID: childWS.ID,
 	})
 	if err != nil {
-		s.discardRecorded(ctx, host)
+		s.discard(ctx, parentHost, childWS.ID)
 		return nil, err
 	}
 
@@ -215,7 +193,7 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 		Task:             req.Task,
 	})
 	s.opts.Logger.Info("subagent started", "subagent_id", c.id, "parent_session_id", parent.ID,
-		"child_session_id", sess.ID, "workspace_id", childWS.ID, "branch", branch)
+		"child_session_id", sess.ID, "workspace_id", childWS.ID, "holder_id", childWS.WorktreeOf, "branch", branch)
 
 	go s.run(runCtx, c, runner, req, base, project.Name)
 	return c, nil
@@ -315,7 +293,7 @@ func (s *Spawner) run(ctx context.Context, c *child, runner Runner, req builtin.
 	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
 	defer cancel()
 	result.State, result.Error = string(state), message
-	s.report(reportCtx, &result, base, project, req.Name)
+	s.report(reportCtx, &result, base, project)
 	c.update(func(r *builtin.AgentResult) { *r = result })
 
 	encoded, err := json.Marshal(result)
@@ -344,13 +322,37 @@ func (s *Spawner) run(ctx context.Context, c *child, runner Runner, req builtin.
 		"branch", result.Branch, "commit", result.Commit)
 }
 
-// report turns what the child left behind into its result: everything in the
-// tree is committed, the branch goes to the hub, and the parent gets the
-// child's last message and a diffstat against the commit it started from. A
-// step that fails is recorded in the result rather than dropped: the parent
-// has to hear what happened even when the child's workspace is unreachable.
-func (s *Spawner) report(ctx context.Context, result *builtin.AgentResult, base, project, name string) {
-	host, err := s.opts.Workspaces.Inspect(ctx, result.WorkspaceID)
+// report turns what the child left behind into its result: its work, and
+// the child's last message, or a description of how it ended when it left
+// none.
+func (s *Spawner) report(ctx context.Context, result *builtin.AgentResult, base, project string) {
+	s.keepWork(ctx, result, base, project)
+	entries, err := s.opts.Store.SessionPath(ctx, result.SessionID)
+	if err != nil {
+		result.Error = join(result.Error, err.Error())
+	} else {
+		result.Summary = summaryOf(entries)
+	}
+	if result.Summary == "" {
+		result.Summary = describe(*result)
+	}
+}
+
+// keepWork commits everything in the child's tree, pushes its branch to the
+// hub, and records the commit and a diffstat against the commit the child
+// started from. A step that fails is recorded in the result rather than
+// dropped: the parent has to hear what happened even when the child's
+// workspace is unreachable.
+//
+// The worktree stays: the user opens a finished child's workspace to see
+// what it did, and the branch is already in the parent's repository.
+func (s *Spawner) keepWork(ctx context.Context, result *builtin.AgentResult, base, project string) {
+	row, err := s.opts.Store.Workspace(ctx, result.WorkspaceID)
+	if err != nil {
+		result.Error = join(result.Error, err.Error())
+		return
+	}
+	host, err := workspace.Locate(ctx, s.opts.Workspaces, row.ID, row.WorktreeOf)
 	if err != nil {
 		result.Error = join(result.Error, err.Error())
 		return
@@ -360,7 +362,7 @@ func (s *Spawner) report(ctx context.Context, result *builtin.AgentResult, base,
 		result.Error = join(result.Error, err.Error())
 		return
 	}
-	if _, err := commitAll(ctx, ex, "wip: subagent "+name+" finished"); err != nil {
+	if _, err := commitAll(ctx, ex, "wip: subagent "+result.Name+" finished"); err != nil {
 		result.Error = join(result.Error, err.Error())
 	}
 	if head, err := git(ctx, ex, "rev-parse", "HEAD"); err == nil {
@@ -378,41 +380,14 @@ func (s *Spawner) report(ctx context.Context, result *builtin.AgentResult, base,
 			result.DiffStat = stat
 		}
 	}
-	entries, err := s.opts.Store.SessionPath(ctx, result.SessionID)
-	if err != nil {
-		result.Error = join(result.Error, err.Error())
-	} else {
-		result.Summary = summaryOf(entries)
-	}
-	if result.Summary == "" {
-		result.Summary = describe(*result)
-	}
-
-	// The container stops but nothing is destroyed: the user opens a finished
-	// child's workspace to see what it did, and starting it again is a click.
-	if err := s.opts.Workspaces.Stop(ctx, &host); err != nil {
-		s.opts.Logger.Error("stop subagent workspace", "workspace_id", host.ID, "error", err)
-		return
-	}
-	if err := s.opts.Store.SetWorkspaceState(ctx, host.ID, string(host.State), host.ContainerID); err != nil {
-		s.opts.Logger.Error("record subagent workspace state", "workspace_id", host.ID, "error", err)
-		return
-	}
-	s.emit(ctx, event.TypeWorkspaceState, event.WorkspaceTopic(host.ID), event.WorkspaceState{
-		WorkspaceID: host.ID,
-		State:       string(host.State),
-	})
 }
 
-// handOver commits whatever the parent has in its tree and pushes its branch
-// to the hub, so that the child can clone the parent's work. It returns the
-// commit the child starts from.
-func (s *Spawner) handOver(ctx context.Context, parent store.Workspace, project store.Project, name string) (string, error) {
-	host, err := s.opts.Workspaces.Inspect(ctx, parent.ID)
-	if err != nil {
-		return "", err
-	}
-	ex, err := s.opts.Workspaces.Executor(host)
+// handOver commits whatever the parent has in its tree, so that the child
+// starts from the parent's work, and returns that commit. The child's
+// worktree shares the parent's repository, so nothing has to travel through
+// the hub first.
+func (s *Spawner) handOver(ctx context.Context, parent workspace.Workspace, name string) (string, error) {
+	ex, err := s.opts.Workspaces.Executor(parent)
 	if err != nil {
 		return "", err
 	}
@@ -423,60 +398,78 @@ func (s *Spawner) handOver(ctx context.Context, parent store.Workspace, project 
 	if err != nil {
 		return "", fmt.Errorf("read the parent workspace's commit: %w", err)
 	}
-	// A local project is pushed as well: the hub mirrors both kinds, so a
-	// child clones the same way whatever its project is.
-	if err := s.opts.Workspaces.Push(ctx, host, project.Name, parent.Branch); err != nil {
-		return "", err
-	}
 	return head, nil
 }
 
-// createChild builds the child's sandbox and puts the parent's commit in it
-// on the child's own branch. Nothing it created survives a failure.
-func (s *Spawner) createChild(ctx context.Context, project store.Project, branch, base, image string, c workspace.Confinement) (workspace.Workspace, error) {
-	// A child never bind-mounts the host directory of a local project: it
-	// works on a clone of its own, which is what makes parallel children
-	// possible at all.
-	host, err := s.opts.Workspaces.Create(ctx, workspace.Spec{
-		ID:          store.NewID(),
-		Image:       image,
-		Project:     project.Name,
-		Confinement: c,
+// addChild gives the child a workspace: a worktree on its own branch at base,
+// in the container its parent's files are in, and the row that records it.
+// A child of a worktree workspace shares the same holder, so every agent in a
+// tree works in the one container its root session's workspace has. Nothing
+// it created survives a failure.
+//
+// The row has no sandbox of its own: the holder's container is what confines
+// the child, so the holder's row is what says how.
+func (s *Spawner) addChild(ctx context.Context, parent store.Workspace, parentHost workspace.Workspace, name, branch, base string) (store.Workspace, error) {
+	holderID := parent.WorktreeOf
+	if holderID == "" {
+		holderID = parent.ID
+	}
+	ex, err := s.holderExecutor(parentHost)
+	if err != nil {
+		return store.Workspace{}, err
+	}
+	id := store.NewID()
+	if err := workspace.AddWorktree(ctx, ex, id, branch, base); err != nil {
+		return store.Workspace{}, err
+	}
+	childWS, err := s.opts.Store.CreateWorkspace(ctx, store.Workspace{
+		ID:                id,
+		ProjectID:         parent.ProjectID,
+		Name:              name,
+		Branch:            branch,
+		BaseCommit:        base,
+		Image:             parent.Image,
+		State:             string(parentHost.State),
+		ContainerID:       parentHost.ContainerID,
+		ParentWorkspaceID: parent.ID,
+		WorktreeOf:        holderID,
 	})
 	if err != nil {
-		return workspace.Workspace{}, err
+		s.removeWorktree(ctx, ex, id)
+		return store.Workspace{}, err
 	}
-	if err := s.opts.Workspaces.Start(ctx, &host); err != nil {
-		s.discard(ctx, host)
-		return workspace.Workspace{}, err
-	}
-	if _, err := s.opts.Workspaces.CloneAt(ctx, host, project.Name, branch, base); err != nil {
-		s.discard(ctx, host)
-		return workspace.Workspace{}, err
-	}
-	return host, nil
+	return childWS, nil
 }
 
-// discard removes a child sandbox whose creation did not finish. It runs on a
-// context of its own, so that the container and its volume go away even when
-// the request that asked for the child is gone.
-func (s *Spawner) discard(ctx context.Context, host workspace.Workspace) {
+// holderExecutor returns the executor at the root of the container a
+// workspace's files are in, which is where its repository's worktrees are
+// added and removed.
+func (s *Spawner) holderExecutor(host workspace.Workspace) (executor.Executor, error) {
+	host.Dir = ""
+	return s.opts.Workspaces.Executor(host)
+}
+
+// discard removes a child whose creation did not finish: its worktree and
+// its row, which takes its sessions and entries with it.
+func (s *Spawner) discard(ctx context.Context, parentHost workspace.Workspace, id string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
 	defer cancel()
-	if err := s.opts.Workspaces.Destroy(ctx, &host); err != nil {
-		s.opts.Logger.Error("discard half-created subagent workspace", "workspace_id", host.ID, "error", err)
+	if ex, err := s.holderExecutor(parentHost); err == nil {
+		s.removeWorktree(ctx, ex, id)
+	}
+	if err := s.opts.Store.DeleteWorkspace(ctx, id); err != nil {
+		s.opts.Logger.Error("remove half-created subagent workspace row", "workspace_id", id, "error", err)
 	}
 }
 
-// discardRecorded removes a child sandbox that already has a row, which is
-// what a spawn that failed after the workspace was recorded leaves behind.
-// Deleting the row takes its sessions and entries with it.
-func (s *Spawner) discardRecorded(ctx context.Context, host workspace.Workspace) {
-	s.discard(ctx, host)
-	remove, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
+// removeWorktree removes a half-created child's worktree. It runs on a
+// context of its own, so that the files go away even when the request that
+// asked for the child is gone.
+func (s *Spawner) removeWorktree(ctx context.Context, ex executor.Executor, id string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
 	defer cancel()
-	if err := s.opts.Store.DeleteWorkspace(remove, host.ID); err != nil {
-		s.opts.Logger.Error("remove half-created subagent workspace row", "workspace_id", host.ID, "error", err)
+	if err := workspace.RemoveWorktree(ctx, ex, id); err != nil {
+		s.opts.Logger.Error("discard half-created subagent worktree", "workspace_id", id, "error", err)
 	}
 }
 

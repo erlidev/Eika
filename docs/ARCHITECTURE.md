@@ -9,13 +9,15 @@ Reasons for the design are in `DECISIONS.md`; wire details in `api/`.
 Project    A git repository: a bare repo in the harness hub, plus a remote
            (GitHub etc.) or a host directory.
 Workspace  A sandbox container + volume holding a clone of a project on a
-           branch. States: creating -> running -> stopped (gone if the
-           container disappeared).
+           branch, or a git worktree in another workspace's container
+           (worktree_of). States: creating -> running -> stopped (gone if
+           the container disappeared); a worktree has its holder's.
 Session    A tree of entries with a head pointer, in one workspace.
 Chat       A session with no workspace: only tools that need none.
 Run        One execution of the agent loop from a session's head.
-Subagent   A child run in its own workspace (cloned from the parent's commit
-           on a child branch) and session; reports back as a tool result.
+Subagent   A child run in its own worktree workspace (in the parent's
+           container, at the parent's commit, on a child branch) and
+           session; reports back as a tool result.
 Profile    A named, nullable configuration of what a run sends.
 ```
 
@@ -105,7 +107,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | Table | Holds |
 |---|---|
 | `projects` | name (unique), kind (remote/local), remote_url, remote_username, remote_password (sealed), host_path, default_branch |
-| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, sandbox (jsonb: limits, egress, ports) |
+| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, worktree_of (cascades), sandbox (jsonb: limits, egress, ports) |
 | `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork/agent), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb) |
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb), commit_sha |
 | `runs` | session, state, started/finished, error |
@@ -283,7 +285,10 @@ times. API: `api/eikad.md`.
 
 `executor/sandbox` is an HTTP client for one daemon; `Exec` streams the
 daemon's newline-delimited frames into the caller's writers. A 404 is
-`sandbox.ErrNotFound`.
+`sandbox.ErrNotFound`. `Options.Dir` narrows a client to a directory below the
+daemon's root, which is how a worktree workspace is served: paths are
+relative to it, commands and terminals start in it, and the client refuses
+paths outside it.
 
 ### Files, terminal, changes
 
@@ -314,11 +319,39 @@ container's environment. `Reconcile` updates recorded states at startup and
 marks a workspace `gone` only when Docker says the container does not exist;
 any other error stops reconciliation without changing states.
 
+### Worktree workspaces
+
+```
+ eika-ws-<holder> container, volume at /workspace
+   /workspace                       holder's checkout, its branch
+   /workspace/.eika/worktrees/      ignores itself (.gitignore "*")
+     <child ws id>/                 child's worktree, <parent>-<name>-<tag>
+     <grandchild ws id>/            a child's child, same holder
+```
+
+A row with `worktree_of` has no container. `workspace.Locate` is the one rule
+from a row to its files: its own container, or the holder's with
+`Workspace.Dir` set to `.eika/worktrees/<id>`, which `Host.Executor`,
+`Terminal`, and `Process` pass on as the client's `Dir`. `worktree_of` always
+names a workspace with a container, so every agent in a tree shares the root
+session's container and repository. `workspace.AddWorktree` and
+`RemoveWorktree` run git at the holder's root.
+
+The server routes every row through `locate`. Start and stop act on the
+holder and carry its worktrees' states along (with their runs aborted on
+stop); on a worktree they are `409`, as is `PUT .../sandbox`. Usage reports
+the holder's container against the holder's sandbox (`sandboxOf`), and a fork
+of a worktree gets the holder's confinement. Deleting a worktree removes its
+directory but keeps its branch, and needs the holder running; deleting the
+holder cascades. `Reconcile` gives a worktree its holder's state. The MCP
+launcher starts a worktree's stdio servers in its worktree.
+
 ### Limits, egress, previews
 
 `Host.Create` applies the workspace's `sandbox` row; `PUT .../sandbox` writes
-the row then `Host.Confine`s; every start re-applies it. Children and forks
-get the parent's limits and egress (`server.ChildSandbox`).
+the row then `Host.Confine`s; every start re-applies it. Forks get the
+parent's limits and egress (`childSandbox`); children share the parent's
+container and so its confinement.
 
 Limits are `NanoCPUs`, `Memory` (= `MemorySwap`), and `PidsLimit`, changed
 live with `ContainerUpdate`; "no limit" on an existing container is the host's
@@ -361,19 +394,23 @@ through the environment to a credential helper.
 
 ```
 parent run -> spawn_agent -> spawner
-  commit parent tree "wip: before spawning <name>", push to hub
-  Host.Create + Start, CloneAt(<parent>-<name>-<id>, base commit)
-  rows: workspace, session (kind agent), subagents; subagent.started
+  commit parent tree "wip: before spawning <name>" (Locate: parent's dir)
+  AddWorktree(<parent>-<name>-<id>, base commit) at the holder's root
+  rows: workspace (worktree_of holder), session (kind agent), subagents;
+    subagent.started
   runs.runChild(child session, task)  -- events on session:<child>
-  on end: commit "wip: subagent <name> finished", push, diff --stat base..head
-  Host.Stop, FinishSubagent, subagent.finished
+  on end: commit "wip: subagent <name> finished", push to hub,
+    diff --stat base..head; the worktree stays
+  FinishSubagent, subagent.finished
   -> tool result: summary, branch, commit, diffstat
 ```
 
 - Tools `spawn_agent` (blocks unless `wait: false`), `wait_agents`, and
   `list_agents` call the spawner through `builtin.Subagents` and only name
   their own session's children.
-- `Host.Push` creates the hub repo if needed and adds it as `eika-hub`.
+- `Host.Push` creates the hub repo if needed and adds it as `eika-hub`. The
+  child's branch is in the parent's repository as soon as it commits; the
+  push makes it reachable from other workspaces and upstream.
 - Depth is measured by walking `subagents` rows up; width counts running
   children plus live reservations.
 - Aborting a run aborts its children recursively; the spawner waits for a

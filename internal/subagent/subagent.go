@@ -21,7 +21,7 @@ import (
 // namePattern is the shape a subagent name and a branch suffix may have. It
 // is stricter than git's own rules on purpose: the name reaches a branch
 // name, a session title, and an event, so it holds nothing that needs
-// escaping anywhere. Host.CloneAt checks the branch it builds with git itself.
+// escaping anywhere. workspace.AddWorktree checks the branch with git itself.
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$`)
 
 // Errors the spawner reports to the model that asked for a child.
@@ -60,7 +60,6 @@ type Store interface {
 	Workspace(ctx context.Context, id string) (store.Workspace, error)
 	CreateWorkspace(ctx context.Context, ws store.Workspace) (store.Workspace, error)
 	DeleteWorkspace(ctx context.Context, id string) error
-	SetWorkspaceState(ctx context.Context, id, state, containerID string) error
 	Project(ctx context.Context, id string) (store.Project, error)
 	StartSubagent(ctx context.Context, sub store.Subagent) (store.Subagent, error)
 	FinishSubagent(ctx context.Context, id string, state store.RunState, result string) error
@@ -69,16 +68,11 @@ type Store interface {
 	SubagentOfSession(ctx context.Context, childSessionID string) (store.Subagent, error)
 }
 
-// Workspaces is the part of the workspace host the spawner uses: a child gets
-// a sandbox of its own, cloned from the hub, and the parent pushes to the hub
-// before it does.
+// Workspaces is the part of the workspace host the spawner uses: a child
+// works in a worktree in its parent's container, reached through that
+// container's daemon, and pushes its branch to the hub when it is done.
 type Workspaces interface {
-	Create(ctx context.Context, spec workspace.Spec) (workspace.Workspace, error)
-	Start(ctx context.Context, ws *workspace.Workspace) error
-	Stop(ctx context.Context, ws *workspace.Workspace) error
-	Destroy(ctx context.Context, ws *workspace.Workspace) error
 	Inspect(ctx context.Context, id string) (workspace.Workspace, error)
-	CloneAt(ctx context.Context, ws workspace.Workspace, project, branch, commit string) (string, error)
 	Push(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Executor(ws workspace.Workspace) (executor.Executor, error)
 }
@@ -94,11 +88,6 @@ type Options struct {
 	// every spawn, so a change the user makes in the settings applies to the
 	// next child. Nil, or a bound below one, means one.
 	Limits func(ctx context.Context) Limits
-	// Sandbox decides a child's sandbox from its parent workspace's: what
-	// the child's row records, and what its container is created with. It
-	// is the server's rule, which a fork follows too. Nil gives a child no
-	// limits and open egress.
-	Sandbox func(parent store.WorkspaceSandbox) (store.WorkspaceSandbox, workspace.Confinement)
 	// Logger receives one line per spawned and finished child.
 	Logger *slog.Logger
 }
@@ -120,7 +109,7 @@ type Spawner struct {
 	// going right now, reservations included. Claiming a child's slot under
 	// the same lock that counts them is what makes the limit true: two
 	// concurrent spawns would otherwise both get past a count taken before
-	// the slow work of creating a sandbox.
+	// the slow work of building a child.
 	mu       sync.Mutex
 	runner   Runner
 	stopped  bool

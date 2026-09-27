@@ -222,13 +222,13 @@ func (s *Server) handleMergeWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host, err := s.deps.Workspaces.Inspect(r.Context(), target.ID)
+	host, err := s.locate(r.Context(), target)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	if host.State != workspace.StateRunning {
-		s.fail(w, r, conflictf("workspace %s is %s, not running", target.ID, host.State))
+		s.fail(w, r, notRunning(target, host.State))
 		return
 	}
 	if err := s.deps.Workspaces.Fetch(r.Context(), host, project.Name, branch); err != nil {
@@ -295,7 +295,7 @@ func (s *Server) sourceBranch(ctx context.Context, target store.Workspace, proje
 	if branch == "" {
 		branch = source.Branch
 	}
-	host, err := s.deps.Workspaces.Inspect(ctx, source.ID)
+	host, err := s.locate(ctx, source)
 	if err != nil || host.State != workspace.StateRunning {
 		// A stopped source cannot push; what it last pushed is what there is.
 		return branch, nil
@@ -331,12 +331,12 @@ func (s *Server) forkWorkspace(ctx context.Context, sess store.Session, entryID 
 	if err != nil {
 		return store.Workspace{}, err
 	}
-	sourceHost, err := s.deps.Workspaces.Inspect(ctx, source.ID)
+	sourceHost, err := s.locate(ctx, source)
 	if err != nil {
 		return store.Workspace{}, err
 	}
 	if sourceHost.State != workspace.StateRunning {
-		return store.Workspace{}, conflictf("workspace %s is %s, not running", source.ID, sourceHost.State)
+		return store.Workspace{}, notRunning(source, sourceHost.State)
 	}
 	if err := s.deps.Workspaces.Push(ctx, sourceHost, project.Name, source.Branch); err != nil {
 		return store.Workspace{}, err
@@ -346,8 +346,14 @@ func (s *Server) forkWorkspace(ctx context.Context, sess store.Session, entryID 
 	// The branch is not a path under the source's branch: git holds either
 	// refs/heads/<branch> or refs/heads/<branch>/<something>, never both.
 	branch := source.Branch + "-fork-" + id[:8]
-	// A fork is confined as its source is, with none of its ports.
-	sandbox := childSandbox(source.Sandbox)
+	// A fork is confined as its source is, with none of its ports. A
+	// worktree's fork gets a container of its own, confined as the holder
+	// whose container the worktree shares.
+	sourceSandbox, err := s.sandboxOf(ctx, source)
+	if err != nil {
+		return store.Workspace{}, err
+	}
+	sandbox := childSandbox(sourceSandbox)
 	host, err := s.deps.Workspaces.Create(ctx, workspace.Spec{
 		ID:          id,
 		Image:       source.Image,

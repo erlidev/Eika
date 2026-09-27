@@ -173,7 +173,7 @@ func (h *fakeHost) hubShow(ctx context.Context, project, branch, path string) (s
 // Push sends a workspace's branch to the fake hub, creating the project's
 // repository when it has none.
 func (h *fakeHost) Push(ctx context.Context, ws workspace.Workspace, project, branch string) error {
-	dir, err := h.dirOf(ws.ID)
+	dir, err := h.filesOf(ws)
 	if err != nil {
 		return err
 	}
@@ -187,7 +187,7 @@ func (h *fakeHost) Push(ctx context.Context, ws workspace.Workspace, project, br
 
 // Fetch brings a branch from the fake hub into a workspace.
 func (h *fakeHost) Fetch(ctx context.Context, ws workspace.Workspace, project, branch string) error {
-	dir, err := h.dirOf(ws.ID)
+	dir, err := h.filesOf(ws)
 	if err != nil {
 		return err
 	}
@@ -212,7 +212,18 @@ func (h *fakeHost) repo(ctx context.Context, project string) (string, error) {
 	return path, nil
 }
 
-// dirOf returns the directory a workspace's files live in.
+// filesOf returns the directory the files of a workspace the host reported
+// are in: its container's directory, narrowed to a worktree as the real
+// host's daemon client is.
+func (h *fakeHost) filesOf(ws workspace.Workspace) (string, error) {
+	dir, err := h.dirOf(ws.ID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, filepath.FromSlash(ws.Dir)), nil
+}
+
+// dirOf returns the directory a workspace's container holds.
 func (h *fakeHost) dirOf(id string) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -396,15 +407,14 @@ func (h *fakeHost) Clone(context.Context, workspace.Workspace, string, string) (
 	return h.baseCommit, nil
 }
 
-// Executor returns an executor on the workspace's directory.
+// Executor returns an executor on the workspace's directory, or on the
+// worktree it is narrowed to.
 func (h *fakeHost) Executor(ws workspace.Workspace) (executor.Executor, error) {
-	h.mu.Lock()
-	found, ok := h.workspaces[ws.ID]
-	h.mu.Unlock()
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", workspace.ErrNoWorkspace, ws.ID)
+	dir, err := h.filesOf(ws)
+	if err != nil {
+		return nil, err
 	}
-	return local.New(found.dir)
+	return local.New(dir)
 }
 
 // Terminal is refused: the terminal proxy has tests of its own, against a

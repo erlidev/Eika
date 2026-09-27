@@ -81,7 +81,6 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Workspaces: host,
 		Emitter:    bus,
 		Limits:     subagentLimits(st, log),
-		Sandbox:    ChildSandbox,
 		Logger:     log,
 	})
 	tools, err := builtin.Registry(builtin.Deps{Questions: questions, Agents: spawner, Search: engine, Pages: pages})

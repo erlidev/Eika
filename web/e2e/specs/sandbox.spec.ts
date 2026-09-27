@@ -103,6 +103,26 @@ test("a stopped workspace shows no usage and can still be changed", async ({ ope
   expect(ws?.sandbox.limits.pids).toBe(512);
 });
 
+test("a child agent's workspace shows and changes the sandbox it shares", async ({ open }) => {
+  const eika = await open({
+    scenario: world("sandbox", () => undefined),
+    path: "/sessions/ses-backoff-tests",
+  });
+  const holder = eika.mock.world.workspaces.find((w) => w.id === "ws-retries");
+  await eika.click("Sandbox");
+  await expect(
+    eika.page.getByText(/add-backoff-tests is a worktree in the container of fix-retries/),
+  ).toBeVisible();
+  // The usage and the limits are the holder's, since its container is the
+  // one the child runs in.
+  await expect(eika.page.getByText("38% of 2 cores")).toBeVisible();
+  await eika.fill("Processes", "512");
+  await eika.click("Apply");
+  expect(holder?.sandbox.limits.pids).toBe(512);
+  const child = eika.mock.world.workspaces.find((w) => w.id === "ws-backoff-tests");
+  expect(child?.sandbox.limits.pids).toBe(0);
+});
+
 test("a harness outside compose offers open egress only", async ({ open }) => {
   const eika = await open({
     scenario: world("workbench", (w) => {

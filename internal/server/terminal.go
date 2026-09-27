@@ -10,6 +10,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/erlidev/eika/internal/eikad"
+	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/workspace"
 )
 
@@ -33,13 +34,13 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	host, err := s.deps.Workspaces.Inspect(r.Context(), id)
+	ws, host, err := s.terminalWorkspace(r.Context(), id)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	if host.State != workspace.StateRunning {
-		s.fail(w, r, conflictf("workspace %s is %s, not running", id, host.State))
+		s.fail(w, r, notRunning(ws, host.State))
 		return
 	}
 	shell, err := s.deps.Workspaces.Terminal(r.Context(), host, rows, cols)
@@ -79,6 +80,22 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	cancel()
 	wg.Wait()
 	s.log.Info("terminal closed", "workspace_id", id)
+}
+
+// terminalWorkspace finds where a workspace's terminal opens: in its own
+// container, or, for a worktree workspace, in its worktree in the holder's.
+// A harness without a database knows no worktrees, so there an id names a
+// container of its own.
+func (s *Server) terminalWorkspace(ctx context.Context, id string) (store.Workspace, workspace.Workspace, error) {
+	ws := store.Workspace{ID: id}
+	if s.deps.Store != nil {
+		var err error
+		if ws, err = s.deps.Store.Workspace(ctx, id); err != nil {
+			return store.Workspace{}, workspace.Workspace{}, err
+		}
+	}
+	host, err := s.locate(ctx, ws)
+	return ws, host, err
 }
 
 // relay copies messages from one socket to the other until reading or

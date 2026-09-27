@@ -406,20 +406,14 @@ func (h *Host) Inspect(ctx context.Context, id string) (Workspace, error) {
 // Executor returns the executor an agent uses to reach the workspace. The
 // workspace must be running.
 func (h *Host) Executor(ws Workspace) (executor.Executor, error) {
-	if ws.Address == "" {
-		return nil, fmt.Errorf("workspace %s has no address: it is not running", ws.ID)
-	}
-	return sandbox.New(sandbox.Options{BaseURL: ws.Address, Token: ws.Token, Root: Root})
+	return h.client(ws)
 }
 
 // Terminal opens an interactive shell in a running workspace, for the person
 // using it. It is kept apart from Executor so that nothing holding an
 // executor, which is every tool, can reach a terminal.
 func (h *Host) Terminal(ctx context.Context, ws Workspace, rows, cols uint16) (*websocket.Conn, error) {
-	if ws.Address == "" {
-		return nil, fmt.Errorf("workspace %s has no address: it is not running", ws.ID)
-	}
-	c, err := sandbox.New(sandbox.Options{BaseURL: ws.Address, Token: ws.Token, Root: Root})
+	c, err := h.client(ws)
 	if err != nil {
 		return nil, err
 	}
@@ -431,14 +425,20 @@ func (h *Host) Terminal(ctx context.Context, ws Workspace, rows, cols uint16) (*
 // server where the agent's processes run. Like Terminal, it is kept apart
 // from Executor, so no tool can hold a process of its own.
 func (h *Host) Process(ctx context.Context, ws Workspace, spec sandbox.ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error) {
-	if ws.Address == "" {
-		return nil, fmt.Errorf("workspace %s has no address: it is not running", ws.ID)
-	}
-	c, err := sandbox.New(sandbox.Options{BaseURL: ws.Address, Token: ws.Token, Root: Root})
+	c, err := h.client(ws)
 	if err != nil {
 		return nil, err
 	}
 	return c.Process(ctx, spec, stderr)
+}
+
+// client returns a client for a running workspace's daemon, narrowed to the
+// directory the workspace's files are in.
+func (h *Host) client(ws Workspace) (*sandbox.Client, error) {
+	if ws.Address == "" {
+		return nil, fmt.Errorf("workspace %s has no address: it is not running", ws.ID)
+	}
+	return sandbox.New(sandbox.Options{BaseURL: ws.Address, Token: ws.Token, Root: Root, Dir: ws.Dir})
 }
 
 // address is the base URL the harness reaches the workspace's daemon on: the

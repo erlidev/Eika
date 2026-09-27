@@ -2040,12 +2040,14 @@
                     }
                   },
                   "state": "string",
-                  "updated_at": "string"
+                  "updated_at": "string",
+                  "worktree_of": "string"
                 },
                 "optional": [
                   "base_commit",
                   "container_id",
-                  "parent_workspace_id"
+                  "parent_workspace_id",
+                  "worktree_of"
                 ]
               }
             }
@@ -2101,12 +2103,14 @@
             }
           },
           "state": "string",
-          "updated_at": "string"
+          "updated_at": "string",
+          "worktree_of": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id"
+          "parent_workspace_id",
+          "worktree_of"
         ]
       }
     },
@@ -3515,12 +3519,14 @@
             }
           },
           "state": "string",
-          "updated_at": "string"
+          "updated_at": "string",
+          "worktree_of": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id"
+          "parent_workspace_id",
+          "worktree_of"
         ]
       }
     },
@@ -3639,12 +3645,14 @@
             }
           },
           "state": "string",
-          "updated_at": "string"
+          "updated_at": "string",
+          "worktree_of": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id"
+          "parent_workspace_id",
+          "worktree_of"
         ]
       }
     },
@@ -3696,12 +3704,14 @@
             }
           },
           "state": "string",
-          "updated_at": "string"
+          "updated_at": "string",
+          "worktree_of": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id"
+          "parent_workspace_id",
+          "worktree_of"
         ]
       }
     },
@@ -4465,12 +4475,14 @@
             }
           },
           "state": "string",
-          "updated_at": "string"
+          "updated_at": "string",
+          "worktree_of": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id"
+          "parent_workspace_id",
+          "worktree_of"
         ]
       }
     }
