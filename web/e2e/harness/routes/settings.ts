@@ -31,6 +31,20 @@ export function settingsRoutes(ctx: RouteContext): void {
         );
       }
     }
+    const compaction = body.compaction;
+    if (typeof compaction === "object" && compaction !== null) {
+      const c = compaction as Record<string, unknown>;
+      for (const field of ["reserve_tokens", "keep_recent_tokens"]) {
+        const n = c[field];
+        if (n !== undefined && (typeof n !== "number" || n < 1024 || n > 1 << 20)) {
+          return fail(
+            400,
+            "invalid_request",
+            `compaction.${field} must be from 1024 to ${String(1 << 20)}`,
+          );
+        }
+      }
+    }
     for (const [key, value] of Object.entries(body)) {
       if (value === null) Reflect.deleteProperty(w.settings.settings, key);
       else w.settings.settings[key] = value;

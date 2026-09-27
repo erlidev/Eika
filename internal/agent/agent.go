@@ -33,8 +33,10 @@ type Options struct {
 	// Model overrides the provider's configured model name.
 	Model string
 	// ContextWindow bounds the input and requested output of one model call.
-	// Zero disables the preflight bound.
+	// Zero disables the bound and automatic compaction.
 	ContextWindow int
+	// Compaction says when and how the conversation is compacted.
+	Compaction CompactionSettings
 	// Sampling holds the sampling parameters every model call sends; a nil
 	// field is left to the endpoint.
 	Sampling provider.Sampling
@@ -235,7 +237,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []s
 			return a.fail(ctx, s, runID, fmt.Errorf("run turn: %w", err))
 		}
 
-		resp, sent, err := a.call(ctx, s, runID, prompt, &gen)
+		resp, sent, err := a.call(ctx, s, runID, prompt, &gen, &pendingMark)
 		if err != nil {
 			restoreFrom(0)
 			return a.fail(ctx, s, runID, err)

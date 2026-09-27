@@ -580,24 +580,25 @@ the agent loop, and so that one file lists the whole protocol. JSON tags are
 ```go
 // internal/event/event.go
 
-// TypeSessionCompacted reports that a session's history was summarised.
-const TypeSessionCompacted = "session.compacted"
+// TypeCompactionStart reports that a conversation is being compacted.
+const TypeCompactionStart = "compaction.start"
 ```
 
 ```go
 // internal/event/payload.go
 
-// SessionCompacted is the payload of a session.compacted event: older entries
-// were replaced by a summary, and a client that holds them drops them.
-type SessionCompacted struct {
-	SessionID string `json:"session_id"`
-	// FirstKeptEntryID is the oldest entry that survived.
-	FirstKeptEntryID string `json:"first_kept_entry_id"`
-	Summary          string `json:"summary"`
+// CompactionStart is the payload of a compaction.start event: the oldest part
+// of the conversation is being summarized.
+type CompactionStart struct {
+	RunID string `json:"run_id"`
+	// Reason is manual, threshold, or overflow.
+	Reason string `json:"reason"`
+	// TokensBefore is the estimated size of the context being compacted.
+	TokensBefore int `json:"tokens_before"`
 }
 ```
 
-Emit it with `event.New(event.TypeSessionCompacted, event.SessionTopic(id), payload)`
+Emit it with `event.New(event.TypeCompactionStart, event.SessionTopic(id), payload)`
 and hand the result to an `event.Emitter`. The bus is one, so an event emitted
 anywhere reaches every client subscribed to its topic. Mirror the type name in
 `eventTypes` in `web/src/api/events.ts`, or `parseEvent` rejects it.

@@ -148,6 +148,30 @@ test("search: try a search", async ({ open, expectAria }) => {
   await expectAria(eika, "search-tried", "role=dialog");
 });
 
+test("compaction", async ({ open, expectAria }) => {
+  const eika = await open({ scenario: "workbench" });
+  await eika.click("Settings");
+  await eika.click("Compaction");
+  await expectAria(eika, "compaction", "role=dialog");
+});
+
+test("compaction: budgets the harness would refuse", async ({ open }) => {
+  const eika = await open({ scenario: "workbench" });
+  await eika.click("Settings");
+  await eika.click("Compaction");
+  await eika.fill("Reserve (tokens)", "10");
+  await expect(eika.page.getByText("Enter a whole number from 1024 to 1048576.")).toBeVisible();
+  await expect(eika.page.getByRole("button", { name: "Save" })).toBeDisabled();
+  await eika.fill("Reserve (tokens)", "8192");
+  await eika.click("Edit the built-in prompt");
+  await eika.click("Save");
+  await expect(eika.page.getByText("Saved. The next run compacts with these.")).toBeVisible();
+  expect(eika.mock.world.settings.settings.compaction).toMatchObject({
+    reserve_tokens: 8192,
+    prompts: { summary: expect.stringContaining("context checkpoint") as unknown },
+  });
+});
+
 test("account", async ({ open, expectAria }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("Settings");
@@ -166,7 +190,7 @@ test("the dialog keeps one height on every tab", async ({ open }) => {
   const eika = await open({ scenario: "providers" });
   await eika.click("Settings");
   const heights: number[] = [];
-  for (const tab of ["Models", "General", "Search", "Account", "Appearance"]) {
+  for (const tab of ["Models", "General", "Compaction", "Search", "Account", "Appearance"]) {
     await eika.click(`role=tab[name="${tab}"]`);
     const box = await eika.page.getByRole("dialog").boundingBox();
     heights.push(Math.round(box?.height ?? 0));

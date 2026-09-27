@@ -102,6 +102,38 @@ test("an answer the endpoint cut off is kept, and says why it stopped", async ({
   await expect(eika.page.getByText(/Cut off at the model's output limit/)).toBeVisible();
 });
 
+test("a conversation compacts on request, and the summary opens from the divider", async ({
+  open,
+  expectShot,
+}) => {
+  const eika = await open({ scenario: "workbench" });
+  await eika.click('role=button[name="Compact"]');
+  const divider = eika.page.getByRole("button", {
+    name: /Compacted about 48k tokens to about 6.4k/,
+  });
+  await expect(divider).toBeVisible();
+  await divider.click();
+  await expect(eika.page.getByText(/The model reads this summary in place/)).toBeVisible();
+  await expectShot(eika, "agent-compacted");
+});
+
+test("/compact in the message box compacts with a focus", async ({ open }) => {
+  const eika = await open({ scenario: "workbench" });
+  await eika.page.getByLabel("Message", { exact: true }).fill("/compact the retry tests");
+  await expect(
+    eika.page.getByRole("button", { name: "Compact", exact: true }).last(),
+  ).toBeVisible();
+  await eika.press("Enter");
+  const divider = eika.page.getByRole("button", { name: /Compacted about/ });
+  await divider.click();
+  await expect(eika.page.getByText("the retry tests")).toBeVisible();
+  // What the compaction kept is all there is now, so a second one has nothing to do.
+  await eika.click('role=button[name="Compact"]');
+  await expect(
+    eika.page.getByText(/Could not compact the conversation: nothing to compact/),
+  ).toBeVisible();
+});
+
 test("the page itself never scrolls under the workbench", async ({ open }) => {
   // A transcript long enough to scroll used to stretch the document: the
   // visually hidden heading in each row is positioned at its place in the

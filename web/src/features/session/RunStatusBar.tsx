@@ -5,7 +5,7 @@
  * status line is read after it, not through it.
  */
 
-import { Brain, Loader2, Radio, Square, WifiOff } from "lucide-react";
+import { Brain, FoldVertical, Loader2, Radio, Square, WifiOff } from "lucide-react";
 
 import type { StreamStatus } from "@/api/stream";
 import { useStreamStatus } from "@/api/useStream";
@@ -22,11 +22,12 @@ import {
 } from "@/components/ui/select";
 import { SessionProfile, useSessionConfiguration } from "@/features/profiles";
 import { ContextMeter } from "@/features/session/ContextMeter";
-import { useAbortRun, useRunStatus } from "@/features/session/queries";
+import { useAbortRun, useCompact, useRunStatus } from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
 import { useModel, useModels, useProviders, useUpdateModel } from "@/features/providers";
 import { nextEffort } from "@/features/providers/efforts";
 import type { Model } from "@/api/types";
+import { failureText } from "@/lib/failure";
 import { cn } from "@/lib/utils";
 
 export type RunStatusBarProps = {
@@ -50,6 +51,8 @@ export function RunStatusBar({
 }: RunStatusBarProps) {
   const status = useRunStatus(sessionId);
   const abort = useAbortRun(sessionId);
+  const compact = useCompact(sessionId);
+  const hasHistory = useSessionStore((s) => s.committed.length > 0);
   const models = useModels();
   const providers = useProviders();
   const stream = useStreamStatus();
@@ -123,6 +126,26 @@ export function RunStatusBar({
         ))}
 
       {meter && <ContextMeter meter={meter} />}
+      {!active && hasHistory && (
+        <Button
+          size="xs"
+          variant="ghost"
+          className="h-6 gap-1 px-1.5 text-xs"
+          disabled={compact.isPending}
+          title="Summarize the older part of the conversation now, keeping the newest messages. Type /compact and a focus in the message box to say what the summary should keep."
+          onClick={() => {
+            compact.mutate(model === "" ? {} : { model });
+          }}
+        >
+          <FoldVertical aria-hidden className="size-3" />
+          Compact
+        </Button>
+      )}
+      {compact.isError && (
+        <span role="alert" className="text-destructive truncate">
+          {failureText("compact the conversation", compact.error)}
+        </span>
+      )}
 
       <span className="ml-auto flex items-center gap-2">
         {dropped > 0 && <span title="Events the connection lost">{dropped} dropped</span>}

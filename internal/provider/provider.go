@@ -122,6 +122,10 @@ type Message struct {
 	// Metrics records the measured usage of an assistant response for session
 	// replay. Providers do not receive this metadata.
 	Metrics *MessageMetrics `json:"metrics,omitempty"`
+	// Summary marks the user message that stands in for the part of a
+	// conversation a compaction summarized. It is never stored: the session
+	// rebuilds it from the compaction. Providers send it as a user message.
+	Summary bool `json:"summary,omitempty"`
 }
 
 // MessageMetrics is the measured state after one assistant response. It is

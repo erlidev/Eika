@@ -18,6 +18,33 @@ export type SettingsDefaults = {
   search_order: string[];
   /** search_limits is every search quota bucket's default limit. */
   search_limits: Record<string, SearchLimit>;
+  /** compaction is the compaction setting's default, with the built-in prompts. */
+  compaction: CompactionSettings;
+};
+
+/**
+ * CompactionSettings is the compaction setting: when a conversation that
+ * outgrows its model's window is summarized, and how. A field the stored
+ * value leaves out keeps its default, and an empty prompt is the built-in one.
+ */
+export type CompactionSettings = {
+  /** auto compacts before a request that would leave less than reserve_tokens free. */
+  auto: boolean;
+  /** reserve_tokens is how much of the window stays free. */
+  reserve_tokens: number;
+  /** keep_recent_tokens is roughly how much of the newest conversation stays verbatim. */
+  keep_recent_tokens: number;
+  prompts: CompactionPrompts;
+};
+
+/** CompactionPrompts are the instructions that ask for a summary. */
+export type CompactionPrompts = {
+  /** summary asks for the first summary of a conversation. */
+  summary: string;
+  /** update folds newer messages into the summary already there. */
+  update: string;
+  /** turn_prefix summarizes the start of a turn too large to keep whole. */
+  turn_prefix: string;
 };
 
 /** SettingsState is the body of GET and PUT /api/settings. */

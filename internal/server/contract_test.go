@@ -110,6 +110,7 @@ var routeWire = map[string]wire{
 	"POST /api/subagents/{id}/abort":   {status: http.StatusOK, response: agentBody{}},
 	"POST /api/sessions/{id}/messages": {status: http.StatusAccepted, request: messageRequest{}, response: runBody{}},
 	"GET /api/sessions/{id}/run":       {status: http.StatusOK, response: runStateResponse{}},
+	"POST /api/sessions/{id}/compact":  {status: http.StatusAccepted, request: compactRequest{}, response: runBody{}},
 	"POST /api/runs/{id}/abort":        {status: http.StatusOK, response: runBody{}},
 	"POST /api/questions/{id}/answer":  {status: http.StatusNoContent, request: answerRequest{}},
 	"GET /api/tools":                   {status: http.StatusOK, response: toolsResponse{}},
@@ -166,6 +167,8 @@ var eventPayloads = map[string]any{
 	event.TypeSessionTitle:     event.SessionTitle{},
 	event.TypeSessionMessage:   event.SessionMessage{},
 	event.TypeBusDropped:       event.BusDropped{},
+	event.TypeCompactionStart:  event.CompactionStart{},
+	event.TypeCompactionEnd:    event.CompactionEnd{},
 }
 
 // eventToolCall is the wire form event.ToolCall's MarshalJSON writes.

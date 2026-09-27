@@ -48,6 +48,14 @@ func (c *Conversation) Truncate(n int) {
 	}
 }
 
+// Replace makes messages the whole conversation. It is how a compaction
+// swaps the summarized part for its summary.
+func (c *Conversation) Replace(messages []provider.Message) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.messages = append([]provider.Message(nil), messages...)
+}
+
 // Len reports how many messages the conversation holds.
 func (c *Conversation) Len() int {
 	c.mu.RLock()
@@ -71,4 +79,7 @@ func NewSession(id, workspaceID string) *Session {
 // against the database.
 type Store interface {
 	Append(ctx context.Context, sessionID string, m provider.Message) error
+	// AppendCompaction records a compaction after the messages already
+	// appended, which it replaces from then on.
+	AppendCompaction(ctx context.Context, sessionID string, c Compaction) error
 }

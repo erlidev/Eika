@@ -82,18 +82,31 @@ func (p *gatedProvider) Requests() []provider.Request {
 
 // memoryStore keeps messages in memory, keyed by session.
 type memoryStore struct {
-	mu       sync.Mutex
-	sessions map[string][]provider.Message
+	mu          sync.Mutex
+	sessions    map[string][]provider.Message
+	compactions map[string][]agent.Compaction
+	// order is what was appended to each session, in order: "message" or
+	// "compaction".
+	order map[string][]string
 }
 
 func newMemoryStore() *memoryStore {
-	return &memoryStore{sessions: map[string][]provider.Message{}}
+	return &memoryStore{sessions: map[string][]provider.Message{}, compactions: map[string][]agent.Compaction{}, order: map[string][]string{}}
 }
 
 func (s *memoryStore) Append(_ context.Context, sessionID string, m provider.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sessionID] = append(s.sessions[sessionID], m)
+	s.order[sessionID] = append(s.order[sessionID], "message")
+	return nil
+}
+
+func (s *memoryStore) AppendCompaction(_ context.Context, sessionID string, c agent.Compaction) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.compactions[sessionID] = append(s.compactions[sessionID], c)
+	s.order[sessionID] = append(s.order[sessionID], "compaction")
 	return nil
 }
 
@@ -123,6 +136,10 @@ func (s *checkingStore) Append(ctx context.Context, _ string, m provider.Message
 	return nil
 }
 
+func (s *checkingStore) AppendCompaction(ctx context.Context, _ string, _ agent.Compaction) error {
+	return ctx.Err()
+}
+
 func (s *checkingStore) Messages() []provider.Message {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -149,6 +166,10 @@ func (s *failOnceStore) Append(ctx context.Context, _ string, m provider.Message
 	}
 	s.messages = append(s.messages, m)
 	return nil
+}
+
+func (s *failOnceStore) AppendCompaction(ctx context.Context, _ string, _ agent.Compaction) error {
+	return ctx.Err()
 }
 
 func (s *failOnceStore) Messages() []provider.Message {

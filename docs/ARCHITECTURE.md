@@ -95,8 +95,25 @@ the session's next run.
 
 Retryable failures (408, 409, 429, 5xx, transport) back off exponentially up
 to `MaxRetries`, honouring `Retry-After`, and emit `message.reset`. Others end
-with `run.error`. A request that cannot fit the model's context window (a
-conservative estimate plus requested output) fails before the call.
+with `run.error`. Before every call the request is estimated as Pi does: the
+last measured context plus 4-byte tokens for each message after it. A request
+of the whole window or more fails before the call; one that fits with less
+room than its max output gets max output lowered to the room left.
+
+**Compaction** (`agent/compaction.go`, `agent/summary.go`) is Pi's. With
+`CompactionSettings.Auto`, a call whose estimate passes `window - reserve`
+compacts first, and a call the endpoint refuses as too large
+(`provider.ContextOverflow`, or a silent truncation) is compacted and sent
+again, once. `Agent.Compact` compacts on request. `planCompaction` walks back
+from the newest stored message until about `keep` tokens are kept and cuts
+at a user or assistant message; a cut inside a turn summarizes the turn's
+start apart. The summary is asked for first as the run's own request up to
+the cut plus a prompt, which the endpoint's prompt cache already holds, and
+else as Pi's serialized transcript; a cut-off or empty answer is asked for
+again at `FallbackEffort`. The conversation becomes a summary message
+(`Message.Summary`) followed by the kept messages, the store gets one
+`compaction` entry, and `compaction.start` and `compaction.end` go out.
+Reserve and keep are capped at a quarter of the window.
 
 ## Persistence
 
@@ -136,7 +153,11 @@ lists `Children`, and renders an `Outline`. `session.Store` implements
 `agent.Store`; `Load` rebuilds a conversation from the path.
 
 `user`, `assistant`, and `tool_result` entries are the conversation; `system`
-and `event` entries are shown but not sent. An assistant entry holds the
+and `event` entries are shown but not sent. A `compaction` entry holds an
+`agent.Compaction`: `session.Messages` folds the path, so each one replaces
+the conversation before it with its summary and the last `kept` messages.
+The entries it covers stay in the tree, so a fork or a head moved above it
+has the whole conversation. An assistant entry holds the
 message JSON (with tool calls, reasoning, and measured `metrics`) and the
 workspace HEAD commit it was produced at.
 
@@ -204,9 +225,16 @@ POST /api/sessions/{id}/messages          GET /api/events
   `agent.Options`, used by runs and the context preview alike.
 - **Settings** the harness reads (`default_model`, `default_profile`,
   `utility_models`, `sandbox_image`, `sandbox_limits`, `sandbox_egress`,
-  `subagent_max_*`, `search_order`, `search_limits`, `setup_complete`) are
+  `subagent_max_*`, `search_order`, `search_limits`, `setup_complete`,
+  `compaction`) are
   validated on write and fall back to defaults on read. Renaming a model
   rewrites the settings that name it.
+- **Compaction** (`compaction.go`): each run gets `agent.CompactionSettings`
+  from the `compaction` setting, with `FallbackEffort` the lowest effort the
+  model offers. `POST /api/sessions/{id}/compact` starts a run whose job is
+  `Agent.Compact` instead of `Agent.Run`: it claims the session like any run,
+  takes no queued messages, and is `409` when `Compactable` finds nothing to
+  summarize.
 - **Utility models** (`titles.go`): a session created without a title is
   `untitled` and called `New session` or `New chat`. When a run begins on
   one, `titles` starts a goroutine (at most one per session, cancelled and

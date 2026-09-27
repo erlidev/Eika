@@ -82,6 +82,8 @@ type settingsDefaults struct {
 	SearchOrder []string `json:"search_order"`
 	// SearchLimits is every quota bucket's default limit.
 	SearchLimits map[string]search.Limit `json:"search_limits"`
+	// Compaction is the compaction setting, with the built-in prompts.
+	Compaction compactionBody `json:"compaction"`
 }
 
 // handleSettings returns every setting.
@@ -133,6 +135,7 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 		SandboxEgress:       sandbox.Egress,
 		SearchOrder:         []string{},
 		SearchLimits:        map[string]search.Limit{},
+		Compaction:          compactionDefaults(),
 	}
 	if s.deps.Search != nil {
 		defaults.SearchOrder, defaults.SearchLimits = s.deps.Search.Web(), s.deps.Search.DefaultLimits()
@@ -220,6 +223,8 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 			return s.validateSearchOrder(value)
 		}
 		return s.validateSearchLimits(value)
+	case settingCompaction:
+		return validateCompaction(value)
 	case settingSetupComplete:
 		var done bool
 		if err := json.Unmarshal(value, &done); err != nil {

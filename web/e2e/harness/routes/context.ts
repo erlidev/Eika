@@ -37,6 +37,8 @@ export type RouteContext = {
   nameSession: (session: Session, text: string) => void;
   finish: (run: Run, state: Run["state"], error?: string) => void;
   play: (session: Session, run: Run, text: string) => Promise<void>;
+  /** compact summarizes a session's conversation as a run of its own. */
+  compact: (session: Session, run: Run, instructions: string) => Promise<void>;
   answers: Map<string, (answer: string) => void>;
   elicitAnswers: Map<string, (answer: ElicitationAnswer) => void>;
   /** authorizations maps an OAuth state the mock handed out to the server it authorizes. */

@@ -3,7 +3,6 @@ package utility
 import (
 	"context"
 	"errors"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -29,10 +28,6 @@ const (
 // ErrNoTitle reports a reply that held no usable title.
 var ErrNoTitle = errors.New("the model replied with no title")
 
-// thinkBlock is reasoning an endpoint left in the answer's text, which it
-// does when it does not parse the model's reasoning apart.
-var thinkBlock = regexp.MustCompile(`(?s)^\s*<think>.*?</think>`)
-
 // Title asks m for the title of a session whose first message is message.
 func Title(ctx context.Context, m Model, message string) (string, error) {
 	reply, _, err := provider.Complete(ctx, m.Provider, m.request(TitlePrompt, truncate(message, MaxTitleSource), titleMaxOutput))
@@ -49,7 +44,7 @@ func Title(ctx context.Context, m Model, message string) (string, error) {
 // cleanTitle reduces a reply to the title in it: its first line of text,
 // without the quotes, markup, label, and final full stop models add.
 func cleanTitle(reply string) string {
-	reply = thinkBlock.ReplaceAllString(reply, "")
+	reply = provider.StripReasoning(reply)
 	var line string
 	for l := range strings.Lines(reply) {
 		if line = strings.TrimSpace(l); line != "" {

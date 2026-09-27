@@ -28,6 +28,16 @@ const finishRetryBackoff = 100 * time.Millisecond
 // that workspace would capture a half-finished tree.
 const childStopTimeout = 60 * time.Second
 
+// job is what a run does: answer a message, or compact the conversation and
+// stop.
+type job struct {
+	// text is the message the run answers.
+	text string
+	// compact makes the run a compaction, which instructions focus.
+	compact      bool
+	instructions string
+}
+
 type queuedMessages struct {
 	steering  []string
 	followUps []string
@@ -147,7 +157,15 @@ func newRuns(s *Server) *runs {
 // start begins a run on a session and returns its row. A session that is
 // already running one is a conflict: the message belongs in a queue instead.
 func (r *runs) start(ctx context.Context, sessionID, text, model string) (store.Run, error) {
-	row, _, err := r.begin(ctx, sessionID, text, model, true)
+	row, _, err := r.begin(ctx, sessionID, model, job{text: text}, true)
+	return row, err
+}
+
+// compact begins a run that compacts a session's conversation and does
+// nothing else. A conversation with nothing old enough to summarize is
+// agent.ErrNothingToCompact, and no run starts.
+func (r *runs) compact(ctx context.Context, sessionID, instructions, model string) (store.Run, error) {
+	row, _, err := r.begin(ctx, sessionID, model, job{compact: true, instructions: instructions}, true)
 	return row, err
 }
 
@@ -156,7 +174,7 @@ func (r *runs) start(ctx context.Context, sessionID, text, model string) (store.
 // it is bound to the caller's context, so that a parent whose run is aborted
 // takes its children with it.
 func (r *runs) runChild(ctx context.Context, sessionID, text, model string) error {
-	row, active, err := r.begin(ctx, sessionID, text, model, false)
+	row, active, err := r.begin(ctx, sessionID, model, job{text: text}, false)
 	if err != nil {
 		return err
 	}
@@ -190,7 +208,7 @@ func (r *runs) runChild(ctx context.Context, sessionID, text, model string) erro
 // begin builds a run and starts its goroutine. A detached run outlives the
 // request that asked for it and is stopped by an abort alone; a child run is
 // bound to the context of the parent run that spawned it.
-func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach bool) (store.Run, *activeRun, error) {
+func (r *runs) begin(ctx context.Context, sessionID, model string, work job, detach bool) (store.Run, *activeRun, error) {
 	s := r.server
 	sess, err := s.deps.Store.Session(ctx, sessionID)
 	if err != nil {
@@ -250,22 +268,30 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 	// reaches now, and adds only its own executor, which is also where a
 	// web_fetch filter runs.
 	ag := s.newAgent(p, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
-		Emitter:  s.deps.Bus,
-		Store:    sessionStore,
-		Logger:   s.log,
-		Recorder: callRecorder{store: s.deps.Store, run: active, config: cfg},
+		Emitter:    s.deps.Bus,
+		Store:      sessionStore,
+		Logger:     s.log,
+		Recorder:   callRecorder{store: s.deps.Store, run: active, config: cfg},
+		Compaction: s.compaction(ctx, cfg.model),
 	})
+	if work.compact && !ag.Compactable(loaded) {
+		return store.Run{}, nil, conflictf("%v", agent.ErrNothingToCompact)
+	}
 
 	row, err := s.deps.Store.StartRun(ctx, sessionID)
 	if err != nil {
 		return store.Run{}, nil, err
 	}
-	queued := r.takePending(sessionID)
-	for _, message := range queued.steering {
-		ag.Steer(message)
-	}
-	for _, message := range queued.followUps {
-		ag.FollowUp(message)
+	// A compaction delivers no messages, so what is queued waits for the
+	// next run that does.
+	if !work.compact {
+		queued := r.takePending(sessionID)
+		for _, message := range queued.steering {
+			ag.Steer(message)
+		}
+		for _, message := range queued.followUps {
+			ag.FollowUp(message)
+		}
 	}
 	active.begin(row.ID, ag)
 	r.mu.Lock()
@@ -275,10 +301,10 @@ func (r *runs) begin(ctx context.Context, sessionID, text, model string, detach 
 	started = true
 	// The title comes from the conversation as it stood before the run, so
 	// it is read before the loop starts adding to it.
-	if sess.Untitled {
-		s.titles.start(sess, firstMessage(loaded.Conversation.Messages(), text))
+	if sess.Untitled && !work.compact {
+		s.titles.start(sess, firstMessage(loaded.Conversation.Messages(), work.text))
 	}
-	go r.drive(runCtx, active, loaded, text)
+	go r.drive(runCtx, active, loaded, work)
 	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", cfg.model.Name,
 		"profile_id", cfg.profile.ID)
 	return row, active, nil
@@ -315,13 +341,19 @@ func (r *runs) abandon(active *activeRun) {
 	close(active.done)
 }
 
-// drive runs the agent loop and records how it ended.
-func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Session, text string) {
+// drive runs the agent loop, or the compaction the run is, and records how it
+// ended.
+func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Session, work job) {
 	defer close(active.done)
 	defer active.cancel()
 	runID := active.runID()
 	loop := active.loop()
-	err := loop.Run(ctx, loaded, text)
+	var err error
+	if work.compact {
+		err = loop.Compact(ctx, loaded, work.instructions)
+	} else {
+		err = loop.Run(ctx, loaded, work.text)
+	}
 
 	state, message := store.RunDone, ""
 	switch {

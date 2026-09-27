@@ -11,6 +11,7 @@ import type { BrowserContext, Route, WebSocketRoute } from "@playwright/test";
 
 import type { EikaEvent, EventType } from "../../src/api/events.ts";
 import type {
+  Compaction,
   ContentDetail,
   Elicitation,
   ElicitationAnswer,
@@ -409,7 +410,8 @@ export class MockHarness {
       kind: entry.kind,
       commit: entry.commit,
       created_at: entry.created_at,
-      message: entry.message,
+      // A compaction entry's payload is the compaction, as the harness stores it.
+      message: entry.kind === "compaction" ? entry.compaction : entry.message,
     });
   }
 
@@ -546,6 +548,7 @@ export class MockHarness {
         this.finish(run, state, error);
       },
       play: (session, run, text) => this.play(session, run, text),
+      compact: (session, run, instructions) => this.compact(session, run, instructions),
       answers: this.answers,
       elicitAnswers: this.elicitAnswers,
       authorizations: this.authorizations,
@@ -574,20 +577,56 @@ export class MockHarness {
     this.world.elicitations = this.world.elicitations.filter((e) => e.run_id !== run.id);
   }
 
-  private append(session: Session, message: Message): Entry {
+  private append(session: Session, message: Message, compaction?: Compaction): Entry {
     const list = (this.world.entries[session.id] ??= []);
     const entry: Entry = {
       id: this.nextId("ent"),
       seq: list.length + 1,
-      kind: entryKind(message),
+      kind: compaction === undefined ? entryKind(message) : "compaction",
       created_at: fixedNow,
       message,
+      ...(compaction === undefined ? {} : { compaction }),
       ...(session.head_entry_id === undefined ? {} : { parent_id: session.head_entry_id }),
     };
     list.push(entry);
     session.head_entry_id = entry.id;
     session.updated_at = fixedNow;
     return entry;
+  }
+
+  /**
+   * compact plays a manual compaction as the harness does: a run of its own
+   * that reports its start and end and stores one compaction entry, which
+   * keeps the last two messages.
+   */
+  private async compact(session: Session, run: Run, instructions: string): Promise<void> {
+    this.busy += 1;
+    const topic = `session:${session.id}`;
+    const turn = this.nextId("turn");
+    const send = (type: EventType, payload: Record<string, unknown>) => {
+      this.emit(this.event(type, topic, { run_id: turn, ...payload }));
+    };
+    try {
+      const tokensBefore = 48_213;
+      send("compaction.start", { reason: "manual", tokens_before: tokensBefore });
+      await new Promise((r) => setTimeout(r, this.stepDelayMs));
+      if (run.state !== "running") return;
+      const focus = instructions === "" ? "" : `\n\n## Focus\n- ${instructions}`;
+      const compaction: Compaction = {
+        summary: `## Goal\nMake webhook delivery retry with backoff.\n\n## Progress\n### Done\n- [x] Read \`internal/webhook/deliver.go\`\n\n## Next Steps\n1. Add tests for the backoff.${focus}`,
+        kept: 2,
+        tokens_before: tokensBefore,
+        tokens_after: 6_412,
+        reason: "manual",
+        usage: { input_tokens: 612, output_tokens: 431, total_tokens: 1043 },
+      };
+      this.append(session, { role: "user" }, compaction);
+      this.finish(run, "done");
+      const { reason, tokens_before, tokens_after, summary, kept, usage } = compaction;
+      send("compaction.end", { reason, tokens_before, tokens_after, summary, kept, usage });
+    } finally {
+      this.busy -= 1;
+    }
   }
 
   /** play streams one scripted reply as a run's events and stores its entries. */

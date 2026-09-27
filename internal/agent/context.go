@@ -193,6 +193,12 @@ func (c Context) WithMessages(msgs []provider.Message) Context {
 // assemble builds the request for the next model call on s from the system
 // prompt sections of the run.
 func (a *Agent) assemble(s *Session, prompt []Section) Context {
+	return a.base(prompt).WithMessages(s.Conversation.Messages())
+}
+
+// base returns the request the run's model calls share, with no messages:
+// the system prompt sections, the tool schemas, and the parameters.
+func (a *Agent) base(prompt []Section) Context {
 	c := Context{
 		Sections: append([]Section{}, prompt...),
 		Tools:    []ToolSchema{},
@@ -208,7 +214,7 @@ func (a *Agent) assemble(s *Session, prompt []Section) Context {
 			c.Tools = append(c.Tools, ToolSchema{ToolDef: def, Source: sourceOf(def.Name), Tokens: ToolTokens(def)})
 		}
 	}
-	return c.WithMessages(s.Conversation.Messages())
+	return c
 }
 
 // ToolTokens estimates the size of one tool definition as JSON, as a

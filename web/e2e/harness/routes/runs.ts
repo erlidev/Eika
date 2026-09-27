@@ -3,6 +3,7 @@
 import type { Run } from "../../../src/api/types.ts";
 import { fail, ok, str } from "./context.ts";
 import type { RouteContext } from "./context.ts";
+import { pathOf } from "../world.ts";
 
 export function runRoutes(ctx: RouteContext): void {
   const { w, on, find, now } = ctx;
@@ -49,6 +50,35 @@ export function runRoutes(ctx: RouteContext): void {
     w.activeRuns[session.id] = run.id;
     ctx.nameSession(session, text);
     void ctx.play(session, run, text);
+    return ok(run, 202);
+  });
+  on("POST", "/api/sessions/{id}/compact", ({ params, body }) => {
+    const session = find(w.sessions, params[0], "session");
+    if ("status" in session) return session;
+    if (w.activeRuns[session.id]) return fail(409, "conflict", "a run is already going");
+    if (w.models.length === 0) return fail(409, "conflict", "no model is configured");
+    // The harness keeps about 20,000 tokens; the mock keeps two messages, so
+    // a context of two or fewer beside its summary has nothing to summarize.
+    const path = pathOf(w, session);
+    const last = path.findLastIndex((e) => e.kind === "compaction");
+    const kept = path[last]?.compaction?.kept ?? 0;
+    const context = last < 0 ? path.length : path.length - last - 1 + kept;
+    if (context <= 2) {
+      return fail(
+        409,
+        "conflict",
+        "nothing to compact: the conversation fits in what a compaction keeps",
+      );
+    }
+    const run: Run = {
+      id: ctx.nextId("run"),
+      session_id: session.id,
+      state: "running",
+      started_at: now(),
+    };
+    w.runs[run.id] = run;
+    w.activeRuns[session.id] = run.id;
+    void ctx.compact(session, run, str(body.instructions));
     return ok(run, 202);
   });
   on("POST", "/api/runs/{id}/abort", ({ params }) => {

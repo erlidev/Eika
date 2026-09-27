@@ -819,6 +819,22 @@
           "head": {
             "object": {
               "commit": "string",
+              "compaction": {
+                "object": {
+                  "kept": "number",
+                  "reason": "string",
+                  "summary": "string",
+                  "tokens_after": "number",
+                  "tokens_before": "number",
+                  "usage": {
+                    "object": {
+                      "input_tokens": "number",
+                      "output_tokens": "number",
+                      "total_tokens": "number"
+                    }
+                  }
+                }
+              },
               "created_at": "string",
               "id": "string",
               "kind": "string",
@@ -868,6 +884,7 @@
                   },
                   "reasoning": "string",
                   "role": "string",
+                  "summary": "boolean",
                   "tool_call_id": "string",
                   "tool_calls": {
                     "array": {
@@ -888,6 +905,7 @@
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "summary",
                   "tool_call_id",
                   "tool_calls"
                 ]
@@ -897,6 +915,7 @@
             },
             "optional": [
               "commit",
+              "compaction",
               "parent_id"
             ]
           },
@@ -1233,6 +1252,7 @@
                   },
                   "reasoning": "string",
                   "role": "string",
+                  "summary": "boolean",
                   "tool_call_id": "string",
                   "tool_calls": {
                     "array": {
@@ -1253,6 +1273,7 @@
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "summary",
                   "tool_call_id",
                   "tool_calls"
                 ]
@@ -1406,6 +1427,22 @@
               "array": {
                 "object": {
                   "commit": "string",
+                  "compaction": {
+                    "object": {
+                      "kept": "number",
+                      "reason": "string",
+                      "summary": "string",
+                      "tokens_after": "number",
+                      "tokens_before": "number",
+                      "usage": {
+                        "object": {
+                          "input_tokens": "number",
+                          "output_tokens": "number",
+                          "total_tokens": "number"
+                        }
+                      }
+                    }
+                  },
                   "created_at": "string",
                   "id": "string",
                   "kind": "string",
@@ -1455,6 +1492,7 @@
                       },
                       "reasoning": "string",
                       "role": "string",
+                      "summary": "boolean",
                       "tool_call_id": "string",
                       "tool_calls": {
                         "array": {
@@ -1475,6 +1513,7 @@
                       "is_error",
                       "metrics",
                       "reasoning",
+                      "summary",
                       "tool_call_id",
                       "tool_calls"
                     ]
@@ -1484,6 +1523,7 @@
                 },
                 "optional": [
                   "commit",
+                  "compaction",
                   "parent_id"
                 ]
               }
@@ -1537,6 +1577,7 @@
                   },
                   "reasoning": "string",
                   "role": "string",
+                  "summary": "boolean",
                   "tool_call_id": "string",
                   "tool_calls": {
                     "array": {
@@ -1557,6 +1598,7 @@
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "summary",
                   "tool_call_id",
                   "tool_calls"
                 ]
@@ -1666,6 +1708,7 @@
                   },
                   "reasoning": "string",
                   "role": "string",
+                  "summary": "boolean",
                   "tool_call_id": "string",
                   "tool_calls": {
                     "array": {
@@ -1686,6 +1729,7 @@
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "summary",
                   "tool_call_id",
                   "tool_calls"
                 ]
@@ -1884,6 +1928,20 @@
         "object": {
           "defaults": {
             "object": {
+              "compaction": {
+                "object": {
+                  "auto": "boolean",
+                  "keep_recent_tokens": "number",
+                  "prompts": {
+                    "object": {
+                      "summary": "string",
+                      "turn_prefix": "string",
+                      "update": "string"
+                    }
+                  },
+                  "reserve_tokens": "number"
+                }
+              },
               "sandbox_egress": {
                 "object": {
                   "allow": {
@@ -3294,6 +3352,29 @@
         ]
       }
     },
+    "POST /api/sessions/{id}/compact": {
+      "status": 202,
+      "request": {
+        "object": {
+          "instructions": "string",
+          "model": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "error": "string",
+          "finished_at": "string",
+          "id": "string",
+          "session_id": "string",
+          "started_at": "string",
+          "state": "string"
+        },
+        "optional": [
+          "error",
+          "finished_at"
+        ]
+      }
+    },
     "POST /api/sessions/{id}/fork": {
       "status": 201,
       "request": {
@@ -4337,6 +4418,20 @@
         "object": {
           "defaults": {
             "object": {
+              "compaction": {
+                "object": {
+                  "auto": "boolean",
+                  "keep_recent_tokens": "number",
+                  "prompts": {
+                    "object": {
+                      "summary": "string",
+                      "turn_prefix": "string",
+                      "update": "string"
+                    }
+                  },
+                  "reserve_tokens": "number"
+                }
+              },
               "sandbox_egress": {
                 "object": {
                   "allow": {
@@ -4510,6 +4605,37 @@
     "bus.dropped": {
       "object": {
         "dropped": "number"
+      }
+    },
+    "compaction.end": {
+      "object": {
+        "error": "string",
+        "kept": "number",
+        "reason": "string",
+        "run_id": "string",
+        "summary": "string",
+        "tokens_after": "number",
+        "tokens_before": "number",
+        "usage": {
+          "object": {
+            "input_tokens": "number",
+            "output_tokens": "number",
+            "total_tokens": "number"
+          }
+        }
+      },
+      "optional": [
+        "error",
+        "kept",
+        "summary",
+        "tokens_after"
+      ]
+    },
+    "compaction.start": {
+      "object": {
+        "reason": "string",
+        "run_id": "string",
+        "tokens_before": "number"
       }
     },
     "mcp.elicitation": {

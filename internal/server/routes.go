@@ -98,6 +98,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 
 	api.HandleFunc("POST /api/sessions/{id}/messages", s.handlePostMessage)
 	api.HandleFunc("GET /api/sessions/{id}/run", s.handleSessionRun)
+	api.HandleFunc("POST /api/sessions/{id}/compact", s.handleCompact)
 	api.HandleFunc("POST /api/runs/{id}/abort", s.handleAbortRun)
 	api.HandleFunc("POST /api/questions/{id}/answer", s.handleAnswerQuestion)
 	api.HandleFunc("GET /api/tools", s.handleListTools)

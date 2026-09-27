@@ -13,8 +13,9 @@ import (
 // EntryKind names what one session entry holds. The kinds are the vocabulary
 // the whole system agrees on, in the same way internal/event fixes the event
 // names: internal/session writes user, assistant, and tool_result entries
-// from provider messages, system entries for prompt-level notes, and event
-// entries for questions, subagent lifecycle, and later compaction.
+// from provider messages, compaction entries for summaries, system entries
+// for prompt-level notes, and event entries for questions and subagent
+// lifecycle.
 type EntryKind string
 
 // The kinds an entry can have.
@@ -31,8 +32,11 @@ const (
 	// than to a turn.
 	KindSystem EntryKind = "system"
 	// KindEvent is something that happened around the session: a question, a
-	// subagent starting or finishing, a compaction.
+	// subagent starting or finishing.
 	KindEvent EntryKind = "event"
+	// KindCompaction is a summary that replaces the conversation before it,
+	// except its newest messages, from then on.
+	KindCompaction EntryKind = "compaction"
 )
 
 // Entry is one node of a session tree. Entries form a tree through ParentID

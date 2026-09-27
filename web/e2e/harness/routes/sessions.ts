@@ -1,6 +1,6 @@
 /** Sessions: their entries, heads, forks, tools, and configuration. */
 
-import type { Entry, Message, Session } from "../../../src/api/types.ts";
+import type { Entry, Session } from "../../../src/api/types.ts";
 import {
   previewContext,
   recordedContext,
@@ -14,7 +14,12 @@ import { sessionTools } from "../world.ts";
 import { fail, ok, str } from "./context.ts";
 import type { Reply, RouteContext } from "./context.ts";
 
-function preview(message: Message): string {
+/** preview is the start of an entry's content, as internal/session words it. */
+function preview(entry: Entry): string {
+  if (entry.compaction) {
+    return `compacted about ${String(entry.compaction.tokens_before)} tokens into a summary`;
+  }
+  const message = entry.message;
   if (message.content) return message.content.slice(0, 80);
   const call = message.tool_calls?.[0];
   return call?.name ?? "";
@@ -126,7 +131,7 @@ export function sessionRoutes(ctx: RouteContext): void {
         id: e.id,
         parent_id: e.parent_id,
         kind: e.kind,
-        preview: preview(e.message),
+        preview: preview(e),
         commit: e.commit,
         resumable,
         created_at: e.created_at,

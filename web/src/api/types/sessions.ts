@@ -1,6 +1,6 @@
 /** Wire types for sessions, their entries, and the tools a run offers. */
 
-import type { EntryKind, Timings, Usage } from "@/api/events";
+import type { CompactionReason, EntryKind, Timings, Usage } from "@/api/events";
 
 /** SessionKind is who opened a session. */
 export type SessionKind = "user" | "fork" | "agent";
@@ -82,6 +82,25 @@ export type Message = {
   is_error?: boolean;
   /** metrics are stored UI metadata and are not sent to the provider. */
   metrics?: MessageMetrics;
+  /**
+   * summary marks the user message that carries a compaction's summary in
+   * place of the conversation before it.
+   */
+  summary?: boolean;
+};
+
+/** Compaction is what an entry of kind compaction records. */
+export type Compaction = {
+  /** summary takes the place of the conversation before the entry. */
+  summary: string;
+  /** kept is how many of the messages before the entry stay after the summary. */
+  kept: number;
+  /** tokens_before and tokens_after are the context's estimated size. */
+  tokens_before: number;
+  tokens_after: number;
+  reason: CompactionReason;
+  /** usage is what making the summary cost. */
+  usage: Usage;
 };
 
 /** Entry is one stored node of a session tree, with its message. */
@@ -93,6 +112,8 @@ export type Entry = {
   commit?: string;
   created_at: string;
   message: Message;
+  /** compaction is present on an entry of kind compaction. */
+  compaction?: Compaction;
 };
 
 /** Node is one entry of a session outline: the tree without payloads. */

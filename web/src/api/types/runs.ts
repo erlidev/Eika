@@ -42,6 +42,14 @@ export type RunStatus = {
 /** MessageMode says what the harness does with a posted message. */
 export type MessageMode = "run" | "steer" | "follow_up";
 
+/** CompactRequest is the body of POST /api/sessions/{id}/compact. */
+export type CompactRequest = {
+  /** instructions say what the summary should focus on. */
+  instructions?: string;
+  /** model writes the summary; absent uses the one a run would. */
+  model?: string;
+};
+
 /** PostMessage is the body of POST /api/sessions/{id}/messages. */
 export type PostMessage = {
   text: string;
