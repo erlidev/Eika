@@ -1,5 +1,10 @@
 # Refactor plan
 
+> **Superseded by `docs/PLAN.md`.** Do not start new items here. Phase 3's
+> import-rule test and ESLint boundary rule moved into `PLAN.md` phases 0 and 3;
+> the comment and doc trimming of phases 4 and 5 is dropped, since that plan
+> rewrites most of the code it covers.
+
 A standing plan for cleaning up Eika without changing what it does. Agents
 work through it over many sessions: pick the first unchecked item in the
 lowest open phase, do it, tick it, and record anything learned in the log at
