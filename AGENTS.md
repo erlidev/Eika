@@ -11,6 +11,8 @@ human changing the codebase. Read it fully before editing.
 3. `docs/DECISIONS.md`: why it is built that way. Read the section for the
    area you change before reversing anything.
 4. `docs/EXTENDING.md` when adding a tool, provider, search backend, or UI panel.
+5. `docs/PLAN.md` and `docs/design/`: the phased plan that turns Eika into a
+   persistent local assistant. Work on it starts from the plan's ground rules.
 
 ## Rules that are never optional
 
