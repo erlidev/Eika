@@ -12,6 +12,7 @@ import type {
   SettingsState,
   SystemStatus,
 } from "@/api/types";
+import type { SandboxSettings } from "@/features/sandbox";
 
 /** The settings keys the harness reads itself. Every other key is the UI's own. */
 export const settingKeys = {
@@ -94,15 +95,12 @@ export function setupComplete(state: SettingsState | undefined): boolean {
   return state?.settings[settingKeys.setupComplete] === true;
 }
 
-/** SandboxDefaults are the limits and network a new workspace gets. */
-export type SandboxDefaults = { limits: SandboxLimits; egress: SandboxEgress };
-
 /**
  * sandboxDefaults is what the settings store, else the harness's own
  * defaults. The table holds any JSON, so a stored value is read only when
  * it has the shape the harness validated it to.
  */
-export function sandboxDefaults(state: SettingsState): SandboxDefaults {
+export function sandboxDefaults(state: SettingsState): SandboxSettings {
   const limits = state.settings[settingKeys.sandboxLimits];
   const egress = state.settings[settingKeys.sandboxEgress];
   return {

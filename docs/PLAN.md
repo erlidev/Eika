@@ -146,7 +146,7 @@ before the routes it calls.
 - [x] Squash migrations into `0001_baseline.sql` in schema `core`. A fresh
       database is expected (decided), so there is no data migration. Update
       `storetest`. Until phase 0 closes, schema changes edit the baseline.
-- [ ] Remove the coding UI:
+- [x] Remove the coding UI:
       - features `files`, `terminal`, `changes`, `workspaces`, `projects`
       - the session tree panel and fork UI
       - diff libraries, Monaco and xterm

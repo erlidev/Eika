@@ -26,16 +26,13 @@ import { previewContext, record } from "./profiles.ts";
 import { authRoutes, mockToken } from "./routes/auth.ts";
 import { fail } from "./routes/context.ts";
 import type { Handler, Reply, RouteContext } from "./routes/context.ts";
-import { fileRoutes } from "./routes/files.ts";
 import { mcpRoutes } from "./routes/mcp.ts";
 import { profileRoutes } from "./routes/profiles.ts";
-import { projectRoutes } from "./routes/projects.ts";
 import { providerRoutes } from "./routes/providers.ts";
 import { runRoutes } from "./routes/runs.ts";
 import { searchRoutes } from "./routes/search.ts";
 import { sessionRoutes } from "./routes/sessions.ts";
 import { settingsRoutes } from "./routes/settings.ts";
-import { workspaceRoutes } from "./routes/workspaces.ts";
 import { entryKind, fixedNow, pathOf, syncSystem } from "./world.ts";
 import type { ReplyStep, World } from "./world.ts";
 
@@ -97,9 +94,6 @@ const statusCodes: Record<number, string> = {
   409: "conflict",
   500: "internal",
 };
-
-/** terminalPath matches a workspace's terminal socket and captures its id. */
-const terminalPath = /^\/api\/workspaces\/([^/]+)\/terminal$/;
 
 export class MockHarness {
   readonly world: World;
@@ -166,12 +160,6 @@ export class MockHarness {
       (url) => url.pathname === "/api/events",
       (ws) => {
         this.accept(ws);
-      },
-    );
-    await context.routeWebSocket(
-      (url) => terminalPath.test(url.pathname),
-      (ws) => {
-        this.shell(ws);
       },
     );
     await context.route(
@@ -328,54 +316,6 @@ export class MockHarness {
       this.checkEvent(e);
       ws.send(JSON.stringify(e));
     }
-  }
-
-  /**
-   * shell plays a terminal that echoes what is typed and prints a prompt
-   * after each line; `exit` ends it the way a shell that exits cleanly does,
-   * with no exit code. A workspace that is not running refuses the socket.
-   */
-  private shell(ws: WebSocketRoute): void {
-    const url = new URL(ws.url());
-    const id = decodeURIComponent(terminalPath.exec(url.pathname)?.[1] ?? "");
-    const workspace = this.world.workspaces.find((x) => x.id === id);
-    if (url.searchParams.get("token") !== mockToken || workspace?.state !== "running") {
-      void ws.close({ code: 1011, reason: "refused" });
-      return;
-    }
-    const out = (text: string) => {
-      ws.send(JSON.stringify({ type: "output", data: Buffer.from(text).toString("base64") }));
-    };
-    const prompt = `${workspace.name} $ `;
-    out(`Connected to ${workspace.name} (${workspace.branch}).\r\n${prompt}`);
-    let line = "";
-    ws.onMessage((data) => {
-      let frame: { type?: string; data?: string };
-      try {
-        frame = JSON.parse(typeof data === "string" ? data : data.toString()) as typeof frame;
-      } catch {
-        return;
-      }
-      if (frame.type !== "input" || frame.data === undefined) return;
-      for (const ch of Buffer.from(frame.data, "base64").toString("utf8")) {
-        if (ch === "\r") {
-          if (line.trim() === "exit") {
-            out("\r\n");
-            ws.send(JSON.stringify({ type: "exit" }));
-            void ws.close();
-            return;
-          }
-          out(`\r\n${prompt}`);
-          line = "";
-        } else if (ch === "\x7f") {
-          if (line !== "") out("\b \b");
-          line = line.slice(0, -1);
-        } else {
-          line += ch;
-          out(ch);
-        }
-      }
-    });
   }
 
   private onFrame(socket: Socket, data: string): void {
@@ -558,9 +498,6 @@ export class MockHarness {
     settingsRoutes(ctx);
     searchRoutes(ctx);
     providerRoutes(ctx);
-    projectRoutes(ctx);
-    workspaceRoutes(ctx);
-    fileRoutes(ctx);
     sessionRoutes(ctx);
     profileRoutes(ctx);
     runRoutes(ctx);

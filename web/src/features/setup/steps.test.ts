@@ -25,11 +25,11 @@ describe("the step order", () => {
     for (let step = nextStep("account"); step !== null; step = nextStep(step)) {
       walked.push(step);
     }
-    expect(walked).toEqual(["account", "provider", "models", "system", "project"]);
+    expect(walked).toEqual(["account", "provider", "models", "system"]);
   });
 
   it("numbers and describes each step", () => {
     expect(stepIndex("models")).toBe(2);
-    expect(stepInfo("project").label).toBe("Project");
+    expect(stepInfo("system").label).toBe("Computer");
   });
 });

@@ -6,7 +6,17 @@
  * taking the shortcuts git does for whole files.
  */
 
-import type { DiffLine } from "@/lib/unifiedDiff";
+/** DiffLine is one rendered row of a unified diff. */
+export type DiffLine = {
+  kind: "context" | "add" | "remove";
+  text: string;
+  /** oldLine is the 1-based line number in the old text, absent for an addition. */
+  oldLine?: number;
+  /** newLine is the 1-based line number in the new text, absent for a removal. */
+  newLine?: number;
+  /** noNewline marks the last line of a text that does not end in a newline. */
+  noNewline?: boolean;
+};
 
 /** maxCells bounds the comparison table; past it the texts are shown as replaced whole. */
 const maxCells = 4_000_000;

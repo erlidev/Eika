@@ -1,13 +1,12 @@
 /**
- * Cmd/Ctrl+K. It switches sessions and chats, opens a new session in the
- * workspace that is open or a new chat, toggles the theme, and opens the
- * settings. It reads the lists it
- * offers from the same queries the sidebar uses, so it needs no state.
+ * Cmd/Ctrl+K. It switches chats, opens a new chat, toggles the theme, and
+ * opens the settings. It reads the list it offers from the same query the
+ * sidebar uses, so it needs no state.
  */
 
 import { Command as CommandIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate } from "react-router";
 
 import { getTheme, nextTheme, setTheme } from "@/app/theme";
 import { Button } from "@/components/ui/button";
@@ -20,9 +19,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { useSession } from "@/features/session";
-import { useChats, useCreateSession, useSessions } from "@/features/sessions";
-import { useWorkspaces } from "@/features/workspaces";
+import { useChats, useCreateSession } from "@/features/sessions";
 
 export type CommandPaletteProps = {
   /** onOpenSettings opens the settings dialog the workbench owns. */
@@ -31,15 +28,6 @@ export type CommandPaletteProps = {
 
 export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
-  const params = useParams();
-  const sessionId = params.sessionId ?? "";
-  const session = useSession(sessionId === "" ? undefined : sessionId);
-  const workspaceId = session.data?.session.workspace_id;
-  const workspaces = useWorkspaces();
-  // With no workspace open this lists every session, chats included; the
-  // chats have a group of their own, so they are left out of this one.
-  const sessions = useSessions(workspaceId, true);
-  const workspaceSessions = (sessions.data ?? []).filter((s) => s.workspace_id !== undefined);
   const chats = useChats();
   const createSession = useCreateSession();
   const navigate = useNavigate();
@@ -88,7 +76,7 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
         open={open}
         onOpenChange={setOpen}
         title="Commands"
-        description="Switch session or chat, create one, or change the theme."
+        description="Switch chat, start one, or change the theme."
       >
         {/*
           This build's CommandDialog renders the dialog alone; cmdk's own
@@ -96,24 +84,10 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
           than by hand-editing components/ui.
         */}
         <Command>
-          <CommandInput placeholder="Type a command or a session title…" />
+          <CommandInput placeholder="Type a command or a chat title…" />
           <CommandList>
             <CommandEmpty>Nothing matches.</CommandEmpty>
             <CommandGroup heading="Actions">
-              {workspaceId !== undefined && (
-                <CommandItem
-                  onSelect={() => {
-                    run(() => {
-                      createSession.mutate(
-                        { workspace_id: workspaceId },
-                        { onSuccess: (created) => void navigate(`/sessions/${created.id}`) },
-                      );
-                    });
-                  }}
-                >
-                  New session in this workspace
-                </CommandItem>
-              )}
               <CommandItem
                 onSelect={() => {
                   run(() => {
@@ -144,29 +118,6 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
               </CommandItem>
             </CommandGroup>
 
-            {/* The forks and child agents of this workspace's sessions are
-                here too: they are sessions to switch to like any other. The
-                kind is spelled out, because the palette is a flat list and
-                the sidebar's nesting is what says it there. */}
-            <CommandGroup heading="Sessions">
-              {workspaceSessions.map((entry) => (
-                <CommandItem
-                  key={entry.id}
-                  value={`session ${entry.kind} ${entry.title} ${entry.id}`}
-                  onSelect={() => {
-                    run(() => void navigate(`/sessions/${entry.id}`));
-                  }}
-                >
-                  {entry.title}
-                  {entry.kind !== "user" && (
-                    <span className="text-muted-foreground ml-auto font-mono text-xs">
-                      {entry.kind}
-                    </span>
-                  )}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-
             <CommandGroup heading="Chats">
               {(chats.data ?? []).map((entry) => (
                 <CommandItem
@@ -178,23 +129,6 @@ export function CommandPalette({ onOpenSettings }: CommandPaletteProps) {
                 >
                   {entry.title}
                   <span className="text-muted-foreground ml-auto font-mono text-xs">chat</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-
-            <CommandGroup heading="Workspaces">
-              {(workspaces.data ?? []).map((workspace) => (
-                <CommandItem
-                  key={workspace.id}
-                  value={`workspace ${workspace.name} ${workspace.branch}`}
-                  onSelect={() => {
-                    run(() => void navigate(`/workspaces/${workspace.id}`));
-                  }}
-                >
-                  {workspace.name}
-                  <span className="text-muted-foreground ml-auto font-mono text-xs">
-                    {workspace.state}
-                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>

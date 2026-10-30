@@ -39,7 +39,7 @@ test.describe("on a phone", () => {
 
   test("sandbox step with Docker unreachable", async ({ open }) => {
     const eika = await open({ scenario: "setup-docker-down", viewport: phone });
-    await expect(eika.page.getByText("Step 4 of 5")).toBeVisible();
+    await expect(eika.page.getByText("Step 4 of 4")).toBeVisible();
     const overflow = await eika.page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );

@@ -137,14 +137,11 @@ test("a new URL leaves the stored headers behind", async ({ open }) => {
   await expect(eika.page.getByText("Authenticated by", { exact: false })).toBeHidden();
 });
 
-test("a stdio server starts in a workspace", async ({ open }) => {
+test("a stdio server is started by a run, not by hand", async ({ open }) => {
   const eika = await open({ scenario: "mcp" });
   await openServers(eika);
   await eika.click("filesystem, stdio");
-  await expect(eika.page.getByText(/Not running in any workspace/)).toBeVisible();
-  await eika.select("Workspace", "fix-retries");
-  await eika.click("Start there");
-  await expect(eika.page.getByText("Running in fix-retries.")).toBeVisible();
+  await expect(eika.page.getByText(/Not running\. A chat that uses it starts it/)).toBeVisible();
   await eika.click("role=tab[name=About]");
   await expect(
     eika.page.getByText(/Its variables \(LOG_LEVEL\) are visible to the agent/),

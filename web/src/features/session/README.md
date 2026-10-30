@@ -75,13 +75,11 @@ one that holds client state of its own.
   step, and a typed fence close itself
   (`lib/markdownEditing.ts`), and sends on Ctrl+Enter. Its edits go through
   `execCommand`, so the browser's undo takes each back like typing.
-- `queries.ts` wraps the session, outline, run, message, head, and fork
-  routes. `useSetSessionHead` rebuilds the transcript afterwards, and
+- `queries.ts` wraps the session, outline, run, message, and head routes. `useSetSessionHead` rebuilds the transcript afterwards, and
   `useRewind` is the one a message's rewind calls: it lands the head on the
   entry before the message and then puts the text in the composer, in that
   order, so a refused move leaves nothing in the box.
-- `ToolsPanel.tsx` is a chat's third panel, in place of a workspace's files,
-  terminal, and changes: the profiles feature's `ToolPicker` over the
+- `ToolsPanel.tsx` is a chat's third panel: the profiles feature's `ToolPicker` over the
   session's own tool choice, with a reset back to its profile's, and the
   names of the tools a chat never has. `tools.ts` holds the pure parts: what
   a chat can never offer, and the one-line summary of a description written
@@ -90,15 +88,12 @@ one that holds client state of its own.
 - `renderers/` is that registry: `registry.ts` has the type and the argument
   helpers, `renderers.tsx` maps a tool name to a renderer, `parts.tsx` holds
   the pieces they share. Adding one is in `docs/EXTENDING.md`.
-- `SessionTreePanel.tsx` and `RunPanel.tsx` are the two panels `app/panels.tsx`
-  registers. The run panel is where the status bar's meter explains itself:
-  the window, the prompt and the response that fill it, and the turn's cost. The tree follows the WAI-ARIA tree pattern with flat rows
-  (`aria-level`, `aria-posinset`, `aria-setsize`) laid out by `tree.ts`: one
-  tab stop, arrows, Home and End to move, Enter to move the head. Nothing
-  collapses, so no row has `aria-expanded`; the head is `aria-current`. A row
-  whose entry is not `resumable` is in the middle of a turn: a run cannot
-  continue from it, so its previews are muted and both its buttons are
-  disabled, matching the `400` the harness answers.
+- `RunPanel.tsx` is a panel `app/panels.tsx` registers. It is where the
+  status bar's meter explains itself: the window, the prompt and the response
+  that fill it, and the turn's cost.
+- `tree.ts` finds where a rewind lands: `rewindTarget` takes the entry before
+  a message, and refuses one whose entry is not `resumable`, in the middle of
+  a turn, matching the `400` the harness answers.
 
 ## Why a store and not a query
 

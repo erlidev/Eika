@@ -12,7 +12,7 @@ export type SettingsTab =
   | "profiles"
   | "general"
   | "compaction"
-  | "sandbox"
+  | "computer"
   | "search"
   | "mcp"
   | "account"

@@ -1,32 +1,16 @@
-/** Server state for the session list of a workspace. */
+/** Server state for the list of chats. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 import { globalTopic, payloadOf } from "@/api/events";
 import { queryKeys } from "@/api/keys";
-import { createSession, deleteSession, listChats, listSessions, updateSession } from "@/api/routes";
+import { createSession, deleteSession, listChats, updateSession } from "@/api/routes";
 import type { CreateSession, Session, UpdateSession } from "@/api/types";
 import { useStreamSubscription } from "@/api/useStream";
 
 /**
- * useSessions lists the sessions of one workspace, or all of them.
- * `descendants` also brings back the forks and child agents they led to,
- * which the sidebar hangs under the session each came from.
- */
-export function useSessions(
-  workspaceId?: string,
-  descendants?: boolean,
-): UseQueryResult<Session[]> {
-  return useQuery({
-    queryKey: queryKeys.sessions(workspaceId, descendants),
-    queryFn: ({ signal }) => listSessions(workspaceId, descendants, signal),
-  });
-}
-
-/**
- * useChats lists the sessions with no workspace. The forks of a chat are
- * chats too, so the list holds them and the sidebar nests them.
+ * useChats lists the chats: the sessions with no workspace.
  */
 export function useChats(): UseQueryResult<Session[]> {
   return useQuery({
@@ -35,7 +19,7 @@ export function useChats(): UseQueryResult<Session[]> {
   });
 }
 
-/** useCreateSession opens a session in a workspace, or a chat in none. */
+/** useCreateSession opens a chat. */
 export function useCreateSession(): UseMutationResult<Session, Error, CreateSession> {
   const client = useQueryClient();
   return useMutation({

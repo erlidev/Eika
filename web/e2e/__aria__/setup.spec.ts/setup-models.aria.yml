@@ -5,8 +5,7 @@
       - listitem: Password
       - listitem: Provider
       - listitem: 3 Models
-      - listitem: 4 Sandbox
-      - listitem: 5 Project
+      - listitem: 4 Computer
     - paragraph: Everything you choose here can be changed later in Settings.
   - heading "Choose models" [level=1]
   - text: Tick the models agents may use. You can add more, and more providers, in Settings whenever you like.
@@ -37,6 +36,8 @@
         - spinbutton "Context window": /\d+/
         - text: Max output
         - spinbutton "Max output": /\d+/
+        - checkbox "Accepts images"
+        - text: Accepts images
   - button "Add 1 model"
   - button "Back"
   - button "Skip the rest and open Eika"

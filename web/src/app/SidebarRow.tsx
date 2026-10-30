@@ -55,8 +55,6 @@ type RowProps = {
   indent: number;
   icon: React.ReactNode;
   label: string;
-  /** labelNote is read after the label by a screen reader only, such as " (fork)". */
-  labelNote?: string;
   meta?: string;
   onClick: () => void;
   /** expanded, when set, makes the row fold what is under it and draws its chevron. */
@@ -77,7 +75,6 @@ export function Row({
   indent,
   icon,
   label,
-  labelNote,
   meta,
   onClick,
   expanded,
@@ -140,7 +137,6 @@ export function Row({
           {icon}
           {/* A row that folds others is a heading of sorts; a session is not. */}
           <span className={cn("truncate", expanded !== undefined && "font-medium")}>{label}</span>
-          {labelNote !== undefined && <span className="sr-only">{labelNote}</span>}
           {pinned && (
             <>
               <Pin aria-hidden className="text-muted-foreground size-3 shrink-0" />

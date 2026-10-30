@@ -16,7 +16,8 @@ import { scenario } from "./scenarios.ts";
 
 /**
  * unmocked are the routes the mock does not serve, with why: the UI never
- * calls them, and a test that calls one sees the mock's 404.
+ * calls them. The routes of the removed coding UI are listed until their
+ * Go route goes. A test that calls one sees the mock's 404.
  */
 const unmocked: Record<string, string> = {
   "POST /api/subagents/{id}/abort": "the UI stops a child agent's run, not the agent",
@@ -24,6 +25,26 @@ const unmocked: Record<string, string> = {
   "GET /api/sessions/{id}/agents": "the sidebar lists child agents with the sessions",
   "GET /api/events": "a WebSocket, which install routes itself",
   "GET /api/workspaces/{id}/terminal": "a WebSocket, which install routes itself",
+  "GET /api/projects": "the coding UI is gone; the Go route goes with a later item",
+  "POST /api/projects": "the coding UI is gone; the Go route goes with a later item",
+  "GET /api/projects/{id}": "the coding UI is gone; the Go route goes with a later item",
+  "PATCH /api/projects/{id}": "the coding UI is gone; the Go route goes with a later item",
+  "DELETE /api/projects/{id}": "the coding UI is gone; the Go route goes with a later item",
+  "GET /api/workspaces": "the coding UI is gone; the Go route goes with a later item",
+  "POST /api/workspaces": "the coding UI is gone; the Go route goes with a later item",
+  "GET /api/workspaces/{id}": "the coding UI is gone; the Go route goes with a later item",
+  "PATCH /api/workspaces/{id}": "the coding UI is gone; the Go route goes with a later item",
+  "DELETE /api/workspaces/{id}": "the coding UI is gone; the Go route goes with a later item",
+  "POST /api/workspaces/{id}/start": "the coding UI is gone; the Go route goes with a later item",
+  "POST /api/workspaces/{id}/stop": "the coding UI is gone; the Go route goes with a later item",
+  "PUT /api/workspaces/{id}/sandbox": "the coding UI is gone; the Go route goes with a later item",
+  "GET /api/workspaces/{id}/usage": "the coding UI is gone; the Go route goes with a later item",
+  "POST /api/workspaces/{id}/ports/{port}/preview":
+    "the coding UI is gone; the Go route goes with a later item",
+  "GET /api/workspaces/{id}/files": "the coding UI is gone; the Go route goes with a later item",
+  "GET /api/workspaces/{id}/file": "the coding UI is gone; the Go route goes with a later item",
+  "PUT /api/workspaces/{id}/file": "the coding UI is gone; the Go route goes with a later item",
+  "POST /api/sessions/{id}/fork": "the coding UI is gone; the Go route goes with a later item",
 };
 
 /** open builds a mock on a named scenario whose replies play without pauses. */
@@ -131,40 +152,6 @@ describe("the mock answers as the harness does", () => {
         { provider_id: provider, name: "gpt-5-nano", model: "gpt-5-nano", context_window: 400000 },
       ],
       ["PATCH /api/models/{id}", `/api/models/${model}`, { reasoning_effort: "high" }],
-      ["GET /api/projects", "/api/projects"],
-      [
-        "POST /api/projects",
-        "/api/projects",
-        { name: "billing", kind: "local", host_path: "/srv/billing" },
-      ],
-      ["GET /api/projects/{id}", "/api/projects/proj-api"],
-      ["PATCH /api/projects/{id}", "/api/projects/proj-api", { default_branch: "trunk" }],
-      ["GET /api/workspaces", "/api/workspaces?project_id=proj-api"],
-      ["POST /api/workspaces", "/api/workspaces", { project_id: "proj-api", name: "try-jitter" }],
-      ["GET /api/workspaces/{id}", "/api/workspaces/ws-retries"],
-      [
-        "PATCH /api/workspaces/{id}",
-        "/api/workspaces/ws-retries",
-        { name: "retries", pinned: true, archived: false },
-      ],
-      ["POST /api/workspaces/{id}/stop", "/api/workspaces/ws-retries/stop"],
-      ["POST /api/workspaces/{id}/start", "/api/workspaces/ws-retries/start"],
-      ["GET /api/workspaces/{id}/files", "/api/workspaces/ws-retries/files"],
-      ["GET /api/workspaces/{id}/file", "/api/workspaces/ws-retries/file?path=README.md"],
-      [
-        "PUT /api/workspaces/{id}/sandbox",
-        "/api/workspaces/ws-retries/sandbox",
-        {
-          limits: { cpus: 2, memory_mb: 4096, pids: 4096 },
-          egress: { mode: "allowlist", allow: ["github.com"] },
-          ports: [{ port: 5173, label: "vite" }],
-        },
-      ],
-      ["GET /api/workspaces/{id}/usage", "/api/workspaces/ws-retries/usage"],
-      [
-        "POST /api/workspaces/{id}/ports/{port}/preview",
-        "/api/workspaces/ws-retries/ports/5173/preview",
-      ],
       ["GET /api/sessions", "/api/sessions?workspace_id=ws-retries&descendants=true"],
       ["POST /api/sessions", "/api/sessions", { workspace_id: "ws-retries", title: "Try jitter" }],
       ["GET /api/sessions/{id}", "/api/sessions/ses-backoff"],
@@ -175,7 +162,6 @@ describe("the mock answers as the harness does", () => {
       ],
       ["GET /api/sessions/{id}/outline", "/api/sessions/ses-backoff/outline"],
       ["POST /api/sessions/{id}/head", "/api/sessions/ses-backoff/head", { entry_id: head }],
-      ["POST /api/sessions/{id}/fork", "/api/sessions/ses-backoff/fork", { entry_id: head }],
       ["PUT /api/sessions/{id}/tools", "/api/sessions/ses-backoff/tools", { tools: ["bash"] }],
       ["GET /api/sessions/{id}/run", "/api/sessions/ses-backoff/run"],
       ["POST /api/sessions/{id}/messages", "/api/sessions/ses-backoff/messages", { text: "Go on" }],
@@ -184,23 +170,10 @@ describe("the mock answers as the harness does", () => {
       const reply = await call(mock, key.split(" ")[0] ?? "", path, body);
       expect(reply.status, `${key}: ${JSON.stringify(reply.body)}`).toBe(statusOf(key));
     }
-    // The editor saves a file as its raw text.
-    const saved = await call(
-      mock,
-      "PUT",
-      "/api/workspaces/ws-retries/file?path=NOTES.md",
-      undefined,
-      "# Notes\n",
-    );
-    expect(saved.status).toBe(statusOf("PUT /api/workspaces/{id}/file"));
-    await mock.idle();
-
     const deletions: [string, string][] = [
       ["DELETE /api/models/{id}", `/api/models/${model}`],
       ["DELETE /api/providers/{id}", `/api/providers/${provider}`],
       ["DELETE /api/sessions/{id}", "/api/sessions/ses-backoff"],
-      ["DELETE /api/workspaces/{id}", "/api/workspaces/ws-retries"],
-      ["DELETE /api/projects/{id}", "/api/projects/proj-api"],
       ["POST /api/auth/logout", "/api/auth/logout"],
     ];
     for (const [key, path] of deletions) {
@@ -504,8 +477,8 @@ describe("the mock answers as the harness does", () => {
     const mock = open("workbench");
     const refusals: [string, string, unknown?][] = [
       // The harness's decoder refuses a field it does not know, and no body.
-      ["POST", "/api/projects", { name: "x", colour: "red" }],
-      ["POST", "/api/projects"],
+      ["POST", "/api/profiles", { name: "x", colour: "red" }],
+      ["POST", "/api/profiles"],
       ["POST", "/api/sessions/ses-backoff/messages", { text: "" }],
       ["GET", "/api/sessions/no-such-session"],
       ["GET", "/api/sessions?chats=true&workspace_id=ws-retries"],
@@ -517,8 +490,8 @@ describe("the mock answers as the harness does", () => {
     // A request with a field the harness does not know is reported, since the
     // page should never send one; the refusals themselves are well formed.
     expect(mock.contractBreaks).toEqual([
-      "POST /api/projects request: $.colour: unknown field",
-      "POST /api/projects request: $: no body",
+      "POST /api/profiles request: $.colour: unknown field",
+      "POST /api/profiles request: $: no body",
     ]);
   });
 

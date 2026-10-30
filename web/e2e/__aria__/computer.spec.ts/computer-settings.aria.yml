@@ -5,15 +5,16 @@
     - tab "Models"
     - tab "Profiles"
     - tab "General"
-    - tab "Sandbox" [selected]
+    - tab "Compaction"
+    - tab "Computer" [selected]
     - tab "Search"
     - tab "MCP"
     - tab "Account"
     - tab "Appearance"
-  - tabpanel "Sandbox":
-    - heading "New workspaces" [level=3]
-    - paragraph: The limits and network a workspace is created with unless it names its own. Forks and child agents take their parent's instead. Change one workspace in its Sandbox panel.
-    - form "New workspaces":
+  - tabpanel "Computer":
+    - heading "Computer" [level=3]
+    - paragraph: The limits and network a sandbox is created with.
+    - form "Computer":
       - region "Limits":
         - heading "Limits" [level=4]
         - text: CPU No limit
