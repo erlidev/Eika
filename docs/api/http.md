@@ -1540,7 +1540,9 @@ What the setup screens check before the first workspace. `200` with:
 
 ## Event stream
 
-`GET /api/events` upgrades to a WebSocket; see `events.md`. The handshake
+### `GET /api/events`
+
+Upgrades to a WebSocket; see `events.md`. The handshake
 is accepted from the harness's own origin and from `allowed_origins`.
 
 ## Egress proxy

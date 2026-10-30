@@ -200,7 +200,7 @@ before the routes it calls.
       (`config.movedToUI`, the README upgrade section, the `deploy/.env`
       ignores): the fresh start makes the first two moot. Move the
       `jackc/pgx/v5` line into the direct `require` block.
-- [ ] Docs checks carried from `REFACTOR_PLAN.md` phase 5, as tests where cheap:
+- [x] Docs checks carried from `REFACTOR_PLAN.md` phase 5, as tests where cheap:
       every route in `routes.go` appears in `docs/api/http.md` and nothing
       else does; `events.md` matches `internal/event`.
 - [ ] Move the lasting lessons in `REFACTOR_PLAN.md`'s log into
