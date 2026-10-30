@@ -27,6 +27,9 @@ func (s *Store) migrate(ctx context.Context) error {
 		if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, migrationLock); err != nil {
 			return wrap("lock migrations", err)
 		}
+		if _, err := q.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS `+schema); err != nil {
+			return wrap("create schema "+schema, err)
+		}
 		const createTable = `CREATE TABLE IF NOT EXISTS schema_migrations (
 			version    text PRIMARY KEY,
 			applied_at timestamptz NOT NULL DEFAULT now()

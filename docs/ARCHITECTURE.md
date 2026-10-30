@@ -128,7 +128,8 @@ Reserve and keep are capped at a quarter of the window.
 ## Persistence
 
 `store` owns the database: a pgx pool, embedded migrations applied by `Open`,
-and SQL in one file per entity. Missing rows are `store.ErrNotFound`,
+and SQL in one file per entity. Its tables live in schema `core` (every
+connection's `search_path`), squashed into one baseline migration. Missing rows are `store.ErrNotFound`,
 duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 
 | Table | Holds |

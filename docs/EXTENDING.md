@@ -419,6 +419,13 @@ applied once and never edited afterwards: `schema_migrations` records the file
 name without its extension, so changing a file that a database already carries
 changes nothing. Correct a mistake with another migration.
 
+Until phase 0 of `docs/PLAN.md` closes, the schema is the one baseline,
+`0001_baseline.sql`, and a change edits it in place: a fresh database is
+expected. The rule above holds from then on.
+
+Tables live in schema `core`, which `store.Open` creates and sets as every
+connection's `search_path`, so a migration names tables without a schema.
+
 ```sql
 -- internal/store/migrations/0002_session_labels.sql
 ALTER TABLE sessions ADD COLUMN label text NOT NULL DEFAULT '';

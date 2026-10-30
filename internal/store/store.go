@@ -18,6 +18,10 @@ var ErrNotFound = errors.New("not found")
 // second project with the same name.
 var ErrConflict = errors.New("conflict")
 
+// schema is the PostgreSQL schema Core's tables live in. Sentry's tables live
+// in a schema of their own, so every connection names this one first.
+const schema = "core"
+
 // Store is the harness's database. One Store owns one connection pool and is
 // safe for concurrent use.
 type Store struct {
@@ -29,7 +33,12 @@ type Store struct {
 // already-migrated database is a no-op, so every harness start takes the same
 // path.
 func Open(ctx context.Context, url string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, url)
+	config, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, fmt.Errorf("connect to database: %w", err)
+	}
+	config.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("connect to database: %w", err)
 	}

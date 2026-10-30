@@ -3,6 +3,7 @@
 package store_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -49,71 +50,29 @@ func TestOpenMigratesAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestRemoteCredentialMigrationSanitizesLegacyURLs(t *testing.T) {
+func TestTablesLiveInSchemaCore(t *testing.T) {
 	ctx := t.Context()
 	databaseURL := storetest.URL(t)
+	st, err := store.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	st.Close()
 	conn, err := pgx.Connect(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	// The schema as 0001 left it, from the migration itself rather than a
-	// copy of it here: this database claims 0001 is applied, and a later
-	// migration may touch any table 0001 created, not only the one this test
-	// is about.
-	initial, err := os.ReadFile("migrations/0001_init.sql")
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	var core, public int
+	err = conn.QueryRow(ctx, `SELECT count(*) FILTER (WHERE table_schema = 'core'),
+		count(*) FILTER (WHERE table_schema = 'public')
+		FROM information_schema.tables WHERE table_type = 'BASE TABLE'`).Scan(&core, &public)
 	if err != nil {
-		_ = conn.Close(ctx)
-		t.Fatalf("read 0001_init.sql: %v", err)
+		t.Fatalf("count tables: %v", err)
 	}
-	_, err = conn.Exec(ctx, string(initial)+`
-		CREATE TABLE schema_migrations (
-			version text PRIMARY KEY,
-			applied_at timestamptz NOT NULL DEFAULT now()
-		);
-		INSERT INTO schema_migrations (version) VALUES ('0001_init');
-		INSERT INTO projects (id, name, kind, remote_url) VALUES
-			('legacy-userinfo', 'legacy-userinfo', 'remote', 'https://user:private@example.test/userinfo.git'),
-			('legacy-query', 'legacy-query', 'remote', 'https://example.test/query.git?access_token=private'),
-			('legacy-fragment', 'legacy-fragment', 'remote', 'https://example.test/fragment.git#private'),
-			('legacy-public', 'legacy-public', 'remote', 'https://example.test/public.git'),
-			('legacy-escaped', 'legacy-escaped', 'remote', 'https://example.test/repo%3Fversion.git');
-	`)
-	if err != nil {
-		_ = conn.Close(ctx)
-		t.Fatalf("prepare legacy schema: %v", err)
-	}
-	if err := conn.Close(ctx); err != nil {
-		t.Fatalf("close legacy connection: %v", err)
-	}
-
-	st, err := store.Open(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("open migrated store: %v", err)
-	}
-	t.Cleanup(st.Close)
-	cases := []struct {
-		id     string
-		remote string
-	}{
-		{"legacy-userinfo", "https://example.test/userinfo.git"},
-		{"legacy-query", "https://example.test/query.git"},
-		{"legacy-fragment", "https://example.test/fragment.git"},
-		{"legacy-public", "https://example.test/public.git"},
-		{"legacy-escaped", "https://example.test/repo%3Fversion.git"},
-	}
-	for _, c := range cases {
-		project, err := st.Project(ctx, c.id)
-		if err != nil {
-			t.Fatalf("read migrated project %s: %v", c.id, err)
-		}
-		if project.RemoteURL != c.remote {
-			t.Errorf("%s remote_url = %q, want %q", c.id, project.RemoteURL, c.remote)
-		}
-		// The credentials an old URL carried are not moved anywhere: they are
-		// entered again, and sealed, in the project's settings.
-		if project.RemoteUsername != "" || project.RemotePassword != nil {
-			t.Errorf("%s credentials = %q, %v, want none", c.id, project.RemoteUsername, project.RemotePassword)
-		}
+	// Sentry's schema sits beside core, so nothing may land in public.
+	if core == 0 || public != 0 {
+		t.Errorf("tables: %d in core, %d in public; want all in core", core, public)
 	}
 }
 
