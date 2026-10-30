@@ -110,6 +110,9 @@ type Workspace struct {
 	// HubToken is the token the workspace uses to clone from and push to the
 	// hub, for its project only.
 	HubToken string
+	// ProxyToken is the password the workspace presents to the egress proxy,
+	// which knows it by its id and this token.
+	ProxyToken string
 	// Project is the hub project the workspace works on, empty when it works
 	// on none.
 	Project string

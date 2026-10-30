@@ -1548,7 +1548,7 @@ is accepted from the harness's own origin and from `allowed_origins`.
 The harness listens on `egress_listen` (`:3128`) for the sandboxes whose
 egress is restricted: an HTTP proxy that takes `CONNECT` tunnels and plain
 `http://` requests in absolute form. A sandbox signs in with
-`Proxy-Authorization: Basic`, its workspace id and hub token, which the
+`Proxy-Authorization: Basic`, its workspace id and proxy token, which the
 harness puts in the proxy URL it gives the sandbox's processes. A request
 without credentials is `407`; one for a host the workspace's mode or
 allowlist does not admit is `403` and is listed in the workspace's usage; the

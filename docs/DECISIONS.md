@@ -89,8 +89,11 @@ this file says why, so neither repeats the other.
   advisory; DNS filtering leaks by address; iptables needs a capability the
   sandbox never gets. The proxy checks the allowlist per request and dials
   through `netguard`.
-- The proxy identifies a sandbox by its workspace id and hub token: already
-  per-workspace, secret, and recoverable after restart, so no grant table.
+- The proxy identifies a sandbox by its workspace id and a proxy token of its
+  own, generated at create and kept in the container's configuration:
+  per-workspace, secret, and recoverable after restart, so no grant table. It
+  was the hub token until the hub was due to go; phase 4 replaces it with
+  Sentry's principals.
 - Proxy variables go through eikad's `PUT /environment`, because a
   container's env is immutable and egress can change while it runs. Open
   sandboxes get no proxy, so they keep private addresses.

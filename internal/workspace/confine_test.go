@@ -26,7 +26,7 @@ func TestCreateResourcesSetsOnlyTheLimitsGiven(t *testing.T) {
 
 func TestEnvironmentPointsAProxiedWorkspaceAtTheProxy(t *testing.T) {
 	h := &Host{opts: Options{EgressProxyURL: "http://eika:3128", HubURL: "http://eika:8080"}}
-	ws := Workspace{ID: "ws1", HubToken: "secret", Proxied: true}
+	ws := Workspace{ID: "ws1", HubToken: "hub", ProxyToken: "secret", Proxied: true}
 	env := h.environment(ws)
 	for _, want := range []string{
 		"HTTPS_PROXY=http://ws1:secret@eika:3128",

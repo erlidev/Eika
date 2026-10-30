@@ -208,8 +208,8 @@ func (s *Server) handleWorkspaceUsage(w http.ResponseWriter, r *http.Request) {
 
 // EgressPolicy is what the egress proxy asks on every request a sandbox
 // sends it: the workspace's token, mode, and allowlist. A workspace is known
-// by its hub token, which lives in its container, so the first request of
-// each workspace reads it from there.
+// by its proxy token, which lives in its container's configuration, so the
+// first request of each workspace reads it from there.
 func (s *Server) EgressPolicy(ctx context.Context, id string) (egress.Policy, error) {
 	ws, err := s.deps.Store.Workspace(ctx, id)
 	if err != nil {
@@ -233,7 +233,7 @@ type proxyTokens struct {
 }
 
 // proxyToken returns the token a workspace presents to the egress proxy.
-// A container's hub token never changes and an id is never reused, so a
+// A container's proxy token never changes and an id is never reused, so a
 // token once read stays right until the workspace is destroyed.
 func (s *Server) proxyToken(ctx context.Context, id string) (string, error) {
 	s.proxyTokens.mu.Lock()
@@ -254,8 +254,8 @@ func (s *Server) proxyToken(ctx context.Context, id string) (string, error) {
 	if s.proxyTokens.byWorkspace == nil {
 		s.proxyTokens.byWorkspace = map[string]string{}
 	}
-	s.proxyTokens.byWorkspace[id] = host.HubToken
-	return host.HubToken, nil
+	s.proxyTokens.byWorkspace[id] = host.ProxyToken
+	return host.ProxyToken, nil
 }
 
 // forgetEgress drops what the harness holds about a destroyed workspace's

@@ -408,7 +408,7 @@ capacity (`Host.Capacity`). `Host.Usage` samples `docker stats`;
 ```
  open: eika-ws-a on eika_sandbox --------------------> internet directly
  allowlist/none: eika-ws-b on eika_sandbox_internal (no route out)
-     HTTP(S)_PROXY=http://<ws id>:<hub token>@eika:3128
+     HTTP(S)_PROXY=http://<ws id>:<proxy token>@eika:3128
      -> egress.Proxy -> allowlisted public hosts only
 ```
 

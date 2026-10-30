@@ -155,7 +155,7 @@ before the routes it calls.
         route in the mock's `unmocked` until the Go route goes
       Keep the sandbox limit and egress fields as a Computer settings tab.
       Rebaseline.
-- [ ] Give each workspace an egress proxy token of its own. Today the proxy
+- [x] Give each workspace an egress proxy token of its own. Today the proxy
       password is the hub token (`server/sandbox.go` `proxyToken`,
       `workspace/confine.go`), so removing the hub would break egress. The new
       token is generated at create and read back like the hub token is today;
