@@ -147,6 +147,14 @@ this file says why, so neither repeats the other.
 - A chat is a session with `workspace_id` NULL: same tree, run manager, and
   view. Created explicitly (`chat: true`), and a workspace's sessions cascade
   with it rather than becoming chats.
+- **Fresh baseline schema.** Turning Eika into an assistant drops most of the
+  coding schema, so its 17 migrations were squashed into `0001_baseline.sql`
+  and existing databases are not migrated: a deployment starts fresh. Until
+  phase 0 closes the baseline is edited in place; after that, migrations are
+  append-only again. Phase 4 starts fresh once more for Sentry.
+- **Schema `core`.** Core's tables live in their own schema rather than
+  `public`, so Sentry's schema can sit beside it in the same database with
+  its own grants.
 - Every model call is a `model_requests` row holding the system prompt
   sections, schemas, and parameters; messages are not copied, since they are
   the session path.

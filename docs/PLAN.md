@@ -143,7 +143,7 @@ before the routes it calls.
       - `tool/builtin` imports `eikad` today (wire types); allow it explicitly
         or move the shared types, and record which
       - room for the Sentry rules of phase 4
-- [ ] Squash migrations into `0001_baseline.sql` in schema `core`. A fresh
+- [x] Squash migrations into `0001_baseline.sql` in schema `core`. A fresh
       database is expected (decided), so there is no data migration. Update
       `storetest`. Until phase 0 closes, schema changes edit the baseline.
 - [ ] Remove the coding UI:
