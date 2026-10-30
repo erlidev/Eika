@@ -63,8 +63,8 @@ test("web search, fetch, and the other tool cards", async ({ open, expectShot })
   await expectShot(eika, "agent-web-search", "role=button[name^=web_search] >> xpath=..");
   await expectShot(eika, "agent-web-fetch", "role=button[name^=web_fetch] >> xpath=..");
   // The rest of the cards, and a tool with no renderer of its own opened.
-  await eika.click("role=button[name^=spawn_agent]");
-  await eika.scroll("role=button[name^=spawn_agent]");
+  await eika.click("role=button[name^=read_note]");
+  await eika.scroll("role=button[name^=read_note]");
   await expectShot(eika, "agent-web-cards", "role=main");
 });
 

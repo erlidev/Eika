@@ -958,62 +958,6 @@
         ]
       }
     },
-    "GET /api/sessions/{id}/agents": {
-      "status": 200,
-      "response": {
-        "object": {
-          "agents": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "agents": {
-                    "nullable": {
-                      "array": {
-                        "ref": "server.agentBody"
-                      }
-                    }
-                  },
-                  "branch": "string",
-                  "created_at": "string",
-                  "finished_at": "string",
-                  "id": "string",
-                  "name": "string",
-                  "parent_session_id": "string",
-                  "result": {
-                    "object": {
-                      "branch": "string",
-                      "commit": "string",
-                      "diff_stat": "string",
-                      "error": "string",
-                      "id": "string",
-                      "name": "string",
-                      "session_id": "string",
-                      "state": "string",
-                      "summary": "string",
-                      "workspace_id": "string"
-                    },
-                    "optional": [
-                      "commit",
-                      "diff_stat",
-                      "error",
-                      "summary"
-                    ]
-                  },
-                  "session_id": "string",
-                  "state": "string",
-                  "workspace_id": "string"
-                },
-                "optional": [
-                  "finished_at",
-                  "result"
-                ]
-              }
-            }
-          },
-          "session_id": "string"
-        }
-      }
-    },
     "GET /api/sessions/{id}/configuration": {
       "status": 200,
       "response": {
@@ -2047,8 +1991,6 @@
                   "array": "string"
                 }
               },
-              "subagent_max_children": "number",
-              "subagent_max_depth": "number",
               "workspace_idle_minutes": "number"
             }
           },
@@ -2169,14 +2111,12 @@
                     }
                   },
                   "state": "string",
-                  "updated_at": "string",
-                  "worktree_of": "string"
+                  "updated_at": "string"
                 },
                 "optional": [
                   "base_commit",
                   "container_id",
-                  "parent_workspace_id",
-                  "worktree_of"
+                  "parent_workspace_id"
                 ]
               }
             }
@@ -2234,14 +2174,12 @@
             }
           },
           "state": "string",
-          "updated_at": "string",
-          "worktree_of": "string"
+          "updated_at": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id",
-          "worktree_of"
+          "parent_workspace_id"
         ]
       }
     },
@@ -2561,14 +2499,12 @@
             }
           },
           "state": "string",
-          "updated_at": "string",
-          "worktree_of": "string"
+          "updated_at": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id",
-          "worktree_of"
+          "parent_workspace_id"
         ]
       }
     },
@@ -3637,53 +3573,6 @@
         ]
       }
     },
-    "POST /api/subagents/{id}/abort": {
-      "status": 200,
-      "response": {
-        "object": {
-          "agents": {
-            "nullable": {
-              "array": {
-                "ref": "server.agentBody"
-              }
-            }
-          },
-          "branch": "string",
-          "created_at": "string",
-          "finished_at": "string",
-          "id": "string",
-          "name": "string",
-          "parent_session_id": "string",
-          "result": {
-            "object": {
-              "branch": "string",
-              "commit": "string",
-              "diff_stat": "string",
-              "error": "string",
-              "id": "string",
-              "name": "string",
-              "session_id": "string",
-              "state": "string",
-              "summary": "string",
-              "workspace_id": "string"
-            },
-            "optional": [
-              "commit",
-              "diff_stat",
-              "error",
-              "summary"
-            ]
-          },
-          "session_id": "string",
-          "state": "string",
-          "workspace_id": "string"
-        },
-        "optional": [
-          "finished_at",
-          "result"
-        ]
-      }
-    },
     "POST /api/workspaces": {
       "status": 201,
       "request": {
@@ -3772,14 +3661,12 @@
             }
           },
           "state": "string",
-          "updated_at": "string",
-          "worktree_of": "string"
+          "updated_at": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id",
-          "worktree_of"
+          "parent_workspace_id"
         ]
       }
     },
@@ -3841,14 +3728,12 @@
             }
           },
           "state": "string",
-          "updated_at": "string",
-          "worktree_of": "string"
+          "updated_at": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id",
-          "worktree_of"
+          "parent_workspace_id"
         ]
       }
     },
@@ -3902,14 +3787,12 @@
             }
           },
           "state": "string",
-          "updated_at": "string",
-          "worktree_of": "string"
+          "updated_at": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id",
-          "worktree_of"
+          "parent_workspace_id"
         ]
       }
     },
@@ -4588,8 +4471,6 @@
                   "array": "string"
                 }
               },
-              "subagent_max_children": "number",
-              "subagent_max_depth": "number",
               "workspace_idle_minutes": "number"
             }
           },
@@ -4692,14 +4573,12 @@
             }
           },
           "state": "string",
-          "updated_at": "string",
-          "worktree_of": "string"
+          "updated_at": "string"
         },
         "optional": [
           "base_commit",
           "container_id",
-          "parent_workspace_id",
-          "worktree_of"
+          "parent_workspace_id"
         ]
       }
     }
@@ -4860,42 +4739,6 @@
         "workspace_id"
       ]
     },
-    "subagent.finished": {
-      "object": {
-        "branch": "string",
-        "child_session_id": "string",
-        "child_workspace_id": "string",
-        "commit": "string",
-        "diff_stat": "string",
-        "error": "string",
-        "name": "string",
-        "parent_session_id": "string",
-        "state": "string",
-        "subagent_id": "string",
-        "summary": "string"
-      },
-      "optional": [
-        "commit",
-        "diff_stat",
-        "error",
-        "summary"
-      ]
-    },
-    "subagent.started": {
-      "object": {
-        "base_commit": "string",
-        "branch": "string",
-        "child_session_id": "string",
-        "child_workspace_id": "string",
-        "name": "string",
-        "parent_session_id": "string",
-        "subagent_id": "string",
-        "task": "string"
-      },
-      "optional": [
-        "base_commit"
-      ]
-    },
     "tool.call": {
       "object": {
         "arguments": "any",
@@ -5043,52 +4886,6 @@
       },
       "optional": [
         "project_id"
-      ]
-    }
-  },
-  "types": {
-    "server.agentBody": {
-      "object": {
-        "agents": {
-          "nullable": {
-            "array": {
-              "ref": "server.agentBody"
-            }
-          }
-        },
-        "branch": "string",
-        "created_at": "string",
-        "finished_at": "string",
-        "id": "string",
-        "name": "string",
-        "parent_session_id": "string",
-        "result": {
-          "object": {
-            "branch": "string",
-            "commit": "string",
-            "diff_stat": "string",
-            "error": "string",
-            "id": "string",
-            "name": "string",
-            "session_id": "string",
-            "state": "string",
-            "summary": "string",
-            "workspace_id": "string"
-          },
-          "optional": [
-            "commit",
-            "diff_stat",
-            "error",
-            "summary"
-          ]
-        },
-        "session_id": "string",
-        "state": "string",
-        "workspace_id": "string"
-      },
-      "optional": [
-        "finished_at",
-        "result"
       ]
     }
   }

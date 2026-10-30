@@ -118,10 +118,6 @@ func (s *Server) handleSetWorkspaceSandbox(w http.ResponseWriter, r *http.Reques
 		s.fail(w, r, err)
 		return
 	}
-	if ws.WorktreeOf != "" {
-		s.fail(w, r, conflictf("workspace %s is a worktree in workspace %s, whose sandbox it shares: change that one", ws.ID, ws.WorktreeOf))
-		return
-	}
 	sandbox, err := s.checkSandbox(r.Context(), req)
 	if err != nil {
 		s.fail(w, r, err)
@@ -160,9 +156,7 @@ func (s *Server) handleWorkspaceUsage(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	// A worktree's container is its holder's, so the sample and the limits
-	// are the holder's too.
-	host, err := s.locate(r.Context(), ws)
+	host, err := s.deps.Workspaces.Inspect(r.Context(), ws.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -171,11 +165,7 @@ func (s *Server) handleWorkspaceUsage(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, notRunning(ws, host.State))
 		return
 	}
-	sandbox, err := s.sandboxOf(r.Context(), ws)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
+	sandbox := ws.Sandbox
 	usage, err := s.deps.Workspaces.Usage(r.Context(), host)
 	if err != nil {
 		s.fail(w, r, err)
@@ -394,19 +384,6 @@ func builtinSandboxDefaults() sandboxDefaults {
 		Limits: limitsBody{PIDs: defaultPIDs},
 		Egress: egressBody{Mode: string(egress.ModeOpen), Allow: slices.Clone(egress.DefaultAllowlist)},
 	}
-}
-
-// sandboxOf is what confines a workspace's container: its own sandbox, or,
-// for a worktree workspace, which has none, its holder's.
-func (s *Server) sandboxOf(ctx context.Context, ws store.Workspace) (store.WorkspaceSandbox, error) {
-	if ws.WorktreeOf == "" {
-		return ws.Sandbox, nil
-	}
-	holder, err := s.deps.Store.Workspace(ctx, ws.WorktreeOf)
-	if err != nil {
-		return store.WorkspaceSandbox{}, err
-	}
-	return holder.Sandbox, nil
 }
 
 // confinement is what a workspace's container is created and confined with.

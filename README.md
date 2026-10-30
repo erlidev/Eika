@@ -3,7 +3,7 @@
 Eika is a Docker-native agentic coding harness. Agents work inside sandbox
 containers, never on the host: every file read, file write, and command goes
 through a workspace container, with CPU, memory, and network limits you set.
-Around that it adds session trees, parallel subagents, chats, web search, MCP
+Around that it adds session trees, chats, web search, MCP
 servers, agent profiles, and a web UI with a terminal, editor, and diff.
 
 The backend is Go, the frontend is React and TypeScript, and the whole stack
@@ -32,7 +32,7 @@ through the rest:
 5. Add a first project: a directory on this machine.
 
 Nothing needs an environment file. Everything the setup asks, and the sandbox
-image and subagent limits besides, is in Settings afterwards. API keys and git
+image besides, is in Settings afterwards. API keys and git
 tokens are encrypted before they are stored.
 
 `make local` runs the same `docker compose up`, `make local-logs` follows the

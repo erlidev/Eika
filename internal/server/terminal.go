@@ -94,7 +94,7 @@ func (s *Server) terminalWorkspace(ctx context.Context, id string) (store.Worksp
 			return store.Workspace{}, workspace.Workspace{}, err
 		}
 	}
-	host, err := s.locate(ctx, ws)
+	host, err := s.deps.Workspaces.Inspect(ctx, ws.ID)
 	return ws, host, err
 }
 

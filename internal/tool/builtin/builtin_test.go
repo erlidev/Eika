@@ -85,8 +85,7 @@ func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
 		t.Fatalf("Registry: %v", err)
 	}
 	want := []string{
-		"ask_user", "bash", "list_agents", "spawn_agent", "wait_agents",
-		"web_fetch", "web_search",
+		"ask_user", "bash", "web_fetch", "web_search",
 	}
 	got := make([]string, 0, len(want))
 	for _, tl := range r.List() {
@@ -115,7 +114,7 @@ func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
 }
 
 // A chat offers the standalone tools alone. Every tool that reads or changes
-// files, runs a command, or spawns a child in a workspace must stay out of it.
+// files or runs a command must stay out of it.
 func TestOnlyToolsThatNeedNoWorkspaceAreStandalone(t *testing.T) {
 	r, err := builtin.Registry(builtin.Deps{})
 	if err != nil {

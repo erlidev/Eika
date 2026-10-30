@@ -98,10 +98,8 @@ function workbench(): WorldBuilder {
         "Done. The client now waits `backoff(attempt)` between tries:\n\n| attempt | delay |\n|---|---|\n| 1 | ~1s |\n| 2 | ~2s |\n| 5 | 30s (cap) |\n\n```go\nfunc backoff(n int) time.Duration {\n\td := time.Second << n\n\treturn min(d, 30*time.Second)\n}\n```",
     },
   ]);
-  // A fork of the older session, and a child agent working in a worktree of
-  // the parent's workspace: both hang under the session they came from in the
-  // sidebar, and the child's workspace is reached through it rather than
-  // listed beside its parent's.
+  // A fork of the older session hangs under the session it came from in the
+  // sidebar.
   const forked = b.session(ws, {
     title: "Investigate flaky test, pinned seed",
     kind: "fork",
@@ -111,29 +109,6 @@ function workbench(): WorldBuilder {
     { role: "user", content: "Why does TestRetry fail sometimes?" },
     { role: "assistant", content: "Trying a different tack: pin the seed instead." },
   ]);
-  const childWS = b.workspace(api, {
-    id: "ws-backoff-tests",
-    name: "add-backoff-tests",
-    branch: "eika/fix-retries-add-backoff-tests-a1b2c3",
-    parent_workspace_id: ws.id,
-    worktree_of: ws.id,
-    sandbox: {
-      limits: { cpus: 0, memory_mb: 0, pids: 0 },
-      egress: { mode: "open", allow: [] },
-      ports: [],
-    },
-  });
-  const child = b.session(childWS, {
-    id: "ses-backoff-tests",
-    title: "add-backoff-tests",
-    kind: "agent",
-    parent_session_id: main.id,
-  });
-  b.conversation(child, [
-    { role: "user", content: "Write table tests for backoff(n), including the 30s cap." },
-    { role: "assistant", content: "Added TestBackoff with six cases; all pass." },
-  ]);
-
   return b;
 }
 
@@ -761,8 +736,8 @@ export const scenarios = {
           details: { exit_code: 0 },
         },
         {
-          tool: "spawn_agent",
-          args: { task: "Review the backoff change", model: "gpt-5-mini" },
+          tool: "read_note",
+          args: { title: "Backoff" },
           result: '{"status":"done"}',
         },
         { say: "Full jitter it is: the cap stays at 30s." },

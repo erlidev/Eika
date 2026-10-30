@@ -29,7 +29,6 @@ func TestErrorMapping(t *testing.T) {
 		{"missing container", fmt.Errorf("%w: w1", workspace.ErrNoWorkspace), http.StatusNotFound, codeNotFound},
 		{"answered question", fmt.Errorf("answer question q1: %w", builtin.ErrNoQuestion), http.StatusNotFound, codeNotFound},
 		{"duplicate row", fmt.Errorf("create project demo: %w", store.ErrConflict), http.StatusConflict, codeConflict},
-		{"bad branch name", fmt.Errorf("%w: %q", workspace.ErrBadBranch, "-x"), http.StatusBadRequest, codeInvalidRequest},
 		{"bad answer", fmt.Errorf("answer question q1: %w", builtin.ErrBadAnswer), http.StatusBadRequest, codeInvalidRequest},
 		{"validation", invalidf("name is required"), http.StatusBadRequest, codeInvalidRequest},
 		{"not found", notFoundf("no run is waiting"), http.StatusNotFound, codeNotFound},

@@ -26,7 +26,6 @@ import (
 	"github.com/erlidev/eika/internal/server"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/store/storetest"
-	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool/builtin"
 )
 
@@ -42,7 +41,6 @@ type api struct {
 	store     *store.Store
 	host      *fakeHost
 	questions *builtin.Questions
-	spawner   *subagent.Spawner
 	secrets   *secret.Box
 	mcp       *mcp.Pool
 	egress    *egress.Proxy
@@ -80,17 +78,8 @@ func newAPI(t *testing.T) *api {
 		return a.EgressPolicy(ctx, id)
 	}}, testLogger())
 	// The bus is built here rather than left to server.New, because the
-	// spawner emits on the same one the stream fans out.
+	// MCP pool emits on the same one the stream fans out.
 	bus := event.NewBus(testLogger())
-	a.spawner = subagent.New(subagent.Options{
-		Store:      st,
-		Workspaces: a.host,
-		Emitter:    bus,
-		Limits: func(context.Context) subagent.Limits {
-			return subagent.Limits{MaxDepth: 2, MaxChildren: 4}
-		},
-		Logger: testLogger(),
-	})
 	a.searxng = searchtest.New(search.Result{Title: "Tokio", URL: "https://tokio.rs/", Description: "An async runtime."})
 	a.marginalia = searchtest.New(search.Result{Title: "Small web", URL: "https://small.example/"})
 	none := searchtest.New()
@@ -106,7 +95,7 @@ func newAPI(t *testing.T) *api {
 	if err != nil {
 		t.Fatalf("server.NewSearch: %v", err)
 	}
-	tools, err := builtin.Registry(builtin.Deps{Questions: a.questions, Agents: a.spawner, Search: engine, Pages: pages})
+	tools, err := builtin.Registry(builtin.Deps{Questions: a.questions, Search: engine, Pages: pages})
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
@@ -127,12 +116,11 @@ func newAPI(t *testing.T) *api {
 		Egress:     a.egress,
 		MCP:        a.mcp,
 	}, server.Options{})
-	a.UseSubagents(a.spawner, a.spawner.Attach)
 	t.Cleanup(a.Close)
 
 	// Every run uses test-model unless it names another. Its window is wide
 	// enough for the whole tool registry: the agent loop refuses a request
-	// whose conservative upper bound does not fit, and the schemas of thirteen
+	// whose conservative upper bound does not fit, and the schemas of the
 	// tools are most of a small window.
 	key, err := secrets.Seal("test-key")
 	if err != nil {
@@ -303,7 +291,6 @@ type workspaceWire struct {
 	BaseCommit string      `json:"base_commit"`
 	Image      string      `json:"image"`
 	State      string      `json:"state"`
-	WorktreeOf string      `json:"worktree_of"`
 	Sandbox    sandboxWire `json:"sandbox"`
 	Pinned     bool        `json:"pinned"`
 	Archived   bool        `json:"archived"`
@@ -375,9 +362,7 @@ type queuedWire struct {
 type settingsWire struct {
 	Settings map[string]json.RawMessage `json:"settings"`
 	Defaults struct {
-		SandboxImage        string `json:"sandbox_image"`
-		SubagentMaxDepth    int    `json:"subagent_max_depth"`
-		SubagentMaxChildren int    `json:"subagent_max_children"`
+		SandboxImage string `json:"sandbox_image"`
 		// WorkspaceIdleMinutes is how long a workspace may go unused.
 		WorkspaceIdleMinutes int `json:"workspace_idle_minutes"`
 		Compaction           struct {
@@ -573,40 +558,6 @@ func TestReconcileRecordsWhatTheHostActuallyHas(t *testing.T) {
 	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID, nil), 200)
 	if got.State != "gone" {
 		t.Errorf("state = %q, want gone", got.State)
-	}
-}
-
-// A worktree workspace has no container for the host to report, so it takes
-// its holder's state rather than being marked gone.
-func TestReconcileGivesAWorktreeItsHoldersState(t *testing.T) {
-	a := newAPI(t)
-	project, _ := a.newProject(t, "demo")
-	holder := a.newWorkspace(t, project.ID)
-	tree, err := a.store.CreateWorkspace(t.Context(), store.Workspace{
-		ProjectID: project.ID, Name: "worker", Branch: "main-worker", State: "running",
-		ParentWorkspaceID: holder.ID, WorktreeOf: holder.ID,
-	})
-	if err != nil {
-		t.Fatalf("create worktree workspace: %v", err)
-	}
-	for _, want := range []string{"running", "stopped"} {
-		if want == "stopped" {
-			host, err := a.host.Inspect(t.Context(), holder.ID)
-			if err != nil {
-				t.Fatalf("inspect: %v", err)
-			}
-			// The holder stopped while the harness was down.
-			if err := a.host.Stop(t.Context(), &host); err != nil {
-				t.Fatalf("stop: %v", err)
-			}
-		}
-		if err := a.Reconcile(t.Context()); err != nil {
-			t.Fatalf("reconcile: %v", err)
-		}
-		got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+tree.ID, nil), 200)
-		if got.State != want {
-			t.Errorf("worktree state = %q, want its holder's %q", got.State, want)
-		}
 	}
 }
 
@@ -897,7 +848,7 @@ func TestSettingsAndModels(t *testing.T) {
 	if len(got.Settings) != 2 {
 		t.Errorf("settings = %v, want both keys", got.Settings)
 	}
-	if got.Defaults.SandboxImage != "eika-sandbox:latest" || got.Defaults.SubagentMaxDepth != 2 || got.Defaults.SubagentMaxChildren != 4 {
+	if got.Defaults.SandboxImage != "eika-sandbox:latest" {
 		t.Errorf("defaults = %+v", got.Defaults)
 	}
 	if c := got.Defaults.Compaction; !c.Auto || c.ReserveTokens != 16384 || c.KeepRecentTokens != 20000 || !strings.HasPrefix(c.Prompts.Summary, "The messages above") {
@@ -915,9 +866,6 @@ func TestSettingsAndModels(t *testing.T) {
 		"a default model that is not a name":     {"default_model": 7},
 		"an empty sandbox image":                 {"sandbox_image": ""},
 		"a sandbox image with a space":           {"sandbox_image": "eika sandbox"},
-		"a subagent depth of zero":               {"subagent_max_depth": 0},
-		"a subagent depth past the limit":        {"subagent_max_depth": 9},
-		"a child count that is not a number":     {"subagent_max_children": "two"},
 		"a setup flag that is not a boolean":     {"setup_complete": "yes"},
 		"utility models that are not an object":  {"utility_models": "test-model"},
 		"a utility model for an unknown task":    {"utility_models": map[string]any{"summarise": "test-model"}},
@@ -928,7 +876,7 @@ func TestSettingsAndModels(t *testing.T) {
 		"a compaction keep that is too large":    {"compaction": map[string]any{"keep_recent_tokens": 1 << 30}},
 		"a compaction prompt that is too long":   {"compaction": map[string]any{"prompts": map[string]any{"update": strings.Repeat("p", 65<<10)}}},
 		"a key that is too long":                 {strings.Repeat("k", 65): true},
-		"a good key beside a bad one":            {"theme": "light", "subagent_max_depth": 0},
+		"a good key beside a bad one":            {"theme": "light", "sandbox_image": ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if rec := request(t, a.Server, "PUT", "/api/settings", body); rec.Code != 400 {
@@ -952,10 +900,10 @@ func TestSettingsAndModels(t *testing.T) {
 		t.Errorf("settings = %v, want the failed write to have written nothing", after.Settings)
 	}
 	ok := decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{
-		"sandbox_image": "custom:1", "subagent_max_depth": 3, "subagent_max_children": 8, "setup_complete": true,
+		"sandbox_image": "custom:1", "setup_complete": true,
 		"default_model": nil,
 	}), 200)
-	if string(ok.Settings["subagent_max_depth"]) != "3" || string(ok.Settings["default_model"]) != "null" {
+	if string(ok.Settings["sandbox_image"]) != `"custom:1"` || string(ok.Settings["default_model"]) != "null" {
 		t.Errorf("settings = %v", ok.Settings)
 	}
 

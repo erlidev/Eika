@@ -19,8 +19,6 @@ export const settingKeys = {
   defaultModel: "default_model",
   defaultProfile: "default_profile",
   sandboxImage: "sandbox_image",
-  subagentMaxDepth: "subagent_max_depth",
-  subagentMaxChildren: "subagent_max_children",
   sandboxLimits: "sandbox_limits",
   sandboxEgress: "sandbox_egress",
   setupComplete: "setup_complete",

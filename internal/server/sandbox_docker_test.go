@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/erlidev/eika/internal/egress"
-	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/workspace"
 )
 
@@ -246,46 +245,6 @@ func TestEgressPolicyKnowsAWorkspaceByItsProxyToken(t *testing.T) {
 	}
 	if _, err := a.EgressPolicy(t.Context(), "missing"); !errors.Is(err, egress.ErrUnknownWorkspace) {
 		t.Errorf("policy of a missing workspace = %v, want ErrUnknownWorkspace", err)
-	}
-}
-
-// A child agent works in its parent's container, so it is confined by the
-// parent's sandbox rather than a copy.
-func TestChildrenShareTheSandbox(t *testing.T) {
-	a := newAPI(t)
-	a.host.egressControl = true
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
-	request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(1, 512, 64, "allowlist", []string{"github.com"}, 3000))
-	sess := a.newSession(t, ws.ID)
-
-	a.script(
-		spawnStep("c1", "worker", "write the notes", true),
-		providertest.Text("nothing to do"),
-		providertest.Calls("", providertest.Call("c2", "bash",
-			map[string]any{"command": "echo one > one.txt && git add -A && git commit -qm one"})),
-		providertest.Text("the child is done"),
-	)
-	a.postMessage(t, sess.ID, "hand it to a child", "", 202)
-	a.waitIdle(t, sess.ID)
-	child := a.waitAgent(t, sess.ID)
-
-	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+child.WorkspaceID, nil), 200)
-	if got.WorktreeOf != ws.ID || got.Sandbox.Limits.MemoryMB != 0 || len(got.Sandbox.Ports) != 0 {
-		t.Errorf("child = %+v, want a worktree of %s with no sandbox of its own", got, ws.ID)
-	}
-	if confined := a.host.confinements(child.WorkspaceID); len(confined) != 0 {
-		t.Errorf("child confined with %+v, want no container of its own", confined)
-	}
-	if rec := request(t, a.Server, "PUT", "/api/workspaces/"+child.WorkspaceID+"/sandbox",
-		sandboxOf(0, 0, 0, "open", nil)); rec.Code != 409 {
-		t.Errorf("changing a child's sandbox = %d, want 409: %s", rec.Code, rec.Body.String())
-	}
-	// The child's usage is its holder's container, under the holder's limits.
-	usage := decodeBody[usageWire](t, request(t, a.Server, "GET", "/api/workspaces/"+child.WorkspaceID+"/usage", nil), 200)
-	if usage.PIDsLimit != 64 || usage.CPUs != 1 {
-		t.Errorf("child usage = %+v, want the holder's limits", usage)
 	}
 }
 

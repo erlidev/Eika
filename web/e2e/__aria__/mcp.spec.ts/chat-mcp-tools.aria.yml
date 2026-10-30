@@ -51,5 +51,5 @@
         - paragraph: Search issues and pull requests across GitHub.
         - text: /~\d+/
   - heading "Need a workspace" [level=3]
-  - paragraph: "Files, commands, and child agents belong to a workspace session: bash, list_agents, spawn_agent, wait_agents."
+  - paragraph: "Files and commands belong to a workspace session: bash."
   - paragraph: "So do the MCP servers that run as a command in the workspace: filesystem."

@@ -52,7 +52,7 @@ function positive(n: number | undefined): number | undefined {
 /**
  * suggestModelName returns the name a new model gets: its id, or the id under
  * the provider's name when another model already has that name. Names are
- * unique across providers because a run and a subagent name a model alone.
+ * unique across providers because a run names a model alone.
  */
 export function suggestModelName(
   id: string,

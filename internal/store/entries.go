@@ -14,8 +14,7 @@ import (
 // the whole system agrees on, in the same way internal/event fixes the event
 // names: internal/session writes user, assistant, and tool_result entries
 // from provider messages, compaction entries for summaries, system entries
-// for prompt-level notes, and event entries for questions and subagent
-// lifecycle.
+// for prompt-level notes, and event entries for questions.
 type EntryKind string
 
 // The kinds an entry can have.
@@ -31,8 +30,8 @@ const (
 	// KindSystem is a note that belongs to the conversation's framing rather
 	// than to a turn.
 	KindSystem EntryKind = "system"
-	// KindEvent is something that happened around the session: a question, a
-	// subagent starting or finishing.
+	// KindEvent is something that happened around the session, such as a
+	// question.
 	KindEvent EntryKind = "event"
 	// KindCompaction is a summary that replaces the conversation before it,
 	// except its newest messages, from then on.

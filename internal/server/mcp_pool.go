@@ -16,23 +16,21 @@ import (
 	"github.com/erlidev/eika/internal/workspace"
 )
 
-// mcpLauncher starts stdio MCP servers in workspaces through the host's
-// /process route: a stdio server is a process an agent's session asked
-// for, so it runs where the agent's processes do.
+// mcpLauncher starts stdio MCP servers in the session's workspace (its
+// computer) through the host's /process route: a stdio server is a process
+// an agent's session asked for, so it runs where the agent's processes do.
 type mcpLauncher struct {
 	store      *store.Store
 	workspaces Workspaces
 }
 
-// Launch starts cmd in a running workspace, in the directory its files are
-// in: a worktree workspace's server runs in its worktree, in the holder's
-// container.
+// Launch starts cmd in a running workspace's container.
 func (l mcpLauncher) Launch(ctx context.Context, workspaceID string, cmd mcp.Command, stderr func(string)) (io.ReadWriteCloser, error) {
 	row, err := l.store.Workspace(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	ws, err := workspace.Locate(ctx, l.workspaces, row.ID, row.WorktreeOf)
+	ws, err := l.workspaces.Inspect(ctx, row.ID)
 	if err != nil {
 		return nil, err
 	}

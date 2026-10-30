@@ -105,8 +105,7 @@ auth_token: "s3cret"
 func TestLoadPointsSettingsThatMovedToTheUI(t *testing.T) {
 	clearEnv(t)
 	for key, body := range map[string]string{
-		"models":    "models:\n  - name: gpt-5\n",
-		"subagents": "subagents:\n  max_depth: 3\n",
+		"models": "models:\n  - name: gpt-5\n",
 	} {
 		t.Run(key, func(t *testing.T) {
 			_, err := config.Load(writeConfig(t, body))

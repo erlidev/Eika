@@ -61,10 +61,10 @@ test("a profile's editor shows what each unset field falls through to", async ({
 
   await eika.click("role=tab[name=Tools]");
   await expect(eika.page.getByRole("switch", { name: "bash" })).toBeChecked();
-  await expect(eika.page.getByRole("switch", { name: "spawn_agent" })).not.toBeChecked();
-  await eika.fill("Search the tools", "agent");
+  await expect(eika.page.getByRole("switch", { name: "web_search" })).not.toBeChecked();
+  await eika.fill("Search the tools", "search");
   await expect(eika.page.getByRole("switch", { name: "bash" })).toBeHidden();
-  await expect(eika.page.getByRole("switch", { name: "spawn_agent" })).toBeVisible();
+  await expect(eika.page.getByRole("switch", { name: "web_search" })).toBeVisible();
 });
 
 test("the editor's controls set and unset each kind of value", async ({ open }) => {

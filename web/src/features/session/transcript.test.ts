@@ -322,7 +322,7 @@ describe("applyEvent", () => {
 
   it("ignores an event type it has no rule for", () => {
     const before = newTranscript(sessionID);
-    expect(applyEvent(before, ev("subagent.started", { run_id: "r1" }))).toBe(before);
+    expect(applyEvent(before, ev("workspace.state", { run_id: "r1" }))).toBe(before);
   });
 });
 

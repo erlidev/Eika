@@ -166,7 +166,7 @@ func TestMessageSkipsNonConversationEntries(t *testing.T) {
 	for _, kind := range []store.EntryKind{store.KindSystem, store.KindEvent} {
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
-			e := store.Entry{Kind: kind, Payload: json.RawMessage(`{"text":"subagent finished"}`)}
+			e := store.Entry{Kind: kind, Payload: json.RawMessage(`{"text":"question answered"}`)}
 			if _, ok, err := session.Message(e); err != nil || ok {
 				t.Fatalf("Message(%s) = ok %v, err %v; want ok false", kind, ok, err)
 			}

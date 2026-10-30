@@ -39,10 +39,6 @@ const (
 	TypeRunError = "run.error"
 	// TypeQuestionAsked reports that the agent is waiting on a user answer.
 	TypeQuestionAsked = "question.asked"
-	// TypeSubagentStarted reports that a child agent run has begun.
-	TypeSubagentStarted = "subagent.started"
-	// TypeSubagentFinished reports that a child agent run has ended.
-	TypeSubagentFinished = "subagent.finished"
 	// TypeWorkspaceState reports a workspace lifecycle transition.
 	TypeWorkspaceState = "workspace.state"
 	// TypeMCPServer reports that an MCP server's connection, authorization,

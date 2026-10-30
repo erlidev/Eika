@@ -111,33 +111,6 @@ const builtinSchemas: Record<string, unknown> = {
     required: ["command"],
     additionalProperties: false,
   },
-  list_agents: { type: "object", properties: {}, additionalProperties: false },
-  spawn_agent: {
-    type: "object",
-    properties: {
-      name: { type: "string", description: "A short name for the child. It names its branch." },
-      task: { type: "string", description: "The whole task, as the child's first message." },
-      model: {
-        type: "string",
-        description: "The model the child runs on. Empty uses the default.",
-      },
-      wait: { type: "boolean", description: "Wait for the child to finish. Defaults to true." },
-    },
-    required: ["name", "task"],
-    additionalProperties: false,
-  },
-  wait_agents: {
-    type: "object",
-    properties: {
-      ids: {
-        type: "array",
-        items: { type: "string" },
-        description: "The agent ids spawn_agent returned.",
-      },
-    },
-    required: ["ids"],
-    additionalProperties: false,
-  },
   web_fetch: {
     type: "object",
     properties: {

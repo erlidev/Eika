@@ -30,10 +30,6 @@ CREATE TABLE projects (
 -- workspace starts and whenever it changes; the empty object is no limits,
 -- open egress, and no ports.
 --
--- A worktree workspace has no container of its own: it is a git worktree in
--- the container of the workspace worktree_of names, which is how a child
--- agent works beside its parent. NULL is a workspace with its own container.
---
 -- pinned and archived are the user's filing and change nothing about what a
 -- workspace's container does.
 CREATE TABLE workspaces (
@@ -47,7 +43,6 @@ CREATE TABLE workspaces (
     container_id        text NOT NULL DEFAULT '',
     parent_workspace_id text REFERENCES workspaces (id) ON DELETE SET NULL,
     sandbox             jsonb NOT NULL DEFAULT '{}',
-    worktree_of         text REFERENCES workspaces (id) ON DELETE CASCADE,
     pinned              boolean NOT NULL DEFAULT false,
     archived            boolean NOT NULL DEFAULT false,
     created_at          timestamptz NOT NULL DEFAULT now(),
@@ -56,7 +51,6 @@ CREATE TABLE workspaces (
 
 CREATE INDEX workspaces_project_idx ON workspaces (project_id);
 CREATE INDEX workspaces_parent_idx ON workspaces (parent_workspace_id);
-CREATE INDEX workspaces_worktree_of_idx ON workspaces (worktree_of);
 
 -- Model providers and models. Every credential column holds what
 -- internal/secret sealed; the harness never writes a credential here in the
@@ -138,8 +132,7 @@ SELECT string_agg(substr('abcdefghijklmnopqrstuvwxyz234567', 1 + floor(random() 
 FROM generate_series(1, 20);
 
 -- A session with no workspace is a chat. kind says who opened it: the user,
--- a fork of another session, or a subagent a run spawned; it is a column
--- rather than a join on subagents because it is what the session is.
+-- or a fork of another session.
 --
 -- head_entry_id has no foreign key: session_entries references sessions, so a
 -- key in the other direction would be a cycle. SetSessionHead checks that the
@@ -156,7 +149,7 @@ CREATE TABLE sessions (
     workspace_id      text REFERENCES workspaces (id) ON DELETE CASCADE,
     title             text NOT NULL DEFAULT '',
     untitled          boolean NOT NULL DEFAULT false,
-    kind              text NOT NULL DEFAULT 'user' CHECK (kind IN ('user', 'fork', 'agent')),
+    kind              text NOT NULL DEFAULT 'user' CHECK (kind IN ('user', 'fork')),
     head_entry_id     text,
     parent_session_id text REFERENCES sessions (id) ON DELETE SET NULL,
     tools             text[],
@@ -201,21 +194,6 @@ CREATE TABLE runs (
 );
 
 CREATE INDEX runs_session_idx ON runs (session_id, started_at);
-
-CREATE TABLE subagents (
-    id                 text PRIMARY KEY,
-    parent_session_id  text NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
-    child_session_id   text NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
-    child_workspace_id text NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,
-    state              text NOT NULL CHECK (state IN ('running', 'done', 'error', 'aborted')),
-    result             text NOT NULL DEFAULT '',
-    created_at         timestamptz NOT NULL DEFAULT now(),
-    finished_at        timestamptz
-);
-
-CREATE INDEX subagents_parent_idx ON subagents (parent_session_id);
-CREATE INDEX subagents_child_session_idx ON subagents (child_session_id);
-CREATE INDEX subagents_child_workspace_idx ON subagents (child_workspace_id);
 
 -- One row per model call a run made. The messages are not copied: they are
 -- the session's path down to entry_id, which the session already stores, so

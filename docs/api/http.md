@@ -189,27 +189,19 @@ of the workspace refresh.
 ### `POST /api/workspaces/{id}/start`
 
 Starts a stopped container again, held to the `sandbox` its row records, so a
-change the container took only in part is completed. The worktree workspaces
-it holds start with it and publish `workspace.state` too. `200` with the
-`Workspace`. `409` for a worktree workspace, which starts with its holder.
+change the container took only in part is completed. `200` with the
+`Workspace`.
 
 ### `POST /api/workspaces/{id}/stop`
 
-Aborts every run in the workspace and in the worktree workspaces it holds,
-then stops the container and keeps its files; the worktree workspaces stop
-with it. `200` with the `Workspace`. `409` for a worktree workspace.
+Aborts every run in the workspace, then stops the container and keeps its
+files. `200` with the `Workspace`.
 
 ### `DELETE /api/workspaces/{id}`
 
 Aborts every run in the workspace, destroys the container and its volume, and
-deletes the row with its sessions and entries, and with the worktree
-workspaces it holds, whose files were in that volume. A container that is
+deletes the row with its sessions and entries. A container that is
 already gone is not an error. `204`.
-
-For a worktree workspace, it aborts the runs in it, removes the worktree with
-its files, uncommitted ones included, and deletes the row; the branch and its
-commits stay in the holder's repository. `409` while the holder is stopped,
-since its files cannot be removed then.
 
 ### `PUT /api/workspaces/{id}/sandbox`
 
@@ -226,14 +218,12 @@ the unchanged state.
 `none`, an allowlist entry that is not a host pattern, a port that is out of
 range, listed twice, or `7000` (the sandbox daemon's), and for restricted
 egress on a harness without the internal sandbox network. `409` for a
-workspace that is creating or gone, and for a worktree workspace: its
-container, and so its sandbox, is its holder's.
+workspace that is creating or gone.
 
 ### `GET /api/workspaces/{id}/usage`
 
 Samples what a running workspace consumes; it takes about a second, because
-Docker reads the CPU counters twice. A worktree workspace reports its
-holder's container, against the holder's limits. `409` for a workspace that
+Docker reads the CPU counters twice. `409` for a workspace that
 is not running. `200` with:
 
 | Field | Type | Meaning |
@@ -346,13 +336,12 @@ workspace that is not running.
 | `project_id` | string | The project it holds. |
 | `name` | string | What the user calls it. |
 | `branch` | string | The branch it works on. |
-| `base_commit` | string, optional | The commit it started from. A child agent's branch is cut from the commit its parent stood on. |
+| `base_commit` | string, optional | The commit it started from. |
 | `image` | string | The image the container runs. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 | `container_id` | string, optional | The Docker container id. |
 | `parent_workspace_id` | string, optional | The workspace it was branched from. |
-| `worktree_of` | string, optional | The workspace whose container it is a git worktree in, at `/workspace/.eika/worktrees/<id>`: a child agent's workspace. It has no container of its own, so it starts, stops, and is confined with that workspace; its paths, commands, and terminal are its worktree's. |
-| `sandbox` | Sandbox | What the container may consume, reach, and expose. A workspace from before sandboxes has no limits, open egress, and no ports. A worktree workspace's is empty: its holder's applies. |
+| `sandbox` | Sandbox | What the container may consume, reach, and expose. A workspace from before sandboxes has no limits, open egress, and no ports. |
 | `pinned` | boolean | Listed before the other workspaces of its project. |
 | `archived` | boolean | Set aside under an Archived heading; the container is left as it is. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
@@ -365,9 +354,7 @@ workspace that is not running.
 | `egress` | `{"mode": string, "allow": [string]}` | `open` reaches the internet directly. `allowlist` puts the container on the internal sandbox network, with no route out, and its processes reach the hosts `allow` names through the harness's egress proxy. `none` is the internal network with nothing allowed. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
 | `ports` | array of `{"port": number, "label": string}` | At most 20 container ports the harness forwards previews to. `label` is at most 40 characters. |
 
-Forks are created with their parent's `limits` and `egress` and no `ports`;
-a fork of a worktree workspace takes its holder's. Child agents share their
-parent's container, and so its sandbox.
+Forks are created with their parent's `limits` and `egress` and no `ports`.
 
 ## Sessions
 
@@ -377,10 +364,9 @@ or commands, and offer the model only the tools that need no workspace.
 
 ### `GET /api/sessions`
 
-`?workspace_id=<id>` narrows the list. `?descendants=true` adds the forks and
-child agents those sessions led to, wherever they run: a fork with a workspace
-and a subagent each have a workspace of their own, and both belong under the
-session they came from. It is ignored without `workspace_id`, which
+`?workspace_id=<id>` narrows the list. `?descendants=true` adds the forks
+those sessions led to, wherever they run: a fork with a workspace has one of
+its own, and belongs under the session it came from. It is ignored without `workspace_id`, which
 already returns every session, chats included. `?chats=true` returns the
 chats alone, forks of chats included; with `workspace_id` it is `400`.
 
@@ -585,11 +571,11 @@ token per 750 pixels; only a record's `input_tokens` is measured.
 | `id` | string | The session id. |
 | `workspace_id` | string, optional | Where its runs act. Absent for a chat. |
 | `title` | string | What the user calls it, or the placeholder of an untitled session until its first run names it. |
-| `kind` | string | `user`, `fork`, or `agent`: who opened it. |
+| `kind` | string | `user` or `fork`: who opened it. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
-| `parent_session_id` | string, optional | The session it was forked from, or the one whose run spawned it. |
+| `parent_session_id` | string, optional | The session it was forked from. |
 | `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a workspace in a chat. |
-| `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. A fork and a child agent start with their parent's. |
+| `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. A fork starts with its parent's. |
 | `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. |
 | `pinned` | boolean | Listed before its siblings. |
 | `archived` | boolean | Set aside under an Archived heading; it runs like any other. |
@@ -766,68 +752,6 @@ its tools out of that run.
 | `allow_free_text` | boolean | An answer outside the options is accepted. |
 | `asked_at` | time | When the run asked. |
 
-## Subagents
-
-A subagent is a child agent run: its own workspace, a git worktree at the
-commit the parent stood on in the container the parent's files are in (see
-`worktree_of`), its own session, and its own branch, `<parent branch>-<name>-<6
-characters of the subagent id>`. The parent's changes are committed first, and
-the branch is in the parent's repository as soon as the child commits. The `spawn_agent`, `wait_agents`, and `list_agents` tools are
-how a run makes and waits for them; these routes are how the UI watches and
-stops them. The lifecycle is on the stream as `subagent.started` and
-`subagent.finished`.
-
-The `subagent_max_depth` and `subagent_max_children` settings bound how deep
-and how wide the tree may grow; the defaults are 2 and 4, and a change applies
-to the next spawn.
-
-### `GET /api/sessions/{id}/agents`
-
-The children this session spawned, and below each of them the children they
-spawned in turn, oldest first.
-
-`200` with `{"session_id": string, "agents": [Agent]}`.
-
-### `POST /api/subagents/{id}/abort`
-
-Stops a running child and waits for it to record how it ended. The child still
-commits what it left in its tree, so aborted work is not lost, and its
-worktree is kept.
-
-`200` with the `Agent`. `409` when the child is already finished; `404` when
-there is no such subagent.
-
-### Agent
-
-| Field | Type | Meaning |
-|---|---|---|
-| `id` | string | The subagent id, which the abort route takes. |
-| `parent_session_id` | string | The session that spawned it. |
-| `session_id` | string | The child's session. Open it to watch the child work. |
-| `workspace_id` | string | The child's workspace. |
-| `name` | string | What the parent called it. |
-| `branch` | string | The branch it works on. |
-| `state` | string | `running`, `done`, `error`, or `aborted`. |
-| `created_at` | time | When it was spawned. |
-| `finished_at` | time, optional | When it ended. |
-| `result` | `AgentResult`, optional | What it reported. Absent while it is running. |
-| `agents` | `[Agent]` | The children it spawned in turn. Empty for a leaf. |
-
-### AgentResult
-
-The same object the parent's model receives as the `spawn_agent` tool result.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `id`, `session_id`, `workspace_id` | string | The child. |
-| `name` | string | What the parent called it. |
-| `branch` | string | The branch it worked on. |
-| `state` | string | `running`, `done`, `error`, or `aborted`. |
-| `commit` | string, optional | Its head commit after it committed its tree. |
-| `summary` | string, optional | Its final assistant message. |
-| `diff_stat` | string, optional | `git diff --stat` from the parent's base commit to that head. |
-| `error` | string, optional | Why a child that did not finish cleanly stopped. |
-
 ## Providers
 
 A provider is an OpenAI-compatible endpoint and the key it takes. Its
@@ -915,7 +839,7 @@ none.
 |---|---|---|
 | `provider_id` | string, required | The provider it belongs to. |
 | `model` | string, required | The endpoint's identifier, such as `gpt-5`. |
-| `name` | string | What Eika, its users, and `spawn_agent` call it; unique across providers. Defaults to `model`. |
+| `name` | string | What Eika and its users call it; unique across providers. Defaults to `model`. |
 | `context_window` | number, required | The total token budget. A run refuses a request that cannot fit. |
 | `max_output` | number, required | The most tokens one response may have; at most `context_window`. |
 | `reasoning_effort` | string | The `reasoning_effort` in force. Compatible endpoints disagree on the vocabulary, so any word of at most 32 letters, digits, hyphens, and underscores is accepted; empty leaves it to the endpoint. |
@@ -1100,9 +1024,7 @@ writes nothing.
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a model. |
 | `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
 | `sandbox_image` | string | The image a new workspace runs when it names none. |
-| `subagent_max_depth` | number, 1 to 8 | How many levels of children a session may have. |
-| `subagent_max_children` | number, 1 to 16 | How many children of one session may run at a time. |
-| `workspace_idle_minutes` | number, 0 to 10080 | How long a running workspace may go without a run, in it or a worktree it holds, before the harness stops it as `POST /api/workspaces/{id}/stop` does. 0 never stops one. Checked once a minute. |
+| `workspace_idle_minutes` | number, 0 to 10080 | How long a running workspace may go without a run in it before the harness stops it as `POST /api/workspaces/{id}/stop` does. 0 never stops one. Checked once a minute. |
 | `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The limits a new workspace gets when its request names none, checked as a Sandbox's are. A field the object leaves out is 0, no limit. |
 | `sandbox_egress` | `{"mode", "allow"}` | The egress a new workspace gets when its request names none. A restricted mode is `400` on a harness without the internal sandbox network. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
@@ -1116,8 +1038,6 @@ writes nothing.
 | Field | Type | Meaning |
 |---|---|---|
 | `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
-| `subagent_max_depth` | number | 2. |
-| `subagent_max_children` | number | 4. |
 | `workspace_idle_minutes` | number | 15. |
 | `sandbox_limits` | object | No CPU or memory limit, and 4096 processes. |
 | `sandbox_egress` | object | `open`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |

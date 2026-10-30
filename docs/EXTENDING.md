@@ -376,8 +376,7 @@ An image needs:
 - a writable `/workspace`, which is where the volume or the host directory is
   mounted,
 - a uid 1000 that owns `/workspace`, because a sandbox never runs as root; an
-  image that uses another user must say so in `Spec.User`,
-- `git`, if child agents are to work in worktrees of it.
+  image that uses another user must say so in `Spec.User`.
 
 A sandbox container drops all Linux capabilities and runs with
 `no-new-privileges`, so an image that needs to install packages at run time

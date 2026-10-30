@@ -145,9 +145,9 @@ func TestProjectsWorkspacesAndSessions(t *testing.T) {
 	}
 }
 
-// A fork with a workspace and a subagent both run somewhere else, so the
-// listing of the workspace they came from has to reach them: the user
-// interface draws them under the session that led to them.
+// A fork with a workspace runs somewhere else, so the listing of the
+// workspace it came from has to reach it: the user interface draws it under
+// the session that led to it.
 func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
@@ -160,7 +160,7 @@ func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
 		t.Fatalf("create workspace: %v", err)
 	}
 	childWS, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "agent", Branch: "main-agent",
+		ProjectID: project.ID, Name: "fork", Branch: "main-fork",
 		State: "running", ParentWorkspaceID: parentWS.ID,
 	})
 	if err != nil {
@@ -172,14 +172,14 @@ func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 	child, err := st.CreateSession(ctx, store.Session{
-		WorkspaceID: childWS.ID, Title: "child", Kind: store.SessionAgent,
+		WorkspaceID: childWS.ID, Title: "child", Kind: store.SessionFork,
 		ParentSessionID: parent.ID,
 	})
 	if err != nil {
 		t.Fatalf("create child session: %v", err)
 	}
 	grand, err := st.CreateSession(ctx, store.Session{
-		WorkspaceID: childWS.ID, Title: "grandchild", Kind: store.SessionAgent,
+		WorkspaceID: childWS.ID, Title: "grandchild", Kind: store.SessionFork,
 		ParentSessionID: child.ID,
 	})
 	if err != nil {
@@ -200,8 +200,8 @@ func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
 	}
 	want := map[string]store.SessionKind{
 		parent.ID: store.SessionUser,
-		child.ID:  store.SessionAgent,
-		grand.ID:  store.SessionAgent,
+		child.ID:  store.SessionFork,
+		grand.ID:  store.SessionFork,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Sessions with descendants = %+v, want %d rows", tree, len(want))
@@ -210,52 +210,6 @@ func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
 		if got[id] != kind {
 			t.Errorf("session %s kind = %q, want %q", id, got[id], kind)
 		}
-	}
-}
-
-// A worktree workspace lives in its holder's volume, so its row, and the
-// sessions in it, go when the holder's does.
-func TestAWorktreeWorkspaceGoesWithItsHolder(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-
-	project := newProject(t, st)
-	holder, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "main", Branch: "main", State: "running",
-	})
-	if err != nil {
-		t.Fatalf("create workspace: %v", err)
-	}
-	tree, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "agent", Branch: "main-agent", State: "running",
-		ParentWorkspaceID: holder.ID, WorktreeOf: holder.ID,
-	})
-	if err != nil {
-		t.Fatalf("create worktree workspace: %v", err)
-	}
-	if tree.WorktreeOf != holder.ID {
-		t.Errorf("created worktree_of = %q, want %q", tree.WorktreeOf, holder.ID)
-	}
-	read, err := st.Workspace(ctx, tree.ID)
-	if err != nil || read.WorktreeOf != holder.ID || read.ParentWorkspaceID != holder.ID {
-		t.Fatalf("read worktree workspace = %+v, %v, want it held by %s", read, err, holder.ID)
-	}
-	if again, err := st.Workspace(ctx, holder.ID); err != nil || again.WorktreeOf != "" {
-		t.Errorf("holder = %+v, %v, want no worktree_of", again, err)
-	}
-	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: tree.ID, Title: "child", Kind: store.SessionAgent})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	if err := st.DeleteWorkspace(ctx, holder.ID); err != nil {
-		t.Fatalf("delete holder: %v", err)
-	}
-	if _, err := st.Workspace(ctx, tree.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("worktree workspace after its holder went: %v, want ErrNotFound", err)
-	}
-	if _, err := st.Session(ctx, sess.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("session in the worktree after its holder went: %v, want ErrNotFound", err)
 	}
 }
 
@@ -331,7 +285,7 @@ func TestChatsHaveNoWorkspaceAndKeepTheirTools(t *testing.T) {
 	}
 }
 
-func TestRunsSubagentsAndSettings(t *testing.T) {
+func TestRunsAndSettings(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
@@ -366,34 +320,6 @@ func TestRunsSubagentsAndSettings(t *testing.T) {
 	}
 	if runs, err := st.Runs(ctx, parent.ID); err != nil || len(runs) != 1 {
 		t.Fatalf("Runs = %d rows, %v; want 1", len(runs), err)
-	}
-
-	childWS, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "child", Branch: "main/child", State: "running",
-		ParentWorkspaceID: ws.ID,
-	})
-	if err != nil {
-		t.Fatalf("create child workspace: %v", err)
-	}
-	child, err := st.CreateSession(ctx, store.Session{WorkspaceID: childWS.ID, ParentSessionID: parent.ID})
-	if err != nil {
-		t.Fatalf("create child session: %v", err)
-	}
-	sub, err := st.StartSubagent(ctx, store.Subagent{
-		ParentSessionID: parent.ID, ChildSessionID: child.ID, ChildWorkspaceID: childWS.ID,
-	})
-	if err != nil {
-		t.Fatalf("start subagent: %v", err)
-	}
-	if err := st.FinishSubagent(ctx, sub.ID, store.RunDone, "pushed main/child"); err != nil {
-		t.Fatalf("finish subagent: %v", err)
-	}
-	subs, err := st.Subagents(ctx, parent.ID)
-	if err != nil || len(subs) != 1 {
-		t.Fatalf("Subagents = %d rows, %v; want 1", len(subs), err)
-	}
-	if subs[0].Result != "pushed main/child" || subs[0].State != store.RunDone {
-		t.Errorf("subagent = %+v, want a finished subagent with its result", subs[0])
 	}
 
 	if err := st.SetSetting(ctx, "model", json.RawMessage(`{"name":"gpt-5"}`)); err != nil {
@@ -502,7 +428,6 @@ func TestErrNotFound(t *testing.T) {
 		"session":      errOf(func() error { _, err := st.Session(ctx, missing); return err }),
 		"entry":        errOf(func() error { _, err := st.Entry(ctx, missing); return err }),
 		"run":          errOf(func() error { _, err := st.Run(ctx, missing); return err }),
-		"subagent":     errOf(func() error { _, err := st.Subagent(ctx, missing); return err }),
 		"setting":      errOf(func() error { _, err := st.Setting(ctx, missing); return err }),
 		"append":       errOf(func() error { _, err := st.AppendEntry(ctx, missing, store.Entry{Kind: store.KindUser}); return err }),
 		"set head":     st.SetSessionHead(ctx, sess.ID, missing),

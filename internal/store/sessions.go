@@ -8,8 +8,8 @@ import (
 )
 
 // SessionKind says who opened a session. It is what the session tree in the
-// user interface draws a row as: a fork and a child agent are both shown
-// under the session they came from, and each reads differently.
+// user interface draws a row as: a fork is shown under
+// the session it came from.
 type SessionKind string
 
 // The kinds a session can have.
@@ -18,8 +18,6 @@ const (
 	SessionUser SessionKind = "user"
 	// SessionFork is a session forked from another at one of its entries.
 	SessionFork SessionKind = "fork"
-	// SessionAgent is the session of a subagent a run spawned.
-	SessionAgent SessionKind = "agent"
 )
 
 // Session is one tree of entries, inside a workspace or, for a chat, in none.
@@ -112,10 +110,9 @@ func (s *Store) Session(ctx context.Context, id string) (Session, error) {
 // Sessions returns the sessions of one workspace, oldest first. An empty
 // workspaceID returns every session, chats included.
 //
-// withDescendants also returns the forks and child agents those sessions led
-// to, wherever they live. A fork with a workspace and a subagent both run in
-// a workspace of their own, so a listing of one workspace would otherwise
-// leave them out of the tree they belong to. The rows come back flat and the
+// withDescendants also returns the forks those sessions led to, wherever
+// they live, so a listing of one workspace does not leave out part of the
+// tree it belongs to. The rows come back flat and the
 // caller hangs each one under its ParentSessionID.
 func (s *Store) Sessions(ctx context.Context, workspaceID string, withDescendants bool) ([]Session, error) {
 	// One query per case: a WHERE that is true for every row when the filter
