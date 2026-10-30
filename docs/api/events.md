@@ -310,48 +310,6 @@ being asked.
 An MCP tool's `tool.result` carries the server's content blocks in
 `details`; `http.md` documents the shape under MCP tool calls.
 
-## Subagent events
-
-Both are published on the **parent** session's topic, `session:<parent id>`,
-so a client watching a session sees the children it spawns without
-subscribing to them. The child's own run events go to `session:<child id>`
-like any other run's.
-
-### `subagent.started`
-
-A run called `spawn_agent`. The child's workspace exists, a worktree at
-`base_commit` in its parent's container; its run is about to start.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `subagent_id` | string | The `subagents` row. `POST /api/subagents/{id}/abort` takes it. |
-| `parent_session_id` | string | The session that spawned the child. |
-| `child_session_id` | string | The child's session. |
-| `child_workspace_id` | string | The child's workspace. |
-| `name` | string | What the parent called the child. |
-| `branch` | string | The branch the child works on. |
-| `base_commit` | string, optional | The parent commit the child's worktree starts at. |
-| `task` | string | The child's first user message. |
-
-### `subagent.finished`
-
-The child's run ended, its tree is committed, and its branch is in its parent's repository.
-The same fields make up the tool result the parent's model sees.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `subagent_id` | string | The `subagents` row. |
-| `parent_session_id` | string | The session that spawned the child. |
-| `child_session_id` | string | The child's session. |
-| `child_workspace_id` | string | The child's workspace. Its worktree is kept. |
-| `name` | string | What the parent called the child. |
-| `branch` | string | The branch the child worked on. |
-| `state` | string | `done`, `error`, or `aborted`. |
-| `commit` | string, optional | The child's head commit. Absent when it committed nothing. |
-| `summary` | string, optional | The child's final assistant message. |
-| `diff_stat` | string, optional | `git diff --stat` from the parent's base commit to the child's head. |
-| `error` | string, optional | Why a child that did not finish cleanly stopped. |
-
 ## Workspace events
 
 ### `workspace.state`

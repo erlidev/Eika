@@ -115,8 +115,6 @@ func TestJSONRoundTrip(t *testing.T) {
 		{"turn end", event.TypeTurnEnd, event.SessionTopic("s1"), nil},
 		{"run error", event.TypeRunError, event.SessionTopic("s1"), delta{Text: "boom"}},
 		{"question asked", event.TypeQuestionAsked, event.SessionTopic("s1"), delta{Text: "which?"}},
-		{"subagent started", event.TypeSubagentStarted, event.TopicGlobal, delta{Text: "child"}},
-		{"subagent finished", event.TypeSubagentFinished, event.TopicGlobal, delta{Text: "child"}},
 		{"workspace state", event.TypeWorkspaceState, event.WorkspaceTopic("w1"), delta{Text: "running"}},
 	}
 	for _, c := range cases {

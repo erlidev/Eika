@@ -10,10 +10,8 @@ import (
 	"io"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 
@@ -116,8 +114,8 @@ func newFakeHost(t *testing.T) *fakeHost {
 }
 
 // filesOf returns the directory the files of a workspace the host reported
-// are in: its container's directory, narrowed to a worktree as the real
-// host's daemon client is.
+// are in: its container's directory, narrowed to ws.Dir as the real host's
+// daemon client is.
 func (h *fakeHost) filesOf(ws workspace.Workspace) (string, error) {
 	dir, err := h.dirOf(ws.ID)
 	if err != nil {
@@ -135,24 +133,6 @@ func (h *fakeHost) dirOf(id string) (string, error) {
 		return "", fmt.Errorf("%w: %s", workspace.ErrNoWorkspace, id)
 	}
 	return found.dir, nil
-}
-
-// git runs one git command in a directory of the test's own tree. The
-// identity is passed on the command line so that the machine running the
-// tests needs no git configuration.
-func git(ctx context.Context, dir string, args ...string) (string, error) {
-	full := append([]string{
-		"-c", "user.name=Eika Test",
-		"-c", "user.email=test@eika.local",
-		"-c", "commit.gpgsign=false",
-	}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git %s in %s: %w: %s", args[0], dir, err, out)
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 // Create makes the workspace's directory.
@@ -301,8 +281,7 @@ func (h *fakeHost) List(context.Context) ([]workspace.Workspace, error) {
 	return out, nil
 }
 
-// Executor returns an executor on the workspace's directory, or on the
-// worktree it is narrowed to.
+// Executor returns an executor on the workspace's directory.
 func (h *fakeHost) Executor(ws workspace.Workspace) (executor.Executor, error) {
 	dir, err := h.filesOf(ws)
 	if err != nil {
@@ -386,13 +365,3 @@ var (
 	_ server.Workspaces = (*fakeHost)(nil)
 	_ server.Providers  = fakeProviders{}
 )
-
-// branchShow reads one path out of a branch in a workspace's repository, which
-// is how a test checks the work a child left on its own branch.
-func (h *fakeHost) branchShow(ctx context.Context, workspaceID, branch, path string) (string, error) {
-	dir, err := h.dirOf(workspaceID)
-	if err != nil {
-		return "", err
-	}
-	return git(ctx, dir, "show", branch+":"+path)
-}

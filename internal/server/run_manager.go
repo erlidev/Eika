@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -19,12 +18,6 @@ import (
 const finishTimeout = 30 * time.Second
 
 const finishRetryBackoff = 100 * time.Millisecond
-
-// childStopTimeout bounds how long a cancelled child run is waited for. The
-// spawner commits, pushes, and stops the child's workspace as soon as
-// runChild returns, so returning while the agent loop is still writing to
-// that workspace would capture a half-finished tree.
-const childStopTimeout = 60 * time.Second
 
 // job is what a run does: answer a message, or compact the conversation and
 // stop.
@@ -158,75 +151,32 @@ func newRuns(s *Server) *runs {
 // start begins a run on a session and returns its row. A session that is
 // already running one is a conflict: the message belongs in a queue instead.
 func (r *runs) start(ctx context.Context, sessionID string, message provider.Message, model string) (store.Run, error) {
-	row, _, err := r.begin(ctx, sessionID, model, job{message: message}, true)
-	return row, err
+	return r.begin(ctx, sessionID, model, job{message: message})
 }
 
 // compact begins a run that compacts a session's conversation and does
 // nothing else. A conversation with nothing old enough to summarize is
 // agent.ErrNothingToCompact, and no run starts.
 func (r *runs) compact(ctx context.Context, sessionID, instructions, model string) (store.Run, error) {
-	row, _, err := r.begin(ctx, sessionID, model, job{compact: true, instructions: instructions}, true)
-	return row, err
+	return r.begin(ctx, sessionID, model, job{compact: true, instructions: instructions})
 }
 
-// runChild runs a child session to the end and reports how it ended. It is
-// what the subagent spawner drives a child with: an ordinary run, except that
-// it is bound to the caller's context, so that a parent whose run is aborted
-// takes its children with it.
-func (r *runs) runChild(ctx context.Context, sessionID, text, model string) error {
-	row, active, err := r.begin(ctx, sessionID, model, job{message: provider.UserMessage(text)}, false)
-	if err != nil {
-		return err
-	}
-	select {
-	case <-active.done:
-	case <-ctx.Done():
-		// Cancelling the context ends the loop; it does not end it at once.
-		// The caller waits for the goroutine either way, bounded so that a
-		// wedged run cannot hold the parent forever.
-		timer := time.NewTimer(childStopTimeout)
-		defer timer.Stop()
-		select {
-		case <-active.done:
-		case <-timer.C:
-			return fmt.Errorf("run %s did not stop within %s: %w", row.ID, childStopTimeout, ctx.Err())
-		}
-	}
-	final, err := r.server.deps.Store.Run(context.WithoutCancel(ctx), row.ID)
-	if err != nil {
-		return err
-	}
-	switch final.State {
-	case store.RunError:
-		return fmt.Errorf("run %s failed: %s", row.ID, final.Error)
-	case store.RunAborted:
-		return fmt.Errorf("run %s was aborted", row.ID)
-	}
-	return nil
-}
-
-// begin builds a run and starts its goroutine. A detached run outlives the
-// request that asked for it and is stopped by an abort alone; a child run is
-// bound to the context of the parent run that spawned it.
-func (r *runs) begin(ctx context.Context, sessionID, model string, work job, detach bool) (store.Run, *activeRun, error) {
+// begin builds a run and starts its goroutine. The run outlives the request
+// that asked for it and is stopped by an abort alone.
+func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (store.Run, error) {
 	s := r.server
 	sess, err := s.deps.Store.Session(ctx, sessionID)
 	if err != nil {
-		return store.Run{}, nil, err
+		return store.Run{}, err
 	}
 
-	// A detached run is not bound to the request: the client gets its answer
-	// as soon as the run starts and follows the rest on the event stream.
-	parent := ctx
-	if detach {
-		parent = context.WithoutCancel(ctx)
-	}
-	runCtx, cancel := context.WithCancel(parent)
+	// The run is not bound to the request: the client gets its answer as
+	// soon as the run starts and follows the rest on the event stream.
+	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	active, err := r.reserve(sessionID, sess.WorkspaceID, cancel)
 	if err != nil {
 		cancel()
-		return store.Run{}, nil, err
+		return store.Run{}, err
 	}
 	// Building a run reads the database and runs a command in the workspace.
 	// Until that is done and the loop is running, the reservation is what
@@ -243,27 +193,27 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job, det
 	var ex executor.Executor
 	if !sess.Chat() {
 		if ex, err = s.executorFor(ctx, sess.WorkspaceID); err != nil {
-			return store.Run{}, nil, err
+			return store.Run{}, err
 		}
 	}
 	cfg, err := s.configure(ctx, sess, model)
 	if err != nil {
-		return store.Run{}, nil, err
+		return store.Run{}, err
 	}
 	if len(work.message.Images) > 0 && !cfg.model.ImageInput {
-		return store.Run{}, nil, noImageInput(cfg.model.Name)
+		return store.Run{}, noImageInput(cfg.model.Name)
 	}
 	p, err := s.providerFor(ctx, cfg)
 	if err != nil {
-		return store.Run{}, nil, err
+		return store.Run{}, err
 	}
 	sessionStore := session.NewStore(s.tree)
 	loaded, err := sessionStore.Load(ctx, sessionID)
 	if err != nil {
-		return store.Run{}, nil, err
+		return store.Run{}, err
 	}
 	// The tools every run shares hold what they reach beyond the workspace:
-	// the spawner, the search engine, and the page reader. A run narrows
+	// the search engine and the page reader. A run narrows
 	// them to its tool choice, together with the tools of the MCP servers it
 	// reaches now, and adds only its own executor, which is also where a
 	// web_fetch filter runs.
@@ -275,12 +225,12 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job, det
 		Compaction: s.compaction(ctx, cfg.model),
 	})
 	if work.compact && !ag.Compactable(loaded) {
-		return store.Run{}, nil, conflictf("%v", agent.ErrNothingToCompact)
+		return store.Run{}, conflictf("%v", agent.ErrNothingToCompact)
 	}
 
 	row, err := s.deps.Store.StartRun(ctx, sessionID)
 	if err != nil {
-		return store.Run{}, nil, err
+		return store.Run{}, err
 	}
 	// A compaction delivers no messages, so what is queued waits for the
 	// next run that does.
@@ -309,7 +259,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job, det
 	go r.drive(runCtx, active, loaded, work)
 	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", cfg.model.Name,
 		"profile_id", cfg.profile.ID)
-	return row, active, nil
+	return row, nil
 }
 
 // reserve claims a session for a run that is about to start. Claiming under
@@ -440,7 +390,7 @@ func (r *runs) abort(ctx context.Context, runID string) (store.Run, error) {
 		}
 		return store.Run{}, conflictf("run %s is already %s", runID, row.State)
 	}
-	r.abortRun(active)
+	active.abort()
 	select {
 	case <-active.done:
 	case <-ctx.Done():
@@ -455,7 +405,7 @@ func (r *runs) stop(ctx context.Context, sessionID string) {
 	if active == nil {
 		return
 	}
-	r.abortRun(active)
+	active.abort()
 	select {
 	case <-active.done:
 	case <-ctx.Done():
@@ -488,19 +438,10 @@ func (r *runs) stopAll() {
 	}
 	r.mu.Unlock()
 	for _, a := range active {
-		r.abortRun(a)
+		a.abort()
 		<-a.done
 	}
 	r.finishes.stop()
-}
-
-// abortRun stops a run and the children it spawned. A child works on a branch
-// of a run that is over and has nobody left to report to, so it stops with it.
-func (r *runs) abortRun(a *activeRun) {
-	a.abort()
-	if r.server.deps.Subagents != nil {
-		r.server.deps.Subagents.AbortChildren(a.sessionID)
-	}
 }
 
 // active returns the run of a session, or nil when it has none.

@@ -53,11 +53,6 @@ export function useSessionStream(sessionId: string | undefined): void {
         });
       }
     }
-    // A child agent is a session of its own; its start and end are the only
-    // word the client gets of it.
-    if (e.type === "subagent.started" || e.type === "subagent.finished") {
-      void client.invalidateQueries({ queryKey: ["sessions"] });
-    }
   });
 
   // Opening a session asks for its whole path; every later replay resumes

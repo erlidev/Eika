@@ -124,11 +124,9 @@ this file says why, so neither repeats the other.
   local project's host directory, bind-mounted. A `remote` project cannot be
   created (the API refuses it), since only cloning could fill one; the kind
   and column stay until projects are removed.
-- What is left of git is inside the sandbox: a child agent is still a
-  worktree in its parent's container (its branch is in the parent's
-  repository the moment it commits, and the parent merges it with its own
-  bash), until subagents are replaced. The `git` binary stays in the Core
-  image for phase 5's memory repository.
+- What is left of git is inside the sandbox, for whatever an agent runs in
+  bash. The `git` binary stays in the Core image for phase 5's memory
+  repository.
 - The data volume is `eika-data` and holds only the sealing key.
 
 ## Persistence and sessions
@@ -144,8 +142,8 @@ this file says why, so neither repeats the other.
   deleting or editing one never reaches the other.
 - **Only a resumable entry can be a head or fork point**: one whose path
   leaves no tool call unanswered. `session.PathResumable` is the one rule.
-- `sessions.kind` (`user`/`fork`/`agent`) is a column so a missing
-  `subagents` row cannot change what a session is.
+- `sessions.kind` (`user`/`fork`) is a column, not a join, because it is
+  what the session is.
 - A chat is a session with `workspace_id` NULL: same tree, run manager, and
   view. Created explicitly (`chat: true`), and a workspace's sessions cascade
   with it rather than becoming chats.
@@ -205,8 +203,8 @@ this file says why, so neither repeats the other.
   carry it.
 - Providers are built per use and never cached, so a changed key applies
   to the next run and a key is in memory only while used.
-- Model names are unique across providers, because runs and `spawn_agent`
-  name a model alone.
+- Model names are unique across providers, because runs name a model
+  alone.
 
 ## Image input
 
@@ -268,7 +266,7 @@ this file says why, so neither repeats the other.
   small window, or a model whose window is near the settings would compact
   on every call.
 - **Checked before every model call**, not only after a run as in Pi: a
-  subagent's single turn can outgrow the window, and compacting before the
+  single turn can outgrow the window, and compacting before the
   call is cheaper than an overflow error and a retry.
 - **The summary request keeps the prefix cache.** It is the run's own
   request (system prompt, tools, parameters, and messages up to the cut,
@@ -362,49 +360,11 @@ this file says why, so neither repeats the other.
 
 ## Subagents
 
-- A child is an ordinary run through `subagent.Runner` (implemented by the
-  run manager), not a second loop.
-- The spawner and server are built in a cycle: `subagent.New` takes no
-  runner and `Spawner.Attach` supplies it before serving.
-- Tools reach the spawner through `builtin.Subagents`, declared where
-  consumed, so nothing under `tool` learns what a workspace is.
-- Branch: `<parent>-<name>-<6 id chars>`. Git cannot hold both
-  `refs/heads/main` and `refs/heads/main/x`, and the id tag keeps same-named
-  children apart. Names match `^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$`.
-- **A child is a git worktree in its parent's container**, not a container of
-  its own: a container per child cost a container, a volume, and a full
-  clone before it could start. A worktree shares the object store, starts in the time `git worktree add` takes, and
-  puts the child's branch in the parent's repository the moment it commits.
-  The cost is isolation between agents of one tree: they share processes,
-  ports, limits, and (through bash) each other's files. They were already one
-  user's agents under one confinement, and the parent's own files were
-  already the child's starting point.
-- A child is a **workspace row with `worktree_of`**, not a session with a
-  directory: files, terminal, fork, and MCP keep working per
-  workspace, and one function, `workspace.Locate`, maps a row to a container
-  and directory. `worktree_of` names the container's workspace, never a
-  worktree, so a tree is always one container deep.
-- Worktrees live at `/workspace/.eika/worktrees/<id>`: eikad serves nothing
-  outside `/workspace`, and a directory in the container's own layer would
-  not survive a recreated container. The directory ignores itself rather than
-  being added to `.git/info/exclude`, which in a local project is the user's.
-  `worktree.useRelativePaths` keeps a local project's worktrees usable from
-  the host where git supports it.
-- A worktree workspace starts, stops, and is confined only through its
-  holder; its own start, stop, and sandbox routes are refused rather than
-  forwarded, so no request on a child quietly changes its parent. Deleting
-  one while the holder is stopped is refused, since its files could not be
-  removed and nothing would account for them.
-- A child runs its parent's image by sharing its container; `spawn_agent` has
-  no image parameter, since nothing validates a name a model invents.
-- Limits are settings (`subagent_max_depth` 2, max 8;
-  `subagent_max_children` 4, max 16), at least 1, read per spawn. A spawn
-  reserves its slot under the counting lock before any slow work.
-- A finished child's worktree is kept: the user looks at what it did. An
-  aborted child still commits and reports, on a context of its own
-  bounded to five minutes.
-- `Server.Close` aborts runs, then `Spawner.Shutdown` aborts children that
-  outlive their parent (`wait: false`) before the pool closes.
+- Subagents, worktrees, `spawn_agent`, `wait_agents`, `list_agents`, and the
+  `subagent.*` events were removed in phase 0 of `PLAN.md`, together with
+  `workspaces.worktree_of`, the `subagents` table, and sessions of kind
+  `agent`. They return in phase 2 with a new design (`design/`). The log in
+  `PLAN.md` says where the pieces worth reusing live in history.
 
 ## Server and API
 
@@ -497,7 +457,7 @@ this file says why, so neither repeats the other.
 - Moving the head rebuilds the transcript, since replay only adds; the
   composer text lives in the session store so a rewind can refill it.
 - Rewind is in the transcript, forking in the tree panel. Nothing is deleted.
-- Forks and child agents nest under their parent session in the sidebar.
+- Forks nest under their parent session in the sidebar.
 - Destructive actions confirm in `ConfirmDialog`, not `window.confirm`.
 - A sidebar row's quick buttons (a workspace's start or stop and new
   session) always show; hiding them until hover made starting a workspace a

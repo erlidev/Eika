@@ -434,7 +434,7 @@ func TestAToolChoiceNamesAnMCPServer(t *testing.T) {
 	}
 }
 
-func TestForksAndChildrenKeepTheProfile(t *testing.T) {
+func TestForksKeepTheProfile(t *testing.T) {
 	a := newAPI(t)
 	project, dir := a.newProject(t, "demo")
 	initRepo(t, dir)
@@ -444,25 +444,18 @@ func TestForksAndChildrenKeepTheProfile(t *testing.T) {
 	a.useProfile(t, sess.ID, profile.ID)
 	a.override(t, sess.ID, map[string]any{"instructions": "from the parent"})
 
-	a.script(
-		spawnStep("c1", "worker", "write the notes", true),
-		providertest.Text("nothing to do"),
-		providertest.Text("the child is done"),
-	)
-	a.postMessage(t, sess.ID, "hand it to a child", "", 202)
+	a.script(providertest.Text("an answer"))
+	a.postMessage(t, sess.ID, "hello", "", 202)
 	a.waitIdle(t, sess.ID)
-	child := a.waitAgent(t, sess.ID)
 
 	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
 	fork := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork", map[string]any{
 		"entry_id": path.Entries[len(path.Entries)-1].ID,
 	}), 201)
 
-	for name, id := range map[string]string{"child": child.SessionID, "fork": fork.ID} {
-		got := a.configuration(t, id)
-		if got.ProfileID != profile.ID || deref(got.Overrides.Instructions) != "from the parent" {
-			t.Errorf("%s configuration = %+v, want the parent's profile and overrides", name, got)
-		}
+	got := a.configuration(t, fork.ID)
+	if got.ProfileID != profile.ID || deref(got.Overrides.Instructions) != "from the parent" {
+		t.Errorf("fork configuration = %+v, want the parent's profile and overrides", got)
 	}
 }
 

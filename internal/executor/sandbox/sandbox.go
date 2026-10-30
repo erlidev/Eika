@@ -41,8 +41,8 @@ type Options struct {
 	Root string
 	// Dir narrows the client to a directory below Root, given relative to
 	// it: paths are relative to Dir, commands and terminals start in it, and
-	// the client refuses any path outside it. Empty is Root itself. It is how
-	// a worktree workspace shares a container with the workspace holding it.
+	// the client refuses any path outside it. Empty is Root itself. Nothing
+	// sets it today.
 	Dir string
 	// HTTPClient is used for every request. Nil means a client with no
 	// overall timeout, because an exec streams for as long as it runs.

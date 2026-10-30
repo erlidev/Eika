@@ -10,8 +10,6 @@ import (
 type Deps struct {
 	// Questions is the broker ask_user waits on.
 	Questions *Questions
-	// Agents is the spawner the agent tools reach children through.
-	Agents Subagents
 	// Search runs web_search; Pages reads for web_fetch.
 	Search Searcher
 	Pages  PageReader
@@ -23,13 +21,10 @@ type Deps struct {
 // call gets its workspace from the tool.CallContext.
 //
 // A nil dependency leaves its tools registered but failing, which is what a
-// run nobody can answer and a harness that spawns nothing want.
+// run nobody can answer wants.
 func Registry(d Deps) (*tool.Registry, error) {
 	r, err := tool.NewRegistry(
 		askUserTool{questions: d.Questions},
-		spawnAgentTool{agents: d.Agents},
-		waitAgentsTool{agents: d.Agents},
-		listAgentsTool{agents: d.Agents},
 		webSearchTool{search: d.Search},
 		webFetchTool{pages: d.Pages},
 		bashTool{},

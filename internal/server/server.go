@@ -25,7 +25,6 @@ import (
 	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
-	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool"
 	"github.com/erlidev/eika/internal/tool/builtin"
 	"github.com/erlidev/eika/internal/workspace"
@@ -34,10 +33,6 @@ import (
 // shutdownTimeout bounds how long in-flight requests may finish after the
 // context passed to Run is cancelled.
 const shutdownTimeout = 10 * time.Second
-
-// subagentStopTimeout bounds how long Close waits for the child agents to
-// commit what they have and record how they ended.
-const subagentStopTimeout = 2 * time.Minute
 
 // Workspaces is the part of the workspace host the API uses. It is an
 // interface so that the handler tests run against a workspace backed by a
@@ -102,9 +97,6 @@ type Deps struct {
 	// them the search routes are not served.
 	Search *search.Engine
 	Pages  *fetch.Reader
-	// Subagents is set by UseSubagents rather than by the caller: the spawner
-	// needs the run manager this server owns.
-	Subagents *subagent.Spawner
 	// Egress is the proxy restricted sandboxes reach the internet through.
 	// Nil when the harness cannot restrict a sandbox's egress.
 	Egress *egress.Proxy
@@ -166,15 +158,6 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	return s
 }
 
-// UseSubagents gives the server the spawner that runs child agents, and gives
-// the spawner the run manager it drives them with. The wiring calls it once,
-// before serving: the spawner cannot be built before the server, because the
-// tool registry every run shares holds the spawn_agent tool it backs.
-func (s *Server) UseSubagents(sp *subagent.Spawner, attach func(subagent.Runner)) {
-	s.deps.Subagents = sp
-	attach(s)
-}
-
 // Handler returns the server's root handler. A request for a workspace
 // preview's host goes to the preview; everything else to the routes.
 func (s *Server) Handler() http.Handler {
@@ -207,24 +190,14 @@ func (s *Server) Run(ctx context.Context) error {
 	return Serve(ctx, s.cfg.Listen, s.Handler(), s.log)
 }
 
-// Close aborts every run, session title, and child agent that is still going
-// and returns once they have stopped. Run calls it on shutdown; a caller that
-// serves Handler itself calls it when it is done, before the store it gave
-// the server closes.
-//
-// The children come after the runs: a child whose parent spawned it without
-// waiting outlives that run, so aborting the runs alone leaves it writing to
-// a database that is about to close. Titles come after the runs too, since
-// no run is left to start one.
+// Close aborts every run and session title that is still going and returns
+// once they have stopped. Run calls it on shutdown; a caller that serves
+// Handler itself calls it when it is done, before the store it gave the
+// server closes. Titles stop after the runs, since no run is left to start
+// one.
 func (s *Server) Close() {
 	s.runs.stopAll()
 	s.titles.stop()
-	if s.deps.Subagents == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), subagentStopTimeout)
-	defer cancel()
-	s.deps.Subagents.Shutdown(ctx)
 }
 
 // Reconcile brings the recorded workspace states in line with the containers
@@ -254,11 +227,6 @@ func (s *Server) Reconcile(ctx context.Context) error {
 	}
 	observed := make(map[string]observedWorkspace, len(recorded))
 	for _, w := range recorded {
-		// A worktree has no container of its own: it is in whatever state
-		// its holder's is, which the second loop reads.
-		if w.WorktreeOf != "" {
-			continue
-		}
 		host, err := s.deps.Workspaces.Inspect(ctx, w.ID)
 		if err == nil {
 			observed[w.ID] = observedWorkspace{state: host.State, containerID: host.ContainerID}
@@ -272,9 +240,6 @@ func (s *Server) Reconcile(ctx context.Context) error {
 	}
 	for _, w := range recorded {
 		actual := observed[w.ID]
-		if w.WorktreeOf != "" {
-			actual = observed[w.WorktreeOf]
-		}
 		state := string(actual.state)
 		if state == w.State {
 			continue

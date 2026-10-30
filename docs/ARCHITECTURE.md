@@ -8,15 +8,11 @@ Reasons for the design are in `DECISIONS.md`; wire details in `api/`.
 ```
 Project    A host directory a workspace bind-mounts. (A remote project, once
            cloned from GitHub etc., can no longer be created.)
-Workspace  A sandbox container working on a project, or a git worktree in
-           another workspace's container (worktree_of). States: creating -> running -> stopped (gone if
-           the container disappeared); a worktree has its holder's.
+Workspace  A sandbox container working on a project. States: creating ->
+           running -> stopped (gone if the container disappeared).
 Session    A tree of entries with a head pointer, in one workspace.
 Chat       A session with no workspace: only tools that need none.
 Run        One execution of the agent loop from a session's head.
-Subagent   A child run in its own worktree workspace (in the parent's
-           container, at the parent's commit, on a child branch) and
-           session; reports back as a tool result.
 Profile    A named, nullable configuration of what a run sends.
 ```
 
@@ -47,7 +43,6 @@ egress proxy are network calls and run in the harness.
 | `netguard` | Public-address-only dialing |
 | `store` | PostgreSQL pool, embedded migrations, queries |
 | `session` | Session tree: append, head, branch, fork, outline; `session.Store` records runs |
-| `subagent` | Spawning children and collecting their results |
 | `search` | Failover chain, quotas, cache; backends in `web`, `wikipedia`, `arxiv`, `github`; `fetch` reads a URL; `filter` is the JS filter |
 | `mcp` | MCP client, transports, pool, elicitation; `mcp/oauth` authorization; `mcptest` fakes |
 | `web/` | The frontend |
@@ -134,11 +129,10 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | Table | Holds |
 |---|---|
 | `projects` | name (unique), kind (remote/local), remote_url, host_path, default_branch |
-| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, worktree_of (cascades), sandbox (jsonb: limits, egress, ports), pinned, archived |
-| `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork/agent), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb), pinned, archived |
+| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, sandbox (jsonb: limits, egress, ports), pinned, archived |
+| `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb), pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
 | `runs` | session, state, started/finished, error |
-| `subagents` | parent/child session, child workspace, state, result |
 | `settings` | key → jsonb value |
 | `providers` | name (unique), kind, base_url, api_key (sealed) |
 | `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
@@ -182,8 +176,7 @@ branch in place (head moved to e2)     fork at e2 (path copied)
 ```
 
 Both require a resumable entry (`session.PathResumable`: no tool call left
-unanswered); the outline reports it per node. Forks get kind `fork`, subagent
-sessions `agent`; `Store.Sessions` with descendants follows
+unanswered); the outline reports it per node. Forks get kind `fork`; `Store.Sessions` with descendants follows
 `parent_session_id` recursively for the sidebar. A fork stays in its
 session's workspace.
 
@@ -234,7 +227,7 @@ POST /api/sessions/{id}/messages          GET /api/events
   `agent.Options`, used by runs and the context preview alike.
 - **Settings** the harness reads (`default_model`, `default_profile`,
   `utility_models`, `sandbox_image`, `sandbox_limits`, `sandbox_egress`,
-  `subagent_max_*`, `search_order`, `search_limits`, `setup_complete`,
+  `search_order`, `search_limits`, `setup_complete`,
   `compaction`) are
   validated on write and fall back to defaults on read. Renaming a model
   rewrites the settings that name it.
@@ -286,8 +279,7 @@ compose stack, which sets only `EIKA_DATABASE_URL`. Notable fields:
   after the one derived from `listen`.
 - `public_url`: when https, serves the OAuth Client ID Metadata Document.
 - `auth_token`: optional fixed API token.
-- A file that still sets `models` or `subagents` is refused with a pointer
-  to the UI.
+- A file that still sets `models` is refused with a pointer to the UI.
 
 Everything a user chooses is a database row. Stored credentials are sealed
 with the 32-byte key in `secret_key_file` (`/var/lib/eika/secret.key`,
@@ -319,9 +311,8 @@ times. API: `api/eikad.md`.
 `executor/sandbox` is an HTTP client for one daemon; `Exec` streams the
 daemon's newline-delimited frames into the caller's writers. A 404 is
 `sandbox.ErrNotFound`. `Options.Dir` narrows a client to a directory below the
-daemon's root, which is how a worktree workspace is served: paths are
-relative to it, commands and terminals start in it, and the client refuses
-paths outside it.
+daemon's root: paths are relative to it, commands and terminals start in it,
+and the client refuses paths outside it. Nothing uses it today.
 
 ### Files and terminal
 
@@ -347,7 +338,7 @@ a per-workspace image. The harness reaches eikad at `http://eika-ws-<id>:7000`.
 
 The server's idle stopper (`server/idle.go`) sweeps once a minute while
 `Server.Run` serves and stops, as `POST .../stop` does, every running holder
-that neither it nor any of its worktrees has had a run in for
+that has not had a run in it for
 `workspace_idle_minutes` (default 15, 0 for never). Last use is in memory:
 a run's end, a start, or a sweep that sees a run going; after a restart a
 running workspace gets the whole timeout again.
@@ -357,37 +348,10 @@ container's environment. `Reconcile` updates recorded states at startup and
 marks a workspace `gone` only when Docker says the container does not exist;
 any other error stops reconciliation without changing states.
 
-### Worktree workspaces
-
-```
- eika-ws-<holder> container, volume at /workspace
-   /workspace                       holder's checkout, its branch
-   /workspace/.eika/worktrees/      ignores itself (.gitignore "*")
-     <child ws id>/                 child's worktree, <parent>-<name>-<tag>
-     <grandchild ws id>/            a child's child, same holder
-```
-
-A row with `worktree_of` has no container. `workspace.Locate` is the one rule
-from a row to its files: its own container, or the holder's with
-`Workspace.Dir` set to `.eika/worktrees/<id>`, which `Host.Executor`,
-`Terminal`, and `Process` pass on as the client's `Dir`. `worktree_of` always
-names a workspace with a container, so every agent in a tree shares the root
-session's container and repository. `workspace.AddWorktree` and
-`RemoveWorktree` run git at the holder's root.
-
-The server routes every row through `locate`. Start and stop act on the
-holder and carry its worktrees' states along (with their runs aborted on
-stop); on a worktree they are `409`, as is `PUT .../sandbox`. Usage reports
-the holder's container against the holder's sandbox (`sandboxOf`). Deleting a worktree removes its
-directory but keeps its branch, and needs the holder running; deleting the
-holder cascades. `Reconcile` gives a worktree its holder's state. The MCP
-launcher starts a worktree's stdio servers in its worktree.
-
 ### Limits, egress, previews
 
 `Host.Create` applies the workspace's `sandbox` row; `PUT .../sandbox` writes
-the row then `Host.Confine`s; every start re-applies it. Children share the
-parent's container and so its confinement.
+the row then `Host.Confine`s; every start re-applies it.
 
 Limits are `NanoCPUs`, `Memory` (= `MemorySwap`), and `PidsLimit`, changed
 live with `ContainerUpdate`; "no limit" on an existing container is the host's
@@ -414,34 +378,6 @@ A preview is served at `<port>-<workspace id>.<host>`: `Server.Handler`
 routes such hosts before the API. `POST .../ports/{port}/preview` returns a
 link with a one-time ticket, traded for a host-only cookie; every request is
 checked against the row. Tickets and sessions are in memory.
-
-## Subagents
-
-```
-parent run -> spawn_agent -> spawner
-  commit parent tree "wip: before spawning <name>" (Locate: parent's dir)
-  AddWorktree(<parent>-<name>-<id>, base commit) at the holder's root
-  rows: workspace (worktree_of holder), session (kind agent), subagents;
-    subagent.started
-  runs.runChild(child session, task)  -- events on session:<child>
-  on end: commit "wip: subagent <name> finished",
-    diff --stat base..head; the worktree stays
-  FinishSubagent, subagent.finished
-  -> tool result: summary, branch, commit, diffstat
-```
-
-- Tools `spawn_agent` (blocks unless `wait: false`), `wait_agents`, and
-  `list_agents` call the spawner through `builtin.Subagents` and only name
-  their own session's children.
-- The child's branch is in the parent's repository as soon as it commits, so
-  the parent's agent can merge it with git.
-- Depth is measured by walking `subagents` rows up; width counts running
-  children plus live reservations.
-- Aborting a run aborts its children recursively; the spawner waits for a
-  child's loop to stop, then commits and reports whatever the state.
-  A child without a closing message gets one written from its state and
-  diffstat. The result is stored on the row, served by
-  `GET /api/sessions/{id}/agents`, and carried by `subagent.finished`.
 
 ## Search
 
@@ -608,13 +544,12 @@ An arrow means "may import".
 
 ```
  cmd/eika -> server                     cmd/eikad -> eikad, search/filter
- server -> agent, session, store, workspace, subagent, search, mcp, egress,
+ server -> agent, session, store, workspace, search, mcp, egress,
            utility, imaging
  agent -> tool, provider, contextfile     session -> agent, store
  utility -> provider                      imaging -> provider
  tool -> executor                         contextfile -> executor
  executor/sandbox -> eikad (wire types)   workspace -> executor, executor/sandbox
- subagent -> workspace, session, store, tool/builtin
  tool/builtin -> search, search/fetch     search/fetch, egress -> netguard
  mcp -> tool, event, mcp/oauth            config, event, secret: leaves
 ```

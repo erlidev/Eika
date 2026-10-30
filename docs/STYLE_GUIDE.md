@@ -19,7 +19,7 @@ case, change it here in the same change, with a sentence of reasoning.
   abstractions for needs that do not exist yet. Two concrete uses justify an
   abstraction; one does not.
 - **Names carry meaning.** Names describe what a thing is or does in the
-  domain (`Workspace`, `spawnSubagent`), never how it is implemented
+  domain (`Workspace`, `startRun`), never how it is implemented
   (`Manager`, `Helper`, `Util`, `Impl`, `Data`).
 
 ## 2. Go

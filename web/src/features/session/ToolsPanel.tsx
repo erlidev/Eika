@@ -109,7 +109,7 @@ export function ToolsPanel({ sessionId }: ToolsPanelProps) {
           </h3>
           {out.tools.length > 0 && (
             <p className="text-muted-foreground">
-              Files, commands, and child agents belong to a workspace session:{" "}
+              Files and commands belong to a workspace session:{" "}
               <span className="font-mono">{out.tools.join(", ")}</span>.
             </p>
           )}

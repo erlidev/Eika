@@ -144,8 +144,6 @@ export function emptyWorld(): World {
       settings: { setup_complete: true },
       defaults: {
         sandbox_image: "eika-sandbox:latest",
-        subagent_max_depth: 2,
-        subagent_max_children: 4,
         workspace_idle_minutes: 15,
         sandbox_limits: { cpus: 0, memory_mb: 0, pids: 4096 },
         sandbox_egress: { mode: "open", allow: [...defaultAllowlist] },
@@ -300,9 +298,6 @@ function toolCatalog(): Tool[] {
       "bash",
       "Run a shell command in the workspace root. This is also how you explore, read, and edit files.",
     ),
-    tool("list_agents", "List the child agents this session spawned."),
-    tool("spawn_agent", "Start a child agent in a worktree beside this one."),
-    tool("wait_agents", "Wait for child agents to finish."),
     tool(
       "web_fetch",
       "Fetch a web page or file by URL and return its content as Markdown.\nUse it to read a page you already have a URL for.",

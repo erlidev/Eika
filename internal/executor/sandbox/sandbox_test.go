@@ -243,7 +243,7 @@ func TestASymlinkOutOfTheRootIsAPermissionError(t *testing.T) {
 	}
 }
 
-// TestADirNarrowsTheClient checks the client a worktree workspace gets: one
+// TestADirNarrowsTheClient checks a client narrowed to a directory: one
 // daemon, one directory below its root, and nothing outside that directory.
 func TestADirNarrowsTheClient(t *testing.T) {
 	root := t.TempDir()

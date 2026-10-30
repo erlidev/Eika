@@ -24,8 +24,7 @@ type idleWorkspaces struct {
 	server *Server
 
 	mu sync.Mutex
-	// lastUsed is when each workspace was last seen in use, by workspace id,
-	// which for a worktree is its own and not its holder's.
+	// lastUsed is when each workspace was last seen in use, by workspace id.
 	lastUsed map[string]time.Time
 }
 
@@ -81,7 +80,7 @@ func (i *idleWorkspaces) sweep(ctx context.Context, now time.Time) {
 	for _, ws := range i.idle(all, now, timeout) {
 		// A run may have started since the look above; it keeps the
 		// workspace up until the next sweep.
-		if i.inUse(ws, all) {
+		if i.inUse(ws) {
 			continue
 		}
 		if _, err := s.changeState(ctx, ws, s.stopWorkspace); err != nil {
@@ -92,33 +91,20 @@ func (i *idleWorkspaces) sweep(ctx context.Context, now time.Time) {
 	}
 }
 
-// idle returns the running workspaces among all whose last use, their own or
-// that of a worktree they hold, is at least timeout before now. It forgets
+// idle returns the running workspaces among all whose last use is at least
+// timeout before now. It forgets
 // the workspaces that are not running, so that one started again begins
 // from its start and not from a use before it stopped.
 func (i *idleWorkspaces) idle(all []store.Workspace, now time.Time, timeout time.Duration) []store.Workspace {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	last := make(map[string]time.Time, len(all))
-	for _, ws := range all {
-		holder := ws.ID
-		if ws.WorktreeOf != "" {
-			holder = ws.WorktreeOf
-		}
-		if at := i.lastUsed[ws.ID]; at.After(last[holder]) {
-			last[holder] = at
-		}
-	}
 	var out []store.Workspace
 	for _, ws := range all {
 		if ws.State != string(workspace.StateRunning) {
 			delete(i.lastUsed, ws.ID)
 			continue
 		}
-		if ws.WorktreeOf != "" {
-			continue
-		}
-		at, seen := last[ws.ID]
+		at, seen := i.lastUsed[ws.ID]
 		if !seen || at.IsZero() {
 			i.lastUsed[ws.ID] = now
 			continue
@@ -130,14 +116,7 @@ func (i *idleWorkspaces) idle(all []store.Workspace, now time.Time, timeout time
 	return out
 }
 
-// inUse reports whether a run is going in the workspace or in a worktree it
-// holds.
-func (i *idleWorkspaces) inUse(holder store.Workspace, all []store.Workspace) bool {
-	inUse := i.server.runs.workspacesInUse()
-	for _, ws := range all {
-		if inUse[ws.ID] && (ws.ID == holder.ID || ws.WorktreeOf == holder.ID) {
-			return true
-		}
-	}
-	return false
+// inUse reports whether a run is going in the workspace.
+func (i *idleWorkspaces) inUse(ws store.Workspace) bool {
+	return i.server.runs.workspacesInUse()[ws.ID]
 }

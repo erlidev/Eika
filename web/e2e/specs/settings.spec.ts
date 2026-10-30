@@ -19,22 +19,12 @@ for (const theme of ["light", "dark"] as const) {
       await expectShot(eika, `models-providers-${theme}`, "role=dialog");
     });
 
-    test("general: problems under the sandbox image and the limits", async ({
-      open,
-      expectShot,
-    }) => {
+    test("general: a problem under the sandbox image", async ({ open, expectShot }) => {
       const eika = await open({ scenario: "workbench", theme });
       await eika.click("Settings");
       await eika.click("General");
       await eika.fill("Sandbox image", "my image");
-      await eika.fill("Levels below a session (1–8)", "0");
-      await eika.fill("Children at a time (1–16)", "20");
-      await expect(
-        eika.page.getByText("Enter a whole number of levels from 1 to 8."),
-      ).toBeVisible();
-      await expect(
-        eika.page.getByText("Enter a whole number of children from 1 to 16."),
-      ).toBeVisible();
+      await expect(eika.page.getByText(/An image reference has no spaces/)).toBeVisible();
       await expectShot(eika, `general-invalid-${theme}`, "role=dialog");
     });
   });

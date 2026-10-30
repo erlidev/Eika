@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// RunState is where an agent run, or a subagent, is in its lifecycle.
+// RunState is where an agent run is in its lifecycle.
 type RunState string
 
 // The states a run can be in. Every state but RunRunning is final.

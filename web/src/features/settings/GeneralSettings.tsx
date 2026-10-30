@@ -1,7 +1,6 @@
 /**
  * The harness-wide choices: the default model, the utility models, the image
- * new workspaces run, how far subagents may spread, and a way back into the
- * guided setup.
+ * new workspaces run, and a way back into the guided setup.
  */
 
 import { useState } from "react";
@@ -15,7 +14,6 @@ import { Separator } from "@/components/ui/separator";
 import { DefaultModelSelect } from "@/features/settings/DefaultModelSelect";
 import {
   settingKeys,
-  settingNumber,
   settingString,
   useSaveSettings,
   useSettings,
@@ -28,7 +26,6 @@ export function GeneralSettings() {
   // The saves live here, above the forms they serve, so that a form that
   // remounts on the value it saved still shows how the save went.
   const saveImage = useSaveSettings();
-  const saveAgents = useSaveSettings();
   if (settings.isError) {
     return (
       <LoadError
@@ -53,12 +50,6 @@ export function GeneralSettings() {
         save={saveImage}
       />
       <SystemCheck />
-      <Separator />
-      <SubagentForm
-        key={`agents-${storedKey(settings.data, settingKeys.subagentMaxDepth)}-${storedKey(settings.data, settingKeys.subagentMaxChildren)}`}
-        state={settings.data}
-        save={saveAgents}
-      />
       <Separator />
       <SetupAgain />
     </div>
@@ -123,107 +114,6 @@ function SandboxForm({ state, save }: SandboxFormProps) {
         works: the harness copies its daemon in.
       </p>
       {save.isError && <ActionError action="save the sandbox image" error={save.error} />}
-    </form>
-  );
-}
-
-type SubagentFormProps = { state: SettingsState; save: SaveSettings };
-
-function SubagentForm({ state, save }: SubagentFormProps) {
-  const [depth, setDepth] = useState(
-    settingNumber(state, settingKeys.subagentMaxDepth) ?? state.defaults.subagent_max_depth,
-  );
-  const [children, setChildren] = useState(
-    settingNumber(state, settingKeys.subagentMaxChildren) ?? state.defaults.subagent_max_children,
-  );
-  const depthProblem =
-    Number.isInteger(depth) && depth >= 1 && depth <= 8
-      ? null
-      : "Enter a whole number of levels from 1 to 8.";
-  const childrenProblem =
-    Number.isInteger(children) && children >= 1 && children <= 16
-      ? null
-      : "Enter a whole number of children from 1 to 16.";
-  const invalid = depthProblem !== null || childrenProblem !== null;
-
-  return (
-    <form
-      className="space-y-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (invalid) return;
-        save.mutate({
-          [settingKeys.subagentMaxDepth]: depth,
-          [settingKeys.subagentMaxChildren]: children,
-        });
-      }}
-    >
-      <div>
-        <h3 className="text-sm font-medium">Subagents</h3>
-        <p className="text-muted-foreground text-xs">
-          How far the tree of child agents may grow. Each child works in a sandbox of its own.
-        </p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-start">
-        <div className="space-y-1">
-          <Label htmlFor="subagent-depth" className="text-xs">
-            Levels below a session (1–8)
-          </Label>
-          <Input
-            id="subagent-depth"
-            type="number"
-            min={1}
-            max={8}
-            step={1}
-            aria-invalid={depthProblem !== null}
-            aria-describedby={depthProblem ? "subagent-depth-problem" : undefined}
-            value={Number.isFinite(depth) ? depth : ""}
-            onChange={(e) => {
-              setDepth(Number(e.target.value === "" ? Number.NaN : e.target.value));
-            }}
-          />
-          {depthProblem && (
-            <p id="subagent-depth-problem" className="text-destructive text-xs">
-              {depthProblem}
-            </p>
-          )}
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="subagent-children" className="text-xs">
-            Children at a time (1–16)
-          </Label>
-          <Input
-            id="subagent-children"
-            type="number"
-            min={1}
-            max={16}
-            step={1}
-            aria-invalid={childrenProblem !== null}
-            aria-describedby={childrenProblem ? "subagent-children-problem" : undefined}
-            value={Number.isFinite(children) ? children : ""}
-            onChange={(e) => {
-              setChildren(Number(e.target.value === "" ? Number.NaN : e.target.value));
-            }}
-          />
-          {childrenProblem && (
-            <p id="subagent-children-problem" className="text-destructive text-xs">
-              {childrenProblem}
-            </p>
-          )}
-        </div>
-        {/* sm:mt-5 lines the button up with the fields below their labels. */}
-        <Button
-          type="submit"
-          variant="outline"
-          className="justify-self-start sm:mt-5"
-          disabled={invalid || save.isPending}
-        >
-          Save
-        </Button>
-      </div>
-      {invalid && <p className="text-destructive text-xs">Fix the limits marked above to save.</p>}
-      {save.isSuccess && <Notice tone="success">Saved. The next spawn uses these limits.</Notice>}
-      {save.isError && <ActionError action="save the subagent limits" error={save.error} />}
     </form>
   );
 }

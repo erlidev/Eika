@@ -19,7 +19,6 @@ import (
 	"github.com/erlidev/eika/internal/search/wikipedia"
 	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/store"
-	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool/builtin"
 	"github.com/erlidev/eika/internal/workspace"
 )
@@ -66,17 +65,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 
 	questions := builtin.NewQuestions()
 	bus := event.NewBus(log)
-	// The spawner and the server need each other: the tools every run shares
-	// hold spawn_agent, and the spawner drives a child through the run
-	// manager. The spawner is built first and given the runner afterwards.
-	spawner := subagent.New(subagent.Options{
-		Store:      st,
-		Workspaces: host,
-		Emitter:    bus,
-		Limits:     subagentLimits(st, log),
-		Logger:     log,
-	})
-	tools, err := builtin.Registry(builtin.Deps{Questions: questions, Agents: spawner, Search: engine, Pages: pages})
+	tools, err := builtin.Registry(builtin.Deps{Questions: questions, Search: engine, Pages: pages})
 	if err != nil {
 		return err
 	}
@@ -107,7 +96,6 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Egress:     proxy,
 		MCP:        pool,
 	}, opts)
-	s.UseSubagents(spawner, spawner.Attach)
 	// Remote servers connect in the background, so their tools are there
 	// when the first run asks; one that is down must not stop the API.
 	if err := pool.Start(ctx); err != nil {
@@ -182,18 +170,14 @@ func NewSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets 
 }
 
 var (
-	_ Providers           = (*provider.Registry)(nil)
-	_ Workspaces          = (*workspace.Host)(nil)
-	_ subagent.Runner     = (*Server)(nil)
-	_ builtin.Subagents   = (*subagent.Spawner)(nil)
-	_ subagent.Store      = (*store.Store)(nil)
-	_ subagent.Workspaces = (*workspace.Host)(nil)
-	_ builtin.Searcher    = (*search.Engine)(nil)
-	_ builtin.PageReader  = (*fetch.Reader)(nil)
-	_ fetch.Quota         = (*search.Engine)(nil)
-	_ mcp.Store           = mcpStore{}
-	_ mcp.Launcher        = mcpLauncher{}
-	_ search.Settings     = searchBackend{}
-	_ search.Keys         = searchBackend{}
-	_ search.UsageStore   = searchBackend{}
+	_ Providers          = (*provider.Registry)(nil)
+	_ Workspaces         = (*workspace.Host)(nil)
+	_ builtin.Searcher   = (*search.Engine)(nil)
+	_ builtin.PageReader = (*fetch.Reader)(nil)
+	_ fetch.Quota        = (*search.Engine)(nil)
+	_ mcp.Store          = mcpStore{}
+	_ mcp.Launcher       = mcpLauncher{}
+	_ search.Settings    = searchBackend{}
+	_ search.Keys        = searchBackend{}
+	_ search.UsageStore  = searchBackend{}
 )

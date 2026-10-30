@@ -73,7 +73,7 @@ export function sessionRoutes(ctx: RouteContext): void {
     if (!ws) return ok({ sessions: w.sessions });
     const listed = w.sessions.filter((s) => s.workspace_id === ws);
     if (query.get("descendants") !== "true") return ok({ sessions: listed });
-    // The forks and child agents those sessions led to, wherever they run,
+    // The forks those sessions led to, wherever they run,
     // as the harness's recursive listing returns them.
     const reached = new Set(listed.map((s) => s.id));
     for (let more = true; more;) {

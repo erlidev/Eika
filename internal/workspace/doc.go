@@ -18,6 +18,6 @@
 // the harness reaches one of a container's ports for a preview.
 //
 // Containers carry the label eika.workspace=<id>, so List reconciles the
-// harness with what is actually running after a restart. Only server and
-// subagent import this package; tools never do.
+// harness with what is actually running after a restart. Only server imports
+// this package; tools never do.
 package workspace

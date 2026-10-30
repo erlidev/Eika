@@ -3,7 +3,7 @@
 import type { CompactionReason, EntryKind, Timings, Usage } from "@/api/events";
 
 /** SessionKind is who opened a session. */
-export type SessionKind = "user" | "fork" | "agent";
+export type SessionKind = "user" | "fork";
 
 /** Session is a tree of entries in one workspace, or in none for a chat. */
 export type Session = {

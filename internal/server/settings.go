@@ -15,7 +15,6 @@ import (
 	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/store"
-	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/utility"
 	"github.com/erlidev/eika/internal/workspace"
 )
@@ -31,11 +30,6 @@ const (
 	settingDefaultProfile = "default_profile"
 	// settingSandboxImage is the image a workspace runs when it names none.
 	settingSandboxImage = "sandbox_image"
-	// settingSubagentDepth is how many levels of children a session may have.
-	settingSubagentDepth = "subagent_max_depth"
-	// settingSubagentChildren is how many children of one session may run at
-	// a time.
-	settingSubagentChildren = "subagent_max_children"
 	// settingSandboxLimits are the limits a new workspace gets when the
 	// request that creates it names none.
 	settingSandboxLimits = "sandbox_limits"
@@ -60,15 +54,6 @@ const (
 	maxIdleMinutes     = 7 * 24 * 60
 )
 
-// The subagent limits until the user sets them, and the most the settings
-// accept: a deeper or wider tree than this is a runaway, not a plan.
-const (
-	defaultSubagentDepth    = 2
-	defaultSubagentChildren = 4
-	maxSubagentDepth        = 8
-	maxSubagentChildren     = 16
-)
-
 // maxSettingKey bounds a setting key.
 const maxSettingKey = 64
 
@@ -83,9 +68,7 @@ type settingsResponse struct {
 // settingsDefaults are the values the harness's own keys have until the user
 // sets them.
 type settingsDefaults struct {
-	SandboxImage        string `json:"sandbox_image"`
-	SubagentMaxDepth    int    `json:"subagent_max_depth"`
-	SubagentMaxChildren int    `json:"subagent_max_children"`
+	SandboxImage string `json:"sandbox_image"`
 	// SandboxLimits and SandboxEgress are what a new workspace gets.
 	SandboxLimits limitsBody `json:"sandbox_limits"`
 	SandboxEgress egressBody `json:"sandbox_egress"`
@@ -142,14 +125,12 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 	}
 	sandbox := builtinSandboxDefaults()
 	defaults := settingsDefaults{
-		SandboxImage:        s.cfg.SandboxImage,
-		SubagentMaxDepth:    defaultSubagentDepth,
-		SubagentMaxChildren: defaultSubagentChildren,
-		SandboxLimits:       sandbox.Limits,
-		SandboxEgress:       sandbox.Egress,
-		SearchOrder:         []string{},
-		SearchLimits:        map[string]search.Limit{},
-		Compaction:          compactionDefaults(),
+		SandboxImage:  s.cfg.SandboxImage,
+		SandboxLimits: sandbox.Limits,
+		SandboxEgress: sandbox.Egress,
+		SearchOrder:   []string{},
+		SearchLimits:  map[string]search.Limit{},
+		Compaction:    compactionDefaults(),
 		// The idle timeout is the harness's own, not the deployment's.
 		WorkspaceIdleMinutes: defaultIdleMinutes,
 	}
@@ -227,10 +208,6 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		if e.Mode != string(egress.ModeOpen) && !s.deps.Workspaces.EgressControl() {
 			return workspace.ErrNoEgressControl
 		}
-	case settingSubagentDepth:
-		return validateCount(key, value, maxSubagentDepth)
-	case settingSubagentChildren:
-		return validateCount(key, value, maxSubagentChildren)
 	case settingIdleMinutes:
 		var n int
 		if err := json.Unmarshal(value, &n); err != nil || n < 0 || n > maxIdleMinutes {
@@ -275,15 +252,6 @@ func strictJSON(value json.RawMessage, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(value))
 	dec.DisallowUnknownFields()
 	return dec.Decode(v)
-}
-
-// validateCount accepts a whole number from one to limit.
-func validateCount(key string, value json.RawMessage, limit int) error {
-	var n int
-	if err := json.Unmarshal(value, &n); err != nil || n < 1 || n > limit {
-		return invalidf("%s must be a whole number from 1 to %d", key, limit)
-	}
-	return nil
 }
 
 // readSetting decodes one setting into v and reports whether it held a
@@ -384,22 +352,6 @@ func (s *Server) idleTimeout(ctx context.Context) time.Duration {
 		minutes = min(n, maxIdleMinutes)
 	}
 	return time.Duration(minutes) * time.Minute
-}
-
-// subagentLimits returns the function the spawner reads its limits with,
-// which consults the settings at every spawn.
-func subagentLimits(st *store.Store, log *slog.Logger) func(context.Context) subagent.Limits {
-	return func(ctx context.Context) subagent.Limits {
-		limits := subagent.Limits{MaxDepth: defaultSubagentDepth, MaxChildren: defaultSubagentChildren}
-		var n int
-		if readSetting(ctx, st, log, settingSubagentDepth, &n) && n >= 1 {
-			limits.MaxDepth = min(n, maxSubagentDepth)
-		}
-		if readSetting(ctx, st, log, settingSubagentChildren, &n) && n >= 1 {
-			limits.MaxChildren = min(n, maxSubagentChildren)
-		}
-		return limits
-	}
 }
 
 // jsonString encodes a string as a JSON value.

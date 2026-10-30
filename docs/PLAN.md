@@ -168,7 +168,7 @@ before the routes it calls.
       - `session_entries.commit_sha` and `workspaceCommit`
       - fork-with-workspace
       Keep `git` in the Core image: phase 5's memory repository needs it.
-- [ ] Remove worktrees (`worktree.go`, `worktree_of`, `Locate`'s worktree case)
+- [x] Remove worktrees (`worktree.go`, `worktree_of`, `Locate`'s worktree case)
       and subagents (`subagent/`, `spawn_agent`, `wait_agents`, `list_agents`,
       `subagent.*` events). The MCP launcher (`server/mcp_pool.go`) starts stdio
       servers in the session's computer instead of through `Locate`. Note in
@@ -1032,6 +1032,54 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-30: phase 0 notes for later phases, from removing worktrees and
+  subagents. Everything below is in history at `478ce9c` ("Merge branch
+  'remove-git-layer'"), the last commit that has it; read it with
+  `git show 478ce9c:<path>`.
+  - Phase 2 (subagents with a new design) can reuse, from
+    `internal/subagent/spawn.go`: `reserve` (claims a slot under the counting
+    lock before any slow work, so concurrent spawns cannot overshoot the
+    width limit), `release`, and `forget`; from `internal/subagent/subagent.go`:
+    `Abort`, `AbortChildren` (aborting a run stops what it spawned),
+    `Shutdown` (waits for children that outlive their parent, bounded, before
+    the store closes), `summaryOf` (a child's final assistant message from its
+    entries) and `describe` (the result written when a child ends without a
+    closing message, from its state and what it changed). `internal/server/run_manager.go` at that
+    commit has `runChild`, a run bound to its caller's context with a bounded
+    wait for the loop to stop. The spawner's tests are in
+    `internal/subagent/spawner_test.go`. Not worth keeping: the worktree and
+    commit and hand-over steps (`commitAll`, `handOver`, `addChild`,
+    `removeWorktree`), `internal/workspace/worktree.go` (`Locate`,
+    `AddWorktree`, `RemoveWorktree`) and `git.go` (`CheckBranch`), and the
+    `subagents` table and `store/subagents.go`.
+  - Phase 12 (the browser's live view) can reuse the preview ticket flow in
+    `internal/server/previews.go` (with `previews_test.go`): a link carries a
+    one-time ticket, valid for two minutes, that the preview's host trades for
+    a host-only cookie (`previews.grant` and `take`), the host routing in
+    `Server.Handler` (`previewHost`), and `withoutPreviewCookie`, which keeps
+    the preview's own cookie out of the request forwarded to the sandbox. The previews item is removing
+    the files at the time of writing, so the commit above is the place to read
+    them.
+  - Left in place on purpose: `Workspace.Dir` and `sandbox.Options.Dir` (a
+    client narrowed to a directory below the daemon's root, with eikad's
+    `dir` query on `/watch`). Only worktrees used them, and nothing sets them
+    now. Remove them with the rename to computer if nothing wants them, or
+    keep them for per-project directories in a home computer.
+  - `workspaces.parent_workspace_id` is still in the schema and the API,
+    though nothing sets it since fork-with-workspace and subagents went. The
+    projects item or the rename can drop it.
+  - The `subagents` key in `config.movedToUI` is gone (its setting no longer
+    exists), and so are the `subagent_max_depth` and `subagent_max_children`
+    settings, the Subagents form in Settings, General, and `SessionKind`'s
+    `agent`.
+  - The MCP launcher (`server/mcp_pool.go`) inspects the session's workspace
+    through the host and starts the server there; no row maps to a
+    different container any more. When workspace becomes computer, this is
+    the place that reads "the session's computer".
+  - `make check` passes; `make smoke` was not run (no compose, Dockerfile,
+    `deploy/` or `server.Run` wiring change: the wiring only lost the
+    spawner).
 
 - 2026-10-30: live test bench set up (section "Live test bench"); no item
   started. First results, for phase 1 to confirm with the runner:

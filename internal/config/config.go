@@ -72,8 +72,7 @@ type Config struct {
 // in the web UI, with where to find each. A file that still sets one fails
 // with that pointer rather than a bare unknown-field error.
 var movedToUI = map[string]string{
-	"models":    "models are added in the web UI under Settings, Models",
-	"subagents": "subagent limits are set in the web UI under Settings, General",
+	"models": "models are added in the web UI under Settings, Models",
 }
 
 // ErrNoConfigFile reports that a named configuration file does not exist.

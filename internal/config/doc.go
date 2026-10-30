@@ -4,8 +4,8 @@
 //
 // It holds only what the process needs before it can reach its database:
 // addresses, paths, and the Docker topology. Everything a user chooses, the
-// model providers and models, the default model, the sandbox image, the
-// subagent limits, and the sign-in password, is set in the web UI and kept
+// model providers and models, the default model, the sandbox image,
+// and the sign-in password, is set in the web UI and kept
 // in the database instead. The defaults are the compose stack's, so a
 // deployment usually sets nothing here.
 //

@@ -9,8 +9,6 @@ export type Settings = Record<string, unknown>;
 /** SettingsDefaults are the values the harness uses until the settings name one. */
 export type SettingsDefaults = {
   sandbox_image: string;
-  subagent_max_depth: number;
-  subagent_max_children: number;
   /** sandbox_limits and sandbox_egress are what a new workspace gets. */
   sandbox_limits: SandboxLimits;
   sandbox_egress: SandboxEgress;
