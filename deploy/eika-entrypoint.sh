@@ -21,7 +21,7 @@ if [ -S "$socket" ]; then
 	usermod --append --groups "$group" eika
 fi
 
-# The data volume holds the hub and the key that seals stored credentials.
+# The data volume holds the key that seals stored credentials.
 chown eika:eika /var/lib/eika
 
 export HOME=/var/lib/eika USER=eika

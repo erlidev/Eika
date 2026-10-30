@@ -55,21 +55,17 @@ type Entry struct {
 	// stored as jsonb, which keeps the document and not its spelling: the
 	// bytes that come back are equal as JSON to the bytes that went in, but
 	// key order, whitespace, and number formatting are the database's.
-	Payload json.RawMessage
-	// Commit is the workspace HEAD commit the entry was produced at, empty
-	// when the caller did not record one. Forking with a workspace clones at
-	// this commit.
-	Commit    string
+	Payload   json.RawMessage
 	CreatedAt time.Time
 }
 
 // entryColumns is the column list every entry query selects, in the order
 // scanEntry reads them.
-const entryColumns = `id, session_id, parent_id, seq, kind, payload, commit_sha, created_at`
+const entryColumns = `id, session_id, parent_id, seq, kind, payload, created_at`
 
 // AppendEntry appends e to the session's head and moves the head to it, in
 // one transaction. ID, SessionID, ParentID, Seq, and CreatedAt are assigned
-// here and ignored on input; Kind, Payload, and Commit are the caller's.
+// here and ignored on input; Kind and Payload are the caller's.
 func (s *Store) AppendEntry(ctx context.Context, sessionID string, e Entry) (Entry, error) {
 	var out Entry
 	err := s.tx(ctx, func(q querier) error {
@@ -161,7 +157,7 @@ func (s *Store) SessionPath(ctx context.Context, sessionID string) ([]Entry, err
 const pathQuery = `WITH RECURSIVE up AS (
 		SELECT ` + entryColumns + ` FROM session_entries WHERE id = $1
 		UNION ALL
-		SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.commit_sha, e.created_at
+		SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at
 		FROM session_entries e JOIN up ON e.id = up.parent_id
 	)
 	SELECT ` + entryColumns + ` FROM up ORDER BY seq`
@@ -170,11 +166,6 @@ const pathQuery = `WITH RECURSIVE up AS (
 type ForkOptions struct {
 	// Title of the new session. Empty copies the source session's title.
 	Title string
-	// WorkspaceID the fork runs in. Empty keeps the source workspace, which
-	// is a fork of the conversation only, and keeps a chat's fork a chat;
-	// fork-with-workspace passes a new workspace cloned at the fork entry's
-	// commit.
-	WorkspaceID string
 }
 
 // ForkSession creates a session that starts as a copy of the path from the
@@ -200,7 +191,7 @@ func (s *Store) ForkSession(ctx context.Context, sessionID, entryID string, opts
 		}
 
 		fork := Session{
-			WorkspaceID: cmp.Or(opts.WorkspaceID, src.WorkspaceID),
+			WorkspaceID: src.WorkspaceID,
 			Title:       cmp.Or(opts.Title, src.Title),
 			// A fork that copies a placeholder is as untitled as its source.
 			Untitled:        opts.Title == "" && src.Untitled,
@@ -242,16 +233,16 @@ func (s *Store) ForkSession(ctx context.Context, sessionID, entryID string, opts
 // concurrent appends without the lock would pick the same number and one of
 // them would lose the (session_id, seq) uniqueness check.
 func insertEntry(ctx context.Context, q querier, sessionID, parentID string, e Entry) (Entry, error) {
-	const insert = `INSERT INTO session_entries (id, session_id, parent_id, seq, kind, payload, commit_sha)
+	const insert = `INSERT INTO session_entries (id, session_id, parent_id, seq, kind, payload)
 		VALUES ($1, $2, $3,
 			(SELECT coalesce(max(seq), 0) + 1 FROM session_entries WHERE session_id = $2),
-			$4, $5, $6)
+			$4, $5)
 		RETURNING ` + entryColumns
 	payload := e.Payload
 	if len(payload) == 0 {
 		payload = json.RawMessage(`{}`)
 	}
-	row := q.QueryRow(ctx, insert, NewID(), sessionID, nullable(parentID), e.Kind, []byte(payload), nullable(e.Commit))
+	row := q.QueryRow(ctx, insert, NewID(), sessionID, nullable(parentID), e.Kind, []byte(payload))
 	return scanEntry(row)
 }
 
@@ -326,15 +317,13 @@ func scanEntry(row pgx.Row) (Entry, error) {
 	var (
 		e       Entry
 		parent  *string
-		commit  *string
 		payload []byte
 	)
-	err := row.Scan(&e.ID, &e.SessionID, &parent, &e.Seq, &e.Kind, &payload, &commit, &e.CreatedAt)
+	err := row.Scan(&e.ID, &e.SessionID, &parent, &e.Seq, &e.Kind, &payload, &e.CreatedAt)
 	if err != nil {
 		return Entry{}, err
 	}
 	e.ParentID = text(parent)
-	e.Commit = text(commit)
 	e.Payload = json.RawMessage(payload)
 	e.CreatedAt = e.CreatedAt.UTC()
 	return e, nil

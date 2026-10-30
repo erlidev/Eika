@@ -28,7 +28,7 @@ func clearEnv(t *testing.T) {
 	for _, name := range []string{
 		"EIKA_LISTEN", "EIKA_DATABASE_URL", "EIKA_DOCKER_SOCKET",
 		"EIKA_SEARXNG_URL", "EIKA_SANDBOX_IMAGE", "EIKA_SANDBOX_NETWORK",
-		"EIKA_EIKAD_BINARY", "EIKA_HUB_ROOT", "EIKA_HUB_URL", "EIKA_AUTH_TOKEN",
+		"EIKA_EIKAD_BINARY", "EIKA_AUTH_TOKEN",
 		"EIKA_SECRET_KEY_FILE", "EIKA_ALLOWED_ORIGINS", "EIKA_PUBLIC_URL",
 	} {
 		t.Setenv(name, "")
@@ -153,8 +153,6 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 	t.Setenv("EIKA_EGRESS_LISTEN", ":4000")
 	t.Setenv("EIKA_EGRESS_PROXY_URL", "http://env:4000")
 	t.Setenv("EIKA_EIKAD_BINARY", "/tmp/eikad")
-	t.Setenv("EIKA_HUB_ROOT", "/tmp/hub")
-	t.Setenv("EIKA_HUB_URL", "http://env:9090")
 	t.Setenv("EIKA_SECRET_KEY_FILE", "/tmp/key")
 
 	cfg, err := config.Load(path)
@@ -172,8 +170,6 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 		EgressListen:           ":4000",
 		EgressProxyURL:         "http://env:4000",
 		EikadBinary:            "/tmp/eikad",
-		HubRoot:                "/tmp/hub",
-		HubURL:                 "http://env:9090",
 		SecretKeyFile:          "/tmp/key",
 		AuthToken:              "from-env",
 		AllowedOrigins:         []string{"localhost:9999", "127.0.0.1:9999"},
@@ -209,8 +205,6 @@ func TestValidate(t *testing.T) {
 		{"an egress proxy url without a scheme", missing(func(c *config.Config) { c.EgressProxyURL = "eika:3128" }), false},
 		{"no egress proxy in development, where nothing is restricted", missing(func(c *config.Config) { c.SandboxNetwork = ""; c.EgressListen = "" }), true},
 		{"empty eikad binary", missing(func(c *config.Config) { c.EikadBinary = "" }), false},
-		{"empty hub root", missing(func(c *config.Config) { c.HubRoot = "" }), false},
-		{"empty hub url", missing(func(c *config.Config) { c.HubURL = "" }), false},
 		{"empty secret key file", missing(func(c *config.Config) { c.SecretKeyFile = "" }), false},
 		{"no auth token, because sign-in sessions need none", missing(func(c *config.Config) { c.AuthToken = "" }), true},
 		{"https public url", missing(func(c *config.Config) { c.PublicURL = "https://eika.example.com" }), true},

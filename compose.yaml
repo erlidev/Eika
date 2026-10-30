@@ -31,7 +31,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Sandboxes join the sandbox network, which is how the harness reaches
-    # them by container name and how they reach the git hub. It holds only
+    # them by container name. It holds only
     # the harness and sandboxes, so a sandbox cannot reach postgres or
     # searxng. A sandbox whose egress is restricted joins the internal
     # network instead, which has no route out: it reaches the harness, and
@@ -42,8 +42,8 @@ services:
       - sandbox-internal
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # The hub's repositories and the key that seals stored credentials.
-      - eika-hub:/var/lib/eika
+      # The key that seals stored credentials.
+      - eika-data:/var/lib/eika
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,7 +100,7 @@ services:
 
 volumes:
   eika-postgres:
-  eika-hub:
+  eika-data:
 
 # The names are pinned because sandbox containers are started by the harness
 # rather than by compose, and they join eika_sandbox or eika_sandbox_internal

@@ -20,7 +20,6 @@ import { scenario } from "./scenarios.ts";
  * Go route goes. A test that calls one sees the mock's 404.
  */
 const unmocked: Record<string, string> = {
-  "POST /api/workspaces/{id}/merge": "only subagents merge a workspace",
   "POST /api/subagents/{id}/abort": "the UI stops a child agent's run, not the agent",
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/sessions/{id}/agents": "the sidebar lists child agents with the sessions",
@@ -42,12 +41,9 @@ const unmocked: Record<string, string> = {
   "GET /api/workspaces/{id}/usage": "the coding UI is gone; the Go route goes with a later item",
   "POST /api/workspaces/{id}/ports/{port}/preview":
     "the coding UI is gone; the Go route goes with a later item",
-  "GET /api/workspaces/{id}/diff": "the coding UI is gone; the Go route goes with a later item",
   "GET /api/workspaces/{id}/files": "the coding UI is gone; the Go route goes with a later item",
   "GET /api/workspaces/{id}/file": "the coding UI is gone; the Go route goes with a later item",
   "PUT /api/workspaces/{id}/file": "the coding UI is gone; the Go route goes with a later item",
-  "POST /api/workspaces/{id}/commit": "the coding UI is gone; the Go route goes with a later item",
-  "POST /api/workspaces/{id}/push": "the coding UI is gone; the Go route goes with a later item",
   "POST /api/sessions/{id}/fork": "the coding UI is gone; the Go route goes with a later item",
 };
 

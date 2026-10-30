@@ -631,15 +631,11 @@
                   "id": "string",
                   "kind": "string",
                   "name": "string",
-                  "remote_password_set": "boolean",
-                  "remote_url": "string",
-                  "remote_username": "string"
+                  "remote_url": "string"
                 },
                 "optional": [
                   "host_path",
-                  "remote_password_set",
-                  "remote_url",
-                  "remote_username"
+                  "remote_url"
                 ]
               }
             }
@@ -657,15 +653,11 @@
           "id": "string",
           "kind": "string",
           "name": "string",
-          "remote_password_set": "boolean",
-          "remote_url": "string",
-          "remote_username": "string"
+          "remote_url": "string"
         },
         "optional": [
           "host_path",
-          "remote_password_set",
-          "remote_url",
-          "remote_username"
+          "remote_url"
         ]
       }
     },
@@ -821,7 +813,6 @@
         "object": {
           "head": {
             "object": {
-              "commit": "string",
               "compaction": {
                 "object": {
                   "kept": "number",
@@ -930,7 +921,6 @@
               "seq": "number"
             },
             "optional": [
-              "commit",
               "compaction",
               "parent_id"
             ]
@@ -1428,7 +1418,6 @@
             "nullable": {
               "array": {
                 "object": {
-                  "commit": "string",
                   "created_at": "string",
                   "id": "string",
                   "kind": "string",
@@ -1437,7 +1426,6 @@
                   "resumable": "boolean"
                 },
                 "optional": [
-                  "commit",
                   "parent_id"
                 ]
               }
@@ -1458,7 +1446,6 @@
             "nullable": {
               "array": {
                 "object": {
-                  "commit": "string",
                   "compaction": {
                     "object": {
                       "kept": "number",
@@ -1567,7 +1554,6 @@
                   "seq": "number"
                 },
                 "optional": [
-                  "commit",
                   "compaction",
                   "parent_id"
                 ]
@@ -2259,20 +2245,6 @@
         ]
       }
     },
-    "GET /api/workspaces/{id}/diff": {
-      "status": 200,
-      "response": {
-        "object": {
-          "base_commit": "string",
-          "diff": "string",
-          "status": "string",
-          "workspace_id": "string"
-        },
-        "optional": [
-          "base_commit"
-        ]
-      }
-    },
     "GET /api/workspaces/{id}/file": {
       "status": 200,
       "response": {
@@ -2451,9 +2423,7 @@
       "status": 200,
       "request": {
         "object": {
-          "default_branch": "string",
-          "remote_password": "string",
-          "remote_username": "string"
+          "default_branch": "string"
         }
       },
       "response": {
@@ -2464,15 +2434,11 @@
           "id": "string",
           "kind": "string",
           "name": "string",
-          "remote_password_set": "boolean",
-          "remote_url": "string",
-          "remote_username": "string"
+          "remote_url": "string"
         },
         "optional": [
           "host_path",
-          "remote_password_set",
-          "remote_url",
-          "remote_username"
+          "remote_url"
         ]
       }
     },
@@ -3351,10 +3317,7 @@
           "default_branch": "string",
           "host_path": "string",
           "kind": "string",
-          "name": "string",
-          "remote_password": "string",
-          "remote_url": "string",
-          "remote_username": "string"
+          "name": "string"
         }
       },
       "response": {
@@ -3365,15 +3328,11 @@
           "id": "string",
           "kind": "string",
           "name": "string",
-          "remote_password_set": "boolean",
-          "remote_url": "string",
-          "remote_username": "string"
+          "remote_url": "string"
         },
         "optional": [
           "host_path",
-          "remote_password_set",
-          "remote_url",
-          "remote_username"
+          "remote_url"
         ]
       }
     },
@@ -3581,8 +3540,7 @@
       "request": {
         "object": {
           "entry_id": "string",
-          "title": "string",
-          "with_workspace": "boolean"
+          "title": "string"
         }
       },
       "response": {
@@ -3825,70 +3783,11 @@
         ]
       }
     },
-    "POST /api/workspaces/{id}/commit": {
-      "status": 200,
-      "request": {
-        "object": {
-          "message": "string",
-          "paths": {
-            "array": "string"
-          }
-        }
-      },
-      "response": {
-        "object": {
-          "commit": "string"
-        }
-      }
-    },
-    "POST /api/workspaces/{id}/merge": {
-      "status": 200,
-      "request": {
-        "object": {
-          "branch": "string",
-          "source_workspace_id": "string",
-          "strategy": "string"
-        }
-      },
-      "response": {
-        "object": {
-          "branch": "string",
-          "commit": "string",
-          "conflicts": {
-            "nullable": {
-              "array": "string"
-            }
-          },
-          "merged": "boolean",
-          "message": "string",
-          "strategy": "string",
-          "workspace_id": "string"
-        },
-        "optional": [
-          "commit"
-        ]
-      }
-    },
     "POST /api/workspaces/{id}/ports/{port}/preview": {
       "status": 200,
       "response": {
         "object": {
           "url": "string"
-        }
-      }
-    },
-    "POST /api/workspaces/{id}/push": {
-      "status": 200,
-      "request": {
-        "object": {
-          "upstream": "boolean"
-        }
-      },
-      "response": {
-        "object": {
-          "branch": "string",
-          "commit": "string",
-          "upstream_pushed": "boolean"
         }
       }
     },
@@ -4931,7 +4830,6 @@
     },
     "session.message": {
       "object": {
-        "commit": "string",
         "created_at": "string",
         "entry_id": "string",
         "kind": "string",
@@ -4940,7 +4838,6 @@
         "session_id": "string"
       },
       "optional": [
-        "commit",
         "parent_id"
       ]
     },

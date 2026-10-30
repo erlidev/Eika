@@ -5,14 +5,10 @@ package workspace_test
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,7 +22,6 @@ import (
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/sandbox"
 	"github.com/erlidev/eika/internal/workspace"
-	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
 // sandboxImage is the image the Docker tests run workspaces from. It must
@@ -64,49 +59,6 @@ func buildEikad(t *testing.T) string {
 	return path
 }
 
-// serveHub serves the hub on every interface and returns its port, so that a
-// sandbox container can reach it through the Docker bridge.
-func serveHub(t *testing.T, h *hub.Hub) int {
-	t.Helper()
-	ln, err := net.Listen("tcp", "0.0.0.0:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	srv := &http.Server{Handler: h.Handler()}
-	go srv.Serve(ln)
-	t.Cleanup(func() { srv.Close() })
-	return ln.Addr().(*net.TCPAddr).Port
-}
-
-// containerGateway asks the container for the address of its default route,
-// which is how it reaches a server running on the host.
-func containerGateway(t *testing.T, ex executor.Executor) string {
-	t.Helper()
-	var stdout bytes.Buffer
-	if _, err := ex.Exec(t.Context(), executor.ExecSpec{
-		Command: "cat /proc/net/route",
-		Shell:   true,
-		Stdout:  &stdout,
-	}); err != nil {
-		t.Fatalf("read routes: %v", err)
-	}
-	for line := range strings.SplitSeq(stdout.String(), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 3 || fields[1] != "00000000" {
-			continue
-		}
-		raw, err := hex.DecodeString(fields[2])
-		if err != nil || len(raw) != 4 {
-			continue
-		}
-		ip := make(net.IP, 4)
-		binary.LittleEndian.PutUint32(ip, binary.BigEndian.Uint32(raw))
-		return ip.String()
-	}
-	t.Fatalf("no default route in %q", stdout.String())
-	return ""
-}
-
 // cleanUp destroys a workspace left over by a test. It cannot use the test's
 // context: that is already cancelled by the time cleanup functions run.
 func cleanUp(host *workspace.Host, ws *workspace.Workspace) {
@@ -136,12 +88,10 @@ func run(t *testing.T, ex executor.Executor, script string) string {
 
 // newHost builds a host whose sandboxes publish their daemon port on
 // 127.0.0.1, because the test runs outside the compose network.
-func newHost(t *testing.T, h *hub.Hub, hubURL string) *workspace.Host {
+func newHost(t *testing.T) *workspace.Host {
 	t.Helper()
 	host, err := workspace.NewHost(workspace.Options{
 		DockerSocket: requireDocker(t),
-		Hub:          h,
-		HubURL:       hubURL,
 		Image:        sandboxImage,
 		EikadBinary:  buildEikad(t),
 	}, testLogger())
@@ -155,7 +105,7 @@ func newHost(t *testing.T, h *hub.Hub, hubURL string) *workspace.Host {
 func TestWorkspaceLifecycle(t *testing.T) {
 	requireDocker(t)
 	requireImage(t)
-	host := newHost(t, testHub(t), "")
+	host := newHost(t)
 
 	ws, err := host.Create(t.Context(), workspace.Spec{
 		Confinement: workspace.Confinement{Limits: workspace.Limits{CPUs: 1, MemoryBytes: 512 << 20, PIDs: 256}},
@@ -364,111 +314,11 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	})
 }
 
-func TestWorkspaceClonesFromTheHubAndPushesBack(t *testing.T) {
-	requireDocker(t)
-	requireImage(t)
-	h := testHub(t)
-	port := serveHub(t, h)
-
-	// The hub URL is only known once a container can say how it reaches the
-	// host, so the workspace is created against a host without one first.
-	probe := newHost(t, h, "")
-	ws, err := probe.Create(t.Context(), workspace.Spec{Project: "demo"})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	t.Cleanup(func() { cleanUp(probe, &ws) })
-	if err := probe.Start(t.Context(), &ws); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	ex, err := probe.Executor(ws)
-	if err != nil {
-		t.Fatalf("executor: %v", err)
-	}
-	host := newHost(t, h, fmt.Sprintf("http://%s:%d", containerGateway(t, ex), port))
-
-	base, err := host.Clone(t.Context(), ws, "demo", "work")
-	if err != nil {
-		t.Fatalf("clone: %v", err)
-	}
-	if base != "" {
-		t.Errorf("base commit = %q, want empty for a new project", base)
-	}
-	// The token reaches git through the environment, never the remote URL.
-	if remote := run(t, ex, "git remote get-url origin"); strings.Contains(remote, ws.HubToken) {
-		t.Errorf("the remote url carries the hub token: %q", remote)
-	}
-
-	run(t, ex, "echo cloned > file.txt && git add file.txt && git commit -m 'from the workspace'")
-	run(t, ex, "git push origin HEAD:refs/heads/work")
-
-	path, err := h.Path("demo")
-	if err != nil {
-		t.Fatalf("hub path: %v", err)
-	}
-	out, err := exec.CommandContext(t.Context(), "git", "-C", path, "log", "-1", "--format=%s", "work").Output()
-	if err != nil {
-		t.Fatalf("read the hub log: %v", err)
-	}
-	if strings.TrimSpace(string(out)) != "from the workspace" {
-		t.Errorf("hub log = %q, want the workspace's commit", out)
-	}
-
-	hubStatus := func(project string) int {
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
-			fmt.Sprintf("http://127.0.0.1:%d/git/%s.git/info/refs?service=git-upload-pack", port, project), nil)
-		if err != nil {
-			t.Fatalf("build request: %v", err)
-		}
-		req.SetBasicAuth(ws.ID, ws.HubToken)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("request: %v", err)
-		}
-		resp.Body.Close()
-		return resp.StatusCode
-	}
-
-	t.Run("cannot reach another project", func(t *testing.T) {
-		if _, err := h.Init(t.Context(), "other"); err != nil {
-			t.Fatalf("init other: %v", err)
-		}
-		if code := hubStatus("other"); code != http.StatusForbidden {
-			t.Errorf("other project status = %d, want 403", code)
-		}
-	})
-
-	t.Run("rejects a branch name that is a command", func(t *testing.T) {
-		marker := filepath.Join(t.TempDir(), "pwned")
-		_, err := host.Clone(t.Context(), ws, "demo", "main; touch "+marker)
-		if !errors.Is(err, workspace.ErrBadBranch) {
-			t.Errorf("Clone error = %v, want ErrBadBranch", err)
-		}
-		if _, err := os.Stat(marker); err == nil {
-			t.Error("the branch name ran as a command")
-		}
-	})
-
-	t.Run("loses hub access when it stops", func(t *testing.T) {
-		if err := host.Stop(t.Context(), &ws); err != nil {
-			t.Fatalf("stop: %v", err)
-		}
-		if _, err := host.Inspect(t.Context(), ws.ID); err != nil {
-			t.Fatalf("inspect: %v", err)
-		}
-		if code := hubStatus("demo"); code != http.StatusUnauthorized {
-			t.Errorf("stopped workspace status = %d, want 401", code)
-		}
-	})
-}
-
 func TestFailedCreateLeavesNothingBehind(t *testing.T) {
 	requireDocker(t)
 	requireImage(t)
-	h := testHub(t)
 	host, err := workspace.NewHost(workspace.Options{
 		DockerSocket: requireDocker(t),
-		Hub:          h,
 		Image:        sandboxImage,
 		// Injection fails, which is the last step of Create.
 		EikadBinary: filepath.Join(t.TempDir(), "absent"),
@@ -479,7 +329,7 @@ func TestFailedCreateLeavesNothingBehind(t *testing.T) {
 	t.Cleanup(func() { host.Close() })
 
 	id := "rollback" + fmt.Sprint(time.Now().UnixNano())
-	if _, err := host.Create(t.Context(), workspace.Spec{ID: id, Project: "demo"}); err == nil {
+	if _, err := host.Create(t.Context(), workspace.Spec{ID: id}); err == nil {
 		t.Fatal("Create succeeded without an eikad binary")
 	}
 	if err := exec.Command("docker", "inspect", workspace.ContainerName(id)).Run(); err == nil {
@@ -507,7 +357,6 @@ func TestListReturnsAnInspectionFailure(t *testing.T) {
 
 	host, err := workspace.NewHost(workspace.Options{
 		DockerSocket: requireDocker(t),
-		Hub:          testHub(t),
 		Image:        sandboxImage,
 		EikadBinary:  "/not-used",
 	}, testLogger())
@@ -522,8 +371,7 @@ func TestListReturnsAnInspectionFailure(t *testing.T) {
 
 func TestWorkspaceFromADockerfileAndAHostPath(t *testing.T) {
 	requireDocker(t)
-	h := testHub(t)
-	host := newHost(t, h, "")
+	host := newHost(t)
 
 	// An image that has never heard of eikad still works, because the daemon
 	// is copied in before the container starts.
@@ -586,113 +434,6 @@ func TestWorkspaceFromADockerfileAndAHostPath(t *testing.T) {
 	}
 }
 
-// TestWorkspaceHandsWorkToAChildClone is the git half of a fork with a
-// workspace, and of a merge, against real containers and the real hub: a
-// parent pushes its branch, a child clones the project at that commit on a
-// branch of its own, and the parent fetches the child's branch back.
-func TestWorkspaceHandsWorkToAChildClone(t *testing.T) {
-	requireDocker(t)
-	requireImage(t)
-	h := testHub(t)
-	port := serveHub(t, h)
-
-	// The hub URL is only known once a container can say how it reaches the
-	// host, so the parent is created against a host without one first.
-	probe := newHost(t, h, "")
-	parent, err := probe.Create(t.Context(), workspace.Spec{Project: "demo"})
-	if err != nil {
-		t.Fatalf("create the parent: %v", err)
-	}
-	t.Cleanup(func() { cleanUp(probe, &parent) })
-	if err := probe.Start(t.Context(), &parent); err != nil {
-		t.Fatalf("start the parent: %v", err)
-	}
-	parentEx, err := probe.Executor(parent)
-	if err != nil {
-		t.Fatalf("parent executor: %v", err)
-	}
-	host := newHost(t, h, fmt.Sprintf("http://%s:%d", containerGateway(t, parentEx), port))
-
-	if _, err := host.Clone(t.Context(), parent, "demo", "work"); err != nil {
-		t.Fatalf("clone the parent: %v", err)
-	}
-	run(t, parentEx, "echo from the parent > shared.txt && git add -A && git commit -m 'the parent'")
-	if err := host.Push(t.Context(), parent, "demo", "work"); err != nil {
-		t.Fatalf("push the parent's branch: %v", err)
-	}
-	base := run(t, parentEx, "git rev-parse HEAD")
-
-	child, err := host.Create(t.Context(), workspace.Spec{Project: "demo"})
-	if err != nil {
-		t.Fatalf("create the child: %v", err)
-	}
-	t.Cleanup(func() { cleanUp(host, &child) })
-	if err := host.Start(t.Context(), &child); err != nil {
-		t.Fatalf("start the child: %v", err)
-	}
-	head, err := host.CloneAt(t.Context(), child, "demo", "work-worker", base)
-	if err != nil {
-		t.Fatalf("clone the child at the parent's commit: %v", err)
-	}
-	if head != base {
-		t.Errorf("child head = %q, want the parent's commit %q", head, base)
-	}
-	childEx, err := host.Executor(child)
-	if err != nil {
-		t.Fatalf("child executor: %v", err)
-	}
-	if got := run(t, childEx, "cat shared.txt"); got != "from the parent" {
-		t.Errorf("child shared.txt = %q, want the parent's content", got)
-	}
-	if got := run(t, childEx, "git rev-parse --abbrev-ref HEAD"); got != "work-worker" {
-		t.Errorf("child branch = %q, want work-worker", got)
-	}
-	// The hub token reaches git through the environment, not the remote URL.
-	if remote := run(t, childEx, "git remote get-url eika-hub"); strings.Contains(remote, child.HubToken) {
-		t.Errorf("the hub remote url carries the token: %q", remote)
-	}
-
-	run(t, childEx, "echo from the child > notes.txt && git add -A && git commit -m 'the child'")
-	if err := host.Push(t.Context(), child, "demo", "work-worker"); err != nil {
-		t.Fatalf("push the child's branch: %v", err)
-	}
-	if err := host.Fetch(t.Context(), parent, "demo", "work-worker"); err != nil {
-		t.Fatalf("fetch the child's branch: %v", err)
-	}
-	run(t, parentEx, "git merge FETCH_HEAD -m 'take the child in'")
-	if got := run(t, parentEx, "cat notes.txt"); got != "from the child" {
-		t.Errorf("parent notes.txt = %q, want the child's work merged in", got)
-	}
-
-	t.Run("reports a commit the hub does not have", func(t *testing.T) {
-		// A clone that cannot reach the commit it was asked for must say so.
-		// Reporting it as an empty repository would hand the child a
-		// workspace at the wrong revision and call it a fresh project.
-		late, err := host.Create(t.Context(), workspace.Spec{Project: "demo"})
-		if err != nil {
-			t.Fatalf("create: %v", err)
-		}
-		t.Cleanup(func() { cleanUp(host, &late) })
-		if err := host.Start(t.Context(), &late); err != nil {
-			t.Fatalf("start: %v", err)
-		}
-		head, err := host.CloneAt(t.Context(), late, "demo", "work-late", strings.Repeat("0", 40))
-		if err == nil {
-			t.Fatalf("CloneAt = %q, nil, want an error for a commit the hub has not", head)
-		}
-	})
-
-	t.Run("rejects a branch name that is a command", func(t *testing.T) {
-		marker := filepath.Join(t.TempDir(), "pwned")
-		if err := host.Push(t.Context(), parent, "demo", "work; touch "+marker); !errors.Is(err, workspace.ErrBadBranch) {
-			t.Errorf("Push error = %v, want ErrBadBranch", err)
-		}
-		if _, err := os.Stat(marker); err == nil {
-			t.Error("the branch name ran as a command")
-		}
-	})
-}
-
 // TestAWorktreeWorksInItsHoldersContainer is the git half of a subagent
 // spawn against a real container: the child is a worktree of the parent's
 // repository, served by the parent's daemon narrowed to the worktree, and its
@@ -700,26 +441,20 @@ func TestWorkspaceHandsWorkToAChildClone(t *testing.T) {
 func TestAWorktreeWorksInItsHoldersContainer(t *testing.T) {
 	requireDocker(t)
 	requireImage(t)
-	h := testHub(t)
-	port := serveHub(t, h)
-
-	probe := newHost(t, h, "")
-	parent, err := probe.Create(t.Context(), workspace.Spec{Project: "demo"})
+	host := newHost(t)
+	parent, err := host.Create(t.Context(), workspace.Spec{})
 	if err != nil {
 		t.Fatalf("create the parent: %v", err)
 	}
-	t.Cleanup(func() { cleanUp(probe, &parent) })
-	if err := probe.Start(t.Context(), &parent); err != nil {
+	t.Cleanup(func() { cleanUp(host, &parent) })
+	if err := host.Start(t.Context(), &parent); err != nil {
 		t.Fatalf("start the parent: %v", err)
 	}
-	parentEx, err := probe.Executor(parent)
+	parentEx, err := host.Executor(parent)
 	if err != nil {
 		t.Fatalf("parent executor: %v", err)
 	}
-	host := newHost(t, h, fmt.Sprintf("http://%s:%d", containerGateway(t, parentEx), port))
-	if _, err := host.Clone(t.Context(), parent, "demo", "work"); err != nil {
-		t.Fatalf("clone the parent: %v", err)
-	}
+	run(t, parentEx, "git init -b work && git config user.name test && git config user.email test@example.test")
 	run(t, parentEx, "echo from the parent > shared.txt && git add -A && git commit -m 'the parent'")
 	base := run(t, parentEx, "git rev-parse HEAD")
 
@@ -757,17 +492,6 @@ func TestAWorktreeWorksInItsHoldersContainer(t *testing.T) {
 	if status := run(t, parentEx, "git status --porcelain --untracked-files=all"); status != "" {
 		t.Errorf("parent status = %q, want the worktree kept out of it", status)
 	}
-	// The child pushes through the parent's container and grant.
-	if err := host.Push(t.Context(), child, "demo", "work-worker"); err != nil {
-		t.Fatalf("push the child's branch: %v", err)
-	}
-	path, err := h.Path("demo")
-	if err != nil {
-		t.Fatalf("hub path: %v", err)
-	}
-	if out, err := exec.CommandContext(t.Context(), "git", "-C", path, "show", "work-worker:notes.txt").Output(); err != nil || strings.TrimSpace(string(out)) != "from the child" {
-		t.Errorf("hub work-worker:notes.txt = %q, %v, want the child's commit", out, err)
-	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
@@ -793,11 +517,7 @@ func TestAWorktreeWorksInItsHoldersContainer(t *testing.T) {
 
 func TestHasImageTellsPresentFromMissing(t *testing.T) {
 	requireImage(t)
-	repos, err := hub.New(t.TempDir(), testLogger())
-	if err != nil {
-		t.Fatalf("hub.New: %v", err)
-	}
-	host := newHost(t, repos, "http://hub.invalid")
+	host := newHost(t)
 	if ok, err := host.HasImage(t.Context(), sandboxImage); err != nil || !ok {
 		t.Errorf("HasImage(%s) = %v, %v; want present", sandboxImage, ok, err)
 	}
@@ -837,7 +557,6 @@ func TestConfineMovesAWorkspaceBetweenTheSandboxNetworks(t *testing.T) {
 	open, internal := testNetwork(t, false), testNetwork(t, true)
 	host, err := workspace.NewHost(workspace.Options{
 		DockerSocket:    requireDocker(t),
-		Hub:             testHub(t),
 		Image:           sandboxImage,
 		EikadBinary:     buildEikad(t),
 		Network:         open,
@@ -871,7 +590,7 @@ func TestConfineMovesAWorkspaceBetweenTheSandboxNetworks(t *testing.T) {
 	}
 	// The proxy knows the workspace by a token of its own, which survives a
 	// harness restart and is not the hub token.
-	if inspected.ProxyToken == "" || inspected.ProxyToken != ws.ProxyToken || inspected.ProxyToken == ws.HubToken {
+	if inspected.ProxyToken == "" || inspected.ProxyToken != ws.ProxyToken {
 		t.Errorf("Inspect's proxy token is not the workspace's own")
 	}
 
@@ -924,7 +643,6 @@ func TestStartRejoinsARecreatedSandboxNetwork(t *testing.T) {
 	open := testNetwork(t, false)
 	host, err := workspace.NewHost(workspace.Options{
 		DockerSocket: requireDocker(t),
-		Hub:          testHub(t),
 		Image:        sandboxImage,
 		EikadBinary:  buildEikad(t),
 		Network:      open,

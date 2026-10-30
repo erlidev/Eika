@@ -29,7 +29,6 @@ import (
 	"github.com/erlidev/eika/internal/tool"
 	"github.com/erlidev/eika/internal/tool/builtin"
 	"github.com/erlidev/eika/internal/workspace"
-	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
 // shutdownTimeout bounds how long in-flight requests may finish after the
@@ -51,10 +50,6 @@ type Workspaces interface {
 	Destroy(ctx context.Context, ws *workspace.Workspace) error
 	Inspect(ctx context.Context, id string) (workspace.Workspace, error)
 	List(ctx context.Context) ([]workspace.Workspace, error)
-	Clone(ctx context.Context, ws workspace.Workspace, project, branch string) (string, error)
-	CloneAt(ctx context.Context, ws workspace.Workspace, project, branch, commit string) (string, error)
-	Push(ctx context.Context, ws workspace.Workspace, project, branch string) error
-	Fetch(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Executor(ws workspace.Workspace) (executor.Executor, error)
 	// Terminal opens a shell in a running workspace for the person using it.
 	// It is not part of the executor, so no tool can reach a terminal.
@@ -78,16 +73,6 @@ type Workspaces interface {
 	PortURL(ctx context.Context, ws workspace.Workspace, port int) (string, error)
 }
 
-// Hub is the part of the git hub the API uses: creating a project's
-// repository, mirroring a remote into it, pushing a branch back to that
-// remote, and serving git over HTTP.
-type Hub interface {
-	Init(ctx context.Context, project string) (string, error)
-	Mirror(ctx context.Context, project, remoteURL string, creds hub.Credentials) error
-	Push(ctx context.Context, project, remoteURL, refspec string, creds hub.Credentials) error
-	Handler() http.Handler
-}
-
 // Providers builds a provider on an endpoint the user configured. The models
 // and providers themselves are rows; this is only what turns one into a
 // client. *provider.Registry is the production implementation; a test scripts
@@ -104,11 +89,10 @@ type Providers interface {
 // remaining route reads or writes rows.
 type Deps struct {
 	Store      *store.Store
-	Hub        Hub
 	Workspaces Workspaces
 	Providers  Providers
-	// Secrets seals the credentials the UI writes, API keys and remote
-	// passwords, and opens them again when a provider or the hub needs one.
+	// Secrets seals the credentials the UI writes, such as API keys, and opens
+	// them again when a provider needs one.
 	Secrets   *secret.Box
 	Tools     *tool.Registry
 	Questions *builtin.Questions

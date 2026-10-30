@@ -46,10 +46,6 @@ type Config struct {
 	// EikadBinary is the path to the static eikad binary in the harness
 	// filesystem. It is copied into every sandbox container.
 	EikadBinary string `yaml:"eikad_binary"`
-	// HubRoot is the directory holding the hub's bare git repositories.
-	HubRoot string `yaml:"hub_root"`
-	// HubURL is the harness base URL a sandbox reaches the git hub on.
-	HubURL string `yaml:"hub_url"`
 	// SecretKeyFile holds the key that seals the credentials the user enters
 	// in the UI before they reach the database. It is created on first start,
 	// so it lives in the harness's own volume, apart from the database.
@@ -103,8 +99,6 @@ func Default() Config {
 		EgressListen:           ":3128",
 		EgressProxyURL:         "http://eika:3128",
 		EikadBinary:            "/usr/local/share/eika/eikad",
-		HubRoot:                "/var/lib/eika/hub",
-		HubURL:                 "http://eika:8080",
 		SecretKeyFile:          "/var/lib/eika/secret.key",
 	}
 }
@@ -176,8 +170,6 @@ func (c *Config) applyEnv() {
 		"EIKA_EGRESS_LISTEN":            &c.EgressListen,
 		"EIKA_EGRESS_PROXY_URL":         &c.EgressProxyURL,
 		"EIKA_EIKAD_BINARY":             &c.EikadBinary,
-		"EIKA_HUB_ROOT":                 &c.HubRoot,
-		"EIKA_HUB_URL":                  &c.HubURL,
 		"EIKA_AUTH_TOKEN":               &c.AuthToken,
 		"EIKA_SECRET_KEY_FILE":          &c.SecretKeyFile,
 		"EIKA_PUBLIC_URL":               &c.PublicURL,
@@ -261,12 +253,6 @@ func (c Config) Validate() error {
 	if c.EikadBinary == "" {
 		return errors.New("validate config: eikad_binary is empty")
 	}
-	if c.HubRoot == "" {
-		return errors.New("validate config: hub_root is empty")
-	}
-	if c.HubURL == "" {
-		return errors.New("validate config: hub_url is empty")
-	}
 	if c.SecretKeyFile == "" {
 		return errors.New("validate config: secret_key_file is empty")
 	}
@@ -286,10 +272,10 @@ const redacted = "[REDACTED]"
 // String renders the configuration with secrets replaced by a placeholder so
 // that it is safe to log.
 func (c Config) String() string {
-	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s sandbox_internal_network=%s egress_listen=%s egress_proxy_url=%s eikad_binary=%s hub_root=%s hub_url=%s secret_key_file=%s auth_token=%s allowed_origins=%s public_url=%s}",
+	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s sandbox_internal_network=%s egress_listen=%s egress_proxy_url=%s eikad_binary=%s secret_key_file=%s auth_token=%s allowed_origins=%s public_url=%s}",
 		c.Listen, redactURL(c.DatabaseURL), c.DockerSocket, c.SearxNGURL, c.SandboxImage,
 		c.SandboxNetwork, c.SandboxInternalNetwork, c.EgressListen, c.EgressProxyURL,
-		c.EikadBinary, c.HubRoot, c.HubURL, c.SecretKeyFile,
+		c.EikadBinary, c.SecretKeyFile,
 		redact(c.AuthToken), strings.Join(c.AllowedOrigins, ","), c.PublicURL)
 }
 

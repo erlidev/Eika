@@ -12,8 +12,8 @@ CREATE TABLE settings (
     value jsonb NOT NULL
 );
 
--- Projects are git repositories the coding harness cloned or mounted. The
--- remote's credentials are entered with the project and sealed.
+-- Projects are directories on the Docker host the coding harness mounted. A
+-- remote project (cloned from a git remote) can no longer be created.
 CREATE TABLE projects (
     id              text PRIMARY KEY,
     name            text NOT NULL UNIQUE,
@@ -21,8 +21,6 @@ CREATE TABLE projects (
     remote_url      text NOT NULL DEFAULT '',
     host_path       text NOT NULL DEFAULT '',
     default_branch  text NOT NULL DEFAULT 'main',
-    remote_username text NOT NULL DEFAULT '',
-    remote_password bytea,
     created_at      timestamptz NOT NULL DEFAULT now()
 );
 
@@ -185,7 +183,6 @@ CREATE TABLE session_entries (
     kind       text NOT NULL
         CHECK (kind IN ('user', 'assistant', 'tool_call', 'tool_result', 'system', 'event', 'compaction')),
     payload    jsonb NOT NULL,
-    commit_sha text,
     created_at timestamptz NOT NULL DEFAULT now(),
     -- The unique constraint is also the (session_id, seq) index a path walk
     -- and an outline order by.

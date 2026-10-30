@@ -67,31 +67,23 @@ func decodeBody[T any](t *testing.T, rec *httptest.ResponseRecorder, status int)
 // fakeHost is a workspace host whose workspaces are directories in a
 // temporary tree. It is what lets the handler tests exercise every route
 // without a Docker daemon; the real host is covered by the workspace
-// package's own docker-tagged tests. Its hub is a directory of bare
-// repositories and real git commands, so that cloning, pushing, and merging
-// behave as they do in a sandbox.
+// package's own docker-tagged tests.
 type fakeHost struct {
 	root string
-	// hub holds one bare repository per project, which Push, CloneAt, and
-	// Fetch talk to with the git binary.
-	hub string
 
 	mu         sync.Mutex
 	workspaces map[string]*fakeWorkspace
-	// baseCommit is what Clone reports as the commit a workspace starts from.
-	baseCommit string
-	// createErr, startErr, and cloneErr fail the matching call when set.
+	// createErr and startErr fail the matching call when set.
 	createErr  error
 	startErr   error
-	cloneErr   error
 	inspectErr error
 	// images are the images HasImage reports present; imageErr fails it,
 	// the way a Docker socket the harness cannot use does.
 	images   map[string]bool
 	imageErr error
-	// cloneHook runs before Clone answers, which is how a test acts in the
+	// startHook runs before Start answers, which is how a test acts in the
 	// middle of a creation the harness has already got a container out of.
-	cloneHook func()
+	startHook func()
 	// process starts what Process is asked for, which is how a test puts a
 	// stdio MCP server in a workspace; processes records where.
 	process   func(spec sandbox.ProcessSpec) (io.ReadWriteCloser, error)
@@ -118,98 +110,9 @@ type fakeWorkspace struct {
 func newFakeHost(t *testing.T) *fakeHost {
 	t.Helper()
 	return &fakeHost{
-		root: t.TempDir(), hub: t.TempDir(), workspaces: map[string]*fakeWorkspace{},
+		root: t.TempDir(), workspaces: map[string]*fakeWorkspace{},
 		confined: map[string][]workspace.Confinement{}, ports: map[int]string{},
 	}
-}
-
-// CloneAt clones the project from the fake hub and puts the workspace on
-// branch at commit.
-func (h *fakeHost) CloneAt(ctx context.Context, ws workspace.Workspace, project, branch, commit string) (string, error) {
-	dir, err := h.dirOf(ws.ID)
-	if err != nil {
-		return "", err
-	}
-	repo, err := h.repo(ctx, project)
-	if err != nil {
-		return "", err
-	}
-	if h.cloneHook != nil {
-		h.cloneHook()
-	}
-	if _, err := git(ctx, dir, "clone", repo, "."); err != nil {
-		return "", err
-	}
-	// The real host configures the identity inside the container before it
-	// clones, so a clone here is committable too.
-	for _, args := range [][]string{
-		{"config", "user.name", "Eika Test"},
-		{"config", "user.email", "test@eika.local"},
-	} {
-		if _, err := git(ctx, dir, args...); err != nil {
-			return "", err
-		}
-	}
-	args := []string{"checkout", "-B", branch}
-	if commit != "" {
-		args = append(args, commit)
-	}
-	if _, err := git(ctx, dir, args...); err != nil {
-		return "", err
-	}
-	return git(ctx, dir, "rev-parse", "HEAD")
-}
-
-// hubShow reads one path out of a branch in the fake hub, which is how a test
-// checks that a workspace's work actually arrived there.
-func (h *fakeHost) hubShow(ctx context.Context, project, branch, path string) (string, error) {
-	repo, err := h.repo(ctx, project)
-	if err != nil {
-		return "", err
-	}
-	return git(ctx, repo, "show", branch+":"+path)
-}
-
-// Push sends a workspace's branch to the fake hub, creating the project's
-// repository when it has none.
-func (h *fakeHost) Push(ctx context.Context, ws workspace.Workspace, project, branch string) error {
-	dir, err := h.filesOf(ws)
-	if err != nil {
-		return err
-	}
-	repo, err := h.repo(ctx, project)
-	if err != nil {
-		return err
-	}
-	_, err = git(ctx, dir, "push", repo, "HEAD:refs/heads/"+branch)
-	return err
-}
-
-// Fetch brings a branch from the fake hub into a workspace.
-func (h *fakeHost) Fetch(ctx context.Context, ws workspace.Workspace, project, branch string) error {
-	dir, err := h.filesOf(ws)
-	if err != nil {
-		return err
-	}
-	repo, err := h.repo(ctx, project)
-	if err != nil {
-		return err
-	}
-	_, err = git(ctx, dir, "fetch", repo, branch)
-	return err
-}
-
-// repo returns the project's bare repository in the fake hub, creating it the
-// first time it is asked for.
-func (h *fakeHost) repo(ctx context.Context, project string) (string, error) {
-	path := filepath.Join(h.hub, project+".git")
-	if _, err := os.Stat(path); err == nil {
-		return path, nil
-	}
-	if _, err := git(ctx, h.hub, "init", "--bare", "--initial-branch=main", path); err != nil {
-		return "", err
-	}
-	return path, nil
 }
 
 // filesOf returns the directory the files of a workspace the host reported
@@ -272,9 +175,7 @@ func (h *fakeHost) Create(_ context.Context, spec workspace.Spec) (workspace.Wor
 		ContainerID: "container-" + spec.ID,
 		Image:       spec.Image,
 		State:       workspace.StateCreating,
-		Project:     spec.Project,
 		HostPath:    spec.HostPath,
-		HubToken:    "hub-token-" + spec.ID,
 		ProxyToken:  "proxy-token-" + spec.ID,
 		Proxied:     spec.Confinement.Proxied,
 	}
@@ -341,6 +242,9 @@ func (h *fakeHost) PortURL(_ context.Context, ws workspace.Workspace, port int) 
 
 // Start marks the workspace running.
 func (h *fakeHost) Start(_ context.Context, ws *workspace.Workspace) error {
+	if h.startHook != nil {
+		h.startHook()
+	}
 	if h.startErr != nil {
 		return h.startErr
 	}
@@ -395,17 +299,6 @@ func (h *fakeHost) List(context.Context) ([]workspace.Workspace, error) {
 		out = append(out, found.ws)
 	}
 	return out, nil
-}
-
-// Clone reports the configured base commit without touching git.
-func (h *fakeHost) Clone(context.Context, workspace.Workspace, string, string) (string, error) {
-	if h.cloneHook != nil {
-		h.cloneHook()
-	}
-	if h.cloneErr != nil {
-		return "", h.cloneErr
-	}
-	return h.baseCommit, nil
 }
 
 // Executor returns an executor on the workspace's directory, or on the
@@ -493,3 +386,13 @@ var (
 	_ server.Workspaces = (*fakeHost)(nil)
 	_ server.Providers  = fakeProviders{}
 )
+
+// branchShow reads one path out of a branch in a workspace's repository, which
+// is how a test checks the work a child left on its own branch.
+func (h *fakeHost) branchShow(ctx context.Context, workspaceID, branch, path string) (string, error) {
+	dir, err := h.dirOf(workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return git(ctx, dir, "show", branch+":"+path)
+}

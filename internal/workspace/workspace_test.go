@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/erlidev/eika/internal/workspace"
-	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
 // testLogger returns a logger that discards everything.
@@ -14,25 +13,12 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// testHub builds a hub over a temporary directory.
-func testHub(t *testing.T) *hub.Hub {
-	t.Helper()
-	h, err := hub.New(t.TempDir(), testLogger())
-	if err != nil {
-		t.Fatalf("new hub: %v", err)
-	}
-	return h
-}
-
 func TestNewHostRejectsIncompleteOptions(t *testing.T) {
 	complete := workspace.Options{
 		DockerSocket: "/var/run/docker.sock",
-		Hub:          testHub(t),
 		Image:        "eika-sandbox:latest",
 		EikadBinary:  "/usr/local/share/eika/eikad",
 	}
-	noHub := complete
-	noHub.Hub = nil
 	noImage := complete
 	noImage.Image = ""
 	noBinary := complete
@@ -41,7 +27,6 @@ func TestNewHostRejectsIncompleteOptions(t *testing.T) {
 	relativeProxy.EgressProxyURL = "eika:3128"
 
 	for name, opts := range map[string]workspace.Options{
-		"no hub":               noHub,
 		"no image":             noImage,
 		"no binary":            noBinary,
 		"a relative proxy url": relativeProxy,

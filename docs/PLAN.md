@@ -160,7 +160,7 @@ before the routes it calls.
       `workspace/confine.go`), so removing the hub would break egress. The new
       token is generated at create and read back like the hub token is today;
       phase 4 replaces it with Sentry's principals.
-- [ ] Remove the git layer:
+- [x] Remove the git layer:
       - `workspace/hub` and `/git/`
       - `Clone`, `CloneAt`, `Push`, `Fetch`, `Mirror`
       - project remote credentials

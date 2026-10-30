@@ -51,7 +51,7 @@ func TestChildBranch(t *testing.T) {
 		// A child's branch is never a path below its parent's: a repository
 		// holds either refs/heads/main or refs/heads/main/fix, never both.
 		// The tag from the child's id is what keeps two children a parent
-		// named the same from writing over each other in the hub.
+		// named the same from writing over each other.
 		{"below a branch", "main", "fix", "main-fix-abcdef"},
 		{"below a branch that is a path", "feature/login", "fix", "feature/login-fix-abcdef"},
 		{"below a workspace with no branch", "", "fix", "fix-abcdef"},

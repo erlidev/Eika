@@ -70,10 +70,9 @@ type Store interface {
 
 // Workspaces is the part of the workspace host the spawner uses: a child
 // works in a worktree in its parent's container, reached through that
-// container's daemon, and pushes its branch to the hub when it is done.
+// container's daemon.
 type Workspaces interface {
 	Inspect(ctx context.Context, id string) (workspace.Workspace, error)
-	Push(ctx context.Context, ws workspace.Workspace, project, branch string) error
 	Executor(ws workspace.Workspace) (executor.Executor, error)
 }
 
@@ -348,7 +347,7 @@ const branchTag = 6
 // parent's branch, which git cannot store: a repository holds either
 // refs/heads/main or refs/heads/main/<name>, never both. The tag is what
 // makes it the child's own: two children a parent gave the same name to would
-// otherwise write over each other in the hub.
+// otherwise write over each other.
 func childBranch(parentBranch, suffix, id string) string {
 	name := suffix + "-" + id[:min(branchTag, len(id))]
 	if parentBranch == "" {

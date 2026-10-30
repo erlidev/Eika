@@ -2,42 +2,26 @@ package session
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/provider"
 )
 
-// CommitFunc reports the workspace HEAD commit a session's workspace is at.
-// A Store calls it once per assistant message, so that the entry records the
-// state of the files the model produced its answer from, which is what a fork
-// with a workspace clones at.
-type CommitFunc func(ctx context.Context, sessionID string) (string, error)
-
 // Store records the messages of a run in the database, one entry per message,
 // appended at the session's head. It is the production implementation of
 // agent.Store.
 type Store struct {
-	tree   *Tree
-	commit CommitFunc
+	tree *Tree
 }
 
-// NewStore returns a store that appends to tree. A nil commit records no
-// commits, which is what a session without a workspace of its own wants.
-func NewStore(tree *Tree, commit CommitFunc) *Store {
-	return &Store{tree: tree, commit: commit}
+// NewStore returns a store that appends to tree.
+func NewStore(tree *Tree) *Store {
+	return &Store{tree: tree}
 }
 
 // Append records one message of a run.
 func (s *Store) Append(ctx context.Context, sessionID string, m provider.Message) error {
-	commit := ""
-	if m.Role == provider.RoleAssistant && s.commit != nil {
-		var err error
-		if commit, err = s.commit(ctx, sessionID); err != nil {
-			return fmt.Errorf("read workspace commit for session %s: %w", sessionID, err)
-		}
-	}
-	if _, err := s.tree.AppendMessage(ctx, sessionID, m, commit); err != nil {
+	if _, err := s.tree.AppendMessage(ctx, sessionID, m); err != nil {
 		return err
 	}
 	return nil

@@ -32,7 +32,7 @@ const (
 
 // Policy is what one workspace may reach through the proxy.
 type Policy struct {
-	// Token is the credential the workspace presents: its hub token.
+	// Token is the credential the workspace presents: its proxy token.
 	Token string
 	// Mode is the workspace's egress mode.
 	Mode Mode

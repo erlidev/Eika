@@ -335,7 +335,7 @@ A run called `spawn_agent`. The child's workspace exists, a worktree at
 
 ### `subagent.finished`
 
-The child's run ended, its tree is committed, and its branch is in the hub.
+The child's run ended, its tree is committed, and its branch is in its parent's repository.
 The same fields make up the tool result the parent's model sees.
 
 | Field | Type | Meaning |
@@ -345,7 +345,7 @@ The same fields make up the tool result the parent's model sees.
 | `child_session_id` | string | The child's session. |
 | `child_workspace_id` | string | The child's workspace. Its worktree is kept. |
 | `name` | string | What the parent called the child. |
-| `branch` | string | The branch the child pushed to the hub. |
+| `branch` | string | The branch the child worked on. |
 | `state` | string | `done`, `error`, or `aborted`. |
 | `commit` | string, optional | The child's head commit. Absent when it committed nothing. |
 | `summary` | string, optional | The child's final assistant message. |
@@ -358,9 +358,8 @@ The same fields make up the tool result the parent's model sees.
 
 Published on `workspace:<id>` whenever a workspace reaches a new lifecycle
 state, including the reconciliation a harness does at startup. It is also
-published, with the state unchanged, after a file is saved, a commit, a
-push, or a rename, pin, or archive through the API, so that views of the
-workspace refresh.
+published, with the state unchanged, after a file is saved or a rename, pin,
+or archive through the API, so that views of the workspace refresh.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -426,7 +425,6 @@ renders a message it watched arrive live.
 | `entry_id` | string | The entry. Pass the last one you saw as `since` to resume. |
 | `parent_id` | string, optional | The entry it follows. |
 | `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, or `compaction`. |
-| `commit` | string, optional | The workspace HEAD commit the entry was produced at. |
 | `created_at` | time | When the entry was written. |
 | `message` | object | The entry's stored payload: a provider message for the conversation kinds. An assistant message can include `reasoning` and `metrics`; `metrics` holds `run_id`, turn `usage`, last-call `context`, `generation_ms`, `context_window`, and optional `timings`, so replay restores the context view and the speed the answer was produced at. Metrics are not sent to the provider. For a `compaction` entry it is the compaction: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason`, and `usage`. It stands for the conversation before it, which stays in the path; the model reads the summary and the last `kept` messages in its place. |
 

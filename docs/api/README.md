@@ -16,6 +16,4 @@ these files in the same commit.
 
 Everything under `/api` requires `Authorization: Bearer <token>` (a sign-in
 session or the deployment's API token) except `GET /api/healthz`, the three
-routes that hand out a session, and the two WebSockets' `?token=` form. The
-git hub at `/git/<project>.git` speaks Smart HTTP with per-workspace basic
-auth.
+routes that hand out a session, and the two WebSockets' `?token=` form.

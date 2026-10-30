@@ -24,10 +24,6 @@ type Node struct {
 	Kind     store.EntryKind `json:"kind"`
 	// Preview is the start of the entry's content on one line.
 	Preview string `json:"preview"`
-	// Commit is the workspace HEAD commit the entry was produced at, empty
-	// when none was recorded. An entry with a commit can be forked with a
-	// workspace.
-	Commit string `json:"commit,omitempty"`
 	// Resumable is whether a run can continue from this entry: the path down
 	// to it leaves no tool call unanswered. Moving the head to an entry that
 	// is not resumable, or forking there, is refused.
@@ -51,7 +47,6 @@ func (t *Tree) Outline(ctx context.Context, sessionID string) ([]Node, error) {
 			ParentID:  e.ParentID,
 			Kind:      e.Kind,
 			Preview:   preview(e),
-			Commit:    e.Commit,
 			Resumable: resumable[e.ID],
 			CreatedAt: e.CreatedAt,
 		})

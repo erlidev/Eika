@@ -12,7 +12,7 @@ import (
 // the same conversion the agent loop writes through.
 func entryOf(t *testing.T, m provider.Message) store.Entry {
 	t.Helper()
-	e, err := session.MessageEntry(m, "")
+	e, err := session.MessageEntry(m)
 	if err != nil {
 		t.Fatalf("record %s message: %v", m.Role, err)
 	}

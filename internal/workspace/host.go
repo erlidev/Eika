@@ -26,7 +26,6 @@ import (
 	"github.com/erlidev/eika/internal/eikad"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/sandbox"
-	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
 // useInit asks Docker to run its own init as PID 1 in a sandbox, which reaps
@@ -44,14 +43,6 @@ const (
 	stopTimeout = 5 * time.Second
 )
 
-// Environment variables the harness sets in every workspace container so that
-// git inside the workspace can reach the hub without the token appearing in a
-// remote URL or in .git/config.
-const (
-	hubUserEnv  = "EIKA_HUB_USER"
-	hubTokenEnv = "EIKA_HUB_TOKEN"
-)
-
 // proxyTokenEnv carries a workspace's egress proxy token in its container's
 // configuration, where Inspect recovers it after a harness restart. The
 // daemon's processes receive it only inside the proxy URL.
@@ -64,11 +55,6 @@ var ErrNoWorkspace = errors.New("workspace not found")
 type Options struct {
 	// DockerSocket is the path to the Docker socket.
 	DockerSocket string
-	// Hub holds the project repositories workspaces clone from.
-	Hub *hub.Hub
-	// HubURL is the harness base URL a sandbox reaches the hub on, for
-	// example http://eika:8080.
-	HubURL string
 	// Image is the image used by a Spec that names none.
 	Image string
 	// Network is the Docker network sandboxes join, which is how the harness
@@ -101,8 +87,6 @@ type Host struct {
 // NewHost connects to the Docker daemon named by the options.
 func NewHost(opts Options, log *slog.Logger) (*Host, error) {
 	switch {
-	case opts.Hub == nil:
-		return nil, errors.New("build workspace host: hub is nil")
 	case opts.Image == "":
 		return nil, errors.New("build workspace host: image is empty")
 	case opts.EikadBinary == "":
@@ -149,14 +133,10 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 	if ws.Token, err = newToken(); err != nil {
 		return Workspace{}, err
 	}
-	if ws.HubToken, err = newToken(); err != nil {
-		return Workspace{}, err
-	}
 	if ws.ProxyToken, err = newToken(); err != nil {
 		return Workspace{}, err
 	}
 
-	ws.Project = spec.Project
 	ws.Image = orDefault(spec.Image, h.opts.Image)
 	built := spec.BuildContext != ""
 	if built {
@@ -185,9 +165,6 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 	}
 
 	labels := map[string]string{Label: ws.ID}
-	if ws.Project != "" {
-		labels[ProjectLabel] = ws.Project
-	}
 	maps.Copy(labels, spec.Labels)
 
 	port := nat.Port(DaemonPort + "/tcp")
@@ -196,8 +173,6 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 		Entrypoint: []string{eikad.BinaryPath, "-listen", ":" + DaemonPort, "-root", Root},
 		Env: append([]string{
 			eikad.TokenEnv + "=" + ws.Token,
-			hubUserEnv + "=" + ws.ID,
-			hubTokenEnv + "=" + ws.HubToken,
 			proxyTokenEnv + "=" + ws.ProxyToken,
 		}, spec.Env...),
 		User:         orDefault(spec.User, DefaultUser),
@@ -236,12 +211,6 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 		h.discard(ctx, ws, built)
 		return Workspace{}, err
 	}
-	if ws.Project != "" {
-		if err := h.opts.Hub.Grant(ws.ID, ws.Project, ws.HubToken); err != nil {
-			h.discard(ctx, ws, built)
-			return Workspace{}, err
-		}
-	}
 	h.log.Info("workspace created", "workspace_id", ws.ID, "image", ws.Image)
 	return ws, nil
 }
@@ -270,7 +239,6 @@ func (h *Host) discard(ctx context.Context, ws Workspace, builtImage bool) {
 			h.log.Warn("remove image", "workspace_id", ws.ID, "error", err)
 		}
 	}
-	h.opts.Hub.Revoke(ws.ID)
 }
 
 // Start starts the workspace's container and waits until its daemon answers,
@@ -338,7 +306,6 @@ func (h *Host) Destroy(ctx context.Context, ws *Workspace) error {
 			return fmt.Errorf("remove image %s: %w", ws.Image, err)
 		}
 	}
-	h.opts.Hub.Revoke(ws.ID)
 	ws.Address = ""
 	ws.State = StateGone
 	h.log.Info("workspace destroyed", "workspace_id", ws.ID)
@@ -382,9 +349,7 @@ func (h *Host) Inspect(ctx context.Context, id string) (Workspace, error) {
 		Image:       info.Config.Image,
 		State:       StateStopped,
 		Token:       envValue(info.Config.Env, eikad.TokenEnv),
-		HubToken:    envValue(info.Config.Env, hubTokenEnv),
 		ProxyToken:  envValue(info.Config.Env, proxyTokenEnv),
-		Project:     info.Config.Labels[ProjectLabel],
 	}
 	if created, err := time.Parse(time.RFC3339Nano, info.Created); err == nil {
 		ws.CreatedAt = created.UTC()
@@ -402,20 +367,11 @@ func (h *Host) Inspect(ctx context.Context, id string) (Workspace, error) {
 			ws.Volume = m.Name
 		}
 	}
-	// Hub access follows the container: only a running workspace holds it, so
-	// a stopped one cannot be used to reach the hub from somewhere else.
 	if info.State != nil && info.State.Running {
 		ws.State = StateRunning
 		if addr, err := h.address(ctx, ws); err == nil {
 			ws.Address = addr
 		}
-	}
-	if ws.State == StateRunning && ws.Project != "" && ws.HubToken != "" {
-		if err := h.opts.Hub.Grant(ws.ID, ws.Project, ws.HubToken); err != nil {
-			return Workspace{}, err
-		}
-	} else {
-		h.opts.Hub.Revoke(ws.ID)
 	}
 	return ws, nil
 }

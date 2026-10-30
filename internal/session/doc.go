@@ -17,9 +17,7 @@
 //
 // Store implements agent.Store against the database: it records every message
 // a run produces as one entry, and Load rebuilds an agent.Session from a
-// session's path so a run can resume where it stopped. An assistant entry
-// also records the workspace HEAD commit the response was produced at, which
-// is what forking with a workspace clones at.
+// session's path so a run can resume where it stopped.
 //
 // A compaction is an entry too. Messages folds a path into the conversation
 // it stands for, where each compaction entry replaces what came before it

@@ -16,8 +16,7 @@ const (
 	// ModeAllowlist lets the sandbox reach the hosts its allowlist names,
 	// through the proxy, and nothing else.
 	ModeAllowlist Mode = "allowlist"
-	// ModeNone lets the sandbox reach the harness alone: the git hub, and
-	// nothing on the internet.
+	// ModeNone lets the sandbox reach nothing on the internet.
 	ModeNone Mode = "none"
 )
 

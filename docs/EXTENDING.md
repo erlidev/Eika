@@ -377,7 +377,7 @@ An image needs:
   mounted,
 - a uid 1000 that owns `/workspace`, because a sandbox never runs as root; an
   image that uses another user must say so in `Spec.User`,
-- `git`, if workspaces built from it clone from the hub.
+- `git`, if child agents are to work in worktrees of it.
 
 A sandbox container drops all Linux capabilities and runs with
 `no-new-privileges`, so an image that needs to install packages at run time
@@ -538,7 +538,7 @@ Rules that keep the surface one surface:
 - Failures go through `s.fail`, which produces the one error shape,
   `{"error":{"code","message"}}`. `invalidf`, `notFoundf`, and `conflictf` are
   for a handler's own rules; the sentinel errors of `store`, `workspace`,
-  `hub`, and `builtin` map themselves in `statusOf`. Add a new sentinel there
+  and `builtin` map themselves in `statusOf`. Add a new sentinel there
   rather than mapping it in a handler.
 - A handler that needs a workspace's files gets an executor with
   `s.executorFor`, which refuses a workspace that is not running. The server

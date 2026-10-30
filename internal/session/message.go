@@ -9,9 +9,7 @@ import (
 	"github.com/erlidev/eika/internal/store"
 )
 
-// MessageEntry returns the entry that records one provider message, tagged
-// with the workspace HEAD commit the message was produced at. Empty commits
-// are not recorded.
+// MessageEntry returns the entry that records one provider message.
 //
 // One message is one entry, including an assistant message that carries tool
 // calls: the payload is the message's own JSON, so an entry round-trips to
@@ -19,7 +17,7 @@ import (
 // their own would be a second representation of the same turn, and the tree
 // would gain branch points the agent loop cannot resume from, because a model
 // that asked for three calls needs all three answered.
-func MessageEntry(m provider.Message, commit string) (store.Entry, error) {
+func MessageEntry(m provider.Message) (store.Entry, error) {
 	kind, err := kindOf(m.Role)
 	if err != nil {
 		return store.Entry{}, err
@@ -28,7 +26,7 @@ func MessageEntry(m provider.Message, commit string) (store.Entry, error) {
 	if err != nil {
 		return store.Entry{}, fmt.Errorf("encode %s message: %w", m.Role, err)
 	}
-	return store.Entry{Kind: kind, Payload: payload, Commit: commit}, nil
+	return store.Entry{Kind: kind, Payload: payload}, nil
 }
 
 // withArguments returns m with every tool call's arguments spelled as a JSON

@@ -76,9 +76,8 @@ this file says why, so neither repeats the other.
   publishes eikad on loopback for `make dev`.
 - **The sandbox config is a row** (`workspaces.sandbox`): desired state,
   applied at create, on `PUT .../sandbox`, and on every start, so partial
-  applies converge. Forks inherit limits and egress but not ports, so a fork
-  cannot escape its parent's confinement; children share the parent's
-  container, so they cannot either. Default: 4096 processes, nothing else.
+  applies converge. Children share the parent's container, so they cannot
+  escape its confinement. Default: 4096 processes, nothing else.
 - **Limits change live** with `ContainerUpdate`: recreating would reset
   everything outside `/workspace`. Docker cannot lift a CPU or memory limit,
   so "no limit" on an existing container means the whole host. Swap equals
@@ -113,24 +112,24 @@ this file says why, so neither repeats the other.
   no event announces, so the no-polling rule does not apply.
 - One address guard, `internal/netguard`, for web_fetch and the proxy.
 
-## Git and the hub
+## Git
 
-- The hub is the single exchange point between containers: bare repos served
-  over Smart HTTP. It mirrors local projects too, so forks and merges work
-  the same for both kinds. A child agent shares its parent's repository and
-  needs the hub only to publish its branch.
-- A hub grant covers one project per workspace; a stopped workspace holds none.
-- The hub lives in `internal/workspace/hub`: `workspace` is its only importer.
-- Remote credentials are sealed, never in URLs, passed to git by a
-  credential helper through the environment, and tried with a fetch before
-  they are stored. No remote credential enters a sandbox: "push upstream"
-  goes workspace → hub → remote.
-- The hub remote in a workspace is `eika-hub`, not `origin`, which a local
-  checkout already has.
-- **The hub is never force-pushed.** A branch belongs to its creator.
-  Unique child branches make this possible.
-- A merge conflict is a normal `200` with `merged: false` and the paths; the
-  tree stays conflicted for the user or agent to resolve.
+- **The git layer is gone.** Eika no longer clones, pushes, fetches or
+  mirrors, has no hub (`internal/workspace/hub`, `/git/`, `EIKA_HUB_*`), keeps
+  no remote credentials, and has no merge, diff, commit or push routes,
+  `session_entries.commit_sha`, or fork-with-workspace. Eika is an assistant,
+  not a coding harness, and sandboxes become its computers (phase 0 of
+  `PLAN.md`).
+- Nothing replaced the hub. A workspace holds whatever is mounted into it: a
+  local project's host directory, bind-mounted. A `remote` project cannot be
+  created (the API refuses it), since only cloning could fill one; the kind
+  and column stay until projects are removed.
+- What is left of git is inside the sandbox: a child agent is still a
+  worktree in its parent's container (its branch is in the parent's
+  repository the moment it commits, and the parent merges it with its own
+  bash), until subagents are replaced. The `git` binary stays in the Core
+  image for phase 5's memory repository.
+- The data volume is `eika-data` and holds only the sealing key.
 
 ## Persistence and sessions
 
@@ -373,16 +372,15 @@ this file says why, so neither repeats the other.
   `refs/heads/main` and `refs/heads/main/x`, and the id tag keeps same-named
   children apart. Names match `^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$`.
 - **A child is a git worktree in its parent's container**, not a container of
-  its own: a container per child cost a container, a volume, a full clone,
-  and a push and fetch through the hub before it could start. A worktree
-  shares the object store, starts in the time `git worktree add` takes, and
+  its own: a container per child cost a container, a volume, and a full
+  clone before it could start. A worktree shares the object store, starts in the time `git worktree add` takes, and
   puts the child's branch in the parent's repository the moment it commits.
   The cost is isolation between agents of one tree: they share processes,
   ports, limits, and (through bash) each other's files. They were already one
   user's agents under one confinement, and the parent's own files were
   already the child's starting point.
 - A child is a **workspace row with `worktree_of`**, not a session with a
-  directory: files, changes, terminal, merge, fork, and MCP keep working per
+  directory: files, terminal, fork, and MCP keep working per
   workspace, and one function, `workspace.Locate`, maps a row to a container
   and directory. `worktree_of` names the container's workspace, never a
   worktree, so a tree is always one container deep.
@@ -403,7 +401,7 @@ this file says why, so neither repeats the other.
   `subagent_max_children` 4, max 16), at least 1, read per spawn. A spawn
   reserves its slot under the counting lock before any slow work.
 - A finished child's worktree is kept: the user looks at what it did. An
-  aborted child still commits, pushes, and reports, on a context of its own
+  aborted child still commits and reports, on a context of its own
   bounded to five minutes.
 - `Server.Close` aborts runs, then `Spawner.Shutdown` aborts children that
   outlive their parent (`wait: false`) before the pool closes.
@@ -411,7 +409,7 @@ this file says why, so neither repeats the other.
 ## Server and API
 
 - Composition lives in `server.Run`; `cmd/eika` stays thin. `Workspaces`,
-  `Hub`, `Models` are interfaces declared in `server` so handler tests run
+  `Models` are interfaces declared in `server` so handler tests run
   against temp directories; `*store.Store` stays concrete.
 - Event payload structs live in `internal/event`, so decoders need not
   import the loop and one file lists the protocol.
@@ -422,7 +420,7 @@ this file says why, so neither repeats the other.
   handshake headers. The handshake is same-origin or `allowed_origins`.
 - **One run per session.** A second is 409; the claim is made under the
   lock before any slow work. Steering and follow-up queues add to a run.
-- Workspace edits (save, commit, push) republish `workspace.state` with the
+- Workspace edits (a file save) republish `workspace.state` with the
   same state rather than a new event type.
 - The API returns resolved values (effective tools, configuration layers,
   sizes) so the UI never re-derives a rule. Editors ask the server what an
@@ -435,7 +433,7 @@ this file says why, so neither repeats the other.
 ## Configuration and security
 
 - Credentials are sealed with AES-256-GCM (`internal/secret`); the key is a
-  file in the hub volume, apart from the database, so a database copy alone
+  file in the data volume, apart from the database, so a database copy alone
   opens nothing. A lost key reads as "enter the key again".
 - Sign-in: PBKDF2-SHA256, 600k iterations. Setup is claimable once, while no
   password exists; the stack binds 127.0.0.1 so only this machine can claim

@@ -10,8 +10,8 @@ GODIRS := cmd internal
 # GOTAGS includes the tests that need Docker: the handler, store, and
 # workspace tests. Without a Docker daemon they skip, saying why.
 GOTAGS := -tags docker
-# DEV holds the state a harness running on the host keeps: the hub and the
-# key that seals credentials. It is ignored by git.
+# DEV holds the state a harness running on the host keeps: the key that
+# seals credentials. It is ignored by git.
 DEV := .dev
 COMPOSE := docker compose
 DEV_COMPOSE := docker compose -f compose.yaml -f compose.dev.yaml
@@ -154,7 +154,6 @@ dev-go:
 	EIKA_SEARXNG_URL="http://127.0.0.1:$${SEARXNG_PORT:-8888}" \
 	EIKA_SANDBOX_NETWORK="" \
 	EIKA_EIKAD_BINARY="$(CURDIR)/$(BIN)/eikad" \
-	EIKA_HUB_ROOT="$(CURDIR)/$(DEV)/hub" \
 	EIKA_SECRET_KEY_FILE="$(CURDIR)/$(DEV)/secret.key" \
 	$(GO) run ./cmd/eika
 
