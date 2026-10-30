@@ -341,7 +341,9 @@ func registeredRoutes(t *testing.T) map[string]bool {
 	t.Helper()
 	routes := map[string]bool{}
 	for _, call := range handleCalls(t) {
-		routes[call.pattern] = true
+		if isAPI(call.pattern) {
+			routes[call.pattern] = true
+		}
 	}
 	return routes
 }
@@ -352,7 +354,9 @@ func publicRoutes(t *testing.T) map[string]bool {
 	t.Helper()
 	public := map[string]bool{}
 	for _, call := range handleCalls(t) {
-		public[call.pattern] = call.onServerMux
+		if isAPI(call.pattern) {
+			public[call.pattern] = call.onServerMux
+		}
 	}
 	return public
 }
@@ -362,8 +366,9 @@ type handleCall struct {
 	onServerMux bool
 }
 
-// handleCalls finds every `x.HandleFunc("METHOD /api/...", ...)` in
-// routes.go, and whether x is the server's own mux, `s.mux`.
+// handleCalls finds every `x.HandleFunc("METHOD /...", ...)` in routes.go,
+// and whether x is the server's own mux, `s.mux`. A pattern without a method,
+// such as the hub's prefix, is not a route of the API and is left out.
 func handleCalls(t *testing.T) []handleCall {
 	t.Helper()
 	file, err := parser.ParseFile(token.NewFileSet(), "routes.go", nil, 0)
@@ -388,7 +393,7 @@ func handleCalls(t *testing.T) []handleCall {
 		if err != nil {
 			t.Fatalf("pattern %s: %v", lit.Value, err)
 		}
-		if _, path, ok := strings.Cut(pattern, " "); !ok || !strings.HasPrefix(path, "/api/") {
+		if !strings.Contains(pattern, " ") {
 			return true
 		}
 		mux, ok := sel.X.(*ast.SelectorExpr)
@@ -396,6 +401,13 @@ func handleCalls(t *testing.T) []handleCall {
 		return true
 	})
 	return calls
+}
+
+// isAPI reports whether a route pattern is under /api, which the contract
+// covers.
+func isAPI(pattern string) bool {
+	_, path, _ := strings.Cut(pattern, " ")
+	return strings.HasPrefix(path, "/api/")
 }
 
 // constants returns the sorted values of the string constants in a file
