@@ -134,74 +134,6 @@ function workbench(): WorldBuilder {
     { role: "assistant", content: "Added TestBackoff with six cases; all pass." },
   ]);
 
-  b.world.files[ws.id] = {
-    ".git/HEAD": "ref: refs/heads/eika/fix-retries\n",
-    ".gitignore": "/bin\n*.out\n",
-    "README.md": "# payments-api\n\nThe payments service and its webhook client.\n",
-    "go.mod": "module example.com/payments-api\n\ngo 1.23\n",
-    "assets/logo.png": "\u0089PNG\r\n\u001a\n\u0000\u0000\u0000\rIHDR",
-    "internal/webhook/backoff.go": [
-      "package webhook",
-      "",
-      'import "time"',
-      "",
-      "// backoff is how long to wait before retry n: doubling from a second, capped at 30s.",
-      "func backoff(n int) time.Duration {",
-      "\td := time.Second << n",
-      "\treturn min(d, 30*time.Second)",
-      "}",
-      "",
-    ].join("\n"),
-    "internal/webhook/client.go": [
-      "package webhook",
-      "",
-      "import (",
-      '\t"context"',
-      '\t"time"',
-      ")",
-      "",
-      "// Client delivers events to a subscriber's endpoint.",
-      "type Client struct {",
-      "\tmaxRetries int",
-      "}",
-      "",
-      "// Send delivers one event, retrying with backoff.",
-      "func (c *Client) Send(ctx context.Context, e Event) error {",
-      "\tvar err error",
-      "\tfor attempt := 0; attempt < c.maxRetries; attempt++ {",
-      "\t\terr = c.post(ctx, e)",
-      "\t\tif err == nil {",
-      "\t\t\treturn nil",
-      "\t\t}",
-      "\t\ttime.Sleep(backoff(attempt))",
-      "\t\tcontinue",
-      "\t}",
-      "\treturn err",
-      "}",
-      "",
-    ].join("\n"),
-    "internal/webhook/client_test.go":
-      'package webhook\n\nimport "testing"\n\nfunc TestSend(t *testing.T) {}\n',
-  };
-  b.world.diffs[ws.id] = {
-    workspace_id: ws.id,
-    base_commit: ws.base_commit,
-    status: " M internal/webhook/client.go\n?? internal/webhook/backoff.go\n",
-    diff: [
-      "diff --git a/internal/webhook/client.go b/internal/webhook/client.go",
-      "--- a/internal/webhook/client.go",
-      "+++ b/internal/webhook/client.go",
-      "@@ -48,7 +48,7 @@ func (c *Client) Send(ctx context.Context, e Event) error {",
-      " \t\tif err == nil {",
-      " \t\t\treturn nil",
-      " \t\t}",
-      "-\t\t// retry immediately",
-      "+\t\ttime.Sleep(backoff(attempt))",
-      " \t\tcontinue",
-      " \t}",
-      "",
-    ].join("\n"),
-  };
   return b;
 }
 
@@ -246,8 +178,8 @@ function profiles(): WorldBuilder {
 }
 
 /**
- * chats adds two chats and a fork of one to a workbench: sessions with no
- * workspace, listed apart from the projects. The main one is `chat-jitter`.
+ * chats adds two chats to a workbench: sessions with no workspace, which
+ * the sidebar lists. The main one is `chat-jitter`.
  */
 function chats(): WorldBuilder {
   const b = workbench();
@@ -285,14 +217,6 @@ function chats(): WorldBuilder {
         "Full jitter picks each delay at random between zero and the capped exponential backoff:\n\n```text\nsleep = random_between(0, min(cap, base * 2 ** attempt))\n```\n\nClients that failed together then retry at different times instead of failing together again ([AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)).",
     },
   ]);
-  b.chat({
-    id: "chat-jitter-fork",
-    title: "What is full jitter? (fork)",
-    kind: "fork",
-    parent_session_id: main.id,
-    tools: ["web_search"],
-    created_at: "2026-03-14T14:30:00.000Z",
-  });
   return b;
 }
 
@@ -848,7 +772,7 @@ export const scenarios = {
   },
   chat: {
     description:
-      "Like workbench with two chats and a fork in the sidebar's Chats section; chat-jitter is open, and the next message plays a reply that searches the web and answers.",
+      "Like workbench with two chats in the sidebar's Chats list; chat-jitter is open, and the next message plays a reply that searches the web and answers.",
     path: "/sessions/chat-jitter",
     build: () => {
       const b = chats();
@@ -998,32 +922,8 @@ export const scenarios = {
     path: "/sessions/ses-backoff",
     build: () => profiles().world,
   },
-  sandbox: {
-    description:
-      "Like workbench, with ws-retries confined: two cores, 4 GiB, an allowlist egress that refused two hosts, and Vite forwarded on 5173. For the Sandbox panel, the settings' Sandbox tab, and the new workspace dialog.",
-    path: "/sessions/ses-backoff",
-    build: () => {
-      const b = workbench();
-      const ws = b.world.workspaces.find((w) => w.id === "ws-retries");
-      if (ws !== undefined) {
-        ws.sandbox = {
-          limits: { cpus: 2, memory_mb: 4096, pids: 4096 },
-          egress: {
-            mode: "allowlist",
-            allow: ["github.com", "*.githubusercontent.com", "proxy.golang.org"],
-          },
-          ports: [{ port: 5173, label: "vite" }],
-        };
-      }
-      b.world.blocked["ws-retries"] = [
-        { host: "sum.golang.org", count: 4, last: minutesAgo(2) },
-        { host: "registry.npmjs.org", count: 1, last: minutesAgo(9) },
-      ];
-      return b.world;
-    },
-  },
   "chat-empty": {
-    description: "A chat with no messages yet, beside the workbench's projects.",
+    description: "A chat with no messages yet, beside the chats of the workbench.",
     path: "/sessions/chat-new",
     build: () => {
       const b = workbench();

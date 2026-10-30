@@ -6,7 +6,7 @@ The guided setup a new harness opens with, so that running Eika is
 - `SetupWizard.tsx` walks the steps in `steps.ts`: choose the sign-in
   password, connect a provider (`features/providers/ProviderForm`), pick its
   models (`ModelPicker`), check the sandbox and choose the default model
-  (`features/settings`), and add a first project (`features/projects`).
+  (`features/settings`); finishing the last step ends the setup.
 - `steps.ts` holds the order and `firstStep`, which resumes a setup left
   halfway at the first thing still missing.
 

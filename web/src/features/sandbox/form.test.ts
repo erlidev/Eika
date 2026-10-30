@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Sandbox, SandboxHost } from "@/api/types";
+import type { SandboxHost } from "@/api/types";
 import {
   checkDraft,
   draftOf,
@@ -8,16 +8,14 @@ import {
   formatMemory,
   formatPids,
   normalizePattern,
-  sameSandbox,
 } from "@/features/sandbox/form";
-import type { SandboxDraft } from "@/features/sandbox/form";
+import type { SandboxDraft, SandboxSettings } from "@/features/sandbox/form";
 
 const host: SandboxHost = { cpus: 8, memory_bytes: 16 * 2 ** 30, egress_control: true };
 
-const stored: Sandbox = {
+const stored: SandboxSettings = {
   limits: { cpus: 2, memory_mb: 4096, pids: 0 },
   egress: { mode: "allowlist", allow: ["github.com"] },
-  ports: [{ port: 5173, label: "vite" }],
 };
 
 function draft(change: Partial<SandboxDraft>): SandboxDraft {
@@ -28,11 +26,10 @@ describe("draftOf and checkDraft", () => {
   it("round-trips a stored sandbox, with no limit as an empty field", () => {
     const d = draftOf(stored);
     expect(d.pids).toBe("");
-    expect(d.ports).toEqual([{ port: "5173", label: "vite" }]);
     const { sandbox, problems } = checkDraft(d, host);
     expect(problems).toEqual({});
     if (sandbox === undefined) throw new Error("a stored sandbox did not check");
-    expect(sameSandbox(sandbox, stored)).toBe(true);
+    expect(sandbox).toEqual(stored);
   });
 
   it("holds limits to the host and the harness's bounds", () => {
@@ -50,16 +47,6 @@ describe("draftOf and checkDraft", () => {
   it("refuses an allowlist that reaches nothing", () => {
     expect(checkDraft(draft({ allow: [] }), host).problems.allow).toMatch(/reaches nothing/);
     expect(checkDraft(draft({ mode: "none", allow: [] }), host).problems.allow).toBeUndefined();
-  });
-
-  it("checks the forwarded ports", () => {
-    const ports = (...list: string[]) =>
-      draft({ ports: list.map((port) => ({ port, label: "" })) });
-    expect(checkDraft(ports("3000", "3000"), host).problems.ports).toMatch(/twice/);
-    expect(checkDraft(ports("7000"), host).problems.ports).toMatch(/daemon/);
-    expect(checkDraft(ports("0"), host).problems.ports).toBeDefined();
-    expect(checkDraft(ports(""), host).problems.ports).toMatch(/A port/);
-    expect(checkDraft(ports("3000"), host).sandbox?.ports).toEqual([{ port: 3000 }]);
   });
 });
 

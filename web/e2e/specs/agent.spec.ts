@@ -68,12 +68,6 @@ test("web search, fetch, and the other tool cards", async ({ open, expectShot })
   await expectShot(eika, "agent-web-cards", "role=main");
 });
 
-test("the session tree indents only a branch", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "agent-web" });
-  await eika.send("Check the cap");
-  await expectAria(eika, "session-tree-branch", "role=tree");
-});
-
 test("reasoning streams beside the answer", async ({ open, expectShot }) => {
   const eika = await open({ scenario: "agent-reasoning" });
   await eika.send("How should the jitter work?");
@@ -94,7 +88,7 @@ test("an answer the endpoint cut off is kept, and says why it stopped", async ({
   await eika.send("Write the file");
   // The text stays on screen: throwing it away would leave the reader with a
   // turn that produced nothing and the model with a history it never wrote.
-  // The same words are also in the live region and the session tree, so this
+  // The same words are also in the live region, so this
   // names the paragraph in the transcript.
   await expect(
     eika.page.getByText("Writing the file now. It starts like this:").first(),

@@ -4,8 +4,9 @@ Drive the UI in a real browser against a **mock harness** and screenshot the
 result. No Go server, Postgres, or Docker needed: `harness/mock.ts` answers
 every `/api` route and the `/api/events` WebSocket from an in-memory world,
 and plays scripted agent replies so a sent message streams like a real run.
-A workspace's terminal socket is a shell that echoes what is typed (`exit`
-ends it), and its files come from the world's `files`.
+Routes whose UI is gone (projects, workspaces, files, the terminal, forks)
+are not served; `harness/mock.test.ts` lists each in `unmocked` until its Go
+route is removed.
 
 Chromium is needed once: `npx playwright install chromium`. `make visual`
 installs it when it is missing.
@@ -105,9 +106,9 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 
 `harness/scenarios.ts` names the starting states. The workbench ones share
 fixed ids: session `ses-backoff` in workspace `ws-retries` of project
-`proj-api`. `chat` adds the sidebar's Chats section and opens chat
-`chat-jitter`, a session with no workspace; `chat-empty` opens one with no
-messages. `mcp` adds five MCP servers, one in each state, and `chat-mcp` the
+`proj-api`; the sidebar lists chats only, so it opens by URL. `chat` adds two
+chats and opens chat `chat-jitter`, a session with no workspace; `chat-empty`
+opens one with no messages. `mcp` adds five MCP servers, one in each state, and `chat-mcp` the
 same servers beside the chats; the mock's authorization server approves at
 once, so Sign in returns straight to `/mcp/callback`. `profiles` adds two
 profiles to the workbench, puts `ses-backoff` on one with an override of its
@@ -135,7 +136,7 @@ baseline back the assertions, each where it is the right tool:
 
 - **Screenshots** (`expectShot`, PNGs in `__screenshots__/`) where pixels are
   the point: both themes of the session, phone layouts, the transcript's
-  cards, the editor, the terminal, the diff. A few stray pixels fail it, so
+  cards, the settings dialog. A few stray pixels fail it, so
   it catches a restyle nobody meant.
 - **ARIA snapshots** (`expectAria`, YAML in `__aria__/`) where the point is
   what a screen says and offers: its headings, fields, buttons, which are

@@ -177,16 +177,15 @@ function ToolRow({ tool, on, busy, onChange }: ToolRowProps) {
 
 type ServesProps = {
   details: MCPServerDetails;
-  /** workspaceId is where a stdio server is asked; undefined for an http one. */
-  workspaceId: string | undefined;
 };
 
-export function ResourcesTab({ details, workspaceId }: ServesProps) {
+export function ResourcesTab({ details }: ServesProps) {
   const server = details.server;
   const read = useReadMCPResource();
   const resources = details.resources ?? [];
   const templates = details.resource_templates ?? [];
-  const needsWorkspace = server.kind === "stdio" && workspaceId === undefined;
+  // A stdio server is asked inside a sandbox, which only a run starts.
+  const needsWorkspace = server.kind === "stdio";
   return (
     <div className="space-y-3">
       <ListError details={details} method="resources/list" />
@@ -217,11 +216,7 @@ export function ResourcesTab({ details, workspaceId }: ServesProps) {
                     aria-label={`Read ${r.title ?? r.name}`}
                     disabled={read.isPending || needsWorkspace}
                     onClick={() => {
-                      read.mutate({
-                        id: server.id,
-                        uri: r.uri,
-                        ...(workspaceId === undefined ? {} : { workspaceId }),
-                      });
+                      read.mutate({ id: server.id, uri: r.uri });
                     }}
                   >
                     {read.isPending && shown ? "Reading…" : "Read"}
@@ -257,15 +252,17 @@ export function ResourcesTab({ details, workspaceId }: ServesProps) {
         </section>
       )}
       {needsWorkspace && resources.length > 0 && (
-        <p className="text-muted-foreground text-xs">Choose a workspace above to read them.</p>
+        <p className="text-muted-foreground text-xs">
+          A stdio server runs inside a sandbox, so its resources are read while a chat uses it.
+        </p>
       )}
     </div>
   );
 }
 
-export function PromptsTab({ details, workspaceId }: ServesProps) {
+export function PromptsTab({ details }: ServesProps) {
   const prompts = details.prompts ?? [];
-  const needsWorkspace = details.server.kind === "stdio" && workspaceId === undefined;
+  const needsWorkspace = details.server.kind === "stdio";
   return (
     <div className="space-y-3">
       <ListError details={details} method="prompts/list" />
@@ -276,13 +273,14 @@ export function PromptsTab({ details, workspaceId }: ServesProps) {
             key={prompt.name}
             serverId={details.server.id}
             prompt={prompt}
-            workspaceId={workspaceId}
             disabled={needsWorkspace}
           />
         ))}
       </ul>
       {needsWorkspace && prompts.length > 0 && (
-        <p className="text-muted-foreground text-xs">Choose a workspace above to try them.</p>
+        <p className="text-muted-foreground text-xs">
+          A stdio server runs inside a sandbox, so its prompts are tried while a chat uses it.
+        </p>
       )}
     </div>
   );
@@ -291,12 +289,11 @@ export function PromptsTab({ details, workspaceId }: ServesProps) {
 type PromptRowProps = {
   serverId: string;
   prompt: MCPPrompt;
-  workspaceId: string | undefined;
   disabled: boolean;
 };
 
 /** PromptRow is one prompt, with a form to render it with arguments. */
-function PromptRow({ serverId, prompt, workspaceId, disabled }: PromptRowProps) {
+function PromptRow({ serverId, prompt, disabled }: PromptRowProps) {
   const get = useGetMCPPrompt();
   const [values, setValues] = useState<Record<string, string>>({});
   const args = prompt.arguments ?? [];
@@ -331,7 +328,6 @@ function PromptRow({ serverId, prompt, workspaceId, disabled }: PromptRowProps) 
                 id: serverId,
                 name: prompt.name,
                 args: Object.fromEntries(Object.entries(values).filter(([, v]) => v !== "")),
-                ...(workspaceId === undefined ? {} : { workspaceId }),
               });
             }}
           >

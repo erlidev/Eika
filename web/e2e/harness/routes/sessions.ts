@@ -1,4 +1,4 @@
-/** Sessions: their entries, heads, forks, tools, and configuration. */
+/** Sessions: their entries, heads, tools, and configuration. */
 
 import type { Entry, Session } from "../../../src/api/types.ts";
 import {
@@ -176,35 +176,6 @@ export function sessionRoutes(ctx: RouteContext): void {
     if (refused) return refused;
     row.head_entry_id = entry.id;
     return ok(row);
-  });
-  on("POST", "/api/sessions/{id}/fork", ({ params, body }) => {
-    const source = find(w.sessions, params[0], "session");
-    if ("status" in source) return source;
-    const refused = midTurn(w.entries[source.id] ?? [], str(body.entry_id));
-    if (refused) return refused;
-    const row: Session = {
-      id: ctx.nextId(source.workspace_id === undefined ? "chat" : "ses"),
-      ...(source.workspace_id === undefined ? {} : { workspace_id: source.workspace_id }),
-      title: str(body.title) || `${source.title} (fork)`,
-      kind: "fork",
-      tools: [...source.tools],
-      overridden: source.overridden,
-      ...(source.profile_id === undefined ? {} : { profile_id: source.profile_id }),
-      parent_session_id: source.id,
-      head_entry_id: str(body.entry_id),
-      pinned: false,
-      archived: false,
-      created_at: now(),
-      updated_at: now(),
-    };
-    // A fork runs as its source is configured to.
-    const overrides = w.overrides[source.id];
-    if (overrides !== undefined) w.overrides[row.id] = overrides;
-    const choice = w.toolChoices[source.id];
-    if (choice !== undefined) w.toolChoices[row.id] = [...choice];
-    w.sessions.unshift(row);
-    w.entries[row.id] = [...(w.entries[source.id] ?? [])];
-    return ok(row, 201);
   });
   on("PUT", "/api/sessions/{id}/tools", ({ params, body }) => {
     const row = find(w.sessions, params[0], "session");

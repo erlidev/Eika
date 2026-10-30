@@ -586,23 +586,24 @@ web/src/
   (`features/setup`) or sign-in (`features/connect`). With a token the setup
   shows until a password exists and `setup_complete` is true.
 - **Settings** (`features/settings`): providers and models, profiles,
-  defaults and utility models, sandbox, search, MCP, password. The profile editor
+  defaults and utility models, the computer's limits and network, search, MCP, password. The profile editor
   (`features/profiles/SettingsEditor`) has Model, Prompt, Tools, and Sampling
   tabs, a cost strip, and a chip per field naming where its value comes from.
   `ToolPicker` is shared by profiles, sessions, and chats. Small stores hold
   which editor and settings tab are open, so links elsewhere can open them.
-- **Workbench**: sidebar (projects → workspaces → sessions, forks and child
-  agents nested; chats below; pinned rows first, archived ones folded under an
-  Archived heading at the end of their list; every row's actions in a menu
-  that a right-click also opens, renaming in place), session (transcript, status bar, composer),
-  and a tab strip of panels from `app/panels.tsx`. Workspace sessions get
-  Files, Terminal, Changes, and Sandbox; chats get Tools; every session gets
-  Tree, Run, and Context (window fill, token bar by part, key parameters; the
-  Context inspector dialog shows a request whole with links to the layer
-  behind each part). `ResizableSplit` remembers widths; below 1024px side
-  panes become drawers. Heavy panels (Monaco, xterm) load lazily.
+- **Workbench**: sidebar (the chats; pinned rows first, archived ones folded
+  under an Archived heading at the end of the list; every row's actions in a
+  menu that a right-click also opens, renaming in place), session (transcript,
+  status bar, composer), and a tab strip of panels from `app/panels.tsx`.
+  Chats get Tools; every session gets Run and Context (window fill, token bar
+  by part, key parameters; the Context inspector dialog shows a request whole
+  with links to the layer behind each part). `ResizableSplit` remembers
+  widths; below 1024px side panes become drawers. The coding UI (projects,
+  workspaces, files, terminal, changes, the session tree and fork) is gone
+  from the frontend; the Go routes it called stay until a later phase 0 item
+  removes them.
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
-  events (`useWorkspaceEvents`, `useSessionStream`, `useMCPEvents`,
+  events (`useSessionStream`, `useMCPEvents`,
   `useSessionUpdates`).
 - **Stream state**: `features/session/store.ts` wraps the pure reducer
   `transcript.ts`, fed by run events (`run_id`) and replayed

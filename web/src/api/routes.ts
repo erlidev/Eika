@@ -8,21 +8,15 @@ import { request, requestEmpty } from "@/api/client";
 import type { Connection } from "@/api/connection";
 import type {
   AuthStatus,
-  CommitRequest,
-  CommitResult,
   CompactRequest,
   Configuration,
   ContentDetail,
   CreateMCPServer,
   CreateModel,
-  CreateProject,
   CreateProvider,
   CreateSession,
-  CreateWorkspace,
   ElicitationAnswer,
   Entry,
-  FileContent,
-  FileEntry,
   MCPPromptResult,
   MCPServer,
   MCPServerDetails,
@@ -34,18 +28,13 @@ import type {
   Models,
   OAuthCallback,
   PostMessage,
-  PreviewLink,
   ProbeProvider,
   Profile,
   ProfileInput,
   Profiles,
   ProfileSettings,
-  Sandbox,
-  Project,
   Provider,
   Providers,
-  PushRequest,
-  PushResult,
   Run,
   RunStatus,
   SearchKey,
@@ -64,177 +53,9 @@ import type {
   Tool,
   UpdateMCPServer,
   UpdateModel,
-  UpdateProject,
   UpdateProvider,
   UpdateSession,
-  UpdateWorkspace,
-  Workspace,
-  WorkspaceDiff,
-  WorkspaceUsage,
 } from "@/api/types";
-
-/** listProjects lists every project, newest first. */
-export async function listProjects(signal?: AbortSignal): Promise<Project[]> {
-  const body = await request<{ projects: Project[] }>("/api/projects", { signal });
-  return body.projects;
-}
-
-/** createProject registers a repository with Eika. */
-export function createProject(input: CreateProject): Promise<Project> {
-  return request<Project>("/api/projects", { method: "POST", body: input });
-}
-
-/** updateProject changes a project's remote credentials or default branch. */
-export function updateProject(id: string, input: UpdateProject): Promise<Project> {
-  return request<Project>(`/api/projects/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: input,
-  });
-}
-
-/** deleteProject destroys a project with its workspaces and sessions. */
-export function deleteProject(id: string): Promise<void> {
-  return requestEmpty(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
-}
-
-/** listWorkspaces lists workspaces, optionally of one project. */
-export async function listWorkspaces(
-  projectId?: string,
-  signal?: AbortSignal,
-): Promise<Workspace[]> {
-  const body = await request<{ workspaces: Workspace[] }>("/api/workspaces", {
-    query: { project_id: projectId },
-    signal,
-  });
-  return body.workspaces;
-}
-
-/** createWorkspace creates and starts a sandbox holding a project checkout. */
-export function createWorkspace(input: CreateWorkspace): Promise<Workspace> {
-  return request<Workspace>("/api/workspaces", { method: "POST", body: input });
-}
-
-/** getWorkspace reads one workspace. */
-export function getWorkspace(id: string, signal?: AbortSignal): Promise<Workspace> {
-  return request<Workspace>(`/api/workspaces/${encodeURIComponent(id)}`, { signal });
-}
-
-/** updateWorkspace renames, pins, or archives a workspace. */
-export function updateWorkspace(id: string, input: UpdateWorkspace): Promise<Workspace> {
-  return request<Workspace>(`/api/workspaces/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: input,
-  });
-}
-
-/** startWorkspace starts a stopped container again. */
-export function startWorkspace(id: string): Promise<Workspace> {
-  return request<Workspace>(`/api/workspaces/${encodeURIComponent(id)}/start`, { method: "POST" });
-}
-
-/** stopWorkspace aborts the workspace's runs and stops its container. */
-export function stopWorkspace(id: string): Promise<Workspace> {
-  return request<Workspace>(`/api/workspaces/${encodeURIComponent(id)}/stop`, { method: "POST" });
-}
-
-/** deleteWorkspace destroys the container, its volume, and its sessions. */
-export function deleteWorkspace(id: string): Promise<void> {
-  return requestEmpty(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
-}
-
-/** setWorkspaceSandbox changes a workspace's limits, network, and ports, applied at once. */
-export function setWorkspaceSandbox(id: string, sandbox: Sandbox): Promise<Workspace> {
-  return request<Workspace>(`/api/workspaces/${encodeURIComponent(id)}/sandbox`, {
-    method: "PUT",
-    body: sandbox,
-  });
-}
-
-/** getWorkspaceUsage samples what a running workspace consumes. */
-export function getWorkspaceUsage(id: string, signal?: AbortSignal): Promise<WorkspaceUsage> {
-  return request<WorkspaceUsage>(`/api/workspaces/${encodeURIComponent(id)}/usage`, { signal });
-}
-
-/** openPreview asks for a one-time link to a forwarded port of a running workspace. */
-export function openPreview(id: string, port: number): Promise<PreviewLink> {
-  return request<PreviewLink>(
-    `/api/workspaces/${encodeURIComponent(id)}/ports/${String(port)}/preview`,
-    { method: "POST" },
-  );
-}
-
-/** getWorkspaceDiff reads the workspace's changes against its base commit. */
-export function getWorkspaceDiff(id: string, signal?: AbortSignal): Promise<WorkspaceDiff> {
-  return request<WorkspaceDiff>(`/api/workspaces/${encodeURIComponent(id)}/diff`, { signal });
-}
-
-/** listWorkspaceFiles lists one directory of a workspace; "" is the root. */
-export async function listWorkspaceFiles(
-  id: string,
-  path: string,
-  signal?: AbortSignal,
-): Promise<FileEntry[]> {
-  const body = await request<{ entries: FileEntry[] }>(
-    `/api/workspaces/${encodeURIComponent(id)}/files`,
-    { query: { path }, signal },
-  );
-  return body.entries;
-}
-
-/** readWorkspaceFile reads one text file of a workspace. */
-export function readWorkspaceFile(
-  id: string,
-  path: string,
-  signal?: AbortSignal,
-): Promise<FileContent> {
-  return request<FileContent>(`/api/workspaces/${encodeURIComponent(id)}/file`, {
-    query: { path },
-    signal,
-  });
-}
-
-/** writeWorkspaceFile replaces a file's contents and returns its new entry. */
-export function writeWorkspaceFile(id: string, path: string, content: string): Promise<FileEntry> {
-  return request<FileEntry>(`/api/workspaces/${encodeURIComponent(id)}/file`, {
-    method: "PUT",
-    query: { path },
-    text: content,
-  });
-}
-
-/** commitWorkspace commits the workspace's changes, or only the given paths. */
-export function commitWorkspace(id: string, input: CommitRequest): Promise<CommitResult> {
-  return request<CommitResult>(`/api/workspaces/${encodeURIComponent(id)}/commit`, {
-    method: "POST",
-    body: input,
-  });
-}
-
-/** pushWorkspace pushes the workspace's branch to the hub, and upstream when asked. */
-export function pushWorkspace(id: string, input: PushRequest): Promise<PushResult> {
-  return request<PushResult>(`/api/workspaces/${encodeURIComponent(id)}/push`, {
-    method: "POST",
-    body: input,
-  });
-}
-
-/**
- * listSessions lists sessions, optionally of one workspace. `descendants`
- * adds the forks and child agents those sessions led to, which run in
- * workspaces of their own, so the sidebar draws the whole tree from one
- * request.
- */
-export async function listSessions(
-  workspaceId?: string,
-  descendants?: boolean,
-  signal?: AbortSignal,
-): Promise<Session[]> {
-  const body = await request<{ sessions: Session[] }>("/api/sessions", {
-    query: { workspace_id: workspaceId, ...(descendants === true ? { descendants: "true" } : {}) },
-    signal,
-  });
-  return body.sessions;
-}
 
 /** listChats lists the sessions with no workspace, forks of chats included. */
 export async function listChats(signal?: AbortSignal): Promise<Session[]> {
@@ -300,14 +121,6 @@ export function setSessionHead(id: string, entryId: string): Promise<Session> {
   return request<Session>(`/api/sessions/${encodeURIComponent(id)}/head`, {
     method: "POST",
     body: { entry_id: entryId },
-  });
-}
-
-/** forkSession copies the path down to an entry into a session of its own. */
-export function forkSession(id: string, entryId: string, title: string): Promise<Session> {
-  return request<Session>(`/api/sessions/${encodeURIComponent(id)}/fork`, {
-    method: "POST",
-    body: { entry_id: entryId, title },
   });
 }
 

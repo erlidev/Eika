@@ -9,7 +9,6 @@ import {
   answerElicitation,
   answerQuestion,
   compactSession,
-  forkSession,
   getRunStatus,
   getSession,
   getSessionOutline,
@@ -45,7 +44,7 @@ export function useSession(
   });
 }
 
-/** useSessionOutline reads the whole tree the session tree panel draws. */
+/** useSessionOutline reads the whole tree of entries, which a rewind needs to find where to land. */
 export function useSessionOutline(id: string | undefined): UseQueryResult<SessionOutline> {
   return useQuery({
     queryKey: queryKeys.sessionOutline(id ?? ""),
@@ -173,17 +172,6 @@ export function useRewind(
       edit(text);
       editImages(draftsOf(images));
     },
-  });
-}
-
-/** useForkSession copies the path down to an entry into a session of its own. */
-export function useForkSession(
-  sessionId: string,
-): UseMutationResult<Session, Error, { entryId: string; title: string }> {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ entryId, title }) => forkSession(sessionId, entryId, title),
-    onSuccess: () => client.invalidateQueries({ queryKey: ["sessions"] }),
   });
 }
 

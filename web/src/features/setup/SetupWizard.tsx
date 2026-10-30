@@ -1,6 +1,6 @@
 /**
  * The guided setup a new harness opens with: choose a password, connect a
- * model provider, pick models, check the sandbox, and add a first project.
+ * model provider, pick models, and check the sandbox.
  * Every step after the password can be skipped, and every choice can be
  * changed later in Settings. Coming back to a setup left halfway resumes it
  * at the first thing still missing.
@@ -22,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthStatus, useConnection } from "@/features/connect";
-import { ProjectForm } from "@/features/projects";
 import { ModelPicker, ProviderForm, useModels, useProviders } from "@/features/providers";
 import { DefaultModelSelect, settingKeys, SystemCheck, useSaveSettings } from "@/features/settings";
 import { firstStep, nextStep, setupSteps, stepIndex, stepInfo } from "@/features/setup/steps";
@@ -194,19 +193,9 @@ function SignedInSetup() {
           <SystemCheck />
           <DefaultModelSelect />
           <div className="flex justify-end">
-            <Button onClick={advance}>Continue</Button>
+            <Button onClick={advance}>Finish</Button>
           </div>
         </div>
-      );
-      break;
-    case "project":
-      content = (
-        <ProjectForm
-          onCreated={finish}
-          onCancel={finish}
-          cancelLabel="Skip for now"
-          submitLabel="Add and finish"
-        />
       );
       break;
   }

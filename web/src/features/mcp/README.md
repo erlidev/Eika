@@ -8,7 +8,8 @@ feature only configures, inspects, and signs in to them.
   the add form (`MCPServerForm`, whose rules are `form.ts`), and each
   server's page (`MCPServerView`): its state, connect and sign-in, its tools
   with a switch each, its resources and prompts to try, its log, and what
-  the connection learned.
+  the connection learned. A stdio server is started by a run in a sandbox, so
+  its page offers no way to start it, and its resources and prompts wait.
 - `MCPCallbackScreen` is the `/mcp/callback` page an OAuth authorization
   server returns the browser to; it posts the answer to the harness and
   opens the server's settings again.

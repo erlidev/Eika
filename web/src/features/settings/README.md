@@ -9,11 +9,10 @@ Everything the user configures after setup, in one dialog of tabs.
   `DefaultModelSelect.tsx`, `UtilityModels.tsx` (a model per utility task,
   or off; both list models with `ModelSelectItems.tsx`), the sandbox image
   with `SystemCheck.tsx`, the
-  subagent limits, and a way back into the guided setup. Sandbox is
-  `SandboxSettings.tsx`: the limits and network a new workspace gets, with
-  the fields from `features/sandbox`; `sandboxDefaults` in `queries.ts` reads
-  them from the table; below them, how many minutes a workspace may go
-  without a run before the harness stops it. Search is
+  subagent limits, and a way back into the guided setup. Computer is
+  `ComputerSettings.tsx`: the limits and network a sandbox is created with,
+  with the fields from `features/sandbox`; `sandboxDefaults` in `queries.ts`
+  reads them from the table. Search is
   `SearchSettings.tsx`: the web provider order, the search API keys, the
   quotas, the sources' health, and a box to try a search, over
   `features/search`. Account is

@@ -27,7 +27,6 @@ import type {
   Project,
   Provider,
   Question,
-  BlockedHost,
   Run,
   Sandbox,
   SearchStatus,
@@ -36,7 +35,6 @@ import type {
   SystemStatus,
   Tool,
   Workspace,
-  WorkspaceDiff,
 } from "../../src/api/types.ts";
 
 /**
@@ -94,11 +92,7 @@ export type World = {
   defaultModel?: string;
   projects: Project[];
   workspaces: Workspace[];
-  diffs: Record<string, WorkspaceDiff>;
-  /**
-   * files holds each workspace's files by path, keyed by workspace id; the
-   * directories follow from the paths. Content with a NUL byte is binary.
-   */
+  /** files holds each workspace's files by path, keyed by workspace id; only AGENTS.md is read. */
   files: Record<string, Record<string, string>>;
   sessions: Session[];
   /** untitled are the sessions created without a title, which their first run names. */
@@ -123,8 +117,6 @@ export type World = {
   probeModels: { id: string; context_window?: number; max_output?: number }[];
   /** eventsOnConnect are sent once to every event stream that opens. */
   eventsOnConnect: EikaEvent[];
-  /** blocked are the hosts each workspace's egress was refused lately, by workspace id. */
-  blocked: Record<string, BlockedHost[]>;
   /** profiles are the profiles, oldest first; the default_profile setting names the default. */
   profiles: StoredProfile[];
   /** overrides are what each session sets over its profile, by session id. */
@@ -197,7 +189,6 @@ export function emptyWorld(): World {
     models: [],
     projects: [],
     workspaces: [],
-    diffs: {},
     files: {},
     sessions: [],
     untitled: [],
@@ -216,7 +207,6 @@ export function emptyWorld(): World {
       { id: "gpt-5-mini", context_window: 400000, max_output: 128000 },
     ],
     eventsOnConnect: [],
-    blocked: {},
     profiles: [defaultProfile()],
     overrides: {},
     toolChoices: {},

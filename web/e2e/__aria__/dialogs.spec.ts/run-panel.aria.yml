@@ -1,10 +1,7 @@
 - complementary "Context panels":
   - tablist "Context panels":
-    - tab "Tree"
     - tab "Run" [selected]
-    - tab "Files"
-    - tab "Terminal"
-    - tab "Changes"
+    - tab "Context"
   - tabpanel "Run":
     - heading "Run" [level=3]
     - paragraph: This session has not run yet.

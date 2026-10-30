@@ -1,5 +1,5 @@
 /**
- * The three-pane shell: the project tree on the left, the session in the
+ * The three-pane shell: the chats on the left, the session in the
  * middle, and the registered panels on the right. Below 1024px the side panes
  * collapse into drawers so the session still has a usable width.
  */
@@ -28,20 +28,18 @@ import { cn } from "@/lib/utils";
 /** narrowWidth is where the three panes stop fitting side by side. */
 const narrowWidth = 1024;
 
-/** panelMax is how wide the context pane may grow; a `fill` panel may take more. */
+/** panelMax is how wide the context pane may grow. */
 const panelMax = 640;
-const fillPanelMax = 960;
 
 export function Workbench() {
   const params = useParams();
   const sessionId = params.sessionId ?? "";
   const session = useSession(sessionId === "" ? undefined : sessionId);
-  const workspaceId = session.data?.session.workspace_id ?? "";
   const chat = session.data !== undefined && session.data.session.workspace_id === undefined;
 
   const [sidebarWidth, setSidebarWidth] = usePersistedNumber("eika.pane.sidebar", 260);
   const [panelWidth, setPanelWidth] = usePersistedNumber("eika.pane.panel", 340);
-  const [activePanel, setActivePanel] = usePersistedString("eika.panel.active", "tree");
+  const [activePanel, setActivePanel] = usePersistedString("eika.panel.active", "run");
   const showSettings = useSettingsDialog((s) => s.show);
   const [drawer, setDrawer] = useState<"sidebar" | "panel" | null>(null);
   const narrow = useNarrow(narrowWidth);
@@ -49,15 +47,12 @@ export function Workbench() {
   // new tools; one subscription for the whole workbench keeps the settings
   // and the tool lists current.
   useMCPEvents();
-  // Untitled sessions are named in the background; the sidebar shows every
-  // session, so the titles are followed here rather than in one session.
+  // Untitled chats are named in the background; the sidebar shows every
+  // chat, so the titles are followed here rather than in one session.
   useSessionUpdates();
 
-  const tabs = availablePanels({ sessionId, workspaceId, chat });
+  const tabs = availablePanels({ sessionId, chat });
   const panel = tabs.find((tab) => tab.id === activePanel) ?? tabs[0];
-  // A wide editor or terminal is the point of dragging the pane out; the
-  // width is remembered, and a scrolling panel shows it capped again.
-  const maxPanelWidth = panel?.fill === true ? fillPanelMax : panelMax;
 
   // A tablist is one tab stop: Tab reaches the selected tab and the arrows
   // move between them, which is what the WAI-ARIA tabs pattern asks for.
@@ -120,12 +115,9 @@ export function Workbench() {
         role="tabpanel"
         id={panel ? `panel-${panel.id}` : undefined}
         aria-labelledby={panel ? `panel-tab-${panel.id}` : undefined}
-        className={cn(
-          "min-h-0 flex-1",
-          panel?.fill === true ? "overflow-hidden" : "overflow-y-auto",
-        )}
+        className="min-h-0 flex-1 overflow-y-auto"
       >
-        {panel && <panel.Component sessionId={sessionId} workspaceId={workspaceId} chat={chat} />}
+        {panel && <panel.Component sessionId={sessionId} chat={chat} />}
       </div>
     </aside>
   );
@@ -154,7 +146,7 @@ export function Workbench() {
               size="icon"
               variant="ghost"
               className="size-7"
-              aria-label="Show projects and chats"
+              aria-label="Show chats"
               aria-expanded={drawer === "sidebar"}
               onClick={() => {
                 setDrawer(drawer === "sidebar" ? null : "sidebar");
@@ -213,15 +205,15 @@ export function Workbench() {
             onWidthChange={setSidebarWidth}
             min={180}
             max={480}
-            label="Resize the project tree"
+            label="Resize the chat list"
             panel={<div className="h-full border-r">{sidebar}</div>}
           >
             <ResizableSplit
               side="end"
-              width={Math.min(panelWidth, maxPanelWidth)}
+              width={Math.min(panelWidth, panelMax)}
               onWidthChange={setPanelWidth}
               min={240}
-              max={maxPanelWidth}
+              max={panelMax}
               label="Resize the context panels"
               panel={contextPane}
             >
@@ -239,18 +231,13 @@ export function Workbench() {
 
 type NothingOpenProps = { onOpened: () => void };
 
-/**
- * NothingOpen is the centre pane before a session is picked: where to find
- * one, and the one action that needs no project, starting a chat.
- */
+/** NothingOpen is the centre pane before a chat is picked: where to find one, and how to start one. */
 function NothingOpen({ onOpened }: NothingOpenProps) {
   const create = useCreateSession();
   const navigate = useNavigate();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-      <p className="text-muted-foreground text-sm">
-        Pick a session or a chat on the left, or create a session in a workspace.
-      </p>
+      <p className="text-muted-foreground text-sm">Pick a chat on the left, or start a new one.</p>
       <Button
         size="sm"
         variant="outline"

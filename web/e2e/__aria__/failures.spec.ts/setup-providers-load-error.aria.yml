@@ -5,8 +5,7 @@
       - listitem: Password
       - listitem: 2 Provider
       - listitem: 3 Models
-      - listitem: 4 Sandbox
-      - listitem: 5 Project
+      - listitem: 4 Computer
     - paragraph: Everything you choose here can be changed later in Settings.
   - heading "Connect a model provider" [level=1]
   - text: "Agents need a model to think with. Pick where it comes from: any OpenAI-compatible endpoint works, hosted or on this machine."

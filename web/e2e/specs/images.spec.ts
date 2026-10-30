@@ -39,7 +39,7 @@ test("a message carries images to a model that accepts them", async ({ open, exp
   await expect(dialog.getByRole("img", { name: "Attached image 1" })).toBeVisible();
   // The dialog hides the rest of the page from roles; the status bar's
   // state is still text on it.
-  await expect(eika.page.getByText("done", { exact: true })).toBeVisible();
+  await expect(session.getByText("done", { exact: true })).toBeVisible();
   await eika.settle();
   await expect(dialog).toBeVisible();
   await eika.press("Escape");
