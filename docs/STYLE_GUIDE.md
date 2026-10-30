@@ -38,6 +38,10 @@ case, change it here in the same change, with a sentence of reasoning.
 - Interfaces are defined where they are consumed, not where they are
   implemented, unless they are the package's main extension point
   (`tool.Tool`, `provider.Provider`, `search.Searcher`, `executor.Executor`).
+  An interface with one implementation and no fake is a concrete type;
+  an optional capability of an extension point (`provider.Lister`) is not.
+- `internal/server` keeps one file per resource: `<resource>.go` for the
+  handlers, `<resource>_wire.go` for its JSON types.
 
 ### Code
 
@@ -58,7 +62,15 @@ case, change it here in the same change, with a sentence of reasoning.
 - Concurrency: every goroutine has an owner that knows when it exits.
   Use `errgroup` or an explicit `sync.WaitGroup`. Channels are closed by the
   sender. Protect shared state with a mutex named `mu` placed directly above
-  the fields it guards.
+  the fields it guards. Fields set once before any goroutine starts, and
+  WaitGroups, go above `mu`, so nothing below it reads as unguarded.
+- HTTP clients: one that needs no dialer of its own leaves `Transport` nil and
+  shares `http.DefaultTransport`'s pool. One that dials out for a sandbox or
+  the web uses a `netguard` dialer.
+- Lint: `golangci-lint` runs in `make check` with the `docker` tag, like vet.
+  An error that is deliberately dropped is written `_ =`; deferred closes
+  follow v2's `std-error-handling` preset. A false positive is exempted by
+  path in `.golangci.yml`, with the reason.
 - Logging: `log/slog` only. Get the logger from the constructor argument or
   from `slog.Default()`; never a package-level logger variable. Log with
   structured keys, lowercase, snake_case: `slog.Info("workspace started",
@@ -141,7 +153,13 @@ web/src/
 - Tailwind for styling, shadcn for primitives. No CSS modules, no inline
   style objects except for computed values.
 - Effects are a last resort. Derive state during render; subscribe with
-  hooks that own their cleanup.
+  hooks that own their cleanup. A "latest handler" ref is the one way to
+  read current props from a long-lived callback.
+- `make check` runs the UI against the mock harness only. A change to what
+  the transcript renders, or when, also needs `make smoke`: moving the
+  live-region announcement from an effect into render once put its text on
+  the page twice in one render, which broke the smoke test's text locators
+  and nothing in `make check`.
 - Accessibility: every interactive element is a `button`, `a`, or input
   with a label. Keyboard navigation works for every panel.
 
@@ -260,6 +278,8 @@ make obvious.
 - Branch per unit of work. Commit messages: imperative subject under 60
   characters, blank line, body explaining why when the diff does not.
   Mention dependency additions with a reason.
+- A move is its own commit with no edits, checked by diffing the sorted
+  removed and added lines; say so in the body when it is not pure.
 - A commit passes `make check`. Do not commit generated files except the
   lockfiles, shadcn components, and `docs/api/contract.json`, which a test
   keeps in step with the Go types.

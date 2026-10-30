@@ -203,7 +203,7 @@ before the routes it calls.
 - [x] Docs checks carried from `REFACTOR_PLAN.md` phase 5, as tests where cheap:
       every route in `routes.go` appears in `docs/api/http.md` and nothing
       else does; `events.md` matches `internal/event`.
-- [ ] Move the lasting lessons in `REFACTOR_PLAN.md`'s log into
+- [x] Move the lasting lessons in `REFACTOR_PLAN.md`'s log into
       `STYLE_GUIDE.md` or `DECISIONS.md` now (for example, that `make check`
       did not catch the live-region change `make smoke` caught), so deleting
       the file in phase 15 loses nothing.
