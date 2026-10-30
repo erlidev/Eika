@@ -55,8 +55,8 @@ type createWorkspaceRequest struct {
 	BuildContext      string `json:"build_context"`
 	Dockerfile        string `json:"dockerfile"`
 	ParentWorkspaceID string `json:"parent_workspace_id"`
-	// Sandbox is the new workspace's limits, network, and ports. Left out,
-	// it gets the settings' defaults and no ports.
+	// Sandbox is the new workspace's limits and network. Left out, it gets
+	// the settings' defaults.
 	Sandbox *sandboxBody `json:"sandbox"`
 }
 

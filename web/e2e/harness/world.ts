@@ -92,8 +92,6 @@ export type World = {
   defaultModel?: string;
   projects: Project[];
   workspaces: Workspace[];
-  /** files holds each workspace's files by path, keyed by workspace id; only AGENTS.md is read. */
-  files: Record<string, Record<string, string>>;
   sessions: Session[];
   /** untitled are the sessions created without a title, which their first run names. */
   untitled: string[];
@@ -187,7 +185,6 @@ export function emptyWorld(): World {
     models: [],
     projects: [],
     workspaces: [],
-    files: {},
     sessions: [],
     untitled: [],
     tools: toolCatalog(),
@@ -232,7 +229,6 @@ export function defaultSandbox(): Sandbox {
   return {
     limits: { cpus: 0, memory_mb: 0, pids: 4096 },
     egress: { mode: "open", allow: [...defaultAllowlist] },
-    ports: [],
   };
 }
 

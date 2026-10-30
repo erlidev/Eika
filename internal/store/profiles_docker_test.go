@@ -113,10 +113,8 @@ func TestProfileSettingsRoundTrip(t *testing.T) {
 				Description: "for reviews",
 				ProfileSettings: store.ProfileSettings{
 					ModelID:          model.ID,
-					WorkspacePrompt:  ptr("Review carefully."),
 					ChatPrompt:       ptr("Chat briefly."),
 					Instructions:     ptr("Cite files."),
-					ContextFiles:     ptr(true),
 					PreserveThinking: ptr(true),
 					Sampling:         json.RawMessage(`{"temperature":0.2,"stop":["END"],"seed":7}`),
 				},
@@ -124,13 +122,11 @@ func TestProfileSettingsRoundTrip(t *testing.T) {
 			},
 		},
 		{
-			"empty prompts, no context files, no thinking, and no tools are values",
+			"empty prompts, no thinking, and no tools are values",
 			store.Profile{
 				ProfileSettings: store.ProfileSettings{
-					WorkspacePrompt:  ptr(""),
 					ChatPrompt:       ptr(""),
 					Instructions:     ptr(""),
-					ContextFiles:     ptr(false),
 					PreserveThinking: ptr(false),
 				},
 				Tools: []string{},
@@ -228,10 +224,9 @@ func TestASessionChoosesAProfileAndOverridesIt(t *testing.T) {
 	}
 
 	overrides := store.ProfileSettings{
-		ModelID:         model.ID,
-		WorkspacePrompt: ptr(""),
-		ContextFiles:    ptr(false),
-		Sampling:        json.RawMessage(`{"top_k":20}`),
+		ModelID:    model.ID,
+		ChatPrompt: ptr(""),
+		Sampling:   json.RawMessage(`{"top_k":20}`),
 	}
 	sess := newSession(t, st, store.Session{ProfileID: review.ID, Overrides: overrides})
 	if sess.ProfileID != review.ID || !sameSettings(t, sess.Overrides, overrides) {

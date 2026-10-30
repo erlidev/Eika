@@ -12,7 +12,7 @@ code a run uses; this feature only draws it.
   Inspect, opens the inspector on it.
 - `ContextInspector` is the large dialog: the parts in a column, and the
   chosen one whole beside it: the system prompt section by section, the
-  context files, the tools with their parameter tables or raw schemas, every
+  the tools with their parameter tables or raw schemas, every
   message with its size, and the parameters with the layer each came from.
   A part of the next request has an Edit link to the setting behind it, and
   the request copies as JSON.

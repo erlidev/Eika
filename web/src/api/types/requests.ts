@@ -5,15 +5,13 @@ import type { ThinkingSwitch } from "@/api/types/providers";
 import type { Message } from "@/api/types/sessions";
 
 /** SectionKind names a part of the system prompt. */
-export type SectionKind = "base" | "context_files" | "instructions";
+export type SectionKind = "base" | "instructions";
 
 /** ContextSection is one part of the system prompt, with its estimated size. */
 export type ContextSection = {
   kind: SectionKind;
   text: string;
   tokens: number;
-  /** files are the context files a context_files section renders. */
-  files?: { path: string; text: string; tokens: number }[];
 };
 
 /** ToolSchema is one tool definition a request sends. */
@@ -75,11 +73,6 @@ export type ModelContext = {
   /** sources names the layer of each parameter: model, thinking_switch, preserve_thinking, sampling.<name>. */
   sources: Record<string, ConfigLayer> | null;
   dropped_effort?: string;
-  /**
-   * context_files_unread says why a preview has no context files where a
-   * run would read them: the workspace is not running.
-   */
-  context_files_unread?: string;
   /** request is the record this is; absent for the next request. */
   request?: ModelRequest;
   /** context_window is the model's window in tokens; 0 when the model is not known. */

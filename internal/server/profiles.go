@@ -30,12 +30,10 @@ const (
 // below.
 type profileSettingsBody struct {
 	ModelID string `json:"model_id,omitempty"`
-	// WorkspacePrompt and ChatPrompt replace the built-in base prompts of a
-	// workspace session and of a chat, the empty string included.
-	WorkspacePrompt *string `json:"workspace_prompt"`
-	ChatPrompt      *string `json:"chat_prompt"`
-	Instructions    *string `json:"instructions"`
-	ContextFiles    *bool   `json:"context_files"`
+	// ChatPrompt replaces the built-in base prompt, the empty string
+	// included.
+	ChatPrompt   *string `json:"chat_prompt"`
+	Instructions *string `json:"instructions"`
 	// PreserveThinking says whether earlier reasoning is replayed to the
 	// model, over the model's own switch.
 	PreserveThinking *bool `json:"preserve_thinking"`
@@ -62,8 +60,7 @@ type profileBody struct {
 // builtinPrompts are the base prompts a profile that sets none uses, which
 // the editor shows, compares an override with, and resets to.
 type builtinPrompts struct {
-	Workspace string `json:"workspace"`
-	Chat      string `json:"chat"`
+	Chat string `json:"chat"`
 }
 
 // profilesResponse is the body of GET /api/profiles.
@@ -122,7 +119,7 @@ func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {
 	out := profilesResponse{
 		Profiles: make([]profileBody, 0, len(base.profiles)),
 		Default:  base.defaultProfile.ID,
-		Prompts:  builtinPrompts{Workspace: agent.WorkspacePrompt, Chat: agent.ChatPrompt},
+		Prompts:  builtinPrompts{Chat: agent.ChatPrompt},
 	}
 	for _, p := range base.profiles {
 		body, err := asProfile(p, base)
@@ -418,9 +415,8 @@ func (s *Server) checkProfile(ctx context.Context, req profileRequest) (store.Pr
 // returns it in the form the store keeps.
 func (s *Server) checkSettings(ctx context.Context, b profileSettingsBody) (store.ProfileSettings, error) {
 	for field, text := range map[string]*string{
-		"workspace_prompt": b.WorkspacePrompt,
-		"chat_prompt":      b.ChatPrompt,
-		"instructions":     b.Instructions,
+		"chat_prompt":  b.ChatPrompt,
+		"instructions": b.Instructions,
 	} {
 		if text != nil && len(*text) > maxPromptBytes {
 			return store.ProfileSettings{}, invalidf("%s must be at most %d bytes", field, maxPromptBytes)
@@ -443,10 +439,8 @@ func (s *Server) checkSettings(ctx context.Context, b profileSettingsBody) (stor
 	}
 	return store.ProfileSettings{
 		ModelID:          b.ModelID,
-		WorkspacePrompt:  b.WorkspacePrompt,
 		ChatPrompt:       b.ChatPrompt,
 		Instructions:     b.Instructions,
-		ContextFiles:     b.ContextFiles,
 		PreserveThinking: b.PreserveThinking,
 		Sampling:         sampling,
 	}, nil
@@ -491,10 +485,8 @@ func asProfile(p store.Profile, base configBase) (profileBody, error) {
 func asSettings(p store.ProfileSettings) (profileSettingsBody, error) {
 	body := profileSettingsBody{
 		ModelID:          p.ModelID,
-		WorkspacePrompt:  p.WorkspacePrompt,
 		ChatPrompt:       p.ChatPrompt,
 		Instructions:     p.Instructions,
-		ContextFiles:     p.ContextFiles,
 		PreserveThinking: p.PreserveThinking,
 	}
 	if len(p.Sampling) > 0 {

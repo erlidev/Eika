@@ -13,7 +13,7 @@ import (
 const maxEnvironmentBytes = 64 << 10
 
 // handleSetEnvironment replaces the entries the daemon adds to the
-// environment of every process it starts: commands, terminals, and stdio
+// environment of every process it starts: commands and stdio
 // processes started after the request. It is how the harness routes a
 // sandbox's traffic through its egress proxy, and stops doing so, without
 // restarting the container. A process already running keeps what it had.

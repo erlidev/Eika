@@ -175,9 +175,9 @@ before the routes it calls.
       the log which pieces later phases reuse from history: the spawner's
       `reserve`, `release`, abort and shutdown, `summaryOf` and `describe`
       (phase 2), and the preview ticket flow (phase 12's live view).
-- [ ] Remove previews, the terminal route and eikad `/pty`. Keep eikad `exec`,
+- [x] Remove previews, the terminal route and eikad `/pty`. Keep eikad `exec`,
       `files`, `stat`, `list`, `process`, `environment` and `watch`.
-- [ ] Remove `contextfile` (AGENTS.md discovery) and `WorkspacePrompt`.
+- [x] Remove `contextfile` (AGENTS.md discovery) and `WorkspacePrompt`.
 - [ ] Remove git projects and the `projects` table. Projects return with a new
       meaning in phase 2.
 - [ ] Rename workspace to computer throughout:

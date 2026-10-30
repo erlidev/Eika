@@ -16,7 +16,7 @@ const idleSweepInterval = time.Minute
 // idleWorkspaces stops the running workspaces no run has used for the
 // workspace_idle_minutes setting, so an unattended sandbox gives its memory
 // and CPU back. A workspace is in use while a run is going or being built in
-// it or in a worktree it holds; a terminal or a preview does not count.
+// it or in a worktree it holds; nothing else counts.
 //
 // What it knows lives in memory: after a restart every running workspace
 // gets the whole timeout again, which errs on the side of leaving one up.

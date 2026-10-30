@@ -36,7 +36,6 @@ egress proxy are network calls and run in the harness.
 | `imaging` | Prepares attached images: decode, EXIF orientation, fit within 1080p (Catmull-Rom), PNG or JPEG without metadata |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
 | `executor` | The interface every agent action uses, path validation; `local` (tests only), `sandbox` (eikad client) |
-| `contextfile` | AGENTS.md discovery and its system prompt section |
 | `eikad` | Daemon handlers, path confinement, wire types |
 | `workspace` | Container and volume lifecycle, confinement, usage |
 | `egress` | Egress modes, allowlist patterns, the proxy |
@@ -74,10 +73,8 @@ Run(ctx, session, text)
   `question.asked`, and waits for the API to deliver an answer.
 - **executor**: `executor.Resolve` rejects paths leaving the root;
   `executor/local` has the `!prod` tag.
-- **contextfile** reads AGENTS.md (CLAUDE.md fallback, AGENTS.override.md
-  replacement) from the workspace root down to the working directory.
 - **Context assembly** (`agent/context.go`) builds every request as an
-  `agent.Context`: system prompt sections (base prompt, context files,
+  `agent.Context`: system prompt sections (base prompt,
   instructions), tool schemas (built-in or MCP), messages, parameters, and a
   size estimate for each. Runs and `Agent.Preview` share it; a `Recorder`
   sees every call that returned.
@@ -129,14 +126,14 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | Table | Holds |
 |---|---|
 | `projects` | name (unique), kind (remote/local), remote_url, host_path, default_branch |
-| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, sandbox (jsonb: limits, egress, ports), pinned, archived |
+| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, sandbox (jsonb: limits, egress), pinned, archived |
 | `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb), pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
 | `providers` | name (unique), kind, base_url, api_key (sealed) |
 | `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
-| `profiles` | name, description, model_id, workspace_prompt, chat_prompt, instructions, context_files, preserve_thinking, tools, sampling (jsonb); NULL = not set |
+| `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
 | `model_requests` | session, run, entry, model, sections, tools, parameters (jsonb), token counts |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
@@ -185,7 +182,7 @@ session's workspace.
 A chat's run gets no executor and no commit function. `sessionTools` drops
 every tool that `NeedsWorkspace`, then applies the tool choice, so the model is
 never offered a workspace tool; the loop also refuses one. The system prompt
-is the chat prompt without context files. web_fetch refuses filters in a chat.
+is the same base prompt every session has. web_fetch refuses filters in a chat.
 A chat's fork is a chat.
 
 ## Server
@@ -210,7 +207,7 @@ POST /api/sessions/{id}/messages          GET /api/events
 - **Auth** is one middleware over `/api`. A bearer token is a sign-in
   session (looked up by SHA-256) or the API token (constant-time compare).
   Public: health, `GET /api/auth/status`, `POST /api/auth/setup` (once),
-  `POST /api/auth/login`, `/oauth/client-metadata.json`. `/api/events` and the terminal also accept `?token=`. Sign-in
+  `POST /api/auth/login`, `/oauth/client-metadata.json`. `/api/events` also accepts `?token=`. Sign-in
   attempts are serialised.
 - **Configuration** (`configuration.go`): `configure` loads models,
   profiles, and defaults; `resolve` takes each value from the first layer
@@ -292,10 +289,9 @@ and, for long keys, the last four characters.
  harness (eika)                              workspace container eika-ws-<id>
   tool -> executor/sandbox --HTTP, bearer--> eikad :7000
   mcp.Pool -> Host.Process --------------->    /exec /files /stat /list
-  terminal relay ------------------------->    /pty /watch /process /environment
+  Host.Process --------------------------->    /watch /process /environment
   workspace.Host ---------docker socket--->  container + volume at /workspace
   egress.Proxy :3128 <-----------------------  HTTP(S)_PROXY, when restricted
-  previews <port>-<id>.<host> ------------>    a forwarded port
 ```
 
 ### eikad
@@ -311,20 +307,15 @@ times. API: `api/eikad.md`.
 `executor/sandbox` is an HTTP client for one daemon; `Exec` streams the
 daemon's newline-delimited frames into the caller's writers. A 404 is
 `sandbox.ErrNotFound`. `Options.Dir` narrows a client to a directory below the
-daemon's root: paths are relative to it, commands and terminals start in it,
-and the client refuses paths outside it. Nothing uses it today.
+daemon's root: paths are relative to it, commands start in it, and the
+client refuses paths outside it. Nothing uses it today.
 
-### Files and terminal
+### Files
 
 File routes call the executor after `executor.Resolve` (eikad re-checks after
 symlinks): refused paths are 403, missing 404. Saves publish
-`workspace.state`.
-
-The terminal relays a browser WebSocket to eikad `/pty` through
-`Host.Terminal` (never the executor). The sandbox is dialled before the
-browser handshake is accepted, so a stopped workspace is an ordinary HTTP
-error. Frames and close codes pass through unchanged; a drop without a close
-frame closes the other side with 1011; messages are capped at 1 MiB.
+`workspace.state`. There is no terminal and no preview: the person using a
+workspace reaches it only through the agent.
 
 ### Workspace lifecycle
 
@@ -348,7 +339,7 @@ container's environment. `Reconcile` updates recorded states at startup and
 marks a workspace `gone` only when Docker says the container does not exist;
 any other error stops reconciliation without changing states.
 
-### Limits, egress, previews
+### Limits and egress
 
 `Host.Create` applies the workspace's `sandbox` row; `PUT .../sandbox` writes
 the row then `Host.Confine`s; every start re-applies it.
@@ -374,10 +365,6 @@ network before leaving the old. Proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`,
 `NO_PROXY` in both cases, `NODE_USE_ENV_PROXY`) are given to eikad with
 `PUT /environment` on every change and start.
 
-A preview is served at `<port>-<workspace id>.<host>`: `Server.Handler`
-routes such hosts before the API. `POST .../ports/{port}/preview` returns a
-link with a one-time ticket, traded for a host-only cookie; every request is
-checked against the row. Tickets and sessions are in memory.
 
 ## Search
 
@@ -512,7 +499,7 @@ web/src/
   widths; below 1024px side panes become drawers. The coding UI (projects,
   workspaces, files, terminal, changes, the session tree and fork) is gone
   from the frontend; the Go routes it called stay until a later phase 0 item
-  removes them.
+  removes them (the terminal and preview routes are already gone).
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
   events (`useSessionStream`, `useMCPEvents`,
   `useSessionUpdates`).
@@ -546,9 +533,9 @@ An arrow means "may import".
  cmd/eika -> server                     cmd/eikad -> eikad, search/filter
  server -> agent, session, store, workspace, search, mcp, egress,
            utility, imaging
- agent -> tool, provider, contextfile     session -> agent, store
+ agent -> tool, provider                 session -> agent, store
  utility -> provider                      imaging -> provider
- tool -> executor                         contextfile -> executor
+ tool -> executor
  executor/sandbox -> eikad (wire types)   workspace -> executor, executor/sandbox
  tool/builtin -> search, search/fetch     search/fetch, egress -> netguard
  mcp -> tool, event, mcp/oauth            config, event, secret: leaves

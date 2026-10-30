@@ -25,6 +25,12 @@ const (
 	// MaxProcessMessage bounds one message on a /process socket. A stdin
 	// message carries one whole MCP message, up to 16 MiB before base64.
 	MaxProcessMessage = 24 << 20
+	// processExitTimeout bounds how long the daemon waits to deliver the
+	// final message to a client that has stopped reading.
+	processExitTimeout = 5 * time.Second
+	// processWriteTimeout bounds one output message, so that a client that
+	// has stopped reading cannot keep the process alive.
+	processWriteTimeout = 30 * time.Second
 )
 
 // handleProcess upgrades to a WebSocket and runs one long-lived process with
@@ -164,7 +170,7 @@ func readStart(ctx context.Context, conn *websocket.Conn) (ProcessMessage, error
 
 // endProcess sends the last message and closes the socket.
 func (d *Daemon) endProcess(ctx context.Context, conn *websocket.Conn, msg ProcessMessage) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ptyExitTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), processExitTimeout)
 	defer cancel()
 	if data, err := json.Marshal(msg); err == nil {
 		_ = conn.Write(ctx, websocket.MessageText, data)
@@ -186,7 +192,7 @@ func (w processWriter) Write(p []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	ctx, cancel := context.WithTimeout(w.ctx, ptyWriteTimeout)
+	ctx, cancel := context.WithTimeout(w.ctx, processWriteTimeout)
 	defer cancel()
 	if err := w.conn.Write(ctx, websocket.MessageText, data); err != nil {
 		return 0, err

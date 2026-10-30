@@ -4,7 +4,7 @@
   - text: Profile
   - button "Edit the profile"
   - combobox "Profile": Reviewer
-  - paragraph: /~\d+ tokens every request sends before the conversation, not counting context files/
+  - paragraph: /~\d+ tokens every request sends before the conversation/
   - button /System prompt ~\d+/
   - button /Tools ~\d+/
   - tablist "Settings":

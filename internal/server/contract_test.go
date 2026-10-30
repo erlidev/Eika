@@ -57,8 +57,7 @@ var routeWire = map[string]wire{
 	"POST /api/auth/logout":  {status: http.StatusNoContent},
 	"PUT /api/auth/password": {status: http.StatusOK, request: changePasswordRequest{}, response: signInResponse{}},
 
-	"GET /api/events":                   {websocket: true},
-	"GET /api/workspaces/{id}/terminal": {websocket: true},
+	"GET /api/events": {websocket: true},
 
 	"GET /api/projects":         {status: http.StatusOK, response: projectsResponse{}},
 	"POST /api/projects":        {status: http.StatusCreated, request: createProjectRequest{}, response: projectBody{}},
@@ -78,8 +77,6 @@ var routeWire = map[string]wire{
 	"PUT /api/workspaces/{id}/file":    {status: http.StatusOK, raw: true, response: fileEntry{}},
 	"PUT /api/workspaces/{id}/sandbox": {status: http.StatusOK, request: sandboxBody{}, response: workspaceBody{}},
 	"GET /api/workspaces/{id}/usage":   {status: http.StatusOK, response: usageResponse{}},
-
-	"POST /api/workspaces/{id}/ports/{port}/preview": {status: http.StatusOK, response: previewResponse{}},
 
 	"GET /api/sessions":              {status: http.StatusOK, response: sessionsResponse{}},
 	"POST /api/sessions":             {status: http.StatusCreated, request: createSessionRequest{}, response: sessionBody{}},

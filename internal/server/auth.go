@@ -4,21 +4,15 @@ import (
 	"crypto/subtle"
 	"errors"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/erlidev/eika/internal/store"
 )
 
-// eventsPath is the event stream. It and the terminal sockets are the routes
-// that accept the token as a query parameter: a browser cannot set a header on
-// a WebSocket handshake.
+// eventsPath is the event stream, the one route that accepts the token as a
+// query parameter: a browser cannot set a header on a WebSocket handshake.
 const eventsPath = "/api/events"
-
-// terminalPattern matches the path of a workspace's terminal socket, the one
-// other route that accepts the token in the query.
-var terminalPattern = regexp.MustCompile(`^/api/workspaces/[^/]+/terminal$`)
 
 // sessionLifetime is how long a sign-in lasts before the browser signs in
 // again.
@@ -103,10 +97,10 @@ func bearerToken(r *http.Request) string {
 	return ""
 }
 
-// isSocketPath reports whether a path is one of the WebSocket routes, the
-// event stream and a workspace's terminal.
+// isSocketPath reports whether a path is the WebSocket route, the event
+// stream.
 func isSocketPath(path string) bool {
-	return path == eventsPath || terminalPattern.MatchString(path)
+	return path == eventsPath
 }
 
 // handleAuthStatus tells the UI whether to offer setup or sign-in.

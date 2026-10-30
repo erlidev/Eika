@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/agent"
-	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -74,11 +73,6 @@ type contextResponse struct {
 	// what the request has to fit in. Zero when the model is not known,
 	// because none is configured or a recorded call's model is deleted.
 	ContextWindow int `json:"context_window"`
-	// ContextFilesUnread says why the preview holds no context files where
-	// a run would read them: the session's workspace is not running, so
-	// they cannot be read until it starts. Absent when they were read, or
-	// when the run would not read them.
-	ContextFilesUnread string `json:"context_files_unread,omitempty"`
 	// Calibration is the measured call the estimates can be scaled to: the
 	// recorded call itself, or the session's last measured one; absent when
 	// there is none.
@@ -158,30 +152,14 @@ func (s *Server) handleSessionContext(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	// The context files are read from the workspace as a run reads them,
-	// which needs it running. A stopped workspace still has a preview,
-	// with the workspace's base prompt and the files marked unread, since
-	// everything else in it is known without the workspace.
-	var ex executor.Executor
-	var unread string
 	opts := agent.Options{Logger: s.log}
-	if !sess.Chat() {
-		ex, err = s.executorFor(ctx, sess.WorkspaceID)
-		if status, _ := statusOf(err); err != nil && status != http.StatusConflict {
-			s.fail(w, r, err)
-			return
-		}
-		if err != nil && cfg.contextFiles {
-			unread = err.Error()
-		}
-	}
 	loaded, err := session.NewStore(s.tree).Load(ctx, sess.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	ag := s.newAgent(nil, sess, cfg, ex, s.offeredMCP(), opts)
-	next, err := ag.Preview(ctx, loaded)
+	ag := s.newAgent(nil, sess, cfg, nil, s.offeredMCP(), opts)
+	next, err := ag.Preview(loaded)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -192,12 +170,11 @@ func (s *Server) handleSessionContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.log, http.StatusOK, contextResponse{
-		Context:            next,
-		Sources:            cfg.parameterSources(),
-		DroppedEffort:      cfg.droppedEffort,
-		ContextFilesUnread: unread,
-		Calibration:        calibration,
-		ContextWindow:      cfg.model.ContextWindow,
+		Context:       next,
+		Sources:       cfg.parameterSources(),
+		DroppedEffort: cfg.droppedEffort,
+		Calibration:   calibration,
+		ContextWindow: cfg.model.ContextWindow,
 	})
 }
 

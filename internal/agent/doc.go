@@ -9,8 +9,8 @@
 // the context aborts the run and puts queued messages back.
 //
 // Every model request is assembled in one place, context.go, as a Context:
-// the system prompt by named section (the base prompt, the workspace's
-// context files, the extra instructions), the tool schemas, the messages as
+// the system prompt by named section (the base prompt and the extra
+// instructions), the tool schemas, the messages as
 // sent, and the parameters. Agent.Preview returns the same assembly for the
 // next call without sending it, and a Recorder learns about every call a run
 // makes.
@@ -22,7 +22,7 @@
 //
 // The loop reports progress as event.Event values through an event.Emitter and
 // persists every message through a Store. It depends on provider, tool,
-// executor, contextfile, and event, and on nothing above it.
+// executor, and event, and on nothing above it.
 //
 // The entry points are New, Agent.Run, Agent.Compact, Agent.Preview,
 // Agent.Steer, and Agent.FollowUp.

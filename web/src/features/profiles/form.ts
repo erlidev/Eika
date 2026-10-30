@@ -132,10 +132,8 @@ export function samplingField(key: SamplingKey): SamplingField {
  */
 export type Draft = {
   model_id: string;
-  workspace_prompt: string | null;
   chat_prompt: string | null;
   instructions: string | null;
-  context_files: boolean | null;
   preserve_thinking: boolean | null;
   sampling: Record<SamplingKey, string>;
   /** tools is the choice, null for none made at this layer. */
@@ -156,10 +154,8 @@ export function toDraft(settings: ProfileSettings, tools: string[] | null): Draf
     sampling[field.key] = samplingText(settings.sampling, field.key);
   return {
     model_id: settings.model_id ?? "",
-    workspace_prompt: settings.workspace_prompt,
     chat_prompt: settings.chat_prompt,
     instructions: settings.instructions,
-    context_files: settings.context_files,
     preserve_thinking: settings.preserve_thinking,
     sampling,
     tools: tools === null ? null : [...tools],
@@ -220,10 +216,8 @@ export function toSettings(
   return {
     settings: {
       ...(draft.model_id === "" ? {} : { model_id: draft.model_id }),
-      workspace_prompt: draft.workspace_prompt,
       chat_prompt: draft.chat_prompt,
       instructions: draft.instructions,
-      context_files: draft.context_files,
       preserve_thinking: draft.preserve_thinking,
       sampling,
     },
@@ -268,10 +262,8 @@ export function inheritedSampling(config: Configuration, key: SamplingKey): stri
 export function isSet(draft: Draft): boolean {
   return (
     draft.model_id !== "" ||
-    draft.workspace_prompt !== null ||
     draft.chat_prompt !== null ||
     draft.instructions !== null ||
-    draft.context_files !== null ||
     draft.preserve_thinking !== null ||
     draft.tools !== null ||
     Object.values(draft.sampling).some((text) => text.trim() !== "")

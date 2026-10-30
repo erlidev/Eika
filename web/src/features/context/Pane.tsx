@@ -32,12 +32,11 @@ type PaneProps = {
   view: View;
   context: ModelContext;
   total: number;
-  chat: boolean;
   edit: Edit;
   onView: (view: View) => void;
 };
 
-export function Pane({ view, context, total, chat, edit, onView }: PaneProps) {
+export function Pane({ view, context, total, edit, onView }: PaneProps) {
   const sections = context.sections ?? [];
   const tools = context.tools ?? [];
   if (view === "system") {
@@ -52,7 +51,7 @@ export function Pane({ view, context, total, chat, edit, onView }: PaneProps) {
           <p className="text-muted-foreground text-sm">No system prompt.</p>
         )}
         {sections.map((s) => (
-          <SectionBlock key={s.kind} section={s} chat={chat} edit={edit} />
+          <SectionBlock key={s.kind} section={s} edit={edit} />
         ))}
       </PaneFrame>
     );
@@ -62,23 +61,7 @@ export function Pane({ view, context, total, chat, edit, onView }: PaneProps) {
     if (section === undefined) return null;
     return (
       <PaneFrame title={segmentLabels[section.kind]} tokens={section.tokens} total={total}>
-        <SectionBlock section={section} chat={chat} edit={edit} bare />
-      </PaneFrame>
-    );
-  }
-  if (view.startsWith("file:")) {
-    const path = view.slice("file:".length);
-    const file = sections.flatMap((s) => s.files ?? []).find((f) => f.path === path);
-    if (file === undefined) return null;
-    return (
-      <PaneFrame
-        title={file.path}
-        mono
-        tokens={file.tokens}
-        total={total}
-        note="A context file, as the model reads it."
-      >
-        <TextBlock label={file.path}>{file.text}</TextBlock>
+        <SectionBlock section={section} edit={edit} bare />
       </PaneFrame>
     );
   }
@@ -100,7 +83,7 @@ export function Pane({ view, context, total, chat, edit, onView }: PaneProps) {
         tokens={tokens}
         total={total}
         note="Every definition is sent with every request, whether the model calls the tool or not."
-        action={<EditLinkFor edit={edit} kind="builtin_tools" chat={chat} what="the tools" />}
+        action={<EditLinkFor edit={edit} kind="builtin_tools" what="the tools" />}
       >
         {group === undefined && tools.length > 0 && <ToolSizes groups={groups} onView={onView} />}
         <ToolList groups={shown} />
@@ -170,55 +153,35 @@ function layerOf(config: SessionConfiguration | undefined, key: string): ConfigL
   return config?.resolved.sources?.[key];
 }
 
-type EditLinkForProps = { edit: Edit; kind: SegmentKind; chat: boolean; what: string };
+type EditLinkForProps = { edit: Edit; kind: SegmentKind; what: string };
 
 /** EditLinkFor links a part of the next request to the setting behind it; a record links nowhere. */
-function EditLinkFor({ edit, kind, chat, what }: EditLinkForProps) {
-  const target = editTargetOf(kind, chat);
+function EditLinkFor({ edit, kind, what }: EditLinkForProps) {
+  const target = editTargetOf(kind);
   if (target === undefined || edit.config === undefined) return null;
   return <EditLink {...edit} target={target} what={what} />;
 }
 
 type SectionBlockProps = {
   section: NonNullable<ModelContext["sections"]>[number];
-  chat: boolean;
   edit: Edit;
   /** bare leaves out the header, for a pane that shows only this section. */
   bare?: boolean;
 };
 
 /** SectionBlock is one section of the system prompt, marked with its colour and source. */
-function SectionBlock({ section, chat, edit, bare = false }: SectionBlockProps) {
-  const target = editTargetOf(section.kind, chat);
+function SectionBlock({ section, edit, bare = false }: SectionBlockProps) {
+  const target = editTargetOf(section.kind);
   const layer = target === undefined ? undefined : layerOf(edit.config, target.key);
   const label = segmentLabels[section.kind];
-  // The overview shows each section exactly as sent; a context files
-  // section's own view splits it into its files.
-  const body =
-    bare && section.files !== undefined && section.files.length > 0 ? (
-      <div className="space-y-2">
-        {section.files.map((f) => (
-          <div key={f.path} className="space-y-1">
-            <p className="flex items-center gap-2 text-xs">
-              <span className="font-mono font-medium">{f.path}</span>
-              <span className="text-muted-foreground font-mono tabular-nums">
-                ~{formatTokens(f.tokens)}
-              </span>
-            </p>
-            <TextBlock label={f.path}>{f.text}</TextBlock>
-          </div>
-        ))}
-      </div>
-    ) : (
-      <TextBlock label={label}>{section.text}</TextBlock>
-    );
+  const body = <TextBlock label={label}>{section.text}</TextBlock>;
   if (bare) {
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           {layer !== undefined && <LayerChip set={false} from={layer} />}
           <div className="ml-auto">
-            <EditLinkFor edit={edit} kind={section.kind} chat={chat} what={label.toLowerCase()} />
+            <EditLinkFor edit={edit} kind={section.kind} what={label.toLowerCase()} />
           </div>
         </div>
         {body}
@@ -236,7 +199,7 @@ function SectionBlock({ section, chat, edit, bare = false }: SectionBlockProps) 
             ~{formatTokens(section.tokens)}
           </span>
           <div className="ml-auto">
-            <EditLinkFor edit={edit} kind={section.kind} chat={chat} what={label.toLowerCase()} />
+            <EditLinkFor edit={edit} kind={section.kind} what={label.toLowerCase()} />
           </div>
         </header>
         {body}

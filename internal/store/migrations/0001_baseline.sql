@@ -101,9 +101,9 @@ CREATE INDEX models_provider_idx ON models (provider_id);
 -- provider's defaults below it.
 --
 -- model_id names the model by id, so that renaming the model does not break
--- the profile; NULL is the default model. workspace_prompt and chat_prompt
--- replace the built-in base prompts when set, the empty string included.
--- context_files NULL reads them. tools is in the shape of sessions.tools,
+-- the profile; NULL is the default model. chat_prompt replaces the built-in
+-- base prompt when set, the empty string included. tools is in the shape of
+-- sessions.tools,
 -- with mcp__<server>__* standing for every tool of that server; NULL is
 -- every tool. sampling is a provider.Sampling: the keys it has are the
 -- parameters set, so '{}' sets none. preserve_thinking NULL leaves the
@@ -113,10 +113,8 @@ CREATE TABLE profiles (
     name              text NOT NULL UNIQUE,
     description       text NOT NULL DEFAULT '',
     model_id          text REFERENCES models (id) ON DELETE SET NULL,
-    workspace_prompt  text,
     chat_prompt       text,
     instructions      text,
-    context_files     boolean,
     tools             text[],
     sampling          jsonb NOT NULL DEFAULT '{}',
     preserve_thinking boolean,

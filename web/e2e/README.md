@@ -4,7 +4,7 @@ Drive the UI in a real browser against a **mock harness** and screenshot the
 result. No Go server, Postgres, or Docker needed: `harness/mock.ts` answers
 every `/api` route and the `/api/events` WebSocket from an in-memory world,
 and plays scripted agent replies so a sent message streams like a real run.
-Routes whose UI is gone (projects, workspaces, files, the terminal, forks)
+Routes whose UI is gone (projects, workspaces, files, forks)
 are not served; `harness/mock.test.ts` lists each in `unmocked` until its Go
 route is removed.
 
@@ -112,7 +112,7 @@ opens one with no messages. `mcp` adds five MCP servers, one in each state, and 
 same servers beside the chats; the mock's authorization server approves at
 once, so Sign in returns straight to `/mcp/callback`. `profiles` adds two
 profiles to the workbench, puts `ses-backoff` on one with an override of its
-own, gives its workspace an AGENTS.md, and records two of its model calls,
+own, and records two of its model calls,
 for the Profiles tab, the status bar's profile, and the Context panel; the
 mock resolves profiles and assembles requests in `harness/profiles.ts`, and
 every run it plays records its model call. The `agent-*`

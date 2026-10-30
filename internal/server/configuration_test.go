@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"maps"
 	"reflect"
@@ -34,7 +33,6 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 		layers  []configLayer
 		model   string
 		prompt  *string
-		files   bool
 		tools   []string
 		want    provider.Sampling
 		dropped string
@@ -42,11 +40,11 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 	}{
 		{
 			name:  "nothing set is the default model's row and the built-in prompts",
-			model: "small", files: true,
-			want: provider.Sampling{MaxOutput: new(1024), ReasoningEffort: new("low")},
+			model: "small",
+			want:  provider.Sampling{MaxOutput: new(1024), ReasoningEffort: new("low")},
 			sources: map[string]string{
-				"profile": layerDefault, "model": layerDefault, "workspace_prompt": layerDefault, "chat_prompt": layerDefault,
-				"instructions": layerDefault, "context_files": layerDefault, "tools": layerDefault,
+				"profile": layerDefault, "model": layerDefault, "chat_prompt": layerDefault,
+				"instructions": layerDefault, "tools": layerDefault,
 				"preserve_thinking":   layerModel,
 				"sampling.max_output": layerModel, "sampling.reasoning_effort": layerModel,
 			},
@@ -58,17 +56,16 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 					Sampling: sampling(t, provider.Sampling{Temperature: new(0.2)}),
 				}, tools: []string{"bash"}},
 				{name: layerProfile, settings: store.ProfileSettings{
-					ModelID:         "m2",
-					WorkspacePrompt: new("be brief"),
-					ContextFiles:    new(false),
-					Sampling:        sampling(t, provider.Sampling{Temperature: new(0.9), MaxOutput: new(100)}),
+					ModelID:    "m2",
+					ChatPrompt: new("be brief"),
+					Sampling:   sampling(t, provider.Sampling{Temperature: new(0.9), MaxOutput: new(100)}),
 				}, tools: []string{"ask_user"}},
 			},
-			model: "large", prompt: new("be brief"), files: false, tools: []string{"bash"},
+			model: "large", prompt: new("be brief"), tools: []string{"bash"},
 			want: provider.Sampling{Temperature: new(0.2), MaxOutput: new(100)},
 			sources: map[string]string{
-				"profile": layerDefault, "model": layerProfile, "workspace_prompt": layerProfile, "chat_prompt": layerDefault,
-				"instructions": layerDefault, "context_files": layerProfile, "tools": layerSession,
+				"profile": layerDefault, "model": layerProfile, "chat_prompt": layerProfile,
+				"instructions": layerDefault, "tools": layerSession,
 				"preserve_thinking":    layerModel,
 				"sampling.temperature": layerSession, "sampling.max_output": layerProfile,
 			},
@@ -79,11 +76,11 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 				{name: layerRequest, settings: store.ProfileSettings{ModelID: "m1"}},
 				{name: layerSession, settings: store.ProfileSettings{ModelID: "m2"}},
 			},
-			model: "small", files: true,
-			want: provider.Sampling{MaxOutput: new(1024), ReasoningEffort: new("low")},
+			model: "small",
+			want:  provider.Sampling{MaxOutput: new(1024), ReasoningEffort: new("low")},
 			sources: map[string]string{
-				"profile": layerDefault, "model": layerRequest, "workspace_prompt": layerDefault, "chat_prompt": layerDefault,
-				"instructions": layerDefault, "context_files": layerDefault, "tools": layerDefault,
+				"profile": layerDefault, "model": layerRequest, "chat_prompt": layerDefault,
+				"instructions": layerDefault, "tools": layerDefault,
 				"preserve_thinking":   layerModel,
 				"sampling.max_output": layerModel, "sampling.reasoning_effort": layerModel,
 			},
@@ -93,11 +90,11 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 			layers: []configLayer{{name: layerProfile, settings: store.ProfileSettings{
 				Sampling: sampling(t, provider.Sampling{ReasoningEffort: new("max")}),
 			}}},
-			model: "small", files: true, dropped: "max",
+			model: "small", dropped: "max",
 			want: provider.Sampling{MaxOutput: new(1024), ReasoningEffort: new("low")},
 			sources: map[string]string{
-				"profile": layerDefault, "model": layerDefault, "workspace_prompt": layerDefault, "chat_prompt": layerDefault,
-				"instructions": layerDefault, "context_files": layerDefault, "tools": layerDefault,
+				"profile": layerDefault, "model": layerDefault, "chat_prompt": layerDefault,
+				"instructions": layerDefault, "tools": layerDefault,
 				"preserve_thinking":   layerModel,
 				"sampling.max_output": layerModel, "sampling.reasoning_effort": layerModel,
 			},
@@ -108,11 +105,11 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 				{name: layerSession, settings: store.ProfileSettings{Sampling: sampling(t, provider.Sampling{ReasoningEffort: new("")})}},
 				{name: layerProfile, settings: store.ProfileSettings{Sampling: sampling(t, provider.Sampling{ReasoningEffort: new("high")})}},
 			},
-			model: "small", files: true,
-			want: provider.Sampling{MaxOutput: new(1024), ReasoningEffort: new("")},
+			model: "small",
+			want:  provider.Sampling{MaxOutput: new(1024), ReasoningEffort: new("")},
 			sources: map[string]string{
-				"profile": layerDefault, "model": layerDefault, "workspace_prompt": layerDefault, "chat_prompt": layerDefault,
-				"instructions": layerDefault, "context_files": layerDefault, "tools": layerDefault,
+				"profile": layerDefault, "model": layerDefault, "chat_prompt": layerDefault,
+				"instructions": layerDefault, "tools": layerDefault,
 				"preserve_thinking":   layerModel,
 				"sampling.max_output": layerModel, "sampling.reasoning_effort": layerSession,
 			},
@@ -123,11 +120,11 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 				{name: layerSession, settings: store.ProfileSettings{Sampling: sampling(t, provider.Sampling{Stop: []string{}})}},
 				{name: layerProfile, settings: store.ProfileSettings{Sampling: sampling(t, provider.Sampling{Stop: []string{"END"}})}},
 			},
-			model: "small", files: true,
-			want: provider.Sampling{Stop: []string{}, MaxOutput: new(1024), ReasoningEffort: new("low")},
+			model: "small",
+			want:  provider.Sampling{Stop: []string{}, MaxOutput: new(1024), ReasoningEffort: new("low")},
 			sources: map[string]string{
-				"profile": layerDefault, "model": layerDefault, "workspace_prompt": layerDefault, "chat_prompt": layerDefault,
-				"instructions": layerDefault, "context_files": layerDefault, "tools": layerDefault,
+				"profile": layerDefault, "model": layerDefault, "chat_prompt": layerDefault,
+				"instructions": layerDefault, "tools": layerDefault,
 				"preserve_thinking": layerModel,
 				"sampling.stop":     layerSession, "sampling.max_output": layerModel, "sampling.reasoning_effort": layerModel,
 			},
@@ -142,8 +139,8 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 			if got.model.Name != c.model {
 				t.Errorf("model = %q, want %q", got.model.Name, c.model)
 			}
-			if !reflect.DeepEqual(got.workspacePrompt, c.prompt) || got.contextFiles != c.files {
-				t.Errorf("prompt, context files = %v, %v; want %v, %v", got.workspacePrompt, got.contextFiles, c.prompt, c.files)
+			if !reflect.DeepEqual(got.chatPrompt, c.prompt) {
+				t.Errorf("prompt = %v, want %v", got.chatPrompt, c.prompt)
 			}
 			if !reflect.DeepEqual(got.tools, c.tools) {
 				t.Errorf("tools = %v, want %v", got.tools, c.tools)
@@ -307,13 +304,11 @@ func TestNewAgentAppliesTheConfiguration(t *testing.T) {
 		model:            store.Model{Model: "vendor/m", ContextWindow: 4096, ThinkingSwitch: "thinking"},
 		modelOK:          true,
 		preserveThinking: true,
-		workspacePrompt:  new("workspace rules"),
 		chatPrompt:       new("chat rules"),
 		instructions:     "be kind",
-		contextFiles:     true,
 		sampling:         provider.Sampling{Temperature: new(0.3)},
 	}
-	preview, err := s.newAgent(nil, store.Session{}, c, nil, nil, agent.Options{}).Preview(context.Background(), agent.NewSession("s1", ""))
+	preview, err := s.newAgent(nil, store.Session{}, c, nil, nil, agent.Options{}).Preview(agent.NewSession("s1", ""))
 	if err != nil {
 		t.Fatalf("Preview: %v", err)
 	}

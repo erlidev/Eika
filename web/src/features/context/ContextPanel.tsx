@@ -25,11 +25,9 @@ import { formatTokens } from "@/lib/format";
 
 export type ContextPanelProps = {
   sessionId: string;
-  /** chat says the session has no workspace, so its base prompt is a chat's. */
-  chat: boolean;
 };
 
-export function ContextPanel({ sessionId, chat }: ContextPanelProps) {
+export function ContextPanel({ sessionId }: ContextPanelProps) {
   const model = useSessionStore((s) => s.model);
   const requests = useRequestSelection(sessionId, model);
   const config = useSessionConfiguration(sessionId);
@@ -67,7 +65,6 @@ export function ContextPanel({ sessionId, chat }: ContextPanelProps) {
       {shown.data !== undefined && <Summary context={shown.data} onInspect={inspect} />}
       <ContextInspector
         sessionId={sessionId}
-        chat={chat}
         open={inspecting}
         onOpenChange={setInspecting}
         view={view}
@@ -164,12 +161,6 @@ function Summary({ context, onInspect }: SummaryProps) {
         </ul>
       </div>
 
-      {context.context_files_unread !== undefined && context.context_files_unread !== "" && (
-        <Notice>
-          The workspace is not running, so its context files are not read here. A run starts it and
-          reads them.
-        </Notice>
-      )}
       {context.dropped_effort !== undefined && context.dropped_effort !== "" && (
         <Notice>
           The reasoning effort <span className="font-mono">{context.dropped_effort}</span> is not

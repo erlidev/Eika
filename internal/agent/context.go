@@ -28,12 +28,9 @@ type SectionKind string
 
 // The parts of a system prompt, in the order they appear.
 const (
-	// SectionBase is the base prompt: WorkspacePrompt, ChatPrompt, or the
-	// Options.BasePrompt that replaces them.
+	// SectionBase is the base prompt: ChatPrompt, or the Options.BasePrompt
+	// that replaces it.
 	SectionBase SectionKind = "base"
-	// SectionContextFiles is the workspace's context files, rendered as one
-	// block under a heading that says how they combine.
-	SectionContextFiles SectionKind = "context_files"
 	// SectionInstructions is Options.Instructions.
 	SectionInstructions SectionKind = "instructions"
 )
@@ -43,19 +40,6 @@ const (
 type Section struct {
 	Kind SectionKind `json:"kind"`
 	// Text is exactly what the section adds to the system prompt.
-	Text string `json:"text"`
-	// Tokens is the estimated size of Text.
-	Tokens int `json:"tokens"`
-	// Files are the files a SectionContextFiles section renders, from the
-	// most general to the most specific.
-	Files []ContextFile `json:"files,omitempty"`
-}
-
-// ContextFile is one context file as its section renders it.
-type ContextFile struct {
-	// Path is the file's workspace path.
-	Path string `json:"path"`
-	// Text is the file's content as the model reads it.
 	Text string `json:"text"`
 	// Tokens is the estimated size of Text.
 	Tokens int `json:"tokens"`
@@ -154,19 +138,15 @@ func (c Context) Request() provider.Request {
 }
 
 // Preview returns the request the next model call on s would send, with the
-// sections it is built from. It reads the context files and assembles the
-// request as a run does, so a run started now sends exactly this, with the
-// run's new message, if it has one, appended to Messages. Nothing is sent,
-// and the context window bound is not applied.
-func (a *Agent) Preview(ctx context.Context, s *Session) (Context, error) {
+// sections it is built from. It assembles the request as a run does, so a run
+// started now sends exactly this, with the run's new message, if it has one,
+// appended to Messages. Nothing is sent, and the context window bound is not
+// applied.
+func (a *Agent) Preview(s *Session) (Context, error) {
 	if s == nil || s.Conversation == nil {
 		return Context{}, errors.New("preview request: session has no conversation")
 	}
-	prompt, err := a.prompt(ctx)
-	if err != nil {
-		return Context{}, fmt.Errorf("preview request: %w", err)
-	}
-	return a.assemble(s, prompt), nil
+	return a.assemble(s, a.prompt()), nil
 }
 
 // WithMessages returns c with msgs as its messages, prepared as a request

@@ -127,7 +127,7 @@ case, change it here in the same change, with a sentence of reasoning.
 ```
 web/src/
   app/          routes, layout shell, panel registry
-  features/     one folder per domain feature (workspaces, sessions, terminal, editor, search)
+  features/     one folder per domain feature (session, profiles, mcp, search)
   components/   shared presentational components; components/ui is shadcn
   api/          generated-or-mirrored wire types, client, WebSocket stream
   lib/          pure utilities with tests

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -110,27 +109,6 @@ func (h *Host) Usage(ctx context.Context, ws Workspace) (Usage, error) {
 		return Usage{}, fmt.Errorf("decode usage of workspace %s: %w", ws.ID, err)
 	}
 	return usageOf(stats), nil
-}
-
-// PortURL is the base URL the harness reaches a port of a workspace on: the
-// container name on the sandbox network, or the container's own address
-// when the harness runs outside that network.
-func (h *Host) PortURL(ctx context.Context, ws Workspace, port int) (string, error) {
-	if h.opts.Network != "" {
-		return "http://" + ContainerName(ws.ID) + ":" + strconv.Itoa(port), nil
-	}
-	info, err := h.docker.ContainerInspect(ctx, ws.ContainerID)
-	if err != nil {
-		return "", fmt.Errorf("inspect workspace %s: %w", ws.ID, err)
-	}
-	if info.NetworkSettings != nil {
-		for _, n := range info.NetworkSettings.Networks {
-			if n != nil && n.IPAddress != "" {
-				return "http://" + n.IPAddress + ":" + strconv.Itoa(port), nil
-			}
-		}
-	}
-	return "", fmt.Errorf("workspace %s has no address on any network", ws.ID)
 }
 
 // networkFor is the sandbox network a workspace joins.

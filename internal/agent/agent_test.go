@@ -737,11 +737,8 @@ func TestDoesNotRetryPermanentFailures(t *testing.T) {
 	}
 }
 
-func TestSystemPromptCarriesWorkspaceInstructions(t *testing.T) {
+func TestSystemPromptCarriesTheBasePrompt(t *testing.T) {
 	f := newFixture(t, []providertest.Step{providertest.Text("ok")})
-	if err := f.exec.WriteFile(context.Background(), "AGENTS.md", []byte("always run make check")); err != nil {
-		t.Fatalf("write AGENTS.md: %v", err)
-	}
 	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -749,8 +746,8 @@ func TestSystemPromptCarriesWorkspaceInstructions(t *testing.T) {
 	if !strings.Contains(system, "You are Eika") {
 		t.Error("system prompt is missing the base prompt")
 	}
-	if !strings.Contains(system, "always run make check") {
-		t.Error("system prompt is missing the workspace instructions")
+	if strings.Contains(system, "AGENTS.md") {
+		t.Error("system prompt names a context file, which nothing reads")
 	}
 	if len(f.provider.Requests()[0].Tools) == 0 {
 		t.Error("request carries no tool definitions")
@@ -1137,14 +1134,14 @@ func TestAStandaloneToolRunsWithoutAWorkspace(t *testing.T) {
 	}
 }
 
-func TestAnAgentWithoutAWorkspaceIsToldItHasNone(t *testing.T) {
+func TestTheBasePromptDoesNotPromiseFilesOrCommands(t *testing.T) {
 	p := providertest.New(providertest.Text("ok"))
 	chat := agent.New(p, nil, agent.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err := chat.Run(context.Background(), agent.NewSession("chat-1", ""), provider.UserMessage("hi")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	system := p.Requests()[0].System
-	if !strings.Contains(system, "no workspace") {
+	if !strings.Contains(system, "Use only the tools you are given") {
 		t.Errorf("system prompt = %q, want the chat rules", system)
 	}
 	if strings.Contains(system, "sandboxed workspace") {

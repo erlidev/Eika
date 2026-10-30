@@ -28,7 +28,6 @@ import { cn } from "@/lib/utils";
 
 type InspectionProps = {
   sessionId: string;
-  chat: boolean;
   context: ModelContext;
   /** live says the request is the next one, whose parts link to their settings. */
   live: boolean;
@@ -69,9 +68,6 @@ function navItems(context: ModelContext): NavItem[] {
       kind: s.kind,
       depth: 1,
     });
-    for (const f of s.files ?? []) {
-      items.push({ view: `file:${f.path}`, label: f.path, tokens: f.tokens, depth: 2, mono: true });
-    }
   }
   items.push({
     view: "tools",
@@ -102,7 +98,6 @@ function navItems(context: ModelContext): NavItem[] {
 
 export function Inspection({
   sessionId,
-  chat,
   context,
   live,
   config,
@@ -149,12 +144,6 @@ export function Inspection({
             onView(viewOf(kind));
           }}
         />
-        {context.context_files_unread !== undefined && context.context_files_unread !== "" && (
-          <Notice>
-            The workspace is not running, so its context files are not read here. A run starts it
-            and reads them.
-          </Notice>
-        )}
         {context.dropped_effort !== undefined && context.dropped_effort !== "" && (
           <Notice>
             The reasoning effort <span className="font-mono">{context.dropped_effort}</span> is not
@@ -218,14 +207,7 @@ export function Inspection({
           </ul>
         </nav>
         <div className="min-h-0 overflow-y-auto p-4" role="region" aria-label="Part detail">
-          <Pane
-            view={current}
-            context={context}
-            total={total}
-            chat={chat}
-            edit={edit}
-            onView={onView}
-          />
+          <Pane view={current} context={context} total={total} edit={edit} onView={onView} />
         </div>
       </div>
     </div>

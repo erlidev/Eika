@@ -30,20 +30,13 @@ export type StoredProfile = Omit<Profile, "inherited">;
 /** RecordedRequest is one model call a run made, and what it sent. */
 export type RecordedRequest = { record: ModelRequest; context: ModelContext };
 
-/** builtinPrompts are internal/agent's WorkspacePrompt and ChatPrompt. */
+/** builtinPrompts is internal/agent's ChatPrompt. */
 const builtinPrompts = {
-  workspace: `You are Eika, a coding agent working inside a sandboxed workspace.
-
-Rules:
-- Every file and command action goes through your tools. The workspace root is your working directory and paths are relative to it.
-- Run the project's own build and test commands to check your work.
-- Work in small, complete steps: change the code, run the tests, report what happened.
-- Be concise. Answer in plain sentences, without preamble or summaries of what you are about to do.
-- If a request is ambiguous, state the interpretation you are using, or ask when you cannot proceed without an answer.`,
   chat: `You are Eika, an assistant in a chat with the user.
 
 Rules:
-- This chat has no workspace: there are no files to read or change and no commands to run. Use only the tools you are given; there may be none.
+- Use only the tools you are given; there may be none. Do not offer to read files or run commands unless you have tools for them.
+- When you use files or commands, they go through your tools, and paths are relative to your working directory.
 - When you use the web, say where an answer came from and link the pages you relied on.
 - Be concise. Answer in plain sentences, without preamble or summaries of what you are about to do.
 - If a request is ambiguous, state the interpretation you are using, or ask when you cannot proceed without an answer.`,
@@ -52,10 +45,8 @@ Rules:
 /** noSettings sets nothing. */
 export function noSettings(): ProfileSettings {
   return {
-    workspace_prompt: null,
     chat_prompt: null,
     instructions: null,
-    context_files: null,
     preserve_thinking: null,
     sampling: {},
   };
@@ -207,10 +198,8 @@ function resolve(
   const sources: Record<string, ConfigLayer> = {
     profile: profileSource,
     model: "default",
-    workspace_prompt: "default",
     chat_prompt: "default",
     instructions: "default",
-    context_files: "default",
     preserve_thinking: "default",
     tools: "default",
   };
@@ -219,10 +208,8 @@ function resolve(
     profile_name: profile.name,
     model_id: "",
     model: "",
-    workspace_prompt: builtinPrompts.workspace,
     chat_prompt: builtinPrompts.chat,
     instructions: "",
-    context_files: true,
     preserve_thinking: false,
     tools: null,
     sampling: {},
@@ -233,13 +220,9 @@ function resolve(
     const s = l.settings;
     const named = w.models.find((m) => m.id === s.model_id);
     if (named) [model, sources.model] = [named, l.name];
-    if (s.workspace_prompt !== null)
-      [config.workspace_prompt, sources.workspace_prompt] = [s.workspace_prompt, l.name];
     if (s.chat_prompt !== null) [config.chat_prompt, sources.chat_prompt] = [s.chat_prompt, l.name];
     if (s.instructions !== null)
       [config.instructions, sources.instructions] = [s.instructions, l.name];
-    if (s.context_files !== null)
-      [config.context_files, sources.context_files] = [s.context_files, l.name];
     if (s.preserve_thinking !== null)
       [preserve, sources.preserve_thinking] = [s.preserve_thinking, l.name];
     if (l.tools !== null) [config.tools, sources.tools] = [l.tools, l.name];
@@ -426,10 +409,8 @@ export function settingsOf(body: Record<string, unknown>): ProfileSettings {
     ...(typeof body.model_id === "string" && body.model_id !== ""
       ? { model_id: body.model_id }
       : {}),
-    workspace_prompt: text(body.workspace_prompt),
     chat_prompt: text(body.chat_prompt),
     instructions: text(body.instructions),
-    context_files: typeof body.context_files === "boolean" ? body.context_files : null,
     preserve_thinking: typeof body.preserve_thinking === "boolean" ? body.preserve_thinking : null,
     sampling,
   };
@@ -461,25 +442,9 @@ function section(kind: ContextSection["kind"], text: string): ContextSection {
 export function previewContext(w: World, session: Session, requested: string): ModelContext {
   const { layers, profile, source } = sessionLayers(w, session, requested);
   const { config, model } = resolve(w, profile, source, layers);
-  const chat = session.workspace_id === undefined;
   const sections: ContextSection[] = [];
-  const base = (chat ? config.chat_prompt : config.workspace_prompt).trim();
+  const base = config.chat_prompt.trim();
   if (base !== "") sections.push(section("base", base));
-  const agents =
-    session.workspace_id === undefined ? undefined : w.files[session.workspace_id]?.["AGENTS.md"];
-  // As the harness does: a stopped workspace's files cannot be read.
-  const ws = w.workspaces.find((x) => x.id === session.workspace_id);
-  const unread =
-    !chat && config.context_files && ws !== undefined && ws.state !== "running"
-      ? `workspace ${ws.id} is ${ws.state}, not running`
-      : undefined;
-  if (!chat && config.context_files && unread === undefined && agents !== undefined) {
-    const files = [{ path: "AGENTS.md", text: agents, tokens: estimate(agents) }];
-    sections.push({
-      ...section("context_files", `# Project context\n\n## AGENTS.md\n\n${agents}`),
-      files,
-    });
-  }
   if (config.instructions.trim() !== "")
     sections.push(section("instructions", config.instructions.trim()));
   const tools: ToolSchema[] = w.tools
@@ -532,7 +497,6 @@ export function previewContext(w: World, session: Session, requested: string): M
     },
     sources,
     ...(config.dropped_effort === undefined ? {} : { dropped_effort: config.dropped_effort }),
-    ...(unread === undefined ? {} : { context_files_unread: unread }),
     ...(last ? { calibration: calibration(last) } : {}),
     context_window: model?.context_window ?? 0,
   };

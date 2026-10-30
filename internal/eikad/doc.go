@@ -2,7 +2,7 @@
 // workspace container.
 //
 // It is the only process the harness talks to when an agent runs a command,
-// reads or writes a file, opens a terminal, watches for changes, or starts a
+// reads or writes a file, watches for changes, or starts a
 // stdio MCP server, whose standard streams /process carries. Every path
 // it accepts is confined to the workspace root: traversal and symlinks that
 // leave the root are rejected. Every route but /healthz requires the bearer

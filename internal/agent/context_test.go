@@ -14,7 +14,6 @@ import (
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/event"
-	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/local"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
@@ -54,14 +53,6 @@ func registry(t *testing.T, extra ...tool.Tool) *tool.Registry {
 		}
 	}
 	return r
-}
-
-// statFails is a workspace whose every stat fails, so any attempt to read a
-// context file fails the call that made it.
-type statFails struct{ executor.Executor }
-
-func (statFails) Stat(context.Context, string) (executor.FileInfo, error) {
-	return executor.FileInfo{}, errors.New("the workspace is unreachable")
 }
 
 // callRecorder keeps the model calls a run reports. For each one it notes how
@@ -121,17 +112,13 @@ func TestPreviewIsTheRequestARunSends(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			ctx := context.Background()
-			exec := workspace(t, map[string]string{
-				"AGENTS.md":     "always run make check",
-				"api/AGENTS.md": "keep handlers small",
-			})
+			exec := workspace(t, nil)
 			search := callTool{name: "mcp__docs__search", run: func(context.Context) string { return "found" }}
 			p := providertest.New(providertest.Text("ok"))
 			calls := &callRecorder{}
 			a := agent.New(p, registry(t, search), agent.Options{
 				Model:          "test-model",
 				Executor:       exec,
-				ContextDir:     "api",
 				Instructions:   "Answer in French.",
 				ContextWindow:  400_000,
 				ThinkingSwitch: provider.SwitchThinking,
@@ -150,7 +137,7 @@ func TestPreviewIsTheRequestARunSends(t *testing.T) {
 			prior.Metrics = &provider.MessageMetrics{RunID: "prior", ContextWindow: 8192}
 			s.Conversation.Append(prior)
 
-			preview, err := a.Preview(ctx, s)
+			preview, err := a.Preview(s)
 			if err != nil {
 				t.Fatalf("Preview: %v", err)
 			}
@@ -190,34 +177,21 @@ func TestTheBasePromptCanBeReplaced(t *testing.T) {
 		wantBase     string
 	}{
 		{
-			name:      "a workspace gets the workspace prompt",
-			workspace: true,
-			wantKinds: []agent.SectionKind{agent.SectionBase, agent.SectionContextFiles},
-			wantBase:  agent.WorkspacePrompt,
-		},
-		{
 			name:      "a chat gets the chat prompt",
 			wantKinds: []agent.SectionKind{agent.SectionBase},
 			wantBase:  agent.ChatPrompt,
 		},
 		{
-			name:      "an override replaces the workspace prompt",
+			name:      "a workspace gets the same prompt",
 			workspace: true,
-			override:  ptr("Work carefully."),
-			wantKinds: []agent.SectionKind{agent.SectionBase, agent.SectionContextFiles},
-			wantBase:  "Work carefully.",
+			wantKinds: []agent.SectionKind{agent.SectionBase},
+			wantBase:  agent.ChatPrompt,
 		},
 		{
 			name:      "an override replaces the chat prompt",
 			override:  ptr("Chat freely."),
 			wantKinds: []agent.SectionKind{agent.SectionBase},
 			wantBase:  "Chat freely.",
-		},
-		{
-			name:      "an empty override leaves a workspace without a base prompt",
-			workspace: true,
-			override:  ptr(""),
-			wantKinds: []agent.SectionKind{agent.SectionContextFiles},
 		},
 		{
 			name:     "an empty override leaves a chat without a system prompt",
@@ -240,12 +214,12 @@ func TestTheBasePromptCanBeReplaced(t *testing.T) {
 				Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 			}
 			if c.workspace {
-				opts.Executor = workspace(t, map[string]string{"AGENTS.md": "always run make check"})
+				opts.Executor = workspace(t, nil)
 			}
 			a := agent.New(p, nil, opts)
 			s := agent.NewSession("s1", "")
 
-			preview, err := a.Preview(ctx, s)
+			preview, err := a.Preview(s)
 			if err != nil {
 				t.Fatalf("Preview: %v", err)
 			}
@@ -262,81 +236,14 @@ func TestTheBasePromptCanBeReplaced(t *testing.T) {
 				t.Errorf("base prompt = %q, want %q", base, c.wantBase)
 			}
 			system := preview.System()
-			if c.wantBase != agent.WorkspacePrompt && strings.Contains(system, "sandboxed workspace") {
-				t.Errorf("system prompt = %q, still carries the workspace prompt", system)
-			}
-			if c.wantBase != agent.ChatPrompt && strings.Contains(system, "no workspace") {
-				t.Errorf("system prompt = %q, still carries the chat prompt", system)
+			if c.wantBase != agent.ChatPrompt && strings.Contains(system, "You are Eika") {
+				t.Errorf("system prompt = %q, still carries the built-in prompt", system)
 			}
 			if err := a.Run(ctx, s, provider.UserMessage("hi")); err != nil {
 				t.Fatalf("Run: %v", err)
 			}
 			if sent := p.Requests()[0].System; sent != system {
 				t.Errorf("sent system prompt %q, want the preview's %q", sent, system)
-			}
-		})
-	}
-}
-
-func TestContextFilesCanBeTurnedOff(t *testing.T) {
-	cases := []struct {
-		name      string
-		skip      bool
-		wantFiles []string
-	}{
-		{"they are read by default", false, []string{".config/eika/AGENTS.md", "AGENTS.md"}},
-		{"turned off none are read", true, nil},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			exec := workspace(t, map[string]string{
-				".config/eika/AGENTS.md": "global rules",
-				"AGENTS.md":              "always run make check",
-			})
-			a := agent.New(providertest.New(), nil, agent.Options{
-				Executor:         exec,
-				SkipContextFiles: c.skip,
-				Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
-			})
-			preview, err := a.Preview(context.Background(), agent.NewSession("s1", "w1"))
-			if err != nil {
-				t.Fatalf("Preview: %v", err)
-			}
-			var files []string
-			for _, section := range preview.Sections {
-				for _, f := range section.Files {
-					files = append(files, f.Path)
-				}
-			}
-			if !reflect.DeepEqual(files, c.wantFiles) {
-				t.Errorf("context files = %v, want %v", files, c.wantFiles)
-			}
-			if got := strings.Contains(preview.System(), "always run make check"); got == c.skip {
-				t.Errorf("system prompt carries the context file = %t, want %t", got, !c.skip)
-			}
-		})
-	}
-}
-
-func TestSkippedContextFilesAreNeverRead(t *testing.T) {
-	cases := []struct {
-		name    string
-		skip    bool
-		wantErr bool
-	}{
-		{"a workspace that cannot be read fails the preview", false, true},
-		{"skipping the files reads nothing", true, false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			a := agent.New(providertest.New(), nil, agent.Options{
-				Executor:         statFails{workspace(t, nil)},
-				SkipContextFiles: c.skip,
-				Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
-			})
-			_, err := a.Preview(context.Background(), agent.NewSession("s1", "w1"))
-			if (err != nil) != c.wantErr {
-				t.Errorf("Preview error = %v, want an error %t", err, c.wantErr)
 			}
 		})
 	}
@@ -362,7 +269,7 @@ func TestEstimateTokensCountsFourBytesToAToken(t *testing.T) {
 }
 
 func TestPreviewEstimatesEverySection(t *testing.T) {
-	exec := workspace(t, map[string]string{"AGENTS.md": strings.Repeat("rule ", 100)})
+	exec := workspace(t, nil)
 	a := agent.New(providertest.New(), registry(t), agent.Options{
 		Executor:     exec,
 		Instructions: "Be brief.",
@@ -372,23 +279,18 @@ func TestPreviewEstimatesEverySection(t *testing.T) {
 	s.Conversation.Append(provider.UserMessage("hello"))
 	s.Conversation.Append(provider.AssistantMessage("", []provider.ToolCall{providertest.Call("c1", "bash", map[string]any{"command": "ls"})}))
 	s.Conversation.Append(provider.ToolResultMessage("c1", "a.txt", false))
-	preview, err := a.Preview(context.Background(), s)
+	preview, err := a.Preview(s)
 	if err != nil {
 		t.Fatalf("Preview: %v", err)
 	}
 
-	if len(preview.Sections) != 3 {
-		t.Fatalf("sections = %v, want three", kinds(preview.Sections))
+	if len(preview.Sections) != 2 {
+		t.Fatalf("sections = %v, want two", kinds(preview.Sections))
 	}
 	for _, section := range preview.Sections {
 		if section.Tokens == 0 || section.Tokens != agent.EstimateTokens(section.Text) {
 			t.Errorf("%s section tokens = %d, want the estimate of its text, %d",
 				section.Kind, section.Tokens, agent.EstimateTokens(section.Text))
-		}
-		for _, f := range section.Files {
-			if f.Tokens != agent.EstimateTokens(f.Text) || f.Text != strings.TrimSpace(strings.Repeat("rule ", 100)) {
-				t.Errorf("context file %s = %d tokens of %q, want the estimate of its content", f.Path, f.Tokens, f.Text)
-			}
 		}
 	}
 	if len(preview.Tools) == 0 {
@@ -431,7 +333,7 @@ func TestToolSchemasSayWhereEachToolComesFrom(t *testing.T) {
 		callTool{name: "mcp__docs__search", run: none},
 		callTool{name: "mcp_read_resource", run: none},
 	), agent.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	preview, err := a.Preview(context.Background(), agent.NewSession("s1", ""))
+	preview, err := a.Preview(agent.NewSession("s1", ""))
 	if err != nil {
 		t.Fatalf("Preview: %v", err)
 	}
@@ -479,7 +381,7 @@ func TestRequestMessagesAreWhatTheProviderReceives(t *testing.T) {
 			prior.Metrics = &provider.MessageMetrics{RunID: "prior", ContextWindow: 8192}
 			s.Conversation.Append(prior)
 
-			preview, err := a.Preview(context.Background(), s)
+			preview, err := a.Preview(s)
 			if err != nil {
 				t.Fatalf("Preview: %v", err)
 			}
@@ -641,7 +543,7 @@ func TestRunSendsTheSamplingParameters(t *testing.T) {
 			opts := c.opts
 			opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 			a := agent.New(p, nil, opts)
-			preview, err := a.Preview(context.Background(), agent.NewSession("s1", ""))
+			preview, err := a.Preview(agent.NewSession("s1", ""))
 			if err != nil {
 				t.Fatalf("Preview: %v", err)
 			}
@@ -665,7 +567,7 @@ func TestPreviewOfAnEmptyChatEncodesEmptyLists(t *testing.T) {
 		Model:      "m",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	preview, err := a.Preview(context.Background(), agent.NewSession("s1", ""))
+	preview, err := a.Preview(agent.NewSession("s1", ""))
 	if err != nil {
 		t.Fatalf("Preview: %v", err)
 	}
@@ -678,7 +580,7 @@ func TestPreviewOfAnEmptyChatEncodesEmptyLists(t *testing.T) {
 
 func TestPreviewRejectsASessionWithoutAConversation(t *testing.T) {
 	a := agent.New(providertest.New(), nil, agent.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	if _, err := a.Preview(context.Background(), &agent.Session{ID: "x"}); err == nil {
+	if _, err := a.Preview(&agent.Session{ID: "x"}); err == nil {
 		t.Fatal("Preview returned no error")
 	}
 }
@@ -771,7 +673,7 @@ func TestImagesAreEstimatedByTheirSizeNotTheirData(t *testing.T) {
 	})
 	s := agent.NewSession("s1", "")
 	s.Conversation.Append(screenshot("look"))
-	preview, err := a.Preview(context.Background(), s)
+	preview, err := a.Preview(s)
 	if err != nil {
 		t.Fatalf("Preview: %v", err)
 	}

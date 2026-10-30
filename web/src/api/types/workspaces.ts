@@ -55,17 +55,10 @@ export type SandboxEgress = {
   allow: string[] | null;
 };
 
-/** SandboxPort is a container port the harness forwards previews to. */
-export type SandboxPort = {
-  port: number;
-  label?: string;
-};
-
-/** Sandbox is what a workspace's container may consume, reach, and expose. */
+/** Sandbox is what a workspace's container may consume and reach. */
 export type Sandbox = {
   limits: SandboxLimits;
   egress: SandboxEgress;
-  ports: SandboxPort[] | null;
 };
 
 /** WorkspaceUsage is the body of GET /api/workspaces/{id}/usage: one sample. */
@@ -91,12 +84,6 @@ export type BlockedHost = {
   host: string;
   count: number;
   last: string;
-};
-
-/** PreviewLink is the body of POST /api/workspaces/{id}/ports/{port}/preview. */
-export type PreviewLink = {
-  /** url opens the preview; its ticket works once, within two minutes. */
-  url: string;
 };
 
 /** CreateWorkspace is the body of POST /api/workspaces. */

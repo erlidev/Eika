@@ -56,7 +56,7 @@ func TestAuthLetsThePublicRoutesThrough(t *testing.T) {
 	}
 }
 
-func TestAuthAcceptsTheTokenInTheQueryForTheSocketsOnly(t *testing.T) {
+func TestAuthAcceptsTheTokenInTheQueryForTheEventStreamOnly(t *testing.T) {
 	s := server.New(testConfig(), testLogger(), server.Deps{}, server.Options{})
 
 	// The API rejects a query token, so that a token cannot leak through a
@@ -66,8 +66,7 @@ func TestAuthAcceptsTheTokenInTheQueryForTheSocketsOnly(t *testing.T) {
 		"/api/projects",
 		"/api/workspaces/w1/diff",
 		"/api/workspaces/w1/file",
-		"/api/workspaces/w1/terminal/extra",
-		"/api/workspaces/a/b/terminal",
+		"/api/workspaces/w1/terminal",
 		"/api/events/extra",
 	} {
 		rec := requestWith(t, s, http.MethodGet, path+"?token="+testToken, nil, "")
@@ -76,11 +75,10 @@ func TestAuthAcceptsTheTokenInTheQueryForTheSocketsOnly(t *testing.T) {
 		}
 	}
 
-	// The sockets accept it, because a browser cannot set a header on a
+	// The event stream accepts it, because a browser cannot set a header on a
 	// WebSocket handshake. Without the handshake headers the upgrade fails,
-	// or the route does not exist on a harness without a host, which is past
-	// authentication and enough for this test.
-	for _, path := range []string{"/api/events", "/api/workspaces/w1/terminal"} {
+	// which is past authentication and enough for this test.
+	for _, path := range []string{"/api/events"} {
 		rec := requestWith(t, s, http.MethodGet, path+"?token="+testToken, nil, "")
 		if rec.Code == http.StatusUnauthorized {
 			t.Errorf("%s status = %d, want anything but 401", path, rec.Code)

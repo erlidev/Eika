@@ -201,10 +201,9 @@ describe("requestJSON", () => {
 
 describe("edit targets", () => {
   it("names the setting behind each part and parameter", () => {
-    expect(editTargetOf("base", true)).toEqual({ key: "chat_prompt", section: "prompt" });
-    expect(editTargetOf("base", false)).toEqual({ key: "workspace_prompt", section: "prompt" });
-    expect(editTargetOf("mcp_tools", false)).toEqual({ key: "tools", section: "tools" });
-    expect(editTargetOf("messages", false)).toBeUndefined();
+    expect(editTargetOf("base")).toEqual({ key: "chat_prompt", section: "prompt" });
+    expect(editTargetOf("mcp_tools")).toEqual({ key: "tools", section: "tools" });
+    expect(editTargetOf("messages")).toBeUndefined();
     expect(parameterTarget("sampling.temperature")?.section).toBe("sampling");
     expect(parameterTarget("sampling.max_output")?.section).toBe("model");
     expect(parameterTarget("preserve_thinking")?.section).toBe("model");

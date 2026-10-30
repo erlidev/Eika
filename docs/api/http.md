@@ -18,8 +18,7 @@ The token is a sign-in session's (from the routes below) or the optional
 `EIKA_AUTH_TOKEN`. Exempt: the health routes, `GET /api/auth/status`,
 `POST /api/auth/setup`, `POST /api/auth/login`,
 and `GET /oauth/client-metadata.json`.
-Only the WebSockets, `GET /api/events` and
-`GET /api/workspaces/{id}/terminal`, also accept `?token=`.
+Only the WebSocket, `GET /api/events`, also accepts `?token=`.
 
 A wrong, missing, or expired token is `401` with a `WWW-Authenticate: Bearer`
 header.
@@ -163,7 +162,7 @@ a rejected request leaves no container and writes no row.
 | `build_context` | string | A directory on the Docker host holding a Dockerfile and its context; the image is built from it first. |
 | `dockerfile` | string | The Dockerfile's name within `build_context`. Defaults to `Dockerfile`. |
 | `parent_workspace_id` | string | The workspace this one was branched from, recorded for the UI. |
-| `sandbox` | Sandbox | Its limits, network, and forwarded ports. Left out, it gets the `sandbox_limits` and `sandbox_egress` settings and no ports. Checked as `PUT /api/workspaces/{id}/sandbox` checks it. |
+| `sandbox` | Sandbox | Its limits and network. Left out, it gets the `sandbox_limits` and `sandbox_egress` settings. Checked as `PUT /api/workspaces/{id}/sandbox` checks it. |
 
 `201` with the `Workspace`.
 
@@ -215,8 +214,7 @@ starts. `200` with the `Workspace`, and `workspace.state` is published with
 the unchanged state.
 
 `400` for a limit out of its range, a mode that is not `open`, `allowlist`, or
-`none`, an allowlist entry that is not a host pattern, a port that is out of
-range, listed twice, or `7000` (the sandbox daemon's), and for restricted
+`none`, an allowlist entry that is not a host pattern, and for restricted
 egress on a harness without the internal sandbox network. `409` for a
 workspace that is creating or gone.
 
@@ -237,31 +235,6 @@ is not running. `200` with:
 | `network_rx_bytes`, `network_tx_bytes` | number | Bytes received and sent since the container started. |
 | `sampled_at` | time | When Docker read the numbers. |
 | `blocked` | array of `{"host", "count", "last"}` | The hosts the egress proxy refused the workspace lately, most recent first, at most 20. Kept in memory since the harness started. |
-
-### `POST /api/workspaces/{id}/ports/{port}/preview`
-
-Hands the UI a link that opens a preview of a forwarded port in the browser.
-`200` with `{"url": string}`: `http://<port>-<workspace id>.<host>/__eika/preview?ticket=<ticket>`,
-where the host is the `public_url`'s, else the host the request reached the
-API on, with an IP address replaced by `localhost`. The ticket works once,
-within two minutes. `404` for a port the workspace does not forward, `409`
-for a workspace that is not running.
-
-A preview host is served by the harness outside `/api` and without the bearer
-token. Its `/__eika/preview?ticket=` trades the ticket for an `eika_preview`
-cookie on that host alone (HttpOnly, SameSite=Lax, twelve hours) and
-redirects to `/`. Every other request with that cookie is forwarded to the
-port in the container, with the preview's host in `Host`, the
-`X-Forwarded-*` headers set, and the cookie removed; WebSocket upgrades pass
-through. The workspace is read on every request, so a port taken off the
-list or a stopped workspace closes the preview at once. The answers the
-harness gives itself are plain text: `401` without a session, `403` for a
-used or expired ticket and for a port no longer forwarded, `503` for a
-stopped workspace, `502` when nothing answers on the port, which a server
-bound to localhost inside the container is the usual reason for. A preview
-has an origin of its own, so the page cannot read the UI's token; for a
-deployment reached by a name other than localhost, the preview hosts need a
-wildcard DNS record.
 
 ### `GET /api/workspaces/{id}/files`
 
@@ -300,23 +273,6 @@ directory; `403` when it is outside the workspace; `409` when the workspace is
 not running; `413` when the body is over the bound. Publishes
 `workspace.state`.
 
-### `GET /api/workspaces/{id}/terminal`
-
-Upgrades to a WebSocket carrying an interactive shell in the workspace.
-`?rows=` and `?cols=` set the starting size; absent means 24 by 80. The
-harness dials the sandbox's `/pty` and relays messages both ways unchanged, so
-they are exactly the PTY messages in `eikad.md`: the client sends
-`{"type":"input","data":<base64>}` and `{"type":"resize","rows":n,"cols":n}`,
-and receives `{"type":"output","data":<base64>}` and, when the shell exits,
-`{"type":"exit","exit_code":n}` (absent `exit_code` means 0) followed by a
-normal close. A close from either side is passed on with its status and
-reason; a lost connection closes the other side with `1011`.
-
-The token may be sent as `?token=`, and the handshake is accepted from the
-same origins as the event stream. Before the upgrade, `400` for a size that is
-not a number from 0 to 65535, `404` for a missing workspace, and `409` for a
-workspace that is not running.
-
 ### FileEntry
 
 | Field | Type | Meaning |
@@ -341,7 +297,7 @@ workspace that is not running.
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 | `container_id` | string, optional | The Docker container id. |
 | `parent_workspace_id` | string, optional | The workspace it was branched from. |
-| `sandbox` | Sandbox | What the container may consume, reach, and expose. A workspace from before sandboxes has no limits, open egress, and no ports. |
+| `sandbox` | Sandbox | What the container may consume and reach. A workspace from before sandboxes has no limits and open egress. |
 | `pinned` | boolean | Listed before the other workspaces of its project. |
 | `archived` | boolean | Set aside under an Archived heading; the container is left as it is. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
@@ -352,9 +308,8 @@ workspace that is not running.
 |---|---|---|
 | `limits` | `{"cpus": number, "memory_mb": number, "pids": number}` | Zero is no limit. `cpus` is a fraction of cores from 0.01 to the host's; `memory_mb` is MiB from 64 to the host's memory, with no swap beyond it; `pids` counts processes and threads, from 32 to 4194304. |
 | `egress` | `{"mode": string, "allow": [string]}` | `open` reaches the internet directly. `allowlist` puts the container on the internal sandbox network, with no route out, and its processes reach the hosts `allow` names through the harness's egress proxy. `none` is the internal network with nothing allowed. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
-| `ports` | array of `{"port": number, "label": string}` | At most 20 container ports the harness forwards previews to. `label` is at most 40 characters. |
 
-Forks are created with their parent's `limits` and `egress` and no `ports`.
+Forks are created with their parent's `limits` and `egress`.
 
 ## Sessions
 
@@ -511,10 +466,7 @@ The session's next model request, assembled by the same code a run uses:
 the request a run started now would send, with the run's new message still
 to be appended. `?model=<name>` names the model the run would request, as a
 message does. The MCP tools are those the servers last listed; a preview
-connects nothing. The context files are read in the workspace as a run
-reads them; when it is not running, the preview has everything else and
-`context_files_unread` says why the files are missing, since a run would
-start the workspace and read them. `200` with a ModelContext. `400` for a
+connects nothing. `200` with a ModelContext. `400` for a
 model that does not exist.
 
 ### `GET /api/sessions/{id}/requests`
@@ -534,7 +486,7 @@ ModelContext that has `request`; `404` for a record of another session.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `sections` | array | The system prompt by section, in order: `{kind, text, tokens, files}`. `kind` is `base`, `context_files`, or `instructions`; `files` lists a `context_files` section's files as `{path, text, tokens}`. The system prompt is the sections' texts joined by a blank line. |
+| `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base` or `instructions`. The system prompt is the sections' texts joined by a blank line. |
 | `tools` | array | The tool schemas sent: `{name, description, schema, source, tokens}`, where `source` is `builtin` or `mcp`. |
 | `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` only when the model preserves thinking. |
 | `message_tokens` | number | The estimated size of the messages. |
@@ -542,7 +494,6 @@ ModelContext that has `request`; `404` for a record of another session.
 | `parameters` | object | `{model, sampling, thinking_switch, preserve_thinking, image_input}`: the endpoint's identifier of the model, the sampling parameters sent (a Sampling), the model's thinking switch, whether earlier reasoning is replayed, and whether images are sent (without it each message's images are a note in its text). |
 | `sources` | object | The layer each parameter came from, keyed `model`, `thinking_switch`, `preserve_thinking`, `image_input`, and `sampling.<parameter>`. |
 | `dropped_effort` | string, optional | A reasoning effort the configuration chose that the model does not offer, which is not sent. |
-| `context_files_unread` | string, optional | In a preview, why the context files a run would read are missing: the workspace is not running. |
 | `request` | ModelRequest, optional | The record this is; absent for the next request. |
 | `context_window` | number | The context window of the call's model, in tokens: what the request and its answer must fit in. 0 when no model is configured, or a recorded call's model is deleted. |
 | `calibration` | object, optional | `{request_id, input_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
@@ -889,7 +840,7 @@ the model is there. `400` with what the endpoint answered when it failed.
 ## Profiles
 
 A profile is a named configuration of what a run sends: the model, the base
-prompts, extra instructions, whether context files are read, the tools, and
+prompt, extra instructions, the tools, and
 the sampling parameters. Every setting is optional, and one that is not set
 falls through. A run's configuration is resolved one value at a time, from
 the first layer that sets it:
@@ -899,7 +850,7 @@ the message's model -> the session's overrides -> the profile -> the model row -
 ```
 
 The model row supplies `max_output` and `reasoning_effort`; the default is
-the `default_model` setting, the built-in prompts, context files read, every
+the `default_model` setting, the built-in prompt, every
 tool, and for any other sampling parameter the endpoint's own default. A
 reasoning effort chosen above the model row that the model does not offer is
 not sent: the model row's own is, and the configuration names the dropped
@@ -908,9 +859,8 @@ one. The harness creates one profile, `Default`, that sets nothing.
 ### `GET /api/profiles`
 
 `200` with `{"profiles": [Profile], "default": string, "prompts":
-{"workspace": string, "chat": string}}`: every profile, oldest first, the id
-of the default one, and the built-in base prompts of a workspace session and
-of a chat.
+{"chat": string}}`: every profile, oldest first, the id of the default one,
+and the built-in base prompt.
 
 ### `GET /api/profiles/inherited`
 
@@ -951,10 +901,8 @@ null, an absent `model_id`, and a sampling parameter left out are not set.
 | Field | Type | Meaning |
 |---|---|---|
 | `model_id` | string, optional | The model, by id. |
-| `workspace_prompt` | string or null | Replaces the built-in base prompt of a workspace session, the empty string included. At most 64 KiB. |
-| `chat_prompt` | string or null | Replaces the built-in base prompt of a chat, likewise. |
-| `instructions` | string or null | Follows the base prompt and the context files. At most 64 KiB. |
-| `context_files` | boolean or null | Whether the workspace's AGENTS.md files are read. |
+| `chat_prompt` | string or null | Replaces the built-in base prompt, the empty string included. At most 64 KiB. |
+| `instructions` | string or null | Follows the base prompt. At most 64 KiB. |
 | `preserve_thinking` | boolean or null | Whether the model's earlier reasoning is replayed to it, over the model's own `preserve_thinking`. |
 | `sampling` | Sampling | The sampling parameters set here. |
 
@@ -992,14 +940,13 @@ A resolved configuration, with the layer each value came from.
 |---|---|---|
 | `profile_id`, `profile_name` | string | The profile it starts from. |
 | `model_id`, `model` | string | The model's id and name, empty when no model is configured. |
-| `workspace_prompt`, `chat_prompt` | string | The base prompts. |
+| `chat_prompt` | string | The base prompt. |
 | `instructions` | string | The extra instructions, empty for none. |
-| `context_files` | boolean | Whether context files are read. |
 | `preserve_thinking` | boolean | Whether earlier reasoning is replayed: a layer's choice, else the model's, else off. |
 | `tools` | string array or null | The tool choice; null is every tool the session can run. |
 | `sampling` | Sampling | The sampling parameters sent. |
 | `dropped_effort` | string, optional | An effort chosen above the model that the model does not offer. |
-| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, or `default`, keyed `profile`, `model`, `workspace_prompt`, `chat_prompt`, `instructions`, `context_files`, `preserve_thinking`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
+| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, or `default`, keyed `profile`, `model`, `chat_prompt`, `instructions`, `preserve_thinking`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
 
 ## Settings
 

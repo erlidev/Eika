@@ -234,13 +234,9 @@ func (a *Agent) Compact(ctx context.Context, s *Session, instructions string) er
 		return errors.New("compact: session has no conversation")
 	}
 	runID := newRunID()
-	prompt, err := a.prompt(ctx)
-	if err != nil {
-		return a.fail(ctx, s, runID, fmt.Errorf("compact: %w", err))
-	}
 	// compact reports its own failure as compaction.end, so there is no
 	// run.error to add.
-	_, err = a.compact(ctx, s, runID, prompt, s.Conversation.Len(), event.CompactManual, instructions)
+	_, err := a.compact(ctx, s, runID, a.prompt(), s.Conversation.Len(), event.CompactManual, instructions)
 	return err
 }
 

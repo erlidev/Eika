@@ -437,16 +437,12 @@
                   "chat_prompt": {
                     "nullable": "string"
                   },
-                  "context_files": {
-                    "nullable": "boolean"
-                  },
                   "created_at": "string",
                   "description": "string",
                   "id": "string",
                   "inherited": {
                     "object": {
                       "chat_prompt": "string",
-                      "context_files": "boolean",
                       "dropped_effort": "string",
                       "instructions": "string",
                       "model": "string",
@@ -491,8 +487,7 @@
                         "nullable": {
                           "array": "string"
                         }
-                      },
-                      "workspace_prompt": "string"
+                      }
                     },
                     "optional": [
                       "dropped_effort"
@@ -539,10 +534,7 @@
                       "array": "string"
                     }
                   },
-                  "updated_at": "string",
-                  "workspace_prompt": {
-                    "nullable": "string"
-                  }
+                  "updated_at": "string"
                 },
                 "optional": [
                   "model_id"
@@ -552,8 +544,7 @@
           },
           "prompts": {
             "object": {
-              "chat": "string",
-              "workspace": "string"
+              "chat": "string"
             }
           }
         }
@@ -564,7 +555,6 @@
       "response": {
         "object": {
           "chat_prompt": "string",
-          "context_files": "boolean",
           "dropped_effort": "string",
           "instructions": "string",
           "model": "string",
@@ -609,8 +599,7 @@
             "nullable": {
               "array": "string"
             }
-          },
-          "workspace_prompt": "string"
+          }
         },
         "optional": [
           "dropped_effort"
@@ -965,7 +954,6 @@
           "inherited": {
             "object": {
               "chat_prompt": "string",
-              "context_files": "boolean",
               "dropped_effort": "string",
               "instructions": "string",
               "model": "string",
@@ -1010,8 +998,7 @@
                 "nullable": {
                   "array": "string"
                 }
-              },
-              "workspace_prompt": "string"
+              }
             },
             "optional": [
               "dropped_effort"
@@ -1021,9 +1008,6 @@
             "object": {
               "chat_prompt": {
                 "nullable": "string"
-              },
-              "context_files": {
-                "nullable": "boolean"
               },
               "instructions": {
                 "nullable": "string"
@@ -1059,9 +1043,6 @@
                   "top_k",
                   "top_p"
                 ]
-              },
-              "workspace_prompt": {
-                "nullable": "string"
               }
             },
             "optional": [
@@ -1072,7 +1053,6 @@
           "resolved": {
             "object": {
               "chat_prompt": "string",
-              "context_files": "boolean",
               "dropped_effort": "string",
               "instructions": "string",
               "model": "string",
@@ -1117,8 +1097,7 @@
                 "nullable": {
                   "array": "string"
                 }
-              },
-              "workspace_prompt": "string"
+              }
             },
             "optional": [
               "dropped_effort"
@@ -1147,7 +1126,6 @@
               "request_id": "string"
             }
           },
-          "context_files_unread": "string",
           "context_window": "number",
           "dropped_effort": "string",
           "message_sizes": {
@@ -1307,22 +1285,10 @@
             "nullable": {
               "array": {
                 "object": {
-                  "files": {
-                    "array": {
-                      "object": {
-                        "path": "string",
-                        "text": "string",
-                        "tokens": "number"
-                      }
-                    }
-                  },
                   "kind": "string",
                   "text": "string",
                   "tokens": "number"
-                },
-                "optional": [
-                  "files"
-                ]
+                }
               }
             }
           },
@@ -1347,7 +1313,6 @@
         },
         "optional": [
           "calibration",
-          "context_files_unread",
           "dropped_effort",
           "request"
         ]
@@ -1639,7 +1604,6 @@
               "request_id": "string"
             }
           },
-          "context_files_unread": "string",
           "context_window": "number",
           "dropped_effort": "string",
           "message_sizes": {
@@ -1799,22 +1763,10 @@
             "nullable": {
               "array": {
                 "object": {
-                  "files": {
-                    "array": {
-                      "object": {
-                        "path": "string",
-                        "text": "string",
-                        "tokens": "number"
-                      }
-                    }
-                  },
                   "kind": "string",
                   "text": "string",
                   "tokens": "number"
-                },
-                "optional": [
-                  "files"
-                ]
+                }
               }
             }
           },
@@ -1839,7 +1791,6 @@
         },
         "optional": [
           "calibration",
-          "context_files_unread",
           "dropped_effort",
           "request"
         ]
@@ -2094,19 +2045,6 @@
                           "memory_mb": "number",
                           "pids": "number"
                         }
-                      },
-                      "ports": {
-                        "nullable": {
-                          "array": {
-                            "object": {
-                              "label": "string",
-                              "port": "number"
-                            },
-                            "optional": [
-                              "label"
-                            ]
-                          }
-                        }
                       }
                     }
                   },
@@ -2157,19 +2095,6 @@
                   "memory_mb": "number",
                   "pids": "number"
                 }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
-                }
               }
             }
           },
@@ -2215,9 +2140,6 @@
           }
         }
       }
-    },
-    "GET /api/workspaces/{id}/terminal": {
-      "websocket": true
     },
     "GET /api/workspaces/{id}/usage": {
       "status": 200,
@@ -2481,19 +2403,6 @@
                   "cpus": "number",
                   "memory_mb": "number",
                   "pids": "number"
-                }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
                 }
               }
             }
@@ -3101,7 +3010,6 @@
       "request": {
         "object": {
           "chat_prompt": "string",
-          "context_files": "boolean",
           "description": "string",
           "instructions": "string",
           "model_id": "string",
@@ -3125,8 +3033,7 @@
           },
           "tools": {
             "array": "string"
-          },
-          "workspace_prompt": "string"
+          }
         }
       },
       "response": {
@@ -3134,16 +3041,12 @@
           "chat_prompt": {
             "nullable": "string"
           },
-          "context_files": {
-            "nullable": "boolean"
-          },
           "created_at": "string",
           "description": "string",
           "id": "string",
           "inherited": {
             "object": {
               "chat_prompt": "string",
-              "context_files": "boolean",
               "dropped_effort": "string",
               "instructions": "string",
               "model": "string",
@@ -3188,8 +3091,7 @@
                 "nullable": {
                   "array": "string"
                 }
-              },
-              "workspace_prompt": "string"
+              }
             },
             "optional": [
               "dropped_effort"
@@ -3236,10 +3138,7 @@
               "array": "string"
             }
           },
-          "updated_at": "string",
-          "workspace_prompt": {
-            "nullable": "string"
-          }
+          "updated_at": "string"
         },
         "optional": [
           "model_id"
@@ -3600,14 +3499,6 @@
                   "memory_mb": "number",
                   "pids": "number"
                 }
-              },
-              "ports": {
-                "array": {
-                  "object": {
-                    "label": "string",
-                    "port": "number"
-                  }
-                }
               }
             }
           }
@@ -3644,19 +3535,6 @@
                   "memory_mb": "number",
                   "pids": "number"
                 }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
-                }
               }
             }
           },
@@ -3668,14 +3546,6 @@
           "container_id",
           "parent_workspace_id"
         ]
-      }
-    },
-    "POST /api/workspaces/{id}/ports/{port}/preview": {
-      "status": 200,
-      "response": {
-        "object": {
-          "url": "string"
-        }
       }
     },
     "POST /api/workspaces/{id}/start": {
@@ -3710,19 +3580,6 @@
                   "cpus": "number",
                   "memory_mb": "number",
                   "pids": "number"
-                }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
                 }
               }
             }
@@ -3770,19 +3627,6 @@
                   "memory_mb": "number",
                   "pids": "number"
                 }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
-                }
               }
             }
           },
@@ -3816,7 +3660,6 @@
       "request": {
         "object": {
           "chat_prompt": "string",
-          "context_files": "boolean",
           "description": "string",
           "instructions": "string",
           "model_id": "string",
@@ -3840,8 +3683,7 @@
           },
           "tools": {
             "array": "string"
-          },
-          "workspace_prompt": "string"
+          }
         }
       },
       "response": {
@@ -3849,16 +3691,12 @@
           "chat_prompt": {
             "nullable": "string"
           },
-          "context_files": {
-            "nullable": "boolean"
-          },
           "created_at": "string",
           "description": "string",
           "id": "string",
           "inherited": {
             "object": {
               "chat_prompt": "string",
-              "context_files": "boolean",
               "dropped_effort": "string",
               "instructions": "string",
               "model": "string",
@@ -3903,8 +3741,7 @@
                 "nullable": {
                   "array": "string"
                 }
-              },
-              "workspace_prompt": "string"
+              }
             },
             "optional": [
               "dropped_effort"
@@ -3951,10 +3788,7 @@
               "array": "string"
             }
           },
-          "updated_at": "string",
-          "workspace_prompt": {
-            "nullable": "string"
-          }
+          "updated_at": "string"
         },
         "optional": [
           "model_id"
@@ -3994,7 +3828,6 @@
       "request": {
         "object": {
           "chat_prompt": "string",
-          "context_files": "boolean",
           "instructions": "string",
           "model_id": "string",
           "preserve_thinking": "boolean",
@@ -4013,8 +3846,7 @@
               "top_k": "number",
               "top_p": "number"
             }
-          },
-          "workspace_prompt": "string"
+          }
         }
       },
       "response": {
@@ -4022,7 +3854,6 @@
           "inherited": {
             "object": {
               "chat_prompt": "string",
-              "context_files": "boolean",
               "dropped_effort": "string",
               "instructions": "string",
               "model": "string",
@@ -4067,8 +3898,7 @@
                 "nullable": {
                   "array": "string"
                 }
-              },
-              "workspace_prompt": "string"
+              }
             },
             "optional": [
               "dropped_effort"
@@ -4078,9 +3908,6 @@
             "object": {
               "chat_prompt": {
                 "nullable": "string"
-              },
-              "context_files": {
-                "nullable": "boolean"
               },
               "instructions": {
                 "nullable": "string"
@@ -4116,9 +3943,6 @@
                   "top_k",
                   "top_p"
                 ]
-              },
-              "workspace_prompt": {
-                "nullable": "string"
               }
             },
             "optional": [
@@ -4129,7 +3953,6 @@
           "resolved": {
             "object": {
               "chat_prompt": "string",
-              "context_files": "boolean",
               "dropped_effort": "string",
               "instructions": "string",
               "model": "string",
@@ -4174,8 +3997,7 @@
                 "nullable": {
                   "array": "string"
                 }
-              },
-              "workspace_prompt": "string"
+              }
             },
             "optional": [
               "dropped_effort"
@@ -4205,7 +4027,6 @@
           "inherited": {
             "object": {
               "chat_prompt": "string",
-              "context_files": "boolean",
               "dropped_effort": "string",
               "instructions": "string",
               "model": "string",
@@ -4250,8 +4071,7 @@
                 "nullable": {
                   "array": "string"
                 }
-              },
-              "workspace_prompt": "string"
+              }
             },
             "optional": [
               "dropped_effort"
@@ -4261,9 +4081,6 @@
             "object": {
               "chat_prompt": {
                 "nullable": "string"
-              },
-              "context_files": {
-                "nullable": "boolean"
               },
               "instructions": {
                 "nullable": "string"
@@ -4299,9 +4116,6 @@
                   "top_k",
                   "top_p"
                 ]
-              },
-              "workspace_prompt": {
-                "nullable": "string"
               }
             },
             "optional": [
@@ -4312,7 +4126,6 @@
           "resolved": {
             "object": {
               "chat_prompt": "string",
-              "context_files": "boolean",
               "dropped_effort": "string",
               "instructions": "string",
               "model": "string",
@@ -4357,8 +4170,7 @@
                 "nullable": {
                   "array": "string"
                 }
-              },
-              "workspace_prompt": "string"
+              }
             },
             "optional": [
               "dropped_effort"
@@ -4514,14 +4326,6 @@
               "memory_mb": "number",
               "pids": "number"
             }
-          },
-          "ports": {
-            "array": {
-              "object": {
-                "label": "string",
-                "port": "number"
-              }
-            }
           }
         }
       },
@@ -4555,19 +4359,6 @@
                   "cpus": "number",
                   "memory_mb": "number",
                   "pids": "number"
-                }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
                 }
               }
             }
