@@ -166,9 +166,11 @@ Other prompts:
 - Save at once. When the user states a preference, a decision is made or a
   durable fact turns up, the agent calls `memory_write` in that turn rather than
   later. There is no flush before compaction, so nothing waits to be saved.
-- Subagents write project-scope memories only, and only of type `project`,
-  `decision`, `procedure` or `reference`. The definition's `access.memory`
-  enforces this, and Sentry denies the rest.
+- Only `eika` and the dreamer write memories. Subagents have no `memory_write`:
+  what they learn goes in their report, and Eika decides what to save. One writer
+  of the conversation's memories keeps the write policy in one prompt, and a
+  report that carries injected text meets the provenance checks when Eika saves
+  it.
 
 ## 5. Recall
 
@@ -197,14 +199,16 @@ order:
 
 | Condition at write time | Provenance | State |
 |---|---|---|
-| The session is `suspicious`, the injection screen hits the body, or the body has instruction-shaped text ("always", "ignore", "you must") that does not quote the user | `external` | `pending`: in the Inbox review queue, searchable with a marker, never in the index |
-| The content quotes the user's message in this turn (checked by substring) | `user` | `active` |
-| A subagent writes `type = procedure` or `feedback` | `inferred` | `pending`, since procedures steer future behaviour |
+| The session is `suspicious`, the injection screen hits the body, or the body has instruction-shaped text ("always", "ignore", "you must") outside a span quoted from the user | `external` | `pending`: in the Inbox review queue, searchable with a marker, never in the index |
+| The body's statement is quoted from the user's messages in this turn (every instruction-shaped span lies inside such a quote, checked by substring after normalising whitespace and case) | `user` | `active` |
+| `type = procedure` or `feedback` drawn from a report rather than the user | `inferred` | `pending`, since procedures steer future behaviour |
 | Otherwise | `inferred` | `active` |
 
 The instruction-shape check runs on every agent write, not only on flagged
 ones. A real preference ("always use metric") passes because the user said it,
-so it quotes the user's message. Secret redaction runs on every write too, and a
+and the instruction-shaped words sit inside the quote. Quoting some other part
+of the user's message does not help a body whose instruction comes from
+elsewhere. Secret redaction runs on every write too, and a
 hit denies it.
 
 The Inbox's memory queue shows pending memories with their source. The user

@@ -27,18 +27,23 @@ A provider row (kept from today) gains these fields:
 | `pool` | Hardware group name. Endpoints in one pool share hardware and are serialised against each other. Default: the provider name |
 | `api` | `responses` or `chat`: which wire protocol Core speaks to the endpoint (below). Chosen at probe time, and the user can override it |
 | `slots` | Concurrent requests the pool accepts. Default: 1 for a local backend, 8 for a cloud one |
-| `capabilities` | Probe result (jsonb): how the endpoint counts tokens (`chat`, `text`, `none`), whether it reports cache metrics, whether it takes slot hints, the per-slot context it reported |
+| `kv` | `shared` (one cache all requests draw on, with its size in tokens) or `partitioned` (a fixed share per slot). Probed; the user can override it and the size |
+| `capabilities` | Probe result (jsonb): how the endpoint counts tokens (`chat`, `text`, `none`), whether it reports cache metrics, whether it takes slot hints, the per-request context it reported |
 
 The probe (`POST /api/providers/probe`, and again on every Core start) reads the
 endpoint's own description where it has one:
 
-| Backend | Identify by | Window per slot | Exact counting | Cache metric |
-|---|---|---|---|---|
-| llama.cpp | `GET /props` | `default_generation_settings.n_ctx` (per slot; `-np` divides `-c` unless `--kv-unified`) | `POST /apply-template` then `POST /tokenize` | `timings.cache_n`, and `prompt_tokens_details.cached_tokens` where present |
-| vLLM | `GET /version` plus `/v1/models` | `max_model_len` | `POST /tokenize` with `messages` (and `tools`, `chat_template_kwargs`) | `usage.prompt_tokens_details.cached_tokens` (needs `--enable-prompt-tokens-details`) |
-| SGLang | `GET /get_server_info` | `context_length` | `/tokenize` where the version has it | `cached_tokens` in usage where reported |
-| TabbyAPI | `GET /v1/model` | `parameters.max_seq_len` | `POST /v1/token/encode` (text, or messages with the template) | none known; shown as unknown |
-| Cloud | `/v1/models` | listing fields | none | `prompt_tokens_details.cached_tokens` |
+| Backend | Identify by | Window per request | KV cache | Exact counting | Cache metric |
+|---|---|---|---|---|---|
+| llama.cpp | `GET /props` | `default_generation_settings.n_ctx` | `partitioned` (`-np` divides `-c`), or `shared` with `--kv-unified` (the default when `-np` is automatic), size `-c` | `POST /apply-template` then `POST /tokenize` | `timings.cache_n`, and `prompt_tokens_details.cached_tokens` where present |
+| vLLM | `GET /version` plus `/v1/models` | `max_model_len` | `shared` (paged blocks); size from `/metrics` `cache_config_info` (blocks x block size) | `POST /tokenize` with `messages` (and `tools`, `chat_template_kwargs`) | `usage.prompt_tokens_details.cached_tokens` (needs `--enable-prompt-tokens-details`) |
+| SGLang | `GET /get_server_info` | `context_length` | `shared` (radix cache); size `max_total_num_tokens` | `/tokenize` where the version has it | `cached_tokens` in usage where reported |
+| TabbyAPI | `GET /v1/model` | `parameters.max_seq_len` | `shared` across the batch; size `parameters.cache_size` | `POST /v1/token/encode` (text, or messages with the template) | none known; shown as unknown |
+| Cloud | `/v1/models` | listing fields | not applicable | none | `prompt_tokens_details.cached_tokens` |
+
+The field names in the KV column are verified against each backend in phase 1,
+like the rest of the table. Where a version does not report the size, the pool is
+`shared` with an unknown size, and the user can enter it.
 
 ### Responses or Chat Completions
 
@@ -50,14 +55,20 @@ conventions that each Chat Completions backend handles a little differently. Cha
 Completions stays as the fallback and as the only choice for endpoints that lack
 the route.
 
-- **Default.** `responses` for llama.cpp. For any other endpoint, `responses` only
-  when the probe's conformance check passes: a streamed tool-call round trip with a
-  reasoning item, and usage with cache metrics. Otherwise `chat`. The user can
-  override per provider.
+- **Default.** `responses` only when the probe's conformance check passes, for
+  llama.cpp as for any other endpoint: a streamed tool-call round trip with a
+  reasoning item, and usage with cache metrics. Otherwise `chat`. llama.cpp is
+  expected to pass, but its support differs by version. The user can override per
+  provider. A cloud endpoint is asked for `reasoning.encrypted_content` through
+  `include`, since `store: false` otherwise returns no reasoning to pass back.
 - **One provider interface.** Both protocols implement `provider.Provider`, so the
   loop, accounting and compaction do not see which one is in use. Exact token
   counting (section 2) works from the equivalent chat-format request, which either
-  provider can build.
+  provider can build. That holds only if the server converts Responses input to
+  chat the same way; phase 1 checks it by drift, and an endpoint with drift on
+  `exact` under `responses` stays on `chat`. Usage fields differ by protocol:
+  `input_tokens`, `input_tokens_details.cached_tokens` and
+  `output_tokens_details.reasoning_tokens` under `responses`.
 - **Verified, not assumed.** Support differs by backend and version, so each
   backend's `responses` behaviour is checked against a live server in phase 1 and
   its fixtures recorded. A backend whose support is partial stays on `chat` by
@@ -68,9 +79,18 @@ of each response shape are recorded. Where a version lacks a route, the capabili
 is `none`, and the runtime falls back as section 2 describes.
 
 The effective window of a model is the smaller of its row's `context_window` and
-the per-slot context the probe reported. A model whose configured window is larger
-than its slot gets a warning in Settings. This is the commonest cause of silent
-truncation on llama.cpp with `-np` above 1.
+the per-request context the probe reported. A model whose configured window is
+larger gets a warning in Settings. On a `partitioned` llama.cpp server with `-np`
+above 1 this is the commonest cause of silent truncation.
+
+Most engines share one KV cache among all their requests: vLLM, SGLang,
+TabbyAPI/exllamav3, and llama.cpp with `--kv-unified`. There a single request may
+use its whole window, but concurrent requests together cannot exceed the cache.
+What happens when they would differs by engine. vLLM and SGLang preempt a request
+and recompute it later, which costs prefill and evicts prefix cache. llama.cpp
+fails the request once the unified cache is full. The inference queue therefore
+admits calls on a `shared` pool against its size as well as its slot count
+(section 3).
 
 ### Model kinds and classes
 
@@ -185,8 +205,7 @@ marked approximate.
   cached tokens of that call, and the predicted next request with its method.
 - Context panel: the parts with exact or approximate markers, and the remainder line.
 - Activity and Settings: per-day prefill seconds and tokens, cache-hit rate
-  (`cached / prompt` over calls that report it), background compute used against
-  its budget.
+  (`cached / prompt` over calls that report it), and compute by priority.
 
 ### Tests
 
@@ -212,7 +231,13 @@ defer call.Release()
 provider.Stream(ctx, request with call.SlotHint())
 ```
 
-- **Concurrency.** A pool admits `slots` leases at once; further calls wait.
+- **Concurrency.** A pool admits `slots` leases at once; further calls wait. A
+  `shared` pool (section 1), the usual kind, also admits a call only while its
+  running calls fit the cache with this one: each counted at its predicted prompt
+  plus maximum output, with a prefix shared between sessions counted once where
+  the engine caches prefixes. This keeps sessions from preempting or failing each
+  other mid-generation. With the size unknown, only slots limit admission, and
+  Activity shows engine preemptions where the backend reports them.
 - **Priorities**, highest first:
   1. `interactive`: the home session answering a message the user sent.
   2. `foreground`: a subagent started or messaged from an interactive turn in the
@@ -227,6 +252,9 @@ provider.Stream(ctx, request with call.SlotHint())
   no slot is free. The cancelled call is retried later and counts as a retry.
 - **Aging.** A waiting call gains one priority level per `aging_seconds` (default
   300) so background work cannot starve.
+- **Upgrade.** A run's priority is set per call, not per run. When a user message
+  joins a home turn running at `background` (a report, an Inbox answer, a wakeup)
+  through the steering queue, the run's next call is `interactive`.
 - **Slot affinity, llama.cpp only.** With `slots > 1`, a session keeps the slot it
   last used (LRU map) and the request carries `id_slot`, so its prefix stays in that
   slot's KV cache. This is the only backend-specific cache feature in the first
@@ -303,7 +331,8 @@ retries, overflow handling, cut-off handling and the Recorder. Changes:
 | Stall timeout | No bytes for `stall` seconds aborts the attempt as retryable. Before the first token the limit scales with predicted prefill: `30 s + predicted_prefilled / measured_prefill_rate x 2`, since 200k tokens of dense prefill can take minutes |
 | Parking | A tool waiting on an approval or on an answer blocks its goroutine, as `ask_user` does today. It holds no inference lease, since leases cover model calls only. Run state becomes `waiting`, so Activity shows it |
 | Durable questions and approvals | The `ask_user` broker, Eika's Inbox questions and the approval wait persist their pending items (a `questions` row; approvals live in Sentry), so a restart does not lose them |
-| Resume after restart | On start, subagent, routine and dream runs that were `running` or `waiting` resume from their last resumable entry with a notice ("Eika restarted at <time>; continue"). A tool call whose approval is still pending is re-dispatched and Sentry returns the same approval (approvals are keyed by session and tool-call id). An interrupted home reply is not resumed: the transcript gets a notice and the user's message stays answerable |
+| Resume after restart | On start, subagent, routine and dream runs that were `running` or `waiting` resume from their last resumable entry with a notice ("Eika restarted at <time>; continue"). A tool call whose approval is still pending is re-dispatched and Sentry returns the same approval (approvals are keyed by session and tool-call id). A non-read call is marked `dispatched` before it runs; one that was dispatched and has no result is never run again, and gets the result "Eika restarted while this ran; its outcome is unknown. Check before retrying.", so a send cannot happen twice. An interrupted home reply is not resumed: the transcript gets a notice and the user's message stays answerable |
+| Tool-call ids | The loop mints its own id for every tool call and keeps the backend's id only for the wire. Local servers reuse ids (`call_0`, empty, per-response counters), and approvals, entries and the dispatched marker need a unique key |
 | Images in tool results | Screenshots reach a vision-capable model as a user message with the image right after the tool result, under either API, since neither takes images in a tool result. A model without `image_input` gets the text and a note in place of each image. This resolves the item `DECISIONS.md` lists as deferred |
 | Compaction | Rebuilt for the home session: deterministic sections, a rolling summary, and idle compaction (section 11). Subagent, routine and dream sessions keep today's Pi compaction with their definition's prompts |
 | Reasoning replay | `preserve_thinking` gains the `chat_template_kwargs` form where a template takes it there |
@@ -336,7 +365,7 @@ Built-ins:
 | Agent | Class | Tools | Access | Role |
 |---|---|---|---|---|
 | `eika` | main | memory_search, memory_read, memory_write, memory_forget, history_search, history_read, skill_use, skill_file, subagent_start, subagent_message, subagent_status, subagent_cancel, inbox_ask, project_list, project_open, project_create, project_update, routine_create, routine_list, routine_update, routine_delete, wake_me, plugin_find, plugin_call, web_search, request_secret | memory write, private data, external effects, no computer | Converses, remembers, plans, delegates |
-| `worker` | main (allowed: `main`, `deep`) | bash, file_read, file_write, file_edit, web_search, web_fetch, skill_use, skill_file, memory_search (project), report | memory read, private data, external effects via Sentry, computer: project | Does work on a computer |
+| `worker` | main (allowed: `main`, `deep`) | bash, file_read, file_write, file_edit, web_search, web_fetch, skill_use, skill_file, memory_search (project), report | memory read (it reports what it learned, and Eika saves it), private data, external effects via Sentry, computer: project | Does work on a computer |
 | `researcher` | fast (allowed: `fast`, `main`) | web_search, web_fetch, report | no memory, no private data, no effects | Reads the web and returns findings |
 | `browser` | main (vision if available) | browser_* (`browser.md`), report, ask_user | no memory; private data through logged-in sites; effects gated per action | Drives the browser |
 | `dreamer` | main | memory_list, memory_read, memory_write, memory_merge, memory_archive, history_search, history_read, dream_report | memory write, no network, no effects | Consolidates memory (`memory.md` 7) |
@@ -533,10 +562,15 @@ It drops clone, push, fetch, hub grants, worktrees and previews.
 
 - The `home` computer is created at setup from the sandbox image, with a persistent
   volume mounted at `/home/eika`. It holds project directories and spilled outputs.
+  `/home/eika` is the computer's root for the executor and eikad (today's
+  `/workspace`). The image installs its tools outside it (under `/opt`), since a
+  volume freezes whatever the image had there at first creation.
 - **Per-run egress identity.** Every `exec` carries `HTTP(S)_PROXY` credentials
   that Sentry issued for that run, so the proxy attributes traffic to the session
   rather than the container. Processes a run starts in the background keep that
-  run's identity. eikad already accepts environment per exec.
+  run's identity; its credentials stay valid until the computer stops. They are
+  attribution, not authentication: the agent can read its own environment.
+  eikad already accepts environment per exec.
 - Computers join `eika_sandbox_internal` only. The `open` egress mode, which
   bypasses the proxy, is removed. A permissive allowlist (`*`) remains, so traffic
   still passes Sentry, and its blocklist and halt still apply.
