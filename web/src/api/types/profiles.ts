@@ -38,11 +38,9 @@ export type ConfigLayer = "request" | "session" | "profile" | "model" | "default
  */
 export type ProfileSettings = {
   model_id?: string;
-  /** workspace_prompt and chat_prompt replace the built-in base prompts, "" included. */
-  workspace_prompt: string | null;
+  /** chat_prompt replaces the built-in base prompt, "" included. */
   chat_prompt: string | null;
   instructions: string | null;
-  context_files: boolean | null;
   /** preserve_thinking replays earlier reasoning to the model, over the model's own switch. */
   preserve_thinking: boolean | null;
   sampling: Sampling;
@@ -55,10 +53,8 @@ export type Configuration = {
   /** model_id and model are empty when no model is configured. */
   model_id: string;
   model: string;
-  workspace_prompt: string;
   chat_prompt: string;
   instructions: string;
-  context_files: boolean;
   preserve_thinking: boolean;
   /** tools is the tool choice; null is every tool the session can run. */
   tools: string[] | null;
@@ -66,9 +62,9 @@ export type Configuration = {
   /** dropped_effort is an effort chosen above the model that the model does not offer. */
   dropped_effort?: string;
   /**
-   * sources names the layer of each value: profile, model, workspace_prompt,
-   * chat_prompt, instructions, context_files, preserve_thinking, tools, and
-   * `sampling.<parameter>` for each parameter sent.
+   * sources names the layer of each value: profile, model, chat_prompt,
+   * instructions, preserve_thinking, tools, and `sampling.<parameter>` for
+   * each parameter sent.
    */
   sources: Record<string, ConfigLayer> | null;
 };
@@ -92,7 +88,7 @@ export type Profiles = {
   /** default is the id of the profile a session that chose none runs with. */
   default: string;
   /** prompts are the built-in base prompts. */
-  prompts: { workspace: string; chat: string };
+  prompts: { chat: string };
 };
 
 /** ProfileInput is the body of POST /api/profiles and PUT /api/profiles/{id}: the whole profile. */

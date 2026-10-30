@@ -32,7 +32,7 @@ export type SettingsEditorProps = {
   /** inherited is what the layer's unset values fall through to. */
   inherited: Configuration;
   /** prompts are the built-in base prompts, which a set prompt is compared with. */
-  prompts: { workspace: string; chat: string };
+  prompts: { chat: string };
   kind: EditorKind;
   problems: readonly SamplingProblem[];
   /** initialSection is the tab the editor opens on. */
@@ -89,13 +89,7 @@ export function SettingsEditor({
 
   return (
     <div className="space-y-3">
-      <CostStrip
-        draft={draft}
-        inherited={inherited}
-        kind={kind}
-        groups={groups}
-        onOpen={setSection}
-      />
+      <CostStrip draft={draft} inherited={inherited} groups={groups} onOpen={setSection} />
       <SectionTabs
         idPrefix={idPrefix}
         label="Settings"
@@ -153,53 +147,21 @@ export function SettingsEditor({
 
       {section === "prompt" && (
         <div {...panel("prompt")} className="space-y-4">
-          {kind !== "chat" && (
-            <PromptEditor
-              id={id("workspace-prompt")}
-              label="Base prompt of a workspace session"
-              value={draft.workspace_prompt}
-              inherited={inherited.workspace_prompt}
-              from={sourceOf(inherited, "workspace_prompt")}
-              builtin={prompts.workspace}
-              onChange={(workspace_prompt) => {
-                set({ workspace_prompt });
-              }}
-            />
-          )}
-          {kind !== "workspace" && (
-            <PromptEditor
-              id={id("chat-prompt")}
-              label="Base prompt of a chat"
-              value={draft.chat_prompt}
-              inherited={inherited.chat_prompt}
-              from={sourceOf(inherited, "chat_prompt")}
-              builtin={prompts.chat}
-              onChange={(chat_prompt) => {
-                set({ chat_prompt });
-              }}
-            />
-          )}
-          {kind !== "chat" && (
-            <SwitchField
-              id={id("context-files")}
-              label="Context files"
-              hint="The workspace's AGENTS.md files, added to the system prompt after the base prompt."
-              options={[
-                { value: "on", label: "Read" },
-                { value: "off", label: "Skip" },
-              ]}
-              value={draft.context_files}
-              inherited={inherited.context_files}
-              from={sourceOf(inherited, "context_files")}
-              onChange={(context_files) => {
-                set({ context_files });
-              }}
-            />
-          )}
+          <PromptEditor
+            id={id("chat-prompt")}
+            label="Base prompt"
+            value={draft.chat_prompt}
+            inherited={inherited.chat_prompt}
+            from={sourceOf(inherited, "chat_prompt")}
+            builtin={prompts.chat}
+            onChange={(chat_prompt) => {
+              set({ chat_prompt });
+            }}
+          />
           <PromptEditor
             id={id("instructions")}
             label="Extra instructions"
-            hint="Added last, after the base prompt and the context files."
+            hint="Added after the base prompt."
             value={draft.instructions}
             inherited={inherited.instructions}
             from={sourceOf(inherited, "instructions")}

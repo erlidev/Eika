@@ -220,7 +220,7 @@ func TestChatRunOffersOnlyItsChosenTools(t *testing.T) {
 	if !slices.Equal(offered, []string{"web_search"}) {
 		t.Errorf("tools offered = %v, want web_search alone", offered)
 	}
-	if system := requests[0].System; !strings.Contains(system, "no workspace") {
+	if system := requests[0].System; !strings.Contains(system, "Use only the tools you are given") {
 		t.Errorf("system prompt = %q, want the chat rules", system)
 	}
 

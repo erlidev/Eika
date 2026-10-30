@@ -282,7 +282,7 @@ describe("the mock answers as the harness does", () => {
       [
         "PUT /api/sessions/{id}/overrides",
         "/api/sessions/ses-backoff/overrides",
-        { sampling: { top_k: 20 }, workspace_prompt: "" },
+        { sampling: { top_k: 20 }, chat_prompt: "" },
       ],
       ["GET /api/sessions/{id}/configuration", "/api/sessions/ses-backoff/configuration"],
       ["PUT /api/sessions/{id}/tools", "/api/sessions/ses-backoff/tools", { tools: null }],

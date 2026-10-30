@@ -112,7 +112,7 @@ opens one with no messages. `mcp` adds five MCP servers, one in each state, and 
 same servers beside the chats; the mock's authorization server approves at
 once, so Sign in returns straight to `/mcp/callback`. `profiles` adds two
 profiles to the workbench, puts `ses-backoff` on one with an override of its
-own, gives its workspace an AGENTS.md, and records two of its model calls,
+own, and records two of its model calls,
 for the Profiles tab, the status bar's profile, and the Context panel; the
 mock resolves profiles and assembles requests in `harness/profiles.ts`, and
 every run it plays records its model call. The `agent-*`

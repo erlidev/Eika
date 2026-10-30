@@ -46,10 +46,8 @@ function configuration(over: Partial<Configuration> = {}): Configuration {
     profile_name: "Default",
     model_id: "m1",
     model: "gpt-5",
-    workspace_prompt: "",
     chat_prompt: "",
     instructions: "",
-    context_files: true,
     preserve_thinking: false,
     tools: null,
     sampling: {},
@@ -62,10 +60,8 @@ describe("parseSampling", () => {
   it("reads each control as its kind, and leaves an empty one unset", () => {
     const draft = toDraft(
       {
-        workspace_prompt: null,
         chat_prompt: null,
         instructions: null,
-        context_files: null,
         preserve_thinking: null,
         sampling: {},
       },
@@ -90,10 +86,8 @@ describe("parseSampling", () => {
   it("names a control whose text is not a number of its kind", () => {
     const draft = toDraft(
       {
-        workspace_prompt: null,
         chat_prompt: null,
         instructions: null,
-        context_files: null,
         preserve_thinking: null,
         sampling: {},
       },
@@ -108,10 +102,8 @@ describe("toSettings", () => {
   it("round-trips what a layer sets, the empty prompt included", () => {
     const settings = {
       model_id: "m2",
-      workspace_prompt: "",
       chat_prompt: null,
       instructions: "Be brief.",
-      context_files: false,
       preserve_thinking: true,
       sampling: { temperature: 0, stop: ["END"] },
     };
@@ -174,10 +166,8 @@ describe("preserve_thinking", () => {
   it("is set by a draft that turns it either way, and unset by null", () => {
     const none = toDraft(
       {
-        workspace_prompt: null,
         chat_prompt: null,
         instructions: null,
-        context_files: null,
         preserve_thinking: null,
         sampling: {},
       },

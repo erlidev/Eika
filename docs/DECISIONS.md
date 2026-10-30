@@ -9,7 +9,7 @@ this file says why, so neither repeats the other.
 ## Scope
 
 - **Origin.** A Go port of the [Pi coding agent](https://github.com/badlogic/pi-mono)
-  core (loop, tools, session trees, context files) plus sandboxed workspaces,
+  core (loop, tools, session trees) plus sandboxed workspaces,
   subagents, web search, MCP, and a web UI, built so agents can modify Eika.
 - **Deferred:** skills and templates, a Responses API provider, a forge API for pull
   requests (the UI builds a compare link from `remote_url`).
@@ -356,9 +356,15 @@ this file says why, so neither repeats the other.
   stay out of chats until their author opts in.
 - Tool choices (profile or session) are lists where `mcp__<server>__*` means
   all of a server's tools, so tools a server adds later are included.
-- Context files are discovered through the executor; the "global" file is a
-  workspace path (`.config/eika/AGENTS.md`), since the harness filesystem is
-  unreachable from a sandbox.
+- **Context files (AGENTS.md discovery) and the workspace prompt are gone.**
+  They told a coding agent about a repository it was working in. Eika is an
+  assistant, not a coding harness, so there is no repository to describe and
+  one base prompt (`chat_prompt`, built in as `agent.ChatPrompt`) serves every
+  session. It makes no claim about files or commands: the tools a session is
+  given say what it can do. The profile fields `workspace_prompt` and
+  `context_files` went with them, edited out of the baseline migration in
+  place (phase 0 keeps one migration), as did `context_files_unread` in the
+  context preview, which only said a stopped workspace's files were skipped.
 - `ask_user` ids are `q-<hex>`, not store ids: a question is never a row,
   and `tool` must not import `store`.
 

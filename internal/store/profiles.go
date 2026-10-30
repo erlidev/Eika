@@ -22,15 +22,11 @@ type ProfileSettings struct {
 	// ModelID names the model a run uses. Empty is not set: the profile's,
 	// or the default model.
 	ModelID string `json:"model_id,omitempty"`
-	// WorkspacePrompt and ChatPrompt replace the built-in base prompt of a
-	// workspace session and of a chat when they are not nil, the empty
-	// string included.
-	WorkspacePrompt *string `json:"workspace_prompt,omitempty"`
-	ChatPrompt      *string `json:"chat_prompt,omitempty"`
-	// Instructions follow the base prompt and the context files.
+	// ChatPrompt replaces the built-in base prompt when it is not nil, the
+	// empty string included.
+	ChatPrompt *string `json:"chat_prompt,omitempty"`
+	// Instructions follow the base prompt.
 	Instructions *string `json:"instructions,omitempty"`
-	// ContextFiles says whether the workspace's context files are read.
-	ContextFiles *bool `json:"context_files,omitempty"`
 	// PreserveThinking says whether earlier reasoning is replayed to the
 	// model, over the model row's own switch.
 	PreserveThinking *bool `json:"preserve_thinking,omitempty"`
@@ -42,8 +38,8 @@ type ProfileSettings struct {
 
 // Empty reports whether the settings set nothing.
 func (p ProfileSettings) Empty() bool {
-	return p.ModelID == "" && p.WorkspacePrompt == nil && p.ChatPrompt == nil && p.Instructions == nil &&
-		p.ContextFiles == nil && p.PreserveThinking == nil && (len(p.Sampling) == 0 || string(p.Sampling) == "{}")
+	return p.ModelID == "" && p.ChatPrompt == nil && p.Instructions == nil &&
+		p.PreserveThinking == nil && (len(p.Sampling) == 0 || string(p.Sampling) == "{}")
 }
 
 // Profile is a named configuration of what a run sends. The migration
@@ -64,8 +60,8 @@ type Profile struct {
 
 // profileColumns is the column list every profile query selects, in the
 // order scanProfile reads them.
-const profileColumns = `id, name, description, model_id, workspace_prompt, chat_prompt, instructions,
-	context_files, preserve_thinking, tools, sampling, created_at, updated_at`
+const profileColumns = `id, name, description, model_id, chat_prompt, instructions,
+	preserve_thinking, tools, sampling, created_at, updated_at`
 
 // CreateProfile inserts p and returns it as stored. An empty ID gets a fresh
 // one; a name another profile has is ErrConflict and an unknown model is
@@ -74,12 +70,12 @@ func (s *Store) CreateProfile(ctx context.Context, p Profile) (Profile, error) {
 	if p.ID == "" {
 		p.ID = NewID()
 	}
-	const q = `INSERT INTO profiles (id, name, description, model_id, workspace_prompt, chat_prompt,
-			instructions, context_files, preserve_thinking, tools, sampling)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	const q = `INSERT INTO profiles (id, name, description, model_id, chat_prompt,
+			instructions, preserve_thinking, tools, sampling)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING ` + profileColumns
 	out, err := scanProfile(s.pool.QueryRow(ctx, q, p.ID, p.Name, p.Description, nullable(p.ModelID),
-		p.WorkspacePrompt, p.ChatPrompt, p.Instructions, p.ContextFiles, p.PreserveThinking, p.Tools,
+		p.ChatPrompt, p.Instructions, p.PreserveThinking, p.Tools,
 		jsonObject(p.Sampling)))
 	if err != nil {
 		return Profile{}, wrapMissing("create profile "+p.Name, err)
@@ -122,13 +118,13 @@ func (s *Store) Profiles(ctx context.Context) ([]Profile, error) {
 // row as it now stands. A name another profile has is ErrConflict and an
 // unknown model is ErrNotFound.
 func (s *Store) UpdateProfile(ctx context.Context, p Profile) (Profile, error) {
-	const q = `UPDATE profiles SET name = $2, description = $3, model_id = $4, workspace_prompt = $5,
-			chat_prompt = $6, instructions = $7, context_files = $8, preserve_thinking = $9, tools = $10,
-			sampling = $11, updated_at = now()
+	const q = `UPDATE profiles SET name = $2, description = $3, model_id = $4,
+			chat_prompt = $5, instructions = $6, preserve_thinking = $7, tools = $8,
+			sampling = $9, updated_at = now()
 		WHERE id = $1
 		RETURNING ` + profileColumns
 	out, err := scanProfile(s.pool.QueryRow(ctx, q, p.ID, p.Name, p.Description, nullable(p.ModelID),
-		p.WorkspacePrompt, p.ChatPrompt, p.Instructions, p.ContextFiles, p.PreserveThinking, p.Tools,
+		p.ChatPrompt, p.Instructions, p.PreserveThinking, p.Tools,
 		jsonObject(p.Sampling)))
 	if err != nil {
 		return Profile{}, wrapMissing("update profile "+p.ID, err)
@@ -263,8 +259,8 @@ func scanProfile(row pgx.Row) (Profile, error) {
 		model    *string
 		sampling []byte
 	)
-	err := row.Scan(&p.ID, &p.Name, &p.Description, &model, &p.WorkspacePrompt, &p.ChatPrompt,
-		&p.Instructions, &p.ContextFiles, &p.PreserveThinking, &p.Tools, &sampling, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Description, &model, &p.ChatPrompt,
+		&p.Instructions, &p.PreserveThinking, &p.Tools, &sampling, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return Profile{}, err
 	}

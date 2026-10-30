@@ -43,9 +43,7 @@ test("a profile's editor shows what each unset field falls through to", async ({
     "Review the change and report problems. Do not edit files.",
   );
   await expect(eika.page.getByRole("button", { name: "Reset extra instructions" })).toBeVisible();
-  await expect(
-    eika.page.getByRole("button", { name: "Override base prompt of a workspace session" }),
-  ).toBeVisible();
+  await expect(eika.page.getByRole("button", { name: "Override base prompt" })).toBeVisible();
 
   await eika.click("role=tab[name=Sampling]");
   const temperature = eika.page.getByRole("textbox", { name: "Temperature" });

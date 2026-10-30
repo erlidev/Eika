@@ -48,20 +48,11 @@ type Options struct {
 	// ImageInput says the model reads images. Without it, the images in the
 	// conversation are replaced by a note saying they were left out.
 	ImageInput bool
-	// BasePrompt replaces the built-in base prompt when it is not nil, the
-	// empty string included. The built-in one is WorkspacePrompt for an
-	// agent with an Executor and ChatPrompt for one without, so the caller
-	// passes the override for the agent's kind.
+	// BasePrompt replaces the built-in ChatPrompt when it is not nil, the
+	// empty string included.
 	BasePrompt *string
-	// SkipContextFiles leaves the workspace's context files out of the
-	// system prompt; none are read.
-	SkipContextFiles bool
-	// Instructions follow the base prompt and the workspace's context files
-	// in the system prompt.
+	// Instructions follow the base prompt in the system prompt.
 	Instructions string
-	// ContextDir is the workspace-relative directory whose context files
-	// apply. Empty means the workspace root.
-	ContextDir string
 	// Queue decides how many follow-up messages one turn delivers.
 	Queue QueueMode
 	// MaxRetries bounds how often a retryable provider failure is retried.
@@ -160,10 +151,7 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Messag
 	if s == nil || s.Conversation == nil {
 		return errors.New("run agent: session has no conversation")
 	}
-	prompt, err := a.prompt(ctx)
-	if err != nil {
-		return fmt.Errorf("run agent: %w", err)
-	}
+	prompt := a.prompt()
 	a.mu.Lock()
 	a.accepting = true
 	a.mu.Unlock()

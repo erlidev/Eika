@@ -480,10 +480,7 @@ The session's next model request, assembled by the same code a run uses:
 the request a run started now would send, with the run's new message still
 to be appended. `?model=<name>` names the model the run would request, as a
 message does. The MCP tools are those the servers last listed; a preview
-connects nothing. The context files are read in the workspace as a run
-reads them; when it is not running, the preview has everything else and
-`context_files_unread` says why the files are missing, since a run would
-start the workspace and read them. `200` with a ModelContext. `400` for a
+connects nothing. `200` with a ModelContext. `400` for a
 model that does not exist.
 
 ### `GET /api/sessions/{id}/requests`
@@ -503,7 +500,7 @@ ModelContext that has `request`; `404` for a record of another session.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `sections` | array | The system prompt by section, in order: `{kind, text, tokens, files}`. `kind` is `base`, `context_files`, or `instructions`; `files` lists a `context_files` section's files as `{path, text, tokens}`. The system prompt is the sections' texts joined by a blank line. |
+| `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base` or `instructions`. The system prompt is the sections' texts joined by a blank line. |
 | `tools` | array | The tool schemas sent: `{name, description, schema, source, tokens}`, where `source` is `builtin` or `mcp`. |
 | `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` only when the model preserves thinking. |
 | `message_tokens` | number | The estimated size of the messages. |
@@ -511,7 +508,6 @@ ModelContext that has `request`; `404` for a record of another session.
 | `parameters` | object | `{model, sampling, thinking_switch, preserve_thinking, image_input}`: the endpoint's identifier of the model, the sampling parameters sent (a Sampling), the model's thinking switch, whether earlier reasoning is replayed, and whether images are sent (without it each message's images are a note in its text). |
 | `sources` | object | The layer each parameter came from, keyed `model`, `thinking_switch`, `preserve_thinking`, `image_input`, and `sampling.<parameter>`. |
 | `dropped_effort` | string, optional | A reasoning effort the configuration chose that the model does not offer, which is not sent. |
-| `context_files_unread` | string, optional | In a preview, why the context files a run would read are missing: the workspace is not running. |
 | `request` | ModelRequest, optional | The record this is; absent for the next request. |
 | `context_window` | number | The context window of the call's model, in tokens: what the request and its answer must fit in. 0 when no model is configured, or a recorded call's model is deleted. |
 | `calibration` | object, optional | `{request_id, input_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
@@ -920,7 +916,7 @@ the model is there. `400` with what the endpoint answered when it failed.
 ## Profiles
 
 A profile is a named configuration of what a run sends: the model, the base
-prompts, extra instructions, whether context files are read, the tools, and
+prompt, extra instructions, the tools, and
 the sampling parameters. Every setting is optional, and one that is not set
 falls through. A run's configuration is resolved one value at a time, from
 the first layer that sets it:
@@ -930,7 +926,7 @@ the message's model -> the session's overrides -> the profile -> the model row -
 ```
 
 The model row supplies `max_output` and `reasoning_effort`; the default is
-the `default_model` setting, the built-in prompts, context files read, every
+the `default_model` setting, the built-in prompt, every
 tool, and for any other sampling parameter the endpoint's own default. A
 reasoning effort chosen above the model row that the model does not offer is
 not sent: the model row's own is, and the configuration names the dropped
@@ -939,9 +935,8 @@ one. The harness creates one profile, `Default`, that sets nothing.
 ### `GET /api/profiles`
 
 `200` with `{"profiles": [Profile], "default": string, "prompts":
-{"workspace": string, "chat": string}}`: every profile, oldest first, the id
-of the default one, and the built-in base prompts of a workspace session and
-of a chat.
+{"chat": string}}`: every profile, oldest first, the id of the default one,
+and the built-in base prompt.
 
 ### `GET /api/profiles/inherited`
 
@@ -982,10 +977,8 @@ null, an absent `model_id`, and a sampling parameter left out are not set.
 | Field | Type | Meaning |
 |---|---|---|
 | `model_id` | string, optional | The model, by id. |
-| `workspace_prompt` | string or null | Replaces the built-in base prompt of a workspace session, the empty string included. At most 64 KiB. |
-| `chat_prompt` | string or null | Replaces the built-in base prompt of a chat, likewise. |
-| `instructions` | string or null | Follows the base prompt and the context files. At most 64 KiB. |
-| `context_files` | boolean or null | Whether the workspace's AGENTS.md files are read. |
+| `chat_prompt` | string or null | Replaces the built-in base prompt, the empty string included. At most 64 KiB. |
+| `instructions` | string or null | Follows the base prompt. At most 64 KiB. |
 | `preserve_thinking` | boolean or null | Whether the model's earlier reasoning is replayed to it, over the model's own `preserve_thinking`. |
 | `sampling` | Sampling | The sampling parameters set here. |
 
@@ -1023,14 +1016,13 @@ A resolved configuration, with the layer each value came from.
 |---|---|---|
 | `profile_id`, `profile_name` | string | The profile it starts from. |
 | `model_id`, `model` | string | The model's id and name, empty when no model is configured. |
-| `workspace_prompt`, `chat_prompt` | string | The base prompts. |
+| `chat_prompt` | string | The base prompt. |
 | `instructions` | string | The extra instructions, empty for none. |
-| `context_files` | boolean | Whether context files are read. |
 | `preserve_thinking` | boolean | Whether earlier reasoning is replayed: a layer's choice, else the model's, else off. |
 | `tools` | string array or null | The tool choice; null is every tool the session can run. |
 | `sampling` | Sampling | The sampling parameters sent. |
 | `dropped_effort` | string, optional | An effort chosen above the model that the model does not offer. |
-| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, or `default`, keyed `profile`, `model`, `workspace_prompt`, `chat_prompt`, `instructions`, `context_files`, `preserve_thinking`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
+| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, or `default`, keyed `profile`, `model`, `chat_prompt`, `instructions`, `preserve_thinking`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
 
 ## Settings
 

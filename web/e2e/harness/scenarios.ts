@@ -162,8 +162,6 @@ function profiles(): WorldBuilder {
   const ws = w.workspaces.find((x) => x.id === "ws-retries");
   const main = w.sessions.find((x) => x.id === "ses-backoff");
   if (!ws || !main) throw new Error("the workbench has no ses-backoff");
-  (w.files[ws.id] ??= {})["AGENTS.md"] =
-    "# payments-api\n\nRun `go test ./...` before you report. Keep the webhook client free of global state.\n";
   main.profile_id = reviewer.id;
   w.overrides[main.id] = { ...noSettings(), sampling: { temperature: 0.7 } };
   syncSession(w, main);
@@ -917,7 +915,7 @@ export const scenarios = {
   },
   profiles: {
     description:
-      "Like workbench, with two more profiles: ses-backoff runs with Reviewer and overrides its temperature, its workspace has an AGENTS.md, and two of its model calls are recorded. For the Profiles tab, the status bar's profile, and the Context panel.",
+      "Like workbench, with two more profiles: ses-backoff runs with Reviewer and overrides its temperature, and two of its model calls are recorded. For the Profiles tab, the status bar's profile, and the Context panel.",
     path: "/sessions/ses-backoff",
     build: () => profiles().world,
   },

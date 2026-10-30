@@ -15,42 +15,37 @@ import (
 
 // The wire shapes of the profile and context routes.
 type configurationWire struct {
-	ProfileID       string            `json:"profile_id"`
-	ProfileName     string            `json:"profile_name"`
-	ModelID         string            `json:"model_id"`
-	Model           string            `json:"model"`
-	WorkspacePrompt string            `json:"workspace_prompt"`
-	ChatPrompt      string            `json:"chat_prompt"`
-	Instructions    string            `json:"instructions"`
-	ContextFiles    bool              `json:"context_files"`
-	PreserveThink   bool              `json:"preserve_thinking"`
-	Tools           []string          `json:"tools"`
-	Sampling        provider.Sampling `json:"sampling"`
-	DroppedEffort   string            `json:"dropped_effort"`
-	Sources         map[string]string `json:"sources"`
+	ProfileID     string            `json:"profile_id"`
+	ProfileName   string            `json:"profile_name"`
+	ModelID       string            `json:"model_id"`
+	Model         string            `json:"model"`
+	ChatPrompt    string            `json:"chat_prompt"`
+	Instructions  string            `json:"instructions"`
+	PreserveThink bool              `json:"preserve_thinking"`
+	Tools         []string          `json:"tools"`
+	Sampling      provider.Sampling `json:"sampling"`
+	DroppedEffort string            `json:"dropped_effort"`
+	Sources       map[string]string `json:"sources"`
 }
 
 type profileWire struct {
-	ID              string            `json:"id"`
-	Name            string            `json:"name"`
-	Description     string            `json:"description"`
-	ModelID         string            `json:"model_id"`
-	WorkspacePrompt *string           `json:"workspace_prompt"`
-	ChatPrompt      *string           `json:"chat_prompt"`
-	Instructions    *string           `json:"instructions"`
-	ContextFiles    *bool             `json:"context_files"`
-	PreserveThink   *bool             `json:"preserve_thinking"`
-	Sampling        provider.Sampling `json:"sampling"`
-	Tools           []string          `json:"tools"`
-	Inherited       configurationWire `json:"inherited"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Description   string            `json:"description"`
+	ModelID       string            `json:"model_id"`
+	ChatPrompt    *string           `json:"chat_prompt"`
+	Instructions  *string           `json:"instructions"`
+	PreserveThink *bool             `json:"preserve_thinking"`
+	Sampling      provider.Sampling `json:"sampling"`
+	Tools         []string          `json:"tools"`
+	Inherited     configurationWire `json:"inherited"`
 }
 
 type profilesWire struct {
 	Profiles []profileWire `json:"profiles"`
 	Default  string        `json:"default"`
 	Prompts  struct {
-		Workspace string `json:"workspace"`
-		Chat      string `json:"chat"`
+		Chat string `json:"chat"`
 	} `json:"prompts"`
 }
 
@@ -93,7 +88,6 @@ type contextWire struct {
 	agent.Context
 	Sources       map[string]string `json:"sources"`
 	DroppedEffort string            `json:"dropped_effort"`
-	Unread        string            `json:"context_files_unread"`
 	Request       *modelRequestWire `json:"request"`
 	ContextWindow int               `json:"context_window"`
 	Calibration   *struct {
@@ -151,23 +145,23 @@ func TestProfileRoutes(t *testing.T) {
 	if len(listed.Profiles) != 1 || listed.Profiles[0].Name != "Default" || listed.Default != listed.Profiles[0].ID {
 		t.Fatalf("profiles = %+v, want the one the migration made, as the default", listed)
 	}
-	if listed.Prompts.Workspace != agent.WorkspacePrompt || listed.Prompts.Chat != agent.ChatPrompt {
+	if listed.Prompts.Chat != agent.ChatPrompt {
 		t.Errorf("prompts = %+v, want the built-in ones", listed.Prompts)
 	}
 	original := listed.Profiles[0]
-	if original.WorkspacePrompt != nil || original.Tools != nil || original.Inherited.Model != "test-model" ||
+	if original.ChatPrompt != nil || original.Tools != nil || original.Inherited.Model != "test-model" ||
 		deref(original.Inherited.Sampling.MaxOutput) != 1024 || original.Inherited.Sources["sampling.max_output"] != "model" {
 		t.Errorf("default profile = %+v, want one that sets nothing and inherits the model row", original)
 	}
 
 	careful := a.newProfile(t, map[string]any{
 		"name": " Careful ", "description": "reviews", "instructions": "Check twice.",
-		"workspace_prompt": "", "context_files": false,
-		"sampling": map[string]any{"temperature": 0.1, "stop": []string{"END"}},
-		"tools":    []string{"bash", "ask_user", "bash"},
+		"chat_prompt": "",
+		"sampling":    map[string]any{"temperature": 0.1, "stop": []string{"END"}},
+		"tools":       []string{"bash", "ask_user", "bash"},
 	})
-	if careful.Name != "Careful" || deref(careful.Instructions) != "Check twice." || careful.WorkspacePrompt == nil ||
-		*careful.WorkspacePrompt != "" || deref(careful.ContextFiles) || deref(careful.Sampling.Temperature) != 0.1 {
+	if careful.Name != "Careful" || deref(careful.Instructions) != "Check twice." || careful.ChatPrompt == nil ||
+		*careful.ChatPrompt != "" || deref(careful.Sampling.Temperature) != 0.1 {
 		t.Errorf("created = %+v", careful)
 	}
 	if !slices.Equal(careful.Tools, []string{"ask_user", "bash"}) {
@@ -222,13 +216,12 @@ func TestProfileRoutes(t *testing.T) {
 
 func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	write(t, dir, "AGENTS.md", "Use tabs.")
+	project, _ := a.newProject(t, "demo")
 	ws := a.newWorkspace(t, project.ID)
 	sess := a.newSession(t, ws.ID)
 
 	profile := a.newProfile(t, map[string]any{
-		"name": "Terse", "workspace_prompt": "You are terse.", "instructions": "Answer in one line.",
+		"name": "Terse", "chat_prompt": "You are terse.", "instructions": "Answer in one line.",
 		"sampling": map[string]any{"temperature": 0.4, "max_output": 200},
 		"tools":    []string{"bash"},
 	})
@@ -262,7 +255,7 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	for _, s := range preview.Sections {
 		kinds = append(kinds, s.Kind)
 	}
-	if !slices.Equal(kinds, []agent.SectionKind{agent.SectionBase, agent.SectionContextFiles, agent.SectionInstructions}) {
+	if !slices.Equal(kinds, []agent.SectionKind{agent.SectionBase, agent.SectionInstructions}) {
 		t.Errorf("sections = %v", kinds)
 	}
 	if preview.Sources["sampling.temperature"] != "session" || preview.Sources["model"] != "default" || preview.Calibration != nil {
@@ -278,8 +271,8 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	if sent.System != preview.System() {
 		t.Errorf("system prompt = %q\nwant the preview's %q", sent.System, preview.System())
 	}
-	if !strings.HasPrefix(sent.System, "You are terse.") || !strings.Contains(sent.System, "Use tabs.") {
-		t.Errorf("system prompt = %q, want the profile's prompt and the context file", sent.System)
+	if !strings.HasPrefix(sent.System, "You are terse.") || !strings.Contains(sent.System, "Answer in one line.") {
+		t.Errorf("system prompt = %q, want the profile's prompt and instructions", sent.System)
 	}
 	if deref(sent.Sampling.Temperature) != 0.9 || deref(sent.Sampling.MaxOutput) != 200 {
 		t.Errorf("sampling = %+v", sent.Sampling)
@@ -509,10 +502,9 @@ func TestAnEditorSeesTheValuesOfTheModelItChoseBeforeSaving(t *testing.T) {
 	}
 }
 
-func TestAStoppedWorkspaceIsPreviewedWithItsContextFilesUnread(t *testing.T) {
+func TestAStoppedWorkspaceStillHasAPreview(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	write(t, dir, "AGENTS.md", "Use tabs.")
+	project, _ := a.newProject(t, "demo")
 	ws := a.newWorkspace(t, project.ID)
 	sess := a.newSession(t, ws.ID)
 	if rec := request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/stop", nil); rec.Code != 200 {
@@ -520,17 +512,7 @@ func TestAStoppedWorkspaceIsPreviewedWithItsContextFilesUnread(t *testing.T) {
 	}
 
 	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/context", nil), 200)
-	if preview.Unread == "" {
-		t.Error("the preview does not say the context files were not read")
-	}
-	if len(preview.Sections) != 1 || preview.Sections[0].Kind != agent.SectionBase || preview.Sections[0].Text != agent.WorkspacePrompt {
-		t.Errorf("sections = %+v, want the workspace's base prompt alone", preview.Sections)
-	}
-
-	// A session that reads no context files misses nothing.
-	a.override(t, sess.ID, map[string]any{"context_files": false})
-	preview = decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/context", nil), 200)
-	if preview.Unread != "" {
-		t.Errorf("unread = %q with context files off, want none", preview.Unread)
+	if len(preview.Sections) != 1 || preview.Sections[0].Kind != agent.SectionBase || preview.Sections[0].Text != agent.ChatPrompt {
+		t.Errorf("sections = %+v, want the base prompt alone", preview.Sections)
 	}
 }

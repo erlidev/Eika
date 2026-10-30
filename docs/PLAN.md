@@ -177,7 +177,7 @@ before the routes it calls.
       (phase 2), and the preview ticket flow (phase 12's live view).
 - [x] Remove previews, the terminal route and eikad `/pty`. Keep eikad `exec`,
       `files`, `stat`, `list`, `process`, `environment` and `watch`.
-- [ ] Remove `contextfile` (AGENTS.md discovery) and `WorkspacePrompt`.
+- [x] Remove `contextfile` (AGENTS.md discovery) and `WorkspacePrompt`.
 - [ ] Remove git projects and the `projects` table. Projects return with a new
       meaning in phase 2.
 - [ ] Rename workspace to computer throughout:

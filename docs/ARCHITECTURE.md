@@ -40,7 +40,6 @@ egress proxy are network calls and run in the harness.
 | `imaging` | Prepares attached images: decode, EXIF orientation, fit within 1080p (Catmull-Rom), PNG or JPEG without metadata |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
 | `executor` | The interface every agent action uses, path validation; `local` (tests only), `sandbox` (eikad client) |
-| `contextfile` | AGENTS.md discovery and its system prompt section |
 | `eikad` | Daemon handlers, path confinement, wire types |
 | `workspace` | Container and volume lifecycle, confinement, usage |
 | `egress` | Egress modes, allowlist patterns, the proxy |
@@ -79,10 +78,8 @@ Run(ctx, session, text)
   `question.asked`, and waits for the API to deliver an answer.
 - **executor**: `executor.Resolve` rejects paths leaving the root;
   `executor/local` has the `!prod` tag.
-- **contextfile** reads AGENTS.md (CLAUDE.md fallback, AGENTS.override.md
-  replacement) from the workspace root down to the working directory.
 - **Context assembly** (`agent/context.go`) builds every request as an
-  `agent.Context`: system prompt sections (base prompt, context files,
+  `agent.Context`: system prompt sections (base prompt,
   instructions), tool schemas (built-in or MCP), messages, parameters, and a
   size estimate for each. Runs and `Agent.Preview` share it; a `Recorder`
   sees every call that returned.
@@ -142,7 +139,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `settings` | key → jsonb value |
 | `providers` | name (unique), kind, base_url, api_key (sealed) |
 | `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
-| `profiles` | name, description, model_id, workspace_prompt, chat_prompt, instructions, context_files, preserve_thinking, tools, sampling (jsonb); NULL = not set |
+| `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
 | `model_requests` | session, run, entry, model, sections, tools, parameters (jsonb), token counts |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
@@ -192,7 +189,7 @@ session's workspace.
 A chat's run gets no executor and no commit function. `sessionTools` drops
 every tool that `NeedsWorkspace`, then applies the tool choice, so the model is
 never offered a workspace tool; the loop also refuses one. The system prompt
-is the chat prompt without context files. web_fetch refuses filters in a chat.
+is the same base prompt every session has. web_fetch refuses filters in a chat.
 A chat's fork is a chat.
 
 ## Server
@@ -599,9 +596,9 @@ An arrow means "may import".
  cmd/eika -> server                     cmd/eikad -> eikad, search/filter
  server -> agent, session, store, workspace, subagent, search, mcp, egress,
            utility, imaging
- agent -> tool, provider, contextfile     session -> agent, store
+ agent -> tool, provider                 session -> agent, store
  utility -> provider                      imaging -> provider
- tool -> executor                         contextfile -> executor
+ tool -> executor
  executor/sandbox -> eikad (wire types)   workspace -> executor, executor/sandbox
  subagent -> workspace, session, store, tool/builtin
  tool/builtin -> search, search/fetch     search/fetch, egress -> netguard

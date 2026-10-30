@@ -18,7 +18,6 @@ export type Segment = { kind: SegmentKind; label: string; tokens: number };
 /** segmentLabels are how the panel names each part. */
 export const segmentLabels: Record<SegmentKind, string> = {
   base: "Base prompt",
-  context_files: "Context files",
   instructions: "Instructions",
   builtin_tools: "Built-in tools",
   mcp_tools: "MCP tools",
@@ -28,7 +27,6 @@ export const segmentLabels: Record<SegmentKind, string> = {
 /** segmentOrder is the bar's order: the system prompt, the tools, the conversation. */
 const segmentOrder: readonly SegmentKind[] = [
   "base",
-  "context_files",
   "instructions",
   "builtin_tools",
   "mcp_tools",
@@ -42,7 +40,6 @@ const segmentOrder: readonly SegmentKind[] = [
 export function segments(c: ModelContext): Segment[] {
   const tokens: Record<SegmentKind, number> = {
     base: 0,
-    context_files: 0,
     instructions: 0,
     builtin_tools: 0,
     mcp_tools: 0,
@@ -244,12 +241,10 @@ export type EditTarget = { key: string; section: EditorSection };
  * editTargetOf is the setting behind a part of the request, or undefined
  * for one no editor sets: the messages are the conversation's.
  */
-export function editTargetOf(kind: SegmentKind, chat: boolean): EditTarget | undefined {
+export function editTargetOf(kind: SegmentKind): EditTarget | undefined {
   switch (kind) {
     case "base":
-      return { key: chat ? "chat_prompt" : "workspace_prompt", section: "prompt" };
-    case "context_files":
-      return { key: "context_files", section: "prompt" };
+      return { key: "chat_prompt", section: "prompt" };
     case "instructions":
       return { key: "instructions", section: "prompt" };
     case "builtin_tools":
@@ -277,7 +272,6 @@ export function parameterTarget(key: string): EditTarget | undefined {
 /** segmentColors are the parts' colours, from the theme's chart tokens. */
 export const segmentColors: Record<SegmentKind, string> = {
   base: "bg-chart-1",
-  context_files: "bg-chart-2",
   instructions: "bg-chart-3",
   builtin_tools: "bg-chart-5",
   mcp_tools: "bg-chart-4",
@@ -294,13 +288,12 @@ export function percent(part: number, whole: number): string {
 
 /**
  * View names what the inspector's pane shows: the system prompt, one of its
- * sections or context files, the tools or one group of them, the messages,
+ * sections, the tools or one group of them, the messages,
  * or the parameters.
  */
 export type View =
   | "system"
-  | `section:${"base" | "context_files" | "instructions"}`
-  | `file:${string}`
+  | `section:${"base" | "instructions"}`
   | "tools"
   | `group:${string}`
   | "messages"

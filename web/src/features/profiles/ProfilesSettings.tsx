@@ -148,7 +148,7 @@ function profileSummary(profile: Profile): string {
   if (profile.description !== "") return profile.description;
   const parts: string[] = [];
   if (profile.model_id !== undefined) parts.push(profile.inherited.model);
-  if (profile.workspace_prompt !== null || profile.chat_prompt !== null) parts.push("own prompt");
+  if (profile.chat_prompt !== null) parts.push("own prompt");
   if (profile.instructions !== null) parts.push("instructions");
   if (profile.tools !== null) parts.push(choiceSummary(profile.tools));
   const sampling = Object.keys(profile.sampling).length;
@@ -206,10 +206,8 @@ type ProfileViewProps = {
 function emptyDraft(): Draft {
   return toDraft(
     {
-      workspace_prompt: null,
       chat_prompt: null,
       instructions: null,
-      context_files: null,
       preserve_thinking: null,
       sampling: {},
     },

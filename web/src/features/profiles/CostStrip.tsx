@@ -6,14 +6,12 @@
 import type { Configuration } from "@/api/types";
 import { toolsTokens } from "@/features/profiles/form";
 import type { Draft, EditorSection, ToolGroups } from "@/features/profiles/form";
-import type { EditorKind } from "@/features/profiles/SettingsEditor";
 import { formatTokens } from "@/lib/format";
 import { estimateTokens } from "@/lib/tokens";
 
 type CostStripProps = {
   draft: Draft;
   inherited: Configuration;
-  kind: EditorKind;
   groups: ToolGroups | undefined;
   onOpen: (section: EditorSection) => void;
 };
@@ -22,11 +20,8 @@ type CostStripProps = {
  * CostStrip says what the draft sends every request before the conversation:
  * the system prompt and the tool definitions, each a button to its tab.
  */
-export function CostStrip({ draft, inherited, kind, groups, onOpen }: CostStripProps) {
-  const base =
-    kind === "chat"
-      ? (draft.chat_prompt ?? inherited.chat_prompt)
-      : (draft.workspace_prompt ?? inherited.workspace_prompt);
+export function CostStrip({ draft, inherited, groups, onOpen }: CostStripProps) {
+  const base = draft.chat_prompt ?? inherited.chat_prompt;
   const instructions = draft.instructions ?? inherited.instructions;
   const prompt = estimateTokens(base.trim()) + estimateTokens(instructions.trim());
   const toolCost = groups === undefined ? 0 : toolsTokens(groups, draft.tools ?? inherited.tools);
@@ -38,8 +33,6 @@ export function CostStrip({ draft, inherited, kind, groups, onOpen }: CostStripP
         <span className="font-mono text-sm font-semibold tabular-nums">~{formatTokens(total)}</span>
         <span className="text-muted-foreground">
           tokens every request sends before the conversation
-          {kind === "chat" ? "" : ", not counting context files"}
-          {kind === "profile" ? ", in a workspace session" : ""}
         </span>
       </p>
       <div className="bg-muted flex h-1.5 overflow-hidden rounded-full" aria-hidden>

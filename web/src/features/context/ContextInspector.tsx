@@ -37,7 +37,6 @@ import { cn } from "@/lib/utils";
 
 export type ContextInspectorProps = {
   sessionId: string;
-  chat: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   view: View;
@@ -48,7 +47,6 @@ export type ContextInspectorProps = {
 
 export function ContextInspector({
   sessionId,
-  chat,
   open,
   onOpenChange,
   view,
@@ -89,7 +87,6 @@ export function ContextInspector({
         {shown.data !== undefined && (
           <Inspection
             sessionId={sessionId}
-            chat={chat}
             context={shown.data}
             live={requests.selected === nextRequest}
             config={config}

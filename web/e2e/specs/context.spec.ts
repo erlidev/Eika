@@ -8,7 +8,6 @@
  */
 
 import { expect, test } from "../fixtures.ts";
-import { scenario } from "../harness/scenarios.ts";
 import type { EikaDriver } from "../harness/driver.ts";
 
 /** inspect opens the Context panel, then the inspector on the whole request. */
@@ -33,10 +32,10 @@ test("the next request at a glance", async ({ open, expectShot }) => {
 test("a part opens the inspector on it", async ({ open, expectShot }) => {
   const eika = await open({ scenario: "profiles", theme: "dark" });
   await eika.click("role=tab[name=Context]");
-  await eika.click("role=button[name=/^Context files, about/]");
+  await eika.click("role=button[name=/^Instructions, about/]");
   const dialog = eika.page.getByRole("dialog", { name: "Context inspector" });
   const detail = dialog.getByRole("region", { name: "Part detail" });
-  await expect(detail.getByRole("group", { name: "AGENTS.md" })).toContainText("go test ./...");
+  await expect(detail).toContainText("Review the change and report problems.");
 
   await eika.click("role=navigation[name=Parts] >> role=button[name=/^Tools/]");
   const bash = detail.getByRole("article", { name: "bash" });
@@ -50,8 +49,8 @@ test("a recorded request and where its parameters came from", async ({ open, exp
   const eika = await open({ scenario: "profiles" });
   await eika.click("role=tab[name=Context]");
   const panel = eika.page.getByRole("tabpanel", { name: "Context" });
-  await eika.select("Request", "#1 · gpt-5 · 532 in · 40m ago");
-  await expect(panel).toContainText("532 measured by the endpoint");
+  await eika.select("Request", "#1 · gpt-5 · 501 in · 40m ago");
+  await expect(panel).toContainText("501 measured by the endpoint");
   await eika.click("Inspect the whole request");
   await eika.click("role=navigation[name=Parts] >> role=button[name=Parameters]");
   const dialog = eika.page.getByRole("dialog", { name: "Context inspector" });
@@ -98,7 +97,7 @@ test("the request copies as JSON", async ({ open }) => {
     temperature: number;
   };
   expect(copied.model).toBe("gpt-5");
-  expect(copied.system).toContain("You are Eika, a coding agent");
+  expect(copied.system).toContain("You are Eika, an assistant in a chat");
   expect(copied.system).toContain("Review the change and report problems.");
   expect(copied.tools.map((t) => t.name)).toEqual(["bash", "web_fetch"]);
   expect(copied.temperature).toBe(0.7);
@@ -110,16 +109,4 @@ test("a turn that ends is recorded", async ({ open }) => {
   await eika.send("Now add jitter");
   await eika.click("role=combobox[name=Request]");
   await expect(eika.page.getByRole("option", { name: /^#3 · gpt-5/ })).toBeVisible();
-});
-
-test("a stopped workspace is previewed without its context files", async ({ open }) => {
-  const world = scenario("profiles").build();
-  const workspace = world.workspaces.find((w) => w.id === "ws-retries");
-  if (workspace) workspace.state = "stopped";
-  const eika = await open({ scenario: world, path: "/sessions/ses-backoff" });
-  await eika.click("role=tab[name=Context]");
-  const panel = eika.page.getByRole("tabpanel", { name: "Context" });
-  await expect(panel).toContainText("The workspace is not running, so its context files");
-  await expect(panel.getByRole("button", { name: /^Base prompt, about/ })).toBeVisible();
-  await expect(panel.getByRole("button", { name: /^Context files, about/ })).toHaveCount(0);
 });

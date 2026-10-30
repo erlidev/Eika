@@ -54,12 +54,9 @@ type configurationBody struct {
 	// model is configured.
 	ModelID string `json:"model_id"`
 	Model   string `json:"model"`
-	// WorkspacePrompt and ChatPrompt are the base prompts of a workspace
-	// session and of a chat.
-	WorkspacePrompt string `json:"workspace_prompt"`
-	ChatPrompt      string `json:"chat_prompt"`
-	Instructions    string `json:"instructions"`
-	ContextFiles    bool   `json:"context_files"`
+	// ChatPrompt is the base prompt.
+	ChatPrompt   string `json:"chat_prompt"`
+	Instructions string `json:"instructions"`
 	// PreserveThinking says whether earlier reasoning is replayed.
 	PreserveThinking bool `json:"preserve_thinking"`
 	// Tools is the tool choice, in the shape of a session's; null is every
@@ -71,9 +68,9 @@ type configurationBody struct {
 	// the model does not offer, which is not sent.
 	DroppedEffort string `json:"dropped_effort,omitempty"`
 	// Sources names the layer each value came from, keyed by the value's
-	// field: profile, model, workspace_prompt, chat_prompt, instructions,
-	// context_files, preserve_thinking, tools, and sampling.<parameter> for
-	// each parameter sent.
+	// field: profile, model, chat_prompt, instructions,
+	// preserve_thinking, tools, and sampling.<parameter> for each parameter
+	// sent.
 	Sources map[string]string `json:"sources"`
 }
 
@@ -92,12 +89,9 @@ type runConfig struct {
 	// model is the model the run uses; ok is false when none is configured.
 	model   store.Model
 	modelOK bool
-	// workspacePrompt and chatPrompt replace the built-in base prompts when
-	// they are not nil.
-	workspacePrompt *string
-	chatPrompt      *string
-	instructions    string
-	contextFiles    bool
+	// chatPrompt replaces the built-in base prompt when it is not nil.
+	chatPrompt   *string
+	instructions string
 	// preserveThinking is the model row's switch unless a layer set it.
 	preserveThinking bool
 	tools            []string
@@ -202,15 +196,12 @@ func (b configBase) resolve(profile store.Profile, profileSource string, layers 
 	c := runConfig{
 		profile:       profile,
 		profileSource: profileSource,
-		contextFiles:  true,
 		sources: map[string]string{
-			sourceProfile:      profileSource,
-			"model":            layerDefault,
-			"workspace_prompt": layerDefault,
-			"chat_prompt":      layerDefault,
-			"instructions":     layerDefault,
-			"context_files":    layerDefault,
-			"tools":            layerDefault,
+			sourceProfile:  profileSource,
+			"model":        layerDefault,
+			"chat_prompt":  layerDefault,
+			"instructions": layerDefault,
+			"tools":        layerDefault,
 		},
 	}
 	var preserve *bool
@@ -223,17 +214,11 @@ func (b configBase) resolve(profile store.Profile, profileSource string, layers 
 		if m, ok := b.model(set.ModelID); ok && set.ModelID != "" {
 			c.model, c.modelOK, c.sources["model"] = m, true, l.name
 		}
-		if set.WorkspacePrompt != nil {
-			c.workspacePrompt, c.sources["workspace_prompt"] = set.WorkspacePrompt, l.name
-		}
 		if set.ChatPrompt != nil {
 			c.chatPrompt, c.sources["chat_prompt"] = set.ChatPrompt, l.name
 		}
 		if set.Instructions != nil {
 			c.instructions, c.sources["instructions"] = *set.Instructions, l.name
-		}
-		if set.ContextFiles != nil {
-			c.contextFiles, c.sources["context_files"] = *set.ContextFiles, l.name
 		}
 		if set.PreserveThinking != nil {
 			preserve, c.sources["preserve_thinking"] = set.PreserveThinking, l.name
@@ -352,24 +337,13 @@ func (b configBase) resolveSession(sess store.Session, requested string) (runCon
 	return b.resolve(profile, source, layers)
 }
 
-// basePrompt returns the base prompt the configuration replaces the
-// built-in one with for a session of the given kind, nil for none.
-func (c runConfig) basePrompt(chat bool) *string {
-	if chat {
-		return c.chatPrompt
-	}
-	return c.workspacePrompt
-}
-
 // asConfiguration renders a resolved configuration on the wire.
 func asConfiguration(c runConfig) configurationBody {
 	body := configurationBody{
 		ProfileID:        c.profile.ID,
 		ProfileName:      c.profile.Name,
-		WorkspacePrompt:  agent.WorkspacePrompt,
 		ChatPrompt:       agent.ChatPrompt,
 		Instructions:     c.instructions,
-		ContextFiles:     c.contextFiles,
 		PreserveThinking: c.preserveThinking,
 		Tools:            c.tools,
 		Sampling:         c.sampling,
@@ -378,9 +352,6 @@ func asConfiguration(c runConfig) configurationBody {
 	}
 	if c.modelOK {
 		body.ModelID, body.Model = c.model.ID, c.model.Name
-	}
-	if c.workspacePrompt != nil {
-		body.WorkspacePrompt = *c.workspacePrompt
 	}
 	if c.chatPrompt != nil {
 		body.ChatPrompt = *c.chatPrompt
@@ -418,14 +389,7 @@ func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, 
 	opts.ThinkingSwitch = provider.ThinkingSwitch(c.model.ThinkingSwitch)
 	opts.PreserveThinking = c.preserveThinking
 	opts.ImageInput = c.model.ImageInput
-	opts.BasePrompt = c.basePrompt(sess.Chat())
-	if opts.BasePrompt == nil && !sess.Chat() {
-		// The agent picks its built-in prompt by whether it has an executor,
-		// and a preview of a stopped workspace has none: the session's kind
-		// is what decides.
-		opts.BasePrompt = new(agent.WorkspacePrompt)
-	}
-	opts.SkipContextFiles = !c.contextFiles
+	opts.BasePrompt = c.chatPrompt
 	opts.Instructions = c.instructions
 	opts.Executor = ex
 	return agent.New(p, s.runTools(sess, c.tools, mcpTools), opts)
