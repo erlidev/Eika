@@ -533,11 +533,14 @@ Design: `design/sentry.md` sections 6 and 9.
 
 - [ ] Add `internal/systemone`: the Jev-protocol client, wire types, thresholds
       and probing. Model kind `decision`.
+      - probing tells a decision model from a chat model by `"decisions"` in
+        llama.cpp's `/v1/models` `output_modalities`
 - [ ] Emulated backend: a chat model with constrained JSON (llama.cpp grammar,
       vLLM guided JSON), with probabilities from logprobs where available.
-- [ ] `guard/` sidecar (Python, compose profile `guard`): the Prompt Guard 2
-      classifier endpoint (22M or 86M, a setting) and `laya-serve`. Show its
-      health in Settings.
+- [ ] `guard/` sidecar (Python, compose profile `guard`): the injection
+      classifier endpoint and `laya-serve`. Show its health in Settings. The
+      screen's flag threshold is a setting; `design/sentry.md` 6 ("Injection
+      screen model") gives the recommended model and its threshold.
 - [ ] Ingest:
       - the injection screen (chunking, bounded sampling of large content)
       - the `suspicious` flag
@@ -557,6 +560,27 @@ Design: `design/sentry.md` sections 6 and 9.
 - [ ] `evals/sentry`: the innocent, injected and over-reach suites. Record attack
       success, utility and approval rate per model, and the asks per active day
       by source.
+- [ ] `evals/systemone`: the decision-model suite behind the recommendation in
+      `design/sentry.md` 9 ("Decision model"), for checking any other model,
+      quantisation or revision.
+      - the reviewer's questions on AgentDojo actions and Eika-shaped cases,
+        with matched pairs, steering variants and the actions Sentry hands off
+        kept apart
+      - monitor trajectories that follow an injection, ignore it, or carry out an
+        unusual legitimate request
+      - `needs_attention_now`, routing and the memory checks
+      - verdicts at the reviewer's thresholds, AUROC, pair ranking, ECE, p50
+        latency and VRAM per model
+- [ ] `evals/sentry/screen`: the injection screen's suite behind the
+      recommendation in `design/sentry.md` 6 ("Injection screen model"), for
+      checking any other model or revision.
+      - adaptive and planted attacks (LLMail-Inject, InjecAgent, AgentDojo,
+        BIPIA, JailbreakBench) and benign web, email, repository markdown and
+        attack-discussion pages, near-duplicates removed, with each model's
+        training-set overlap excluded
+      - per-subset recall at the threshold that gives 1% false positives
+      - the window-boundary split and counterfeit-policy steering tests
+      - latency per window on GPU and on CPU
 
 **Exit:**
 - Injected content on a fixture page is flagged and wrapped.

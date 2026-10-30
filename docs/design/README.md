@@ -251,9 +251,16 @@ the phase that implements it lands.
   comes first. Backend-specific cache tricks are limited to what is cheap: slot
   affinity and reading cache metrics.
 - "Jev-style System One" means a separate model kind that takes state plus typed
-  questions and returns calibrated probabilities. The backends are hosted Jev, local
-  Laya (`laya-serve`, Jev-compatible), or a chat model emulating it with constrained
-  output.
+  questions and returns calibrated probabilities. Eika connects to whatever
+  `/v1/systemone` endpoint it is given: hosted Jev, a local server such as
+  llama.cpp, Laya (`laya-serve`), or a chat model emulating it with constrained
+  output. The recommended local model is vLLM-SR `d3-flash` (`sentry.md` 9,
+  "Decision model").
+- The injection screen is a dedicated classifier behind whatever endpoint is
+  configured. The recommendation is Horizon-Labs `prompt-injection-guard-small`,
+  not Prompt Guard 2, which misses injections that are not phrased as jailbreaks,
+  and not a System One model, whose answer the screened content can steer
+  (`sentry.md` 6).
 - Agents never write skills. They write memories, which Sentry gates.
 - One home session for the user, across every channel, with no direct sessions.
   The user watches subagents read-only and steers them through Eika. More home
