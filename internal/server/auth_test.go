@@ -38,14 +38,13 @@ func TestAuthRejectsEverythingButTheRightToken(t *testing.T) {
 }
 
 func TestAuthLetsThePublicRoutesThrough(t *testing.T) {
-	s := server.New(testConfig(), testLogger(), server.Deps{Hub: newFakeHub()}, server.Options{})
+	s := server.New(testConfig(), testLogger(), server.Deps{}, server.Options{})
 	cases := []struct {
 		name string
 		path string
 	}{
 		{"container health check", "/healthz"},
 		{"frontend health check", "/api/healthz"},
-		{"the git hub, which authenticates workspaces itself", "/git/demo.git/info/refs"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

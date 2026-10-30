@@ -192,17 +192,4 @@ export function workspaceRoutes(ctx: RouteContext): void {
     w.sessions = w.sessions.filter((s) => !gone.has(s.workspace_id ?? ""));
     return { status: 204 };
   });
-  on("GET", "/api/workspaces/{id}/diff", ({ params }) => {
-    const row = find(w.workspaces, params[0], "workspace");
-    if ("status" in row) return row;
-    if (row.state !== "running") return fail(409, "conflict", "workspace is not running");
-    return ok(
-      w.diffs[row.id] ?? {
-        workspace_id: row.id,
-        base_commit: row.base_commit,
-        diff: "",
-        status: "",
-      },
-    );
-  });
 }

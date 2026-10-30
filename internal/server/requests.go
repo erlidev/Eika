@@ -175,7 +175,7 @@ func (s *Server) handleSessionContext(w http.ResponseWriter, r *http.Request) {
 			unread = err.Error()
 		}
 	}
-	loaded, err := session.NewStore(s.tree, nil).Load(ctx, sess.ID)
+	loaded, err := session.NewStore(s.tree).Load(ctx, sess.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return

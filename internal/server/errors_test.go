@@ -13,7 +13,6 @@ import (
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
 	"github.com/erlidev/eika/internal/workspace"
-	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
 // Error mapping is tested from inside the package: it is the one rule every
@@ -28,10 +27,8 @@ func TestErrorMapping(t *testing.T) {
 	}{
 		{"missing row", fmt.Errorf("read project p1: %w", store.ErrNotFound), http.StatusNotFound, codeNotFound},
 		{"missing container", fmt.Errorf("%w: w1", workspace.ErrNoWorkspace), http.StatusNotFound, codeNotFound},
-		{"missing hub project", fmt.Errorf("%w: demo", hub.ErrNoProject), http.StatusNotFound, codeNotFound},
 		{"answered question", fmt.Errorf("answer question q1: %w", builtin.ErrNoQuestion), http.StatusNotFound, codeNotFound},
 		{"duplicate row", fmt.Errorf("create project demo: %w", store.ErrConflict), http.StatusConflict, codeConflict},
-		{"bad project name", fmt.Errorf("%w: %q", hub.ErrBadProject, "../etc"), http.StatusBadRequest, codeInvalidRequest},
 		{"bad branch name", fmt.Errorf("%w: %q", workspace.ErrBadBranch, "-x"), http.StatusBadRequest, codeInvalidRequest},
 		{"bad answer", fmt.Errorf("answer question q1: %w", builtin.ErrBadAnswer), http.StatusBadRequest, codeInvalidRequest},
 		{"validation", invalidf("name is required"), http.StatusBadRequest, codeInvalidRequest},

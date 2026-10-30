@@ -5,16 +5,15 @@
 // configuration and the context of its model requests, MCP servers, and
 // settings;
 // password sign-in and bearer token authentication; the WebSocket event
-// stream; a workspace's files, commits, pushes, and the terminal socket it
-// relays to the sandbox; the git hub mounted at its own prefix; and, when
-// configured, the built frontend. Nothing else in internal/ imports server.
+// stream; a workspace's files and the terminal socket it relays to the
+// sandbox; and, when configured, the built frontend. Nothing else in internal/ imports server.
 //
 // Providers, models, and credentials are rows the UI edits. The server seals
 // credentials with internal/secret and builds a provider client from a row
 // for one run, probe, or test at a time.
 //
 // Run, in composition.go, is the composition of the process: it opens the
-// store, loads the sealing key, builds the hub, the workspace host, the
+// store, loads the sealing key, builds the workspace host, the
 // provider registry, the tool registry, and the MCP pool (mcp_pool.go, which
 // starts stdio servers through the host; mcp_store.go backs the pool with
 // sealed rows), and serves. New takes those pieces as Deps instead, which is

@@ -295,9 +295,7 @@ type SessionMessage struct {
 	ParentID  string `json:"parent_id,omitempty"`
 	// Kind is the entry kind: user, assistant, tool_call, tool_result,
 	// system, or event.
-	Kind string `json:"kind"`
-	// Commit is the workspace HEAD commit the entry was produced at.
-	Commit    string    `json:"commit,omitempty"`
+	Kind      string    `json:"kind"`
 	CreatedAt time.Time `json:"created_at"`
 	// Message is the entry's stored payload: a provider message for the
 	// conversation kinds.

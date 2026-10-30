@@ -47,16 +47,6 @@ type agentsWire struct {
 	Agents    []agentWire `json:"agents"`
 }
 
-type mergeWire struct {
-	WorkspaceID string   `json:"workspace_id"`
-	Branch      string   `json:"branch"`
-	Strategy    string   `json:"strategy"`
-	Merged      bool     `json:"merged"`
-	Commit      string   `json:"commit"`
-	Conflicts   []string `json:"conflicts"`
-	Message     string   `json:"message"`
-}
-
 // spawnStep is a model response that hands a task to a child agent.
 func spawnStep(callID, name, task string, wait bool) providertest.Step {
 	return providertest.Calls("handing it over", providertest.Call(callID, "spawn_agent", map[string]any{
@@ -128,7 +118,7 @@ func spawnChild(t *testing.T, a *api, command string) (workspaceWire, agentWire)
 
 // TestSpawnAgentRunsAChildAndReportsBack walks the whole subagent flow: the
 // parent hands over a task, a child works in a workspace of its own, its work
-// reaches the hub on its own branch, and the parent gets a result naming it.
+// lands on its own branch, and the parent gets a result naming it.
 func TestSpawnAgentRunsAChildAndReportsBack(t *testing.T) {
 	a := newAPI(t)
 	project, dir := a.newProject(t, "demo")
@@ -167,7 +157,7 @@ func TestSpawnAgentRunsAChildAndReportsBack(t *testing.T) {
 		}
 	}
 	// The branch carries a tag from the child's id, so two children a parent
-	// named the same do not write over each other in the hub.
+	// named the same do not write over each other.
 	if started.SubagentID == "" || started.Name != "worker" {
 		t.Errorf("subagent.started = %+v, want the child named", started)
 	}
@@ -205,14 +195,14 @@ func TestSpawnAgentRunsAChildAndReportsBack(t *testing.T) {
 		t.Errorf("child agents = %+v, want none", child.Agents)
 	}
 
-	// The work is in the hub, on the child's branch, which is what lets the
-	// parent fetch and merge it.
-	content, err := a.host.hubShow(t.Context(), "demo", child.Branch, "notes.txt")
+	// The work is on the child's branch in the parent's repository, which is
+	// what lets the parent merge it.
+	content, err := a.host.branchShow(t.Context(), ws.ID, child.Branch, "notes.txt")
 	if err != nil {
-		t.Fatalf("read notes.txt from the hub: %v", err)
+		t.Fatalf("read notes.txt from the child's branch: %v", err)
 	}
 	if strings.TrimSpace(content) != "from the child" {
-		t.Errorf("hub notes.txt = %q, want what the child wrote", content)
+		t.Errorf("branch notes.txt = %q, want what the child wrote", content)
 	}
 
 	// The parent's model saw the branch, the commit, and the summary.
@@ -251,9 +241,8 @@ func TestSpawnAgentRunsAChildAndReportsBack(t *testing.T) {
 	if content, err := git(t.Context(), dir, "show", child.Branch+":notes.txt"); err != nil || content != "from the child" {
 		t.Errorf("the parent's repository reads %q, %v from the child's branch", content, err)
 	}
-	diff := decodeBody[diffWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID+"/diff", nil), 200)
-	if strings.Contains(diff.Status, ".eika") || strings.Contains(diff.Status, "notes.txt") {
-		t.Errorf("parent status = %q, want the child's worktree kept out of it", diff.Status)
+	if status, err := git(t.Context(), dir, "status", "--porcelain", "--untracked-files=all"); err != nil || strings.Contains(status, ".eika") || strings.Contains(status, "notes.txt") {
+		t.Errorf("parent status = %q, %v, want the child's worktree kept out of it", status, err)
 	}
 }
 
@@ -270,9 +259,8 @@ func TestAChildWorkspaceLivesInItsParentsContainer(t *testing.T) {
 	if !slices.ContainsFunc(files.Entries, func(e fileEntryWire) bool { return e.Path == "notes.txt" }) {
 		t.Errorf("child files = %+v, want notes.txt at the worktree's root", files.Entries)
 	}
-	diff := decodeBody[diffWire](t, request(t, a.Server, "GET", childWS+"/diff", nil), 200)
-	if !strings.Contains(diff.Diff, "from the child") {
-		t.Errorf("child diff = %q, want the child's change against where it started", diff.Diff)
+	if content, err := a.host.branchShow(t.Context(), parent.ID, child.Branch, "notes.txt"); err != nil || content != "from the child" {
+		t.Errorf("the child's branch reads %q, %v, want its change", content, err)
 	}
 	if rec := request(t, a.Server, "GET", childWS+"/files?path=../../README.md", nil); rec.Code != 403 {
 		t.Errorf("reading past the worktree = %d, want 403: %s", rec.Code, rec.Body.String())
@@ -419,19 +407,19 @@ func TestAbortingAParentRunAbortsItsChildren(t *testing.T) {
 		t.Fatalf("child = %+v, want aborted with its parent", final)
 	}
 	// The child's own run was over before the spawner reported on it. A
-	// spawner that gave up waiting when its context ended would commit, push,
+	// spawner that gave up waiting when its context ended would commit
 	// and stop the child's workspace while its agent loop was still writing
 	// to it.
 	if childRun := a.runState(t, final.SessionID); childRun.Active {
 		t.Errorf("child run = %+v, want it finished before the child was reported on", childRun)
 	}
-	// An aborted child still commits and pushes: the work is not thrown away.
-	content, err := a.host.hubShow(t.Context(), "demo", final.Branch, "notes.txt")
+	// An aborted child still commits: the work is not thrown away.
+	content, err := a.host.branchShow(t.Context(), ws.ID, final.Branch, "notes.txt")
 	if err != nil {
-		t.Fatalf("read notes.txt from the hub: %v", err)
+		t.Fatalf("read notes.txt from the child's branch: %v", err)
 	}
 	if strings.TrimSpace(content) != "half done" {
-		t.Errorf("hub notes.txt = %q, want what the child managed to write", content)
+		t.Errorf("branch notes.txt = %q, want what the child managed to write", content)
 	}
 }
 
@@ -481,142 +469,6 @@ func TestAbortSubagentRouteStopsOneChild(t *testing.T) {
 	}
 	if rec := request(t, a.Server, "POST", "/api/subagents/nosuchagent/abort", nil); rec.Code != 404 {
 		t.Errorf("aborting an unknown child = %d, want 404", rec.Code)
-	}
-}
-
-// TestMergeBringsAChildBranchIntoTheParent checks the route a parent takes a
-// child's work back with, and what it reports when git cannot.
-func TestMergeBringsAChildBranchIntoTheParent(t *testing.T) {
-	t.Run("a clean merge", func(t *testing.T) {
-		a := newAPI(t)
-		parent, child := spawnChild(t, a, "echo from the child > notes.txt")
-
-		body := decodeBody[mergeWire](t, request(t, a.Server,
-			"POST", "/api/workspaces/"+parent.ID+"/merge",
-			map[string]any{"source_workspace_id": child.WorkspaceID}), 200)
-		if !body.Merged || body.Branch != child.Branch || body.Strategy != "merge" {
-			t.Fatalf("merge = %+v, want the child's branch merged", body)
-		}
-		if body.Commit == "" || len(body.Conflicts) != 0 {
-			t.Errorf("merge = %+v, want a commit and no conflicts", body)
-		}
-		diff := decodeBody[diffWire](t, request(t, a.Server,
-			"GET", "/api/workspaces/"+parent.ID+"/diff", nil), 200)
-		if strings.Contains(diff.Status, "notes.txt") {
-			t.Errorf("workspace status = %q, want the merged file committed, not untracked", diff.Status)
-		}
-	})
-
-	t.Run("a conflict", func(t *testing.T) {
-		a := newAPI(t)
-		parent, child := spawnChild(t, a, "echo from the child > notes.txt")
-
-		// The parent writes the same file differently, so the branches cannot
-		// both be right and git has to stop.
-		dir, err := a.host.dirOf(parent.ID)
-		if err != nil {
-			t.Fatalf("parent workspace directory: %v", err)
-		}
-		write(t, dir, "notes.txt", "from the parent\n")
-		for _, args := range [][]string{{"add", "-A"}, {"commit", "-m", "the parent's own notes"}} {
-			if _, err := git(t.Context(), dir, args...); err != nil {
-				t.Fatalf("commit in the parent workspace: %v", err)
-			}
-		}
-
-		body := decodeBody[mergeWire](t, request(t, a.Server,
-			"POST", "/api/workspaces/"+parent.ID+"/merge",
-			map[string]any{"source_workspace_id": child.WorkspaceID}), 200)
-		if body.Merged {
-			t.Fatalf("merge = %+v, want it to report conflicts", body)
-		}
-		if len(body.Conflicts) != 1 || body.Conflicts[0] != "notes.txt" {
-			t.Errorf("conflicts = %v, want notes.txt", body.Conflicts)
-		}
-	})
-
-	t.Run("bad requests", func(t *testing.T) {
-		a := newAPI(t)
-		project, dir := a.newProject(t, "demo")
-		initRepo(t, dir)
-		ws := a.newWorkspace(t, project.ID)
-		cases := map[string]struct {
-			body map[string]any
-			want int
-		}{
-			"neither a source nor a branch": {map[string]any{}, 400},
-			"an unknown strategy":           {map[string]any{"branch": "main", "strategy": "squash"}, 400},
-			"itself":                        {map[string]any{"source_workspace_id": ws.ID}, 400},
-			"a branch the hub has not":      {map[string]any{"branch": "nothing-here"}, 400},
-		}
-		for name, c := range cases {
-			t.Run(name, func(t *testing.T) {
-				rec := request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/merge", c.body)
-				if rec.Code != c.want {
-					t.Errorf("status = %d, want %d: %s", rec.Code, c.want, rec.Body.String())
-				}
-			})
-		}
-	})
-}
-
-// TestForkWithWorkspaceClonesAtTheEntryCommit checks that a fork can rewind
-// the files as well as the conversation.
-func TestForkWithWorkspaceClonesAtTheEntryCommit(t *testing.T) {
-	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
-	sess := a.newSession(t, ws.ID)
-
-	a.script(
-		providertest.Calls("", providertest.Call("c1", "bash",
-			map[string]any{"command": "echo one > one.txt && git add -A && git commit -m one"})),
-		providertest.Text("committed one.txt"),
-	)
-	a.postMessage(t, sess.ID, "make a commit", "", 202)
-	a.waitIdle(t, sess.ID)
-
-	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	last := path.Entries[len(path.Entries)-1]
-	if last.Commit == "" {
-		t.Fatalf("last entry = %+v, want a recorded commit to fork at", last)
-	}
-
-	fork := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork",
-		map[string]any{"entry_id": last.ID, "title": "a what if", "with_workspace": true}), 201)
-	if fork.WorkspaceID == ws.ID {
-		t.Fatalf("fork = %+v, want a workspace of its own", fork)
-	}
-	forked := decodeBody[workspaceWire](t,
-		request(t, a.Server, "GET", "/api/workspaces/"+fork.WorkspaceID, nil), 200)
-	if !strings.HasPrefix(forked.Branch, "main-fork-") {
-		t.Errorf("fork branch = %q, want main-fork-<id>", forked.Branch)
-	}
-	if forked.BaseCommit != last.Commit {
-		t.Errorf("fork base commit = %q, want the entry's %q", forked.BaseCommit, last.Commit)
-	}
-	forkDir, err := a.host.dirOf(fork.WorkspaceID)
-	if err != nil {
-		t.Fatalf("fork workspace directory: %v", err)
-	}
-	content, err := git(t.Context(), forkDir, "show", "HEAD:one.txt")
-	if err != nil {
-		t.Fatalf("read one.txt in the fork: %v", err)
-	}
-	if strings.TrimSpace(content) != "one" {
-		t.Errorf("fork one.txt = %q, want the commit's content", content)
-	}
-
-	// An entry with no commit has nothing to clone, and the request says so
-	// rather than making an empty workspace.
-	root := path.Entries[0]
-	if root.Commit == "" {
-		rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork",
-			map[string]any{"entry_id": root.ID, "with_workspace": true})
-		if rec.Code != 400 {
-			t.Errorf("forking at an entry with no commit = %d, want 400: %s", rec.Code, rec.Body.String())
-		}
 	}
 }
 
@@ -670,89 +522,5 @@ func TestShutdownStopsAChildWhoseParentIsLongDone(t *testing.T) {
 	}
 	if state := a.runState(t, child.SessionID); state.Active {
 		t.Errorf("child run = %+v, want it finished", state)
-	}
-}
-
-// TestForkWithWorkspaceRollsBackWhenTheForkFails checks that a workspace made
-// for a fork that never happens does not outlive the request.
-func TestForkWithWorkspaceRollsBackWhenTheForkFails(t *testing.T) {
-	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
-	sess := a.newSession(t, ws.ID)
-
-	a.script(
-		providertest.Calls("", providertest.Call("c1", "bash",
-			map[string]any{"command": "echo one > one.txt && git add -A && git commit -m one"})),
-		providertest.Text("committed one.txt"),
-	)
-	a.postMessage(t, sess.ID, "make a commit", "", 202)
-	a.waitIdle(t, sess.ID)
-	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	last := path.Entries[len(path.Entries)-1]
-
-	// The session goes away while its fork's workspace is being cloned, which
-	// is what leaves the fork with nothing to belong to.
-	a.host.cloneHook = func() {
-		if rec := request(t, a.Server, "DELETE", "/api/sessions/"+sess.ID, nil); rec.Code != 204 {
-			t.Errorf("delete the session = %d: %s", rec.Code, rec.Body.String())
-		}
-	}
-	rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork",
-		map[string]any{"entry_id": last.ID, "with_workspace": true})
-	if rec.Code < 400 {
-		t.Fatalf("fork = %d, want it to fail once its session is gone: %s", rec.Code, rec.Body.String())
-	}
-
-	// Neither the container nor its row is left behind.
-	live, err := a.host.List(t.Context())
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(live) != 1 || live[0].ID != ws.ID {
-		t.Errorf("host holds %+v, want the original workspace alone", live)
-	}
-	workspaces := decodeBody[workspacesWire](t, request(t, a.Server, "GET", "/api/workspaces", nil), 200)
-	if len(workspaces.Workspaces) != 1 || workspaces.Workspaces[0].ID != ws.ID {
-		t.Errorf("workspace rows = %+v, want the original row alone", workspaces.Workspaces)
-	}
-}
-
-// TestMergePushesTheSourcesOwnBranch checks that naming a branch to merge does
-// not send the source workspace's HEAD to that branch instead of its own.
-func TestMergePushesTheSourcesOwnBranch(t *testing.T) {
-	a := newAPI(t)
-	parent, child := spawnChild(t, a, "echo from the child > notes.txt")
-
-	// The child's workspace becomes the target, and the parent, still on
-	// main, the source. The parent has a commit the hub has not seen.
-	dir, err := a.host.dirOf(parent.ID)
-	if err != nil {
-		t.Fatalf("parent workspace directory: %v", err)
-	}
-	write(t, dir, "later.txt", "after the child\n")
-	for _, args := range [][]string{{"add", "-A"}, {"commit", "-m", "a later commit"}} {
-		if _, err := git(t.Context(), dir, args...); err != nil {
-			t.Fatalf("commit in the parent workspace: %v", err)
-		}
-	}
-
-	body := decodeBody[mergeWire](t, request(t, a.Server,
-		"POST", "/api/workspaces/"+child.WorkspaceID+"/merge",
-		map[string]any{"source_workspace_id": parent.ID, "branch": child.Branch}), 200)
-	if !body.Merged || body.Branch != child.Branch {
-		t.Fatalf("merge = %+v, want the named branch merged", body)
-	}
-	// The source pushed the branch it is on, not the branch that was named.
-	if _, err := a.host.hubShow(t.Context(), "demo", "main", "later.txt"); err != nil {
-		t.Errorf("the source's own branch was not pushed: %v", err)
-	}
-	content, err := a.host.hubShow(t.Context(), "demo", child.Branch, "notes.txt")
-	if err != nil {
-		t.Fatalf("read notes.txt from the hub: %v", err)
-	}
-	if strings.TrimSpace(content) != "from the child" {
-		t.Errorf("hub %s notes.txt = %q, want the child's branch untouched", child.Branch, content)
 	}
 }

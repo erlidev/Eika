@@ -250,9 +250,8 @@ func TestEgressPolicyKnowsAWorkspaceByItsProxyToken(t *testing.T) {
 }
 
 // A child agent works in its parent's container, so it is confined by the
-// parent's sandbox rather than a copy; a fork, of the parent's session or of
-// the child's, gets a container of its own, confined as that container is.
-func TestChildrenShareTheSandboxAndForksKeepItButNotThePorts(t *testing.T) {
+// parent's sandbox rather than a copy.
+func TestChildrenShareTheSandbox(t *testing.T) {
 	a := newAPI(t)
 	a.host.egressControl = true
 	project, dir := a.newProject(t, "demo")
@@ -287,27 +286,6 @@ func TestChildrenShareTheSandboxAndForksKeepItButNotThePorts(t *testing.T) {
 	usage := decodeBody[usageWire](t, request(t, a.Server, "GET", "/api/workspaces/"+child.WorkspaceID+"/usage", nil), 200)
 	if usage.PIDsLimit != 64 || usage.CPUs != 1 {
 		t.Errorf("child usage = %+v, want the holder's limits", usage)
-	}
-
-	forks := map[string]string{}
-	for name, from := range map[string]string{"fork": sess.ID, "child's fork": child.SessionID} {
-		path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+from+"/path", nil), 200)
-		last := path.Entries[len(path.Entries)-1]
-		fork := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions/"+from+"/fork",
-			map[string]any{"entry_id": last.ID, "with_workspace": true}), 201)
-		forks[name] = fork.WorkspaceID
-	}
-	for name, id := range forks {
-		got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+id, nil), 200)
-		if got.WorktreeOf != "" {
-			t.Errorf("%s = %+v, want a container of its own", name, got)
-		}
-		if got.Sandbox.Limits.MemoryMB != 512 || got.Sandbox.Egress.Mode != "allowlist" || len(got.Sandbox.Ports) != 0 {
-			t.Errorf("%s sandbox = %+v, want the holder's limits and egress and no ports", name, got.Sandbox)
-		}
-		if confined := a.host.confinements(id); len(confined) != 1 || !confined[0].Proxied || confined[0].Limits.PIDs != 64 {
-			t.Errorf("%s created with %+v, want the holder's confinement", name, confined)
-		}
 	}
 }
 

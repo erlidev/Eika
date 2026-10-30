@@ -20,8 +20,6 @@ export function projectRoutes(ctx: RouteContext): void {
       created_at: now(),
       ...(body.remote_url ? { remote_url: str(body.remote_url) } : {}),
       ...(body.host_path ? { host_path: str(body.host_path) } : {}),
-      ...(body.remote_username ? { remote_username: str(body.remote_username) } : {}),
-      ...(body.remote_password ? { remote_password_set: true } : {}),
     };
     w.projects.unshift(row);
     return ok(row, 201);
@@ -34,10 +32,6 @@ export function projectRoutes(ctx: RouteContext): void {
     const row = find(w.projects, params[0], "project");
     if ("status" in row) return row;
     if (typeof body.default_branch === "string") row.default_branch = body.default_branch;
-    if (typeof body.remote_username === "string") row.remote_username = body.remote_username;
-    if (typeof body.remote_password === "string") {
-      row.remote_password_set = body.remote_password !== "";
-    }
     return ok(row);
   });
   on("DELETE", "/api/projects/{id}", ({ params }) => {

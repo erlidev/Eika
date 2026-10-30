@@ -5,9 +5,6 @@ import { minutesAgo } from "../world.ts";
 import { fail, ok, str } from "./context.ts";
 import type { RouteContext } from "./context.ts";
 
-/** mockCommit is the commit every commit and push reports. */
-const mockCommit = "9b2e4c1f7a3d5e6b8c0a1f2e3d4c5b6a7f8e9d0c";
-
 export function fileRoutes(ctx: RouteContext): void {
   const { w, on, now, running } = ctx;
   const filesOf = (id: string) => (w.files[id] ??= {});
@@ -92,28 +89,5 @@ export function fileRoutes(ctx: RouteContext): void {
     }
     changed(row);
     return ok(entry(row.id, path));
-  });
-  on("POST", "/api/workspaces/{id}/commit", ({ params, body }) => {
-    const row = running(params[0]);
-    if ("status" in row) return row;
-    if (str(body.message).trim() === "") {
-      return fail(400, "invalid_request", "message is required");
-    }
-    const diff = diffOf(row);
-    if (diff.status.trim() === "") return fail(409, "conflict", "nothing to commit");
-    diff.status = "";
-    changed(row);
-    return ok({ commit: mockCommit });
-  });
-  on("POST", "/api/workspaces/{id}/push", ({ params, body }) => {
-    const row = running(params[0]);
-    if ("status" in row) return row;
-    const upstream = body.upstream === true;
-    const project = w.projects.find((p) => p.id === row.project_id);
-    if (upstream && (project?.remote_url ?? "") === "") {
-      return fail(400, "invalid_request", "the project has no remote to push to");
-    }
-    changed(row);
-    return ok({ branch: row.branch, commit: mockCommit, upstream_pushed: upstream });
   });
 }

@@ -4,8 +4,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-
-	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
 // routes registers every route the server serves. It is the one place to look
@@ -38,11 +36,6 @@ func (s *Server) routes() {
 	if s.deps.MCP != nil {
 		s.mux.HandleFunc("GET /oauth/client-metadata.json", s.handleClientMetadata)
 	}
-	// The hub authenticates workspaces itself, with a per-workspace token
-	// scoped to one project, so it is mounted outside the bearer token.
-	if s.deps.Hub != nil {
-		s.mux.Handle(hub.Prefix+"/", s.deps.Hub.Handler())
-	}
 	// The frontend is the catch-all, so it is registered without a method:
 	// a pattern with a method cannot be more general than "/api/".
 	if s.opts.WebDir != "" {
@@ -68,10 +61,6 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("DELETE /api/workspaces/{id}", s.handleDeleteWorkspace)
 	api.HandleFunc("POST /api/workspaces/{id}/start", s.handleStartWorkspace)
 	api.HandleFunc("POST /api/workspaces/{id}/stop", s.handleStopWorkspace)
-	api.HandleFunc("POST /api/workspaces/{id}/merge", s.handleMergeWorkspace)
-	api.HandleFunc("GET /api/workspaces/{id}/diff", s.handleWorkspaceDiff)
-	api.HandleFunc("POST /api/workspaces/{id}/commit", s.handleCommitWorkspace)
-	api.HandleFunc("POST /api/workspaces/{id}/push", s.handlePushWorkspace)
 	api.HandleFunc("GET /api/workspaces/{id}/files", s.handleListFiles)
 	api.HandleFunc("GET /api/workspaces/{id}/file", s.handleReadFile)
 	api.HandleFunc("PUT /api/workspaces/{id}/file", s.handleWriteFile)

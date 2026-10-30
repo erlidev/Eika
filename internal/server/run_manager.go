@@ -1,12 +1,9 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"strings"
 	"sync"
 	"time"
 
@@ -241,17 +238,13 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job, det
 		}
 	}()
 
-	// A chat has no workspace: its run gets no executor, records no commit,
-	// and the agent tells the model it has neither files nor commands.
-	var (
-		ex     executor.Executor
-		commit session.CommitFunc
-	)
+	// A chat has no workspace: its run gets no executor, and the agent tells
+	// the model it has neither files nor commands.
+	var ex executor.Executor
 	if !sess.Chat() {
 		if ex, err = s.executorFor(ctx, sess.WorkspaceID); err != nil {
 			return store.Run{}, nil, err
 		}
-		commit = workspaceCommit(ex)
 	}
 	cfg, err := s.configure(ctx, sess, model)
 	if err != nil {
@@ -264,7 +257,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job, det
 	if err != nil {
 		return store.Run{}, nil, err
 	}
-	sessionStore := session.NewStore(s.tree, commit)
+	sessionStore := session.NewStore(s.tree)
 	loaded, err := sessionStore.Load(ctx, sessionID)
 	if err != nil {
 		return store.Run{}, nil, err
@@ -643,24 +636,4 @@ func (a *activeRun) wasAborted() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.aborted
-}
-
-// workspaceCommit reports the workspace's HEAD commit for the entries a run
-// writes. A workspace that holds no repository yet reports no commit rather
-// than failing the run.
-func workspaceCommit(ex executor.Executor) session.CommitFunc {
-	return func(ctx context.Context, _ string) (string, error) {
-		var out bytes.Buffer
-		res, err := ex.Exec(ctx, executor.ExecSpec{
-			Command: "git",
-			Args:    []string{"rev-parse", "HEAD"},
-			Timeout: gitTimeout,
-			Stdout:  &out,
-			Stderr:  io.Discard,
-		})
-		if err != nil || res.ExitCode != 0 {
-			return "", nil
-		}
-		return strings.TrimSpace(out.String()), nil
-	}
 }

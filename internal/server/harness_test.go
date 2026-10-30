@@ -2,19 +2,15 @@ package server_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/server"
 	"github.com/erlidev/eika/internal/server/servertest"
-	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
 // testToken is the bearer token every test server is configured with.
@@ -84,82 +80,3 @@ func errorOf(t *testing.T, rec *httptest.ResponseRecorder) (string, string) {
 	}
 	return body.Error.Code, body.Error.Message
 }
-
-// fakeHub records what the API asked of the git hub.
-type fakeHub struct {
-	mu          sync.Mutex
-	projects    []string
-	mirrored    map[string]string
-	credentials map[string]hub.Credentials
-	initErr     error
-	// mirrorErr fails every Mirror when set, the way a remote refusing a
-	// token does.
-	mirrorErr error
-	// pushes records every push to a remote; pushErr fails them.
-	pushes  []hubPush
-	pushErr error
-}
-
-// hubPush is one push the API asked the hub for.
-type hubPush struct {
-	project, remoteURL, refspec string
-	creds                       hub.Credentials
-}
-
-// newFakeHub returns an empty hub.
-func newFakeHub() *fakeHub {
-	return &fakeHub{
-		mirrored:    map[string]string{},
-		credentials: map[string]hub.Credentials{},
-	}
-}
-
-// Init records that a project's repository was asked for. It rejects a name
-// no directory can have, as the real hub does, because that check is what the
-// API relies on to validate a project name.
-func (h *fakeHub) Init(_ context.Context, project string) (string, error) {
-	if h.initErr != nil {
-		return "", h.initErr
-	}
-	if project == "" || strings.ContainsAny(project, "/\\") || strings.Contains(project, "..") {
-		return "", fmt.Errorf("%w: %q", hub.ErrBadProject, project)
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.projects = append(h.projects, project)
-	return "/hub/" + project + ".git", nil
-}
-
-// Mirror records the remote a project mirrors.
-func (h *fakeHub) Mirror(_ context.Context, project, remoteURL string, creds hub.Credentials) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.mirrorErr != nil {
-		return h.mirrorErr
-	}
-	h.mirrored[project] = remoteURL
-	h.credentials[project] = creds
-	return nil
-}
-
-// Push records a push to a project's remote.
-func (h *fakeHub) Push(_ context.Context, project, remoteURL, refspec string, creds hub.Credentials) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.pushErr != nil {
-		return h.pushErr
-	}
-	h.pushes = append(h.pushes, hubPush{project: project, remoteURL: remoteURL, refspec: refspec, creds: creds})
-	return nil
-}
-
-// Handler stands in for git's Smart HTTP backend, which authenticates
-// workspaces itself.
-func (h *fakeHub) Handler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("git"))
-	})
-}
-
-var _ server.Hub = (*fakeHub)(nil)

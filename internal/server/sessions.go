@@ -51,7 +51,6 @@ type entryBody struct {
 	ParentID  string           `json:"parent_id,omitempty"`
 	Seq       int64            `json:"seq"`
 	Kind      string           `json:"kind"`
-	Commit    string           `json:"commit,omitempty"`
 	CreatedAt time.Time        `json:"created_at"`
 	Message   provider.Message `json:"message"`
 	// Compaction is what a compaction entry records, and absent on the
@@ -104,10 +103,6 @@ type setHeadRequest struct {
 type forkRequest struct {
 	EntryID string `json:"entry_id"`
 	Title   string `json:"title"`
-	// WithWorkspace gives the fork a workspace of its own, cloned from the
-	// hub at the commit the fork entry recorded, so that the files rewind
-	// with the conversation.
-	WithWorkspace bool `json:"with_workspace"`
 }
 
 // sessionsResponse is the body of GET /api/sessions.
@@ -384,8 +379,7 @@ func (s *Server) handleSetSessionHead(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleForkSession copies the branch down to an entry into a session of its
-// own. With with_workspace the fork also gets a workspace cloned at the
-// commit that entry recorded, so the files rewind with the conversation.
+// own, in the same workspace.
 func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[forkRequest](r)
 	if err != nil {
@@ -397,43 +391,19 @@ func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	sess, err := s.deps.Store.Session(r.Context(), id)
+	_, err = s.deps.Store.Session(r.Context(), id)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if req.WithWorkspace && sess.Chat() {
-		s.fail(w, r, invalidf("a chat has no workspace to fork; fork the conversation alone"))
-		return
-	}
-	// The check comes before the workspace is cloned: a fork that the tree
-	// would refuse must not leave a container behind.
 	if err := s.checkResumable(r.Context(), id, req.EntryID); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	opts := store.ForkOptions{Title: strings.TrimSpace(req.Title)}
-	var forked store.Workspace
-	if req.WithWorkspace {
-		forked, err = s.forkWorkspace(r.Context(), sess, req.EntryID)
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		opts.WorkspaceID = forked.ID
-	}
-	fork, err := s.tree.Fork(r.Context(), id, req.EntryID, opts)
+	fork, err := s.tree.Fork(r.Context(), id, req.EntryID, store.ForkOptions{Title: strings.TrimSpace(req.Title)})
 	if err != nil {
-		// The workspace was made for a fork that does not exist, so nothing
-		// is left to own it.
-		if opts.WorkspaceID != "" {
-			s.discardRecorded(r.Context(), forked.ID)
-		}
 		s.fail(w, r, err)
 		return
-	}
-	if opts.WorkspaceID != "" {
-		s.workspaceState(r.Context(), forked.ID, forked.ProjectID, forked.State)
 	}
 	s.log.Info("session forked", "session_id", id, "fork_id", fork.ID, "entry_id", req.EntryID)
 	s.writeSession(w, r, http.StatusCreated, fork)
@@ -519,7 +489,6 @@ func asEntry(e store.Entry) (entryBody, error) {
 		ParentID:  e.ParentID,
 		Seq:       e.Seq,
 		Kind:      string(e.Kind),
-		Commit:    e.Commit,
 		CreatedAt: e.CreatedAt,
 	}
 	m, ok, err := session.Message(e)

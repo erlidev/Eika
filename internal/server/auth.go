@@ -51,9 +51,7 @@ type signInResponse struct {
 
 // authenticated wraps h so that only requests carrying a valid bearer token
 // reach it: a sign-in session's, or the configured API token. The health
-// checks, the sign-in routes, and the git hub are mounted outside it: the
-// health checks and sign-in are public and the hub authenticates workspaces
-// itself, with per-workspace credentials.
+// checks and the sign-in routes are mounted outside it: they are public.
 func (s *Server) authenticated(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.authorized(r) {

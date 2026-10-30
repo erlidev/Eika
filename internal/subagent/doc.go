@@ -6,10 +6,10 @@
 // container the parent's files are in, records it as a worktree workspace,
 // opens a child session, runs the agent loop in it through a Runner, and
 // turns what the child left behind into one result the parent sees as a tool
-// result. The child's branch goes to the git hub when it finishes.
+// result. The child's branch stays in its parent's repository.
 //
 // It depends on internal/store for the rows, internal/workspace for the
-// containers, the worktrees, and the hub, internal/session for the child's
+// containers and the worktrees, internal/session for the child's
 // messages, and internal/event for the subagent.started and subagent.finished
 // events. The agent tools reach it through the builtin.Subagents interface,
 // so no package under internal/tool has to know what a workspace is. The

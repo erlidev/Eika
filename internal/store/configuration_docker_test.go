@@ -126,15 +126,15 @@ func TestPasswordAndSessions(t *testing.T) {
 	}
 }
 
-func TestProjectCredentialsUpdate(t *testing.T) {
+func TestProjectDefaultBranchUpdate(t *testing.T) {
 	st := storetest.Open(t)
 	p := newProject(t, st)
-	p.RemoteUsername, p.RemotePassword, p.DefaultBranch = "x-access-token", []byte("sealed"), "trunk"
+	p.DefaultBranch = "trunk"
 	got, err := st.UpdateProject(t.Context(), p)
 	if err != nil {
 		t.Fatalf("UpdateProject: %v", err)
 	}
-	if got.RemoteUsername != "x-access-token" || string(got.RemotePassword) != "sealed" || got.DefaultBranch != "trunk" {
+	if got.DefaultBranch != "trunk" {
 		t.Errorf("project = %+v", got)
 	}
 	if _, err := st.UpdateProject(t.Context(), store.Project{ID: "absent"}); !errors.Is(err, store.ErrNotFound) {

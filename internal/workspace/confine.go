@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -200,7 +199,7 @@ func (h *Host) setEnvironment(ctx context.Context, ws Workspace) error {
 
 // environment is what a workspace's processes inherit from the daemon. A
 // proxied workspace reaches the internet through the egress proxy, which
-// knows it by its id and proxy token; the hub and loopback are reached
+// knows it by its id and proxy token; loopback is reached
 // directly. Both spellings are set because tools disagree on which they
 // read, and NODE_USE_ENV_PROXY makes Node's own fetch read them at all.
 func (h *Host) environment(ws Workspace) []string {
@@ -212,11 +211,7 @@ func (h *Host) environment(ws Workspace) []string {
 		return nil
 	}
 	proxy.User = url.UserPassword(ws.ID, ws.ProxyToken)
-	direct := []string{"localhost", "127.0.0.1", "::1"}
-	if hub, err := url.Parse(h.opts.HubURL); err == nil && hub.Hostname() != "" {
-		direct = append(direct, hub.Hostname())
-	}
-	noProxy := strings.Join(direct, ",")
+	noProxy := "localhost,127.0.0.1,::1"
 	return []string{
 		"HTTP_PROXY=" + proxy.String(),
 		"HTTPS_PROXY=" + proxy.String(),

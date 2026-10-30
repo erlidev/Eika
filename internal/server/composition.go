@@ -22,7 +22,6 @@ import (
 	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool/builtin"
 	"github.com/erlidev/eika/internal/workspace"
-	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
 // Run builds the harness from its configuration and serves until ctx is
@@ -35,20 +34,14 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	}
 	defer st.Close()
 
-	// The key that seals credentials lives beside the hub, not in the
+	// The key that seals credentials lives in the data volume, not in the
 	// database, so a copy of the database alone opens none of them.
 	secrets, err := secret.Load(cfg.SecretKeyFile)
 	if err != nil {
 		return err
 	}
-	repos, err := hub.New(cfg.HubRoot, log)
-	if err != nil {
-		return err
-	}
 	host, err := workspace.NewHost(workspace.Options{
 		DockerSocket: cfg.DockerSocket,
-		Hub:          repos,
-		HubURL:       cfg.HubURL,
 		Image:        cfg.SandboxImage,
 		Network:      cfg.SandboxNetwork,
 		EikadBinary:  cfg.EikadBinary,
@@ -103,7 +96,6 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	}
 	s = New(cfg, log, Deps{
 		Store:      st,
-		Hub:        repos,
 		Workspaces: host,
 		Providers:  provider.NewRegistry(openai.New),
 		Secrets:    secrets,
@@ -192,7 +184,6 @@ func NewSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets 
 var (
 	_ Providers           = (*provider.Registry)(nil)
 	_ Workspaces          = (*workspace.Host)(nil)
-	_ Hub                 = (*hub.Hub)(nil)
 	_ subagent.Runner     = (*Server)(nil)
 	_ builtin.Subagents   = (*subagent.Spawner)(nil)
 	_ subagent.Store      = (*store.Store)(nil)

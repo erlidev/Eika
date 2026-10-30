@@ -19,7 +19,6 @@ import { scenario } from "./scenarios.ts";
  * calls them, and a test that calls one sees the mock's 404.
  */
 const unmocked: Record<string, string> = {
-  "POST /api/workspaces/{id}/merge": "only subagents merge a workspace",
   "POST /api/subagents/{id}/abort": "the UI stops a child agent's run, not the agent",
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/sessions/{id}/agents": "the sidebar lists child agents with the sessions",
@@ -136,7 +135,7 @@ describe("the mock answers as the harness does", () => {
       [
         "POST /api/projects",
         "/api/projects",
-        { name: "billing", kind: "remote", remote_url: "https://github.com/example/billing.git" },
+        { name: "billing", kind: "local", host_path: "/srv/billing" },
       ],
       ["GET /api/projects/{id}", "/api/projects/proj-api"],
       ["PATCH /api/projects/{id}", "/api/projects/proj-api", { default_branch: "trunk" }],
@@ -150,15 +149,8 @@ describe("the mock answers as the harness does", () => {
       ],
       ["POST /api/workspaces/{id}/stop", "/api/workspaces/ws-retries/stop"],
       ["POST /api/workspaces/{id}/start", "/api/workspaces/ws-retries/start"],
-      ["GET /api/workspaces/{id}/diff", "/api/workspaces/ws-retries/diff"],
       ["GET /api/workspaces/{id}/files", "/api/workspaces/ws-retries/files"],
       ["GET /api/workspaces/{id}/file", "/api/workspaces/ws-retries/file?path=README.md"],
-      [
-        "POST /api/workspaces/{id}/commit",
-        "/api/workspaces/ws-retries/commit",
-        { message: "Back off" },
-      ],
-      ["POST /api/workspaces/{id}/push", "/api/workspaces/ws-retries/push", { upstream: true }],
       [
         "PUT /api/workspaces/{id}/sandbox",
         "/api/workspaces/ws-retries/sandbox",
@@ -516,7 +508,6 @@ describe("the mock answers as the harness does", () => {
       ["POST", "/api/projects"],
       ["POST", "/api/sessions/ses-backoff/messages", { text: "" }],
       ["GET", "/api/sessions/no-such-session"],
-      ["POST", "/api/workspaces/ws-retries/commit", { message: "" }],
       ["GET", "/api/sessions?chats=true&workspace_id=ws-retries"],
     ];
     for (const [method, path, body] of refusals) {

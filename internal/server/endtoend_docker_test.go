@@ -101,9 +101,6 @@ func TestEndToEnd(t *testing.T) {
 	if last.Kind != "assistant" || last.Message.Content != "it printed hi" {
 		t.Errorf("last entry = %+v, want the final answer", last)
 	}
-	if last.Commit == "" {
-		t.Error("the assistant entry recorded no workspace commit")
-	}
 }
 
 func TestEventStreamReplaysASessionFromAnEntry(t *testing.T) {

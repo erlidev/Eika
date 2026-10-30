@@ -41,7 +41,6 @@ type api struct {
 	*server.Server
 	store     *store.Store
 	host      *fakeHost
-	hub       *fakeHub
 	questions *builtin.Questions
 	spawner   *subagent.Spawner
 	secrets   *secret.Box
@@ -75,7 +74,7 @@ func newAPI(t *testing.T) *api {
 	if err != nil {
 		t.Fatalf("secret.Load: %v", err)
 	}
-	a := &api{store: st, host: newFakeHost(t), hub: newFakeHub(), questions: builtin.NewQuestions(), secrets: secrets}
+	a := &api{store: st, host: newFakeHost(t), questions: builtin.NewQuestions(), secrets: secrets}
 	// The proxy asks the server for policies, as it does in the harness.
 	a.egress = egress.New(egress.Options{Policy: func(ctx context.Context, id string) (egress.Policy, error) {
 		return a.EgressPolicy(ctx, id)
@@ -117,7 +116,6 @@ func newAPI(t *testing.T) *api {
 	t.Cleanup(a.mcp.Close)
 	a.Server = server.New(testConfig(), testLogger(), server.Deps{
 		Store:      st,
-		Hub:        a.hub,
 		Workspaces: a.host,
 		Providers:  fakeProviders{build: a.buildProvider},
 		Secrets:    secrets,
@@ -286,14 +284,11 @@ func (a *api) waitQuestion(t *testing.T, sessionID string) builtin.Question {
 // with the handlers so that a change to a handler's struct that changes the
 // JSON fails a test instead of passing quietly.
 type projectWire struct {
-	ID                string `json:"id"`
-	Name              string `json:"name"`
-	Kind              string `json:"kind"`
-	RemoteURL         string `json:"remote_url"`
-	RemoteUsername    string `json:"remote_username"`
-	RemotePasswordSet bool   `json:"remote_password_set"`
-	HostPath          string `json:"host_path"`
-	DefaultBranch     string `json:"default_branch"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Kind          string `json:"kind"`
+	HostPath      string `json:"host_path"`
+	DefaultBranch string `json:"default_branch"`
 }
 
 type projectsWire struct {
@@ -318,13 +313,6 @@ type workspacesWire struct {
 	Workspaces []workspaceWire `json:"workspaces"`
 }
 
-type diffWire struct {
-	WorkspaceID string `json:"workspace_id"`
-	BaseCommit  string `json:"base_commit"`
-	Diff        string `json:"diff"`
-	Status      string `json:"status"`
-}
-
 type sessionWire struct {
 	ID              string `json:"id"`
 	WorkspaceID     string `json:"workspace_id"`
@@ -343,7 +331,6 @@ type sessionsWire struct {
 type entryWire struct {
 	ID      string           `json:"id"`
 	Kind    string           `json:"kind"`
-	Commit  string           `json:"commit"`
 	Message provider.Message `json:"message"`
 }
 
@@ -430,9 +417,6 @@ func TestProjectRoutes(t *testing.T) {
 	if created.Kind != "local" || created.HostPath != dir || created.DefaultBranch != "main" {
 		t.Fatalf("created = %+v", created)
 	}
-	if len(a.hub.projects) != 1 || a.hub.projects[0] != "demo" {
-		t.Errorf("hub projects = %v, want [demo]: a local project is mirrored too", a.hub.projects)
-	}
 
 	got := decodeBody[projectWire](t, request(t, a.Server, "GET", "/api/projects/"+created.ID, nil), 200)
 	if got.ID != created.ID {
@@ -443,15 +427,11 @@ func TestProjectRoutes(t *testing.T) {
 		t.Errorf("projects = %d, want 1", len(list.Projects))
 	}
 
-	remote := decodeBody[projectWire](t, request(t, a.Server, "POST", "/api/projects", map[string]any{
-		"name": "upstream", "kind": "remote", "remote_url": "https://example.invalid/x.git",
-		"default_branch": "trunk",
+	trunk := decodeBody[projectWire](t, request(t, a.Server, "POST", "/api/projects", map[string]any{
+		"name": "trunked", "kind": "local", "host_path": "/tmp", "default_branch": "trunk",
 	}), 201)
-	if remote.DefaultBranch != "trunk" {
-		t.Errorf("default_branch = %q, want trunk", remote.DefaultBranch)
-	}
-	if a.hub.mirrored["upstream"] != "https://example.invalid/x.git" {
-		t.Errorf("mirrored = %v, want the remote url", a.hub.mirrored)
+	if trunk.DefaultBranch != "trunk" {
+		t.Errorf("default_branch = %q, want trunk", trunk.DefaultBranch)
 	}
 
 	if rec := request(t, a.Server, "DELETE", "/api/projects/"+created.ID, nil); rec.Code != 204 {
@@ -462,89 +442,17 @@ func TestProjectRoutes(t *testing.T) {
 	}
 }
 
-func TestPrivateRemoteCredentialsAreSealed(t *testing.T) {
+func TestProjectRoutesUpdateTheDefaultBranch(t *testing.T) {
 	a := newAPI(t)
-	rec := request(t, a.Server, "POST", "/api/projects", map[string]any{
-		"name":            "private",
-		"kind":            "remote",
-		"remote_url":      "https://example.invalid/private.git",
-		"remote_username": "git-user",
-		"remote_password": "private-token",
-	})
-	created := decodeBody[projectWire](t, rec, 201)
-	if created.RemoteUsername != "git-user" || !created.RemotePasswordSet {
-		t.Errorf("credentials = %q, set=%v", created.RemoteUsername, created.RemotePasswordSet)
-	}
-	if strings.Contains(rec.Body.String(), "private-token") {
-		t.Errorf("response exposed the password: %s", rec.Body.String())
-	}
-	if creds := a.hub.credentials["private"]; creds.Username != "git-user" || creds.Password != "private-token" {
-		t.Errorf("hub credentials = %+v, want the project's", creds)
-	}
-	stored, err := a.store.Project(t.Context(), created.ID)
-	if err != nil {
-		t.Fatalf("read project: %v", err)
-	}
-	if len(stored.RemotePassword) == 0 || strings.Contains(string(stored.RemotePassword), "private-token") {
-		t.Errorf("stored password = %q, want it sealed", stored.RemotePassword)
-	}
-
-	// A new token is tried against the remote before it replaces the old one.
-	updated := decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+created.ID,
-		map[string]any{"remote_password": "rotated-token"}), 200)
-	if creds := a.hub.credentials["private"]; creds.Username != "git-user" || creds.Password != "rotated-token" {
-		t.Errorf("hub credentials after rotation = %+v", creds)
-	}
-	if !updated.RemotePasswordSet {
-		t.Error("the rotated password is not reported as set")
-	}
-
-	// A token the remote refuses is not stored.
-	a.hub.mirrorErr = fmt.Errorf("authentication failed for wrong-token")
-	rec = request(t, a.Server, "PATCH", "/api/projects/"+created.ID, map[string]any{"remote_password": "wrong-token"})
-	if rec.Code != 400 || strings.Contains(rec.Body.String(), "wrong-token") {
-		t.Errorf("refused token = %d %s, want a 400 that does not quote it", rec.Code, rec.Body.String())
-	}
-	a.hub.mirrorErr = nil
-	if creds, _ := a.store.Project(t.Context(), created.ID); string(creds.RemotePassword) == string(stored.RemotePassword) {
-		t.Error("the stored password did not change on the rotation")
-	}
-
-	// A password the harness can no longer open, as after the secret key
-	// file changed, is replaced by entering a new one.
-	unreadable, err := a.store.Project(t.Context(), created.ID)
-	if err != nil {
-		t.Fatalf("read project: %v", err)
-	}
-	unreadable.RemotePassword = []byte("sealed under a key this harness lacks")
-	if _, err := a.store.UpdateProject(t.Context(), unreadable); err != nil {
-		t.Fatalf("corrupt the stored password: %v", err)
-	}
-	if rec := request(t, a.Server, "PATCH", "/api/projects/"+created.ID, map[string]any{"remote_username": "git-user"}); rec.Code != 409 {
-		t.Errorf("username change over an unreadable password = %d, want 409", rec.Code)
-	}
-	decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+created.ID,
-		map[string]any{"remote_password": "re-entered-token"}), 200)
-	if creds := a.hub.credentials["private"]; creds.Username != "git-user" || creds.Password != "re-entered-token" {
-		t.Errorf("hub credentials after re-entry = %+v", creds)
-	}
-
-	// Removing the password makes the remote public again.
-	cleared := decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+created.ID,
-		map[string]any{"remote_password": ""}), 200)
-	if cleared.RemoteUsername != "" || cleared.RemotePasswordSet {
-		t.Errorf("cleared = %+v, want no credentials", cleared)
-	}
-
 	local, _ := a.newProject(t, "local")
-	if rec := request(t, a.Server, "PATCH", "/api/projects/"+local.ID,
-		map[string]any{"remote_username": "u", "remote_password": "p"}); rec.Code != 400 {
-		t.Errorf("credentials on a local project = %d, want 400", rec.Code)
-	}
 	branch := decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+local.ID,
 		map[string]any{"default_branch": "trunk"}), 200)
 	if branch.DefaultBranch != "trunk" {
 		t.Errorf("default_branch = %q, want trunk", branch.DefaultBranch)
+	}
+	if rec := request(t, a.Server, "PATCH", "/api/projects/"+local.ID,
+		map[string]any{"default_branch": " "}); rec.Code != 400 {
+		t.Errorf("an empty default_branch = %d, want 400", rec.Code)
 	}
 }
 
@@ -559,17 +467,11 @@ func TestProjectRoutesRejectBadRequests(t *testing.T) {
 		code   string
 	}{
 		{"unknown kind", map[string]any{"name": "x", "kind": "svn"}, 400, "invalid_request"},
-		{"remote without a url", map[string]any{"name": "x", "kind": "remote"}, 400, "invalid_request"},
-		{"remote with url credentials", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://token@example.test/repo.git"}, 400, "invalid_request"},
-		{"remote with a url query", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git?token=private"}, 400, "invalid_request"},
-		{"remote with an empty url query", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git?"}, 400, "invalid_request"},
-		{"remote with a url fragment", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git#private"}, 400, "invalid_request"},
-		{"remote with half a credential pair", map[string]any{"name": "x", "kind": "remote", "remote_url": "https://example.test/repo.git", "remote_password": "token"}, 400, "invalid_request"},
-		{"local with remote credentials", map[string]any{"name": "x", "kind": "local", "host_path": "/tmp", "remote_username": "u", "remote_password": "p"}, 400, "invalid_request"},
+		{"remote, which cannot be cloned any more", map[string]any{"name": "x", "kind": "remote"}, 400, "invalid_request"},
+		{"an empty name", map[string]any{"name": " ", "kind": "local", "host_path": "/tmp"}, 400, "invalid_request"},
 		{"local without a path", map[string]any{"name": "x", "kind": "local"}, 400, "invalid_request"},
 		{"local with a relative path", map[string]any{"name": "x", "kind": "local", "host_path": "rel"}, 400, "invalid_request"},
 		{"a name that is taken", map[string]any{"name": existing.Name, "kind": "local", "host_path": "/tmp"}, 409, "conflict"},
-		{"a name no repository can have", map[string]any{"name": "../etc", "kind": "local", "host_path": "/tmp"}, 400, "invalid_request"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -584,57 +486,6 @@ func TestProjectRoutesRejectBadRequests(t *testing.T) {
 	}
 	if rec := request(t, a.Server, "GET", "/api/projects/nope", nil); rec.Code != 404 {
 		t.Errorf("unknown project = %d, want 404", rec.Code)
-	}
-}
-
-func TestProjectCreationDoesNotReturnURLCredentialData(t *testing.T) {
-	a := newAPI(t)
-	for name, remote := range map[string]string{
-		"userinfo": "https://user:password-secret@example.test/repo.git",
-		"query":    "https://example.test/repo.git?token=query-secret",
-		"fragment": "https://example.test/repo.git#fragment-secret",
-	} {
-		t.Run(name, func(t *testing.T) {
-			rec := request(t, a.Server, "POST", "/api/projects", map[string]any{
-				"name": name, "kind": "remote", "remote_url": remote,
-			})
-			if rec.Code != 400 {
-				t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
-			}
-			for _, secret := range []string{"password-secret", "query-secret", "fragment-secret"} {
-				if strings.Contains(rec.Body.String(), secret) {
-					t.Errorf("response exposed %q: %s", secret, rec.Body.String())
-				}
-			}
-		})
-	}
-}
-
-func TestProjectRoutesRemoveCredentialDataFromStoredLegacyURLs(t *testing.T) {
-	a := newAPI(t)
-	project, err := a.store.CreateProject(t.Context(), store.Project{
-		Name:          "legacy-private",
-		Kind:          store.ProjectRemote,
-		RemoteURL:     "https://user:password-secret@example.test/repo.git?token=query-secret#fragment-secret",
-		DefaultBranch: "main",
-	})
-	if err != nil {
-		t.Fatalf("create legacy project: %v", err)
-	}
-
-	for _, path := range []string{"/api/projects/" + project.ID, "/api/projects"} {
-		rec := request(t, a.Server, "GET", path, nil)
-		if rec.Code != 200 {
-			t.Fatalf("GET %s status = %d, want 200: %s", path, rec.Code, rec.Body.String())
-		}
-		if !strings.Contains(rec.Body.String(), "https://example.test/repo.git") {
-			t.Errorf("GET %s did not return the sanitized remote: %s", path, rec.Body.String())
-		}
-		for _, secret := range []string{"password-secret", "query-secret", "fragment-secret"} {
-			if strings.Contains(rec.Body.String(), secret) {
-				t.Errorf("GET %s exposed %q: %s", path, secret, rec.Body.String())
-			}
-		}
 	}
 }
 
@@ -660,27 +511,9 @@ func TestWorkspaceRoutes(t *testing.T) {
 		t.Errorf("workspaces of another project = %d, want 0", len(empty.Workspaces))
 	}
 
-	// The diff reports what the workspace changed since its base commit,
-	// including the files git does not track yet.
-	write(t, dir, "hello.txt", "changed\n")
-	write(t, dir, "new.txt", "brand new\n")
-	diff := decodeBody[diffWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID+"/diff", nil), 200)
-	if diff.BaseCommit != ws.BaseCommit {
-		t.Errorf("base_commit = %q, want %q", diff.BaseCommit, ws.BaseCommit)
-	}
-	if !strings.Contains(diff.Diff, "changed") {
-		t.Errorf("diff = %q, want the changed line", diff.Diff)
-	}
-	if !strings.Contains(diff.Status, "new.txt") {
-		t.Errorf("status = %q, want the untracked file", diff.Status)
-	}
-
 	stopped := decodeBody[workspaceWire](t, request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/stop", nil), 200)
 	if stopped.State != "stopped" {
 		t.Errorf("state after stop = %q, want stopped", stopped.State)
-	}
-	if rec := request(t, a.Server, "GET", "/api/workspaces/"+ws.ID+"/diff", nil); rec.Code != 409 {
-		t.Errorf("diff of a stopped workspace = %d, want 409", rec.Code)
 	}
 	started := decodeBody[workspaceWire](t, request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/start", nil), 200)
 	if started.State != "running" {
@@ -913,9 +746,6 @@ func TestSessionRoutes(t *testing.T) {
 	}
 	if path.Entries[0].Kind != "user" || path.Entries[1].Kind != "assistant" {
 		t.Errorf("kinds = %q %q, want user assistant", path.Entries[0].Kind, path.Entries[1].Kind)
-	}
-	if path.Entries[1].Commit == "" {
-		t.Error("the assistant entry recorded no commit, so a fork could not clone at it")
 	}
 	if len(path.Messages) != 2 || path.Messages[1].Content != "first answer" {
 		t.Errorf("messages = %+v", path.Messages)
@@ -1167,25 +997,21 @@ func write(t *testing.T, dir, name, content string) {
 
 func TestWorkspaceCreationCleansUpEvenWhenTheRequestIsGone(t *testing.T) {
 	a := newAPI(t)
-	// A remote project, because that is the kind whose workspaces clone from
-	// the hub: a local one is bind-mounted and has nothing to fetch.
-	project := decodeBody[projectWire](t, request(t, a.Server, "POST", "/api/projects", map[string]any{
-		"name": "upstream", "kind": "remote", "remote_url": "https://example.invalid/x.git",
-	}), 201)
+	project, _ := a.newProject(t, "demo")
 
-	// The client gives up while the workspace is being filled, which is the
+	// The client gives up while the container is being started, which is the
 	// most likely reason the creation fails at all. The container the harness
 	// already made is still its own to remove, so the cleanup must not run on
 	// the request's context.
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	a.host.cloneHook = cancel
-	a.host.cloneErr = fmt.Errorf("the hub is unreachable")
+	a.host.startHook = cancel
+	a.host.startErr = fmt.Errorf("the daemon is unreachable")
 
 	rec := requestOn(ctx, t, a.Server, "POST", "/api/workspaces",
 		map[string]any{"project_id": project.ID, "name": "work"})
 	if rec.Code == 201 {
-		t.Fatalf("the workspace was created despite the clone failing: %s", rec.Body.String())
+		t.Fatalf("the workspace was created despite the start failing: %s", rec.Body.String())
 	}
 
 	live, err := a.host.List(t.Context())

@@ -6,11 +6,10 @@ Reasons for the design are in `DECISIONS.md`; wire details in `api/`.
 ## Domain model
 
 ```
-Project    A git repository: a bare repo in the harness hub, plus a remote
-           (GitHub etc.) or a host directory.
-Workspace  A sandbox container + volume holding a clone of a project on a
-           branch, or a git worktree in another workspace's container
-           (worktree_of). States: creating -> running -> stopped (gone if
+Project    A host directory a workspace bind-mounts. (A remote project, once
+           cloned from GitHub etc., can no longer be created.)
+Workspace  A sandbox container working on a project, or a git worktree in
+           another workspace's container (worktree_of). States: creating -> running -> stopped (gone if
            the container disappeared); a worktree has its holder's.
 Session    A tree of entries with a head pointer, in one workspace.
 Chat       A session with no workspace: only tools that need none.
@@ -43,7 +42,7 @@ egress proxy are network calls and run in the harness.
 | `executor` | The interface every agent action uses, path validation; `local` (tests only), `sandbox` (eikad client) |
 | `contextfile` | AGENTS.md discovery and its system prompt section |
 | `eikad` | Daemon handlers, path confinement, wire types |
-| `workspace` | Container and volume lifecycle, confinement, usage; `workspace/hub` serves bare repos |
+| `workspace` | Container and volume lifecycle, confinement, usage |
 | `egress` | Egress modes, allowlist patterns, the proxy |
 | `netguard` | Public-address-only dialing |
 | `store` | PostgreSQL pool, embedded migrations, queries |
@@ -54,7 +53,7 @@ egress proxy are network calls and run in the harness.
 | `web/` | The frontend |
 
 Health: `GET /healthz` (container check) and `GET /api/healthz` (frontend)
-return `{"status":"ok"}`. `/api` is the JSON API, `/git/` the hub.
+return `{"status":"ok"}`. `/api` is the JSON API.
 
 ## Agent core
 
@@ -134,10 +133,10 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 
 | Table | Holds |
 |---|---|
-| `projects` | name (unique), kind (remote/local), remote_url, remote_username, remote_password (sealed), host_path, default_branch |
+| `projects` | name (unique), kind (remote/local), remote_url, host_path, default_branch |
 | `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, worktree_of (cascades), sandbox (jsonb: limits, egress, ports), pinned, archived |
 | `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork/agent), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb), pinned, archived |
-| `session_entries` | session, parent_id, seq, kind, payload (jsonb), commit_sha |
+| `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
 | `runs` | session, state, started/finished, error |
 | `subagents` | parent/child session, child workspace, state, result |
 | `settings` | key → jsonb value |
@@ -185,9 +184,8 @@ branch in place (head moved to e2)     fork at e2 (path copied)
 Both require a resumable entry (`session.PathResumable`: no tool call left
 unanswered); the outline reports it per node. Forks get kind `fork`, subagent
 sessions `agent`; `Store.Sessions` with descendants follows
-`parent_session_id` recursively for the sidebar. Fork-with-workspace pushes
-the workspace, clones a new one at the fork entry's commit on
-`<branch>-fork-<id>`, and points the fork at it.
+`parent_session_id` recursively for the sidebar. A fork stays in its
+session's workspace.
 
 ### Chats
 
@@ -201,7 +199,7 @@ A chat's fork is a chat.
 
 ```
 cmd/eika -> server.Run
-  store.Open, secret.Load, hub.New, workspace.NewHost,
+  store.Open, secret.Load, workspace.NewHost,
   provider.NewRegistry(openai.New), builtin.Registry, event.NewBus, NewMCP
   -> server.New(Deps) -> Reconcile -> Serve
 
@@ -213,14 +211,13 @@ POST /api/sessions/{id}/messages          GET /api/events
   FinishRun(done | error | aborted)                  per connection
 ```
 
-- **Deps**: store, hub, workspace host, provider registry, secret box, tool
-  registry, question broker, bus, MCP pool. `Workspaces`, `Hub`, and
-  `Providers` are interfaces declared here.
+- **Deps**: store, workspace host, provider registry, secret box, tool
+  registry, question broker, bus, MCP pool. `Workspaces` and `Providers` are
+  interfaces declared here.
 - **Auth** is one middleware over `/api`. A bearer token is a sign-in
   session (looked up by SHA-256) or the API token (constant-time compare).
   Public: health, `GET /api/auth/status`, `POST /api/auth/setup` (once),
-  `POST /api/auth/login`, `/oauth/client-metadata.json`. `/git/` has its own
-  auth. `/api/events` and the terminal also accept `?token=`. Sign-in
+  `POST /api/auth/login`, `/oauth/client-metadata.json`. `/api/events` and the terminal also accept `?token=`. Sign-in
   attempts are serialised.
 - **Configuration** (`configuration.go`): `configure` loads models,
   profiles, and defaults; `resolve` takes each value from the first layer
@@ -307,10 +304,6 @@ and, for long keys, the last four characters.
   workspace.Host ---------docker socket--->  container + volume at /workspace
   egress.Proxy :3128 <-----------------------  HTTP(S)_PROXY, when restricted
   previews <port>-<id>.<host> ------------>    a forwarded port
-  hub.Handler /git/ <--------------------------  clone / push, per-workspace token
-        |
-        v git fetch / push with sealed credentials
-  upstream remote
 ```
 
 ### eikad
@@ -330,13 +323,11 @@ daemon's root, which is how a worktree workspace is served: paths are
 relative to it, commands and terminals start in it, and the client refuses
 paths outside it.
 
-### Files, terminal, changes
+### Files and terminal
 
 File routes call the executor after `executor.Resolve` (eikad re-checks after
-symlinks): refused paths are 403, missing 404. Commit, diff, and push run git
-through `Exec`; push goes through `Host.Push` to the hub, and an upstream push
-then runs `hub.Push` with the project's credentials. Saves, commits, and
-pushes publish `workspace.state`.
+symlinks): refused paths are 403, missing 404. Saves publish
+`workspace.state`.
 
 The terminal relays a browser WebSocket to eikad `/pty` through
 `Host.Terminal` (never the executor). The sandbox is dialled before the
@@ -387,8 +378,7 @@ session's container and repository. `workspace.AddWorktree` and
 The server routes every row through `locate`. Start and stop act on the
 holder and carry its worktrees' states along (with their runs aborted on
 stop); on a worktree they are `409`, as is `PUT .../sandbox`. Usage reports
-the holder's container against the holder's sandbox (`sandboxOf`), and a fork
-of a worktree gets the holder's confinement. Deleting a worktree removes its
+the holder's container against the holder's sandbox (`sandboxOf`). Deleting a worktree removes its
 directory but keeps its branch, and needs the holder running; deleting the
 holder cascades. `Reconcile` gives a worktree its holder's state. The MCP
 launcher starts a worktree's stdio servers in its worktree.
@@ -396,9 +386,8 @@ launcher starts a worktree's stdio servers in its worktree.
 ### Limits, egress, previews
 
 `Host.Create` applies the workspace's `sandbox` row; `PUT .../sandbox` writes
-the row then `Host.Confine`s; every start re-applies it. Forks get the
-parent's limits and egress (`childSandbox`); children share the parent's
-container and so its confinement.
+the row then `Host.Confine`s; every start re-applies it. Children share the
+parent's container and so its confinement.
 
 Limits are `NanoCPUs`, `Memory` (= `MemorySwap`), and `PidsLimit`, changed
 live with `ContainerUpdate`; "no limit" on an existing container is the host's
@@ -426,17 +415,6 @@ routes such hosts before the API. `POST .../ports/{port}/preview` returns a
 link with a one-time ticket, traded for a host-only cookie; every request is
 checked against the row. Tickets and sessions are in memory.
 
-### The git hub
-
-One bare repo per project at `<hub_root>/<project>.git`, served at
-`/git/<project>.git` by `git http-backend`. Workspaces authenticate with basic
-auth (workspace id, per-workspace token from `Grant`, withdrawn by `Revoke`);
-a grant covers one project. `Host.Clone` configures a credential helper from
-`EIKA_HUB_USER`/`EIKA_HUB_TOKEN`, validates names (`git check-ref-format`),
-passes them as arguments, and returns the base commit. `Mirror` fetches a
-remote into the hub and `Push` sends a refspec back, with credentials passed
-through the environment to a credential helper.
-
 ## Subagents
 
 ```
@@ -446,7 +424,7 @@ parent run -> spawn_agent -> spawner
   rows: workspace (worktree_of holder), session (kind agent), subagents;
     subagent.started
   runs.runChild(child session, task)  -- events on session:<child>
-  on end: commit "wip: subagent <name> finished", push to hub,
+  on end: commit "wip: subagent <name> finished",
     diff --stat base..head; the worktree stays
   FinishSubagent, subagent.finished
   -> tool result: summary, branch, commit, diffstat
@@ -455,18 +433,15 @@ parent run -> spawn_agent -> spawner
 - Tools `spawn_agent` (blocks unless `wait: false`), `wait_agents`, and
   `list_agents` call the spawner through `builtin.Subagents` and only name
   their own session's children.
-- `Host.Push` creates the hub repo if needed and adds it as `eika-hub`. The
-  child's branch is in the parent's repository as soon as it commits; the
-  push makes it reachable from other workspaces and upstream.
+- The child's branch is in the parent's repository as soon as it commits, so
+  the parent's agent can merge it with git.
 - Depth is measured by walking `subagents` rows up; width counts running
   children plus live reservations.
 - Aborting a run aborts its children recursively; the spawner waits for a
-  child's loop to stop, then commits, pushes, and reports whatever the state.
+  child's loop to stop, then commits and reports whatever the state.
   A child without a closing message gets one written from its state and
   diffstat. The result is stored on the row, served by
   `GET /api/sessions/{id}/agents`, and carried by `subagent.finished`.
-- `POST /api/workspaces/{id}/merge`: the source pushes, the target fetches
-  and merges or rebases in its own workspace.
 
 ## Search
 
@@ -558,7 +533,7 @@ Bounds are in `internal/mcp/limits.go`.
  host.docker. <-- eika (harness) ----- searxng     (eika_default)
  internal           |      \---------- postgres 16 (volume eika-postgres)
  (local models)     | docker.sock: sibling sandboxes
-                    | volume eika-hub -> /var/lib/eika (hub/, secret.key)
+                    | volume eika-data -> /var/lib/eika (secret.key)
                     +-- eika_sandbox / eika_sandbox_internal: sandboxes only
 ```
 
@@ -637,7 +612,7 @@ An arrow means "may import".
  agent -> tool, provider, contextfile     session -> agent, store
  utility -> provider                      imaging -> provider
  tool -> executor                         contextfile -> executor
- executor/sandbox -> eikad (wire types)   workspace -> executor, executor/sandbox, hub
+ executor/sandbox -> eikad (wire types)   workspace -> executor, executor/sandbox
  subagent -> workspace, session, store, tool/builtin
  tool/builtin -> search, search/fetch     search/fetch, egress -> netguard
  mcp -> tool, event, mcp/oauth            config, event, secret: leaves

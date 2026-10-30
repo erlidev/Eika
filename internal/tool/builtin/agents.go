@@ -53,7 +53,7 @@ type AgentResult struct {
 	SessionID   string `json:"session_id"`
 	WorkspaceID string `json:"workspace_id"`
 	Name        string `json:"name"`
-	// Branch is the branch the child worked on and pushed to the hub.
+	// Branch is the branch the child worked on.
 	Branch string `json:"branch"`
 	// State is running, done, error, or aborted.
 	State string `json:"state"`

@@ -81,15 +81,12 @@ func TestMessageEntryRoundTrip(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			e, err := session.MessageEntry(c.msg, "abc123")
+			e, err := session.MessageEntry(c.msg)
 			if err != nil {
 				t.Fatalf("MessageEntry: %v", err)
 			}
 			if e.Kind != c.kind {
 				t.Errorf("kind = %q, want %q", e.Kind, c.kind)
-			}
-			if e.Commit != "abc123" {
-				t.Errorf("commit = %q, want abc123", e.Commit)
 			}
 			got, ok, err := session.Message(e)
 			if err != nil || !ok {
@@ -108,7 +105,7 @@ func TestMalformedToolArgumentsRoundTrip(t *testing.T) {
 	msg := provider.AssistantMessage("", []provider.ToolCall{{
 		ID: "call_1", Name: "read", Arguments: want,
 	}})
-	e, err := session.MessageEntry(msg, "")
+	e, err := session.MessageEntry(msg)
 	if err != nil {
 		t.Fatalf("MessageEntry with malformed model arguments: %v", err)
 	}
@@ -139,7 +136,7 @@ func TestJSONStringToolArgumentsRoundTripExactly(t *testing.T) {
 	msg := provider.AssistantMessage("", []provider.ToolCall{{
 		ID: "call_1", Name: "accept_string", Arguments: want,
 	}})
-	e, err := session.MessageEntry(msg, "")
+	e, err := session.MessageEntry(msg)
 	if err != nil {
 		t.Fatalf("MessageEntry with JSON string arguments: %v", err)
 	}
@@ -180,7 +177,7 @@ func TestMessageSkipsNonConversationEntries(t *testing.T) {
 func TestMessagesFoldCompactions(t *testing.T) {
 	t.Parallel()
 	entry := func(m provider.Message) store.Entry {
-		e, err := session.MessageEntry(m, "")
+		e, err := session.MessageEntry(m)
 		if err != nil {
 			t.Fatalf("MessageEntry: %v", err)
 		}
@@ -235,7 +232,7 @@ func TestMessagesFoldCompactions(t *testing.T) {
 
 func TestMessageEntryRejectsUnknownRole(t *testing.T) {
 	t.Parallel()
-	if _, err := session.MessageEntry(provider.Message{Role: "oracle"}, ""); err == nil {
+	if _, err := session.MessageEntry(provider.Message{Role: "oracle"}); err == nil {
 		t.Fatal("MessageEntry accepted an unknown role")
 	}
 }

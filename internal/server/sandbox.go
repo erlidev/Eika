@@ -396,16 +396,6 @@ func builtinSandboxDefaults() sandboxDefaults {
 	}
 }
 
-// childSandbox is the sandbox of a fork: the same limits and egress as the
-// workspace it was made from, and none of its ports, which belong to
-// whatever the original was running.
-func childSandbox(parent store.WorkspaceSandbox) store.WorkspaceSandbox {
-	child := parent
-	child.Allow = slices.Clone(parent.Allow)
-	child.Ports = nil
-	return child
-}
-
 // sandboxOf is what confines a workspace's container: its own sandbox, or,
 // for a worktree workspace, which has none, its holder's.
 func (s *Server) sandboxOf(ctx context.Context, ws store.Workspace) (store.WorkspaceSandbox, error) {

@@ -29,15 +29,15 @@ through the rest:
 3. Pick the models agents may use. Eika lists what the endpoint serves and
    suggests each model's limits; a test button sends one short request.
 4. Check that Eika can start sandbox containers.
-5. Add a first project: a directory on this machine or a git remote.
+5. Add a first project: a directory on this machine.
 
 Nothing needs an environment file. Everything the setup asks, and the sandbox
 image and subagent limits besides, is in Settings afterwards. API keys and git
 tokens are encrypted before they are stored.
 
 `make local` runs the same `docker compose up`, `make local-logs` follows the
-logs, and `make local-down` stops the stack. Docker volumes keep the database,
-the git hub, and the key that encrypts stored credentials. The stack listens
+logs, and `make local-down` stops the stack. Docker volumes keep the database
+and the key that encrypts stored credentials. The stack listens
 on 127.0.0.1 only; put a reverse proxy in front of it for remote access.
 
 To change the published port or set a fixed API token for scripts, copy
@@ -45,16 +45,14 @@ To change the published port or set a fixed API token for scripts, copy
 
 ### Upgrading from an environment-configured version
 
-Earlier versions read models from `deploy/eika.yaml` and the auth token, API
-keys, and git credentials from `deploy/.env`. After updating:
+Earlier versions read models from `deploy/eika.yaml` and the auth token and API
+keys from `deploy/.env`. After updating:
 
 - The stack now reads `.env` from the repository root. If your database was
   created with a `POSTGRES_PASSWORD` of your own, copy that line from
   `deploy/.env` to `.env`: the volume keeps the password it was created with.
 - Open the UI. The guided setup asks for a password and a provider; add the
   models your `eika.yaml` declared there.
-- Enter the credentials of private remote projects again under each
-  project's settings, the gear in the project tree.
 - `make local` used to run as the Compose project `eika-local`. Its data stays
   in the `eika-local_*` volumes; `docker compose -p eika-local up -d` runs the
   stack on it.

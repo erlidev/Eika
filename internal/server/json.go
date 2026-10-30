@@ -11,7 +11,6 @@ import (
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
 	"github.com/erlidev/eika/internal/workspace"
-	"github.com/erlidev/eika/internal/workspace/hub"
 )
 
 // maxRequestBytes bounds a JSON request body. Everything the API accepts as
@@ -142,12 +141,12 @@ func statusOf(err error) (int, string) {
 	case errors.As(err, &api):
 		return api.status, api.code
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, workspace.ErrNoWorkspace),
-		errors.Is(err, hub.ErrNoProject), errors.Is(err, builtin.ErrNoQuestion),
+		errors.Is(err, builtin.ErrNoQuestion),
 		errors.Is(err, mcp.ErrNoElicitation), errors.Is(err, mcp.ErrNoAuthorization):
 		return http.StatusNotFound, codeNotFound
 	case errors.Is(err, store.ErrConflict), errors.Is(err, mcp.ErrDisabled):
 		return http.StatusConflict, codeConflict
-	case errors.Is(err, hub.ErrBadProject), errors.Is(err, workspace.ErrBadBranch),
+	case errors.Is(err, workspace.ErrBadBranch),
 		errors.Is(err, builtin.ErrBadAnswer), errors.Is(err, mcp.ErrBadElicitationAnswer),
 		errors.Is(err, mcp.ErrNeedsWorkspace), errors.Is(err, workspace.ErrNoEgressControl):
 		return http.StatusBadRequest, codeInvalidRequest

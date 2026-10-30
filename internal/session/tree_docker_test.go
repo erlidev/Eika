@@ -3,7 +3,6 @@
 package session_test
 
 import (
-	"context"
 	"errors"
 	"os"
 	"strconv"
@@ -46,9 +45,9 @@ func newTree(t *testing.T) (*session.Tree, store.Session) {
 }
 
 // appendText appends a message of the given role and returns the entry.
-func appendText(t *testing.T, tree *session.Tree, sessionID string, m provider.Message, commit string) store.Entry {
+func appendText(t *testing.T, tree *session.Tree, sessionID string, m provider.Message) store.Entry {
 	t.Helper()
-	e, err := tree.AppendMessage(t.Context(), sessionID, m, commit)
+	e, err := tree.AppendMessage(t.Context(), sessionID, m)
 	if err != nil {
 		t.Fatalf("append %s: %v", m.Role, err)
 	}
@@ -82,8 +81,8 @@ func TestAppendBuildsPathAndMovesHead(t *testing.T) {
 		t.Fatalf("Path of an empty session = %d entries, %v", len(path), err)
 	}
 
-	first := appendText(t, tree, sess.ID, provider.UserMessage("fix the build"), "")
-	second := appendText(t, tree, sess.ID, provider.AssistantMessage("on it", nil), "commit-1")
+	first := appendText(t, tree, sess.ID, provider.UserMessage("fix the build"))
+	second := appendText(t, tree, sess.ID, provider.AssistantMessage("on it", nil))
 
 	if first.ParentID != "" {
 		t.Errorf("root parent = %q, want empty", first.ParentID)
@@ -93,9 +92,6 @@ func TestAppendBuildsPathAndMovesHead(t *testing.T) {
 	}
 	if first.Seq != 1 || second.Seq != 2 {
 		t.Errorf("seq = %d, %d; want 1, 2", first.Seq, second.Seq)
-	}
-	if second.Commit != "commit-1" {
-		t.Errorf("commit = %q, want commit-1", second.Commit)
 	}
 	head, err := tree.Head(ctx, sess.ID)
 	if err != nil || head.ID != second.ID {
@@ -114,14 +110,14 @@ func TestSetHeadBranchesInPlace(t *testing.T) {
 	tree, sess := newTree(t)
 	ctx := t.Context()
 
-	first := appendText(t, tree, sess.ID, provider.UserMessage("one"), "")
-	appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil), "")
-	appendText(t, tree, sess.ID, provider.UserMessage("three"), "")
+	first := appendText(t, tree, sess.ID, provider.UserMessage("one"))
+	appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil))
+	appendText(t, tree, sess.ID, provider.UserMessage("three"))
 
 	if err := tree.SetHead(ctx, sess.ID, first.ID); err != nil {
 		t.Fatalf("SetHead: %v", err)
 	}
-	branch := appendText(t, tree, sess.ID, provider.AssistantMessage("two again", nil), "")
+	branch := appendText(t, tree, sess.ID, provider.AssistantMessage("two again", nil))
 	if branch.ParentID != first.ID {
 		t.Errorf("branch parent = %q, want the entry the head was moved to", branch.ParentID)
 	}
@@ -153,7 +149,7 @@ func TestSetHeadBranchesInPlace(t *testing.T) {
 func TestSetHeadRejectsAnotherSessionsEntry(t *testing.T) {
 	tree, sess := newTree(t)
 	ctx := t.Context()
-	entry := appendText(t, tree, sess.ID, provider.UserMessage("one"), "")
+	entry := appendText(t, tree, sess.ID, provider.UserMessage("one"))
 
 	other, err := tree.Fork(ctx, sess.ID, entry.ID, store.ForkOptions{})
 	if err != nil {
@@ -168,9 +164,9 @@ func TestForkCopiesThePathAndRunsOn(t *testing.T) {
 	tree, sess := newTree(t)
 	ctx := t.Context()
 
-	first := appendText(t, tree, sess.ID, provider.UserMessage("one"), "")
-	second := appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil), "commit-1")
-	appendText(t, tree, sess.ID, provider.UserMessage("three"), "")
+	first := appendText(t, tree, sess.ID, provider.UserMessage("one"))
+	second := appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil))
+	appendText(t, tree, sess.ID, provider.UserMessage("three"))
 
 	fork, err := tree.Fork(ctx, sess.ID, second.ID, store.ForkOptions{Title: "what if"})
 	if err != nil {
@@ -193,11 +189,8 @@ func TestForkCopiesThePathAndRunsOn(t *testing.T) {
 	if path[0].ID == first.ID || path[1].ID == second.ID {
 		t.Error("the fork shares entry rows with its parent; it must copy them")
 	}
-	if path[1].Commit != "commit-1" {
-		t.Errorf("fork entry commit = %q, want the copied commit", path[1].Commit)
-	}
 
-	appendText(t, tree, fork.ID, provider.UserMessage("three again"), "")
+	appendText(t, tree, fork.ID, provider.UserMessage("three again"))
 	if got := texts(t, mustPath(t, tree, fork.ID)); len(got) != 3 || got[2] != "three again" {
 		t.Errorf("fork path = %q, want the fork to continue on its own", got)
 	}
@@ -209,9 +202,9 @@ func TestForkCopiesThePathAndRunsOn(t *testing.T) {
 func TestOutlineCountsTheImagesOfAMessageWithoutText(t *testing.T) {
 	tree, sess := newTree(t)
 	image := provider.Image{MediaType: "image/png", Data: []byte("png"), Width: 1, Height: 1}
-	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Images: []provider.Image{image}}, "")
-	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Images: []provider.Image{image, image}}, "")
-	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Content: "see this", Images: []provider.Image{image}}, "")
+	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Images: []provider.Image{image}})
+	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Images: []provider.Image{image, image}})
+	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Content: "see this", Images: []provider.Image{image}})
 
 	nodes, err := tree.Outline(t.Context(), sess.ID)
 	if err != nil {
@@ -229,16 +222,16 @@ func TestOutlineDescribesTheWholeTree(t *testing.T) {
 	tree, sess := newTree(t)
 	ctx := t.Context()
 
-	user := appendText(t, tree, sess.ID, provider.UserMessage("fix the build\nplease"), "")
+	user := appendText(t, tree, sess.ID, provider.UserMessage("fix the build\nplease"))
 	calls := appendText(t, tree, sess.ID, provider.AssistantMessage("", []provider.ToolCall{
 		{ID: "call_1", Name: "read", Arguments: provider.ToolArguments(`{"path":"go.mod"}`)},
 		{ID: "call_2", Name: "bash", Arguments: provider.ToolArguments(`{"command":"go build"}`)},
-	}), "commit-1")
-	appendText(t, tree, sess.ID, provider.ToolResultMessage("call_1", "module eika", false), "")
+	}))
+	appendText(t, tree, sess.ID, provider.ToolResultMessage("call_1", "module eika", false))
 	if err := tree.SetHead(ctx, sess.ID, user.ID); err != nil {
 		t.Fatalf("SetHead: %v", err)
 	}
-	appendText(t, tree, sess.ID, provider.AssistantMessage("let me look", nil), "")
+	appendText(t, tree, sess.ID, provider.AssistantMessage("let me look", nil))
 
 	nodes, err := tree.Outline(ctx, sess.ID)
 	if err != nil {
@@ -257,8 +250,8 @@ func TestOutlineDescribesTheWholeTree(t *testing.T) {
 	if nodes[1].Preview != "calls read, bash" {
 		t.Errorf("tool call preview = %q, want the tool names", nodes[1].Preview)
 	}
-	if nodes[1].Kind != store.KindAssistant || nodes[1].Commit != "commit-1" || nodes[1].ID != calls.ID {
-		t.Errorf("node = %+v, want the assistant entry with its commit", nodes[1])
+	if nodes[1].Kind != store.KindAssistant || nodes[1].ID != calls.ID {
+		t.Errorf("node = %+v, want the assistant entry", nodes[1])
 	}
 	if nodes[0].CreatedAt.IsZero() || nodes[0].CreatedAt.Location().String() != "UTC" {
 		t.Errorf("created_at = %v, want a UTC timestamp", nodes[0].CreatedAt)
@@ -269,10 +262,7 @@ func TestStoreRecordsAndLoadsEveryMessageKind(t *testing.T) {
 	tree, sess := newTree(t)
 	ctx := t.Context()
 
-	commits := map[string]string{sess.ID: "commit-42"}
-	st := session.NewStore(tree, func(_ context.Context, sessionID string) (string, error) {
-		return commits[sessionID], nil
-	})
+	st := session.NewStore(tree)
 
 	messages := []provider.Message{
 		provider.UserMessage("fix the build"),
@@ -306,32 +296,15 @@ func TestStoreRecordsAndLoadsEveryMessageKind(t *testing.T) {
 			t.Errorf("message %d = %+v, want %+v", i, got[i], want)
 		}
 	}
-
-	path, err := tree.Path(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Path: %v", err)
-	}
-	for _, e := range path {
-		switch e.Kind {
-		case store.KindAssistant:
-			if e.Commit != "commit-42" {
-				t.Errorf("assistant entry commit = %q, want the workspace commit", e.Commit)
-			}
-		default:
-			if e.Commit != "" {
-				t.Errorf("%s entry commit = %q, want none", e.Kind, e.Commit)
-			}
-		}
-	}
 }
 
 func TestLoadFollowsTheHead(t *testing.T) {
 	tree, sess := newTree(t)
 	ctx := t.Context()
-	st := session.NewStore(tree, nil)
+	st := session.NewStore(tree)
 
-	first := appendText(t, tree, sess.ID, provider.UserMessage("one"), "")
-	appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil), "")
+	first := appendText(t, tree, sess.ID, provider.UserMessage("one"))
+	appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil))
 	if err := tree.SetHead(ctx, sess.ID, first.ID); err != nil {
 		t.Fatalf("SetHead: %v", err)
 	}
@@ -351,15 +324,15 @@ func TestLoadFollowsTheHead(t *testing.T) {
 func TestLoadFoldsACompaction(t *testing.T) {
 	tree, sess := newTree(t)
 	ctx := t.Context()
-	st := session.NewStore(tree, nil)
+	st := session.NewStore(tree)
 
-	appendText(t, tree, sess.ID, provider.UserMessage("one"), "")
-	before := appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil), "")
-	appendText(t, tree, sess.ID, provider.UserMessage("three"), "")
+	appendText(t, tree, sess.ID, provider.UserMessage("one"))
+	before := appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil))
+	appendText(t, tree, sess.ID, provider.UserMessage("three"))
 	if err := st.AppendCompaction(ctx, sess.ID, agent.Compaction{Summary: "one and two", Kept: 1, TokensBefore: 1234, Reason: "manual"}); err != nil {
 		t.Fatalf("AppendCompaction: %v", err)
 	}
-	appendText(t, tree, sess.ID, provider.AssistantMessage("four", nil), "")
+	appendText(t, tree, sess.ID, provider.AssistantMessage("four", nil))
 
 	loaded, err := st.Load(ctx, sess.ID)
 	if err != nil {
@@ -404,7 +377,7 @@ func TestConcurrentAppendsKeepOneChain(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := tree.AppendMessage(ctx, sess.ID, provider.UserMessage(strconv.Itoa(i)), "")
+			_, err := tree.AppendMessage(ctx, sess.ID, provider.UserMessage(strconv.Itoa(i)))
 			errs <- err
 		}()
 	}
@@ -450,7 +423,7 @@ func TestArgumentLessToolCallSurvivesTheDatabase(t *testing.T) {
 	ctx := t.Context()
 
 	call := provider.AssistantMessage("", []provider.ToolCall{{ID: "call_1", Name: "ls"}})
-	if _, err := tree.AppendMessage(ctx, sess.ID, call, ""); err != nil {
+	if _, err := tree.AppendMessage(ctx, sess.ID, call); err != nil {
 		t.Fatalf("append a call without arguments: %v", err)
 	}
 	messages, err := tree.Messages(ctx, sess.ID)
@@ -472,7 +445,7 @@ func TestToolArgumentTextSurvivesTheDatabase(t *testing.T) {
 		{ID: "valid", Name: "accept_string", Arguments: provider.ToolArguments(`"value"`)},
 		{ID: "malformed", Name: "read", Arguments: provider.ToolArguments(`{"path":`)},
 	}
-	if _, err := tree.AppendMessage(ctx, sess.ID, provider.AssistantMessage("", want), ""); err != nil {
+	if _, err := tree.AppendMessage(ctx, sess.ID, provider.AssistantMessage("", want)); err != nil {
 		t.Fatalf("append calls: %v", err)
 	}
 	messages, err := tree.Messages(ctx, sess.ID)

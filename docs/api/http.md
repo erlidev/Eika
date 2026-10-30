@@ -17,7 +17,7 @@ Authorization: Bearer <token>
 The token is a sign-in session's (from the routes below) or the optional
 `EIKA_AUTH_TOKEN`. Exempt: the health routes, `GET /api/auth/status`,
 `POST /api/auth/setup`, `POST /api/auth/login`,
-`GET /oauth/client-metadata.json`, and the git hub (`/git/`, basic auth).
+and `GET /oauth/client-metadata.json`.
 Only the WebSockets, `GET /api/events` and
 `GET /api/workspaces/{id}/terminal`, also accept `?token=`.
 
@@ -38,7 +38,7 @@ Every failure has one shape:
 | `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
 | `forbidden` | 403 | A workspace path is outside the workspace, directly or through a symlink, or the sandbox may not open it. |
 | `not_found` | 404 | The addressed project, workspace, session, entry, run, question, provider, model, MCP server, elicitation, pending authorization, or workspace file does not exist. |
-| `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a workspace that is not running, nothing to commit, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
+| `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a workspace that is not running, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
 | `too_large` | 413 | A file saved through the API is over its 2 MiB bound. |
 | `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
 
@@ -90,9 +90,8 @@ ends every session, and signs this browser in again: `200` with a `SignIn`.
 
 ## Projects
 
-A project is a git repository Eika knows. Every project gets a bare repository
-in the hub; a `remote` project is mirrored from its remote, and a `local`
-project also has a host directory its workspaces bind-mount.
+A project is a host directory its workspaces bind-mount. Eika no longer clones
+a repository, so a `remote` project cannot be created.
 
 ### `GET /api/projects`
 
@@ -102,20 +101,13 @@ project also has a host directory its workspaces bind-mount.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `name` | string, required | The project name. It is also the hub repository's directory, so it may not contain a slash or `..`. |
-| `kind` | `remote` or `local`, required | Where the code comes from. |
-| `remote_url` | string | Required for `remote`. The upstream the hub mirrors. |
-| `remote_username` | string | Optional for `remote`. The user the hub authenticates to the upstream as; for a token, any placeholder such as `x-access-token`. Set it with `remote_password`. |
-| `remote_password` | string | Optional for `remote`. The upstream password or access token. It is encrypted at rest and never returned. Set it with `remote_username`. |
-| `host_path` | string | Required for `local`. An absolute path on the Docker host, bind-mounted at the workspace root. |
+| `name` | string, required | The project name, at most 200 characters. |
+| `kind` | `local`, required | Where the code comes from. `remote` is refused. |
+| `host_path` | string | Required. An absolute path on the Docker host, bind-mounted at the workspace root. |
 | `default_branch` | string | The branch a workspace uses when it names none. Defaults to `main`. |
 
-`remote_url` must not contain userinfo, a query string, or a fragment;
-credentials go in their own fields.
-
-`201` with the `Project`. `400` for a missing or malformed field, an incomplete
-credential pair, and a remote the hub cannot mirror; `409` when the name is
-taken.
+`201` with the `Project`. `400` for a missing or malformed field and for a
+`remote` project; `409` when the name is taken.
 
 ### `GET /api/projects/{id}`
 
@@ -125,20 +117,15 @@ taken.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `remote_username` | string | Replaces the upstream username. |
-| `remote_password` | string | Replaces the upstream password; the empty string removes the credentials, username included. |
 | `default_branch` | string | Replaces the branch new workspaces use. |
 
 An absent field is left alone. Where the code comes from does not change.
-New credentials fetch from the remote before they are stored, so a token the
-remote refuses is `400` and changes nothing. Credentials on a local project
-are `400`. `200` with the `Project`.
+`200` with the `Project`.
 
 ### `DELETE /api/projects/{id}`
 
 Destroys every workspace of the project, their containers and volumes, and
-deletes the project with its sessions and entries. The hub repository stays:
-it holds the branches the workspaces pushed. `204`.
+deletes the project with its sessions and entries. `204`.
 
 ### Project
 
@@ -146,17 +133,15 @@ it holds the branches the workspaces pushed. `204`.
 |---|---|---|
 | `id` | string | The project id. |
 | `name` | string | The project name, unique. |
-| `kind` | `remote` or `local` | Where the code comes from. |
-| `remote_url` | string, optional | The upstream, for a remote project. |
-| `remote_username` | string, optional | The upstream username of a private remote. |
-| `remote_password_set` | boolean, optional | A password is stored. The password itself is never returned. |
-| `host_path` | string, optional | The bind-mounted directory, for a local project. |
+| `kind` | string | Where the code comes from: `local`. |
+| `remote_url` | string, optional | The upstream of a remote project. None can be created now, so it is absent. |
+| `host_path` | string, optional | The bind-mounted directory. |
 | `default_branch` | string | The branch new workspaces use. |
 | `created_at` | time | When it was registered. |
 
 ## Workspaces
 
-A workspace is one sandbox container holding a checkout of a project.
+A workspace is one sandbox container working on a project.
 
 ### `GET /api/workspaces`
 
@@ -165,13 +150,13 @@ A workspace is one sandbox container holding a checkout of a project.
 
 ### `POST /api/workspaces`
 
-Creates the container, starts it, puts the project's code in it, and records
-the commit it starts from. A failure at any step destroys what was created, so
+Creates the container, starts it with the project's directory mounted, and
+records the commit it starts from. A failure at any step destroys what was created, so
 a rejected request leaves no container and writes no row.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `project_id` | string, required | The project to check out. |
+| `project_id` | string, required | The project to work on. |
 | `name` | string, required | What the user calls this workspace, at most 200 characters. |
 | `branch` | string | The branch to work on. Defaults to the project's `default_branch`. |
 | `image` | string | The container image. Defaults to the `sandbox_image` setting, or the deployment's `eika-sandbox:latest`. Ignored when `build_context` is set. |
@@ -288,96 +273,6 @@ has an origin of its own, so the page cannot read the UI's token; for a
 deployment reached by a name other than localhost, the preview hosts need a
 wildcard DNS record.
 
-### `GET /api/workspaces/{id}/diff`
-
-Runs `git diff <base_commit>` and `git status --porcelain` inside the
-workspace through its executor. `?path=<path>` narrows both to one file or
-directory; a path outside the workspace is `403`.
-
-`200` with:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `workspace_id` | string | The workspace. |
-| `base_commit` | string, optional | The commit the workspace started from. |
-| `diff` | string | `git diff` against that commit. Empty when nothing tracked changed. |
-| `status` | string | `git status --porcelain`, which is what shows untracked files. |
-
-`409` when the workspace is not running; `400` when git itself failed, with
-git's message.
-
-### `POST /api/workspaces/{id}/merge`
-
-Brings another workspace's branch into this one, which is how a parent takes
-a subagent's work. The branch travels through the hub: a running source
-workspace pushes first, the target fetches, and git merges or rebases inside
-the target workspace through its executor.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `source_workspace_id` | string | The workspace whose branch to bring in. When it is running it pushes its own branch to the hub first. |
-| `branch` | string | The branch in the hub to merge, which overrides the source's own. Required when there is no source workspace. |
-| `strategy` | `merge` or `rebase` | Empty means `merge`. |
-
-One of `source_workspace_id` and `branch` is required.
-
-`200` with:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `workspace_id` | string | The target workspace. |
-| `branch` | string | The branch that was brought in. |
-| `strategy` | string | `merge` or `rebase`. |
-| `merged` | boolean | False means git stopped on conflicts. |
-| `commit` | string, optional | The target's HEAD after a successful merge. |
-| `conflicts` | string array | The paths git could not resolve. Empty on success. |
-| `message` | string | git's own output. |
-
-A conflict is a `200`, not an error: the target's tree is left conflicted on
-purpose, so the user or the agent working in it resolves it there. `409` when
-the target workspace is not running; `400` when the branch is not in the hub
-or the source belongs to another project.
-
-### `POST /api/workspaces/{id}/commit`
-
-Stages the workspace's changes with `git add -A` and commits them, inside the
-workspace through its executor. A repository without an identity of its own
-commits as `Eika Agent <agent@eika.local>`.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `message` | string, required | The commit message. |
-| `paths` | string array | Commit only these workspace paths. Absent or empty commits every change. |
-
-`200` with `{"commit": string}`, the new commit. `400` for an empty message or
-when git itself failed, with git's message; `403` for a path outside the
-workspace; `409` with the message `nothing to commit` when nothing is staged,
-and when the workspace is not running. Publishes `workspace.state`.
-
-### `POST /api/workspaces/{id}/push`
-
-Pushes the workspace's HEAD to its branch in the hub and, when asked, the
-hub's branch on to the project's remote with the project's credentials. The
-push never forces.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `upstream` | boolean | Also push the branch from the hub to the project's `remote_url`. |
-
-`200` with:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `branch` | string | The workspace's branch, which is the branch pushed. |
-| `commit` | string | The commit pushed. |
-| `upstream_pushed` | boolean | Whether the branch also went to the remote. |
-
-`400` when the hub or the remote refused the push, with git's message and no
-credentials, and when `upstream` is set for a project without a remote; `409`
-when the workspace is not running. Publishes `workspace.state`. A client
-builds a link to open a pull request from the project's `remote_url` and
-`branch`; the harness has no forge API.
-
 ### `GET /api/workspaces/{id}/files`
 
 Lists one directory of the workspace: `?path=<path>`, relative to the
@@ -451,7 +346,7 @@ workspace that is not running.
 | `project_id` | string | The project it holds. |
 | `name` | string | What the user calls it. |
 | `branch` | string | The branch it works on. |
-| `base_commit` | string, optional | The commit it started from. A diff and a fork are measured against it. |
+| `base_commit` | string, optional | The commit it started from. A child agent's branch is cut from the commit its parent stood on. |
 | `image` | string | The image the container runs. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 | `container_id` | string, optional | The Docker container id. |
@@ -467,7 +362,7 @@ workspace that is not running.
 | Field | Type | Meaning |
 |---|---|---|
 | `limits` | `{"cpus": number, "memory_mb": number, "pids": number}` | Zero is no limit. `cpus` is a fraction of cores from 0.01 to the host's; `memory_mb` is MiB from 64 to the host's memory, with no swap beyond it; `pids` counts processes and threads, from 32 to 4194304. |
-| `egress` | `{"mode": string, "allow": [string]}` | `open` reaches the internet directly. `allowlist` puts the container on the internal sandbox network, with no route out, and its processes reach the hosts `allow` names through the harness's egress proxy. `none` is the internal network with nothing allowed: the harness and its git hub only. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
+| `egress` | `{"mode": string, "allow": [string]}` | `open` reaches the internet directly. `allowlist` puts the container on the internal sandbox network, with no route out, and its processes reach the hosts `allow` names through the harness's egress proxy. `none` is the internal network with nothing allowed. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
 | `ports` | array of `{"port": number, "label": string}` | At most 20 container ports the harness forwards previews to. `label` is at most 40 characters. |
 
 Forks are created with their parent's `limits` and `egress` and no `ports`;
@@ -531,7 +426,7 @@ Every entry of the tree, without payloads: what the session tree panel draws.
 
 `200` with `{"session_id": string, "head_entry_id": string, "nodes": [Node]}`,
 where a `Node` is
-`{id, parent_id?, kind, preview, commit?, resumable, created_at}`.
+`{id, parent_id?, kind, preview, resumable, created_at}`.
 
 `resumable` is whether a run can continue from that entry: the path down to it
 leaves no tool call unanswered. It is false for an assistant entry whose tool
@@ -565,28 +460,17 @@ that stops with tool calls unanswered is a conversation no endpoint accepts.
 |---|---|---|
 | `entry_id` | string, required | The entry to fork at. |
 | `title` | string | What to call the fork. |
-| `with_workspace` | boolean | Give the fork a workspace of its own, rewound to the entry's commit. |
 
 Copies the path from the root down to the entry into a session of its own,
-sharing no rows. Without `with_workspace` the fork stays in the same
-workspace, so only the conversation rewinds.
-
-With `with_workspace` the source workspace pushes its branch to the hub, a new
-workspace in the same project is created and cloned from the hub at the
-commit that entry recorded, on branch `<source branch>-fork-<8 chars of the
-new id>`, and the fork points at it. The files rewind with the conversation.
+sharing no rows. The fork stays in the same workspace, so only the
+conversation rewinds.
 
 `201` with the new `Session`, whose `kind` is `fork` and whose
 `parent_session_id` is the source.
 
 A fork keeps its source's tools, and a fork of a chat is a chat.
 
-`400` when `entry_id` is missing, when the entry is not `resumable`, or, with
-`with_workspace`, when the source is a chat or the entry recorded no commit
-and there is nothing to clone; `409` when the source workspace is not
-running. The resumability check
-runs before anything is created, so a refused fork leaves no workspace
-behind.
+`400` when `entry_id` is missing or the entry is not `resumable`.
 
 ### `PUT /api/sessions/{id}/tools`
 
@@ -719,7 +603,6 @@ token per 750 pixels; only a record's `input_tokens` is measured.
 | `parent_id` | string, optional | The entry it follows. |
 | `seq` | number | Write order within the session. |
 | `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, or `compaction`. |
-| `commit` | string, optional | The workspace HEAD commit the entry was produced at. |
 | `created_at` | time | When it was written. |
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
 | `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `threshold`, or `overflow`), and `usage`. The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
@@ -908,8 +791,8 @@ spawned in turn, oldest first.
 ### `POST /api/subagents/{id}/abort`
 
 Stops a running child and waits for it to record how it ended. The child still
-commits and pushes what it left in its tree, so aborted work is not lost, and
-its worktree is kept.
+commits what it left in its tree, so aborted work is not lost, and its
+worktree is kept.
 
 `200` with the `Agent`. `409` when the child is already finished; `404` when
 there is no such subagent.
@@ -923,7 +806,7 @@ there is no such subagent.
 | `session_id` | string | The child's session. Open it to watch the child work. |
 | `workspace_id` | string | The child's workspace. |
 | `name` | string | What the parent called it. |
-| `branch` | string | The branch it works on and pushes to the hub. |
+| `branch` | string | The branch it works on. |
 | `state` | string | `running`, `done`, `error`, or `aborted`. |
 | `created_at` | time | When it was spawned. |
 | `finished_at` | time, optional | When it ended. |
@@ -938,7 +821,7 @@ The same object the parent's model receives as the `spawn_agent` tool result.
 |---|---|---|
 | `id`, `session_id`, `workspace_id` | string | The child. |
 | `name` | string | What the parent called it. |
-| `branch` | string | The branch it pushed to the hub. |
+| `branch` | string | The branch it worked on. |
 | `state` | string | `running`, `done`, `error`, or `aborted`. |
 | `commit` | string, optional | Its head commit after it committed its tree. |
 | `summary` | string, optional | Its final assistant message. |
@@ -1556,10 +1439,3 @@ without credentials is `407`; one for a host the workspace's mode or
 allowlist does not admit is `403` and is listed in the workspace's usage; the
 proxy connects to public addresses only, so a private one is `403` whatever
 the mode. The body of every refusal is one line saying why.
-
-## Git hub
-
-`/git/<project>.git/...` speaks git's Smart HTTP protocol for workspaces. It
-is mounted outside the bearer token and authenticates with HTTP basic auth:
-the workspace id as the user and its per-workspace hub token as the password,
-scoped to one project. Clients other than workspaces have no reason to use it.

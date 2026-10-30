@@ -41,7 +41,7 @@ human changing the codebase. Read it fully before editing.
 cmd/eika      harness server         internal/agent     agent loop
 cmd/eikad     sandbox daemon         internal/tool      tools and registry
 internal/provider  LLM providers     internal/executor  sandbox I/O
-internal/workspace containers, hub   internal/session   session trees
+internal/workspace containers      internal/session   session trees
 internal/search    web search, fetch internal/server    HTTP + WebSocket
 internal/store     Postgres          internal/config    deployment config
 internal/secret    sealed secrets    web/               frontend

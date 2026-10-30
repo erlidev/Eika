@@ -110,10 +110,6 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 	if err != nil {
 		return nil, err
 	}
-	project, err := s.opts.Store.Project(ctx, parentWS.ProjectID)
-	if err != nil {
-		return nil, err
-	}
 	// The child's id exists before its row does, because its branch is named
 	// after it and the branch is what the worktree needs.
 	c, runCtx, err := s.reserve(ctx, parent.ID, store.NewID(), req.Name)
@@ -195,7 +191,7 @@ func (s *Spawner) start(ctx context.Context, req builtin.SpawnRequest) (*child, 
 	s.opts.Logger.Info("subagent started", "subagent_id", c.id, "parent_session_id", parent.ID,
 		"child_session_id", sess.ID, "workspace_id", childWS.ID, "holder_id", childWS.WorktreeOf, "branch", branch)
 
-	go s.run(runCtx, c, runner, req, base, project.Name)
+	go s.run(runCtx, c, runner, req, base)
 	return c, nil
 }
 
@@ -272,7 +268,7 @@ func (s *Spawner) forget(c *child) {
 }
 
 // run drives the child's session and reports what it did, whatever happened.
-func (s *Spawner) run(ctx context.Context, c *child, runner Runner, req builtin.SpawnRequest, base, project string) {
+func (s *Spawner) run(ctx context.Context, c *child, runner Runner, req builtin.SpawnRequest, base string) {
 	defer close(c.done)
 	defer c.cancel()
 	result := c.snapshot()
@@ -293,7 +289,7 @@ func (s *Spawner) run(ctx context.Context, c *child, runner Runner, req builtin.
 	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
 	defer cancel()
 	result.State, result.Error = string(state), message
-	s.report(reportCtx, &result, base, project)
+	s.report(reportCtx, &result, base)
 	c.update(func(r *builtin.AgentResult) { *r = result })
 
 	encoded, err := json.Marshal(result)
@@ -325,8 +321,8 @@ func (s *Spawner) run(ctx context.Context, c *child, runner Runner, req builtin.
 // report turns what the child left behind into its result: its work, and
 // the child's last message, or a description of how it ended when it left
 // none.
-func (s *Spawner) report(ctx context.Context, result *builtin.AgentResult, base, project string) {
-	s.keepWork(ctx, result, base, project)
+func (s *Spawner) report(ctx context.Context, result *builtin.AgentResult, base string) {
+	s.keepWork(ctx, result, base)
 	entries, err := s.opts.Store.SessionPath(ctx, result.SessionID)
 	if err != nil {
 		result.Error = join(result.Error, err.Error())
@@ -338,15 +334,14 @@ func (s *Spawner) report(ctx context.Context, result *builtin.AgentResult, base,
 	}
 }
 
-// keepWork commits everything in the child's tree, pushes its branch to the
-// hub, and records the commit and a diffstat against the commit the child
-// started from. A step that fails is recorded in the result rather than
+// keepWork commits everything in the child's tree and records the commit and
+// a diffstat against the commit the child started from. A step that fails is recorded in the result rather than
 // dropped: the parent has to hear what happened even when the child's
 // workspace is unreachable.
 //
 // The worktree stays: the user opens a finished child's workspace to see
 // what it did, and the branch is already in the parent's repository.
-func (s *Spawner) keepWork(ctx context.Context, result *builtin.AgentResult, base, project string) {
+func (s *Spawner) keepWork(ctx context.Context, result *builtin.AgentResult, base string) {
 	row, err := s.opts.Store.Workspace(ctx, result.WorkspaceID)
 	if err != nil {
 		result.Error = join(result.Error, err.Error())
@@ -368,13 +363,6 @@ func (s *Spawner) keepWork(ctx context.Context, result *builtin.AgentResult, bas
 	if head, err := git(ctx, ex, "rev-parse", "HEAD"); err == nil {
 		result.Commit = head
 	}
-	if result.Commit != "" {
-		// The branch is the child's own, tagged with its id, so nothing is
-		// there to overwrite and the push never has to force.
-		if err := s.opts.Workspaces.Push(ctx, host, project, result.Branch); err != nil {
-			result.Error = join(result.Error, err.Error())
-		}
-	}
 	if base != "" && result.Commit != "" && base != result.Commit {
 		if stat, err := git(ctx, ex, "diff", "--stat", base, result.Commit); err == nil {
 			result.DiffStat = stat
@@ -384,8 +372,7 @@ func (s *Spawner) keepWork(ctx context.Context, result *builtin.AgentResult, bas
 
 // handOver commits whatever the parent has in its tree, so that the child
 // starts from the parent's work, and returns that commit. The child's
-// worktree shares the parent's repository, so nothing has to travel through
-// the hub first.
+// worktree shares the parent's repository, so nothing has to travel.
 func (s *Spawner) handOver(ctx context.Context, parent workspace.Workspace, name string) (string, error) {
 	ex, err := s.opts.Workspaces.Executor(parent)
 	if err != nil {
@@ -537,7 +524,13 @@ func commitAll(ctx context.Context, ex executor.Executor, message string) (bool,
 	if strings.TrimSpace(status) == "" {
 		return false, nil
 	}
-	for _, args := range [][]string{{"add", "-A"}, {"commit", "-m", message}} {
+	// A repository with an identity of its own, a local project's checkout,
+	// keeps it; anything else commits as Eika.
+	commit := []string{"commit", "-m", message}
+	if _, err := git(ctx, ex, "config", "user.email"); err != nil {
+		commit = append([]string{"-c", "user.name=" + workspace.GitUserName, "-c", "user.email=" + workspace.GitUserEmail}, commit...)
+	}
+	for _, args := range [][]string{{"add", "-A"}, commit} {
 		if _, err := git(ctx, ex, args...); err != nil {
 			return false, err
 		}

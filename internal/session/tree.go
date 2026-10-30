@@ -18,16 +18,15 @@ type Tree struct {
 func NewTree(s *store.Store) *Tree { return &Tree{store: s} }
 
 // Append writes e under the session's current head and makes it the new head.
-// The caller supplies Kind, Payload, and Commit; the tree assigns the id, the
+// The caller supplies Kind and Payload; the tree assigns the id, the
 // parent, and the sequence number.
 func (t *Tree) Append(ctx context.Context, sessionID string, e store.Entry) (store.Entry, error) {
 	return t.store.AppendEntry(ctx, sessionID, e)
 }
 
-// AppendMessage records one provider message as an entry, tagged with the
-// workspace HEAD commit it was produced at.
-func (t *Tree) AppendMessage(ctx context.Context, sessionID string, m provider.Message, commit string) (store.Entry, error) {
-	e, err := MessageEntry(m, commit)
+// AppendMessage records one provider message as an entry.
+func (t *Tree) AppendMessage(ctx context.Context, sessionID string, m provider.Message) (store.Entry, error) {
+	e, err := MessageEntry(m)
 	if err != nil {
 		return store.Entry{}, err
 	}
@@ -72,8 +71,7 @@ func (t *Tree) SetHead(ctx context.Context, sessionID, entryID string) error {
 
 // Fork copies the path from the session's root down to entryID into a new
 // session whose head is the copy of that entry. The fork shares no rows with
-// its parent, so both continue independently; opts.WorkspaceID points the
-// fork at a workspace cloned at the entry's commit.
+// its parent, so both continue independently.
 func (t *Tree) Fork(ctx context.Context, sessionID, entryID string, opts store.ForkOptions) (store.Session, error) {
 	return t.store.ForkSession(ctx, sessionID, entryID, opts)
 }

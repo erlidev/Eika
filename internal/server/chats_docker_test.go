@@ -175,10 +175,6 @@ func TestChatForksStayChats(t *testing.T) {
 	rec := request(t, a.Server, "PUT", "/api/sessions/"+chat.ID+"/tools", map[string]any{"tools": []string{"web_fetch"}})
 	decodeBody[chatWire](t, rec, 200)
 
-	rec = request(t, a.Server, "POST", "/api/sessions/"+chat.ID+"/fork",
-		map[string]any{"entry_id": last, "with_workspace": true})
-	refused(t, rec, 400)
-
 	fork := decodeBody[chatWire](t, request(t, a.Server, "POST", "/api/sessions/"+chat.ID+"/fork",
 		map[string]any{"entry_id": last}), 201)
 	if fork.WorkspaceID != nil || fork.Kind != "fork" || fork.ParentSessionID != chat.ID {
