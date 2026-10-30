@@ -43,7 +43,7 @@ unparseable, and the reason shows in the UI.
 ### Storage and scope
 
 ```
-/var/lib/eika/skills/<name>/...         Core volume, read-only to every computer
+/var/lib/eika/skills/<name>/...         volume eika-skills, read-only to every computer
 core.skills: name, scope (global | project:<slug>), enabled, agents[], source
              (upload | git:<url>@<commit> | path), sha, installed_at, warnings
 ```

@@ -189,7 +189,7 @@ Defences, in the order they apply:
 | Capability per agent | Core, agent definitions | An agent cannot call a tool it was not given; the browser agent has no memory, the researcher no private data |
 | Sentry decide | Sentry, before every action | Unapproved effects, hand-off actions, actions while halted, rule-of-two violations |
 | Taint | Core labels, Sentry, the reviewer | Private data leaving through an unapproved effect; actions from a session where the injection screen found something |
-| Egress proxy | Sentry, network-enforced | Exfiltration from code in a computer, the browser or a plugin |
+| Egress proxy | Sentry, network-enforced | Traffic that bypasses Sentry: every connection is attributed, blocklisted hosts and private addresses are refused, canaries and misused surrogates are caught (TLS interception), and halt cuts everything. It does not judge other hosts (caveat below) |
 | Vault and surrogates | Sentry | Credential theft; a surrogate resolves only for its bound domains |
 | Ingress scanning | Sentry, on untrusted results | Obvious injections, secrets and one-time codes reaching a model |
 | Isolated reviewer | Sentry, for `review` actions | Injected instructions steering an action; the reviewer never sees the untrusted content |
@@ -201,6 +201,11 @@ Current caveats:
 
 - Core holds the Docker socket, which is root-equivalent on the host. A compromised
   Core is out of scope. A Docker socket proxy is listed as hardening in phase 15.
+  So are the parts that pass through Core: it writes the `auth_sessions` table
+  Sentry checks approvals against and relays the user's token, and it serves
+  the UI code that encrypts secure entry. Those checks show that an answer came
+  through the UI and keep values out of Core's logs and rows. They do not stop a
+  compromised Core forging an answer or reading a value.
 - Classifiers are bypassable by adaptive attacks. They escalate; they do not block
   on their own.
 - A subagent's report can still carry misleading data into the main agent. The

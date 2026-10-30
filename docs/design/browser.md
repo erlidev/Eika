@@ -29,7 +29,8 @@ text but never passwords or stored session cookies.
     through Sentry's proxy with the browser principal. The proxy tunnels TLS
     without intercepting it, so sites see Chrome's own TLS fingerprint and the
     user's own IP.
-  - The viewer port (section 5) is on a network Core joins.
+  - The viewer port (section 5) is on `eika_browser_ctl` too. Core joins neither
+    network, so it has no path to `browserd` at all.
 - **Hardening.**
   - Chrome runs as an unprivileged user with its own sandbox (`--no-sandbox` is
     not used: the container gets the seccomp profile Chrome needs).
@@ -144,10 +145,10 @@ the accessibility tree hides, and driving widgets that refuse ordinary clicks.
 - Every page it reads is scanned and wrapped. Logged-in sites make its session
   `sensitive`, so every submit and every `eval` there goes to the reviewer with
   stricter thresholds (section 4), and to the user when the reviewer is unsure.
-- Its results return to the delegator as untrusted content, wrapped. The main agent
-  reads a scanned summary, never a page. The Dual LLM pattern calls this a
-  quarantined model; injections can still shape the summary, which is why the
-  wrapper and any `sensitive` label carry over.
+- Its report returns to the delegator like any subagent's, not wrapped. The main
+  agent reads a summary, never a page. The Dual LLM pattern calls this a
+  quarantined model; injections can still shape the summary, which is the
+  README's caveat on reports. The `sensitive` label carries over.
 - `screenshot` and vision are used only when the model is vision-capable and the
   snapshot names an opaque region or keeps failing. Browser Use advises disabling
   vision around secrets, and so does `browserd`: screenshots are refused while a
@@ -183,9 +184,11 @@ to publish its user agent and give sites an opt-out, so the user can decide.
 ## 5. Live view and takeover
 
 - **Viewer.** `browserd` streams a CDP screencast (`Page.startScreencast`, JPEG
-  frames) over a WebSocket on its viewer port. Core relays it to the UI after
-  checking a one-time ticket from Sentry, using the pattern of today's preview
-  tickets. No X server or VNC is involved, and coordinates map exactly.
+  frames) over a WebSocket on its viewer port. Sentry relays it on
+  `/v1/user/browser/view`, which checks the user's token like any user route, and
+  Core passes the UI's socket through to Sentry unchanged. Takeover input travels
+  the same relay, so only Sentry can send input to the browser. No X server or VNC
+  is involved, and coordinates map exactly.
 - **Watching** is read-only and needs no lock. It works on a phone: the frame
   scales to the screen, with pinch-zoom.
 - **Takeover.** The user presses Take over. Sentry gives the lock to the user, and

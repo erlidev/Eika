@@ -30,12 +30,16 @@ structure has to contain it.
 
 - **Container.** `eika-sentry` on the networks `eika_default` (Postgres, Guard),
   `eika_sandbox_internal` (proxy for computers and plugin cells),
-  `eika_browser_ctl` (the browser's control port) and `eika_egress` (the internet).
+  `eika_browser_ctl` (the browser's control and viewer ports),
+  `eika_browser_internal` (the proxy for the browser's own traffic) and
+  `eika_egress` (the internet).
 - **Storage.** Postgres schema `sentry`, owned by role `eika_sentry`, with its
   own migrator over `internal/sentry/store/migrations`. Core's role
   `eika_core` has no privilege on it. `eika_sentry` has `SELECT` on
-  `core.auth_sessions` only, so it can check that the user, and not Core, signed
-  an approval.
+  `core.auth_sessions` only, so it can check that an answer came through a
+  signed-in UI and not from Core's service identity or an agent. Core writes that
+  table and relays the token, so this does not hold against a compromised Core,
+  which the threat model leaves out of scope (`README.md`).
 - **Keys.** `/var/lib/eika-sentry/vault.key` (AES-256-GCM, `internal/secret`
   reused) in volume `eika-sentry`.
 - **Core API.** HTTP/JSON over a Unix socket at
@@ -51,6 +55,7 @@ structure has to contain it.
 | `POST /v1/egress/principals` | Core registers a container or run and receives proxy credentials for it |
 | `POST /v1/plugins/call`, `GET /v1/plugins` | Plugin host (`skills-and-plugins.md`) |
 | `POST /v1/browser/command` | Browser mediation (`browser.md`) |
+| `POST /v1/labels` | Core reports what a decide cannot show: private content placed in a preamble, a report from a `sensitive` session, a history hit from a private source, a compaction cut and what it kept. Sentry sets or clears the labels and returns them (section 6) |
 | `POST /v1/observe` | Asynchronous feed of turns, reasoning and tool calls for the monitor |
 | `GET /v1/events` | NDJSON stream of `approval.*`, `alert.*`, `halt.*`, `secret_request.*`, which Core relays to the UI on topic `inbox` |
 | `/v1/user/*` | User-authenticated routes Core reverse-proxies unchanged from the UI: answer approvals, edit grants, tool settings and the blocklist, the vault, halt and resume, the audit log. Each request carries the user's bearer token, which Sentry checks itself |
@@ -61,7 +66,8 @@ Core describes every action in one shape:
 
 ```
 Action {
-  key        stable id: session id + tool call id, or container + connection id
+  key        stable id: session id + Eika's tool-call id (minted by the loop, never
+             the backend's, `runtime.md` 5), or container + connection id
   principal  {session, run, subagent?, routine?, computer?}
   kind       tool | plugin | egress | browser
   name       tool name, plugin/tool, host, browser command
@@ -168,7 +174,7 @@ thresholds, so the table has two columns.
 | read (private sources set `sensitive`) | allow | allow |
 | write own data (project files, memory) | allow | allow |
 | send to the user (notify, own channels) | allow | allow |
-| send external (email, post, message, form submit with content) | review | review, grant scope at most `subagent` |
+| send external (email, post, message, form submit with content) | review | review, grant scope at most `subagent` (`until`, for at most a day, in the home session) |
 | delete external | review | review |
 | schedule (create or enable a routine) | ask | ask |
 | egress (a connection) | allow | allow |
@@ -186,8 +192,9 @@ make.
 
 **Labels route to the reviewer, not to the user.** A label never creates an
 approval by itself. It turns an `allow` into a `review` and tightens the reviewer's
-thresholds (section 9.2). The user is asked only when the reviewer is unsure. Until
-the reviewer exists (phase 8), a `review` falls back to `ask`. Memory writes follow
+thresholds (section 9.2). The user is asked only when the reviewer is unsure. The
+reviewer ships with Sentry in phase 4, on the emulated backend (section 9), so
+there is no period where labels turn into approvals. Memory writes follow
 the provenance rules of `memory.md` 6 on top of this table.
 
 ### Tool settings and the blocklist
@@ -249,7 +256,13 @@ action meets them:
 ### Labels
 
 Taint tracks one thing: whether a session holds sensitive data. Each session (and
-so each run) carries one label and one flag, mirrored to Core:
+so each run) carries one label and one flag. Sentry owns them: it sets them from
+the `private?` reads it decides and from what Core reports on `/v1/labels`
+(content that enters without a decide, such as pinned private memories and
+private project instructions in a preamble, and compaction cuts), and Core
+mirrors Sentry's answer into `sessions` for the UI. Content in a preamble is
+replaced only by a compaction that rebuilds the preamble without it, so a
+session whose preamble holds private memories stays `sensitive`:
 
 - **`sensitive`** is set when the session reads a private source: memory of
   sensitivity `private`, plugins the user marked private (email, calendar,
@@ -276,7 +289,8 @@ Current caveat: a session with no sensitive data that reads an
 injected page can still do what the defaults allow without asking, such as
 writing its own files or reaching a new host. External sends and deletes still
 go to the reviewer, canaries still halt, and from phase 8 the injection screen sets
-`suspicious`. Before phase 8, only the deterministic scans run.
+`suspicious`. Before phase 8, only the deterministic scans run, and the reviewer
+(from phase 4) runs on the emulated backend.
 
 Approval fatigue is the reason labels route to the reviewer instead of the user.
 Reviewer decisions and the user's answers on them are audited, so the share of
@@ -399,7 +413,7 @@ from Muse:
 | `once` | This action key only |
 | `subagent` | Until this subagent next reports, so a resumed subagent starts without it |
 | `routine` | Every run of one routine; created when the user enables it |
-| `until` | A time bound ("for an hour", "today"); the home session's alternative to a session scope, since it never ends |
+| `until` | A time bound ("for an hour", "today"); the home session's alternative to a session scope, since it never ends. Where a row caps the scope at `subagent`, the home session gets `until`, for at most a day |
 | `always` | Until revoked; not offered for send-external from a `sensitive` session, delete, or schedule |
 
 Grants are listed in the UI by agent, plugin and site, and are revocable at once.
@@ -448,7 +462,10 @@ creates entries, either in Settings, Vault or through a secret request.
 3. The UI fetches Sentry's ephemeral public key (X25519) and encrypts the value
    in the browser with WebCrypto. Core relays only ciphertext. Sentry decrypts,
    seals and stores it.
-4. The tool returns the surrogate. Core never sees the value, even in transit.
+4. The tool returns the surrogate. Core never sees the value, even in transit,
+   as long as Core serves honest UI code and relays the real public key: this
+   keeps the value out of Core's logs, rows and memory, not away from a
+   compromised Core (`README.md`, caveats).
 
 ### Surrogates
 
@@ -461,11 +478,16 @@ creates entries, either in Settings, Vault or through a secret request.
   2. **Browser typing** (Sentry sends the real value straight to `browserd`).
   3. **Model provider keys stay in Core**, by design: they are the user's chosen
      endpoints, not agent-reachable services.
-  4. **HTTP egress from computers.** In phase 15, the proxy intercepts TLS only for
-     hosts with bound secrets, using a Sentry CA trusted by the sandbox image. It
-     swaps surrogates in headers and bodies. A surrogate in a request to any other
-     host is denied with a high-severity alert, because that is an exfiltration
-     attempt.
+  4. **HTTP egress from computers.** From phase 10, with the vault, the proxy
+     intercepts TLS for computers, using a Sentry CA trusted by the sandbox image:
+     for hosts with bound secrets, and for every host while canary checking is on
+     for the computer (a setting, on by default). It swaps surrogates in headers
+     and bodies for bound hosts. A surrogate or a canary in a request to any
+     other host is denied with a high-severity alert, because that is an
+     exfiltration attempt. Without interception the proxy sees only an HTTPS
+     request's host, so `curl -H "Authorization: Bearer $KEY"` would pass
+     unseen. Clients that pin certificates get a clear proxy error and can be
+     exempted per host. The browser's traffic is never intercepted.
 - Real values that appear in any content flowing back (ingress) are redacted. A
   surrogate shown to the model is just text.
 
@@ -494,9 +516,18 @@ Jev's wire format, so any compatible backend fits:
 POST {base}/v1/systemone
 {"model": "...", "state": "<string or JSON>",
  "questions": {"dangerous": {"type": "noul", "instructions": "..."},
-               "risk": {"type": "choice", "options": ["low","medium","high"], "instructions": "..."}}}
--> {"answers": {"dangerous": {"p": 0.04}, "risk": {"choice": "low", "confidence": 0.81, "dist": {...}}}}
+               "risk": {"type": "choice", "instructions": "...",
+                        "criteria": {"low": "...", "medium": "...", "high": "..."}}}}
+-> {"answers": {"dangerous": {"type": "noul", "noul": 0.06},
+                "risk": {"type": "choice", "choice": "low", "confidence": 0.29,
+                         "probabilities": {"low": 0.53, "medium": 0.45, "high": 0.02}}},
+    "usage": {"input_tokens": 300, "output_tokens": 0}}
 ```
+
+This is the shape llama.cpp serves, checked against the live test bench
+(`PLAN.md`): a choice question names its options in `criteria`, each with a
+description, and llama.cpp rejects a request without it. Hosted Jev's shape is to
+be checked against this in phase 8.
 
 `internal/systemone` holds the client, the wire types and thresholds. It is shared
 by Sentry and Core, which uses it for routing and notification triage.
@@ -505,7 +536,7 @@ by Sentry and Core, which uses it for routing and notification triage.
 
 | Backend | Where | Notes |
 |---|---|---|
-| Any `/v1/systemone` endpoint, such as llama.cpp serving a decision model (recommended: vLLM-SR `d3-flash`, below) | wherever the user runs it | A llama.cpp server reports `"decisions"` in its `/v1/models` `output_modalities`, which lets probing tell a decision model from a chat model |
+| Any `/v1/systemone` endpoint, such as llama.cpp serving a decision model (recommended: vLLM-SR `d3-flash`, below) | wherever the user runs it | A llama.cpp server reports `"decisions"` in its `/v1/models` `output_modalities`, which lets probing tell a decision model from a chat model. Builds that do not report it yet (b11941 does not) are probed with a one-question `/v1/systemone` call |
 | Hosted Jev (TypeSafe) | cloud | 70 to 500 ms, 32k state. Sends state off the machine, so it is allowed only for content without the `sensitive` label unless the user opts in |
 | Laya via `laya-serve` (Apache-2.0, 322M to 421M) | Guard sidecar, CPU or small GPU | Jev-compatible. Near chance before fine-tuning, so it needs the fine-tune loop below |
 | OpenDecider (Apache-2.0, nano 400M, small 4B) | a CPU host (nano) or a GPU (small, 8 GB) | `opendecider serve` exposes `/v1/systemone`; wire compatibility with Jev is unverified. Self-reported calibration is better than Laya's. Nano takes about 900 ms per two-question call on a 6-core CPU in bf16, so it suits the reviewer on a GPU better than CPU |
