@@ -134,7 +134,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | Table | Holds |
 |---|---|
 | `projects` | name (unique), kind (remote/local), remote_url, host_path, default_branch |
-| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, worktree_of (cascades), sandbox (jsonb: limits, egress, ports), pinned, archived |
+| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, worktree_of (cascades), sandbox (jsonb: limits, egress), pinned, archived |
 | `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork/agent), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb), pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
 | `runs` | session, state, started/finished, error |
@@ -217,7 +217,7 @@ POST /api/sessions/{id}/messages          GET /api/events
 - **Auth** is one middleware over `/api`. A bearer token is a sign-in
   session (looked up by SHA-256) or the API token (constant-time compare).
   Public: health, `GET /api/auth/status`, `POST /api/auth/setup` (once),
-  `POST /api/auth/login`, `/oauth/client-metadata.json`. `/api/events` and the terminal also accept `?token=`. Sign-in
+  `POST /api/auth/login`, `/oauth/client-metadata.json`. `/api/events` also accepts `?token=`. Sign-in
   attempts are serialised.
 - **Configuration** (`configuration.go`): `configure` loads models,
   profiles, and defaults; `resolve` takes each value from the first layer
@@ -300,10 +300,9 @@ and, for long keys, the last four characters.
  harness (eika)                              workspace container eika-ws-<id>
   tool -> executor/sandbox --HTTP, bearer--> eikad :7000
   mcp.Pool -> Host.Process --------------->    /exec /files /stat /list
-  terminal relay ------------------------->    /pty /watch /process /environment
+  Host.Process --------------------------->    /watch /process /environment
   workspace.Host ---------docker socket--->  container + volume at /workspace
   egress.Proxy :3128 <-----------------------  HTTP(S)_PROXY, when restricted
-  previews <port>-<id>.<host> ------------>    a forwarded port
 ```
 
 ### eikad
@@ -320,20 +319,15 @@ times. API: `api/eikad.md`.
 daemon's newline-delimited frames into the caller's writers. A 404 is
 `sandbox.ErrNotFound`. `Options.Dir` narrows a client to a directory below the
 daemon's root, which is how a worktree workspace is served: paths are
-relative to it, commands and terminals start in it, and the client refuses
+relative to it, commands start in it, and the client refuses
 paths outside it.
 
-### Files and terminal
+### Files
 
 File routes call the executor after `executor.Resolve` (eikad re-checks after
 symlinks): refused paths are 403, missing 404. Saves publish
-`workspace.state`.
-
-The terminal relays a browser WebSocket to eikad `/pty` through
-`Host.Terminal` (never the executor). The sandbox is dialled before the
-browser handshake is accepted, so a stopped workspace is an ordinary HTTP
-error. Frames and close codes pass through unchanged; a drop without a close
-frame closes the other side with 1011; messages are capped at 1 MiB.
+`workspace.state`. There is no terminal and no preview: the person using a
+workspace reaches it only through the agent.
 
 ### Workspace lifecycle
 
@@ -370,7 +364,7 @@ any other error stops reconciliation without changing states.
 A row with `worktree_of` has no container. `workspace.Locate` is the one rule
 from a row to its files: its own container, or the holder's with
 `Workspace.Dir` set to `.eika/worktrees/<id>`, which `Host.Executor`,
-`Terminal`, and `Process` pass on as the client's `Dir`. `worktree_of` always
+and `Process` pass on as the client's `Dir`. `worktree_of` always
 names a workspace with a container, so every agent in a tree shares the root
 session's container and repository. `workspace.AddWorktree` and
 `RemoveWorktree` run git at the holder's root.
@@ -383,7 +377,7 @@ directory but keeps its branch, and needs the holder running; deleting the
 holder cascades. `Reconcile` gives a worktree its holder's state. The MCP
 launcher starts a worktree's stdio servers in its worktree.
 
-### Limits, egress, previews
+### Limits and egress
 
 `Host.Create` applies the workspace's `sandbox` row; `PUT .../sandbox` writes
 the row then `Host.Confine`s; every start re-applies it. Children share the
@@ -409,11 +403,6 @@ workspace (`Proxy.Blocked`). It serves only when both networks exist
 network before leaving the old. Proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`,
 `NO_PROXY` in both cases, `NODE_USE_ENV_PROXY`) are given to eikad with
 `PUT /environment` on every change and start.
-
-A preview is served at `<port>-<workspace id>.<host>`: `Server.Handler`
-routes such hosts before the API. `POST .../ports/{port}/preview` returns a
-link with a one-time ticket, traded for a host-only cookie; every request is
-checked against the row. Tickets and sessions are in memory.
 
 ## Subagents
 
@@ -576,7 +565,7 @@ web/src/
   widths; below 1024px side panes become drawers. The coding UI (projects,
   workspaces, files, terminal, changes, the session tree and fork) is gone
   from the frontend; the Go routes it called stay until a later phase 0 item
-  removes them.
+  removes them (the terminal and preview routes are already gone).
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
   events (`useSessionStream`, `useMCPEvents`,
   `useSessionUpdates`).

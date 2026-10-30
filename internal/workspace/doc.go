@@ -14,8 +14,7 @@
 // out is the harness's egress proxy; Host.Confine changes both on an existing
 // container without restarting it, and Start gives eikad the proxy settings
 // a proxied container's processes need. Host.Usage samples what a container
-// consumes, Host.Capacity what the Docker host has, and Host.PortURL is where
-// the harness reaches one of a container's ports for a preview.
+// consumes, and Host.Capacity what the Docker host has.
 //
 // Containers carry the label eika.workspace=<id>, so List reconciles the
 // harness with what is actually running after a restart. Only server and

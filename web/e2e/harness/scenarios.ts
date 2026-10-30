@@ -120,7 +120,6 @@ function workbench(): WorldBuilder {
     sandbox: {
       limits: { cpus: 0, memory_mb: 0, pids: 0 },
       egress: { mode: "open", allow: [] },
-      ports: [],
     },
   });
   const child = b.session(childWS, {

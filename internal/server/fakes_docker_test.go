@@ -17,8 +17,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/coder/websocket"
-
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/local"
 	"github.com/erlidev/eika/internal/executor/sandbox"
@@ -94,9 +92,6 @@ type fakeHost struct {
 	// confined records every confinement a workspace was created or
 	// confined with, in order, by workspace id.
 	confined map[string][]workspace.Confinement
-	// ports are the base URLs PortURL answers with, by port, which is how a
-	// test puts a server behind a workspace's port.
-	ports map[int]string
 }
 
 // fakeWorkspace is one workspace of a fakeHost.
@@ -111,7 +106,7 @@ func newFakeHost(t *testing.T) *fakeHost {
 	t.Helper()
 	return &fakeHost{
 		root: t.TempDir(), workspaces: map[string]*fakeWorkspace{},
-		confined: map[string][]workspace.Confinement{}, ports: map[int]string{},
+		confined: map[string][]workspace.Confinement{},
 	}
 }
 
@@ -229,17 +224,6 @@ func (h *fakeHost) EgressControl() bool {
 	return h.egressControl
 }
 
-// PortURL answers with the server the test put behind a port.
-func (h *fakeHost) PortURL(_ context.Context, ws workspace.Workspace, port int) (string, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	base, ok := h.ports[port]
-	if !ok {
-		return "", fmt.Errorf("workspace %s has nothing on port %d", ws.ID, port)
-	}
-	return base, nil
-}
-
 // Start marks the workspace running.
 func (h *fakeHost) Start(_ context.Context, ws *workspace.Workspace) error {
 	if h.startHook != nil {
@@ -309,12 +293,6 @@ func (h *fakeHost) Executor(ws workspace.Workspace) (executor.Executor, error) {
 		return nil, err
 	}
 	return local.New(dir)
-}
-
-// Terminal is refused: the terminal proxy has tests of its own, against a
-// scripted sandbox, that need no database.
-func (h *fakeHost) Terminal(_ context.Context, ws workspace.Workspace, _, _ uint16) (*websocket.Conn, error) {
-	return nil, fmt.Errorf("the fake host has no terminal for %s", ws.ID)
 }
 
 // Process starts what the test scripted, in a workspace the host has.

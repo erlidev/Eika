@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coder/websocket"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -382,21 +381,10 @@ func (h *Host) Executor(ws Workspace) (executor.Executor, error) {
 	return h.client(ws)
 }
 
-// Terminal opens an interactive shell in a running workspace, for the person
-// using it. It is kept apart from Executor so that nothing holding an
-// executor, which is every tool, can reach a terminal.
-func (h *Host) Terminal(ctx context.Context, ws Workspace, rows, cols uint16) (*websocket.Conn, error) {
-	c, err := h.client(ws)
-	if err != nil {
-		return nil, err
-	}
-	return c.Terminal(ctx, rows, cols)
-}
-
 // Process starts a long-lived process in a running workspace with its
 // standard streams connected to the caller: how the harness runs a stdio MCP
-// server where the agent's processes run. Like Terminal, it is kept apart
-// from Executor, so no tool can hold a process of its own.
+// server where the agent's processes run. It is kept apart from
+// Executor, so no tool can hold a process of its own.
 func (h *Host) Process(ctx context.Context, ws Workspace, spec sandbox.ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error) {
 	c, err := h.client(ws)
 	if err != nil {

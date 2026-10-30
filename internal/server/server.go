@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coder/websocket"
-
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/event"
@@ -51,12 +49,9 @@ type Workspaces interface {
 	Inspect(ctx context.Context, id string) (workspace.Workspace, error)
 	List(ctx context.Context) ([]workspace.Workspace, error)
 	Executor(ws workspace.Workspace) (executor.Executor, error)
-	// Terminal opens a shell in a running workspace for the person using it.
-	// It is not part of the executor, so no tool can reach a terminal.
-	Terminal(ctx context.Context, ws workspace.Workspace, rows, cols uint16) (*websocket.Conn, error)
 	// Process starts a long-lived process in a running workspace, which is
-	// how a stdio MCP server runs there. Like Terminal, it is not part of
-	// the executor, so no tool can hold a process of its own.
+	// how a stdio MCP server runs there. It is not part of the executor, so
+	// no tool can hold a process of its own.
 	Process(ctx context.Context, ws workspace.Workspace, spec sandbox.ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error)
 	HasImage(ctx context.Context, ref string) (bool, error)
 	// Confine applies a workspace's limits and network to its container,
@@ -68,9 +63,6 @@ type Workspaces interface {
 	Capacity(ctx context.Context) (workspace.Capacity, error)
 	// EgressControl reports whether a workspace's egress can be restricted.
 	EgressControl() bool
-	// PortURL is where the harness reaches one of a workspace's ports,
-	// which is where a preview is forwarded.
-	PortURL(ctx context.Context, ws workspace.Workspace, port int) (string, error)
 }
 
 // Providers builds a provider on an endpoint the user configured. The models
@@ -143,9 +135,6 @@ type Server struct {
 	// proxyTokens caches each workspace's egress proxy token, read from its
 	// container the first time the proxy is asked about it.
 	proxyTokens proxyTokens
-
-	// previews holds the tickets and sessions of workspace previews.
-	previews previews
 }
 
 // New builds a Server for the given configuration and dependencies. A zero
@@ -175,17 +164,8 @@ func (s *Server) UseSubagents(sp *subagent.Spawner, attach func(subagent.Runner)
 	attach(s)
 }
 
-// Handler returns the server's root handler. A request for a workspace
-// preview's host goes to the preview; everything else to the routes.
-func (s *Server) Handler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if id, port, ok := previewHost(r.Host); ok && s.deps.Store != nil && s.deps.Workspaces != nil {
-			s.servePreview(w, r, id, port)
-			return
-		}
-		s.mux.ServeHTTP(w, r)
-	})
-}
+// Handler returns the server's root handler.
+func (s *Server) Handler() http.Handler { return s.mux }
 
 // Bus returns the event bus the server fans events out on, which is the
 // emitter every run writes to.

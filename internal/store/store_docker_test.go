@@ -116,7 +116,7 @@ func TestProjectsWorkspacesAndSessions(t *testing.T) {
 	}
 	sandbox := store.WorkspaceSandbox{
 		CPUs: 1.5, MemoryMB: 2048, PIDs: 512, Egress: "allowlist",
-		Allow: []string{"github.com"}, Ports: []store.WorkspacePort{{Port: 5173, Label: "vite"}},
+		Allow: []string{"github.com"},
 	}
 	if got, err = st.SetWorkspaceSandbox(ctx, ws.ID, sandbox); err != nil || !reflect.DeepEqual(got.Sandbox, sandbox) {
 		t.Errorf("SetWorkspaceSandbox = %+v, %v; want the sandbox back", got.Sandbox, err)

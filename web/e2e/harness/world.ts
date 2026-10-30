@@ -234,7 +234,6 @@ export function defaultSandbox(): Sandbox {
   return {
     limits: { cpus: 0, memory_mb: 0, pids: 4096 },
     egress: { mode: "open", allow: [...defaultAllowlist] },
-    ports: [],
   };
 }
 

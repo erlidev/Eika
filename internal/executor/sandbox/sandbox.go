@@ -40,7 +40,7 @@ type Options struct {
 	// Root is the daemon's root inside the sandbox. Empty means DefaultRoot.
 	Root string
 	// Dir narrows the client to a directory below Root, given relative to
-	// it: paths are relative to Dir, commands and terminals start in it, and
+	// it: paths are relative to Dir, commands start in it, and
 	// the client refuses any path outside it. Empty is Root itself. It is how
 	// a worktree workspace shares a container with the workspace holding it.
 	Dir string
@@ -234,7 +234,7 @@ func (c *Client) WriteFile(ctx context.Context, path string, data []byte) error 
 }
 
 // SetEnvironment replaces the KEY=VALUE entries the daemon adds to the
-// environment of every process it starts from now on: commands, terminals,
+// environment of every process it starts from now on: commands
 // and stdio processes. Empty clears them. It is not part of the executor, so
 // a tool cannot change what the sandbox's processes inherit.
 func (c *Client) SetEnvironment(ctx context.Context, env []string) error {
@@ -279,40 +279,6 @@ func (c *Client) List(ctx context.Context, path string) ([]executor.FileInfo, er
 		entries[i] = c.fileInfo(e)
 	}
 	return entries, nil
-}
-
-// Terminal opens an interactive shell in the sandbox: a WebSocket on the
-// daemon's /pty route carrying eikad.PTYMessage frames. A zero rows or cols
-// leaves that dimension to the daemon's default. It is not part of
-// executor.Executor on purpose: tools run commands, and a terminal is for the
-// person using the workspace.
-func (c *Client) Terminal(ctx context.Context, rows, cols uint16) (*websocket.Conn, error) {
-	q := url.Values{}
-	if rows > 0 {
-		q.Set("rows", strconv.FormatUint(uint64(rows), 10))
-	}
-	if cols > 0 {
-		q.Set("cols", strconv.FormatUint(uint64(cols), 10))
-	}
-	if c.dir != "" {
-		q.Set("dir", c.dir)
-	}
-	u := c.base + "/pty"
-	if len(q) > 0 {
-		u += "?" + q.Encode()
-	}
-	conn, resp, err := websocket.Dial(ctx, u, &websocket.DialOptions{
-		HTTPClient: c.http,
-		HTTPHeader: http.Header{"Authorization": {"Bearer " + c.token}},
-	})
-	if err != nil {
-		// A refused handshake keeps the daemon's status and message.
-		if resp != nil && resp.Body != nil && resp.StatusCode != http.StatusSwitchingProtocols {
-			return nil, responseError(http.MethodGet, "/pty", resp)
-		}
-		return nil, fmt.Errorf("dial terminal: %w", err)
-	}
-	return conn, nil
 }
 
 // fileInfo converts the wire type into the executor type.

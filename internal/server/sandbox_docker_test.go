@@ -4,13 +4,11 @@ package server_test
 
 import (
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/erlidev/eika/internal/egress"
@@ -29,10 +27,6 @@ type sandboxWire struct {
 		Mode  string   `json:"mode"`
 		Allow []string `json:"allow"`
 	} `json:"egress"`
-	Ports []struct {
-		Port  int    `json:"port"`
-		Label string `json:"label"`
-	} `json:"ports"`
 }
 
 // usageWire is GET /api/workspaces/{id}/usage.
@@ -47,15 +41,10 @@ type usageWire struct {
 }
 
 // sandboxOf builds a sandbox request body.
-func sandboxOf(cpus float64, memoryMB, pids int64, mode string, allow []string, ports ...int) map[string]any {
-	listed := []map[string]any{}
-	for _, p := range ports {
-		listed = append(listed, map[string]any{"port": p})
-	}
+func sandboxOf(cpus float64, memoryMB, pids int64, mode string, allow []string) map[string]any {
 	return map[string]any{
 		"limits": map[string]any{"cpus": cpus, "memory_mb": memoryMB, "pids": pids},
 		"egress": map[string]any{"mode": mode, "allow": allow},
-		"ports":  listed,
 	}
 }
 
@@ -68,7 +57,7 @@ func TestANewWorkspaceGetsTheSandboxDefaults(t *testing.T) {
 	if ws.Sandbox.Limits.PIDs != 4096 || ws.Sandbox.Limits.CPUs != 0 || ws.Sandbox.Limits.MemoryMB != 0 {
 		t.Errorf("limits = %+v, want the built-in process limit and nothing else", ws.Sandbox.Limits)
 	}
-	if ws.Sandbox.Egress.Mode != "open" || !slices.Equal(ws.Sandbox.Egress.Allow, egress.DefaultAllowlist) || len(ws.Sandbox.Ports) != 0 {
+	if ws.Sandbox.Egress.Mode != "open" || !slices.Equal(ws.Sandbox.Egress.Allow, egress.DefaultAllowlist) {
 		t.Errorf("sandbox = %+v, want open egress with the suggested allowlist and no ports", ws.Sandbox)
 	}
 	if got := a.host.confinements(ws.ID); len(got) != 1 || got[0].Limits.PIDs != 4096 || got[0].Proxied {
@@ -126,9 +115,6 @@ func TestCreatingAWorkspaceChecksItsSandbox(t *testing.T) {
 		"more cores than the host has":    sandboxOf(8, 0, 0, "open", nil),
 		"more memory than the host has":   sandboxOf(0, 64<<10, 0, "open", nil),
 		"too few processes":               sandboxOf(0, 0, 4, "open", nil),
-		"a port listed twice":             sandboxOf(0, 0, 0, "open", nil, 3000, 3000),
-		"the daemon's port":               sandboxOf(0, 0, 0, "open", nil, 7000),
-		"a port out of range":             sandboxOf(0, 0, 0, "open", nil, 70000),
 		"a bad allowlist entry":           sandboxOf(0, 0, 0, "open", []string{"github.com:443"}),
 		"restricted egress on this host":  sandboxOf(0, 0, 0, "none", nil),
 		"an allowlist on this host, even": sandboxOf(0, 0, 0, "allowlist", []string{"github.com"}),
@@ -141,13 +127,10 @@ func TestCreatingAWorkspaceChecksItsSandbox(t *testing.T) {
 	}
 
 	a.host.egressControl = true
-	rec := create(sandboxOf(1.5, 1024, 256, "allowlist", []string{"GitHub.com ", "github.com", "*.npmjs.org"}, 5173))
+	rec := create(sandboxOf(1.5, 1024, 256, "allowlist", []string{"GitHub.com ", "github.com", "*.npmjs.org"}))
 	ws := decodeBody[workspaceWire](t, rec, 201)
 	if !slices.Equal(ws.Sandbox.Egress.Allow, []string{"github.com", "*.npmjs.org"}) {
 		t.Errorf("allowlist = %v, want it lowercased, trimmed, and without the repeat", ws.Sandbox.Egress.Allow)
-	}
-	if len(ws.Sandbox.Ports) != 1 || ws.Sandbox.Ports[0].Port != 5173 {
-		t.Errorf("ports = %+v, want 5173", ws.Sandbox.Ports)
 	}
 	want := workspace.Confinement{Limits: workspace.Limits{CPUs: 1.5, MemoryBytes: 1 << 30, PIDs: 256}, Proxied: true}
 	if got := a.host.confinements(ws.ID); len(got) != 1 || got[0] != want {
@@ -162,9 +145,9 @@ func TestChangingASandboxAppliesItToTheContainer(t *testing.T) {
 	initRepo(t, dir)
 	ws := a.newWorkspace(t, project.ID)
 
-	rec := request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(2, 4096, 0, "none", []string{"github.com"}, 3000))
+	rec := request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(2, 4096, 0, "none", []string{"github.com"}))
 	changed := decodeBody[workspaceWire](t, rec, 200)
-	if changed.Sandbox.Egress.Mode != "none" || changed.Sandbox.Limits.MemoryMB != 4096 || len(changed.Sandbox.Ports) != 1 {
+	if changed.Sandbox.Egress.Mode != "none" || changed.Sandbox.Limits.MemoryMB != 4096 {
 		t.Errorf("sandbox = %+v, want what was sent", changed.Sandbox)
 	}
 	confined := a.host.confinements(ws.ID)
@@ -257,7 +240,7 @@ func TestChildrenShareTheSandbox(t *testing.T) {
 	project, dir := a.newProject(t, "demo")
 	initRepo(t, dir)
 	ws := a.newWorkspace(t, project.ID)
-	request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(1, 512, 64, "allowlist", []string{"github.com"}, 3000))
+	request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(1, 512, 64, "allowlist", []string{"github.com"}))
 	sess := a.newSession(t, ws.ID)
 
 	a.script(
@@ -272,7 +255,7 @@ func TestChildrenShareTheSandbox(t *testing.T) {
 	child := a.waitAgent(t, sess.ID)
 
 	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+child.WorkspaceID, nil), 200)
-	if got.WorktreeOf != ws.ID || got.Sandbox.Limits.MemoryMB != 0 || len(got.Sandbox.Ports) != 0 {
+	if got.WorktreeOf != ws.ID || got.Sandbox.Limits.MemoryMB != 0 {
 		t.Errorf("child = %+v, want a worktree of %s with no sandbox of its own", got, ws.ID)
 	}
 	if confined := a.host.confinements(child.WorkspaceID); len(confined) != 0 {
@@ -286,89 +269,5 @@ func TestChildrenShareTheSandbox(t *testing.T) {
 	usage := decodeBody[usageWire](t, request(t, a.Server, "GET", "/api/workspaces/"+child.WorkspaceID+"/usage", nil), 200)
 	if usage.PIDsLimit != 64 || usage.CPUs != 1 {
 		t.Errorf("child usage = %+v, want the holder's limits", usage)
-	}
-}
-
-// previewRequest sends one request to a preview's host.
-func previewRequest(t *testing.T, a *api, host, path string, cookie *http.Cookie) *httptest.ResponseRecorder {
-	t.Helper()
-	r := httptest.NewRequest("GET", path, nil)
-	r.Host = host
-	if cookie != nil {
-		r.AddCookie(cookie)
-		r.AddCookie(&http.Cookie{Name: "app", Value: "kept"})
-	}
-	rec := httptest.NewRecorder()
-	a.Server.Handler().ServeHTTP(rec, r)
-	return rec
-}
-
-func TestAPreviewForwardsAListedPortToTheSignedInBrowser(t *testing.T) {
-	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
-
-	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The app sees its own cookies, never the preview's, and the host
-		// the browser asked for.
-		if _, err := r.Cookie("eika_preview"); err == nil {
-			http.Error(w, "the preview cookie leaked", http.StatusTeapot)
-			return
-		}
-		cookie, _ := r.Cookie("app")
-		io.WriteString(w, "app at "+r.Host+" "+r.URL.Path+" cookie="+cookie.Value)
-	}))
-	defer app.Close()
-	a.host.ports[5173] = app.URL
-
-	open := func() *httptest.ResponseRecorder {
-		return request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/ports/5173/preview", nil)
-	}
-	if rec := open(); rec.Code != 404 {
-		t.Errorf("preview of a port not listed = %d, want 404", rec.Code)
-	}
-	request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(0, 0, 0, "open", nil, 5173))
-
-	body := decodeBody[struct {
-		URL string `json:"url"`
-	}](t, open(), 200)
-	u, err := url.Parse(body.URL)
-	if err != nil {
-		t.Fatalf("parse %q: %v", body.URL, err)
-	}
-	// httptest's requests are for example.com, which previews live under.
-	if u.Host != "5173-"+ws.ID+".example.com" || u.Path != "/__eika/preview" || u.Query().Get("ticket") == "" {
-		t.Fatalf("preview url = %s", body.URL)
-	}
-
-	if rec := previewRequest(t, a, u.Host, "/", nil); rec.Code != 401 {
-		t.Errorf("a preview without a session = %d, want 401", rec.Code)
-	}
-	redeemed := previewRequest(t, a, u.Host, u.RequestURI(), nil)
-	if redeemed.Code != http.StatusSeeOther {
-		t.Fatalf("redeeming the ticket = %d: %s", redeemed.Code, redeemed.Body.String())
-	}
-	cookies := redeemed.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != "eika_preview" || !cookies[0].HttpOnly {
-		t.Fatalf("cookies = %+v, want one http-only preview session", cookies)
-	}
-	if again := previewRequest(t, a, u.Host, u.RequestURI(), nil); again.Code != 403 {
-		t.Errorf("a ticket used twice = %d, want 403", again.Code)
-	}
-
-	page := previewRequest(t, a, u.Host, "/src/main.ts", cookies[0])
-	if page.Code != 200 || page.Body.String() != "app at "+u.Host+" /src/main.ts cookie=kept" {
-		t.Errorf("forwarded = %d %q", page.Code, page.Body.String())
-	}
-	// The session opens this port of this workspace and no other.
-	if rec := previewRequest(t, a, "3000-"+ws.ID+".example.com", "/", cookies[0]); rec.Code != 401 {
-		t.Errorf("the session on another port = %d, want 401", rec.Code)
-	}
-
-	// Taking the port off the list closes the preview at once.
-	request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(0, 0, 0, "open", nil))
-	if rec := previewRequest(t, a, u.Host, "/", cookies[0]); rec.Code != 403 || !strings.Contains(rec.Body.String(), "no longer forwards") {
-		t.Errorf("a port taken off the list = %d %q, want 403", rec.Code, rec.Body.String())
 	}
 }

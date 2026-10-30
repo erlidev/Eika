@@ -34,7 +34,7 @@ Request:
 | `dir` | string | Working directory, relative to the root. Empty means the root. |
 | `env` | string[] | Additional `KEY=VALUE` entries. |
 | `timeout_ms` | number | Kill the command after this many milliseconds. Zero means no limit. |
-| `stdin` | base64 string | Fed to the command. Sent up front; `/pty` is the interactive route. |
+| `stdin` | base64 string | Fed to the command. Sent up front; `/process` is the streaming route. |
 
 Response: `200` with `Content-Type: application/x-ndjson`, one JSON object per
 line, flushed as the command produces output.
@@ -88,22 +88,6 @@ directory.
 | `mod_time` | RFC 3339 timestamp, UTC | Modification time. |
 | `is_dir` | bool | Whether it is a directory. |
 
-## GET /pty?shell=&dir=&rows=&cols=
-
-Upgrades to a WebSocket carrying an interactive shell. Messages are JSON text
-frames in both directions.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `type` | string | `input`, `output`, `resize`, or `exit`. |
-| `data` | base64 string | Terminal input (`input`) or output (`output`). |
-| `rows`, `cols` | number | New window size on `resize`. |
-| `exit_code` | number | The shell's exit status on `exit`. Absent means 0. |
-
-The client sends `input` and `resize`; the daemon sends `output` and, once the
-shell exits, a final `exit` before closing. A message is at most 1 MiB, so a
-large paste arrives as one `input`.
-
 ## GET /process
 
 Upgrades to a WebSocket carrying one long-lived process with its standard
@@ -151,8 +135,8 @@ made after the client connects is missed. At most 100 000 files are watched.
 ## PUT /environment
 
 Replaces the `KEY=VALUE` entries the daemon adds to the environment of every
-process it starts from now on: `/exec` commands, `/pty` shells, and
-`/process` processes. A request's own `env` still wins for that request. A
+process it starts from now on: `/exec` commands and `/process`
+processes. A request's own `env` still wins for that request. A
 process already running keeps what it had, and the daemon forgets the entries
 when the container stops; the harness sets them again on every start. It is
 how the harness points a restricted sandbox's processes at its egress proxy

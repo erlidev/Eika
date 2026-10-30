@@ -110,7 +110,6 @@ func (d *Daemon) Handler() http.Handler { return d.mux }
 func (d *Daemon) routes() {
 	d.mux.HandleFunc("GET /healthz", d.handleHealth)
 	d.mux.HandleFunc("POST /exec", d.authed(d.handleExec))
-	d.mux.HandleFunc("GET /pty", d.authed(d.handlePTY))
 	d.mux.HandleFunc("GET /process", d.authed(d.handleProcess))
 	d.mux.HandleFunc("GET /files", d.authed(d.handleReadFile))
 	d.mux.HandleFunc("PUT /files", d.authed(d.handleWriteFile))

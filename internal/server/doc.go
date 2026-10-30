@@ -5,8 +5,7 @@
 // configuration and the context of its model requests, MCP servers, and
 // settings;
 // password sign-in and bearer token authentication; the WebSocket event
-// stream; a workspace's files and the terminal socket it relays to the
-// sandbox; and, when configured, the built frontend. Nothing else in internal/ imports server.
+// stream; a workspace's files; and, when configured, the built frontend. Nothing else in internal/ imports server.
 //
 // Providers, models, and credentials are rows the UI edits. The server seals
 // credentials with internal/secret and builds a provider client from a row
@@ -35,10 +34,8 @@
 // profile and session configuration routes (profiles.go) all use it, and
 // every model call a run makes is recorded in model_requests (requests.go).
 //
-// A workspace's sandbox, its limits, egress, and forwarded ports, is checked
+// A workspace's sandbox, its limits and egress, is checked
 // and applied in sandbox.go, which also answers the egress proxy's policy
 // lookups (EgressPolicy); Run serves the proxy beside the API when the host
-// can restrict egress. previews.go forwards a preview host,
-// <port>-<workspace id>.<host>, to the port in the sandbox, which is why
-// Handler looks at the Host header before the routes.
+// can restrict egress.
 package server

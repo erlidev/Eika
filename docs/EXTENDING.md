@@ -372,7 +372,7 @@ entrypoint, so an image needs no Eika-specific content at all.
 
 An image needs:
 
-- a shell at `/bin/sh`, because `exec` with `shell` and the terminal use it,
+- a shell at `/bin/sh`, because `exec` with `shell` uses it,
 - a writable `/workspace`, which is where the volume or the host directory is
   mounted,
 - a uid 1000 that owns `/workspace`, because a sandbox never runs as root; an

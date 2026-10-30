@@ -1,6 +1,6 @@
 // Command eikad is the sandbox daemon. It runs inside every workspace
 // container and is the only thing the harness talks to when an agent reads a
-// file, writes a file, runs a command, opens a terminal, or watches for
+// file, writes a file, runs a command, or watches for
 // changes.
 //
 // It refuses to start without EIKAD_TOKEN, which the harness generates per

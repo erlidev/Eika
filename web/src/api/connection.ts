@@ -94,18 +94,6 @@ export function eventStreamUrl(topics: readonly string[], since?: string): strin
   return url.toString();
 }
 
-/**
- * terminalUrl builds the WebSocket URL of a workspace's shell, sized to the
- * terminal that opens it. Like the event stream, it carries the token as a
- * query parameter.
- */
-export function terminalUrl(workspaceId: string, rows: number, cols: number): string {
-  const url = socketUrl(`/api/workspaces/${encodeURIComponent(workspaceId)}/terminal`);
-  url.searchParams.set("rows", String(rows));
-  url.searchParams.set("cols", String(cols));
-  return url.toString();
-}
-
 /** socketUrl resolves a WebSocket path against the base URL, with the token attached. */
 function socketUrl(path: string): URL {
   const base = current.baseUrl === "" ? window.location.origin : current.baseUrl;

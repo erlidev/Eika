@@ -103,7 +103,6 @@ func TestEveryOtherRouteNeedsTheToken(t *testing.T) {
 		{http.MethodGet, "/stat?path=."},
 		{http.MethodGet, "/list?path=."},
 		{http.MethodGet, "/watch"},
-		{http.MethodGet, "/pty"},
 		{http.MethodPut, "/environment"},
 	}
 	for _, c := range cases {
@@ -494,83 +493,6 @@ func nextWatchEvent(t *testing.T, conn *websocket.Conn, path string) eikad.Watch
 		}
 		if ev.Path == path {
 			return ev
-		}
-	}
-}
-
-func TestPTYRunsAShell(t *testing.T) {
-	base, _ := newDaemon(t, eikad.Options{})
-	conn := dial(t, base+"/pty?rows=24&cols=80")
-
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-	defer cancel()
-	send := func(msg eikad.PTYMessage) {
-		data, err := json.Marshal(msg)
-		if err != nil {
-			t.Fatalf("encode pty message: %v", err)
-		}
-		if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
-			t.Fatalf("write pty message: %v", err)
-		}
-	}
-	send(eikad.PTYMessage{Type: eikad.PTYResize, Rows: 40, Cols: 100})
-	send(eikad.PTYMessage{Type: eikad.PTYInput, Data: []byte("echo pty-works\nexit 7\n")})
-
-	var output strings.Builder
-	for {
-		_, data, err := conn.Read(ctx)
-		if err != nil {
-			t.Fatalf("read pty message: %v, output so far %q", err, output.String())
-		}
-		var msg eikad.PTYMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
-			t.Fatalf("decode pty message: %v", err)
-		}
-		switch msg.Type {
-		case eikad.PTYOutput:
-			output.Write(msg.Data)
-		case eikad.PTYExit:
-			if msg.ExitCode != 7 {
-				t.Errorf("exit code = %d, want 7", msg.ExitCode)
-			}
-			if !strings.Contains(output.String(), "pty-works") {
-				t.Errorf("output = %q, want it to contain pty-works", output.String())
-			}
-			return
-		}
-	}
-}
-
-func TestPTYAcceptsAPasteLargerThanTheSocketDefault(t *testing.T) {
-	base, _ := newDaemon(t, eikad.Options{})
-	conn := dial(t, base+"/pty")
-
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-	defer cancel()
-	// Comment lines keep the shell from doing any work with the paste; the
-	// point is only that 64 KiB arrives as one message and is accepted.
-	paste := strings.Repeat("#"+strings.Repeat("x", 98)+"\n", 650) + "exit 3\n"
-	data, err := json.Marshal(eikad.PTYMessage{Type: eikad.PTYInput, Data: []byte(paste)})
-	if err != nil {
-		t.Fatalf("encode pty message: %v", err)
-	}
-	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
-		t.Fatalf("write pty message: %v", err)
-	}
-	for {
-		_, data, err := conn.Read(ctx)
-		if err != nil {
-			t.Fatalf("read pty message: %v", err)
-		}
-		var msg eikad.PTYMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
-			t.Fatalf("decode pty message: %v", err)
-		}
-		if msg.Type == eikad.PTYExit {
-			if msg.ExitCode != 3 {
-				t.Errorf("exit code = %d, want 3", msg.ExitCode)
-			}
-			return
 		}
 	}
 }

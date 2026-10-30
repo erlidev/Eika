@@ -30,8 +30,7 @@ this file says why, so neither repeats the other.
   dependency for less.
 - `docker/docker/client`, the official Engine client, over hand-rolling the
   socket protocol.
-- `coder/websocket` (context-aware, maintained) and `creack/pty` (the
-  standard library has no pty). The eikad watcher polls instead of adding
+- `coder/websocket` (context-aware, maintained). The eikad watcher polls instead of adding
   fsnotify: trees are small and polling behaves the same on bind mounts.
 - `golang.org/x/net/html`: the standard library has no HTML parser; a
   Markdown library would still need our container and sanitising rules.
@@ -68,8 +67,8 @@ this file says why, so neither repeats the other.
   a shared volume would need a helper container. Any image then works.
 - Confinement: Docker init as PID 1, all capabilities dropped,
   `no-new-privileges`, uid 1000 by default.
-- **The terminal and `/process` are not executor calls.** They go through
-  `Workspaces`/`Host`, so a tool can run commands but never hold a PTY or a
+- **`/process` is not an executor call.** It goes through
+  `Workspaces`/`Host`, so a tool can run commands but never hold a
   process.
 - Sandboxes are on `eika_sandbox`, which only the harness also joins, so a
   sandbox cannot reach postgres or searxng. An empty `sandbox_network`
@@ -96,16 +95,19 @@ this file says why, so neither repeats the other.
 - Proxy variables go through eikad's `PUT /environment`, because a
   container's env is immutable and egress can change while it runs. Open
   sandboxes get no proxy, so they keep private addresses.
-- **Previews are forwarded by the harness at `<port>-<id>.<host>`**: Docker
-  port publishing needs a new container per change and does not work on an
-  internal network. A separate origin keeps the page from reading the UI
-  token; a one-time ticket becomes a host-only cookie, and every request is
-  checked against the row.
+- **Previews, the terminal and eikad `/pty` are gone.** They let a person
+  work in a sandbox by hand, which a coding harness needs and an assistant
+  does not: the agent is the only thing that uses a computer, and the user
+  talks to it. With them went the sandbox's forwarded `ports` and the
+  `creack/pty` dependency. The one-time-ticket-to-host-cookie flow
+  (a separate origin so the page cannot read the UI token, every request
+  checked against the row) is in history for phase 12's live view of the
+  browser.
 - **Idle workspaces stop after `workspace_idle_minutes` (default 15)
-  without a run.** A run is what a sandbox is for; a terminal or a preview
-  does not count, since an open tab would keep a forgotten sandbox up
-  forever. One harness-wide setting, not a per-workspace column: nothing
-  yet needs two timeouts. Last use lives in memory rather than a row, so a
+  without a run.** A run is what a sandbox is for; an open browser tab would
+  keep a forgotten sandbox up forever. One harness-wide setting, not a
+  per-workspace column: nothing yet needs two
+  timeouts. Last use lives in memory rather than a row, so a
   restart only ever delays a stop. Rejected: Docker's own restart policies
   and a timer in eikad, which see processes, not runs.
 - Usage is sampled every 5 s while the Sandbox panel is open: a measurement

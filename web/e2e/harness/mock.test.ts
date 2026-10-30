@@ -24,7 +24,6 @@ const unmocked: Record<string, string> = {
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/sessions/{id}/agents": "the sidebar lists child agents with the sessions",
   "GET /api/events": "a WebSocket, which install routes itself",
-  "GET /api/workspaces/{id}/terminal": "a WebSocket, which install routes itself",
   "GET /api/projects": "the coding UI is gone; the Go route goes with a later item",
   "POST /api/projects": "the coding UI is gone; the Go route goes with a later item",
   "GET /api/projects/{id}": "the coding UI is gone; the Go route goes with a later item",
@@ -39,8 +38,6 @@ const unmocked: Record<string, string> = {
   "POST /api/workspaces/{id}/stop": "the coding UI is gone; the Go route goes with a later item",
   "PUT /api/workspaces/{id}/sandbox": "the coding UI is gone; the Go route goes with a later item",
   "GET /api/workspaces/{id}/usage": "the coding UI is gone; the Go route goes with a later item",
-  "POST /api/workspaces/{id}/ports/{port}/preview":
-    "the coding UI is gone; the Go route goes with a later item",
   "GET /api/workspaces/{id}/files": "the coding UI is gone; the Go route goes with a later item",
   "GET /api/workspaces/{id}/file": "the coding UI is gone; the Go route goes with a later item",
   "PUT /api/workspaces/{id}/file": "the coding UI is gone; the Go route goes with a later item",

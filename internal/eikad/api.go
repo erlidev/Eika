@@ -9,7 +9,7 @@ const BinaryPath = "/usr/local/bin/eikad"
 // ExecRequest is the body of POST /exec.
 //
 // Stdin is sent up front rather than streamed: /exec is for non-interactive
-// commands, and an interactive session belongs on /pty.
+// commands, and a long-lived process with streams belongs on /process.
 type ExecRequest struct {
 	// Command is the program to run, or the script when Shell is set.
 	Command string `json:"command"`
@@ -93,28 +93,6 @@ type WatchEvent struct {
 	IsDir bool `json:"is_dir"`
 	// Time is when the daemon observed the change, in UTC.
 	Time time.Time `json:"time"`
-}
-
-// PTY message types, used in both directions on GET /pty.
-const (
-	PTYInput  = "input"
-	PTYOutput = "output"
-	PTYResize = "resize"
-	PTYExit   = "exit"
-)
-
-// PTYMessage is one message on a /pty WebSocket. The client sends input and
-// resize messages; the daemon sends output and a final exit message.
-type PTYMessage struct {
-	// Type is one of the PTY constants.
-	Type string `json:"type"`
-	// Data is terminal input or output, base64 encoded on the wire.
-	Data []byte `json:"data,omitempty"`
-	// Rows and Cols are the new window size on a resize message.
-	Rows uint16 `json:"rows,omitempty"`
-	Cols uint16 `json:"cols,omitempty"`
-	// ExitCode is the shell's exit status on an exit message.
-	ExitCode int `json:"exit_code,omitempty"`
 }
 
 // Process message types, used on GET /process.

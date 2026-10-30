@@ -2152,19 +2152,6 @@
                           "memory_mb": "number",
                           "pids": "number"
                         }
-                      },
-                      "ports": {
-                        "nullable": {
-                          "array": {
-                            "object": {
-                              "label": "string",
-                              "port": "number"
-                            },
-                            "optional": [
-                              "label"
-                            ]
-                          }
-                        }
                       }
                     }
                   },
@@ -2217,19 +2204,6 @@
                   "memory_mb": "number",
                   "pids": "number"
                 }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
-                }
               }
             }
           },
@@ -2277,9 +2251,6 @@
           }
         }
       }
-    },
-    "GET /api/workspaces/{id}/terminal": {
-      "websocket": true
     },
     "GET /api/workspaces/{id}/usage": {
       "status": 200,
@@ -2543,19 +2514,6 @@
                   "cpus": "number",
                   "memory_mb": "number",
                   "pids": "number"
-                }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
                 }
               }
             }
@@ -3711,14 +3669,6 @@
                   "memory_mb": "number",
                   "pids": "number"
                 }
-              },
-              "ports": {
-                "array": {
-                  "object": {
-                    "label": "string",
-                    "port": "number"
-                  }
-                }
               }
             }
           }
@@ -3755,19 +3705,6 @@
                   "memory_mb": "number",
                   "pids": "number"
                 }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
-                }
               }
             }
           },
@@ -3781,14 +3718,6 @@
           "parent_workspace_id",
           "worktree_of"
         ]
-      }
-    },
-    "POST /api/workspaces/{id}/ports/{port}/preview": {
-      "status": 200,
-      "response": {
-        "object": {
-          "url": "string"
-        }
       }
     },
     "POST /api/workspaces/{id}/start": {
@@ -3823,19 +3752,6 @@
                   "cpus": "number",
                   "memory_mb": "number",
                   "pids": "number"
-                }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
                 }
               }
             }
@@ -3884,19 +3800,6 @@
                   "cpus": "number",
                   "memory_mb": "number",
                   "pids": "number"
-                }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
                 }
               }
             }
@@ -4633,14 +4536,6 @@
               "memory_mb": "number",
               "pids": "number"
             }
-          },
-          "ports": {
-            "array": {
-              "object": {
-                "label": "string",
-                "port": "number"
-              }
-            }
           }
         }
       },
@@ -4674,19 +4569,6 @@
                   "cpus": "number",
                   "memory_mb": "number",
                   "pids": "number"
-                }
-              },
-              "ports": {
-                "nullable": {
-                  "array": {
-                    "object": {
-                      "label": "string",
-                      "port": "number"
-                    },
-                    "optional": [
-                      "label"
-                    ]
-                  }
                 }
               }
             }

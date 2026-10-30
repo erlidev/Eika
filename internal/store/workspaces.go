@@ -46,9 +46,8 @@ type Workspace struct {
 	UpdatedAt time.Time
 }
 
-// WorkspaceSandbox is what a workspace's container may consume, reach, and
-// expose. The zero value is a workspace with no limits, open egress, and no
-// ports, which is what every workspace was before the column existed.
+// WorkspaceSandbox is what a workspace's container may consume and reach. The
+// zero value is a workspace with no limits and open egress.
 type WorkspaceSandbox struct {
 	// CPUs is the number of cores the container may use; zero is no limit.
 	CPUs float64 `json:"cpus,omitempty"`
@@ -60,15 +59,6 @@ type WorkspaceSandbox struct {
 	Egress string `json:"egress,omitempty"`
 	// Allow is the egress allowlist, used when Egress is allowlist.
 	Allow []string `json:"allow,omitempty"`
-	// Ports are the container's ports the harness forwards previews to.
-	Ports []WorkspacePort `json:"ports,omitempty"`
-}
-
-// WorkspacePort is one port of a workspace that the harness forwards to.
-type WorkspacePort struct {
-	Port int `json:"port"`
-	// Label says what listens there, such as "vite".
-	Label string `json:"label,omitempty"`
 }
 
 // workspaceColumns is the column list every workspace query selects, in the

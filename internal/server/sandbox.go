@@ -27,22 +27,15 @@ const (
 	minPIDs = 32
 	// maxPIDs is the kernel's own ceiling on process ids.
 	maxPIDs = 4194304
-	// maxPorts is how many ports one workspace forwards.
-	maxPorts = 20
-	// maxPortLabel bounds a port's label.
-	maxPortLabel = 40
 	// defaultPIDs is the process limit a new workspace gets until the user
 	// sets another: a fork bomb stops there, a parallel build does not.
 	defaultPIDs = 4096
 )
 
-// sandboxBody is what a workspace's container may consume, reach, and
-// expose.
+// sandboxBody is what a workspace's container may consume and reach.
 type sandboxBody struct {
 	Limits limitsBody `json:"limits"`
 	Egress egressBody `json:"egress"`
-	// Ports are the container ports the harness forwards previews to.
-	Ports []portBody `json:"ports"`
 }
 
 // limitsBody bounds a container's resources. Zero is no limit.
@@ -63,13 +56,6 @@ type egressBody struct {
 	// *.githubusercontent.com. It is kept whatever the mode, so switching
 	// back to allowlist finds it as it was.
 	Allow []string `json:"allow"`
-}
-
-// portBody is one container port the harness forwards to.
-type portBody struct {
-	Port int `json:"port"`
-	// Label says what listens there.
-	Label string `json:"label,omitempty"`
 }
 
 // usageResponse is the body of GET /api/workspaces/{id}/usage.
@@ -148,7 +134,7 @@ func (s *Server) handleSetWorkspaceSandbox(w http.ResponseWriter, r *http.Reques
 	}
 	s.workspaceState(r.Context(), ws.ID, ws.ProjectID, ws.State)
 	s.log.Info("workspace sandbox set", "workspace_id", ws.ID, "cpus", sandbox.CPUs,
-		"memory_mb", sandbox.MemoryMB, "pids", sandbox.PIDs, "egress", egressMode(sandbox), "ports", len(sandbox.Ports))
+		"memory_mb", sandbox.MemoryMB, "pids", sandbox.PIDs, "egress", egressMode(sandbox))
 	writeJSON(w, s.log, http.StatusOK, asWorkspace(ws))
 }
 
@@ -270,13 +256,13 @@ func (s *Server) forgetEgress(id string) {
 }
 
 // newSandbox is the sandbox a workspace is created with: the one the request
-// names, else the settings' defaults with no ports.
+// names, else the settings' defaults.
 func (s *Server) newSandbox(ctx context.Context, req *sandboxBody) (store.WorkspaceSandbox, error) {
 	if req != nil {
 		return s.checkSandbox(ctx, *req)
 	}
 	defaults := s.sandboxDefaults(ctx)
-	sandbox := fromBody(sandboxBody{Limits: defaults.Limits, Egress: defaults.Egress})
+	sandbox := fromBody(sandboxBody(defaults))
 	// A default that asks for restricted egress on a harness that has none
 	// is not the user's fault in this request; it is reported when saved.
 	if egressMode(sandbox).Restricted() && !s.deps.Workspaces.EgressControl() {
@@ -299,29 +285,8 @@ func (s *Server) checkSandbox(ctx context.Context, b sandboxBody) (store.Workspa
 	if b.Egress.Mode != string(egress.ModeOpen) && !s.deps.Workspaces.EgressControl() {
 		return store.WorkspaceSandbox{}, workspace.ErrNoEgressControl
 	}
-	if len(b.Ports) > maxPorts {
-		return store.WorkspaceSandbox{}, invalidf("a workspace forwards at most %d ports", maxPorts)
-	}
-	seen := map[int]bool{}
-	for i, p := range b.Ports {
-		switch {
-		case p.Port < 1 || p.Port > 65535:
-			return store.WorkspaceSandbox{}, invalidf("port %d is not a port from 1 to 65535", p.Port)
-		case p.Port == daemonPort:
-			return store.WorkspaceSandbox{}, invalidf("port %d is the sandbox daemon's own", p.Port)
-		case seen[p.Port]:
-			return store.WorkspaceSandbox{}, invalidf("port %d is listed twice", p.Port)
-		case len(p.Label) > maxPortLabel:
-			return store.WorkspaceSandbox{}, invalidf("the label of port %d is longer than %d characters", p.Port, maxPortLabel)
-		}
-		seen[p.Port] = true
-		b.Ports[i].Label = strings.TrimSpace(p.Label)
-	}
 	return fromBody(b), nil
 }
-
-// daemonPort is the sandbox daemon's port, which is never forwarded.
-const daemonPort = 7000
 
 // checkLimits validates limits against the Docker host's capacity. A host
 // that cannot be asked is not checked against: Docker refuses what it cannot
@@ -439,9 +404,6 @@ func fromBody(b sandboxBody) store.WorkspaceSandbox {
 		Egress:   b.Egress.Mode,
 		Allow:    slices.Clone(b.Egress.Allow),
 	}
-	for _, p := range b.Ports {
-		sb.Ports = append(sb.Ports, store.WorkspacePort{Port: p.Port, Label: p.Label})
-	}
 	return sb
 }
 
@@ -450,18 +412,9 @@ func asSandbox(sb store.WorkspaceSandbox) sandboxBody {
 	b := sandboxBody{
 		Limits: limitsBody{CPUs: sb.CPUs, MemoryMB: sb.MemoryMB, PIDs: sb.PIDs},
 		Egress: egressBody{Mode: string(egressMode(sb)), Allow: slices.Clone(sb.Allow)},
-		Ports:  make([]portBody, 0, len(sb.Ports)),
 	}
 	if b.Egress.Allow == nil {
 		b.Egress.Allow = []string{}
 	}
-	for _, p := range sb.Ports {
-		b.Ports = append(b.Ports, portBody{Port: p.Port, Label: p.Label})
-	}
 	return b
-}
-
-// sandboxPort reports whether a workspace forwards a port.
-func sandboxPort(sb store.WorkspaceSandbox, port int) bool {
-	return slices.ContainsFunc(sb.Ports, func(p store.WorkspacePort) bool { return p.Port == port })
 }
