@@ -19,11 +19,12 @@ auto memory, Codex Memories, Letta Context Repositories, OpenClaw and Hermes.
 
 | Layer | Written by | Loaded | Authority |
 |---|---|---|---|
-| Instructions: "About me", standing rules, per-project instructions | User only, in the UI | Whole, in the preamble | Followed. Not enforcement: anything that must hold is a Sentry rule |
+| Instructions: "About me", standing rules, per-project instructions | User only, in the UI | Whole, in the preamble | Followed. Not enforcement: anything that must hold is enforced by Sentry |
 | Pinned memories (core profile, project `status`) | Agents and user; pinning is the user's or the dreamer's | Bodies in full, in the preamble, capped | Recall |
 | Memory index | Generated from memories | One line per memory, in the preamble, capped | Recall pointer |
 | Memories | Agents and user | On demand: `memory_read`, `memory_search` | Recall |
-| Episodic history | The sessions themselves | On demand: `history_search`, `history_read` | Evidence |
+| Compaction summary | Code and the main agent, at each compaction (`runtime.md` 11) | In the home session's context | Working state |
+| Episodic history | The sessions themselves | On demand: `history_search`, `history_read` (`runtime.md` 11) | Evidence |
 
 Instructions and memory are kept apart on purpose. OpenAI advises treating
 memories as a recall layer, not as the only source for rules that must always
@@ -45,14 +46,13 @@ Memories are files, and files are the source of truth:
   user. History, diff and revert come free; Letta and Codex do the same. One
   writer goroutine in Core serialises writes.
 - **Index in Postgres.** `core.memories` mirrors frontmatter plus
-  `body_tsv tsvector`, `state`, `use_count`, `last_used_at`, `content_sha` and the
-  optional `embedding`. File and row change in one operation: write the file,
+  `body_tsv tsvector`, `state`, `use_count`, `last_used_at` and `content_sha`.
+  File and row change in one operation: write the file,
   commit, then upsert the row. A crash between steps is repaired at start-up by
   `memory.Reconcile`, which re-indexes from the files whose SHA differs.
   `make memory-reindex` rebuilds the whole index from files.
-- **No vector database.** Postgres FTS is the first search. `pgvector` (an image
-  change to `pgvector/pgvector:pg16`) plus the `embedding` class is optional and
-  comes in phase 9.
+- **No vector database and no embedding model.** Search is Postgres full-text
+  search.
 
 ### File format
 
@@ -80,8 +80,8 @@ Exceptions: none so far.
 | `description` | The "when it is relevant" note, 20 to 200 characters. It is the index line, so it must say when to use the memory, not restate it |
 | `type` | `user` (who the user is), `preference`, `person`, `fact`, `project`, `decision`, `procedure`, `feedback` (corrections and confirmed approaches), `reference` (where something lives), `event` (dated) |
 | `scope` | `global` or `project:<slug>` |
-| `sensitivity` | `normal` or `private` (health, finance, other people's details). `private` marks a session that reads it as B (`sentry.md` 6) |
-| `provenance` | `user` (the user stated it), `inferred` (an agent concluded it from the user's own words or actions), `external` (derived from untrusted content) |
+| `sensitivity` | `normal` or `private` (health, finance, other people's details). `private` marks a session that reads it `sensitive` (`sentry.md` 6) |
+| `provenance` | `user` (the user stated it), `inferred` (an agent concluded it), `external` (flagged as possibly derived from untrusted content; section 6) |
 | `source` | Where it was learned; links back in the UI |
 | `expires` | Optional date for facts that go stale ("the user is travelling until ...") |
 | `pinned` | Loaded in full. At most 12 global and 6 per project; the total is capped (section 3) |
@@ -130,12 +130,11 @@ Every write goes to Sentry as a `memory_write` action first.
 
 | Tool | Arguments | Behaviour |
 |---|---|---|
-| `memory_search` | `query`, `scope?` (global, project, all), `type?`, `limit?` (10) | FTS rank (later hybrid) plus a small boost for pinned, recently used and frequently used memories. Returns name, description and the first 200 characters. Counts as a use only when followed by a read |
+| `memory_search` | `query`, `scope?` (global, project, all), `type?`, `limit?` (10) | FTS rank plus a small boost for pinned, recently used and frequently used memories. Returns name, description and the first 200 characters. Counts as a use only when followed by a read |
 | `memory_read` | `name`, `scope?` | Full file. Increments `use_count` and sets `last_used_at` |
 | `memory_write` | `name`, `description`, `type`, `body`, `scope?`, `sensitivity?`, `expires?`, `replace?` | Creates, or replaces when `replace` is true. A name collision without `replace` returns the existing memory so the agent merges instead. Sets provenance from the session's labels (section 6) |
 | `memory_forget` | `name`, `reason` | Archives the memory (moves it to `state = archived`, file kept in history). The user's "forget X" maps here; the UI can purge |
-| `history_search` | `query`, `since?`, `project?`, `limit?` | FTS over user and assistant text of past sessions. Returns snippets with session, time and entry id |
-| `history_read` | `session`, `around_entry?`, `limit?` | Reads a window of a past session's messages. Dreamer and `eika` only |
+| `history_search`, `history_read` | See `runtime.md` 11 | Search and read every past entry, verbatim. `eika` and the dreamer only |
 
 The dreamer has `memory_list`, `memory_merge {names, into}` and `memory_archive`
 besides. Size limits are enforced by the tool, which returns a normal error the
@@ -164,23 +163,23 @@ Code saves and skips:
 
 Other prompts:
 
-- At the pre-compaction flush (`runtime.md` 5), the agent is asked to save what
-  the summary would lose.
-- Task agents write project-scope memories only, and only of type `project`,
+- Save at once. When the user states a preference, a decision is made or a
+  durable fact turns up, the agent calls `memory_write` in that turn rather than
+  later. There is no flush before compaction, so nothing waits to be saved.
+- Subagents write project-scope memories only, and only of type `project`,
   `decision`, `procedure` or `reference`. The definition's `access.memory`
   enforces this, and Sentry denies the rest.
 
 ## 5. Recall
 
-Retrieval is layered: the index in context, keyword search, then optionally
-vectors. Agents decide when to search. The research is clear that an agent with
+Retrieval is layered: the index in context, then keyword search. Agents decide when to search. The research is clear that an agent with
 file and search tools does as well as or better than an automatic top-k
 injection. On LongMemEval-V2, Codex with no special memory beat the strongest RAG
 baseline, and Letta's filesystem agent beat Mem0's graph variant on LoCoMo.
 
 One automatic step is kept, because it is cheap:
 
-- When a user message arrives in a home or direct session, Core runs
+- When a user message arrives in the home session, Core runs
   `memory_search` on it in the background.
 - Up to 3 matches that are not pinned and not in the index excerpt are added to
   that message's `<context>` block as names and descriptions only, never bodies.
@@ -192,18 +191,21 @@ One automatic step is kept, because it is cheap:
 
 The write path decides provenance mechanically, never by asking the model:
 
-| Session labels at write time | Provenance | State |
+Sessions are not labelled for having read untrusted content (`sentry.md` 6), so
+provenance comes from what the write contains and who makes it, checked in this
+order:
+
+| Condition at write time | Provenance | State |
 |---|---|---|
-| clean | `inferred` (or `user` when the content quotes the user's message in this turn, checked by substring) | `active` |
-| A (untrusted content in context) | `external` | `pending`: in the Inbox review queue, searchable with a marker, never in the index |
-| any, `type = procedure` or `feedback` | as above | `pending` if A, since procedures steer future behaviour |
+| The session is `suspicious`, the injection screen hits the body, or the body has instruction-shaped text ("always", "ignore", "you must") that does not quote the user | `external` | `pending`: in the Inbox review queue, searchable with a marker, never in the index |
+| The content quotes the user's message in this turn (checked by substring) | `user` | `active` |
+| A subagent writes `type = procedure` or `feedback` | `inferred` | `pending`, since procedures steer future behaviour |
+| Otherwise | `inferred` | `active` |
 
-Sentry also scans every write:
-
-- secret redaction, where a hit denies the write
-- the injection screen on the body, where a hit marks it `pending` with an alert
-- a check for instruction-shaped text ("always", "ignore", "you must") in a
-  memory of external provenance, which marks it `pending`
+The instruction-shape check runs on every agent write, not only on flagged
+ones. A real preference ("always use metric") passes because the user said it,
+so it quotes the user's message. Secret redaction runs on every write too, and a
+hit denies it.
 
 The Inbox's memory queue shows pending memories with their source. The user
 accepts (provenance becomes `user`), edits, or rejects. The dreamer may merge
@@ -218,15 +220,17 @@ it learned until a full reset; Eika can do better because provenance is per file
 Dreaming is consolidation in the background. Agents that only append to memory
 degrade over time, which is the consensus finding of 2026. Eika's dream is a
 routine (`scheduler.md`) running agent `dreamer` at `maintenance` priority:
-nightly by default, when the pool is idle and at least 3 sessions have ended
-since the last dream, or as soon as possible when an index is over budget.
+nightly by default, when the pool is idle and at least `dream_min_entries`
+(default 200) new entries have accumulated since the last dream, or as soon as
+possible when an index is over budget. Entries are counted rather than sessions,
+since the home session never ends.
 
 The phases follow Claude Code's auto-dream, with Codex's usage ranking:
 
 1. **Orient.** List memories per scope with use counts, ages and states, and
    read the previous dream report.
-2. **Gather.** `history_search` and `history_read` over sessions since the last
-   dream. Look for corrections ("no, I meant"), decisions, new facts about people
+2. **Gather.** `history_search` and `history_read` over history since the last
+   dream, including the home session's compaction summaries. Look for corrections ("no, I meant"), decisions, new facts about people
    and dates, and contradictions with existing memories.
 3. **Consolidate.**
    - Merge duplicates (`memory_merge`).
@@ -247,10 +251,11 @@ The phases follow Claude Code's auto-dream, with Codex's usage ranking:
 Guardrails:
 
 - The dreamer has no network and no egress identity. It cannot touch vault,
-  instructions or Sentry rules.
-- Its writes are `memory_write` actions like anyone's. A dream session's labels
-  come from what it reads: history that contained untrusted content taints it, so
-  its writes on those subjects go `pending`.
+  instructions or Sentry settings.
+- Its writes are `memory_write` actions like anyone's, with the same scans and
+  provenance rules, so instruction-shaped text it carries over from history goes
+  `pending`. History it reads from private sources makes its session
+  `sensitive`.
 - Deleting or rewriting a `user`-provenance memory becomes a proposal in the
   Inbox, not a change. The setting `dream_mode` is `auto` (default, applies
   everything else) or `propose` (everything waits for review).

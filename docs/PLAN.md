@@ -37,9 +37,8 @@ ticked and its exit check passes.
   and one of vLLM or TabbyAPI before they close, and the log records the result.
 - **Dependencies.** Each needs the one-line justification `AGENTS.md` requires.
   The ones this plan expects:
-  - `browser/`: Playwright, Readability, Turndown
+  - `browser/`: Patchright (a Playwright fork), Readability, Turndown
   - `guard/`: Python, with a classifier runtime and `laya-serve`
-  - `pgvector` image (phase 9, optional)
   - Possibly a list virtualiser (phase 3, only if measurement says so)
   - Possibly a Web Push helper (phase 3, only if the RFC 8291 code would be
     unreasonable with `crypto/ecdh`)
@@ -52,7 +51,7 @@ ticked and its exit check passes.
 ## Phase map
 
 ```
-0 Groundwork ─ 1 Inference & accounting ─ 2 Agents, sessions, projects, tasks ─ 3 Web shell
+0 Groundwork ─ 1 Inference & accounting ─ 2 Agents, home, projects, subagents ─ 3 Web shell
                                                                                    │
             ┌──────────────────────────────────────────────────────────────────────┘
             4 Sentry v1 ─ 5 Memory ─ 6 Skills ─ 7 Scheduler ─ 8 System One & scanning
@@ -144,6 +143,13 @@ Design: `design/README.md` "Kept, changed, removed".
 Exact token numbers, model classes, and one queue for the GPU. Design:
 `design/runtime.md` sections 1 to 5.
 
+- [ ] Responses API provider: a second implementation of `provider.Provider`
+      for the stateless Responses API (`store: false`, reasoning items passed
+      back). The probe sets `api` per endpoint: `responses` for llama.cpp, and
+      for others only when a conformance check passes (streamed tool-call round
+      trip with a reasoning item, cache metrics); otherwise `chat`. The user can
+      override it. Record fixtures per backend and note in the log which
+      backends behave well.
 - [ ] Provider probe: detect the backend, the per-slot window and capabilities for
       llama.cpp, vLLM, SGLang, TabbyAPI and generic OpenAI-compatible cloud
       endpoints. Record response fixtures for each. Add the provider columns
@@ -170,8 +176,8 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       predicted next request with its method, effective window.
 - [ ] Effective window is the smaller of the configured window and the probed
       per-slot context. Settings warns on a mismatch.
-- [ ] Add model kinds (`chat`, `decision`, `embedding`) and the setting
-      `model_classes` (`deep`, `main`, `fast`, `decision`, `embedding`) with its
+- [ ] Add model kinds (`chat`, `decision`) and the setting
+      `model_classes` (`deep`, `main`, `fast`, `decision`) with its
       fallbacks. Retire `utility_models`; titles run on `fast`. Replace the
       utility-models UI with a classes UI.
 - [ ] Add `internal/inference`:
@@ -187,14 +193,12 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
 - [ ] Loop hardening:
       - `Options.Clock` and the `<context>` block, with the time on every
         user-side message
-      - `Options.Limits`: max calls, a repeated-call detector, wall time
+      - `Options.Limits`: max calls, a repeated-call warning (from the 3rd
+        identical call, never a stop), wall time (24 h by default)
       - a stall timeout scaled by predicted prefill
 - [ ] Prefix-stability test: across scripted turns, a restart and a resume, each
       request's serialised prefix is a byte-prefix of the next, except across a
       compaction.
-- [ ] Account background compute (prefill plus decode seconds per day, by
-      priority). Add the settings `background_budget` and `quiet_hours`; the
-      scheduler enforces them in phase 7.
 - [ ] Add a `make live` target and an `evals/` skeleton: a README and a runner
       over scripted scenarios against `EIKA_LIVE_ENDPOINT`, reporting drift,
       cache-hit rate and prefill seconds.
@@ -204,66 +208,105 @@ stated bound on TabbyAPI. With two sessions on a one-slot pool, an interactive
 message is answered before a waiting background call. The meter's numbers match the
 server's logs.
 
-## Phase 2: Agents, sessions, projects, tasks
+## Phase 2: Agents, home session, projects, subagents
 
-The main agent, the home session, projects with their new meaning, and delegation.
-Design: `design/runtime.md` sections 4 to 10.
+The main agent, the one home session with its compaction and history recall,
+projects with their new meaning, and persistent subagents. Design:
+`design/runtime.md` sections 4 to 11.
 
 - [ ] Add `internal/agentdef`:
       - built-ins `eika`, `worker`, `researcher` (and `browser` and `dreamer`
         stubs registered later), with prompts embedded as Markdown
-      - an `agents` override table
+      - an `agents` override table, including each agent's class (the user sets
+        it for `eika`, `browser` and `dreamer` too) and, for `worker` and
+        `researcher`, the classes Eika may choose from
       - per-agent compaction prompts
       Profiles are removed: the feature, its API and UI, and the configuration
       layering they fed. The Settings page for agents reuses the profile editor's
       fields.
-- [ ] Session columns: `kind` (home, direct, task, routine, dream), `agent`,
-      `project_id`, `computer_id`, `channel`, `state`, `brief`, `result`, `taint`.
-      Entry kinds gain `preamble` and `notice`. Unused columns and kinds are
-      removed.
+- [ ] Session columns: `kind` (home, subagent, routine, dream), `agent`, `name`,
+      `project_id`, `computer_id`, `state`, `brief`, `result`, `sensitive`,
+      `suspicious`, `last_active_at`. Entry kinds gain `preamble` and `notice`;
+      home entries record their `channel`. Unused columns and kinds are removed.
 - [ ] Preamble builder: global and project instructions, the active-projects list,
-      the project or task brief, and the session's start date, time zone and
-      locale. Store it as an entry, and rebuild it only at compaction. Memory,
+      the project or subagent brief, the delegable agents with their allowed
+      classes, and the user's time zone and locale. Store it as an entry, and rebuild it only at compaction. Memory,
       skills and plugins add their sections in their own phases.
 - [ ] Instructions: global "About me" and rules, plus project instructions.
       Stored as rows and edited in the UI. No agent tool writes them.
-- [ ] Create the web channel's home session at setup, and add
-      `GET /api/home`. Retire chats as a separate concept: a direct session with
-      no project replaces them.
+- [ ] Create the one home session at setup, found by `(owner, name)`, and add
+      `GET /api/home`. Retire chats: there are no direct sessions, and the user
+      talks only to Eika. Each user-side `<context>` names its channel; replies go
+      back to it, and proactive messages go to `notify_channel`.
 - [ ] Add projects: table, API and the tools `project_list`, `project_open`,
       `project_create` and `project_update`. The default directory is
       `/home/eika/projects/<slug>` on `home`.
 - [ ] Add the file tools `file_read`, `file_write` and `file_edit` over the
       executor, with limits like bash's. Record in `DECISIONS.md` why they are
       back.
-- [ ] Add `internal/task`:
-      - the tools `task_start`, `task_status`, `task_message` (steer, or resume a
-        finished task) and `task_cancel`
-      - the `report` tool and a report written when a task ends without one
-      - the limits `task_max_depth` and `task_max_active`
-      - abort and shutdown
-      Reuse the spawner pieces noted in phase 0.
-- [ ] Notices: a task result becomes a notice in the delegator's next `<context>`.
-      `report: always` starts a background turn on the home session.
-- [ ] Durable questions: a `questions` table. `ask_user` from a task goes to topic
-      `inbox`, and the home session gets a "waiting on you" notice.
-- [ ] Durable runs: task and routine runs resume after a restart with a notice.
-      Interrupted home and direct replies end with a notice instead.
+- [ ] Add `internal/subagent` (rewritten; runtime.md 9):
+      - named, persistent subagent sessions, resumable by name
+      - the tools `subagent_start` (with `class`, checked against the agent's
+        allowed classes), `subagent_message` (steer, answer a question, or resume
+        an idle one in its own context), `subagent_status` (the board, or one
+        subagent) and `subagent_cancel`
+      - the `report` tool. A run that ends without one is sent a message to
+        draft it; if it still does not call `report`, its final message becomes
+        the report
+      - state set by code: running, waiting (with the reason), idle, failed,
+        cancelled
+      - the limits `subagent_max_depth` and `subagent_max_running`, and
+        `subagent_board_days`
+      - abort and shutdown; aborting a home reply leaves its subagents running
+      Reuse the spawner pieces noted in phase 0. `eika` has no `ask_user`, but has
+      `inbox_ask`. The prompts for `eika` and the brief template say to decide for
+      itself on small details and state the assumption, and to ask when it is
+      unclear what the user wants in a way that changes the result. The prompt also
+      cautions against irreversible actions, as model guidance only.
+- [ ] Notices: a report becomes a notice in Eika's next `<context>`, naming the
+      subagent. `report: always` starts a background turn on the home session.
+- [ ] Durable questions: a `questions` table. `ask_user` from a subagent parks
+      it and goes to Eika as a notice plus a background home turn; Eika answers
+      with `subagent_message` or asks the user with `inbox_ask`, which goes to
+      topic `inbox`.
+- [ ] Durable runs: subagent and routine runs resume after a restart with a
+      notice. An interrupted home reply ends with a notice instead.
 - [ ] Paginated entries: `GET /api/sessions/{id}/entries?before=&limit=`.
-- [ ] Idle compaction at maintenance priority.
-- [ ] Topics `inbox` and `activity`, and the events `task.started`,
-      `task.updated`, `task.finished`, and `question.asked` on `inbox`.
+- [ ] Home compaction (runtime.md 11):
+      - deterministic `[Subagents]`, `[Ledger]` and `[Recent turns]` sections,
+        with `(#id)` references
+      - `[Conversation]` by rolling update, with an assistant-tuned prompt
+      - the cut at user-turn boundaries, keeping `keep_recent_share` of the window
+      - idle compaction at maintenance priority (over `compact_idle_fill`, and
+        no important run for `compact_idle_minutes`, default 30), with threshold
+        and overflow kept as safety nets
+      - a failed summary still compacts, and a maintenance retry folds the span in
+      - the tool list and preamble rebuilt at compaction
+      Subagent, routine and dream sessions keep Pi's compaction with per-agent
+      prompts.
+- [ ] History recall (runtime.md 11): `entries.tsv` and `pg_trgm` indexes over
+      entries, tool calls, notices and compaction summaries (tool results apart);
+      the tools `history_search` and `history_read`; the `sensitive` label
+      carried by hits from private sources.
+- [ ] `evals/compaction`: a scripted multi-week home history, questions after N
+      compactions, with and without the history tools.
+- [ ] Topics `inbox` and `activity`, and the events `subagent.started`,
+      `subagent.updated`, `subagent.reported`, and `question.asked` on `inbox`.
 - [ ] Transitional UI so the phase can be used before phase 3: the sidebar lists
-      the home session, then tasks by state; questions show in their session.
+      the home session, then subagents by state, each opening a read-only view;
+      questions show in the home transcript.
 
 **Exit:** in the home session, "look into X and keep notes in a project for it"
 should:
 - create the project
-- start a task that runs while the home chat stays responsive
-- bring the result back as a notice
+- start a named subagent that runs while the home chat stays responsive
+- bring its report back as a notice
+- resume the same subagent a day later from "follow up on X"
 
-Restarting Core mid-task resumes the task. The prefix-stability test covers home
-and task sessions.
+Restarting Core mid-run resumes the subagent. After a forced compaction, Eika
+answers a question about something only the compacted span held, using
+`history_search`. The prefix-stability test covers the home session across a
+compaction, and subagent sessions.
 
 ## Phase 3: Web shell
 
@@ -278,16 +321,19 @@ The mobile-first app. Design: `design/interface.md`.
 - [ ] Chat page on the home session:
       - a paginated transcript, with virtualisation decided by measuring a
         5,000-entry session on a phone
-      - delegation cards and notices
+      - every channel's messages, marked with their channel
+      - Eika's reasoning and tool calls, compaction cards, subagent cards and
+        notices
       - on touch, Enter makes a newline and a send button sends
       - the markdown field verified on iOS Safari and Android Chrome, with a
         fallback if it misaligns
-- [ ] Activity page: tasks and their states, a task view (the session view reused)
-      with steer and cancel, and the pool and queue strip.
+- [ ] Activity page: subagents and their states, a read-only live view of each
+      (the session view reused, no composer) with cancel, and the pool and queue
+      strip. Steering goes through Eika.
 - [ ] Inbox page: questions and elicitations as cards (the existing forms
       generalised), a badge, live updates on `inbox`.
-- [ ] Projects pages: list, detail, instructions editor, sessions, start a direct
-      session with any agent.
+- [ ] Projects pages: list, detail, instructions editor, and the project's
+      subagents (watch only).
 - [ ] Reorganise Settings:
       - providers and models
       - model classes, agents, instructions
@@ -296,14 +342,14 @@ The mobile-first app. Design: `design/interface.md`.
       - developer: the inspector and model calls with drift
 - [ ] Notifications: an in-app list and toasts.
 - [ ] Web Push: VAPID keys sealed in Core, a subscription per device, a minimal
-      payload, and delivery for questions and task results. Record the dependency
+      payload, and delivery for questions and subagent reports. Record the dependency
       decision in the log.
 - [ ] PWA: manifest, icons, and a service worker that caches the shell only.
 - [ ] Setup gains a "reach Eika from your phone" step. Document Tailscale serve
       in the README.
 - [ ] ESLint rule: a feature imports another feature only through its
       `index.ts` (from `REFACTOR_PLAN.md` phase 3).
-- [ ] Mock harness: a `World` for home and task sessions, the Inbox and projects;
+- [ ] Mock harness: a `World` for the home session and subagents, the Inbox and projects;
       scenarios; phone baselines for every page; a touch emulation pass of the
       composer spec.
 - [ ] Remove the transitional UI and what is left of the workbench.
@@ -311,8 +357,8 @@ The mobile-first app. Design: `design/interface.md`.
 **Exit:** on a phone over Tailscale:
 1. Install the PWA.
 2. Chat with Eika.
-3. Watch a task in Activity.
-4. Answer the task's question from a push notification.
+3. Watch a subagent in Activity.
+4. Answer one of Eika's questions from a push notification.
 
 ## Phase 4: Sentry v1
 
@@ -330,15 +376,21 @@ The permission authority, deterministic. Design: `design/sentry.md` sections 1 t
       checked like `contract.json`. Extend the boundary test with the Sentry rules.
 - [ ] Core gate: `Options.Gate` in the loop, with `Decide` before every tool call.
       Each built-in tool declares its `effect` and how to read `target`.
-      Fail closed: side-effecting tools return "Sentry unavailable" and the run
-      parks.
+      The model is never told about the gate: a block is a `Blocked: <reason>`
+      error result, an ask is a slow tool, and no prompt or tool description
+      mentions Sentry. Fail closed: side-effecting tools return the generic
+      blocked result and the run parks.
 - [ ] Policy:
       - hard rules
-      - the defaults table by effect and taint
-      - user rules (storage, matching, presets)
+      - the defaults table by effect and label
+      - tool settings and the blocklist
       Every table row is a unit test.
-- [ ] Taint: session labels A and B set by ingest sources and private sources,
-      cleared by compaction as specified, and mirrored into `sessions.taint`.
+- [ ] Taint: the `sensitive` label set by private sources, by reports from
+      `sensitive` subagents and by history hits from private sources; the
+      `suspicious` flag (set from phase 8); both cleared by compaction as
+      specified and mirrored into `sessions`. Untrusted content sets no label.
+      Labels route to the `review` verdict, never straight to the user; until
+      the reviewer lands in phase 8, a labelled `review` falls back to `ask`.
 - [ ] Approvals:
       - durable, keyed by action, with wait and expiry
       - grouping of related approvals
@@ -347,12 +399,14 @@ The permission authority, deterministic. Design: `design/sentry.md` sections 1 t
       Resuming a run gets the same approval back.
 - [ ] Grants: the scopes, an in-memory cache with invalidation, and a revoke UI.
 - [ ] Inbox approval cards (action, destination, recipients, content and diff,
-      reason, labels, the answers) and push for every approval.
+      reason, labels, the answers) and a grouped push digest (default delay
+      5 minutes), immediate only for hand-offs, secret requests and alerts.
 - [ ] Move `internal/egress` and `internal/netguard` into Sentry:
       - principals API
       - per-run proxy credentials in each `exec`'s environment
       - the `open` mode removed
-      - `ask` per connection with a 60 s hold
+      - `allow` or `deny` per connection (blocklist, netguard, hard rules,
+        halt, per-computer allowlist mode); never `ask` or `review`
       `web_fetch` and the hosted search backends go through the proxy as the
       calling run.
 - [ ] Ingest v1, deterministic: pattern-based secret redaction and
@@ -361,8 +415,9 @@ The permission authority, deterministic. Design: `design/sentry.md` sections 1 t
       numbers, ID formats.
 - [ ] Halt: an always-visible button, resume, and Core's reaction (abort runs, a
       scheduler pause hook, a banner).
-- [ ] Audit log and its UI timeline. Retention setting.
-- [ ] Settings pages for Sentry rules and grants.
+- [ ] Audit log and its UI timeline. Retention setting. Asks per active day in
+      Activity, split by source.
+- [ ] Settings pages for grants, tool settings and the blocklist.
 - [ ] Benchmarks: `decide` p99 under 2 ms, proxy overhead under 1 ms.
 - [ ] `make smoke` covers Sentry: a scripted model triggers an `ask`, and the smoke
       test answers it through the user API.
@@ -370,10 +425,12 @@ The permission authority, deterministic. Design: `design/sentry.md` sections 1 t
       holds third-party credentials; computers get proxy identities and nothing
       else.
 
-**Exit:** a run in a session holding web content tries to `curl` a host it has
-not used before. It parks, and an approval arrives on the phone. Approving lets it
-continue; denying gives the agent a reason it can act on. Halt stops everything
-in one press. The benchmarks pass.
+**Exit:** a run tries to send an email. It parks, and an approval arrives on the
+phone. Approving lets it continue; denying gives the agent a `Blocked: <reason>`
+result it can act on, with nothing in its context naming the gate. A run in a
+`sensitive` session (it read files of a private project) that runs a `curl`
+command falls back to an approval until phase 8, then goes to the reviewer. Halt
+stops everything in one press. The benchmarks pass.
 
 ## Phase 5: Memory
 
@@ -393,11 +450,10 @@ Design: `design/memory.md` sections 1 to 6, 8 and 9.
       deterministic order, with a visible overflow count. An over-budget index
       flags a dream (consumed in phase 9).
 - [ ] Notices at the tail for memory changes since the preamble.
-- [ ] Add `history_search` and `history_read` (an FTS index over entry text).
 - [ ] Recall hint: up to 3 FTS matches, names and descriptions only, in the
-      `<context>` of each home or direct user message.
-- [ ] Pre-compaction memory flush in home, direct and project sessions.
-- [ ] Write policy in the `eika` prompt. Task agents are limited to the project
+      `<context>` of each home user message.
+- [ ] Write policy in the `eika` prompt, including saving a memory at once
+      instead of later. Subagents are limited to the project
       scope and its types.
 - [ ] Memory UI: list, filters, search, editor, pin, archive, purge, history with
       diff and revert, the "what Eika loads" view, and the pending queue in the
@@ -459,11 +515,10 @@ Design: `design/scheduler.md`.
       - file changes (eikad `/watch`)
       - interval watches
       Plugin notifications follow in phase 11.
-- [ ] Quiet hours apply to delivery. Urgency comes from `fast` for now. The
-      background budget is enforced, and deferrals are shown.
+- [ ] Urgency (`needs_attention_now`) comes from `fast` for now.
 - [ ] Shipped routines: Morning brief (disabled), Check-in (disabled, read-only
       grant).
-- [ ] Schedules UI and Activity integration (runs, wakeups, budget).
+- [ ] Schedules UI and Activity integration (runs, wakeups).
 
 **Exit:** "every weekday at 8, send me the weather and my open tasks" should:
 - ask for approval
@@ -489,22 +544,24 @@ Design: `design/sentry.md` sections 6 and 9.
       - alerts
       - one-time code and sign-in link removal for mail, messaging and browser
         sources
-- [ ] Outbound "needs consent" tier, with the user's own request counting as
-      consent.
-- [ ] Reviewer: isolated state, its questions and thresholds, a 5 s cut-off that
-      becomes `ask`. Turn on the `review` verdict.
+- [ ] Reviewer: isolated state capped at 16k tokens (a setting), its questions
+      and user-adjustable thresholds, a 5 s cut-off that becomes `ask` (`deny`
+      for egress). Turn on the `review` verdict: external sends and deletes in
+      every session, and navigation and fetches, browser submits, `eval` and
+      `bash` commands in labelled ones.
 - [ ] Use the screen when a skill is installed and when a routine is created.
 - [ ] Notification urgency `needs_attention_now` on `decision`.
 - [ ] Settings warns when `decision` shares a pool with `main` without a spare
       slot.
 - [ ] Hosted Jev may not see `sensitive` state unless the user opts in.
 - [ ] `evals/sentry`: the innocent, injected and over-reach suites. Record attack
-      success, utility and approval rate per model.
+      success, utility and approval rate per model, and the asks per active day
+      by source.
 
 **Exit:**
 - Injected content on a fixture page is flagged and wrapped.
-- On the eval set, the reviewer allows submits that match the user's intent and
-  asks on the others.
+- On the eval set, the reviewer allows benign actions and denies or asks on
+  dangerous ones.
 - The numbers are in the log.
 
 ## Phase 9: Dreaming
@@ -527,9 +584,6 @@ Design: `design/memory.md` section 7.
 - [ ] "Undo last dream" (a revert) in the UI.
 - [ ] Pre-classify merge candidates and contradictions with `decision`.
 - [ ] Prune by `use_count`, `last_used_at` and `expires`.
-- [ ] Optional hybrid search: the `pgvector` image, the `embedding` class,
-      embedding on write, hybrid ranking behind a setting. Measure against FTS
-      alone on the recall suite before making it the default.
 - [ ] `evals/memory` stress suite.
 
 **Exit:** after a scripted week of history, a dream:
@@ -556,7 +610,8 @@ Design: `design/sentry.md` section 8.
 - [ ] Surrogates: the format, binding by domain and principal, and the resolution
       API for the plugin host and the browser.
 - [ ] Redact real vault values on ingest (multi-pattern search).
-- [ ] Canaries planted at setup. A minimal tripwire halts on any canary in an
+- [ ] Canaries planted at setup: an OpenAI-shaped API key in the `home`
+      environment and a vault-looking file. A minimal tripwire halts on any canary in an
       action's arguments or in egress; phase 13 builds the full monitor.
 
 **Exit:**
@@ -591,15 +646,19 @@ Design: `design/skills-and-plugins.md` "Plugins".
 
 Design: `design/browser.md`.
 
-- [ ] `browser/` service on Playwright:
-      - the command set
+- [ ] `browser/` service on Patchright driving headed Chrome on Xvfb:
+      - the command set, including `eval`
       - pruned interactive snapshots with refs, budgets, deltas and masking
       - `find` and `read`
       - tabs
       - the download quarantine
-      - non-GET requests reported to Sentry
       Unit tests run against fixture pages.
-- [ ] Container, networks, profile volume, hardening and compose.
+- [ ] Container (pinned Chrome stable on x86-64 Linux, Xvfb),
+      networks, profile volume, hardening and compose.
+- [ ] A detection check in `evals/browser`: a fixed list of bot-detection test
+      pages and captcha-protected fixture sites, run headed against vanilla
+      headless Chromium, so a Patchright or Chrome update that regresses shows
+      up.
 - [ ] Sentry relay:
       - `browser` actions
       - form-submit decisions
@@ -607,9 +666,9 @@ Design: `design/browser.md`.
       - surrogate typing bound to origins
       - the per-site list
 - [ ] `browser` agent definition, its tools, and the one-task browser lock.
-- [ ] Images in tool results: a screenshot reaches a vision model as a user message
-      after the tool result. Add the `DECISIONS.md` entry, which replaces the
-      deferred note.
+- [ ] Images in tool results: a screenshot reaches a vision model as a user
+      message after the tool result. Add the `DECISIONS.md` entry, which
+      replaces the deferred note.
 - [ ] Live view: a screencast relayed through Core with Sentry tickets; the
       Browser page; a phone layout.
 - [ ] Takeover: the lock, input relay, the return-control notice, and hand-off
@@ -624,6 +683,7 @@ Design: `design/browser.md`.
 - It logs in through a vault surrogate.
 - A sign-up form is handed off.
 - Nothing is submitted without approval.
+- A simple captcha is attempted by the agent.
 - An injected review on a fixture page fails to redirect the task.
 
 ## Phase 13: Monitor and auto-halt
@@ -632,8 +692,9 @@ Design: `design/sentry.md` sections 9 and 11.
 
 - [ ] Core sends turns, reasoning excerpts and tool calls to `/v1/observe`.
 - [ ] The full list of deterministic tripwires.
-- [ ] Trajectory checks with `decision`, triggered and sampled. The reasoning
-      review setting (off by default).
+- [ ] One trajectory check (`malicious_or_dangerous`) with `decision`, run only when a
+      tripwire fires or ingest flags an injection. It reads tool results. The
+      reasoning review setting (off by default).
 - [ ] Severity routing and push. Auto-halt on high severity. Resuming can revoke
       the grants of the halted session.
 - [ ] Approval-fatigue suggestions in the Inbox.
@@ -702,6 +763,16 @@ log.
   deferred.
 - **Per-value capability tracking (CaMeL):** only if session-level taint proves
   too coarse in the phase 8 and 12 evals.
+- **An untrusted-content label.** Dropped (sentry.md 6). Revisit only if the phase
+  8 and 12 evals show injected sessions without sensitive data doing real harm
+  within the defaults.
+- **Reviewer load from labels.** Measure how many label-driven reviews reach the
+  user in phase 8, and tune the stricter thresholds.
+- **Chapters for home compaction** (frozen per-span summaries with a list of
+  titles, runtime.md 11). Deferred until `evals/compaction` shows drift from the
+  rolling update.
+- **More than one home session** (another person, another persona). The schema
+  allows it; nothing else is built.
 - **Several browser identities and profiles:** after phase 12, if needed.
 
 ## Log
@@ -710,6 +781,66 @@ Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
 
+- 2026-10-29: design revised before any item started. Decisions:
+  - Simplifications: no embedding model or hybrid memory search, no background
+    compute budget or quiet hours, no start date in the preamble, no
+    pre-compaction memory flush (Eika saves memories at once), a warning from
+    the 3rd identical tool call and never a stop, 24 h default wall time, and
+    idle compaction after 30 minutes with no important run.
+  - Tool-result images keep the user-message workaround. The Responses API is
+    the preferred protocol, by default for llama.cpp and any endpoint that
+    passes the probe.
+  - The user sets the class of `eika`, `browser` and `dreamer` (dreamer now
+    defaults to `main`), and the classes Eika may pick for `worker` and
+    `researcher`.
+  - A subagent ending without `report` is asked to draft it, then its final
+    message is used. A subagent's questions go to Eika, who asks the user with
+    `inbox_ask` when needed.
+  - One home session for the user across every channel, with no direct
+    sessions. Subagent, routine and dream sessions are watched read-only, and
+    steering goes through Eika.
+  - Lines of work are named, persistent subagents (`subagent_*` tools replace
+    `task_*`), resumable by name, rather than a separate thread concept. `eika`
+    loses `ask_user`.
+  - Home compaction: Pi's rolling update plus deterministic sections in the
+    style of Pi-VCC, cuts at user turns, idle compaction, and `history_search`
+    and `history_read` over every entry. These move into phase 2, since the
+    home session starts accumulating history there. Chapters are deferred.
+  - Sentry is invisible to the model: no prompt or notice names it, the loop
+    stays standard, and a block is a generic `Blocked: <reason>` result.
+  - Taint is back: `sensitive` plus the evidence-based `suspicious` flag, with
+    labels routing to the decision model (the `review` verdict) rather than the
+    user, to avoid approval fatigue. Memory
+    provenance comes from what a write contains and who makes it (memory.md 6).
+  - No outbound health/finance category check; only the deterministic "never
+    share" tier. The agent supplies no rationale field. Agents cannot change
+    their own permissions by construction, not by a rule.
+  - The reviewer runs only in labelled sessions (browser submits, `eval` and
+    `bash` included), capped at 16k tokens, thresholds user-adjustable. The
+    monitor runs one `malicious_or_dangerous` check, only when something is
+    flagged, and may read tool results.
+  - One canary API key shaped like an OpenAI key, and the vault-looking file. No
+    private-memory canary.
+  - Egress never asks the user and is not reviewed: `allow` or `deny` from the
+    blocklist, netguard, hard rules, halt and per-computer allowlist mode. A
+    labelled session is guarded at the actions that can move data out (navigation,
+    fetches, submits, `eval`, `bash`) instead of per connection.
+  - The browser is real headed Chrome on Xvfb driven by Patchright, with `eval`
+    for JavaScript. Per-request reporting from the browser is dropped. The agent
+    attempts captchas itself. Chrome only, with no second engine.
+  - Action schema trimmed: `kind` is tool, plugin, egress or browser; `intent`,
+    `rationale`, `project` and the `data` labels are gone, replaced by a
+    `private?` flag on reads. The reviewer judges the action alone (`dangerous`,
+    `risk`, `reversible`), with no intent chain.
+  - Eika should ask far less. External sends and deletes go to the reviewer first
+    and ask the user only when it is unsure, approvals arrive as a grouped push
+    digest, the suggestion for a standing grant comes after 5 approvals, the
+    prompts tell the agents to decide small details themselves and ask when user
+    intent is unclear, and asks per active day are
+    measured. Known gaps are documented as current caveats.
+  - User rules removed. Policy is hard rules, defaults by effect and label, tool
+    settings, the blocklist and grants. A grant answers an `ask` and never skips
+    the reviewer. `suspicious` is a superset of `sensitive`.
 - 2026-10-29: plan and `docs/design/` written from the design discussion. No items
   started except the `REFACTOR_PLAN.md` banner. Decisions taken in that
   discussion:

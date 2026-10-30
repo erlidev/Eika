@@ -40,7 +40,7 @@ It borrows these patterns from OpenClaw and Hermes:
 | `context` | `fresh` (a new `routine` session per run, the default), `continue` (one long `routine` session that keeps its own history, Hermes's `continuity`), or `nudge` (a user-side message into the home session, cache-friendly, only when the work needs the conversation) |
 | `precheck` | Optional command on a computer, run before any model call. Exit code 0 with stdout different from the last run wakes the model, and stdout goes into the prompt. Anything else records "nothing new" and ends. This is Hermes's script-only mode |
 | `report` | `always`, `when_noteworthy` (the run ends with `NO_REPLY` to stay silent) or `never` |
-| `active_hours`, `idle_only`, `max_runtime`, `budget_class` | When it may run. Idle-only means no interactive lease in the last 10 minutes |
+| `active_hours`, `idle_only`, `max_runtime` | When it may run and for how long. Idle-only means no interactive lease in the last 10 minutes. `max_runtime` defaults to 24 h |
 | `missed` | `run_once` (run at most once on return, within a grace window of 6 h by default) or `skip` |
 | `created_by`, `approved_grant` | `user` or an agent, and the Sentry grant (scope `routine`) its runs act under |
 
@@ -56,13 +56,14 @@ Defaults that ship disabled:
 ## 3. Wakeups
 
 `wake_me {at | in, note}` is a tool for any agent with a session that continues
-(home, direct, task). At the time given, the note is appended to that session as a
+(home, subagent). At the time given, the note is appended to that session as a
 user-side message: `<context>wakeup: <note>, scheduled <when></context>`. The
 agent then runs at `background` priority. The session's prefix is untouched, so
 the wakeup costs only its own tokens plus whatever the cache lost meanwhile.
 
-A task waiting for something outside ("check back on the build in an hour") uses
-a wakeup instead of holding a run open. Wakeups are listed in Activity, and the
+A subagent waiting for something outside ("check back on the build in an hour")
+uses a wakeup instead of holding a run open; the wakeup resumes that subagent, not
+the home session. Wakeups are listed in Activity, and the
 user can cancel them. An agent may hold at most `wakeups_max` (default 20)
 pending wakeups.
 
@@ -81,11 +82,9 @@ pending wakeups.
   plugins and model class still exist and are usable. A routine that fails is
   marked `blocked` with the reason, before any token is spent. Hermes calls this
   `blocked_config`.
-- **Budget.** `background` runs count against the daily background budget
-  (`runtime.md` 3). Over budget, runs defer to the next window and say so.
-- **Quiet hours** delay `report` delivery, not the run. A result found at 3 am is
-  delivered at the end of quiet hours unless it is urgent. A `decision` model, or
-  `fast`, judges urgency with the question `needs_attention_now`.
+- **Urgency.** A `decision` model, or `fast`, judges whether a result needs the
+  user now with the question `needs_attention_now`. Otherwise it waits in the
+  Inbox without a push.
 
 ## 5. Safety
 
@@ -96,7 +95,7 @@ pending wakeups.
   wakeups beyond their own session. The tools return an error saying so.
 - **Prompt scan at creation.** A routine's prompt goes through Sentry ingest.
   An injected routine is the classic persistence attack, so a routine created
-  from a tainted session is flagged in its approval card.
+  from a `suspicious` session is flagged in its approval card.
 - Webhook triggers get a random path secret per routine
   (`/hooks/<routine id>/<secret>`). The payload is untrusted content and arrives
   wrapped.
@@ -106,7 +105,6 @@ pending wakeups.
 - Tools: `routine_create`, `routine_list`, `routine_update` (an agent can change
   what it created; enabling still needs approval), `routine_delete`, and
   `wake_me`.
-- UI: the Schedules page lists routines (next run, last outcome, budget used),
-  run history with links to each run's session, wakeups, triggers, the background
-  budget and quiet hours. An edit dialog shows the parsed schedule in words and
+- UI: the Schedules page lists routines (next run, last outcome),
+  run history with links to each run's session, wakeups and triggers. An edit dialog shows the parsed schedule in words and
   the next five times.
