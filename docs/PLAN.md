@@ -137,7 +137,7 @@ before the routes it calls.
 - [x] Put a banner on `REFACTOR_PLAN.md` saying this plan supersedes it. Carry
       over its phase 3 import-rule test as the next item; drop its comment and
       doc trimming of code this plan rewrites.
-- [ ] Add a Go import-boundary test in the style of `contract_test.go`:
+- [x] Add a Go import-boundary test in the style of `contract_test.go`:
       - nothing imports `server`
       - `tool` never imports `workspace` (later `computer`)
       - `tool/builtin` imports `eikad` today (wire types); allow it explicitly
