@@ -121,7 +121,7 @@ catalog listing and change notifications. What moves is where it runs:
 | Remote connections | Core's `mcp.Pool` | Sentry's plugin host, so OAuth tokens and headers live in the vault |
 | Stdio servers | A process in the session's workspace, with its environment visible to the agent | A process in a plugin cell (a computer labelled `eika.role=plugin`) that no agent can execute in. Its environment's secrets are surrogates resolved by Sentry where possible, otherwise the real values, which stay in the cell |
 | Tool exposure | One `tool.Tool` per MCP tool | Catalog plus `plugin_find` and `plugin_call` (below) |
-| Permission | Static tool choices per profile | Sentry rules per tool, with defaults from MCP annotations |
+| Permission | Static tool choices per profile | Sentry tool settings, with defaults from MCP annotations |
 
 One plugin cell runs per stdio plugin, from the sandbox image or a user-chosen
 image. Its egress goes through Sentry's proxy with its own principal, so a plugin
@@ -158,24 +158,24 @@ cannot reach hosts the user did not allow.
 ### Permissions
 
 The defaults come from MCP tool annotations, which `sentry.md` 3 maps to effects.
-The Plugins page shows, per tool, the effect and the current verdict, with
-allow, ask, deny and hand-off controls. These are Sentry rules underneath.
-Marking a plugin **private** makes its reads set label B. Marking it **trusted**
+The Plugins page shows, per tool, the effect and the verdict that follows from it,
+and lets the user change the effect or block the tool (`sentry.md` 5).
+Marking a plugin **private** makes its reads set the `sensitive` label. Marking it **trusted**
 skips the injection screen for its results; use this only for servers you run.
 
 ### Result filtering
 
 Every result goes through Sentry ingest (`sentry.md` 6): secret redaction,
 one-time-code removal (especially mail and messaging plugins), the injection
-screen and wrapping. Images and audio in results keep today's handling: kept in
-details, replaced in the model's text. Images can now reach a vision model
-through the screenshot path (`runtime.md` 5).
+screen and wrapping. Audio in results keeps today's handling: kept in details,
+replaced in the model's text. Images can reach a vision model through the
+user-message path (`runtime.md` 5).
 
 ### Elicitation and OAuth
 
 Elicitation requests from a plugin become Inbox items, using today's form and
-URL-mode UI, moved to the Inbox. Requests the plugin makes while a task runs
-park the task. OAuth sign-in happens from the Plugins page. The redirect lands on
+URL-mode UI, moved to the Inbox. Requests the plugin makes while a subagent runs
+park that subagent. OAuth sign-in happens from the Plugins page. The redirect lands on
 Core's UI route and posts to Sentry through `/v1/user/*`, and tokens are sealed
 in the vault.
 

@@ -14,17 +14,17 @@ Desktop: left rail  Chat, Activity, Inbox, Projects, Memory, Skills, Plugins,
 
 | Page | Contents |
 |---|---|
-| Chat | The home session: a linear transcript, composer, compact delegation cards ("worker is renovating-budget.xlsx in Kitchen") linking to the task |
-| Activity | Running, waiting and recent tasks, routine runs and dreams. Each opens its session view with state, a steer box, cancel, and its approvals. The pool and queue strip shows what holds the GPU |
-| Inbox | Approvals, questions from tasks, secret requests, elicitations, pending memories, alerts. Each is a card with its full context and actions (`sentry.md` 7). Badge counts unanswered items |
-| Projects | List, then a project page: description, instructions editor, status memory, sessions (open or start a direct session with any agent), routines, files (a read-only listing of its directory) |
+| Chat | The one home session, the only place the user talks to Eika: a linear transcript of every channel's messages (each marked with its channel), composer, Eika's reasoning and tool calls, compaction cards, and compact subagent cards ("plumber · worker · running · Kitchen") that open the subagent's view |
+| Activity | Eika's subagents (running, waiting with the reason, idle, failed), routine runs and dreams. Each opens a read-only live view of its session: streamed reasoning, tool calls and results, its report, approvals and questions, with Cancel. There is no composer: steering goes through Eika in Chat. The pool and queue strip shows what holds the GPU |
+| Inbox | Approvals, questions from Eika, secret requests, elicitations, pending memories, alerts. Each is a card with its full context and actions (`sentry.md` 7). Badge counts unanswered items |
+| Projects | List, then a project page: description, instructions editor, status memory, its subagents (watch, read-only), routines, files (a read-only listing of its directory) |
 | Memory | `memory.md` 8, with the Instructions editor |
 | Skills | Install (drop, zip, paste, git URL), read, enable, scope, assign to agents |
 | Plugins | The MCP screens of today (connection, OAuth, tools, log), plus per-tool effect and verdict and the private and trusted flags |
 | Schedules | `scheduler.md` 6 |
 | Browser | Live view, takeover, tabs, site permissions, profile data, downloads |
 | Vault | Secrets (names, kinds, bound domains, last used; never values), rotate, delete |
-| Settings | Providers and models (kept), model classes, agents (definitions and overrides), Sentry rules and grants, background budget and quiet hours, channels, notifications, appearance, account, and system health (Docker, Sentry, Guard, endpoints with their probed capabilities) |
+| Settings | Providers and models (kept), model classes, agents (definitions and overrides), Sentry grants, tool settings and the blocklist, channels, notifications, appearance, account, and system health (Docker, Sentry, Guard, endpoints with their probed capabilities) |
 | Developer (in Settings) | Context inspector, model call log with token accounting and drift, Sentry audit timeline |
 
 ## 2. What carries over from today's frontend
@@ -81,17 +81,18 @@ Removed in phase 0:
   in Settings and Notifications. Push needs a secure context: `localhost`, or HTTPS
   through Tailscale serve or a reverse proxy. Push goes through the browser
   vendor's push service. The payload is end-to-end encrypted by the Web Push
-  protocol and says only "Eika needs your approval" or "Task X finished"; details
+  protocol and says only "Eika needs your approval" or "plumber reported"; details
   load when opened.
 - **ntfy** (optional, self-hostable) for setups without HTTPS or for desktop
   notifications through ntfy's apps. The topic secret is sealed.
 - **What notifies**, each set per category in Settings:
-  - approvals, secret requests and hand-offs: always, with high urgency
+  - approvals: grouped into one push after a short delay (default 5 minutes),
+    with the Inbox badge updating at once
+  - secret requests and hand-offs: at once, with high urgency
   - alerts: by severity
-  - task results: when the task's `report` says so
+  - subagent reports: when the subagent's `report` mode says so
   - routine results: per routine
-  - quiet hours apply except to approvals the user marked urgent
-- **Urgency** for task and routine results is judged by `decision` (or `fast`) with
+- **Urgency** for subagent reports and routine results is judged by `decision` (or `fast`) with
   `needs_attention_now`, so a check-in at 2 pm with nothing new stays silent.
 
 ## 5. Remote access
@@ -105,8 +106,8 @@ itself.
 
 ## 6. Channels
 
-A channel is an adapter that moves messages between an external chat app and a home
-session (`runtime.md` 7):
+A channel is an adapter that moves messages between an external chat app and the
+home session (`runtime.md` 7):
 
 ```
 type Channel interface {
@@ -120,8 +121,10 @@ The interface waits for its second implementation, per the style guide's rule on
 abstractions. Web is the first, built into Core. Discord or Matrix is the second;
 the user's Matrix-Bot project is a head start.
 
-- Each channel has its own home session, so messages are kept apart while memory
-  and projects are shared. ChatGPT dots and Muse both behave this way.
+- Every channel feeds the one home session, as talking to the same person by text
+  and in person is one relationship. Each message's `<context>` names its channel,
+  replies go back where the message came from, and the web Chat shows all of it.
+  Proactive messages go to the `notify_channel` setting.
 - Only allowlisted user ids are accepted. Anything else is ignored and logged.
 - Approvals, secret requests and takeovers are never done in a channel. The
   channel gets a link to the web Inbox instead, following Duet's rule that a
@@ -135,7 +138,7 @@ the user's Matrix-Bot project is a head start.
 
 The mock harness stays the way UI work is checked. Its `World` gains these states:
 
-- home and task sessions
+- the home session, with compactions, and subagent sessions in every state
 - the Inbox (approvals, questions, secret requests, alerts)
 - memories, skills, routines
 - the browser viewer, as a fake frame stream
