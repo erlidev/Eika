@@ -53,8 +53,9 @@ deploy/            entrypoint, searxng  docs/           documentation
 ```
 
 Dependencies point inward. `server` may import `agent`; `agent` may import
-`tool`; `tool` may import `executor`. Nothing imports `server`. `tool` never
-imports `workspace`.
+`tool`; `tool` may import `executor`. Nothing but the binaries imports `server`.
+`tool` never imports `workspace`. `internal/imports_test.go` enforces these
+rules; an exception is listed there with its reason.
 
 ## Commands
 
