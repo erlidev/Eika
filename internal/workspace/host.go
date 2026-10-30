@@ -52,6 +52,11 @@ const (
 	hubTokenEnv = "EIKA_HUB_TOKEN"
 )
 
+// proxyTokenEnv carries a workspace's egress proxy token in its container's
+// configuration, where Inspect recovers it after a harness restart. The
+// daemon's processes receive it only inside the proxy URL.
+const proxyTokenEnv = "EIKA_PROXY_TOKEN"
+
 // ErrNoWorkspace reports that no container carries the given workspace id.
 var ErrNoWorkspace = errors.New("workspace not found")
 
@@ -147,6 +152,9 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 	if ws.HubToken, err = newToken(); err != nil {
 		return Workspace{}, err
 	}
+	if ws.ProxyToken, err = newToken(); err != nil {
+		return Workspace{}, err
+	}
 
 	ws.Project = spec.Project
 	ws.Image = orDefault(spec.Image, h.opts.Image)
@@ -190,6 +198,7 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 			eikad.TokenEnv + "=" + ws.Token,
 			hubUserEnv + "=" + ws.ID,
 			hubTokenEnv + "=" + ws.HubToken,
+			proxyTokenEnv + "=" + ws.ProxyToken,
 		}, spec.Env...),
 		User:         orDefault(spec.User, DefaultUser),
 		WorkingDir:   Root,
@@ -374,6 +383,7 @@ func (h *Host) Inspect(ctx context.Context, id string) (Workspace, error) {
 		State:       StateStopped,
 		Token:       envValue(info.Config.Env, eikad.TokenEnv),
 		HubToken:    envValue(info.Config.Env, hubTokenEnv),
+		ProxyToken:  envValue(info.Config.Env, proxyTokenEnv),
 		Project:     info.Config.Labels[ProjectLabel],
 	}
 	if created, err := time.Parse(time.RFC3339Nano, info.Created); err == nil {

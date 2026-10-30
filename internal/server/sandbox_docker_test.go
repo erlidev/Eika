@@ -204,7 +204,7 @@ func TestUsageReportsTheSampleAndTheRefusedHosts(t *testing.T) {
 	proxy := httptest.NewServer(a.egress)
 	defer proxy.Close()
 	proxyURL, _ := url.Parse(proxy.URL)
-	proxyURL.User = url.UserPassword(ws.ID, "hub-token-"+ws.ID)
+	proxyURL.User = url.UserPassword(ws.ID, "proxy-token-"+ws.ID)
 	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
 	resp, err := client.Get("http://example.com/")
 	if err != nil {
@@ -229,7 +229,7 @@ func TestUsageReportsTheSampleAndTheRefusedHosts(t *testing.T) {
 	}
 }
 
-func TestEgressPolicyKnowsAWorkspaceByItsHubToken(t *testing.T) {
+func TestEgressPolicyKnowsAWorkspaceByItsProxyToken(t *testing.T) {
 	a := newAPI(t)
 	a.host.egressControl = true
 	project, dir := a.newProject(t, "demo")
@@ -241,7 +241,7 @@ func TestEgressPolicyKnowsAWorkspaceByItsHubToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("policy: %v", err)
 	}
-	if policy.Token != "hub-token-"+ws.ID || policy.Mode != egress.ModeAllowlist || !slices.Equal(policy.Allow, []string{"github.com"}) {
+	if policy.Token != "proxy-token-"+ws.ID || policy.Mode != egress.ModeAllowlist || !slices.Equal(policy.Allow, []string{"github.com"}) {
 		t.Errorf("policy = %+v", policy)
 	}
 	if _, err := a.EgressPolicy(t.Context(), "missing"); !errors.Is(err, egress.ErrUnknownWorkspace) {

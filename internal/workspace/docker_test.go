@@ -869,6 +869,11 @@ func TestConfineMovesAWorkspaceBetweenTheSandboxNetworks(t *testing.T) {
 	if !inspected.Proxied {
 		t.Error("Inspect does not report the workspace proxied")
 	}
+	// The proxy knows the workspace by a token of its own, which survives a
+	// harness restart and is not the hub token.
+	if inspected.ProxyToken == "" || inspected.ProxyToken != ws.ProxyToken || inspected.ProxyToken == ws.HubToken {
+		t.Errorf("Inspect's proxy token is not the workspace's own")
+	}
 
 	if err := host.Confine(t.Context(), &ws, workspace.Confinement{}); err != nil {
 		t.Fatalf("confine: %v", err)

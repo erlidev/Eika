@@ -275,6 +275,7 @@ func (h *fakeHost) Create(_ context.Context, spec workspace.Spec) (workspace.Wor
 		Project:     spec.Project,
 		HostPath:    spec.HostPath,
 		HubToken:    "hub-token-" + spec.ID,
+		ProxyToken:  "proxy-token-" + spec.ID,
 		Proxied:     spec.Confinement.Proxied,
 	}
 	if ws.Image == "" {
