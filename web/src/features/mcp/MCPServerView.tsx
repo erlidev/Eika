@@ -91,10 +91,6 @@ function ServerPage({ details, back, onDeleted }: ServerPageProps) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [section, setSection] = useState<Section>("tools");
-  // A stdio server runs in a workspace, which is where it is started and
-  // where its resources and prompts are read.
-  const [workspaceId, setWorkspaceId] = useState(server.workspaces?.[0] ?? "");
-  const stdioWorkspace = server.kind === "stdio" && workspaceId !== "" ? workspaceId : undefined;
   const tools = details.tools ?? [];
   const resources = details.resources ?? [];
   const templates = details.resource_templates ?? [];
@@ -159,7 +155,7 @@ function ServerPage({ details, back, onDeleted }: ServerPageProps) {
       {server.kind === "http" ? (
         <RemoteConnection details={details} />
       ) : (
-        <StdioConnection server={server} workspaceId={workspaceId} onWorkspace={setWorkspaceId} />
+        <StdioConnection server={server} />
       )}
 
       <SectionTabs
@@ -177,8 +173,8 @@ function ServerPage({ details, back, onDeleted }: ServerPageProps) {
       />
       <div role="tabpanel" id={`mcp-section-${section}`} aria-labelledby={`mcp-tab-${section}`}>
         {section === "tools" && <ToolsTab details={details} />}
-        {section === "resources" && <ResourcesTab details={details} workspaceId={stdioWorkspace} />}
-        {section === "prompts" && <PromptsTab details={details} workspaceId={stdioWorkspace} />}
+        {section === "resources" && <ResourcesTab details={details} />}
+        {section === "prompts" && <PromptsTab details={details} />}
         {section === "log" && (
           <>
             {logs.length === 0 ? (

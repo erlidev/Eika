@@ -1,26 +1,18 @@
 /**
- * The fields of a sandbox: its resource limits, its network, and the ports
- * the harness forwards to it. The settings' defaults, a new workspace, and
- * the Sandbox panel all edit a sandbox with them. They hold a SandboxDraft
- * and report changes; checking and saving belong to whoever holds the draft.
+ * The fields of the Computer settings: the sandbox's resource limits and its
+ * network. They hold a SandboxDraft and report changes; checking and saving
+ * belong to whoever holds the draft.
  */
 
-import { Plus, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Slider } from "radix-ui";
 import { useState } from "react";
 
 import type { SandboxHost } from "@/api/types";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import {
-  bounds,
-  egressModes,
-  formatCores,
-  formatMemory,
-  normalizePattern,
-} from "@/features/sandbox/form";
+import { egressModes, formatCores, formatMemory, normalizePattern } from "@/features/sandbox/form";
 import type { SandboxDraft, SandboxProblems } from "@/features/sandbox/form";
 import { cn } from "@/lib/utils";
 
@@ -321,91 +313,6 @@ function AllowlistField({ id, allow, problem, onChange }: AllowlistFieldProps) {
       >
         {shown ??
           "A host such as github.com, or *.github.com for every name below it. Git, npm, pip, Go, curl, and Node reach them through the harness's proxy."}
-      </p>
-    </div>
-  );
-}
-
-/** PortsFields edits the container ports the harness forwards previews to. */
-export function PortsFields({ id, draft, onChange, problems }: SandboxFieldsProps) {
-  const hintId = `${id}-ports-hint`;
-  const set = (i: number, change: Partial<{ port: string; label: string }>) => {
-    onChange({ ports: draft.ports.map((p, j) => (j === i ? { ...p, ...change } : p)) });
-  };
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">Forwarded ports</span>
-        <Button
-          type="button"
-          size="xs"
-          variant="ghost"
-          className="ml-auto"
-          disabled={draft.ports.length >= bounds.maxPorts}
-          onClick={() => {
-            onChange({ ports: [...draft.ports, { port: "", label: "" }] });
-          }}
-        >
-          <Plus aria-hidden />
-          Add port
-        </Button>
-      </div>
-      {draft.ports.length === 0 ? (
-        <p className="text-muted-foreground text-xs">
-          None. Nothing outside the sandbox reaches it but the harness.
-        </p>
-      ) : (
-        <ul className="space-y-1">
-          {draft.ports.map((p, i) => (
-            // The index is the key: a row keeps its place while its port is edited.
-            <li key={i} className="flex items-center gap-1.5">
-              <Input
-                aria-label={`Port ${String(i + 1)}`}
-                value={p.port}
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="5173"
-                aria-describedby={hintId}
-                className="h-7 w-20 font-mono text-xs"
-                onChange={(e) => {
-                  set(i, { port: e.target.value });
-                }}
-              />
-              <Input
-                aria-label={`Label of port ${String(i + 1)}`}
-                value={p.label}
-                autoComplete="off"
-                placeholder="What listens there"
-                maxLength={bounds.maxPortLabel}
-                className="h-7 flex-1 text-xs"
-                onChange={(e) => {
-                  set(i, { label: e.target.value });
-                }}
-              />
-              <Button
-                type="button"
-                size="icon-xs"
-                variant="ghost"
-                aria-label={`Remove port ${p.port === "" ? String(i + 1) : p.port}`}
-                onClick={() => {
-                  onChange({ ports: draft.ports.filter((_, j) => j !== i) });
-                }}
-              >
-                <X aria-hidden />
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <p
-        id={hintId}
-        className={cn(
-          "text-xs",
-          problems.ports === undefined ? "text-muted-foreground" : "text-destructive",
-        )}
-      >
-        {problems.ports ??
-          "The harness forwards a listed port to your browser alone, on a preview address of its own. A server there must listen on 0.0.0.0, not localhost."}
       </p>
     </div>
   );

@@ -5,25 +5,10 @@
 
 /** queryKeys names the cached server state, one entry per route. */
 export const queryKeys = {
-  projects: () => ["projects"] as const,
-  project: (id: string) => ["projects", id] as const,
-  workspaces: (projectId?: string) => ["workspaces", projectId ?? "all"] as const,
-  workspace: (id: string) => ["workspace", id] as const,
-  workspaceDiff: (id: string) => ["workspace", id, "diff"] as const,
-  workspaceUsage: (id: string) => ["workspace", id, "usage"] as const,
-  /** workspaceFiles without a path is the prefix of every listing of the workspace. */
-  workspaceFiles: (id: string, path?: string) =>
-    path === undefined
-      ? (["workspace", id, "files"] as const)
-      : (["workspace", id, "files", path] as const),
-  workspaceFile: (id: string, path: string) => ["workspace", id, "file", path] as const,
-  sessions: (workspaceId?: string, descendants?: boolean) =>
-    ["sessions", workspaceId ?? "all", descendants === true ? "tree" : "flat"] as const,
   /** chats sits under the sessions prefix, so invalidating sessions refreshes it. */
   chats: () => ["sessions", "chats"] as const,
   session: (id: string) => ["session", id] as const,
   sessionOutline: (id: string) => ["session", id, "outline"] as const,
-  sessionPath: (id: string) => ["session", id, "path"] as const,
   runStatus: (sessionId: string) => ["session", sessionId, "run"] as const,
   /** sessionConfiguration without a draft is the saved one and the prefix of every draft's. */
   sessionConfiguration: (id: string, draft?: { profileId?: string; modelId?: string }) =>

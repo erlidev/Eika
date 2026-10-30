@@ -1,16 +1,9 @@
 /**
- * Dialogs and panels reached from the workbench. The command palette and
- * the session tree are compared pixel for pixel; the rest is checked by what
- * it says and offers.
+ * Dialogs and panels reached from the workbench. The command palette is
+ * compared pixel for pixel; the rest is checked by what it says and offers.
  */
 
 import { expect, test } from "../fixtures.ts";
-
-test("new project dialog", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("New project");
-  await expectAria(eika, "new-project", "role=dialog");
-});
 
 test("command palette", async ({ open, expectShot }) => {
   const eika = await open({ scenario: "workbench" });
@@ -22,29 +15,6 @@ test("run panel", async ({ open, expectAria }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("Run");
   await expectAria(eika, "run-panel", 'role=complementary[name="Context panels"]');
-});
-
-test("project tree expanded", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("payments-api remote");
-  await expectAria(eika, "project-tree", 'role=navigation[name="Projects"]');
-});
-
-test("session tree: a tree the keyboard walks", async ({ open, expectShot }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Tree");
-  const tree = eika.page.getByRole("tree", { name: "Session tree" });
-  const items = tree.getByRole("treeitem");
-  await expect(items.first()).toBeVisible();
-  // One tab stop, on the head.
-  const head = tree.locator('[role="treeitem"][aria-current="true"]');
-  await expect(head).toHaveAttribute("tabindex", "0");
-  await head.focus();
-  await eika.press("Home");
-  await expect(items.first()).toBeFocused();
-  await eika.press("ArrowDown");
-  await expect(items.nth(1)).toBeFocused();
-  await expectShot(eika, "session-tree-light", 'role=complementary[name="Context panels"]');
 });
 
 test("run status bar: the live connection is labelled", async ({ open }) => {

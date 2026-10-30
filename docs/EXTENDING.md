@@ -620,56 +620,52 @@ panel is a component plus one entry in `web/src/app/panels.tsx`; nothing else
 in the shell changes.
 
 Write the component in the feature that owns its data. A panel receives the
-open session and its workspace, both empty strings when nothing is open, and
-whether the session is a chat, which has no workspace:
+open session, an empty string when nothing is open, and whether the session is
+a chat, which has no workspace:
 
 ```tsx
-// web/src/features/workspaces/InfoPanel.tsx
-/** What the session's workspace is: its image, its branch, and its state. */
+// web/src/features/session/InfoPanel.tsx
+/** What the open session is: its kind, when it was started, and its head. */
 
-import { useWorkspace } from "@/features/workspaces/queries";
-import { useWorkspaceEvents } from "@/features/workspaces/useWorkspaceEvents";
+import { useSession } from "@/features/session/queries";
 
 export type InfoPanelProps = {
-  workspaceId: string;
+  sessionId: string;
 };
 
-export function InfoPanel({ workspaceId }: InfoPanelProps) {
-  useWorkspaceEvents(workspaceId);
-  const workspace = useWorkspace(workspaceId);
-  if (workspace.isPending) {
-    return <p className="text-muted-foreground p-3 text-xs">Loading the workspace…</p>;
+export function InfoPanel({ sessionId }: InfoPanelProps) {
+  const session = useSession(sessionId);
+  if (session.isPending) {
+    return <p className="text-muted-foreground p-3 text-xs">Loading the session…</p>;
   }
-  if (workspace.isError) {
+  if (session.isError) {
     return (
       <p role="alert" className="text-destructive p-3 text-xs">
-        {workspace.error.message}
+        {session.error.message}
       </p>
     );
   }
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-3 p-3 font-mono text-xs">
-      <dt className="text-muted-foreground">state</dt>
-      <dd>{workspace.data.state}</dd>
-      <dt className="text-muted-foreground">branch</dt>
-      <dd className="truncate">{workspace.data.branch}</dd>
-      <dt className="text-muted-foreground">image</dt>
-      <dd className="truncate">{workspace.data.image}</dd>
+      <dt className="text-muted-foreground">kind</dt>
+      <dd>{session.data.session.kind}</dd>
+      <dt className="text-muted-foreground">started</dt>
+      <dd className="truncate">{session.data.session.created_at}</dd>
     </dl>
   );
 }
 ```
 
-`useWorkspaceEvents` is what keeps it current: nothing in the frontend polls,
-so a panel showing something the harness changes subscribes to the topic that
-reports the change.
+Nothing in the frontend polls, so a panel showing something the harness
+changes subscribes to the topic that reports the change, as
+`useSessionStream` does for the session.
 
 Export it from the feature's `index.ts`, because `app/` imports a feature only
 through that file:
 
 ```ts
-// web/src/features/workspaces/index.ts
-export { InfoPanel } from "@/features/workspaces/InfoPanel";
+// web/src/features/session/index.ts
+export { InfoPanel } from "@/features/session/InfoPanel";
 ```
 
 Register it. `id` is what the layout remembers, so it never changes once it
@@ -679,45 +675,26 @@ ships. `available` hides the tab when its data cannot exist yet:
 // web/src/app/panels.tsx
 import { Info } from "lucide-react";
 
-import { InfoPanel } from "@/features/workspaces";
+import { InfoPanel } from "@/features/session";
 
 const infoPanel: Panel = {
   id: "info",
   title: "Info",
   icon: Info,
-  available: (context) => context.workspaceId !== "",
-  Component: ({ workspaceId }) => <InfoPanel workspaceId={workspaceId} />,
+  available: (context) => context.sessionId !== "",
+  Component: ({ sessionId }) => <InfoPanel sessionId={sessionId} />,
 };
 
-export const panels: readonly Panel[] = [sessionTreePanel, runPanel, infoPanel];
+export const panels: readonly Panel[] = [runPanel, contextPanel, toolsPanel, infoPanel];
 ```
 
 The tab strip, the keyboard handling, the remembered active tab, and the narrow
 layout all follow from the array. Add a README line to the feature folder and
 you are done.
 
-The pane body scrolls, which suits a list. A panel that sizes and scrolls its
-own content, such as a terminal or an editor, sets `fill: true` instead: its
-component then gets the whole body at a fixed height (lay it out with `h-full`
-and `min-h-0`), and the pane may be dragged wider than a scrolling panel
-allows. The Files and Terminal panels are the examples:
-
-```tsx
-const terminalPanel: Panel = {
-  id: "terminal",
-  title: "Terminal",
-  icon: SquareTerminal,
-  available: (context) => context.workspaceId !== "",
-  fill: true,
-  Component: ({ workspaceId }) => <TerminalPanel workspaceId={workspaceId} />,
-};
-```
-
-A panel that works inside the sandbox wraps its content in `RunningWorkspace`
-from `features/workspaces`, which shows the workspace's state and a Start
-button until it runs. A panel whose component pulls in a large library loads
-that part with `React.lazy`, as the Files panel does for Monaco and the
-Terminal panel for xterm, so the main bundle stays small.
+The pane body scrolls, which suits a list. A panel whose component pulls in a
+large library loads that part with `React.lazy`, so the main bundle stays
+small.
 
 ## Adding a tool renderer
 

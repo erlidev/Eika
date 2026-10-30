@@ -4,7 +4,7 @@
  */
 
 /** SetupStep names one step of the guided setup. */
-export type SetupStep = "account" | "provider" | "models" | "system" | "project";
+export type SetupStep = "account" | "provider" | "models" | "system";
 
 /** SetupStepInfo is what the stepper and the step's heading say. */
 export type SetupStepInfo = {
@@ -40,17 +40,10 @@ export const setupSteps: readonly SetupStepInfo[] = [
   },
   {
     id: "system",
-    label: "Sandbox",
-    title: "Check the sandbox",
+    label: "Computer",
+    title: "Check the computer",
     description:
       "Agents work only inside Docker containers, never on this machine directly. Eika checks that it can start them.",
-  },
-  {
-    id: "project",
-    label: "Project",
-    title: "Add your first project",
-    description:
-      "A project is a git repository agents work on: a directory on this machine, or a remote such as GitHub.",
   },
 ];
 

@@ -1,26 +1,16 @@
 /**
  * Where an MCP server's connection stands: for an http server, connecting
- * and signing in; for a stdio server, the workspaces it runs in and a way to
- * start it in one.
+ * and signing in; for a stdio server, the sandboxes it runs in.
  */
 
 import type { MCPServer, MCPServerDetails } from "@/api/types";
 import { ActionError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   useAuthorizeMCPServer,
   useConnectMCPServer,
   useSignOutMCPServer,
 } from "@/features/mcp/queries";
-import { useWorkspaces } from "@/features/workspaces";
 
 type RemoteConnectionProps = { details: MCPServerDetails };
 
@@ -96,66 +86,19 @@ export function RemoteConnection({ details }: RemoteConnectionProps) {
   );
 }
 
-type StdioConnectionProps = {
-  server: MCPServer;
-  workspaceId: string;
-  onWorkspace: (id: string) => void;
-};
+type StdioConnectionProps = { server: MCPServer };
 
-/** StdioConnection is where a stdio server runs, and a way to start it in a workspace. */
-export function StdioConnection({ server, workspaceId, onWorkspace }: StdioConnectionProps) {
-  const workspaces = useWorkspaces();
-  const connect = useConnectMCPServer();
-  const running = (workspaces.data ?? []).filter((w) => w.state === "running");
-  const nameOf = (id: string) => workspaces.data?.find((w) => w.id === id)?.name ?? id;
+/** StdioConnection is where a stdio server runs. A run starts it; there is nothing to start by hand. */
+export function StdioConnection({ server }: StdioConnectionProps) {
   const runsIn = server.workspaces ?? [];
   return (
     <div className="space-y-2">
       <StateNotice server={server} />
       <p className="text-muted-foreground text-xs">
         {runsIn.length === 0
-          ? "Not running in any workspace. A session that uses it starts it in its own workspace; you can start it in one here to see what it offers."
-          : `Running in ${runsIn.map(nameOf).join(", ")}.`}
+          ? "Not running. A chat that uses it starts it in its sandbox."
+          : `Running in ${String(runsIn.length)} ${runsIn.length === 1 ? "sandbox" : "sandboxes"}.`}
       </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Label htmlFor="mcp-workspace" className="sr-only">
-          Workspace
-        </Label>
-        <Select value={workspaceId} onValueChange={onWorkspace} disabled={running.length === 0}>
-          <SelectTrigger id="mcp-workspace" size="sm" className="w-56">
-            <SelectValue
-              placeholder={running.length === 0 ? "No running workspace" : "Choose a workspace"}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {running.map((w) => (
-              <SelectItem key={w.id} value={w.id}>
-                {w.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          size="xs"
-          variant="outline"
-          disabled={workspaceId === "" || connect.isPending || !server.enabled}
-          onClick={() => {
-            connect.mutate({ id: server.id, workspaceId });
-          }}
-        >
-          {connect.isPending
-            ? "Starting…"
-            : runsIn.includes(workspaceId)
-              ? "Restart there"
-              : "Start there"}
-        </Button>
-      </div>
-      {connect.isError && (
-        <ActionError
-          action={`start ${server.name} in ${nameOf(workspaceId)}`}
-          error={connect.error}
-        />
-      )}
     </div>
   );
 }

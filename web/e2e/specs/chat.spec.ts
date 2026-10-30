@@ -1,6 +1,6 @@
 /**
- * Chat mode: sessions with no workspace, listed apart from the projects,
- * marked as chats in their header, and offering only the tools that need no
+ * Chat mode: sessions with no workspace, listed in the sidebar, marked as
+ * chats in their header, and offering only the tools that need no
  * workspace, which the Tools panel turns on and off. A chat is compared pixel
  * for pixel once; the rest is checked by what the page says and offers.
  */
@@ -18,15 +18,8 @@ test("a new chat says what it cannot do", async ({ open, expectAria }) => {
   await expectAria(eika, "chat-empty", 'role=region[name="Session"]');
 });
 
-test("a chat has a Tools panel where a workspace session has files", async ({
-  open,
-  expectAria,
-}) => {
+test("a chat has a Tools panel", async ({ open, expectAria }) => {
   const eika = await open({ scenario: "chat" });
-  const tabs = eika.page.getByRole("tablist", { name: "Context panels" });
-  await expect(tabs.getByRole("tab", { name: "Files" })).toBeHidden();
-  await expect(tabs.getByRole("tab", { name: "Terminal" })).toBeHidden();
-
   await eika.click("Tools");
   const fetch = eika.page.getByRole("switch", { name: "web_fetch" });
   await expect(fetch).toBeChecked();
@@ -45,10 +38,9 @@ test("a chat has a Tools panel where a workspace session has files", async ({
   await expect(eika.page.getByRole("switch", { name: "web_fetch" })).toBeChecked();
 });
 
-test("a workspace session names its workspace and has no Tools panel", async ({ open }) => {
+test("a session in a workspace is no chat and has no Tools panel", async ({ open }) => {
   const eika = await open({ scenario: "workbench" });
   const header = eika.page.getByRole("region", { name: "Session" }).locator("header");
-  await expect(header.getByText("fix-retries", { exact: true })).toBeVisible();
   await expect(header.getByText("Chat")).toBeHidden();
   const tabs = eika.page.getByRole("tablist", { name: "Context panels" });
   await expect(tabs.getByRole("tab", { name: "Tools" })).toBeHidden();

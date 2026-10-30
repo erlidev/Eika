@@ -116,7 +116,7 @@ Design: `design/README.md` "Kept, changed, removed".
 - [ ] Squash migrations into `0001_baseline.sql` in schema `core`. A fresh
       database is expected (decided), so there is no data migration. Update
       `storetest`.
-- [ ] Remove the coding UI:
+- [x] Remove the coding UI:
       - features `files`, `terminal`, `changes`, `workspaces`, `projects`
       - the session tree panel and fork UI
       - diff libraries, Monaco and xterm

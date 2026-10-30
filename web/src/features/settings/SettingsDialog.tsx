@@ -1,6 +1,6 @@
 /**
  * The settings: models and providers, profiles, the harness-wide choices,
- * compaction, the sandbox defaults, web search,
+ * compaction, the computer's limits and network, web search,
  * MCP servers, the account, and how the app looks. Everything but the appearance is stored
  * in the harness. Its open state is `store.ts`, so anything can open it on a
  * tab.
@@ -37,9 +37,9 @@ import { useTranscriptPreferences } from "@/features/session";
 import type { ComposerMode, ReasoningDisplay } from "@/features/session";
 import { AccountSettings } from "@/features/settings/AccountSettings";
 import { CompactionSettings } from "@/features/settings/CompactionSettings";
+import { ComputerSettings } from "@/features/settings/ComputerSettings";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
 import { settingKeys, useSaveSettings } from "@/features/settings/queries";
-import { SandboxSettings } from "@/features/settings/SandboxSettings";
 import { SearchSettings } from "@/features/settings/SearchSettings";
 import { useSettingsDialog } from "@/features/settings/store";
 import type { SettingsTab } from "@/features/settings/store";
@@ -54,7 +54,7 @@ const tabs: readonly { value: SettingsTab; label: string }[] = [
   { value: "profiles", label: "Profiles" },
   { value: "general", label: "General" },
   { value: "compaction", label: "Compaction" },
-  { value: "sandbox", label: "Sandbox" },
+  { value: "computer", label: "Computer" },
   { value: "search", label: "Search" },
   { value: "mcp", label: "MCP" },
   { value: "account", label: "Account" },
@@ -133,8 +133,8 @@ export function SettingsDialog() {
             <TabsContent value="compaction">
               <CompactionSettings />
             </TabsContent>
-            <TabsContent value="sandbox">
-              <SandboxSettings />
+            <TabsContent value="computer">
+              <ComputerSettings />
             </TabsContent>
             <TabsContent value="search">
               <SearchSettings />

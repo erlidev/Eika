@@ -5,7 +5,7 @@ are in `docs/STYLE_GUIDE.md` section 3.
 
 ```
 app/          routes, the layout shell, the panel registry
-features/     one folder per domain feature (projects, workspaces, sessions, session, files, terminal, changes, providers, profiles, context, search, mcp, settings, setup, connect)
+features/     one folder per domain feature (sessions, session, sandbox, providers, profiles, context, search, mcp, settings, setup, connect)
 components/   shared presentational components; components/ui is shadcn-managed
 api/          wire types mirroring docs/api/, the HTTP client, the WebSocket stream
 lib/          pure utilities with tests
@@ -25,7 +25,7 @@ Rules:
 
 ## The shell
 
-`app/Workbench.tsx` is a three-pane workbench: the project tree on the left,
+`app/Workbench.tsx` is a three-pane workbench: the chat list on the left,
 the open session in the middle, and the registered panels on the right. The
 side panes are resized by `components/ResizableSplit` and their widths are
 remembered by `lib/persisted`. Below 1024px the side panes become drawers, so
@@ -40,13 +40,12 @@ until the user picks a side. `app/CommandPalette.tsx` is Cmd/Ctrl+K.
 There is one HTTP client (`api/client.ts`) and one WebSocket connection
 (`api/stream.ts`). The stream reference-counts topics, reconnects with
 jittered backoff, and re-sends its topics on every reconnect, so a component
-subscribes to `session:<id>` or `workspace:<id>` and nothing else has to be
+subscribes to `session:<id>` or another topic and nothing else has to be
 arranged. The socket carries no history, so a reconnect only restores the
 subscription: `onReopen` tells a subscriber that events were missed, and the
 session store answers it with a replay from the last entry it holds.
 
 Nothing polls. An event invalidates the queries it makes stale:
-`features/workspaces/useWorkspaceEvents` for a container's lifecycle,
 `features/session/useSessionStream` for a turn that ended (which also
 refreshes the Context panel's next request and recorded calls), and
 `features/mcp`'s `useMCPEvents` for an MCP server's state on the global

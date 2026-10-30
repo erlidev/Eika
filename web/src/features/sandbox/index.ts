@@ -1,5 +1,4 @@
-/** The sandbox feature: a workspace's limits, network, and forwarded ports, and its usage. */
+/** The sandbox feature: the limits and network a sandbox gets, as the Computer settings edit them. */
 export { checkDraft, draftOf } from "@/features/sandbox/form";
-export type { SandboxDraft } from "@/features/sandbox/form";
-export { EgressFields, LimitsFields, PortsFields } from "@/features/sandbox/SandboxFields";
-export { SandboxPanel } from "@/features/sandbox/SandboxPanel";
+export type { SandboxDraft, SandboxSettings } from "@/features/sandbox/form";
+export { EgressFields, LimitsFields } from "@/features/sandbox/SandboxFields";

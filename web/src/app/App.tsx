@@ -7,7 +7,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 
 import { ApiError } from "@/api/client";
 import { resetEventStream } from "@/api/stream";
@@ -15,7 +15,6 @@ import { Workbench } from "@/app/Workbench";
 import { Splash } from "@/components/Splash";
 import { LoadFailedScreen, SignInScreen, useAuthStatus, useConnection } from "@/features/connect";
 import { callbackPath, MCPCallbackScreen, useMCPSelection } from "@/features/mcp";
-import { useSessions } from "@/features/sessions";
 import { setupComplete, useSettings, useSettingsDialog } from "@/features/settings";
 import { SetupWizard } from "@/features/setup";
 
@@ -82,24 +81,10 @@ function SignedIn() {
     <Routes>
       <Route path="/" element={<Workbench />} />
       <Route path="/sessions/:sessionId" element={<Workbench />} />
-      <Route path="/workspaces/:workspaceId" element={<WorkspaceRoute />} />
       <Route path={callbackPath} element={<MCPCallbackRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
-}
-
-/**
- * WorkspaceRoute opens a workspace's newest session. A workspace is not a view
- * of its own: everything in it is reached through a session.
- */
-function WorkspaceRoute() {
-  const params = useParams();
-  const sessions = useSessions(params.workspaceId);
-  if (params.workspaceId === undefined) return <Navigate to="/" replace />;
-  if (sessions.isPending) return <Workbench />;
-  const newest = sessions.data?.[0];
-  return newest ? <Navigate to={`/sessions/${newest.id}`} replace /> : <Workbench />;
 }
 
 /**
