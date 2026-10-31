@@ -42,6 +42,10 @@ func Scenarios() []Scenario {
 		SessionTitle(),
 		QueuePriority(nonce),
 		SharedAdmission(nonce),
+		SlotHintHonoured(nonce, provider.APIChat),
+		SlotHintHonoured(nonce, provider.APIResponses),
+		SlotAffinity(nonce, provider.APIChat),
+		SlotAffinity(nonce, provider.APIResponses),
 		ResponsesDrift(nonce),
 		OnResponses(CutOffReasoning(nonce)),
 		OnResponses(ToolsAndReasoning(nonce)),
@@ -67,6 +71,17 @@ type Result struct {
 	// Calls are the model calls the scenario made, in order, including the
 	// ones before a failure.
 	Calls []Call `json:"calls"`
+	// Notes are the findings a scenario states in words, such as what a
+	// control run cost, in the order it stated them.
+	Notes []string `json:"notes,omitempty"`
+}
+
+// Note records a finding of the scenario being played, to be reported with
+// its result. It does nothing on a target that is not playing one.
+func (t *Target) Note(format string, args ...any) {
+	if t.notes != nil {
+		*t.notes = append(*t.notes, fmt.Sprintf(format, args...))
+	}
 }
 
 // Execute plays the scenario against t and returns its result. The scenario
@@ -79,6 +94,8 @@ func (s Scenario) Execute(ctx context.Context, t *Target) Result {
 	if t.Source != nil {
 		session.Counter = counter.New(t.Source)
 	}
+	var notes []string
+	session.notes = &notes
 	calls, err := s.Run(ctx, &session)
 	if err == nil {
 		err = exactDrift(calls)
@@ -89,6 +106,7 @@ func (s Scenario) Execute(ctx context.Context, t *Target) Result {
 		Seconds: time.Since(start).Seconds(),
 		Summary: Summarise(calls),
 		Calls:   calls,
+		Notes:   notes,
 	}
 	if res.Calls == nil {
 		res.Calls = []Call{}
@@ -145,6 +163,9 @@ func (t *Target) Complete(ctx context.Context, label string, req provider.Reques
 		}
 	}
 	call := newCall(label, usage, timings, stop, time.Since(start))
+	if req.SlotHint != nil {
+		call.Slot = new(*req.SlotHint)
+	}
 	if predicted != nil {
 		call.Predicted, call.Method = &predicted.Tokens, string(predicted.Method)
 		seconds := countTime.Seconds()

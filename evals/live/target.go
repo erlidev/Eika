@@ -53,6 +53,9 @@ type Target struct {
 	// each scenario its own, as each session has one. Nil when the target
 	// was not made by Connect.
 	Counter *counter.Counter
+
+	// notes collects what the scenario being played states in words (Note).
+	notes *[]string
 }
 
 // ServerInfo is what the harness's probe reports about the bench's server, as

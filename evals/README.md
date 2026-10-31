@@ -62,6 +62,17 @@ against the bench's model, thinking off, and requires a short single-line title.
 over real model calls: a call holds the slot, a background call and then an
 interactive one line up, and the interactive call must be admitted and answered
 first (`queue_seconds` in the report is each call's wait for its lease).
+`slot_hint_honoured` (and `responses_slot_hint_honoured`) asks the server to run
+requests on slot 1, 1, 0, 0 and on a slot it does not have, reads `/slots` while
+each runs, and requires the slot named to be the only one processing it (and the
+unknown one not to fail the call); the zero drift on those requests shows the hint
+is not part of what the counter renders. `slot_affinity` (and
+`responses_slot_affinity`) plays two sessions that share a 3000-token head through
+the real agent loop on the queue's slot affinity, then the same pair with no hint,
+and reports what affinity saved in prefilled tokens in the result's `notes`. It
+runs the harness's slot affinity check first. When the check passes, the sessions
+must keep one slot each and find their previous prompt cached; when it fails,
+hints must not have beaten the control, so the harness is right not to send them.
 `shared_admission` is the one scenario that sends large prompts: two sessions
 of about 66k tokens each, which together pass the bench's 131072-token cache,
 ask at once through a pool that states `kv: shared` with that size (the probe
@@ -91,6 +102,8 @@ not start, stop or swap anything on it from a scenario.
 | `calls[].predicted_tokens`, `prediction_method` | What the token counter (`internal/provider/counter`) predicted for the prompt before the call, and how: `exact`, `anchored` or `estimated` |
 | `calls[].drift` | The prediction less `prompt_tokens`. Any drift on an `exact` prediction fails the scenario |
 | `calls[].count_seconds` | What predicting the request cost: the tokenizer requests included |
+| `calls[].id_slot` | The slot the request named; absent when it named none |
+| `scenarios[].notes` | What a scenario states in words, such as what a control run cost |
 | `summary` | The same, totalled over a scenario's calls |
 
 A number that was not measured is `null`, never 0. Each scenario is one session
