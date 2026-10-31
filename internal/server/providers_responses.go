@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/counter"
 	"github.com/erlidev/eika/internal/provider/probe"
@@ -59,7 +60,21 @@ func (s *Server) withConformance(ctx context.Context, p store.Provider, key stri
 		res.Capabilities.Responses = prior.Responses
 		return res, apiOf(prior.Responses)
 	}
-	conf := s.checkResponses(ctx, p, key, res, model, known)
+	// A user who pressed "Probe again" is waiting for the answer, so the check
+	// is interactive and does not wait for an idle pool. The check a start
+	// of Core makes is maintenance: nobody waits for it.
+	priority := inference.Maintenance
+	if force {
+		priority = inference.Interactive
+	}
+	conf := s.checkResponses(ctx, p, key, res, model, known, priority)
+	if conf.Busy && prior.Responses != nil {
+		// The pool never had room for the check: what was known stands, and
+		// the check, which names no build or model, runs again next time.
+		s.log.Info("responses conformance deferred; the pool stayed busy", "provider_id", p.ID, "name", p.Name)
+		res.Capabilities.Responses = prior.Responses
+		return res, apiOf(prior.Responses)
+	}
 	res.Capabilities.Responses = &conf
 	s.log.Info("responses conformance checked", "provider_id", p.ID, "name", p.Name, "model", model.Model,
 		"verdict", conf.Verdict, "reason", conf.Reason, "reasoning", conf.Reasoning, "cache_metrics", conf.CacheMetrics,
@@ -88,7 +103,7 @@ func (s *Server) checkModel(ctx context.Context, providerID string) (store.Model
 // checkResponses runs the Responses conformance check against the provider's
 // endpoint with its model, counting the second request with a counter of its
 // own where the endpoint counts exactly. A provider with no model is skipped.
-func (s *Server) checkResponses(ctx context.Context, p store.Provider, key string, res probe.Result, model store.Model, known bool) probe.Conformance {
+func (s *Server) checkResponses(ctx context.Context, p store.Provider, key string, res probe.Result, model store.Model, known bool, priority inference.Priority) probe.Conformance {
 	now := time.Now().UTC()
 	if !known {
 		return probe.Conformance{
@@ -116,6 +131,8 @@ func (s *Server) checkResponses(ctx context.Context, p store.Provider, key strin
 		// user keeps the thinking of; a server of the user's own takes the
 		// reasoning back whatever the setting, and the check should see it do so.
 		PreserveThinking: !providerEndpoint(row, key).Hosted || model.PreserveThinking,
+		Queue:            s.queue(ctx),
+		Need:             callNeed(p, priority, "", 0),
 	}
 	if res.Capabilities.Counting == probe.CountChat {
 		encoder, _ := client.(provider.ChatEncoder)

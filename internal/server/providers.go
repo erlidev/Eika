@@ -46,6 +46,9 @@ const (
 	// testMaxTokens leaves a reasoning model room to think and still say a
 	// word, at a cost too small to matter.
 	testMaxTokens = 512
+	// testPromptTokens is the room the test's prompt and its picture take in
+	// a shared cache, which the queue admits the test against.
+	testPromptTokens = 1024
 	// keyHintLength is how many trailing characters of a key the UI may see,
 	// so the user can tell which key is stored.
 	keyHintLength = 4
@@ -99,6 +102,7 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.syncInference(r.Context())
 	s.log.Info("provider created", "provider_id", created.ID, "name", created.Name, "kind", created.Kind)
 	writeJSON(w, s.log, http.StatusCreated, s.asProvider(created))
 }
@@ -159,6 +163,7 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.syncInference(r.Context())
 	s.log.Info("provider updated", "provider_id", updated.ID, "key_changed", req.APIKey != nil, "key_cleared", keyCleared,
 		"overridden", updated.Overridden)
 	writeJSON(w, s.log, http.StatusOK, s.asProvider(updated))
@@ -172,6 +177,7 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.syncInference(r.Context())
 	s.log.Info("provider deleted", "provider_id", id)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -296,12 +302,6 @@ func (s *Server) endpointFor(ctx context.Context, cfg runConfig) (endpoint, erro
 		return endpoint{}, conflictf("no model is configured; add one under Settings, Models")
 	}
 	return s.endpointOf(ctx, cfg.model)
-}
-
-// providerOf builds a provider on the endpoint of model m.
-func (s *Server) providerOf(ctx context.Context, m store.Model) (provider.Provider, error) {
-	ep, err := s.endpointOf(ctx, m)
-	return ep.client, err
 }
 
 // endpointOf builds the provider on the endpoint of model m.

@@ -13,7 +13,9 @@
 // model's reasoning, then that call, its result and the reasoning item sent back)
 // and reports whether the Responses API works the way the loop needs: the
 // Conformance it returns says so, with the model and server build it was made
-// against, which is how a later probe knows whether to ask again.
+// against, which is how a later probe knows whether to ask again. Each of its
+// two requests takes a lease on the inference queue it is given, at the
+// priority of whoever asked; a check that never gets one is skipped, not failed.
 //
 // The Result a probe returns is what the harness stores on a provider row. A
 // field the user overrode is not replaced by it (internal/server and

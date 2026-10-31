@@ -20,6 +20,10 @@ export type SettingsDefaults = {
   compaction: CompactionSettings;
   /** computer_idle_minutes is how long a running computer may go without a run. */
   computer_idle_minutes: number;
+  /** maintenance_idle_seconds, aging_seconds and preempt_running are the inference queue's settings. */
+  maintenance_idle_seconds: number;
+  aging_seconds: number;
+  preempt_running: boolean;
 };
 
 /**

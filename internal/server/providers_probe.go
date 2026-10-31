@@ -50,7 +50,7 @@ func (s *Server) recordProbe(ctx context.Context, id string, res probe.Result, a
 	if err != nil {
 		return store.Provider{}, fmt.Errorf("encode capabilities: %w", err)
 	}
-	return s.deps.Store.RecordProbe(ctx, id, store.ProbeResult{
+	stored, err := s.deps.Store.RecordProbe(ctx, id, store.ProbeResult{
 		Backend:      string(res.Backend),
 		Slots:        res.Slots,
 		KV:           string(res.KV),
@@ -59,6 +59,12 @@ func (s *Server) recordProbe(ctx context.Context, id string, res probe.Result, a
 		Capabilities: capabilities,
 		At:           time.Now().UTC(),
 	})
+	if err == nil {
+		// A probe can change the slots, the cache and the window the queue
+		// admits calls against.
+		s.syncInference(ctx)
+	}
+	return stored, err
 }
 
 // probeStored probes one stored provider and records the outcome: the

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -58,13 +59,24 @@ type modelCallBody struct {
 	ContextWindow *int `json:"context_window"`
 	// Endpoint is the provider's name when the call was made.
 	Endpoint string `json:"endpoint,omitempty"`
-	// QueueMS, Slot, Class, Priority and Agent are null until the inference
-	// queue and the agents fill them.
-	QueueMS   *int      `json:"queue_ms"`
-	Slot      *int      `json:"slot"`
-	Class     string    `json:"class,omitempty"`
-	Priority  string    `json:"priority,omitempty"`
-	Agent     string    `json:"agent,omitempty"`
+	// QueueMS is how long the call waited for a lease on its pool, Slot the
+	// queue's slot number of the lease that served it (the server's own slot
+	// only once slot affinity sends it), Class the model class the run was
+	// resolved from and Priority what the call asked for: interactive,
+	// foreground, background or maintenance. They are null or absent for a
+	// call recorded before the queue existed, and Class for a run that named
+	// its model. Agent is null until the agents fill it.
+	QueueMS  *int   `json:"queue_ms"`
+	Slot     *int   `json:"slot"`
+	Class    string `json:"class,omitempty"`
+	Priority string `json:"priority,omitempty"`
+	Agent    string `json:"agent,omitempty"`
+	// PrefillMS is how long the endpoint took to read the prompt, as it
+	// stated it, and DecodeMS how long it spent generating: its own measure,
+	// else the harness's from the first token. Null when nothing measured
+	// them.
+	PrefillMS *int      `json:"prefill_ms"`
+	DecodeMS  *int      `json:"decode_ms"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -190,8 +202,49 @@ func (c callRecorder) Record(ctx context.Context, call agent.ModelCall) error {
 		Drift:                 call.Drift,
 		ContextWindow:         positive(call.ContextWindow),
 		Endpoint:              c.endpoint,
+		QueueMS:               queueMS(call.Queue),
+		Slot:                  slotOf(call.Queue),
+		Class:                 call.Queue.Class,
+		Priority:              call.Queue.Priority,
+		PrefillMS:             prefillMS(call.Timings),
+		DecodeMS:              decodeMS(call.Timings),
 	})
 	return err
+}
+
+// queueMS is the time a call waited in the inference queue, nil for a call
+// that took no lease.
+func queueMS(q agent.QueueRecord) *int {
+	if !q.Queued {
+		return nil
+	}
+	return new(int(q.Waited.Milliseconds()))
+}
+
+// slotOf is the queue slot that served a call, nil for a call that took no
+// lease.
+func slotOf(q agent.QueueRecord) *int {
+	if !q.Queued {
+		return nil
+	}
+	return new(q.Slot)
+}
+
+// prefillMS is the time the endpoint said it took to read the prompt, nil
+// when it said none.
+func prefillMS(t provider.Timings) *int {
+	if !t.HasPrompt() {
+		return nil
+	}
+	return new(int(math.Round(t.PromptMS)))
+}
+
+// decodeMS is the time spent generating, nil when nothing measured it.
+func decodeMS(t provider.Timings) *int {
+	if !t.HasDecode() {
+		return nil
+	}
+	return new(int(math.Round(t.DecodeMS)))
 }
 
 // handleSessionContext previews the next model call of a session: the
@@ -371,6 +424,8 @@ func asModelCall(c store.ModelCall) modelCallBody {
 		Class:                 c.Class,
 		Priority:              c.Priority,
 		Agent:                 c.Agent,
+		PrefillMS:             c.PrefillMS,
+		DecodeMS:              c.DecodeMS,
 		CreatedAt:             c.CreatedAt,
 	}
 }

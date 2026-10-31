@@ -354,8 +354,9 @@ model is configured; `400` for a model that does not exist.
 | `drift` | number or null | `predicted_prompt_tokens` less `prompt_tokens`; `null` unless both exist. Any drift on an `exact` prediction is a bug. |
 | `context_window` | number or null | The window the call was judged against; `null` when the model had none configured. |
 | `endpoint` | string, optional | The provider's name when the call was made. |
-| `queue_ms`, `slot` | number or null | Wait before the call and the slot that served it. `null` until the inference queue records them. |
-| `class`, `priority`, `agent` | string, optional | Attribution; absent until the inference queue and the agents record them. |
+| `queue_ms`, `slot` | number or null | Milliseconds the call waited for a lease on its pool (summed over its attempts, so a call that was preempted and queued again counts both waits), and the queue's slot number of the lease that served it. That is the server's own slot only once slot affinity sends it. `null` for a call recorded before the queue existed. |
+| `class`, `priority`, `agent` | string, optional | Attribution. `priority` is what the call asked for: `interactive`, `foreground`, `background` or `maintenance`. `class` is the model class the run was resolved from and is absent for a run that named its model. `agent` is absent until the agents record it. |
+| `prefill_ms`, `decode_ms` | number or null | Milliseconds the endpoint took to read the prompt (as it stated it) and to generate (its own measure, else the harness's from the first token). `null` when nothing measured them. |
 | `created_at` | time | When the call returned. |
 
 ### Session
@@ -664,7 +665,7 @@ harness runs in a container. `400` too for a kind that cannot list.
 | Field | Type | Meaning |
 |---|---|---|
 | `verdict` | string | `passed`, `failed` or `skipped`. Only `passed` chooses the Responses API. |
-| `reason` | string, optional | Why it failed or was skipped, with the key removed. |
+| `reason` | string, optional | Why it failed or was skipped, with the key removed. A check is skipped when the provider has no chat model, and when its requests never got a lease on a busy pool (the earlier outcome then stands and the check runs again at the next probe). |
 | `model`, `build` | string, optional | The model asked and the server's build when it was. A change of either makes the outcome stale, and the next probe runs the check again. |
 | `checked_at` | time | When it ran. |
 | `reasoning` | boolean | The model returned a reasoning item and the second request sent it back. False for a model that did not reason. |
@@ -902,6 +903,9 @@ stores them.
 | `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The home computer's limits, checked as a Sandbox's are. A field the object leaves out is 0, no limit. A write applies them to its container, running or stopped, without a restart; a stopped container also takes them at its next start. |
 | `sandbox_egress` | `{"mode", "allow"}` | The home computer's egress, applied as the limits are: a change between open and restricted moves the container between the sandbox networks, dropping the connections it has open, and the processes it starts from then on get the proxy settings that go with its network. A restricted mode is `400` on a harness without the internal sandbox network. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
+| `maintenance_idle_seconds` | number, 0 to 86400 | How long a pool must have run nothing but maintenance calls before it admits a maintenance call (session titles, and later dreaming). 0 admits them at once, in order. Applied to the queue as soon as it is saved. |
+| `aging_seconds` | number, 1 to 604800 | How long a waiting model call waits for each priority level it gains, so none starves. A maintenance call that has aged one level no longer waits for an idle pool. Applied at once. |
+| `preempt_running` | boolean | Whether an interactive call that cannot be admitted cancels running background and maintenance calls, which their runs retry. Off by default: a running generation is left to finish. Applied at once. |
 | `model_classes` | object | The model each class is served by, `{"main": "qwen", "fast": "gpt-5-mini"}`. The classes are `deep`, `main`, `fast` (chat models) and `decision` (a decision model); each key must be one, and each value the name of a model of that kind or `""` for none. Harness tasks name a class, never a model. A class with none falls back, `deep` and `fast` to `main`, and a chat class that still has none to the default model (`default_model`, else the first chat model); `decision` has no fallback. Renaming a model renames it here, and deleting one leaves its classes to fall back. Session titles run on `fast` (see `session.title` in `events.md`), and are skipped when `fast` falls back onto the model assigned to `deep` and that model is on a hosted API (backend `openai`). |
 | `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
 | `search_limits` | object | Quotas by bucket, `{"exa": {"month": 500}, "marginalia": {"day": 50}}`. Each bucket must exist; `day` and `month` are whole numbers from 1 to 10 000 000, and 0 or an absent field is unlimited. Anything else is `400` naming the bucket and the range. A bucket not named keeps its default. |
@@ -923,6 +927,8 @@ stores them.
 |---|---|---|
 | `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
 | `computer_idle_minutes` | number | 15. |
+| `maintenance_idle_seconds`, `aging_seconds` | number | 120 and 300. |
+| `preempt_running` | boolean | `false`. |
 | `sandbox_limits` | object | No CPU or memory limit, and 4096 processes. |
 | `sandbox_egress` | object | `open`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |
 | `search_order` | array of strings | Every web provider in its default order: `searxng`, `exa`, `tavily`, `brave`, `marginalia`. |
@@ -1224,6 +1230,35 @@ What the setup screens check before the first computer. `200` with:
 | `sandbox_image` | `{"name": string, "present": boolean}` | The image the home computer is created from and whether the Docker host has it. |
 | `sandbox` | `{"cpus": number, "memory_bytes": number, "egress_control": boolean}` | The Docker host's cores and memory, which bound a sandbox's limits, zero when Docker cannot be asked; and whether a sandbox's egress can be restricted, which a harness outside the compose stack cannot. |
 | `providers`, `models` | number | How many providers exist, and how many chat models: the setup needs one a conversation can run on. |
+
+## Inference queue
+
+### `GET /api/inference`
+
+What holds each hardware pool and what waits behind it (`docs/design/runtime.md`
+section 3). Read-only; the queue's settings are `maintenance_idle_seconds`,
+`aging_seconds` and `preempt_running` under Settings, and a pool is described by
+its providers' `pool`, `slots`, `kv` and `kv_tokens`. `200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `policy` | object | `maintenance_idle_seconds`, `aging_seconds` (numbers) and `preempt_running` (boolean) now in force. |
+| `pools` | InferencePool array | Every pool the providers describe, and any other that still has a call, by name. |
+
+#### InferencePool
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | The pool. A provider's pool is its `pool` field, or its own name when that is empty. |
+| `endpoints` | string array | The providers in the pool, serialised against each other. Rows of one pool that disagree take the fewest `slots` and the smallest cache. |
+| `slots` | number | Calls the pool runs at once. |
+| `kv` | string | `shared`, `partitioned` or `unknown`. |
+| `cache_tokens` | number or null | The cache a call is admitted against: the size of a shared cache, or the probed per-request window for `unknown`. `null` when only `slots` limit admission (`partitioned`, or a shared cache of no known size). |
+| `used_tokens` | number | The sum of the running calls' predicted prompt plus maximum output, which `cache_tokens` bounds. |
+| `idle` | boolean | The pool has run nothing but maintenance for `maintenance_idle_seconds`, so it admits maintenance calls. |
+| `idle_seconds` | number or null | How long it has been idle; `null` when it never ran anything else. |
+| `running` | array | The calls holding a slot, by `slot`: `endpoint`, `class` and `session_id` (optional), `priority`, `tokens`, `held_ms`, and `preempted` (cancelled for an interactive call, not yet let go). |
+| `waiting` | array | The calls waiting, in the order they will be admitted: `endpoint`, `class` and `session_id` (optional), `priority` (what it asked for), `earned` (what its waiting has raised it to), `tokens`, `waited_ms` (for this slot), `total_waited_ms` (since the caller first began waiting, which a retry carries), and `gated` (a maintenance call waiting for an idle pool). |
 
 ## Event stream
 

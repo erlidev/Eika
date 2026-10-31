@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/erlidev/eika/internal/imaging"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -234,8 +235,6 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, invalidf("%s", scrub(err.Error(), key)))
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), testTimeout)
-	defer cancel()
 	sampling := provider.Sampling{MaxOutput: new(testMaxTokens)}
 	if req.ReasoningEffort != "" {
 		sampling.ReasoningEffort = &req.ReasoningEffort
@@ -244,14 +243,28 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 	if req.ImageInput {
 		question.Images = []provider.Image{testImage}
 	}
-	started := time.Now()
-	reply, stop, err := provider.Complete(ctx, client, provider.Request{
-		Model:            model,
-		Messages:         []provider.Message{question},
-		Sampling:         sampling,
-		ThinkingSwitch:   provider.ThinkingSwitch(req.ThinkingSwitch),
-		PreserveThinking: req.PreserveThinking,
-	})
+	// The user is waiting on the answer, so the test is interactive. Its time
+	// limit starts when it is admitted, and the latency it reports is the
+	// model's, not the queue's.
+	var (
+		reply, stop string
+		started     time.Time
+	)
+	err = s.queue(r.Context()).Do(r.Context(), callNeed(p, inference.Interactive, "", testPromptTokens+testMaxTokens),
+		func(ctx context.Context, _ *inference.Lease) error {
+			ctx, cancel := context.WithTimeout(ctx, testTimeout)
+			defer cancel()
+			started = time.Now()
+			var err error
+			reply, stop, err = provider.Complete(ctx, client, provider.Request{
+				Model:            model,
+				Messages:         []provider.Message{question},
+				Sampling:         sampling,
+				ThinkingSwitch:   provider.ThinkingSwitch(req.ThinkingSwitch),
+				PreserveThinking: req.PreserveThinking,
+			})
+			return err
+		})
 	if err != nil {
 		s.fail(w, r, endpointFailure(p.BaseURL, err, key))
 		return

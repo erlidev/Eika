@@ -473,8 +473,9 @@ this file says why, so neither repeats the other.
   (the reader cannot tell them apart); a separate column for each source (every
   aggregate would pick one).
 - **Columns with no source yet exist and are NULL.** `queue_ms`, `slot`,
-  `class`, `priority` and `agent` are added now so the inference queue and the
-  agents items add no migration, and nothing writes them. `endpoint` is the
+  `class`, `priority` and `agent` were added so the inference queue and the
+  agents items would add no migration; the queue now fills the first four
+  ("The inference queue") and `agent` waits for the agents. `endpoint` is the
   provider's name at the time of the call, as `model` is the model's.
 - **One counter per session, held by the server.** A run builds its agent
   afresh for every message, so the counter that learns lives in
@@ -553,6 +554,126 @@ this file says why, so neither repeats the other.
   two columns, and every index and constraint named after the old table, so no
   object keeps the old name, and rows are untouched. Rejected: a new table
   and a copy (the rows are the deployment's history).
+
+### The inference queue
+
+`internal/inference` is the one queue every model call of Core waits in
+(`docs/design/runtime.md` section 3).
+
+- **A leaf package on the standard library.** It imports nothing of the
+  module, so the agent, the probe, the utility tasks and the server all hold
+  leases without it knowing any of them; callers translate provider rows into
+  `inference.Endpoint` and a call into `inference.Need`. `internal/imports_test.go`
+  holds this (`leaves`). Rejected: a queue that knows `provider.Provider` and
+  wraps it. The agent needs the lease itself: `queue_ms`, the slot and the
+  priority go on the `model_calls` row, the request's predicted prompt is the
+  lease's `Tokens`, the lease's context is the call's and is how a preemption
+  reaches it, and every attempt of a retry takes its own lease. A wrapper would
+  have hidden all four.
+- **Every call site holds a lease, and a test keeps it so.** The agent holds
+  one per attempt in `stream` (agent turns and the compaction summaries,
+  which follow their run's priority). The server holds one around the session
+  title (maintenance, class `fast`), the model test (interactive: the user is
+  waiting) and, through `probe.ResponsesCheck.Queue`, each of the Responses
+  check's two requests. `internal/modelcalls_test.go` scans the source for
+  `Stream` and `provider.Complete` calls and fails on a file it does not list,
+  with the reason that file is covered. Counting requests (`/tokenize`,
+  `/apply-template`) and probes that send no prompt take no lease. A lease
+  covers a model call only: never a tool call, a backoff or any other wait
+  between calls, so a retry takes a new lease and a more urgent call can get in
+  between.
+- **Pools come from the provider rows**, `pool` or else the provider's name,
+  and `classes[].pool` is the same value. The server describes the queue from
+  the store at start, on first use, and after every change of a provider, a
+  probe or one of the queue's settings (`syncInference`), so a changed `slots`,
+  `kv` or `kv_tokens` takes effect on the next admission without a restart.
+  Rows of one pool that disagree take the most restrictive of each: the
+  fewest slots, the smallest cache size, and the most binding kv mode. A pool
+  is one machine, so a row that claims more than another is not believed over
+  it. Rejected: the largest (it can overfill a cache), the first row (the
+  answer would depend on creation order). A lease already running is never
+  cancelled by a change of settings; a smaller pool admits nothing until
+  its running leases fall under the new size, and a larger one admits what
+  waits at once.
+- **Admission on a shared cache.** A call is admitted while the running calls
+  fit the cache with it, each counted at its predicted prompt plus its maximum
+  output (`Tokens`; a request with no output limit counts the rest of the
+  window). `kv: unknown` is admitted as shared with the probed per-request
+  window as its size, as the probe's log entry says; `shared` with no known
+  size, `partitioned`, and `unknown` with no probed window are limited by slots
+  alone. Order is strict: the next call by priority is the only one considered,
+  and when it does not fit nothing behind it is admitted, so a large call is
+  not starved by a stream of small ones. A call larger than the whole cache is
+  admitted when the pool is empty, and runs alone, with a warning. The count
+  is a worst case, so failing a turn for it would be wrong, and llama.cpp or the
+  engine reports the real overflow if it comes. Rejected: failing it clearly
+  (it fails a turn that might fit) and admitting it beside others (it does the
+  harm admission exists to prevent).
+- **A prefix shared between sessions is not counted once.** The design asks
+  for it "where the engine caches prefixes", and it cannot be done today:
+  the loop has no prefix identity to hand the queue (the counter keeps prefix
+  hashes of its own, per session, and exposes none), the only engine on the
+  bench is llama.cpp, whose unified cache is not shown to share cells between
+  slots, and the engines that do share (vLLM, SGLang) are unverified. Calls are
+  counted whole. That over-counts, which costs parallelism and never overfills
+  the cache.
+- **Priority is per call.** Interactive, foreground, background, maintenance.
+  A call waiting gains one level per `aging_seconds`, never passing interactive;
+  ties go to the call that began waiting first, so a stream of interactive
+  calls cannot starve an older background one (a test shows it admitted within
+  two aging periods). The wait is counted from `Need.Since`, which a retry
+  passes, so a call that was preempted keeps the age it earned. A run's
+  priority that can change is an `inference.Rank` the loop reads at every
+  `Acquire`: raising it (a user message joining a background home turn) changes
+  the run's next lease and nothing already queued. The home session of phase 2
+  calls `Raise`; no caller does yet but tests.
+- **Maintenance runs after an idle pool, and is not blocked forever.** A pool
+  is idle when none of its running calls is above maintenance and the last one
+  ended `maintenance_idle_seconds` ago (a pool that never ran one has been idle
+  for ever, and 0 turns the wait off). Maintenance calls do not keep the pool
+  from being idle for each other, so three titles run together. A maintenance
+  call that has waited one aging period is background, and no longer waits for
+  idleness: a pool that never rests delays a title by `aging_seconds` and not for
+  ever. Titles are maintenance, so on a pool in use a title appears a couple
+  of minutes after the last model call, not within seconds; a title that waits is
+  owned by the server (`titles`), not by the run, so it is made after the run is
+  over. Its time limit starts at admission, since waiting for the pool is not the
+  model being slow.
+- **`preempt_running`** (default off) cancels running background or maintenance
+  calls, least urgent first and, among equals, the one started last (the least
+  prefill lost), when an interactive call is waiting and cannot be admitted for
+  want of a slot or of cache room, and only the calls that cancelling makes
+  room with. A call that waited its way up to interactive is not a victim, so a
+  background call cannot be preempted for ever. The victim's lease context ends
+  with `ErrPreempted`; the slot is free once the victim lets go. The agent
+  turns it into a retryable `provider.Error`, so the retry path takes it:
+  `message.reset`, a new lease at the same request, no `run.error`. It is not
+  charged to `MaxRetries` (the endpoint did not fail, and a user chatting a
+  while must not fail a background run), and has no backoff. Calls outside the
+  loop (titles, the check) are made again by `Queue.Do`, up to sixteen times.
+- **The Responses check is maintenance, unless the user asked.** A start of
+  Core runs it only for a stale outcome and nobody waits, so it waits for an
+  idle pool like a title; "Probe again" is interactive. If its requests never get
+  a lease before its four minutes are up, that says nothing of the endpoint, so
+  the result is `skipped` with a reason and `Busy` set: the earlier outcome
+  stands, and it is not current, so the next probe tries again. Rejected: a
+  `failed` verdict, which would put a busy pool's provider on `chat`.
+- **What is recorded.** `queue_ms` is the time a call waited for leases, summed
+  over its attempts; `slot` is the queue's own slot number (the server's slot
+  only once slot affinity sends it); `priority` is what the call asked for;
+  `class` is the model class a run was resolved from, which no run names yet,
+  so it stays absent; `prefill_ms` and `decode_ms` (migration `0009`) are the
+  endpoint's `timings`, the decode time the harness's own from the first token
+  when the endpoint states none. Waits over 250 ms are logged when the call is
+  admitted, preemptions and oversize calls as warnings.
+- **Visibility is a read-only route.** `GET /api/inference` reports each pool,
+  what holds its slots and what waits in the order it will be admitted; the
+  Activity page of phase 3 is its UI. The queue's three settings
+  (`maintenance_idle_seconds`, `aging_seconds`, `preempt_running`) are
+  settings keys like `computer_idle_minutes`, applied when saved, and have no
+  UI of their own yet.
+- Compaction summaries, though queued, are still neither recorded nor
+  observed; they remain unowned by the Recorder until the agents item.
 
 ### Effective window
 

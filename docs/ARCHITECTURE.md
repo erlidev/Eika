@@ -31,6 +31,7 @@ egress proxy are network calls and run in the harness.
 | `server` | Composition, JSON API, event stream, auth, run manager; `server/servertest` builds and checks `docs/api/contract.json` |
 | `agent` | The loop: turns, tool dispatch, queues, retries, context assembly |
 | `provider` | Model interface, kind registry, `Complete`; `openai` implementation in two protocols (Chat Completions and the stateless Responses API); `providertest` scripted fake; `probe` identifies the backend behind an endpoint, reads its slots, window, KV cache and capabilities, and runs the Responses conformance check, with `probetest` serving its fixtures; `counter` predicts a request's token count (exact, anchored or estimated) and learns from the measured one |
+| `inference` | The queue every model call waits in: pools of slots (and a shared cache), four priorities with aging, an idle gate for maintenance, optional preemption of running low-priority calls, one lease per model call; standard library only |
 | `utility` | The harness's own one-shot model tasks (session titles), sent to the model of the class the task runs on |
 | `imaging` | Prepares attached images: decode, EXIF orientation, fit within 1080p (Catmull-Rom), PNG or JPEG without metadata |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
@@ -76,6 +77,18 @@ Run(ctx, session, text)
   build or another model than the one it would ask now; the outcome picks the
   provider's `api` (`responses` only when it passed), which a user's own choice
   overrides. `server/providers_responses.go` runs it.
+- **inference** (`inference`) is the queue between the loop and the GPU.
+  `Queue.Acquire(ctx, Need)` blocks until the call's pool has a slot (and, on
+  a pool with a cache size, room: predicted prompt plus maximum output of
+  every running call), and returns a `Lease` whose `Context` the model call is
+  made with. The agent takes one per attempt inside `stream`, so queue time
+  (`queue_ms`) is outside the response's timings, and releases it on every way
+  out; a preempted attempt fails with a retryable error the retry path takes
+  without spending its budget. Titles, the model test and the Responses check
+  hold a lease around their call through `Queue.Do`. The server describes the
+  queue from the provider rows and three settings (`server/inference.go`) and
+  serves its state on `GET /api/inference`.
+  `internal/modelcalls_test.go` lists the files that send a model request.
 - **counter** (`provider/counter`) predicts the size of a `provider.Request`
   before it is sent. One `Counter` belongs to one session: `Predict` returns a
   `provider.Prediction` (tokens and method) and `Observe` takes the measured
@@ -222,7 +235,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, api (`chat` or `responses`), capabilities (jsonb, with the Responses check's outcome), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
 | `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
-| `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; `queue_ms`, `slot`, `class`, `priority` and `agent` stay NULL until the inference queue and the agents fill them |
+| `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot`, `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |
@@ -659,7 +672,8 @@ An arrow means "may import".
  cmd/eika -> server                     cmd/eikad -> eikad, search/filter
  server -> agent, session, store, computer, search, mcp, egress,
            utility, imaging
- agent -> tool, provider                 session -> agent, store
+ agent -> tool, provider, inference       session -> agent, store
+ provider/probe -> inference              inference: a leaf (standard library only)
  utility -> provider                      imaging -> provider
  provider/counter -> provider, provider/probe   (evals/live, later agent -> counter)
  tool -> executor

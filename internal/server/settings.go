@@ -14,6 +14,7 @@ import (
 
 	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/egress"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -86,6 +87,14 @@ type settingsDefaults struct {
 	// ComputerIdleMinutes is how long a running computer may go without a
 	// run before the harness stops it.
 	ComputerIdleMinutes int `json:"computer_idle_minutes"`
+	// MaintenanceIdleSeconds, AgingSeconds and PreemptRunning are the
+	// inference queue's settings: how long a pool is idle before it admits
+	// maintenance calls, how long a waiting call waits for each priority
+	// level it gains, and whether an interactive call cancels running
+	// background calls.
+	MaintenanceIdleSeconds int  `json:"maintenance_idle_seconds"`
+	AgingSeconds           int  `json:"aging_seconds"`
+	PreemptRunning         bool `json:"preempt_running"`
 }
 
 // handleSettings returns every setting.
@@ -117,6 +126,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("settings written", "keys", len(req))
+	if touchesInference(req) {
+		s.syncInference(r.Context())
+	}
 	// The sandbox settings are the home computer's limits and egress. The
 	// table is written first, so a container that refuses the change leaves
 	// the new values saved, and the next start applies them.
@@ -157,7 +169,9 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 		SearchLimits:  map[string]search.Limit{},
 		Compaction:    compactionDefaults(),
 		// The idle timeout is the harness's own, not the deployment's.
-		ComputerIdleMinutes: defaultIdleMinutes,
+		ComputerIdleMinutes:    defaultIdleMinutes,
+		MaintenanceIdleSeconds: int(inference.DefaultMaintenanceIdle / time.Second),
+		AgingSeconds:           int(inference.DefaultAging / time.Second),
 	}
 	if s.deps.Search != nil {
 		defaults.SearchOrder, defaults.SearchLimits = s.deps.Search.Web(), s.deps.Search.DefaultLimits()
@@ -238,6 +252,21 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		var n int
 		if err := json.Unmarshal(value, &n); err != nil || n < 0 || n > maxIdleMinutes {
 			return invalidf("%s must be a whole number of minutes from 0 to %d", key, maxIdleMinutes)
+		}
+	case settingMaintenanceIdle:
+		var n int
+		if err := json.Unmarshal(value, &n); err != nil || n < 0 || n > maxMaintenanceIdleSeconds {
+			return invalidf("%s must be a whole number of seconds from 0 to %d", key, maxMaintenanceIdleSeconds)
+		}
+	case settingAging:
+		var n int
+		if err := json.Unmarshal(value, &n); err != nil || n < 1 || n > maxAgingSeconds {
+			return invalidf("%s must be a whole number of seconds from 1 to %d", key, maxAgingSeconds)
+		}
+	case settingPreemptRunning:
+		var on bool
+		if err := json.Unmarshal(value, &on); err != nil {
+			return invalidf("%s must be true or false", key)
 		}
 	case settingSearchOrder, settingSearchLimits:
 		if s.deps.Search == nil {

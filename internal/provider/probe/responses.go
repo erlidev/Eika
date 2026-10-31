@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 )
 
@@ -22,8 +23,8 @@ const (
 	Passed Verdict = "passed"
 	// Failed means the endpoint did something else, and Reason says what.
 	Failed Verdict = "failed"
-	// Skipped means the check could not run, for want of a model to ask, and
-	// Reason says why.
+	// Skipped means the check could not run, for want of a model to ask or
+	// because the inference pool stayed busy, and Reason says why.
 	Skipped Verdict = "skipped"
 )
 
@@ -55,6 +56,12 @@ type Conformance struct {
 	// endpoint's own. A nonzero drift fails the check.
 	Counted bool `json:"counted"`
 	Drift   int  `json:"drift"`
+	// Busy is set on a Skipped result that is skipped because the check could
+	// not get a lease on the inference pool in time, not for want of a model.
+	// It is not stored: the caller keeps the earlier outcome instead, and the
+	// result, which names no model and build, is never current, so the check
+	// runs again at the next probe.
+	Busy bool `json:"-"`
 }
 
 // Current reports whether the check was made against the same build and the
@@ -91,7 +98,17 @@ type ResponsesCheck struct {
 	Predict func(ctx context.Context, req provider.Request) (provider.Prediction, error)
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// Queue is the inference queue each request takes a lease from, and Need
+	// says whose requests they are: the pool, the endpoint and the priority.
+	// A check the user asked for is interactive, and one a start of Core runs
+	// is maintenance, so it waits for an idle pool. Nil takes no lease.
+	Queue *inference.Queue
+	Need  inference.Need
 }
+
+// checkPromptTokens bounds the prompt of either request of the check, which
+// is a short instruction, one small tool and at most one call and its result.
+const checkPromptTokens = 512
 
 // CheckResponses sends the endpoint two small requests and reports whether the
 // Responses API works on it the way the loop needs (docs/design/runtime.md
@@ -129,8 +146,22 @@ func CheckResponses(ctx context.Context, c ResponsesCheck) Conformance {
 		}
 	}
 
+	busy := func(err error) (Conformance, bool) {
+		var wait *waitError
+		if !errors.As(err, &wait) {
+			return Conformance{}, false
+		}
+		return Conformance{
+			Verdict: Skipped, CheckedAt: out.CheckedAt, Busy: true,
+			Reason: fmt.Sprintf("the inference pool stayed busy, so the check did not run and will be tried again: %v", wait.err),
+		}, true
+	}
+
 	ask := provider.UserMessage("Echo the word ping.")
-	first, err := collect(ctx, c.Provider, request(firstMaxOutput, ask))
+	first, err := c.collect(ctx, request(firstMaxOutput, ask))
+	if skipped, ok := busy(err); ok {
+		return skipped
+	}
 	switch {
 	case err != nil:
 		return fail("the first request failed: %v", err)
@@ -151,7 +182,10 @@ func CheckResponses(ctx context.Context, c ResponsesCheck) Conformance {
 			out.Counted, predicted = true, p.Tokens
 		}
 	}
-	reply, err := collect(ctx, c.Provider, second)
+	reply, err := c.collect(ctx, second)
+	if skipped, ok := busy(err); ok {
+		return skipped
+	}
 	switch {
 	case err != nil:
 		return fail("sending the tool result and the reasoning back failed: %v", err)
@@ -177,6 +211,37 @@ type answer struct {
 	message provider.Message
 	stop    string
 	usage   provider.Usage
+}
+
+// waitError is a request that never got its lease: the pool was busy until the
+// check's own time ran out, which says nothing about the endpoint.
+type waitError struct{ err error }
+
+func (e *waitError) Error() string { return e.err.Error() }
+func (e *waitError) Unwrap() error { return e.err }
+
+// collect reads one request to the end under a lease on the check's pool. The
+// request's own time limit starts when the lease is granted.
+func (c ResponsesCheck) collect(ctx context.Context, req provider.Request) (answer, error) {
+	need := c.Need
+	need.Tokens = checkPromptTokens
+	if req.Sampling.MaxOutput != nil {
+		need.Tokens += *req.Sampling.MaxOutput
+	}
+	var (
+		a        answer
+		admitted bool
+	)
+	err := c.Queue.Do(ctx, need, func(ctx context.Context, _ *inference.Lease) error {
+		admitted = true
+		var err error
+		a, err = collect(ctx, c.Provider, req)
+		return err
+	})
+	if err != nil && !admitted && c.Queue != nil {
+		return answer{}, &waitError{err: err}
+	}
+	return a, err
 }
 
 // collect streams one request to the end within the check's time limit and

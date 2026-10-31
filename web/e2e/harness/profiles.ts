@@ -669,6 +669,8 @@ export function record(
       ...(endpoint === undefined ? {} : { endpoint }),
       queue_ms: null,
       slot: null,
+      prefill_ms: null,
+      decode_ms: null,
       created_at: input.at ?? fixedNow,
     },
     context: input.context,

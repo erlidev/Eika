@@ -86,6 +86,85 @@
       },
       "public": true
     },
+    "GET /api/inference": {
+      "status": 200,
+      "response": {
+        "object": {
+          "policy": {
+            "object": {
+              "aging_seconds": "number",
+              "maintenance_idle_seconds": "number",
+              "preempt_running": "boolean"
+            }
+          },
+          "pools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "cache_tokens": {
+                    "nullable": "number"
+                  },
+                  "endpoints": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "idle": "boolean",
+                  "idle_seconds": {
+                    "nullable": "number"
+                  },
+                  "kv": "string",
+                  "name": "string",
+                  "running": {
+                    "nullable": {
+                      "array": {
+                        "object": {
+                          "class": "string",
+                          "endpoint": "string",
+                          "held_ms": "number",
+                          "preempted": "boolean",
+                          "priority": "string",
+                          "session_id": "string",
+                          "slot": "number",
+                          "tokens": "number"
+                        },
+                        "optional": [
+                          "class",
+                          "session_id"
+                        ]
+                      }
+                    }
+                  },
+                  "slots": "number",
+                  "used_tokens": "number",
+                  "waiting": {
+                    "nullable": {
+                      "array": {
+                        "object": {
+                          "class": "string",
+                          "earned": "string",
+                          "endpoint": "string",
+                          "gated": "boolean",
+                          "priority": "string",
+                          "session_id": "string",
+                          "tokens": "number",
+                          "total_waited_ms": "number",
+                          "waited_ms": "number"
+                        },
+                        "optional": [
+                          "class",
+                          "session_id"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "GET /api/mcp/servers": {
       "status": 200,
       "response": {
@@ -1061,6 +1140,9 @@
                     "nullable": "number"
                   },
                   "created_at": "string",
+                  "decode_ms": {
+                    "nullable": "number"
+                  },
                   "drift": {
                     "nullable": "number"
                   },
@@ -1074,6 +1156,9 @@
                     "nullable": "number"
                   },
                   "prediction": "string",
+                  "prefill_ms": {
+                    "nullable": "number"
+                  },
                   "prefilled_tokens": {
                     "nullable": "number"
                   },
@@ -1190,6 +1275,9 @@
                 "nullable": "number"
               },
               "created_at": "string",
+              "decode_ms": {
+                "nullable": "number"
+              },
               "drift": {
                 "nullable": "number"
               },
@@ -1203,6 +1291,9 @@
                 "nullable": "number"
               },
               "prediction": "string",
+              "prefill_ms": {
+                "nullable": "number"
+              },
               "prefilled_tokens": {
                 "nullable": "number"
               },
@@ -1695,6 +1786,9 @@
                 "nullable": "number"
               },
               "created_at": "string",
+              "decode_ms": {
+                "nullable": "number"
+              },
               "drift": {
                 "nullable": "number"
               },
@@ -1708,6 +1802,9 @@
                 "nullable": "number"
               },
               "prediction": "string",
+              "prefill_ms": {
+                "nullable": "number"
+              },
               "prefilled_tokens": {
                 "nullable": "number"
               },
@@ -2408,6 +2505,7 @@
           },
           "defaults": {
             "object": {
+              "aging_seconds": "number",
               "compaction": {
                 "object": {
                   "auto": "boolean",
@@ -2423,6 +2521,8 @@
                 }
               },
               "computer_idle_minutes": "number",
+              "maintenance_idle_seconds": "number",
+              "preempt_running": "boolean",
               "sandbox_egress": {
                 "object": {
                   "allow": {
@@ -4519,6 +4619,7 @@
           },
           "defaults": {
             "object": {
+              "aging_seconds": "number",
               "compaction": {
                 "object": {
                   "auto": "boolean",
@@ -4534,6 +4635,8 @@
                 }
               },
               "computer_idle_minutes": "number",
+              "maintenance_idle_seconds": "number",
+              "preempt_running": "boolean",
               "sandbox_egress": {
                 "object": {
                   "allow": {

@@ -21,6 +21,7 @@ import { scenario } from "./scenarios.ts";
 const unmocked: Record<string, string> = {
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/events": "a WebSocket, which install routes itself",
+  "GET /api/inference": "the Activity page that reads the queue arrives in phase 3",
 };
 
 /** open builds a mock on a named scenario whose replies play without pauses. */

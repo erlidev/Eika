@@ -431,6 +431,18 @@ func Summary(ctx context.Context, m Model, answer string) (string, error) {
 }
 ```
 
+Every model call goes through the inference queue (`internal/inference`), and
+a task is no exception: the server holds a lease around the call, at the
+priority the task deserves (`maintenance` for work nobody waits for, which runs
+only on an idle pool; `interactive` when a person is waiting), and the call's
+time limit starts inside the lease. `titles.ask` in `internal/server/titles.go`
+is the pattern: `s.queue(ctx).Do(ctx, callNeed(row, inference.Maintenance,
+class, tokens), func(ctx context.Context, _ *inference.Lease) error {...})`,
+with `tokens` the call's predicted prompt plus its largest answer (see
+`utility.TitleTokens`). `s.utilityClient` also returns the provider row the
+pool comes from. `internal/modelcalls_test.go` fails on a file that sends a
+model request without being listed there, with the reason it holds a lease.
+
 The server calls it where its trigger happens: `resolveClass` in
 `internal/server/classes.go` returns the model of the class the task runs on
 (false for none), with the fallbacks applied, and `s.utilityClient` builds

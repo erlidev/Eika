@@ -67,12 +67,15 @@ export type ModelCall = {
   context_window: number | null;
   /** endpoint is the provider's name when the call was made. */
   endpoint?: string;
-  /** queue_ms and slot are null, and class, priority and agent absent, until the inference queue and agents record them. */
+  /** queue_ms is the wait for a lease on the pool, and slot the queue's slot that served the call; both are null for a call recorded before the queue. class, priority and agent are absent when unknown. */
   queue_ms: number | null;
   slot: number | null;
   class?: string;
   priority?: string;
   agent?: string;
+  /** prefill_ms and decode_ms are the time spent reading the prompt and generating; null when nothing measured them. */
+  prefill_ms: number | null;
+  decode_ms: number | null;
   created_at: string;
 };
 
