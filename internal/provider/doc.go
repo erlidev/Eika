@@ -15,7 +15,11 @@
 // interface of a provider that can list its models. Usage holds the token
 // counts a call cost as Counts, each a number or not reported (never 0), and
 // ChatUsage and ResponsesUsage read them from the two wire protocols; Tally
-// sums them over calls without hiding a count that was missing. The only implementation
-// today is provider/openai. Package probe, below this one, works out which
-// inference server an endpoint is and what it can take.
+// sums them over calls without hiding a count that was missing. Prediction and
+// Method say how large a request is expected to be and how that was reached;
+// ChatEncoder is the optional interface of a Provider that can state the Chat
+// Completions body of a request, which package counter renders to count it.
+// NewHTTPClient is the client every request to an endpoint goes through. The
+// only implementation today is provider/openai. Package probe, below this one,
+// works out which inference server an endpoint is and what it can take.
 package provider

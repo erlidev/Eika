@@ -156,7 +156,7 @@ Every model call records these, in a renamed `model_calls` table (formerly
 | `cached_tokens` | `usage.prompt_tokens_details.cached_tokens` (`input_tokens_details.cached_tokens` under `responses`), else llama.cpp's `timings.cache_n` | Part of the prompt reused from cache. NULL when the server states neither, never 0 by assumption; a stated 0 is 0. The usage field is read first because it is the one every backend carries, so the count means the same everywhere; `cache_n` is the fallback for a llama.cpp build without it (verified equal, below) |
 | `prefilled_tokens` | `timings.prompt_n`, where the server states it | Tokens actually processed. NULL otherwise: usage parsing derives nothing, and where both `prompt` and `cached` are stated and the prompt includes the cached part, `prompt - cached` is the same number |
 | `completion_tokens` | `usage.completion_tokens`; `usage.output_tokens` under `responses` | Generated tokens, **reasoning included** (verified, below) |
-| `reasoning_tokens` | `usage.completion_tokens_details.reasoning_tokens` (`output_tokens_details.reasoning_tokens` under `responses`) | Part of the completion that was reasoning. NULL when the server states none (llama.cpp does not). A tokenisation of the reasoning text is the token counter's to add, as its own labelled source |
+| `reasoning_tokens` | `usage.completion_tokens_details.reasoning_tokens` (`output_tokens_details.reasoning_tokens` under `responses`) | Part of the completion that was reasoning. NULL when the server states none (llama.cpp does not). A tokenisation of the reasoning text is a separate, labelled source for the `model_calls` item to add: it needs the column, and `counter.Counter` has the text cache to do it with |
 | `predicted_prompt_tokens`, `prediction` | the runtime | What the runtime expected before sending, and how: `exact`, `anchored` or `estimated` |
 | `window` | effective window | The window this call was judged against |
 | `queue_ms`, `prefill_ms`, `decode_ms` | inference queue, timings | Wait before the call, prompt phase, generation phase |
@@ -195,21 +195,34 @@ meter. It uses the best method the endpoint offers:
 1. **Exact** (`exact`). The endpoint renders and tokenises the request itself:
    vLLM `/tokenize` with messages and tools, or llama.cpp `/apply-template` followed
    by `/tokenize`. This adds one HTTP round trip and a CPU tokenisation, a few tens
-   of milliseconds at 200k tokens, which is negligible beside prefill. Results are
-   cached per session by prefix hash, so only the new tail is tokenised again
-   whenever the endpoint supports text tokenisation.
+   of milliseconds at 200k tokens, which is negligible beside prefill (measured on
+   llama.cpp at 20k tokens: 31 ms uncached, 10 ms with the cache). Results are
+   cached per session by prefix hash: llama.cpp's rendered prompt is cut at its
+   control tokens and the count up to the last cut is remembered, so only the
+   messages added since are tokenised again. vLLM shows no prompt, so a whole
+   request is remembered and nothing finer. The server renders the equivalent
+   chat body that the provider sends (`provider.ChatEncoder`), so the two
+   protocols count alike.
+   **Pictures are not counted** by any of these routes (checked on llama.cpp: the
+   placeholder is tokenised as text and the picture's own tokens are missing). A
+   request with a picture is therefore never `exact`: it is counted without the
+   picture, and each picture size costs what the first measurement of that size
+   showed (`anchored`), or a pixel estimate until then (`estimated`).
 2. **Anchored** (`anchored`). This is for endpoints that can tokenise text but not
-   render a chat request. The last measured `prompt_tokens` is the anchor. Each
-   message added since is tokenised exactly as text, and per-message template
-   overhead is added: a per-role constant learned from earlier calls as measured
-   total minus tokenised content. Reasoning the template drops from earlier turns
-   is subtracted. Whether a template drops it is learned the same way, from
-   measurements.
+   render a chat request. The text of the request is tokenised exactly and the
+   template's share is a weighted sum fitted on every measured `prompt_tokens`: a
+   base, a weight per role, per tool call, and for replayed reasoning after and
+   before the last user message (a template that drops reasoning from earlier
+   turns learns a weight of 0 for the second). The last measurement is the anchor
+   while a request extends it; after a compaction the fitted model alone
+   predicts. Before the first measurement the method is `estimated`. The weights
+   are kept in memory in the session's counter and relearned after a restart.
 3. **Estimated** (`estimated`). This is for endpoints with no tokenizer route
    (TabbyAPI without messages support, cloud APIs). It uses the anchor plus bytes
-   divided by a per-endpoint, per-content-class ratio learned from that endpoint's
-   history, starting at 4 until there is data. It is shown with a tilde, and the
-   compaction reserve is widened by the ratio's observed error.
+   divided by a ratio learned from the session's history, starting at 4 until
+   there is data (one ratio for now; per content class is not built). It is
+   shown with a tilde, and the compaction reserve is widened by the ratio's
+   observed error (`Counter.EstimateError`).
 
 After every call the runtime logs `drift = predicted - measured`. An `exact`
 prediction with any drift is a bug and appears in the Context inspector. Persistent

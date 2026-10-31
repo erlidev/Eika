@@ -30,7 +30,7 @@ egress proxy are network calls and run in the harness.
 | `event` | Envelope, type constants, payload structs, `Emitter`, fan-out `Bus` |
 | `server` | Composition, JSON API, event stream, auth, run manager; `server/servertest` builds and checks `docs/api/contract.json` |
 | `agent` | The loop: turns, tool dispatch, queues, retries, context assembly |
-| `provider` | Model interface, kind registry, `Complete`; `openai` implementation; `providertest` scripted fake; `probe` identifies the backend behind an endpoint and reads its slots, window, KV cache and capabilities, with `probetest` serving its fixtures |
+| `provider` | Model interface, kind registry, `Complete`; `openai` implementation; `providertest` scripted fake; `probe` identifies the backend behind an endpoint and reads its slots, window, KV cache and capabilities, with `probetest` serving its fixtures; `counter` predicts a request's token count (exact, anchored or estimated) and learns from the measured one |
 | `utility` | The harness's own one-shot model tasks (session titles), sent to the model a task is assigned |
 | `imaging` | Prepares attached images: decode, EXIF orientation, fit within 1080p (Catmull-Rom), PNG or JPEG without metadata |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
@@ -67,6 +67,29 @@ Run(ctx, session, text)
   on `POST /api/providers/probe` and for every provider at start (`Server.Run`),
   and `store.RecordProbe` writes the result in one statement that leaves the
   fields in `overridden` alone. A failed probe writes only `probe_error`.
+- **counter** (`provider/counter`) predicts the size of a `provider.Request`
+  before it is sent. One `Counter` belongs to one session: `Predict` returns a
+  `provider.Prediction` (tokens and method) and `Observe` takes the measured
+  usage back, returns the drift and trains the learned parts. The methods:
+  `exact` (the endpoint renders and tokenises the request: llama.cpp
+  `/apply-template` then `/tokenize`, vLLM `/tokenize` with messages),
+  `anchored` (the text tokenised exactly, the template's share fitted by least
+  squares over the measured calls: a base, a weight per role, per tool call,
+  and for replayed reasoning; the last measurement is the anchor while a
+  request extends it) and `estimated` (a learned bytes-per-token ratio, with
+  its running error exposed for the compaction reserve). A request is
+  rendered from `provider.ChatEncoder.ChatBody`, the one serialiser the
+  OpenAI provider also sends, so the template sees the same messages, tools,
+  thinking switch and replayed reasoning. A `Source` is the endpoint's routes
+  (`Routes` over HTTP; `providertest.TokenServer` is the fake). Counts are
+  cached by hash per session: a rendered prompt is cut at the control tokens
+  the server names and each prefix remembered, so only the messages added since
+  the last call are tokenised. Pictures are not counted by any route, so
+  they are taken out of the request, the text is counted, and each picture
+  size costs what a measurement showed (`anchored`), or a pixel estimate until
+  one has (`estimated`): a request with a picture is never `exact`.
+  `provider.NewHTTPClient`, which the provider, the probe and the counter share,
+  repeats a request whose idle connection the server had closed.
 - **provider** turns a `Request` into a channel of `Event`s (text and
   reasoning deltas, tool calls, usage with optional `Timings`, done or
   error). `openai/timings.go` reads the speed fields of llama.cpp, vLLM, NIM,
@@ -563,6 +586,7 @@ An arrow means "may import".
            utility, imaging
  agent -> tool, provider                 session -> agent, store
  utility -> provider                      imaging -> provider
+ provider/counter -> provider, provider/probe   (evals/live, later agent -> counter)
  tool -> executor
  executor/sandbox -> eikad (wire types)   computer -> executor, executor/sandbox
  tool/builtin -> search, search/fetch     search/fetch, egress -> netguard
@@ -602,7 +626,9 @@ files. Vet and staticcheck also compile the `live`-tagged tests.
   model through `internal/provider/openai`, behind the `live` build tag. The
   package reads `~/.config/eika/live.env`, describes the server with the
   harness's own provider probe (build, model file and revision, slots, window),
-  plays each scenario and writes a JSON
+  plays each scenario with a token counter of its own (the report records each
+  call's prediction, its method and its drift, and a scenario fails on drift in
+  an `exact` prediction) and writes a JSON
   report to the ignored `evals/results/`. Its plain code and fakes-backed
   tests run in `make check`; the live test skips without
   `EIKA_LIVE_ENDPOINT` and fails when that is set but silent. `evals/README.md`

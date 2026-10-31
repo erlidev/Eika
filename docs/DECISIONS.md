@@ -440,6 +440,89 @@ this file says why, so neither repeats the other.
   count is not reported. Tokenising the reasoning text is the token counter's
   to add, as a separate, labelled source.
 
+### The token counter
+
+- **A package of its own over an optional capability of the provider.**
+  `provider/counter` holds the `Counter` (one per session), the `Source` (an
+  endpoint's tokenizer routes) and `Routes` (the HTTP `Source`). The provider
+  contributes one optional interface, `provider.ChatEncoder`, in the way
+  `Lister` is optional: `ChatBody(req)` returns the Chat Completions body, from
+  the function `Stream` posts. Rejected: a `Count` method on `Provider` (the
+  routes depend on what the probe found, and prediction needs per-session
+  state a provider does not have); a second serialiser in the counter (it would
+  drift from the first the day a field is added); the counter in `agent` (the
+  live suite and the next items use it without a loop).
+- **The server renders, from the body the provider sends.** llama.cpp's
+  `/apply-template` takes the whole Chat Completions body (checked on b11942:
+  `reasoning_effort`, `chat_template_kwargs`, `preserve_thinking`, tools, tool
+  calls and `reasoning_content` all change the prompt it returns), so the
+  counter posts `ChatBody` as it is. That the template adds a preamble when
+  `reasoning_effort` is absent is why the body must be complete. vLLM gets the
+  same body at `/tokenize` (unverified). Tabby and SGLang count text only.
+- **Prefix cache: cut the rendered prompt at control tokens.** A tokenizer
+  never merges across a control token, so a prompt cut at the start of one
+  counts the same in pieces as whole. `Routes.Boundaries` finds candidates
+  (`<|...|>`) and asks the server once each whether it is one token with
+  special-token parsing and not with it off (a plain vocabulary entry fails
+  that). The counter remembers the token count up to each prompt's last cut by
+  the hash of everything before it, so the next call tokenises only the
+  messages added since; the generation prompt after the last cut is a memo of
+  its own. A count with nothing reused is also taken whole, once per such
+  count, and a cut that changes the answer switches cutting off for the
+  session. vLLM shows no prompt, so a repeated whole request is remembered
+  and nothing finer. Rejected: cutting at newlines or at message ends found
+  by rendering prefixes (not guaranteed separable, or one render per message);
+  asking for token ids with pieces (a megabyte of JSON at 20k tokens).
+- **Pictures are not counted by the routes, so they are taken out.**
+  Checked on the bench with one 56, 112 and 224 pixel PNG: `/apply-template`
+  leaves a media marker, `/tokenize` counts the marker as 26 ordinary tokens
+  and nothing for the picture, and the real prompt was 11, 18 and 51 tokens
+  larger than the text without the marker. The counter counts the request
+  without its pictures and adds a cost per picture size, learned from the
+  first measurement of that size (`anchored`) and a pixel estimate until then
+  (`estimated`). A request with a picture is never `exact`. Several unknown
+  sizes in one request teach nothing. Rejected: stripping the marker from the
+  prompt (it needs the server's per-start marker string, and the text on either
+  side of it is tokenised apart there, which stripping would join).
+- **Anchored: least squares over the template's share.** The text of a
+  request is counted exactly; what the template adds is a weighted sum of seven
+  terms (a base, one per role, per tool call, and replayed reasoning after and
+  before the last user message), fitted on every measured request, each
+  weight pulled toward a prior (a ChatML-sized 5 or 6 tokens a role or call; none
+  on the base, or a large constant such as a tool list's boilerplate would be
+  spread over the roles, which cost 95 tokens of drift on the second call on the
+  bench before the prior). Replayed reasoning has two terms because a template may drop what
+  precedes the last question, and the weights say so after a few calls. When a
+  request extends the last measured one, the prediction is that measurement plus
+  the change in the model; after a compaction it is the model alone. The first
+  prediction, before any measurement, is `estimated`. Rejected: a per-role
+  average of residuals (a call that adds an assistant message and a tool result
+  at once cannot be split).
+- **The learned constants live in the session's `Counter`, in memory.** The
+  weights, the ratio and the picture costs are rebuilt from the first calls after
+  a restart (about five, in the fake) and cost no storage. The data to seed them
+  exists: each `model_calls` row will carry its prediction and measurement.
+  Rejected: persisting them now (a new table before anything reads it); sharing
+  them among sessions of an endpoint (the tool list sits in the base, and sessions
+  differ in theirs).
+- **Estimated: one ratio.** Bytes divided by the bytes per token learned over
+  the session (4 until measured), from the last measurement when the request
+  extends it, with the running relative error of estimated predictions exposed
+  as `EstimateError` for the compaction reserve. A ratio per content class
+  (prose, JSON, code) is not built: nothing measures one yet.
+- **Reasoning tokens from the reasoning text are not here.** llama.cpp states
+  none; counting the text of the reasoning needs a labelled source column on
+  `model_calls`, which that item adds.
+- **A summary of drift is the sum of absolute drift.** Errors in opposite
+  directions must not cancel to a clean report. A scenario fails on drift in any
+  prediction called exact.
+- **Cost, measured on the bench at about 20k tokens (a prompt of 20,389
+  tokens).** `/apply-template` takes 8 ms and `/tokenize` of the whole prompt 23 ms
+  over the SSH forward, so a count with no cache is about 31 ms. With the cache a
+  count is the render plus the new messages: 10 ms one exchange later. The first
+  count costs 58 ms, the two checks of a new session included (the candidates'
+  control-token test, and the whole-prompt count against the pieces).
+
 ### Provider transport
 
 - **One HTTP client for every request to an endpoint, repeating a request that
