@@ -9,16 +9,22 @@ import (
 	"github.com/erlidev/eika/internal/provider/providertest"
 )
 
-// computerState reads a computer's recorded state.
+// computerState reads a computer's recorded state from the computer list.
 func (a *api) computerState(t *testing.T, id string) string {
 	t.Helper()
-	return decodeBody[computerWire](t, request(t, a.Server, "GET", "/api/computers/"+id, nil), 200).State
+	for _, cx := range decodeBody[computersWire](t, request(t, a.Server, "GET", "/api/computers", nil), 200).Computers {
+		if cx.ID == id {
+			return cx.State
+		}
+	}
+	t.Fatalf("computer %s is not listed", id)
+	return ""
 }
 
 func TestIdleComputersStop(t *testing.T) {
 	t.Run("after the default timeout without a run", func(t *testing.T) {
 		a := newAPI(t)
-		cx := a.newComputer(t)
+		cx := a.home(t)
 		start := time.Now()
 
 		a.SweepIdle(t.Context(), start)
@@ -34,7 +40,7 @@ func TestIdleComputersStop(t *testing.T) {
 
 	t.Run("counting from the end of the last run", func(t *testing.T) {
 		a := newAPI(t)
-		cx := a.newComputer(t)
+		cx := a.home(t)
 		sess := a.newSession(t, cx.ID)
 		// First seen ten minutes ago, so only the run keeps it up below.
 		a.SweepIdle(t.Context(), time.Now().Add(-10*time.Minute))
@@ -56,7 +62,7 @@ func TestIdleComputersStop(t *testing.T) {
 
 	t.Run("after the timeout the settings name", func(t *testing.T) {
 		a := newAPI(t)
-		cx := a.newComputer(t)
+		cx := a.home(t)
 		decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings",
 			map[string]any{"computer_idle_minutes": 5}), 200)
 		start := time.Now()
@@ -70,7 +76,7 @@ func TestIdleComputersStop(t *testing.T) {
 
 	t.Run("never when the timeout is zero", func(t *testing.T) {
 		a := newAPI(t)
-		cx := a.newComputer(t)
+		cx := a.home(t)
 		decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings",
 			map[string]any{"computer_idle_minutes": 0}), 200)
 		start := time.Now()
@@ -84,7 +90,7 @@ func TestIdleComputersStop(t *testing.T) {
 
 	t.Run("not while a run is going in it", func(t *testing.T) {
 		a := newAPI(t)
-		cx := a.newComputer(t)
+		cx := a.home(t)
 		sess := a.newSession(t, cx.ID)
 		start := time.Now()
 		a.SweepIdle(t.Context(), start)

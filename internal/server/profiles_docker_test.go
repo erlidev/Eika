@@ -216,7 +216,7 @@ func TestProfileRoutes(t *testing.T) {
 
 func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 	sess := a.newSession(t, cx.ID)
 
 	profile := a.newProfile(t, map[string]any{
@@ -471,11 +471,9 @@ func TestAnEditorSeesTheValuesOfTheModelItChoseBeforeSaving(t *testing.T) {
 
 func TestAStoppedComputerStillHasAPreview(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 	sess := a.newSession(t, cx.ID)
-	if rec := request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil); rec.Code != 200 {
-		t.Fatalf("stop = %d", rec.Code)
-	}
+	a.stopIdle(t)
 
 	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/context", nil), 200)
 	if len(preview.Sections) != 1 || preview.Sections[0].Kind != agent.SectionBase || preview.Sections[0].Text != agent.ChatPrompt {

@@ -44,14 +44,6 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PUT /api/auth/password", s.handleChangePassword)
 
 	api.HandleFunc("GET /api/computers", s.handleListComputers)
-	api.HandleFunc("POST /api/computers", s.handleCreateComputer)
-	api.HandleFunc("GET /api/computers/{id}", s.handleComputer)
-	api.HandleFunc("PATCH /api/computers/{id}", s.handleUpdateComputer)
-	api.HandleFunc("DELETE /api/computers/{id}", s.handleDeleteComputer)
-	api.HandleFunc("POST /api/computers/{id}/start", s.handleStartComputer)
-	api.HandleFunc("POST /api/computers/{id}/stop", s.handleStopComputer)
-	api.HandleFunc("PUT /api/computers/{id}/sandbox", s.handleSetComputerSandbox)
-	api.HandleFunc("GET /api/computers/{id}/usage", s.handleComputerUsage)
 
 	api.HandleFunc("GET /api/sessions", s.handleListSessions)
 	api.HandleFunc("POST /api/sessions", s.handleCreateSession)

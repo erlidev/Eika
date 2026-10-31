@@ -597,7 +597,7 @@ func TestAStdioMCPServerRunsInTheComputer(t *testing.T) {
 		"name": "files", "kind": "stdio", "command": "npx", "args": []string{"-y", "files"},
 		"env": map[string]string{"ROOT": "/home/eika"},
 	})
-	cx := a.newComputer(t)
+	cx := a.home(t)
 
 	refused(t, request(t, a.Server, "POST", "/api/mcp/servers/"+server.ID+"/connect", map[string]any{}), 400)
 	d := a.connectMCP(t, server.ID, cx.ID)
@@ -635,7 +635,7 @@ func TestAStdioMCPServerRunsInTheComputer(t *testing.T) {
 	}
 
 	// Stopping the computer ends the server there.
-	decodeBody[computerWire](t, request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil), 200)
+	a.stopIdle(t)
 	d = a.mcpDetails(t, server.ID)
 	if len(d.Server.Computers) != 0 || d.Server.State == "connected" {
 		t.Errorf("after the computer stopped = %+v", d.Server)

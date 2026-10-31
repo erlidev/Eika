@@ -21,14 +21,6 @@ import { scenario } from "./scenarios.ts";
 const unmocked: Record<string, string> = {
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/events": "a WebSocket, which install routes itself",
-  "POST /api/computers": "no UI calls it",
-  "GET /api/computers/{id}": "no UI calls it",
-  "PATCH /api/computers/{id}": "no UI calls it",
-  "DELETE /api/computers/{id}": "no UI calls it",
-  "POST /api/computers/{id}/start": "no UI calls it",
-  "POST /api/computers/{id}/stop": "no UI calls it",
-  "PUT /api/computers/{id}/sandbox": "no UI calls it",
-  "GET /api/computers/{id}/usage": "no UI calls it",
 };
 
 /** open builds a mock on a named scenario whose replies play without pauses. */

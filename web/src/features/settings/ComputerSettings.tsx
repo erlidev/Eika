@@ -1,6 +1,6 @@
 /**
- * The Computer tab: the limits and network the sandbox is created with.
- * A sandbox keeps what it was created with.
+ * The Computer tab: the limits and network of the home computer. A save is
+ * applied to its container at once, without restarting it.
  */
 
 import { useState } from "react";
@@ -42,7 +42,8 @@ export function ComputerSettings() {
       <div>
         <h3 className="text-sm font-medium">Computer</h3>
         <p className="text-muted-foreground text-xs">
-          The limits and network a sandbox is created with.
+          The limits and network of the home computer. A save applies to it at once, without
+          restarting it.
         </p>
       </div>
       <DefaultsForm
@@ -107,9 +108,7 @@ function DefaultsForm({ stored, host, save }: DefaultsFormProps) {
           <p className="text-destructive text-xs">Fix the fields marked above to save.</p>
         )}
       </div>
-      {save.isSuccess && (
-        <Notice tone="success">Saved. The next sandbox is created with these.</Notice>
-      )}
+      {save.isSuccess && <Notice tone="success">Saved. The home computer uses these.</Notice>}
       {save.isError && <ActionError action="save the computer settings" error={save.error} />}
     </form>
   );

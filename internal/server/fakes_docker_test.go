@@ -3,7 +3,6 @@
 package server_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -30,22 +29,6 @@ func request(t *testing.T, s *server.Server, method, path string, body any) *htt
 	return requestWith(t, s, method, path, body, "Bearer "+testToken)
 }
 
-// requestOn sends one API request on a context of the caller's choosing,
-// which is how a test stands in for a client that gave up.
-func requestOn(ctx context.Context, t *testing.T, s *server.Server, method, path string, body any) *httptest.ResponseRecorder {
-	t.Helper()
-	data, err := json.Marshal(body)
-	if err != nil {
-		t.Fatalf("encode request body: %v", err)
-	}
-	r := httptest.NewRequestWithContext(ctx, method, path, bytes.NewReader(data))
-	r.Header.Set("Authorization", "Bearer "+testToken)
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, r)
-	checkContract(t, r, rec)
-	return rec
-}
-
 // decodeBody decodes a JSON response body into T, failing the test when the
 // status is not the expected one.
 func decodeBody[T any](t *testing.T, rec *httptest.ResponseRecorder, status int) T {
@@ -69,9 +52,10 @@ type fakeHost struct {
 
 	mu        sync.Mutex
 	computers map[string]*fakeComputer
-	// createErr and startErr fail the matching call when set.
+	// createErr, startErr and confineErr fail the matching call when set.
 	createErr  error
 	startErr   error
+	confineErr error
 	inspectErr error
 	// images are the images HasImage reports present; imageErr fails it,
 	// the way a Docker socket the harness cannot use does.
@@ -90,6 +74,9 @@ type fakeHost struct {
 	// confined records every confinement a computer was created or
 	// confined with, in order, by computer id.
 	confined map[string][]computer.Confinement
+	// created counts the containers made under each computer id, so that a
+	// container made again gets a proxy token of its own, as a real one does.
+	created map[string]int
 }
 
 // fakeComputer is one computer of a fakeHost.
@@ -104,8 +91,16 @@ func newFakeHost(t *testing.T) *fakeHost {
 	t.Helper()
 	return &fakeHost{
 		root: t.TempDir(), computers: map[string]*fakeComputer{},
-		confined: map[string][]computer.Confinement{},
+		confined: map[string][]computer.Confinement{}, created: map[string]int{},
 	}
+}
+
+// failConfine makes every Confine fail with err until it is called with nil,
+// the way a Docker daemon that refuses a container update does.
+func (h *fakeHost) failConfine(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.confineErr = err
 }
 
 // failCreate makes every Create fail with err until it is called with nil,
@@ -148,19 +143,20 @@ func (h *fakeHost) Create(_ context.Context, spec computer.Spec) (computer.Compu
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return computer.Computer{}, err
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.created[spec.ID]++
 	cx := computer.Computer{
 		ID:          spec.ID,
 		ContainerID: "container-" + spec.ID,
 		Image:       spec.Image,
 		State:       computer.StateCreating,
-		ProxyToken:  "proxy-token-" + spec.ID,
+		ProxyToken:  fmt.Sprintf("proxy-token-%s-%d", spec.ID, h.created[spec.ID]),
 		Proxied:     spec.Confinement.Proxied,
 	}
 	if cx.Image == "" {
 		cx.Image = "eika-sandbox:latest"
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.computers[cx.ID] = &fakeComputer{cx: cx, dir: dir}
 	h.confined[cx.ID] = append(h.confined[cx.ID], spec.Confinement)
 	return cx, nil
@@ -168,6 +164,12 @@ func (h *fakeHost) Create(_ context.Context, spec computer.Spec) (computer.Compu
 
 // Confine records the confinement a computer was given.
 func (h *fakeHost) Confine(_ context.Context, cx *computer.Computer, c computer.Confinement) error {
+	h.mu.Lock()
+	confineErr := h.confineErr
+	h.mu.Unlock()
+	if confineErr != nil {
+		return confineErr
+	}
 	if c.Proxied && !h.EgressControl() {
 		return computer.ErrNoEgressControl
 	}
@@ -189,9 +191,14 @@ func (h *fakeHost) confinements(id string) []computer.Confinement {
 	return slices.Clone(h.confined[id])
 }
 
-// Usage reports a fixed sample of a running computer.
-func (h *fakeHost) Usage(context.Context, computer.Computer) (computer.Usage, error) {
-	return computer.Usage{CPUPercent: 42, MemoryBytes: 256 << 20, MemoryLimitBytes: 1 << 30, PIDs: 7}, nil
+// proxyToken returns the egress proxy token of a computer's container.
+func (h *fakeHost) proxyToken(id string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if found, ok := h.computers[id]; ok {
+		return found.cx.ProxyToken
+	}
+	return ""
 }
 
 // Capacity is a host of four cores and 8 GiB.

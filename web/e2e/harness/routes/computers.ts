@@ -1,7 +1,6 @@
 /**
  * Computers: only the list. The UI reads it to find the home computer, which
- * the harness makes for itself; the routes that act on a computer are
- * unmocked because the UI never calls them (see mock.test.ts).
+ * the harness makes for itself; the API serves no other computer route.
  */
 
 import { ok } from "./context.ts";

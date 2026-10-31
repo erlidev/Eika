@@ -46,7 +46,7 @@ func typesOf(events []event.Event) []string {
 // on the WebSocket, and the entries the run leaves in the tree.
 func TestEndToEnd(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 	sess := a.newSession(t, cx.ID)
 
 	conn := stream(t, a.Server, "topics="+event.SessionTopic(sess.ID))
@@ -158,14 +158,12 @@ func TestEventStreamReplaysASessionFromAnEntry(t *testing.T) {
 
 func TestEventStreamReportsComputerState(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 
 	conn := stream(t, a.Server, "topics="+event.ComputerTopic(cx.ID))
 	a.waitSubscribed(t)
 
-	if rec := request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil); rec.Code != 200 {
-		t.Fatalf("stop = %d", rec.Code)
-	}
+	a.stopIdle(t)
 	e := next(t, conn)
 	if e.Type != event.TypeComputerState {
 		t.Fatalf("type = %q, want computer.state", e.Type)

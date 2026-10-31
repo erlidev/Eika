@@ -1,11 +1,11 @@
 // Package server exposes the Eika harness over HTTP.
 //
-// It owns the whole HTTP surface: the JSON API for computers,
+// It owns the whole HTTP surface: the JSON API for the list of computers,
 // sessions, runs, questions, providers, models, profiles, a session's
 // configuration and the context of its model requests, MCP servers, and
 // settings;
 // password sign-in and bearer token authentication; the WebSocket event
-// stream; a computer's files; and, when configured, the built frontend. Nothing else in internal/ imports server.
+// stream; and, when configured, the built frontend. Nothing else in internal/ imports server.
 //
 // Providers, models, and credentials are rows the UI edits. The server seals
 // credentials with internal/secret and builds a provider client from a row
@@ -34,8 +34,9 @@
 // profile and session configuration routes (profiles.go) all use it, and
 // every model call a run makes is recorded in model_requests (requests.go).
 //
-// A computer's sandbox, its limits and egress, is checked
-// and applied in sandbox.go, which also answers the egress proxy's policy
-// lookups (EgressPolicy); Run serves the proxy beside the API when the host
+// The home computer's sandbox, its limits and egress, is checked in
+// sandbox.go when the settings are saved and applied to its container by
+// applyHomeSandbox in home.go; sandbox.go also answers the egress proxy's
+// policy lookups (EgressPolicy); Run serves the proxy beside the API when the host
 // can restrict egress.
 package server

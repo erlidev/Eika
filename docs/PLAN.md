@@ -1035,6 +1035,80 @@ Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
 
+- 2026-10-30: the computer routes no UI calls are removed (branch
+  `remove-computer-routes`). An owner-requested follow-up to phase 0, not the
+  start of phase 1. Only `GET /api/computers` is left, and `POST /api/sessions`
+  still takes a `computer_id`.
+  - Items. The Computer settings apply to `home` in `90c5c3d`; the proxy token
+    fix in `32c484b`; the route removal, migration `0003`, the docs and this
+    entry in the commit that carries it.
+  - Settings. The tab saved `sandbox_limits` and `sandbox_egress`, which only
+    said what a computer made later would get, and `PUT .../sandbox` was the
+    only code that changed an existing one. Saving either now writes the
+    settings, then the `home` row, then confines the container, running or
+    stopped (`applyHomeSandbox`, under `startMu` and `homeMu`). A container
+    that refuses the update is a `500`, as the route answered, with the values
+    kept: the next start confines it from the row, and a stopped `home` takes
+    the change at its next start. With no row, or no container, the save stores
+    the setting or the row and `EnsureHome` does the rest. The tests cover
+    each of those on the fake host, and
+    `TestSavingLimitsReachesTheRealHomeContainer` checks the cgroup limits of a
+    real running container and the configuration of a stopped one.
+  - Gap, not built. `sandbox_image` applies when the container is created and
+    nothing replaces a container, so `home` stays on the image it was created
+    from until its container goes missing: a sandbox image upgrade does not
+    reach it. The General tab says so. Replacing the container over its volume
+    is deferred.
+  - Proxy token. The harness cached each computer's egress proxy token by id,
+    on the reasoning that an id is never reused. `home` is: a container lost to
+    `docker rm` is made again over the same id with a new token, and the proxy
+    kept refusing it. `EnsureHome` now forgets the id after `Create`. The
+    token cache was the only stale state: `EgressPolicy` reads the row on every
+    request, and the proxy keeps only its list of refused hosts.
+  - Removed beyond the named handlers. `usageResponse`, `blockedBody`,
+    `createComputerRequest`, `updateComputerRequest`, `checkSandbox` and the
+    request side of `newSandbox` (now `homeSandbox`), `discard`,
+    `destroyComputer`, `Store.UpdateComputer`, `ComputerChanges`,
+    `Store.DeleteComputer`, `Computer.Pinned` and `Archived`, `Host.Usage` with
+    `Usage` and `usageOf`, the `Usage` method of `server.Computers`, and
+    `requestOn` and the fake host's `Usage` in the tests. No plan item or
+    design document uses a resource sample, so `Host.Usage` went.
+  - `runExecutor`. A run starts any stopped computer: the `cx.Home` condition
+    on the start is gone, since nothing but the idle stopper stops one. A
+    start that fails is a `409` saying why (a test covers it), and a test
+    covers starting a computer that is not `home`, seeded with
+    `Store.CreateComputer`.
+  - Kept. `computer.Host`'s `Create`, `Destroy`, `Start`, `Stop`, `Confine`,
+    image building and `ownRoot`, for phases 2 and 11. `Store.CreateComputer`
+    stays with no production caller, since a project's own computer in phase 2
+    needs that insert, and its doc comment says so. `stopRunsIn`,
+    `stopComputer`, `changeState`, `teardown` and `notRunning` stay: the idle
+    stopper, session deletion and the MCP launcher use them. `egress.Proxy.Blocked`
+    stays with no reader; phase 4 decides its fate when egress moves to
+    Sentry. `Forget` is in use again by the fix above.
+  - Schema. `0003_remove_computer_filing.sql` drops `computers.pinned` and
+    `computers.archived`, which had no index and no reader once the PATCH route
+    went. A fresh database applies it (every store test opens one), and a new
+    store test builds a database at `0002` with filed computers and opens it.
+    The cascade from a computer to its sessions has no store call left to test
+    it, so that test deletes the row in SQL.
+  - Frontend. `UpdateComputer`, `CreateComputer`, `ComputerUsage` and
+    `BlockedHost` are gone from the types, and `pinned` and `archived` from
+    `Computer`. The mock's `unmocked` list names only the transcript path and
+    the stream. Baselines: the two `general-invalid` screenshots changed (the
+    sandbox image help text is longer, and wraps within the form); I looked at
+    both. Four ARIA snapshots carry the new text. `make visual-update` rewrote
+    them whole and added unrelated lines, so I put them back and edited only
+    the changed lines.
+  - Tests moved. The server tests that used `POST /api/computers` use the
+    `home` computer, and stop it through the idle stopper where they used the
+    stop route. The tests of the removed routes are gone, and
+    `TestTheComputerRoutesAreGone` lists all eight.
+    `TestNoOneWithoutASignInTokenReachesAComputer` keeps the list and the
+    session routes.
+  - `make check` and `make smoke` both passed on the commit that carries this
+    entry.
+
 - 2026-10-30: the computer file routes and the session fork route are removed
   (branch `remove-file-fork-routes`). An owner-requested follow-up to phase 0,
   not the start of phase 1.

@@ -28,13 +28,15 @@ const (
 	// settingDefaultProfile is the id of the profile a session runs with
 	// when it chose none.
 	settingDefaultProfile = "default_profile"
-	// settingSandboxImage is the image a computer runs when it names none.
+	// settingSandboxImage is the image the home computer's container is
+	// created from. A container that exists keeps the image it was created
+	// from.
 	settingSandboxImage = "sandbox_image"
-	// settingSandboxLimits are the limits a new computer gets when the
-	// request that creates it names none.
+	// settingSandboxLimits are the home computer's limits. Saving them applies
+	// them to its container.
 	settingSandboxLimits = "sandbox_limits"
-	// settingSandboxEgress is the egress mode and allowlist a new computer
-	// gets when the request that creates it names none.
+	// settingSandboxEgress is the home computer's egress mode and allowlist.
+	// Saving them applies them to its container.
 	settingSandboxEgress = "sandbox_egress"
 	// settingSetupComplete records that the user finished or skipped the
 	// guided setup, so the UI stops offering it.
@@ -69,7 +71,8 @@ type settingsResponse struct {
 // sets them.
 type settingsDefaults struct {
 	SandboxImage string `json:"sandbox_image"`
-	// SandboxLimits and SandboxEgress are what a new computer gets.
+	// SandboxLimits and SandboxEgress are what the home computer gets until
+	// the user sets others.
 	SandboxLimits limitsBody `json:"sandbox_limits"`
 	SandboxEgress egressBody `json:"sandbox_egress"`
 	// SearchOrder is every web provider in its default order.
@@ -92,6 +95,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 // alone, and returns the whole table as it now stands. The keys the harness
 // reads are checked first, and the keys are written in one
 // transaction, so a bad value or a failed write leaves the table as it was.
+// A write that carries the sandbox limits or egress then applies them to the
+// home computer; when its container refuses, the answer is an error and the
+// values stay saved.
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[map[string]json.RawMessage](r)
 	if err != nil {
@@ -109,7 +115,24 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("settings written", "keys", len(req))
+	// The sandbox settings are the home computer's limits and egress. The
+	// table is written first, so a container that refuses the change leaves
+	// the new values saved, and the next start applies them.
+	if touchesSandbox(req) {
+		if err := s.applyHomeSandbox(r.Context()); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	s.writeSettings(w, r, http.StatusOK)
+}
+
+// touchesSandbox reports whether a settings write carries a key that is the
+// home computer's limits or egress.
+func touchesSandbox(req map[string]json.RawMessage) bool {
+	_, limits := req[settingSandboxLimits]
+	_, egress := req[settingSandboxEgress]
+	return limits || egress
 }
 
 // writeSettings answers with the settings table and the defaults.
@@ -333,8 +356,8 @@ func (s *Server) renameModelSettings(ctx context.Context, oldName, newName strin
 	return s.deps.Store.SetSettings(ctx, writes)
 }
 
-// sandboxImage returns the image a new computer runs when the request names
-// none: the settings' choice, or the deployment's default.
+// sandboxImage returns the image the home computer's container is created
+// from: the settings' choice, or the deployment's default.
 func (s *Server) sandboxImage(ctx context.Context) string {
 	var image string
 	if readSetting(ctx, s.deps.Store, s.log, settingSandboxImage, &image) && image != "" {

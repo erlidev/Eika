@@ -47,6 +47,15 @@ this file says why, so neither repeats the other.
   head, the entries, the outline); only copying a branch into a new session
   is gone, and with it the `fork` session kind and
   `sessions.parent_session_id`, dropped by migration `0002`.
+- **The computer routes no UI calls are gone too.** Only `GET /api/computers`
+  stays, which the sidebar reads, and `POST /api/sessions` still takes a
+  `computer_id`. Create, rename, pin, archive, start, stop, delete, set the
+  sandbox and usage had no caller once `home` and the Computer settings
+  existed. `computers.pinned` and `computers.archived` went with them
+  (migration `0003`), and so did the usage sampler, `Host.Usage`, which no
+  plan item uses. A computer is made by the harness, stopped by its idle
+  stopper, and given its limits by the settings. A project's own computer
+  (phase 2) brings back whatever route it needs.
 - What went is recoverable: the `PLAN.md` log names the commit
   (`478ce9c`) that last had the subagent spawner and the preview ticket flow,
   and says which parts phases 2 and 12 reuse.
@@ -118,8 +127,8 @@ this file says why, so neither repeats the other.
   sandbox cannot reach postgres or searxng. An empty `sandbox_network`
   publishes eikad on loopback for `make dev`.
 - **The sandbox config is a row** (`computers.sandbox`): desired state,
-  applied at create, on `PUT .../sandbox`, and on every start, so partial
-  applies converge. Default: 4096 processes, nothing else.
+  applied at create, when the Computer settings are saved (to `home`'s row),
+  and on every start, so partial applies converge. Default: 4096 processes, nothing else.
 - **Limits change live** with `ContainerUpdate`: recreating would reset
   everything outside the volume at `/home/eika`. Docker cannot lift a CPU or memory limit,
   so "no limit" on an existing container means the whole host. Swap equals
@@ -151,10 +160,9 @@ this file says why, so neither repeats the other.
   keep a forgotten sandbox up forever. One harness-wide setting, not a
   per-computer column: nothing yet needs two
   timeouts. Last use lives in memory rather than a row, so a
-  restart only ever delays a stop. Rejected: a timer in eikad, which sees
-  processes, not runs.
-- Usage is sampled every 5 s by a client that asks for it: a measurement
-  no event announces, so the no-polling rule does not apply.
+  restart only ever delays a stop. A later run starts the computer again
+  (see `home`, below). Rejected: a timer in eikad, which sees processes, not
+  runs.
 - One address guard, `internal/netguard`, for web_fetch and the proxy.
 
 ### The home computer
@@ -179,22 +187,36 @@ this file says why, so neither repeats the other.
   expected cause on a first start. The user sees the computer listed as
   `creating`, and `GET /api/system`, which the guided setup shows, names what
   is missing.
-- **Nothing deletes its files.** The API refuses to delete it (`409`). A
-  volume that exists when `Host.Create` runs is reattached, and a `Create`
+- **Nothing deletes its files.** The API has no route that deletes a
+  computer. A volume that exists when `Host.Create` runs is reattached, and a `Create`
   that fails does not remove a volume it found, so a container lost to
   `docker rm` comes back over its files, and a failed attempt (the image
   missing) cannot take them. Nothing else recreates a container: limits and
   egress change the running one (`ContainerUpdate`, network connect), and a
   harness restart leaves containers alone.
-- **A run starts a stopped `home`.** The idle stopper stops `home` like any
-  computer, and the next run, which needs it, starts it (`runExecutor`): a
-  stopped computer is a `409` the user clears by starting it, and nothing in
-  the UI starts a computer any more. A run in `home` whose container is gone
-  calls `EnsureHome`. Any other stopped computer still refuses the run, as a
-  user who stopped it meant. Rejected: starting at the first `bash` call,
-  which would put a lazy start inside the executor every tool shares, for a
-  computer the run is about to use anyway; and starting every computer, which
-  would override a stop the user asked for.
+- **The Computer settings are `home`'s limits and egress.** Saving
+  `sandbox_limits` or `sandbox_egress` records them on the home row and
+  confines its container, running or stopped, without a restart
+  (`applyHomeSandbox`). `EnsureHome` makes `home` before anyone can reach
+  Settings, so settings that only said what a computer made later would get
+  were a tab that did nothing. The table is written first and then the row,
+  and a container that refuses the update is a `500` with the values kept:
+  the next start confines it from the row. Before the row exists, a save
+  only stores the setting, and `EnsureHome` reads it. Rejected: applying
+  before saving, which would lose the user's values when Docker fails.
+- **The image is not applied to an existing `home`.** `sandbox_image` is read
+  when the container is created, and nothing replaces a container, so `home`
+  stays on the image it was created from until its container goes missing,
+  and a sandbox image upgrade does not reach it. The Settings text says so.
+  Deferred: replacing the container over its volume.
+- **A run starts a stopped computer.** The idle stopper is the only thing
+  that stops one, and the next run, which needs it, starts it
+  (`runExecutor`). Nothing in the API stops or starts a computer, so a stopped
+  one is never a stop anyone asked for. A run in `home` whose container is
+  gone calls `EnsureHome`. A computer that cannot be started refuses the run
+  with a `409` naming why. Rejected: starting at the first `bash` call, which
+  would put a lazy start inside the executor every tool shares, for a computer
+  the run is about to use anyway.
 - **The root is `/home/eika`.** It is the user's home directory and the
   volume's mount point (`eikad.DefaultRoot`, the one Go constant; the
   Dockerfile spells it three times and a test holds them equal). A volume
@@ -229,9 +251,7 @@ this file says why, so neither repeats the other.
   (`Spec.HostPath`), and the project count in `GET /api/system`. A project
   carried no ownership: the harness has one user, and the sign-in token is the
   only gate to a computer, so there was nothing to move onto the computer.
-  `POST /api/computers` takes a name (and optionally an image and sandbox),
-  which keeps a sandboxed `bash` reachable until the `home` computer replaces
-  it. "Project" comes back in phase 2 with a new meaning.
+  "Project" comes back in phase 2 with a new meaning.
 - **A computer's volume is mounted at its root.** The files live in the
   volume rather than the container's writable layer, and `Inspect` reports the
   volume from the container's mounts, so a restarted harness can remove it.

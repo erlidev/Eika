@@ -36,7 +36,7 @@ egress proxy are network calls and run in the harness.
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
 | `executor` | The interface every agent action uses, path validation; `local` (tests only), `sandbox` (eikad client) |
 | `eikad` | Daemon handlers, path confinement, wire types |
-| `computer` | Container and volume lifecycle, confinement, usage |
+| `computer` | Container and volume lifecycle, confinement |
 | `egress` | Egress modes, allowlist patterns, the proxy |
 | `netguard` | Public-address-only dialing |
 | `store` | PostgreSQL pool, embedded migrations, queries |
@@ -124,7 +124,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 
 | Table | Holds |
 |---|---|
-| `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), pinned, archived |
+| `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), home |
 | `sessions` | computer_id (NULL for a chat), title, untitled, kind (user), head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
 | `runs` | session, state, started/finished, error |
@@ -330,17 +330,21 @@ comes to be. `Server.Run` starts it beside the idle stopper on every start,
 so setup, a deployment with a fixed `EIKA_AUTH_TOKEN` that never calls setup,
 and a restart all reach it. It inserts the `computers` row first, which the
 unique index on `home` allows once, and then creates the container over the
-row's id when `Inspect` finds none and starts it when it is stopped. A failure
+row's id when `Inspect` finds none (dropping the proxy token the harness
+cached for that id, since the new container has its own) and starts it when it
+is stopped. A failure
 (no Docker, no sandbox image) is logged and tried again after 5 seconds, then
 10, up to a minute, without keeping the API from serving; meanwhile the row
-reads `creating`. A run in `home` starts it first when the idle stopper has
-stopped it, and calls `EnsureHome` when its container is gone; a run in any
-other computer that is not running is a `409`. `DELETE /api/computers/{id}`
-refuses `home`.
+reads `creating`. A run starts its computer first when the idle stopper has
+stopped it (`runExecutor`), and a run in `home` calls `EnsureHome` when its
+container is gone; a computer that cannot be started refuses the run with a
+`409` naming the cause. The API has no route that creates, changes, stops or
+deletes a computer: `GET /api/computers` lists them, and the settings change
+`home`'s limits and egress (below).
 
 The server's idle stopper (`server/idle.go`) sweeps once a minute while
-`Server.Run` serves and stops, as `POST .../stop` does, every running holder
-that has not had a run in it for
+`Server.Run` serves and stops every running computer (aborting its runs, ending
+its stdio MCP servers) that has not had a run in it for
 `computer_idle_minutes` (default 15, 0 for never). Last use is in memory:
 a run's end, a start, or a sweep that sees a run going; after a restart a
 running computer gets the whole timeout again.
@@ -352,13 +356,13 @@ any other error stops reconciliation without changing states.
 
 ### Limits and egress
 
-`Host.Create` applies the computer's `sandbox` row; `PUT .../sandbox` writes
-the row then `Host.Confine`s; every start re-applies it.
+`Host.Create` applies the computer's `sandbox` row. Saving `sandbox_limits` or
+`sandbox_egress` in the settings writes the home row and then `Host.Confine`s
+its container (`Server.applyHomeSandbox`); every start re-applies the row.
 
 Limits are `NanoCPUs`, `Memory` (= `MemorySwap`), and `PidsLimit`, changed
 live with `ContainerUpdate`; "no limit" on an existing container is the host's
-capacity (`Host.Capacity`). `Host.Usage` samples `docker stats`;
-`GET .../usage` adds hosts the proxy refused.
+capacity (`Host.Capacity`).
 
 ```
  open: eika-cx-a on eika_sandbox --------------------> internet directly
@@ -371,7 +375,7 @@ capacity (`Host.Capacity`). `Host.Usage` samples `docker stats`;
 sandbox from `Proxy-Authorization` (the computer's id and a proxy token of its
 own, made at create and read back by `Inspect`), asks `Server.EgressPolicy` per request,
 dials through `netguard`, and answers refusals with 403, remembered per
-computer (`Proxy.Blocked`). It serves only when both networks exist
+computer in memory (`Proxy.Blocked`, which no route reads now). It serves only when both networks exist
 (`Host.EgressControl`). Switching modes connects the container to the new
 network before leaving the old. Proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`,
 `NO_PROXY` in both cases, `NODE_USE_ENV_PROXY`) are given to eikad with

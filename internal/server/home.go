@@ -38,7 +38,7 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 	s.homeMu.Lock()
 	defer s.homeMu.Unlock()
 
-	sandbox, err := s.newSandbox(ctx, nil)
+	sandbox, err := s.homeSandbox(ctx)
 	if err != nil {
 		return fmt.Errorf("choose the home computer's sandbox: %w", err)
 	}
@@ -68,6 +68,9 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 		}); err != nil {
 			return fmt.Errorf("create the home computer: %w", err)
 		}
+		// The new container has a proxy token of its own, and the harness
+		// may hold the old container's under this same id.
+		s.forgetEgress(row.ID)
 		s.log.Info("home computer created", "computer_id", row.ID)
 	default:
 		return err
@@ -90,6 +93,55 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 		return nil
 	}
 	return s.record(ctx, row.ID, host)
+}
+
+// applyHomeSandbox makes the home computer follow the sandbox settings: it
+// records the limits and egress they now give on the home row and applies them
+// to the container, running or stopped, without restarting it. This is the one
+// way an existing computer's sandbox changes. The settings are saved before
+// this runs, and the row before the container is touched, so a container that
+// took only part of the change gets the rest when it next starts. The image is
+// not part of it: it applies when the container is created.
+//
+// While no home row exists the settings are all there is to do: EnsureHome
+// reads them when it records the row. While the row exists but the container
+// does not, the row alone is updated, and EnsureHome creates the container
+// from it.
+func (s *Server) applyHomeSandbox(ctx context.Context) error {
+	// The same order runExecutor takes them in.
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+	s.homeMu.Lock()
+	defer s.homeMu.Unlock()
+
+	home, err := s.deps.Store.HomeComputer(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	sandbox, err := s.homeSandbox(ctx)
+	if err != nil {
+		return err
+	}
+	if home, err = s.deps.Store.SetComputerSandbox(ctx, home.ID, sandbox); err != nil {
+		return err
+	}
+	host, err := s.deps.Computers.Inspect(ctx, home.ID)
+	if errors.Is(err, computer.ErrNoComputer) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.deps.Computers.Confine(ctx, &host, confinement(sandbox)); err != nil {
+		return err
+	}
+	s.computerState(ctx, home.ID, home.State)
+	s.log.Info("home computer sandbox set", "computer_id", home.ID, "cpus", sandbox.CPUs,
+		"memory_mb", sandbox.MemoryMB, "pids", sandbox.PIDs, "egress", egressMode(sandbox))
+	return nil
 }
 
 // record writes the state a computer's container is in and announces it. The
@@ -149,18 +201,18 @@ func (s *Server) startComputer(ctx context.Context, cx store.Computer, host *com
 	return s.deps.Computers.Start(ctx, host)
 }
 
-// runExecutor returns the executor a run in a computer acts through. The home
-// computer is the one a run may find stopped or gone and still use: the idle
-// stopper stops it like any other, and nothing in the UI starts a computer by
-// hand, so a run starts it, and makes its container again over the volume when
-// that is missing. Any other computer that is not running refuses the run.
+// runExecutor returns the executor a run in a computer acts through. The
+// computer may be stopped, since the idle stopper stops it and nothing else
+// starts it, so a run starts it; and the home computer's container may be
+// gone, so a run makes it again over the volume. A computer that cannot be
+// started refuses the run, saying why.
 func (s *Server) runExecutor(ctx context.Context, id string) (executor.Executor, error) {
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
 	cx, err := s.deps.Store.Computer(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	s.startMu.Lock()
-	defer s.startMu.Unlock()
 	host, err := s.deps.Computers.Inspect(ctx, cx.ID)
 	if errors.Is(err, computer.ErrNoComputer) && cx.Home {
 		if err := s.EnsureHome(ctx); err != nil {
@@ -171,11 +223,12 @@ func (s *Server) runExecutor(ctx context.Context, id string) (executor.Executor,
 	if err != nil {
 		return nil, err
 	}
-	if host.State == computer.StateStopped && cx.Home {
+	if host.State == computer.StateStopped {
 		if cx, err = s.changeState(ctx, cx, func(ctx context.Context, cx store.Computer, host *computer.Computer) error {
 			return s.startComputer(ctx, cx, host)
 		}); err != nil {
-			return nil, err
+			s.log.Error("start computer for a run", "computer_id", id, "error", err)
+			return nil, conflictf("computer %s could not be started: %v", id, err)
 		}
 		s.idle.used(cx.ID, time.Now())
 		if host, err = s.deps.Computers.Inspect(ctx, cx.ID); err != nil {

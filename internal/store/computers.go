@@ -25,11 +25,6 @@ type Computer struct {
 	ContainerID string
 	// Sandbox is what the container may consume, reach, and expose.
 	Sandbox ComputerSandbox
-	// Pinned computers are listed before the others.
-	Pinned bool
-	// Archived computers are set aside under a heading of their own. It is
-	// filing only: the container is neither stopped nor started by it.
-	Archived bool
 	// Home marks the one computer that holds the user's durable files. At
 	// most one row has it.
 	Home      bool
@@ -54,11 +49,13 @@ type ComputerSandbox struct {
 
 // computerColumns is the column list every computer query selects, in the
 // order scanComputer reads them.
-const computerColumns = `id, name, image, state, container_id, sandbox, pinned, archived,
-	home, created_at, updated_at`
+const computerColumns = `id, name, image, state, container_id, sandbox, home, created_at, updated_at`
 
 // CreateComputer inserts w and returns it with the fields the database
-// assigned. An empty ID gets a fresh one.
+// assigned. An empty ID gets a fresh one. The harness records its home
+// computer with EnsureHomeComputer, so no production path calls this yet: it
+// is the insert for the other computers, such as the one a project gets in
+// phase 2 of docs/PLAN.md, and the store and server tests use it for rows.
 func (s *Store) CreateComputer(ctx context.Context, w Computer) (Computer, error) {
 	if w.ID == "" {
 		w.ID = NewID()
@@ -68,11 +65,10 @@ func (s *Store) CreateComputer(ctx context.Context, w Computer) (Computer, error
 		return Computer{}, fmt.Errorf("encode sandbox of computer %s: %w", w.ID, err)
 	}
 	const q = `INSERT INTO computers
-		(id, name, image, state, container_id, sandbox, pinned, archived, home)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		(id, name, image, state, container_id, sandbox, home)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING ` + computerColumns
-	row := s.pool.QueryRow(ctx, q, w.ID, w.Name, w.Image, w.State, w.ContainerID, sandbox,
-		w.Pinned, w.Archived, w.Home)
+	row := s.pool.QueryRow(ctx, q, w.ID, w.Name, w.Image, w.State, w.ContainerID, sandbox, w.Home)
 	out, err := scanComputer(row)
 	if err != nil {
 		return Computer{}, wrap("create computer "+w.ID, err)
@@ -94,19 +90,29 @@ func (s *Store) EnsureHomeComputer(ctx context.Context, w Computer) (home Comput
 		return Computer{}, false, fmt.Errorf("encode sandbox of computer %s: %w", w.ID, err)
 	}
 	const insert = `INSERT INTO computers
-		(id, name, image, state, container_id, sandbox, pinned, archived, home)
-		VALUES ($1, $2, $3, $4, $5, $6, false, false, true)
+		(id, name, image, state, container_id, sandbox, home)
+		VALUES ($1, $2, $3, $4, $5, $6, true)
 		ON CONFLICT (home) WHERE home DO NOTHING`
 	tag, err := s.pool.Exec(ctx, insert, w.ID, w.Name, w.Image, w.State, w.ContainerID, sandbox)
 	if err != nil {
 		return Computer{}, false, wrap("ensure home computer", err)
 	}
-	row := s.pool.QueryRow(ctx, `SELECT `+computerColumns+` FROM computers WHERE home`)
-	home, err = scanComputer(row)
+	home, err = s.HomeComputer(ctx)
 	if err != nil {
-		return Computer{}, false, wrap("read home computer", err)
+		return Computer{}, false, err
 	}
 	return home, tag.RowsAffected() == 1, nil
+}
+
+// HomeComputer returns the home computer, or ErrNotFound while the harness
+// has not recorded it yet.
+func (s *Store) HomeComputer(ctx context.Context) (Computer, error) {
+	row := s.pool.QueryRow(ctx, `SELECT `+computerColumns+` FROM computers WHERE home`)
+	w, err := scanComputer(row)
+	if err != nil {
+		return Computer{}, wrap("read home computer", err)
+	}
+	return w, nil
 }
 
 // Computer returns the computer with the given id.
@@ -175,43 +181,6 @@ func (s *Store) SetComputerSandbox(ctx context.Context, id string, sandbox Compu
 	return w, nil
 }
 
-// ComputerChanges are the edits a user makes to a computer's name and
-// filing. A nil field is left as it is.
-type ComputerChanges struct {
-	Name     *string
-	Pinned   *bool
-	Archived *bool
-}
-
-// UpdateComputer applies changes to a computer and returns it as it now
-// stands.
-func (s *Store) UpdateComputer(ctx context.Context, id string, changes ComputerChanges) (Computer, error) {
-	const q = `UPDATE computers
-		SET name = COALESCE($2, name),
-		    pinned = COALESCE($3, pinned),
-		    archived = COALESCE($4, archived),
-		    updated_at = now()
-		WHERE id = $1
-		RETURNING ` + computerColumns
-	w, err := scanComputer(s.pool.QueryRow(ctx, q, id, changes.Name, changes.Pinned, changes.Archived))
-	if err != nil {
-		return Computer{}, wrap("update computer "+id, err)
-	}
-	return w, nil
-}
-
-// DeleteComputer removes a computer and its sessions.
-func (s *Store) DeleteComputer(ctx context.Context, id string) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM computers WHERE id = $1`, id)
-	if err != nil {
-		return wrap("delete computer "+id, err)
-	}
-	if tag.RowsAffected() == 0 {
-		return wrap("delete computer "+id, pgx.ErrNoRows)
-	}
-	return nil
-}
-
 // scanComputer reads one computer row.
 func scanComputer(row pgx.Row) (Computer, error) {
 	var (
@@ -219,7 +188,7 @@ func scanComputer(row pgx.Row) (Computer, error) {
 		sandbox []byte
 	)
 	err := row.Scan(&w.ID, &w.Name, &w.Image, &w.State, &w.ContainerID, &sandbox,
-		&w.Pinned, &w.Archived, &w.Home, &w.CreatedAt, &w.UpdatedAt)
+		&w.Home, &w.CreatedAt, &w.UpdatedAt)
 	if err != nil {
 		return Computer{}, err
 	}

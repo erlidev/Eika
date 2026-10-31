@@ -58,15 +58,7 @@ var routeWire = map[string]wire{
 
 	"GET /api/events": {websocket: true},
 
-	"GET /api/computers":              {status: http.StatusOK, response: computersResponse{}},
-	"POST /api/computers":             {status: http.StatusCreated, request: createComputerRequest{}, response: computerBody{}},
-	"GET /api/computers/{id}":         {status: http.StatusOK, response: computerBody{}},
-	"PATCH /api/computers/{id}":       {status: http.StatusOK, request: updateComputerRequest{}, response: computerBody{}},
-	"DELETE /api/computers/{id}":      {status: http.StatusNoContent},
-	"POST /api/computers/{id}/start":  {status: http.StatusOK, response: computerBody{}},
-	"POST /api/computers/{id}/stop":   {status: http.StatusOK, response: computerBody{}},
-	"PUT /api/computers/{id}/sandbox": {status: http.StatusOK, request: sandboxBody{}, response: computerBody{}},
-	"GET /api/computers/{id}/usage":   {status: http.StatusOK, response: usageResponse{}},
+	"GET /api/computers": {status: http.StatusOK, response: computersResponse{}},
 
 	"GET /api/sessions":              {status: http.StatusOK, response: sessionsResponse{}},
 	"POST /api/sessions":             {status: http.StatusCreated, request: createSessionRequest{}, response: sessionBody{}},

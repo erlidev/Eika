@@ -190,13 +190,6 @@ func (a *api) lastEndpoint() provider.Endpoint {
 	return a.endpoint
 }
 
-// newComputer creates a computer.
-func (a *api) newComputer(t *testing.T) computerWire {
-	t.Helper()
-	rec := request(t, a.Server, "POST", "/api/computers", map[string]any{"name": "work"})
-	return decodeBody[computerWire](t, rec, 201)
-}
-
 // newSession opens a session in a computer.
 func (a *api) newSession(t *testing.T, computerID string) sessionWire {
 	t.Helper()
@@ -258,14 +251,12 @@ func (a *api) waitQuestion(t *testing.T, sessionID string) builtin.Question {
 // with the handlers so that a change to a handler's struct that changes the
 // JSON fails a test instead of passing quietly.
 type computerWire struct {
-	ID       string      `json:"id"`
-	Name     string      `json:"name"`
-	Image    string      `json:"image"`
-	State    string      `json:"state"`
-	Sandbox  sandboxWire `json:"sandbox"`
-	Pinned   bool        `json:"pinned"`
-	Archived bool        `json:"archived"`
-	Home     bool        `json:"home"`
+	ID      string      `json:"id"`
+	Name    string      `json:"name"`
+	Image   string      `json:"image"`
+	State   string      `json:"state"`
+	Sandbox sandboxWire `json:"sandbox"`
+	Home    bool        `json:"home"`
 }
 
 type computersWire struct {
@@ -366,56 +357,38 @@ type modelsWire struct {
 	Default string      `json:"default"`
 }
 
-func TestComputerRoutes(t *testing.T) {
+func TestTheComputerListIsTheHomeComputer(t *testing.T) {
 	a := newAPI(t)
-
-	cx := a.newComputer(t)
-	if cx.State != "running" || cx.Name != "work" {
-		t.Fatalf("created = %+v", cx)
-	}
+	home := a.home(t)
 
 	list := decodeBody[computersWire](t, request(t, a.Server, "GET", "/api/computers", nil), 200)
-	if len(list.Computers) != 1 || list.Computers[0].ID != cx.ID {
-		t.Errorf("computers = %+v, want the one created", list.Computers)
-	}
-
-	stopped := decodeBody[computerWire](t, request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil), 200)
-	if stopped.State != "stopped" {
-		t.Errorf("state after stop = %q, want stopped", stopped.State)
-	}
-	started := decodeBody[computerWire](t, request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/start", nil), 200)
-	if started.State != "running" {
-		t.Errorf("state after start = %q, want running", started.State)
-	}
-
-	if rec := request(t, a.Server, "DELETE", "/api/computers/"+cx.ID, nil); rec.Code != 204 {
-		t.Fatalf("delete = %d: %s", rec.Code, rec.Body.String())
-	}
-	if rec := request(t, a.Server, "GET", "/api/computers/"+cx.ID, nil); rec.Code != 404 {
-		t.Errorf("get after delete = %d, want 404", rec.Code)
+	if len(list.Computers) != 1 || list.Computers[0].ID != home.ID || !list.Computers[0].Home {
+		t.Errorf("computers = %+v, want the home computer alone", list.Computers)
 	}
 }
 
-func TestAComputerNeedsOnlyAName(t *testing.T) {
+// The computer routes no UI calls are gone: a computer is made, started and
+// kept by the harness, and a user cannot rename, stop, delete or sample it.
+func TestTheComputerRoutesAreGone(t *testing.T) {
 	a := newAPI(t)
-	for name, c := range map[string]struct {
-		body   map[string]any
-		status int
-	}{
-		"an empty name": {map[string]any{"name": " "}, 400},
-		"no name":       {map[string]any{}, 400},
-		"a project_id, which computers no longer have": {map[string]any{"name": "work", "project_id": "p1"}, 400},
-		"a name": {map[string]any{"name": "work"}, 201},
+	home := a.home(t)
+	base := "/api/computers/" + home.ID
+	for _, c := range []struct{ method, path string }{
+		{"POST", "/api/computers"},
+		{"GET", base},
+		{"PATCH", base},
+		{"DELETE", base},
+		{"POST", base + "/start"},
+		{"POST", base + "/stop"},
+		{"PUT", base + "/sandbox"},
+		{"GET", base + "/usage"},
 	} {
-		t.Run(name, func(t *testing.T) {
-			if rec := request(t, a.Server, "POST", "/api/computers", c.body); rec.Code != c.status {
-				t.Errorf("create = %d, want %d: %s", rec.Code, c.status, rec.Body.String())
-			}
-		})
+		if rec := request(t, a.Server, c.method, c.path, map[string]any{}); rec.Code != 404 && rec.Code != 405 {
+			t.Errorf("%s %s = %d, want 404 or 405", c.method, c.path, rec.Code)
+		}
 	}
-	list := decodeBody[computersWire](t, request(t, a.Server, "GET", "/api/computers", nil), 200)
-	if len(list.Computers) != 1 {
-		t.Errorf("computers = %d, want only the valid one", len(list.Computers))
+	if got := a.homeOf(t); got.State != "running" || got.Name != "home" {
+		t.Errorf("home = %+v, want it untouched by the refused requests", got)
 	}
 }
 
@@ -439,20 +412,11 @@ func TestTheProjectRoutesAreGone(t *testing.T) {
 // someone without it, each to a route that reads or changes the computer.
 func TestNoOneWithoutASignInTokenReachesAComputer(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 	sess := a.newSession(t, cx.ID)
-	base := "/api/computers/" + cx.ID
 
 	routes := []struct{ method, path string }{
 		{"GET", "/api/computers"},
-		{"POST", "/api/computers"},
-		{"GET", base},
-		{"PATCH", base},
-		{"DELETE", base},
-		{"POST", base + "/start"},
-		{"POST", base + "/stop"},
-		{"PUT", base + "/sandbox"},
-		{"GET", base + "/usage"},
 		{"GET", "/api/sessions/" + sess.ID},
 		{"POST", "/api/sessions/" + sess.ID + "/messages"},
 	}
@@ -473,38 +437,14 @@ func TestNoOneWithoutASignInTokenReachesAComputer(t *testing.T) {
 	}
 
 	// None of it changed the computer.
-	got := decodeBody[computerWire](t, request(t, a.Server, "GET", base, nil), 200)
-	if got.Name != "work" || got.State != "running" {
+	if got := a.homeOf(t); got.Name != "home" || got.State != "running" {
 		t.Errorf("computer = %+v, want it untouched and running", got)
-	}
-}
-
-func TestComputerCreationLeavesNothingBehindWhenItFails(t *testing.T) {
-	a := newAPI(t)
-	a.host.startErr = fmt.Errorf("no daemon")
-
-	if rec := request(t, a.Server, "POST", "/api/computers", map[string]any{"name": "work"}); rec.Code != 500 {
-		t.Fatalf("status = %d, want 500: %s", rec.Code, rec.Body.String())
-	}
-	live, err := a.host.List(t.Context())
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(live) != 0 {
-		t.Errorf("host holds %d computers, want none", len(live))
-	}
-	rows, err := a.store.Computers(t.Context())
-	if err != nil {
-		t.Fatalf("computers: %v", err)
-	}
-	if len(rows) != 0 {
-		t.Errorf("store holds %d computers, want none", len(rows))
 	}
 }
 
 func TestReconcileRecordsWhatTheHostActuallyHas(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 
 	// The container went away while the harness was down.
 	host, err := a.host.Inspect(t.Context(), cx.ID)
@@ -517,9 +457,8 @@ func TestReconcileRecordsWhatTheHostActuallyHas(t *testing.T) {
 	if err := a.Reconcile(t.Context()); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	got := decodeBody[computerWire](t, request(t, a.Server, "GET", "/api/computers/"+cx.ID, nil), 200)
-	if got.State != "gone" {
-		t.Errorf("state = %q, want gone", got.State)
+	if got := a.computerState(t, cx.ID); got != "gone" {
+		t.Errorf("state = %q, want gone", got)
 	}
 }
 
@@ -544,7 +483,7 @@ func TestReconcileAbortsRunsLeftByAnEarlierProcess(t *testing.T) {
 
 func TestReconcilePreservesStateWhenInspectFails(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 	a.host.inspectErr = fmt.Errorf("docker daemon unavailable")
 
 	if err := a.Reconcile(t.Context()); err == nil {
@@ -559,26 +498,12 @@ func TestReconcilePreservesStateWhenInspectFails(t *testing.T) {
 	}
 }
 
-func TestDeleteComputerPreservesRowWhenInspectFails(t *testing.T) {
-	a := newAPI(t)
-	cx := a.newComputer(t)
-	a.host.inspectErr = fmt.Errorf("docker daemon unavailable")
-
-	rec := request(t, a.Server, "DELETE", "/api/computers/"+cx.ID, nil)
-	if rec.Code != 500 {
-		t.Fatalf("status = %d, want 500: %s", rec.Code, rec.Body.String())
-	}
-	if _, err := a.store.Computer(t.Context(), cx.ID); err != nil {
-		t.Errorf("computer row was deleted after an inspection failure: %v", err)
-	}
-}
-
 // A run's tool calls have to be answered before the conversation can go
 // anywhere else, so the entries in the middle of a turn are not places a
 // head may be put: a run continuing from there fails.
 func TestHeadRefusesAnUnansweredTurn(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 	sess := a.newSession(t, cx.ID)
 
 	a.script(
@@ -625,7 +550,7 @@ func TestHeadRefusesAnUnansweredTurn(t *testing.T) {
 
 func TestSessionRoutes(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 
 	sess := a.newSession(t, cx.ID)
 	if sess.ComputerID != cx.ID {
@@ -675,16 +600,14 @@ func TestSessionRoutes(t *testing.T) {
 }
 
 // Renaming, pinning, and archiving are partial edits: each changes what the
-// request names, is refused when the name is blank, and tells the clients
-// that list the thing.
+// request names, is refused when the title is blank, and tells the clients
+// that list the session.
 func TestRenamePinAndArchive(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 	sess := a.newSession(t, cx.ID)
 	global := a.Bus().Subscribe(event.TopicGlobal)
 	defer global.Close()
-	cxEvents := a.Bus().Subscribe(event.ComputerTopic(cx.ID))
-	defer cxEvents.Close()
 
 	pinned := decodeBody[sessionWire](t, request(t, a.Server, "PATCH", "/api/sessions/"+sess.ID,
 		map[string]any{"pinned": true}), 200)
@@ -715,24 +638,6 @@ func TestRenamePinAndArchive(t *testing.T) {
 		}
 	})
 
-	named := decodeBody[computerWire](t, request(t, a.Server, "PATCH", "/api/computers/"+cx.ID,
-		map[string]any{"name": "login fix", "archived": true}), 200)
-	if named.Name != "login fix" || !named.Archived || named.Pinned || named.State != "running" {
-		t.Errorf("updated computer = %+v, want renamed and archived, still running", named)
-	}
-	waitFor(t, "a computer.state event", func() bool {
-		select {
-		case e := <-cxEvents.Events():
-			return e.Type == event.TypeComputerState
-		default:
-			return false
-		}
-	})
-	got := decodeBody[computerWire](t, request(t, a.Server, "GET", "/api/computers/"+cx.ID, nil), 200)
-	if got.Name != "login fix" || !got.Archived {
-		t.Errorf("computer = %+v, want the edit kept", got)
-	}
-
 	refused := []struct {
 		name, path string
 		body       map[string]any
@@ -740,9 +645,7 @@ func TestRenamePinAndArchive(t *testing.T) {
 	}{
 		{"blank title", "/api/sessions/" + sess.ID, map[string]any{"title": "  "}, 400},
 		{"long title", "/api/sessions/" + sess.ID, map[string]any{"title": strings.Repeat("x", 201)}, 400},
-		{"blank name", "/api/computers/" + cx.ID, map[string]any{"name": ""}, 400},
 		{"missing session", "/api/sessions/missing", map[string]any{"pinned": true}, 404},
-		{"missing computer", "/api/computers/missing", map[string]any{"pinned": true}, 404},
 	}
 	for _, tc := range refused {
 		t.Run(tc.name, func(t *testing.T) {
@@ -838,32 +741,5 @@ func TestSettingsAndModels(t *testing.T) {
 	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages",
 		map[string]any{"text": "hi", "model": "gone"}); rec.Code != 400 {
 		t.Errorf("unknown model = %d, want 400", rec.Code)
-	}
-}
-
-func TestComputerCreationCleansUpEvenWhenTheRequestIsGone(t *testing.T) {
-	a := newAPI(t)
-
-	// The client gives up while the container is being started, which is the
-	// most likely reason the creation fails at all. The container the harness
-	// already made is still its own to remove, so the cleanup must not run on
-	// the request's context.
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	a.host.startHook = cancel
-	a.host.startErr = fmt.Errorf("the daemon is unreachable")
-
-	rec := requestOn(ctx, t, a.Server, "POST", "/api/computers",
-		map[string]any{"name": "work"})
-	if rec.Code == 201 {
-		t.Fatalf("the computer was created despite the start failing: %s", rec.Body.String())
-	}
-
-	live, err := a.host.List(t.Context())
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(live) != 0 {
-		t.Errorf("host holds %d computers, want none", len(live))
 	}
 }

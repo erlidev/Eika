@@ -54,7 +54,7 @@ func refused(t *testing.T, rec *httptest.ResponseRecorder, want int) {
 
 func TestChatRoutes(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
+	cx := a.home(t)
 	work := a.newSession(t, cx.ID)
 
 	chat := a.newChat(t, "a question")

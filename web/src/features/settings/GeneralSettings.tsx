@@ -1,6 +1,6 @@
 /**
  * The harness-wide choices: the default model, the utility models, the image
- * new computers run, and a way back into the guided setup.
+ * the home computer is created from, and a way back into the guided setup.
  */
 
 import { useState } from "react";
@@ -109,9 +109,10 @@ function SandboxForm({ state, save }: SandboxFormProps) {
         </p>
       )}
       <p className="text-muted-foreground text-xs">
-        The image a new computer runs when it names none. Leave empty for{" "}
-        <code>{state.defaults.sandbox_image}</code>, which the compose stack builds. Any image
-        works: the harness copies its daemon in.
+        The image the home computer is created from. Leave empty for{" "}
+        <code>{state.defaults.sandbox_image}</code>, which the compose stack builds. A container
+        that exists keeps its image, so a change reaches the home computer only when its container
+        is made again. Any image works: the harness copies its daemon in.
       </p>
       {save.isError && <ActionError action="save the sandbox image" error={save.error} />}
     </form>

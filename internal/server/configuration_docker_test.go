@@ -480,7 +480,7 @@ func TestSystemReport(t *testing.T) {
 	}
 
 	// A new computer runs the image the settings name.
-	if cx := a.newComputer(t); cx.Image != "custom:2" {
+	if cx := a.home(t); cx.Image != "custom:2" {
 		t.Errorf("computer image = %q, want the setting's", cx.Image)
 	}
 

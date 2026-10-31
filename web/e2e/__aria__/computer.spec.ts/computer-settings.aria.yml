@@ -13,7 +13,7 @@
     - tab "Appearance"
   - tabpanel "Computer":
     - heading "Computer" [level=3]
-    - paragraph: The limits and network a sandbox is created with.
+    - paragraph: The limits and network of the home computer. A save applies to it at once, without restarting it.
     - form "Computer":
       - region "Limits":
         - heading "Limits" [level=4]
