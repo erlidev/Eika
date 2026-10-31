@@ -440,6 +440,30 @@ this file says why, so neither repeats the other.
   count is not reported. Tokenising the reasoning text is the token counter's
   to add, as a separate, labelled source.
 
+### Provider transport
+
+- **One HTTP client for every request to an endpoint, repeating a request that
+  found its idle connection closed.** `provider.NewHTTPClient` shares
+  `http.DefaultTransport`'s pool, and when a request fails with EOF or a reset
+  before any response byte on a connection taken from the idle pool, it sends
+  the request again on another connection (at most four times, never after a
+  failure on a new connection). The openai provider, the probe and the token
+  counter use it. Cause, found on the bench: llama.cpp closes the connection
+  when a streamed response ends (a request after a stream never got a reused
+  connection in a trace; one after a plain response did). The client can take
+  that connection from its pool before it has seen the close, which an SSH
+  forward delays; the POST then fails with `EOF`, about one call in twenty on
+  the bench. Go retries such a failure only for requests safe to repeat, and a
+  POST is not. The code classed it correctly already (`Retryable`, so the agent
+  loop recovers after its backoff); the fault was that nothing else recovered
+  and a token count before every call would meet it as often as the call.
+  Rejected: `Connection: close` on streamed requests (a TLS handshake per
+  call to a hosted API for a fault of one server); disabling keep-alives
+  (same cost); leaving it to the loop (the counter and the probe have no
+  loop, and the probe takes one failed request as "nobody answers"); retrying
+  at the SDK (`WithMaxRetries` also repeats after real server errors, which the
+  loop owns).
+
 ## Image input
 
 - **Images are prepared once, in the harness** (`internal/imaging`), when a

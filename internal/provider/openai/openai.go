@@ -44,6 +44,9 @@ func New(e provider.Endpoint) (provider.Provider, error) {
 		// Retries are the agent loop's job, so that every provider and the
 		// scripted fake behave the same way.
 		option.WithMaxRetries(0),
+		// The shared pool, repeating a request once when the server had closed
+		// the idle connection it went out on.
+		option.WithHTTPClient(provider.NewHTTPClient(0)),
 	}
 	return &Provider{client: openai.NewClient(opts...)}, nil
 }
