@@ -24,12 +24,27 @@ type authStatusWire struct {
 }
 
 type providerWire struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Kind       string `json:"kind"`
-	BaseURL    string `json:"base_url"`
-	APIKeySet  bool   `json:"api_key_set"`
-	APIKeyHint string `json:"api_key_hint"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	BaseURL      string `json:"base_url"`
+	APIKeySet    bool   `json:"api_key_set"`
+	APIKeyHint   string `json:"api_key_hint"`
+	Backend      string `json:"backend"`
+	Pool         string `json:"pool"`
+	Slots        int    `json:"slots"`
+	KV           string `json:"kv"`
+	KVTokens     int    `json:"kv_tokens"`
+	Capabilities struct {
+		Build        string `json:"build"`
+		Window       int    `json:"window"`
+		Counting     string `json:"counting"`
+		CacheMetrics string `json:"cache_metrics"`
+		SlotHints    bool   `json:"slot_hints"`
+	} `json:"capabilities"`
+	Overridden []string `json:"overridden"`
+	ProbedAt   string   `json:"probed_at"`
+	ProbeError string   `json:"probe_error"`
 }
 
 type providersWire struct {
@@ -39,6 +54,13 @@ type providersWire struct {
 
 type probeWire struct {
 	Models []provider.ModelInfo `json:"models"`
+	Probe  struct {
+		Backend  string `json:"backend"`
+		Slots    int    `json:"slots"`
+		KV       string `json:"kv"`
+		KVTokens int    `json:"kv_tokens"`
+	} `json:"probe"`
+	Provider *providerWire `json:"provider"`
 }
 
 type systemWire struct {

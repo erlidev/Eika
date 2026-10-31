@@ -662,15 +662,43 @@
                 "object": {
                   "api_key_hint": "string",
                   "api_key_set": "boolean",
+                  "backend": "string",
                   "base_url": "string",
+                  "capabilities": {
+                    "object": {
+                      "build": "string",
+                      "cache_metrics": "string",
+                      "counting": "string",
+                      "slot_hints": "boolean",
+                      "window": "number"
+                    },
+                    "optional": [
+                      "build",
+                      "window"
+                    ]
+                  },
                   "created_at": "string",
                   "id": "string",
                   "kind": "string",
+                  "kv": "string",
+                  "kv_tokens": "number",
                   "name": "string",
+                  "overridden": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "pool": "string",
+                  "probe_error": "string",
+                  "probed_at": "string",
+                  "slots": "number",
                   "updated_at": "string"
                 },
                 "optional": [
-                  "api_key_hint"
+                  "api_key_hint",
+                  "kv_tokens",
+                  "probe_error",
+                  "probed_at"
                 ]
               }
             }
@@ -2116,23 +2144,59 @@
       "request": {
         "object": {
           "api_key": "string",
+          "backend": "string",
           "base_url": "string",
-          "name": "string"
+          "kv": "string",
+          "kv_tokens": "number",
+          "name": "string",
+          "pool": "string",
+          "reset": {
+            "array": "string"
+          },
+          "slots": "number"
         }
       },
       "response": {
         "object": {
           "api_key_hint": "string",
           "api_key_set": "boolean",
+          "backend": "string",
           "base_url": "string",
+          "capabilities": {
+            "object": {
+              "build": "string",
+              "cache_metrics": "string",
+              "counting": "string",
+              "slot_hints": "boolean",
+              "window": "number"
+            },
+            "optional": [
+              "build",
+              "window"
+            ]
+          },
           "created_at": "string",
           "id": "string",
           "kind": "string",
+          "kv": "string",
+          "kv_tokens": "number",
           "name": "string",
+          "overridden": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "pool": "string",
+          "probe_error": "string",
+          "probed_at": "string",
+          "slots": "number",
           "updated_at": "string"
         },
         "optional": [
-          "api_key_hint"
+          "api_key_hint",
+          "kv_tokens",
+          "probe_error",
+          "probed_at"
         ]
       }
     },
@@ -2913,15 +2977,43 @@
         "object": {
           "api_key_hint": "string",
           "api_key_set": "boolean",
+          "backend": "string",
           "base_url": "string",
+          "capabilities": {
+            "object": {
+              "build": "string",
+              "cache_metrics": "string",
+              "counting": "string",
+              "slot_hints": "boolean",
+              "window": "number"
+            },
+            "optional": [
+              "build",
+              "window"
+            ]
+          },
           "created_at": "string",
           "id": "string",
           "kind": "string",
+          "kv": "string",
+          "kv_tokens": "number",
           "name": "string",
+          "overridden": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "pool": "string",
+          "probe_error": "string",
+          "probed_at": "string",
+          "slots": "number",
           "updated_at": "string"
         },
         "optional": [
-          "api_key_hint"
+          "api_key_hint",
+          "kv_tokens",
+          "probe_error",
+          "probed_at"
         ]
       }
     },
@@ -2953,8 +3045,78 @@
                 ]
               }
             }
+          },
+          "probe": {
+            "object": {
+              "backend": "string",
+              "capabilities": {
+                "object": {
+                  "build": "string",
+                  "cache_metrics": "string",
+                  "counting": "string",
+                  "slot_hints": "boolean",
+                  "window": "number"
+                },
+                "optional": [
+                  "build",
+                  "window"
+                ]
+              },
+              "kv": "string",
+              "kv_tokens": "number",
+              "slots": "number"
+            },
+            "optional": [
+              "kv_tokens"
+            ]
+          },
+          "provider": {
+            "object": {
+              "api_key_hint": "string",
+              "api_key_set": "boolean",
+              "backend": "string",
+              "base_url": "string",
+              "capabilities": {
+                "object": {
+                  "build": "string",
+                  "cache_metrics": "string",
+                  "counting": "string",
+                  "slot_hints": "boolean",
+                  "window": "number"
+                },
+                "optional": [
+                  "build",
+                  "window"
+                ]
+              },
+              "created_at": "string",
+              "id": "string",
+              "kind": "string",
+              "kv": "string",
+              "kv_tokens": "number",
+              "name": "string",
+              "overridden": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "pool": "string",
+              "probe_error": "string",
+              "probed_at": "string",
+              "slots": "number",
+              "updated_at": "string"
+            },
+            "optional": [
+              "api_key_hint",
+              "kv_tokens",
+              "probe_error",
+              "probed_at"
+            ]
           }
-        }
+        },
+        "optional": [
+          "provider"
+        ]
       }
     },
     "POST /api/questions/{id}/answer": {

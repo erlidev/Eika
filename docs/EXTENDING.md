@@ -199,6 +199,19 @@ The UI's provider form creates OpenAI-compatible providers only, so offering
 the new kind there means giving `web/src/features/providers/presets.ts` a
 preset for it and sending its kind from `ProviderForm.tsx`.
 
+An endpoint's kind (`openai`) is not its backend. To make the probe recognise
+a new inference server, add a method to `internal/provider/probe` beside
+`llamacpp.go`, `vllm.go`, `sglang.go` and `tabby.go`: it reads the server's
+description route, returns a `Result` (backend, slots, KV cache, window,
+counting) and says `false` when the route is not that server's, so the next
+identifier runs. Add the backend to `Backend`, to the `backend` check of the
+`providers` table (a new migration), to `backends` in
+`web/src/api/types/providers.ts` and to `backendLabels` in
+`web/src/features/providers/endpoint.ts`. Put its responses under
+`probe/probetest/testdata/<name>/`, marked recorded or unverified in that
+folder's README, and a constructor in `probetest`. A field the server does not
+state is the documented default or `unknown`, never a guess.
+
 Test a provider against an `httptest` server that serves its wire format, as
 `internal/provider/openai/openai_test.go` does. Test everything that consumes a
 provider with `provider/providertest`, the scripted fake.

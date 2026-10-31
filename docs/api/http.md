@@ -527,8 +527,23 @@ models are listed separately.
 alone and an empty `api_key` removes the key. A stored key belongs to the
 base URL it was entered for: a `base_url` that differs from the stored one,
 without an `api_key`, clears the stored key, so it is never sent to the new
-endpoint. `200` with the `Provider`; `400` for a bad field; `409` when the
-name is taken.
+endpoint.
+
+`backend`, `pool`, `slots`, `kv` and `kv_tokens` set what a probe would
+otherwise find. A field set here is listed in the provider's `overridden` and a
+probe leaves it alone, until `reset` hands it back.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `backend` | string | One of `llamacpp`, `vllm`, `sglang`, `tabby`, `openai`, `other`. |
+| `pool` | string | The hardware group, at most 64 characters. `""` means the provider's name. |
+| `slots` | integer | Concurrent requests the endpoint takes, 1 to 1024. |
+| `kv` | string | `shared`, `partitioned` or `unknown`. |
+| `kv_tokens` | integer | The size of a shared cache in tokens, 0 when unknown. Refused with a `kv` that is not `shared`. Setting either `kv` or `kv_tokens` sets the cache. |
+| `reset` | array of string | Fields (`backend`, `pool`, `slots`, `kv`) handed back to the probe. Their values stay until the next probe. |
+
+`200` with the `Provider`; `400` for a bad field; `409` when the name is
+taken.
 
 ### `DELETE /api/providers/{id}`
 
@@ -537,8 +552,11 @@ built. `204`.
 
 ### `POST /api/providers/probe`
 
-Asks an endpoint which models it serves: the setup screens' connection test
-and model list.
+Asks an endpoint which models it serves, which is the setup screens'
+connection test and model list, and what kind of server it is: its backend,
+slots, per-request window, KV cache and capabilities, read from the server's
+own description (`docs/design/runtime.md` section 1). The harness probes every
+stored provider again at each start.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -547,10 +565,17 @@ and model list.
 | `base_url` | string | Overrides or, without `provider_id`, names the endpoint. A stored key is used only with the stored base URL; with another one, the probe carries `api_key` or no key. |
 | `api_key` | string | Overrides or, without `provider_id`, gives the key. |
 
-`200` with `{"models": [ModelInfo]}`, sorted by id. `400` with what the
-endpoint answered, the key removed, when it could not be used; a connection
-to a loopback address that fails says to use `host.docker.internal`, because
-the harness runs in a container. `400` too for a kind that cannot list.
+`200` with `{"models": [ModelInfo], "probe": Probe, "provider": Provider}`.
+`models` are sorted by id. `probe` is what the endpoint said about itself,
+before any override: `backend`, `slots`, `kv`, `kv_tokens` (absent when
+unknown) and `capabilities`. `provider` is the stored provider after the
+findings were recorded on it, which the route does only for a stored provider
+probed at its stored `base_url` and without a new `api_key`; it is absent
+otherwise, and nothing is written. Recording keeps every field the user set.
+`400` with what the endpoint answered, the key removed, when it could not be
+used, which a stored provider records as its `probe_error`; a connection to a
+loopback address that fails says to use `host.docker.internal`, because the
+harness runs in a container. `400` too for a kind that cannot list.
 
 ### Provider
 
@@ -559,6 +584,15 @@ the harness runs in a container. `400` too for a kind that cannot list.
 | `id`, `name`, `kind`, `base_url` | string | The provider. |
 | `api_key_set` | boolean | A key is stored. |
 | `api_key_hint` | string, optional | The last four characters of a key of 16 or more. |
+| `backend` | string | The kind of server: `llamacpp`, `vllm`, `sglang`, `tabby`, `openai` (a hosted API) or `other` (a server on the local network nothing recognised). `other` until a probe has answered. |
+| `pool` | string | The hardware group: endpoints in one pool share hardware. The provider's name unless set. |
+| `slots` | integer | Concurrent requests the endpoint takes. The server's own number where it states one, else 1 for a local backend and 8 for a hosted one. |
+| `kv` | string | How the KV cache is divided: `shared`, `partitioned`, or `unknown` (the server does not say; llama.cpp with several slots). |
+| `kv_tokens` | integer, optional | The size of a shared cache in tokens; absent when unknown. |
+| `capabilities` | object | The last successful probe's other findings: `build` (the server's version, optional), `window` (the context one request may use, optional), `counting` (`chat`, `text` or `none`: how the endpoint counts tokens), `cache_metrics` (`reported` or `unknown`) and `slot_hints` (a request may name its slot). |
+| `overridden` | array of string | The fields the user set, which a probe leaves alone: any of `backend`, `pool`, `slots`, `kv`. |
+| `probed_at` | time, optional | When a probe last succeeded; absent until one has. |
+| `probe_error` | string, optional | Why the latest probe failed, with the key removed; absent after a success. Earlier findings stay. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ### ModelInfo

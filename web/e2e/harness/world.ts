@@ -25,6 +25,7 @@ import type {
   ProfileSettings,
   QueuedMessage,
   Provider,
+  ProbeFindings,
   Question,
   Run,
   Sandbox,
@@ -111,6 +112,8 @@ export type World = {
   replies: ReplyStep[][];
   /** probeModels is what "detect models" on any endpoint answers. */
   probeModels: { id: string; context_window?: number; max_output?: number }[];
+  /** probeFinds is what a probe says any endpoint is, as the harness would find it. */
+  probeFinds: ProbeFindings;
   /** eventsOnConnect are sent once to every event stream that opens. */
   eventsOnConnect: EikaEvent[];
   /** profiles are the profiles, oldest first; the default_profile setting names the default. */
@@ -197,6 +200,12 @@ export function emptyWorld(): World {
       { id: "gpt-5", context_window: 400000, max_output: 128000 },
       { id: "gpt-5-mini", context_window: 400000, max_output: 128000 },
     ],
+    probeFinds: {
+      backend: "openai",
+      slots: 8,
+      kv: "unknown",
+      capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
+    },
     eventsOnConnect: [],
     profiles: [defaultProfile()],
     overrides: {},
@@ -332,6 +341,14 @@ export class WorldBuilder {
       base_url: "https://api.openai.com/v1",
       api_key_set: true,
       api_key_hint: "a1b2",
+      // A hosted API, probed when it was added.
+      backend: "openai",
+      pool: input.name,
+      slots: 8,
+      kv: "unknown",
+      capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
+      overridden: [],
+      probed_at: minutesAgo(30),
       created_at: minutesAgo(600),
       updated_at: minutesAgo(600),
       ...input,

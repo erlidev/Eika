@@ -20,6 +20,7 @@ import {
   uniqueProviderName,
 } from "@/features/providers/presets";
 import type { ProviderPreset } from "@/features/providers/presets";
+import { backendLabels } from "@/features/providers/endpoint";
 import {
   keyWillBeCleared,
   probeInput,
@@ -267,9 +268,10 @@ export function ProviderForm({ provider, onSaved, onCancel, submitLabel }: Provi
       {probe.isSuccess && (
         <Notice tone="success">
           Connected.{" "}
-          {probe.data.length === 0
+          {probe.data.models.length === 0
             ? "The endpoint lists no models; add them by name next."
-            : `${String(probe.data.length)} model${probe.data.length === 1 ? "" : "s"} available.`}
+            : `${String(probe.data.models.length)} model${probe.data.models.length === 1 ? "" : "s"} available.`}{" "}
+          Detected: {backendLabels[probe.data.probe.backend]}.
         </Notice>
       )}
       {probe.isError && (

@@ -238,7 +238,7 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       Responses-to-chat conversion must match the request `/apply-template`
       renders), or llama.cpp stays on `chat` by default. Record fixtures per
       backend and note in the log which backends behave well.
-- [ ] Provider probe: detect the backend, the per-request window, the KV cache and capabilities for
+- [x] Provider probe: detect the backend, the per-request window, the KV cache and capabilities for
       llama.cpp, vLLM, SGLang, TabbyAPI and generic OpenAI-compatible cloud
       endpoints. Record response fixtures for each. Add the provider columns
       `backend`, `pool`, `slots`, `kv` and `capabilities`.
@@ -266,7 +266,7 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       predicted next request with its method, effective window.
 - [ ] Effective window is the smaller of the configured window and the probed
       per-request context. Settings warns on a mismatch.
-- [ ] KV cache per pool (runtime.md 1): the provider column `kv`, `shared` with
+- [x] KV cache per pool (runtime.md 1): the provider column `kv`, `shared` with
       its size in tokens, or `partitioned`. `shared` is the usual case (vLLM,
       SGLang, TabbyAPI/exllamav3, llama.cpp with `--kv-unified`); `partitioned`
       is llama.cpp without it. Probe the size per backend, verify the fields
@@ -331,8 +331,11 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       - queue priority: an interactive call overtakes a waiting background call
         on one slot
       - a `partitioned` run: the runner restarts `llama-qwen` with
-        `--no-kv-unified` and checks the probe and the effective window, then
-        restores it
+        `--no-kv-unified` and the same `-c`, and checks that the probe's
+        window halves (it reads `n_ctx` per slot) while `kv` stays `unknown`,
+        since nothing llama.cpp serves tells the two modes apart (probe item,
+        Log); with the user's `kv: partitioned` set, the effective window and
+        admission follow it. Then it restores `llama-qwen`
       - a second backend: the runner stops `llama-qwen`, starts the existing
         `tabbyapi` Deployment (the same Qwen3.8-27B as EXL3), runs the accounting
         suite with its stated bound, then swaps back
@@ -1039,6 +1042,72 @@ Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
 
+- 2026-10-31: the provider probe and the KV cache per pool, one piece of code
+  (branch `provider-probe`). Both items are ticked.
+  - Landed. `internal/provider/probe` (`Run` identifies llama.cpp, SGLang,
+    TabbyAPI and vLLM, else a hosted API or an unknown local server, and reads
+    slots, per-request window, KV cache, counting routes, cache-metric and
+    slot-hint support); `probe/probetest` (the fixtures as fake servers);
+    migration `0004_provider_probe.sql` (`backend`, `pool`, `slots`, `kv`,
+    `kv_tokens`, `capabilities`, `overridden`, `probed_at`, `probe_error`);
+    `store.RecordProbe`, `RecordProbeFailure` and `OverrideProvider`;
+    `POST /api/providers/probe` records the findings on a stored provider and
+    returns them, `PATCH /api/providers/{id}` sets `backend`, `pool`, `slots`,
+    `kv` and `kv_tokens` or hands them back (`reset`), and `Server.Run` probes
+    every provider at start beside the server. Settings gains a one-line
+    hardware summary on each provider card and an endpoint dialog (found
+    values, the user's own, "Use the probe's"); the mock harness, `contract.json`,
+    `http.md`, `runtime.md` section 1 (its table now says what the bench showed
+    and what is unverified), `ARCHITECTURE.md`, `DECISIONS.md` ("The provider
+    probe") and `EXTENDING.md` follow. `evals/live` no longer parses `/props` or
+    `/v1/models` itself: `Connect` lists the models and calls the probe, and a
+    new `provider_probe` scenario checks the probe against `/slots`.
+  - What the bench showed (llama.cpp b11942, 2 slots). `/props`,
+    `/slots` (every slot) and `/v1/models` (`meta.n_ctx`) all give 131072: the
+    per-slot context. Nothing the server serves states `--kv-unified` or `-c`
+    (`/props`, `/slots`, `/metrics`, `/v1/models` read; `/version`,
+    `/get_server_info`, `/v1/model` are 404). A unified server sets every slot
+    to the whole cache and a partitioned one to `-c / -np`, so 2 x 131072 reads
+    the same for `-c 131072 --kv-unified` and `-c 262144 --no-kv-unified`. So
+    the probe says `kv: unknown` for llama.cpp with several slots and `shared`
+    (size `n_ctx`) with one, and the bench needs `kv: shared`, 131072 entered in
+    Settings (or the API) for the shared-KV live test. The queue item treats
+    `unknown` as shared with the window as its size (runtime.md 1 and 3).
+    `/apply-template` and `/tokenize` answer as the exact-counting design needs
+    (`{"content": "hi"}` is 1 token, 5834). `/metrics` has no KV usage series
+    in this build; its `prompt_tokens_total` excludes cached tokens, as its HELP
+    says, and `prompt_tokens_cached_total` counts them.
+  - Unverified fixtures (written from each project's docs or source, marked in
+    `probetest/testdata/README.md`, to be replaced by recordings): vLLM
+    `version.json`, `models.json`, `metrics.txt` (the `vllm:cache_config_info`
+    labels), `tokenize_chat.json`; SGLang `get_server_info.json`,
+    `models.json`, `tokenize.json`; TabbyAPI `model.json`, `models.json`,
+    `token_encode.json`; cloud `models.json`. Recorded from the bench: the five
+    llama.cpp ones (`props`, `slots`, `models`, `apply_template`, `tokenize`),
+    with `chat_template` and per-slot `params` left out of `props` and `slots`.
+  - `make check` passed (every Go package ok, 432 web tests, 128 visual
+    specs). `make smoke` passed (2 specs), run because `Server.Run` now starts
+    the probe. `make live` against b11942-338fce651:
+    `provider_probe` passed (backend llamacpp, 2 slots both listed by `/slots`
+    with 131072, counting `chat`, `kv: unknown`) and `cache_reuse` passed
+    (turn 2: 370 prompt tokens, 348 cached). One earlier run of `cache_reuse`
+    failed on turn 2 with `EOF` on the POST (a kept-alive connection the server
+    had closed, which the SDK does not retry on a POST); it passed on the next
+    run. Watch for it in the live suite.
+  - Visual baselines I looked at and updated: `models-providers-{light,dark}`,
+    `models-phone`, `models-load-error-{light,dark}` (the providers scenario
+    gained a llama.cpp provider, a hardware line and an endpoint button on each
+    card); new `endpoint-bench-{light,dark}`.
+  - For later items. The Responses item adds `api` and the conformance result
+    to `probe.Capabilities` (stored as JSON) and to the provider row. vLLM,
+    SGLang and TabbyAPI do not report a slot count the way llama.cpp does, so
+    their pools default to 1 slot (TabbyAPI uses `max_batch_size`, SGLang
+    `max_running_requests`): set `slots` in Settings or the queue will
+    serialise an engine that batches. The probe does not read cache metrics
+    from usage, so `cache_metrics` is `unknown` except on llama.cpp; the usage
+    item sets what a response shows. A new backend means a function in
+    `probe`, a migration for the `backend` check, and the UI lists
+    (`docs/EXTENDING.md`).
 - 2026-10-31: part 1 of the `make live` and `evals/` item, moved ahead of the
   rest of phase 1 so every later item can verify against the real model (branch
   `live-skeleton`). The item stays unticked; its text now says what remains.

@@ -159,15 +159,21 @@ func (s *Server) Bus() *event.Bus { return s.deps.Bus }
 
 // Run serves until ctx is cancelled, then drains in-flight requests and stops
 // the runs that are still going. While it serves, it makes sure the home
-// computer exists, and stops the computers that go unused for the idle
-// timeout.
+// computer exists, probes every provider's endpoint once (a failed probe
+// keeps the earlier result and never stops the server), and stops the
+// computers that go unused for the idle timeout.
 func (s *Server) Run(ctx context.Context) error {
 	defer s.Close()
-	if s.deps.Store != nil && s.deps.Computers != nil {
+	if s.deps.Store != nil {
 		watchCtx, cancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
-		wg.Go(func() { s.idle.watch(watchCtx) })
-		wg.Go(func() { s.keepHome(watchCtx, firstHomeRetry) })
+		if s.deps.Providers != nil {
+			wg.Go(func() { s.probeProviders(watchCtx) })
+		}
+		if s.deps.Computers != nil {
+			wg.Go(func() { s.idle.watch(watchCtx) })
+			wg.Go(func() { s.keepHome(watchCtx, firstHomeRetry) })
+		}
 		// The sweep stops before Close, whose runs it would otherwise race.
 		defer wg.Wait()
 		defer cancel()

@@ -4,7 +4,7 @@
  * It is the Models tab of the settings dialog.
  */
 
-import { Image as ImageIcon, KeyRound, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { Image as ImageIcon, KeyRound, Pencil, Plus, Server, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import type { Model, Provider } from "@/api/types";
@@ -19,6 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EndpointDialog } from "@/features/providers/EndpointDialog";
+import { hardwareSummary } from "@/features/providers/endpoint";
 import { ModelDialog } from "@/features/providers/ModelDialog";
 import { ModelPicker } from "@/features/providers/ModelPicker";
 import { presetOf } from "@/features/providers/presets";
@@ -44,6 +46,7 @@ export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps)
   const models = useModels();
   const [addingProvider, setAddingProvider] = useState(false);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
+  const [endpointOf, setEndpointOf] = useState<string | null>(null);
   const [pickingFor, setPickingFor] = useState<Provider | null>(null);
   const [editingModel, setEditingModel] = useState<Model | null>(null);
 
@@ -107,6 +110,9 @@ export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps)
             defaultModel={models.data?.default ?? ""}
             onEdit={() => {
               setEditingProvider(provider);
+            }}
+            onEndpoint={() => {
+              setEndpointOf(provider.id);
             }}
             onAddModels={() => {
               setPickingFor(provider);
@@ -194,6 +200,13 @@ export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps)
         </DialogContent>
       </Dialog>
 
+      <EndpointDialog
+        providerId={endpointOf}
+        onClose={() => {
+          setEndpointOf(null);
+        }}
+      />
+
       <ModelDialog
         model={editingModel}
         onOpenChange={() => {
@@ -211,6 +224,7 @@ type ProviderCardProps = {
   modelsLoaded: boolean;
   defaultModel: string;
   onEdit: () => void;
+  onEndpoint: () => void;
   onAddModels: () => void;
   onEditModel: (model: Model) => void;
   onDefaultChange: (name: string) => void;
@@ -224,6 +238,7 @@ function ProviderCard({
   modelsLoaded,
   defaultModel,
   onEdit,
+  onEndpoint,
   onAddModels,
   onEditModel,
   onDefaultChange,
@@ -240,6 +255,12 @@ function ProviderCard({
         <div className="min-w-40 flex-1">
           <p className="truncate text-sm font-medium">{provider.name}</p>
           <p className="text-muted-foreground truncate font-mono text-xs">{provider.base_url}</p>
+          <p className="text-muted-foreground truncate text-xs" title={hardwareSummary(provider)}>
+            {provider.probe_error !== undefined && provider.probe_error !== "" && (
+              <span className="text-destructive">Last probe failed · </span>
+            )}
+            {hardwareSummary(provider)}
+          </p>
         </div>
         <span className="text-muted-foreground flex items-center gap-1 text-xs">
           <KeyRound aria-hidden className="size-3.5" />
@@ -261,6 +282,14 @@ function ProviderCard({
           <Button size="xs" variant="outline" onClick={onAddModels}>
             <Plus aria-hidden />
             Models
+          </Button>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label={`Endpoint settings of ${provider.name}`}
+            onClick={onEndpoint}
+          >
+            <Server aria-hidden />
           </Button>
           <Button
             size="icon-xs"

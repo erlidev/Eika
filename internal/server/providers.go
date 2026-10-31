@@ -7,11 +7,13 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/probe"
 	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -32,6 +34,10 @@ const (
 	// maxContextWindow is far above any model today; it only catches a typo
 	// with too many zeros.
 	maxContextWindow = 100_000_000
+	// maxSlots and maxKVTokens only catch a typo: no pool takes a thousand
+	// concurrent requests on a local GPU, and the column holds an int32.
+	maxSlots    = 1024
+	maxKVTokens = 2_000_000_000
 	// probeTimeout bounds asking an endpoint which models it serves.
 	probeTimeout = 20 * time.Second
 	// testTimeout bounds the one small request a model test sends. A
@@ -128,6 +134,11 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	override, err := validateOverride(p, req)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if req.APIKey != nil {
 		if p.APIKey, err = s.sealKey(*req.APIKey); err != nil {
 			s.fail(w, r, err)
@@ -142,7 +153,14 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.log.Info("provider updated", "provider_id", updated.ID, "key_changed", req.APIKey != nil, "key_cleared", keyCleared)
+	if override != nil {
+		if updated, err = s.deps.Store.OverrideProvider(r.Context(), p.ID, *override); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	s.log.Info("provider updated", "provider_id", updated.ID, "key_changed", req.APIKey != nil, "key_cleared", keyCleared,
+		"overridden", updated.Overridden)
 	writeJSON(w, s.log, http.StatusOK, s.asProvider(updated))
 }
 
@@ -160,45 +178,47 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 
 // handleProbeProvider asks an endpoint which models it serves, which is both
 // the connection test of the setup screens and where their model list comes
-// from.
+// from, and what kind of server it is. The findings are recorded on a stored
+// provider when the request probes its stored base URL; a form checking an
+// unsaved address or key gets them back and nothing is written.
 func (s *Server) handleProbeProvider(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[probeRequest](r)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	p, key, err := s.probeTarget(r.Context(), req)
+	p, key, record, err := s.probeTarget(r.Context(), req)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	client, err := s.deps.Providers.Build(p.Kind, provider.Endpoint{BaseURL: p.BaseURL, APIKey: key})
+	models, res, err := s.probeEndpoint(r.Context(), p, key)
 	if err != nil {
-		s.fail(w, r, invalidf("%s", scrub(err.Error(), key)))
+		if record {
+			s.recordProbeFailure(r.Context(), p.ID, err)
+		}
+		s.fail(w, r, err)
 		return
 	}
-	lister, ok := client.(provider.Lister)
-	if !ok {
-		s.fail(w, r, invalidf("a %s provider cannot list its models; add them by name", p.Kind))
-		return
+	out := probeResponse{Models: models, Probe: asProbe(res)}
+	if record {
+		stored, err := s.recordProbe(r.Context(), p.ID, res)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		body := s.asProvider(stored)
+		out.Provider = &body
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
-	defer cancel()
-	models, err := lister.Models(ctx)
-	if err != nil {
-		s.fail(w, r, endpointFailure(p.BaseURL, err, key))
-		return
-	}
-	if models == nil {
-		models = []provider.ModelInfo{}
-	}
-	writeJSON(w, s.log, http.StatusOK, probeResponse{Models: models})
+	writeJSON(w, s.log, http.StatusOK, out)
 }
 
 // probeTarget merges a probe request with the provider it names, if any, and
 // returns the endpoint to probe with its key in the clear. A stored key is
-// used only with the stored base URL.
-func (s *Server) probeTarget(ctx context.Context, req probeRequest) (store.Provider, string, error) {
+// used only with the stored base URL. The last result says whether the
+// findings belong to the stored provider: they do when the endpoint probed is
+// the one stored.
+func (s *Server) probeTarget(ctx context.Context, req probeRequest) (store.Provider, string, bool, error) {
 	var (
 		p   store.Provider
 		key string
@@ -206,10 +226,10 @@ func (s *Server) probeTarget(ctx context.Context, req probeRequest) (store.Provi
 	if req.ProviderID != "" {
 		stored, err := s.deps.Store.Provider(ctx, req.ProviderID)
 		if err != nil {
-			return store.Provider{}, "", err
+			return store.Provider{}, "", false, err
 		}
 		if key, err = s.openKey(stored); err != nil {
-			return store.Provider{}, "", err
+			return store.Provider{}, "", false, err
 		}
 		p = stored
 	} else {
@@ -220,21 +240,38 @@ func (s *Server) probeTarget(ctx context.Context, req probeRequest) (store.Provi
 		// The name is not probed; it only has to pass validation.
 		p.Name = "probe"
 	}
+	record := req.ProviderID != ""
 	if req.BaseURL != nil {
 		baseURL := strings.TrimSpace(*req.BaseURL)
-		// The stored key goes only to the endpoint it was entered for.
+		// The stored key goes only to the endpoint it was entered for, and
+		// what another endpoint says is not about this provider.
 		if req.ProviderID != "" && baseURL != p.BaseURL {
-			key = ""
+			key, record = "", false
 		}
 		p.BaseURL = baseURL
 	}
 	if req.APIKey != nil {
-		key = strings.TrimSpace(*req.APIKey)
+		// A key typed into a form is being tried; a refusal of it says
+		// nothing about the stored one.
+		key, record = strings.TrimSpace(*req.APIKey), false
 	}
 	if err := s.validateProvider(p); err != nil {
-		return store.Provider{}, "", err
+		return store.Provider{}, "", false, err
 	}
-	return p, key, nil
+	return p, key, record, nil
+}
+
+// recordProbeFailure stores why a probe of a stored provider failed, on a
+// context that survives the request, and logs it if even that fails.
+func (s *Server) recordProbeFailure(ctx context.Context, id string, cause error) {
+	if ctx.Err() != nil {
+		return // the harness is stopping or the caller left; the endpoint did not fail
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), probeTimeout)
+	defer cancel()
+	if err := s.deps.Store.RecordProbeFailure(ctx, id, cause.Error()); err != nil {
+		s.log.Error("record provider probe failure", "provider_id", id, "error", err)
+	}
 }
 
 // providerFor builds a provider on the endpoint of the model a run's
@@ -278,6 +315,51 @@ func (s *Server) validateProvider(p store.Provider) error {
 		return invalidf("kind must be one of %s", strings.Join(s.deps.Providers.Kinds(), ", "))
 	}
 	return validateBaseURL(p.BaseURL)
+}
+
+// validateOverride checks the fields of an update that set what a probe
+// finds, and returns what to store, or nil when the request sets none.
+func validateOverride(p store.Provider, req updateProviderRequest) (*store.ProviderOverride, error) {
+	o := store.ProviderOverride{
+		Backend: req.Backend, Pool: req.Pool, Slots: req.Slots, KV: req.KV, KVTokens: req.KVTokens, Reset: req.Reset,
+	}
+	if o.Backend == nil && o.Pool == nil && o.Slots == nil && o.KV == nil && o.KVTokens == nil && len(o.Reset) == 0 {
+		return nil, nil
+	}
+	if o.Backend != nil && !probe.Backend(*o.Backend).Valid() {
+		return nil, invalidf("backend must be one of llamacpp, vllm, sglang, tabby, openai, other")
+	}
+	if o.Pool != nil {
+		pool := strings.TrimSpace(*o.Pool)
+		if len(pool) > maxProviderName || strings.IndexFunc(pool, unicode.IsControl) >= 0 {
+			return nil, invalidf("pool must be at most %d characters", maxProviderName)
+		}
+		o.Pool = &pool
+	}
+	if o.Slots != nil && (*o.Slots < 1 || *o.Slots > maxSlots) {
+		return nil, invalidf("slots must be between 1 and %d", maxSlots)
+	}
+	if o.KV != nil && !probe.KV(*o.KV).Valid() {
+		return nil, invalidf("kv must be one of shared, partitioned, unknown")
+	}
+	if o.KVTokens != nil {
+		if *o.KVTokens < 0 || *o.KVTokens > maxKVTokens {
+			return nil, invalidf("kv_tokens must be between 0 and %d", maxKVTokens)
+		}
+		kv := p.KV
+		if o.KV != nil {
+			kv = *o.KV
+		}
+		if *o.KVTokens > 0 && probe.KV(kv) != probe.Shared {
+			return nil, invalidf("kv_tokens is the size of a shared cache; set kv to shared with it")
+		}
+	}
+	for _, field := range o.Reset {
+		if !slices.Contains([]string{store.OverrideBackend, store.OverridePool, store.OverrideSlots, store.OverrideKV}, field) {
+			return nil, invalidf("reset names %q, which is not one of backend, pool, slots, kv", field)
+		}
+	}
+	return &o, nil
 }
 
 // validateBaseURL accepts an http or https API root. Credentials, a query,

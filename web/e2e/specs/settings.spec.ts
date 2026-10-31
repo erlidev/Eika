@@ -19,6 +19,17 @@ for (const theme of ["light", "dark"] as const) {
       await expectShot(eika, `models-providers-${theme}`, "role=dialog");
     });
 
+    test("endpoint: what the probe found and what only the user can say", async ({
+      open,
+      expectShot,
+    }) => {
+      const eika = await open({ scenario: "providers", theme });
+      await eika.click("Settings");
+      await eika.click("Endpoint settings of Bench");
+      await expect(eika.page.getByRole("combobox", { name: "KV cache" })).toHaveText("Not known");
+      await expectShot(eika, `endpoint-bench-${theme}`, `role=dialog[name="Endpoint of Bench"]`);
+    });
+
     test("general: a problem under the sandbox image", async ({ open, expectShot }) => {
       const eika = await open({ scenario: "workbench", theme });
       await eika.click("Settings");
@@ -29,6 +40,69 @@ for (const theme of ["light", "dark"] as const) {
     });
   });
 }
+
+test("models: each provider says what its endpoint is", async ({ open }) => {
+  const eika = await open({ scenario: "providers" });
+  await eika.click("Settings");
+  const card = (name: string) =>
+    eika.page.locator("li", { has: eika.page.getByText(name, { exact: true }) }).first();
+  await expect(card("Bench")).toContainText(
+    "llama.cpp b11942 · 2 slots · 131,072 window · cache not known",
+  );
+  await expect(card("Local vLLM")).toContainText(
+    "vLLM 0.11.0 · 1 slot · 40,960 window · cache shared 134,736",
+  );
+  // A failed probe is said first, and the earlier findings stay.
+  await expect(card("OpenRouter")).toContainText("Last probe failed · Hosted API · 8 slots");
+});
+
+test("endpoint settings: what the user sets survives the next probe", async ({
+  open,
+  expectAria,
+}) => {
+  const eika = await open({ scenario: "providers" });
+  await eika.click("Settings");
+  await eika.click("Endpoint settings of Bench");
+  const dialog = eika.page.getByRole("dialog", { name: /Endpoint of Bench/ });
+  // The probe cannot tell whether a 2-slot llama.cpp cache is shared, and
+  // says so; the user knows it is (--kv-unified).
+  await expect(dialog.getByText(/does not say whether its cache is shared/)).toBeVisible();
+  await expectAria(eika, "endpoint-bench-unknown", `role=dialog[name="Endpoint of Bench"]`);
+  const save = dialog.getByRole("button", { name: "Save" });
+  await expect(save).toBeDisabled();
+  await eika.click("label=KV cache");
+  await eika.click("role=option[name=Shared]");
+  await eika.fill("Shared cache size (tokens)", "131072");
+  await expect(save).toBeEnabled();
+  await eika.click("Save");
+  await expect(eika.page.getByText(/cache shared 131,072/)).toBeVisible();
+
+  // The next probe finds the same endpoint and leaves the user's cache alone.
+  await eika.click("Endpoint settings of Bench");
+  await expect(dialog.getByText("Set by you")).toBeVisible();
+  await eika.click("Probe again");
+  await expect(dialog.getByText("Probed 2026-03-14 15:00 UTC.")).toBeVisible();
+  await expect(dialog.getByText("Set by you")).toBeVisible();
+  await expect(dialog.getByLabel("Shared cache size (tokens)")).toHaveValue("131072");
+
+  // Handed back, the probe's own answer returns.
+  await eika.click("Use the probe's");
+  await expect(dialog.getByText(/does not say whether its cache is shared/)).toBeVisible();
+  await expect(dialog.getByText("Set by you")).toBeHidden();
+});
+
+test("endpoint settings: values the harness would refuse", async ({ open }) => {
+  const eika = await open({ scenario: "providers" });
+  await eika.click("Settings");
+  await eika.click("Endpoint settings of Bench");
+  const dialog = eika.page.getByRole("dialog", { name: /Endpoint of Bench/ });
+  const save = dialog.getByRole("button", { name: "Save" });
+  await eika.fill("Slots", "0");
+  await expect(dialog.getByLabel("Slots")).toHaveAccessibleDescription(/whole number of slots/);
+  await expect(save).toBeDisabled();
+  await eika.fill("Slots", "4");
+  await expect(save).toBeEnabled();
+});
 
 test("edit provider: a new base URL clears the stored key", async ({ open, expectAria }) => {
   const eika = await open({ scenario: "providers" });
@@ -209,6 +283,16 @@ test.describe("on a phone", () => {
       expect(a.y < b.y + b.height && b.y < a.y + a.height, `${name} and its arrows`).toBe(true);
     }
     await expectShot(eika, "search-phone");
+  });
+
+  test("endpoint settings fit the screen", async ({ open }) => {
+    const eika = await open({ scenario: "providers", viewport: phone });
+    await eika.click("Settings");
+    await eika.click("Endpoint settings of Bench");
+    const dialog = eika.page.getByRole("dialog", { name: /Endpoint of Bench/ });
+    await expect(dialog.getByRole("button", { name: "Save" })).toBeVisible();
+    const overflow = await dialog.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow, "the endpoint settings are wider than the dialog").toBeLessThanOrEqual(0);
   });
 
   test("the dialog never scrolls sideways", async ({ open }) => {

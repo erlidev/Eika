@@ -18,6 +18,12 @@ const stored: Provider = {
   base_url: "https://api.openai.com/v1",
   api_key_set: true,
   api_key_hint: "cdef",
+  backend: "openai",
+  pool: "OpenAI",
+  slots: 8,
+  kv: "unknown",
+  capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
+  overridden: [],
   created_at: "2026-09-01T00:00:00Z",
   updated_at: "2026-09-01T00:00:00Z",
 };

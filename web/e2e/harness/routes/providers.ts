@@ -1,6 +1,13 @@
 /** Providers and their models, as internal/server/providers.go serves them. */
 
-import type { Model, Provider, ThinkingSwitch } from "../../../src/api/types.ts";
+import type {
+  Backend,
+  EndpointField,
+  KV,
+  Model,
+  Provider,
+  ThinkingSwitch,
+} from "../../../src/api/types.ts";
 import { fail, ok, str, strings } from "./context.ts";
 import type { Reply, RouteContext } from "./context.ts";
 
@@ -9,10 +16,83 @@ function thinkingSwitch(value: unknown): ThinkingSwitch {
   return value === "chat_template_kwargs" || value === "thinking" ? value : "reasoning_effort";
 }
 
+const endpointFields: EndpointField[] = ["backend", "pool", "slots", "kv"];
+
+/** overrideProblem mirrors validateOverride in internal/server/providers.go. */
+function overrideProblem(body: Record<string, unknown>): Reply | undefined {
+  const bad = (message: string) => fail(400, "invalid_request", message);
+  if (typeof body.slots === "number" && (body.slots < 1 || body.slots > 1024)) {
+    return bad("slots must be between 1 and 1024");
+  }
+  if (typeof body.kv === "string" && !["shared", "partitioned", "unknown"].includes(body.kv)) {
+    return bad("kv must be one of shared, partitioned, unknown");
+  }
+  if (typeof body.kv_tokens === "number" && body.kv_tokens > 0 && body.kv !== "shared") {
+    return bad("kv_tokens is the size of a shared cache; set kv to shared with it");
+  }
+  return undefined;
+}
+
+/** applyOverride records what the user set and hands back what they reset. */
+function applyOverride(row: Provider, body: Record<string, unknown>): void {
+  const mark = (field: EndpointField) => {
+    if (!row.overridden.includes(field)) row.overridden.push(field);
+  };
+  if (typeof body.backend === "string") {
+    row.backend = body.backend as Backend;
+    mark("backend");
+  }
+  if (typeof body.pool === "string") {
+    // The harness stores "" for the default, which reads as the provider's name.
+    const pool = body.pool.trim();
+    row.pool = pool === "" ? row.name : pool;
+    row.overridden = row.overridden.filter((f) => f !== "pool");
+    if (pool !== "") mark("pool");
+  }
+  if (typeof body.slots === "number") {
+    row.slots = body.slots;
+    mark("slots");
+  }
+  if (typeof body.kv === "string" || typeof body.kv_tokens === "number") {
+    if (typeof body.kv === "string") row.kv = body.kv as KV;
+    if (typeof body.kv_tokens === "number") row.kv_tokens = body.kv_tokens;
+    if (row.kv !== "shared" || !row.kv_tokens) delete row.kv_tokens;
+    mark("kv");
+  }
+  for (const field of strings(body.reset)) {
+    if (endpointFields.includes(field as EndpointField)) {
+      row.overridden = row.overridden.filter((f) => f !== field);
+      if (field === "pool") row.pool = row.name;
+    }
+  }
+}
+
 export function providerRoutes(ctx: RouteContext): void {
   const { w, on, find, now } = ctx;
   on("GET", "/api/providers", () => ok({ providers: w.providers, kinds: w.providerKinds }));
-  on("POST", "/api/providers/probe", () => ok({ models: w.probeModels }));
+  // As internal/server/providers_probe.go records a probe: the user's own
+  // values stay, and only the probe's own fields are replaced.
+  on("POST", "/api/providers/probe", ({ body }) => {
+    const row = w.providers.find((p) => p.id === body.provider_id);
+    const finds = w.probeFinds;
+    const sameEndpoint =
+      typeof body.base_url !== "string" || body.base_url.trim() === row?.base_url;
+    // A key typed into a form is being tried; nothing is recorded for it.
+    if (row && sameEndpoint && typeof body.api_key !== "string") {
+      if (!row.overridden.includes("backend")) row.backend = finds.backend;
+      if (!row.overridden.includes("slots")) row.slots = finds.slots;
+      if (!row.overridden.includes("kv")) {
+        row.kv = finds.kv;
+        if (finds.kv_tokens !== undefined) row.kv_tokens = finds.kv_tokens;
+        else delete row.kv_tokens;
+      }
+      row.capabilities = finds.capabilities;
+      row.probed_at = now();
+      delete row.probe_error;
+      return ok({ models: w.probeModels, probe: finds, provider: row });
+    }
+    return ok({ models: w.probeModels, probe: finds });
+  });
   // As internal/server/providers.go validates a provider.
   const providerProblem = (name: string, baseUrl: string, id?: string): Reply | undefined => {
     if (name === "") return fail(400, "invalid_request", "name must be 1 to 64 characters");
@@ -64,6 +144,13 @@ export function providerRoutes(ctx: RouteContext): void {
       base_url: str(body.base_url),
       api_key_set: key !== "",
       ...keyHint(key),
+      // Nobody has probed it yet.
+      backend: "other",
+      pool: str(body.name),
+      slots: 1,
+      kv: "unknown",
+      capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
+      overridden: [],
       created_at: now(),
       updated_at: now(),
     };
@@ -79,6 +166,8 @@ export function providerRoutes(ctx: RouteContext): void {
       row.id,
     );
     if (problem) return problem;
+    const override = overrideProblem(body);
+    if (override) return override;
     if (typeof body.name === "string") row.name = body.name.trim();
     if (typeof body.base_url === "string") {
       // As the harness does: a new URL without a new key clears the key.
@@ -93,6 +182,7 @@ export function providerRoutes(ctx: RouteContext): void {
       delete row.api_key_hint;
       Object.assign(row, keyHint(body.api_key));
     }
+    applyOverride(row, body);
     row.updated_at = now();
     return ok(row);
   });

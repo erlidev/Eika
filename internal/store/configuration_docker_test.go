@@ -4,6 +4,7 @@ package store_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -80,6 +81,101 @@ func TestProvidersAndModels(t *testing.T) {
 	}
 	if err := st.DeleteProvider(ctx, p.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("second DeleteProvider = %v, want ErrNotFound", err)
+	}
+}
+
+// A new provider is a local server nobody has probed: one slot, no known
+// cache, and its own name for a pool.
+func TestNewProviderIsUnprobed(t *testing.T) {
+	st := storetest.Open(t)
+	p, err := st.CreateProvider(t.Context(), store.Provider{Name: "local", Kind: "openai", BaseURL: "http://m.invalid/v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Backend != "other" || p.Slots != 1 || p.KV != "unknown" || p.KVTokens != 0 || p.PoolName() != "local" ||
+		p.ProbedAt != nil || p.ProbeError != "" || len(p.Overridden) != 0 || string(p.Capabilities) != "{}" {
+		t.Errorf("provider = %+v", p)
+	}
+}
+
+// A probe fills the probed fields; a field the user set is left alone by the
+// next probe until it is handed back; a failed probe keeps the earlier result.
+func TestProbeResultsAndOverrides(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	p, err := st.CreateProvider(ctx, store.Provider{Name: "bench", Kind: "openai", BaseURL: "http://m.invalid/v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	found := store.ProbeResult{
+		Backend: "llamacpp", Slots: 2, KV: "unknown", Capabilities: []byte(`{"window":131072}`), At: at,
+	}
+	got, err := st.RecordProbe(ctx, p.ID, found)
+	if err != nil {
+		t.Fatalf("RecordProbe: %v", err)
+	}
+	if got.Backend != "llamacpp" || got.Slots != 2 || got.KV != "unknown" || got.ProbedAt == nil || !got.ProbedAt.Equal(at) ||
+		!sameJSON(t, got.Capabilities, []byte(`{"window":131072}`)) {
+		t.Errorf("after a probe = %+v", got)
+	}
+
+	// The user states what the probe could not.
+	got, err = st.OverrideProvider(ctx, p.ID, store.ProviderOverride{
+		KV: ptr("shared"), KVTokens: ptr(131072), Pool: ptr("rtx5090"),
+	})
+	if err != nil {
+		t.Fatalf("OverrideProvider: %v", err)
+	}
+	if got.KV != "shared" || got.KVTokens != 131072 || got.PoolName() != "rtx5090" || !slices.Equal(got.Overridden, []string{"kv"}) {
+		t.Errorf("after an override = %+v", got)
+	}
+
+	// The next probe replaces what it owns and keeps what the user set.
+	found.Slots, found.KV, found.At = 4, "partitioned", at.Add(time.Hour)
+	got, err = st.RecordProbe(ctx, p.ID, found)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Slots != 4 || got.KV != "shared" || got.KVTokens != 131072 || got.PoolName() != "rtx5090" {
+		t.Errorf("after a second probe = %+v, want slots 4 and the user's cache and pool", got)
+	}
+
+	// A failed probe records why and loses nothing; a success clears it.
+	if err := st.RecordProbeFailure(ctx, p.ID, "no route to host"); err != nil {
+		t.Fatalf("RecordProbeFailure: %v", err)
+	}
+	got, _ = st.Provider(ctx, p.ID)
+	if got.ProbeError != "no route to host" || got.Slots != 4 || got.Backend != "llamacpp" || !got.ProbedAt.Equal(at.Add(time.Hour)) {
+		t.Errorf("after a failed probe = %+v", got)
+	}
+	if got, _ = st.RecordProbe(ctx, p.ID, found); got.ProbeError != "" {
+		t.Errorf("probe error after a success = %q", got.ProbeError)
+	}
+
+	// Handing a field back lets the probe write it again, and a cache that is
+	// not shared has no size.
+	got, err = st.OverrideProvider(ctx, p.ID, store.ProviderOverride{Reset: []string{"kv", "pool"}})
+	if err != nil || len(got.Overridden) != 0 || got.PoolName() != "bench" {
+		t.Errorf("after a reset = %+v, %v", got, err)
+	}
+	got, _ = st.RecordProbe(ctx, p.ID, found)
+	if got.KV != "partitioned" || got.KVTokens != 0 {
+		t.Errorf("after the reset and a probe: kv %q, %d tokens", got.KV, got.KVTokens)
+	}
+	got, err = st.OverrideProvider(ctx, p.ID, store.ProviderOverride{KV: ptr("shared"), KVTokens: ptr(1000)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = st.OverrideProvider(ctx, p.ID, store.ProviderOverride{KV: ptr("partitioned")}); got.KVTokens != 0 {
+		t.Errorf("a partitioned cache kept %d tokens", got.KVTokens)
+	}
+
+	if _, err := st.OverrideProvider(ctx, "absent", store.ProviderOverride{Slots: ptr(2)}); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("override of an unknown provider = %v, want ErrNotFound", err)
+	}
+	if err := st.RecordProbeFailure(ctx, "absent", "x"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("failure of an unknown provider = %v, want ErrNotFound", err)
 	}
 }
 

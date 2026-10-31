@@ -4,11 +4,9 @@
  * each model's limits, tests one on request, and adds the chosen ones.
  */
 
-import { useQuery } from "@tanstack/react-query";
 import { Plus, RefreshCw, Search, X } from "lucide-react";
 import { useState } from "react";
 
-import { probeProvider } from "@/api/routes";
 import type { Model, ModelInfo, Provider } from "@/api/types";
 import { ActionError, LoadError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
@@ -18,7 +16,12 @@ import { Label } from "@/components/ui/label";
 import { chosenProblem, suggestLimits, suggestModelName } from "@/features/providers/limits";
 import type { ChosenProblem } from "@/features/providers/limits";
 import type { ModelChoice } from "@/features/providers/limits";
-import { useCreateModel, useModels, useTestModel } from "@/features/providers/queries";
+import {
+  useCreateModel,
+  useDiscoveredModels,
+  useModels,
+  useTestModel,
+} from "@/features/providers/queries";
 import { failureText } from "@/lib/failure";
 import { formatTokens } from "@/lib/format";
 
@@ -38,11 +41,7 @@ const filterThreshold = 8;
 export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPickerProps) {
   const models = useModels();
   const create = useCreateModel();
-  const discovered = useQuery({
-    queryKey: ["providers", provider.id, "models"],
-    queryFn: () => probeProvider({ provider_id: provider.id }),
-    staleTime: 60_000,
-  });
+  const discovered = useDiscoveredModels(provider.id);
   const [chosen, setChosen] = useState<readonly Choice[]>([]);
   const [filter, setFilter] = useState("");
   const [typed, setTyped] = useState("");
@@ -415,6 +414,8 @@ type NumberFieldProps = {
   value: number;
   /** problem is why the value cannot be used, shown under the field. */
   problem?: string | undefined;
+  /** min is the smallest value the field offers; a token count starts at 1. */
+  min?: number;
   onChange: (value: number) => void;
 };
 
@@ -431,7 +432,7 @@ export function FieldProblem({ id, message }: FieldProblemProps) {
 }
 
 /** NumberField is a labelled token count. */
-export function NumberField({ id, label, value, problem, onChange }: NumberFieldProps) {
+export function NumberField({ id, label, value, problem, min = 1, onChange }: NumberFieldProps) {
   return (
     <div className="space-y-1">
       <Label htmlFor={id} className="text-xs">
@@ -440,7 +441,7 @@ export function NumberField({ id, label, value, problem, onChange }: NumberField
       <Input
         id={id}
         type="number"
-        min={1}
+        min={min}
         step={1}
         inputMode="numeric"
         value={Number.isFinite(value) ? value : ""}
