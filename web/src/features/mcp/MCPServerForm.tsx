@@ -2,7 +2,7 @@
  * The form that configures an MCP server: a remote one by its URL, with the
  * headers every request carries and an OAuth client registered by hand if its
  * authorization server needs one, or a stdio one by the command that starts
- * it in a workspace. Values of headers and variables are never shown again,
+ * it in a computer. Values of headers and variables are never shown again,
  * so a stored one is left blank to keep it.
  */
 
@@ -47,7 +47,7 @@ const kinds: { kind: MCPServerKind; name: string; blurb: string }[] = [
   {
     kind: "stdio",
     name: "Local command (stdio)",
-    blurb: "A program started in each workspace whose session uses it, such as npx or uvx.",
+    blurb: "A program started in each computer whose session uses it, such as npx or uvx.",
   },
 ];
 
@@ -284,10 +284,10 @@ export function MCPServerForm({ server, onSaved, onCancel }: MCPServerFormProps)
               set({ env });
             }}
             problem={problemFor("env")}
-            hint="Added to the workspace's environment when the server starts."
+            hint="Added to the computer's environment when the server starts."
           />
           <Notice>
-            The server runs inside each workspace that uses it, with the workspace&apos;s files. Its
+            The server runs inside each computer that uses it, with the computer&apos;s files. Its
             variables are visible to the agent there, so do not give it a secret the agent should
             not read.
           </Notice>

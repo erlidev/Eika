@@ -27,7 +27,7 @@ const (
 
 // Options configures a Daemon.
 type Options struct {
-	// Root is the workspace directory every path is confined to.
+	// Root is the computer directory every path is confined to.
 	Root string
 	// Token is the bearer token every route but /healthz requires.
 	Token string
@@ -38,7 +38,7 @@ type Options struct {
 	WatchInterval time.Duration
 }
 
-// Daemon serves the sandbox API over HTTP for one workspace.
+// Daemon serves the sandbox API over HTTP for one computer.
 type Daemon struct {
 	root          string
 	token         string
@@ -54,7 +54,7 @@ type Daemon struct {
 	env []string
 }
 
-// New builds a Daemon serving the workspace at opts.Root. It fails when the
+// New builds a Daemon serving the computer at opts.Root. It fails when the
 // token is empty or the root is not an existing directory, so a sandbox can
 // never come up unauthenticated or pointed at nothing.
 func New(opts Options, log *slog.Logger) (*Daemon, error) {
@@ -99,7 +99,7 @@ func New(opts Options, log *slog.Logger) (*Daemon, error) {
 	return d, nil
 }
 
-// Root is the workspace directory the daemon serves.
+// Root is the computer directory the daemon serves.
 func (d *Daemon) Root() string { return d.root }
 
 // Handler returns the daemon's root handler.
@@ -137,7 +137,7 @@ func (d *Daemon) authed(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// requestPath resolves the ?path= query parameter against the workspace root.
+// requestPath resolves the ?path= query parameter against the computer root.
 func (d *Daemon) requestPath(r *http.Request) (string, error) {
 	return d.resolve(r.URL.Query().Get("path"))
 }

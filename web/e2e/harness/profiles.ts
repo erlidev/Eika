@@ -390,9 +390,9 @@ function chosen(choice: string[] | null, name: string, server: string | undefine
 export function syncSession(w: World, session: Session): void {
   const { layers, profile, source } = sessionLayers(w, session, "");
   const { config } = resolve(w, profile, source, layers);
-  const chat = session.workspace_id === undefined;
+  const chat = session.computer_id === undefined;
   session.tools = w.tools
-    .filter((t) => !(chat && t.needs_workspace) && chosen(config.tools, t.name, t.server))
+    .filter((t) => !(chat && t.needs_computer) && chosen(config.tools, t.name, t.server))
     .map((t) => t.name);
   const overrides = w.overrides[session.id];
   session.overridden =

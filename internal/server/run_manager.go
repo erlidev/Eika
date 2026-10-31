@@ -118,13 +118,13 @@ type runs struct {
 
 // activeRun is one execution of the agent loop, from the moment its session
 // is claimed. Building a run takes a database read and a command in the
-// workspace, so the claim exists before the run row and the loop do; runID
+// computer, so the claim exists before the run row and the loop do; runID
 // and loop report empty until they are there.
 type activeRun struct {
-	sessionID   string
-	workspaceID string
-	cancel      context.CancelFunc
-	done        chan struct{}
+	sessionID  string
+	computerID string
+	cancel     context.CancelFunc
+	done       chan struct{}
 
 	mu    sync.Mutex
 	id    string
@@ -173,12 +173,12 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	// The run is not bound to the request: the client gets its answer as
 	// soon as the run starts and follows the rest on the event stream.
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	active, err := r.reserve(sessionID, sess.WorkspaceID, cancel)
+	active, err := r.reserve(sessionID, sess.ComputerID, cancel)
 	if err != nil {
 		cancel()
 		return store.Run{}, err
 	}
-	// Building a run reads the database and runs a command in the workspace.
+	// Building a run reads the database and runs a command in the computer.
 	// Until that is done and the loop is running, the reservation is what
 	// holds the session, and every way out of here releases it.
 	started := false
@@ -188,11 +188,11 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 		}
 	}()
 
-	// A chat has no workspace: its run gets no executor, and the agent tells
+	// A chat has no computer: its run gets no executor, and the agent tells
 	// the model it has neither files nor commands.
 	var ex executor.Executor
 	if !sess.Chat() {
-		if ex, err = s.executorFor(ctx, sess.WorkspaceID); err != nil {
+		if ex, err = s.executorFor(ctx, sess.ComputerID); err != nil {
 			return store.Run{}, err
 		}
 	}
@@ -212,7 +212,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	if err != nil {
 		return store.Run{}, err
 	}
-	// The tools every run shares hold what they reach beyond the workspace:
+	// The tools every run shares hold what they reach beyond the computer:
 	// the search engine and the page reader. A run narrows
 	// them to its tool choice, together with the tools of the MCP servers it
 	// reaches now, and adds only its own executor, which is also where a
@@ -266,7 +266,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 // the lock that reads the check is what makes one run per session true:
 // building a run takes long enough that two requests would otherwise both get
 // past a check that only looked at the runs already going.
-func (r *runs) reserve(sessionID, workspaceID string, cancel context.CancelFunc) (*activeRun, error) {
+func (r *runs) reserve(sessionID, computerID string, cancel context.CancelFunc) (*activeRun, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.stopped {
@@ -276,10 +276,10 @@ func (r *runs) reserve(sessionID, workspaceID string, cancel context.CancelFunc)
 		return nil, conflictf("session %s already has a run in progress", sessionID)
 	}
 	active := &activeRun{
-		sessionID:   sessionID,
-		workspaceID: workspaceID,
-		cancel:      cancel,
-		done:        make(chan struct{}),
+		sessionID:  sessionID,
+		computerID: computerID,
+		cancel:     cancel,
+		done:       make(chan struct{}),
 	}
 	r.bySession[sessionID] = active
 	return active, nil
@@ -412,13 +412,13 @@ func (r *runs) stop(ctx context.Context, sessionID string) {
 	}
 }
 
-// stopSessionsOf aborts every run in a workspace, which is what stopping or
-// deleting that workspace has to do first: the runs reach it through an
+// stopSessionsOf aborts every run in a computer, which is what stopping or
+// deleting that computer has to do first: the runs reach it through an
 // executor that is about to go away.
-func (r *runs) stopSessionsOf(ctx context.Context, st *store.Store, workspaceID string) {
-	sessions, err := st.Sessions(ctx, workspaceID, false)
+func (r *runs) stopSessionsOf(ctx context.Context, st *store.Store, computerID string) {
+	sessions, err := st.Sessions(ctx, computerID, false)
 	if err != nil {
-		r.server.log.Error("list sessions of workspace", "workspace_id", workspaceID, "error", err)
+		r.server.log.Error("list sessions of computer", "computer_id", computerID, "error", err)
 		return
 	}
 	for _, sess := range sessions {
@@ -451,15 +451,15 @@ func (r *runs) active(sessionID string) *activeRun {
 	return r.bySession[sessionID]
 }
 
-// workspacesInUse reports the workspaces that have a run going, or one being
+// computersInUse reports the computers that have a run going, or one being
 // built, which the idle stopper leaves running.
-func (r *runs) workspacesInUse() map[string]bool {
+func (r *runs) computersInUse() map[string]bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	inUse := make(map[string]bool, len(r.bySession))
 	for _, a := range r.bySession {
-		if a.workspaceID != "" {
-			inUse[a.workspaceID] = true
+		if a.computerID != "" {
+			inUse[a.computerID] = true
 		}
 	}
 	return inUse
@@ -467,7 +467,7 @@ func (r *runs) workspacesInUse() map[string]bool {
 
 // forget drops a finished run.
 func (r *runs) forget(a *activeRun) {
-	r.server.idle.used(a.workspaceID, time.Now())
+	r.server.idle.used(a.computerID, time.Now())
 	id := a.runID()
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -483,8 +483,8 @@ func (r *runs) forget(a *activeRun) {
 // active run under one lock.
 func (r *runs) finish(a *activeRun, queued queuedMessages) {
 	// A run shorter than the idle stopper's sweep is never seen going, so
-	// its end is what counts as the workspace's last use.
-	r.server.idle.used(a.workspaceID, time.Now())
+	// its end is what counts as the computer's last use.
+	r.server.idle.used(a.computerID, time.Now())
 	id := a.runID()
 	r.mu.Lock()
 	defer r.mu.Unlock()

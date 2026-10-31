@@ -31,8 +31,8 @@ var boundaries = []boundary{
 		"cmd/eika",
 		"cmd/eikad", // server.Serve, the one HTTP listener both binaries share
 	}},
-	// Tools reach a workspace only through the executor.
-	{from: "internal/tool", to: "internal/workspace"},
+	// Tools reach a computer only through the executor.
+	{from: "internal/tool", to: "internal/computer"},
 	// Tools do not depend on the sandbox daemon.
 	{from: "internal/tool", to: "internal/eikad", allowed: []string{
 		"internal/tool/builtin", // eikad.BinaryPath, the binary web_fetch's filter runs in the sandbox

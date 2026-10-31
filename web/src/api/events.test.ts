@@ -4,7 +4,7 @@ import {
   globalTopic,
   parseEvent,
   sessionTopic,
-  workspaceTopic,
+  computerTopic,
   type BusDropped,
   type SessionMessage,
   type ToolResult,
@@ -118,7 +118,7 @@ describe("parseEvent", () => {
 describe("topics", () => {
   it("names the topics the harness routes on", () => {
     expect(globalTopic).toBe("global");
-    expect(workspaceTopic("w1")).toBe("workspace:w1");
+    expect(computerTopic("w1")).toBe("computer:w1");
     expect(sessionTopic("s1")).toBe("session:s1");
   });
 });

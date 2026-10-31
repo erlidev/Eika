@@ -1,4 +1,4 @@
-# The default workspace image. Agents run every command in a container built
+# The default computer image. Agents run every command in a container built
 # from this image, as the non-root user `eika`, with the repository checked out
 # at /workspace.
 #
@@ -62,7 +62,7 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o
 ENV PATH=/usr/local/go/bin:/home/eika/go/bin:${PATH}
 
 # Ubuntu 24.04 ships an `ubuntu` user on uid 1000; rename it to eika so the
-# workspace volume is owned by a predictable, non-root user.
+# computer volume is owned by a predictable, non-root user.
 RUN usermod -l eika -d /home/eika -m ubuntu && \
     groupmod -n eika ubuntu && \
     mkdir -p /workspace /home/eika/go && \

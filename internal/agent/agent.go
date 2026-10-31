@@ -61,9 +61,9 @@ type Options struct {
 	// each attempt.
 	RetryBackoff time.Duration
 	// Executor is what tools act through. A nil executor means the agent has
-	// no workspace, as in a chat: tools that need one fail, standalone tools
+	// no computer, as in a chat: tools that need one fail, standalone tools
 	// run with a nil executor, no context files are read, and the system
-	// prompt says there is no workspace.
+	// prompt says there is no computer.
 	Executor executor.Executor
 	// Emitter receives the run's events. Nil drops them.
 	Emitter event.Emitter
@@ -200,11 +200,11 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []p
 		images = append(images, m.Images...)
 	}
 	a.emit(ctx, s, event.TypeTurnStart, event.TurnStart{
-		RunID:       runID,
-		SessionID:   s.ID,
-		WorkspaceID: s.WorkspaceID,
-		Message:     strings.Join(texts, "\n\n"),
-		Images:      images,
+		RunID:      runID,
+		SessionID:  s.ID,
+		ComputerID: s.ComputerID,
+		Message:    strings.Join(texts, "\n\n"),
+		Images:     images,
 	})
 
 	var steered []provider.Message
@@ -376,16 +376,16 @@ func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provid
 	if !ok {
 		return tool.Errorf("unknown tool %q", c.Name), nil
 	}
-	if a.opts.Executor == nil && tool.NeedsWorkspace(t) {
-		return tool.Errorf("this session has no workspace, so %s cannot run", c.Name), nil
+	if a.opts.Executor == nil && tool.NeedsComputer(t) {
+		return tool.Errorf("this session has no computer, so %s cannot run", c.Name), nil
 	}
 	return t.Call(ctx, tool.CallContext{
-		Exec:        a.opts.Executor,
-		Emit:        a.opts.Emitter,
-		WorkspaceID: s.WorkspaceID,
-		SessionID:   s.ID,
-		RunID:       runID,
-		CallID:      c.ID,
+		Exec:       a.opts.Executor,
+		Emit:       a.opts.Emitter,
+		ComputerID: s.ComputerID,
+		SessionID:  s.ID,
+		RunID:      runID,
+		CallID:     c.ID,
 	}, json.RawMessage(c.Arguments))
 }
 

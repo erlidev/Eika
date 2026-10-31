@@ -1,11 +1,11 @@
-package workspace_test
+package computer_test
 
 import (
 	"io"
 	"log/slog"
 	"testing"
 
-	"github.com/erlidev/eika/internal/workspace"
+	"github.com/erlidev/eika/internal/computer"
 )
 
 // testLogger returns a logger that discards everything.
@@ -14,7 +14,7 @@ func testLogger() *slog.Logger {
 }
 
 func TestNewHostRejectsIncompleteOptions(t *testing.T) {
-	complete := workspace.Options{
+	complete := computer.Options{
 		DockerSocket: "/var/run/docker.sock",
 		Image:        "eika-sandbox:latest",
 		EikadBinary:  "/usr/local/share/eika/eikad",
@@ -26,19 +26,19 @@ func TestNewHostRejectsIncompleteOptions(t *testing.T) {
 	relativeProxy := complete
 	relativeProxy.EgressProxyURL = "eika:3128"
 
-	for name, opts := range map[string]workspace.Options{
+	for name, opts := range map[string]computer.Options{
 		"no image":             noImage,
 		"no binary":            noBinary,
 		"a relative proxy url": relativeProxy,
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := workspace.NewHost(opts, testLogger()); err == nil {
+			if _, err := computer.NewHost(opts, testLogger()); err == nil {
 				t.Error("NewHost accepted incomplete options")
 			}
 		})
 	}
 
-	h, err := workspace.NewHost(complete, testLogger())
+	h, err := computer.NewHost(complete, testLogger())
 	if err != nil {
 		t.Fatalf("NewHost rejected complete options: %v", err)
 	}
@@ -47,24 +47,24 @@ func TestNewHostRejectsIncompleteOptions(t *testing.T) {
 		t.Error("a host with no sandbox networks reports egress control")
 	}
 
-	// A workspace that is not running has no address to talk to.
-	if _, err := h.Executor(workspace.Workspace{ID: "abc"}); err == nil {
-		t.Error("Executor accepted a workspace with no address")
+	// A computer that is not running has no address to talk to.
+	if _, err := h.Executor(computer.Computer{ID: "abc"}); err == nil {
+		t.Error("Executor accepted a computer with no address")
 	}
-	ex, err := h.Executor(workspace.Workspace{ID: "abc", Address: "http://eika-ws-abc:7000", Token: "t"})
+	ex, err := h.Executor(computer.Computer{ID: "abc", Address: "http://eika-cx-abc:7000", Token: "t"})
 	if err != nil {
 		t.Fatalf("executor: %v", err)
 	}
-	if ex.Root() != workspace.Root {
-		t.Errorf("Root() = %q, want %q", ex.Root(), workspace.Root)
+	if ex.Root() != computer.Root {
+		t.Errorf("Root() = %q, want %q", ex.Root(), computer.Root)
 	}
 }
 
 func TestNames(t *testing.T) {
-	if got := workspace.ContainerName("abc"); got != "eika-ws-abc" {
-		t.Errorf("ContainerName = %q, want eika-ws-abc", got)
+	if got := computer.ContainerName("abc"); got != "eika-cx-abc" {
+		t.Errorf("ContainerName = %q, want eika-cx-abc", got)
 	}
-	if got := workspace.VolumeName("abc"); got != "eika-ws-abc" {
-		t.Errorf("VolumeName = %q, want eika-ws-abc", got)
+	if got := computer.VolumeName("abc"); got != "eika-cx-abc" {
+		t.Errorf("VolumeName = %q, want eika-cx-abc", got)
 	}
 }

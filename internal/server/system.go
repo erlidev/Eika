@@ -12,7 +12,7 @@ import (
 const systemCheckTimeout = 5 * time.Second
 
 // systemResponse is the body of GET /api/system: what the setup screens check
-// before the first workspace is made.
+// before the first computer is made.
 type systemResponse struct {
 	Docker       dockerStatus `json:"docker"`
 	SandboxImage imageStatus  `json:"sandbox_image"`
@@ -39,20 +39,20 @@ type sandboxHost struct {
 	EgressControl bool `json:"egress_control"`
 }
 
-// imageStatus says whether the sandbox image new workspaces run is there.
+// imageStatus says whether the sandbox image new computers run is there.
 type imageStatus struct {
 	Name    string `json:"name"`
 	Present bool   `json:"present"`
 }
 
-// handleSystem reports whether the harness is ready to run workspaces and how
+// handleSystem reports whether the harness is ready to run computers and how
 // much of it the user has set up.
 func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	body := systemResponse{SandboxImage: imageStatus{Name: s.sandboxImage(ctx)}}
 
 	checkCtx, cancel := context.WithTimeout(ctx, systemCheckTimeout)
-	present, err := s.deps.Workspaces.HasImage(checkCtx, body.SandboxImage.Name)
+	present, err := s.deps.Computers.HasImage(checkCtx, body.SandboxImage.Name)
 	cancel()
 	if err != nil {
 		body.Docker.Error = err.Error()
@@ -60,10 +60,10 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 		body.Docker.Reachable = true
 		body.SandboxImage.Present = present
 	}
-	body.Sandbox.EgressControl = s.deps.Workspaces.EgressControl()
+	body.Sandbox.EgressControl = s.deps.Computers.EgressControl()
 	if body.Docker.Reachable {
 		checkCtx, cancel := context.WithTimeout(ctx, systemCheckTimeout)
-		capacity, err := s.deps.Workspaces.Capacity(checkCtx)
+		capacity, err := s.deps.Computers.Capacity(checkCtx)
 		cancel()
 		if err == nil {
 			body.Sandbox.CPUs, body.Sandbox.MemoryBytes = capacity.CPUs, capacity.MemoryBytes

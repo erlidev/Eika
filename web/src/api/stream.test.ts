@@ -95,7 +95,7 @@ describe("EventStream", () => {
     const { stream, sockets } = harness();
     const seen: string[] = [];
     stream.subscribe("session:s1", () => seen.push("s1"));
-    stream.subscribe("workspace:w1", () => seen.push("w1"));
+    stream.subscribe("computer:w1", () => seen.push("w1"));
     sockets[0]?.onopen?.();
     sockets[0]?.deliver({
       type: "bus.dropped",

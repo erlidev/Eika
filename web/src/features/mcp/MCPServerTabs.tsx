@@ -185,7 +185,7 @@ export function ResourcesTab({ details }: ServesProps) {
   const resources = details.resources ?? [];
   const templates = details.resource_templates ?? [];
   // A stdio server is asked inside a sandbox, which only a run starts.
-  const needsWorkspace = server.kind === "stdio";
+  const needsComputer = server.kind === "stdio";
   return (
     <div className="space-y-3">
       <ListError details={details} method="resources/list" />
@@ -214,7 +214,7 @@ export function ResourcesTab({ details }: ServesProps) {
                     size="xs"
                     variant="outline"
                     aria-label={`Read ${r.title ?? r.name}`}
-                    disabled={read.isPending || needsWorkspace}
+                    disabled={read.isPending || needsComputer}
                     onClick={() => {
                       read.mutate({ id: server.id, uri: r.uri });
                     }}
@@ -251,7 +251,7 @@ export function ResourcesTab({ details }: ServesProps) {
           </ul>
         </section>
       )}
-      {needsWorkspace && resources.length > 0 && (
+      {needsComputer && resources.length > 0 && (
         <p className="text-muted-foreground text-xs">
           A stdio server runs inside a sandbox, so its resources are read while a chat uses it.
         </p>
@@ -262,7 +262,7 @@ export function ResourcesTab({ details }: ServesProps) {
 
 export function PromptsTab({ details }: ServesProps) {
   const prompts = details.prompts ?? [];
-  const needsWorkspace = details.server.kind === "stdio";
+  const needsComputer = details.server.kind === "stdio";
   return (
     <div className="space-y-3">
       <ListError details={details} method="prompts/list" />
@@ -273,11 +273,11 @@ export function PromptsTab({ details }: ServesProps) {
             key={prompt.name}
             serverId={details.server.id}
             prompt={prompt}
-            disabled={needsWorkspace}
+            disabled={needsComputer}
           />
         ))}
       </ul>
-      {needsWorkspace && prompts.length > 0 && (
+      {needsComputer && prompts.length > 0 && (
         <p className="text-muted-foreground text-xs">
           A stdio server runs inside a sandbox, so its prompts are tried while a chat uses it.
         </p>

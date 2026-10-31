@@ -90,7 +90,7 @@ type StdioConnectionProps = { server: MCPServer };
 
 /** StdioConnection is where a stdio server runs. A run starts it; there is nothing to start by hand. */
 export function StdioConnection({ server }: StdioConnectionProps) {
-  const runsIn = server.workspaces ?? [];
+  const runsIn = server.computers ?? [];
   return (
     <div className="space-y-2">
       <StateNotice server={server} />

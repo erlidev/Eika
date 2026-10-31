@@ -17,10 +17,10 @@ import (
 // sessionBody is one session on the wire.
 type sessionBody struct {
 	ID string `json:"id"`
-	// WorkspaceID is the workspace the session's runs act in, absent for a
+	// ComputerID is the computer the session's runs act in, absent for a
 	// chat.
-	WorkspaceID string `json:"workspace_id,omitempty"`
-	Title       string `json:"title"`
+	ComputerID string `json:"computer_id,omitempty"`
+	Title      string `json:"title"`
 	// Kind is user, fork, or agent: who opened the session. It is what the
 	// session tree draws a row as under the session it came from.
 	Kind            string `json:"kind"`
@@ -59,10 +59,10 @@ type entryBody struct {
 }
 
 // createSessionRequest is the body of POST /api/sessions: a session in a
-// workspace, or with Chat a session in none.
+// computer, or with Chat a session in none.
 type createSessionRequest struct {
-	WorkspaceID string `json:"workspace_id"`
-	Chat        bool   `json:"chat"`
+	ComputerID string `json:"computer_id"`
+	Chat       bool   `json:"chat"`
 	// Title is what to call the session. Empty leaves it untitled until its
 	// first run names it.
 	Title string `json:"title"`
@@ -78,7 +78,7 @@ type updateSessionRequest struct {
 	Archived *bool   `json:"archived"`
 }
 
-// maxName is the most characters a session title or a workspace name holds.
+// maxName is the most characters a session title or a computer name holds.
 const maxName = 200
 
 // checkName trims a title or name the user chose and refuses one that is
@@ -133,10 +133,10 @@ type pathResponse struct {
 	Messages  []provider.Message `json:"messages"`
 }
 
-// handleListSessions lists the sessions, of one workspace when the query
+// handleListSessions lists the sessions, of one computer when the query
 // names one. `descendants=true` adds the forks and child agents those
-// sessions led to, which run in workspaces of their own, so that one request
-// returns the whole tree a workspace is the root of. `chats=true` lists the
+// sessions led to, which run in computers of their own, so that one request
+// returns the whole tree a computer is the root of. `chats=true` lists the
 // chats instead, forks of chats included.
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
@@ -145,14 +145,14 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		err      error
 	)
 	if query.Get("chats") == "true" {
-		if query.Get("workspace_id") != "" {
-			s.fail(w, r, invalidf("a chat has no workspace; ask for chats or for a workspace's sessions"))
+		if query.Get("computer_id") != "" {
+			s.fail(w, r, invalidf("a chat has no computer; ask for chats or for a computer's sessions"))
 			return
 		}
 		sessions, err = s.deps.Store.Chats(r.Context())
 	} else {
 		sessions, err = s.deps.Store.Sessions(r.Context(),
-			query.Get("workspace_id"), query.Get("descendants") == "true")
+			query.Get("computer_id"), query.Get("descendants") == "true")
 	}
 	if err != nil {
 		s.fail(w, r, err)
@@ -175,9 +175,9 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.log, http.StatusOK, sessionsResponse{Sessions: out})
 }
 
-// handleCreateSession opens a session in a workspace, or a chat in none. A
-// chat is asked for by name rather than by leaving the workspace out, so a
-// client that forgets a workspace gets an error, not a chat. A session
+// handleCreateSession opens a session in a computer, or a chat in none. A
+// chat is asked for by name rather than by leaving the computer out, so a
+// client that forgets a computer gets an error, not a chat. A session
 // created without a title shows a placeholder and is named after its first
 // message.
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
@@ -198,25 +198,25 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
-	case req.Chat && req.WorkspaceID != "":
-		s.fail(w, r, invalidf("a chat has no workspace; send chat or workspace_id, not both"))
+	case req.Chat && req.ComputerID != "":
+		s.fail(w, r, invalidf("a chat has no computer; send chat or computer_id, not both"))
 		return
 	case !req.Chat:
-		if _, err := s.deps.Store.Workspace(r.Context(), req.WorkspaceID); err != nil {
+		if _, err := s.deps.Store.Computer(r.Context(), req.ComputerID); err != nil {
 			s.fail(w, r, err)
 			return
 		}
 	}
 	sess, err := s.deps.Store.CreateSession(r.Context(), store.Session{
-		WorkspaceID: req.WorkspaceID,
-		Title:       title,
-		Untitled:    untitled,
+		ComputerID: req.ComputerID,
+		Title:      title,
+		Untitled:   untitled,
 	})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.log.Info("session created", "session_id", sess.ID, "workspace_id", sess.WorkspaceID, "chat", sess.Chat())
+	s.log.Info("session created", "session_id", sess.ID, "computer_id", sess.ComputerID, "chat", sess.Chat())
 	s.writeSession(w, r, http.StatusCreated, sess)
 }
 
@@ -277,8 +277,8 @@ func (s *Server) handleUpdateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e, err := event.New(event.TypeSessionUpdated, event.TopicGlobal, event.SessionUpdated{
-		SessionID:   sess.ID,
-		WorkspaceID: sess.WorkspaceID,
+		SessionID:  sess.ID,
+		ComputerID: sess.ComputerID,
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -379,7 +379,7 @@ func (s *Server) handleSetSessionHead(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleForkSession copies the branch down to an entry into a session of its
-// own, in the same workspace.
+// own, in the same computer.
 func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[forkRequest](r)
 	if err != nil {
@@ -466,7 +466,7 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 	}
 	return sessionBody{
 		ID:              sess.ID,
-		WorkspaceID:     sess.WorkspaceID,
+		ComputerID:      sess.ComputerID,
 		Title:           sess.Title,
 		Kind:            string(sess.Kind),
 		HeadEntryID:     sess.HeadEntryID,

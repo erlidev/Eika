@@ -12,11 +12,11 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/utility"
-	"github.com/erlidev/eika/internal/workspace"
 )
 
 // The settings keys the harness reads itself. Each is validated when it is
@@ -28,12 +28,12 @@ const (
 	// settingDefaultProfile is the id of the profile a session runs with
 	// when it chose none.
 	settingDefaultProfile = "default_profile"
-	// settingSandboxImage is the image a workspace runs when it names none.
+	// settingSandboxImage is the image a computer runs when it names none.
 	settingSandboxImage = "sandbox_image"
-	// settingSandboxLimits are the limits a new workspace gets when the
+	// settingSandboxLimits are the limits a new computer gets when the
 	// request that creates it names none.
 	settingSandboxLimits = "sandbox_limits"
-	// settingSandboxEgress is the egress mode and allowlist a new workspace
+	// settingSandboxEgress is the egress mode and allowlist a new computer
 	// gets when the request that creates it names none.
 	settingSandboxEgress = "sandbox_egress"
 	// settingSetupComplete records that the user finished or skipped the
@@ -42,9 +42,9 @@ const (
 	// settingUtilityModels assigns the harness's own tasks the names of the
 	// models they are sent to; a task it assigns none does not run.
 	settingUtilityModels = "utility_models"
-	// settingIdleMinutes is how long a running workspace may go without a
+	// settingIdleMinutes is how long a running computer may go without a
 	// run before the harness stops it; 0 never stops one.
-	settingIdleMinutes = "workspace_idle_minutes"
+	settingIdleMinutes = "computer_idle_minutes"
 )
 
 // The idle timeout until the user sets one, and the longest the settings
@@ -69,7 +69,7 @@ type settingsResponse struct {
 // sets them.
 type settingsDefaults struct {
 	SandboxImage string `json:"sandbox_image"`
-	// SandboxLimits and SandboxEgress are what a new workspace gets.
+	// SandboxLimits and SandboxEgress are what a new computer gets.
 	SandboxLimits limitsBody `json:"sandbox_limits"`
 	SandboxEgress egressBody `json:"sandbox_egress"`
 	// SearchOrder is every web provider in its default order.
@@ -78,9 +78,9 @@ type settingsDefaults struct {
 	SearchLimits map[string]search.Limit `json:"search_limits"`
 	// Compaction is the compaction setting, with the built-in prompts.
 	Compaction compactionBody `json:"compaction"`
-	// WorkspaceIdleMinutes is how long a running workspace may go without a
+	// ComputerIdleMinutes is how long a running computer may go without a
 	// run before the harness stops it.
-	WorkspaceIdleMinutes int `json:"workspace_idle_minutes"`
+	ComputerIdleMinutes int `json:"computer_idle_minutes"`
 }
 
 // handleSettings returns every setting.
@@ -132,7 +132,7 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 		SearchLimits:  map[string]search.Limit{},
 		Compaction:    compactionDefaults(),
 		// The idle timeout is the harness's own, not the deployment's.
-		WorkspaceIdleMinutes: defaultIdleMinutes,
+		ComputerIdleMinutes: defaultIdleMinutes,
 	}
 	if s.deps.Search != nil {
 		defaults.SearchOrder, defaults.SearchLimits = s.deps.Search.Web(), s.deps.Search.DefaultLimits()
@@ -205,8 +205,8 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		if _, err := checkEgress(e); err != nil {
 			return err
 		}
-		if e.Mode != string(egress.ModeOpen) && !s.deps.Workspaces.EgressControl() {
-			return workspace.ErrNoEgressControl
+		if e.Mode != string(egress.ModeOpen) && !s.deps.Computers.EgressControl() {
+			return computer.ErrNoEgressControl
 		}
 	case settingIdleMinutes:
 		var n int
@@ -333,7 +333,7 @@ func (s *Server) renameModelSettings(ctx context.Context, oldName, newName strin
 	return s.deps.Store.SetSettings(ctx, writes)
 }
 
-// sandboxImage returns the image a new workspace runs when the request names
+// sandboxImage returns the image a new computer runs when the request names
 // none: the settings' choice, or the deployment's default.
 func (s *Server) sandboxImage(ctx context.Context) string {
 	var image string
@@ -343,7 +343,7 @@ func (s *Server) sandboxImage(ctx context.Context) string {
 	return s.cfg.SandboxImage
 }
 
-// idleTimeout returns how long a running workspace may go without a run
+// idleTimeout returns how long a running computer may go without a run
 // before the harness stops it, and 0 when the settings say never.
 func (s *Server) idleTimeout(ctx context.Context) time.Duration {
 	minutes := defaultIdleMinutes

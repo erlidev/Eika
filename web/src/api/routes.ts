@@ -57,7 +57,7 @@ import type {
   UpdateSession,
 } from "@/api/types";
 
-/** listChats lists the sessions with no workspace, forks of chats included. */
+/** listChats lists the sessions with no computer, forks of chats included. */
 export async function listChats(signal?: AbortSignal): Promise<Session[]> {
   const body = await request<{ sessions: Session[] }>("/api/sessions", {
     query: { chats: "true" },
@@ -66,7 +66,7 @@ export async function listChats(signal?: AbortSignal): Promise<Session[]> {
   return body.sessions;
 }
 
-/** createSession opens a session in a workspace, or a chat in none. */
+/** createSession opens a session in a computer, or a chat in none. */
 export function createSession(input: CreateSession): Promise<Session> {
   return request<Session>("/api/sessions", { method: "POST", body: input });
 }
@@ -82,7 +82,7 @@ export function setSessionTools(id: string, tools: string[] | null): Promise<Ses
   });
 }
 
-/** listTools lists every tool a run can offer, with whether it needs a workspace. */
+/** listTools lists every tool a run can offer, with whether it needs a computer. */
 export async function listTools(signal?: AbortSignal): Promise<Tool[]> {
   const body = await request<{ tools: Tool[] }>("/api/tools", { signal });
   return body.tools;
@@ -438,12 +438,12 @@ export function deleteMCPServer(id: string): Promise<void> {
 
 /**
  * connectMCPServer drops a server's connection and connects again, in the
- * workspace for a stdio server, and answers with how that went.
+ * computer for a stdio server, and answers with how that went.
  */
-export function connectMCPServer(id: string, workspaceId?: string): Promise<MCPServerDetails> {
+export function connectMCPServer(id: string, computerId?: string): Promise<MCPServerDetails> {
   return request<MCPServerDetails>(`/api/mcp/servers/${encodeURIComponent(id)}/connect`, {
     method: "POST",
-    body: workspaceId === undefined ? {} : { workspace_id: workspaceId },
+    body: computerId === undefined ? {} : { computer_id: computerId },
   });
 }
 
@@ -476,13 +476,13 @@ export function signOutMCPServer(id: string): Promise<void> {
 export async function readMCPResource(
   id: string,
   uri: string,
-  workspaceId?: string,
+  computerId?: string,
 ): Promise<ContentDetail[]> {
   const body = await request<{ contents: ContentDetail[] | null }>(
     `/api/mcp/servers/${encodeURIComponent(id)}/resources/read`,
     {
       method: "POST",
-      body: { uri, ...(workspaceId === undefined ? {} : { workspace_id: workspaceId }) },
+      body: { uri, ...(computerId === undefined ? {} : { computer_id: computerId }) },
     },
   );
   return body.contents ?? [];
@@ -493,14 +493,14 @@ export function getMCPPrompt(
   id: string,
   name: string,
   args: Record<string, string>,
-  workspaceId?: string,
+  computerId?: string,
 ): Promise<MCPPromptResult> {
   return request<MCPPromptResult>(`/api/mcp/servers/${encodeURIComponent(id)}/prompts/get`, {
     method: "POST",
     body: {
       name,
       arguments: args,
-      ...(workspaceId === undefined ? {} : { workspace_id: workspaceId }),
+      ...(computerId === undefined ? {} : { computer_id: computerId }),
     },
   });
 }

@@ -4,7 +4,7 @@
 export type SystemStatus = {
   docker: { reachable: boolean; error?: string };
   sandbox_image: { name: string; present: boolean };
-  /** sandbox is what the Docker host can give a workspace. */
+  /** sandbox is what the Docker host can give a computer. */
   sandbox: SandboxHost;
   providers: number;
   models: number;

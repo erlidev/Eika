@@ -101,15 +101,15 @@ export function useDeleteMCPServer(): UseMutationResult<void, Error, string> {
   });
 }
 
-/** useConnectMCPServer connects a server again, in a workspace for a stdio one. */
+/** useConnectMCPServer connects a server again, in a computer for a stdio one. */
 export function useConnectMCPServer(): UseMutationResult<
   MCPServerDetails,
   Error,
-  { id: string; workspaceId?: string }
+  { id: string; computerId?: string }
 > {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, workspaceId }) => connectMCPServer(id, workspaceId),
+    mutationFn: ({ id, computerId }) => connectMCPServer(id, computerId),
     onSuccess: async (details) => {
       client.setQueryData(queryKeys.mcpServer(details.server.id), details);
       await refresh(client);
@@ -149,10 +149,10 @@ export function useSignOutMCPServer(): UseMutationResult<void, Error, string> {
 export function useReadMCPResource(): UseMutationResult<
   ContentDetail[],
   Error,
-  { id: string; uri: string; workspaceId?: string }
+  { id: string; uri: string; computerId?: string }
 > {
   return useMutation({
-    mutationFn: ({ id, uri, workspaceId }) => readMCPResource(id, uri, workspaceId),
+    mutationFn: ({ id, uri, computerId }) => readMCPResource(id, uri, computerId),
   });
 }
 
@@ -160,9 +160,9 @@ export function useReadMCPResource(): UseMutationResult<
 export function useGetMCPPrompt(): UseMutationResult<
   MCPPromptResult,
   Error,
-  { id: string; name: string; args: Record<string, string>; workspaceId?: string }
+  { id: string; name: string; args: Record<string, string>; computerId?: string }
 > {
   return useMutation({
-    mutationFn: ({ id, name, args, workspaceId }) => getMCPPrompt(id, name, args, workspaceId),
+    mutationFn: ({ id, name, args, computerId }) => getMCPPrompt(id, name, args, computerId),
   });
 }

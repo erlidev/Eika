@@ -19,7 +19,7 @@
       - /placeholder: eika-sandbox:latest
     - button "Save" [disabled]
     - paragraph:
-      - text: The image a new workspace runs when it names none. Leave empty for
+      - text: The image a new computer runs when it names none. Leave empty for
       - code: eika-sandbox:latest
       - text: ", which the compose stack builds. Any image works: the harness copies its daemon in."
     - heading "Sandbox" [level=3]

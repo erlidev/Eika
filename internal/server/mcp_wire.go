@@ -17,14 +17,14 @@ type mcpServerBody struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	// Kind is http for a remote server the harness connects to, stdio for a
-	// command it starts in each workspace that uses it.
+	// command it starts in each computer that uses it.
 	Kind string `json:"kind"`
 	URL  string `json:"url"`
 	// HeaderNames are the headers every request carries, sorted.
 	HeaderNames []string `json:"header_names"`
 	Command     string   `json:"command"`
 	Args        []string `json:"args"`
-	// EnvNames are the variables the process gets beside the workspace's
+	// EnvNames are the variables the process gets beside the computer's
 	// own, sorted.
 	EnvNames      []string `json:"env_names"`
 	Enabled       bool     `json:"enabled"`
@@ -37,10 +37,10 @@ type mcpServerBody struct {
 	// error; Error says why it is in the last two.
 	State string `json:"state"`
 	Error string `json:"error,omitempty"`
-	// Workspaces are where a stdio server is running now.
-	Workspaces []string  `json:"workspaces"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	// Computers are where a stdio server is running now.
+	Computers []string  `json:"computers"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // mcpServersResponse is the body of GET /api/mcp/servers.
@@ -250,10 +250,10 @@ type updateMCPServerRequest struct {
 	OAuthClientSecret *string `json:"oauth_client_secret"`
 }
 
-// mcpWorkspaceRequest is the body of POST /api/mcp/servers/{id}/connect:
-// the workspace a stdio server connects in, empty for a remote server.
-type mcpWorkspaceRequest struct {
-	WorkspaceID string `json:"workspace_id"`
+// mcpComputerRequest is the body of POST /api/mcp/servers/{id}/connect:
+// the computer a stdio server connects in, empty for a remote server.
+type mcpComputerRequest struct {
+	ComputerID string `json:"computer_id"`
 }
 
 // authorizeRequest is the body of POST /api/mcp/servers/{id}/authorize.
@@ -290,8 +290,8 @@ type oauthCallbackResponse struct {
 // readResourceRequest is the body of POST
 // /api/mcp/servers/{id}/resources/read.
 type readResourceRequest struct {
-	URI         string `json:"uri"`
-	WorkspaceID string `json:"workspace_id"`
+	URI        string `json:"uri"`
+	ComputerID string `json:"computer_id"`
 }
 
 // readResourceResponse is the body POST /api/mcp/servers/{id}/resources/read
@@ -302,9 +302,9 @@ type readResourceResponse struct {
 
 // getPromptRequest is the body of POST /api/mcp/servers/{id}/prompts/get.
 type getPromptRequest struct {
-	Name        string            `json:"name"`
-	Arguments   map[string]string `json:"arguments"`
-	WorkspaceID string            `json:"workspace_id"`
+	Name       string            `json:"name"`
+	Arguments  map[string]string `json:"arguments"`
+	ComputerID string            `json:"computer_id"`
 }
 
 // elicitationAnswerRequest is the body of POST
@@ -331,7 +331,7 @@ func (s *Server) asMCPServer(row store.MCPServer) mcpServerBody {
 		DisabledTools:        textList(row.DisabledTools),
 		OAuthClientID:        row.OAuthClientID,
 		OAuthClientSecretSet: len(row.OAuthClientSecret) > 0,
-		Workspaces:           []string{},
+		Computers:            []string{},
 		CreatedAt:            row.CreatedAt,
 		UpdatedAt:            row.UpdatedAt,
 	}
@@ -346,7 +346,7 @@ func (s *Server) asMCPServer(row store.MCPServer) mcpServerBody {
 	if !row.Enabled {
 		body.State, body.Error = mcp.StateDisabled, ""
 	}
-	body.Workspaces = append(body.Workspaces, st.Workspaces...)
+	body.Computers = append(body.Computers, st.Computers...)
 	return body
 }
 
@@ -366,7 +366,7 @@ func (s *Server) asMCPDetails(row store.MCPServer, d mcp.Details) mcpServerDetai
 	}
 	// The details are one snapshot: the state beside the lists they explain.
 	out.Server.State, out.Server.Error = d.State, d.Error
-	out.Server.Workspaces = append([]string{}, d.Workspaces...)
+	out.Server.Computers = append([]string{}, d.Computers...)
 	if info := d.Catalog.Info; info.Era != "" {
 		out.Connection = &mcpConnectionBody{
 			Era:               string(info.Era),

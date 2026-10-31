@@ -1,7 +1,7 @@
 /**
  * The tools panel of a chat: which tools the model may use, chosen with the
  * same picker the configuration editor uses, and the tools a chat never has.
- * It is how a chat reads as a chat beside the transcript: where a workspace
+ * It is how a chat reads as a chat beside the transcript: where a computer
  * session has its files, terminal, and changes, a chat has this. A change is
  * the session's own tool choice; Reset goes back to its profile's.
  */
@@ -67,8 +67,8 @@ export function ToolsPanel({ sessionId }: ToolsPanelProps) {
   return (
     <div className="space-y-4 p-3 text-xs">
       <p className="text-muted-foreground">
-        A chat has no workspace, so the model can use only the tools below. A change applies from
-        the next message.
+        A chat has no computer, so the model can use only the tools below. A change applies from the
+        next message.
       </p>
       <div className="space-y-2">
         <FieldHeader
@@ -105,17 +105,17 @@ export function ToolsPanel({ sessionId }: ToolsPanelProps) {
       {(out.tools.length > 0 || out.servers.length > 0) && (
         <section>
           <h3 className="text-muted-foreground mb-1 text-2xs font-semibold tracking-wide uppercase">
-            Need a workspace
+            Need a computer
           </h3>
           {out.tools.length > 0 && (
             <p className="text-muted-foreground">
-              Files and commands belong to a workspace session:{" "}
+              Files and commands belong to a computer session:{" "}
               <span className="font-mono">{out.tools.join(", ")}</span>.
             </p>
           )}
           {out.servers.length > 0 && (
             <p className="text-muted-foreground mt-1">
-              So do the MCP servers that run as a command in the workspace:{" "}
+              So do the MCP servers that run as a command in the computer:{" "}
               <span className="font-mono">{out.servers.join(", ")}</span>.
             </p>
           )}

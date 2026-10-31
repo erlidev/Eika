@@ -18,23 +18,23 @@ import (
 	"github.com/erlidev/eika/internal/netguard"
 )
 
-// ErrUnknownWorkspace is what Options.Policy returns for a workspace that
+// ErrUnknownComputer is what Options.Policy returns for a computer that
 // does not exist, which the proxy answers as a failed sign-in.
-var ErrUnknownWorkspace = errors.New("unknown workspace")
+var ErrUnknownComputer = errors.New("unknown computer")
 
 // Bounds on the proxy's own connections.
 const (
 	// dialTimeout bounds connecting to a destination.
 	dialTimeout = 10 * time.Second
-	// maxBlocked is how many refused hosts are remembered per workspace.
+	// maxBlocked is how many refused hosts are remembered per computer.
 	maxBlocked = 20
 )
 
-// Policy is what one workspace may reach through the proxy.
+// Policy is what one computer may reach through the proxy.
 type Policy struct {
-	// Token is the credential the workspace presents: its proxy token.
+	// Token is the credential the computer presents: its proxy token.
 	Token string
-	// Mode is the workspace's egress mode.
+	// Mode is the computer's egress mode.
 	Mode Mode
 	// Allow is the allowlist, used in ModeAllowlist.
 	Allow []string
@@ -42,16 +42,16 @@ type Policy struct {
 
 // Options configures a Proxy.
 type Options struct {
-	// Policy looks up the policy of the workspace a request names. It is
+	// Policy looks up the policy of the computer a request names. It is
 	// asked on every request, so a change applies to the next connection.
-	Policy func(ctx context.Context, workspaceID string) (Policy, error)
+	Policy func(ctx context.Context, computerID string) (Policy, error)
 	// Control checks each address the proxy is about to connect to. Nil is
 	// netguard.Control, which refuses every address that is not public; only
 	// tests, whose servers listen on loopback, set another.
 	Control func(network, address string, c syscall.RawConn) error
 }
 
-// Blocked is a host a workspace was refused.
+// Blocked is a host a computer was refused.
 type Blocked struct {
 	// Host is the host name or address the sandbox asked for.
 	Host string
@@ -74,7 +74,7 @@ type Proxy struct {
 	mu sync.Mutex
 	// tunnels are the CONNECT tunnels open now, closed by Close.
 	tunnels map[net.Conn]struct{}
-	// blocked holds each workspace's refused hosts, most recent last.
+	// blocked holds each computer's refused hosts, most recent last.
 	blocked map[string][]Blocked
 }
 
@@ -117,21 +117,21 @@ func New(opts Options, log *slog.Logger) *Proxy {
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id, token, ok := credentials(r)
 	if !ok {
-		challenge(w, "the egress proxy needs a workspace's credentials")
+		challenge(w, "the egress proxy needs a computer's credentials")
 		return
 	}
 	policy, err := p.opts.Policy(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrUnknownWorkspace) {
-			challenge(w, "unknown workspace")
+		if errors.Is(err, ErrUnknownComputer) {
+			challenge(w, "unknown computer")
 			return
 		}
-		p.log.Error("read egress policy", "workspace_id", id, "error", err)
-		refuse(w, http.StatusBadGateway, "the egress proxy could not read the workspace's policy")
+		p.log.Error("read egress policy", "computer_id", id, "error", err)
+		refuse(w, http.StatusBadGateway, "the egress proxy could not read the computer's policy")
 		return
 	}
 	if policy.Token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(policy.Token)) != 1 {
-		challenge(w, "wrong credentials for workspace "+id)
+		challenge(w, "wrong credentials for computer "+id)
 		return
 	}
 
@@ -150,11 +150,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case policy.Mode == ModeNone:
 		p.block(id, host)
-		refuse(w, http.StatusForbidden, "this workspace has no network access: its egress is off")
+		refuse(w, http.StatusForbidden, "this computer has no network access: its egress is off")
 		return
 	case policy.Mode == ModeAllowlist && !Allowed(policy.Allow, host):
 		p.block(id, host)
-		refuse(w, http.StatusForbidden, fmt.Sprintf("%s is not on this workspace's allowlist; add it in the workspace's Sandbox panel", host))
+		refuse(w, http.StatusForbidden, fmt.Sprintf("%s is not on this computer's allowlist; add it in the computer's Sandbox panel", host))
 		return
 	}
 
@@ -165,20 +165,20 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.forward.ServeHTTP(w, r)
 }
 
-// Blocked lists the hosts a workspace was refused lately, most recent first.
-func (p *Proxy) Blocked(workspaceID string) []Blocked {
+// Blocked lists the hosts a computer was refused lately, most recent first.
+func (p *Proxy) Blocked(computerID string) []Blocked {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	out := slices.Clone(p.blocked[workspaceID])
+	out := slices.Clone(p.blocked[computerID])
 	slices.Reverse(out)
 	return out
 }
 
-// Forget drops what the proxy remembers about a workspace, once it is gone.
-func (p *Proxy) Forget(workspaceID string) {
+// Forget drops what the proxy remembers about a computer, once it is gone.
+func (p *Proxy) Forget(computerID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	delete(p.blocked, workspaceID)
+	delete(p.blocked, computerID)
 }
 
 // Close ends every tunnel that is open. The server that serves the proxy
@@ -260,12 +260,12 @@ func (p *Proxy) untrack(conns ...net.Conn) {
 	}
 }
 
-// block records that a workspace was refused a host, and logs the first
+// block records that a computer was refused a host, and logs the first
 // refusal of each host it remembers.
-func (p *Proxy) block(workspaceID, host string) {
+func (p *Proxy) block(computerID, host string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	list := p.blocked[workspaceID]
+	list := p.blocked[computerID]
 	now := time.Now().UTC()
 	i := slices.IndexFunc(list, func(b Blocked) bool { return b.Host == host })
 	if i >= 0 {
@@ -274,16 +274,16 @@ func (p *Proxy) block(workspaceID, host string) {
 		b.Last = now
 		list = append(slices.Delete(list, i, i+1), b)
 	} else {
-		p.log.Info("egress refused", "workspace_id", workspaceID, "host", host)
+		p.log.Info("egress refused", "computer_id", computerID, "host", host)
 		list = append(list, Blocked{Host: host, Count: 1, Last: now})
 		if len(list) > maxBlocked {
 			list = list[len(list)-maxBlocked:]
 		}
 	}
-	p.blocked[workspaceID] = list
+	p.blocked[computerID] = list
 }
 
-// credentials reads the workspace id and token from Proxy-Authorization.
+// credentials reads the computer id and token from Proxy-Authorization.
 func credentials(r *http.Request) (string, string, bool) {
 	h := r.Header.Get("Proxy-Authorization")
 	if h == "" {

@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 
 export type RunStatusBarProps = {
   sessionId: string;
-  /** chat says the session has no workspace. */
+  /** chat says the session has no computer. */
   chat: boolean;
   /** overridden says the session sets something of its own over its profile. */
   overridden: boolean;

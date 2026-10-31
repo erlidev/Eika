@@ -100,9 +100,9 @@ func (t *titles) name(sess store.Session, message string) {
 		return
 	}
 	e, err := event.New(event.TypeSessionTitle, event.TopicGlobal, event.SessionTitle{
-		SessionID:   sess.ID,
-		WorkspaceID: sess.WorkspaceID,
-		Title:       title,
+		SessionID:  sess.ID,
+		ComputerID: sess.ComputerID,
+		Title:      title,
 	})
 	if err != nil {
 		s.log.Error("encode session title event", "session_id", sess.ID, "error", err)

@@ -49,8 +49,8 @@ test("a recorded request and where its parameters came from", async ({ open, exp
   const eika = await open({ scenario: "profiles" });
   await eika.click("role=tab[name=Context]");
   const panel = eika.page.getByRole("tabpanel", { name: "Context" });
-  await eika.select("Request", "#1 · gpt-5 · 501 in · 40m ago");
-  await expect(panel).toContainText("501 measured by the endpoint");
+  await eika.select("Request", "#1 · gpt-5 · 500 in · 40m ago");
+  await expect(panel).toContainText("500 measured by the endpoint");
   await eika.click("Inspect the whole request");
   await eika.click("role=navigation[name=Parts] >> role=button[name=Parameters]");
   const dialog = eika.page.getByRole("dialog", { name: "Context inspector" });

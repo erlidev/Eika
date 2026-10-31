@@ -63,16 +63,16 @@ func (c *Conversation) Len() int {
 	return len(c.messages)
 }
 
-// Session is the conversation an agent run operates on, inside one workspace.
+// Session is the conversation an agent run operates on, inside one computer.
 type Session struct {
 	ID           string
-	WorkspaceID  string
+	ComputerID   string
 	Conversation *Conversation
 }
 
 // NewSession returns an empty session.
-func NewSession(id, workspaceID string) *Session {
-	return &Session{ID: id, WorkspaceID: workspaceID, Conversation: NewConversation()}
+func NewSession(id, computerID string) *Session {
+	return &Session{ID: id, ComputerID: computerID, Conversation: NewConversation()}
 }
 
 // Store persists the messages a run produces. session.Store implements it

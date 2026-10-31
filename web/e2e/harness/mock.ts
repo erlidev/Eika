@@ -205,7 +205,7 @@ export class MockHarness {
     this.emit(
       this.event("session.title", "global", {
         session_id: session.id,
-        ...(session.workspace_id === undefined ? {} : { workspace_id: session.workspace_id }),
+        ...(session.computer_id === undefined ? {} : { computer_id: session.computer_id }),
         title: session.title,
       }),
     );
@@ -466,9 +466,9 @@ export class MockHarness {
     };
     const now = () => fixedNow;
     const running = (id: string | undefined) => {
-      const row = find(w.workspaces, id, "workspace");
+      const row = find(w.computers, id, "computer");
       if ("status" in row) return row;
-      if (row.state !== "running") return fail(409, "conflict", "workspace is not running");
+      if (row.state !== "running") return fail(409, "conflict", "computer is not running");
       return row;
     };
     const ctx: RouteContext = {
@@ -630,7 +630,7 @@ export class MockHarness {
       const sentAt = session.head_entry_id;
       send("turn.start", {
         session_id: session.id,
-        workspace_id: session.workspace_id,
+        computer_id: session.computer_id,
         message: text,
         ...(images.length === 0 ? {} : { images }),
       });

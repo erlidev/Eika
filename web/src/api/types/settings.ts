@@ -1,7 +1,7 @@
 /** Wire types for the settings table. */
 
 import type { SearchLimit } from "@/api/types/search";
-import type { SandboxEgress, SandboxLimits } from "@/api/types/workspaces";
+import type { SandboxEgress, SandboxLimits } from "@/api/types/computers";
 
 /** Settings is the settings table as one object of arbitrary JSON values. */
 export type Settings = Record<string, unknown>;
@@ -9,7 +9,7 @@ export type Settings = Record<string, unknown>;
 /** SettingsDefaults are the values the harness uses until the settings name one. */
 export type SettingsDefaults = {
   sandbox_image: string;
-  /** sandbox_limits and sandbox_egress are what a new workspace gets. */
+  /** sandbox_limits and sandbox_egress are what a new computer gets. */
   sandbox_limits: SandboxLimits;
   sandbox_egress: SandboxEgress;
   /** search_order is every web search provider in its default order. */
@@ -18,8 +18,8 @@ export type SettingsDefaults = {
   search_limits: Record<string, SearchLimit>;
   /** compaction is the compaction setting's default, with the built-in prompts. */
   compaction: CompactionSettings;
-  /** workspace_idle_minutes is how long a running workspace may go without a run. */
-  workspace_idle_minutes: number;
+  /** computer_idle_minutes is how long a running computer may go without a run. */
+  computer_idle_minutes: number;
 };
 
 /**

@@ -223,10 +223,10 @@ func TestPathsOutsideTheRootAreRefused(t *testing.T) {
 	c, _ := newClient(t)
 	ctx := t.Context()
 	if _, err := c.ReadFile(ctx, "../escape", executor.ReadOpts{}); err == nil {
-		t.Error("ReadFile left the workspace")
+		t.Error("ReadFile left the computer")
 	}
 	if err := c.WriteFile(ctx, "../escape", []byte("x")); err == nil {
-		t.Error("WriteFile left the workspace")
+		t.Error("WriteFile left the computer")
 	}
 }
 
@@ -348,7 +348,7 @@ func TestProcessReadFailsWithHowItEnded(t *testing.T) {
 	}{
 		"exit status":    {sandbox.ProcessSpec{Command: "sh", Args: []string{"-c", "echo bye; exit 3"}}, "status 3"},
 		"missing binary": {sandbox.ProcessSpec{Command: "no-such-command-anywhere"}, "no-such-command-anywhere"},
-		"escaping dir":   {sandbox.ProcessSpec{Command: "true", Dir: "../.."}, "outside the workspace"},
+		"escaping dir":   {sandbox.ProcessSpec{Command: "true", Dir: "../.."}, "outside the computer"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

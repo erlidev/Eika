@@ -24,9 +24,9 @@ import (
 // ptr returns a pointer to v, for the optional fields of the options.
 func ptr[T any](v T) *T { return &v }
 
-// workspace returns an executor over a temporary directory holding files,
-// keyed by workspace path.
-func workspace(t *testing.T, files map[string]string) *local.Executor {
+// computer returns an executor over a temporary directory holding files,
+// keyed by computer path.
+func computer(t *testing.T, files map[string]string) *local.Executor {
 	t.Helper()
 	e, err := local.New(t.TempDir())
 	if err != nil {
@@ -112,7 +112,7 @@ func TestPreviewIsTheRequestARunSends(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			ctx := context.Background()
-			exec := workspace(t, nil)
+			exec := computer(t, nil)
 			search := callTool{name: "mcp__docs__search", run: func(context.Context) string { return "found" }}
 			p := providertest.New(providertest.Text("ok"))
 			calls := &callRecorder{}
@@ -170,7 +170,7 @@ func TestPreviewIsTheRequestARunSends(t *testing.T) {
 func TestTheBasePromptCanBeReplaced(t *testing.T) {
 	cases := []struct {
 		name         string
-		workspace    bool
+		computer     bool
 		override     *string
 		instructions string
 		wantKinds    []agent.SectionKind
@@ -182,8 +182,8 @@ func TestTheBasePromptCanBeReplaced(t *testing.T) {
 			wantBase:  agent.ChatPrompt,
 		},
 		{
-			name:      "a workspace gets the same prompt",
-			workspace: true,
+			name:      "a computer gets the same prompt",
+			computer:  true,
 			wantKinds: []agent.SectionKind{agent.SectionBase},
 			wantBase:  agent.ChatPrompt,
 		},
@@ -213,8 +213,8 @@ func TestTheBasePromptCanBeReplaced(t *testing.T) {
 				Instructions: c.instructions,
 				Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 			}
-			if c.workspace {
-				opts.Executor = workspace(t, nil)
+			if c.computer {
+				opts.Executor = computer(t, nil)
 			}
 			a := agent.New(p, nil, opts)
 			s := agent.NewSession("s1", "")
@@ -269,7 +269,7 @@ func TestEstimateTokensCountsFourBytesToAToken(t *testing.T) {
 }
 
 func TestPreviewEstimatesEverySection(t *testing.T) {
-	exec := workspace(t, nil)
+	exec := computer(t, nil)
 	a := agent.New(providertest.New(), registry(t), agent.Options{
 		Executor:     exec,
 		Instructions: "Be brief.",
@@ -464,7 +464,7 @@ func TestRecorderLearnsEveryModelCallOnce(t *testing.T) {
 			events := &recorder{}
 			a := agent.New(p, registry(t), agent.Options{
 				Model:        "test-model",
-				Executor:     workspace(t, nil),
+				Executor:     computer(t, nil),
 				Store:        store,
 				Emitter:      events,
 				Recorder:     calls,

@@ -16,7 +16,7 @@ export type PanelContext = {
   sessionId: string;
   /**
    * chat is true once the open session is known to be a chat, which has no
-   * workspace. It is false while the session loads, so no tab flashes up
+   * computer. It is false while the session loads, so no tab flashes up
    * for a session that has not arrived yet.
    */
   chat: boolean;

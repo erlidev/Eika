@@ -1,4 +1,4 @@
-package workspace
+package computer
 
 import (
 	"crypto/rand"
@@ -7,25 +7,25 @@ import (
 	"time"
 )
 
-// Label is the Docker label every workspace container carries, so that the
+// Label is the Docker label every computer container carries, so that the
 // harness can find its containers again after a restart.
-const Label = "eika.workspace"
+const Label = "eika.computer"
 
-// DefaultUser is the user every workspace container runs as unless the spec
+// DefaultUser is the user every computer container runs as unless the spec
 // says otherwise. A sandbox never runs as root.
 const DefaultUser = "1000:1000"
 
-// DaemonPort is the port eikad listens on inside a workspace container.
+// DaemonPort is the port eikad listens on inside a computer container.
 const DaemonPort = "7000"
 
-// Root is where a workspace's files live inside its container.
+// Root is where a computer's files live inside its container.
 const Root = "/workspace"
 
-// State is where a workspace is in its lifecycle.
+// State is where a computer is in its lifecycle.
 type State string
 
-// The states a workspace can be in. They mirror the container's state; a
-// workspace whose container is gone is StateGone.
+// The states a computer can be in. They mirror the container's state; a
+// computer whose container is gone is StateGone.
 const (
 	StateCreating State = "creating"
 	StateRunning  State = "running"
@@ -33,7 +33,7 @@ const (
 	StateGone     State = "gone"
 )
 
-// Limits bounds what a workspace may consume. A zero field means no limit.
+// Limits bounds what a computer may consume. A zero field means no limit.
 type Limits struct {
 	// CPUs is the number of cores the container may use, as a fraction.
 	CPUs float64
@@ -44,8 +44,8 @@ type Limits struct {
 	PIDs int64
 }
 
-// Confinement is what a workspace may consume and reach. It is set when the
-// workspace is created and can be changed while it exists, running or not,
+// Confinement is what a computer may consume and reach. It is set when the
+// computer is created and can be changed while it exists, running or not,
 // with Host.Confine.
 type Confinement struct {
 	// Limits bounds the container's resources.
@@ -57,9 +57,9 @@ type Confinement struct {
 	Proxied bool
 }
 
-// Spec describes a workspace to create.
+// Spec describes a computer to create.
 type Spec struct {
-	// ID is the workspace id. Empty generates one.
+	// ID is the computer id. Empty generates one.
 	ID string
 	// Image is the container image. Empty uses the host's default image.
 	// Ignored when BuildContext is set.
@@ -78,29 +78,29 @@ type Spec struct {
 	User string
 	// Confinement bounds what the container may consume and reach.
 	Confinement Confinement
-	// Labels are added to the container alongside the workspace label.
+	// Labels are added to the container alongside the computer label.
 	Labels map[string]string
 }
 
-// Workspace is one sandbox container and its volume.
-type Workspace struct {
-	// ID identifies the workspace everywhere: container name, volume name,
+// Computer is one sandbox container and its volume.
+type Computer struct {
+	// ID identifies the computer everywhere: container name, volume name,
 	// and label value.
 	ID string
 	// ContainerID is the Docker container id.
 	ContainerID string
 	// Image is the image the container runs.
 	Image string
-	// State is the workspace's lifecycle state.
+	// State is the computer's lifecycle state.
 	State State
-	// Token is the workspace's eikad token.
+	// Token is the computer's eikad token.
 	Token string
-	// ProxyToken is the password the workspace presents to the egress proxy,
+	// ProxyToken is the password the computer presents to the egress proxy,
 	// which knows it by its id and this token.
 	ProxyToken string
-	// Volume is the name of the volume mounted at the workspace root.
+	// Volume is the name of the volume mounted at the computer root.
 	Volume string
-	// Address is the base URL of the workspace's eikad daemon as the harness
+	// Address is the base URL of the computer's eikad daemon as the harness
 	// reaches it.
 	Address string
 	// Proxied reports that the container is on the internal sandbox network
@@ -110,22 +110,22 @@ type Workspace struct {
 	CreatedAt time.Time
 }
 
-// ContainerName is the Docker name of a workspace's container. It doubles as
+// ContainerName is the Docker name of a computer's container. It doubles as
 // the hostname other containers reach it on.
-func ContainerName(id string) string { return "eika-ws-" + id }
+func ContainerName(id string) string { return "eika-cx-" + id }
 
-// VolumeName is the Docker name of a workspace's volume.
-func VolumeName(id string) string { return "eika-ws-" + id }
+// VolumeName is the Docker name of a computer's volume.
+func VolumeName(id string) string { return "eika-cx-" + id }
 
-// builtImageRef is the tag given to an image built for one workspace from a
-// spec's build context. It is removed together with the workspace.
+// builtImageRef is the tag given to an image built for one computer from a
+// spec's build context. It is removed together with the computer.
 func builtImageRef(id string) string { return ContainerName(id) + ":latest" }
 
-// newID returns a short random workspace id.
+// newID returns a short random computer id.
 func newID() (string, error) {
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("generate workspace id: %w", err)
+		return "", fmt.Errorf("generate computer id: %w", err)
 	}
 	return hex.EncodeToString(b[:]), nil
 }

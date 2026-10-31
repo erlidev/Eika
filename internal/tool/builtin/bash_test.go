@@ -8,7 +8,7 @@ import (
 )
 
 func TestBashRunsCommand(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	w.write("a.txt", "x")
 
 	res := w.call("bash", map[string]any{"command": "ls"})
@@ -16,7 +16,7 @@ func TestBashRunsCommand(t *testing.T) {
 		t.Fatalf("bash failed: %s", res.Content)
 	}
 	if !strings.Contains(res.Content, "a.txt") {
-		t.Errorf("content = %q, want it to list the workspace", res.Content)
+		t.Errorf("content = %q, want it to list the computer", res.Content)
 	}
 	if len(w.outputs) == 0 {
 		t.Error("no tool.output events were emitted")
@@ -25,7 +25,7 @@ func TestBashRunsCommand(t *testing.T) {
 
 // With no file tools, bash is how a model reads, writes, and edits files.
 func TestBashReadsWritesAndEditsFiles(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	res := w.call("bash", map[string]any{"command": "mkdir -p src && cat > src/a.txt <<'EOF'\n" +
 		"one $HOME\ntwo\nEOF\nsed -i 's/two/three/' src/a.txt && cat src/a.txt"})
 	if res.IsError {
@@ -37,7 +37,7 @@ func TestBashReadsWritesAndEditsFiles(t *testing.T) {
 }
 
 func TestBashCombinesStreams(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	res := w.call("bash", map[string]any{"command": "echo out; echo err 1>&2"})
 	if res.IsError {
 		t.Fatalf("bash failed: %s", res.Content)
@@ -48,7 +48,7 @@ func TestBashCombinesStreams(t *testing.T) {
 }
 
 func TestBashReportsExitCode(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	res := w.call("bash", map[string]any{"command": "exit 7"})
 	if !res.IsError {
 		t.Fatalf("bash reported success for a failing command: %s", res.Content)
@@ -69,7 +69,7 @@ func TestBashReportsExitCode(t *testing.T) {
 }
 
 func TestBashTimesOut(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	res := w.call("bash", map[string]any{"command": "sleep 5", "timeout": 1})
 	if !res.IsError || !strings.Contains(res.Content, "timed out") {
 		t.Errorf("result = %+v, want a timeout", res)
@@ -77,7 +77,7 @@ func TestBashTimesOut(t *testing.T) {
 }
 
 func TestBashTruncatesLongOutput(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	res := w.call("bash", map[string]any{"command": `head -c 200000 /dev/zero | tr '\0' 'a'`})
 	if res.IsError {
 		t.Fatalf("bash failed: %s", res.Content)
@@ -94,7 +94,7 @@ func TestBashTruncatesLongOutput(t *testing.T) {
 }
 
 func TestBashDoesNotAnnounceTruncationItDidNotDo(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	// 25 KB is past the head budget but inside the total budget, so nothing
 	// is dropped.
 	res := w.call("bash", map[string]any{"command": `head -c 25000 /dev/zero | tr '\0' 'a'`})
@@ -110,7 +110,7 @@ func TestBashDoesNotAnnounceTruncationItDidNotDo(t *testing.T) {
 }
 
 func TestBashStopsStreamingPastTheOutputBudget(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	res := w.call("bash", map[string]any{"command": `head -c 200000 /dev/zero | tr '\0' 'a'`})
 	if res.IsError {
 		t.Fatalf("bash failed: %s", res.Content)
@@ -132,7 +132,7 @@ func TestBashStopsStreamingPastTheOutputBudget(t *testing.T) {
 }
 
 func TestBashTimeoutKillsBackgroundChildren(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	start := time.Now()
 	res := w.call("bash", map[string]any{"command": "sleep 30 & sleep 30", "timeout": 1})
 	if !res.IsError || !strings.Contains(res.Content, "timed out") {
@@ -144,7 +144,7 @@ func TestBashTimeoutKillsBackgroundChildren(t *testing.T) {
 }
 
 func TestBashRequiresCommand(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	res := w.call("bash", map[string]any{"command": "  "})
 	if !res.IsError || !strings.Contains(res.Content, "command is required") {
 		t.Errorf("result = %+v", res)

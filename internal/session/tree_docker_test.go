@@ -20,18 +20,18 @@ func TestMain(m *testing.M) {
 	os.Exit(storetest.Main(m))
 }
 
-// newTree returns a tree and an empty session in a workspace of its own.
+// newTree returns a tree and an empty session in a computer of its own.
 func newTree(t *testing.T) (*session.Tree, store.Session) {
 	t.Helper()
 	st := storetest.Open(t)
 	ctx := t.Context()
-	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+	cx, err := st.CreateComputer(ctx, store.Computer{
 		Name: "fix-build", State: "running",
 	})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID, Title: "fix the build"})
+	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "fix the build"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -169,8 +169,8 @@ func TestForkCopiesThePathAndRunsOn(t *testing.T) {
 	if fork.ID == sess.ID || fork.ParentSessionID != sess.ID {
 		t.Errorf("fork = %+v, want a new session whose parent is the original", fork)
 	}
-	if fork.Title != "what if" || fork.WorkspaceID != sess.WorkspaceID {
-		t.Errorf("fork = %+v, want the given title and the original workspace", fork)
+	if fork.Title != "what if" || fork.ComputerID != sess.ComputerID {
+		t.Errorf("fork = %+v, want the given title and the original computer", fork)
 	}
 
 	path, err := tree.Path(ctx, fork.ID)
@@ -278,7 +278,7 @@ func TestStoreRecordsAndLoadsEveryMessageKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if loaded.ID != sess.ID || loaded.WorkspaceID != sess.WorkspaceID {
+	if loaded.ID != sess.ID || loaded.ComputerID != sess.ComputerID {
 		t.Errorf("loaded session = %+v, want the stored ids", loaded)
 	}
 	got := loaded.Conversation.Messages()

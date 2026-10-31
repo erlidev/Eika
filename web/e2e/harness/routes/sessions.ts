@@ -63,15 +63,15 @@ function midTurn(entries: Entry[], entryId: string): Reply | undefined {
 export function sessionRoutes(ctx: RouteContext): void {
   const { w, on, find, now } = ctx;
   on("GET", "/api/sessions", ({ query }) => {
-    const ws = query.get("workspace_id");
+    const cx = query.get("computer_id");
     if (query.get("chats") === "true") {
-      if (ws) return fail(400, "invalid_request", "a chat has no workspace");
+      if (cx) return fail(400, "invalid_request", "a chat has no computer");
       // Oldest first, as the harness lists them.
-      const chats = w.sessions.filter((s) => s.workspace_id === undefined);
+      const chats = w.sessions.filter((s) => s.computer_id === undefined);
       return ok({ sessions: chats.toSorted((a, b) => a.created_at.localeCompare(b.created_at)) });
     }
-    if (!ws) return ok({ sessions: w.sessions });
-    const listed = w.sessions.filter((s) => s.workspace_id === ws);
+    if (!cx) return ok({ sessions: w.sessions });
+    const listed = w.sessions.filter((s) => s.computer_id === cx);
     if (query.get("descendants") !== "true") return ok({ sessions: listed });
     // The forks those sessions led to, wherever they run,
     // as the harness's recursive listing returns them.
@@ -90,14 +90,14 @@ export function sessionRoutes(ctx: RouteContext): void {
   });
   on("POST", "/api/sessions", ({ body }) => {
     const chat = body.chat === true;
-    if (chat && str(body.workspace_id) !== "") {
-      return fail(400, "invalid_request", "a chat has no workspace");
+    if (chat && str(body.computer_id) !== "") {
+      return fail(400, "invalid_request", "a chat has no computer");
     }
-    const ws = chat ? undefined : find(w.workspaces, str(body.workspace_id), "workspace");
-    if (ws !== undefined && "status" in ws) return ws;
+    const cx = chat ? undefined : find(w.computers, str(body.computer_id), "computer");
+    if (cx !== undefined && "status" in cx) return cx;
     const row: Session = {
       id: ctx.nextId(chat ? "chat" : "ses"),
-      ...(ws ? { workspace_id: ws.id } : {}),
+      ...(cx ? { computer_id: cx.id } : {}),
       title: str(body.title) || (chat ? "New chat" : "New session"),
       kind: "user",
       tools: sessionTools(w, chat),
@@ -135,7 +135,7 @@ export function sessionRoutes(ctx: RouteContext): void {
     ctx.emit(
       ctx.event("session.updated", "global", {
         session_id: row.id,
-        ...(row.workspace_id === undefined ? {} : { workspace_id: row.workspace_id }),
+        ...(row.computer_id === undefined ? {} : { computer_id: row.computer_id }),
       }),
     );
     return ok(row);
@@ -198,8 +198,8 @@ export function sessionRoutes(ctx: RouteContext): void {
       }
       const known = w.tools.find((t) => t.name === name);
       if (!known) return fail(400, "invalid_request", `there is no tool "${name}"`);
-      if (row.workspace_id === undefined && known.needs_workspace) {
-        return fail(400, "invalid_request", `${name} needs a workspace, and a chat has none`);
+      if (row.computer_id === undefined && known.needs_computer) {
+        return fail(400, "invalid_request", `${name} needs a computer, and a chat has none`);
       }
     }
     w.toolChoices[row.id] = names;

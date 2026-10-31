@@ -47,7 +47,7 @@ func New(dir string) (*Executor, error) {
 	return &Executor{root: resolved}, nil
 }
 
-// Root reports the directory that acts as the workspace root.
+// Root reports the directory that acts as the computer root.
 func (e *Executor) Root() string { return e.root }
 
 // Exec runs a command with its working directory inside the root, streaming
@@ -184,7 +184,7 @@ func (e *Executor) List(_ context.Context, path string) ([]executor.FileInfo, er
 	return out, nil
 }
 
-// fileInfo converts an os.FileInfo into the workspace-relative form.
+// fileInfo converts an os.FileInfo into the computer-relative form.
 func (e *Executor) fileInfo(abs string, info os.FileInfo) (executor.FileInfo, error) {
 	rel, err := executor.Rel(e.root, abs)
 	if err != nil {
@@ -200,7 +200,7 @@ func (e *Executor) fileInfo(abs string, info os.FileInfo) (executor.FileInfo, er
 	}, nil
 }
 
-// resolve validates a workspace-relative path lexically and again after
+// resolve validates a computer-relative path lexically and again after
 // symlink evaluation, so a symlink inside the root cannot point out of it.
 func (e *Executor) resolve(path string) (string, error) {
 	abs, err := executor.Resolve(e.root, path)

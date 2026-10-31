@@ -24,7 +24,7 @@ type server struct {
 	// disabled are the tools the user turned off.
 	disabled []string
 	// remote is the connection to an HTTP server; local holds a stdio
-	// server's, by workspace.
+	// server's, by computer.
 	remote *conn
 	local  map[string]*conn
 	// catalog is what the latest connection listed, kept after it closes
@@ -132,14 +132,14 @@ func (s *server) statusLocked() Status {
 			}
 		case c.alive():
 			out.State = StateConnected
-			if c.workspace != "" {
-				out.Workspaces = append(out.Workspaces, c.workspace)
+			if c.computer != "" {
+				out.Computers = append(out.Computers, c.computer)
 			}
 		case c.err != nil:
 			failure = c.err
 		}
 	}
-	slices.Sort(out.Workspaces)
+	slices.Sort(out.Computers)
 	if out.State == StateIdle && failure != nil {
 		var auth *AuthError
 		if errors.As(failure, &auth) && auth.Status == http.StatusUnauthorized {
@@ -150,30 +150,30 @@ func (s *server) statusLocked() Status {
 	return out
 }
 
-// connFor returns the connection for a workspace, or the remote one.
-func (s *server) connFor(workspace string) *conn {
-	if workspace == "" {
+// connFor returns the connection for a computer, or the remote one.
+func (s *server) connFor(computer string) *conn {
+	if computer == "" {
 		return s.remote
 	}
-	return s.local[workspace]
+	return s.local[computer]
 }
 
 // setConn records a new connection.
-func (s *server) setConn(workspace string, c *conn) {
-	if workspace == "" {
+func (s *server) setConn(computer string, c *conn) {
+	if computer == "" {
 		s.remote = c
 		return
 	}
-	s.local[workspace] = c
+	s.local[computer] = c
 }
 
-// takeConns removes and returns the connections in a workspace, or every
-// connection when workspace is empty.
-func (s *server) takeConns(workspace string) []*conn {
+// takeConns removes and returns the connections in a computer, or every
+// connection when computer is empty.
+func (s *server) takeConns(computer string) []*conn {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []*conn
-	if workspace == "" {
+	if computer == "" {
 		if s.remote != nil {
 			out = append(out, s.remote)
 			s.remote = nil
@@ -184,9 +184,9 @@ func (s *server) takeConns(workspace string) []*conn {
 		}
 		return out
 	}
-	if c, ok := s.local[workspace]; ok {
+	if c, ok := s.local[computer]; ok {
 		out = append(out, c)
-		delete(s.local, workspace)
+		delete(s.local, computer)
 	}
 	return out
 }

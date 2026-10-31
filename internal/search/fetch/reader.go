@@ -120,7 +120,7 @@ type Request struct {
 }
 
 // FilterFunc runs a filter. The web_fetch tool runs it as `eikad filter`
-// inside the workspace sandbox.
+// inside the computer sandbox.
 type FilterFunc func(ctx context.Context, req page.FilterRequest) (page.FilterOutcome, error)
 
 // Outcome is a finished fetch. Text is what the model reads; IsError marks a

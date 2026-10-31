@@ -20,11 +20,11 @@ func askStep(callID, question string) providertest.Step {
 	return providertest.Calls("", providertest.Call(callID, "ask_user", map[string]any{"question": question}))
 }
 
-// session sets up a workspace and a session to run in.
+// session sets up a computer and a session to run in.
 func (a *api) session(t *testing.T) sessionWire {
 	t.Helper()
-	ws := a.newWorkspace(t)
-	return a.newSession(t, ws.ID)
+	cx := a.newComputer(t)
+	return a.newSession(t, cx.ID)
 }
 
 // postMessage sends one message to a session.
@@ -239,10 +239,10 @@ func TestRunRejectsBadMessages(t *testing.T) {
 	}
 }
 
-func TestRunFailsWhenTheWorkspaceIsNotRunning(t *testing.T) {
+func TestRunFailsWhenTheComputerIsNotRunning(t *testing.T) {
 	a := newAPI(t)
 	sess := a.session(t)
-	if rec := request(t, a.Server, "POST", "/api/workspaces/"+sess.WorkspaceID+"/stop", nil); rec.Code != 200 {
+	if rec := request(t, a.Server, "POST", "/api/computers/"+sess.ComputerID+"/stop", nil); rec.Code != 200 {
 		t.Fatalf("stop = %d", rec.Code)
 	}
 	a.script(providertest.Text("unreachable"))
@@ -320,7 +320,7 @@ func TestOnlyOneOfTwoConcurrentRunsStarts(t *testing.T) {
 	sess := a.session(t)
 	a.script(providertest.Text("one answer"))
 
-	// Building a run reads the database and runs a command in the workspace.
+	// Building a run reads the database and runs a command in the computer.
 	// The delay stands in for that: without a claim taken when the check is
 	// made, both requests get through it.
 	a.mu.Lock()

@@ -19,10 +19,10 @@ import (
 	"github.com/erlidev/eika/internal/executor"
 )
 
-// DefaultRoot is where a workspace is mounted inside its sandbox.
+// DefaultRoot is where a computer is mounted inside its sandbox.
 const DefaultRoot = "/workspace"
 
-// ErrNotFound reports that a path does not exist in the workspace. It remains
+// ErrNotFound reports that a path does not exist in the computer. It remains
 // as an alias for callers that used the sandbox-specific name.
 var ErrNotFound = executor.ErrNotFound
 
@@ -32,9 +32,9 @@ const truncationNotice = "\n[eika: output truncated]\n"
 
 // Options configures a Client.
 type Options struct {
-	// BaseURL is the daemon's address, for example http://eika-ws-1:7000.
+	// BaseURL is the daemon's address, for example http://eika-cx-1:7000.
 	BaseURL string
-	// Token is the workspace's eikad token.
+	// Token is the computer's eikad token.
 	Token string
 	// Root is the daemon's root inside the sandbox. Empty means DefaultRoot.
 	Root string
@@ -77,7 +77,7 @@ func New(opts Options) (*Client, error) {
 	return c, nil
 }
 
-// Root is the absolute path of the workspace inside the sandbox: the
+// Root is the absolute path of the computer inside the sandbox: the
 // daemon's root.
 func (c *Client) Root() string { return c.root }
 
@@ -193,7 +193,7 @@ func (c *Client) SetEnvironment(ctx context.Context, env []string) error {
 	return err
 }
 
-// Stat describes one file in the workspace.
+// Stat describes one file in the computer.
 func (c *Client) Stat(ctx context.Context, path string) (executor.FileInfo, error) {
 	var out eikad.FileInfo
 	if err := c.getJSON(ctx, "/stat", url.Values{"path": {path}}, &out); err != nil {
@@ -202,7 +202,7 @@ func (c *Client) Stat(ctx context.Context, path string) (executor.FileInfo, erro
 	return fileInfo(out), nil
 }
 
-// List describes the direct children of a directory in the workspace.
+// List describes the direct children of a directory in the computer.
 func (c *Client) List(ctx context.Context, path string) ([]executor.FileInfo, error) {
 	var out eikad.ListResponse
 	if err := c.getJSON(ctx, "/list", url.Values{"path": {path}}, &out); err != nil {

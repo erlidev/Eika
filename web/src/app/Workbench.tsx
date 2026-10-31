@@ -35,7 +35,7 @@ export function Workbench() {
   const params = useParams();
   const sessionId = params.sessionId ?? "";
   const session = useSession(sessionId === "" ? undefined : sessionId);
-  const chat = session.data !== undefined && session.data.session.workspace_id === undefined;
+  const chat = session.data !== undefined && session.data.session.computer_id === undefined;
 
   const [sidebarWidth, setSidebarWidth] = usePersistedNumber("eika.pane.sidebar", 260);
   const [panelWidth, setPanelWidth] = usePersistedNumber("eika.pane.panel", 340);

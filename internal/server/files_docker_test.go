@@ -52,30 +52,30 @@ func rawRequest(t *testing.T, s *server.Server, method, path string, body []byte
 	return rec
 }
 
-// nextWorkspaceEvent waits for the next event on a subscription.
-func nextWorkspaceEvent(t *testing.T, sub *event.Subscription) event.WorkspaceState {
+// nextComputerEvent waits for the next event on a subscription.
+func nextComputerEvent(t *testing.T, sub *event.Subscription) event.ComputerState {
 	t.Helper()
 	select {
 	case e := <-sub.Events():
-		if e.Type != event.TypeWorkspaceState {
-			t.Fatalf("event type = %q, want workspace.state", e.Type)
+		if e.Type != event.TypeComputerState {
+			t.Fatalf("event type = %q, want computer.state", e.Type)
 		}
-		var payload event.WorkspaceState
+		var payload event.ComputerState
 		if err := e.DecodePayload(&payload); err != nil {
 			t.Fatalf("decode event: %v", err)
 		}
 		return payload
 	case <-time.After(5 * time.Second):
-		t.Fatal("no workspace.state event")
-		return event.WorkspaceState{}
+		t.Fatal("no computer.state event")
+		return event.ComputerState{}
 	}
 }
 
 func TestFileRoutes(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
-	base := "/api/workspaces/" + ws.ID
-	dir := a.filesOf(t, ws.ID)
+	cx := a.newComputer(t)
+	base := "/api/computers/" + cx.ID
+	dir := a.filesOf(t, cx.ID)
 	write(t, dir, "hello.txt", "hello\n")
 
 	if err := os.MkdirAll(filepath.Join(dir, "src", "deep"), 0o700); err != nil {
@@ -110,7 +110,7 @@ func TestFileRoutes(t *testing.T) {
 		}
 	})
 
-	t.Run("lists a subdirectory with workspace paths", func(t *testing.T) {
+	t.Run("lists a subdirectory with computer paths", func(t *testing.T) {
 		list := decodeBody[filesWire](t, request(t, a.Server, "GET", base+"/files?path=src", nil), 200)
 		if len(list.Entries) != 2 || list.Entries[0].Path != "src/deep" || !list.Entries[0].IsDir ||
 			list.Entries[1].Path != "src/main.go" {
@@ -137,7 +137,7 @@ func TestFileRoutes(t *testing.T) {
 	})
 
 	t.Run("saves a file and reports it", func(t *testing.T) {
-		sub := a.Server.Bus().Subscribe(event.WorkspaceTopic(ws.ID))
+		sub := a.Server.Bus().Subscribe(event.ComputerTopic(cx.ID))
 		defer sub.Close()
 		rec := rawRequest(t, a.Server, "PUT", base+"/file?path=new/dir/notes.txt", []byte("saved\n"))
 		entry := decodeBody[fileEntryWire](t, rec, 200)
@@ -148,9 +148,9 @@ func TestFileRoutes(t *testing.T) {
 		if err != nil || string(data) != "saved\n" {
 			t.Errorf("file on disk = %q, %v", data, err)
 		}
-		// Views of the workspace's files and changes refresh on this.
-		if got := nextWorkspaceEvent(t, sub); got.WorkspaceID != ws.ID || got.State != "running" {
-			t.Errorf("event = %+v, want the running workspace", got)
+		// Views of the computer's files and changes refresh on this.
+		if got := nextComputerEvent(t, sub); got.ComputerID != cx.ID || got.State != "running" {
+			t.Errorf("event = %+v, want the running computer", got)
 		}
 	})
 
@@ -181,24 +181,24 @@ func TestFileRoutes(t *testing.T) {
 			})
 		}
 		if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "escape.txt")); err == nil {
-			t.Error("a save left the workspace")
+			t.Error("a save left the computer")
 		}
 		if _, err := os.Stat(filepath.Join(dir, "big.txt")); err == nil {
 			t.Error("an oversized save was written")
 		}
 	})
 
-	t.Run("needs a running workspace", func(t *testing.T) {
+	t.Run("needs a running computer", func(t *testing.T) {
 		if rec := request(t, a.Server, "POST", base+"/stop", nil); rec.Code != 200 {
 			t.Fatalf("stop = %d", rec.Code)
 		}
 		defer request(t, a.Server, "POST", base+"/start", nil)
 		if rec := request(t, a.Server, "GET", base+"/files", nil); rec.Code != http.StatusConflict {
-			t.Errorf("list in a stopped workspace = %d, want 409", rec.Code)
+			t.Errorf("list in a stopped computer = %d, want 409", rec.Code)
 		}
 	})
 
-	if rec := request(t, a.Server, "GET", "/api/workspaces/absent/files", nil); rec.Code != http.StatusNotFound {
-		t.Errorf("list in a missing workspace = %d, want 404", rec.Code)
+	if rec := request(t, a.Server, "GET", "/api/computers/absent/files", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("list in a missing computer = %d, want 404", rec.Code)
 	}
 }

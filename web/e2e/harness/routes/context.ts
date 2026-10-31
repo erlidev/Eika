@@ -10,7 +10,7 @@ import type {
   MessageImage,
   Run,
   Session,
-  Workspace,
+  Computer,
 } from "../../../src/api/types.ts";
 import type { World } from "../world.ts";
 
@@ -35,8 +35,8 @@ export type RouteContext = {
   on: (method: string, path: string, handle: Handler, auth?: boolean) => void;
   find: <T extends { id: string }>(rows: T[], id: string | undefined, what: string) => T | Reply;
   now: () => string;
-  /** running finds a workspace that must be running, or the refusal if it is not. */
-  running: (id: string | undefined) => Workspace | Reply;
+  /** running finds a computer that must be running, or the refusal if it is not. */
+  running: (id: string | undefined) => Computer | Reply;
   nextId: (prefix: string) => string;
   emit: (event: EikaEvent) => void;
   event: (type: EventType, topic: string, payload?: unknown) => EikaEvent;

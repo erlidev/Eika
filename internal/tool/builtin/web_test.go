@@ -19,7 +19,7 @@ import (
 	"github.com/erlidev/eika/internal/tool/builtin"
 )
 
-// sandbox answers `eikad filter` the way the daemon in a workspace does, and
+// sandbox answers `eikad filter` the way the daemon in a computer does, and
 // records every command it was asked to run.
 type sandbox struct {
 	executor.Executor
@@ -120,7 +120,7 @@ func TestWebFetchRunsFiltersInTheSandbox(t *testing.T) {
 type failing struct{ executor.Executor }
 
 func (failing) Exec(context.Context, executor.ExecSpec) (executor.ExecResult, error) {
-	return executor.ExecResult{}, errors.New("workspace is stopped")
+	return executor.ExecResult{}, errors.New("computer is stopped")
 }
 
 func TestWebFetchReportsASandboxThatCannotRunTheFilter(t *testing.T) {
@@ -131,7 +131,7 @@ func TestWebFetchReportsASandboxThatCannotRunTheFilter(t *testing.T) {
 	}
 }
 
-// A chat has no workspace, so the model's JavaScript has nowhere to run; the
+// A chat has no computer, so the model's JavaScript has nowhere to run; the
 // page itself is still a network read the harness makes.
 func TestWebFetchInAChatRefusesAFilterButReadsThePage(t *testing.T) {
 	chat := tool.CallContext{}

@@ -12,7 +12,7 @@ import (
 // every failure answers with, and the payload of every event. Its JSON form
 // is docs/api/contract.json.
 type Contract struct {
-	// Routes are keyed as routes.go registers them: `GET /api/workspaces/{id}`.
+	// Routes are keyed as routes.go registers them: `GET /api/computers/{id}`.
 	Routes map[string]Route `json:"routes"`
 	// Error is the body of every failure, and ErrorCodes the codes it names.
 	Error      *Shape   `json:"error"`

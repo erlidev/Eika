@@ -55,7 +55,7 @@ type EnvironmentRequest struct {
 	Env []string `json:"env"`
 }
 
-// FileInfo describes one file. Path is relative to the workspace root and Mode
+// FileInfo describes one file. Path is relative to the computer root and Mode
 // is the Go file mode bits.
 type FileInfo struct {
 	Name    string    `json:"name"`
@@ -85,7 +85,7 @@ const (
 
 // WatchEvent is one change reported by GET /watch.
 type WatchEvent struct {
-	// Path is the changed file, relative to the workspace root.
+	// Path is the changed file, relative to the computer root.
 	Path string `json:"path"`
 	// Kind is one of the Change constants.
 	Kind string `json:"kind"`

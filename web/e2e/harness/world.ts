@@ -2,7 +2,7 @@
  * The in-memory world a mock harness serves: every table the HTTP API reads,
  * plus the session trees a replay walks. A scenario is a function that builds
  * one; routes then read and mutate it, so a flow driven through the UI (create
- * a workspace, send a message) changes what the next request sees.
+ * a computer, send a message) changes what the next request sees.
  */
 
 import type { EikaEvent } from "../../src/api/events.ts";
@@ -33,7 +33,7 @@ import type {
   SettingsState,
   SystemStatus,
   Tool,
-  Workspace,
+  Computer,
 } from "../../src/api/types.ts";
 
 /**
@@ -89,7 +89,7 @@ export type World = {
   providerKinds: string[];
   models: Model[];
   defaultModel?: string;
-  workspaces: Workspace[];
+  computers: Computer[];
   sessions: Session[];
   /** untitled are the sessions created without a title, which their first run names. */
   untitled: string[];
@@ -140,7 +140,7 @@ export function emptyWorld(): World {
       settings: { setup_complete: true },
       defaults: {
         sandbox_image: "eika-sandbox:latest",
-        workspace_idle_minutes: 15,
+        computer_idle_minutes: 15,
         sandbox_limits: { cpus: 0, memory_mb: 0, pids: 4096 },
         sandbox_egress: { mode: "open", allow: [...defaultAllowlist] },
         // As the harness documents them in docs/api/http.md.
@@ -180,7 +180,7 @@ export function emptyWorld(): World {
     providers: [],
     providerKinds: ["openai", "anthropic"],
     models: [],
-    workspaces: [],
+    computers: [],
     sessions: [],
     untitled: [],
     tools: toolCatalog(),
@@ -220,7 +220,7 @@ const defaultAllowlist = [
   "*.crates.io",
 ];
 
-/** defaultSandbox is what a workspace gets from the harness's own defaults. */
+/** defaultSandbox is what a computer gets from the harness's own defaults. */
 export function defaultSandbox(): Sandbox {
   return {
     limits: { cpus: 0, memory_mb: 0, pids: 4096 },
@@ -278,17 +278,17 @@ function searchStatus(): SearchStatus {
 
 /** toolCatalog is the harness's built-in tools, as GET /api/tools lists them. */
 function toolCatalog(): Tool[] {
-  const tool = (name: string, description: string, needsWorkspace = true): Tool => ({
+  const tool = (name: string, description: string, needsComputer = true): Tool => ({
     name,
     description,
-    needs_workspace: needsWorkspace,
+    needs_computer: needsComputer,
     tokens: builtinToolTokens(name, description),
   });
   return [
     tool("ask_user", "Ask the user a question and wait for the answer.", false),
     tool(
       "bash",
-      "Run a shell command in the workspace root. This is also how you explore, read, and edit files.",
+      "Run a shell command in the computer root. This is also how you explore, read, and edit files.",
     ),
     tool(
       "web_fetch",
@@ -305,10 +305,10 @@ function toolCatalog(): Tool[] {
 
 /**
  * sessionTools is the tool list a new session reports: every tool, or for a
- * chat every tool that needs no workspace, as the harness narrows it.
+ * chat every tool that needs no computer, as the harness narrows it.
  */
 export function sessionTools(world: World, chat: boolean): string[] {
-  return world.tools.filter((t) => !chat || !t.needs_workspace).map((t) => t.name);
+  return world.tools.filter((t) => !chat || !t.needs_computer).map((t) => t.name);
 }
 
 /** WorldBuilder adds rows with consistent ids and timestamps. */
@@ -360,9 +360,9 @@ export class WorldBuilder {
     return row;
   }
 
-  workspace(input: Partial<Workspace> & { name: string }): Workspace {
-    const row: Workspace = {
-      id: this.id("ws"),
+  computer(input: Partial<Computer> & { name: string }): Computer {
+    const row: Computer = {
+      id: this.id("cx"),
       image: "eika-sandbox:latest",
       state: "running",
       container_id: "c0ffee",
@@ -373,14 +373,14 @@ export class WorldBuilder {
       updated_at: minutesAgo(30),
       ...input,
     };
-    this.world.workspaces.unshift(row);
+    this.world.computers.unshift(row);
     return row;
   }
 
-  session(workspace: Workspace, input: Partial<Session> & { title: string }): Session {
+  session(computer: Computer, input: Partial<Session> & { title: string }): Session {
     const row: Session = {
       id: this.id("ses"),
-      workspace_id: workspace.id,
+      computer_id: computer.id,
       kind: "user",
       tools: sessionTools(this.world, false),
       overridden: false,
@@ -395,7 +395,7 @@ export class WorldBuilder {
     return row;
   }
 
-  /** chat adds a session with no workspace, offering the tools that need none. */
+  /** chat adds a session with no computer, offering the tools that need none. */
   chat(input: Partial<Session> & { title: string }): Session {
     const row: Session = {
       id: this.id("chat"),
@@ -434,7 +434,7 @@ export class WorldBuilder {
         oauth_client_id: "",
         oauth_client_secret_set: false,
         state: "idle",
-        workspaces: [],
+        computers: [],
         created_at: minutesAgo(300),
         updated_at: minutesAgo(300),
         ...server,
@@ -548,7 +548,7 @@ export function syncSystem(world: World): void {
 /**
  * syncMCPTools rebuilds GET /api/tools from the built-in tools and what each
  * enabled MCP server last listed, as the harness offers them: a stdio
- * server's tools need a workspace, and a disabled tool is left out.
+ * server's tools need a computer, and a disabled tool is left out.
  */
 export function syncMCPTools(world: World): void {
   const builtIn = world.tools.filter((t) => t.server === undefined && !t.name.startsWith("mcp_"));
@@ -560,7 +560,7 @@ export function syncMCPTools(world: World): void {
         .map((t) => ({
           name: t.exposed_name,
           description: t.description ?? "",
-          needs_workspace: d.server.kind === "stdio",
+          needs_computer: d.server.kind === "stdio",
           server: d.server.name,
           tokens: toolTokens(t.exposed_name, t.description ?? "", t.input_schema),
         })),
@@ -570,7 +570,7 @@ export function syncMCPTools(world: World): void {
         {
           name: "mcp_list_resources",
           description: "List the resources the MCP servers of this run offer.",
-          needs_workspace: false,
+          needs_computer: false,
           tokens: builtinToolTokens(
             "mcp_list_resources",
             "List the resources the MCP servers of this run offer.",
@@ -579,7 +579,7 @@ export function syncMCPTools(world: World): void {
         {
           name: "mcp_read_resource",
           description: "Read one resource of an MCP server by its URI.",
-          needs_workspace: false,
+          needs_computer: false,
           tokens: builtinToolTokens(
             "mcp_read_resource",
             "Read one resource of an MCP server by its URI.",

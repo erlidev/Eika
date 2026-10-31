@@ -51,7 +51,7 @@ func TestBusFansOutByTopic(t *testing.T) {
 		t.Fatalf("subscribers = %d, want 3", b.Subscribers())
 	}
 	emit(t, b, event.TypeTurnStart, event.SessionTopic("s1"), event.TurnStart{RunID: "r1"})
-	emit(t, b, event.TypeWorkspaceState, event.TopicGlobal, event.WorkspaceState{WorkspaceID: "w1", State: "running"})
+	emit(t, b, event.TypeComputerState, event.TopicGlobal, event.ComputerState{ComputerID: "w1", State: "running"})
 
 	if got := receive(t, one); got.Type != event.TypeTurnStart {
 		t.Errorf("first subscriber got %q, want turn.start", got.Type)
@@ -62,8 +62,8 @@ func TestBusFansOutByTopic(t *testing.T) {
 	if got := receive(t, two); got.Type != event.TypeTurnStart {
 		t.Errorf("second subscriber got %q, want turn.start", got.Type)
 	}
-	if got := receive(t, two); got.Type != event.TypeWorkspaceState {
-		t.Errorf("second subscriber got %q, want workspace.state", got.Type)
+	if got := receive(t, two); got.Type != event.TypeComputerState {
+		t.Errorf("second subscriber got %q, want computer.state", got.Type)
 	}
 	if len(other.Events()) != 0 {
 		t.Errorf("subscriber of another topic got %d events, want 0", len(other.Events()))

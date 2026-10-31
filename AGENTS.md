@@ -41,7 +41,7 @@ human changing the codebase. Read it fully before editing.
 cmd/eika      harness server         internal/agent     agent loop
 cmd/eikad     sandbox daemon         internal/tool      tools and registry
 internal/provider  LLM providers     internal/executor  sandbox I/O
-internal/workspace containers      internal/session   session trees
+internal/computer  containers        internal/session   session trees
 internal/search    web search, fetch internal/server    HTTP + WebSocket
 internal/store     Postgres          internal/config    deployment config
 internal/secret    sealed secrets    web/               frontend
@@ -53,7 +53,7 @@ deploy/            entrypoint, searxng  docs/           documentation
 
 Dependencies point inward. `server` may import `agent`; `agent` may import
 `tool`; `tool` may import `executor`. Nothing but the binaries imports `server`.
-`tool` never imports `workspace`. `internal/imports_test.go` enforces these
+`tool` never imports `computer`. `internal/imports_test.go` enforces these
 rules; an exception is listed there with its reason.
 
 ## Commands

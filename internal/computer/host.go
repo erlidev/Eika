@@ -1,4 +1,4 @@
-package workspace
+package computer
 
 import (
 	"context"
@@ -42,13 +42,13 @@ const (
 	stopTimeout = 5 * time.Second
 )
 
-// proxyTokenEnv carries a workspace's egress proxy token in its container's
+// proxyTokenEnv carries a computer's egress proxy token in its container's
 // configuration, where Inspect recovers it after a harness restart. The
 // daemon's processes receive it only inside the proxy URL.
 const proxyTokenEnv = "EIKA_PROXY_TOKEN"
 
-// ErrNoWorkspace reports that no container carries the given workspace id.
-var ErrNoWorkspace = errors.New("workspace not found")
+// ErrNoComputer reports that no container carries the given computer id.
+var ErrNoComputer = errors.New("computer not found")
 
 // Options configures a Host.
 type Options struct {
@@ -75,7 +75,7 @@ type Options struct {
 	EgressProxyURL string
 }
 
-// Host creates and runs workspaces on one Docker daemon.
+// Host creates and runs computers on one Docker daemon.
 type Host struct {
 	docker *client.Client
 	opts   Options
@@ -87,13 +87,13 @@ type Host struct {
 func NewHost(opts Options, log *slog.Logger) (*Host, error) {
 	switch {
 	case opts.Image == "":
-		return nil, errors.New("build workspace host: image is empty")
+		return nil, errors.New("build computer host: image is empty")
 	case opts.EikadBinary == "":
-		return nil, errors.New("build workspace host: eikad binary path is empty")
+		return nil, errors.New("build computer host: eikad binary path is empty")
 	}
 	if opts.EgressProxyURL != "" {
 		if u, err := url.Parse(opts.EgressProxyURL); err != nil || u.Host == "" {
-			return nil, fmt.Errorf("build workspace host: egress proxy url %q is not an absolute url", opts.EgressProxyURL)
+			return nil, fmt.Errorf("build computer host: egress proxy url %q is not an absolute url", opts.EgressProxyURL)
 		}
 	}
 	docker, err := client.NewClientWithOpts(
@@ -114,59 +114,59 @@ func NewHost(opts Options, log *slog.Logger) (*Host, error) {
 // Close releases the connection to the Docker daemon.
 func (h *Host) Close() error { return h.docker.Close() }
 
-// Create builds the workspace's volume and container. The container is not
+// Create builds the computer's volume and container. The container is not
 // started; call Start.
-func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
+func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 	if spec.Confinement.Proxied && !h.EgressControl() {
-		return Workspace{}, ErrNoEgressControl
+		return Computer{}, ErrNoEgressControl
 	}
-	ws := Workspace{ID: spec.ID, State: StateCreating, CreatedAt: time.Now().UTC(), Proxied: spec.Confinement.Proxied}
-	if ws.ID == "" {
+	cx := Computer{ID: spec.ID, State: StateCreating, CreatedAt: time.Now().UTC(), Proxied: spec.Confinement.Proxied}
+	if cx.ID == "" {
 		id, err := newID()
 		if err != nil {
-			return Workspace{}, err
+			return Computer{}, err
 		}
-		ws.ID = id
+		cx.ID = id
 	}
 	var err error
-	if ws.Token, err = newToken(); err != nil {
-		return Workspace{}, err
+	if cx.Token, err = newToken(); err != nil {
+		return Computer{}, err
 	}
-	if ws.ProxyToken, err = newToken(); err != nil {
-		return Workspace{}, err
+	if cx.ProxyToken, err = newToken(); err != nil {
+		return Computer{}, err
 	}
 
-	ws.Image = orDefault(spec.Image, h.opts.Image)
+	cx.Image = orDefault(spec.Image, h.opts.Image)
 	built := spec.BuildContext != ""
 	if built {
-		ws.Image = builtImageRef(ws.ID)
-		if err := h.buildImage(ctx, spec, ws.Image); err != nil {
-			return Workspace{}, err
+		cx.Image = builtImageRef(cx.ID)
+		if err := h.buildImage(ctx, spec, cx.Image); err != nil {
+			return Computer{}, err
 		}
 	}
 	// Everything created from here on is rolled back if creation fails, so a
 	// failed Create leaves nothing behind.
-	rollback := func() { h.discard(ctx, ws, built) }
+	rollback := func() { h.discard(ctx, cx, built) }
 
-	ws.Volume = VolumeName(ws.ID)
+	cx.Volume = VolumeName(cx.ID)
 	if _, err := h.docker.VolumeCreate(ctx, volume.CreateOptions{
-		Name:   ws.Volume,
-		Labels: map[string]string{Label: ws.ID},
+		Name:   cx.Volume,
+		Labels: map[string]string{Label: cx.ID},
 	}); err != nil {
 		rollback()
-		return Workspace{}, fmt.Errorf("create volume %s: %w", ws.Volume, err)
+		return Computer{}, fmt.Errorf("create volume %s: %w", cx.Volume, err)
 	}
 
-	labels := map[string]string{Label: ws.ID}
+	labels := map[string]string{Label: cx.ID}
 	maps.Copy(labels, spec.Labels)
 
 	port := nat.Port(DaemonPort + "/tcp")
 	cfg := &container.Config{
-		Image:      ws.Image,
+		Image:      cx.Image,
 		Entrypoint: []string{eikad.BinaryPath, "-listen", ":" + DaemonPort, "-root", Root},
 		Env: append([]string{
-			eikad.TokenEnv + "=" + ws.Token,
-			proxyTokenEnv + "=" + ws.ProxyToken,
+			eikad.TokenEnv + "=" + cx.Token,
+			proxyTokenEnv + "=" + cx.ProxyToken,
 		}, spec.Env...),
 		User:         orDefault(spec.User, DefaultUser),
 		WorkingDir:   Root,
@@ -174,7 +174,7 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 		ExposedPorts: nat.PortSet{port: struct{}{}},
 	}
 	hostCfg := &container.HostConfig{
-		Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: ws.Volume, Target: Root}},
+		Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: cx.Volume, Target: Root}},
 		// Docker's own init is PID 1 and reaps the orphans a shell leaves
 		// behind; eikad runs under it as an ordinary process.
 		Init: &useInit,
@@ -187,156 +187,156 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 	netCfg := &network.NetworkingConfig{}
 	if h.opts.Network != "" {
 		netCfg.EndpointsConfig = map[string]*network.EndpointSettings{
-			h.networkFor(ws.Proxied): {Aliases: []string{ContainerName(ws.ID)}},
+			h.networkFor(cx.Proxied): {Aliases: []string{ContainerName(cx.ID)}},
 		}
 	} else {
 		hostCfg.PortBindings = nat.PortMap{port: []nat.PortBinding{{HostIP: "127.0.0.1", HostPort: "0"}}}
 	}
 
-	created, err := h.createContainer(ctx, cfg, hostCfg, netCfg, ContainerName(ws.ID))
+	created, err := h.createContainer(ctx, cfg, hostCfg, netCfg, ContainerName(cx.ID))
 	if err != nil {
 		rollback()
-		return Workspace{}, fmt.Errorf("create container for workspace %s: %w", ws.ID, err)
+		return Computer{}, fmt.Errorf("create container for computer %s: %w", cx.ID, err)
 	}
-	ws.ContainerID = created.ID
+	cx.ContainerID = created.ID
 
-	if err := h.injectDaemon(ctx, ws.ContainerID); err != nil {
-		h.discard(ctx, ws, built)
-		return Workspace{}, err
+	if err := h.injectDaemon(ctx, cx.ContainerID); err != nil {
+		h.discard(ctx, cx, built)
+		return Computer{}, err
 	}
-	h.log.Info("workspace created", "workspace_id", ws.ID, "image", ws.Image)
-	return ws, nil
+	h.log.Info("computer created", "computer_id", cx.ID, "image", cx.Image)
+	return cx, nil
 }
 
-// discard removes whatever of a workspace already exists. It is the rollback
+// discard removes whatever of a computer already exists. It is the rollback
 // for a failed Create and the body of Destroy, and it ignores what is not
 // there.
-func (h *Host) discard(ctx context.Context, ws Workspace, builtImage bool) {
-	if ws.ContainerID != "" {
-		if err := h.docker.ContainerRemove(ctx, ws.ContainerID, container.RemoveOptions{
+func (h *Host) discard(ctx context.Context, cx Computer, builtImage bool) {
+	if cx.ContainerID != "" {
+		if err := h.docker.ContainerRemove(ctx, cx.ContainerID, container.RemoveOptions{
 			Force: true,
 		}); err != nil && !cerrdefs.IsNotFound(err) {
-			h.log.Warn("remove container", "workspace_id", ws.ID, "error", err)
+			h.log.Warn("remove container", "computer_id", cx.ID, "error", err)
 		}
 	}
-	if ws.Volume != "" {
-		if err := h.docker.VolumeRemove(ctx, ws.Volume, true); err != nil && !cerrdefs.IsNotFound(err) {
-			h.log.Warn("remove volume", "workspace_id", ws.ID, "error", err)
+	if cx.Volume != "" {
+		if err := h.docker.VolumeRemove(ctx, cx.Volume, true); err != nil && !cerrdefs.IsNotFound(err) {
+			h.log.Warn("remove volume", "computer_id", cx.ID, "error", err)
 		}
 	}
 	if builtImage {
-		if _, err := h.docker.ImageRemove(ctx, builtImageRef(ws.ID), image.RemoveOptions{
+		if _, err := h.docker.ImageRemove(ctx, builtImageRef(cx.ID), image.RemoveOptions{
 			Force:         true,
 			PruneChildren: true,
 		}); err != nil && !cerrdefs.IsNotFound(err) {
-			h.log.Warn("remove image", "workspace_id", ws.ID, "error", err)
+			h.log.Warn("remove image", "computer_id", cx.ID, "error", err)
 		}
 	}
 }
 
-// Start starts the workspace's container and waits until its daemon answers,
+// Start starts the computer's container and waits until its daemon answers,
 // filling in the address the harness reaches it on. It first puts the
 // container back on its sandbox network, in case that network was recreated
 // since the container last ran.
-func (h *Host) Start(ctx context.Context, ws *Workspace) error {
+func (h *Host) Start(ctx context.Context, cx *Computer) error {
 	if h.opts.Network != "" {
-		if err := h.moveTo(ctx, *ws, h.networkFor(ws.Proxied)); err != nil {
+		if err := h.moveTo(ctx, *cx, h.networkFor(cx.Proxied)); err != nil {
 			return err
 		}
 	}
-	if err := h.docker.ContainerStart(ctx, ws.ContainerID, container.StartOptions{}); err != nil {
-		return fmt.Errorf("start workspace %s: %w", ws.ID, err)
+	if err := h.docker.ContainerStart(ctx, cx.ContainerID, container.StartOptions{}); err != nil {
+		return fmt.Errorf("start computer %s: %w", cx.ID, err)
 	}
-	addr, err := h.address(ctx, *ws)
+	addr, err := h.address(ctx, *cx)
 	if err != nil {
 		return err
 	}
-	ws.Address = addr
+	cx.Address = addr
 	if err := h.waitReady(ctx, addr); err != nil {
-		return fmt.Errorf("workspace %s did not become ready: %w", ws.ID, err)
+		return fmt.Errorf("computer %s did not become ready: %w", cx.ID, err)
 	}
 	// The daemon forgets the environment it was given when the container
 	// stops, so every start gives it again.
-	if err := h.setEnvironment(ctx, *ws); err != nil {
+	if err := h.setEnvironment(ctx, *cx); err != nil {
 		return err
 	}
-	ws.State = StateRunning
-	h.log.Info("workspace started", "workspace_id", ws.ID, "address", addr)
+	cx.State = StateRunning
+	h.log.Info("computer started", "computer_id", cx.ID, "address", addr)
 	return nil
 }
 
-// Stop stops the workspace's container, leaving its volume in place.
-func (h *Host) Stop(ctx context.Context, ws *Workspace) error {
+// Stop stops the computer's container, leaving its volume in place.
+func (h *Host) Stop(ctx context.Context, cx *Computer) error {
 	timeout := int(stopTimeout.Seconds())
-	if err := h.docker.ContainerStop(ctx, ws.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
-		return fmt.Errorf("stop workspace %s: %w", ws.ID, err)
+	if err := h.docker.ContainerStop(ctx, cx.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
+		return fmt.Errorf("stop computer %s: %w", cx.ID, err)
 	}
-	ws.State = StateStopped
-	h.log.Info("workspace stopped", "workspace_id", ws.ID)
+	cx.State = StateStopped
+	h.log.Info("computer stopped", "computer_id", cx.ID)
 	return nil
 }
 
-// Destroy removes the workspace's container and its volume. The files in a
+// Destroy removes the computer's container and its volume. The files in a
 // bind-mounted host directory are left alone.
-func (h *Host) Destroy(ctx context.Context, ws *Workspace) error {
-	if err := h.docker.ContainerRemove(ctx, ws.ContainerID, container.RemoveOptions{
+func (h *Host) Destroy(ctx context.Context, cx *Computer) error {
+	if err := h.docker.ContainerRemove(ctx, cx.ContainerID, container.RemoveOptions{
 		Force:         true,
 		RemoveVolumes: false,
 	}); err != nil && !cerrdefs.IsNotFound(err) {
-		return fmt.Errorf("remove container for workspace %s: %w", ws.ID, err)
+		return fmt.Errorf("remove container for computer %s: %w", cx.ID, err)
 	}
-	if ws.Volume != "" {
-		if err := h.docker.VolumeRemove(ctx, ws.Volume, true); err != nil && !cerrdefs.IsNotFound(err) {
-			return fmt.Errorf("remove volume %s: %w", ws.Volume, err)
+	if cx.Volume != "" {
+		if err := h.docker.VolumeRemove(ctx, cx.Volume, true); err != nil && !cerrdefs.IsNotFound(err) {
+			return fmt.Errorf("remove volume %s: %w", cx.Volume, err)
 		}
 	}
-	// An image built for this one workspace is named after it, so it goes too.
-	if ws.Image == builtImageRef(ws.ID) {
-		if _, err := h.docker.ImageRemove(ctx, ws.Image, image.RemoveOptions{
+	// An image built for this one computer is named after it, so it goes too.
+	if cx.Image == builtImageRef(cx.ID) {
+		if _, err := h.docker.ImageRemove(ctx, cx.Image, image.RemoveOptions{
 			Force:         true,
 			PruneChildren: true,
 		}); err != nil && !cerrdefs.IsNotFound(err) {
-			return fmt.Errorf("remove image %s: %w", ws.Image, err)
+			return fmt.Errorf("remove image %s: %w", cx.Image, err)
 		}
 	}
-	ws.Address = ""
-	ws.State = StateGone
-	h.log.Info("workspace destroyed", "workspace_id", ws.ID)
+	cx.Address = ""
+	cx.State = StateGone
+	h.log.Info("computer destroyed", "computer_id", cx.ID)
 	return nil
 }
 
-// List reports every workspace container the Docker daemon knows about,
+// List reports every computer container the Docker daemon knows about,
 // running or not. The harness calls it on startup to reconcile with reality.
-func (h *Host) List(ctx context.Context) ([]Workspace, error) {
+func (h *Host) List(ctx context.Context) ([]Computer, error) {
 	summaries, err := h.docker.ContainerList(ctx, container.ListOptions{
 		All:     true,
 		Filters: filters.NewArgs(filters.Arg("label", Label)),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list workspace containers: %w", err)
+		return nil, fmt.Errorf("list computer containers: %w", err)
 	}
-	out := make([]Workspace, 0, len(summaries))
+	out := make([]Computer, 0, len(summaries))
 	for _, s := range summaries {
-		ws, err := h.Inspect(ctx, s.Labels[Label])
+		cx, err := h.Inspect(ctx, s.Labels[Label])
 		if err != nil {
-			return nil, fmt.Errorf("inspect listed workspace container %s: %w", s.ID, err)
+			return nil, fmt.Errorf("inspect listed computer container %s: %w", s.ID, err)
 		}
-		out = append(out, ws)
+		out = append(out, cx)
 	}
 	return out, nil
 }
 
-// Inspect reports the current state of one workspace, recovering its tokens
+// Inspect reports the current state of one computer, recovering its tokens
 // from the container so that the harness can keep working after a restart.
-func (h *Host) Inspect(ctx context.Context, id string) (Workspace, error) {
+func (h *Host) Inspect(ctx context.Context, id string) (Computer, error) {
 	info, err := h.docker.ContainerInspect(ctx, ContainerName(id))
 	if err != nil {
 		if cerrdefs.IsNotFound(err) {
-			return Workspace{}, fmt.Errorf("%w: %s", ErrNoWorkspace, id)
+			return Computer{}, fmt.Errorf("%w: %s", ErrNoComputer, id)
 		}
-		return Workspace{}, fmt.Errorf("inspect workspace %s: %w", id, err)
+		return Computer{}, fmt.Errorf("inspect computer %s: %w", id, err)
 	}
-	ws := Workspace{
+	cx := Computer{
 		ID:          id,
 		ContainerID: info.ID,
 		Image:       info.Config.Image,
@@ -345,67 +345,67 @@ func (h *Host) Inspect(ctx context.Context, id string) (Workspace, error) {
 		ProxyToken:  envValue(info.Config.Env, proxyTokenEnv),
 	}
 	if created, err := time.Parse(time.RFC3339Nano, info.Created); err == nil {
-		ws.CreatedAt = created.UTC()
+		cx.CreatedAt = created.UTC()
 	}
 	if info.NetworkSettings != nil && h.EgressControl() {
-		_, ws.Proxied = info.NetworkSettings.Networks[h.opts.InternalNetwork]
+		_, cx.Proxied = info.NetworkSettings.Networks[h.opts.InternalNetwork]
 	}
 	for _, m := range info.Mounts {
 		if m.Destination != Root {
 			continue
 		}
-		ws.Volume = m.Name
+		cx.Volume = m.Name
 	}
 	if info.State != nil && info.State.Running {
-		ws.State = StateRunning
-		if addr, err := h.address(ctx, ws); err == nil {
-			ws.Address = addr
+		cx.State = StateRunning
+		if addr, err := h.address(ctx, cx); err == nil {
+			cx.Address = addr
 		}
 	}
-	return ws, nil
+	return cx, nil
 }
 
-// Executor returns the executor an agent uses to reach the workspace. The
-// workspace must be running.
-func (h *Host) Executor(ws Workspace) (executor.Executor, error) {
-	return h.client(ws)
+// Executor returns the executor an agent uses to reach the computer. The
+// computer must be running.
+func (h *Host) Executor(cx Computer) (executor.Executor, error) {
+	return h.client(cx)
 }
 
-// Process starts a long-lived process in a running workspace with its
+// Process starts a long-lived process in a running computer with its
 // standard streams connected to the caller: how the harness runs a stdio MCP
 // server where the agent's processes run. It is kept apart from
 // Executor, so no tool can hold a process of its own.
-func (h *Host) Process(ctx context.Context, ws Workspace, spec sandbox.ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error) {
-	c, err := h.client(ws)
+func (h *Host) Process(ctx context.Context, cx Computer, spec sandbox.ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error) {
+	c, err := h.client(cx)
 	if err != nil {
 		return nil, err
 	}
 	return c.Process(ctx, spec, stderr)
 }
 
-// client returns a client for a running workspace's daemon, narrowed to the
-// directory the workspace's files are in.
-func (h *Host) client(ws Workspace) (*sandbox.Client, error) {
-	if ws.Address == "" {
-		return nil, fmt.Errorf("workspace %s has no address: it is not running", ws.ID)
+// client returns a client for a running computer's daemon, narrowed to the
+// directory the computer's files are in.
+func (h *Host) client(cx Computer) (*sandbox.Client, error) {
+	if cx.Address == "" {
+		return nil, fmt.Errorf("computer %s has no address: it is not running", cx.ID)
 	}
-	return sandbox.New(sandbox.Options{BaseURL: ws.Address, Token: ws.Token, Root: Root})
+	return sandbox.New(sandbox.Options{BaseURL: cx.Address, Token: cx.Token, Root: Root})
 }
 
-// address is the base URL the harness reaches the workspace's daemon on: the
+// address is the base URL the harness reaches the computer's daemon on: the
 // container name on the sandbox network, or the published port when the
 // harness runs outside that network.
-func (h *Host) address(ctx context.Context, ws Workspace) (string, error) {
+func (h *Host) address(ctx context.Context, cx Computer) (string, error) {
 	if h.opts.Network != "" {
-		return "http://" + ContainerName(ws.ID) + ":" + DaemonPort, nil
+		return "http://" + ContainerName(cx.ID) + ":" + DaemonPort, nil
 	}
-	info, err := h.docker.ContainerInspect(ctx, ws.ContainerID)
+	info, err := h.docker.ContainerInspect(ctx, cx.ContainerID)
 	if err != nil {
-		return "", fmt.Errorf("inspect workspace %s: %w", ws.ID, err)
+		return "", fmt.Errorf("inspect computer %s: %w", cx.ID, err)
 	}
 	bindings := info.NetworkSettings.Ports[nat.Port(DaemonPort+"/tcp")]
 	if len(bindings) == 0 {
-		return "", fmt.Errorf("workspace %s publishes no daemon port", ws.ID)
+		return "", fmt.Errorf("computer %s publishes no daemon port", cx.ID)
 	}
 	return "http://127.0.0.1:" + bindings[0].HostPort, nil
 }

@@ -37,7 +37,7 @@ func (s *Store) AppendCompaction(ctx context.Context, sessionID string, c agent.
 	return err
 }
 
-// Load rebuilds the session a run works on from the database: the workspace
+// Load rebuilds the session a run works on from the database: the computer
 // it belongs to and the conversation on its current branch. A run started
 // from a loaded session continues where the last one stopped, and a run
 // started after SetHead continues the branch the head now points at.
@@ -52,7 +52,7 @@ func (s *Store) Load(ctx context.Context, sessionID string) (*agent.Session, err
 	}
 	return &agent.Session{
 		ID:           sess.ID,
-		WorkspaceID:  sess.WorkspaceID,
+		ComputerID:   sess.ComputerID,
 		Conversation: agent.NewConversation(messages...),
 	}, nil
 }

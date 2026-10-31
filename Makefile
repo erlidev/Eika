@@ -8,7 +8,7 @@ SANDBOX_IMAGE ?= eika-sandbox:latest
 GOPKGS := ./cmd/... ./internal/...
 GODIRS := cmd internal
 # GOTAGS includes the tests that need Docker: the handler, store, and
-# workspace tests. Without a Docker daemon they skip, saying why.
+# computer tests. Without a Docker daemon they skip, saying why.
 GOTAGS := -tags docker
 # DEV holds the state a harness running on the host keeps: the key that
 # seals credentials. It is ignored by git.
@@ -45,7 +45,7 @@ test: test-go test-web
 
 test-go:
 	@docker info >/dev/null 2>&1 || \
-		echo "Docker is not reachable: the handler, store, and workspace tests will skip."
+		echo "Docker is not reachable: the handler, store, and computer tests will skip."
 	$(GO) test $(GOTAGS) $(GOPKGS)
 
 ## contract: rewrite docs/api/contract.json from the Go wire types, after a
@@ -130,8 +130,8 @@ smoke: web-install playwright-browser
 
 ## smoke-down: remove the smoke stack, its data, and any sandbox it left.
 smoke-down:
-	@left=$$(docker ps -aq --filter label=eika.workspace --filter network=eika_smoke_sandbox; \
-		docker ps -aq --filter label=eika.workspace --filter network=eika_smoke_sandbox_internal); \
+	@left=$$(docker ps -aq --filter label=eika.computer --filter network=eika_smoke_sandbox; \
+		docker ps -aq --filter label=eika.computer --filter network=eika_smoke_sandbox_internal); \
 	if [ -n "$$left" ]; then docker rm -fv $$left; fi
 	$(SMOKE_COMPOSE) down -v
 

@@ -56,9 +56,9 @@ func TestAnUntitledSessionIsNamedAfterItsFirstMessage(t *testing.T) {
 	events := a.Bus().Subscribe(event.TopicGlobal)
 	defer events.Close()
 
-	ws := a.newWorkspace(t)
+	cx := a.newComputer(t)
 	untitled := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions", map[string]any{
-		"workspace_id": ws.ID,
+		"computer_id": cx.ID,
 	}), 201)
 	if untitled.Title != "New session" {
 		t.Errorf("title = %q, want the placeholder", untitled.Title)
@@ -85,7 +85,7 @@ func TestAnUntitledSessionIsNamedAfterItsFirstMessage(t *testing.T) {
 		}
 		return false
 	})
-	if got != (event.SessionTitle{SessionID: untitled.ID, WorkspaceID: ws.ID, Title: "Fix the login loop"}) {
+	if got != (event.SessionTitle{SessionID: untitled.ID, ComputerID: cx.ID, Title: "Fix the login loop"}) {
 		t.Errorf("event = %+v", got)
 	}
 	if title := a.sessionTitle(t, untitled.ID); title != "Fix the login loop" {

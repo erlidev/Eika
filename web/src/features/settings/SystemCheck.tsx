@@ -1,6 +1,6 @@
 /**
  * Whether the harness can start sandboxes: it reaches the Docker socket, and
- * the image new workspaces run is there. Each failure says how to fix it.
+ * the image new computers run is there. Each failure says how to fix it.
  */
 
 import { CircleAlert, CircleCheck, Loader2, RefreshCw } from "lucide-react";
@@ -107,7 +107,7 @@ export function SystemCheck() {
                     <code>make sandbox</code>, from the Eika repository.
                   </>
                 ) : (
-                  "Docker pulls it when the first workspace starts. Pull a private image on the host first."
+                  "Docker pulls it when the first computer starts. Pull a private image on the host first."
                 )}
               </span>
             )}

@@ -1,6 +1,6 @@
 //go:build docker
 
-package workspace_test
+package computer_test
 
 import (
 	"bytes"
@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/sandbox"
-	"github.com/erlidev/eika/internal/workspace"
 )
 
-// sandboxImage is the image the Docker tests run workspaces from. It must
+// sandboxImage is the image the Docker tests run computers from. It must
 // carry git; build it with `make sandbox`.
 const sandboxImage = "eika-sandbox:latest"
 
@@ -55,15 +55,15 @@ func buildEikad(t *testing.T) string {
 	return path
 }
 
-// cleanUp destroys a workspace left over by a test. It cannot use the test's
+// cleanUp destroys a computer left over by a test. It cannot use the test's
 // context: that is already cancelled by the time cleanup functions run.
-func cleanUp(host *workspace.Host, ws *workspace.Workspace) {
+func cleanUp(host *computer.Host, cx *computer.Computer) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	host.Destroy(ctx, ws)
+	host.Destroy(ctx, cx)
 }
 
-// run executes a shell command in the workspace and returns its output.
+// run executes a shell command in the computer and returns its output.
 func run(t *testing.T, ex executor.Executor, script string) string {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
@@ -84,9 +84,9 @@ func run(t *testing.T, ex executor.Executor, script string) string {
 
 // newHost builds a host whose sandboxes publish their daemon port on
 // 127.0.0.1, because the test runs outside the compose network.
-func newHost(t *testing.T) *workspace.Host {
+func newHost(t *testing.T) *computer.Host {
 	t.Helper()
-	host, err := workspace.NewHost(workspace.Options{
+	host, err := computer.NewHost(computer.Options{
 		DockerSocket: requireDocker(t),
 		Image:        sandboxImage,
 		EikadBinary:  buildEikad(t),
@@ -98,13 +98,13 @@ func newHost(t *testing.T) *workspace.Host {
 	return host
 }
 
-func TestWorkspaceLifecycle(t *testing.T) {
+func TestComputerLifecycle(t *testing.T) {
 	requireDocker(t)
 	requireImage(t)
 	host := newHost(t)
 
-	ws, err := host.Create(t.Context(), workspace.Spec{
-		Confinement: workspace.Confinement{Limits: workspace.Limits{CPUs: 1, MemoryBytes: 512 << 20, PIDs: 256}},
+	cx, err := host.Create(t.Context(), computer.Spec{
+		Confinement: computer.Confinement{Limits: computer.Limits{CPUs: 1, MemoryBytes: 512 << 20, PIDs: 256}},
 		Labels:      map[string]string{"eika.test": "lifecycle"},
 	})
 	if err != nil {
@@ -113,17 +113,17 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	destroyed := false
 	t.Cleanup(func() {
 		if !destroyed {
-			cleanUp(host, &ws)
+			cleanUp(host, &cx)
 		}
 	})
-	if err := host.Start(t.Context(), &ws); err != nil {
+	if err := host.Start(t.Context(), &cx); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	if ws.State != workspace.StateRunning || ws.Address == "" {
-		t.Fatalf("workspace = %+v, want a running workspace with an address", ws)
+	if cx.State != computer.StateRunning || cx.Address == "" {
+		t.Fatalf("computer = %+v, want a running computer with an address", cx)
 	}
 
-	ex, err := host.Executor(ws)
+	ex, err := host.Executor(cx)
 	if err != nil {
 		t.Fatalf("executor: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	})
 
 	t.Run("reports what it uses", func(t *testing.T) {
-		usage, err := host.Usage(t.Context(), ws)
+		usage, err := host.Usage(t.Context(), cx)
 		if err != nil {
 			t.Fatalf("usage: %v", err)
 		}
@@ -165,7 +165,7 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	})
 
 	t.Run("changes its limits while it runs", func(t *testing.T) {
-		if err := host.Confine(t.Context(), &ws, workspace.Confinement{Limits: workspace.Limits{CPUs: 0.5, MemoryBytes: 256 << 20}}); err != nil {
+		if err := host.Confine(t.Context(), &cx, computer.Confinement{Limits: computer.Limits{CPUs: 0.5, MemoryBytes: 256 << 20}}); err != nil {
 			t.Fatalf("confine: %v", err)
 		}
 		capacity, err := host.Capacity(t.Context())
@@ -178,7 +178,7 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		}
 		// Docker cannot lift a limit from a container, so no limit is the
 		// whole host.
-		if err := host.Confine(t.Context(), &ws, workspace.Confinement{}); err != nil {
+		if err := host.Confine(t.Context(), &cx, computer.Confinement{}); err != nil {
 			t.Fatalf("confine: %v", err)
 		}
 		limits = run(t, ex, "cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max")
@@ -188,7 +188,7 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	})
 
 	t.Run("refuses a proxied network outside compose", func(t *testing.T) {
-		if err := host.Confine(t.Context(), &ws, workspace.Confinement{Proxied: true}); !errors.Is(err, workspace.ErrNoEgressControl) {
+		if err := host.Confine(t.Context(), &cx, computer.Confinement{Proxied: true}); !errors.Is(err, computer.ErrNoEgressControl) {
 			t.Errorf("confine = %v, want ErrNoEgressControl", err)
 		}
 	})
@@ -209,10 +209,10 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		}
 	})
 
-	t.Run("runs a long-lived process in the workspace", func(t *testing.T) {
+	t.Run("runs a long-lived process in the computer", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
-		p, err := host.Process(ctx, ws, sandbox.ProcessSpec{Command: "sh", Args: []string{"-c", `read line; echo "$line $(cat notes/hello.txt)"`}}, nil)
+		p, err := host.Process(ctx, cx, sandbox.ProcessSpec{Command: "sh", Args: []string{"-c", `read line; echo "$line $(cat notes/hello.txt)"`}}, nil)
 		if err != nil {
 			t.Fatalf("process: %v", err)
 		}
@@ -221,55 +221,55 @@ func TestWorkspaceLifecycle(t *testing.T) {
 			t.Fatalf("write: %v", err)
 		}
 		out, err := io.ReadAll(p)
-		// The process runs in the workspace root and exits once it answers.
+		// The process runs in the computer root and exits once it answers.
 		if string(out) != "got hei\n" || err == nil || !strings.Contains(err.Error(), "status 0") {
 			t.Errorf("output = %q, %v; want the answer, then the exit status", out, err)
 		}
 	})
 
-	t.Run("lists and inspects the workspace", func(t *testing.T) {
+	t.Run("lists and inspects the computer", func(t *testing.T) {
 		listed, err := host.List(t.Context())
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}
 		found := false
 		for _, w := range listed {
-			if w.ID == ws.ID {
+			if w.ID == cx.ID {
 				found = true
-				if w.Token != ws.Token || w.State != workspace.StateRunning {
-					t.Errorf("listed workspace = %+v, want the running workspace with its token", w)
+				if w.Token != cx.Token || w.State != computer.StateRunning {
+					t.Errorf("listed computer = %+v, want the running computer with its token", w)
 				}
 			}
 		}
 		if !found {
-			t.Errorf("list did not report workspace %s", ws.ID)
+			t.Errorf("list did not report computer %s", cx.ID)
 		}
 	})
 
 	t.Run("stops and destroys", func(t *testing.T) {
-		if err := host.Stop(t.Context(), &ws); err != nil {
+		if err := host.Stop(t.Context(), &cx); err != nil {
 			t.Fatalf("stop: %v", err)
 		}
-		stopped, err := host.Inspect(t.Context(), ws.ID)
+		stopped, err := host.Inspect(t.Context(), cx.ID)
 		if err != nil {
 			t.Fatalf("inspect: %v", err)
 		}
-		if stopped.State != workspace.StateStopped {
+		if stopped.State != computer.StateStopped {
 			t.Errorf("state = %q, want stopped", stopped.State)
 		}
 		// A harness that restarted knows the volume only through Inspect, and
 		// Destroy removes only the volume it knows.
-		if stopped.Volume != workspace.VolumeName(ws.ID) {
-			t.Errorf("inspected volume = %q, want %q", stopped.Volume, workspace.VolumeName(ws.ID))
+		if stopped.Volume != computer.VolumeName(cx.ID) {
+			t.Errorf("inspected volume = %q, want %q", stopped.Volume, computer.VolumeName(cx.ID))
 		}
-		if err := host.Destroy(t.Context(), &ws); err != nil {
+		if err := host.Destroy(t.Context(), &cx); err != nil {
 			t.Fatalf("destroy: %v", err)
 		}
 		destroyed = true
-		if _, err := host.Inspect(t.Context(), ws.ID); err == nil {
+		if _, err := host.Inspect(t.Context(), cx.ID); err == nil {
 			t.Error("the container outlived Destroy")
 		}
-		if err := exec.Command("docker", "volume", "inspect", workspace.VolumeName(ws.ID)).Run(); err == nil {
+		if err := exec.Command("docker", "volume", "inspect", computer.VolumeName(cx.ID)).Run(); err == nil {
 			t.Error("the volume outlived Destroy")
 		}
 	})
@@ -278,7 +278,7 @@ func TestWorkspaceLifecycle(t *testing.T) {
 func TestFailedCreateLeavesNothingBehind(t *testing.T) {
 	requireDocker(t)
 	requireImage(t)
-	host, err := workspace.NewHost(workspace.Options{
+	host, err := computer.NewHost(computer.Options{
 		DockerSocket: requireDocker(t),
 		Image:        sandboxImage,
 		// Injection fails, which is the last step of Create.
@@ -290,13 +290,13 @@ func TestFailedCreateLeavesNothingBehind(t *testing.T) {
 	t.Cleanup(func() { host.Close() })
 
 	id := "rollback" + fmt.Sprint(time.Now().UnixNano())
-	if _, err := host.Create(t.Context(), workspace.Spec{ID: id}); err == nil {
+	if _, err := host.Create(t.Context(), computer.Spec{ID: id}); err == nil {
 		t.Fatal("Create succeeded without an eikad binary")
 	}
-	if err := exec.Command("docker", "inspect", workspace.ContainerName(id)).Run(); err == nil {
+	if err := exec.Command("docker", "inspect", computer.ContainerName(id)).Run(); err == nil {
 		t.Error("the container outlived a failed Create")
 	}
-	if err := exec.Command("docker", "volume", "inspect", workspace.VolumeName(id)).Run(); err == nil {
+	if err := exec.Command("docker", "volume", "inspect", computer.VolumeName(id)).Run(); err == nil {
 		t.Error("the volume outlived a failed Create")
 	}
 }
@@ -308,7 +308,7 @@ func TestListReturnsAnInspectionFailure(t *testing.T) {
 	containerName := "misnamed-" + id
 	create := exec.Command("docker", "create",
 		"--name", containerName,
-		"--label", workspace.Label+"="+id,
+		"--label", computer.Label+"="+id,
 		sandboxImage,
 	)
 	if out, err := create.CombinedOutput(); err != nil {
@@ -316,7 +316,7 @@ func TestListReturnsAnInspectionFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "--force", containerName).Run() })
 
-	host, err := workspace.NewHost(workspace.Options{
+	host, err := computer.NewHost(computer.Options{
 		DockerSocket: requireDocker(t),
 		Image:        sandboxImage,
 		EikadBinary:  "/not-used",
@@ -330,7 +330,7 @@ func TestListReturnsAnInspectionFailure(t *testing.T) {
 	}
 }
 
-func TestWorkspaceFromADockerfile(t *testing.T) {
+func TestComputerFromADockerfile(t *testing.T) {
 	requireDocker(t)
 	host := newHost(t)
 
@@ -342,15 +342,15 @@ func TestWorkspaceFromADockerfile(t *testing.T) {
 		t.Fatalf("write dockerfile: %v", err)
 	}
 
-	ws, err := host.Create(t.Context(), workspace.Spec{BuildContext: build})
+	cx, err := host.Create(t.Context(), computer.Spec{BuildContext: build})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	t.Cleanup(func() { cleanUp(host, &ws) })
-	if err := host.Start(t.Context(), &ws); err != nil {
+	t.Cleanup(func() { cleanUp(host, &cx) })
+	if err := host.Start(t.Context(), &cx); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	ex, err := host.Executor(ws)
+	ex, err := host.Executor(cx)
 	if err != nil {
 		t.Fatalf("executor: %v", err)
 	}
@@ -367,9 +367,9 @@ func TestWorkspaceFromADockerfile(t *testing.T) {
 		t.Errorf("echo = %q, want built", got)
 	}
 
-	// The image was built for this workspace alone, so it goes with it.
-	image := ws.Image
-	if err := host.Destroy(t.Context(), &ws); err != nil {
+	// The image was built for this computer alone, so it goes with it.
+	image := cx.Image
+	if err := host.Destroy(t.Context(), &cx); err != nil {
 		t.Fatalf("destroy: %v", err)
 	}
 	if err := exec.Command("docker", "image", "inspect", image).Run(); err == nil {
@@ -413,11 +413,11 @@ func networksOf(t *testing.T, containerID string) []string {
 	return strings.Fields(string(out))
 }
 
-func TestConfineMovesAWorkspaceBetweenTheSandboxNetworks(t *testing.T) {
+func TestConfineMovesAComputerBetweenTheSandboxNetworks(t *testing.T) {
 	requireDocker(t)
 	requireImage(t)
 	open, internal := testNetwork(t, false), testNetwork(t, true)
-	host, err := workspace.NewHost(workspace.Options{
+	host, err := computer.NewHost(computer.Options{
 		DockerSocket:    requireDocker(t),
 		Image:           sandboxImage,
 		EikadBinary:     buildEikad(t),
@@ -435,45 +435,45 @@ func TestConfineMovesAWorkspaceBetweenTheSandboxNetworks(t *testing.T) {
 
 	// The test runs outside both networks, so the container is never
 	// started: joining and leaving networks works on a created one.
-	ws, err := host.Create(t.Context(), workspace.Spec{Confinement: workspace.Confinement{Proxied: true}})
+	cx, err := host.Create(t.Context(), computer.Spec{Confinement: computer.Confinement{Proxied: true}})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	t.Cleanup(func() { cleanUp(host, &ws) })
-	if got := networksOf(t, ws.ContainerID); len(got) != 1 || got[0] != internal {
-		t.Fatalf("a proxied workspace is on %v, want only %s", got, internal)
+	t.Cleanup(func() { cleanUp(host, &cx) })
+	if got := networksOf(t, cx.ContainerID); len(got) != 1 || got[0] != internal {
+		t.Fatalf("a proxied computer is on %v, want only %s", got, internal)
 	}
-	inspected, err := host.Inspect(t.Context(), ws.ID)
+	inspected, err := host.Inspect(t.Context(), cx.ID)
 	if err != nil {
 		t.Fatalf("inspect: %v", err)
 	}
 	if !inspected.Proxied {
-		t.Error("Inspect does not report the workspace proxied")
+		t.Error("Inspect does not report the computer proxied")
 	}
-	// The proxy knows the workspace by a token of its own, which survives a
+	// The proxy knows the computer by a token of its own, which survives a
 	// harness restart and is not the hub token.
-	if inspected.ProxyToken == "" || inspected.ProxyToken != ws.ProxyToken {
-		t.Errorf("Inspect's proxy token is not the workspace's own")
+	if inspected.ProxyToken == "" || inspected.ProxyToken != cx.ProxyToken {
+		t.Errorf("Inspect's proxy token is not the computer's own")
 	}
 
-	if err := host.Confine(t.Context(), &ws, workspace.Confinement{}); err != nil {
+	if err := host.Confine(t.Context(), &cx, computer.Confinement{}); err != nil {
 		t.Fatalf("confine: %v", err)
 	}
-	if got := networksOf(t, ws.ContainerID); len(got) != 1 || got[0] != open {
-		t.Errorf("an open workspace is on %v, want only %s", got, open)
+	if got := networksOf(t, cx.ContainerID); len(got) != 1 || got[0] != open {
+		t.Errorf("an open computer is on %v, want only %s", got, open)
 	}
-	if ws.Proxied {
-		t.Error("the workspace is still marked proxied")
+	if cx.Proxied {
+		t.Error("the computer is still marked proxied")
 	}
 	// Doing it twice changes nothing.
-	if err := host.Confine(t.Context(), &ws, workspace.Confinement{}); err != nil {
+	if err := host.Confine(t.Context(), &cx, computer.Confinement{}); err != nil {
 		t.Fatalf("confine again: %v", err)
 	}
-	if err := host.Confine(t.Context(), &ws, workspace.Confinement{Proxied: true}); err != nil {
+	if err := host.Confine(t.Context(), &cx, computer.Confinement{Proxied: true}); err != nil {
 		t.Fatalf("confine back: %v", err)
 	}
-	if got := networksOf(t, ws.ContainerID); len(got) != 1 || got[0] != internal {
-		t.Errorf("the workspace is on %v, want only %s", got, internal)
+	if got := networksOf(t, cx.ContainerID); len(got) != 1 || got[0] != internal {
+		t.Errorf("the computer is on %v, want only %s", got, internal)
 	}
 }
 
@@ -503,7 +503,7 @@ func TestStartRejoinsARecreatedSandboxNetwork(t *testing.T) {
 	requireDocker(t)
 	requireImage(t)
 	open := testNetwork(t, false)
-	host, err := workspace.NewHost(workspace.Options{
+	host, err := computer.NewHost(computer.Options{
 		DockerSocket: requireDocker(t),
 		Image:        sandboxImage,
 		EikadBinary:  buildEikad(t),
@@ -513,21 +513,21 @@ func TestStartRejoinsARecreatedSandboxNetwork(t *testing.T) {
 		t.Fatalf("new host: %v", err)
 	}
 	t.Cleanup(func() { host.Close() })
-	ws, err := host.Create(t.Context(), workspace.Spec{})
+	cx, err := host.Create(t.Context(), computer.Spec{})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	t.Cleanup(func() { cleanUp(host, &ws) })
+	t.Cleanup(func() { cleanUp(host, &cx) })
 
 	// A container records its network's id only once it has run, so run it
 	// before the network goes away.
-	for _, args := range [][]string{{"start", ws.ContainerID}, {"stop", ws.ContainerID}} {
+	for _, args := range [][]string{{"start", cx.ContainerID}, {"stop", cx.ContainerID}} {
 		if out, err := exec.Command("docker", args...).CombinedOutput(); err != nil {
 			t.Fatalf("docker %s: %v: %s", args[0], err, out)
 		}
 	}
 	recreateNetwork(t, open)
-	if err := exec.Command("docker", "start", ws.ContainerID).Run(); err == nil {
+	if err := exec.Command("docker", "start", cx.ContainerID).Run(); err == nil {
 		t.Fatal("a container on a recreated network started without repair; the test no longer reproduces the fault")
 	}
 
@@ -535,14 +535,14 @@ func TestStartRejoinsARecreatedSandboxNetwork(t *testing.T) {
 	// and Start fails its readiness wait; the container must be running.
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	err = host.Start(ctx, &ws)
+	err = host.Start(ctx, &cx)
 	if err != nil && strings.Contains(err.Error(), "not found") {
 		t.Fatalf("start: %v", err)
 	}
-	if !running(t, ws.ContainerID) {
-		t.Errorf("the workspace is not running after Start: %v", err)
+	if !running(t, cx.ContainerID) {
+		t.Errorf("the computer is not running after Start: %v", err)
 	}
-	if got := networksOf(t, ws.ContainerID); len(got) != 1 || got[0] != open {
-		t.Errorf("the workspace is on %v, want only %s", got, open)
+	if got := networksOf(t, cx.ContainerID); len(got) != 1 || got[0] != open {
+		t.Errorf("the computer is on %v, want only %s", got, open)
 	}
 }

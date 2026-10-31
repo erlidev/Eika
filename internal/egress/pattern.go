@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Mode is what a workspace may reach on the network.
+// Mode is what a computer may reach on the network.
 type Mode string
 
 // The egress modes.

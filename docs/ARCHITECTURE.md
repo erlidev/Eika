@@ -6,15 +6,15 @@ Reasons for the design are in `DECISIONS.md`; wire details in `api/`.
 ## Domain model
 
 ```
-Workspace  A sandbox container with a volume of its own at /workspace. States:
+Computer  A sandbox container with a volume of its own at /workspace. States:
            creating -> running -> stopped (gone if the container disappeared).
-Session    A tree of entries with a head pointer, in one workspace.
-Chat       A session with no workspace: only tools that need none.
+Session    A tree of entries with a head pointer, in one computer.
+Chat       A session with no computer: only tools that need none.
 Run        One execution of the agent loop from a session's head.
 Profile    A named, nullable configuration of what a run sends.
 ```
 
-Every agent action on files or processes happens inside a workspace container
+Every agent action on files or processes happens inside a computer container
 through `executor.Executor`. Model calls, search, fetch, remote MCP, and the
 egress proxy are network calls and run in the harness.
 
@@ -35,7 +35,7 @@ egress proxy are network calls and run in the harness.
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
 | `executor` | The interface every agent action uses, path validation; `local` (tests only), `sandbox` (eikad client) |
 | `eikad` | Daemon handlers, path confinement, wire types |
-| `workspace` | Container and volume lifecycle, confinement, usage |
+| `computer` | Container and volume lifecycle, confinement, usage |
 | `egress` | Egress modes, allowlist patterns, the proxy |
 | `netguard` | Public-address-only dialing |
 | `store` | PostgreSQL pool, embedded migrations, queries |
@@ -123,8 +123,8 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 
 | Table | Holds |
 |---|---|
-| `workspaces` | name, image, state, container_id, sandbox (jsonb: limits, egress), pinned, archived |
-| `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb), pinned, archived |
+| `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), pinned, archived |
+| `sessions` | computer_id (NULL for a chat), title, untitled, kind (user/fork), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb), pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
@@ -136,7 +136,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |
 
-A workspace's sessions are deleted with it; chats are deleted on their own; MCP
+A computer's sessions are deleted with it; chats are deleted on their own; MCP
 credentials cascade from their server. `sessions.head_entry_id` has no foreign
 key (it would be a cycle); `SetSessionHead` checks ownership in its `UPDATE`.
 
@@ -157,8 +157,7 @@ the conversation before it with its summary and the last `kept` messages.
 The entries it covers stay in the tree, so a fork or a head moved above it
 has the whole conversation. A user entry may hold `images` (base64 PNG or
 JPEG with their size), stored inline as the model is sent them. An assistant entry holds the
-message JSON (with tool calls, reasoning, and measured `metrics`) and the
-workspace HEAD commit it was produced at.
+message JSON (with tool calls, reasoning, and measured `metrics`).
 
 ```
 branch in place (head moved to e2)     fork at e2 (path copied)
@@ -172,13 +171,13 @@ branch in place (head moved to e2)     fork at e2 (path copied)
 Both require a resumable entry (`session.PathResumable`: no tool call left
 unanswered); the outline reports it per node. Forks get kind `fork`; `Store.Sessions` with descendants follows
 `parent_session_id` recursively for the sidebar. A fork stays in its
-session's workspace.
+session's computer.
 
 ### Chats
 
 A chat's run gets no executor and no commit function. `sessionTools` drops
-every tool that `NeedsWorkspace`, then applies the tool choice, so the model is
-never offered a workspace tool; the loop also refuses one. The system prompt
+every tool that `NeedsComputer`, then applies the tool choice, so the model is
+never offered a computer tool; the loop also refuses one. The system prompt
 is the same base prompt every session has. web_fetch refuses filters in a chat.
 A chat's fork is a chat.
 
@@ -186,7 +185,7 @@ A chat's fork is a chat.
 
 ```
 cmd/eika -> server.Run
-  store.Open, secret.Load, workspace.NewHost,
+  store.Open, secret.Load, computer.NewHost,
   provider.NewRegistry(openai.New), builtin.Registry, event.NewBus, NewMCP
   -> server.New(Deps) -> Reconcile -> Serve
 
@@ -198,8 +197,8 @@ POST /api/sessions/{id}/messages          GET /api/events
   FinishRun(done | error | aborted)                  per connection
 ```
 
-- **Deps**: store, workspace host, provider registry, secret box, tool
-  registry, question broker, bus, MCP pool. `Workspaces` and `Providers` are
+- **Deps**: store, computer host, provider registry, secret box, tool
+  registry, question broker, bus, MCP pool. `Computers` and `Providers` are
   interfaces declared here.
 - **Auth** is one middleware over `/api`. A bearer token is a sign-in
   session (looked up by SHA-256) or the API token (constant-time compare).
@@ -249,10 +248,10 @@ POST /api/sessions/{id}/messages          GET /api/events
   the run row immediately and follows events. Assistant entries record HEAD
   via `git rev-parse HEAD` through the executor. `FinishRun` retries on a
   context that outlives the run and continues in the background past 30 s.
-  Startup aborts stale `running` rows. Stopping or deleting a workspace or
+  Startup aborts stale `running` rows. Stopping or deleting a computer or
   session, and shutdown, abort the runs involved first.
 - **Bus**: `Emit` never blocks; a slow subscriber loses events and is told
-  with `bus.dropped`. Topics: `global`, `workspace:<id>`, `session:<id>`.
+  with `bus.dropped`. Topics: `global`, `computer:<id>`, `session:<id>`.
 - **Event stream**: a reader goroutine handles `subscribe` and
   `session.replay`; replays write straight to the socket.
 
@@ -283,11 +282,11 @@ and, for long keys, the last four characters.
 ## Sandboxes
 
 ```
- harness (eika)                              workspace container eika-ws-<id>
+ harness (eika)                              computer container eika-cx-<id>
   tool -> executor/sandbox --HTTP, bearer--> eikad :7000
   mcp.Pool -> Host.Process --------------->    /exec /files /stat /list
   Host.Process --------------------------->    /watch /process /environment
-  workspace.Host ---------docker socket--->  container + volume at /workspace
+  computer.Host ---------docker socket--->  container + volume at /workspace
   egress.Proxy :3128 <-----------------------  HTTP(S)_PROXY, when restricted
 ```
 
@@ -309,34 +308,34 @@ daemon's newline-delimited frames into the caller's writers. A 404 is
 
 File routes call the executor after `executor.Resolve` (eikad re-checks after
 symlinks): refused paths are 403, missing 404. Saves publish
-`workspace.state`. There is no terminal and no preview: the person using a
-workspace reaches it only through the agent.
+`computer.state`. There is no terminal and no preview: the person using a
+computer reaches it only through the agent.
 
-### Workspace lifecycle
+### Computer lifecycle
 
-`workspace.Host` wraps the Docker client. `Create` builds the image if the
-spec has a build context, creates volume `eika-ws-<id>` mounted at the
+`computer.Host` wraps the Docker client. `Create` builds the image if the
+spec has a build context, creates volume `eika-cx-<id>` mounted at the
 root, creates the container labelled
-`eika.workspace=<id>` with its sandbox settings, and copies the harness's
+`eika.computer=<id>` with its sandbox settings, and copies the harness's
 static eikad to `/usr/local/bin/eikad` as the entrypoint. `Start` waits for
 `/healthz`. `Stop` keeps the volume; `Destroy` removes container, volume, and
-a per-workspace image. The harness reaches eikad at `http://eika-ws-<id>:7000`.
+a per-computer image. The harness reaches eikad at `http://eika-cx-<id>:7000`.
 
 The server's idle stopper (`server/idle.go`) sweeps once a minute while
 `Server.Run` serves and stops, as `POST .../stop` does, every running holder
 that has not had a run in it for
-`workspace_idle_minutes` (default 15, 0 for never). Last use is in memory:
+`computer_idle_minutes` (default 15, 0 for never). Last use is in memory:
 a run's end, a start, or a sweep that sees a run going; after a restart a
-running workspace gets the whole timeout again.
+running computer gets the whole timeout again.
 
 `List` finds containers by label and `Inspect` recovers tokens from the
 container's environment. `Reconcile` updates recorded states at startup and
-marks a workspace `gone` only when Docker says the container does not exist;
+marks a computer `gone` only when Docker says the container does not exist;
 any other error stops reconciliation without changing states.
 
 ### Limits and egress
 
-`Host.Create` applies the workspace's `sandbox` row; `PUT .../sandbox` writes
+`Host.Create` applies the computer's `sandbox` row; `PUT .../sandbox` writes
 the row then `Host.Confine`s; every start re-applies it.
 
 Limits are `NanoCPUs`, `Memory` (= `MemorySwap`), and `PidsLimit`, changed
@@ -345,16 +344,16 @@ capacity (`Host.Capacity`). `Host.Usage` samples `docker stats`;
 `GET .../usage` adds hosts the proxy refused.
 
 ```
- open: eika-ws-a on eika_sandbox --------------------> internet directly
- allowlist/none: eika-ws-b on eika_sandbox_internal (no route out)
-     HTTP(S)_PROXY=http://<ws id>:<proxy token>@eika:3128
+ open: eika-cx-a on eika_sandbox --------------------> internet directly
+ allowlist/none: eika-cx-b on eika_sandbox_internal (no route out)
+     HTTP(S)_PROXY=http://<computer id>:<proxy token>@eika:3128
      -> egress.Proxy -> allowlisted public hosts only
 ```
 
 `egress.Proxy` takes `CONNECT` and absolute `http://` requests, identifies the
 sandbox from `Proxy-Authorization`, asks `Server.EgressPolicy` per request,
 dials through `netguard`, and answers refusals with 403, remembered per
-workspace (`Proxy.Blocked`). It serves only when both networks exist
+computer (`Proxy.Blocked`). It serves only when both networks exist
 (`Host.EgressControl`). Switching modes connects the container to the new
 network before leaving the old. Proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`,
 `NO_PROXY` in both cases, `NODE_USE_ENV_PROXY`) are given to eikad with
@@ -395,11 +394,11 @@ providers, stores keys, edits quotas, and tries `POST /api/search`.
 ## MCP
 
 ```
-runs.begin -> mcp.Pool.Tools(ctx, workspace)
+runs.begin -> mcp.Pool.Tools(ctx, computer)
   remote: one conn per server, ConnectHTTP
     modern (server/discover) -> initialize -> HTTP+SSE; Bearer from mcp_credentials
-  stdio: one conn per server per workspace
-    Launcher -> Workspaces.Process -> Host.Process -> eikad /process -> command
+  stdio: one conn per server per computer
+    Launcher -> Computers.Process -> Host.Process -> eikad /process -> command
   catalog: tools, resources, templates, prompts
   events: mcp.server on global, mcp.elicitation on session:<id>
 ```
@@ -414,12 +413,12 @@ runs.begin -> mcp.Pool.Tools(ctx, workspace)
   callers share an attempt; a failure stands for 30 s. Modern connections
   hold `subscriptions/listen` open. `Store` (implemented by `server` as
   `mcpStore`) keeps sealed values away from the pool.
-- **Stdio servers** end with their workspace (after its runs). Their
+- **Stdio servers** end with their computer (after its runs). Their
   environment is visible to the agent.
 - **Tools**: `Pool.Tools` waits at most 15 s and returns
   `mcp__<server>__<tool>` (hashed to 64 chars), plus `mcp_list_resources`
   and `mcp_read_resource` when a server has resources. Remote tools are
-  standalone; stdio tools need a workspace. `Pool.Offered` lists tools from
+  standalone; stdio tools need a computer. `Pool.Offered` lists tools from
   the last listing without connecting (for `GET /api/tools` and previews).
   Progress becomes `tool.output`; images and audio are replaced in the model's
   text and kept (≤ 4 MiB) in `tool.result` details. An expired session or
@@ -492,8 +491,8 @@ web/src/
   by part, key parameters; the Context inspector dialog shows a request whole
   with links to the layer behind each part). `ResizableSplit` remembers
   widths; below 1024px side panes become drawers. The coding UI (projects,
-  workspaces, files, terminal, changes, the session tree and fork) is gone
-  from the frontend; the workspace, file and fork routes it called stay until
+  computers, files, terminal, changes, the session tree and fork) is gone
+  from the frontend; the computer, file and fork routes it called stay until
   a later phase 0 item removes them (the project, terminal and preview routes
   are already gone).
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
@@ -527,19 +526,19 @@ An arrow means "may import".
 
 ```
  cmd/eika -> server                     cmd/eikad -> eikad, search/filter
- server -> agent, session, store, workspace, search, mcp, egress,
+ server -> agent, session, store, computer, search, mcp, egress,
            utility, imaging
  agent -> tool, provider                 session -> agent, store
  utility -> provider                      imaging -> provider
  tool -> executor
- executor/sandbox -> eikad (wire types)   workspace -> executor, executor/sandbox
+ executor/sandbox -> eikad (wire types)   computer -> executor, executor/sandbox
  tool/builtin -> search, search/fetch     search/fetch, egress -> netguard
  mcp -> tool, event, mcp/oauth            config, event, secret: leaves
 ```
 
 - Nothing imports `server` except `cmd/`.
-- `tool` never imports `workspace`; tools reach a workspace only through an
-  executor. `mcp` never imports `workspace` or `executor`: the server hands
+- `tool` never imports `computer`; tools reach a computer only through an
+  executor. `mcp` never imports `computer` or `executor`: the server hands
   it a `Store` and a `Launcher`.
 - `search` imports nothing from `internal/`; goja (`search/filter`) is linked
   into eikad only.
@@ -553,7 +552,7 @@ ESLint, `tsc`, Vitest, then the visual suite. Go targets name
 
 - Go: stdlib tests; `providertest` and `executor/local` make the loop
   testable without Docker or a model. `docker`-tagged tests (handlers, store,
-  workspaces) use `storetest` and skip without a daemon.
+  computers) use `storetest` and skip without a daemon.
 - Contract: `docs/api/contract.json` is generated from the wire types; handler
   tests check responses against it and the mock harness checks requests,
   responses, and events.

@@ -1,5 +1,5 @@
 - tabpanel "Tools":
-  - paragraph: A chat has no workspace, so the model can use only the tools below. A change applies from the next message.
+  - paragraph: A chat has no computer, so the model can use only the tools below. A change applies from the next message.
   - text: Tools in this chat set here
   - button "Reset the chat's tools to its profile's"
   - searchbox "Search the tools"
@@ -50,6 +50,6 @@
         - text: search_issues
         - paragraph: Search issues and pull requests across GitHub.
         - text: /~\d+/
-  - heading "Need a workspace" [level=3]
-  - paragraph: "Files and commands belong to a workspace session: bash."
-  - paragraph: "So do the MCP servers that run as a command in the workspace: filesystem."
+  - heading "Need a computer" [level=3]
+  - paragraph: "Files and commands belong to a computer session: bash."
+  - paragraph: "So do the MCP servers that run as a command in the computer: filesystem."

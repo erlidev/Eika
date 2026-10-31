@@ -180,14 +180,14 @@ before the routes it calls.
 - [x] Remove `contextfile` (AGENTS.md discovery) and `WorkspacePrompt`.
 - [x] Remove git projects and the `projects` table. Projects return with a new
       meaning in phase 2.
-- [ ] Rename workspace to computer throughout:
+- [x] Rename workspace to computer throughout:
       - package `computer`
       - `/api/computers`
       - event `computer.state`
       - containers `eika-cx-<id>`, label `eika.computer`
       - frontend types
 - [ ] Create the `home` computer at setup (persistent volume at `/home/eika`).
-      Move the root from `/workspace` to `/home/eika`: `workspace.Root`, the
+      Move the root from `/workspace` to `/home/eika`: `computer.Root`, the
       executor's and eikad's path confinement, and the sandbox image's
       `WORKDIR`. Move what the image installs under the home directory (such
       as `~/go/bin` on `PATH`) to `/opt`, since a volume over `/home/eika`
@@ -1032,6 +1032,58 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-30: renamed workspace to computer (branch `rename-computer`; the
+  dead-code commit is `6fdca6b`, the rename the one after it).
+  - Renamed: package `internal/computer` (and `computers.go` in `server` and
+    `store`), types and functions (`Computer`, `ComputerState`,
+    `ComputerTopic`, `NeedsComputer`, `ErrNoComputer`), `workspace_id` to
+    `computer_id` in every wire type, payload and column, the table
+    `computers` and the index names (edited in the baseline, no migration),
+    the routes `/api/computers...`, the event `computer.state` and its topic
+    `computer:<id>`, the container and volume prefix `eika-cx-<id>`, the label
+    `eika.computer` (the `Makefile`'s smoke cleanup filters on it), the setting
+    `computer_idle_minutes`, the tool property `needs_computer`, and the
+    frontend types, mock harness and UI text. Local variables that held one
+    (`ws`) are `cx`. `make contract` rewrote `docs/api/contract.json`.
+  - Dead code removed first: `Workspace.Dir` and `sandbox.Options.Dir` with the
+    client's path translation and its test, and the unused types in
+    `web/src/api/types/files.ts` that the removed repository layer left
+    behind. There was no eikad `dir` query on `/watch` (the earlier note was
+    wrong about it); the `dir` fields in `docs/api/eikad.md` belong to `/exec`
+    and `/process`.
+  - Left alone on purpose: the path `/workspace` (`computer.Root`,
+    `sandbox.DefaultRoot`, eikad's `-root` default, the sandbox `Dockerfile`'s
+    `WORKDIR` and `chown`, and the path tests), which the `home` item moves;
+    `X-Workspace`, an arbitrary header name in the MCP form's e2e test, and
+    "your Linear workspace" in a mock server's message, both another
+    product's word; history in `REFACTOR_PLAN.md`, this log, and the parts of
+    `DECISIONS.md` that tell what was removed (`internal/workspace/hub`,
+    `fork-with-workspace`, `workspace_prompt`, `parent_workspace_id`,
+    `workspaces.worktree_of`).
+  - Design docs touched only where they would be wrong: the topic and package
+    rows in `design/README.md`, `computer_id` in `runtime.md`, and one
+    "session's computer" in `skills-and-plugins.md`.
+  - A tool description reads "in the computer root" now, one character shorter
+    than before, which moved the mock's estimated token counts: the Context
+    spec's "501 in" is "500 in".
+  - `make check` and `make smoke` pass. Six baselines changed, each looked at
+    first: `chat-light`, `context-light`, `context-inspector-dark`,
+    `profile-editor`, `general-invalid-{light,dark}`. They differ only in the
+    words "computer" and "no computer", and in the token estimates the
+    shorter description moves. The ARIA snapshots that carry the word changed
+    with them.
+  - Found on the way: the `smoke` spec runs a chat with no computer, so the
+    label filter in `smoke-down` and the `eika-cx-` names are exercised by the
+    Docker tests and not by `make smoke`; the `home` item gives smoke a
+    computer. The egress proxy's refusal text still says "Sandbox panel", which
+    the UI no longer has; reword it when the Computer settings tab learns to
+    edit a computer's allowlist. `ARCHITECTURE.md` no longer says an
+    assistant entry records a HEAD commit (an earlier item left that sentence
+    behind).
+  - For the `home` item: `computer.Root`, `sandbox.DefaultRoot` and eikad's
+    `-root` default are three copies of `/workspace`; the Dockerfile's `WORKDIR`
+    and `CMD` are two more, and `/home/eika/go` is made beside it.
 
 - 2026-10-30: removed git projects and the `projects` table (branch
   `remove-projects`).

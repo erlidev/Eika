@@ -37,7 +37,7 @@ type mcpServerWire struct {
 	OAuthClientSecretSet bool     `json:"oauth_client_secret_set"`
 	State                string   `json:"state"`
 	Error                string   `json:"error"`
-	Workspaces           []string `json:"workspaces"`
+	Computers            []string `json:"computers"`
 }
 
 type mcpServersWire struct {
@@ -95,9 +95,9 @@ type mcpLogWire struct {
 
 type mcpToolsWire struct {
 	Tools []struct {
-		Name           string `json:"name"`
-		NeedsWorkspace bool   `json:"needs_workspace"`
-		Server         string `json:"server"`
+		Name          string `json:"name"`
+		NeedsComputer bool   `json:"needs_computer"`
+		Server        string `json:"server"`
 	} `json:"tools"`
 }
 
@@ -153,9 +153,9 @@ func (a *api) mcpDetails(t *testing.T, id string) mcpDetailsWire {
 }
 
 // connectMCP connects a server again and reports how it went.
-func (a *api) connectMCP(t *testing.T, id, workspaceID string) mcpDetailsWire {
+func (a *api) connectMCP(t *testing.T, id, computerID string) mcpDetailsWire {
 	t.Helper()
-	rec := request(t, a.Server, "POST", "/api/mcp/servers/"+id+"/connect", map[string]any{"workspace_id": workspaceID})
+	rec := request(t, a.Server, "POST", "/api/mcp/servers/"+id+"/connect", map[string]any{"computer_id": computerID})
 	return decodeBody[mcpDetailsWire](t, rec, 200)
 }
 
@@ -332,13 +332,13 @@ func TestMCPServerDetailsAndTools(t *testing.T) {
 	}
 
 	// The tool list names the server of each MCP tool; a remote server's
-	// tools need no workspace.
+	// tools need no computer.
 	tools := decodeBody[mcpToolsWire](t, request(t, a.Server, "GET", "/api/tools", nil), 200)
 	servers := map[string]string{}
 	for _, tl := range tools.Tools {
 		servers[tl.Name] = tl.Server
-		if strings.HasPrefix(tl.Name, "mcp_") && tl.NeedsWorkspace {
-			t.Errorf("%s needs a workspace", tl.Name)
+		if strings.HasPrefix(tl.Name, "mcp_") && tl.NeedsComputer {
+			t.Errorf("%s needs a computer", tl.Name)
 		}
 	}
 	if servers["mcp__docs__echo"] != "docs" || servers["mcp__docs__drop"] != "docs" || servers["bash"] != "" {
@@ -585,7 +585,7 @@ func TestAuthorizingAnMCPServer(t *testing.T) {
 	}
 }
 
-func TestAStdioMCPServerRunsInTheWorkspace(t *testing.T) {
+func TestAStdioMCPServerRunsInTheComputer(t *testing.T) {
 	a := newAPI(t)
 	local := &mcptest.Server{Name: "files", Tools: []mcptest.Tool{echoTool("read")}}
 	var spec sandbox.ProcessSpec
@@ -597,25 +597,25 @@ func TestAStdioMCPServerRunsInTheWorkspace(t *testing.T) {
 		"name": "files", "kind": "stdio", "command": "npx", "args": []string{"-y", "files"},
 		"env": map[string]string{"ROOT": "/workspace"},
 	})
-	ws := a.newWorkspace(t)
+	cx := a.newComputer(t)
 
 	refused(t, request(t, a.Server, "POST", "/api/mcp/servers/"+server.ID+"/connect", map[string]any{}), 400)
-	d := a.connectMCP(t, server.ID, ws.ID)
-	if d.Server.State != "connected" || !slices.Equal(d.Server.Workspaces, []string{ws.ID}) || d.Connection == nil || d.Connection.Transport != "stdio" {
+	d := a.connectMCP(t, server.ID, cx.ID)
+	if d.Server.State != "connected" || !slices.Equal(d.Server.Computers, []string{cx.ID}) || d.Connection == nil || d.Connection.Transport != "stdio" {
 		t.Fatalf("details = %+v", d)
 	}
 	if spec.Command != "npx" || !slices.Equal(spec.Args, []string{"-y", "files"}) || !slices.Equal(spec.Env, []string{"ROOT=/workspace"}) {
 		t.Errorf("process = %+v", spec)
 	}
-	if got := a.host.started(); !slices.Equal(got, []string{ws.ID}) {
+	if got := a.host.started(); !slices.Equal(got, []string{cx.ID}) {
 		t.Errorf("started in %v", got)
 	}
 
-	// A workspace session's run offers the tool; it needs the workspace.
-	sess := a.newSession(t, ws.ID)
+	// A computer session's run offers the tool; it needs the computer.
+	sess := a.newSession(t, cx.ID)
 	tools := decodeBody[mcpToolsWire](t, request(t, a.Server, "GET", "/api/tools", nil), 200)
 	for _, tl := range tools.Tools {
-		if tl.Name == "mcp__files__read" && (!tl.NeedsWorkspace || tl.Server != "files") {
+		if tl.Name == "mcp__files__read" && (!tl.NeedsComputer || tl.Server != "files") {
 			t.Errorf("tool = %+v", tl)
 		}
 	}
@@ -629,21 +629,21 @@ func TestAStdioMCPServerRunsInTheWorkspace(t *testing.T) {
 		t.Errorf("tool results = %q", results)
 	}
 	// A chat never offers it.
-	chat := a.newChat(t, "no workspace")
+	chat := a.newChat(t, "no computer")
 	if slices.Contains(chat.Tools, "mcp__files__read") {
 		t.Errorf("chat tools = %v", chat.Tools)
 	}
 
-	// Stopping the workspace ends the server there.
-	decodeBody[workspaceWire](t, request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/stop", nil), 200)
+	// Stopping the computer ends the server there.
+	decodeBody[computerWire](t, request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil), 200)
 	d = a.mcpDetails(t, server.ID)
-	if len(d.Server.Workspaces) != 0 || d.Server.State == "connected" {
-		t.Errorf("after the workspace stopped = %+v", d.Server)
+	if len(d.Server.Computers) != 0 || d.Server.State == "connected" {
+		t.Errorf("after the computer stopped = %+v", d.Server)
 	}
-	// A stopped workspace starts no server.
-	rec := request(t, a.Server, "POST", "/api/mcp/servers/"+server.ID+"/connect", map[string]any{"workspace_id": ws.ID})
+	// A stopped computer starts no server.
+	rec := request(t, a.Server, "POST", "/api/mcp/servers/"+server.ID+"/connect", map[string]any{"computer_id": cx.ID})
 	if _, message := errorOf(t, rec); rec.Code != 409 || !strings.Contains(message, "not running") {
-		t.Errorf("connect in a stopped workspace = %d %q", rec.Code, message)
+		t.Errorf("connect in a stopped computer = %d %q", rec.Code, message)
 	}
 	if got := a.host.started(); len(got) != 1 {
 		t.Errorf("started in %v, want no second process", got)

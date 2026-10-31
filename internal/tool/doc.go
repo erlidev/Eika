@@ -4,8 +4,8 @@
 // Schema for its parameters, and runs one call against a CallContext. The
 // context carries the executor the tool must use for every file and process
 // action, plus the event emitter it streams partial output through, so a tool
-// never touches the harness filesystem and never imports the workspace
-// package. A tool that also implements Standalone runs without a workspace,
+// never touches the harness filesystem and never imports the computer
+// package. A tool that also implements Standalone runs without a computer,
 // which is what a chat offers the model.
 //
 // The entry points are Tool, Standalone, Registry, and CallContext. The built-in tools

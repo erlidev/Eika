@@ -1,7 +1,7 @@
 /**
- * Chat mode: sessions with no workspace, listed in the sidebar, marked as
+ * Chat mode: sessions with no computer, listed in the sidebar, marked as
  * chats in their header, and offering only the tools that need no
- * workspace, which the Tools panel turns on and off. A chat is compared pixel
+ * computer, which the Tools panel turns on and off. A chat is compared pixel
  * for pixel once; the rest is checked by what the page says and offers.
  */
 
@@ -38,7 +38,7 @@ test("a chat has a Tools panel", async ({ open, expectAria }) => {
   await expect(eika.page.getByRole("switch", { name: "web_fetch" })).toBeChecked();
 });
 
-test("a session in a workspace is no chat and has no Tools panel", async ({ open }) => {
+test("a session in a computer is no chat and has no Tools panel", async ({ open }) => {
   const eika = await open({ scenario: "workbench" });
   const header = eika.page.getByRole("region", { name: "Session" }).locator("header");
   await expect(header.getByText("Chat")).toBeHidden();

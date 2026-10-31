@@ -21,23 +21,23 @@ import {
 } from "@/features/profiles/form";
 
 const tools: Tool[] = [
-  { name: "ask_user", description: "Ask the user", needs_workspace: false, tokens: 10 },
-  { name: "bash", description: "Run a command", needs_workspace: true, tokens: 40 },
+  { name: "ask_user", description: "Ask the user", needs_computer: false, tokens: 10 },
+  { name: "bash", description: "Run a command", needs_computer: true, tokens: 40 },
   {
     name: "mcp__docs__read",
     description: "Read a page",
-    needs_workspace: false,
+    needs_computer: false,
     server: "docs",
     tokens: 5,
   },
   {
     name: "mcp__docs__search",
     description: "Search the docs",
-    needs_workspace: false,
+    needs_computer: false,
     server: "docs",
     tokens: 7,
   },
-  { name: "mcp__fs__list", description: "", needs_workspace: true, server: "fs", tokens: 3 },
+  { name: "mcp__fs__list", description: "", needs_computer: true, server: "fs", tokens: 3 },
 ];
 
 function configuration(over: Partial<Configuration> = {}): Configuration {
@@ -123,7 +123,7 @@ describe("inheritedSampling", () => {
 });
 
 describe("tool choices", () => {
-  it("leaves what needs a workspace out of a chat's choice", () => {
+  it("leaves what needs a computer out of a chat's choice", () => {
     const chat = toolGroups(tools, true);
     expect(chat.builtin.map((t) => t.name)).toEqual(["ask_user"]);
     expect(chat.servers.map((s) => s.server)).toEqual(["docs"]);

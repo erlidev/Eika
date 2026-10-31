@@ -1,7 +1,7 @@
 // Package event defines the envelope and type names for everything Eika
 // streams to a client.
 //
-// The agent loop and the workspace lifecycle both emit the
+// The agent loop and the computer lifecycle both emit the
 // same Event value: a type name, a topic to route it to, a UTC timestamp, and
 // a JSON payload whose struct lives in payload.go. Keeping the envelope and the
 // payloads here lets the server fan events out and the frontend decode them

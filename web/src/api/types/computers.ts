@@ -1,27 +1,27 @@
-/** Wire types for workspaces and their sandboxes. */
+/** Wire types for computers and their sandboxes. */
 
-/** WorkspaceLifecycle is a workspace's lifecycle state. */
-export type WorkspaceLifecycle = "creating" | "running" | "stopped" | "gone";
+/** ComputerLifecycle is a computer's lifecycle state. */
+export type ComputerLifecycle = "creating" | "running" | "stopped" | "gone";
 
-/** Workspace is one sandbox container with a volume of its own. */
-export type Workspace = {
+/** Computer is one sandbox container with a volume of its own. */
+export type Computer = {
   id: string;
   name: string;
   image: string;
-  state: WorkspaceLifecycle;
+  state: ComputerLifecycle;
   container_id?: string;
   /** sandbox is what the container may consume, reach, and expose. */
   sandbox: Sandbox;
-  /** pinned workspaces are listed before the others. */
+  /** pinned computers are listed before the others. */
   pinned: boolean;
-  /** archived workspaces are set aside under an Archived heading; the container is left as it is. */
+  /** archived computers are set aside under an Archived heading; the container is left as it is. */
   archived: boolean;
   created_at: string;
   updated_at: string;
 };
 
-/** UpdateWorkspace is the body of PATCH /api/workspaces/{id}; an absent field is left alone. */
-export type UpdateWorkspace = {
+/** UpdateComputer is the body of PATCH /api/computers/{id}; an absent field is left alone. */
+export type UpdateComputer = {
   name?: string;
   pinned?: boolean;
   archived?: boolean;
@@ -51,14 +51,14 @@ export type SandboxEgress = {
   allow: string[] | null;
 };
 
-/** Sandbox is what a workspace's container may consume and reach. */
+/** Sandbox is what a computer's container may consume and reach. */
 export type Sandbox = {
   limits: SandboxLimits;
   egress: SandboxEgress;
 };
 
-/** WorkspaceUsage is the body of GET /api/workspaces/{id}/usage: one sample. */
-export type WorkspaceUsage = {
+/** ComputerUsage is the body of GET /api/computers/{id}/usage: one sample. */
+export type ComputerUsage = {
   /** cpu_percent is the CPU used over the sample, 100 per core. */
   cpu_percent: number;
   /** cpus is the cores the container may use: its limit, or the host's. */
@@ -75,19 +75,19 @@ export type WorkspaceUsage = {
   blocked: BlockedHost[] | null;
 };
 
-/** BlockedHost is a host the egress proxy refused a workspace. */
+/** BlockedHost is a host the egress proxy refused a computer. */
 export type BlockedHost = {
   host: string;
   count: number;
   last: string;
 };
 
-/** CreateWorkspace is the body of POST /api/workspaces. */
-export type CreateWorkspace = {
+/** CreateComputer is the body of POST /api/computers. */
+export type CreateComputer = {
   name: string;
   image?: string;
   build_context?: string;
   dockerfile?: string;
-  /** sandbox left out gives the new workspace the settings' defaults. */
+  /** sandbox left out gives the new computer the settings' defaults. */
   sandbox?: Sandbox;
 };

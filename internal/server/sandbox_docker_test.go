@@ -11,11 +11,11 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/egress"
-	"github.com/erlidev/eika/internal/workspace"
 )
 
-// sandboxWire is a workspace's sandbox as the API sends it.
+// sandboxWire is a computer's sandbox as the API sends it.
 type sandboxWire struct {
 	Limits struct {
 		CPUs     float64 `json:"cpus"`
@@ -28,7 +28,7 @@ type sandboxWire struct {
 	} `json:"egress"`
 }
 
-// usageWire is GET /api/workspaces/{id}/usage.
+// usageWire is GET /api/computers/{id}/usage.
 type usageWire struct {
 	CPUPercent float64 `json:"cpu_percent"`
 	CPUs       float64 `json:"cpus"`
@@ -47,29 +47,29 @@ func sandboxOf(cpus float64, memoryMB, pids int64, mode string, allow []string) 
 	}
 }
 
-func TestANewWorkspaceGetsTheSandboxDefaults(t *testing.T) {
+func TestANewComputerGetsTheSandboxDefaults(t *testing.T) {
 	a := newAPI(t)
 
-	ws := a.newWorkspace(t)
-	if ws.Sandbox.Limits.PIDs != 4096 || ws.Sandbox.Limits.CPUs != 0 || ws.Sandbox.Limits.MemoryMB != 0 {
-		t.Errorf("limits = %+v, want the built-in process limit and nothing else", ws.Sandbox.Limits)
+	cx := a.newComputer(t)
+	if cx.Sandbox.Limits.PIDs != 4096 || cx.Sandbox.Limits.CPUs != 0 || cx.Sandbox.Limits.MemoryMB != 0 {
+		t.Errorf("limits = %+v, want the built-in process limit and nothing else", cx.Sandbox.Limits)
 	}
-	if ws.Sandbox.Egress.Mode != "open" || !slices.Equal(ws.Sandbox.Egress.Allow, egress.DefaultAllowlist) {
-		t.Errorf("sandbox = %+v, want open egress with the suggested allowlist and no ports", ws.Sandbox)
+	if cx.Sandbox.Egress.Mode != "open" || !slices.Equal(cx.Sandbox.Egress.Allow, egress.DefaultAllowlist) {
+		t.Errorf("sandbox = %+v, want open egress with the suggested allowlist and no ports", cx.Sandbox)
 	}
-	if got := a.host.confinements(ws.ID); len(got) != 1 || got[0].Limits.PIDs != 4096 || got[0].Proxied {
+	if got := a.host.confinements(cx.ID); len(got) != 1 || got[0].Limits.PIDs != 4096 || got[0].Proxied {
 		t.Errorf("created with %+v, want the default limits", got)
 	}
 
-	// The settings' defaults apply to the next workspace.
+	// The settings' defaults apply to the next computer.
 	rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{
 		"sandbox_limits": map[string]any{"cpus": 2, "memory_mb": 2048, "pids": 512},
 	})
 	if rec.Code != 200 {
 		t.Fatalf("put settings = %d: %s", rec.Code, rec.Body.String())
 	}
-	next := a.newWorkspace(t)
-	want := workspace.Limits{CPUs: 2, MemoryBytes: 2048 << 20, PIDs: 512}
+	next := a.newComputer(t)
+	want := computer.Limits{CPUs: 2, MemoryBytes: 2048 << 20, PIDs: 512}
 	if got := a.host.confinements(next.ID); len(got) != 1 || got[0].Limits != want {
 		t.Errorf("created with %+v, want %+v", got, want)
 	}
@@ -99,10 +99,10 @@ func TestSandboxSettingsAreChecked(t *testing.T) {
 	}
 }
 
-func TestCreatingAWorkspaceChecksItsSandbox(t *testing.T) {
+func TestCreatingAComputerChecksItsSandbox(t *testing.T) {
 	a := newAPI(t)
 	create := func(sb map[string]any) *httptest.ResponseRecorder {
-		return request(t, a.Server, "POST", "/api/workspaces", map[string]any{
+		return request(t, a.Server, "POST", "/api/computers", map[string]any{
 			"name": "work", "sandbox": sb,
 		})
 	}
@@ -123,12 +123,12 @@ func TestCreatingAWorkspaceChecksItsSandbox(t *testing.T) {
 
 	a.host.egressControl = true
 	rec := create(sandboxOf(1.5, 1024, 256, "allowlist", []string{"GitHub.com ", "github.com", "*.npmjs.org"}))
-	ws := decodeBody[workspaceWire](t, rec, 201)
-	if !slices.Equal(ws.Sandbox.Egress.Allow, []string{"github.com", "*.npmjs.org"}) {
-		t.Errorf("allowlist = %v, want it lowercased, trimmed, and without the repeat", ws.Sandbox.Egress.Allow)
+	cx := decodeBody[computerWire](t, rec, 201)
+	if !slices.Equal(cx.Sandbox.Egress.Allow, []string{"github.com", "*.npmjs.org"}) {
+		t.Errorf("allowlist = %v, want it lowercased, trimmed, and without the repeat", cx.Sandbox.Egress.Allow)
 	}
-	want := workspace.Confinement{Limits: workspace.Limits{CPUs: 1.5, MemoryBytes: 1 << 30, PIDs: 256}, Proxied: true}
-	if got := a.host.confinements(ws.ID); len(got) != 1 || got[0] != want {
+	want := computer.Confinement{Limits: computer.Limits{CPUs: 1.5, MemoryBytes: 1 << 30, PIDs: 256}, Proxied: true}
+	if got := a.host.confinements(cx.ID); len(got) != 1 || got[0] != want {
 		t.Errorf("created with %+v, want %+v", got, want)
 	}
 }
@@ -136,49 +136,49 @@ func TestCreatingAWorkspaceChecksItsSandbox(t *testing.T) {
 func TestChangingASandboxAppliesItToTheContainer(t *testing.T) {
 	a := newAPI(t)
 	a.host.egressControl = true
-	ws := a.newWorkspace(t)
+	cx := a.newComputer(t)
 
-	rec := request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(2, 4096, 0, "none", []string{"github.com"}))
-	changed := decodeBody[workspaceWire](t, rec, 200)
+	rec := request(t, a.Server, "PUT", "/api/computers/"+cx.ID+"/sandbox", sandboxOf(2, 4096, 0, "none", []string{"github.com"}))
+	changed := decodeBody[computerWire](t, rec, 200)
 	if changed.Sandbox.Egress.Mode != "none" || changed.Sandbox.Limits.MemoryMB != 4096 {
 		t.Errorf("sandbox = %+v, want what was sent", changed.Sandbox)
 	}
-	confined := a.host.confinements(ws.ID)
-	want := workspace.Confinement{Limits: workspace.Limits{CPUs: 2, MemoryBytes: 4096 << 20}, Proxied: true}
+	confined := a.host.confinements(cx.ID)
+	want := computer.Confinement{Limits: computer.Limits{CPUs: 2, MemoryBytes: 4096 << 20}, Proxied: true}
 	if len(confined) != 2 || confined[1] != want {
 		t.Fatalf("confinements = %+v, want the new one applied at once", confined)
 	}
-	if got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID, nil), 200); !reflect.DeepEqual(got.Sandbox, changed.Sandbox) {
+	if got := decodeBody[computerWire](t, request(t, a.Server, "GET", "/api/computers/"+cx.ID, nil), 200); !reflect.DeepEqual(got.Sandbox, changed.Sandbox) {
 		t.Errorf("stored sandbox = %+v, want %+v", got.Sandbox, changed.Sandbox)
 	}
 
 	// A start applies the recorded sandbox again, which completes a change
 	// the container took only part of.
-	request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/stop", nil)
-	request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/start", nil)
-	if confined := a.host.confinements(ws.ID); len(confined) != 3 || confined[2] != want {
+	request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil)
+	request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/start", nil)
+	if confined := a.host.confinements(cx.ID); len(confined) != 3 || confined[2] != want {
 		t.Errorf("confinements after a restart = %+v, want the recorded one again", confined)
 	}
 
-	if rec := request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(0, 0, 0, "sideways", nil)); rec.Code != 400 {
+	if rec := request(t, a.Server, "PUT", "/api/computers/"+cx.ID+"/sandbox", sandboxOf(0, 0, 0, "sideways", nil)); rec.Code != 400 {
 		t.Errorf("an unknown mode = %d, want 400", rec.Code)
 	}
-	if rec := request(t, a.Server, "PUT", "/api/workspaces/missing/sandbox", sandboxOf(0, 0, 0, "open", nil)); rec.Code != 404 {
-		t.Errorf("a missing workspace = %d, want 404", rec.Code)
+	if rec := request(t, a.Server, "PUT", "/api/computers/missing/sandbox", sandboxOf(0, 0, 0, "open", nil)); rec.Code != 404 {
+		t.Errorf("a missing computer = %d, want 404", rec.Code)
 	}
 }
 
 func TestUsageReportsTheSampleAndTheRefusedHosts(t *testing.T) {
 	a := newAPI(t)
 	a.host.egressControl = true
-	ws := a.newWorkspace(t)
-	request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(0, 0, 100, "allowlist", []string{"github.com"}))
+	cx := a.newComputer(t)
+	request(t, a.Server, "PUT", "/api/computers/"+cx.ID+"/sandbox", sandboxOf(0, 0, 100, "allowlist", []string{"github.com"}))
 
 	// The sandbox asks the proxy for a host that is not on its list.
 	proxy := httptest.NewServer(a.egress)
 	defer proxy.Close()
 	proxyURL, _ := url.Parse(proxy.URL)
-	proxyURL.User = url.UserPassword(ws.ID, "proxy-token-"+ws.ID)
+	proxyURL.User = url.UserPassword(cx.ID, "proxy-token-"+cx.ID)
 	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
 	resp, err := client.Get("http://example.com/")
 	if err != nil {
@@ -189,7 +189,7 @@ func TestUsageReportsTheSampleAndTheRefusedHosts(t *testing.T) {
 		t.Errorf("proxy status = %d, want 403", resp.StatusCode)
 	}
 
-	usage := decodeBody[usageWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID+"/usage", nil), 200)
+	usage := decodeBody[usageWire](t, request(t, a.Server, "GET", "/api/computers/"+cx.ID+"/usage", nil), 200)
 	if usage.CPUPercent != 42 || usage.CPUs != 4 || usage.PIDsLimit != 100 {
 		t.Errorf("usage = %+v, want the sample, the host's cores, and the process limit", usage)
 	}
@@ -197,26 +197,26 @@ func TestUsageReportsTheSampleAndTheRefusedHosts(t *testing.T) {
 		t.Errorf("blocked = %+v, want example.com", usage.Blocked)
 	}
 
-	request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/stop", nil)
-	if rec := request(t, a.Server, "GET", "/api/workspaces/"+ws.ID+"/usage", nil); rec.Code != 409 {
-		t.Errorf("usage of a stopped workspace = %d, want 409", rec.Code)
+	request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil)
+	if rec := request(t, a.Server, "GET", "/api/computers/"+cx.ID+"/usage", nil); rec.Code != 409 {
+		t.Errorf("usage of a stopped computer = %d, want 409", rec.Code)
 	}
 }
 
-func TestEgressPolicyKnowsAWorkspaceByItsProxyToken(t *testing.T) {
+func TestEgressPolicyKnowsAComputerByItsProxyToken(t *testing.T) {
 	a := newAPI(t)
 	a.host.egressControl = true
-	ws := a.newWorkspace(t)
-	request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(0, 0, 0, "allowlist", []string{"github.com"}))
+	cx := a.newComputer(t)
+	request(t, a.Server, "PUT", "/api/computers/"+cx.ID+"/sandbox", sandboxOf(0, 0, 0, "allowlist", []string{"github.com"}))
 
-	policy, err := a.EgressPolicy(t.Context(), ws.ID)
+	policy, err := a.EgressPolicy(t.Context(), cx.ID)
 	if err != nil {
 		t.Fatalf("policy: %v", err)
 	}
-	if policy.Token != "proxy-token-"+ws.ID || policy.Mode != egress.ModeAllowlist || !slices.Equal(policy.Allow, []string{"github.com"}) {
+	if policy.Token != "proxy-token-"+cx.ID || policy.Mode != egress.ModeAllowlist || !slices.Equal(policy.Allow, []string{"github.com"}) {
 		t.Errorf("policy = %+v", policy)
 	}
-	if _, err := a.EgressPolicy(t.Context(), "missing"); !errors.Is(err, egress.ErrUnknownWorkspace) {
-		t.Errorf("policy of a missing workspace = %v, want ErrUnknownWorkspace", err)
+	if _, err := a.EgressPolicy(t.Context(), "missing"); !errors.Is(err, egress.ErrUnknownComputer) {
+		t.Errorf("policy of a missing computer = %v, want ErrUnknownComputer", err)
 	}
 }

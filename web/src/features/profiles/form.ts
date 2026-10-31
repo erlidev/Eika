@@ -283,13 +283,13 @@ export type ToolGroups = {
 
 /**
  * toolGroups sorts the harness's tools for a choice. A chat's editor leaves
- * out what needs a workspace; a profile's serves both kinds of session.
+ * out what needs a computer; a profile's serves both kinds of session.
  */
 export function toolGroups(tools: readonly Tool[], chat: boolean): ToolGroups {
   const builtin: Tool[] = [];
   const servers = new Map<string, Tool[]>();
   for (const t of tools) {
-    if (chat && t.needs_workspace) continue;
+    if (chat && t.needs_computer) continue;
     if (t.server === undefined) builtin.push(t);
     else servers.set(t.server, [...(servers.get(t.server) ?? []), t]);
   }

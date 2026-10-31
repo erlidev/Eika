@@ -1,4 +1,4 @@
-package workspace
+package computer
 
 import (
 	"archive/tar"

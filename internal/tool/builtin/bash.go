@@ -11,7 +11,7 @@ import (
 	"github.com/erlidev/eika/internal/tool"
 )
 
-// bashTool runs a shell command in the workspace.
+// bashTool runs a shell command in the computer.
 type bashTool struct{}
 
 // bashArgs are the parameters of a bash call.
@@ -27,7 +27,7 @@ func (bashTool) Name() string { return "bash" }
 // tools: bash is how the model reads, writes, and edits files, so the
 // description says how to do that well and leaves the rest to the model.
 func (bashTool) Description() string {
-	return `Run a shell command with sh -c in the workspace root. Standard output and standard error are combined and returned with the exit code; long output is truncated in the middle.
+	return `Run a shell command with sh -c in the computer root. Standard output and standard error are combined and returned with the exit code; long output is truncated in the middle.
 
 This is also how you explore, read, and edit files:
 - Search with rg (or grep -rn), find files with rg --files or find, and list directories with ls.

@@ -3,15 +3,15 @@ import { describe, expect, it } from "vitest";
 import type { Tool } from "@/api/types";
 import { outOfChat, toolSummary } from "@/features/session/tools";
 
-const tool = (name: string, needsWorkspace: boolean): Tool => ({
+const tool = (name: string, needsComputer: boolean): Tool => ({
   name,
   description: `${name} does a thing.`,
-  needs_workspace: needsWorkspace,
+  needs_computer: needsComputer,
   tokens: 10,
 });
 
 describe("outOfChat", () => {
-  it("lists the built-in tools and the servers that need a workspace", () => {
+  it("lists the built-in tools and the servers that need a computer", () => {
     const out = outOfChat([
       tool("ask_user", false),
       tool("ls", true),

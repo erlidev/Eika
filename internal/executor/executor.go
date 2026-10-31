@@ -7,25 +7,25 @@ import (
 	"time"
 )
 
-// ErrNotFound reports that a workspace path does not exist. Executor
+// ErrNotFound reports that a computer path does not exist. Executor
 // implementations must wrap this error for missing files and directories.
 var ErrNotFound = fs.ErrNotExist
 
-// Executor runs commands and file operations inside one workspace root.
+// Executor runs commands and file operations inside one computer root.
 type Executor interface {
-	// Root reports the absolute path of the workspace root inside the
+	// Root reports the absolute path of the computer root inside the
 	// execution environment.
 	Root() string
 	// Exec runs a command, streaming its output to the writers in spec.
 	Exec(ctx context.Context, spec ExecSpec) (ExecResult, error)
-	// ReadFile returns the contents of a workspace-relative path.
+	// ReadFile returns the contents of a computer-relative path.
 	ReadFile(ctx context.Context, path string, opts ReadOpts) ([]byte, error)
-	// WriteFile writes data to a workspace-relative path, creating parent
+	// WriteFile writes data to a computer-relative path, creating parent
 	// directories as needed.
 	WriteFile(ctx context.Context, path string, data []byte) error
-	// Stat describes one workspace-relative path.
+	// Stat describes one computer-relative path.
 	Stat(ctx context.Context, path string) (FileInfo, error)
-	// List describes the direct children of a workspace-relative directory.
+	// List describes the direct children of a computer-relative directory.
 	List(ctx context.Context, path string) ([]FileInfo, error)
 }
 
@@ -57,7 +57,7 @@ type ReadOpts struct {
 	MaxBytes int64
 }
 
-// FileInfo describes one file or directory. Path is workspace-relative and
+// FileInfo describes one file or directory. Path is computer-relative and
 // slash-separated; Name is the base name.
 type FileInfo struct {
 	Name    string

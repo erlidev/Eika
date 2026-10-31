@@ -11,7 +11,7 @@ import (
 
 // conn is one connection and what it serves.
 type conn struct {
-	workspace string
+	computer string
 	// ready is closed when connecting finished, one way or the other;
 	// cancelOpen ends a connection attempt that is no longer wanted.
 	ready      chan struct{}
@@ -59,7 +59,7 @@ func (p *Pool) connectInBackground(s *server) {
 // connection returns a live connection to a server, connecting when there
 // is none. A connection that failed recently is not tried again unless
 // retry says so, so a server that is down costs each run nothing.
-func (p *Pool) connection(ctx context.Context, id, workspaceID string, retry bool) (*conn, error) {
+func (p *Pool) connection(ctx context.Context, id, computerID string, retry bool) (*conn, error) {
 	s, cfg, err := p.lookup(ctx, id)
 	if err != nil {
 		return nil, err
@@ -69,10 +69,10 @@ func (p *Pool) connection(ctx context.Context, id, workspaceID string, retry boo
 	}
 	key := ""
 	if cfg.Kind == KindStdio {
-		if workspaceID == "" {
-			return nil, ErrNeedsWorkspace
+		if computerID == "" {
+			return nil, ErrNeedsComputer
 		}
-		key = workspaceID
+		key = computerID
 	}
 	s.mu.Lock()
 	c := s.connFor(key)
@@ -91,7 +91,7 @@ func (p *Pool) connection(ctx context.Context, id, workspaceID string, retry boo
 	fresh := c == nil
 	var openCtx context.Context
 	if fresh {
-		c = &conn{workspace: key, ready: make(chan struct{}), attempted: time.Now()}
+		c = &conn{computer: key, ready: make(chan struct{}), attempted: time.Now()}
 		openCtx, c.cancelOpen = context.WithTimeout(p.ctx, 2*requestTimeout)
 		s.setConn(key, c)
 	}
@@ -141,7 +141,7 @@ func (p *Pool) open(ctx context.Context, s *server, c *conn, cfg ServerConfig) {
 	}
 	lists := p.catalog(ctx, client)
 	s.mu.Lock()
-	current := s.connFor(c.workspace) == c
+	current := s.connFor(c.computer) == c
 	if current {
 		c.client, c.lists = client, lists
 		s.catalog = lists
@@ -157,7 +157,7 @@ func (p *Pool) open(ctx context.Context, s *server, c *conn, cfg ServerConfig) {
 		return
 	}
 	info := client.Info()
-	s.addLog("eika", "info", fmt.Sprintf("connected: %s %s over %s%s", info.Era, info.Version, info.Transport, where(c.workspace)))
+	s.addLog("eika", "info", fmt.Sprintf("connected: %s %s over %s%s", info.Era, info.Version, info.Transport, where(c.computer)))
 	if client.listens() {
 		listenCtx, stopListening := context.WithCancel(p.ctx)
 		c.stopListening = stopListening
@@ -173,7 +173,7 @@ func (p *Pool) open(ctx context.Context, s *server, c *conn, cfg ServerConfig) {
 
 // dial opens the connection itself: over HTTP with the configured headers
 // and the access token, refreshing an expired token once, or over a process
-// the launcher starts in the workspace.
+// the launcher starts in the computer.
 func (p *Pool) dial(ctx context.Context, s *server, c *conn, cfg ServerConfig, handlers Handlers) (*Client, error) {
 	switch cfg.Kind {
 	case KindHTTP:
@@ -189,7 +189,7 @@ func (p *Pool) dial(ctx context.Context, s *server, c *conn, cfg ServerConfig, h
 			return nil, errors.New("this harness cannot start stdio servers")
 		}
 		stderr := func(line string) { s.addLog("stderr", "info", line) }
-		rw, err := p.opts.Launcher.Launch(ctx, c.workspace, Command{Name: cfg.Command, Args: cfg.Args, Env: cfg.Env}, stderr)
+		rw, err := p.opts.Launcher.Launch(ctx, c.computer, Command{Name: cfg.Command, Args: cfg.Args, Env: cfg.Env}, stderr)
 		if err != nil {
 			return nil, fmt.Errorf("start %s: %w", cfg.Command, err)
 		}
@@ -213,7 +213,7 @@ func (p *Pool) failed(s *server, c *conn, err error) {
 		s.mu.Unlock()
 		s.addLog("eika", "warning", "the server asks for authorization")
 	} else {
-		s.addLog("eika", "error", fmt.Sprintf("connection failed%s: %v", where(c.workspace), err))
+		s.addLog("eika", "error", fmt.Sprintf("connection failed%s: %v", where(c.computer), err))
 	}
 	s.mu.Lock()
 	c.err = err
@@ -316,7 +316,7 @@ func (p *Pool) relist(s *server, c *conn) {
 	lists := p.catalog(ctx, client)
 	s.mu.Lock()
 	c.lists = lists
-	if s.connFor(c.workspace) == c {
+	if s.connFor(c.computer) == c {
 		s.catalog = lists
 	}
 	s.mu.Unlock()
@@ -360,7 +360,7 @@ func (p *Pool) listen(ctx context.Context, s *server, c *conn) {
 // It runs on the transport's goroutine, so the closing is left to another.
 func (p *Pool) dropped(s *server, c *conn, err error) {
 	s.mu.Lock()
-	current := s.connFor(c.workspace) == c
+	current := s.connFor(c.computer) == c
 	if current {
 		c.err = err
 	}
@@ -368,7 +368,7 @@ func (p *Pool) dropped(s *server, c *conn, err error) {
 	if !current {
 		return
 	}
-	s.addLog("eika", "error", fmt.Sprintf("connection lost%s: %v", where(c.workspace), err))
+	s.addLog("eika", "error", fmt.Sprintf("connection lost%s: %v", where(c.computer), err))
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -409,10 +409,10 @@ func (c *conn) close() {
 	}
 }
 
-// where names the workspace a connection is in, for a log line.
-func where(workspace string) string {
-	if workspace == "" {
+// where names the computer a connection is in, for a log line.
+func where(computer string) string {
+	if computer == "" {
 		return ""
 	}
-	return " in workspace " + workspace
+	return " in computer " + computer
 }

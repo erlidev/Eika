@@ -410,7 +410,7 @@ entries are kept. Changes:
   - `sensitive` and `suspicious`: Sentry's labels, mirrored for the UI
     (`sentry.md` 6).
   - `last_active_at`.
-  It loses `workspace_id`, `tools`, `profile_id` and `overrides`.
+  It loses `computer_id`, `tools`, `profile_id` and `overrides`.
 - Entry kinds gain `preamble` (the snapshot above) and `notice` (harness text shown
   to the user, also sent as part of the next user-side `<context>`). They lose
   `commit_sha`. User and assistant entries in the home session record their
@@ -551,7 +551,7 @@ assignment.
 
 ## 10. Computers
 
-The `workspace` package becomes `computer`. It keeps:
+The `workspace` package is now `computer` (renamed in phase 0). It keeps:
 
 - Docker lifecycle, confinement, limits and usage
 - the idle stopper

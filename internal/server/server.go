@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/event"
@@ -25,38 +26,37 @@ import (
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool"
 	"github.com/erlidev/eika/internal/tool/builtin"
-	"github.com/erlidev/eika/internal/workspace"
 )
 
 // shutdownTimeout bounds how long in-flight requests may finish after the
 // context passed to Run is cancelled.
 const shutdownTimeout = 10 * time.Second
 
-// Workspaces is the part of the workspace host the API uses. It is an
-// interface so that the handler tests run against a workspace backed by a
-// temporary directory instead of a Docker daemon; *workspace.Host is the one
+// Computers is the part of the computer host the API uses. It is an
+// interface so that the handler tests run against a computer backed by a
+// temporary directory instead of a Docker daemon; *computer.Host is the one
 // production implementation.
-type Workspaces interface {
-	Create(ctx context.Context, spec workspace.Spec) (workspace.Workspace, error)
-	Start(ctx context.Context, ws *workspace.Workspace) error
-	Stop(ctx context.Context, ws *workspace.Workspace) error
-	Destroy(ctx context.Context, ws *workspace.Workspace) error
-	Inspect(ctx context.Context, id string) (workspace.Workspace, error)
-	List(ctx context.Context) ([]workspace.Workspace, error)
-	Executor(ws workspace.Workspace) (executor.Executor, error)
-	// Process starts a long-lived process in a running workspace, which is
+type Computers interface {
+	Create(ctx context.Context, spec computer.Spec) (computer.Computer, error)
+	Start(ctx context.Context, cx *computer.Computer) error
+	Stop(ctx context.Context, cx *computer.Computer) error
+	Destroy(ctx context.Context, cx *computer.Computer) error
+	Inspect(ctx context.Context, id string) (computer.Computer, error)
+	List(ctx context.Context) ([]computer.Computer, error)
+	Executor(cx computer.Computer) (executor.Executor, error)
+	// Process starts a long-lived process in a running computer, which is
 	// how a stdio MCP server runs there. It is not part of the executor, so
 	// no tool can hold a process of its own.
-	Process(ctx context.Context, ws workspace.Workspace, spec sandbox.ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error)
+	Process(ctx context.Context, cx computer.Computer, spec sandbox.ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error)
 	HasImage(ctx context.Context, ref string) (bool, error)
-	// Confine applies a workspace's limits and network to its container,
+	// Confine applies a computer's limits and network to its container,
 	// running or stopped, without restarting it.
-	Confine(ctx context.Context, ws *workspace.Workspace, c workspace.Confinement) error
-	// Usage samples what a running workspace is consuming.
-	Usage(ctx context.Context, ws workspace.Workspace) (workspace.Usage, error)
+	Confine(ctx context.Context, cx *computer.Computer, c computer.Confinement) error
+	// Usage samples what a running computer is consuming.
+	Usage(ctx context.Context, cx computer.Computer) (computer.Usage, error)
 	// Capacity is what the Docker host has to give, which bounds a limit.
-	Capacity(ctx context.Context) (workspace.Capacity, error)
-	// EgressControl reports whether a workspace's egress can be restricted.
+	Capacity(ctx context.Context) (computer.Capacity, error)
+	// EgressControl reports whether a computer's egress can be restricted.
 	EgressControl() bool
 }
 
@@ -75,9 +75,9 @@ type Providers interface {
 // stream alone, and with it every other field must be set too, because every
 // remaining route reads or writes rows.
 type Deps struct {
-	Store      *store.Store
-	Workspaces Workspaces
-	Providers  Providers
+	Store     *store.Store
+	Computers Computers
+	Providers Providers
 	// Secrets seals the credentials the UI writes, such as API keys, and opens
 	// them again when a provider needs one.
 	Secrets   *secret.Box
@@ -117,14 +117,14 @@ type Server struct {
 	runs *runs
 	// titles names untitled sessions after their first message.
 	titles *titles
-	// idle stops the running workspaces no run has used for a while.
-	idle *idleWorkspaces
+	// idle stops the running computers no run has used for a while.
+	idle *idleComputers
 
 	// loginMu makes sign-in attempts take turns, which bounds how fast a
 	// password can be guessed without locking its owner out.
 	loginMu sync.Mutex
 
-	// proxyTokens caches each workspace's egress proxy token, read from its
+	// proxyTokens caches each computer's egress proxy token, read from its
 	// container the first time the proxy is asked about it.
 	proxyTokens proxyTokens
 }
@@ -142,7 +142,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	}
 	s.runs = newRuns(s)
 	s.titles = newTitles(s)
-	s.idle = newIdleWorkspaces(s)
+	s.idle = newIdleComputers(s)
 	s.routes()
 	return s
 }
@@ -155,11 +155,11 @@ func (s *Server) Handler() http.Handler { return s.mux }
 func (s *Server) Bus() *event.Bus { return s.deps.Bus }
 
 // Run serves until ctx is cancelled, then drains in-flight requests and stops
-// the runs that are still going. While it serves, it stops the workspaces
+// the runs that are still going. While it serves, it stops the computers
 // that go unused for the idle timeout.
 func (s *Server) Run(ctx context.Context) error {
 	defer s.Close()
-	if s.deps.Store != nil && s.deps.Workspaces != nil {
+	if s.deps.Store != nil && s.deps.Computers != nil {
 		watchCtx, cancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
 		wg.Go(func() { s.idle.watch(watchCtx) })
@@ -180,7 +180,7 @@ func (s *Server) Close() {
 	s.titles.stop()
 }
 
-// Reconcile brings the recorded workspace states in line with the containers
+// Reconcile brings the recorded computer states in line with the containers
 // the host actually has. The harness calls it on startup: a container may
 // have been stopped or removed while the harness was down.
 func (s *Server) Reconcile(ctx context.Context) error {
@@ -194,29 +194,29 @@ func (s *Server) Reconcile(ctx context.Context) error {
 	if aborted != 0 {
 		s.log.Info("stale runs aborted", "count", aborted)
 	}
-	if s.deps.Workspaces == nil {
+	if s.deps.Computers == nil {
 		return nil
 	}
-	recorded, err := s.deps.Store.Workspaces(ctx)
+	recorded, err := s.deps.Store.Computers(ctx)
 	if err != nil {
 		return err
 	}
-	type observedWorkspace struct {
-		state       workspace.State
+	type observedComputer struct {
+		state       computer.State
 		containerID string
 	}
-	observed := make(map[string]observedWorkspace, len(recorded))
+	observed := make(map[string]observedComputer, len(recorded))
 	for _, w := range recorded {
-		host, err := s.deps.Workspaces.Inspect(ctx, w.ID)
+		host, err := s.deps.Computers.Inspect(ctx, w.ID)
 		if err == nil {
-			observed[w.ID] = observedWorkspace{state: host.State, containerID: host.ContainerID}
+			observed[w.ID] = observedComputer{state: host.State, containerID: host.ContainerID}
 			continue
 		}
-		if errors.Is(err, workspace.ErrNoWorkspace) {
-			observed[w.ID] = observedWorkspace{state: workspace.StateGone}
+		if errors.Is(err, computer.ErrNoComputer) {
+			observed[w.ID] = observedComputer{state: computer.StateGone}
 			continue
 		}
-		return fmt.Errorf("reconcile workspace %s: %w", w.ID, err)
+		return fmt.Errorf("reconcile computer %s: %w", w.ID, err)
 	}
 	for _, w := range recorded {
 		actual := observed[w.ID]
@@ -224,24 +224,24 @@ func (s *Server) Reconcile(ctx context.Context) error {
 		if state == w.State {
 			continue
 		}
-		if err := s.deps.Store.SetWorkspaceState(ctx, w.ID, state, actual.containerID); err != nil {
+		if err := s.deps.Store.SetComputerState(ctx, w.ID, state, actual.containerID); err != nil {
 			return err
 		}
-		s.workspaceState(ctx, w.ID, state)
-		s.log.Info("workspace state reconciled", "workspace_id", w.ID, "was", w.State, "state", state)
+		s.computerState(ctx, w.ID, state)
+		s.log.Info("computer state reconciled", "computer_id", w.ID, "was", w.State, "state", state)
 	}
 	return nil
 }
 
-// workspaceState reports a workspace lifecycle transition to the clients
-// watching that workspace.
-func (s *Server) workspaceState(ctx context.Context, workspaceID, state string) {
-	e, err := event.New(event.TypeWorkspaceState, event.WorkspaceTopic(workspaceID), event.WorkspaceState{
-		WorkspaceID: workspaceID,
-		State:       state,
+// computerState reports a computer lifecycle transition to the clients
+// watching that computer.
+func (s *Server) computerState(ctx context.Context, computerID, state string) {
+	e, err := event.New(event.TypeComputerState, event.ComputerTopic(computerID), event.ComputerState{
+		ComputerID: computerID,
+		State:      state,
 	})
 	if err != nil {
-		s.log.Error("encode workspace state event", "workspace_id", workspaceID, "error", err)
+		s.log.Error("encode computer state event", "computer_id", computerID, "error", err)
 		return
 	}
 	s.deps.Bus.Emit(ctx, e)

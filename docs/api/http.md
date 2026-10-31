@@ -28,16 +28,16 @@ header.
 Every failure has one shape:
 
 ```json
-{"error": {"code": "not_found", "message": "read workspace w1: not found"}}
+{"error": {"code": "not_found", "message": "read computer w1: not found"}}
 ```
 
 | Code | Status | Meaning |
 |---|---|---|
 | `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field is malformed. |
 | `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
-| `forbidden` | 403 | A workspace path is outside the workspace, directly or through a symlink, or the sandbox may not open it. |
-| `not_found` | 404 | The addressed workspace, session, entry, run, question, provider, model, MCP server, elicitation, pending authorization, or workspace file does not exist. |
-| `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a workspace that is not running, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
+| `forbidden` | 403 | A computer path is outside the computer, directly or through a symlink, or the sandbox may not open it. |
+| `not_found` | 404 | The addressed computer, session, entry, run, question, provider, model, MCP server, elicitation, pending authorization, or computer file does not exist. |
+| `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a computer that is not running, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
 | `too_large` | 413 | A file saved through the API is over its 2 MiB bound. |
 | `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
 
@@ -87,17 +87,17 @@ ends every session, and signs this browser in again: `200` with a `SignIn`.
 | `token` | string | The bearer token to send from now on. |
 | `expires_at` | time | When it stops working. |
 
-## Workspaces
+## Computers
 
-A workspace is one sandbox container with a volume of its own at its root.
-Any holder of the sign-in token reaches every workspace; the harness has one
-user and a workspace has no owner.
+A computer is one sandbox container with a volume of its own at its root.
+Any holder of the sign-in token reaches every computer; the harness has one
+user and a computer has no owner.
 
-### `GET /api/workspaces`
+### `GET /api/computers`
 
-`200` with `{"workspaces": [Workspace]}`, oldest first.
+`200` with `{"computers": [Computer]}`, oldest first.
 
-### `POST /api/workspaces`
+### `POST /api/computers`
 
 Creates the container and its volume, starts it, and records it. A failure at
 any step destroys what was created, so a rejected request leaves no container
@@ -105,70 +105,70 @@ and writes no row. A field the table does not list is `400`.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `name` | string, required | What the user calls this workspace, at most 200 characters. |
+| `name` | string, required | What the user calls this computer, at most 200 characters. |
 | `image` | string | The container image. Defaults to the `sandbox_image` setting, or the deployment's `eika-sandbox:latest`. Ignored when `build_context` is set. |
 | `build_context` | string | A directory on the Docker host holding a Dockerfile and its context; the image is built from it first. |
 | `dockerfile` | string | The Dockerfile's name within `build_context`. Defaults to `Dockerfile`. |
-| `sandbox` | Sandbox | Its limits and network. Left out, it gets the `sandbox_limits` and `sandbox_egress` settings. Checked as `PUT /api/workspaces/{id}/sandbox` checks it. |
+| `sandbox` | Sandbox | Its limits and network. Left out, it gets the `sandbox_limits` and `sandbox_egress` settings. Checked as `PUT /api/computers/{id}/sandbox` checks it. |
 
-`201` with the `Workspace`.
+`201` with the `Computer`.
 
-### `GET /api/workspaces/{id}`
+### `GET /api/computers/{id}`
 
-`200` with the `Workspace`.
+`200` with the `Computer`.
 
-### `PATCH /api/workspaces/{id}`
+### `PATCH /api/computers/{id}`
 
-Renames, pins, or archives a workspace. It is filing only: the container
+Renames, pins, or archives a computer. It is filing only: the container
 and its state are left as they are.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | string | Renames it. Trimmed; empty or past 200 characters is `400`. |
-| `pinned` | boolean | Lists it before the other workspaces. |
+| `pinned` | boolean | Lists it before the other computers. |
 | `archived` | boolean | Sets it aside under an Archived heading. |
 
-An absent field is left alone. `200` with the `Workspace`, `404` when there is
-none. It publishes `workspace.state` with the state unchanged, so the views
-of the workspace refresh.
+An absent field is left alone. `200` with the `Computer`, `404` when there is
+none. It publishes `computer.state` with the state unchanged, so the views
+of the computer refresh.
 
-### `POST /api/workspaces/{id}/start`
+### `POST /api/computers/{id}/start`
 
 Starts a stopped container again, held to the `sandbox` its row records, so a
 change the container took only in part is completed. `200` with the
-`Workspace`.
+`Computer`.
 
-### `POST /api/workspaces/{id}/stop`
+### `POST /api/computers/{id}/stop`
 
-Aborts every run in the workspace, then stops the container and keeps its
-files. `200` with the `Workspace`.
+Aborts every run in the computer, then stops the container and keeps its
+files. `200` with the `Computer`.
 
-### `DELETE /api/workspaces/{id}`
+### `DELETE /api/computers/{id}`
 
-Aborts every run in the workspace, destroys the container and its volume, and
+Aborts every run in the computer, destroys the container and its volume, and
 deletes the row with its sessions and entries. A container that is
 already gone is not an error. `204`.
 
-### `PUT /api/workspaces/{id}/sandbox`
+### `PUT /api/computers/{id}/sandbox`
 
-Records a workspace's `Sandbox` and applies it to the container, running or
+Records a computer's `Sandbox` and applies it to the container, running or
 stopped, without restarting it: limits take hold at once, a change between
 open and restricted egress moves the container between the sandbox networks
 (dropping the connections it has open), and the processes it starts from then
 on get the proxy settings that go with its network. The row is written first,
 so a container that took only part of a change gets the rest when it next
-starts. `200` with the `Workspace`, and `workspace.state` is published with
+starts. `200` with the `Computer`, and `computer.state` is published with
 the unchanged state.
 
 `400` for a limit out of its range, a mode that is not `open`, `allowlist`, or
 `none`, an allowlist entry that is not a host pattern, and for restricted
 egress on a harness without the internal sandbox network. `409` for a
-workspace that is creating or gone.
+computer that is creating or gone.
 
-### `GET /api/workspaces/{id}/usage`
+### `GET /api/computers/{id}/usage`
 
-Samples what a running workspace consumes; it takes about a second, because
-Docker reads the CPU counters twice. `409` for a workspace that
+Samples what a running computer consumes; it takes about a second, because
+Docker reads the CPU counters twice. `409` for a computer that
 is not running. `200` with:
 
 | Field | Type | Meaning |
@@ -181,19 +181,19 @@ is not running. `200` with:
 | `pids_limit` | number | Its process limit, 0 for none. |
 | `network_rx_bytes`, `network_tx_bytes` | number | Bytes received and sent since the container started. |
 | `sampled_at` | time | When Docker read the numbers. |
-| `blocked` | array of `{"host", "count", "last"}` | The hosts the egress proxy refused the workspace lately, most recent first, at most 20. Kept in memory since the harness started. |
+| `blocked` | array of `{"host", "count", "last"}` | The hosts the egress proxy refused the computer lately, most recent first, at most 20. Kept in memory since the harness started. |
 
-### `GET /api/workspaces/{id}/files`
+### `GET /api/computers/{id}/files`
 
-Lists one directory of the workspace: `?path=<path>`, relative to the
-workspace root, and absent or empty for the root. Directories come first,
+Lists one directory of the computer: `?path=<path>`, relative to the
+computer root, and absent or empty for the root. Directories come first,
 then files, each in byte order of their names.
 
 `200` with `{"entries": [FileEntry]}`. `400` when the path is a file; `403`
-when it is outside the workspace; `404` when it does not exist; `409` when the
-workspace is not running.
+when it is outside the computer; `404` when it does not exist; `409` when the
+computer is not running.
 
-### `GET /api/workspaces/{id}/file`
+### `GET /api/computers/{id}/file`
 
 Reads one file for the editor. `?path=<path>` is required.
 
@@ -201,7 +201,7 @@ Reads one file for the editor. `?path=<path>` is required.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `path` | string | The file, relative to the workspace root. |
+| `path` | string | The file, relative to the computer root. |
 | `size` | number | Its size in bytes. |
 | `binary` | boolean | A NUL byte is in its first 8 KiB. `content` is then empty. |
 | `too_large` | boolean | It is over 2 MiB. `content` is then empty. |
@@ -210,38 +210,38 @@ Reads one file for the editor. `?path=<path>` is required.
 `400` when the path is missing or a directory; `403`, `404`, and `409` as for
 the listing.
 
-### `PUT /api/workspaces/{id}/file`
+### `PUT /api/computers/{id}/file`
 
 Saves the raw request body as one file, `?path=<path>`, creating its parent
 directories. The body is at most 2 MiB.
 
 `200` with the saved file's `FileEntry`. `400` when the path is missing or a
-directory; `403` when it is outside the workspace; `409` when the workspace is
+directory; `403` when it is outside the computer; `409` when the computer is
 not running; `413` when the body is over the bound. Publishes
-`workspace.state`.
+`computer.state`.
 
 ### FileEntry
 
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | string | The base name. |
-| `path` | string | Relative to the workspace root, slash-separated. |
+| `path` | string | Relative to the computer root, slash-separated. |
 | `size` | number | Size in bytes. |
 | `mode` | number | Go file mode bits. |
 | `mod_time` | time | Last modification. |
 | `is_dir` | boolean | Whether it is a directory. |
 
-### Workspace
+### Computer
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string | The workspace id. It names the container and the volume as well. |
+| `id` | string | The computer id. It names the container and the volume as well. |
 | `name` | string | What the user calls it. |
 | `image` | string | The image the container runs. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 | `container_id` | string, optional | The Docker container id. |
-| `sandbox` | Sandbox | What the container may consume and reach. A workspace from before sandboxes has no limits and open egress. |
-| `pinned` | boolean | Listed before the other workspaces. |
+| `sandbox` | Sandbox | What the container may consume and reach. A computer from before sandboxes has no limits and open egress. |
+| `pinned` | boolean | Listed before the other computers. |
 | `archived` | boolean | Set aside under an Archived heading; the container is left as it is. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
@@ -256,17 +256,17 @@ Forks are created with their parent's `limits` and `egress`.
 
 ## Sessions
 
-A session is a tree of entries in one workspace, with a head the next run
-continues from. A chat is a session with no workspace: its runs have no files
-or commands, and offer the model only the tools that need no workspace.
+A session is a tree of entries in one computer, with a head the next run
+continues from. A chat is a session with no computer: its runs have no files
+or commands, and offer the model only the tools that need no computer.
 
 ### `GET /api/sessions`
 
-`?workspace_id=<id>` narrows the list. `?descendants=true` adds the forks
-those sessions led to, wherever they run: a fork with a workspace has one of
-its own, and belongs under the session it came from. It is ignored without `workspace_id`, which
+`?computer_id=<id>` narrows the list. `?descendants=true` adds the forks
+those sessions led to, wherever they run: a fork with a computer has one of
+its own, and belongs under the session it came from. It is ignored without `computer_id`, which
 already returns every session, chats included. `?chats=true` returns the
-chats alone, forks of chats included; with `workspace_id` it is `400`.
+chats alone, forks of chats included; with `computer_id` it is `400`.
 
 `200` with `{"sessions": [Session]}`, oldest first. The rows are flat; a
 client hangs each one under its `parent_session_id`.
@@ -275,11 +275,11 @@ client hangs each one under its `parent_session_id`.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `workspace_id` | string | The workspace the session's runs act in. Required unless `chat` is set. |
-| `chat` | boolean | Open a chat, which has no workspace. |
+| `computer_id` | string | The computer the session's runs act in. Required unless `chat` is set. |
+| `chat` | boolean | Open a chat, which has no computer. |
 | `title` | string | What to call it, at most 200 characters. Empty or absent leaves it untitled: it is called `New session` (`New chat` for a chat) until its first run names it after the first message, when the `utility_models` setting assigns `session_title` a model. |
 
-`201` with the `Session`. `400` for `chat` with a `workspace_id`; `404` when the workspace does not exist, which is also what
+`201` with the `Session`. `400` for `chat` with a `computer_id`; `404` when the computer does not exist, which is also what
 leaving both out gives: a chat is asked for, never a fallback.
 
 ### `GET /api/sessions/{id}`
@@ -346,7 +346,7 @@ that stops with tool calls unanswered is a conversation no endpoint accepts.
 | `title` | string | What to call the fork. |
 
 Copies the path from the root down to the entry into a session of its own,
-sharing no rows. The fork stays in the same workspace, so only the
+sharing no rows. The fork stays in the same computer, so only the
 conversation rewinds.
 
 `201` with the new `Session`, whose `kind` is `fork` and whose
@@ -367,7 +367,7 @@ later. The entries are stored sorted, once each.
 
 `200` with the `Session`. `400` when `tools` is missing or not a list, names
 a tool or an MCP server that does not exist, or, for a chat, names a tool or
-a stdio server that needs a workspace.
+a stdio server that needs a computer.
 
 ### `GET /api/sessions/{id}/configuration`
 
@@ -463,12 +463,12 @@ token per 750 pixels; only a record's `input_tokens` is measured.
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | string | The session id. |
-| `workspace_id` | string, optional | Where its runs act. Absent for a chat. |
+| `computer_id` | string, optional | Where its runs act. Absent for a chat. |
 | `title` | string | What the user calls it, or the placeholder of an untitled session until its first run names it. |
 | `kind` | string | `user` or `fork`: who opened it. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
 | `parent_session_id` | string, optional | The session it was forked from. |
-| `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a workspace in a chat. |
+| `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a computer in a chat. |
 | `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. A fork starts with its parent's. |
 | `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. |
 | `pinned` | boolean | Listed before its siblings. |
@@ -535,7 +535,7 @@ against the running model.
 model that does not exist, an image the harness cannot read (the message names
 which, counting from 1), more than 10 images, or images for a model without
 `image_input`; `413` for a body over 64 MiB; `409` when the session's
-workspace is not running or no model is configured. A chat has no workspace to
+computer is not running or no model is configured. A chat has no computer to
 be stopped, so it runs whenever a model is configured.
 
 ### `GET /api/sessions/{id}/run`
@@ -569,7 +569,7 @@ the rest is replaced by a summary (the `compaction` setting). It is a run of
 its own, which the event stream reports with `compaction.start` and
 `compaction.end` and no turn events; queued messages wait for the next run.
 
-`202` with the `Run`. `409` when a run is going, when the workspace is not
+`202` with the `Run`. `409` when a run is going, when the computer is not
 running, or when the conversation has nothing older than what a compaction
 keeps. A compaction that fails ends the run in `error`, with the conversation
 as it was.
@@ -600,14 +600,14 @@ choice picks from.
 |---|---|---|
 | `name` | string | What the model calls it, and what `PUT /api/sessions/{id}/tools` takes. |
 | `description` | string | What the model is told it does. |
-| `needs_workspace` | boolean | It acts on files or processes, so a chat never offers it. A `stdio` MCP server's tools do. |
+| `needs_computer` | boolean | It acts on files or processes, so a chat never offers it. A `stdio` MCP server's tools do. |
 | `server` | string, optional | The MCP server whose tool it is. Absent for a built-in tool and for `mcp_list_resources` and `mcp_read_resource`, which reach every server of a run. |
 | `tokens` | number | The estimated size of its definition in a request, four bytes to a token: what offering it costs every model call. The same figure the context view gives it. |
 
 The list includes the tools each enabled MCP server offered when it was last
 listed, without connecting to any, and the two resource tools when one of
 them has resources. A run offers the tools of the servers it reaches when it
-starts: remote ones, and the stdio ones in its workspace, which it starts. A
+starts: remote ones, and the stdio ones in its computer, which it starts. A
 server not connected yet has 15 seconds; one that cannot be reached leaves
 its tools out of that run.
 
@@ -820,7 +820,7 @@ new profile asks before it exists. `400` for a model that does not exist.
 | `name` | string, required | Unique, 1 to 64 characters. |
 | `description` | string | At most 500 characters. |
 | ProfileSettings fields | | What the profile sets. |
-| `tools` | string array or null | The tool choice, in the shape `PUT /api/sessions/{id}/tools` takes; null is every tool, an empty list none. A profile may choose a tool that needs a workspace: a chat's runs leave it out. |
+| `tools` | string array or null | The tool choice, in the shape `PUT /api/sessions/{id}/tools` takes; null is every tool, an empty list none. A profile may choose a tool that needs a computer: a chat's runs leave it out. |
 
 `201` with the `Profile`. `400` for a bad field; `409` when the name is taken.
 
@@ -913,10 +913,10 @@ writes nothing.
 |---|---|---|
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a model. |
 | `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
-| `sandbox_image` | string | The image a new workspace runs when it names none. |
-| `workspace_idle_minutes` | number, 0 to 10080 | How long a running workspace may go without a run in it before the harness stops it as `POST /api/workspaces/{id}/stop` does. 0 never stops one. Checked once a minute. |
-| `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The limits a new workspace gets when its request names none, checked as a Sandbox's are. A field the object leaves out is 0, no limit. |
-| `sandbox_egress` | `{"mode", "allow"}` | The egress a new workspace gets when its request names none. A restricted mode is `400` on a harness without the internal sandbox network. |
+| `sandbox_image` | string | The image a new computer runs when it names none. |
+| `computer_idle_minutes` | number, 0 to 10080 | How long a running computer may go without a run in it before the harness stops it as `POST /api/computers/{id}/stop` does. 0 never stops one. Checked once a minute. |
+| `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The limits a new computer gets when its request names none, checked as a Sandbox's are. A field the object leaves out is 0, no limit. |
+| `sandbox_egress` | `{"mode", "allow"}` | The egress a new computer gets when its request names none. A restricted mode is `400` on a harness without the internal sandbox network. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
 | `utility_models` | object | The model each of the harness's own tasks is sent to, by task, `{"session_title": "gpt-5-mini"}`. Each key must be a task and each value the name of a model or `""` for none; a task with none does not run. Renaming a model renames it here. Tasks: `session_title` names an untitled session after its first message (see `session.title` in `events.md`). |
 | `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
@@ -928,7 +928,7 @@ writes nothing.
 | Field | Type | Meaning |
 |---|---|---|
 | `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
-| `workspace_idle_minutes` | number | 15. |
+| `computer_idle_minutes` | number | 15. |
 | `sandbox_limits` | object | No CPU or memory limit, and 4096 processes. |
 | `sandbox_egress` | object | `open`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |
 | `search_order` | array of strings | Every web provider in its default order: `searxng`, `exa`, `tavily`, `brave`, `marginalia`. |
@@ -994,15 +994,15 @@ characters. `200` with:
 An MCP server is a Model Context Protocol server whose tools runs offer
 beside the built-in ones. An `http` server is remote: the harness connects to
 it, and its tools reach chats too. A `stdio` server is a command the harness
-starts in each workspace whose session uses it, through eikad's `/process`;
-its tools need a workspace. A server's tool is named
+starts in each computer whose session uses it, through eikad's `/process`;
+its tools need a computer. A server's tool is named
 `mcp__<server>__<tool>`, cut to 64 characters with a hash when longer. The
 state of every server is on the `global` topic as `mcp.server` events.
 
 Header and environment values and the OAuth client secret are sealed like
 provider keys and never returned; their names are. So are the OAuth tokens,
 of which the API reports only whether they exist. A stdio server's
-environment is visible to the agent in the workspace it runs in.
+environment is visible to the agent in the computer it runs in.
 
 ### `GET /api/mcp/servers`
 
@@ -1018,7 +1018,7 @@ environment is visible to the agent in the workspace it runs in.
 | `headers` | object of strings | Headers every request to an `http` server carries, such as an API key. At most 64; not one the client sets itself (`Accept`, `Content-Type`, `Mcp-*`, `MCP-Protocol-Version`, `Last-Event-ID`, ...). A configured `Authorization` header replaces OAuth. |
 | `command` | string | A `stdio` server's program, such as `npx`. |
 | `args` | string array | Its arguments. At most 64. |
-| `env` | object of strings | Variables its process gets on top of the workspace's. At most 64. |
+| `env` | object of strings | Variables its process gets on top of the computer's. At most 64. |
 | `enabled` | boolean | Defaults to true. A server that is off is not connected and offers nothing. |
 | `disabled_tools` | string array | Server tool names (not `mcp__` names) left out of every run. |
 | `oauth_client_id` | string | An `http` server's client registered by hand with its authorization server. |
@@ -1057,13 +1057,13 @@ Removes the server, its credentials, and its connections, and emits
 
 ### `POST /api/mcp/servers/{id}/connect`
 
-`{"workspace_id": string}`, where the workspace is where a `stdio` server
+`{"computer_id": string}`, where the computer is where a `stdio` server
 runs and is ignored for an `http` one; send `{}` for an `http` server. Drops
 the server's connection there and connects again, waiting for the attempt.
 `200` with `MCPServerDetails`, whatever the attempt came to: a server that
 did not connect says why in `server.state`, `server.error`, and `logs`.
-`400` for a `stdio` server without a workspace, `404` for an unknown server
-or workspace, `409` for a server that is off or a workspace that is not
+`400` for a `stdio` server without a computer, `404` for an unknown server
+or computer, `409` for a server that is off or a computer that is not
 running.
 
 ### `POST /api/mcp/servers/{id}/authorize`
@@ -1113,7 +1113,7 @@ registered client is kept for the next authorization. `204`.
 
 ### `POST /api/mcp/servers/{id}/resources/read`
 
-`{"uri": string, "workspace_id": string}`, where `workspace_id` is only for
+`{"uri": string, "computer_id": string}`, where `computer_id` is only for
 a `stdio` server. Reads one resource. `200` with
 `{"contents": [ContentDetail]}`, each of type `resource`. `400` with the
 server's message when it refuses; an `http` server that is not connected is
@@ -1121,7 +1121,7 @@ connected first.
 
 ### `POST /api/mcp/servers/{id}/prompts/get`
 
-`{"name": string, "arguments": {string: string}, "workspace_id": string}`.
+`{"name": string, "arguments": {string: string}, "computer_id": string}`.
 Renders a prompt. `200` with `{"description": string, "messages":
 [{"role": "user" or "assistant", "content": ContentDetail}]}`; `400` with
 the server's message when it refuses.
@@ -1163,9 +1163,9 @@ which an authorization server fetches to learn who Eika is. Served only when
 | `disabled_tools` | string array | Server tool names left out of every run, sorted. |
 | `oauth_client_id` | string | The client registered by hand, if any. |
 | `oauth_client_secret_set` | boolean | That client has a secret stored. |
-| `state` | string | `disabled`, `idle` (not connected, nothing failed), `connecting`, `connected`, `unauthorized` (it needs OAuth authorization), or `error`. A `stdio` server is `connected` while it runs in any workspace. |
+| `state` | string | `disabled`, `idle` (not connected, nothing failed), `connecting`, `connected`, `unauthorized` (it needs OAuth authorization), or `error`. A `stdio` server is `connected` while it runs in any computer. |
 | `error` | string, optional | Why it is `unauthorized` or in `error`. |
-| `workspaces` | string array | The workspaces a `stdio` server runs in now. |
+| `computers` | string array | The computers a `stdio` server runs in now. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ### MCPServerDetails
@@ -1222,12 +1222,12 @@ tool result carries its `content` alone.
 
 ### `GET /api/system`
 
-What the setup screens check before the first workspace. `200` with:
+What the setup screens check before the first computer. `200` with:
 
 | Field | Type | Meaning |
 |---|---|---|
 | `docker` | `{"reachable": boolean, "error": string}` | Whether the harness can use the Docker socket, and the client's reason when it cannot. |
-| `sandbox_image` | `{"name": string, "present": boolean}` | The image new workspaces run and whether the Docker host has it. |
+| `sandbox_image` | `{"name": string, "present": boolean}` | The image new computers run and whether the Docker host has it. |
 | `sandbox` | `{"cpus": number, "memory_bytes": number, "egress_control": boolean}` | The Docker host's cores and memory, which bound a sandbox's limits, zero when Docker cannot be asked; and whether a sandbox's egress can be restricted, which a harness outside the compose stack cannot. |
 | `providers`, `models` | number | How many of each exist. |
 
@@ -1243,9 +1243,9 @@ is accepted from the harness's own origin and from `allowed_origins`.
 The harness listens on `egress_listen` (`:3128`) for the sandboxes whose
 egress is restricted: an HTTP proxy that takes `CONNECT` tunnels and plain
 `http://` requests in absolute form. A sandbox signs in with
-`Proxy-Authorization: Basic`, its workspace id and proxy token, which the
+`Proxy-Authorization: Basic`, its computer id and proxy token, which the
 harness puts in the proxy URL it gives the sandbox's processes. A request
-without credentials is `407`; one for a host the workspace's mode or
-allowlist does not admit is `403` and is listed in the workspace's usage; the
+without credentials is `407`; one for a host the computer's mode or
+allowlist does not admit is `403` and is listed in the computer's usage; the
 proxy connects to public addresses only, so a private one is `403` whatever
 the mode. The body of every refusal is one line saying why.

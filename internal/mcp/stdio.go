@@ -13,7 +13,7 @@ import (
 
 // stdioTransport speaks newline-delimited JSON-RPC over a process's standard
 // streams: it writes to the process's stdin and reads its stdout. Where the
-// process runs is the Launcher's business; for Eika it is a workspace.
+// process runs is the Launcher's business; for Eika it is a computer.
 type stdioTransport struct {
 	rw   io.ReadWriteCloser
 	recv receiver

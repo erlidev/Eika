@@ -1,15 +1,15 @@
 # eikad API
 
-The sandbox daemon's HTTP API. It runs inside every workspace container on
-port 7000 and is the only way the harness reaches a workspace. The Go wire
+The sandbox daemon's HTTP API. It runs inside every computer container on
+port 7000 and is the only way the harness reaches a computer. The Go wire
 types live in `internal/eikad/api.go`; the client is
 `internal/executor/sandbox`.
 
 Every route except `GET /healthz` requires `Authorization: Bearer <token>`,
-where the token is the `EIKAD_TOKEN` the harness generated for that workspace.
+where the token is the `EIKAD_TOKEN` the harness generated for that computer.
 A missing or wrong token is `401`.
 
-Every `path` is relative to the workspace root (`/workspace` by default). An
+Every `path` is relative to the computer root (`/workspace` by default). An
 absolute path inside the root is accepted; a path that leaves the root, by
 `..` or through a symlink, is `403`. A missing path is `404`.
 
@@ -82,7 +82,7 @@ directory.
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | string | Base name. |
-| `path` | string | Path relative to the workspace root. |
+| `path` | string | Path relative to the computer root. |
 | `size` | number | Size in bytes. |
 | `mode` | number | Go file mode bits. |
 | `mod_time` | RFC 3339 timestamp, UTC | Modification time. |
@@ -91,7 +91,7 @@ directory.
 ## GET /process
 
 Upgrades to a WebSocket carrying one long-lived process with its standard
-streams: how the harness runs a stdio MCP server in the workspace. Messages
+streams: how the harness runs a stdio MCP server in the computer. Messages
 are JSON text frames in both directions.
 
 | Field | Type | Meaning |
@@ -124,7 +124,7 @@ reported within about a second of happening.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `path` | string | Changed file, relative to the workspace root. |
+| `path` | string | Changed file, relative to the computer root. |
 | `kind` | string | `created`, `modified`, or `deleted`. |
 | `is_dir` | bool | Whether the changed file is a directory. |
 | `time` | RFC 3339 timestamp, UTC | When the daemon observed the change. |

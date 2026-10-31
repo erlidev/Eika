@@ -26,7 +26,7 @@ func (s *Server) handleListMCPServers(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCreateMCPServer adds a server. A remote one that is on starts
-// connecting at once; a stdio one starts in a workspace when a run there
+// connecting at once; a stdio one starts in a computer when a run there
 // first asks for its tools.
 func (s *Server) handleCreateMCPServer(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[createMCPServerRequest](r)
@@ -197,9 +197,9 @@ func (s *Server) handleDeleteMCPServer(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleConnectMCPServer drops a server's connection and connects it again,
-// in the given workspace for a stdio server, and reports how that went.
+// in the given computer for a stdio server, and reports how that went.
 func (s *Server) handleConnectMCPServer(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeJSON[mcpWorkspaceRequest](r)
+	req, err := decodeJSON[mcpComputerRequest](r)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -207,7 +207,7 @@ func (s *Server) handleConnectMCPServer(w http.ResponseWriter, r *http.Request) 
 	id := r.PathValue("id")
 	// A failed attempt is in the details, as the state and the log say it;
 	// only a server that cannot be tried at all fails the request.
-	if err := s.deps.MCP.Reconnect(r.Context(), id, req.WorkspaceID); err != nil {
+	if err := s.deps.MCP.Reconnect(r.Context(), id, req.ComputerID); err != nil {
 		if status, _ := statusOf(err); status != http.StatusInternalServerError {
 			s.fail(w, r, err)
 			return
@@ -228,7 +228,7 @@ func (s *Server) handleReadMCPResource(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, invalidf("uri is required and at most %d bytes", maxMCPResourceURI))
 		return
 	}
-	res, err := s.deps.MCP.ReadResource(r.Context(), r.PathValue("id"), req.WorkspaceID, req.URI)
+	res, err := s.deps.MCP.ReadResource(r.Context(), r.PathValue("id"), req.ComputerID, req.URI)
 	if err != nil {
 		s.fail(w, r, mcpFailure("read the resource", err))
 		return
@@ -251,7 +251,7 @@ func (s *Server) handleGetMCPPrompt(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, invalidf("a prompt takes at most %d arguments", maxMCPPromptArgs))
 		return
 	}
-	res, err := s.deps.MCP.GetPrompt(r.Context(), r.PathValue("id"), req.WorkspaceID, req.Name, req.Arguments)
+	res, err := s.deps.MCP.GetPrompt(r.Context(), r.PathValue("id"), req.ComputerID, req.Name, req.Arguments)
 	if err != nil {
 		s.fail(w, r, mcpFailure("get the prompt", err))
 		return

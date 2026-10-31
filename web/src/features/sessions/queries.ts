@@ -10,7 +10,7 @@ import type { CreateSession, Session, UpdateSession } from "@/api/types";
 import { useStreamSubscription } from "@/api/useStream";
 
 /**
- * useChats lists the chats: the sessions with no workspace.
+ * useChats lists the chats: the sessions with no computer.
  */
 export function useChats(): UseQueryResult<Session[]> {
   return useQuery({

@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// ErrOutsideRoot reports a path that leaves the workspace root, whether by
+// ErrOutsideRoot reports a path that leaves the computer root, whether by
 // traversal, by being absolute, or through a symlink.
-var ErrOutsideRoot = errors.New("path is outside the workspace root")
+var ErrOutsideRoot = errors.New("path is outside the computer root")
 
 // resolve maps a request path to an absolute path inside the root. The path
 // may be relative to the root or absolute inside it; ".." and symlinks that

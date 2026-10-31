@@ -559,7 +559,7 @@ func TestRunCompactsInTheMiddleOfATurn(t *testing.T) {
 		providertest.Text("PREFIX"),
 		providertest.Text("answer"),
 	)
-	c = newCompactor(p, compactorOptions{window: 12_000, tools: tools, executor: workspace(t, nil), compaction: agent.CompactionSettings{Auto: true, KeepRecentTokens: 2000}})
+	c = newCompactor(p, compactorOptions{window: 12_000, tools: tools, executor: computer(t, nil), compaction: agent.CompactionSettings{Auto: true, KeepRecentTokens: 2000}})
 	s := sessionOf(history(6, 1000))
 	if err := c.agent.Run(context.Background(), s, provider.UserMessage("next")); err != nil {
 		t.Fatalf("Run: %v", err)

@@ -33,12 +33,12 @@ type fileEntry struct {
 	IsDir   bool      `json:"is_dir"`
 }
 
-// filesResponse is the body of GET /api/workspaces/{id}/files.
+// filesResponse is the body of GET /api/computers/{id}/files.
 type filesResponse struct {
 	Entries []fileEntry `json:"entries"`
 }
 
-// fileResponse is the body of GET /api/workspaces/{id}/file. Content is empty
+// fileResponse is the body of GET /api/computers/{id}/file. Content is empty
 // when the file is binary or too large to open, and the flags say which.
 type fileResponse struct {
 	Path     string `json:"path"`
@@ -48,10 +48,10 @@ type fileResponse struct {
 	Content  string `json:"content"`
 }
 
-// handleListFiles lists one directory of a workspace, directories first and
+// handleListFiles lists one directory of a computer, directories first and
 // each group by name.
 func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
-	ex, path, err := s.workspaceFile(r, false)
+	ex, path, err := s.computerFile(r, false)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -86,7 +86,7 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 // handleReadFile returns one file's text for the editor. A binary file or one
 // over maxFileBytes comes back flagged and without content.
 func (s *Server) handleReadFile(w http.ResponseWriter, r *http.Request) {
-	ex, path, err := s.workspaceFile(r, true)
+	ex, path, err := s.computerFile(r, true)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -126,9 +126,9 @@ func (s *Server) handleReadFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleWriteFile saves the request body as one file, creating its parent
-// directories, and tells the workspace's watchers that its files changed.
+// directories, and tells the computer's watchers that its files changed.
 func (s *Server) handleWriteFile(w http.ResponseWriter, r *http.Request) {
-	ex, path, err := s.workspaceFile(r, true)
+	ex, path, err := s.computerFile(r, true)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -156,14 +156,14 @@ func (s *Server) handleWriteFile(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, fileError(err, path))
 		return
 	}
-	s.workspaceChanged(r.Context(), r.PathValue("id"))
+	s.computerChanged(r.Context(), r.PathValue("id"))
 	writeJSON(w, s.log, http.StatusOK, asFileEntry(info))
 }
 
-// workspaceFile resolves the workspace and the path a file request names.
-// The path is checked against the workspace root before anything reaches the
+// computerFile resolves the computer and the path a file request names.
+// The path is checked against the computer root before anything reaches the
 // sandbox, which checks it again after following symlinks.
-func (s *Server) workspaceFile(r *http.Request, required bool) (executor.Executor, string, error) {
+func (s *Server) computerFile(r *http.Request, required bool) (executor.Executor, string, error) {
 	path := strings.TrimSpace(r.URL.Query().Get("path"))
 	if path == "" {
 		if required {
@@ -182,12 +182,12 @@ func (s *Server) workspaceFile(r *http.Request, required bool) (executor.Executo
 }
 
 // fileError maps what an executor reports about a path onto the API's
-// statuses: a missing file is 404 and a path the workspace refuses, outside
+// statuses: a missing file is 404 and a path the computer refuses, outside
 // its root or unreadable, is 403. Anything else is the harness's failure.
 func fileError(err error, path string) error {
 	switch {
 	case errors.Is(err, executor.ErrPathOutsideRoot), errors.Is(err, fs.ErrPermission):
-		return forbiddenf("%s is outside the workspace or not accessible", path)
+		return forbiddenf("%s is outside the computer or not accessible", path)
 	case errors.Is(err, executor.ErrNotFound):
 		return notFoundf("%s not found", path)
 	default:
@@ -195,17 +195,17 @@ func fileError(err error, path string) error {
 	}
 }
 
-// workspaceChanged tells the clients watching a workspace that its files or
+// computerChanged tells the clients watching a computer that its files or
 // its git state changed, so that file and change views refresh. It reuses
-// workspace.state with the workspace's unchanged state rather than adding an
+// computer.state with the computer's unchanged state rather than adding an
 // event type: the payload is the same, and a client refreshes on either.
-func (s *Server) workspaceChanged(ctx context.Context, id string) {
-	ws, err := s.deps.Store.Workspace(ctx, id)
+func (s *Server) computerChanged(ctx context.Context, id string) {
+	cx, err := s.deps.Store.Computer(ctx, id)
 	if err != nil {
-		s.log.Warn("read workspace for a change event", "workspace_id", id, "error", err)
+		s.log.Warn("read computer for a change event", "computer_id", id, "error", err)
 		return
 	}
-	s.workspaceState(ctx, ws.ID, ws.State)
+	s.computerState(ctx, cx.ID, cx.State)
 }
 
 // asFileEntry renders an executor's file description on the wire.

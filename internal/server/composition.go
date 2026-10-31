@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/event"
@@ -20,7 +21,6 @@ import (
 	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
-	"github.com/erlidev/eika/internal/workspace"
 )
 
 // Run builds the harness from its configuration and serves until ctx is
@@ -39,7 +39,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	if err != nil {
 		return err
 	}
-	host, err := workspace.NewHost(workspace.Options{
+	host, err := computer.NewHost(computer.Options{
 		DockerSocket: cfg.DockerSocket,
 		Image:        cfg.SandboxImage,
 		Network:      cfg.SandboxNetwork,
@@ -73,7 +73,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	// before the store it reads.
 	pool := NewMCP(cfg, st, secrets, host, bus, log)
 	defer pool.Close()
-	// The proxy asks the server for a workspace's policy, and the server
+	// The proxy asks the server for a computer's policy, and the server
 	// reports what the proxy refused, so the proxy reaches the server
 	// through a variable set just below.
 	var s *Server
@@ -84,17 +84,17 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		}}, log)
 	}
 	s = New(cfg, log, Deps{
-		Store:      st,
-		Workspaces: host,
-		Providers:  provider.NewRegistry(openai.New),
-		Secrets:    secrets,
-		Tools:      tools,
-		Questions:  questions,
-		Bus:        bus,
-		Search:     engine,
-		Pages:      pages,
-		Egress:     proxy,
-		MCP:        pool,
+		Store:     st,
+		Computers: host,
+		Providers: provider.NewRegistry(openai.New),
+		Secrets:   secrets,
+		Tools:     tools,
+		Questions: questions,
+		Bus:       bus,
+		Search:    engine,
+		Pages:     pages,
+		Egress:    proxy,
+		MCP:       pool,
 	}, opts)
 	// Remote servers connect in the background, so their tools are there
 	// when the first run asks; one that is down must not stop the API.
@@ -106,7 +106,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	// down. Reconciling is how the recorded states catch up; a Docker daemon
 	// that is not there yet must not stop the API from serving.
 	if err := s.Reconcile(ctx); err != nil {
-		log.Error("reconcile workspaces", "error", err)
+		log.Error("reconcile computers", "error", err)
 	}
 	if proxy != nil {
 		// A proxy that cannot listen leaves restricted sandboxes with no way
@@ -171,7 +171,7 @@ func NewSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets 
 
 var (
 	_ Providers          = (*provider.Registry)(nil)
-	_ Workspaces         = (*workspace.Host)(nil)
+	_ Computers          = (*computer.Host)(nil)
 	_ builtin.Searcher   = (*search.Engine)(nil)
 	_ builtin.PageReader = (*fetch.Reader)(nil)
 	_ fetch.Quota        = (*search.Engine)(nil)

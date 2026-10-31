@@ -1,9 +1,9 @@
-/** Wire types for a workspace's files. */
+/** Wire types for a computer's files. */
 
-/** FileEntry is one file or directory of a workspace listing. */
+/** FileEntry is one file or directory of a computer listing. */
 export type FileEntry = {
   name: string;
-  /** path is relative to the workspace root. */
+  /** path is relative to the computer root. */
   path: string;
   size: number;
   mode: number;
@@ -11,7 +11,7 @@ export type FileEntry = {
   is_dir: boolean;
 };
 
-/** FileContent is the body of GET /api/workspaces/{id}/file. */
+/** FileContent is the body of GET /api/computers/{id}/file. */
 export type FileContent = {
   path: string;
   size: number;

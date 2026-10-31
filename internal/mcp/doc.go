@@ -12,7 +12,7 @@
 // ElicitFunc.
 //
 // The Pool is the entry point for the harness. It keeps one connection to
-// each remote server and one to each stdio server in each workspace that
+// each remote server and one to each stdio server in each computer that
 // runs it, starting the process through a Launcher, reads the servers'
 // configuration and credentials through a Store, and reports every change
 // as an mcp.server event. Tools turns what the servers offer into tool.Tool
@@ -22,5 +22,5 @@
 //
 // Every bound the client applies is in limits.go. The package depends on
 // internal/event, internal/tool, and internal/mcp/oauth, and on nothing that
-// knows a workspace: the harness hands it a Store and a Launcher.
+// knows a computer: the harness hands it a Store and a Launcher.
 package mcp

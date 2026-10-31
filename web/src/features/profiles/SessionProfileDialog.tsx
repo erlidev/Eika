@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
 
 export type SessionProfileProps = {
   sessionId: string;
-  /** chat says the session has no workspace, so only a chat's settings apply. */
+  /** chat says the session has no computer, so only a chat's settings apply. */
   chat: boolean;
   /** overridden says the session sets something of its own over its profile. */
   overridden: boolean;
@@ -238,7 +238,7 @@ function SessionSettingsForm({
         onChange={setDraft}
         inherited={inherited}
         prompts={profiles.prompts}
-        kind={chat ? "chat" : "workspace"}
+        kind={chat ? "chat" : "computer"}
         problems={problems}
         initialSection={initialSection}
       />

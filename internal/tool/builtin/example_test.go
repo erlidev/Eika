@@ -27,7 +27,7 @@ func (countLinesTool) Schema() json.RawMessage {
 	return json.RawMessage(`{
   "type": "object",
   "properties": {
-    "path": {"type": "string", "description": "Path relative to the workspace root."}
+    "path": {"type": "string", "description": "Path relative to the computer root."}
   },
   "required": ["path"],
   "additionalProperties": false
@@ -61,7 +61,7 @@ func ExampleTool() {
 }
 
 func TestExampleToolCountsLines(t *testing.T) {
-	w := newWorkspace(t)
+	w := newComputer(t)
 	w.write("a.txt", "one\ntwo\nthree\n")
 	if err := w.registry.Register(countLinesTool{}); err != nil {
 		t.Fatalf("register: %v", err)

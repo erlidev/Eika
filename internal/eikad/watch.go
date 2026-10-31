@@ -10,7 +10,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-// maxWatchEntries bounds the snapshot the watcher keeps, so that a workspace
+// maxWatchEntries bounds the snapshot the watcher keeps, so that a computer
 // with a huge tree cannot exhaust the sandbox's memory. Beyond the limit the
 // walk stops and later files are not reported.
 const maxWatchEntries = 100_000
@@ -23,8 +23,8 @@ type stamp struct {
 }
 
 // handleWatch upgrades to a WebSocket and reports file changes under the
-// workspace root. It polls and compares modification times rather than taking
-// a dependency on an inotify library; a workspace tree is small enough that a
+// computer root. It polls and compares modification times rather than taking
+// a dependency on an inotify library; a computer tree is small enough that a
 // scan per second is cheap, and polling behaves the same on a bind mount.
 func (d *Daemon) handleWatch(w http.ResponseWriter, r *http.Request) {
 	root, err := d.requestPath(r)
