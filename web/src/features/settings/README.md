@@ -6,8 +6,9 @@ Everything the user configures after setup, in one dialog of tabs.
   `store.ts`, so the workbench, the command palette, and a session's "no
   model" notice can all open it on the right tab.
 - Models is `features/providers/ModelsPanel`. General is `GeneralSettings.tsx`:
-  `DefaultModelSelect.tsx`, `UtilityModels.tsx` (a model per utility task,
-  or off; both list models with `ModelSelectItems.tsx`), the image the
+  `DefaultModelSelect.tsx`, `ModelClasses.tsx` (a model per class, with the
+  fallback each class has and the classes that share a pool, from
+  `classes.ts`; both list models with `ModelSelectItems.tsx`), the image the
   home computer is created from, with `SystemCheck.tsx`, and a way back into the guided setup. Computer is
   `ComputerSettings.tsx`: the home computer's limits and network, which a
   save applies to its container, with the fields from `features/sandbox`; `sandboxDefaults` in `queries.ts`

@@ -27,6 +27,8 @@ import { formatTokens } from "@/lib/format";
 
 export type ModelPickerProps = {
   provider: Provider;
+  /** offerDecision lets a chosen model be marked a decision model; the guided setup needs a chat model, so it does not. */
+  offerDecision?: boolean;
   /** onDone receives the models that were added. */
   onDone: (added: Model[]) => void;
   onCancel?: () => void;
@@ -38,7 +40,13 @@ type Choice = ModelChoice;
 /** filterThreshold is how many models a list has before it offers a search box. */
 const filterThreshold = 8;
 
-export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPickerProps) {
+export function ModelPicker({
+  provider,
+  offerDecision = false,
+  onDone,
+  onCancel,
+  doneLabel,
+}: ModelPickerProps) {
   const models = useModels();
   const create = useCreateModel();
   const discovered = useDiscoveredModels(provider.id);
@@ -64,6 +72,7 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
         id,
         name: suggestModelName(id, provider.name, takenNames),
         ...suggestLimits(id, info),
+        kind: "chat",
         image_input: info?.image_input ?? false,
       },
     ]);
@@ -103,6 +112,7 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
         added.push(
           await create.mutateAsync({
             provider_id: provider.id,
+            kind: choice.kind,
             name: choice.name.trim(),
             model: choice.id,
             context_window: choice.context_window,
@@ -256,6 +266,7 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
                 key={choice.id}
                 provider={provider}
                 choice={choice}
+                offerDecision={offerDecision}
                 problem={problem?.id === choice.id ? problem : null}
                 onChange={(patch) => {
                   change(choice.id, patch);
@@ -305,6 +316,7 @@ export function ModelPicker({ provider, onDone, onCancel, doneLabel }: ModelPick
 type ChoiceRowProps = {
   provider: Provider;
   choice: Choice;
+  offerDecision: boolean;
   /** problem is what keeps this choice from being added, shown under its field. */
   problem: ChosenProblem | null;
   onChange: (patch: Partial<Choice>) => void;
@@ -312,30 +324,41 @@ type ChoiceRowProps = {
 };
 
 /** ChoiceRow is one model about to be added: its name, its limits, and a test. */
-function ChoiceRow({ provider, choice, problem, onChange, onRemove }: ChoiceRowProps) {
+function ChoiceRow({
+  provider,
+  choice,
+  offerDecision,
+  problem,
+  onChange,
+  onRemove,
+}: ChoiceRowProps) {
   const test = useTestModel();
   const base = `choice-${provider.id}-${choice.id}`;
+  // A chat request cannot test a decision model, and it takes no images.
+  const decision = choice.kind === "decision";
   const problemFor = (field: ChosenProblem["field"]) =>
     problem?.field === field ? problem.message : undefined;
   return (
     <li className="bg-muted/30 space-y-3 rounded-md border p-3">
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate font-mono text-xs font-medium">{choice.id}</span>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          disabled={test.isPending}
-          onClick={() => {
-            test.mutate({
-              provider_id: provider.id,
-              model: choice.id,
-              image_input: choice.image_input,
-            });
-          }}
-        >
-          {test.isPending ? "Testing…" : "Test"}
-        </Button>
+        {!decision && (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            disabled={test.isPending}
+            onClick={() => {
+              test.mutate({
+                provider_id: provider.id,
+                model: choice.id,
+                image_input: choice.image_input,
+              });
+            }}
+          >
+            {test.isPending ? "Testing…" : "Test"}
+          </Button>
+        )}
         <Button
           type="button"
           size="icon-xs"
@@ -381,18 +404,43 @@ function ChoiceRow({ provider, choice, problem, onChange, onRemove }: ChoiceRowP
           }}
         />
       </div>
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id={`${base}-images`}
-          checked={choice.image_input}
-          onCheckedChange={(checked) => {
-            onChange({ image_input: checked === true });
-          }}
-        />
-        <Label htmlFor={`${base}-images`} className="text-xs font-normal">
-          Accepts images
-        </Label>
-      </div>
+      {!decision && (
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={`${base}-images`}
+            checked={choice.image_input}
+            onCheckedChange={(checked) => {
+              onChange({ image_input: checked === true });
+            }}
+          />
+          <Label htmlFor={`${base}-images`} className="text-xs font-normal">
+            Accepts images
+          </Label>
+        </div>
+      )}
+      {offerDecision && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={`${base}-decision`}
+              checked={decision}
+              aria-describedby={`${base}-decision-hint`}
+              onCheckedChange={(checked) => {
+                onChange(
+                  checked === true ? { kind: "decision", image_input: false } : { kind: "chat" },
+                );
+              }}
+            />
+            <Label htmlFor={`${base}-decision`} className="text-xs font-normal">
+              Decision model
+            </Label>
+          </div>
+          <p id={`${base}-decision-hint`} className="text-muted-foreground text-xs">
+            Answers typed questions with probabilities instead of writing text. It is never offered
+            for a conversation, and a chat request cannot test it.
+          </p>
+        </div>
+      )}
       {test.isSuccess && (
         <Notice tone="success">
           Answered in {(test.data.latency_ms / 1000).toFixed(1)}s

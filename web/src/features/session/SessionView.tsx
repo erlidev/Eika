@@ -18,7 +18,7 @@ import { Notice } from "@/components/Notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSessionConfiguration } from "@/features/profiles";
-import { useModels } from "@/features/providers";
+import { chatModels, useModels } from "@/features/providers";
 import { useSettingsDialog } from "@/features/settings";
 import { useHomeComputer } from "@/features/sessions";
 
@@ -63,8 +63,9 @@ export function SessionView({ sessionId }: SessionViewProps) {
   // uses what the session's configuration resolves to.
   const chosenModel =
     model === "" ? (configuration.data?.resolved.model ?? models.data?.default ?? "") : model;
-  const noModel = models.data?.models.length === 0;
-  const imageInput = models.data?.models.find((m) => m.name === chosenModel)?.image_input ?? false;
+  const available = chatModels(models.data?.models);
+  const noModel = models.data !== undefined && available.length === 0;
+  const imageInput = available.find((m) => m.name === chosenModel)?.image_input ?? false;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Session">

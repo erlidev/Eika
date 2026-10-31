@@ -1,12 +1,15 @@
 /** The settings, the system check, and the tool list. */
 
 import { syncSession } from "../profiles.ts";
+import { classView, modelClassNames } from "../world.ts";
 import { fail, ok } from "./context.ts";
 import type { RouteContext } from "./context.ts";
 
 export function settingsRoutes(ctx: RouteContext): void {
   const { w, on } = ctx;
-  on("GET", "/api/settings", () => ok(w.settings));
+  /** served is the settings table with the classes resolved, as GET and PUT answer. */
+  const served = () => ({ ...w.settings, ...classView(w) });
+  on("GET", "/api/settings", () => ok(served()));
   on("PUT", "/api/settings", ({ body }) => {
     const named = body.default_profile;
     if (typeof named === "string" && named !== "" && !w.profiles.some((p) => p.id === named)) {
@@ -16,20 +19,49 @@ export function settingsRoutes(ctx: RouteContext): void {
         `default_profile names "${named}", which is not a profile`,
       );
     }
-    const utility = body.utility_models;
-    if (utility !== undefined && utility !== null) {
-      const names: unknown[] =
-        typeof utility === "object" ? Object.values(utility as Record<string, unknown>) : [utility];
-      const unknown = names.find(
-        (n) => typeof n !== "string" || (n !== "" && !w.models.some((m) => m.name === n)),
-      );
-      if (unknown !== undefined) {
+    const classes = body.model_classes;
+    if (classes !== undefined && classes !== null) {
+      if (typeof classes !== "object") {
         return fail(
           400,
           "invalid_request",
-          `utility_models names ${JSON.stringify(unknown)}, which is not a configured model`,
+          "model_classes must be an object of class names to model names",
         );
       }
+      for (const [name, model] of Object.entries(classes)) {
+        if (!(modelClassNames as readonly string[]).includes(name)) {
+          return fail(
+            400,
+            "invalid_request",
+            `model_classes names ${JSON.stringify(name)}, which is not a class`,
+          );
+        }
+        if (model === "") continue;
+        const row = w.models.find((m) => m.name === model);
+        if (typeof model !== "string" || row === undefined) {
+          return fail(
+            400,
+            "invalid_request",
+            `model_classes names ${JSON.stringify(model)}, which is not a configured model`,
+          );
+        }
+        const kind = name === "decision" ? "decision" : "chat";
+        if (row.kind !== kind) {
+          return fail(
+            400,
+            "invalid_request",
+            `model_classes assigns ${JSON.stringify(model)}, a ${row.kind} model, to the ${name} class, which needs a ${kind} model`,
+          );
+        }
+      }
+    }
+    const chosen = w.models.find((m) => m.name === body.default_model);
+    if (chosen !== undefined && chosen.kind !== "chat") {
+      return fail(
+        400,
+        "invalid_request",
+        `default_model names ${JSON.stringify(chosen.name)}, a ${chosen.kind} model, which cannot hold a conversation`,
+      );
     }
     const compaction = body.compaction;
     if (typeof compaction === "object" && compaction !== null) {
@@ -52,7 +84,7 @@ export function settingsRoutes(ctx: RouteContext): void {
     if (typeof body.default_model === "string") w.defaultModel = body.default_model;
     // A new default profile can change what every session offers.
     for (const session of w.sessions) syncSession(w, session);
-    return ok(w.settings);
+    return ok(served());
   });
   on("GET", "/api/system", () => ok(w.system));
   on("GET", "/api/tools", () => ok({ tools: w.tools }));

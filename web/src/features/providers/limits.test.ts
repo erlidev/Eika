@@ -81,6 +81,7 @@ describe("chosenProblem", () => {
     name: "mini",
     context_window: 400_000,
     max_output: 128_000,
+    kind: "chat" as const,
     image_input: false,
   };
 

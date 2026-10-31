@@ -6,7 +6,7 @@
  * than the model allows, so a conservative guess is the better mistake.
  */
 
-import type { Model, ModelInfo } from "@/api/types";
+import type { Model, ModelInfo, ModelKind } from "@/api/types";
 
 /** Limits are a model's context window and output limit in tokens. */
 export type Limits = { context_window: number; max_output: number };
@@ -78,6 +78,8 @@ export type ModelChoice = {
   name: string;
   context_window: number;
   max_output: number;
+  /** kind is chat unless the user says the model answers typed questions. */
+  kind: ModelKind;
   /** image_input starts as what the endpoint says, and off when it says nothing. */
   image_input: boolean;
 };

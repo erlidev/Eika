@@ -965,15 +965,63 @@ this file says why, so neither repeats the other.
 - The summary call uses the run's model. A utility model was rejected for
   now: it has no cache of the conversation, so it would re-read all of it.
 
-## Utility models
+## Model kinds and classes
 
-- **A utility model is a model row the user assigns to a harness task**
-  (`utility_models`, task → model name), not a new kind of model, so it
-  reuses the provider, key, and thinking switch already configured. The tasks
-  are fixed in `internal/utility`. A task with no model does not run, so the
-  harness never makes a call the user did not choose; falling back to the
-  default model was rejected because that is often a large reasoning model,
-  and a hidden call to it per session costs more than a title is worth.
+- **The harness's own tasks name a class, and a setting maps each class to a
+  model row.** `model_classes` (`deep`, `main`, `fast`, `decision` to a model
+  name) replaced `utility_models`, which mapped one task to a model. A class
+  reuses the provider, key and thinking switch already configured on a model
+  row, and agents and later tasks share the classes instead of each adding a
+  key. The names settle the plan's open question: `high/medium/low`,
+  `System 2/System 1` and `thinker/worker/scout` were rejected, because
+  `deep`, `main` and `fast` say what a class is for and read clearly in
+  config. Migration `0008` carries `utility_models.session_title` to
+  `model_classes.fast`, and a user who had assigned none keeps no class set.
+- **Fallbacks are `deep -> main` and `fast -> main`, and a chat class that
+  reaches the end of that chain gets the default model; `decision` has
+  none.** A missing `fast` model must not turn titles off, which the old rule
+  (a task with no model does not run) did. A user who has set no class has no
+  `main` either, so `main` falls back to the default model (the
+  `default_model` setting, or the first chat model when it names none or
+  names a deleted or decision model), and `fast -> main -> default model`
+  works before anything is configured. The default is not a class and is not
+  written to `model_classes`; the classes UI says which models it supplies.
+  Leaving `main` unset until agents move to classes was the first choice and
+  was reversed: it left titles off for a user who set no class, against the
+  rule above. A class whose assigned model is gone, as after a delete, counts
+  as unset and falls back.
+- **Titles are skipped when `fast` would fall back onto a hosted deep
+  model.** Read literally: `fast` has no model of its own, its fallback
+  (`main`, or the default model when `main` has none) is the model the user
+  assigned to `deep`, and that model's provider is a hosted API (backend
+  `openai`). A title is not worth a call to a
+  hosted reasoning model. A `fast` model the user assigned is always used,
+  and a hosted `main` that is not also `deep` is used. The broader reading,
+  skipping whenever `fast` lands on a hosted model, was rejected: it would
+  turn titles off for everyone whose only model is hosted, and the sentence
+  names deep models.
+- **`kind` is `chat` or `decision`, chosen when a model is added and never
+  changed.** Changing it would need the default model, profiles, sessions
+  and classes that name the model re-checked in one place; delete and add
+  is the way. A decision model answers typed questions at `/v1/systemone`
+  and cannot hold a conversation, so it is refused wherever one is held
+  (`default_model`, profile and session `model_id`, a message's `model`, the
+  `deep`, `main` and `fast` classes) and never listed in a model picker, and
+  a chat model is refused for `decision`. A decision model has no reasoning
+  effort, thinking switch, preserved thinking or image input.
+- **The model test refuses a decision model and sends nothing.** The test is
+  a chat request, which a decision model cannot answer, and the one request
+  it can answer, a `/v1/systemone` question, is built with the Sentry client
+  (`internal/systemone`, phase 4) and was not verified against a server
+  here. The test moves there. A one-off request in the model test was
+  rejected: it would be a second client for the protocol.
+- **The Responses check asks the provider's oldest chat model**, never a
+  decision model, whatever is older; a provider with only a decision model is
+  skipped.
+- **`GET /api/settings` reports the classes resolved**, with each model's
+  pool and the model that makes titles, so the UI shows which classes share
+  slots without a second copy of the fallback rule. The mock harness repeats
+  the rule, as it repeats every handler.
 - A utility call is one request outside any run: no tools, no history,
   thinking off through the model's `thinking_switch` (effort `none`). It is
   not a `model_calls` row, which records what a session's runs sent.

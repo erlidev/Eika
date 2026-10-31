@@ -34,7 +34,7 @@ import { runRoutes } from "./routes/runs.ts";
 import { searchRoutes } from "./routes/search.ts";
 import { sessionRoutes } from "./routes/sessions.ts";
 import { settingsRoutes } from "./routes/settings.ts";
-import { entryKind, fixedNow, pathOf, syncSystem } from "./world.ts";
+import { classView, entryKind, fixedNow, pathOf, syncSystem } from "./world.ts";
 import type { ReplyStep, World } from "./world.ts";
 
 export { mockToken };
@@ -188,17 +188,12 @@ export class MockHarness {
 
   /**
    * nameSession titles an untitled session after its first message, as the
-   * harness does when the settings assign the session title task a model.
-   * The mock's model titles a message with its first six words.
+   * harness does when a model serves the fast class. The mock's model titles
+   * a message with its first six words.
    */
   private nameSession(session: Session, text: string): void {
     const w = this.world;
-    const assigned = w.settings.settings.utility_models;
-    const model =
-      typeof assigned === "object" && assigned !== null && "session_title" in assigned
-        ? assigned.session_title
-        : undefined;
-    if (!w.untitled.includes(session.id) || !w.models.some((m) => m.name === model)) return;
+    if (!w.untitled.includes(session.id) || classView(w).titles_model === "") return;
     const first = (w.entries[session.id] ?? []).find((e) => e.kind === "user")?.message.content;
     session.title = (first ?? text).split(/\s+/).slice(0, 6).join(" ");
     session.updated_at = fixedNow;

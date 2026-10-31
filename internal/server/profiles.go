@@ -232,8 +232,8 @@ func (d editorDraft) apply(b configBase, sess store.Session) (store.Session, err
 		sess.ProfileID = *d.profileID
 	}
 	if d.modelID != nil {
-		if _, ok := b.model(*d.modelID); *d.modelID != "" && !ok {
-			return store.Session{}, invalidf("model %s does not exist", *d.modelID)
+		if err := b.checkModelID(*d.modelID); err != nil {
+			return store.Session{}, err
 		}
 		sess.Overrides.ModelID = *d.modelID
 	}
@@ -252,8 +252,8 @@ func (s *Server) handleInheritedProfile(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	modelID := r.URL.Query().Get("model_id")
-	if _, ok := base.model(modelID); modelID != "" && !ok {
-		s.fail(w, r, invalidf("model %s does not exist", modelID))
+	if err := base.checkModelID(modelID); err != nil {
+		s.fail(w, r, err)
 		return
 	}
 	layers := []configLayer{{name: layerProfile, settings: store.ProfileSettings{ModelID: modelID}}}
@@ -426,11 +426,15 @@ func (s *Server) checkSettings(ctx context.Context, b profileSettingsBody) (stor
 		return store.ProfileSettings{}, invalidf("%v", err)
 	}
 	if b.ModelID != "" {
-		if _, err := s.deps.Store.Model(ctx, b.ModelID); err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				return store.ProfileSettings{}, invalidf("model %s does not exist", b.ModelID)
-			}
+		m, err := s.deps.Store.Model(ctx, b.ModelID)
+		if errors.Is(err, store.ErrNotFound) {
+			return store.ProfileSettings{}, invalidf("model %s does not exist", b.ModelID)
+		}
+		if err != nil {
 			return store.ProfileSettings{}, err
+		}
+		if m.Kind != store.ModelKindChat {
+			return store.ProfileSettings{}, notChatModel(m)
 		}
 	}
 	sampling, err := json.Marshal(b.Sampling)

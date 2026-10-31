@@ -55,16 +55,21 @@ test("new chat opens a chat from the sidebar", async ({ open, expectAria }) => {
   await expectAria(eika, "chat-sidebar", 'role=navigation[name="Chats"]');
 });
 
-test("a new chat is named after its first message once a utility model is chosen", async ({
+test("a new chat is named after its first message, by the fast model once one is chosen", async ({
   open,
 }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("Settings");
   await eika.click("General");
-  const titles = eika.page.getByRole("combobox", { name: "Session titles" });
-  await expect(titles).toHaveText("Off");
-  await eika.select("role=combobox[name='Session titles']", "gpt-5-mini");
+  const titles = eika.page.getByRole("combobox", { name: "Fast" });
+  await expect(titles).toHaveText("Not set");
+  // With no class set, fast falls back through main to the default model, so
+  // titles work out of the box.
+  await expect(eika.page.getByText("Uses gpt-5, the default model.").first()).toBeVisible();
+  await expect(eika.page.getByText("Session titles are made by gpt-5.")).toBeVisible();
+  await eika.select("role=combobox[name='Fast']", "gpt-5-mini");
   await expect(titles).toHaveText("gpt-5-mini");
+  await expect(eika.page.getByText("Session titles are made by gpt-5-mini.")).toBeVisible();
   await eika.page.keyboard.press("Escape");
 
   await eika.click("New chat");

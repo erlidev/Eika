@@ -22,11 +22,10 @@ const (
 	untitledChat    = "New chat"
 )
 
-// titles names untitled sessions in the background, with the model the
-// utility_models setting assigns the session title task. A title outlives
-// the run that asked for it, so each is a goroutine owned here: the context
-// made in newTitles bounds them, and stop cancels it and waits for them
-// before the store they write to closes.
+// titles names untitled sessions in the background, with the model of the
+// fast class. A title outlives the run that asked for it, so each is a
+// goroutine owned here: the context made in newTitles bounds them, and stop
+// cancels it and waits for them before the store they write to closes.
 type titles struct {
 	server *Server
 	ctx    context.Context
@@ -67,12 +66,12 @@ func (t *titles) start(sess store.Session, message string) {
 }
 
 // name makes the title and gives it to the session, which leaves the session
-// untitled when no model is assigned the task or the model fails.
+// untitled when no model serves titles or the model fails.
 func (t *titles) name(sess store.Session, message string) {
 	s := t.server
 	ctx, cancel := context.WithTimeout(t.ctx, titleTimeout)
 	defer cancel()
-	m, ok, err := s.utilityModel(ctx, utility.TaskSessionTitle)
+	m, ok, err := s.titleModel(ctx)
 	if err != nil {
 		s.log.Error("read the session title model", "session_id", sess.ID, "error", err)
 		return
@@ -120,6 +119,34 @@ func (t *titles) stop() {
 	t.mu.Unlock()
 	t.cancel()
 	t.wg.Wait()
+}
+
+// titleModel returns the model that makes session titles: the fast class. A
+// missing fast model must not turn titles off, so the class falls back to
+// main, and main to the default model. A title is not worth the cost of a hosted reasoning model, so titles
+// are skipped when the fallback lands on the model the user assigned the deep
+// class and that model is on a hosted API. A fast model the user assigned
+// outright is used whatever it is.
+func (s *Server) titleModel(ctx context.Context) (store.Model, bool, error) {
+	models, err := s.deps.Store.Models(ctx)
+	if err != nil {
+		return store.Model{}, false, err
+	}
+	assigned := s.classAssignments(ctx)
+	choice, ok := resolveClass(classFast, assigned, models, s.defaultModelName(ctx, models))
+	if !ok {
+		return store.Model{}, false, nil
+	}
+	if choice.fellBack(classFast) && choice.Model.Name == assigned[classDeep] {
+		p, err := s.deps.Store.Provider(ctx, choice.Model.ProviderID)
+		if err != nil {
+			return store.Model{}, false, err
+		}
+		if hostedEndpoint(p) {
+			return store.Model{}, false, nil
+		}
+	}
+	return choice.Model, true, nil
 }
 
 // utilityClient returns model m, as configured, for a utility task.

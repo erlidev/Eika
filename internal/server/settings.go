@@ -16,7 +16,6 @@ import (
 	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/store"
-	"github.com/erlidev/eika/internal/utility"
 )
 
 // The settings keys the harness reads itself. Each is validated when it is
@@ -41,9 +40,6 @@ const (
 	// settingSetupComplete records that the user finished or skipped the
 	// guided setup, so the UI stops offering it.
 	settingSetupComplete = "setup_complete"
-	// settingUtilityModels assigns the harness's own tasks the names of the
-	// models they are sent to; a task it assigns none does not run.
-	settingUtilityModels = "utility_models"
 	// settingIdleMinutes is how long a running computer may go without a
 	// run before the harness stops it; 0 never stops one.
 	settingIdleMinutes = "computer_idle_minutes"
@@ -65,6 +61,12 @@ const maxSettingKey = 64
 type settingsResponse struct {
 	Settings map[string]json.RawMessage `json:"settings"`
 	Defaults settingsDefaults           `json:"defaults"`
+	// Classes is every model class and the model that serves it now, fallbacks
+	// applied, so a client never repeats the fallback rule.
+	Classes []classBody `json:"classes"`
+	// TitlesModel is the name of the model that makes session titles, and
+	// empty when none does.
+	TitlesModel string `json:"titles_model"`
 }
 
 // settingsDefaults are the values the harness's own keys have until the user
@@ -160,7 +162,19 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 	if s.deps.Search != nil {
 		defaults.SearchOrder, defaults.SearchLimits = s.deps.Search.Web(), s.deps.Search.DefaultLimits()
 	}
-	writeJSON(w, s.log, status, settingsResponse{Settings: out, Defaults: defaults})
+	classes, err := s.classBodies(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	titles, _, err := s.titleModel(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, s.log, status, settingsResponse{
+		Settings: out, Defaults: defaults, Classes: classes, TitlesModel: titles.Name,
+	})
 }
 
 // validateSetting rejects a value the harness could not use for one of its
@@ -178,20 +192,9 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		if err := json.Unmarshal(value, &name); err != nil {
 			return invalidf("%s must be a model name", key)
 		}
-		return s.checkModelName(ctx, key, name)
-	case settingUtilityModels:
-		var assigned map[utility.Task]string
-		if err := json.Unmarshal(value, &assigned); err != nil {
-			return invalidf("%s must be an object of task names to model names", key)
-		}
-		for task, name := range assigned {
-			if !utility.Known(task) {
-				return invalidf("%s names %q, which is not a task", key, task)
-			}
-			if err := s.checkModelName(ctx, key, name); err != nil {
-				return err
-			}
-		}
+		return s.checkChatModelName(ctx, key, name)
+	case settingModelClasses:
+		return s.validateModelClasses(ctx, value)
 	case settingDefaultProfile:
 		var id string
 		if err := json.Unmarshal(value, &id); err != nil {
@@ -255,17 +258,29 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 	return nil
 }
 
-// checkModelName accepts the name of a configured model, or the empty name
-// for none.
-func (s *Server) checkModelName(ctx context.Context, key, name string) error {
+// modelNamed returns the configured model called name, and an invalid-request
+// error naming key when there is none.
+func (s *Server) modelNamed(ctx context.Context, key, name string) (store.Model, error) {
+	m, err := s.deps.Store.ModelByName(ctx, name)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Model{}, invalidf("%s names %q, which is not a configured model", key, name)
+	}
+	return m, err
+}
+
+// checkChatModelName accepts the name of a configured chat model, or the
+// empty name for none. A decision model answers typed questions and cannot
+// hold a conversation, so it is refused wherever a conversation is held.
+func (s *Server) checkChatModelName(ctx context.Context, key, name string) error {
 	if name == "" {
 		return nil
 	}
-	if _, err := s.deps.Store.ModelByName(ctx, name); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return invalidf("%s names %q, which is not a configured model", key, name)
-		}
+	m, err := s.modelNamed(ctx, key, name)
+	if err != nil {
 		return err
+	}
+	if m.Kind != store.ModelKindChat {
+		return invalidf("%s names %q, a %s model, which cannot hold a conversation", key, name, m.Kind)
 	}
 	return nil
 }
@@ -306,48 +321,28 @@ func (s *Server) defaultModelSetting(ctx context.Context) string {
 	return name
 }
 
-// utilityModel returns the model the settings assign task, and false when
-// they assign none or name a model that no longer exists.
-func (s *Server) utilityModel(ctx context.Context, task utility.Task) (store.Model, bool, error) {
-	var assigned map[utility.Task]string
-	readSetting(ctx, s.deps.Store, s.log, settingUtilityModels, &assigned)
-	name := assigned[task]
-	if name == "" {
-		return store.Model{}, false, nil
-	}
-	m, err := s.deps.Store.ModelByName(ctx, name)
-	if errors.Is(err, store.ErrNotFound) {
-		s.log.Warn("utility model setting names no model", "task", task, "model", name)
-		return store.Model{}, false, nil
-	}
-	if err != nil {
-		return store.Model{}, false, err
-	}
-	return m, true, nil
-}
-
 // renameModelSettings makes the settings that name a model by oldName name
 // it by newName, so that renaming a model keeps it the default and keeps the
-// tasks assigned to it.
+// classes assigned to it.
 func (s *Server) renameModelSettings(ctx context.Context, oldName, newName string) error {
 	writes := map[string]json.RawMessage{}
 	if s.defaultModelSetting(ctx) == oldName {
 		writes[settingDefaultModel] = jsonString(newName)
 	}
-	var assigned map[utility.Task]string
-	if readSetting(ctx, s.deps.Store, s.log, settingUtilityModels, &assigned) {
+	var assigned map[modelClass]string
+	if readSetting(ctx, s.deps.Store, s.log, settingModelClasses, &assigned) {
 		renamed := false
-		for task, name := range assigned {
+		for c, name := range assigned {
 			if name == oldName {
-				assigned[task], renamed = newName, true
+				assigned[c], renamed = newName, true
 			}
 		}
 		if renamed {
 			value, err := json.Marshal(assigned)
 			if err != nil {
-				return fmt.Errorf("encode %s: %w", settingUtilityModels, err)
+				return fmt.Errorf("encode %s: %w", settingModelClasses, err)
 			}
-			writes[settingUtilityModels] = value
+			writes[settingModelClasses] = value
 		}
 	}
 	if len(writes) == 0 {

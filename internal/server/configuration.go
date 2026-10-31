@@ -107,7 +107,10 @@ type runConfig struct {
 // configBase is what resolving a configuration reads from the database:
 // the models, the profiles, and the defaults the settings name.
 type configBase struct {
+	// models are the chat models: the only ones a run can use. The others are
+	// kept for refusing them by name.
 	models       []store.Model
+	notChat      []store.Model
 	defaultModel store.Model
 	profiles     []store.Profile
 	// defaultProfile is the profile a session that chose none runs with.
@@ -124,7 +127,12 @@ func (s *Server) loadConfigBase(ctx context.Context) (configBase, error) {
 	if err != nil {
 		return configBase{}, err
 	}
-	b := configBase{models: models, profiles: profiles}
+	b := configBase{models: chatModels(models), profiles: profiles}
+	for _, m := range models {
+		if m.Kind != store.ModelKindChat {
+			b.notChat = append(b.notChat, m)
+		}
+	}
 	b.defaultModel, _ = s.defaultModel(ctx, models)
 	b.defaultProfile = s.defaultProfile(ctx, profiles)
 	return b, nil
@@ -162,7 +170,7 @@ func (b configBase) profileOf(sess store.Session) (store.Profile, string) {
 	return b.defaultProfile, layerDefault
 }
 
-// model returns the model with the given id.
+// model returns the chat model with the given id.
 func (b configBase) model(id string) (store.Model, bool) {
 	for _, m := range b.models {
 		if m.ID == id {
@@ -170,6 +178,24 @@ func (b configBase) model(id string) (store.Model, bool) {
 		}
 	}
 	return store.Model{}, false
+}
+
+// checkModelID accepts the id of a chat model, or the empty id for none, and
+// refuses any other: one that does not exist, or a decision model, which
+// cannot hold a conversation.
+func (b configBase) checkModelID(id string) error {
+	if _, ok := b.model(id); ok || id == "" {
+		return nil
+	}
+	if i := slices.IndexFunc(b.notChat, func(m store.Model) bool { return m.ID == id }); i >= 0 {
+		return notChatModel(b.notChat[i])
+	}
+	return invalidf("model %s does not exist", id)
+}
+
+// notChatModel refuses a model that cannot hold a conversation.
+func notChatModel(m store.Model) error {
+	return invalidf("model %q is a %s model, which cannot hold a conversation", m.Name, m.Kind)
 }
 
 // sessionLayers are the layers of a run of sess, top first: the model the
@@ -181,6 +207,9 @@ func (b configBase) sessionLayers(sess store.Session, requested string) ([]confi
 	if requested != "" {
 		i := slices.IndexFunc(b.models, func(m store.Model) bool { return m.Name == requested })
 		if i < 0 {
+			if j := slices.IndexFunc(b.notChat, func(m store.Model) bool { return m.Name == requested }); j >= 0 {
+				return nil, store.Profile{}, "", notChatModel(b.notChat[j])
+			}
 			return nil, store.Profile{}, "", invalidf("unknown model %q", requested)
 		}
 		layers = append(layers, configLayer{name: layerRequest, settings: store.ProfileSettings{ModelID: b.models[i].ID}})

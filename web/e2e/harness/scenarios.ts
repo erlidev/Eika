@@ -687,6 +687,39 @@ export const scenarios = {
       return b.world;
     },
   },
+  classes: {
+    description:
+      "The workbench with a llama.cpp bench (one chat model), a decision model on a server of its own, and the OpenAI models. The classes are set: deep is gpt-5, main is the bench's model, decision is d3-flash, and fast is not set, so it falls back to main on the same pool. For the model classes in Settings, General.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      const bench = b.provider({
+        name: "Bench",
+        base_url: "http://10.0.0.2:8091/v1",
+        api_key_hint: undefined,
+        backend: "llamacpp",
+        slots: 2,
+        kv: "unknown",
+      });
+      b.model(bench, { name: "bench-chat", model: "qwen3.8-27b", context_window: 131072 });
+      const decider = b.provider({
+        name: "Decider",
+        base_url: "http://10.0.0.3:9941/v1",
+        api_key_set: false,
+        api_key_hint: undefined,
+        backend: "llamacpp",
+        slots: 2,
+        kv: "unknown",
+      });
+      b.model(decider, { name: "d3-flash", kind: "decision", context_window: 32768 });
+      b.world.settings.settings.model_classes = {
+        deep: "gpt-5",
+        main: "bench-chat",
+        decision: "d3-flash",
+      };
+      return b.world;
+    },
+  },
   "bench-window": {
     description:
       "A llama.cpp bench that serves 131,072 tokens per request, with one model whose context window is set to 200,000 (Settings warns) and one set within it (no warning). For the Models tab.",

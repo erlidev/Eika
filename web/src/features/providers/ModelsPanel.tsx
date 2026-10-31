@@ -190,6 +190,7 @@ export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps)
             <ModelPicker
               key={pickingFor.id}
               provider={pickingFor}
+              offerDecision
               onCancel={() => {
                 setPickingFor(null);
               }}
@@ -364,6 +365,9 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
   const test = useTestModel();
   const [confirming, setConfirming] = useState(false);
   const warning = windowWarning(model);
+  // A decision model answers typed questions, so it is not the default and a
+  // chat request cannot test it.
+  const decision = model.kind === "decision";
 
   return (
     <li className="px-4 py-2.5">
@@ -371,6 +375,15 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
         <div className="min-w-40 flex-1">
           <p className="flex min-w-0 items-center gap-2 text-sm">
             <span className="truncate font-medium">{model.name}</span>
+            {decision && (
+              <Badge
+                variant="outline"
+                className="shrink-0"
+                title="Answers typed questions, not chat: never offered for a conversation"
+              >
+                Decision
+              </Badge>
+            )}
             {isDefault && (
               <Badge variant="secondary" className="shrink-0">
                 Default
@@ -394,29 +407,31 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
           </p>
         </div>
         <span className="flex items-center gap-1">
-          {!isDefault && (
+          {!isDefault && !decision && (
             <Button size="xs" variant="ghost" onClick={onMakeDefault}>
               <Star aria-hidden />
               Make default
             </Button>
           )}
-          <Button
-            size="xs"
-            variant="ghost"
-            disabled={test.isPending}
-            onClick={() => {
-              test.mutate({
-                provider_id: model.provider_id,
-                model: model.model,
-                ...(model.reasoning_effort ? { reasoning_effort: model.reasoning_effort } : {}),
-                thinking_switch: model.thinking_switch,
-                preserve_thinking: model.preserve_thinking,
-                image_input: model.image_input,
-              });
-            }}
-          >
-            {test.isPending ? "Testing…" : "Test"}
-          </Button>
+          {!decision && (
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={test.isPending}
+              onClick={() => {
+                test.mutate({
+                  provider_id: model.provider_id,
+                  model: model.model,
+                  ...(model.reasoning_effort ? { reasoning_effort: model.reasoning_effort } : {}),
+                  thinking_switch: model.thinking_switch,
+                  preserve_thinking: model.preserve_thinking,
+                  image_input: model.image_input,
+                });
+              }}
+            >
+              {test.isPending ? "Testing…" : "Test"}
+            </Button>
+          )}
           <Button size="icon-xs" variant="ghost" aria-label={`Edit ${model.name}`} onClick={onEdit}>
             <Pencil aria-hidden />
           </Button>

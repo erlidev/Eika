@@ -15,6 +15,8 @@ import {
 function state(settings: Record<string, unknown>): SettingsState {
   return {
     settings,
+    classes: [],
+    titles_model: "",
     defaults: {
       sandbox_image: "eika-sandbox:latest",
       computer_idle_minutes: 15,

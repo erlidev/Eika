@@ -80,6 +80,8 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	body.Providers, body.Models = len(providers), len(models)
+	// Setup needs a model a conversation can run on.
+	body.Providers = len(providers)
+	body.Models = len(chatModels(models))
 	writeJSON(w, s.log, http.StatusOK, body)
 }

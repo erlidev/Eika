@@ -399,11 +399,14 @@ consumes one.
 ## Adding a utility task
 
 A utility task is a small job the harness gives a model for itself, outside
-any run: naming a session is one. The user assigns each task a model in
-Settings, General (the `utility_models` setting); a task with no model does
-not run. A task is a `utility.Task` in `internal/utility/utility.go`, listed
-in `Known`, and a function in its own file of that package that sends one
-request with `Model.request`, which turns thinking off the way a run does:
+any run: naming a session is one. A task never names a model. It runs on a
+model class (`deep`, `main`, `fast`, or `decision`), and the user assigns each
+class a model in Settings, General (the `model_classes` setting). Pick the
+class by what the task needs: `fast` for a small job, `main` for most work,
+`deep` for hard reasoning. A class with no model falls back (`deep` and
+`fast` to `main`), and a task with no model at all does not run. A task is a
+function in its own file of `internal/utility` that sends one request with
+`Model.request`, which turns thinking off the way a run does:
 
 ```go
 package utility
@@ -428,15 +431,19 @@ func Summary(ctx context.Context, m Model, answer string) (string, error) {
 }
 ```
 
-The server calls it where its trigger happens: `s.utilityModel(ctx, task)`
-reads the assigned model (false for none), and `s.utilityClient` builds it.
-A task that must not hold up a request runs in a goroutine with an owner that
-`Server.Close` stops, as `titles` in `internal/server/titles.go` does. Test
-the function with `providertest`, as `internal/utility/title_test.go` does,
-and the trigger with a `docker`-tagged server test. Give the task a label in
-`utilityTasks` in `web/src/features/settings/UtilityModels.tsx`, add it to
-the `utility_models` row in `docs/api/http.md`, and mirror it in the mock
-harness.
+The server calls it where its trigger happens: `resolveClass` in
+`internal/server/classes.go` returns the model of the class the task runs on
+(false for none), with the fallbacks applied, and `s.utilityClient` builds
+it. A task with a rule of its own for when to skip, as titles have, wraps
+that in a method beside its trigger, as `titleModel` does. A task that must
+not hold up a request runs in a goroutine with an owner that `Server.Close`
+stops, as `titles` in `internal/server/titles.go` does. Test the function
+with `providertest`, as `internal/utility/title_test.go` does, and the
+trigger with a `docker`-tagged server test. The classes need no UI change; a
+new class is a decision of its own: add it to `modelClasses` in `classes.go`
+with its kind and fallback, to `classInfo` in
+`web/src/features/settings/classes.ts`, to the `model_classes` row in
+`docs/api/http.md`, and mirror it in the mock harness's `classView`.
 
 ## Using a custom sandbox image
 

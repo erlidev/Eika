@@ -22,7 +22,7 @@ export const settingKeys = {
   sandboxLimits: "sandbox_limits",
   sandboxEgress: "sandbox_egress",
   setupComplete: "setup_complete",
-  utilityModels: "utility_models",
+  modelClasses: "model_classes",
   computerIdleMinutes: "computer_idle_minutes",
 } as const;
 
@@ -75,15 +75,15 @@ export function settingNumber(state: SettingsState | undefined, key: string): nu
 }
 
 /**
- * utilityModels reads which model each utility task is assigned, by task. A
- * value that is not an object of names reads as no assignments.
+ * modelClassAssignments reads which model each class is assigned, by class.
+ * A value that is not an object of names reads as no assignments.
  */
-export function utilityModels(state: SettingsState | undefined): Record<string, string> {
-  const value = state?.settings[settingKeys.utilityModels];
+export function modelClassAssignments(state: SettingsState | undefined): Record<string, string> {
+  const value = state?.settings[settingKeys.modelClasses];
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
   const out: Record<string, string> = {};
-  for (const [task, name] of Object.entries(value)) {
-    if (typeof name === "string") out[task] = name;
+  for (const [name, model] of Object.entries(value)) {
+    if (typeof model === "string") out[name] = model;
   }
   return out;
 }

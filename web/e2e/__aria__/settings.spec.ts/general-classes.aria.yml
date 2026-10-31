@@ -1,0 +1,58 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "Profiles"
+    - tab "General" [selected]
+    - tab "Compaction"
+    - tab "Computer"
+    - tab "Search"
+    - tab "MCP"
+    - tab "Account"
+    - tab "Appearance"
+  - tabpanel "General":
+    - text: Default model
+    - combobox "Default model": gpt-5
+    - paragraph: Used when a message names no model. A session can pick another in its status bar.
+    - heading "Model classes" [level=3]
+    - paragraph: Tasks and agents ask for a class, not a model. Classes served from one pool of hardware contend for the same slots.
+    - text: Deep
+    - combobox "Deep": gpt-5
+    - paragraph: Hard reasoning, and anything an agent definition marks deep. May be a cloud model. Falls back to main.
+    - text: Main
+    - combobox "Main": bench-chat
+    - paragraph: The main agent and most tasks. Falls back to the default model.
+    - paragraph: Shares the Bench pool with fast.
+    - text: Fast
+    - combobox "Fast": Not set
+    - paragraph: Session titles and other small tasks. Falls back to main, so a missing fast model does not turn titles off.
+    - paragraph: Uses bench-chat, the main model.
+    - paragraph: Session titles are made by bench-chat.
+    - paragraph: Shares the Bench pool with main.
+    - text: Decision
+    - combobox "Decision": d3-flash
+    - paragraph: A decision model answers typed questions with calibrated probabilities instead of writing text. Nothing asks it anything yet.
+    - text: Sandbox image
+    - textbox "Sandbox image":
+      - /placeholder: eika-sandbox:latest
+    - button "Save" [disabled]
+    - paragraph:
+      - text: The image the home computer is created from. Leave empty for
+      - code: eika-sandbox:latest
+      - text: ", which the compose stack builds. A container that exists keeps its image, so a change reaches the home computer only when its container is made again. Any image works: the harness copies its daemon in."
+    - heading "Sandbox" [level=3]
+    - button "Check again"
+    - list:
+      - listitem:
+        - paragraph: Docker
+        - paragraph: The harness can start containers.
+      - listitem:
+        - paragraph: Sandbox image
+        - paragraph:
+          - code: eika-sandbox:latest
+          - text: is ready.
+    - heading "Guided setup" [level=3]
+    - paragraph: Walk through connecting a provider and checking the sandbox again.
+    - button "Run the setup again"
+  - button "Close"

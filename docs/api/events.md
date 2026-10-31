@@ -373,7 +373,7 @@ page stays current without polling.
 ### `session.title`
 
 Published on `global` when an untitled session is named after its first
-message by the model the `utility_models` setting assigns `session_title`.
+message by the model of the `fast` class (the `model_classes` setting).
 It goes to every client, since every sidebar lists every session; a client
 refetches its session lists.
 

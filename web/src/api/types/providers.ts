@@ -21,10 +21,22 @@ export const effortNone = "none";
  */
 export type ThinkingSwitch = "reasoning_effort" | "chat_template_kwargs" | "thinking";
 
+/**
+ * ModelKind is what a model answers: a chat model holds a conversation; a
+ * decision model answers typed questions at /v1/systemone and cannot, so it is
+ * never offered where a conversation is held.
+ */
+export type ModelKind = "chat" | "decision";
+
+/** modelKinds lists every ModelKind, in the order a menu offers them. */
+export const modelKinds: readonly ModelKind[] = ["chat", "decision"];
+
 /** Model is one model the user configured on a provider. */
 export type Model = {
   id: string;
   provider_id: string;
+  /** kind is chosen when the model is added and does not change. */
+  kind: ModelKind;
   /** name is what Eika calls the model, unique across providers. */
   name: string;
   /** model is the identifier the provider's endpoint knows it by. */
@@ -50,13 +62,15 @@ export type Model = {
 /** Models is the body of GET /api/models. */
 export type Models = {
   models: Model[];
-  /** default is the model a run uses when it names none; absent when there are no models. */
+  /** default is the chat model a run uses when it names none; absent when there are no chat models. */
   default?: string;
 };
 
 /** CreateModel is the body of POST /api/models. */
 export type CreateModel = {
   provider_id: string;
+  /** kind defaults to chat. */
+  kind?: ModelKind;
   /** name defaults to model. */
   name?: string;
   model: string;
@@ -70,11 +84,15 @@ export type CreateModel = {
 };
 
 /** UpdateModel is the body of PATCH /api/models/{id}; an absent field is left alone. */
-export type UpdateModel = Partial<Omit<CreateModel, "provider_id">>;
+export type UpdateModel = Partial<Omit<CreateModel, "provider_id" | "kind">>;
 
-/** TestModel is the body of POST /api/models/test. */
+/**
+ * TestModel is the body of POST /api/models/test. A decision model is refused:
+ * the test is a chat request, which it cannot answer.
+ */
 export type TestModel = {
   provider_id: string;
+  kind?: ModelKind;
   model: string;
   reasoning_effort?: ReasoningEffort;
   thinking_switch?: ThinkingSwitch;

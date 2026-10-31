@@ -76,7 +76,8 @@ the route.
   llama.cpp as for any other endpoint: a streamed tool-call round trip with a
   reasoning item sent back, usage with cache metrics, and, where the endpoint
   counts exactly, the second request counted to the token. Otherwise `chat`. The
-  check asks the user's model (the provider's oldest configured one) two small
+  check asks the user's model (the provider's oldest configured chat model,
+  never a decision model, which cannot answer a chat request) two small
   requests, so it runs on an explicit probe and, at start, only when its recorded
   outcome (`capabilities.responses`) was made on another server build or model;
   a provider with no model is skipped and stays on `chat`. llama.cpp passes on
@@ -133,15 +134,27 @@ Agents and harness tasks never name a model. They name a class, and the setting
 | `fast` | chat | Titles, summaries for notifications, the reviewer when no decision model is set, routine pre-checks |
 | `decision` | decision | Sentry's reviewer and monitor, injection screening, routing, "is this worth a notification" |
 
-A class with no model falls back along `deep -> main` and `fast -> main`. `decision`
+A class with no model falls back along `deep -> main` and `fast -> main`, and a chat
+class with no model along that chain falls back to the default model
+(`default_model`, or the first chat model when it names none), so `fast -> main ->
+default model` works before the user has set a class. `decision`
 falls back to a chat model emulating the protocol (`sentry.md` 9.3). The UI shows
 which classes share an endpoint, since a shared endpoint means they contend for
 the same slots.
 
 `model_classes` replaces `utility_models`. The session title task moves to `fast`.
 For chat classes the fallback is deliberate: a missing `fast` model must not
-disable titles. Titles are still skipped when `fast` would fall back onto a
-`deep` cloud model.
+disable titles. Titles are still skipped when `fast` would fall back, through `main`
+or the default model, onto the model assigned to `deep`, if that is a hosted API (a
+"cloud" model: its provider's backend is `openai`). A model the user assigned to `fast` is used
+whatever it is. A class whose model row is deleted counts as unset.
+
+A model's `kind` is chosen when it is added and does not change. A `decision`
+model is refused wherever a conversation is held: the default model, a profile's
+or session's model, a message's model, and the `deep`, `main` and `fast`
+classes. The model test, a chat request, does not run on one; the test that
+asks a decision model its own question comes with its client (`sentry.md` 9).
+The Responses check asks a provider's oldest chat model.
 
 Naming alternatives that were considered: high/medium/low; System 2/System 1;
 thinker/worker/scout. `deep`/`main`/`fast` describe what each class is for and

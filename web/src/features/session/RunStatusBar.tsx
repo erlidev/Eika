@@ -29,7 +29,13 @@ import {
   useRunStatus,
 } from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
-import { useModel, useModels, useProviders, useUpdateModel } from "@/features/providers";
+import {
+  chatModels,
+  useModel,
+  useModels,
+  useProviders,
+  useUpdateModel,
+} from "@/features/providers";
 import { nextEffort } from "@/features/providers/efforts";
 import type { Model } from "@/api/types";
 import { failureText } from "@/lib/failure";
@@ -97,7 +103,9 @@ export function RunStatusBar({
         </SelectTrigger>
         <SelectContent>
           {(providers.data?.providers ?? []).map((provider) => {
-            const own = (models.data?.models ?? []).filter((m) => m.provider_id === provider.id);
+            const own = chatModels(models.data?.models).filter(
+              (m) => m.provider_id === provider.id,
+            );
             if (own.length === 0) return null;
             return (
               <SelectGroup key={provider.id}>
