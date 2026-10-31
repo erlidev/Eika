@@ -244,7 +244,14 @@ chosen per provider row, so it needs a check that tells the two apart:
 with the reasoning item sent back, usage with cache metrics, exact counting),
 run by `server/providers_responses.go` and recorded in
 `capabilities.responses`. It asks the user's model, so it runs only when a
-probe needs it. Record each backend's streams in
+probe needs it. A backend feature that helps only when the server behaves a
+certain way, and whose behaviour the server does not state, is gated the same
+way: `probe.CheckSlotAffinity` measures whether naming a llama.cpp slot keeps a
+prefix there, `capabilities.slot_affinity` records it, and
+`server/providers_slots.go`'s `takesSlotHints` is the one rule that lets the
+queue place calls by slot and the client send `id_slot`. A backend that takes
+slot hints too adds itself to `namesSlots` and to the client's field, in the
+`openai` package's `slot.go`. Record each backend's streams in
 `internal/provider/testdata/responses/<backend>/`, marked recorded or
 unverified in the README there.
 

@@ -28,7 +28,7 @@ A provider row (kept from today) gains these fields:
 | `api` | `responses` or `chat`: which wire protocol Core speaks to the endpoint (below). Chosen by the Responses conformance check, `chat` until one passes, and the user can override it |
 | `slots` | Concurrent requests the pool accepts. The probe reads it where the server states it (llama.cpp `total_slots`, SGLang `max_running_requests`, TabbyAPI `max_batch_size`); otherwise 1 for a local backend, 8 for a cloud one. The user can override it |
 | `kv` | `shared` (one cache all requests draw on, with its size in tokens), `partitioned` (a fixed share per slot) or `unknown` (the server does not say and nothing it serves tells the two apart). Probed; the user can override it and the size |
-| `capabilities` | Probe result (jsonb): how the endpoint counts tokens (`chat`, `text`, `none`), whether it reports cache metrics (`reported`, `unknown`), whether it takes slot hints, the per-request context it reported (`window`), the server's version (`build`), and the outcome of the Responses check (`responses`: verdict, reason, the model and build it ran on) |
+| `capabilities` | Probe result (jsonb): how the endpoint counts tokens (`chat`, `text`, `none`), whether it reports cache metrics (`reported`, `unknown`), whether it takes slot hints, the per-request context it reported (`window`), the server's version (`build`), the outcome of the Responses check (`responses`: verdict, reason, the model and build it ran on) and, for llama.cpp with several slots, the outcome of the slot affinity check (`slot_affinity`, the same shape: whether a named slot keeps its prefix) |
 
 The probe (`POST /api/providers/probe`, and again on every Core start) reads the
 endpoint's own description where it has one. It identifies the backend by the
@@ -318,9 +318,9 @@ compaction, titles, dream steps and chat-model emulation of decisions. Sentry ma
 its own calls to its own endpoints; see `sentry.md` 9.4.
 
 ```
-call := queue.Acquire(ctx, Need{Endpoint, Priority, SessionID, Tokens})  // blocks
+call := queue.Acquire(ctx, Need{Endpoint, Priority, SessionID, Affinity, Tokens, Prompt})  // blocks
 defer call.Release()
-provider.Stream(ctx, request with call.SlotHint())
+provider.Stream(ctx, request with call.SlotHint())   // a slot only where the endpoint takes hints
 ```
 
 - **Concurrency.** A pool admits `slots` leases at once; further calls wait. A
@@ -359,9 +359,18 @@ provider.Stream(ctx, request with call.SlotHint())
   through the steering queue, the run's next call is `interactive`.
 - **Slot affinity, llama.cpp only.** With `slots > 1`, a session keeps the slot it
   last used (LRU map) and the request carries `id_slot`, so its prefix stays in that
-  slot's KV cache. This is the only backend-specific cache feature in the first
+  slot's KV cache. A busy slot is waited for as long as reading the prefix again
+  would take, then another free slot is taken and the map follows. Compaction
+  summaries use the session's slot; titles, the model test and the checks name
+  none. Slot numbers are per endpoint. Both `/v1/chat/completions` and
+  `/v1/responses` read `id_slot`. Whether a named slot keeps its prefix depends on
+  how the server was started (llama.cpp with a unified KV cache and
+  `--cache-idle-slots`, both the default, clears an idle slot when another starts
+  and restores prefixes only for requests that name no slot), so `id_slot` is
+  sent only after the slot affinity check (`capabilities.slot_affinity`) passed.
+  This is the only backend-specific cache feature in the first
   version. Slot save and restore to disk, and anything like LMCache, are deferred
-  (`PLAN.md`, open questions).
+  (`PLAN.md`, open questions). `DECISIONS.md` ("Slot affinity") has the reasons.
 - **No compute budget.** Priorities and aging keep background work from hurting
   interactive latency.
 - **Visibility.** Queue wait is recorded per call (`queue_ms`). Activity shows what

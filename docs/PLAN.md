@@ -291,9 +291,11 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       - priority upgrade: a user message that joins a running background home
         turn raises that run's next lease to `interactive`
       Every model call in Core goes through it.
-- [ ] Slot affinity on llama.cpp endpoints with `slots > 1` (`id_slot`, an LRU map
+- [x] Slot affinity on llama.cpp endpoints with `slots > 1` (`id_slot`, an LRU map
       from session to slot). Verify `id_slot` is honoured on `/v1/responses` as
-      well as chat completions.
+      well as chat completions. (Honoured on both. Sent only to a server that
+      passed the slot affinity check, which the bench's server does not: see the
+      Log.)
 - [ ] Loop hardening:
       - `Options.Clock` and the `<context>` block, with the time on every
         user-side message
@@ -334,7 +336,12 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
         `shared_admission` scenario by the inference queue item, through a
         client-side pool; the agent loop's own run of it is left to this item)
       - slot affinity: two alternating sessions keep their `id_slot`, and
-        `cache_n` shows the prefix reused
+        `cache_n` shows the prefix reused (the scenarios `slot_affinity` and
+        `responses_slot_affinity` landed with the slot affinity item and show the
+        opposite on the bench as it is started: the runner restarts `llama-qwen`
+        with `--no-cache-idle-slots`, and the scenarios must then show the check
+        passing, one slot per session and the prefix reused; then it restores
+        `llama-qwen`)
       - queue priority: an interactive call overtakes a waiting background call
         on one slot (done as the `queue_priority` scenario by the inference
         queue item, through a client-side pool of one; the same with two
@@ -1048,6 +1055,110 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-31: slot affinity (branch `slot-affinity`, from `phase-1`; `14e1310`,
+  `ccc67d0`, `8b3ab03`, `fda8a99` and this entry). The item is ticked. The
+  decisions are in `DECISIONS.md` ("Slot affinity"). The headline: `id_slot` is
+  honoured on both routes, and on the bench's server it does not keep a prefix, so
+  the harness does not send it there.
+  - What `id_slot` does on b11942-338fce651, read, not inferred. Both
+    `/v1/chat/completions` and `/v1/responses` honour it: `/slots` showed the named
+    slot, and only it, processing a 200-token generation for slots 1, 1, 0, 0 under
+    each route (the order is chosen so least-recently-used selection and selection
+    by prompt similarity would each be caught). A number past the slot count is
+    taken modulo it (`get_slot_by_id`: 7 ran on slot 1 of 2), so a stale hint
+    lands on some slot and never fails. The request carried `id_slot` with zero
+    drift: it is not in the body `/apply-template` renders.
+  - Why that is not enough. With a unified KV cache and `--cache-idle-slots`
+    (the llama.cpp defaults, and the bench's) the server saves every idle slot's
+    prompt to a host cache and clears it whenever another slot starts a task, and
+    restores a prefix from that cache only for a request that names no slot
+    (`get_available_slot` takes an empty named slot as it is; read from the source
+    of the build, `tools/server/server-context.cpp` at `338fce651`). Observed: one
+    session pinned to slot 0 reuses its prefix (3453 of 3894 prompt tokens
+    cached, then 3895 of 4336); with any request on the other slot between, the
+    pinned request finds 0, whether that request was a 20-token call or the other
+    session's; the same sequences without `id_slot` find 3454 of 3895.
+  - The numbers (`slot_affinity`, two sessions of a 3000-token shared head and
+    three turns each, through the agent loop on the queue). Chat: with
+    `id_slot` per session, 25920 prompt tokens prefilled (6.76 s), every call
+    after the first cold (cached 0, slots 0 and 1 kept: the queue did its part);
+    with no hint 10825 prefilled (3.17 s), each call finding the 3019-token head
+    (the server's similarity rule puts the second session on the first's slot, so
+    the other slot stays empty and each call keeps only the shared head).
+    Affinity saved -15095 tokens (-3.59 s). Responses: 25926 against 10826,
+    -15100 (-3.62 s). Where a named slot does keep its prefix the saving on this
+    workload is modest: about 441 prefilled per later turn (the single-session
+    figure) against 1300 to 1700 for the control, roughly 9520 against 10825
+    tokens in all, an estimate, not a measurement; it grows with how much of a
+    session's prompt is its own.
+  - What landed. `internal/inference/affinity.go`: a book per endpoint of what each
+    slot holds, `Need.Affinity` and `Need.Prompt`, `Lease.SlotHint`, a busy slot
+    waited for as long as reading the prefix again takes (`Policy.PrefillRate`,
+    2000 tokens a second) and then a free one (the ski-rental rule), the wait holding
+    the line; calls with no affinity (titles, the model test, the checks) name no
+    slot and never move a session's entry; each endpoint of a pool has its own
+    numbers, and a hinted endpoint may have more slots than the pool runs at once.
+    `provider.Request.SlotHint` and `Endpoint.SlotHints`: both OpenAI providers send
+    `id_slot` only when the endpoint takes it, and send the request again without
+    it if the server refuses the field in a 400 that names it. The loop sets the
+    hint on the request after sizing it, for turns and compaction summaries.
+    `model_calls.slot` is the slot the request named, NULL otherwise (the queue's
+    own count meant nothing to a vLLM call); `GET /api/inference` running calls
+    carry `slot_named`.
+  - The gate. `probe.CheckSlotAffinity` (three small requests, slot 0, slot 1,
+    slot 0 continuing the first's conversation; the last must find 80% of the
+    first's prompt cached) runs on the explicit probe and at start only when its
+    outcome (`capabilities.slot_affinity`) is for another build or model, at
+    maintenance priority at start, like the Responses check. Until it has passed, a
+    llama.cpp server is sent no `id_slot`, so a provider with no model, a busy pool
+    or a server like the bench's behaves as it did before this item. On the bench
+    it fails: "found 0 of the 641 prompt tokens cached", with the flag to try in its
+    reason. Rejected in `DECISIONS.md`: sending hints to every llama.cpp server,
+    switching off after cold calls seen at run time, a setting.
+  - Tests. 22 on the queue's fake clock (the book, eviction order, the wait and
+    when it ends, the line held, a cancelled waiter, resize, endpoints of one pool,
+    a hinted endpoint with more slots than the pool runs), provider tests of the body
+    (both routes, no hint, no endpoint support, ChatBody never, refusal retried
+    once and a 400 of another kind not), agent tests (each session's slot reaches the
+    request and the record, none without hints, a compaction summary on the
+    session's slot), probe tests of the check, and docker server tests (sessions keep
+    their slots, every other server and every verdict but a pass gets none, a title
+    names none, the probe runs the check and its verdict decides, start asks again
+    only when stale). The live scenarios are tested against a fake llama.cpp that
+    places requests as the build does, with and without idle-slot clearing.
+  - `make check` passes on the final commit (36 Go packages with the docker tag, 474
+    web tests, 138 visual specs, no baseline changed). `make live` passes on all 29
+    scenarios on b11942-338fce651, Qwen3.8-27B revision 4ca72078. An earlier run
+    failed `shared_admission` once with "post /tokenize: http: server closed idle
+    connection" (the counter's client does not repeat a request that lost a write
+    to a connection llama.cpp closed, as the provider's does; not from this change,
+    it ran before any of the new scenarios) and it passed on every rerun. New:
+    `slot_hint_honoured` and `slot_affinity`, each also under `responses_`. The
+    scenarios assert that the check's verdict and the sessions agree: when it
+    passes, one slot per session and 90% of the previous prompt cached; when it fails,
+    hints did not beat the control. `make smoke` not run: no compose file,
+    Dockerfile, `deploy/` or `server.Run` wiring changed.
+  - Not verified, and why. That `--no-cache-idle-slots` makes the check pass and
+    the sessions reuse their slots: the server is not ours to restart, and the
+    desktop does not load models. It follows from the source (a named slot is no
+    longer emptied), nothing more. The ski-rental wait is tested on the fake
+    clock only: nothing on the bench has one session with two calls at once.
+  - Skipped or open. No UI shows `slot_affinity` or `slot_named` (the types are in
+    `web/src/api/types/providers.ts`); no setting forces hints on or off (a user
+    who knows their server passes can only rerun the probe). A new provider gets
+    hints after its first probe with a model, not when the model is added, as
+    with the Responses check. Two provider rows that reach one server are two
+    endpoints to the queue (give one server one row). The phase 1 live suite's
+    slot bullet now says what remains.
+  - For later items. The runner restarts `llama-qwen` with `--no-cache-idle-slots`
+    and runs `make live`: the check should pass and `slot_affinity` should show one
+    slot per session and the prefix reused, under both routes; then it restores
+    the Deployment. The home session of phase 2 sets `Need.Affinity` through the
+    loop already; idle compaction (the user's message arriving while a summary
+    still generates) is where the busy-slot wait first matters. A title keeps
+    `Affinity` false: if a task later runs against a session's own prefix (a
+    reflection on it), it should set it.
 
 - 2026-10-31: the inference queue (branch `inference-queue`, from `phase-1`).
   The `internal/inference` item is ticked. The decisions are in `DECISIONS.md`
