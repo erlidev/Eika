@@ -39,6 +39,7 @@ func Scenarios() []Scenario {
 		OnResponses(ThinkingSwitches(nonce)),
 		CutOffReasoning(nonce),
 		ResponsesConformance(),
+		SessionTitle(),
 		ResponsesDrift(nonce),
 		OnResponses(CutOffReasoning(nonce)),
 		OnResponses(ToolsAndReasoning(nonce)),

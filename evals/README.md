@@ -56,7 +56,8 @@ the input left out or changed anything the chat request holds. `responses_drift`
 is a three-turn conversation with thinking on, parallel tool calls and replayed
 reasoning items under the Responses API, and `responses_conformance` runs the
 harness's Responses conformance check for real (two small model requests) and
-requires it to pass.
+requires it to pass. `session_title` runs the title task of the fast class
+against the bench's model, thinking off, and requires a short single-line title.
 
 Keep scenarios small: bounded `max_tokens`, no load. The server is shared; do
 not start, stop or swap anything on it from a scenario.
