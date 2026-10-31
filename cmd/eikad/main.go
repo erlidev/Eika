@@ -44,7 +44,7 @@ func main() {
 // run serves the daemon until the container stops it.
 func run() error {
 	listen := flag.String("listen", ":7000", "address to listen on")
-	root := flag.String("root", "/workspace", "computer directory every path is confined to")
+	root := flag.String("root", eikad.DefaultRoot, "computer directory every path is confined to")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))

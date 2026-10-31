@@ -276,6 +276,7 @@ type computerWire struct {
 	Sandbox  sandboxWire `json:"sandbox"`
 	Pinned   bool        `json:"pinned"`
 	Archived bool        `json:"archived"`
+	Home     bool        `json:"home"`
 }
 
 type computersWire struct {

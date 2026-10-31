@@ -369,6 +369,7 @@ export class WorldBuilder {
       sandbox: defaultSandbox(),
       pinned: false,
       archived: false,
+      home: false,
       created_at: minutesAgo(400),
       updated_at: minutesAgo(30),
       ...input,

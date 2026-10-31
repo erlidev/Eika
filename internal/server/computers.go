@@ -31,7 +31,10 @@ type computerBody struct {
 	Pinned bool `json:"pinned"`
 	// Archived computers are set aside under a heading of their own; the
 	// container is left as it is.
-	Archived  bool      `json:"archived"`
+	Archived bool `json:"archived"`
+	// Home marks the computer that holds the user's durable files, which the
+	// harness creates itself and which cannot be deleted.
+	Home      bool      `json:"home"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -255,6 +258,10 @@ func (s *Server) handleDeleteComputer(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if cx.Home {
+		s.fail(w, r, conflictf("computer %s is the home computer, which holds your files and cannot be deleted", cx.ID))
+		return
+	}
 	if err := s.destroyComputer(r.Context(), cx); err != nil {
 		s.fail(w, r, err)
 		return
@@ -345,6 +352,7 @@ func asComputer(cx store.Computer) computerBody {
 		Sandbox:     asSandbox(cx.Sandbox),
 		Pinned:      cx.Pinned,
 		Archived:    cx.Archived,
+		Home:        cx.Home,
 		CreatedAt:   cx.CreatedAt,
 		UpdatedAt:   cx.UpdatedAt,
 	}

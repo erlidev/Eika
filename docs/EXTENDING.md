@@ -373,10 +373,16 @@ entrypoint, so an image needs no Eika-specific content at all.
 An image needs:
 
 - a shell at `/bin/sh`, because `exec` with `shell` uses it,
-- a writable `/workspace`, which is where the volume or the host directory is
-  mounted,
-- a uid 1000 that owns `/workspace`, because a sandbox never runs as root; an
-  image that uses another user must say so in `Spec.User`.
+- `/home/eika`, which is where the computer's volume is mounted and where its
+  commands start. It need not exist in the image, and need not belong to the
+  user: the harness makes the user its owner before the container starts. What
+  the image holds there is copied into a new volume once, so a tool the image
+  installs belongs elsewhere, such as `/opt`: a computer that is made again
+  over an old volume has the old directory, not the new image's,
+- a uid 1000, because a sandbox never runs as root; an image that uses another
+  user must say so in `Spec.User`, and a user given by name keeps whatever
+  ownership its image gave `/home/eika`. `HOME` is `/home/eika` in either
+  case.
 
 A sandbox container drops all Linux capabilities and runs with
 `no-new-privileges`, so an image that needs to install packages at run time
@@ -540,7 +546,8 @@ Rules that keep the surface one surface:
   and `builtin` map themselves in `statusOf`. Add a new sentinel there
   rather than mapping it in a handler.
 - A handler that needs a computer's files gets an executor with
-  `s.executorFor`, which refuses a computer that is not running. The server
+  `s.executorFor`, which refuses a computer that is not running. A run gets
+  one with `s.runExecutor`, which starts a stopped `home` computer first. The server
   reaches a computer no other way.
 - New dependencies belong in `Deps`, as an interface declared in `server` when
   a test has to stand in for them.

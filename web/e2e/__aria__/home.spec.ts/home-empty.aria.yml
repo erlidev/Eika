@@ -1,0 +1,15 @@
+- region "Session":
+  - heading "New session" [level=2]:
+    - button "New session"
+  - text: /Home computer ses-\d+ Send a message to start the chat\. It runs on the home computer, so the model can run commands and keep files in \/home\/eika\./
+  - status
+  - textbox "Message":
+    - /placeholder: Send a message to the agent…
+  - button "Attach images" [disabled]
+  - paragraph: Enter sends · Shift+Enter newline · Esc aborts
+  - button "Send" [disabled]
+  - text: idle
+  - combobox "Model": gpt-5
+  - 'button "Profile: Default"'
+  - 'button "Reasoning effort, click to cycle: medium"'
+  - 'status "Live updates: Live"'

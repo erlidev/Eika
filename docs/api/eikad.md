@@ -9,7 +9,7 @@ Every route except `GET /healthz` requires `Authorization: Bearer <token>`,
 where the token is the `EIKAD_TOKEN` the harness generated for that computer.
 A missing or wrong token is `401`.
 
-Every `path` is relative to the computer root (`/workspace` by default). An
+Every `path` is relative to the computer root (`/home/eika` by default). An
 absolute path inside the root is accepted; a path that leaves the root, by
 `..` or through a symlink, is `403`. A missing path is `404`.
 

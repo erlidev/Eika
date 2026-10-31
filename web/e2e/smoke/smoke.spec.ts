@@ -18,6 +18,22 @@ test.beforeAll(async ({ request }) => {
     .toBe(200);
 });
 
+test("the harness makes the home computer before anyone sets it up", async ({ request }) => {
+  // Setup has not run: this stack has a fixed API token and nothing else,
+  // and the computer that holds the user's files is there regardless.
+  const headers = { Authorization: `Bearer ${process.env.EIKA_SMOKE_TOKEN ?? ""}` };
+  await expect
+    .poll(
+      async () => {
+        const reply = await request.get("/api/computers", { headers });
+        const body = (await reply.json()) as { computers: { home: boolean; state: string }[] };
+        return body.computers.find((cx) => cx.home)?.state;
+      },
+      { timeout: 120_000, intervals: [1000] },
+    )
+    .toBe("running");
+});
+
 test("setup, a chat, and a scripted answer", async ({ page }) => {
   await page.goto("/");
 

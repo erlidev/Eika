@@ -120,6 +120,11 @@ type Server struct {
 	// idle stops the running computers no run has used for a while.
 	idle *idleComputers
 
+	// homeMu makes EnsureHome take turns, and startMu makes the runs that
+	// find a computer stopped take turns starting it.
+	homeMu  sync.Mutex
+	startMu sync.Mutex
+
 	// loginMu makes sign-in attempts take turns, which bounds how fast a
 	// password can be guessed without locking its owner out.
 	loginMu sync.Mutex
@@ -155,14 +160,16 @@ func (s *Server) Handler() http.Handler { return s.mux }
 func (s *Server) Bus() *event.Bus { return s.deps.Bus }
 
 // Run serves until ctx is cancelled, then drains in-flight requests and stops
-// the runs that are still going. While it serves, it stops the computers
-// that go unused for the idle timeout.
+// the runs that are still going. While it serves, it makes sure the home
+// computer exists, and stops the computers that go unused for the idle
+// timeout.
 func (s *Server) Run(ctx context.Context) error {
 	defer s.Close()
 	if s.deps.Store != nil && s.deps.Computers != nil {
 		watchCtx, cancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
 		wg.Go(func() { s.idle.watch(watchCtx) })
+		wg.Go(func() { s.keepHome(watchCtx, firstHomeRetry) })
 		// The sweep stops before Close, whose runs it would otherwise race.
 		defer wg.Wait()
 		defer cancel()

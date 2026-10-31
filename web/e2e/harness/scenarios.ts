@@ -419,7 +419,7 @@ function mcpServers(b: WorldBuilder): void {
           time: minutesAgo(41),
           source: "stderr",
           level: "info",
-          text: "Allowed directories: [ '/workspace' ]",
+          text: "Allowed directories: [ '/home/eika' ]",
         },
       ],
     },
@@ -892,6 +892,34 @@ export const scenarios = {
       "Like workbench, with two more profiles: ses-backoff runs with Reviewer and overrides its temperature, and two of its model calls are recorded. For the Profiles tab, the status bar's profile, and the Context panel.",
     path: "/sessions/ses-backoff",
     build: () => profiles().world,
+  },
+  home: {
+    description:
+      "The chats beside a session on the home computer, which the harness makes for itself.",
+    path: "/sessions/ses-home",
+    build: () => {
+      const b = chats();
+      const home = b.computer({ id: "cx-home", name: "home", home: true });
+      const main = b.session(home, {
+        id: "ses-home",
+        title: "What is in my home directory?",
+        created_at: "2026-03-14T13:00:00.000Z",
+      });
+      b.conversation(main, [
+        { role: "user", content: "What is in my home directory?" },
+        {
+          role: "assistant",
+          tool_calls: [{ id: "h1", name: "bash", arguments: { command: "ls -a ~" } }],
+        },
+        { role: "tool", tool_call_id: "h1", content: ".\n..\n.bashrc\n.profile" },
+        {
+          role: "assistant",
+          content:
+            "Only the shell's starter files, `.bashrc` and `.profile`. Nothing of yours yet.",
+        },
+      ]);
+      return b.world;
+    },
   },
   "chat-empty": {
     description: "A chat with no messages yet, beside the chats of the workbench.",

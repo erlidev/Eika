@@ -29,7 +29,10 @@ type Computer struct {
 	Pinned bool
 	// Archived computers are set aside under a heading of their own. It is
 	// filing only: the container is neither stopped nor started by it.
-	Archived  bool
+	Archived bool
+	// Home marks the one computer that holds the user's durable files. At
+	// most one row has it.
+	Home      bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -52,7 +55,7 @@ type ComputerSandbox struct {
 // computerColumns is the column list every computer query selects, in the
 // order scanComputer reads them.
 const computerColumns = `id, name, image, state, container_id, sandbox, pinned, archived,
-	created_at, updated_at`
+	home, created_at, updated_at`
 
 // CreateComputer inserts w and returns it with the fields the database
 // assigned. An empty ID gets a fresh one.
@@ -65,16 +68,45 @@ func (s *Store) CreateComputer(ctx context.Context, w Computer) (Computer, error
 		return Computer{}, fmt.Errorf("encode sandbox of computer %s: %w", w.ID, err)
 	}
 	const q = `INSERT INTO computers
-		(id, name, image, state, container_id, sandbox, pinned, archived)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		(id, name, image, state, container_id, sandbox, pinned, archived, home)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING ` + computerColumns
 	row := s.pool.QueryRow(ctx, q, w.ID, w.Name, w.Image, w.State, w.ContainerID, sandbox,
-		w.Pinned, w.Archived)
+		w.Pinned, w.Archived, w.Home)
 	out, err := scanComputer(row)
 	if err != nil {
 		return Computer{}, wrap("create computer "+w.ID, err)
 	}
 	return out, nil
+}
+
+// EnsureHomeComputer returns the home computer, inserting w as that row first
+// when there is none. Concurrent callers, and callers in separate processes,
+// get the same row: the database allows one home, so the insert of every
+// caller but one does nothing. Created reports whether this call inserted it,
+// in which case the row has w's id.
+func (s *Store) EnsureHomeComputer(ctx context.Context, w Computer) (home Computer, created bool, err error) {
+	if w.ID == "" {
+		w.ID = NewID()
+	}
+	sandbox, err := json.Marshal(w.Sandbox)
+	if err != nil {
+		return Computer{}, false, fmt.Errorf("encode sandbox of computer %s: %w", w.ID, err)
+	}
+	const insert = `INSERT INTO computers
+		(id, name, image, state, container_id, sandbox, pinned, archived, home)
+		VALUES ($1, $2, $3, $4, $5, $6, false, false, true)
+		ON CONFLICT (home) WHERE home DO NOTHING`
+	tag, err := s.pool.Exec(ctx, insert, w.ID, w.Name, w.Image, w.State, w.ContainerID, sandbox)
+	if err != nil {
+		return Computer{}, false, wrap("ensure home computer", err)
+	}
+	row := s.pool.QueryRow(ctx, `SELECT `+computerColumns+` FROM computers WHERE home`)
+	home, err = scanComputer(row)
+	if err != nil {
+		return Computer{}, false, wrap("read home computer", err)
+	}
+	return home, tag.RowsAffected() == 1, nil
 }
 
 // Computer returns the computer with the given id.
@@ -187,7 +219,7 @@ func scanComputer(row pgx.Row) (Computer, error) {
 		sandbox []byte
 	)
 	err := row.Scan(&w.ID, &w.Name, &w.Image, &w.State, &w.ContainerID, &sandbox,
-		&w.Pinned, &w.Archived, &w.CreatedAt, &w.UpdatedAt)
+		&w.Pinned, &w.Archived, &w.Home, &w.CreatedAt, &w.UpdatedAt)
 	if err != nil {
 		return Computer{}, err
 	}

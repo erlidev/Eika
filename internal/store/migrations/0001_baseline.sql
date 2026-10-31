@@ -20,6 +20,10 @@ CREATE TABLE settings (
 --
 -- pinned and archived are the user's filing and change nothing about what a
 -- computer's container does.
+--
+-- home marks the one computer that holds the user's durable files. The
+-- unique index below allows at most one row to carry it, so two harnesses
+-- starting at once, or a restart, cannot make a second.
 CREATE TABLE computers (
     id                  text PRIMARY KEY,
     name                text NOT NULL,
@@ -29,9 +33,12 @@ CREATE TABLE computers (
     sandbox             jsonb NOT NULL DEFAULT '{}',
     pinned              boolean NOT NULL DEFAULT false,
     archived            boolean NOT NULL DEFAULT false,
+    home                boolean NOT NULL DEFAULT false,
     created_at          timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX computers_home_idx ON computers (home) WHERE home;
 
 -- Model providers and models. Every credential column holds what
 -- internal/secret sealed; the harness never writes a credential here in the

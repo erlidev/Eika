@@ -144,11 +144,22 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 			return Computer{}, err
 		}
 	}
-	// Everything created from here on is rolled back if creation fails, so a
-	// failed Create leaves nothing behind.
-	rollback := func() { h.discard(ctx, cx, built) }
-
 	cx.Volume = VolumeName(cx.ID)
+	// A volume that is already there holds files an earlier container of
+	// this computer left, which a computer made again under the same id
+	// gets back. Creation that fails must not remove them.
+	_, inspectErr := h.docker.VolumeInspect(ctx, cx.Volume)
+	kept := inspectErr == nil
+	// Everything created from here on is rolled back if creation fails, so a
+	// failed Create leaves nothing behind but the volume it found.
+	rollback := func() {
+		doomed := cx
+		if kept {
+			doomed.Volume = ""
+		}
+		h.discard(ctx, doomed, built)
+	}
+
 	if _, err := h.docker.VolumeCreate(ctx, volume.CreateOptions{
 		Name:   cx.Volume,
 		Labels: map[string]string{Label: cx.ID},
@@ -160,15 +171,19 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 	labels := map[string]string{Label: cx.ID}
 	maps.Copy(labels, spec.Labels)
 
+	user := orDefault(spec.User, DefaultUser)
 	port := nat.Port(DaemonPort + "/tcp")
 	cfg := &container.Config{
 		Image:      cx.Image,
 		Entrypoint: []string{eikad.BinaryPath, "-listen", ":" + DaemonPort, "-root", Root},
+		// HOME is the root whoever the user is: an image with no passwd
+		// entry for the uid would otherwise leave it at "/".
 		Env: append([]string{
+			"HOME=" + Root,
 			eikad.TokenEnv + "=" + cx.Token,
 			proxyTokenEnv + "=" + cx.ProxyToken,
 		}, spec.Env...),
-		User:         orDefault(spec.User, DefaultUser),
+		User:         user,
 		WorkingDir:   Root,
 		Labels:       labels,
 		ExposedPorts: nat.PortSet{port: struct{}{}},
@@ -201,7 +216,11 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 	cx.ContainerID = created.ID
 
 	if err := h.injectDaemon(ctx, cx.ContainerID); err != nil {
-		h.discard(ctx, cx, built)
+		rollback()
+		return Computer{}, err
+	}
+	if err := h.ownRoot(ctx, cx.ContainerID, user); err != nil {
+		rollback()
 		return Computer{}, err
 	}
 	h.log.Info("computer created", "computer_id", cx.ID, "image", cx.Image)

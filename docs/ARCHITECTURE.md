@@ -6,8 +6,9 @@ Reasons for the design are in `DECISIONS.md`; wire details in `api/`.
 ## Domain model
 
 ```
-Computer  A sandbox container with a volume of its own at /workspace. States:
+Computer  A sandbox container with a volume of its own at /home/eika. States:
            creating -> running -> stopped (gone if the container disappeared).
+           The `home` computer is the one that holds the user's durable files.
 Session    A tree of entries with a head pointer, in one computer.
 Chat       A session with no computer: only tools that need none.
 Run        One execution of the agent loop from a session's head.
@@ -286,16 +287,17 @@ and, for long keys, the last four characters.
   tool -> executor/sandbox --HTTP, bearer--> eikad :7000
   mcp.Pool -> Host.Process --------------->    /exec /files /stat /list
   Host.Process --------------------------->    /watch /process /environment
-  computer.Host ---------docker socket--->  container + volume at /workspace
+  computer.Host ---------docker socket--->  container + volume at /home/eika
   egress.Proxy :3128 <-----------------------  HTTP(S)_PROXY, when restricted
 ```
 
 ### eikad
 
 Reads `EIKAD_TOKEN`, refuses to start without it, and serves via
-`server.Serve`. Every path is confined to `/workspace`: `..` is rejected, the
+`server.Serve`. Every path is confined to `/home/eika`: `..` is rejected, the
 longest existing prefix is resolved through symlinks before comparison, and
-the canonical path is what is opened. `EIKAD_TOKEN` is stripped from command
+the canonical path is what is opened. `/home` holds other directories, so a
+sibling such as `/home/eikaother` is outside, however it is spelled. `EIKAD_TOKEN` is stripped from command
 environments. A command leads its own process group, killed on timeout;
 output is capped and reported as truncated. The watcher polls modification
 times. API: `api/eikad.md`.
@@ -320,6 +322,27 @@ root, creates the container labelled
 static eikad to `/usr/local/bin/eikad` as the entrypoint. `Start` waits for
 `/healthz`. `Stop` keeps the volume; `Destroy` removes container, volume, and
 a per-computer image. The harness reaches eikad at `http://eika-cx-<id>:7000`.
+A container gets `HOME` set to the root, and before it starts the daemon
+extracts the root directory into it owned by the container's user, so an
+image with no such directory, or one root owns, still has a root the user can
+write. A volume that exists when `Create` runs is reattached, and a `Create`
+that fails does not remove it: this is how a lost container comes back with
+the files it had.
+
+### The home computer
+
+`Server.EnsureHome` (`server/home.go`) is the one way the `home` computer
+comes to be. `Server.Run` starts it beside the idle stopper on every start,
+so setup, a deployment with a fixed `EIKA_AUTH_TOKEN` that never calls setup,
+and a restart all reach it. It inserts the `computers` row first, which the
+unique index on `home` allows once, and then creates the container over the
+row's id when `Inspect` finds none and starts it when it is stopped. A failure
+(no Docker, no sandbox image) is logged and tried again after 5 seconds, then
+10, up to a minute, without keeping the API from serving; meanwhile the row
+reads `creating`. A run in `home` starts it first when the idle stopper has
+stopped it, and calls `EnsureHome` when its container is gone; a run in any
+other computer that is not running is a `409`. `DELETE /api/computers/{id}`
+refuses `home`.
 
 The server's idle stopper (`server/idle.go`) sweeps once a minute while
 `Server.Run` serves and stops, as `POST .../stop` does, every running holder

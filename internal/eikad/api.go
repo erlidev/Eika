@@ -6,6 +6,12 @@ import "time"
 // own build there, and runs `eikad filter` from it for fetch filters.
 const BinaryPath = "/usr/local/bin/eikad"
 
+// DefaultRoot is the computer root inside a sandbox: the home directory of
+// the user every command runs as, and where a computer's volume is mounted.
+// It is the one copy of the path in Go; the sandbox image's Dockerfile
+// spells it too, and a test keeps the two equal.
+const DefaultRoot = "/home/eika"
+
 // ExecRequest is the body of POST /exec.
 //
 // Stdin is sent up front rather than streamed: /exec is for non-interactive

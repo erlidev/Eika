@@ -3,7 +3,7 @@
  * bar under it. It owns the session's stream subscription.
  */
 
-import { MessageCircle } from "lucide-react";
+import { House, MessageCircle } from "lucide-react";
 import { useEffect } from "react";
 
 import { Composer } from "@/features/session/Composer";
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { useSessionConfiguration } from "@/features/profiles";
 import { useModels } from "@/features/providers";
 import { useSettingsDialog } from "@/features/settings";
+import { useHomeComputer } from "@/features/sessions";
 
 export type SessionViewProps = {
   sessionId: string;
@@ -36,8 +37,10 @@ export function SessionView({ sessionId }: SessionViewProps) {
   const model = useSessionStore((s) => s.model);
   const chooseModel = useSessionStore((s) => s.chooseModel);
 
+  const home = useHomeComputer();
   const computerId = session.data?.session.computer_id;
   const chat = session.data !== undefined && computerId === undefined;
+  const onHome = computerId !== undefined && computerId === home.data?.id;
 
   // Esc aborts the run from anywhere in the session view, which is why the
   // listener is on the document rather than on one control. `abortsRun`
@@ -68,6 +71,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
       <header className="flex items-center gap-2 border-b px-3 py-2">
         <SessionHeading session={session.data?.session} />
         {chat && <ChatBadge />}
+        {onHome && <HomeBadge />}
         {/* On a phone the id gives way: the title is what the header is for. */}
         <span className="text-muted-foreground hidden shrink-0 font-mono text-xs sm:inline">
           {sessionId}
@@ -80,7 +84,9 @@ export function SessionView({ sessionId }: SessionViewProps) {
         empty={
           chat
             ? "Send a message to start the chat. A chat has no computer, so the model cannot touch files or run commands; the Tools panel says what it can use."
-            : "Send a message to start the first turn."
+            : onHome
+              ? "Send a message to start the chat. It runs on the home computer, so the model can run commands and keep files in /home/eika."
+              : "Send a message to start the first turn."
         }
       />
       {noModel && (
@@ -134,6 +140,19 @@ function ChatBadge() {
       <MessageCircle aria-hidden className="size-3" />
       Chat
       <span className="text-muted-foreground font-normal">· no computer</span>
+    </Badge>
+  );
+}
+
+/**
+ * HomeBadge marks a session on the home computer, the one place a chat's
+ * model has files and commands.
+ */
+function HomeBadge() {
+  return (
+    <Badge variant="outline" className="h-5 shrink-0 gap-1 px-1.5 text-2xs">
+      <House aria-hidden className="size-3" />
+      Home computer
     </Badge>
   );
 }

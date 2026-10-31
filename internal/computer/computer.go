@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"time"
+
+	"github.com/erlidev/eika/internal/executor/sandbox"
 )
 
 // Label is the Docker label every computer container carries, so that the
@@ -18,8 +20,9 @@ const DefaultUser = "1000:1000"
 // DaemonPort is the port eikad listens on inside a computer container.
 const DaemonPort = "7000"
 
-// Root is where a computer's files live inside its container.
-const Root = "/workspace"
+// Root is where a computer's files live inside its container: the home
+// directory of the user it runs as.
+const Root = sandbox.DefaultRoot
 
 // State is where a computer is in its lifecycle.
 type State string

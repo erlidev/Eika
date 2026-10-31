@@ -16,6 +16,8 @@ export type Computer = {
   pinned: boolean;
   /** archived computers are set aside under an Archived heading; the container is left as it is. */
   archived: boolean;
+  /** home marks the computer that holds the user's durable files; it cannot be deleted. */
+  home: boolean;
   created_at: string;
   updated_at: string;
 };

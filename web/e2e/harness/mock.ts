@@ -24,6 +24,7 @@ import type {
 import { check, contract, matchRoute } from "./contract.ts";
 import { previewContext, record } from "./profiles.ts";
 import { authRoutes, mockToken } from "./routes/auth.ts";
+import { computerRoutes } from "./routes/computers.ts";
 import { fail } from "./routes/context.ts";
 import type { Handler, Reply, RouteContext } from "./routes/context.ts";
 import { mcpRoutes } from "./routes/mcp.ts";
@@ -495,6 +496,7 @@ export class MockHarness {
       authorizations: this.authorizations,
     };
     authRoutes(ctx);
+    computerRoutes(ctx);
     settingsRoutes(ctx);
     searchRoutes(ctx);
     providerRoutes(ctx);
