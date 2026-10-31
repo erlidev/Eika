@@ -40,6 +40,8 @@ func Scenarios() []Scenario {
 		CutOffReasoning(nonce),
 		ResponsesConformance(),
 		SessionTitle(),
+		QueuePriority(nonce),
+		SharedAdmission(nonce),
 		ResponsesDrift(nonce),
 		OnResponses(CutOffReasoning(nonce)),
 		OnResponses(ToolsAndReasoning(nonce)),

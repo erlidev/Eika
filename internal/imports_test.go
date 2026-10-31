@@ -61,6 +61,31 @@ func TestImportBoundaries(t *testing.T) {
 	}
 }
 
+// leaves are the packages that import nothing of the module, so that any
+// package may import them without a cycle and their tests need no fake of
+// another package. Each has the reason it must stay one.
+var leaves = map[string]string{
+	// The queue every model call waits in. Callers describe pools and calls
+	// to it in its own terms, so the agent, the probe, the utility tasks and
+	// the server can all hold a lease without it knowing any of them.
+	"internal/inference": "the inference queue is imported by every package that makes model calls",
+}
+
+// TestLeavesImportNothingOfTheModule checks the packages in leaves.
+func TestLeavesImportNothingOfTheModule(t *testing.T) {
+	imports := packageImports(t, "..")
+	for pkg, reason := range leaves {
+		deps, ok := imports[pkg]
+		if !ok {
+			t.Errorf("leaf %s has no Go package (%s)", pkg, reason)
+			continue
+		}
+		for _, dep := range deps {
+			t.Errorf("%s imports %s, but it must import only the standard library: %s", pkg, dep, reason)
+		}
+	}
+}
+
 // TestBoundariesNameRealPackages keeps the rules from going stale when a
 // package is renamed or removed.
 func TestBoundariesNameRealPackages(t *testing.T) {

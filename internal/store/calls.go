@@ -68,13 +68,20 @@ type ModelCall struct {
 	ContextWindow *int
 	// Endpoint is the provider's name when the call was made.
 	Endpoint string
-	// QueueMS, Slot, Class, Priority and Agent are filled by the items that
-	// produce them (the inference queue, agents) and are nil until then.
+	// QueueMS is the time the call waited for a lease on its pool, Slot the
+	// queue's slot number of the lease that served it, Class the model class
+	// the run was resolved from and Priority the priority it asked for. They
+	// are nil or empty for a call made without the queue, or whose source
+	// does not exist yet. Agent is filled by the agents item.
 	QueueMS  *int
 	Slot     *int
 	Class    string
 	Priority string
 	Agent    string
+	// PrefillMS and DecodeMS are how long the endpoint took to read the
+	// prompt and to generate, nil when nothing measured them.
+	PrefillMS *int
+	DecodeMS  *int
 
 	CreatedAt time.Time
 }
@@ -83,7 +90,8 @@ type ModelCall struct {
 // without the large documents.
 const modelCallFields = `parameters, message_tokens, prompt_tokens, completion_tokens, total_tokens,
 	cached_tokens, prefilled_tokens, reasoning_tokens, reasoning_source, predicted_prompt_tokens,
-	prediction, drift, context_window, endpoint, queue_ms, slot, class, priority, agent, created_at`
+	prediction, drift, context_window, endpoint, queue_ms, slot, class, priority, agent, prefill_ms,
+	decode_ms, created_at`
 
 // modelCallSummary is the column list a listing selects, in the order
 // scanModelCall reads them: every column but the large documents, which read
@@ -106,9 +114,9 @@ func (s *Store) RecordModelCall(ctx context.Context, c ModelCall) (ModelCall, er
 	const q = `INSERT INTO model_calls (id, session_id, run_id, entry_id, model_id, model, sections, tools,
 			parameters, message_tokens, prompt_tokens, completion_tokens, total_tokens, cached_tokens,
 			prefilled_tokens, reasoning_tokens, reasoning_source, predicted_prompt_tokens, prediction, drift,
-			context_window, endpoint, queue_ms, slot, class, priority, agent)
+			context_window, endpoint, queue_ms, slot, class, priority, agent, prefill_ms, decode_ms)
 		SELECT $1, $2, $3, $4, (SELECT id FROM models WHERE id = $5), $6, $7, $8, $9, $10, $11, $12, $13, $14,
-			$15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+			$15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29
 		WHERE EXISTS (SELECT 1 FROM runs WHERE id = $3 AND session_id = $2)
 			AND ($4::text IS NULL OR EXISTS (
 				SELECT 1 FROM session_entries WHERE id = $4 AND session_id = $2))
@@ -118,7 +126,7 @@ func (s *Store) RecordModelCall(ctx context.Context, c ModelCall) (ModelCall, er
 		c.MessageTokens, c.PromptTokens, c.CompletionTokens, c.TotalTokens, c.CachedTokens,
 		c.PrefilledTokens, c.ReasoningTokens, nullable(c.ReasoningSource), c.PredictedPromptTokens,
 		nullable(c.Prediction), c.Drift, c.ContextWindow, nullable(c.Endpoint), c.QueueMS, c.Slot,
-		nullable(c.Class), nullable(c.Priority), nullable(c.Agent)))
+		nullable(c.Class), nullable(c.Priority), nullable(c.Agent), c.PrefillMS, c.DecodeMS))
 	if err != nil {
 		return ModelCall{}, wrap("record model call of session "+c.SessionID, err)
 	}
@@ -182,7 +190,7 @@ func scanModelCall(row pgx.Row) (ModelCall, error) {
 		&parameters, &c.MessageTokens, &c.PromptTokens, &c.CompletionTokens, &c.TotalTokens,
 		&c.CachedTokens, &c.PrefilledTokens, &c.ReasoningTokens, &reasoningSource,
 		&c.PredictedPromptTokens, &prediction, &c.Drift, &c.ContextWindow, &endpoint,
-		&c.QueueMS, &c.Slot, &class, &priority, &agentID, &c.CreatedAt)
+		&c.QueueMS, &c.Slot, &class, &priority, &agentID, &c.PrefillMS, &c.DecodeMS, &c.CreatedAt)
 	if err != nil {
 		return ModelCall{}, err
 	}

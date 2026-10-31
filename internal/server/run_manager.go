@@ -8,6 +8,7 @@ import (
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/executor"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
@@ -233,6 +234,15 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 		Recorder:   callRecorder{store: s.deps.Store, run: active, config: cfg, endpoint: ep.row.Name},
 		Counter:    counted,
 		Compaction: s.compaction(ctx, cfg.model),
+		// A run, and the compaction a user asks for, answers a person who is
+		// waiting; a run that is not interactive says so by raising or
+		// lowering this rank, as the home session will.
+		Inference: agent.Inference{
+			Queue:    s.queue(ctx),
+			Pool:     ep.row.PoolName(),
+			Endpoint: ep.row.Name,
+			Rank:     inference.NewRank(inference.Interactive),
+		},
 	})
 	if work.compact && !ag.Compactable(loaded) {
 		return store.Run{}, conflictf("%v", agent.ErrNothingToCompact)

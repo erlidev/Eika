@@ -234,12 +234,15 @@ func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []pr
 	partial := ""
 	// ask tries every effort in one form. It reports whether the form
 	// cannot work at all, so the next one should be tried.
-	ask := func(c Context, budget int) (string, bool, error) {
+	ask := func(c Context, prompt, budget int) (string, bool, error) {
 		for _, effort := range efforts {
 			c.Parameters.Sampling.MaxOutput = new(budget)
 			c.Parameters.Sampling.ReasoningEffort = effort
+			// A summary is a model call of the run that needed it, queued at
+			// the run's own priority.
+			q := &queued{tokens: a.callTokens(prompt, c)}
 			resp, err := a.retrying(ctx, s, "", false, func() (response, error) {
-				return a.stream(ctx, s, "", c.Request(), nil)
+				return a.stream(ctx, s, "", c.Request(), nil, q)
 			})
 			if err != nil {
 				return "", provider.ContextOverflow(err), err
@@ -260,12 +263,13 @@ func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []pr
 
 	sent := append(slices.Clone(msgs[:r.end]), provider.UserMessage(r.prompt))
 	cached := base.WithMessages(sent)
-	room := budget
+	room, prompt := budget, 0
 	if window > 0 {
-		room = min(budget, window-a.predict(ctx, cached).Tokens)
+		prompt = a.predict(ctx, cached).Tokens
+		room = min(budget, window-prompt)
 	}
 	if room >= need {
-		text, next, err := ask(cached, room)
+		text, next, err := ask(cached, prompt, room)
 		switch {
 		case text != "":
 			return text, usage, nil
@@ -277,14 +281,15 @@ func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []pr
 	}
 
 	transcript := transcriptContext(base, msgs[r.from:r.end], r.prompt)
-	room = budget
+	room, prompt = budget, 0
 	if window > 0 {
-		room = min(budget, window-a.predict(ctx, transcript).Tokens)
+		prompt = a.predict(ctx, transcript).Tokens
+		room = min(budget, window-prompt)
 	}
 	if room < need {
 		return "", usage, fmt.Errorf("the conversation to summarize does not fit the configured window of %d with room for a summary", window)
 	}
-	text, _, err := ask(transcript, room)
+	text, _, err := ask(transcript, prompt, room)
 	switch {
 	case text != "":
 		return text, usage, nil

@@ -278,7 +278,7 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       `model_classes` (`deep`, `main`, `fast`, `decision`) with its
       fallbacks. Retire `utility_models`; titles run on `fast`. Replace the
       utility-models UI with a classes UI.
-- [ ] Add `internal/inference`:
+- [x] Add `internal/inference`:
       - pools, slots and priorities (interactive, foreground, background,
         maintenance)
       - aging, and idle detection for maintenance
@@ -330,11 +330,15 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       - usage fields: whether `prompt_tokens` counts cached tokens, and NULL
         where a field is missing
       - shared KV: two sessions near the 128k limit at once are admitted one
-        after the other, and neither fails or is cut off
+        after the other, and neither fails or is cut off (done as the
+        `shared_admission` scenario by the inference queue item, through a
+        client-side pool; the agent loop's own run of it is left to this item)
       - slot affinity: two alternating sessions keep their `id_slot`, and
         `cache_n` shows the prefix reused
       - queue priority: an interactive call overtakes a waiting background call
-        on one slot
+        on one slot (done as the `queue_priority` scenario by the inference
+        queue item, through a client-side pool of one; the same with two
+        sessions of the real server needs the runner's server operations)
       - a `partitioned` run: the runner restarts `llama-qwen` with
         `--no-kv-unified` and the same `-c`, and checks that the probe's
         window halves (it reads `n_ctx` per slot) while `kv` stays `unknown`,
@@ -1044,6 +1048,78 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-31: the inference queue (branch `inference-queue`, from `phase-1`).
+  The `internal/inference` item is ticked. The decisions are in `DECISIONS.md`
+  ("The inference queue").
+  - Landed. `internal/inference` (standard library only, a "leaf" in
+    `imports_test.go`): pools with slots and a cache budget, four priorities
+    with aging, the idle gate for maintenance, `preempt_running`, `Lease`
+    (idempotent `Release`, a context that ends on preemption), `Queue.Do`,
+    `Rank` for the priority upgrade, and `Snapshot`. The agent takes a lease per
+    attempt in `stream` (compaction summaries too); a preempted attempt is a
+    retryable error the retry path takes without spending its budget and
+    without a `run.error`. Titles (maintenance), the model test (interactive)
+    and the Responses check (maintenance, interactive for "Probe again") hold
+    a lease through `Queue.Do`; `internal/modelcalls_test.go` fails on a source
+    file that sends a model request and is not listed with how it is covered.
+    The server describes the queue from the provider rows and the three new
+    settings (`maintenance_idle_seconds`, `aging_seconds`, `preempt_running`)
+    at start, on first use and on every provider, probe or settings change, and
+    serves `GET /api/inference`. `model_calls` now gets `queue_ms`, `slot`,
+    `priority`, and (migration `0009`) `prefill_ms` and `decode_ms`.
+  - Rules chosen where the brief left a choice: rows of one pool take the
+    fewest slots, smallest cache and most binding kv; an oversize call is
+    admitted when the pool is empty and runs alone; admission is strictly in
+    order (no backfill past a call that does not fit); a prefix shared between
+    sessions is not counted once (no prefix identity reaches the queue and no
+    engine on the bench is known to share one); maintenance that has aged one
+    level no longer waits for idleness; maintenance calls do not count as
+    activity for each other.
+  - Tests. Over 60 queue tests on `testing/synctest` (a fake clock, no
+    production indirection), the starvation test, a `-race` stress test, agent
+    tests for lease scope, every way a call ends, retry, preemption, the rank
+    and summaries, probe tests for the check's leases and the busy skip, and
+    docker server tests for the queue in the run path, live pool changes,
+    settings, a title that waits and outlives its run, and the model test.
+  - `make check` passes on the final commit (Go with `-race` on the queue's
+    own tests, 474 web tests, 138 visual specs, no baseline changed). `make
+    smoke` passes (2 specs). `make live` passes on all 25 scenarios against
+    b11942-338fce651, Qwen3.8-27B revision 4ca72078. New: `queue_priority`
+    (a holder, then a background and an interactive call lining up behind it
+    on a one-slot pool: the interactive call is admitted and answered first,
+    waits of about 0.29 s and 0.43 s) and `shared_admission` (two sessions of
+    66002 tokens each, `kv: shared` 131072 stated in the scenario's pool: one
+    call at a time, the second waited 22.8 s for the first's prefill, neither
+    failed or was cut off; 46 s in all).
+  - What the queue adds to one uncontended call: `BenchmarkUncontendedLease`,
+    an `Acquire` and a `Release` on a free pool, is about 360 ns and 5
+    allocations on the desktop, against a call that takes tens of
+    milliseconds to many seconds. The loop adds a few integer sums for the
+    lease's token count.
+  - Visible behaviour to know. Titles are maintenance, so on a pool in use a
+    title appears `maintenance_idle_seconds` (120) after the last model call
+    instead of within seconds, as the design says; on a pool that has been quiet
+    for that long a title runs at once, possibly before the run's first call
+    takes its slot (harmless with two slots, a short wait with one). The titler
+    and the runs are on the same pool only when the user puts them there.
+    Set the setting to 0 to take titles at once.
+  - Skipped or open. No UI for the three settings or the route (Settings and
+    Activity, phase 3). `class` is never written: no run names a class yet.
+    `slot` is the queue's own number until slot affinity sends `id_slot`.
+    Compaction summaries are queued but still neither recorded nor observed.
+    The phase 1 live suite's runs of these two properties through the real
+    server (two sessions, the runner's server operations) are still open, as
+    are the other bullets. `preempt_running` is covered by fakes only; the
+    bench's 2 slots could show it with a client-side pool but nothing here
+    needed it.
+  - For later items. The home session of phase 2 must call `Rank.Raise` when
+    a user message joins its running turn, and pass its own `Rank` and class in
+    `agent.Inference`. Slot affinity should choose the slot in
+    `grantLocked` (`freeSlot`) by session. The prefix-sharing count needs a
+    prefix identity from the loop; the counter's prefix hashes are the place.
+    Each time a provider row changes in a way `syncInference` does not see
+    (a new write path in the store), call it.
 
 - 2026-10-31: model kinds and classes (branch `model-classes`, from `phase-1`).
   The item is ticked. The class names `deep`, `main`, `fast`, `decision` are

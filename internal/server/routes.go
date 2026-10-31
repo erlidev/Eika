@@ -111,6 +111,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/settings", s.handleSettings)
 	api.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	api.HandleFunc("GET /api/system", s.handleSystem)
+	api.HandleFunc("GET /api/inference", s.handleInference)
 }
 
 // health is the body of a health check response.

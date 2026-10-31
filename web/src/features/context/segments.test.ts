@@ -85,6 +85,8 @@ function call(over: Partial<ModelCall> = {}): ModelCall {
     context_window: 1000,
     queue_ms: null,
     slot: null,
+    prefill_ms: null,
+    decode_ms: null,
     created_at: "2026-10-31T00:00:00Z",
     ...over,
   };

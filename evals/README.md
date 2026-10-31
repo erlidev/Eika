@@ -58,6 +58,16 @@ reasoning items under the Responses API, and `responses_conformance` runs the
 harness's Responses conformance check for real (two small model requests) and
 requires it to pass. `session_title` runs the title task of the fast class
 against the bench's model, thinking off, and requires a short single-line title.
+`queue_priority` puts the inference queue on a client-side pool of one slot
+over real model calls: a call holds the slot, a background call and then an
+interactive one line up, and the interactive call must be admitted and answered
+first (`queue_seconds` in the report is each call's wait for its lease).
+`shared_admission` is the one scenario that sends large prompts: two sessions
+of about 66k tokens each, which together pass the bench's 131072-token cache,
+ask at once through a pool that states `kv: shared` with that size (the probe
+reads `unknown` for the bench), and must be admitted one after the other with
+neither failing or cut off. It costs two cold prefills of that size, about
+45 seconds on the bench.
 
 Keep scenarios small: bounded `max_tokens`, no load. The server is shared; do
 not start, stop or swap anything on it from a scenario.

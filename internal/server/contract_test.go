@@ -106,6 +106,7 @@ var routeWire = map[string]wire{
 	"GET /api/settings":           {status: http.StatusOK, response: settingsResponse{}},
 	"PUT /api/settings":           {status: http.StatusOK, request: map[string]json.RawMessage{}, response: settingsResponse{}},
 	"GET /api/system":             {status: http.StatusOK, response: systemResponse{}},
+	"GET /api/inference":          {status: http.StatusOK, response: inferenceResponse{}},
 
 	"GET /api/mcp/servers":                       {status: http.StatusOK, response: mcpServersResponse{}},
 	"POST /api/mcp/servers":                      {status: http.StatusCreated, request: createMCPServerRequest{}, response: mcpServerBody{}},

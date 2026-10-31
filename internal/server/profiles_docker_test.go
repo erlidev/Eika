@@ -90,6 +90,8 @@ type modelCallWire struct {
 	ContextWindow         *int   `json:"context_window"`
 	Endpoint              string `json:"endpoint"`
 	QueueMS               *int   `json:"queue_ms"`
+	Slot                  *int   `json:"slot"`
+	Priority              string `json:"priority"`
 }
 
 type callsWire struct {
@@ -306,9 +308,10 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 		t.Fatalf("requests = %+v, want the one call", records)
 	}
 	rec := records.Calls[0]
-	if rec.Endpoint != "test" || rec.ContextWindow == nil || rec.QueueMS != nil {
-		t.Errorf("call attribution = endpoint %q, window %v, queue_ms %v; want the provider's name, the model's window, and no queue time yet",
-			rec.Endpoint, rec.ContextWindow, rec.QueueMS)
+	if rec.Endpoint != "test" || rec.ContextWindow == nil || rec.QueueMS == nil || *rec.QueueMS < 0 ||
+		rec.Slot == nil || *rec.Slot != 0 || rec.Priority != "interactive" {
+		t.Errorf("call attribution = endpoint %q, window %v, queue_ms %v, slot %v, priority %q; want the provider's name, the model's window, and the queue's wait, slot 0 and interactive",
+			rec.Endpoint, rec.ContextWindow, rec.QueueMS, rec.Slot, rec.Priority)
 	}
 	recorded := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/calls/"+rec.ID, nil), 200)
 	if recorded.System() != sent.System || len(recorded.Tools) != 1 || recorded.Call == nil || recorded.Call.ID != rec.ID {

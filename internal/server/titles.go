@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/utility"
@@ -69,9 +70,7 @@ func (t *titles) start(sess store.Session, message string) {
 // untitled when no model serves titles or the model fails.
 func (t *titles) name(sess store.Session, message string) {
 	s := t.server
-	ctx, cancel := context.WithTimeout(t.ctx, titleTimeout)
-	defer cancel()
-	m, ok, err := s.titleModel(ctx)
+	m, ok, err := s.titleModel(t.ctx)
 	if err != nil {
 		s.log.Error("read the session title model", "session_id", sess.ID, "error", err)
 		return
@@ -79,16 +78,20 @@ func (t *titles) name(sess store.Session, message string) {
 	if !ok {
 		return
 	}
-	um, err := s.utilityClient(ctx, m)
+	um, row, err := s.utilityClient(t.ctx, m)
 	if err != nil {
 		s.log.Error("build the session title model", "session_id", sess.ID, "model", m.Name, "error", err)
 		return
 	}
-	title, err := utility.Title(ctx, um, message)
+	title, err := t.ask(sess, row, um, message)
 	if err != nil {
-		s.log.Warn("make session title", "session_id", sess.ID, "model", m.Name, "error", err)
+		if t.ctx.Err() == nil {
+			s.log.Warn("make session title", "session_id", sess.ID, "model", m.Name, "error", err)
+		}
 		return
 	}
+	ctx, cancel := context.WithTimeout(t.ctx, titleTimeout)
+	defer cancel()
 	named, err := s.deps.Store.TitleUntitledSession(ctx, sess.ID, title)
 	if err != nil {
 		s.log.Error("title session", "session_id", sess.ID, "error", err)
@@ -109,6 +112,26 @@ func (t *titles) name(sess store.Session, message string) {
 	}
 	s.deps.Bus.Emit(ctx, e)
 	s.log.Info("session titled", "session_id", sess.ID, "model", m.Name)
+}
+
+// ask has the model of the fast class write the title. A title is
+// maintenance, so it waits in the queue for an idle pool, and nothing bounds
+// that wait but the server stopping and the aging that lifts it out of
+// maintenance after a while: the run that wanted the title may be long over
+// by then, and the title is still made. The time limit starts when the title
+// is admitted, since waiting for the pool is not the model being slow.
+func (t *titles) ask(sess store.Session, row store.Provider, model utility.Model, message string) (string, error) {
+	need := callNeed(row, inference.Maintenance, string(classFast), utility.TitleTokens(model, message))
+	need.SessionID = sess.ID
+	var title string
+	err := t.server.queue(t.ctx).Do(t.ctx, need, func(ctx context.Context, _ *inference.Lease) error {
+		ctx, cancel := context.WithTimeout(ctx, titleTimeout)
+		defer cancel()
+		var err error
+		title, err = utility.Title(ctx, model, message)
+		return err
+	})
+	return title, err
 }
 
 // stop cancels every title being made and waits for them. No title starts
@@ -149,20 +172,21 @@ func (s *Server) titleModel(ctx context.Context) (store.Model, bool, error) {
 	return choice.Model, true, nil
 }
 
-// utilityClient returns model m, as configured, for a utility task.
-func (s *Server) utilityClient(ctx context.Context, m store.Model) (utility.Model, error) {
-	p, err := s.providerOf(ctx, m)
+// utilityClient returns model m, as configured, for a utility task, with the
+// provider row it runs on.
+func (s *Server) utilityClient(ctx context.Context, m store.Model) (utility.Model, store.Provider, error) {
+	ep, err := s.endpointOf(ctx, m)
 	if err != nil {
-		return utility.Model{}, err
+		return utility.Model{}, store.Provider{}, err
 	}
 	return utility.Model{
-		Provider:         p,
+		Provider:         ep.client,
 		ID:               m.Model,
 		MaxOutput:        m.MaxOutput,
 		ReasoningEffort:  m.ReasoningEffort,
 		ReasoningEfforts: m.ReasoningEfforts,
 		ThinkingSwitch:   provider.ThinkingSwitch(m.ThinkingSwitch),
-	}, nil
+	}, ep.row, nil
 }
 
 // firstMessage returns the text of the first user message of a

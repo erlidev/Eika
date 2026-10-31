@@ -43,6 +43,10 @@ type Call struct {
 	// WallSeconds is how long the call took from request to the end of the
 	// stream, as the harness saw it.
 	WallSeconds float64 `json:"wall_seconds"`
+	// QueueSeconds is how long the call waited for a lease on the scenario's
+	// inference queue, before the request was sent. It is nil for a scenario
+	// that uses no queue, and is not part of WallSeconds.
+	QueueSeconds *float64 `json:"queue_seconds,omitempty"`
 	// Predicted is what the token counter said the prompt would be before
 	// the request was sent, and Method how it reached that: exact, anchored
 	// or estimated.

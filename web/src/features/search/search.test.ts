@@ -20,6 +20,9 @@ function state(settings: Record<string, unknown>): SettingsState {
     defaults: {
       sandbox_image: "eika-sandbox:latest",
       computer_idle_minutes: 15,
+      maintenance_idle_seconds: 120,
+      aging_seconds: 300,
+      preempt_running: false,
       sandbox_limits: { cpus: 0, memory_mb: 0, pids: 4096 },
       sandbox_egress: { mode: "open", allow: [] },
       search_order: ["searxng", "exa", "marginalia"],

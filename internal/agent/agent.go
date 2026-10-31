@@ -86,6 +86,9 @@ type Options struct {
 	// ten seconds. A call whose prediction does not finish in time is sent with
 	// the counter's estimate.
 	CountTimeout time.Duration
+	// Inference says how the agent's model calls wait for the GPU. The zero
+	// value takes no lease.
+	Inference Inference
 }
 
 // Agent runs the loop for one session at a time.

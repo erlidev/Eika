@@ -182,7 +182,7 @@ Every model call records these, in a renamed `model_calls` table (formerly
 | `reasoning_tokens` | `usage.completion_tokens_details.reasoning_tokens` (`output_tokens_details.reasoning_tokens` under `responses`) | Part of the completion that was reasoning. NULL when the server states none (llama.cpp does not). Where the endpoint can tokenise text, the record holds a tokenisation of the reasoning text instead, and `reasoning_source` says which: `reported` or `tokenised`. A tokenised count approximates the generated tokens (on llama.cpp b11942 it equalled them), so it never enters `provider.Usage` or the events |
 | `predicted_prompt_tokens`, `prediction` | the runtime | What the runtime expected before sending, and how: `exact`, `anchored` or `estimated` |
 | `context_window` | effective window | The window this call was judged against (`window` is a reserved word in SQL) |
-| `queue_ms`, `prefill_ms`, `decode_ms` | inference queue, timings | Wait before the call, prompt phase, generation phase. `queue_ms` exists and is NULL until the queue fills it; `prefill_ms` and `decode_ms` are not columns yet |
+| `queue_ms`, `prefill_ms`, `decode_ms` | inference queue, timings | Wait before the call (summed over its attempts), prompt phase as the endpoint stated it, generation phase (the endpoint's own, else the harness's from the first token) |
 | `endpoint`, `slot`, `class`, `agent`, `priority` | runtime | Attribution. `endpoint` is the provider's name; the others exist and are NULL until the queue and the agents fill them |
 | `drift` | the runtime | `predicted_prompt_tokens - prompt_tokens`; NULL unless both exist |
 
@@ -326,9 +326,13 @@ provider.Stream(ctx, request with call.SlotHint())
 - **Concurrency.** A pool admits `slots` leases at once; further calls wait. A
   `shared` pool (section 1), the usual kind, also admits a call only while its
   running calls fit the cache with this one: each counted at its predicted prompt
-  plus maximum output, with a prefix shared between sessions counted once where
-  the engine caches prefixes. This keeps sessions from preempting or failing each
-  other mid-generation. A pool whose `kv` is `unknown` is admitted as `shared` with
+  plus maximum output. A prefix shared between sessions is not counted once yet:
+  the loop has no prefix identity to give the queue and the engine on the bench
+  does not show it shares, so calls are counted whole (over-counting costs
+  parallelism and never overfills the cache; `DECISIONS.md`, "The inference
+  queue"). This keeps sessions from preempting or failing each other
+  mid-generation. A call larger than the whole cache is admitted when the pool
+  is empty, and runs alone. A pool whose `kv` is `unknown` is admitted as `shared` with
   the per-request window as its size (section 1). With no size at all, only slots
   limit admission, and Activity shows engine preemptions where the backend
   reports them.
@@ -343,9 +347,13 @@ provider.Stream(ctx, request with call.SlotHint())
   next free lease. Generations already running are not cancelled by default, since
   cancelling throws away their prefill. The setting `preempt_running: true` cancels a
   running background or maintenance call when an interactive call is waiting and
-  no slot is free. The cancelled call is retried later and counts as a retry.
+  no slot (or cache room) is free. The cancelled call is retried through the
+  loop's retry path, without spending its retry budget and without a failure
+  the user sees.
 - **Aging.** A waiting call gains one priority level per `aging_seconds` (default
-  300) so background work cannot starve.
+  300) so background work cannot starve. A maintenance call that has aged one
+  level is background and no longer waits for an idle pool, so a pool that is
+  never idle delays maintenance by one aging period and not for ever.
 - **Upgrade.** A run's priority is set per call, not per run. When a user message
   joins a home turn running at `background` (a report, an Inbox answer, a wakeup)
   through the steering queue, the run's next call is `interactive`.

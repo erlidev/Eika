@@ -300,6 +300,13 @@ type ModelCall struct {
 	// ContextWindow is the window the call was judged against, zero when
 	// there was none.
 	ContextWindow int
+	// Queue is what the inference queue did for the call: how long it waited
+	// and on which slot. Its Queued is false when the agent has no queue.
+	Queue QueueRecord
+	// Timings is how long the endpoint took to read the prompt and to
+	// generate, as far as anything measured it; the zero value when nothing
+	// did.
+	Timings provider.Timings
 }
 
 // The sources a ModelCall's reasoning count can have.
@@ -325,6 +332,7 @@ func (a *Agent) record(ctx context.Context, s *Session, runID string, c Context,
 	call := ModelCall{
 		RunID: runID, SessionID: s.ID, Context: c, Usage: resp.usage,
 		Prediction: count.prediction, Drift: count.drift, ContextWindow: a.opts.ContextWindow,
+		Queue: resp.queue, Timings: resp.timings,
 	}
 	call.Reasoning, call.ReasoningSource = a.reasoningTokens(recordCtx, resp)
 	if err := a.opts.Recorder.Record(recordCtx, call); err != nil {
