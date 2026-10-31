@@ -3,6 +3,7 @@ package provider
 import (
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"syscall"
@@ -63,7 +64,9 @@ func (staleConnRetry) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // closedByServer reports whether err is what a write to a connection the
 // server has closed looks like once the request is sent: the read finds the
-// end of the stream, or the connection reset.
+// end of the stream, the connection reset, or the transport has already closed
+// the connection it saw the server end and the write lost the race to it.
 func closedByServer(err error) bool {
-	return errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE)
+	return errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, net.ErrClosed)
 }
