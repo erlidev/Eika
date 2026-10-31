@@ -437,6 +437,27 @@ this file says why, so neither repeats the other.
   stripping the blocks from the cached form (it is the cached prefix; changing
   it costs the cache the form exists for).
 
+### Prefix stability
+
+- **A request is sent as the same bytes every time.** A server's prompt cache is
+  keyed by what it reads, so what the harness sends of the conversation must be
+  the same bytes on every call. The Responses provider already encoded its
+  fields in sorted order. The Chat provider did not: the SDK writes the fields
+  it takes from a map (`SetExtraFields`: `top_k`, `min_p`, `chat_template_kwargs`,
+  `thinking`, `preserve_thinking`, `id_slot`) in whatever order the map is
+  walked, so one request went out in several byte layouts and a test that
+  compared two encodings failed about half the time. No server reads key order
+  and the rendered prompt did not change, so it cost nothing in the cache, but
+  "deterministic" is a claim the wire has to make true. `withExtraFields` now
+  serialises the SDK's own fields and appends the extras in the order of their
+  names, so `ChatBody` and `Stream` produce identical bytes (the latter with
+  `stream` at its end), under both protocols. Rejected: replacing the SDK for
+  the chat provider (the encoding of messages, tools and images is the part it
+  does right); comparing decoded documents instead (the byte comparison is the
+  invariant, a decoded one hides any later reordering); sending the extras one
+  `WithJSONSet` at a time (the counter's `ChatBody` could not share that
+  path).
+
 ### Loop limits
 
 - **A run is bounded in model calls and in wall time.** `Options.Limits` holds

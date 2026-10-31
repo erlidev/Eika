@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"sort"
@@ -307,9 +308,6 @@ func (p *Provider) params(req provider.Request, slot *int) (openai.ChatCompletio
 	if slot != nil {
 		extra[slotField] = *slot
 	}
-	if len(extra) > 0 {
-		params.SetExtraFields(extra)
-	}
 	for _, t := range req.Tools {
 		var schema shared.FunctionParameters
 		if len(t.Schema) > 0 {
@@ -323,7 +321,37 @@ func (p *Provider) params(req provider.Request, slot *int) (openai.ChatCompletio
 			Parameters:  schema,
 		}))
 	}
-	return params, nil
+	return withExtraFields(params, extra)
+}
+
+// withExtraFields returns params as a request that serialises to its own fields
+// and then extra, in the order of the field names. The SDK writes the fields it
+// takes from a map (SetExtraFields) in whatever order the map is walked, which
+// differs from one encoding to the next, so a request sent twice would go out as
+// two different bodies, and a server's prompt cache is keyed by what it reads.
+// extra holds only fields the SDK has no struct field for, so none repeats one.
+func withExtraFields(params openai.ChatCompletionNewParams, extra map[string]any) (openai.ChatCompletionNewParams, error) {
+	if len(extra) == 0 {
+		return params, nil
+	}
+	body, err := params.MarshalJSON()
+	if err != nil {
+		return openai.ChatCompletionNewParams{}, fmt.Errorf("encode chat request: %w", err)
+	}
+	if len(body) < 2 || body[len(body)-1] != '}' {
+		return openai.ChatCompletionNewParams{}, fmt.Errorf("encode chat request: %.40q is not an object", body)
+	}
+	body = body[:len(body)-1]
+	for _, name := range slices.Sorted(maps.Keys(extra)) {
+		value, err := json.Marshal(extra[name])
+		if err != nil {
+			return openai.ChatCompletionNewParams{}, fmt.Errorf("encode chat request field %s: %w", name, err)
+		}
+		key, _ := json.Marshal(name)
+		body = append(append(append(append(body, ','), key...), ':'), value...)
+	}
+	body = append(body, '}')
+	return param.Override[openai.ChatCompletionNewParams](json.RawMessage(body)), nil
 }
 
 // message converts one conversation message into its SDK form. wire maps the
