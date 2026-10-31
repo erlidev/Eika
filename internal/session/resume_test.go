@@ -81,7 +81,7 @@ func TestPathResumableAcceptsAnUnknownToolResult(t *testing.T) {
 	t.Parallel()
 
 	// A result whose call is not on this path answers nothing, and it must
-	// not cancel a call that is still out: forking there would produce a
+	// not cancel a call that is still out: a head there would produce a
 	// conversation the endpoint rejects.
 	call := entryOf(t, provider.AssistantMessage("", []provider.ToolCall{
 		{ID: "call_1", Name: "bash", Arguments: provider.ToolArguments(`{"command":"ls"}`)},

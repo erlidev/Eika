@@ -76,7 +76,6 @@ var routeWire = map[string]wire{
 	"GET /api/sessions/{id}/outline": {status: http.StatusOK, response: outlineResponse{}},
 	"GET /api/sessions/{id}/path":    {status: http.StatusOK, response: pathResponse{}},
 	"POST /api/sessions/{id}/head":   {status: http.StatusOK, request: setHeadRequest{}, response: sessionBody{}},
-	"POST /api/sessions/{id}/fork":   {status: http.StatusCreated, request: forkRequest{}, response: sessionBody{}},
 	"PUT /api/sessions/{id}/tools":   {status: http.StatusOK, request: setToolsRequest{}, response: sessionBody{}},
 
 	"GET /api/sessions/{id}/configuration":         {status: http.StatusOK, response: sessionConfigurationResponse{}},

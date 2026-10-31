@@ -843,7 +843,6 @@
                   "id": "string",
                   "kind": "string",
                   "overridden": "boolean",
-                  "parent_session_id": "string",
                   "pinned": "boolean",
                   "profile_id": "string",
                   "title": "string",
@@ -857,7 +856,6 @@
                 "optional": [
                   "computer_id",
                   "head_entry_id",
-                  "parent_session_id",
                   "profile_id"
                 ]
               }
@@ -993,7 +991,6 @@
               "id": "string",
               "kind": "string",
               "overridden": "boolean",
-              "parent_session_id": "string",
               "pinned": "boolean",
               "profile_id": "string",
               "title": "string",
@@ -1007,7 +1004,6 @@
             "optional": [
               "computer_id",
               "head_entry_id",
-              "parent_session_id",
               "profile_id"
             ]
           }
@@ -2279,7 +2275,6 @@
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
-          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
@@ -2293,7 +2288,6 @@
         "optional": [
           "computer_id",
           "head_entry_id",
-          "parent_session_id",
           "profile_id"
         ]
       }
@@ -3333,7 +3327,6 @@
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
-          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
@@ -3347,7 +3340,6 @@
         "optional": [
           "computer_id",
           "head_entry_id",
-          "parent_session_id",
           "profile_id"
         ]
       }
@@ -3375,42 +3367,6 @@
         ]
       }
     },
-    "POST /api/sessions/{id}/fork": {
-      "status": 201,
-      "request": {
-        "object": {
-          "entry_id": "string",
-          "title": "string"
-        }
-      },
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "computer_id": "string",
-          "created_at": "string",
-          "head_entry_id": "string",
-          "id": "string",
-          "kind": "string",
-          "overridden": "boolean",
-          "parent_session_id": "string",
-          "pinned": "boolean",
-          "profile_id": "string",
-          "title": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          },
-          "updated_at": "string"
-        },
-        "optional": [
-          "computer_id",
-          "head_entry_id",
-          "parent_session_id",
-          "profile_id"
-        ]
-      }
-    },
     "POST /api/sessions/{id}/head": {
       "status": 200,
       "request": {
@@ -3427,7 +3383,6 @@
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
-          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
@@ -3441,7 +3396,6 @@
         "optional": [
           "computer_id",
           "head_entry_id",
-          "parent_session_id",
           "profile_id"
         ]
       }
@@ -4101,7 +4055,6 @@
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
-          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
@@ -4115,7 +4068,6 @@
         "optional": [
           "computer_id",
           "head_entry_id",
-          "parent_session_id",
           "profile_id"
         ]
       }

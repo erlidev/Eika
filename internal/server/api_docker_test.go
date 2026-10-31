@@ -273,14 +273,13 @@ type computersWire struct {
 }
 
 type sessionWire struct {
-	ID              string `json:"id"`
-	ComputerID      string `json:"computer_id"`
-	Title           string `json:"title"`
-	Kind            string `json:"kind"`
-	HeadEntryID     string `json:"head_entry_id"`
-	ParentSessionID string `json:"parent_session_id"`
-	Pinned          bool   `json:"pinned"`
-	Archived        bool   `json:"archived"`
+	ID          string `json:"id"`
+	ComputerID  string `json:"computer_id"`
+	Title       string `json:"title"`
+	Kind        string `json:"kind"`
+	HeadEntryID string `json:"head_entry_id"`
+	Pinned      bool   `json:"pinned"`
+	Archived    bool   `json:"archived"`
 }
 
 type sessionsWire struct {
@@ -576,8 +575,8 @@ func TestDeleteComputerPreservesRowWhenInspectFails(t *testing.T) {
 
 // A run's tool calls have to be answered before the conversation can go
 // anywhere else, so the entries in the middle of a turn are not places a
-// head or a fork may be put: a session made there fails on its next run.
-func TestHeadAndForkRefuseAnUnansweredTurn(t *testing.T) {
+// head may be put: a run continuing from there fails.
+func TestHeadRefusesAnUnansweredTurn(t *testing.T) {
 	a := newAPI(t)
 	cx := a.newComputer(t)
 	sess := a.newSession(t, cx.ID)
@@ -614,10 +613,6 @@ func TestHeadAndForkRefuseAnUnansweredTurn(t *testing.T) {
 		body := map[string]any{"entry_id": path.Entries[at].ID}
 		if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/head", body); rec.Code != 400 {
 			t.Errorf("head at entry %d = %d, want 400: %s", at, rec.Code, rec.Body.String())
-		}
-		body["title"] = "mid-turn"
-		if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork", body); rec.Code != 400 {
-			t.Errorf("fork at entry %d = %d, want 400: %s", at, rec.Code, rec.Body.String())
 		}
 	}
 	// The result that answers the last call closes the turn, so it is a
@@ -671,34 +666,10 @@ func TestSessionRoutes(t *testing.T) {
 		t.Errorf("head = %q, want the first entry", moved.HeadEntryID)
 	}
 
-	fork := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork",
-		map[string]any{"entry_id": path.Entries[1].ID, "title": "a fork"}), 201)
-	if fork.ID == sess.ID || fork.Title != "a fork" || fork.ComputerID != cx.ID {
-		t.Errorf("fork = %+v", fork)
-	}
-	forkPath := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+fork.ID+"/path", nil), 200)
-	if len(forkPath.Entries) != 2 {
-		t.Errorf("fork entries = %d, want the copied path", len(forkPath.Entries))
-	}
-
-	if fork.Kind != "fork" || fork.ParentSessionID != sess.ID {
-		t.Errorf("fork = %+v, want kind fork under %s", fork, sess.ID)
-	}
-	// The fork lives in the source's computer, so it is in the plain
-	// listing; a fork with a computer of its own would need descendants.
-	tree := decodeBody[sessionsWire](t, request(t, a.Server, "GET",
-		"/api/sessions?computer_id="+cx.ID+"&descendants=true", nil), 200)
-	if len(tree.Sessions) != 2 {
-		t.Errorf("sessions with descendants = %d, want the session and its fork", len(tree.Sessions))
-	}
-
-	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork", map[string]any{"title": "no entry"}); rec.Code != 400 {
-		t.Errorf("fork without an entry = %d, want 400", rec.Code)
-	}
-	if rec := request(t, a.Server, "DELETE", "/api/sessions/"+fork.ID, nil); rec.Code != 204 {
+	if rec := request(t, a.Server, "DELETE", "/api/sessions/"+sess.ID, nil); rec.Code != 204 {
 		t.Fatalf("delete = %d", rec.Code)
 	}
-	if rec := request(t, a.Server, "GET", "/api/sessions/"+fork.ID, nil); rec.Code != 404 {
+	if rec := request(t, a.Server, "GET", "/api/sessions/"+sess.ID, nil); rec.Code != 404 {
 		t.Errorf("get after delete = %d, want 404", rec.Code)
 	}
 }

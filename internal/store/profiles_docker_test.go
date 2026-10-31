@@ -232,7 +232,7 @@ func TestASessionChoosesAProfileAndOverridesIt(t *testing.T) {
 	if sess.ProfileID != review.ID || !sameSettings(t, sess.Overrides, overrides) {
 		t.Errorf("created session = profile %q overrides %+v, want %q %+v", sess.ProfileID, sess.Overrides, review.ID, overrides)
 	}
-	listed, err := st.Sessions(ctx, sess.ComputerID, true)
+	listed, err := st.Sessions(ctx, sess.ComputerID)
 	if err != nil || len(listed) != 1 || listed[0].ProfileID != review.ID || !sameSettings(t, listed[0].Overrides, overrides) {
 		t.Errorf("Sessions = %+v, %v; want the profile and overrides", listed, err)
 	}
@@ -312,31 +312,6 @@ func TestDeletingAProfileOrAModelFallsBackToTheDefault(t *testing.T) {
 	}
 	if got, err := st.Session(ctx, kept.ID); err != nil || got.ProfileID != "" {
 		t.Errorf("session after deleting its profile = %+v, %v; want the default profile", got, err)
-	}
-}
-
-func TestAForkKeepsItsSourcesProfileAndOverrides(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-	review, err := st.CreateProfile(ctx, store.Profile{Name: "Review"})
-	if err != nil {
-		t.Fatalf("CreateProfile: %v", err)
-	}
-	overrides := store.ProfileSettings{Instructions: ptr("Be brief."), Sampling: json.RawMessage(`{"temperature":0}`)}
-	src := newSession(t, st, store.Session{ProfileID: review.ID, Overrides: overrides})
-	entry, err := st.AppendEntry(ctx, src.ID, store.Entry{Kind: store.KindUser, Payload: json.RawMessage(`{"role":"user","content":"hi"}`)})
-	if err != nil {
-		t.Fatalf("AppendEntry: %v", err)
-	}
-	fork, err := st.ForkSession(ctx, src.ID, entry.ID, store.ForkOptions{})
-	if err != nil {
-		t.Fatalf("ForkSession: %v", err)
-	}
-	if fork.ProfileID != review.ID || !sameSettings(t, fork.Overrides, overrides) {
-		t.Errorf("fork = profile %q overrides %+v, want %q %+v", fork.ProfileID, fork.Overrides, review.ID, overrides)
-	}
-	if got, err := st.Session(ctx, fork.ID); err != nil || got.ProfileID != review.ID || !sameSettings(t, got.Overrides, overrides) {
-		t.Errorf("stored fork = %+v, %v", got, err)
 	}
 }
 

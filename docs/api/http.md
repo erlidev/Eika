@@ -216,8 +216,6 @@ is not running. `200` with:
 | `limits` | `{"cpus": number, "memory_mb": number, "pids": number}` | Zero is no limit. `cpus` is a fraction of cores from 0.01 to the host's; `memory_mb` is MiB from 64 to the host's memory, with no swap beyond it; `pids` counts processes and threads, from 32 to 4194304. |
 | `egress` | `{"mode": string, "allow": [string]}` | `open` reaches the internet directly. `allowlist` puts the container on the internal sandbox network, with no route out, and its processes reach the hosts `allow` names through the harness's egress proxy. `none` is the internal network with nothing allowed. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
 
-Forks are created with their parent's `limits` and `egress`.
-
 ## Sessions
 
 A session is a tree of entries in one computer, with a head the next run
@@ -226,13 +224,11 @@ or commands, and offer the model only the tools that need no computer.
 
 ### `GET /api/sessions`
 
-`?computer_id=<id>` narrows the list. `?descendants=true` adds the forks
-those sessions led to, which belong under the session they came from. It is ignored without `computer_id`, which
-already returns every session, chats included. `?chats=true` returns the
-chats alone, forks of chats included; with `computer_id` it is `400`.
+`?computer_id=<id>` narrows the list; without it every session is returned,
+chats included. `?chats=true` returns the chats alone; with `computer_id` it is
+`400`.
 
-`200` with `{"sessions": [Session]}`, oldest first. The rows are flat; a
-client hangs each one under its `parent_session_id`.
+`200` with `{"sessions": [Session]}`, oldest first.
 
 ### `POST /api/sessions`
 
@@ -278,8 +274,8 @@ where a `Node` is
 `resumable` is whether a run can continue from that entry: the path down to it
 leaves no tool call unanswered. It is false for an assistant entry whose tool
 calls are still out and for a tool result that is not the last of its set. The
-head and fork routes refuse those entries, so a client offers no branch from
-a node that is not resumable.
+head route refuses those entries, so a client offers no branch from a node
+that is not resumable.
 
 ### `GET /api/sessions/{id}/path`
 
@@ -300,24 +296,6 @@ the next run continues from there and the tree branches in place. An empty
 `200` with the `Session`. `409` while a run is going; `404` when the entry is
 not the session's; `400` when the entry is not `resumable`, because a path
 that stops with tool calls unanswered is a conversation no endpoint accepts.
-
-### `POST /api/sessions/{id}/fork`
-
-| Field | Type | Meaning |
-|---|---|---|
-| `entry_id` | string, required | The entry to fork at. |
-| `title` | string | What to call the fork. |
-
-Copies the path from the root down to the entry into a session of its own,
-sharing no rows. The fork stays in the same computer, so only the
-conversation rewinds.
-
-`201` with the new `Session`, whose `kind` is `fork` and whose
-`parent_session_id` is the source.
-
-A fork keeps its source's tools, and a fork of a chat is a chat.
-
-`400` when `entry_id` is missing or the entry is not `resumable`.
 
 ### `PUT /api/sessions/{id}/tools`
 
@@ -428,11 +406,10 @@ token per 750 pixels; only a record's `input_tokens` is measured.
 | `id` | string | The session id. |
 | `computer_id` | string, optional | Where its runs act. Absent for a chat. |
 | `title` | string | What the user calls it, or the placeholder of an untitled session until its first run names it. |
-| `kind` | string | `user` or `fork`: who opened it. |
+| `kind` | string | Who opened it: `user`. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
-| `parent_session_id` | string, optional | The session it was forked from. |
 | `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a computer in a chat. |
-| `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. A fork starts with its parent's. |
+| `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. |
 | `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. |
 | `pinned` | boolean | Listed before its siblings. |
 | `archived` | boolean | Set aside under an Archived heading; it runs like any other. |

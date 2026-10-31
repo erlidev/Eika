@@ -8,8 +8,7 @@ import (
 	"github.com/erlidev/eika/internal/store"
 )
 
-// Tree is the session tree of one database: entries, heads, branches, and
-// forks.
+// Tree is the session tree of one database: entries, heads, and branches.
 type Tree struct {
 	store *store.Store
 }
@@ -67,13 +66,6 @@ func (t *Tree) Messages(ctx context.Context, sessionID string) ([]provider.Messa
 // they are, on a branch of their own.
 func (t *Tree) SetHead(ctx context.Context, sessionID, entryID string) error {
 	return t.store.SetSessionHead(ctx, sessionID, entryID)
-}
-
-// Fork copies the path from the session's root down to entryID into a new
-// session whose head is the copy of that entry. The fork shares no rows with
-// its parent, so both continue independently.
-func (t *Tree) Fork(ctx context.Context, sessionID, entryID string, opts store.ForkOptions) (store.Session, error) {
-	return t.store.ForkSession(ctx, sessionID, entryID, opts)
 }
 
 // Children returns the entries that hang off entryID, oldest first. An empty

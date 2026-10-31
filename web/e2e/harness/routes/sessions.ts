@@ -47,7 +47,7 @@ function resumableEntries(entries: Entry[]): { entry: Entry; resumable: boolean 
 }
 
 /**
- * midTurn is the refusal the harness answers with when a head or a fork names
+ * midTurn is the refusal the harness answers with when a head names
  * an entry that leaves tool calls unanswered, and nothing when it does not.
  */
 function midTurn(entries: Entry[], entryId: string): Reply | undefined {
@@ -71,22 +71,7 @@ export function sessionRoutes(ctx: RouteContext): void {
       return ok({ sessions: chats.toSorted((a, b) => a.created_at.localeCompare(b.created_at)) });
     }
     if (!cx) return ok({ sessions: w.sessions });
-    const listed = w.sessions.filter((s) => s.computer_id === cx);
-    if (query.get("descendants") !== "true") return ok({ sessions: listed });
-    // The forks those sessions led to, wherever they run,
-    // as the harness's recursive listing returns them.
-    const reached = new Set(listed.map((s) => s.id));
-    for (let more = true; more;) {
-      more = false;
-      for (const s of w.sessions) {
-        const parent = s.parent_session_id;
-        if (parent !== undefined && reached.has(parent) && !reached.has(s.id)) {
-          reached.add(s.id);
-          more = true;
-        }
-      }
-    }
-    return ok({ sessions: w.sessions.filter((s) => reached.has(s.id)) });
+    return ok({ sessions: w.sessions.filter((s) => s.computer_id === cx) });
   });
   on("POST", "/api/sessions", ({ body }) => {
     const chat = body.chat === true;

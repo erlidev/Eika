@@ -357,9 +357,9 @@ projects with their new meaning, and persistent subagents. Design:
       phase 11 agents have no plugins (decided). The MCP screens and Core's pool
       stay, so connections and OAuth keep working for phase 11 to pick up.
 - [ ] Session columns: `kind` (home, subagent, routine, dream), `agent`, `name`,
-      `project_id`, `computer_id`, `state`, `brief`, `result`, `sensitive`,
-      `suspicious`, `last_active_at`. Entry kinds gain `preamble` and `notice`;
-      home entries record their `channel`. Unused columns and kinds are removed.
+      `project_id`, `computer_id`, `parent_session_id`, `state`, `brief`,
+      `result`, `sensitive`, `suspicious`, `last_active_at`. Entry kinds gain
+      `preamble` and `notice`; home entries record their `channel`. Unused columns and kinds are removed.
 - [ ] Preamble builder: global and project instructions, the active-projects list,
       the project or subagent brief, the delegable agents with their allowed
       classes, and the user's time zone and locale. Store it as an entry, and rebuild it only at compaction. Memory,

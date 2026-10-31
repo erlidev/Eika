@@ -29,7 +29,6 @@ const unmocked: Record<string, string> = {
   "POST /api/computers/{id}/stop": "no UI calls it",
   "PUT /api/computers/{id}/sandbox": "no UI calls it",
   "GET /api/computers/{id}/usage": "no UI calls it",
-  "POST /api/sessions/{id}/fork": "no UI calls it",
 };
 
 /** open builds a mock on a named scenario whose replies play without pauses. */
@@ -138,7 +137,7 @@ describe("the mock answers as the harness does", () => {
         { provider_id: provider, name: "gpt-5-nano", model: "gpt-5-nano", context_window: 400000 },
       ],
       ["PATCH /api/models/{id}", `/api/models/${model}`, { reasoning_effort: "high" }],
-      ["GET /api/sessions", "/api/sessions?computer_id=cx-retries&descendants=true"],
+      ["GET /api/sessions", "/api/sessions?computer_id=cx-retries"],
       ["POST /api/sessions", "/api/sessions", { computer_id: "cx-retries", title: "Try jitter" }],
       ["GET /api/sessions/{id}", "/api/sessions/ses-backoff"],
       [

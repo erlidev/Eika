@@ -397,13 +397,14 @@ entries are kept. Changes:
 
 - `sessions` gains these columns:
   - `kind`: `home`, `subagent`, `routine` or `dream`. It replaces
-    user/fork/agent.
+    `user`, the only kind left.
   - `agent`: the definition name.
   - `name`: a subagent's handle (`plumber`, `flights-lisbon`), unique under its
     home session.
   - `project_id`: nullable.
   - `computer_id`: nullable.
-  - `parent_session_id`: the delegator; kept.
+  - `parent_session_id`: the delegator. Migration `0002` dropped the column
+    with forks; this adds it back with this meaning.
   - `state`: `idle`, `running`, `waiting`, `failed` or `cancelled`, set by code.
   - `brief`: a subagent's first brief.
   - `result`: a subagent's latest report.

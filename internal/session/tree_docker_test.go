@@ -141,55 +141,21 @@ func TestSetHeadBranchesInPlace(t *testing.T) {
 }
 
 func TestSetHeadRejectsAnotherSessionsEntry(t *testing.T) {
-	tree, sess := newTree(t)
+	st := storetest.Open(t)
+	tree := session.NewTree(st)
 	ctx := t.Context()
+	sess, err := st.CreateSession(ctx, store.Session{Title: "one"})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	other, err := st.CreateSession(ctx, store.Session{Title: "another"})
+	if err != nil {
+		t.Fatalf("create second session: %v", err)
+	}
 	entry := appendText(t, tree, sess.ID, provider.UserMessage("one"))
 
-	other, err := tree.Fork(ctx, sess.ID, entry.ID, store.ForkOptions{})
-	if err != nil {
-		t.Fatalf("Fork: %v", err)
-	}
 	if err := tree.SetHead(ctx, other.ID, entry.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("SetHead across sessions = %v, want ErrNotFound", err)
-	}
-}
-
-func TestForkCopiesThePathAndRunsOn(t *testing.T) {
-	tree, sess := newTree(t)
-	ctx := t.Context()
-
-	first := appendText(t, tree, sess.ID, provider.UserMessage("one"))
-	second := appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil))
-	appendText(t, tree, sess.ID, provider.UserMessage("three"))
-
-	fork, err := tree.Fork(ctx, sess.ID, second.ID, store.ForkOptions{Title: "what if"})
-	if err != nil {
-		t.Fatalf("Fork: %v", err)
-	}
-	if fork.ID == sess.ID || fork.ParentSessionID != sess.ID {
-		t.Errorf("fork = %+v, want a new session whose parent is the original", fork)
-	}
-	if fork.Title != "what if" || fork.ComputerID != sess.ComputerID {
-		t.Errorf("fork = %+v, want the given title and the original computer", fork)
-	}
-
-	path, err := tree.Path(ctx, fork.ID)
-	if err != nil {
-		t.Fatalf("Path of the fork: %v", err)
-	}
-	if got := texts(t, path); len(got) != 2 || got[0] != "one" || got[1] != "two" {
-		t.Errorf("fork path = %q, want the path up to the fork entry", got)
-	}
-	if path[0].ID == first.ID || path[1].ID == second.ID {
-		t.Error("the fork shares entry rows with its parent; it must copy them")
-	}
-
-	appendText(t, tree, fork.ID, provider.UserMessage("three again"))
-	if got := texts(t, mustPath(t, tree, fork.ID)); len(got) != 3 || got[2] != "three again" {
-		t.Errorf("fork path = %q, want the fork to continue on its own", got)
-	}
-	if got := texts(t, mustPath(t, tree, sess.ID)); len(got) != 3 || got[2] != "three" {
-		t.Errorf("original path = %q, want it untouched by the fork", got)
 	}
 }
 
@@ -338,17 +304,16 @@ func TestLoadFoldsACompaction(t *testing.T) {
 		t.Errorf("loaded conversation = %+v, want the summary, three, and four", got)
 	}
 
-	// A fork from before the compaction has the whole conversation.
-	fork, err := tree.Fork(ctx, sess.ID, before.ID, store.ForkOptions{Title: "earlier"})
-	if err != nil {
-		t.Fatalf("Fork: %v", err)
+	// A branch from before the compaction has the whole conversation.
+	if err := tree.SetHead(ctx, sess.ID, before.ID); err != nil {
+		t.Fatalf("SetHead: %v", err)
 	}
-	forked, err := st.Load(ctx, fork.ID)
+	branched, err := st.Load(ctx, sess.ID)
 	if err != nil {
-		t.Fatalf("Load fork: %v", err)
+		t.Fatalf("Load branch: %v", err)
 	}
-	if got := forked.Conversation.Messages(); len(got) != 2 || got[0].Content != "one" {
-		t.Errorf("forked conversation = %+v, want one and two", got)
+	if got := branched.Conversation.Messages(); len(got) != 2 || got[0].Content != "one" {
+		t.Errorf("branched conversation = %+v, want one and two", got)
 	}
 
 	nodes, err := tree.Outline(ctx, sess.ID)
@@ -454,14 +419,4 @@ func TestToolArgumentTextSurvivesTheDatabase(t *testing.T) {
 			t.Errorf("call %s arguments = %q, want exact text %q", call.ID, call.Arguments, want[i].Arguments)
 		}
 	}
-}
-
-// mustPath reads a session's path or fails the test.
-func mustPath(t *testing.T, tree *session.Tree, sessionID string) []store.Entry {
-	t.Helper()
-	path, err := tree.Path(t.Context(), sessionID)
-	if err != nil {
-		t.Fatalf("Path: %v", err)
-	}
-	return path
 }

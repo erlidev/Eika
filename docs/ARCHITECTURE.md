@@ -40,7 +40,7 @@ egress proxy are network calls and run in the harness.
 | `egress` | Egress modes, allowlist patterns, the proxy |
 | `netguard` | Public-address-only dialing |
 | `store` | PostgreSQL pool, embedded migrations, queries |
-| `session` | Session tree: append, head, branch, fork, outline; `session.Store` records runs |
+| `session` | Session tree: append, head, branch, outline; `session.Store` records runs |
 | `search` | Failover chain, quotas, cache; backends in `web`, `wikipedia`, `arxiv`, `github`; `fetch` reads a URL; `filter` is the JS filter |
 | `mcp` | MCP client, transports, pool, elicitation; `mcp/oauth` authorization; `mcptest` fakes |
 | `web/` | The frontend |
@@ -125,7 +125,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | Table | Holds |
 |---|---|
 | `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), pinned, archived |
-| `sessions` | computer_id (NULL for a chat), title, untitled, kind (user/fork), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb), pinned, archived |
+| `sessions` | computer_id (NULL for a chat), title, untitled, kind (user), head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
@@ -143,36 +143,33 @@ key (it would be a cycle); `SetSessionHead` checks ownership in its `UPDATE`.
 
 `AppendEntry` locks the session row, inserts with the head as parent and
 `max(seq)+1`, and moves the head, so concurrent appends form one chain.
-`ForkSession` copies entries into a new session.
 
 ### Session trees
 
-`session.Tree` appends, reads `Path` (root to head), moves the head, forks,
-lists `Children`, and renders an `Outline`. `session.Store` implements
+`session.Tree` appends, reads `Path` (root to head), moves the head, lists `Children`, and renders an `Outline`. `session.Store` implements
 `agent.Store`; `Load` rebuilds a conversation from the path.
 
 `user`, `assistant`, and `tool_result` entries are the conversation; `system`
 and `event` entries are shown but not sent. A `compaction` entry holds an
 `agent.Compaction`: `session.Messages` folds the path, so each one replaces
 the conversation before it with its summary and the last `kept` messages.
-The entries it covers stay in the tree, so a fork or a head moved above it
+The entries it covers stay in the tree, so a head moved above it
 has the whole conversation. A user entry may hold `images` (base64 PNG or
 JPEG with their size), stored inline as the model is sent them. An assistant entry holds the
 message JSON (with tool calls, reasoning, and measured `metrics`).
 
 ```
-branch in place (head moved to e2)     fork at e2 (path copied)
-  e1                                      A: e1 - e2 - e3 - e4
-  e2                                      B: e1' - e2' - e5'
+branch in place (head moved to e2)
+  e1
+  e2
   |\
   e3 e5 <- head
   e4
 ```
 
-Both require a resumable entry (`session.PathResumable`: no tool call left
-unanswered); the outline reports it per node. Forks get kind `fork`; `Store.Sessions` with descendants follows
-`parent_session_id` recursively for the sidebar. A fork stays in its
-session's computer.
+Moving the head requires a resumable entry (`session.PathResumable`: no tool
+call left unanswered); the outline reports it per node. A session cannot be
+copied into another.
 
 ### Chats
 
@@ -180,7 +177,6 @@ A chat's run gets no executor. `sessionTools` drops
 every tool that `NeedsComputer`, then applies the tool choice, so the model is
 never offered a computer tool; the loop also refuses one. The system prompt
 is the same base prompt every session has. web_fetch refuses filters in a chat.
-A chat's fork is a chat.
 
 ## Server
 
@@ -513,9 +509,9 @@ web/src/
   by part, key parameters; the Context inspector dialog shows a request whole
   with links to the layer behind each part). `ResizableSplit` remembers
   widths; below 1024px side panes become drawers. The UI has no panel for a
-  computer's files, no terminal, and no session tree or fork. The API still
-  serves the file and fork routes, which the UI does not call; rewind uses the
-  outline and head routes.
+  computer's files, no terminal, and no session tree or fork, and the API has
+  no routes for a computer's files or a session fork; rewind uses the outline
+  and head routes.
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
   events (`useSessionStream`, `useMCPEvents`,
   `useSessionUpdates`).
