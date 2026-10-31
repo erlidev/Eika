@@ -424,9 +424,8 @@ applied once and never edited afterwards: `schema_migrations` records the file
 name without its extension, so changing a file that a database already carries
 changes nothing. Correct a mistake with another migration.
 
-Until phase 0 of `docs/PLAN.md` closes, the schema is the one baseline,
-`0001_baseline.sql`, and a change edits it in place: a fresh database is
-expected. The rule above holds from then on.
+`0001_baseline.sql` is the schema as phase 0 of `docs/PLAN.md` left it. Never
+edit it: the next file is `0002`.
 
 Tables live in schema `core`, which `store.Open` creates and sets as every
 connection's `search_path`, so a migration names tables without a schema.

@@ -15,5 +15,7 @@ these files in the same commit.
   this file says which fields exist.
 
 Everything under `/api` requires `Authorization: Bearer <token>` (a sign-in
-session or the deployment's API token) except `GET /api/healthz`, the three
-routes that hand out a session, and the two WebSockets' `?token=` form.
+session or the deployment's API token) except `GET /api/healthz` and the
+three sign-in routes (`GET /api/auth/status`, `POST /api/auth/setup` and
+`POST /api/auth/login`). Only the event stream, `GET /api/events`, also takes
+the token as `?token=`.

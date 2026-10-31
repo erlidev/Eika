@@ -4,8 +4,8 @@
 -- names it as every connection's search_path. Sentry's tables get a schema of
 -- their own.
 --
--- Until phase 0 of docs/PLAN.md closes, a schema change edits this file
--- rather than adding a migration, since a fresh database is expected.
+-- This is the schema as phase 0 of docs/PLAN.md left it. A change after that
+-- is a new migration; this file is not edited.
 
 CREATE TABLE settings (
     key   text PRIMARY KEY,

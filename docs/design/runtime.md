@@ -412,9 +412,8 @@ entries are kept. Changes:
   - `last_active_at`.
   It loses `computer_id`, `tools`, `profile_id` and `overrides`.
 - Entry kinds gain `preamble` (the snapshot above) and `notice` (harness text shown
-  to the user, also sent as part of the next user-side `<context>`). They lose
-  `commit_sha`. User and assistant entries in the home session record their
-  `channel`.
+  to the user, also sent as part of the next user-side `<context>`). User and
+  assistant entries in the home session record their `channel`.
 - **One home session.** The user works with Eika the way they would with one
   person: a single conversation that never ends, while Eika keeps track of many
   lines of work through its subagents (section 9). The home session is created at
@@ -433,7 +432,7 @@ entries are kept. Changes:
   (`interface.md` 1). Steering goes through Eika, which calls `subagent_message`,
   so Eika's own view of its work stays accurate.
 - **Branching.** The tree stays in storage, but the UI is linear, with no rewind or
-  fork. Fork-with-workspace is gone.
+  fork.
 - **Pagination.** `GET .../entries?before=<id>&limit=` serves history in pages, since
   the home session grows without end. Replay since an entry id stays as it is.
 
@@ -519,7 +518,8 @@ assignment.
   `failed`; `cancelled`.
 - **Reports.** A run that ends without calling `report` is sent one message in its
   own session: "Draft your report now with the report tool." If it still does not
-  call `report`, its final message becomes the report, as `summaryOf` does today.
+  call `report`, its final message becomes the report, as the removed spawner's
+  `summaryOf` did (`PLAN.md` log, "phase 0 notes for later phases").
   Every report becomes a notice in Eika's
   next `<context>`: "plumber (worker) reported: <summary>; follow-ups: …". With
   `report: always`, a background turn on the home session tells the user.
@@ -543,32 +543,18 @@ assignment.
   subagent belongs to its parent, not to Eika's board. At most
   `subagent_max_running` subagents are runnable at once (default 4). They still
   execute one at a time on a one-slot pool. The reserve-under-lock logic of
-  today's spawner carries over.
-- **Abort and shutdown** carry over from the spawner. Aborting a home reply does
+  the removed spawner carries over.
+- **Abort and shutdown** carry over from the removed spawner. Aborting a home reply does
   not cancel its subagents, since they outlive the turn that started them. Halt
   stops everything. `Shutdown` stops runs, and durable runs resume on start
   (section 5).
 
 ## 10. Computers
 
-The `workspace` package is now `computer` (renamed in phase 0). It keeps:
+The `computer` package and the `home` computer are built (`ARCHITECTURE.md`,
+"Sandboxes"). What is still to come:
 
-- Docker lifecycle, confinement, limits and usage
-- the idle stopper
-- the eikad copy-in and the executor client
-- the `PUT /environment` path
-
-It drops clone, push, fetch, hub grants, worktrees and previews.
-
-- The `home` computer is ensured on every start from the sandbox image, with a
-  persistent volume mounted at `/home/eika`: found by the `home` flag on its row,
-  created when missing, started when stopped, and tried again until Docker and the
-  image are ready. Setup does not create it, since a deployment with a fixed API
-  token never runs setup. It holds project directories and spilled outputs.
-  `/home/eika` is the computer's root for the executor and eikad. The image installs
-  its tools outside it (under `/opt`), since a volume freezes whatever the image had
-  there at first creation. It cannot be deleted, and a run in it starts it when the
-  idle stopper has stopped it.
+- `home` holds project directories and spilled outputs.
 - **Per-run egress identity.** Every `exec` carries `HTTP(S)_PROXY` credentials
   that Sentry issued for that run, so the proxy attributes traffic to the session
   rather than the container. Processes a run starts in the background keep that

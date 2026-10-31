@@ -702,7 +702,8 @@ Changes:
 - **Identity per principal.** Proxy credentials come from
   `POST /v1/egress/principals`: one per computer for its own processes, one per
   run for exec calls (`runtime.md` 10), one per plugin cell, one for the browser.
-  The hub token, which no longer exists, stops being the proxy password.
+  The proxy token each computer has of its own (phase 0) stops being the proxy
+  password.
 - **Decisions per connection.** A connection is an `egress` action. The verdict is
   `allow` or `deny`, never `ask` or `review`: egress does not wait on the user or
   a model. It is denied when the host is on the blocklist, netguard refuses the

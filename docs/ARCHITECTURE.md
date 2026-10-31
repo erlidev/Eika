@@ -372,7 +372,8 @@ capacity (`Host.Capacity`). `Host.Usage` samples `docker stats`;
 ```
 
 `egress.Proxy` takes `CONNECT` and absolute `http://` requests, identifies the
-sandbox from `Proxy-Authorization`, asks `Server.EgressPolicy` per request,
+sandbox from `Proxy-Authorization` (the computer's id and a proxy token of its
+own, made at create and read back by `Inspect`), asks `Server.EgressPolicy` per request,
 dials through `netguard`, and answers refusals with 403, remembered per
 computer (`Proxy.Blocked`). It serves only when both networks exist
 (`Host.EgressControl`). Switching modes connects the container to the new
@@ -562,6 +563,8 @@ An arrow means "may import".
   it a `Store` and a `Launcher`.
 - `search` imports nothing from `internal/`; goja (`search/filter`) is linked
   into eikad only.
+- `internal/imports_test.go` holds these rules as a list of boundaries; an
+  exception names the importing package and says why.
 
 ## Testing
 
@@ -575,7 +578,10 @@ ESLint, `tsc`, Vitest, then the visual suite. Go targets name
   computers) use `storetest` and skip without a daemon.
 - Contract: `docs/api/contract.json` is generated from the wire types; handler
   tests check responses against it and the mock harness checks requests,
-  responses, and events.
+  responses, and events. `docs_test.go` in `server` keeps `docs/api/http.md`
+  listing every route in `routes.go` and nothing else, and `events.md` listing
+  every event type.
 - Frontend: Vitest for logic; Playwright specs in `web/e2e/` against the mock
   harness (`make visual`); `npm run shot` for screenshots.
-- `make smoke`: the real stack from setup to a sandboxed bash call.
+- `make smoke`: the real stack, from setup and a provider to a plain chat and
+  then a chat on the home computer whose `bash` call runs in its container.
