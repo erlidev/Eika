@@ -497,6 +497,33 @@ func (a *Agent) emit(ctx context.Context, s *Session, typ string, payload any) {
 	a.opts.Emitter.Emit(ctx, e)
 }
 
+// mintCall gives a call the backend named its own id. Local servers reuse ids
+// (call_0 in every response, none at all, a counter per response), so the
+// backend's id keys nothing: it is kept as the call's WireID, for the request
+// that sends the call back, and the id every entry, event and approval uses is
+// minted here. A call that already has a WireID was minted before and is left
+// alone.
+func mintCall(c provider.ToolCall) provider.ToolCall {
+	if c.WireID != nil {
+		return c
+	}
+	wire := c.ID
+	c.WireID = &wire
+	c.ID = newCallID()
+	return c
+}
+
+// newCallID returns a unique id for one tool call. It looks like the ids
+// OpenAI mints, since it is what a request sends for a call whose backend gave
+// none.
+func newCallID() string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("call_%d", time.Now().UnixNano())
+	}
+	return "call_" + hex.EncodeToString(b[:])
+}
+
 // newRunID returns an identifier for one turn.
 func newRunID() string {
 	var b [8]byte

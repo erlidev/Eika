@@ -285,6 +285,28 @@ func roles(msgs []provider.Message) []string {
 	return out
 }
 
+// resultsByBackendID returns the tool results of msgs keyed by the id the
+// backend gave the call each one answers. The loop mints its own id for every
+// call and keeps the backend's as the call's WireID, so a test that scripted
+// the backend ids finds its results by them.
+func resultsByBackendID(msgs []provider.Message) map[string]provider.Message {
+	backend := map[string]string{}
+	for _, m := range msgs {
+		for _, c := range m.ToolCalls {
+			if c.WireID != nil {
+				backend[c.ID] = *c.WireID
+			}
+		}
+	}
+	results := map[string]provider.Message{}
+	for _, m := range msgs {
+		if m.Role == provider.RoleTool {
+			results[backend[m.ToolCallID]] = m
+		}
+	}
+	return results
+}
+
 func TestRunStreamsATextAnswer(t *testing.T) {
 	f := newFixture(t, []providertest.Step{providertest.Text("hello there")})
 	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
@@ -357,8 +379,9 @@ func TestRunExecutesToolCalls(t *testing.T) {
 
 	var call event.ToolCall
 	f.events.payloadOf(t, event.TypeToolCall, &call)
-	if call.Name != "bash" || call.CallID != "c1" {
-		t.Errorf("tool.call payload = %+v", call)
+	first := f.session.Conversation.Messages()[1].ToolCalls[0]
+	if call.Name != "bash" || call.CallID != first.ID || first.ID == "c1" {
+		t.Errorf("tool.call payload = %+v, want the id the loop minted for the call, not the backend's c1", call)
 	}
 	var result event.ToolResult
 	f.events.payloadOf(t, event.TypeToolResult, &result)
@@ -968,13 +991,8 @@ func TestAbortPersistsATerminalResultForEveryToolCall(t *testing.T) {
 	if err := a.Run(ctx, agent.NewSession("s1", "w1"), provider.UserMessage("start")); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
 	}
-	results := map[string]bool{}
-	for _, message := range store.Messages() {
-		if message.Role == provider.RoleTool {
-			results[message.ToolCallID] = true
-		}
-	}
-	if !results["c1"] || !results["c2"] || len(results) != 2 {
+	results := resultsByBackendID(store.Messages())
+	if len(results) != 2 || results["c1"].Role == "" || results["c2"].Role == "" {
 		t.Errorf("persisted tool results = %v, want c1 and c2", results)
 	}
 }
@@ -1002,13 +1020,8 @@ func TestCompletedToolResultStoreFailurePersistsATerminalResult(t *testing.T) {
 	}
 
 	for _, messages := range [][]provider.Message{store.Messages(), s.Conversation.Messages()} {
-		var results []provider.Message
-		for _, message := range messages {
-			if message.Role == provider.RoleTool && message.ToolCallID == "c1" {
-				results = append(results, message)
-			}
-		}
-		if len(results) != 1 || !results[0].IsError || !strings.Contains(results[0].Content, "temporary store failure") {
+		results := resultsByBackendID(messages)
+		if len(results) != 1 || !results["c1"].IsError || !strings.Contains(results["c1"].Content, "temporary store failure") {
 			t.Errorf("terminal results = %+v, want one persisted c1 error", results)
 		}
 	}
@@ -1112,7 +1125,7 @@ func TestMalformedToolArgumentsBecomeARecoverableToolResult(t *testing.T) {
 	if len(messages) != 4 {
 		t.Fatalf("stored messages = %d, want user, assistant, tool result, assistant", len(messages))
 	}
-	if !messages[2].IsError || messages[2].ToolCallID != "c1" {
+	if !messages[2].IsError || messages[2].ToolCallID != messages[1].ToolCalls[0].ID {
 		t.Errorf("tool result = %+v, want a recoverable c1 error", messages[2])
 	}
 	if messages[3].Content != "recovered" {

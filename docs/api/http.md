@@ -401,7 +401,11 @@ answer's generation speed after replay, and is never sent to the provider. A too
 `arguments` is normally an object. If a model returns malformed JSON, it is a
 string with the exact malformed text, and the tool call has
 `arguments_malformed: true`. The marker is absent for valid JSON, including a
-valid top-level JSON string. A user message can include `images`, each
+valid top-level JSON string. A tool call's `id` is Eika's own, unique in the
+session, and is what events and the `tool_call_id` of its result carry. Its
+`wire_id` is the id the model server gave it, kept only so a later request can
+send it back as the server knows it, and is absent on a call stored before Eika
+minted ids, whose one `id` is both. A user message can include `images`, each
 `{"media_type": string, "data": string, "width": number, "height": number}`:
 the picture as the model is sent it, `image/png` or `image/jpeg`, base64
 encoded, with its size in pixels. `content` is absent on a message of images

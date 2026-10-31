@@ -1081,10 +1081,12 @@
                         "arguments": "any",
                         "arguments_malformed": "boolean",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "wire_id"
                       ]
                     }
                   }
@@ -1457,10 +1459,12 @@
                         "arguments": "any",
                         "arguments_malformed": "boolean",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "wire_id"
                       ]
                     }
                   }
@@ -1968,10 +1972,12 @@
                         "arguments": "any",
                         "arguments_malformed": "boolean",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "wire_id"
                       ]
                     }
                   }
@@ -2243,10 +2249,12 @@
                             "arguments": "any",
                             "arguments_malformed": "boolean",
                             "id": "string",
-                            "name": "string"
+                            "name": "string",
+                            "wire_id": "string"
                           },
                           "optional": [
-                            "arguments_malformed"
+                            "arguments_malformed",
+                            "wire_id"
                           ]
                         }
                       }
@@ -2374,10 +2382,12 @@
                         "arguments": "any",
                         "arguments_malformed": "boolean",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "wire_id"
                       ]
                     }
                   }

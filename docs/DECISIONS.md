@@ -344,6 +344,41 @@ this file says why, so neither repeats the other.
 - Model names are unique across providers, because runs name a model
   alone.
 
+### Tool-call ids
+
+- **The loop mints an id for every tool call and keeps the backend's for the
+  wire only.** Local servers reuse ids: llama.cpp can answer `call_0` in every
+  response, a server may send none, a Responses server counts per response.
+  Entries, events, the resume rule (`session.PathResumable`) and, from phase
+  4, approvals and the dispatched marker are keyed by the call, so an id that
+  two calls share corrupts them: two parallel calls with the same empty id
+  were one pending call to the resume rule. `ToolCall.ID` is now Eika's
+  (`call_` and 24 hex digits, from `crypto/rand`) and `ToolCall.WireID` is the
+  backend's, set by the loop when a response's call arrives
+  (`agent.mintCall`). A tool result names its call by Eika's id; a provider
+  translates it with `provider.WireToolCallIDs` when it serialises, so the
+  result of a call carries the id the backend gave the call.
+- **Replay is byte for byte.** A request sends the backend's id exactly as it
+  came, from the first request that carries the call to every one after, so
+  the serialised prefix does not change when a call is replayed and exact
+  counting sees no drift from it. A backend that gave none (`WireID` is the
+  empty string) is sent Eika's id instead, the same on every replay: an empty
+  `call_id` is invalid under Responses and ambiguous under chat when two
+  calls share it. `WireID` is a pointer so that "the backend sent nothing"
+  (`""`) and "stored before ids were minted" (absent) differ.
+- **Old entries stay as they are.** A stored call with no `wire_id` has one id
+  that is both, and is replayed under it, empty included. Nothing rewrites
+  history, because a rewritten id is a changed prefix.
+- **A session may change protocol.** Both providers read the same
+  `ToolCall`, so a conversation stored under `chat` replays under `responses`
+  (`call_id` is the wire id) and the reverse; neither protocol's item id
+  (`fc_...`) is stored or sent, since the request is stateless.
+- Rejected: replacing the backend's id at the provider, so that the loop never
+  sees a collision (the provider cannot see the other responses of a session,
+  so it cannot make an id unique in one); a counter per session (it restarts
+  with a restart, and a mint must not depend on state that does not persist);
+  rewriting the ids of old entries (above).
+
 ### The provider probe
 
 - **A probe reads each server's own description, then verifies the counting
@@ -950,6 +985,12 @@ verified against `/slots` while a call ran, on b11942). The design is
   POST is not. The code classed it correctly already (`Retryable`, so the agent
   loop recovers after its backoff); the fault was that nothing else recovered
   and a token count before every call would meet it as often as the call.
+  A request whose reused connection the server closes while it is being
+  written fails with net/http's `http: server closed idle connection`, which
+  is the same fault; `closedByServer` recognises it by that whole message,
+  because net/http keeps the value unexported and wraps nothing around it, so
+  there is no type or sentinel to test for. The regression test provokes the
+  real error, so a Go release that rewords it fails the test.
   Rejected: `Connection: close` on streamed requests (a TLS handshake per
   call to a hosted API for a fault of one server); disabling keep-alives
   (same cost); leaving it to the loop (the counter and the probe have no

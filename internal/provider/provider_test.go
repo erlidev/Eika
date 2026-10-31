@@ -1,8 +1,10 @@
 package provider_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +111,40 @@ func TestErrorClassification(t *testing.T) {
 			}
 			if got := provider.RetryAfter(c.err); got != c.wantAfter {
 				t.Errorf("RetryAfter = %v, want %v", got, c.wantAfter)
+			}
+		})
+	}
+}
+
+func TestToolCallIDsSurviveStorageAndOldEntriesHaveOne(t *testing.T) {
+	none, wire := "", "call_0"
+	for _, tc := range []struct {
+		name     string
+		stored   string
+		wantWire *string
+		wantSent string
+	}{
+		{"an entry stored before ids were minted", `{"id":"toolu_1","name":"ls","arguments":{}}`, nil, "toolu_1"},
+		{"a call the backend named", `{"id":"call_ab","wire_id":"call_0","name":"ls","arguments":{}}`, &wire, "call_0"},
+		{"a call the backend gave no id", `{"id":"call_ab","wire_id":"","name":"ls","arguments":{}}`, &none, "call_ab"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var c provider.ToolCall
+			if err := json.Unmarshal([]byte(tc.stored), &c); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(c.WireID, tc.wantWire) {
+				t.Errorf("WireID = %v, want %v", c.WireID, tc.wantWire)
+			}
+			if got := c.Wire(); got != tc.wantSent {
+				t.Errorf("Wire() = %q, want %q", got, tc.wantSent)
+			}
+			again, err := json.Marshal(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(again) != tc.stored {
+				t.Errorf("stored again as %s, want it unchanged: %s", again, tc.stored)
 			}
 		})
 	}

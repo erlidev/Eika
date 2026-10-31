@@ -223,8 +223,9 @@ func (p *Responses) tools(defs []provider.ToolDef) ([]map[string]any, error) {
 // input converts the conversation into input items.
 func (p *Responses) input(req provider.Request) ([]any, error) {
 	items := make([]any, 0, len(req.Messages)+1)
+	wire := provider.WireToolCallIDs(req.Messages)
 	for _, m := range req.Messages {
-		converted, err := p.items(m, req.PreserveThinking)
+		converted, err := p.items(m, req.PreserveThinking, wire)
 		if err != nil {
 			return nil, err
 		}
@@ -235,13 +236,13 @@ func (p *Responses) input(req provider.Request) ([]any, error) {
 
 // items converts one message into the input items that stand for it. An
 // assistant message becomes its reasoning, its answer and its tool calls, in
-// that order.
-func (p *Responses) items(m provider.Message, preserveThinking bool) ([]any, error) {
+// that order. wire maps the Eika id of each tool call to the id sent for it.
+func (p *Responses) items(m provider.Message, preserveThinking bool, wire map[string]string) ([]any, error) {
 	switch m.Role {
 	case provider.RoleUser:
 		return []any{userItem(m)}, nil
 	case provider.RoleTool:
-		return []any{map[string]any{"type": "function_call_output", "call_id": m.ToolCallID, "output": m.Content}}, nil
+		return []any{map[string]any{"type": "function_call_output", "call_id": provider.WireToolCallID(wire, m.ToolCallID), "output": m.Content}}, nil
 	case provider.RoleAssistant:
 		var items []any
 		if preserveThinking && (m.Content != "" || len(m.ToolCalls) > 0 || !p.hosted) {
@@ -257,7 +258,7 @@ func (p *Responses) items(m provider.Message, preserveThinking bool) ([]any, err
 		}
 		for _, c := range m.ToolCalls {
 			items = append(items, map[string]any{
-				"type": "function_call", "call_id": c.ID, "name": c.Name, "arguments": string(c.Arguments),
+				"type": "function_call", "call_id": c.Wire(), "name": c.Name, "arguments": string(c.Arguments),
 			})
 		}
 		return items, nil

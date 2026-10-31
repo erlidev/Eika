@@ -236,8 +236,9 @@ func (p *Provider) params(req provider.Request, slot *int) (openai.ChatCompletio
 	if req.System != "" {
 		messages = append(messages, openai.SystemMessage(req.System))
 	}
+	wire := provider.WireToolCallIDs(req.Messages)
 	for _, m := range req.Messages {
-		converted, err := message(m, req.PreserveThinking)
+		converted, err := message(m, req.PreserveThinking, wire)
 		if err != nil {
 			return openai.ChatCompletionNewParams{}, err
 		}
@@ -325,8 +326,10 @@ func (p *Provider) params(req provider.Request, slot *int) (openai.ChatCompletio
 	return params, nil
 }
 
-// message converts one conversation message into its SDK form.
-func message(m provider.Message, preserveThinking bool) (openai.ChatCompletionMessageParamUnion, error) {
+// message converts one conversation message into its SDK form. wire maps the
+// Eika id of each tool call in the conversation to the id sent for it
+// (provider.WireToolCallIDs).
+func message(m provider.Message, preserveThinking bool, wire map[string]string) (openai.ChatCompletionMessageParamUnion, error) {
 	switch m.Role {
 	case provider.RoleUser:
 		if len(m.Images) == 0 {
@@ -334,7 +337,7 @@ func message(m provider.Message, preserveThinking bool) (openai.ChatCompletionMe
 		}
 		return openai.UserMessage(userParts(m)), nil
 	case provider.RoleTool:
-		return openai.ToolMessage(m.Content, m.ToolCallID), nil
+		return openai.ToolMessage(m.Content, provider.WireToolCallID(wire, m.ToolCallID)), nil
 	case provider.RoleAssistant:
 		msg := openai.ChatCompletionAssistantMessageParam{}
 		if preserveThinking && m.Reasoning != "" {
@@ -349,7 +352,7 @@ func message(m provider.Message, preserveThinking bool) (openai.ChatCompletionMe
 		for _, c := range m.ToolCalls {
 			msg.ToolCalls = append(msg.ToolCalls, openai.ChatCompletionMessageToolCallUnionParam{
 				OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
-					ID: c.ID,
+					ID: c.Wire(),
 					Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
 						Name:      c.Name,
 						Arguments: string(c.Arguments),

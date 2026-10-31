@@ -170,6 +170,7 @@ type providerUsage struct {
 // providerToolCall is the wire form provider.ToolCall's MarshalJSON writes.
 type providerToolCall struct {
 	ID                 string          `json:"id"`
+	WireID             *string         `json:"wire_id,omitempty"`
 	Name               string          `json:"name"`
 	Arguments          json.RawMessage `json:"arguments"`
 	ArgumentsMalformed bool            `json:"arguments_malformed,omitempty"`

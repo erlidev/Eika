@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -164,13 +165,25 @@ func TestCountingDoesNotChangeWhatIsSent(t *testing.T) {
 				t.Fatalf("Run: %v", err)
 			}
 		}
+		// The loop mints a different id for every call in every run, and the
+		// request sends the backend's. Name them in the order they appear.
+		ids := map[string]string{}
 		var out []string
 		for _, req := range p.Requests() {
 			raw, err := json.Marshal(req)
 			if err != nil {
 				t.Fatalf("encode request: %v", err)
 			}
-			out = append(out, string(raw))
+			text := string(raw)
+			for _, m := range req.Messages {
+				for _, c := range m.ToolCalls {
+					if _, seen := ids[c.ID]; !seen {
+						ids[c.ID] = fmt.Sprintf("minted-%d", len(ids)+1)
+					}
+					text = strings.ReplaceAll(text, c.ID, ids[c.ID])
+				}
+			}
+			out = append(out, text)
 		}
 		return out
 	}

@@ -295,7 +295,7 @@ func (a *Agent) read(callCtx, ctx context.Context, s *Session, runID string, req
 		case provider.KindToolCallDelta:
 			begin()
 		case provider.KindToolCall:
-			calls = append(calls, e.ToolCall)
+			calls = append(calls, mintCall(e.ToolCall))
 		case provider.KindUsage:
 			// A usage event can carry only timings: an endpoint may measure
 			// its own speed in a chunk that repeats no token counts.

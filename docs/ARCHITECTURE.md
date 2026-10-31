@@ -155,7 +155,9 @@ Run(ctx, session, text)
   items the endpoint returned as `Message.ReasoningItems`, exactly as sent,
   beside the reasoning text; they are stored in the entry, sent back when the
   model preserves thinking, and ignored by Chat Completions, which sends the
-  text.
+  text. A tool call has two ids: `ID` is Eika's, minted by the loop and unique
+  in the session, and `WireID` the backend's, which both protocols send back
+  unchanged (`ToolCall.Wire`); entries, events and approvals use `ID`.
 - **tool**: a call gets a `CallContext` (executor, emitter, ids). A
   `tool.Standalone` tool runs with a nil executor in chats;
   `Registry.Filter` narrows the shared registry per run. `bash` is the only
