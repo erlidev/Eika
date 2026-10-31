@@ -134,8 +134,10 @@ type TurnProgress struct {
 	// GenerationMS is how long the turn has spent inside model responses,
 	// measured from each response's first streamed token.
 	GenerationMS int64 `json:"generation_ms"`
-	// ContextWindow is the configured window of the model that produced this
-	// measurement. It keeps the usage bound to the model that reported it.
+	// ContextWindow is the effective window of the model that produced this
+	// measurement: the smaller of its configured window and what its endpoint
+	// reported per request. It keeps the usage bound to the model that
+	// reported it.
 	ContextWindow int `json:"context_window"`
 	// Timings is how fast the most recent model call ran, split into reading
 	// the prompt and generating the answer. It is absent until something
@@ -156,7 +158,7 @@ type TurnEnd struct {
 	// GenerationMS is the turn's total time inside model responses, the
 	// denominator of its decode rate.
 	GenerationMS int64 `json:"generation_ms"`
-	// ContextWindow is the configured window of the model that ran the turn.
+	// ContextWindow is the effective window of the model that ran the turn.
 	ContextWindow int `json:"context_window"`
 	// Timings is how fast the turn's last model call ran.
 	Timings *provider.Timings `json:"timings,omitempty"`

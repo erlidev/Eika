@@ -98,6 +98,10 @@ type runConfig struct {
 	sampling         provider.Sampling
 	droppedEffort    string
 	sources          map[string]string
+	// probedWindow is the per-request context the model's endpoint reported,
+	// zero when it stated none or the endpoint is not known yet (onEndpoint
+	// sets it). The window a run is judged against is window().
+	probedWindow int
 }
 
 // configBase is what resolving a configuration reads from the database:
@@ -384,7 +388,7 @@ func (c runConfig) parameterSources() map[string]string {
 func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, ex executor.Executor,
 	mcpTools []tool.Tool, opts agent.Options) *agent.Agent {
 	opts.Model = c.model.Model
-	opts.ContextWindow = c.model.ContextWindow
+	opts.ContextWindow = c.window()
 	opts.Sampling = c.sampling
 	opts.ThinkingSwitch = provider.ThinkingSwitch(c.model.ThinkingSwitch)
 	opts.PreserveThinking = c.preserveThinking

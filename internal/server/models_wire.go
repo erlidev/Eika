@@ -8,11 +8,18 @@ import (
 
 // modelBody is one model on the wire.
 type modelBody struct {
-	ID               string    `json:"id"`
-	ProviderID       string    `json:"provider_id"`
-	Name             string    `json:"name"`
-	Model            string    `json:"model"`
-	ContextWindow    int       `json:"context_window"`
+	ID            string `json:"id"`
+	ProviderID    string `json:"provider_id"`
+	Name          string `json:"name"`
+	Model         string `json:"model"`
+	ContextWindow int    `json:"context_window"`
+	// ProbedWindow is the context one request may use on the model's endpoint,
+	// as its last probe read it, and absent when the endpoint states none.
+	ProbedWindow int `json:"probed_window,omitempty"`
+	// EffectiveWindow is the window runs on the model are judged against: the
+	// smaller of ContextWindow and ProbedWindow. Less than ContextWindow means
+	// the endpoint holds less than the configured window allows.
+	EffectiveWindow  int       `json:"effective_window"`
 	MaxOutput        int       `json:"max_output"`
 	ReasoningEffort  string    `json:"reasoning_effort,omitempty"`
 	ReasoningEfforts []string  `json:"reasoning_efforts"`
@@ -93,14 +100,17 @@ func effortList(list []string) []string {
 	return list
 }
 
-// asModel renders a model on the wire.
-func asModel(m store.Model) modelBody {
+// asModel renders a model on the wire, with probed the per-request context
+// its endpoint reported, zero when it stated none.
+func asModel(m store.Model, probed int) modelBody {
 	return modelBody{
 		ID:               m.ID,
 		ProviderID:       m.ProviderID,
 		Name:             m.Name,
 		Model:            m.Model,
 		ContextWindow:    m.ContextWindow,
+		ProbedWindow:     probed,
+		EffectiveWindow:  effectiveWindow(m.ContextWindow, probed),
 		MaxOutput:        m.MaxOutput,
 		ReasoningEffort:  m.ReasoningEffort,
 		ReasoningEfforts: effortList(m.ReasoningEfforts),

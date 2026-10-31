@@ -175,7 +175,7 @@ counted.
 | `usage` | Usage | What the turn has cost, summed over every model call in it so far. |
 | `context` | Usage | The **most recent** model call's own usage. This is what fills the model's context window; `usage` is what the turn costs, which is larger. |
 | `generation_ms` | number | The turn's time inside model responses so far. |
-| `context_window` | number | The configured window of the model that produced this usage. Zero means it is not configured. |
+| `context_window` | number | The effective window of the model that produced this usage (the smaller of its configured window and what its endpoint reported per request). Zero means it is not configured. |
 | `timings` | object, optional | How fast the **most recent** model call ran. See below. |
 
 #### `timings`
@@ -226,7 +226,7 @@ and reports no `timings`.
 | `usage` | Usage | What the turn cost, summed over every model call in it. |
 | `context` | Usage | The last model call's own usage: how much of the model's context window the conversation now fills. |
 | `generation_ms` | number | The turn's total time inside model responses. |
-| `context_window` | number | The configured window of the model that ran the turn. Zero means it is not configured. |
+| `context_window` | number | The effective window of the model that ran the turn. Zero means it is not configured. |
 | `timings` | object, optional | How fast the turn's last model call ran, in the shape `turn.progress` documents. |
 
 ### Usage

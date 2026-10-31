@@ -92,7 +92,12 @@ Run(ctx, session, text)
   `server/counters.go`, which attaches the routes, and the key, through a
   `counter.Switch` for the length of a run only); `Estimate` answers without asking the server when a
   prediction cannot finish in time, `Seed` teaches a fresh counter from a stored
-  measurement, and `CountText` tokenises a text of the caller's own.
+  measurement, and `CountText` tokenises a text of the caller's own. For the
+  context breakdown it also sizes parts: `Size` counts a text (exact, or
+  estimated and said so), `ToolSizes` sizes each tool by rendering the request
+  with growing tool prefixes where the endpoint renders (otherwise as JSON text,
+  not exact), `ImageSize` is a picture's learned cost, and `Peek` sizes a
+  request for a preview without leaving a prediction for `Observe`.
   `provider.NewHTTPClient`, which the provider, the probe and the counter share,
   repeats a request whose idle connection the server had closed.
 - **provider** turns a `Request` into a channel of `Event`s (text and
@@ -136,6 +141,23 @@ back, the `ModelCall` handed to the `Recorder` carries the prediction, its
 method and its drift, and an `exact` prediction with any drift is logged as a
 warning with its numbers. A session resumed with a counter that has learned
 nothing is seeded from the newest measurement its messages carry.
+
+The window every one of those checks uses is `Options.ContextWindow`, which the
+server sets to the model's effective window: the smaller of its row's
+`context_window` and the per-request context its provider's probe reported
+(`server/window.go`). With no probed window it is the configured one.
+
+**The context breakdown** is not computed by the loop. When a client asks for
+the context of the next request or of a recorded call (`server/calls.go`,
+`server/breakdown.go`), `agent.MeasureParts` counts each part of it (the
+sections of the system prompt, each tool, each message and its replayed
+reasoning) with the session's counter, remembered by content hash, and the
+server states the remainder, `prompt - sum(parts)`, as the template and
+formatting: against the measured prompt for a recorded call, against the
+prediction for the next request when that is `exact`, and absent otherwise.
+Nothing is scaled and a negative remainder is returned as it is. The status
+bar's meter reads `GET /api/sessions/{id}/prediction`, which sizes the request
+once without counting the parts.
 
 **Images** are `provider.Message.Images` on a user message.
 `POST .../messages` runs each through `imaging.Prepare` before the run is
@@ -556,8 +578,11 @@ web/src/
   menu that a right-click also opens, renaming in place), session (transcript,
   status bar, composer), and a tab strip of panels from `app/panels.tsx`.
   Chats get Tools; every session gets Run and Context (window fill, token bar
-  by part, key parameters; the Context inspector dialog shows a request whole
-  with links to the layer behind each part). `ResizableSplit` remembers
+  by part with the template's remainder as a line of its own, key parameters;
+  the Context inspector dialog shows a request whole with links to the layer
+  behind each part). The status bar's meter shows the last call's fill against
+  the effective window, its cached tokens, and the predicted next request with
+  its method. `ResizableSplit` remembers
   widths; below 1024px side panes become drawers. The UI has no panel for a
   computer's files, no terminal, and no session tree or fork, and the API has
   no routes for a computer's files or a session fork; rewind uses the outline

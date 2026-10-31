@@ -1,19 +1,48 @@
 import { describe, expect, it } from "vitest";
 
-import type { ModelContext } from "@/api/types";
+import type { Breakdown, ModelCall, ModelContext } from "@/api/types";
 import {
+  barTotal,
   editTargetOf,
-  estimatedTotal,
+  exactDrift,
+  messageSizes,
   parameterTarget,
   requestJSON,
-  scale,
+  requestSize,
   schemaParameters,
   segments,
   serverOf,
   share,
+  sizedSections,
+  sizedTools,
   toolGroupsOf,
   windowUse,
 } from "@/features/context/segments";
+
+/**
+ * breakdown is the counted size of request(): its estimates (4, 3, 40, 25,
+ * 15 and 10 tokens) are not what the endpoint counted, and nothing shown
+ * comes from them. The parts add up to 82 and the endpoint measured 100.
+ */
+function breakdown(over: Partial<Breakdown> = {}): Breakdown {
+  return {
+    sections: [
+      { kind: "base", tokens: 6 },
+      { kind: "instructions", tokens: 2 },
+    ],
+    tools: [
+      { name: "bash", tokens: 30 },
+      { name: "mcp__docs__search", tokens: 20 },
+      { name: "mcp__docs__read", tokens: 10 },
+    ],
+    messages: [{ tokens: 9, reasoning_tokens: 5 }],
+    parts: 82,
+    prompt_tokens: 100,
+    prompt_source: "measured",
+    remainder: 18,
+    ...over,
+  };
+}
 
 function request(over: Partial<ModelContext> = {}): ModelContext {
   return {
@@ -32,42 +61,158 @@ function request(over: Partial<ModelContext> = {}): ModelContext {
     parameters: { model: "m", sampling: {}, preserve_thinking: false, image_input: false },
     sources: {},
     context_window: 0,
+    breakdown: breakdown(),
+    ...over,
+  };
+}
+
+function call(over: Partial<ModelCall> = {}): ModelCall {
+  return {
+    id: "c1",
+    session_id: "s",
+    run_id: "r",
+    model: "m",
+    message_tokens: 10,
+    prompt_tokens: 100,
+    completion_tokens: 20,
+    total_tokens: 120,
+    cached_tokens: null,
+    prefilled_tokens: null,
+    reasoning_tokens: null,
+    predicted_prompt_tokens: 100,
+    prediction: "exact",
+    drift: 0,
+    context_window: 1000,
+    queue_ms: null,
+    slot: null,
+    created_at: "2026-10-31T00:00:00Z",
     ...over,
   };
 }
 
 describe("segments", () => {
-  it("splits a request into its parts in the bar's order, tools by where they come from", () => {
+  it("splits a request into its counted parts in the bar's order, then what the template adds", () => {
     expect(segments(request())).toEqual([
-      { kind: "base", label: "Base prompt", tokens: 4 },
-      { kind: "instructions", label: "Instructions", tokens: 3 },
-      { kind: "builtin_tools", label: "Built-in tools", tokens: 40 },
-      { kind: "mcp_tools", label: "MCP tools", tokens: 40 },
-      { kind: "messages", label: "Messages", tokens: 10 },
+      { kind: "base", label: "Base prompt", tokens: 6, approximate: false },
+      { kind: "instructions", label: "Instructions", tokens: 2, approximate: false },
+      { kind: "builtin_tools", label: "Built-in tools", tokens: 30, approximate: false },
+      { kind: "mcp_tools", label: "MCP tools", tokens: 30, approximate: false },
+      { kind: "messages", label: "Messages", tokens: 9, approximate: false },
+      { kind: "reasoning", label: "Replayed reasoning", tokens: 5, approximate: false },
+      { kind: "template", label: "Template and formatting", tokens: 18, approximate: false },
     ]);
   });
 
-  it("leaves out what a request does not have", () => {
-    const empty = request({ sections: null, tools: null, messages: null, message_tokens: 0 });
+  it("marks a part approximate when any size in it is", () => {
+    const parts = segments(
+      request({
+        breakdown: breakdown({
+          tools: [
+            { name: "bash", tokens: 30, approximate: true },
+            { name: "mcp__docs__search", tokens: 20 },
+            { name: "mcp__docs__read", tokens: 10 },
+          ],
+          messages: [{ tokens: 9, reasoning_tokens: 5, approximate: true }],
+        }),
+      }),
+    );
+    const approximate = Object.fromEntries(parts.map((p) => [p.kind, p.approximate]));
+    expect(approximate).toMatchObject({
+      base: false,
+      builtin_tools: true,
+      mcp_tools: false,
+      messages: true,
+      reasoning: true,
+    });
+  });
+
+  it("leaves out what a request does not have, and the template line while nothing states it", () => {
+    const empty = request({
+      sections: null,
+      tools: null,
+      messages: null,
+      breakdown: breakdown({
+        sections: [],
+        tools: [],
+        messages: [],
+        parts: 0,
+        prompt_tokens: null,
+        remainder: null,
+      }),
+    });
     expect(segments(empty)).toEqual([]);
-    expect(estimatedTotal(segments(request()))).toBe(97);
+  });
+
+  it("keeps a negative remainder visible and gives it no width in the bar", () => {
+    const parts = segments(request({ breakdown: breakdown({ prompt_tokens: 80, remainder: -2 }) }));
+    expect(parts.at(-1)).toEqual({
+      kind: "template",
+      label: "Template and formatting",
+      tokens: -2,
+      approximate: false,
+    });
+    expect(barTotal(parts)).toBe(82);
+  });
+
+  it("is the whole request in the bar: the parts and the remainder", () => {
+    expect(barTotal(segments(request()))).toBe(100);
   });
 });
 
-describe("scale", () => {
-  it("is the measured input over the estimate of the same call", () => {
-    const measured = request({
-      calibration: { call_id: "r1", prompt_tokens: 150, estimated_tokens: 100 },
-    });
-    expect(scale(measured)).toBe(1.5);
+describe("counted sizes", () => {
+  it("replace the estimates on sections, tools and messages", () => {
+    expect(sizedSections(request()).map((s) => s.tokens)).toEqual([6, 2]);
+    expect(sizedTools(request()).map((t) => [t.name, t.tokens, t.approximate])).toEqual([
+      ["bash", 30, false],
+      ["mcp__docs__search", 20, false],
+      ["mcp__docs__read", 10, false],
+    ]);
+    expect(messageSizes(request())).toEqual([{ tokens: 9, reasoning_tokens: 5 }]);
+  });
+});
+
+describe("requestSize", () => {
+  it("is what the endpoint measured, when it did", () => {
+    expect(requestSize(request())).toEqual({ tokens: 100, basis: "measured" });
   });
 
-  it("is undefined without a measured call", () => {
-    expect(scale(request())).toBeUndefined();
-    const unmeasured = request({
-      calibration: { call_id: "r1", prompt_tokens: 0, estimated_tokens: 100 },
+  it("is the next request's prediction and how it was reached", () => {
+    const next = request({
+      breakdown: breakdown({ prompt_tokens: 97, prompt_source: "predicted", remainder: 15 }),
+      prediction: { tokens: 97, method: "exact" },
     });
-    expect(scale(unmeasured)).toBeUndefined();
+    expect(requestSize(next)).toEqual({ tokens: 97, basis: "predicted", method: "exact" });
+  });
+
+  it("is a recorded call's own prediction when the endpoint stated no prompt", () => {
+    const unmeasured = request({
+      breakdown: breakdown({ prompt_tokens: null, remainder: null }),
+      call: call({ prompt_tokens: null, predicted_prompt_tokens: 95, prediction: "anchored" }),
+    });
+    delete unmeasured.breakdown.prompt_source;
+    expect(requestSize(unmeasured)).toEqual({ tokens: 95, basis: "predicted", method: "anchored" });
+  });
+
+  it("is only the parts when nothing was measured or predicted", () => {
+    const bare = request({ breakdown: breakdown({ prompt_tokens: null, remainder: null }) });
+    delete bare.breakdown.prompt_source;
+    expect(requestSize(bare)).toEqual({ tokens: 82, basis: "parts" });
+  });
+});
+
+describe("exactDrift", () => {
+  it("is the drift of an exact prediction that was off", () => {
+    expect(exactDrift(request({ call: call({ drift: 3 }) }))).toBe(3);
+    expect(exactDrift(request({ call: call({ drift: -1 }) }))).toBe(-1);
+  });
+
+  it("is nothing for an exact prediction that was right, or a guess that was off", () => {
+    expect(exactDrift(request({ call: call({ drift: 0 }) }))).toBeUndefined();
+    expect(exactDrift(request({ call: call({ drift: null }) }))).toBeUndefined();
+    expect(
+      exactDrift(request({ call: call({ prediction: "anchored", drift: 4 }) })),
+    ).toBeUndefined();
+    expect(exactDrift(request())).toBeUndefined();
   });
 });
 
@@ -86,6 +231,7 @@ describe("toolGroupsOf", () => {
       schema: {},
       source,
       tokens,
+      approximate: false,
     });
     const groups = toolGroupsOf([
       tool("bash", "builtin", 40),

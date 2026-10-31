@@ -1,7 +1,7 @@
 /**
  * The Context panel: what a model request sends, at a glance. The next
  * request is previewed live with the same assembly a run uses; any recorded
- * call can be chosen instead. The panel says how full the context window is
+ * call can be chosen instead. The panel says how large the request is and how that is known, how full the context window is
  * and what fills it, part by part, with the key parameters; each part, and
  * the Inspect button, opens the Context inspector, which lays the request
  * open whole.
@@ -15,13 +15,19 @@ import { LoadError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ContextInspector, RequestSelect } from "@/features/context/ContextInspector";
-import { Dot, PartsBar, WindowMeter } from "@/features/context/parts";
+import { PartsBar, WindowMeter } from "@/features/context/parts";
 import { nextRequest, useRequestSelection } from "@/features/context/queries";
-import { estimatedTotal, percent, scale, segments, viewOf } from "@/features/context/segments";
+import { barTotal, requestSize, segments, viewOf } from "@/features/context/segments";
 import type { View } from "@/features/context/segments";
+import {
+  CallFacts,
+  DriftNotice,
+  PartRows,
+  PartsNotes,
+  RequestHeadline,
+} from "@/features/context/Size";
 import { useSessionConfiguration } from "@/features/profiles";
 import { useSessionStore } from "@/features/session";
-import { formatTokens } from "@/lib/format";
 
 export type ContextPanelProps = {
   sessionId: string;
@@ -84,9 +90,7 @@ type SummaryProps = {
 /** Summary is the request at a glance: its size, the window, its parts, and its key parameters. */
 function Summary({ context, onInspect }: SummaryProps) {
   const parts = segments(context);
-  const total = estimatedTotal(parts);
-  const ratio = scale(context);
-  const measured = context.call?.prompt_tokens ?? 0;
+  const total = barTotal(parts);
   const p = context.parameters;
   const keys: [string, string][] = [
     ["model", p.model === "" ? "none" : p.model],
@@ -101,33 +105,11 @@ function Summary({ context, onInspect }: SummaryProps) {
 
   return (
     <div className="space-y-3">
-      <div className="space-y-0.5">
-        <p className="flex flex-wrap items-baseline gap-x-1.5">
-          <span className="font-mono text-lg font-semibold tabular-nums">
-            ~{formatTokens(total)}
-          </span>
-          <span className="text-muted-foreground">tokens estimated</span>
-        </p>
-        <p className="text-muted-foreground">
-          {ratio !== undefined && context.call === undefined && (
-            <>
-              <span className="font-mono tabular-nums">~{formatTokens(total * ratio)}</span> scaled
-              to the last measured call.{" "}
-            </>
-          )}
-          {measured > 0 && (
-            <>
-              <span className="font-mono tabular-nums">{measured.toLocaleString("en-US")}</span>{" "}
-              measured by the endpoint.{" "}
-            </>
-          )}
-          {context.call === undefined
-            ? "What a message sent now is added to."
-            : `Sent to ${context.call.model}.`}
-        </p>
-      </div>
+      <RequestHeadline context={context} />
+      <DriftNotice context={context} />
+      <CallFacts context={context} />
 
-      <WindowMeter context={context} total={total} />
+      <WindowMeter context={context} used={requestSize(context).tokens} />
 
       <div className="space-y-1.5">
         <PartsBar
@@ -137,28 +119,8 @@ function Summary({ context, onInspect }: SummaryProps) {
             onInspect(viewOf(kind));
           }}
         />
-        <ul aria-label="Parts" className="-mx-1">
-          {parts.map((part) => (
-            <li key={part.kind}>
-              <button
-                type="button"
-                onClick={() => {
-                  onInspect(viewOf(part.kind));
-                }}
-                className="hover:bg-accent focus-visible:ring-ring flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left transition-colors focus-visible:ring-1 focus-visible:outline-none"
-              >
-                <Dot kind={part.kind} />
-                <span className="min-w-0 flex-1 truncate">{part.label}</span>
-                <span className="text-muted-foreground w-10 text-right font-mono tabular-nums">
-                  {percent(part.tokens, total)}
-                </span>
-                <span className="w-12 text-right font-mono tabular-nums">
-                  {formatTokens(part.tokens)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <PartRows context={context} parts={parts} total={total} onOpen={onInspect} />
+        <PartsNotes context={context} />
       </div>
 
       {context.dropped_effort !== undefined && context.dropped_effort !== "" && (

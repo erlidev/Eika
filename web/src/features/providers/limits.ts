@@ -82,6 +82,25 @@ export type ModelChoice = {
   image_input: boolean;
 };
 
+/**
+ * windowWarning says what to do about a model whose configured context window
+ * is larger than the endpoint holds for one request, or null when the endpoint
+ * holds all of it. Eika already judges requests against the smaller number, so
+ * the warning is about the setting being wrong, not about requests failing.
+ */
+export function windowWarning(
+  m: Pick<Model, "context_window" | "effective_window" | "probed_window">,
+): string | null {
+  const probed = m.probed_window;
+  if (probed === undefined || m.effective_window >= m.context_window) return null;
+  const tokens = (n: number) => n.toLocaleString("en-US");
+  return (
+    `Its context window is set to ${tokens(m.context_window)} tokens, but the endpoint holds ` +
+    `${tokens(probed)} for one request, so Eika sizes requests to ${tokens(probed)}. ` +
+    `Set the context window to ${tokens(probed)} to match, or restart the server with a larger context.`
+  );
+}
+
 /** ChosenProblem is what keeps one chosen model from being added, and the field at fault. */
 export type ChosenProblem = {
   /** id is the model identifier of the choice at fault. */

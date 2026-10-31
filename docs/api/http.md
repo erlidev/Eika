@@ -291,11 +291,48 @@ ModelContext that has `call`; `404` for a record of another session.
 | `sources` | object | The layer each parameter came from, keyed `model`, `thinking_switch`, `preserve_thinking`, `image_input`, and `sampling.<parameter>`. |
 | `dropped_effort` | string, optional | A reasoning effort the configuration chose that the model does not offer, which is not sent. |
 | `call` | ModelCall, optional | The record this is; absent for the next request. |
-| `context_window` | number | The context window of the call's model, in tokens: what the request and its answer must fit in. 0 when no model is configured, or a recorded call's model is deleted. |
-| `calibration` | object, optional | `{call_id, prompt_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
+| `context_window` | number | The effective window, in tokens: what the request and its answer must fit in. For a recorded call, the window it was judged against. 0 when no model is configured, or a recorded call kept none and its model is deleted. |
+| `breakdown` | Breakdown | Where the request's tokens go, part by part. |
+| `prediction` | object, optional | `{tokens, method}`: what the token counter expects the next request to cost and how it knows (`exact`, `anchored` or `estimated`). Absent for a recorded call, whose own is on `call`. |
 
-Every `tokens` figure is an estimate, four bytes to a token and an image one
-token per 750 pixels; only a record's `prompt_tokens`, when it is not `null`, is measured.
+The `tokens` of a section and a tool, `message_tokens` and `message_sizes` are
+the agent's planning estimates, four bytes to a token and a picture one token
+per 750 pixels; the loop places a compaction cut with them. A client shows
+`breakdown`, which counts every part with the endpoint's own tokenizer where it
+has one.
+
+### Breakdown
+
+Each part is tokenised on its own, and nothing is scaled to make the parts add
+up to the whole: what they leave unexplained is `remainder`, the cost of the
+template and the formatting around them.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sections` | array | The size of each system prompt section, in the order of `sections`: `{kind, tokens, approximate}`. |
+| `tools` | array | The size of each tool definition, in the order of `tools`: `{name, tokens, approximate}`. Where the endpoint can render a request, a tool is what the template adds when it is added to the tools before it, so the sizes add up to what the whole list costs and the first carries the template's wrapper around the list. Otherwise it is the definition as JSON text and `approximate` is set. |
+| `messages` | array | The size of each message, in the order of `messages`: `{tokens, approximate, reasoning_tokens}`. `tokens` is its text, its tool calls and its pictures; `reasoning_tokens` is the replayed reasoning counted apart, absent when the message sends none. |
+| `parts` | number | The sum of every part, replayed reasoning included. |
+| `prompt_tokens` | number or null | The size of the whole request the parts fall short of: the call's measured prompt for a recorded call, or for the next request its prediction when that is `exact`. `null` when there is none, never `0` in its place. |
+| `prompt_source` | string, optional | `measured` or `predicted`. Absent exactly when `prompt_tokens` is `null`. |
+| `remainder` | number or null | `prompt_tokens` less `parts`: what the template and formatting cost. It is negative when the parts add up to more than the endpoint counted, which says a part was counted wrongly, and it is never clamped. `null` exactly when `prompt_tokens` is. |
+
+`approximate` is set on a part that is not the endpoint's own tokenisation of
+it: estimated from bytes where the endpoint tokenises nothing (or the time to
+count ran out), a picture whose size was never measured, or a tool sized as
+JSON text. Pictures are not counted by any tokenizer route, so a request with a
+picture is never `exact` and its remainder includes what the picture's estimate
+gets wrong.
+
+### `GET /api/sessions/{id}/prediction`
+
+What the session's next request is expected to cost, for the status bar's
+meter: the size of the request `GET /api/sessions/{id}/context` describes,
+without the request. `?model=<name>` names the model, as there. `200` with
+`{"model": string, "tokens": number, "method": string, "context_window":
+number}`: the model's name, the expected prompt size, how it is known (`exact`,
+`anchored` or `estimated`), and the model's effective window. `409` when no
+model is configured; `400` for a model that does not exist.
 
 ### ModelCall
 
@@ -671,6 +708,8 @@ the model is there. `400` with what the endpoint answered when it failed.
 |---|---|---|
 | `id`, `provider_id`, `name`, `model` | string | The model, its provider, Eika's name for it, and the endpoint's. |
 | `context_window`, `max_output` | number | Its limits. |
+| `probed_window` | number, optional | The context one request may use on the model's endpoint, as its provider's last probe read it. Absent when the endpoint states none. |
+| `effective_window` | number | The window runs on the model are judged against: the smaller of `context_window` and `probed_window`, or `context_window` when there is no probed one. Less than `context_window` means the endpoint holds less than the model row allows. |
 | `reasoning_effort` | string, optional | As on `POST`. |
 | `reasoning_efforts` | string array | As on `POST`; always present, empty when the model offers no choices. |
 | `thinking_switch` | string | As on `POST`; always present. |

@@ -30,6 +30,10 @@ export type Model = {
   /** model is the identifier the provider's endpoint knows it by. */
   model: string;
   context_window: number;
+  /** probed_window is the context one request may use on the endpoint, as its last probe read it; absent when it states none. */
+  probed_window?: number;
+  /** effective_window is the smaller of context_window and probed_window: what runs are judged against. */
+  effective_window: number;
   max_output: number;
   reasoning_effort?: ReasoningEffort;
   /** reasoning_efforts are the values this model offers, in cycling order. */

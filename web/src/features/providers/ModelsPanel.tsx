@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { EndpointDialog } from "@/features/providers/EndpointDialog";
 import { hardwareSummary } from "@/features/providers/endpoint";
+import { windowWarning } from "@/features/providers/limits";
 import { ModelDialog } from "@/features/providers/ModelDialog";
 import { ModelPicker } from "@/features/providers/ModelPicker";
 import { presetOf } from "@/features/providers/presets";
@@ -362,6 +363,7 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
   const remove = useDeleteModel();
   const test = useTestModel();
   const [confirming, setConfirming] = useState(false);
+  const warning = windowWarning(model);
 
   return (
     <li className="px-4 py-2.5">
@@ -430,6 +432,11 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
           </Button>
         </span>
       </div>
+      {warning !== null && (
+        <Notice tone="warning" className="mt-2">
+          {warning}
+        </Notice>
+      )}
       {test.isSuccess && (
         <Notice tone="success" className="mt-2">
           Answered in {(test.data.latency_ms / 1000).toFixed(1)}s

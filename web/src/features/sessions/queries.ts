@@ -30,11 +30,15 @@ export function useChats(): UseQueryResult<Session[]> {
  * useHomeComputer reads the home computer, which the harness makes on its
  * own: undefined until it has recorded it. A `computer.state` event on the
  * global topic says it has (see useSessionUpdates), so nothing polls.
+ *
+ * A query function may not return undefined, so the cache holds null for "no
+ * home computer yet" and `select` hands the component undefined.
  */
 export function useHomeComputer(): UseQueryResult<Computer | undefined> {
   return useQuery({
     queryKey: queryKeys.computers(),
-    queryFn: async ({ signal }) => (await listComputers(signal)).find((cx) => cx.home),
+    queryFn: async ({ signal }) => (await listComputers(signal)).find((cx) => cx.home) ?? null,
+    select: (home) => home ?? undefined,
   });
 }
 

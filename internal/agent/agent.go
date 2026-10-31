@@ -123,7 +123,7 @@ func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
 		opts.Logger = slog.Default()
 	}
 	if opts.CountTimeout <= 0 {
-		opts.CountTimeout = defaultCountTimeout
+		opts.CountTimeout = DefaultCountTimeout
 	}
 	if opts.Counter == nil {
 		opts.Counter = counter.NewEstimating()

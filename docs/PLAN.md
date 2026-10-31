@@ -263,11 +263,11 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
 - [x] Replace the 4-byte estimate in `fit`, `shouldCompact` and
       `estimateContext` with the counter. Widen the compaction reserve by the
       observed error when the method is `estimated`.
-- [ ] Break the context down by part: each part tokenised exactly where possible,
+- [x] Break the context down by part: each part tokenised exactly where possible,
       plus the "template and formatting" remainder, with no scaling. Update the
       Context inspector and the status bar meter: measured fill, cached tokens,
       predicted next request with its method, effective window.
-- [ ] Effective window is the smaller of the configured window and the probed
+- [x] Effective window is the smaller of the configured window and the probed
       per-request context. Settings warns on a mismatch.
 - [x] KV cache per pool (runtime.md 1): the provider column `kv`, `shared` with
       its size in tokens, or `partitioned`. `shared` is the usual case (vLLM,
@@ -1046,6 +1046,50 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-31: effective window and the context breakdown (branch
+  `context-breakdown`, from `phase-1`). Both items are ticked.
+  - Landed. Effective window: `server/window.go` takes the smaller of the model
+    row's `context_window` and the provider's probed window and sets it once on
+    `Options.ContextWindow`, so `fit`, `shouldCompact`, the counter's reserve,
+    `model_calls.context_window` and the meter all read it; with no probe it is
+    the configured one. The model wire carries `probed_window` and
+    `effective_window`, and Settings warns on a model whose window is larger than
+    the endpoint holds (Notice, warning tone) with what to do. The configured
+    number is never rewritten. Breakdown: `agent.MeasureParts` counts the
+    sections, each tool, each message and its replayed reasoning with the
+    session's counter (`Counter.Size`, `ToolSizes`, `ImageSize`), cached by
+    content hash and computed only when the context routes are asked; the server
+    states `remainder = prompt - sum(parts)`, unscaled and negative if it is
+    (against the measured prompt for a recorded call, against the prediction for
+    the next request only when that is `exact`, else null). `calibration` is
+    retired from the context response. New `GET /api/sessions/{id}/prediction`
+    feeds the meter (fill against the effective window, cached tokens, predicted
+    next request with its method; a tilde on `estimated`; `n/a`, never 0, for
+    what is unreported); `Counter.Peek` sizes without leaving a prediction for
+    `Observe`. The inspector shows the template line, approximate marks, and an
+    error notice for an `exact` prediction with any drift. Docs: DECISIONS
+    ("Effective window", "Context breakdown"), ARCHITECTURE, runtime.md,
+    `docs/api`, `contract.json`, the mock harness (scenarios `bench-window`,
+    `context-estimated`, `context-drift`), visual baselines (each changed one
+    looked at). Also fixed: the `providers` scenario's "Query data cannot be
+    undefined" for `GET /api/computers` (the home-computer query returned
+    undefined when none exists; now null, with a test), and a flake in
+    `TestStreamSurvivesAServerThatClosesTheIdleConnection` (`closedByServer` now
+    matches `net.ErrClosed`).
+  - `make check` passes on the final commit (Go, 458 web tests, 132 visual).
+    `make live` passes, nine scenarios; new `context_breakdown`: a plain request
+    (two sections, two tools, a tool round with replayed reasoning) of 499 prompt
+    tokens was 439 in parts and 60 template and formatting, exact prediction, no
+    drift, nothing approximate; the bound is 32 + 12 per message and section.
+    `make smoke` not run: no compose file, Dockerfile, `deploy/` or `server.Run`
+    wiring changed.
+  - Skipped or open: the preamble is not a part (it does not exist yet; the item
+    that builds it adds its section). Tool sizes by rendering are verified on
+    llama.cpp only; vLLM and the text-only routes size tools as JSON text and mark
+    them approximate (the text-only path is covered by fakes, not the bench).
+    Pictures stay approximate until a size has been measured. The live scenario's
+    remainder is 60 on this template; a different model template will move it.
 
 - 2026-10-31: `model_calls` and the counter in the loop (branch `model-calls`,
   two commits). Both items are ticked; `make live` part 2 and the Phase 1 live

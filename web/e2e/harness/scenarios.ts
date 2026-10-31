@@ -102,9 +102,11 @@ function workbench(): WorldBuilder {
 /**
  * profiles adds two profiles to a workbench, puts ses-backoff on one with an
  * override of its own, and records two of its model calls: one when only
- * its first message had been sent, and one at its head.
+ * its first message had been sent, and one at its head. Its endpoint counts
+ * tokens the way `counting` says: by rendering requests (chat), by tokenising
+ * text (text), or not at all (none).
  */
-function profiles(): WorldBuilder {
+function profiles(counting: "chat" | "text" | "none" = "chat"): WorldBuilder {
   const b = workbench();
   const w = b.world;
   const mini = w.models.find((m) => m.name === "gpt-5-mini");
@@ -128,6 +130,12 @@ function profiles(): WorldBuilder {
   main.profile_id = reviewer.id;
   w.overrides[main.id] = { ...noSettings(), sampling: { temperature: 0.7 } };
   syncSession(w, main);
+  // An endpoint that renders and tokenises requests (llama.cpp, vLLM), so the
+  // context view counts every part exactly and predicts the next request
+  // exactly. A scenario that wants another way of counting says so.
+  for (const p of w.providers) {
+    p.capabilities = { ...p.capabilities, counting, cache_metrics: "reported" };
+  }
   const head = main.head_entry_id;
   const first = (w.entries[main.id] ?? [])[0];
   if (first) main.head_entry_id = first.id;
@@ -667,6 +675,42 @@ export const scenarios = {
       return b.world;
     },
   },
+  "bench-window": {
+    description:
+      "A llama.cpp bench that serves 131,072 tokens per request, with one model whose context window is set to 200,000 (Settings warns) and one set within it (no warning). For the Models tab.",
+    path: "/",
+    build: () => {
+      const b = configured();
+      const bench = b.provider({
+        name: "Bench",
+        base_url: "http://10.0.0.2:8091/v1",
+        api_key_hint: undefined,
+        backend: "llamacpp",
+        slots: 2,
+        kv: "unknown",
+        capabilities: {
+          build: "b11942-338fce651",
+          window: 131072,
+          counting: "chat",
+          cache_metrics: "reported",
+          slot_hints: true,
+        },
+      });
+      b.model(bench, {
+        name: "qwen-long",
+        model: "qwen3.8-27b",
+        context_window: 200000,
+        max_output: 16384,
+      });
+      b.model(bench, {
+        name: "qwen-short",
+        model: "qwen3.8-27b",
+        context_window: 65536,
+        max_output: 8192,
+      });
+      return b.world;
+    },
+  },
   "agent-web": {
     description:
       "Like workbench with an abandoned branch in the session tree; the next message plays a reply that uses web_search, web_fetch, bash to read, search, and write files, and a tool with no renderer of its own. Expand a card by its summary to see its body.",
@@ -916,6 +960,25 @@ export const scenarios = {
       "Like workbench, with two more profiles: ses-backoff runs with Reviewer and overrides its temperature, and two of its model calls are recorded. For the Profiles tab, the status bar's profile, and the Context panel.",
     path: "/sessions/ses-backoff",
     build: () => profiles().world,
+  },
+  "context-estimated": {
+    description:
+      "Like profiles, but the endpoint has no tokenizer: every part of a request is estimated from bytes and marked so, the next request's size is an estimate, and no remainder can be stated for it.",
+    path: "/sessions/ses-backoff",
+    build: () => profiles("none").world,
+  },
+  "context-drift": {
+    description:
+      "Like profiles, but the counter's exact prediction for the session's last recorded call was 3 tokens short of what the endpoint counted: the inspector shows it as a bug.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const w = profiles().world;
+      const last = (w.calls["ses-backoff"] ?? []).at(-1);
+      if (!last) throw new Error("ses-backoff has no recorded call");
+      last.record.predicted_prompt_tokens = (last.record.prompt_tokens ?? 0) - 3;
+      last.record.drift = -3;
+      return w;
+    },
   },
   home: {
     description:

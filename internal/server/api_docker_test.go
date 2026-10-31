@@ -344,6 +344,8 @@ type modelWire struct {
 	Name             string   `json:"name"`
 	Model            string   `json:"model"`
 	ContextWindow    int      `json:"context_window"`
+	ProbedWindow     int      `json:"probed_window"`
+	EffectiveWindow  int      `json:"effective_window"`
 	MaxOutput        int      `json:"max_output"`
 	ReasoningEffort  string   `json:"reasoning_effort"`
 	ReasoningEfforts []string `json:"reasoning_efforts"`

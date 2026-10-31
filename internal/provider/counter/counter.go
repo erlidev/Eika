@@ -106,6 +106,34 @@ func (c *Counter) Predict(ctx context.Context, req provider.Request) (provider.P
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	p, err := c.predict(ctx, req)
+	if err != nil {
+		return provider.Prediction{}, err
+	}
+	c.finish(p)
+	c.remember(requestKey(req), p)
+	return p.pred, nil
+}
+
+// Peek returns the size of req by the best method the endpoint offers, as
+// Predict does, for a caller that only wants to know: it remembers nothing for
+// Observe, so a preview of the next request cannot stand in for the request a
+// run sends, and it never fails: when ctx ends first the answer is the
+// estimate.
+func (c *Counter) Peek(ctx context.Context, req provider.Request) provider.Prediction {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	p, err := c.predict(ctx, req)
+	if err != nil {
+		p = c.estimate(req)
+	}
+	c.finish(p)
+	return p.pred
+}
+
+// predict sizes req, stripped of its pictures, by the best method available.
+func (c *Counter) predict(ctx context.Context, req provider.Request) (*pending, error) {
 	stripped, images := stripImages(req)
 	p := &pending{images: images}
 	p.head, p.messages = keys(stripped)
@@ -115,7 +143,7 @@ func (c *Counter) Predict(ctx context.Context, req provider.Request) (provider.P
 		if err == nil {
 			p.base, p.method = n, provider.MethodExact
 		} else if ctx.Err() != nil {
-			return provider.Prediction{}, ctx.Err()
+			return nil, ctx.Err()
 		}
 	}
 	p.cen = take(stripped)
@@ -124,15 +152,13 @@ func (c *Counter) Predict(ctx context.Context, req provider.Request) (provider.P
 		if err == nil {
 			p.base, p.method = n, provider.MethodAnchored
 		} else if ctx.Err() != nil {
-			return provider.Prediction{}, ctx.Err()
+			return nil, ctx.Err()
 		}
 	}
 	if p.method == "" {
 		p.base, p.method = c.estimated(p), provider.MethodEstimated
 	}
-
-	c.finish(req, p)
-	return p.pred, nil
+	return p, nil
 }
 
 // Estimate returns the size of req by the estimated method alone, without
@@ -143,18 +169,25 @@ func (c *Counter) Estimate(req provider.Request) provider.Prediction {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	p := c.estimate(req)
+	c.finish(p)
+	c.remember(requestKey(req), p)
+	return p.pred
+}
+
+// estimate sizes req by the estimated method alone.
+func (c *Counter) estimate(req provider.Request) *pending {
 	stripped, images := stripImages(req)
 	p := &pending{images: images}
 	p.head, p.messages = keys(stripped)
 	p.cen = take(stripped)
 	p.base, p.method = c.estimated(p), provider.MethodEstimated
-	c.finish(req, p)
-	return p.pred
+	return p
 }
 
-// finish adds the pictures to the count of the text, sets the method the
-// whole can claim, and remembers p for Observe.
-func (c *Counter) finish(req provider.Request, p *pending) {
+// finish adds the pictures to the count of the text and sets the method the
+// whole can claim.
+func (c *Counter) finish(p *pending) {
 	cost, known := c.imageCost(p.images)
 	p.pred = provider.Prediction{Tokens: p.base + cost, Method: p.method}
 	if len(p.images) > 0 && p.method == provider.MethodExact {
@@ -165,7 +198,6 @@ func (c *Counter) finish(req provider.Request, p *pending) {
 	if !known {
 		p.pred.Method = provider.MethodEstimated
 	}
-	c.remember(requestKey(req), p)
 }
 
 // remember keeps p until its measurement arrives.

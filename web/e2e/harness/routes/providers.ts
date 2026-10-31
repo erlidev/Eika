@@ -8,6 +8,7 @@ import type {
   Provider,
   ThinkingSwitch,
 } from "../../../src/api/types.ts";
+import { windowOf } from "../world.ts";
 import { fail, ok, str, strings } from "./context.ts";
 import type { Reply, RouteContext } from "./context.ts";
 
@@ -191,8 +192,17 @@ export function providerRoutes(ctx: RouteContext): void {
     w.models = w.models.filter((m) => m.provider_id !== params[0]);
     return { status: 204 };
   });
+  /** served is a model with the windows its provider's probe gives it. */
+  const served = (m: Model): Model => {
+    const { probed, effective } = windowOf(w, m);
+    return {
+      ...m,
+      ...(probed === undefined ? {} : { probed_window: probed }),
+      effective_window: effective,
+    };
+  };
   on("GET", "/api/models", () =>
-    ok({ models: w.models, ...(w.defaultModel ? { default: w.defaultModel } : {}) }),
+    ok({ models: w.models.map(served), ...(w.defaultModel ? { default: w.defaultModel } : {}) }),
   );
   on("POST", "/api/models/test", ({ body }) =>
     ok({ reply: `Hello from ${str(body.model)}.`, stop_reason: "stop", latency_ms: 412 }),
@@ -208,6 +218,7 @@ export function providerRoutes(ctx: RouteContext): void {
       name,
       model: str(body.model),
       context_window: Number(body.context_window) || 0,
+      effective_window: Number(body.context_window) || 0,
       max_output: Number(body.max_output) || 0,
       reasoning_effort: str(body.reasoning_effort),
       reasoning_efforts: strings(body.reasoning_efforts),
@@ -219,13 +230,13 @@ export function providerRoutes(ctx: RouteContext): void {
     };
     w.models.push(row);
     w.defaultModel ??= row.name;
-    return ok(row, 201);
+    return ok(served(row), 201);
   });
   on("PATCH", "/api/models/{id}", ({ params, body }) => {
     const row = find(w.models, params[0], "model");
     if ("status" in row) return row;
     Object.assign(row, body, { updated_at: now() });
-    return ok(row);
+    return ok(served(row));
   });
   on("DELETE", "/api/models/{id}", ({ params }) => {
     w.models = w.models.filter((m) => m.id !== params[0]);

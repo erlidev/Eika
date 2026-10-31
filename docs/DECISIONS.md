@@ -551,6 +551,86 @@ this file says why, so neither repeats the other.
   object keeps the old name, and rows are untouched. Rejected: a new table
   and a copy (the rows are the deployment's history).
 
+### Effective window
+
+- **A run is judged against the smaller of two numbers.** The model row's
+  `context_window` is what the user says the model has; the provider's probed
+  `capabilities.window` is the per-request context the endpoint said it serves
+  (llama.cpp's per-slot `n_ctx`, vLLM's `max_model_len`). `server/window.go`
+  takes the smaller (`effectiveWindow`; no probe means the configured one) and
+  `runConfig.window()` hands it to `agent.Options.ContextWindow`, which `fit`,
+  `shouldCompact`, the summary's room, the counter's reserve, `silentOverflow`,
+  `model_calls.context_window`, the events' `context_window` and the meter all
+  already read. There is no second place that picks a window. Rejected: the
+  agent taking both numbers and choosing (every reader of the window would need
+  the rule, and a call's recorded window would not say which was meant).
+- **The configured number is never rewritten.** A probe that finds less does
+  not edit the model row: the user's number may be right for a later restart
+  of the server, and a probe that failed to read the field would otherwise lose
+  it. Settings warns on the model instead (`effective_window` below
+  `context_window` on the wire, `probed_window` beside it), in words that say
+  what to do: set the window to what the endpoint holds, or restart the server
+  with a larger context. Rejected: silently lowering the row; refusing to save
+  a larger window (the probe can be stale, and a window set before the server
+  was started is legitimate).
+- **A recorded call keeps its own window.** `GET .../calls/{call_id}` answers
+  with the `context_window` the call was judged against, and the model's
+  configured one only for a record that kept none, so a probe that changed
+  since does not rewrite what an old call was measured against.
+
+### Context breakdown
+
+- **Each part is counted on its own; the template is the remainder, stated
+  and never spread.** `agent.MeasureParts` sizes the system prompt's
+  sections, each tool, each message and its replayed reasoning with the
+  session's counter (`Counter.Size`, `ToolSizes`, `ImageSize`). The server
+  states `remainder = prompt - sum(parts)` and returns both. A negative
+  remainder stays negative and the UI shows it as an accounting bug. The
+  older `calibration` on the context response scaled the parts to a measured
+  call; it is retired, because a scale hides exactly the errors the breakdown
+  exists to expose. Rejected: scaling parts to the measurement (a part could
+  be wrong by any amount and the sum would still look right); clamping the
+  remainder at zero (it would hide a double-counted part).
+- **What the remainder is stated against.** A recorded call: its measured
+  `prompt_tokens`. The next request has no measurement, so the remainder is
+  against its prediction only when that prediction is `exact`, since an exact
+  prediction is the endpoint's own count of that very request; against an
+  `anchored` or `estimated` one it would only measure the predictor's guess
+  and is `null`, shown as n/a. A NULL is never shown as 0. Rejected: stating
+  it against the prediction always (the line would look measured when it is a
+  guess).
+- **Tools are sized by rendering prefixes.** Where the endpoint renders the
+  request, tool _i_ costs `render(tools[:i+1]) - render(tools[:i])`, so the
+  sizes add up to the whole list's cost; the first carries the template's
+  wrapper for the list. Past 64 tools, or where the endpoint only tokenises
+  text, a tool is its JSON as text and marked approximate. Rejected: tokenising
+  the JSON always (the template renders a tool differently, and the error is
+  invisible without a mark); rendering without tools once and subtracting (one
+  size for the whole list, no per-tool figure).
+- **Counted on demand, remembered by hash.** The loop never measures parts;
+  the context and call routes do, and the counter's content-hash memos mean a
+  growing conversation tokenises only what is new. Rejected: measuring in the
+  loop on every call (a second round trip per part on the critical path);
+  storing the breakdown on `model_calls` (a recorded call is rebuilt from its
+  messages, and a stored figure could not be recomputed when counting
+  improves).
+- **A picture is approximate until measured.** The routes do not count
+  pictures (see "The token counter"), so a message with a picture is marked
+  approximate until a measurement of a picture of its size is learned.
+- **The meter asks for the prediction alone.** The status bar is always on
+  screen, and `GET /api/sessions/{id}/context` counts every part, so the meter
+  reads `GET /api/sessions/{id}/prediction`, which sizes the request once.
+  `Counter.Peek` sizes without leaving a pending prediction, so a preview never
+  stands in for the request a run sends and `Observe` pairs with the run's own.
+  Rejected: the meter reading the whole context (a heavy payload for a number
+  that changes once a turn).
+- **An exact prediction with any drift is shown as a bug.** The inspector
+  raises an error notice for a recorded call whose `prediction` is `exact` and
+  `drift` is not 0; the loop already logs it.
+- **The preamble is not a part yet.** The system prompt's sections are the base
+  prompt and the instructions; the preamble item (Phase 1) adds its own.
+  Nothing is invented for it.
+
 ### The token counter
 
 - **A package of its own over an optional capability of the provider.**

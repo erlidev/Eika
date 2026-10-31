@@ -363,6 +363,8 @@ export class WorldBuilder {
       provider_id: provider.id,
       model: input.name,
       context_window: 400000,
+      // The routes recompute this from the provider's probe when they serve it.
+      effective_window: input.context_window ?? 400000,
       max_output: 128000,
       reasoning_efforts: [],
       thinking_switch: "reasoning_effort",
@@ -553,6 +555,24 @@ export function pathOf(world: World, session: Session): Entry[] {
     cursor = entry.parent_id;
   }
   return path;
+}
+
+/**
+ * windowOf is a model's windows as internal/server/window.go states them: the
+ * per-request context its provider's probe read, if any, and the smaller of
+ * that and the model's configured window.
+ */
+export function windowOf(
+  world: World,
+  model: Model,
+): { probed: number | undefined; effective: number } {
+  const stated = world.providers.find((p) => p.id === model.provider_id)?.capabilities.window;
+  const probed = stated !== undefined && stated > 0 ? stated : undefined;
+  return {
+    probed,
+    effective:
+      probed !== undefined && probed < model.context_window ? probed : model.context_window,
+  };
 }
 
 /** syncSystem recounts the system status from the tables. */

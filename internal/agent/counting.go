@@ -8,11 +8,13 @@ import (
 	"github.com/erlidev/eika/internal/provider"
 )
 
-// defaultCountTimeout bounds everything the token counter does for one model
-// call: the prediction before it, and what the counter learns after it. A
-// tokenizer that answers in tens of milliseconds at 200k tokens, and one that
-// has stopped answering, must both leave the call to go ahead.
-const defaultCountTimeout = 10 * time.Second
+// DefaultCountTimeout is what Options.CountTimeout is when it is zero. It
+// bounds everything the token counter does for one model call: the prediction
+// before it, and what the counter learns after it. A tokenizer that answers in
+// tens of milliseconds at 200k tokens, and one that has stopped answering,
+// must both leave the call to go ahead. A preview of a request is counted
+// under it too.
+const DefaultCountTimeout = 10 * time.Second
 
 // counted is what the token counter said about one model call.
 type counted struct {

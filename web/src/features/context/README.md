@@ -16,6 +16,12 @@ code a run uses; this feature only draws it.
   message with its size, and the parameters with the layer each came from.
   A part of the next request has an Edit link to the setting behind it, and
   the request copies as JSON.
+- `Size.tsx` is how large a request is and how that is known: the headline
+  (measured, predicted with its method, or only the parts), the drift notice
+  for an exact prediction that was wrong, a recorded call's facts, and the
+  parts with the template's remainder as a line of its own (n/a when there is
+  nothing to state it against, negative and flagged when the parts add up to
+  more than the endpoint counted).
 - `parts.tsx` holds what both draw: the window meter, the parts bar, the
   colour dots, and the Edit link, which opens the profile's editor when the
   profile sets the value and the session's otherwise.

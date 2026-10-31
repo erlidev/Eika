@@ -8,7 +8,7 @@ import { Pencil } from "lucide-react";
 
 import type { ModelContext, SessionConfiguration } from "@/api/types";
 import { Button } from "@/components/ui/button";
-import { percent, segmentColors, windowUse } from "@/features/context/segments";
+import { percent, segmentColors, tilde, windowUse } from "@/features/context/segments";
 import type { EditTarget, Segment, SegmentKind } from "@/features/context/segments";
 import { useConfigEditor } from "@/features/profiles/store";
 import { formatTokens } from "@/lib/format";
@@ -28,17 +28,17 @@ export function Dot({ kind, className }: DotProps) {
 
 export type WindowMeterProps = {
   context: ModelContext;
-  /** total is the request's estimated size. */
-  total: number;
+  /** used is the size of the request, in tokens. */
+  used: number;
 };
 
 /**
  * WindowMeter shows how the request fills its model's context window: what
  * it uses, the room its answer may take, and what is left.
  */
-export function WindowMeter({ context, total }: WindowMeterProps) {
+export function WindowMeter({ context, used }: WindowMeterProps) {
   const reserved = context.parameters.sampling.max_output ?? 0;
-  const use = windowUse(total, reserved, context.context_window);
+  const use = windowUse(used, reserved, context.context_window);
   if (context.context_window <= 0) return null;
   const width = (n: number) => `${String(Math.min(100, (n / use.window) * 100))}%`;
   return (
@@ -94,7 +94,11 @@ export type PartsBarProps = {
   className?: string;
 };
 
-/** PartsBar is the request's parts side by side, each a button that opens it. */
+/**
+ * PartsBar is the request's parts side by side, each a button that opens it.
+ * What the template adds is drawn too, as a plain segment with nothing to
+ * open, and a remainder below zero is not drawn: it has no width to give.
+ */
 export function PartsBar({ parts, total, onOpen, className }: PartsBarProps) {
   if (total <= 0) return null;
   return (
@@ -103,22 +107,40 @@ export function PartsBar({ parts, total, onOpen, className }: PartsBarProps) {
       role="group"
       aria-label="Tokens by part"
     >
-      {parts.map((part) => (
-        <button
-          key={part.kind}
-          type="button"
-          title={`${part.label}: ~${formatTokens(part.tokens)} tokens`}
-          aria-label={`${part.label}, about ${formatTokens(part.tokens)} tokens`}
-          className={cn(
-            "h-full min-w-1 transition-opacity hover:opacity-75 focus-visible:opacity-75 focus-visible:outline-none",
-            segmentColors[part.kind],
-          )}
-          style={{ width: `${String((part.tokens / total) * 100)}%` }}
-          onClick={() => {
-            onOpen(part.kind);
-          }}
-        />
-      ))}
+      {parts
+        .filter((part) => part.tokens > 0)
+        .map((part) => {
+          const text = `${tilde(part.approximate)}${formatTokens(part.tokens)} tokens`;
+          const style = { width: `${String((part.tokens / total) * 100)}%` };
+          if (part.kind === "template") {
+            return (
+              <span
+                key={part.kind}
+                role="img"
+                title={`${part.label}: ${text}`}
+                aria-label={`${part.label}, ${text}`}
+                className={cn("h-full min-w-1", segmentColors[part.kind])}
+                style={style}
+              />
+            );
+          }
+          return (
+            <button
+              key={part.kind}
+              type="button"
+              title={`${part.label}: ${text}`}
+              aria-label={`${part.label}, ${text}`}
+              className={cn(
+                "h-full min-w-1 transition-opacity hover:opacity-75 focus-visible:opacity-75 focus-visible:outline-none",
+                segmentColors[part.kind],
+              )}
+              style={style}
+              onClick={() => {
+                onOpen(part.kind);
+              }}
+            />
+          );
+        })}
     </div>
   );
 }
