@@ -147,6 +147,15 @@ values and never leaks a vendor SDK type upwards. It closes the channel after a
 request names the model by the endpoint's identifier. Retrying is the agent
 loop's job: classify a failure as a `provider.Error` and let the loop decide.
 
+Two rules of the loop reach a provider. A tool call it relays carries the
+backend's own id in `ToolCall.ID`; the loop replaces it with an id of its own
+and keeps the backend's in `WireID`, so a request must send `ToolCall.Wire()`
+for a call, and translate the `ToolCallID` of a result with
+`provider.WireToolCallIDs`, never send `ID`. And the loop aborts a call whose stream is silent: read the response
+through a client from `provider.NewHTTPClient`, which reports every arrival of
+bytes, or call `provider.Progressed(ctx)` yourself when bytes arrive that no
+event shows.
+
 A provider also implements `provider.ChatEncoder` (`ChatBody`) so that the
 token counter can render what it sends. The body must come from the same
 code that builds the request `Stream` posts, not a second serialiser: the

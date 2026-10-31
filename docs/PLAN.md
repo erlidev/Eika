@@ -296,7 +296,7 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       well as chat completions. (Honoured on both. Sent only to a server that
       passed the slot affinity check, which the bench's server does not: see the
       Log.)
-- [ ] Loop hardening:
+- [x] Loop hardening:
       - `Options.Clock` and the `<context>` block, with the time on every
         user-side message
       - `Options.Limits`: max calls, a repeated-call warning (from the 3rd
@@ -1055,6 +1055,84 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-31: loop hardening (branch `loop-hardening`, from `phase-1`; `3c2137b`,
+  `48b9b2f`, `e4dafbc`, `742a14b`, `34d95fc`, `2953f8e`, `c32f343` and this entry).
+  The item is ticked. The decisions are in `DECISIONS.md` ("Tool-call ids", "The
+  context block", "Loop limits", "The stall timeout", and a paragraph under
+  "Provider transport").
+  - Two things done first. `closedByServer` now recognises net/http's `http: server
+    closed idle connection`, which a POST gets when the server closes a pooled
+    connection while the request is written (`3c2137b`). There is no typed way:
+    the value is unexported in net/http and nothing wraps it, so the whole message
+    is matched, and the regression test provokes the real error (a trace hook
+    closes the pooled connection after the client took it, 10 of 20 requests
+    failed before the fix) so a Go release that rewords it fails the test. The
+    counter and the probe both use that client, which is where `make live` saw it.
+  - `anchored_counting`, "call 8 estimated, drift 46". Found: the counter lowered
+    a method silently. `Counter.predict` drops from exact to anchored to estimated
+    when a tokenizer route errors or times out and kept no trace of the cause, and
+    nothing in the agent saw it either, since `Predict` reports only a cancelled
+    context. It now logs a warning with the method it tried and the cause
+    (`48b9b2f`). Not reproducible (16 of 16 alone, and every scenario of the full
+    runs below). The 10 s `CountTimeout` cannot be the cause there: the live
+    harness predicts under its own two-minute call bound and a 30 s bound per
+    route, not through the agent's `predict`. So the likely cause is the closed
+    idle connection of the same fault, which was a failure of a route and so a
+    drop to `estimated`; unproven, and the next occurrence will say.
+  - Tool-call ids (`e4dafbc`). `ToolCall.ID` is Eika's, minted in the loop;
+    `WireID` is the backend's, a pointer so that "sent none" (`""`) differs from
+    "stored before ids were minted" (absent). Old entries have one id and replay
+    as they were. Both providers send the backend's id back unchanged for a call
+    and translate a result's id through `provider.WireToolCallIDs`; a backend that
+    gave none is sent Eika's id, so a replay under `responses` after `chat` never
+    sends an empty `call_id`. Two parallel calls with the same id, or none, get two
+    ids and two results (`TestEveryToolCallGetsAnIDOfItsOwn...`). The stored
+    `wire_id` is a wire change: `make contract`, the web type and `http.md`.
+  - The context block (`742a14b`). `Options.Clock` and `Options.Location`;
+    `<context>` with a `time:` line, written once when the loop first holds a
+    user message (`Run`, `Steer`, `FollowUp`) and stored in `Message.Context`.
+    Kept out of `Content`, so the transcript, `turn.start`, the queue display and
+    titles are what the user wrote, and a request joins them (`ModelText`). The
+    counter census, the breakdown and the Context inspector see it. The summary
+    prompts say what a block is, and the transcript form leaves it out. The test
+    that moves the clock between turns and across a restart and asserts every
+    request is a byte-prefix of the next is in `contextblock_test.go`; it is not
+    the full prefix-stability item (no compaction case, no approvals), which is
+    still open. Decision: the zone is UTC until the phase 2 preamble stores the
+    user's, stated beside the time. Tool results carry no block (the design does
+    not say they do).
+  - Limits (`34d95fc`). 40 model calls and 24 hours a run; the default of 40 is the
+    home session's, and agent definitions set their own in phase 2. A run that
+    reaches one returns `nil` with every call answered and its last `turn.end`
+    carries `max_calls` or `max_wall_time`; the transcript says which and that a
+    message carries on. The reason is not stored with the session: phase 2's
+    `notice` entry is where that belongs. The repeated-call warning is appended to
+    the result from the third identical consecutive call and never stops it.
+  - Stall (`2953f8e`). `Limits.Stall` 30 s; before the first token plus twice the
+    predicted prompt over the prefill rate, nothing assumed cached. The clock
+    starts at the lease. Bytes come from the shared HTTP client through
+    `provider.WithProgress`, so SSE comments count (tested against both
+    providers). The rate is `inference.DefaultPrefillRate` through the queue's
+    policy, replaced by `store.PrefillRate` (newest 20 calls with at least 500
+    prefilled tokens) once the endpoint has recorded calls. The bench read 66002
+    tokens in 22.8 s: that prompt is allowed 75 s before its first token.
+  - `make check` passes on the final commit (all Go packages with the docker tag,
+    475 web tests, 140 visual specs, no baseline changed; the two new specs assert
+    text, not pixels). `make live` passes on all 29 scenarios (30 results with the
+    parent) on b11942-338fce651, Qwen3.8-27B revision 4ca72078, before the live
+    scenario below; the new `context_block_prefix` (`c32f343`), and its
+    `responses_` twin, pass on their own: three turns on a clock that moves seven
+    minutes a reading, exact with no drift on every call, and 87 and 89% of the
+    prompt found cached after the first (the cache holds the previous reply too).
+    `make smoke` passes (run manager wiring changed).
+  - Not verified. The stall against a real hung server (the bench's is not ours to
+    stop): the formula and the abort are tested on timers of the test process
+    only. The measured prefill rate in the running server has the store's test and
+    the agent's, and no test of `server.prefillRate` itself.
+  - For later items. The prefix-stability item can reuse `stepClock` and
+    `newFixtureWith` in the agent tests; the notice and channel lines join
+    `contextBlock` as more `contextField`s; approvals key on `ToolCall.ID`.
 
 - 2026-10-31: slot affinity (branch `slot-affinity`, from `phase-1`; `14e1310`,
   `ccc67d0`, `8b3ab03`, `fda8a99` and this entry). The item is ticked. The
