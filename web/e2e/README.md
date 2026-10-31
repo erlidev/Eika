@@ -216,11 +216,17 @@ tab shows that URL, so its baselines change with the port).
 `make smoke` is the one test against the real stack. It starts compose as
 project `eika-smoke` on port 18080 with `compose.smoke.yaml`, whose `model`
 service runs `smoke/model.ts`, a scripted OpenAI-compatible endpoint: it
-lists one model, `smoke`, answers a user message by calling
-`bash` with `echo smoke-ok`, and answers the tool result with "The command
-printed smoke-ok." `smoke/smoke.spec.ts` (config `playwright.smoke.config.ts`)
-walks the guided setup with that endpoint, opens a chat, sends a message,
-and waits for the model's "ok". A plain chat reaches no sandbox; the spec
-also polls until the harness has made the home computer, before setup runs. `make smoke-down` removes the stack, its volumes, and any
-sandbox left on its networks. A first run builds the images and takes
-a few minutes; later runs take well under one.
+lists one model, `smoke`, answers a user message by calling `bash` when the
+request offers it, and answers the tool result with "The command printed
+<output>." The command prints `smoke-ok`, the hostname and the working
+directory. `smoke/smoke.spec.ts` (config `playwright.smoke.config.ts`) first
+polls until the harness has made the home computer, with no setup done. It
+then walks the guided setup with that endpoint, opens a plain chat (no
+sandbox, so no `bash`; the model answers "ok"), then a chat on the home
+computer with "New home chat", and waits for the answer that carries the
+hostname of the home computer's container (read from `GET /api/computers`)
+and `/home/eika`: only eikad running the command there prints both. The stack
+builds its own sandbox image, `eika-sandbox:smoke`, and never reads or moves
+`eika-sandbox:latest`. `make smoke-down` removes the stack, its volumes, and
+any sandbox left on its networks with the volume of each. A first run builds
+the images and takes a few minutes; later runs take well under one.
