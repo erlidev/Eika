@@ -213,17 +213,39 @@ export function providerRoutes(ctx: RouteContext): void {
   on("GET", "/api/models", () =>
     ok({ models: w.models.map(served), ...(w.defaultModel ? { default: w.defaultModel } : {}) }),
   );
-  on("POST", "/api/models/test", ({ body }) =>
-    ok({ reply: `Hello from ${str(body.model)}.`, stop_reason: "stop", latency_ms: 412 }),
-  );
+  on("POST", "/api/models/test", ({ body }) => {
+    if (body.kind === "decision") {
+      return fail(
+        400,
+        "invalid_request",
+        "a decision model answers typed questions, not chat, so a chat request cannot test it; nothing asks it before Sentry",
+      );
+    }
+    return ok({ reply: `Hello from ${str(body.model)}.`, stop_reason: "stop", latency_ms: 412 });
+  });
   on("POST", "/api/models", ({ body }) => {
     const name = str(body.name) || str(body.model);
     if (w.models.some((m) => m.name === name)) {
       return fail(409, "conflict", `a model named ${name} exists`);
     }
+    const kind = body.kind === "decision" ? "decision" : "chat";
+    if (
+      kind === "decision" &&
+      (str(body.reasoning_effort) !== "" ||
+        strings(body.reasoning_efforts).length > 0 ||
+        body.preserve_thinking === true ||
+        body.image_input === true)
+    ) {
+      return fail(
+        400,
+        "invalid_request",
+        "a decision model has no reasoning, preserved thinking or image input: it answers typed questions, not chat",
+      );
+    }
     const row: Model = {
       id: ctx.nextId("mod"),
       provider_id: str(body.provider_id),
+      kind,
       name,
       model: str(body.model),
       context_window: Number(body.context_window) || 0,
@@ -238,7 +260,7 @@ export function providerRoutes(ctx: RouteContext): void {
       updated_at: now(),
     };
     w.models.push(row);
-    w.defaultModel ??= row.name;
+    if (kind === "chat") w.defaultModel ??= row.name;
     return ok(served(row), 201);
   });
   on("PATCH", "/api/models/{id}", ({ params, body }) => {

@@ -12,16 +12,28 @@ import (
 	"github.com/erlidev/eika/internal/provider/providertest"
 )
 
-// utilityURL is the endpoint of the model the title tests assign the task.
+// utilityURL is the endpoint of the model the title tests assign the class.
 const utilityURL = "https://utility.test/v1"
 
 // addTitleModel adds a model on an endpoint of its own, whose calls p
 // answers, and returns its name.
 func (a *api) addTitleModel(t *testing.T, p provider.Provider) string {
 	t.Helper()
+	return a.addTitleModelOn(t, p, "")
+}
+
+// addTitleModelOn is addTitleModel on an endpoint whose backend is set to
+// backend, such as openai for a hosted API.
+func (a *api) addTitleModelOn(t *testing.T, p provider.Provider, backend string) string {
+	t.Helper()
 	utility := decodeBody[providerWire](t, request(t, a.Server, "POST", "/api/providers", map[string]any{
 		"name": "utility", "base_url": utilityURL,
 	}), 201)
+	if backend != "" {
+		decodeBody[providerWire](t, request(t, a.Server, "PATCH", "/api/providers/"+utility.ID, map[string]any{
+			"backend": backend,
+		}), 200)
+	}
 	decodeBody[modelWire](t, request(t, a.Server, "POST", "/api/models", map[string]any{
 		"provider_id": utility.ID, "name": "titler", "model": "vendor/small",
 		"context_window": 8192, "max_output": 512, "reasoning_effort": "high",
@@ -31,11 +43,18 @@ func (a *api) addTitleModel(t *testing.T, p provider.Provider) string {
 	return "titler"
 }
 
-// assignTitleModel assigns the session title task a model, or none.
+// assignTitleModel assigns the fast class, which makes titles, a model, or
+// none.
 func (a *api) assignTitleModel(t *testing.T, name string) {
 	t.Helper()
+	a.assignClasses(t, map[string]any{"fast": name})
+}
+
+// assignClasses writes the model_classes setting.
+func (a *api) assignClasses(t *testing.T, classes map[string]any) {
+	t.Helper()
 	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{
-		"utility_models": map[string]any{"session_title": name},
+		"model_classes": classes,
 	}), 200)
 }
 
@@ -114,7 +133,7 @@ func TestAnUntitledSessionIsNamedAfterItsFirstMessage(t *testing.T) {
 	}
 }
 
-func TestATitleWaitsForATitleModel(t *testing.T) {
+func TestATitleWaitsForAFastModel(t *testing.T) {
 	a := newAPI(t)
 	titler := providertest.New(providertest.Text("Explain the scheduler"))
 	name := a.addTitleModel(t, titler)
@@ -151,7 +170,7 @@ func TestASessionGivenATitleKeepsIt(t *testing.T) {
 	}
 }
 
-func TestRenamingAModelKeepsItsTasks(t *testing.T) {
+func TestRenamingAModelKeepsItsClasses(t *testing.T) {
 	a := newAPI(t)
 	a.assignTitleModel(t, a.addTitleModel(t, providertest.New()))
 	models := decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200)
@@ -164,7 +183,7 @@ func TestRenamingAModelKeepsItsTasks(t *testing.T) {
 	decodeBody[modelWire](t, request(t, a.Server, "PATCH", "/api/models/"+id, map[string]any{"name": "namer"}), 200)
 	got := decodeBody[settingsWire](t, request(t, a.Server, "GET", "/api/settings", nil), 200)
 	var assigned map[string]string
-	if err := json.Unmarshal(got.Settings["utility_models"], &assigned); err != nil || assigned["session_title"] != "namer" {
-		t.Errorf("utility_models = %s, want the task to follow the rename", got.Settings["utility_models"])
+	if err := json.Unmarshal(got.Settings["model_classes"], &assigned); err != nil || assigned["fast"] != "namer" {
+		t.Errorf("model_classes = %s, want the class to follow the rename", got.Settings["model_classes"])
 	}
 }

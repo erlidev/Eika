@@ -6,21 +6,6 @@ import (
 	"github.com/erlidev/eika/internal/provider"
 )
 
-// Task is a job the harness gives a utility model. Its value is the key the
-// utility_models setting assigns a model under.
-type Task string
-
-// The tasks a utility model can be assigned.
-const (
-	// TaskSessionTitle names a new session after the first message sent to it.
-	TaskSessionTitle Task = "session_title"
-)
-
-// Known reports whether t is a task the harness has.
-func Known(t Task) bool {
-	return t == TaskSessionTitle
-}
-
 // Model is the model a task is sent to, as the user configured it.
 type Model struct {
 	// Provider is the client for the model's endpoint.

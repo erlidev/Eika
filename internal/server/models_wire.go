@@ -8,8 +8,11 @@ import (
 
 // modelBody is one model on the wire.
 type modelBody struct {
-	ID            string `json:"id"`
-	ProviderID    string `json:"provider_id"`
+	ID         string `json:"id"`
+	ProviderID string `json:"provider_id"`
+	// Kind is chat, or decision for a model that answers typed questions and
+	// cannot hold a conversation.
+	Kind          string `json:"kind"`
 	Name          string `json:"name"`
 	Model         string `json:"model"`
 	ContextWindow int    `json:"context_window"`
@@ -34,14 +37,16 @@ type modelBody struct {
 type modelsResponse struct {
 	Models []modelBody `json:"models"`
 	// Default is the model a run uses when the request names none: the
-	// default_model setting when it names a model that exists, the first
-	// model otherwise, and empty when there are no models.
+	// default_model setting when it names a chat model that exists, the first
+	// chat model otherwise, and empty when there are no chat models.
 	Default string `json:"default,omitempty"`
 }
 
 // createModelRequest is the body of POST /api/models.
 type createModelRequest struct {
 	ProviderID string `json:"provider_id"`
+	// Kind defaults to chat. It cannot be changed afterwards.
+	Kind string `json:"kind"`
 	// Name defaults to Model.
 	Name             string   `json:"name"`
 	Model            string   `json:"model"`
@@ -71,7 +76,9 @@ type updateModelRequest struct {
 // testModelRequest is the body of POST /api/models/test: a model on a stored
 // provider, saved or not yet.
 type testModelRequest struct {
-	ProviderID       string `json:"provider_id"`
+	ProviderID string `json:"provider_id"`
+	// Kind defaults to chat. A decision model is not tested (handleTestModel).
+	Kind             string `json:"kind"`
 	Model            string `json:"model"`
 	ReasoningEffort  string `json:"reasoning_effort"`
 	ThinkingSwitch   string `json:"thinking_switch"`
@@ -106,6 +113,7 @@ func asModel(m store.Model, probed int) modelBody {
 	return modelBody{
 		ID:               m.ID,
 		ProviderID:       m.ProviderID,
+		Kind:             m.Kind,
 		Name:             m.Name,
 		Model:            m.Model,
 		ContextWindow:    m.ContextWindow,

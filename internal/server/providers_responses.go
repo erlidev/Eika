@@ -24,8 +24,14 @@ func providerEndpoint(p store.Provider, key string) provider.Endpoint {
 		BaseURL: p.BaseURL,
 		APIKey:  key,
 		API:     provider.API(p.API),
-		Hosted:  probe.Backend(p.Backend) == probe.OpenAI,
+		Hosted:  hostedEndpoint(p),
 	}
+}
+
+// hostedEndpoint reports whether the provider is a hosted API rather than a
+// server on the user's own network, as its backend says.
+func hostedEndpoint(p store.Provider) bool {
+	return probe.Backend(p.Backend) == probe.OpenAI
 }
 
 // apiOf is the protocol a probe's verdict chooses: the Responses API only if
@@ -62,15 +68,16 @@ func (s *Server) withConformance(ctx context.Context, p store.Provider, key stri
 }
 
 // checkModel is the model the Responses check asks on a provider: the oldest
-// the user configured on it. It reports false when there is none, in which
-// case nobody knows which model the user means.
+// chat model the user configured on it. A decision model is never asked, since
+// it cannot answer a chat request. It reports false when there is none, in
+// which case nobody knows which model the user means.
 func (s *Server) checkModel(ctx context.Context, providerID string) (store.Model, bool) {
 	models, err := s.deps.Store.Models(ctx)
 	if err != nil {
 		s.log.Warn("list models for the responses check", "provider_id", providerID, "error", err)
 		return store.Model{}, false
 	}
-	for _, m := range models {
+	for _, m := range chatModels(models) {
 		if m.ProviderID == providerID {
 			return m, true
 		}
@@ -86,7 +93,7 @@ func (s *Server) checkResponses(ctx context.Context, p store.Provider, key strin
 	if !known {
 		return probe.Conformance{
 			Verdict: probe.Skipped, Build: res.Capabilities.Build, CheckedAt: now,
-			Reason: "no model is configured on this provider, so there is no model to ask",
+			Reason: "no chat model is configured on this provider, so there is no model to ask",
 		}
 	}
 	// The row as the check will use it: the backend the probe found unless the

@@ -148,7 +148,7 @@ chats included. `?chats=true` returns the chats alone; with `computer_id` it is
 |---|---|---|
 | `computer_id` | string | The computer the session's runs act in. Required unless `chat` is set. |
 | `chat` | boolean | Open a chat, which has no computer. |
-| `title` | string | What to call it, at most 200 characters. Empty or absent leaves it untitled: it is called `New session` (`New chat` for a chat) until its first run names it after the first message, when the `utility_models` setting assigns `session_title` a model. |
+| `title` | string | What to call it, at most 200 characters. Empty or absent leaves it untitled: it is called `New session` (`New chat` for a chat) until its first run names it after the first message, when a model serves the `fast` class (`model_classes` in `PUT /api/settings`). |
 
 `201` with the `Session`. `400` for `chat` with a `computer_id`; `404` when the computer does not exist, which is also what
 leaving both out gives: a chat is asked for, never a fallback.
@@ -419,7 +419,7 @@ on the event stream.
 | `text` | string | The message. Required unless `images` holds at least one image. |
 | `images` | array | Pictures attached to the message, each `{"data": string}`: a PNG, JPEG, GIF, or WebP file, base64 encoded, of at most 20 MiB and 50 megapixels. At most 10. |
 | `mode` | `run`, `steer`, or `follow_up` | What to do with it. Empty means `run`. |
-| `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first model. |
+| `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first chat model. A decision model is `400`. |
 
 - `run` starts a run from the session's head. `409` when one is already going.
 - `steer` joins the run in progress as soon as the running tool call
@@ -611,13 +611,13 @@ own description (`docs/design/runtime.md` section 1). The harness probes every
 stored provider again at each start.
 
 Probing a stored provider also runs the Responses conformance check, which is
-the one part of a probe that asks a model: two small requests to the first model
-the user configured on the provider, with a small output limit and a time limit
-each. The explicit probe always runs it. A probe at start runs it only when the
+the one part of a probe that asks a model: two small requests to the first chat
+model the user configured on the provider (never a decision model, which cannot
+answer a chat request), with a small output limit and a time limit each. The explicit probe always runs it. A probe at start runs it only when the
 provider has no recorded outcome, or the outcome was made against another server
 build or another model than the one it would ask now, so a start of the
-harness sends the model nothing in the usual case. A provider with no model is
-not asked (`verdict` `skipped`), and an endpoint nothing stores has no model of
+harness sends the model nothing in the usual case. A provider with no chat
+model is not asked (`verdict` `skipped`), and an endpoint nothing stores has no model of
 the user's to ask, so a form probe leaves `api` at `chat`.
 
 | Field | Type | Meaning |
@@ -682,20 +682,26 @@ harness runs in a container. `400` too for a kind that cannot list.
 
 ## Models
 
-A model is one model of a provider that runs may use.
+A model is one model of a provider. A `chat` model holds a conversation, which
+is what runs use. A `decision` model answers typed questions at `/v1/systemone`
+and cannot hold a conversation, so no route that picks a model for a
+conversation accepts one: the `default_model` setting, a profile's or a
+session's `model_id`, the `model` of a message, and the `deep`, `main` and
+`fast` classes of `model_classes` all answer `400` for it.
 
 ### `GET /api/models`
 
-`200` with `{"models": [Model], "default": string}`, oldest first. `default`
-is the model a run uses when it names none: the `default_model` setting when
-it names a model that exists, the first model otherwise, absent when there are
-none.
+`200` with `{"models": [Model], "default": string}`, oldest first, models of
+both kinds. `default` is the chat model a run uses when it names none: the
+`default_model` setting when it names a chat model that exists, the first chat
+model otherwise, absent when there are none.
 
 ### `POST /api/models`
 
 | Field | Type | Meaning |
 |---|---|---|
 | `provider_id` | string, required | The provider it belongs to. |
+| `kind` | string | `chat` (the default) or `decision`. Chosen here and never changed. A decision model has no `reasoning_effort`, `reasoning_efforts`, `preserve_thinking` or `image_input`: any of them is `400`. |
 | `model` | string, required | The endpoint's identifier, such as `gpt-5`. |
 | `name` | string | What Eika and its users call it; unique across providers. Defaults to `model`. |
 | `context_window` | number, required | The total token budget. A run refuses a request that cannot fit. |
@@ -711,19 +717,23 @@ when the name is taken.
 
 ### `PATCH /api/models/{id}`
 
-Any field of `POST` but `provider_id`; an absent field is left alone.
-Renaming the default model keeps it the default. `200` with the `Model`.
+Any field of `POST` but `provider_id` and `kind`; an absent field is left alone.
+Renaming a model keeps it the default and keeps the `model_classes` that name
+it. `200` with the `Model`.
 
 ### `DELETE /api/models/{id}`
 
-`204`. When it was the default, the first remaining model is the default until
-the user picks another.
+`204`. When it was the default, the first remaining chat model is the default
+until the user picks another. A class that named it has no model of its own, so
+it falls back (`model_classes`).
 
 ### `POST /api/models/test`
 
-`{"provider_id": string, "model": string, "reasoning_effort": string,
-"thinking_switch": string, "preserve_thinking": boolean, "image_input":
-boolean}`: a model on a stored provider, saved or not. With `image_input` the
+`{"provider_id": string, "model": string, "kind": string, "reasoning_effort":
+string, "thinking_switch": string, "preserve_thinking": boolean,
+"image_input": boolean}`: a model on a stored provider, saved or not. A
+`kind` of `decision` is `400` and sends nothing: the test is a chat request,
+which a decision model cannot answer. With `image_input` the
 question carries a 16 by 16 pixel PNG, which proves the endpoint takes images
 for the model.
 Sends one short request with no tools and answers `200` with
@@ -736,6 +746,7 @@ the model is there. `400` with what the endpoint answered when it failed.
 | Field | Type | Meaning |
 |---|---|---|
 | `id`, `provider_id`, `name`, `model` | string | The model, its provider, Eika's name for it, and the endpoint's. |
+| `kind` | string | `chat` or `decision`. |
 | `context_window`, `max_output` | number | Its limits. |
 | `probed_window` | number, optional | The context one request may use on the model's endpoint, as its provider's last probe read it. Absent when the endpoint states none. |
 | `effective_window` | number | The window runs on the model are judged against: the smaller of `context_window` and `probed_window`, or `context_window` when there is no probed one. Less than `context_window` means the endpoint holds less than the model row allows. |
@@ -861,9 +872,12 @@ A resolved configuration, with the layer each value came from.
 
 ### `GET /api/settings`
 
-`200` with `{"settings": {key: value}, "defaults": Defaults}`: the settings
-table as one object, with values as they were stored, and the values the
-harness uses for its own keys while the table does not name them.
+`200` with `{"settings": {key: value}, "defaults": Defaults, "classes":
+[ModelClass], "titles_model": string}`: the settings table as one object, with
+values as they were stored, the values the harness uses for its own keys while
+the table does not name them, every model class with the model that serves it
+now, and the name of the model that makes session titles, empty when none does
+(see `model_classes`).
 
 ### `PUT /api/settings`
 
@@ -881,17 +895,27 @@ stores them.
 
 | Key | Value | Meaning |
 |---|---|---|
-| `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a model. |
+| `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a chat model. |
 | `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
 | `sandbox_image` | string | The image the home computer's container is created from. A container that exists keeps its image, so a change reaches the home computer only when its container is made again. |
 | `computer_idle_minutes` | number, 0 to 10080 | How long a running computer may go without a run in it before the harness aborts its runs and stops it. A later run starts it again. 0 never stops one. Checked once a minute. |
 | `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The home computer's limits, checked as a Sandbox's are. A field the object leaves out is 0, no limit. A write applies them to its container, running or stopped, without a restart; a stopped container also takes them at its next start. |
 | `sandbox_egress` | `{"mode", "allow"}` | The home computer's egress, applied as the limits are: a change between open and restricted moves the container between the sandbox networks, dropping the connections it has open, and the processes it starts from then on get the proxy settings that go with its network. A restricted mode is `400` on a harness without the internal sandbox network. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
-| `utility_models` | object | The model each of the harness's own tasks is sent to, by task, `{"session_title": "gpt-5-mini"}`. Each key must be a task and each value the name of a model or `""` for none; a task with none does not run. Renaming a model renames it here. Tasks: `session_title` names an untitled session after its first message (see `session.title` in `events.md`). |
+| `model_classes` | object | The model each class is served by, `{"main": "qwen", "fast": "gpt-5-mini"}`. The classes are `deep`, `main`, `fast` (chat models) and `decision` (a decision model); each key must be one, and each value the name of a model of that kind or `""` for none. Harness tasks name a class, never a model. A class with none falls back, `deep` and `fast` to `main`; `main` and `decision` have no fallback. Renaming a model renames it here, and deleting one leaves its classes unserved. Session titles run on `fast` (see `session.title` in `events.md`), and are skipped when `fast` falls back onto the model assigned to `deep` and that model is on a hosted API (backend `openai`). |
 | `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
 | `search_limits` | object | Quotas by bucket, `{"exa": {"month": 500}, "marginalia": {"day": 50}}`. Each bucket must exist; `day` and `month` are whole numbers from 1 to 10 000 000, and 0 or an absent field is unlimited. Anything else is `400` naming the bucket and the range. A bucket not named keeps its default. |
 | `compaction` | object | How a conversation that outgrows its model's context window is summarized: `{"auto", "reserve_tokens", "keep_recent_tokens", "prompts": {"summary", "update", "turn_prefix"}}`. `auto` compacts before a request that would leave less than `reserve_tokens` of the window free, and once after an endpoint refuses a request as too large. `reserve_tokens` and `keep_recent_tokens` are whole numbers from 1024 to 1048576, each capped at run time to a quarter of the model's window. A prompt is at most 64 KiB, and an empty one is the built-in prompt. A field left out keeps its default; an unknown field is `400`. |
+
+### ModelClass
+
+| Field | Type | Meaning |
+|---|---|---|
+| `class` | string | `deep`, `main`, `fast` or `decision`, in that order in `classes`. |
+| `kind` | string | The kind of model the class takes: `decision` for `decision`, `chat` for the rest. |
+| `model` | string | The name of the model that serves the class, fallbacks applied; empty when none does. |
+| `via` | string, optional | The class whose assignment supplied `model`, when that is not this one: the fallback taken. |
+| `provider_id`, `pool` | string, optional | The endpoint and the hardware pool of `model`. Classes served from one pool contend for its slots. |
 
 ### Defaults
 
@@ -1199,7 +1223,7 @@ What the setup screens check before the first computer. `200` with:
 | `docker` | `{"reachable": boolean, "error": string}` | Whether the harness can use the Docker socket, and the client's reason when it cannot. |
 | `sandbox_image` | `{"name": string, "present": boolean}` | The image the home computer is created from and whether the Docker host has it. |
 | `sandbox` | `{"cpus": number, "memory_bytes": number, "egress_control": boolean}` | The Docker host's cores and memory, which bound a sandbox's limits, zero when Docker cannot be asked; and whether a sandbox's egress can be restricted, which a harness outside the compose stack cannot. |
-| `providers`, `models` | number | How many of each exist. |
+| `providers`, `models` | number | How many providers exist, and how many chat models: the setup needs one a conversation can run on. |
 
 ## Event stream
 

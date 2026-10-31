@@ -323,7 +323,16 @@ type queuedWire struct {
 
 type settingsWire struct {
 	Settings map[string]json.RawMessage `json:"settings"`
-	Defaults struct {
+	Classes  []struct {
+		Class      string `json:"class"`
+		Kind       string `json:"kind"`
+		Model      string `json:"model"`
+		Via        string `json:"via"`
+		ProviderID string `json:"provider_id"`
+		Pool       string `json:"pool"`
+	} `json:"classes"`
+	TitlesModel string `json:"titles_model"`
+	Defaults    struct {
 		SandboxImage string `json:"sandbox_image"`
 		// ComputerIdleMinutes is how long a computer may go unused.
 		ComputerIdleMinutes int `json:"computer_idle_minutes"`
@@ -341,6 +350,7 @@ type settingsWire struct {
 type modelWire struct {
 	ID               string   `json:"id"`
 	ProviderID       string   `json:"provider_id"`
+	Kind             string   `json:"kind"`
 	Name             string   `json:"name"`
 	Model            string   `json:"model"`
 	ContextWindow    int      `json:"context_window"`
@@ -698,9 +708,10 @@ func TestSettingsAndModels(t *testing.T) {
 		"an empty sandbox image":                 {"sandbox_image": ""},
 		"a sandbox image with a space":           {"sandbox_image": "eika sandbox"},
 		"a setup flag that is not a boolean":     {"setup_complete": "yes"},
-		"utility models that are not an object":  {"utility_models": "test-model"},
-		"a utility model for an unknown task":    {"utility_models": map[string]any{"summarise": "test-model"}},
-		"a utility model that does not exist":    {"utility_models": map[string]any{"session_title": "gone"}},
+		"model classes that are not an object":   {"model_classes": "test-model"},
+		"a model for an unknown class":           {"model_classes": map[string]any{"slow": "test-model"}},
+		"a class model that does not exist":      {"model_classes": map[string]any{"fast": "gone"}},
+		"a chat model for the decision class":    {"model_classes": map[string]any{"decision": "test-model"}},
 		"a compaction that is not an object":     {"compaction": true},
 		"a compaction with an unknown field":     {"compaction": map[string]any{"auto": true, "reserve": 1}},
 		"a compaction reserve that is too small": {"compaction": map[string]any{"reserve_tokens": 10}},

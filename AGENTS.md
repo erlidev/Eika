@@ -92,7 +92,7 @@ there, test it, document it. Full walkthroughs are in `docs/EXTENDING.md`.
 | tool            | `tool.Tool`                  | `internal/tool/builtin/registry.go`|
 | provider        | `provider.Provider`          | `internal/provider/registry.go`    |
 | search backend  | `search.Searcher`            | `internal/search/registry.go`      |
-| utility task    | function in `internal/utility` | `Known` in `internal/utility/utility.go` + `web/src/features/settings/UtilityModels.tsx` |
+| utility task    | function in `internal/utility` | its trigger in `internal/server`, which resolves a class with `resolveClass` (`internal/server/classes.go`) |
 | API endpoint    | handler in `internal/server` | `internal/server/routes.go` + `routeWire` in `contract_test.go` + `docs/api/http.md` |
 | event type      | struct in `internal/event`   | `docs/api/events.md` + `web/src/api/events.ts` + `eventPayloads` in `internal/server/contract_test.go` |
 | UI panel        | component in `web/src/`      | `web/src/app/panels.tsx`           |

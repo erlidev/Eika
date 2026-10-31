@@ -11,6 +11,8 @@ import {
 function state(stored: unknown): SettingsState {
   return {
     settings: stored === undefined ? {} : { compaction: stored },
+    classes: [],
+    titles_model: "",
     defaults: {
       sandbox_image: "eika-sandbox:latest",
       computer_idle_minutes: 15,

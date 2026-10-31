@@ -22,6 +22,8 @@ import type {
   MCPServerDetails,
   Message,
   Model,
+  ModelClass,
+  ModelClassName,
   ProfileSettings,
   QueuedMessage,
   Provider,
@@ -141,6 +143,9 @@ export function emptyWorld(): World {
     signedIn: true,
     settings: {
       settings: { setup_complete: true },
+      // The routes resolve these from the model_classes setting when they serve it.
+      classes: [],
+      titles_model: "",
       defaults: {
         sandbox_image: "eika-sandbox:latest",
         computer_idle_minutes: 15,
@@ -363,6 +368,7 @@ export class WorldBuilder {
     const row: Model = {
       id: this.id("mod"),
       provider_id: provider.id,
+      kind: "chat",
       model: input.name,
       context_window: 400000,
       // The routes recompute this from the provider's probe when they serve it.
@@ -377,7 +383,7 @@ export class WorldBuilder {
       ...input,
     };
     this.world.models.push(row);
-    this.world.defaultModel ??= row.name;
+    if (row.kind === "chat") this.world.defaultModel ??= row.name;
     return row;
   }
 
@@ -580,7 +586,59 @@ export function windowOf(
 /** syncSystem recounts the system status from the tables. */
 export function syncSystem(world: World): void {
   world.system.providers = world.providers.length;
-  world.system.models = world.models.length;
+  world.system.models = world.models.filter((m) => m.kind === "chat").length;
+}
+
+/**
+ * modelClassNames is every class, in the order the settings list them. The
+ * harness cannot import the UI's own list: node loads this file without the
+ * UI's path aliases.
+ */
+export const modelClassNames: readonly ModelClassName[] = ["deep", "main", "fast", "decision"];
+
+/** classFallback is the class that serves a class with no model, as classes.go has it. */
+const classFallback: Partial<Record<ModelClassName, ModelClassName>> = {
+  deep: "main",
+  fast: "main",
+};
+
+/**
+ * classView resolves every model class and the model that makes titles from
+ * the model_classes setting, as internal/server/classes.go does: a class with
+ * no model falls back, and titles are skipped when fast falls back onto the
+ * model assigned to deep, if that is on a hosted API.
+ */
+export function classView(world: World): Pick<SettingsState, "classes" | "titles_model"> {
+  const stored = world.settings.settings.model_classes;
+  const assigned: Partial<Record<string, string>> =
+    typeof stored === "object" && stored !== null ? stored : {};
+  const resolve = (asked: ModelClassName): { model: Model; via: ModelClassName } | undefined => {
+    for (let c: ModelClassName | undefined = asked; c !== undefined; c = classFallback[c]) {
+      const kind = c === "decision" ? "decision" : "chat";
+      const model = world.models.find((m) => m.name === assigned[c] && m.kind === kind);
+      if (model !== undefined) return { model, via: c };
+    }
+    return undefined;
+  };
+  const classes = modelClassNames.map((name): ModelClass => {
+    const found = resolve(name);
+    const provider = world.providers.find((p) => p.id === found?.model.provider_id);
+    return {
+      class: name,
+      kind: name === "decision" ? "decision" : "chat",
+      model: found?.model.name ?? "",
+      ...(found === undefined || found.via === name ? {} : { via: found.via }),
+      ...(provider === undefined ? {} : { provider_id: provider.id, pool: provider.pool }),
+    };
+  });
+  const fast = resolve("fast");
+  const deep = assigned.deep;
+  const hosted =
+    fast !== undefined &&
+    fast.via !== "fast" &&
+    fast.model.name === deep &&
+    world.providers.find((p) => p.id === fast.model.provider_id)?.backend === "openai";
+  return { classes, titles_model: fast === undefined || hosted ? "" : fast.model.name };
 }
 
 /**

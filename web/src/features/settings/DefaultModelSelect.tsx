@@ -3,7 +3,7 @@
 import { LoadError } from "@/components/Notice";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useModels, useProviders } from "@/features/providers";
+import { chatModels, useModels, useProviders } from "@/features/providers";
 import { ModelSelectItems } from "@/features/settings/ModelSelectItems";
 import { settingKeys, useSaveSettings } from "@/features/settings/queries";
 import { failureText } from "@/lib/failure";
@@ -12,7 +12,7 @@ export function DefaultModelSelect() {
   const models = useModels();
   const providers = useProviders();
   const save = useSaveSettings();
-  const all = models.data?.models ?? [];
+  const all = chatModels(models.data?.models);
   const loadFailed = models.error ?? providers.error;
 
   return (

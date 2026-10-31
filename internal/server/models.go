@@ -9,6 +9,7 @@ import (
 	"image/draw"
 	"image/png"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -66,6 +67,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	m := store.Model{
 		ProviderID:       req.ProviderID,
+		Kind:             modelKindOf(req.Kind),
 		Name:             strings.TrimSpace(req.Name),
 		Model:            strings.TrimSpace(req.Model),
 		ContextWindow:    req.ContextWindow,
@@ -103,8 +105,8 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.log, http.StatusCreated, body)
 }
 
-// handleUpdateModel changes a model. Renaming a model keeps it the default
-// and keeps the utility tasks assigned to it.
+// handleUpdateModel changes a model, but not its kind. Renaming a model keeps
+// it the default and keeps the classes assigned to it.
 func (s *Server) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[updateModelRequest](r)
 	if err != nil {
@@ -197,6 +199,18 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, invalidf("model is required"))
 		return
 	}
+	switch modelKindOf(req.Kind) {
+	case store.ModelKindChat:
+	case store.ModelKindDecision:
+		// The test is a chat request, which a decision model cannot answer: it
+		// takes typed questions at /v1/systemone. The decision client that
+		// can ask one is built with Sentry, and the test moves there.
+		s.fail(w, r, invalidf("a decision model answers typed questions, not chat, so a chat request cannot test it; nothing asks it before Sentry"))
+		return
+	default:
+		s.fail(w, r, invalidKind(req.Kind))
+		return
+	}
 	if !provider.ValidReasoningEffort(req.ReasoningEffort) {
 		s.fail(w, r, invalidEffort(req.ReasoningEffort))
 		return
@@ -249,9 +263,26 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// defaultModel returns the model a run uses when it names none: the one the
-// settings name, or the first. It reports false when there are no models.
+// chatModels returns the models that can hold a conversation, in order.
+func chatModels(models []store.Model) []store.Model {
+	return slices.DeleteFunc(slices.Clone(models), func(m store.Model) bool {
+		return m.Kind != store.ModelKindChat
+	})
+}
+
+// modelKindOf is the kind a request names, and chat when it names none.
+func modelKindOf(kind string) string {
+	if kind == "" {
+		return store.ModelKindChat
+	}
+	return kind
+}
+
+// defaultModel returns the model a run uses when it names none: the chat
+// model the settings name, or the first chat model. It reports false when
+// there are no chat models.
 func (s *Server) defaultModel(ctx context.Context, models []store.Model) (store.Model, bool) {
+	models = chatModels(models)
 	if len(models) == 0 {
 		return store.Model{}, false
 	}
@@ -269,6 +300,10 @@ func (s *Server) defaultModel(ctx context.Context, models []store.Model) (store.
 // validateModel rejects a model a run could not use.
 func validateModel(m store.Model) error {
 	switch {
+	case m.Kind != store.ModelKindChat && m.Kind != store.ModelKindDecision:
+		return invalidKind(m.Kind)
+	case m.Kind == store.ModelKindDecision && (m.ReasoningEffort != "" || len(m.ReasoningEfforts) > 0 || m.PreserveThinking || m.ImageInput):
+		return invalidf("a decision model has no reasoning, preserved thinking or image input: it answers typed questions, not chat")
 	case m.Model == "" || len(m.Model) > maxModelID:
 		return invalidf("model must be the endpoint's identifier for it, 1 to %d characters", maxModelID)
 	case len(m.Name) > maxModelName || strings.IndexFunc(m.Name, unicode.IsControl) >= 0:
@@ -298,6 +333,11 @@ func validateModel(m store.Model) error {
 		seen[effort] = struct{}{}
 	}
 	return nil
+}
+
+// invalidKind reports a kind the harness does not have.
+func invalidKind(kind string) error {
+	return invalidf("kind %q must be %s or %s", kind, store.ModelKindChat, store.ModelKindDecision)
 }
 
 // invalidEffort reports a reasoning_effort the harness will not send. The

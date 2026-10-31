@@ -274,7 +274,7 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       SGLang, TabbyAPI/exllamav3, llama.cpp with `--kv-unified`); `partitioned`
       is llama.cpp without it. Probe the size per backend, verify the fields
       against a live server, and let the user override.
-- [ ] Add model kinds (`chat`, `decision`) and the setting
+- [x] Add model kinds (`chat`, `decision`) and the setting
       `model_classes` (`deep`, `main`, `fast`, `decision`) with its
       fallbacks. Retire `utility_models`; titles run on `fast`. Replace the
       utility-models UI with a classes UI.
@@ -1013,8 +1013,6 @@ as a link to the web Inbox.
 Decide these when the phase that needs them starts, and record the outcome in the
 log.
 
-- **Class names.** `deep`, `main`, `fast` (proposed). Change them before phase 1
-  ships, if at all.
 - **KV slot save and restore, LMCache.** Deferred until phase 1's accounting
   shows how much prefill is lost to switching. Measure first.
 - **Main agent with `bash`.** Not by default (runtime.md 6). Revisit if delegating
@@ -1046,6 +1044,75 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-31: model kinds and classes (branch `model-classes`, from `phase-1`).
+  The item is ticked. The class names `deep`, `main`, `fast`, `decision` are
+  settled by it, so the open question about naming is removed.
+  - Landed. A model row has a `kind` (`chat` or `decision`, migration `0008`,
+    fixed when the model is added). `model_classes` (class to model name)
+    replaces `utility_models`; the migration carries `session_title` to `fast`
+    and a user who had assigned none keeps no class set. `internal/server/
+    classes.go` resolves a class: `deep -> main` and `fast -> main`, `main` and
+    `decision` have no fallback, an assignment whose model is gone counts as
+    unset. `internal/utility` lost `Task` and `Known`; titles run on `fast`
+    (`titleModel`). `GET` and `PUT /api/settings` now also report `classes`
+    (each class with the model, the class it fell back from and the pool) and
+    `titles_model`, so the UI shows which classes share a pool without a
+    second copy of the rule. The utility-models UI is a classes UI in the same
+    place (Settings, General), with the fallback each class took, the pool
+    shared, and why titles are skipped when they are. The Models tab marks a
+    decision model, hides its chat-only fields and its Test, and the model
+    picker can mark a chosen model a decision model (not in the guided setup).
+  - Decision models are never chat models. They are refused (`400`) for
+    `default_model`, a profile's or session's `model_id`, a message's `model`
+    and the `deep`, `main` and `fast` classes, and a chat model is refused for
+    `decision`. The server filters them out of the default model, the run
+    configuration and the setup's model count (`GET /api/system` `models` is
+    now the chat models); every UI picker (default model, session status bar,
+    profile editor) lists chat models only. `kind` cannot be changed after the
+    model is added, so no stored reference can go stale.
+  - The model test refuses a decision model with `400` and sends nothing. The
+    test is a chat request, which it cannot answer, and the request it can
+    answer is a `/v1/systemone` question: the client for that is `internal/
+    systemone` (phase 4), and the decision model was not running to verify a
+    request shape against, so none was written here. The test moves with the
+    client. The Responses check now asks a provider's oldest chat model (the
+    Responses item's finding): a provider whose oldest model is a decision model
+    is asked about its chat model, and a provider with only a decision model is
+    `skipped`, with no request sent (tests for both).
+  - Reading of "titles are still skipped when `fast` would fall back onto a
+    `deep` cloud model". The only way `fast` falls back onto a deep model is
+    that its fallback, the `main` model, is also the model the user assigned to
+    `deep`, so that is the rule: `fast` unset, `main` is the model assigned to
+    `deep`, and its provider is a hosted API (backend `openai`). A `fast` model
+    the user chose is always used, and a hosted `main` that is not `deep` is
+    used. Tests cover nine cases (fast assigned, main local, main hosted not
+    deep, main hosted, main deep local, main deep hosted, fast chosen as a
+    hosted deep model, only deep set, nothing set). The broader reading (skip
+    whenever `fast` lands on a hosted model) is rejected in `DECISIONS.md`; if
+    the intent was that, it is a one-line change in `titleModel`.
+  - `make check` passes (35 Go packages, 474 web tests, 138 visual; new
+    baselines `classes-phone` and the `general-classes` ARIA snapshot, and the
+    two `general-invalid` baselines, which changed because the classes fill the
+    dialog above the sandbox image: I looked at each, and the spec now scrolls
+    to the problem so it stays in the picture). `make smoke` passes (2 specs):
+    it applies migration `0008` to the real stack. `make live` passes on all 23
+    scenarios; the new `session_title` runs the title task on the bench's model
+    with thinking off through the template switch and got "Fix Infinite Login
+    Loop". It runs `utility.Title` directly, not the server's class
+    resolution, which the server tests cover.
+  - Skipped or open. `main` is not defaulted from `default_model`: a session
+    still picks its model that way, and a class setting is empty until the user
+    makes one, so titles stay off for a user who set no class, as before. Agents
+    (phase 2) decide whether `main` should read the default. The mock harness
+    does not refuse a decision model for a profile, session or run, which the UI
+    never offers; the Go tests do. The decision class is stored and resolved and
+    nothing calls it. No emulation was built (`sentry.md` 9.3).
+  - For later items. The inference item should key slot contention on the pool
+    the classes report (`classes[].pool`), not on the provider. When phase 4 adds
+    `internal/systemone`, the model test for a decision model becomes a
+    one-question `/v1/systemone` request, and the Responses check and the title
+    path need no change.
 
 - 2026-10-31: the Responses API provider (branch `responses-provider`, from
   `phase-1`). The first Phase 1 item is ticked.

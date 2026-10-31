@@ -31,7 +31,7 @@ egress proxy are network calls and run in the harness.
 | `server` | Composition, JSON API, event stream, auth, run manager; `server/servertest` builds and checks `docs/api/contract.json` |
 | `agent` | The loop: turns, tool dispatch, queues, retries, context assembly |
 | `provider` | Model interface, kind registry, `Complete`; `openai` implementation in two protocols (Chat Completions and the stateless Responses API); `providertest` scripted fake; `probe` identifies the backend behind an endpoint, reads its slots, window, KV cache and capabilities, and runs the Responses conformance check, with `probetest` serving its fixtures; `counter` predicts a request's token count (exact, anchored or estimated) and learns from the measured one |
-| `utility` | The harness's own one-shot model tasks (session titles), sent to the model a task is assigned |
+| `utility` | The harness's own one-shot model tasks (session titles), sent to the model of the class the task runs on |
 | `imaging` | Prepares attached images: decode, EXIF orientation, fit within 1080p (Catmull-Rom), PNG or JPEG without metadata |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
 | `executor` | The interface every agent action uses, path validation; `local` (tests only), `sandbox` (eikad client) |
@@ -306,7 +306,7 @@ POST /api/sessions/{id}/messages          GET /api/events
   the registry and MCP pool. `newAgent` turns a configuration into
   `agent.Options`, used by runs and the context preview alike.
 - **Settings** the harness reads (`default_model`, `default_profile`,
-  `utility_models`, `sandbox_image`, `sandbox_limits`, `sandbox_egress`,
+  `model_classes`, `sandbox_image`, `sandbox_limits`, `sandbox_egress`,
   `search_order`, `search_limits`, `setup_complete`,
   `compaction`) are
   validated on write and fall back to defaults on read. Renaming a model
@@ -317,11 +317,26 @@ POST /api/sessions/{id}/messages          GET /api/events
   `Agent.Compact` instead of `Agent.Run`: it claims the session like any run,
   takes no queued messages, and is `409` when `Compactable` finds nothing to
   summarize.
-- **Utility models** (`titles.go`): a session created without a title is
+- **Model kinds and classes** (`classes.go`): a model row has a `kind`,
+  `chat` or `decision`, fixed when it is added. A decision model is never a
+  chat model: `defaultModel`, the run configuration (`configBase.models`),
+  profile and session `model_id`, the model of a message, the Responses
+  check and the setup's model count all see chat models only, and the
+  model test refuses one, since its request is a chat. The harness's own
+  tasks name a class, not a model. The `model_classes` setting maps `deep`,
+  `main`, `fast` (chat models) and `decision` (a decision model) to model
+  names; `resolveClass` applies the fallbacks `deep -> main` and
+  `fast -> main`, and `GET /api/settings` reports each class with the model
+  and pool that serve it, so the UI never repeats the rule. Nothing asks
+  for `decision` before Sentry. A session still picks its own model
+  (`default_model`, profile, override); agents move to classes in phase 2.
+- **Titles** (`titles.go`): a session created without a title is
   `untitled` and called `New session` or `New chat`. When a run begins on
   one, `titles` starts a goroutine (at most one per session, cancelled and
-  joined by `Close`) that reads the model `utility_models` assigns
-  `session_title`, builds its provider, and calls `utility.Title` with the
+  joined by `Close`) that resolves the `fast` class (`titleModel`: it
+  falls back to `main`, and is skipped when it would fall back onto the
+  model assigned to `deep` and that is a hosted API), builds its provider,
+  and calls `utility.Title` with the
   first user message: one request, no tools, effort `none` in the model's
   thinking switch when it offers `none`. `TitleUntitledSession` writes the
   title only if the session is still untitled, then `session.title` goes out
@@ -590,7 +605,7 @@ web/src/
   (`features/setup`) or sign-in (`features/connect`). With a token the setup
   shows until a password exists and `setup_complete` is true.
 - **Settings** (`features/settings`): providers and models, profiles,
-  defaults and utility models, the computer's limits and network, search, MCP, password. The profile editor
+  defaults and model classes, the computer's limits and network, search, MCP, password. The profile editor
   (`features/profiles/SettingsEditor`) has Model, Prompt, Tools, and Sampling
   tabs, a cost strip, and a chip per field naming where its value comes from.
   `ToolPicker` is shared by profiles, sessions, and chats. Small stores hold

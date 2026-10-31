@@ -1,4 +1,5 @@
 /** The providers feature: model providers, their models, and the forms that manage both. */
+export { chatModels, modelsOfKind } from "@/features/providers/kind";
 export { ModelPicker } from "@/features/providers/ModelPicker";
 export { ModelsPanel } from "@/features/providers/ModelsPanel";
 export { ProviderForm } from "@/features/providers/ProviderForm";
