@@ -186,8 +186,9 @@ before the routes it calls.
       - event `computer.state`
       - containers `eika-cx-<id>`, label `eika.computer`
       - frontend types
-- [ ] Create the `home` computer at setup (persistent volume at `/home/eika`).
-      Move the root from `/workspace` to `/home/eika`: `computer.Root`, the
+- [x] Ensure the `home` computer on every start (persistent volume at
+      `/home/eika`), not at setup: a deployment with a fixed `EIKA_AUTH_TOKEN`
+      never calls setup. Move the root from `/workspace` to `/home/eika`: `computer.Root`, the
       executor's and eikad's path confinement, and the sandbox image's
       `WORKDIR`. Move what the image installs under the home directory (such
       as `~/go/bin` on `PATH`) to `/opt`, since a volume over `/home/eika`
@@ -218,8 +219,8 @@ before the routes it calls.
 - [ ] Re-measure lines and test counts against the `REFACTOR_PLAN.md` baseline and
       log them.
 
-**Exit:** on a fresh stack, setup creates the home computer, and a chat runs
-`bash` in it. `make check` and `make smoke` are green.
+**Exit:** on a fresh stack, the harness has made the home computer by the time
+setup is done, and a chat runs `bash` in it. `make check` and `make smoke` are green.
 
 ## Phase 1: Inference and accounting
 
@@ -365,7 +366,8 @@ projects with their new meaning, and persistent subagents. Design:
       skills and plugins add their sections in their own phases.
 - [ ] Instructions: global "About me" and rules, plus project instructions.
       Stored as rows and edited in the UI. No agent tool writes them.
-- [ ] Create the one home session at setup, found by `(owner, name)`, and add
+- [ ] Ensure the one home session on start, as the home computer is (see the log
+      of 2026-10-30), found by `(owner, name)`, and add
       `GET /api/home`. Retire chats: there are no direct sessions, and the user
       talks only to Eika. Each user-side `<context>` names its channel; replies go
       back to it, and proactive messages go to `notify_channel`.
@@ -1032,6 +1034,44 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-30: the `home` computer (branch `home-computer`).
+  - **Created on start, not at setup.** `POST /api/auth/setup` is registered
+    whenever there is a database, but a deployment with `EIKA_AUTH_TOKEN` set
+    (as `make smoke` has) never has to call it, and a restart must find the
+    computer it made. `Server.EnsureHome` runs from `Server.Run` beside the idle
+    stopper: it finds the row or inserts it, creates the container when there is
+    none, and starts it when stopped. It is idempotent, so a start, a retry and
+    a run that finds the container gone all call it. Phase 2's home session and
+    phase 4's canaries have the same trap ("at setup" is not a moment every
+    install has); their items now say "on start".
+  - Identity is `computers.home` with `UNIQUE ... WHERE home` in the baseline;
+    the row is inserted before the container. It is not found by name, which a
+    rename changes. Failure (no Docker, no image) is logged and retried after
+    5 s, doubling to a minute, never blocking the API; the row reads `creating`
+    meanwhile and `GET /api/system` says what is missing. The state is announced
+    on the `global` topic too, so the sidebar needs no polling.
+  - The volume outlives the container: `Host.Create` reattaches a volume that
+    exists and no longer removes one it found when it fails, which would have
+    deleted the files the first time the sandbox image was missing. `DELETE`
+    refuses `home` (`409`).
+  - A run in `home` starts it when the idle stopper has stopped it
+    (`runExecutor`), and makes the container again if it is gone. A run in
+    any other stopped computer is still a `409`: a test says so, and it
+    is the user's stop.
+  - Root is `/home/eika` (`eikad.DefaultRoot` is the one Go constant; the
+    Dockerfile's three copies are checked by a test). `GOPATH` moved to `/opt/go`;
+    nothing else in the image lived under the home directory. A custom image
+    with no `/home/eika`, or one root owns, used to leave the volume unwritable
+    for uid 1000 (and still would for `/workspace`); `Create` now has the daemon
+    extract the root directory owned by the numeric `Spec.User`, and sets `HOME`.
+  - The sidebar gained "New home chat" and lists the home computer's sessions
+    with the chats, so a chat can reach `bash` until phase 2 retires chats. The
+    mock serves `GET /api/computers`. No existing baseline changed; the `home`
+    scenario adds one screenshot and one ARIA snapshot.
+  - Left for the `make smoke` item: the spec does no more than check that the
+    home computer is running after setup; it should run a chat on `home` that
+    calls `bash` (a scripted model call, see `web/e2e/smoke/model.ts`).
 
 - 2026-10-30: renamed workspace to computer (branch `rename-computer`; the
   dead-code commit is `6fdca6b`, the rename the one after it).

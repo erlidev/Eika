@@ -9,6 +9,7 @@ import type { Connection } from "@/api/connection";
 import type {
   AuthStatus,
   CompactRequest,
+  Computer,
   Configuration,
   ContentDetail,
   CreateMCPServer,
@@ -61,6 +62,24 @@ import type {
 export async function listChats(signal?: AbortSignal): Promise<Session[]> {
   const body = await request<{ sessions: Session[] }>("/api/sessions", {
     query: { chats: "true" },
+    signal,
+  });
+  return body.sessions;
+}
+
+/** listComputers lists the computers, oldest first. */
+export async function listComputers(signal?: AbortSignal): Promise<Computer[]> {
+  const body = await request<{ computers: Computer[] }>("/api/computers", { signal });
+  return body.computers;
+}
+
+/** listComputerSessions lists the sessions that run in one computer. */
+export async function listComputerSessions(
+  computerId: string,
+  signal?: AbortSignal,
+): Promise<Session[]> {
+  const body = await request<{ sessions: Session[] }>("/api/sessions", {
+    query: { computer_id: computerId },
     signal,
   });
   return body.sessions;

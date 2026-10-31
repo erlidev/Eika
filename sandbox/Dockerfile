@@ -1,6 +1,8 @@
 # The default computer image. Agents run every command in a container built
-# from this image, as the non-root user `eika`, with the repository checked out
-# at /workspace.
+# from this image, as the non-root user `eika`, in /home/eika. A computer
+# mounts a volume of its own there, and a volume keeps whatever the image held
+# at /home/eika when it was first created: nothing a tool needs may be
+# installed under the home directory, so Go's GOPATH is /opt/go.
 #
 # eikad is baked in here, but the harness also copies its own build of the
 # binary into every container before starting it, so a custom image that does
@@ -59,23 +61,24 @@ RUN case "${TARGETARCH}" in \
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tar.gz && \
     tar -xzf /tmp/go.tar.gz -C /usr/local && \
     rm /tmp/go.tar.gz
-ENV PATH=/usr/local/go/bin:/home/eika/go/bin:${PATH}
+ENV GOPATH=/opt/go
+ENV PATH=/usr/local/go/bin:/opt/go/bin:${PATH}
 
 # Ubuntu 24.04 ships an `ubuntu` user on uid 1000; rename it to eika so the
-# computer volume is owned by a predictable, non-root user.
+# computer volume is owned by a predictable, non-root user. /opt/go is
+# eika's too, so `go install` and the module cache work.
 RUN usermod -l eika -d /home/eika -m ubuntu && \
     groupmod -n eika ubuntu && \
-    mkdir -p /workspace /home/eika/go && \
-    chown -R eika:eika /workspace /home/eika
+    mkdir -p /opt/go && \
+    chown -R eika:eika /home/eika /opt/go
 
 COPY --from=eikad /out/eikad /usr/local/bin/eikad
 
 USER eika
-WORKDIR /workspace
-ENV GOPATH=/home/eika/go
+WORKDIR /home/eika
 EXPOSE 7000
 
 # The harness overrides this entrypoint with the same command plus its flags;
 # it is spelled out here so the image is usable on its own.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/eikad"]
-CMD ["-listen", ":7000", "-root", "/workspace"]
+CMD ["-listen", ":7000", "-root", "/home/eika"]

@@ -37,7 +37,7 @@ Every failure has one shape:
 | `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
 | `forbidden` | 403 | A computer path is outside the computer, directly or through a symlink, or the sandbox may not open it. |
 | `not_found` | 404 | The addressed computer, session, entry, run, question, provider, model, MCP server, elicitation, pending authorization, or computer file does not exist. |
-| `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a computer that is not running, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
+| `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, the home computer asked to be deleted, a computer that is not running, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
 | `too_large` | 413 | A file saved through the API is over its 2 MiB bound. |
 | `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
 
@@ -62,7 +62,8 @@ chosen the password, which is how the UI decides between setup and sign-in.
 
 No token needed. `{"password": string}`, at least 8 characters. Sets the
 password of a harness that has none and signs in. `201` with a `SignIn`. `409`
-once a password exists, so setup can be claimed once.
+once a password exists, so setup can be claimed once. It does not create the
+`home` computer, which the harness makes on its own when it starts.
 
 ### `POST /api/auth/login`
 
@@ -89,19 +90,28 @@ ends every session, and signs this browser in again: `200` with a `SignIn`.
 
 ## Computers
 
-A computer is one sandbox container with a volume of its own at its root.
-Any holder of the sign-in token reaches every computer; the harness has one
-user and a computer has no owner.
+A computer is one sandbox container with a volume of its own at its root,
+`/home/eika` in the default image. Any holder of the sign-in token reaches
+every computer; the harness has one user and a computer has no owner.
+
+The `home` computer holds the user's durable files. No request creates it: the
+harness makes it on every start, whether or not setup was ever called, and
+tries again until the Docker daemon and the sandbox image are there. Until
+then it is listed with the state `creating`, and `GET /api/system` says what is
+missing. It cannot be deleted, and its volume outlives any container made for
+it.
 
 ### `GET /api/computers`
 
-`200` with `{"computers": [Computer]}`, oldest first.
+`200` with `{"computers": [Computer]}`, oldest first, the `home` computer
+among them.
 
 ### `POST /api/computers`
 
 Creates the container and its volume, starts it, and records it. A failure at
 any step destroys what was created, so a rejected request leaves no container
-and writes no row. A field the table does not list is `400`.
+and writes no row. A field the table does not list is `400`. The computer is
+never the `home` computer.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -136,7 +146,8 @@ of the computer refresh.
 
 Starts a stopped container again, held to the `sandbox` its row records, so a
 change the container took only in part is completed. `200` with the
-`Computer`.
+`Computer`. A run in the `home` computer starts it the same way, so this is
+for any other computer.
 
 ### `POST /api/computers/{id}/stop`
 
@@ -147,7 +158,8 @@ files. `200` with the `Computer`.
 
 Aborts every run in the computer, destroys the container and its volume, and
 deletes the row with its sessions and entries. A container that is
-already gone is not an error. `204`.
+already gone is not an error. `204`. `409` for the `home` computer, which
+holds the user's files and is never deleted: nothing changes.
 
 ### `PUT /api/computers/{id}/sandbox`
 
@@ -243,6 +255,7 @@ not running; `413` when the body is over the bound. Publishes
 | `sandbox` | Sandbox | What the container may consume and reach. A computer from before sandboxes has no limits and open egress. |
 | `pinned` | boolean | Listed before the other computers. |
 | `archived` | boolean | Set aside under an Archived heading; the container is left as it is. |
+| `home` | boolean | The computer that holds the user's durable files. Exactly one computer has it, once the harness has recorded it; it cannot be deleted. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ### Sandbox
@@ -534,9 +547,11 @@ against the running model.
 `202` with the `Run`. `400` for no text and no images, an unknown mode, a
 model that does not exist, an image the harness cannot read (the message names
 which, counting from 1), more than 10 images, or images for a model without
-`image_input`; `413` for a body over 64 MiB; `409` when the session's
-computer is not running or no model is configured. A chat has no computer to
-be stopped, so it runs whenever a model is configured.
+`image_input`; `413` for a body over 64 MiB; `409` when no model is
+configured, or when the session's computer is stopped, unless it is the `home`
+computer: a run there starts it first, and when its container is gone makes the
+container again over the same volume. A chat has no computer, so it runs
+whenever a model is configured.
 
 ### `GET /api/sessions/{id}/run`
 

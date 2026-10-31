@@ -560,11 +560,15 @@ The `workspace` package is now `computer` (renamed in phase 0). It keeps:
 
 It drops clone, push, fetch, hub grants, worktrees and previews.
 
-- The `home` computer is created at setup from the sandbox image, with a persistent
-  volume mounted at `/home/eika`. It holds project directories and spilled outputs.
-  `/home/eika` is the computer's root for the executor and eikad (today's
-  `/workspace`). The image installs its tools outside it (under `/opt`), since a
-  volume freezes whatever the image had there at first creation.
+- The `home` computer is ensured on every start from the sandbox image, with a
+  persistent volume mounted at `/home/eika`: found by the `home` flag on its row,
+  created when missing, started when stopped, and tried again until Docker and the
+  image are ready. Setup does not create it, since a deployment with a fixed API
+  token never runs setup. It holds project directories and spilled outputs.
+  `/home/eika` is the computer's root for the executor and eikad. The image installs
+  its tools outside it (under `/opt`), since a volume freezes whatever the image had
+  there at first creation. It cannot be deleted, and a run in it starts it when the
+  idle stopper has stopped it.
 - **Per-run egress identity.** Every `exec` carries `HTTP(S)_PROXY` credentials
   that Sentry issued for that run, so the proxy attributes traffic to the session
   rather than the container. Processes a run starts in the background keep that

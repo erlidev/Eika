@@ -128,11 +128,17 @@ smoke: web-install playwright-browser
 		npx playwright test -c playwright.smoke.config.ts; \
 		status=$$?; cd .. && $(MAKE) smoke-down; exit $$status
 
-## smoke-down: remove the smoke stack, its data, and any sandbox it left.
+## smoke-down: remove the smoke stack, its data, and any sandbox it left, with
+## the volume of each: the home computer's outlives its container by design, so
+## only the volumes the left containers mount are removed, never a stack's own.
 smoke-down:
 	@left=$$(docker ps -aq --filter label=eika.computer --filter network=eika_smoke_sandbox; \
 		docker ps -aq --filter label=eika.computer --filter network=eika_smoke_sandbox_internal); \
-	if [ -n "$$left" ]; then docker rm -fv $$left; fi
+	if [ -n "$$left" ]; then \
+		volumes=$$(docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' $$left); \
+		docker rm -fv $$left; \
+		if [ -n "$$(echo $$volumes)" ]; then docker volume rm -f $$volumes; fi; \
+	fi
 	$(SMOKE_COMPOSE) down -v
 
 ## dev: run the harness and the Vite dev server against the compose services.

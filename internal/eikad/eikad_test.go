@@ -247,6 +247,51 @@ func TestPathsAreConfinedToTheRoot(t *testing.T) {
 	}
 }
 
+// A root at /home/eika has siblings, unlike the old /workspace: other homes
+// and a directory that only shares the root's name as a prefix. None of them,
+// by any spelling, is inside the root.
+func TestPathsAreConfinedToARootBesideItsSiblings(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	root := filepath.Join(home, "eika")
+	for _, dir := range []string{root, filepath.Join(home, "eikaother"), filepath.Join(home, "other")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("make %s: %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "private.txt"), []byte("private"), 0o600); err != nil {
+			t.Fatalf("write private file: %v", err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(home, "other"), filepath.Join(root, "link-out")); err != nil {
+		t.Fatalf("make symlink: %v", err)
+	}
+	base, _ := newDaemon(t, eikad.Options{Root: root})
+
+	escapes := []string{
+		"../other/private.txt",
+		"../eikaother/private.txt",
+		"link-out/private.txt",
+		url.QueryEscape(filepath.Join(home, "other", "private.txt")),
+		url.QueryEscape(filepath.Join(home, "eikaother", "private.txt")),
+		url.QueryEscape(root + "/../other/private.txt"),
+		url.QueryEscape(home),
+	}
+	for _, path := range escapes {
+		t.Run(path, func(t *testing.T) {
+			if resp := do(t, http.MethodGet, base+"/files?path="+path, nil); resp.StatusCode != http.StatusForbidden {
+				t.Errorf("read status = %d, want 403", resp.StatusCode)
+			}
+			if resp := do(t, http.MethodPut, base+"/files?path="+path, strings.NewReader("x")); resp.StatusCode != http.StatusForbidden {
+				t.Errorf("write status = %d, want 403", resp.StatusCode)
+			}
+		})
+	}
+	for _, dir := range []string{"other", "eikaother"} {
+		if data, err := os.ReadFile(filepath.Join(home, dir, "private.txt")); err != nil || string(data) != "private" {
+			t.Errorf("%s/private.txt was overwritten: %q, %v", dir, data, err)
+		}
+	}
+}
+
 func TestAbsolutePathsInsideTheRootAreAccepted(t *testing.T) {
 	base, root := newDaemon(t, eikad.Options{})
 	if err := os.WriteFile(filepath.Join(root, "inside.txt"), []byte("ok"), 0o600); err != nil {

@@ -192,7 +192,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	// the model it has neither files nor commands.
 	var ex executor.Executor
 	if !sess.Chat() {
-		if ex, err = s.executorFor(ctx, sess.ComputerID); err != nil {
+		if ex, err = s.runExecutor(ctx, sess.ComputerID); err != nil {
 			return store.Run{}, err
 		}
 	}

@@ -204,7 +204,7 @@ func TestComputerLifecycle(t *testing.T) {
 		if string(data) != "hei" {
 			t.Errorf("read = %q, want hei", data)
 		}
-		if got := run(t, ex, "cat /workspace/notes/hello.txt"); got != "hei" {
+		if got := run(t, ex, "cat /home/eika/notes/hello.txt"); got != "hei" {
 			t.Errorf("the file is not in the container: %q", got)
 		}
 	})
@@ -338,7 +338,7 @@ func TestComputerFromADockerfile(t *testing.T) {
 	// is copied in before the container starts.
 	build := t.TempDir()
 	if err := os.WriteFile(filepath.Join(build, "Dockerfile"),
-		[]byte("FROM alpine:3.20\nRUN mkdir -p /workspace && echo baked > /workspace/from-the-image.txt\n"), 0o600); err != nil {
+		[]byte("FROM alpine:3.20\nRUN mkdir -p /home/eika && echo baked > /home/eika/from-the-image.txt\n"), 0o600); err != nil {
 		t.Fatalf("write dockerfile: %v", err)
 	}
 

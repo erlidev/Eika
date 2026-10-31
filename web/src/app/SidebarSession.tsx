@@ -1,6 +1,15 @@
-/** A chat in the sidebar. */
+/** A chat in the sidebar, or a session on the home computer. */
 
-import { Archive, ArchiveRestore, MessageCircle, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  House,
+  MessageCircle,
+  Pencil,
+  Pin,
+  PinOff,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -19,7 +28,7 @@ type SessionRowProps = {
   onNavigate?: () => void;
 };
 
-/** SessionRow draws one chat with its menu: rename, pin, archive, delete. */
+/** SessionRow draws one chat, or session on the home computer, with its menu: rename, pin, archive, delete. */
 export function SessionRow({ session, indent, sessionId, onNavigate }: SessionRowProps) {
   const remove = useDeleteSession();
   const update = useUpdateSession();
@@ -64,7 +73,13 @@ export function SessionRow({ session, indent, sessionId, onNavigate }: SessionRo
     <li>
       <Row
         indent={indent}
-        icon={<MessageCircle aria-hidden className="size-3.5 shrink-0" />}
+        icon={
+          session.computer_id === undefined ? (
+            <MessageCircle aria-hidden className="size-3.5 shrink-0" />
+          ) : (
+            <House aria-hidden className="size-3.5 shrink-0" />
+          )
+        }
         label={session.title}
         current={session.id === sessionId}
         pinned={session.pinned}

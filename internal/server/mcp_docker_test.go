@@ -595,7 +595,7 @@ func TestAStdioMCPServerRunsInTheComputer(t *testing.T) {
 	}
 	server := a.addMCPServer(t, map[string]any{
 		"name": "files", "kind": "stdio", "command": "npx", "args": []string{"-y", "files"},
-		"env": map[string]string{"ROOT": "/workspace"},
+		"env": map[string]string{"ROOT": "/home/eika"},
 	})
 	cx := a.newComputer(t)
 
@@ -604,7 +604,7 @@ func TestAStdioMCPServerRunsInTheComputer(t *testing.T) {
 	if d.Server.State != "connected" || !slices.Equal(d.Server.Computers, []string{cx.ID}) || d.Connection == nil || d.Connection.Transport != "stdio" {
 		t.Fatalf("details = %+v", d)
 	}
-	if spec.Command != "npx" || !slices.Equal(spec.Args, []string{"-y", "files"}) || !slices.Equal(spec.Env, []string{"ROOT=/workspace"}) {
+	if spec.Command != "npx" || !slices.Equal(spec.Args, []string{"-y", "files"}) || !slices.Equal(spec.Env, []string{"ROOT=/home/eika"}) {
 		t.Errorf("process = %+v", spec)
 	}
 	if got := a.host.started(); !slices.Equal(got, []string{cx.ID}) {

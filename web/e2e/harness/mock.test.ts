@@ -22,7 +22,6 @@ import { scenario } from "./scenarios.ts";
 const unmocked: Record<string, string> = {
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/events": "a WebSocket, which install routes itself",
-  "GET /api/computers": "the coding UI is gone; the Go route goes with a later item",
   "POST /api/computers": "the coding UI is gone; the Go route goes with a later item",
   "GET /api/computers/{id}": "the coding UI is gone; the Go route goes with a later item",
   "PATCH /api/computers/{id}": "the coding UI is gone; the Go route goes with a later item",
@@ -109,6 +108,7 @@ describe("the mock answers as the harness does", () => {
     const requests: [string, string, unknown?][] = [
       ["GET /api/healthz", "/api/healthz"],
       ["GET /api/auth/status", "/api/auth/status"],
+      ["GET /api/computers", "/api/computers"],
       ["POST /api/auth/login", "/api/auth/login", { password: "correct horse" }],
       [
         "PUT /api/auth/password",

@@ -96,3 +96,62 @@ func TestEnvValue(t *testing.T) {
 		}
 	}
 }
+
+func TestNumericUser(t *testing.T) {
+	cases := []struct {
+		user     string
+		uid, gid int
+		ok       bool
+	}{
+		{"1000:1000", 1000, 1000, true},
+		{"1000", 1000, 1000, true},
+		{"2000:3000", 2000, 3000, true},
+		{"worker", 0, 0, false},
+		{"worker:staff", 0, 0, false},
+		{"1000:staff", 0, 0, false},
+		{"-1:5", 0, 0, false},
+		{"", 0, 0, false},
+	}
+	for _, c := range cases {
+		t.Run(c.user, func(t *testing.T) {
+			uid, gid, ok := numericUser(c.user)
+			if ok != c.ok || (ok && (uid != c.uid || gid != c.gid)) {
+				t.Errorf("numericUser(%q) = %d, %d, %v; want %d, %d, %v", c.user, uid, gid, ok, c.uid, c.gid, c.ok)
+			}
+		})
+	}
+}
+
+// The sandbox image spells the computer root where the Go constant cannot be
+// read: its working directory, the daemon's -root flag, and the home
+// directory it renames the user's to. Nothing that a tool needs may live
+// under that directory, since a volume mounted over it keeps the directory as
+// it was at the volume's creation.
+func TestSandboxImageAgreesWithTheComputerRoot(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "sandbox", "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read the sandbox Dockerfile: %v", err)
+	}
+	dockerfile := string(raw)
+	for _, want := range []string{
+		"WORKDIR " + Root + "\n",
+		`CMD ["-listen", ":7000", "-root", "` + Root + `"]`,
+		"usermod -l eika -d " + Root + " -m",
+	} {
+		if !strings.Contains(dockerfile, want) {
+			t.Errorf("the sandbox Dockerfile has no %q", want)
+		}
+	}
+	for _, line := range strings.Split(dockerfile, "\n") {
+		code, _, _ := strings.Cut(line, "#")
+		if !strings.HasPrefix(strings.TrimSpace(code), "ENV") {
+			continue
+		}
+		if strings.Contains(code, Root) {
+			t.Errorf("%q puts an environment variable under the home volume", strings.TrimSpace(line))
+		}
+	}
+	if strings.Contains(dockerfile, "/workspace") {
+		t.Error("the sandbox Dockerfile still mentions /workspace")
+	}
+}

@@ -10,7 +10,10 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/build"
@@ -110,6 +113,60 @@ func (h *Host) injectDaemon(ctx context.Context, containerID string) error {
 		return fmt.Errorf("copy eikad into container: %w", err)
 	}
 	return nil
+}
+
+// ownRoot makes the user the container runs as the owner of the computer
+// root. A volume starts out as the image's directory at the root, owned as
+// the image owns it; an image with no such directory leaves the volume
+// owned by root, which the user could read and never write. The container
+// has not started, so the daemon extracts the directory entry itself,
+// carrying the owner in the archive.
+//
+// A user given by name, which the harness cannot resolve to a uid, is left
+// to its image.
+func (h *Host) ownRoot(ctx context.Context, containerID, user string) error {
+	uid, gid, ok := numericUser(user)
+	if !ok {
+		return nil
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := tw.WriteHeader(&tar.Header{
+		Typeflag: tar.TypeDir,
+		Name:     path.Base(Root) + "/",
+		Mode:     0o755,
+		Uid:      uid,
+		Gid:      gid,
+	}); err != nil {
+		return fmt.Errorf("write tar header for %s: %w", Root, err)
+	}
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("close tar archive: %w", err)
+	}
+	if err := h.docker.CopyToContainer(ctx, containerID, path.Dir(Root), &buf, container.CopyToContainerOptions{
+		CopyUIDGID: true,
+	}); err != nil {
+		return fmt.Errorf("own %s in container: %w", Root, err)
+	}
+	return nil
+}
+
+// numericUser parses a container user of the form "uid" or "uid:gid". The
+// group defaults to the uid. It reports false for a name.
+func numericUser(user string) (uid, gid int, ok bool) {
+	u, g, hasGroup := strings.Cut(user, ":")
+	uid, err := strconv.Atoi(u)
+	if err != nil || uid < 0 {
+		return 0, 0, false
+	}
+	if !hasGroup {
+		return uid, uid, true
+	}
+	gid, err = strconv.Atoi(g)
+	if err != nil || gid < 0 {
+		return 0, 0, false
+	}
+	return uid, gid, true
 }
 
 // tarFile wraps one file's contents in a tar archive.

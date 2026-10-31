@@ -20,7 +20,7 @@ import (
 )
 
 // DefaultRoot is where a computer is mounted inside its sandbox.
-const DefaultRoot = "/workspace"
+const DefaultRoot = eikad.DefaultRoot
 
 // ErrNotFound reports that a path does not exist in the computer. It remains
 // as an alias for callers that used the sandbox-specific name.

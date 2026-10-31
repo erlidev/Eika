@@ -4,7 +4,7 @@ Drive the UI in a real browser against a **mock harness** and screenshot the
 result. No Go server, Postgres, or Docker needed: `harness/mock.ts` answers
 every `/api` route and the `/api/events` WebSocket from an in-memory world,
 and plays scripted agent replies so a sent message streams like a real run.
-Routes whose UI is gone (computers, files, forks)
+Routes whose UI is gone (computers but the list, files, forks)
 are not served; `harness/mock.test.ts` lists each in `unmocked` until its Go
 route is removed.
 
@@ -107,7 +107,9 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 `harness/scenarios.ts` names the starting states. The workbench ones share
 fixed ids: session `ses-backoff` in computer `cx-retries`; the sidebar lists chats only, so it opens by URL. `chat` adds two
 chats and opens chat `chat-jitter`, a session with no computer; `chat-empty`
-opens one with no messages. `mcp` adds five MCP servers, one in each state, and `chat-mcp` the
+opens one with no messages. `home` adds the home computer the harness makes for itself, with
+a session on it that ran `bash`, beside the chats; the other scenarios have no home computer, so
+the sidebar offers no home chat. `mcp` adds five MCP servers, one in each state, and `chat-mcp` the
 same servers beside the chats; the mock's authorization server approves at
 once, so Sign in returns straight to `/mcp/callback`. `profiles` adds two
 profiles to the workbench, puts `ses-backoff` on one with an override of its
@@ -218,7 +220,7 @@ lists one model, `smoke`, answers a user message by calling
 `bash` with `echo smoke-ok`, and answers the tool result with "The command
 printed smoke-ok." `smoke/smoke.spec.ts` (config `playwright.smoke.config.ts`)
 walks the guided setup with that endpoint, opens a chat, sends a message,
-and waits for the model's "ok". A chat reaches no sandbox until the home
-computer returns. `make smoke-down` removes the stack, its volumes, and any
+and waits for the model's "ok". A plain chat reaches no sandbox; the spec
+also polls until the harness has made the home computer, before setup runs. `make smoke-down` removes the stack, its volumes, and any
 sandbox left on its networks. A first run builds the images and takes
 a few minutes; later runs take well under one.

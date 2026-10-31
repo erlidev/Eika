@@ -78,7 +78,7 @@ this file says why, so neither repeats the other.
   applies converge. Children share the parent's container, so they cannot
   escape its confinement. Default: 4096 processes, nothing else.
 - **Limits change live** with `ContainerUpdate`: recreating would reset
-  everything outside `/workspace`. Docker cannot lift a CPU or memory limit,
+  everything outside the volume at `/home/eika`. Docker cannot lift a CPU or memory limit,
   so "no limit" on an existing container means the whole host. Swap equals
   memory.
 - **Egress is enforced by the network; the proxy is the one door.** A
@@ -113,6 +113,61 @@ this file says why, so neither repeats the other.
 - Usage is sampled every 5 s while the Sandbox panel is open: a measurement
   no event announces, so the no-polling rule does not apply.
 - One address guard, `internal/netguard`, for web_fetch and the proxy.
+
+### The home computer
+
+- **`home` is ensured on every start, not created by setup.** `POST
+  /api/auth/setup` is one path to a usable install, and not the only one: a
+  deployment with a fixed `EIKA_AUTH_TOKEN` never calls it, and a restart
+  must find the computer it made. `Server.EnsureHome` does the same work
+  whichever way the harness got here: find the row, make the container if it
+  is missing, start it if it is stopped. Rejected: creating it in the setup
+  handler, which would be a second code path with its own half-finished
+  states.
+- **The database decides which computer is home.** `computers.home` with a
+  unique index `WHERE home` allows one row. The row is inserted before the
+  container, so two harnesses starting at once, or a start that follows a
+  failed one, agree on one id, and with it on one container name and one
+  volume. Rejected: finding it by name, which the user can change, and a lock
+  in the process, which two processes do not share.
+- **It never blocks start-up.** `Server.Run` ensures it beside the API and
+  tries again, after 5 seconds and then longer, up to a minute, until it
+  works. Docker not yet reachable or the sandbox image not yet built is the
+  expected cause on a first start. The user sees the computer listed as
+  `creating`, and `GET /api/system`, which the guided setup shows, names what
+  is missing.
+- **Nothing deletes its files.** The API refuses to delete it (`409`). A
+  volume that exists when `Host.Create` runs is reattached, and a `Create`
+  that fails does not remove a volume it found, so a container lost to
+  `docker rm` comes back over its files, and a failed attempt (the image
+  missing) cannot take them. Nothing else recreates a container: limits and
+  egress change the running one (`ContainerUpdate`, network connect), and a
+  harness restart leaves containers alone.
+- **A run starts a stopped `home`.** The idle stopper stops `home` like any
+  computer, and the next run, which needs it, starts it (`runExecutor`): a
+  stopped computer is a `409` the user clears by starting it, and nothing in
+  the UI starts a computer any more. A run in `home` whose container is gone
+  calls `EnsureHome`. Any other stopped computer still refuses the run, as a
+  user who stopped it meant. Rejected: starting at the first `bash` call,
+  which would put a lazy start inside the executor every tool shares, for a
+  computer the run is about to use anyway; and starting every computer, which
+  would override a stop the user asked for.
+- **The root is `/home/eika`.** It is the user's home directory and the
+  volume's mount point (`eikad.DefaultRoot`, the one Go constant; the
+  Dockerfile spells it three times and a test holds them equal). A volume
+  keeps what the image held at its mount point from its first creation, so
+  the image installs nothing there: Go's `GOPATH` is `/opt/go`, writable by
+  `eika`. Everything else the image installs is already outside it (Node and
+  Go under `/usr/local`).
+- **Any image gets a root the user can write.** A volume over a directory the
+  image lacks is owned by root, which the user could read and never write.
+  `Host.Create` has the daemon extract the root directory, owned by the
+  numeric uid and gid of `Spec.User`, into the container before it starts,
+  and sets `HOME` to the root. A user given by name is left to its image.
+- **Until phase 2 replaces chats, a chat attaches to `home` from the
+  sidebar.** `POST /api/sessions` already took a `computer_id`; the sidebar
+  gained a button that opens a session on `home`, and lists those with the
+  chats. The UI cannot start any other computer's session.
 
 ## Git
 

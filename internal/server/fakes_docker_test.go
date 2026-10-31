@@ -108,6 +108,14 @@ func newFakeHost(t *testing.T) *fakeHost {
 	}
 }
 
+// failCreate makes every Create fail with err until it is called with nil,
+// the way a sandbox image that is not built yet does.
+func (h *fakeHost) failCreate(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.createErr = err
+}
+
 // filesOf returns the directory the files of a computer the host reported
 // are in: its container's directory.
 func (h *fakeHost) filesOf(cx computer.Computer) (string, error) {
@@ -127,8 +135,11 @@ func (h *fakeHost) dirOf(id string) (string, error) {
 
 // Create makes the computer's directory.
 func (h *fakeHost) Create(_ context.Context, spec computer.Spec) (computer.Computer, error) {
-	if h.createErr != nil {
-		return computer.Computer{}, h.createErr
+	h.mu.Lock()
+	createErr := h.createErr
+	h.mu.Unlock()
+	if createErr != nil {
+		return computer.Computer{}, createErr
 	}
 	if spec.Confinement.Proxied && !h.EgressControl() {
 		return computer.Computer{}, computer.ErrNoEgressControl

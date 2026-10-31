@@ -5,8 +5,15 @@ import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 import { globalTopic, payloadOf } from "@/api/events";
 import { queryKeys } from "@/api/keys";
-import { createSession, deleteSession, listChats, updateSession } from "@/api/routes";
-import type { CreateSession, Session, UpdateSession } from "@/api/types";
+import {
+  createSession,
+  deleteSession,
+  listChats,
+  listComputers,
+  listComputerSessions,
+  updateSession,
+} from "@/api/routes";
+import type { Computer, CreateSession, Session, UpdateSession } from "@/api/types";
 import { useStreamSubscription } from "@/api/useStream";
 
 /**
@@ -19,7 +26,28 @@ export function useChats(): UseQueryResult<Session[]> {
   });
 }
 
-/** useCreateSession opens a chat. */
+/**
+ * useHomeComputer reads the home computer, which the harness makes on its
+ * own: undefined until it has recorded it. A `computer.state` event on the
+ * global topic says it has (see useSessionUpdates), so nothing polls.
+ */
+export function useHomeComputer(): UseQueryResult<Computer | undefined> {
+  return useQuery({
+    queryKey: queryKeys.computers(),
+    queryFn: async ({ signal }) => (await listComputers(signal)).find((cx) => cx.home),
+  });
+}
+
+/** useHomeSessions lists the sessions that run on the home computer; none without it. */
+export function useHomeSessions(homeId: string | undefined): UseQueryResult<Session[]> {
+  return useQuery({
+    queryKey: queryKeys.computerSessions(homeId ?? ""),
+    queryFn: ({ signal }) => listComputerSessions(homeId ?? "", signal),
+    enabled: homeId !== undefined,
+  });
+}
+
+/** useCreateSession opens a chat, or a session on a computer. */
 export function useCreateSession(): UseMutationResult<Session, Error, CreateSession> {
   const client = useQueryClient();
   return useMutation({
@@ -66,6 +94,12 @@ export function useDeleteSession(): UseMutationResult<void, Error, string> {
 export function useSessionUpdates(): void {
   const client = useQueryClient();
   useStreamSubscription(globalTopic, (e) => {
+    // The harness announces the home computer on the global topic when it
+    // records it, which is how the sidebar learns it can offer it.
+    if (payloadOf(e, "computer.state")) {
+      void client.invalidateQueries({ queryKey: queryKeys.computers() });
+      return;
+    }
     const payload = payloadOf(e, "session.title") ?? payloadOf(e, "session.updated");
     if (!payload) return;
     void client.invalidateQueries({ queryKey: ["sessions"] });

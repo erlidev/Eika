@@ -7,6 +7,10 @@
 export const queryKeys = {
   /** chats sits under the sessions prefix, so invalidating sessions refreshes it. */
   chats: () => ["sessions", "chats"] as const,
+  /** computerSessions sits under the sessions prefix too, for the same reason. */
+  computerSessions: (computerId: string) => ["sessions", "computer", computerId] as const,
+  /** computers is the list of computers, of which the sidebar reads the home one. */
+  computers: () => ["computers"] as const,
   session: (id: string) => ["session", id] as const,
   sessionOutline: (id: string) => ["session", id, "outline"] as const,
   runStatus: (sessionId: string) => ["session", sessionId, "run"] as const,
