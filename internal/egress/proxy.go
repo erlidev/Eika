@@ -154,7 +154,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case policy.Mode == ModeAllowlist && !Allowed(policy.Allow, host):
 		p.block(id, host)
-		refuse(w, http.StatusForbidden, fmt.Sprintf("%s is not on this computer's allowlist; add it in the computer's Sandbox panel", host))
+		refuse(w, http.StatusForbidden, fmt.Sprintf("%s is not on this computer's egress allowlist", host))
 		return
 	}
 

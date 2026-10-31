@@ -110,7 +110,7 @@ this file says why, so neither repeats the other.
   timeouts. Last use lives in memory rather than a row, so a
   restart only ever delays a stop. Rejected: Docker's own restart policies
   and a timer in eikad, which see processes, not runs.
-- Usage is sampled every 5 s while the Sandbox panel is open: a measurement
+- Usage is sampled every 5 s by a client that asks for it: a measurement
   no event announces, so the no-polling rule does not apply.
 - One address guard, `internal/netguard`, for web_fetch and the proxy.
 
