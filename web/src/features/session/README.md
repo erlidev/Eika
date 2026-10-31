@@ -1,9 +1,9 @@
 # session
 
 The session that is open: its streaming transcript, its composer, its run, and
-the three context panels it registers. A chat is a session with no workspace
-and uses the same view; its header says it is a chat where a workspace
-session's names its workspace. This is the largest feature and the only
+the three context panels it registers. A chat is a session with no computer
+and uses the same view; its header says it is a chat where a computer
+session's names its computer. This is the largest feature and the only
 one that holds client state of its own.
 
 ## Entry points

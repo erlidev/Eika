@@ -12,15 +12,15 @@ CREATE TABLE settings (
     value jsonb NOT NULL
 );
 
--- sandbox is what a workspace's container may consume, reach, and expose: its
+-- sandbox is what a computer's container may consume, reach, and expose: its
 -- CPU, memory, and process limits, its egress mode and allowlist, and the
 -- ports the harness forwards to it. It is the desired state, applied when the
--- workspace starts and whenever it changes; the empty object is no limits,
+-- computer starts and whenever it changes; the empty object is no limits,
 -- open egress, and no ports.
 --
 -- pinned and archived are the user's filing and change nothing about what a
--- workspace's container does.
-CREATE TABLE workspaces (
+-- computer's container does.
+CREATE TABLE computers (
     id                  text PRIMARY KEY,
     name                text NOT NULL,
     image               text NOT NULL DEFAULT '',
@@ -110,7 +110,7 @@ INSERT INTO profiles (id, name)
 SELECT string_agg(substr('abcdefghijklmnopqrstuvwxyz234567', 1 + floor(random() * 32)::int, 1), ''), 'Default'
 FROM generate_series(1, 20);
 
--- A session with no workspace is a chat. kind says who opened it: the user,
+-- A session with no computer is a chat. kind says who opened it: the user,
 -- or a fork of another session.
 --
 -- head_entry_id has no foreign key: session_entries references sessions, so a
@@ -125,7 +125,7 @@ FROM generate_series(1, 20);
 -- until its first run names it. pinned and archived are the user's filing.
 CREATE TABLE sessions (
     id                text PRIMARY KEY,
-    workspace_id      text REFERENCES workspaces (id) ON DELETE CASCADE,
+    computer_id       text REFERENCES computers (id) ON DELETE CASCADE,
     title             text NOT NULL DEFAULT '',
     untitled          boolean NOT NULL DEFAULT false,
     kind              text NOT NULL DEFAULT 'user' CHECK (kind IN ('user', 'fork')),
@@ -140,9 +140,9 @@ CREATE TABLE sessions (
     updated_at        timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX sessions_workspace_idx ON sessions (workspace_id);
+CREATE INDEX sessions_computer_idx ON sessions (computer_id);
 CREATE INDEX sessions_parent_idx ON sessions (parent_session_id);
-CREATE INDEX sessions_chat_idx ON sessions (created_at) WHERE workspace_id IS NULL;
+CREATE INDEX sessions_chat_idx ON sessions (created_at) WHERE computer_id IS NULL;
 CREATE INDEX sessions_profile_idx ON sessions (profile_id);
 
 -- A compaction entry holds a summary that replaces the conversation before it,
@@ -241,7 +241,7 @@ CREATE TABLE search_usage (
 );
 
 -- MCP servers the user configured. kind is http for a remote server the
--- harness reaches, stdio for one it starts in a workspace. The headers and
+-- harness reaches, stdio for one it starts in a computer. The headers and
 -- the environment are sealed JSON, since both commonly carry tokens.
 CREATE TABLE mcp_servers (
     id                  text PRIMARY KEY,

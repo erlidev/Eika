@@ -118,7 +118,7 @@ type webFetchArgs struct {
 func (webFetchTool) Name() string { return "web_fetch" }
 
 // Standalone marks web_fetch as a tool a chat may offer. Reading a page is a
-// network call the harness makes; only a filter needs the workspace, and
+// network call the harness makes; only a filter needs the computer, and
 // Call refuses one when there is none.
 func (webFetchTool) Standalone() {}
 
@@ -156,7 +156,7 @@ func (webFetchTool) Schema() json.RawMessage {
 }`)
 }
 
-// Call reads the page. The model's filter runs inside the workspace sandbox,
+// Call reads the page. The model's filter runs inside the computer sandbox,
 // never in the harness.
 func (t webFetchTool) Call(ctx context.Context, c tool.CallContext, raw json.RawMessage) (tool.Result, error) {
 	args, err := decodeArgs[webFetchArgs](raw)
@@ -167,7 +167,7 @@ func (t webFetchTool) Call(ctx context.Context, c tool.CallContext, raw json.Raw
 		return tool.Errorf("web_fetch: this harness has no fetch configured"), nil
 	}
 	if args.Filter != "" && c.Exec == nil {
-		return tool.Errorf("web_fetch: a filter runs in a workspace sandbox, and this chat has none; " +
+		return tool.Errorf("web_fetch: a filter runs in a computer sandbox, and this chat has none; " +
 			"fetch the page or one section of it instead"), nil
 	}
 	req := fetch.Request{URL: args.URL, Section: args.Section, Filter: args.Filter, Format: args.Format}
@@ -185,12 +185,12 @@ func (t webFetchTool) Call(ctx context.Context, c tool.CallContext, raw json.Raw
 	return tool.Result{Content: out.Text, IsError: out.IsError, Details: details}, nil
 }
 
-// sandboxFilter runs a filter as `eikad filter` in the workspace, which is
+// sandboxFilter runs a filter as `eikad filter` in the computer, which is
 // where the model's JavaScript belongs.
 func sandboxFilter(exec executor.Executor) fetch.FilterFunc {
 	return func(ctx context.Context, req page.FilterRequest) (page.FilterOutcome, error) {
 		if exec == nil {
-			return page.FilterOutcome{}, fmt.Errorf("no workspace to run it in")
+			return page.FilterOutcome{}, fmt.Errorf("no computer to run it in")
 		}
 		in, err := json.Marshal(req)
 		if err != nil {

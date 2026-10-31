@@ -75,13 +75,13 @@ func TestParseMode(t *testing.T) {
 // loopback.
 func anyAddress(string, string, syscall.RawConn) error { return nil }
 
-// policies is a fixed table of workspaces the proxy looks up.
+// policies is a fixed table of computers the proxy looks up.
 type policies map[string]egress.Policy
 
 func (p policies) lookup(_ context.Context, id string) (egress.Policy, error) {
 	policy, ok := p[id]
 	if !ok {
-		return egress.Policy{}, egress.ErrUnknownWorkspace
+		return egress.Policy{}, egress.ErrUnknownComputer
 	}
 	return policy, nil
 }
@@ -97,7 +97,7 @@ func serveProxy(t *testing.T, table policies, control func(string, string, sysca
 }
 
 // through returns a client that sends every request through the proxy as
-// the given workspace. base is the client of the server the test reaches,
+// the given computer. base is the client of the server the test reaches,
 // so an https test trusts its certificate.
 func through(t *testing.T, base *http.Client, proxy, user, password string) *http.Client {
 	t.Helper()
@@ -118,9 +118,9 @@ func TestTheProxyTunnelsToAnAllowedHost(t *testing.T) {
 		io.WriteString(w, "hello over tls")
 	}))
 	defer target.Close()
-	_, proxy := serveProxy(t, policies{"ws1": {Token: "tok", Mode: egress.ModeAllowlist, Allow: []string{"127.0.0.1"}}}, anyAddress)
+	_, proxy := serveProxy(t, policies{"cx1": {Token: "tok", Mode: egress.ModeAllowlist, Allow: []string{"127.0.0.1"}}}, anyAddress)
 
-	resp, err := through(t, target.Client(), proxy, "ws1", "tok").Get(target.URL)
+	resp, err := through(t, target.Client(), proxy, "cx1", "tok").Get(target.URL)
 	if err != nil {
 		t.Fatalf("get through the tunnel: %v", err)
 	}
@@ -141,9 +141,9 @@ func TestTheProxyForwardsPlainHTTP(t *testing.T) {
 		io.WriteString(w, "hello "+r.URL.Path)
 	}))
 	defer target.Close()
-	_, proxy := serveProxy(t, policies{"ws1": {Token: "tok", Mode: egress.ModeAllowlist, Allow: []string{"127.0.0.1"}}}, anyAddress)
+	_, proxy := serveProxy(t, policies{"cx1": {Token: "tok", Mode: egress.ModeAllowlist, Allow: []string{"127.0.0.1"}}}, anyAddress)
 
-	resp, err := through(t, target.Client(), proxy, "ws1", "tok").Get(target.URL + "/path")
+	resp, err := through(t, target.Client(), proxy, "cx1", "tok").Get(target.URL + "/path")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -171,9 +171,9 @@ func TestTheProxyRefuses(t *testing.T) {
 	}{
 		{"a request without credentials", proxy, "", "", http.StatusProxyAuthRequired},
 		{"a wrong token", proxy, "listed", "nope", http.StatusProxyAuthRequired},
-		{"an unknown workspace", proxy, "gone", "tok", http.StatusProxyAuthRequired},
+		{"an unknown computer", proxy, "gone", "tok", http.StatusProxyAuthRequired},
 		{"a host not on the allowlist", proxy, "listed", "tok", http.StatusForbidden},
-		{"a workspace whose egress is off", proxy, "off", "tok", http.StatusForbidden},
+		{"a computer whose egress is off", proxy, "off", "tok", http.StatusForbidden},
 		{"a private address, whatever the mode", guarded, "open", "tok", http.StatusForbidden},
 	}
 	for _, c := range cases {
@@ -203,8 +203,8 @@ func TestTheProxyRefuses(t *testing.T) {
 }
 
 func TestBlockedKeepsTheMostRecentHostsFirst(t *testing.T) {
-	p, proxy := serveProxy(t, policies{"ws1": {Token: "tok", Mode: egress.ModeAllowlist}}, anyAddress)
-	client := through(t, &http.Client{Transport: &http.Transport{}}, proxy, "ws1", "tok")
+	p, proxy := serveProxy(t, policies{"cx1": {Token: "tok", Mode: egress.ModeAllowlist}}, anyAddress)
+	client := through(t, &http.Client{Transport: &http.Transport{}}, proxy, "cx1", "tok")
 	for _, host := range []string{"a.example", "b.example", "a.example"} {
 		resp, err := client.Get("http://" + host + "/")
 		if err != nil {
@@ -212,7 +212,7 @@ func TestBlockedKeepsTheMostRecentHostsFirst(t *testing.T) {
 		}
 		resp.Body.Close()
 	}
-	blocked := p.Blocked("ws1")
+	blocked := p.Blocked("cx1")
 	if len(blocked) != 2 || blocked[0].Host != "a.example" || blocked[0].Count != 2 || blocked[1].Host != "b.example" {
 		t.Errorf("blocked = %+v, want a.example twice, then b.example", blocked)
 	}
@@ -235,7 +235,7 @@ func TestCloseEndsOpenTunnels(t *testing.T) {
 			defer c.Close()
 		}
 	}()
-	p, proxy := serveProxy(t, policies{"ws1": {Token: "tok", Mode: egress.ModeOpen}}, anyAddress)
+	p, proxy := serveProxy(t, policies{"cx1": {Token: "tok", Mode: egress.ModeOpen}}, anyAddress)
 
 	conn, err := net.Dial("tcp", strings.TrimPrefix(proxy, "http://"))
 	if err != nil {
@@ -244,7 +244,7 @@ func TestCloseEndsOpenTunnels(t *testing.T) {
 	defer conn.Close()
 	req, _ := http.NewRequest(http.MethodConnect, "", nil)
 	req.Host = ln.Addr().String()
-	req.SetBasicAuth("ws1", "tok")
+	req.SetBasicAuth("cx1", "tok")
 	req.Header.Set("Proxy-Authorization", req.Header.Get("Authorization"))
 	req.Header.Del("Authorization")
 	if err := req.Write(conn); err != nil {

@@ -235,7 +235,7 @@ func (c callTool) Call(ctx context.Context, _ tool.CallContext, _ json.RawMessag
 	return tool.Text(c.run(ctx)), nil
 }
 
-// fixture is an agent wired to a scripted provider and a temporary workspace.
+// fixture is an agent wired to a scripted provider and a temporary computer.
 type fixture struct {
 	agent    *agent.Agent
 	provider *providertest.Provider
@@ -272,7 +272,7 @@ func newFixture(t *testing.T, steps []providertest.Step, extra ...tool.Tool) *fi
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RetryBackoff:  time.Millisecond,
 	})
-	return &fixture{agent: a, provider: p, events: rec, store: store, exec: e, session: agent.NewSession("session-1", "workspace-1")}
+	return &fixture{agent: a, provider: p, events: rec, store: store, exec: e, session: agent.NewSession("session-1", "computer-1")}
 }
 
 // roles lists the roles of the messages in the conversation.
@@ -310,7 +310,7 @@ func TestSteeringAcceptedDuringFinalResponseStartsANewTurn(t *testing.T) {
 	p := &gatedProvider{started: make(chan struct{}), release: make(chan struct{})}
 	store := newMemoryStore()
 	a := agent.New(p, nil, agent.Options{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	s := agent.NewSession("session-1", "workspace-1")
+	s := agent.NewSession("session-1", "computer-1")
 	done := make(chan error, 1)
 	go func() { done <- a.Run(context.Background(), s, provider.UserMessage("first question")) }()
 	<-p.started
@@ -348,7 +348,7 @@ func TestRunExecutesToolCalls(t *testing.T) {
 	}
 	data, err := f.exec.ReadFile(context.Background(), "a.txt", executor.ReadOpts{})
 	if err != nil {
-		t.Fatalf("read workspace file: %v", err)
+		t.Fatalf("read computer file: %v", err)
 	}
 	if string(data) != "hello" {
 		t.Errorf("file = %q, want %q", data, "hello")
@@ -1067,29 +1067,29 @@ func TestMalformedToolArgumentsBecomeARecoverableToolResult(t *testing.T) {
 	}
 }
 
-func TestToolsWithoutAWorkspaceFailInsteadOfPanicking(t *testing.T) {
+func TestToolsWithoutAComputerFailInsteadOfPanicking(t *testing.T) {
 	f := newFixture(t, []providertest.Step{
 		providertest.Calls("", providertest.Call("c1", "bash", map[string]any{"command": "ls"})),
-		providertest.Text("no workspace then"),
+		providertest.Text("no computer then"),
 	})
 	registry, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
-	noWorkspace := agent.New(f.provider, registry, agent.Options{
+	noComputer := agent.New(f.provider, registry, agent.Options{
 		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RetryBackoff: time.Millisecond,
 	})
-	if err := noWorkspace.Run(context.Background(), f.session, provider.UserMessage("list files")); err != nil {
+	if err := noComputer.Run(context.Background(), f.session, provider.UserMessage("list files")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	result := f.session.Conversation.Messages()[2]
-	if !result.IsError || !strings.Contains(result.Content, "no workspace") {
-		t.Errorf("tool message = %+v, want a no-workspace error", result)
+	if !result.IsError || !strings.Contains(result.Content, "no computer") {
+		t.Errorf("tool message = %+v, want a no-computer error", result)
 	}
 }
 
-// standaloneTool is a callTool that runs without a workspace and records
+// standaloneTool is a callTool that runs without a computer and records
 // whether it was handed an executor.
 type standaloneTool struct {
 	callTool
@@ -1103,7 +1103,7 @@ func (s standaloneTool) Call(ctx context.Context, c tool.CallContext, raw json.R
 	return s.callTool.Call(ctx, c, raw)
 }
 
-func TestAStandaloneToolRunsWithoutAWorkspace(t *testing.T) {
+func TestAStandaloneToolRunsWithoutAComputer(t *testing.T) {
 	f := newFixture(t, []providertest.Step{
 		providertest.Calls("", providertest.Call("c1", "lookup", map[string]any{})),
 		providertest.Text("found it"),
@@ -1144,8 +1144,8 @@ func TestTheBasePromptDoesNotPromiseFilesOrCommands(t *testing.T) {
 	if !strings.Contains(system, "Use only the tools you are given") {
 		t.Errorf("system prompt = %q, want the chat rules", system)
 	}
-	if strings.Contains(system, "sandboxed workspace") {
-		t.Errorf("system prompt = %q, still describes a workspace", system)
+	if strings.Contains(system, "sandboxed computer") {
+		t.Errorf("system prompt = %q, still describes a computer", system)
 	}
 }
 

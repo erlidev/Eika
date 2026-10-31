@@ -81,9 +81,9 @@ type launcher struct {
 	pipes  map[string][]io.ReadWriteCloser
 }
 
-func (l *launcher) Launch(_ context.Context, workspace string, cmd mcp.Command, stderr func(string)) (io.ReadWriteCloser, error) {
-	if workspace == "" {
-		return nil, errors.New("no workspace")
+func (l *launcher) Launch(_ context.Context, computer string, cmd mcp.Command, stderr func(string)) (io.ReadWriteCloser, error) {
+	if computer == "" {
+		return nil, errors.New("no computer")
 	}
 	stderr("starting " + cmd.Name)
 	p := l.server.Pipe()
@@ -92,14 +92,14 @@ func (l *launcher) Launch(_ context.Context, workspace string, cmd mcp.Command, 
 	if l.pipes == nil {
 		l.pipes = map[string][]io.ReadWriteCloser{}
 	}
-	l.pipes[workspace] = append(l.pipes[workspace], p)
+	l.pipes[computer] = append(l.pipes[computer], p)
 	return p, nil
 }
 
-func (l *launcher) launched(workspace string) int {
+func (l *launcher) launched(computer string) int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return len(l.pipes[workspace])
+	return len(l.pipes[computer])
 }
 
 // recorder keeps the events emitted.
@@ -244,28 +244,28 @@ func TestPoolLeavesOutWhatIsOffOrDown(t *testing.T) {
 	}
 }
 
-func TestPoolRunsStdioServersInTheWorkspace(t *testing.T) {
+func TestPoolRunsStdioServersInTheComputer(t *testing.T) {
 	s := &mcptest.Server{Tools: []mcptest.Tool{echoTool("echo")}}
 	l := &launcher{server: s}
 	store := &memStore{servers: []mcp.ServerConfig{{ID: "s1", Name: "local", Kind: mcp.KindStdio, Command: "npx", Args: []string{"server"}, Enabled: true}}}
 	pool := newPool(t, store, mcp.Options{Launcher: l})
 
 	if got := pool.Tools(context.Background(), ""); len(got) != 0 {
-		t.Errorf("tools without a workspace = %v", toolNames(got))
+		t.Errorf("tools without a computer = %v", toolNames(got))
 	}
-	tools := pool.Tools(context.Background(), "ws1")
-	if len(tools) != 1 || l.launched("ws1") != 1 {
-		t.Fatalf("tools = %v, launched %d", toolNames(tools), l.launched("ws1"))
+	tools := pool.Tools(context.Background(), "cx1")
+	if len(tools) != 1 || l.launched("cx1") != 1 {
+		t.Fatalf("tools = %v, launched %d", toolNames(tools), l.launched("cx1"))
 	}
 	if _, ok := tools[0].(tool.Standalone); ok {
-		t.Error("a stdio server's tool claims to need no workspace")
+		t.Error("a stdio server's tool claims to need no computer")
 	}
-	res, err := tools[0].Call(context.Background(), tool.CallContext{WorkspaceID: "ws1"}, json.RawMessage(`{}`))
+	res, err := tools[0].Call(context.Background(), tool.CallContext{ComputerID: "cx1"}, json.RawMessage(`{}`))
 	if err != nil || res.IsError {
 		t.Fatalf("Call = %+v, %v", res, err)
 	}
-	pool.Tools(context.Background(), "ws2")
-	if st := pool.Status("s1"); !slices.Equal(st.Workspaces, []string{"ws1", "ws2"}) {
+	pool.Tools(context.Background(), "cx2")
+	if st := pool.Status("s1"); !slices.Equal(st.Computers, []string{"cx1", "cx2"}) {
 		t.Errorf("status = %+v", st)
 	}
 	d, _ := pool.Details(context.Background(), "s1")
@@ -273,9 +273,9 @@ func TestPoolRunsStdioServersInTheWorkspace(t *testing.T) {
 		t.Errorf("logs = %+v, want the process's stderr", d.Logs)
 	}
 
-	pool.StopWorkspace("ws1")
-	if st := pool.Status("s1"); !slices.Equal(st.Workspaces, []string{"ws2"}) {
-		t.Errorf("status after stopping ws1 = %+v", st)
+	pool.StopComputer("cx1")
+	if st := pool.Status("s1"); !slices.Equal(st.Computers, []string{"cx2"}) {
+		t.Errorf("status after stopping cx1 = %+v", st)
 	}
 }
 

@@ -1,4 +1,4 @@
-package workspace
+package computer
 
 import (
 	"archive/tar"
@@ -64,7 +64,7 @@ func (h *Host) pullImage(ctx context.Context, ref string) error {
 	return nil
 }
 
-// buildImage builds a workspace image from the spec's build context and tags
+// buildImage builds a computer image from the spec's build context and tags
 // it as ref.
 func (h *Host) buildImage(ctx context.Context, spec Spec, ref string) error {
 	buildContext, err := tarDir(spec.BuildContext)
@@ -87,7 +87,7 @@ func (h *Host) buildImage(ctx context.Context, spec Spec, ref string) error {
 	if err := drainDockerStream(resp.Body); err != nil {
 		return fmt.Errorf("build image %s: %w", ref, err)
 	}
-	h.log.Info("workspace image built", "image", ref, "context", spec.BuildContext)
+	h.log.Info("computer image built", "image", ref, "context", spec.BuildContext)
 	return nil
 }
 

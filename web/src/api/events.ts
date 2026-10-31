@@ -18,7 +18,7 @@ export type EventType =
   | "turn.end"
   | "run.error"
   | "question.asked"
-  | "workspace.state"
+  | "computer.state"
   | "mcp.server"
   | "mcp.elicitation"
   | "session.title"
@@ -40,7 +40,7 @@ export type EikaEvent = {
 export type TurnStart = {
   run_id: string;
   session_id: string;
-  workspace_id?: string;
+  computer_id?: string;
   message: string;
   /** images are the pictures the message carries, as the model is sent them. */
   images?: MessageImage[];
@@ -165,9 +165,9 @@ export type QuestionAsked = {
   allow_free_text: boolean;
 };
 
-/** WorkspaceState is the payload of a workspace.state event. */
-export type WorkspaceState = {
-  workspace_id: string;
+/** ComputerState is the payload of a computer.state event. */
+export type ComputerState = {
+  computer_id: string;
   state: string;
 };
 
@@ -196,16 +196,16 @@ export type MCPElicitation = {
 /** SessionTitle is the payload of a session.title event: an untitled session was named. */
 export type SessionTitle = {
   session_id: string;
-  /** workspace_id is absent for a chat. */
-  workspace_id?: string;
+  /** computer_id is absent for a chat. */
+  computer_id?: string;
   title: string;
 };
 
 /** SessionUpdated is the payload of a session.updated event: a session was renamed, pinned, or archived. */
 export type SessionUpdated = {
   session_id: string;
-  /** workspace_id is absent for a chat. */
-  workspace_id?: string;
+  /** computer_id is absent for a chat. */
+  computer_id?: string;
 };
 
 /** EntryKind is what one session entry holds. */
@@ -283,7 +283,7 @@ export type EventPayloads = {
   "turn.end": TurnEnd;
   "run.error": RunError;
   "question.asked": QuestionAsked;
-  "workspace.state": WorkspaceState;
+  "computer.state": ComputerState;
   "mcp.server": MCPServerChanged;
   "mcp.elicitation": MCPElicitation;
   "session.title": SessionTitle;
@@ -313,12 +313,12 @@ export type StreamRequest =
   | { type: "subscribe"; topics: string[] }
   | { type: "session.replay"; session_id: string; since?: string };
 
-/** globalTopic is the topic of events that belong to no workspace or session. */
+/** globalTopic is the topic of events that belong to no computer or session. */
 export const globalTopic = "global";
 
-/** workspaceTopic names the topic carrying one workspace's events. */
-export function workspaceTopic(id: string): string {
-  return `workspace:${id}`;
+/** computerTopic names the topic carrying one computer's events. */
+export function computerTopic(id: string): string {
+  return `computer:${id}`;
 }
 
 /** sessionTopic names the topic carrying one session's events. */
@@ -339,7 +339,7 @@ export const eventTypes: readonly EventType[] = [
   "turn.end",
   "run.error",
   "question.asked",
-  "workspace.state",
+  "computer.state",
   "mcp.server",
   "mcp.elicitation",
   "session.title",

@@ -60,16 +60,16 @@ func newModel(t *testing.T, st *store.Store, name string) store.Model {
 	return m
 }
 
-// newSession creates a session in a workspace of its own.
+// newSession creates a session in a computer of its own.
 func newSession(t *testing.T, st *store.Store, sess store.Session) store.Session {
 	t.Helper()
-	ws, err := st.CreateWorkspace(t.Context(), store.Workspace{
+	cx, err := st.CreateComputer(t.Context(), store.Computer{
 		Name: "main", State: "running",
 	})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	sess.WorkspaceID = ws.ID
+	sess.ComputerID = cx.ID
 	out, err := st.CreateSession(t.Context(), sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
@@ -232,7 +232,7 @@ func TestASessionChoosesAProfileAndOverridesIt(t *testing.T) {
 	if sess.ProfileID != review.ID || !sameSettings(t, sess.Overrides, overrides) {
 		t.Errorf("created session = profile %q overrides %+v, want %q %+v", sess.ProfileID, sess.Overrides, review.ID, overrides)
 	}
-	listed, err := st.Sessions(ctx, sess.WorkspaceID, true)
+	listed, err := st.Sessions(ctx, sess.ComputerID, true)
 	if err != nil || len(listed) != 1 || listed[0].ProfileID != review.ID || !sameSettings(t, listed[0].Overrides, overrides) {
 		t.Errorf("Sessions = %+v, %v; want the profile and overrides", listed, err)
 	}

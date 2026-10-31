@@ -23,7 +23,7 @@ type Config struct {
 	DockerSocket string `yaml:"docker_socket"`
 	// SearxNGURL is the base URL of the SearXNG instance used for web search.
 	SearxNGURL string `yaml:"searxng_url"`
-	// SandboxImage is the image used by workspaces that do not override it.
+	// SandboxImage is the image used by computers that do not override it.
 	SandboxImage string `yaml:"sandbox_image"`
 	// SandboxNetwork is the Docker network sandbox containers join, which is
 	// how the harness resolves them by container name. Empty publishes each

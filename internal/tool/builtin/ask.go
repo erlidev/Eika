@@ -16,7 +16,7 @@ import (
 const maxQuestionOptions = 10
 
 // askUserTool asks the user a question and waits for the answer. It is the
-// one tool that blocks on a human rather than on the workspace.
+// one tool that blocks on a human rather than on the computer.
 type askUserTool struct {
 	questions *Questions
 }
@@ -32,7 +32,7 @@ type askUserArgs struct {
 func (askUserTool) Name() string { return "ask_user" }
 
 // Standalone marks ask_user as a tool a chat may offer: it waits on the user,
-// not on a workspace.
+// not on a computer.
 func (askUserTool) Standalone() {}
 
 // Description tells the model what the tool does.

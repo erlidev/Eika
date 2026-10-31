@@ -9,7 +9,7 @@ this file says why, so neither repeats the other.
 ## Scope
 
 - **Origin.** A Go port of the [Pi coding agent](https://github.com/badlogic/pi-mono)
-  core (loop, tools, session trees) plus sandboxed workspaces,
+  core (loop, tools, session trees) plus sandboxed computers,
   subagents, web search, MCP, and a web UI, built so agents can modify Eika.
 - **Deferred:** skills and templates, a Responses API provider, a forge API for pull
   requests (the UI builds a compare link from `remote_url`).
@@ -54,7 +54,7 @@ this file says why, so neither repeats the other.
 
 ## Sandboxes
 
-- **Every agent action on files or processes runs in the workspace
+- **Every agent action on files or processes runs in the computer
   container** through `executor.Executor`. Network actions (model calls,
   search, fetch, the egress proxy, remote MCP) run in the harness; model
   code (fetch filters) and processes (stdio MCP) run in the sandbox.
@@ -68,12 +68,12 @@ this file says why, so neither repeats the other.
 - Confinement: Docker init as PID 1, all capabilities dropped,
   `no-new-privileges`, uid 1000 by default.
 - **`/process` is not an executor call.** It goes through
-  `Workspaces`/`Host`, so a tool can run commands but never hold a
+  `Computers`/`Host`, so a tool can run commands but never hold a
   process.
 - Sandboxes are on `eika_sandbox`, which only the harness also joins, so a
   sandbox cannot reach postgres or searxng. An empty `sandbox_network`
   publishes eikad on loopback for `make dev`.
-- **The sandbox config is a row** (`workspaces.sandbox`): desired state,
+- **The sandbox config is a row** (`computers.sandbox`): desired state,
   applied at create, on `PUT .../sandbox`, and on every start, so partial
   applies converge. Children share the parent's container, so they cannot
   escape its confinement. Default: 4096 processes, nothing else.
@@ -87,9 +87,9 @@ this file says why, so neither repeats the other.
   advisory; DNS filtering leaks by address; iptables needs a capability the
   sandbox never gets. The proxy checks the allowlist per request and dials
   through `netguard`.
-- The proxy identifies a sandbox by its workspace id and a proxy token of its
+- The proxy identifies a sandbox by its computer id and a proxy token of its
   own, generated at create and kept in the container's configuration:
-  per-workspace, secret, and recoverable after restart, so no grant table. It
+  per-computer, secret, and recoverable after restart, so no grant table. It
   was the hub token until the hub was due to go; phase 4 replaces it with
   Sentry's principals.
 - Proxy variables go through eikad's `PUT /environment`, because a
@@ -103,10 +103,10 @@ this file says why, so neither repeats the other.
   (a separate origin so the page cannot read the UI token, every request
   checked against the row) is in history for phase 12's live view of the
   browser.
-- **Idle workspaces stop after `workspace_idle_minutes` (default 15)
+- **Idle computers stop after `computer_idle_minutes` (default 15)
   without a run.** A run is what a sandbox is for; an open browser tab would
   keep a forgotten sandbox up forever. One harness-wide setting, not a
-  per-workspace column: nothing yet needs two
+  per-computer column: nothing yet needs two
   timeouts. Last use lives in memory rather than a row, so a
   restart only ever delays a stop. Rejected: Docker's own restart policies
   and a timer in eikad, which see processes, not runs.
@@ -122,19 +122,19 @@ this file says why, so neither repeats the other.
   `session_entries.commit_sha`, or fork-with-workspace. Eika is an assistant,
   not a coding harness, and sandboxes become its computers (phase 0 of
   `PLAN.md`).
-- Nothing replaced the hub. A workspace holds only its own volume.
-- **Projects are gone, and a workspace stands alone.** The `projects` table
+- Nothing replaced the hub. A computer holds only its own volume.
+- **Projects are gone, and a computer stands alone.** The `projects` table
   held a host directory and a git remote, which nothing needs once the git
-  layer is gone and sandboxes become computers. With it went the workspace's
+  layer is gone and sandboxes become computers. With it went the computer's
   `project_id`, `branch`, `base_commit` and `parent_workspace_id` (nothing set
   the last), the `/api/projects` routes, host-directory bind mounts
   (`Spec.HostPath`), and the project count in `GET /api/system`. A project
   carried no ownership: the harness has one user, and the sign-in token is the
-  only gate to a workspace, so there was nothing to move onto the workspace.
-  `POST /api/workspaces` takes a name (and optionally an image and sandbox),
+  only gate to a computer, so there was nothing to move onto the computer.
+  `POST /api/computers` takes a name (and optionally an image and sandbox),
   which keeps a sandboxed `bash` reachable until the `home` computer replaces
   it. "Project" comes back in phase 2 with a new meaning.
-- **A workspace's volume is mounted at its root.** The files live in the
+- **A computer's volume is mounted at its root.** The files live in the
   volume rather than the container's writable layer, and `Inspect` reports the
   volume from the container's mounts, so a restarted harness can remove it.
 - What is left of git is inside the sandbox, for whatever an agent runs in
@@ -157,8 +157,8 @@ this file says why, so neither repeats the other.
   leaves no tool call unanswered. `session.PathResumable` is the one rule.
 - `sessions.kind` (`user`/`fork`) is a column, not a join, because it is
   what the session is.
-- A chat is a session with `workspace_id` NULL: same tree, run manager, and
-  view. Created explicitly (`chat: true`), and a workspace's sessions cascade
+- A chat is a session with `computer_id` NULL: same tree, run manager, and
+  view. Created explicitly (`chat: true`), and a computer's sessions cascade
   with it rather than becoming chats.
 - **Fresh baseline schema.** Turning Eika into an assistant drops most of the
   coding schema, so its 17 migrations were squashed into `0001_baseline.sql`
@@ -261,7 +261,7 @@ this file says why, so neither repeats the other.
   size, which would count a screenshot as hundreds of thousands of tokens and
   compact every conversation that holds one.
 - **Deferred:** images a tool returns (an MCP screenshot) reaching the model,
-  and a tool that shows the model an image file in the workspace. Chat
+  and a tool that shows the model an image file in the computer. Chat
   Completions takes images only in user messages, so both need a user message
   after the tool result, which is its own decision.
 
@@ -344,13 +344,13 @@ this file says why, so neither repeats the other.
 - Titles arrive as `session.title` on `global`, since every sidebar shows
   every session, not only the one open.
 - **Pinning and archiving are filing, not state.** They are two boolean
-  columns on `sessions` and `workspaces`, edited with `PATCH` on the
+  columns on `sessions` and `computers`, edited with `PATCH` on the
   resource, and change nothing else: an archived session still runs, and an
-  archived workspace's container is neither stopped nor started. Stopping on
+  archived computer's container is neither stopped nor started. Stopping on
   archive was rejected because it would abort runs as a side effect of
   tidying the sidebar; Stop is one menu item away. The listings return
   archived rows with the rest and the client splits them off, so one request
-  still returns a workspace's whole session tree. A user's rename or filing
+  still returns a computer's whole session tree. A user's rename or filing
   goes out as `session.updated` rather than as `session.title`, which means
   "the harness named an untitled session".
 
@@ -361,7 +361,7 @@ this file says why, so neither repeats the other.
 - One shared, stateless tool registry; the executor arrives per call.
 - The built-in registry is `tool/builtin/registry.go` and provider kinds are
   `NewRegistry` parameters: both avoid import cycles.
-- `tool.Standalone` marks a tool that needs no workspace; unmarked tools
+- `tool.Standalone` marks a tool that needs no computer; unmarked tools
   stay out of chats until their author opts in.
 - Tool choices (profile or session) are lists where `mcp__<server>__*` means
   all of a server's tools, so tools a server adds later are included.
@@ -387,7 +387,7 @@ this file says why, so neither repeats the other.
 
 ## Server and API
 
-- Composition lives in `server.Run`; `cmd/eika` stays thin. `Workspaces`,
+- Composition lives in `server.Run`; `cmd/eika` stays thin. `Computers`,
   `Models` are interfaces declared in `server` so handler tests run
   against temp directories; `*store.Store` stays concrete.
 - Event payload structs live in `internal/event`, so decoders need not
@@ -399,7 +399,7 @@ this file says why, so neither repeats the other.
   handshake headers. The handshake is same-origin or `allowed_origins`.
 - **One run per session.** A second is 409; the claim is made under the
   lock before any slow work. Steering and follow-up queues add to a run.
-- Workspace edits (a file save) republish `workspace.state` with the
+- Computer edits (a file save) republish `computer.state` with the
   same state rather than a new event type.
 - The API returns resolved values (effective tools, configuration layers,
   sizes) so the UI never re-derives a rule. Editors ask the server what an
@@ -434,7 +434,7 @@ this file says why, so neither repeats the other.
   connection.
 - Remote servers connect from the harness (a network call; tools reach
   chats). Stdio servers are processes, so they run in the session's
-  workspace via eikad `/process`, one per workspace.
+  computer via eikad `/process`, one per computer.
 - Tools are `mcp__<server>__<tool>`, cut to 64 characters. Renaming a server
   rewrites tool choices in the same transaction; names hold no `__`.
 - OAuth 2.1 per the MCP spec. The redirect lands on a frontend route that
@@ -478,8 +478,8 @@ this file says why, so neither repeats the other.
 - Rewind is in the transcript, forking in the tree panel. Nothing is deleted.
 - Forks nest under their parent session in the sidebar.
 - Destructive actions confirm in `ConfirmDialog`, not `window.confirm`.
-- A sidebar row's quick buttons (a workspace's start or stop and new
-  session) always show; hiding them until hover made starting a workspace a
+- A sidebar row's quick buttons (a computer's start or stop and new
+  session) always show; hiding them until hover made starting a computer a
   hunt, and touch screens have no hover.
 - Transcript display preferences are per browser, not harness settings.
 - **A message is written as markdown source and shown rendered once sent.**

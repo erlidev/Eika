@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -20,10 +19,10 @@ import (
 	"github.com/erlidev/eika/internal/executor"
 )
 
-// DefaultRoot is where a workspace is mounted inside its sandbox.
+// DefaultRoot is where a computer is mounted inside its sandbox.
 const DefaultRoot = "/workspace"
 
-// ErrNotFound reports that a path does not exist in the workspace. It remains
+// ErrNotFound reports that a path does not exist in the computer. It remains
 // as an alias for callers that used the sandbox-specific name.
 var ErrNotFound = executor.ErrNotFound
 
@@ -33,17 +32,12 @@ const truncationNotice = "\n[eika: output truncated]\n"
 
 // Options configures a Client.
 type Options struct {
-	// BaseURL is the daemon's address, for example http://eika-ws-1:7000.
+	// BaseURL is the daemon's address, for example http://eika-cx-1:7000.
 	BaseURL string
-	// Token is the workspace's eikad token.
+	// Token is the computer's eikad token.
 	Token string
 	// Root is the daemon's root inside the sandbox. Empty means DefaultRoot.
 	Root string
-	// Dir narrows the client to a directory below Root, given relative to
-	// it: paths are relative to Dir, commands start in it, and the client
-	// refuses any path outside it. Empty is Root itself. Nothing sets it
-	// today.
-	Dir string
 	// HTTPClient is used for every request. Nil means a client with no
 	// overall timeout, because an exec streams for as long as it runs.
 	HTTPClient *http.Client
@@ -54,7 +48,6 @@ type Client struct {
 	base  string
 	token string
 	root  string
-	dir   string
 	http  *http.Client
 }
 
@@ -78,67 +71,24 @@ func New(opts Options) (*Client, error) {
 	if c.root == "" {
 		c.root = DefaultRoot
 	}
-	if opts.Dir != "" {
-		dir, err := executor.Resolve(c.root, opts.Dir)
-		if err != nil {
-			return nil, fmt.Errorf("narrow sandbox client to %s: %w", opts.Dir, err)
-		}
-		if c.dir, err = executor.Rel(c.root, dir); err != nil {
-			return nil, err
-		}
-		if c.dir == "." {
-			c.dir = ""
-		}
-	}
 	if c.http == nil {
 		c.http = &http.Client{}
 	}
 	return c, nil
 }
 
-// Root is the absolute path of the workspace inside the sandbox: the
-// daemon's root, or the directory the client is narrowed to.
-func (c *Client) Root() string { return filepath.Join(c.root, c.dir) }
-
-// daemonPath turns a path relative to the client's root, or absolute inside
-// it, into one relative to the daemon's root, which is what the daemon reads.
-// A client that is not narrowed passes paths through for the daemon to check.
-func (c *Client) daemonPath(path string) (string, error) {
-	if c.dir == "" {
-		return path, nil
-	}
-	abs, err := executor.Resolve(c.Root(), path)
-	if err != nil {
-		return "", err
-	}
-	return executor.Rel(c.root, abs)
-}
-
-// clientPath turns a path the daemon reported, relative to its root, into one
-// relative to the client's root.
-func (c *Client) clientPath(path string) string {
-	if c.dir == "" {
-		return path
-	}
-	rel, err := executor.Rel(c.Root(), filepath.Join(c.root, filepath.FromSlash(path)))
-	if err != nil {
-		return path
-	}
-	return rel
-}
+// Root is the absolute path of the computer inside the sandbox: the
+// daemon's root.
+func (c *Client) Root() string { return c.root }
 
 // Exec runs a command in the sandbox, streaming its output into the spec's
 // writers as the daemon produces it.
 func (c *Client) Exec(ctx context.Context, spec executor.ExecSpec) (executor.ExecResult, error) {
-	dir, err := c.daemonPath(spec.Dir)
-	if err != nil {
-		return executor.ExecResult{}, err
-	}
 	req := eikad.ExecRequest{
 		Command:   spec.Command,
 		Args:      spec.Args,
 		Shell:     spec.Shell,
-		Dir:       dir,
+		Dir:       spec.Dir,
 		Env:       spec.Env,
 		TimeoutMS: spec.Timeout.Milliseconds(),
 	}
@@ -197,11 +147,7 @@ func readFrames(r io.Reader, stdout, stderr io.Writer) (executor.ExecResult, err
 
 // ReadFile returns the contents of path, truncated at opts.MaxBytes.
 func (c *Client) ReadFile(ctx context.Context, path string, opts executor.ReadOpts) ([]byte, error) {
-	target, err := c.daemonPath(path)
-	if err != nil {
-		return nil, err
-	}
-	q := url.Values{"path": {target}}
+	q := url.Values{"path": {path}}
 	if opts.MaxBytes > 0 {
 		q.Set("max_bytes", strconv.FormatInt(opts.MaxBytes, 10))
 	}
@@ -219,11 +165,7 @@ func (c *Client) ReadFile(ctx context.Context, path string, opts executor.ReadOp
 
 // WriteFile writes data to path, creating parent directories.
 func (c *Client) WriteFile(ctx context.Context, path string, data []byte) error {
-	target, err := c.daemonPath(path)
-	if err != nil {
-		return err
-	}
-	resp, err := c.do(ctx, http.MethodPut, "/files", url.Values{"path": {target}},
+	resp, err := c.do(ctx, http.MethodPut, "/files", url.Values{"path": {path}},
 		bytes.NewReader(data), "application/octet-stream")
 	if err != nil {
 		return err
@@ -251,41 +193,33 @@ func (c *Client) SetEnvironment(ctx context.Context, env []string) error {
 	return err
 }
 
-// Stat describes one file in the workspace.
+// Stat describes one file in the computer.
 func (c *Client) Stat(ctx context.Context, path string) (executor.FileInfo, error) {
-	target, err := c.daemonPath(path)
-	if err != nil {
-		return executor.FileInfo{}, err
-	}
 	var out eikad.FileInfo
-	if err := c.getJSON(ctx, "/stat", url.Values{"path": {target}}, &out); err != nil {
+	if err := c.getJSON(ctx, "/stat", url.Values{"path": {path}}, &out); err != nil {
 		return executor.FileInfo{}, err
 	}
-	return c.fileInfo(out), nil
+	return fileInfo(out), nil
 }
 
-// List describes the direct children of a directory in the workspace.
+// List describes the direct children of a directory in the computer.
 func (c *Client) List(ctx context.Context, path string) ([]executor.FileInfo, error) {
-	target, err := c.daemonPath(path)
-	if err != nil {
-		return nil, err
-	}
 	var out eikad.ListResponse
-	if err := c.getJSON(ctx, "/list", url.Values{"path": {target}}, &out); err != nil {
+	if err := c.getJSON(ctx, "/list", url.Values{"path": {path}}, &out); err != nil {
 		return nil, err
 	}
 	entries := make([]executor.FileInfo, len(out.Entries))
 	for i, e := range out.Entries {
-		entries[i] = c.fileInfo(e)
+		entries[i] = fileInfo(e)
 	}
 	return entries, nil
 }
 
 // fileInfo converts the wire type into the executor type.
-func (c *Client) fileInfo(f eikad.FileInfo) executor.FileInfo {
+func fileInfo(f eikad.FileInfo) executor.FileInfo {
 	return executor.FileInfo{
 		Name:    f.Name,
-		Path:    c.clientPath(f.Path),
+		Path:    f.Path,
 		Size:    f.Size,
 		Mode:    fs.FileMode(f.Mode),
 		ModTime: f.ModTime.UTC(),
@@ -381,10 +315,6 @@ const maxStderrLine = 4096
 // Like Terminal, it is not part of executor.Executor: it is how the harness
 // runs a stdio MCP server the user configured, not something a tool calls.
 func (c *Client) Process(ctx context.Context, spec ProcessSpec, stderr func(string)) (io.ReadWriteCloser, error) {
-	dir, err := c.daemonPath(spec.Dir)
-	if err != nil {
-		return nil, err
-	}
 	conn, resp, err := websocket.Dial(ctx, c.base+"/process", &websocket.DialOptions{
 		HTTPClient: c.http,
 		HTTPHeader: http.Header{"Authorization": {"Bearer " + c.token}},
@@ -398,7 +328,7 @@ func (c *Client) Process(ctx context.Context, spec ProcessSpec, stderr func(stri
 	// Past the bound, the caller's reader has more than one whole message
 	// to take; the daemon's output chunks are far smaller.
 	conn.SetReadLimit(eikad.MaxProcessMessage)
-	start, err := json.Marshal(eikad.ProcessMessage{Type: eikad.ProcessStart, Command: spec.Command, Args: spec.Args, Dir: dir, Env: spec.Env})
+	start, err := json.Marshal(eikad.ProcessMessage{Type: eikad.ProcessStart, Command: spec.Command, Args: spec.Args, Dir: spec.Dir, Env: spec.Env})
 	if err != nil {
 		_ = conn.CloseNow()
 		return nil, fmt.Errorf("encode process start: %w", err)

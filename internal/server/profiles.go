@@ -402,8 +402,8 @@ func (s *Server) checkProfile(ctx context.Context, req profileRequest) (store.Pr
 	}
 	p := store.Profile{Name: name, Description: description, ProfileSettings: settings}
 	if req.Tools != nil {
-		// A profile serves chats and workspace sessions alike, so it may
-		// choose a tool that needs a workspace; a chat's runs leave it out.
+		// A profile serves chats and computer sessions alike, so it may
+		// choose a tool that needs a computer; a chat's runs leave it out.
 		if p.Tools, err = s.checkToolChoice(ctx, req.Tools, false); err != nil {
 			return store.Profile{}, err
 		}

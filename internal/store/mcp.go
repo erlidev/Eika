@@ -14,7 +14,7 @@ type MCPServer struct {
 	ID   string
 	Name string
 	// Kind is http for a remote server, stdio for one started in a
-	// workspace.
+	// computer.
 	Kind string
 	URL  string
 	// Headers is the JSON of the headers every request carries, as the

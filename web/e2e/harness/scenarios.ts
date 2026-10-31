@@ -30,16 +30,16 @@ function configured(): WorldBuilder {
 }
 
 /**
- * workbench builds the richest state: workspaces in several
+ * workbench builds the richest state: computers in several
  * states, and a session whose transcript uses every kind of entry. Its ids
- * are fixed: the main session is `ses-backoff`, its workspace `ws-retries`.
+ * are fixed: the main session is `ses-backoff`, its computer `cx-retries`.
  */
 function workbench(): WorldBuilder {
   const b = configured();
-  b.workspace({ name: "dark-mode", state: "stopped" });
-  const ws = b.workspace({ id: "ws-retries", name: "fix-retries" });
-  b.workspace({ name: "upgrade-go", state: "creating" });
-  const older = b.session(ws, { title: "Investigate flaky test" });
+  b.computer({ name: "dark-mode", state: "stopped" });
+  const cx = b.computer({ id: "cx-retries", name: "fix-retries" });
+  b.computer({ name: "upgrade-go", state: "creating" });
+  const older = b.session(cx, { title: "Investigate flaky test" });
   b.conversation(older, [
     { role: "user", content: "Why does TestRetry fail sometimes?" },
     {
@@ -47,7 +47,7 @@ function workbench(): WorldBuilder {
       content: "It depends on wall-clock time; I'll switch it to a fake clock.",
     },
   ]);
-  const main = b.session(ws, { id: "ses-backoff", title: "Add exponential backoff to retries" });
+  const main = b.session(cx, { id: "ses-backoff", title: "Add exponential backoff to retries" });
   b.conversation(main, [
     {
       role: "user",
@@ -98,7 +98,7 @@ function workbench(): WorldBuilder {
   ]);
   // A fork of the older session hangs under the session it came from in the
   // sidebar.
-  const forked = b.session(ws, {
+  const forked = b.session(cx, {
     title: "Investigate flaky test, pinned seed",
     kind: "fork",
     parent_session_id: older.id,
@@ -133,9 +133,9 @@ function profiles(): WorldBuilder {
     ...(mini ? { model_id: mini.id } : {}),
     sampling: { reasoning_effort: "low", max_output: 4096 },
   });
-  const ws = w.workspaces.find((x) => x.id === "ws-retries");
+  const cx = w.computers.find((x) => x.id === "cx-retries");
   const main = w.sessions.find((x) => x.id === "ses-backoff");
-  if (!ws || !main) throw new Error("the workbench has no ses-backoff");
+  if (!cx || !main) throw new Error("the workbench has no ses-backoff");
   main.profile_id = reviewer.id;
   w.overrides[main.id] = { ...noSettings(), sampling: { temperature: 0.7 } };
   syncSession(w, main);
@@ -149,7 +149,7 @@ function profiles(): WorldBuilder {
 }
 
 /**
- * chats adds two chats to a workbench: sessions with no workspace, which
+ * chats adds two chats to a workbench: sessions with no computer, which
  * the sidebar lists. The main one is `chat-jitter`.
  */
 function chats(): WorldBuilder {
@@ -507,7 +507,7 @@ export const scenarios = {
   },
   workbench: {
     description:
-      "Workspaces (running/stopped/creating), and session ses-backoff with a full transcript. Sending a message streams a mock reply.",
+      "Computers (running/stopped/creating), and session ses-backoff with a full transcript. Sending a message streams a mock reply.",
     path: "/sessions/ses-backoff",
     build: () => workbench().world,
   },
@@ -903,12 +903,12 @@ export const scenarios = {
     },
   },
   "empty-session": {
-    description: "A workspace with a session that has no messages yet.",
+    description: "A computer with a session that has no messages yet.",
     path: "/sessions/ses-empty",
     build: () => {
       const b = configured();
-      const ws = b.workspace({ name: "scratch" });
-      b.session(ws, { id: "ses-empty", title: "New session" });
+      const cx = b.computer({ name: "scratch" });
+      b.session(cx, { id: "ses-empty", title: "New session" });
       return b.world;
     },
   },

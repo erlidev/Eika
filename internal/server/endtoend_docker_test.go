@@ -41,13 +41,13 @@ func typesOf(events []event.Event) []string {
 	return out
 }
 
-// TestEndToEnd walks the whole harness: a workspace, a session in it, one
+// TestEndToEnd walks the whole harness: a computer, a session in it, one
 // message whose model asks for a shell command, the events that reach a client
 // on the WebSocket, and the entries the run leaves in the tree.
 func TestEndToEnd(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
-	sess := a.newSession(t, ws.ID)
+	cx := a.newComputer(t)
+	sess := a.newSession(t, cx.ID)
 
 	conn := stream(t, a.Server, "topics="+event.SessionTopic(sess.ID))
 	a.waitSubscribed(t)
@@ -156,25 +156,25 @@ func TestEventStreamReplaysASessionFromAnEntry(t *testing.T) {
 	})
 }
 
-func TestEventStreamReportsWorkspaceState(t *testing.T) {
+func TestEventStreamReportsComputerState(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
+	cx := a.newComputer(t)
 
-	conn := stream(t, a.Server, "topics="+event.WorkspaceTopic(ws.ID))
+	conn := stream(t, a.Server, "topics="+event.ComputerTopic(cx.ID))
 	a.waitSubscribed(t)
 
-	if rec := request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/stop", nil); rec.Code != 200 {
+	if rec := request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil); rec.Code != 200 {
 		t.Fatalf("stop = %d", rec.Code)
 	}
 	e := next(t, conn)
-	if e.Type != event.TypeWorkspaceState {
-		t.Fatalf("type = %q, want workspace.state", e.Type)
+	if e.Type != event.TypeComputerState {
+		t.Fatalf("type = %q, want computer.state", e.Type)
 	}
-	var payload event.WorkspaceState
+	var payload event.ComputerState
 	if err := e.DecodePayload(&payload); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if payload.WorkspaceID != ws.ID || payload.State != "stopped" {
-		t.Errorf("payload = %+v, want the workspace stopped", payload)
+	if payload.ComputerID != cx.ID || payload.State != "stopped" {
+		t.Errorf("payload = %+v, want the computer stopped", payload)
 	}
 }

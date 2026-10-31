@@ -62,7 +62,7 @@ func TestWebDirServesIndexForClientRoutes(t *testing.T) {
 	s := server.New(config.Default(), testLogger(), server.Deps{}, server.Options{WebDir: dir})
 
 	// "/assets" is a real directory: it must render the app, not a listing.
-	for _, path := range []string{"/", "/workspaces/42", "/assets", "/assets/"} {
+	for _, path := range []string{"/", "/computers/42", "/assets", "/assets/"} {
 		rec := httptest.NewRecorder()
 		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusOK {

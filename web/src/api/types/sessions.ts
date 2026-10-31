@@ -5,11 +5,11 @@ import type { CompactionReason, EntryKind, Timings, Usage } from "@/api/events";
 /** SessionKind is who opened a session. */
 export type SessionKind = "user" | "fork";
 
-/** Session is a tree of entries in one workspace, or in none for a chat. */
+/** Session is a tree of entries in one computer, or in none for a chat. */
 export type Session = {
   id: string;
-  /** workspace_id is where the session's runs act; a chat has none. */
-  workspace_id?: string;
+  /** computer_id is where the session's runs act; a chat has none. */
+  computer_id?: string;
   title: string;
   /** kind says whether the user opened it, a fork made it, or a run spawned it. */
   kind: SessionKind;
@@ -41,8 +41,8 @@ export type Tool = {
   name: string;
   /** description is what the model is told the tool does. */
   description: string;
-  /** needs_workspace keeps the tool out of a chat. */
-  needs_workspace: boolean;
+  /** needs_computer keeps the tool out of a chat. */
+  needs_computer: boolean;
   /**
    * server names the MCP server whose tool it is; absent for a built-in tool
    * and for the resource tools, which reach every server of a run.
@@ -53,11 +53,11 @@ export type Tool = {
 };
 
 /**
- * CreateSession opens a session in a workspace, or a chat in none. Without a
+ * CreateSession opens a session in a computer, or a chat in none. Without a
  * title it is untitled: it shows a placeholder until its first run names it.
  */
 export type CreateSession =
-  { workspace_id: string; title?: string } | { chat: true; title?: string };
+  { computer_id: string; title?: string } | { chat: true; title?: string };
 
 /** Role is the author of one provider message. */
 export type Role = "system" | "user" | "assistant" | "tool";

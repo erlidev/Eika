@@ -223,10 +223,10 @@ func TestPathsOutsideTheRootAreRefused(t *testing.T) {
 	c, _ := newClient(t)
 	ctx := t.Context()
 	if _, err := c.ReadFile(ctx, "../escape", executor.ReadOpts{}); err == nil {
-		t.Error("ReadFile left the workspace")
+		t.Error("ReadFile left the computer")
 	}
 	if err := c.WriteFile(ctx, "../escape", []byte("x")); err == nil {
-		t.Error("WriteFile left the workspace")
+		t.Error("WriteFile left the computer")
 	}
 }
 
@@ -237,74 +237,6 @@ func TestASymlinkOutOfTheRootIsAPermissionError(t *testing.T) {
 	}
 	if _, err := c.List(t.Context(), "out"); !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("List error = %v, want fs.ErrPermission", err)
-	}
-}
-
-// TestADirNarrowsTheClient checks a client narrowed to a directory: one
-// daemon, one directory below its root, and nothing outside that directory.
-func TestADirNarrowsTheClient(t *testing.T) {
-	root := t.TempDir()
-	d, err := eikad.New(eikad.Options{Root: root, Token: testToken},
-		slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatalf("new daemon: %v", err)
-	}
-	srv := httptest.NewServer(d.Handler())
-	t.Cleanup(srv.Close)
-	if err := os.WriteFile(filepath.Join(root, "outside.txt"), []byte("the holder's"), 0o644); err != nil {
-		t.Fatalf("write outside the directory: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(root, "trees", "a"), 0o755); err != nil {
-		t.Fatalf("make the directory: %v", err)
-	}
-	c, err := sandbox.New(sandbox.Options{BaseURL: srv.URL, Token: testToken, Root: d.Root(), Dir: "trees/a"})
-	if err != nil {
-		t.Fatalf("new client: %v", err)
-	}
-	ctx := t.Context()
-	if want := filepath.Join(d.Root(), "trees", "a"); c.Root() != want {
-		t.Errorf("Root() = %q, want %q", c.Root(), want)
-	}
-
-	if err := c.WriteFile(ctx, "notes/a.txt", []byte("inside")); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if data, err := os.ReadFile(filepath.Join(root, "trees", "a", "notes", "a.txt")); err != nil || string(data) != "inside" {
-		t.Errorf("file under the directory = %q, %v, want what the client wrote", data, err)
-	}
-	entries, err := c.List(ctx, "notes")
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(entries) != 1 || entries[0].Path != "notes/a.txt" {
-		t.Errorf("entries = %+v, want notes/a.txt relative to the directory", entries)
-	}
-	if info, err := c.Stat(ctx, c.Root()); err != nil || info.Path != "." {
-		t.Errorf("stat of the root = %+v, %v, want path .", info, err)
-	}
-
-	var stdout bytes.Buffer
-	if _, err := c.Exec(ctx, executor.ExecSpec{Command: "cat notes/a.txt", Shell: true, Stdout: &stdout}); err != nil {
-		t.Fatalf("exec: %v", err)
-	}
-	if stdout.String() != "inside" {
-		t.Errorf("a command ran with stdout %q, want it to start in the directory", stdout.String())
-	}
-
-	for name, path := range map[string]string{
-		"a relative escape":          "../../outside.txt",
-		"an absolute path outside":   filepath.Join(d.Root(), "outside.txt"),
-		"the daemon's root":          d.Root(),
-		"a sibling directory prefix": filepath.Join(d.Root(), "trees", "ab"),
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := c.ReadFile(ctx, path, executor.ReadOpts{}); !errors.Is(err, executor.ErrPathOutsideRoot) {
-				t.Errorf("read error = %v, want ErrPathOutsideRoot", err)
-			}
-			if _, err := c.Exec(ctx, executor.ExecSpec{Command: "true", Dir: path}); !errors.Is(err, executor.ErrPathOutsideRoot) {
-				t.Errorf("exec error = %v, want ErrPathOutsideRoot", err)
-			}
-		})
 	}
 }
 
@@ -416,7 +348,7 @@ func TestProcessReadFailsWithHowItEnded(t *testing.T) {
 	}{
 		"exit status":    {sandbox.ProcessSpec{Command: "sh", Args: []string{"-c", "echo bye; exit 3"}}, "status 3"},
 		"missing binary": {sandbox.ProcessSpec{Command: "no-such-command-anywhere"}, "no-such-command-anywhere"},
-		"escaping dir":   {sandbox.ProcessSpec{Command: "true", Dir: "../.."}, "outside the workspace"},
+		"escaping dir":   {sandbox.ProcessSpec{Command: "true", Dir: "../.."}, "outside the computer"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

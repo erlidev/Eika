@@ -127,12 +127,12 @@ func TestEventStreamDeliversSubscribedTopicsOnly(t *testing.T) {
 
 func TestEventStreamSubscribesFromTheQuery(t *testing.T) {
 	s := server.New(testConfig(), testLogger(), server.Deps{}, server.Options{})
-	conn := stream(t, s, "topics="+event.TopicGlobal+","+event.WorkspaceTopic("w1"))
+	conn := stream(t, s, "topics="+event.TopicGlobal+","+event.ComputerTopic("w1"))
 
-	got := emitUntilSeen(t, s, conn, event.TypeWorkspaceState, event.WorkspaceTopic("w1"),
-		event.WorkspaceState{WorkspaceID: "w1", State: "running"})
-	if got.Type != event.TypeWorkspaceState {
-		t.Errorf("type = %q, want workspace.state", got.Type)
+	got := emitUntilSeen(t, s, conn, event.TypeComputerState, event.ComputerTopic("w1"),
+		event.ComputerState{ComputerID: "w1", State: "running"})
+	if got.Type != event.TypeComputerState {
+		t.Errorf("type = %q, want computer.state", got.Type)
 	}
 }
 

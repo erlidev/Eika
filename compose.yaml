@@ -57,9 +57,9 @@ services:
       timeout: 5s
       retries: 3
 
-  # Builds the default workspace image the harness starts sandboxes from. It
+  # Builds the default computer image the harness starts sandboxes from. It
   # is not a service: the container exits as soon as it starts, and the
-  # harness waits for that so the image exists before the first workspace.
+  # harness waits for that so the image exists before the first computer.
   sandbox-image:
     build:
       context: .

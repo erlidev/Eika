@@ -27,8 +27,8 @@ func TestOpenMigratesAndIsIdempotent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s open: %v", pass, err)
 		}
-		if _, err := st.CreateWorkspace(t.Context(), store.Workspace{Name: pass, State: "running"}); err != nil {
-			t.Fatalf("%s open, create workspace: %v", pass, err)
+		if _, err := st.CreateComputer(t.Context(), store.Computer{Name: pass, State: "running"}); err != nil {
+			t.Fatalf("%s open, create computer: %v", pass, err)
 		}
 		st.Close()
 	}
@@ -60,50 +60,50 @@ func TestTablesLiveInSchemaCore(t *testing.T) {
 	}
 }
 
-func TestWorkspacesAndSessions(t *testing.T) {
+func TestComputersAndSessions(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+	cx, err := st.CreateComputer(ctx, store.Computer{
 		Name: "fix-build", Image: "eika-sandbox:latest", State: "creating",
 	})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	if err := st.SetWorkspaceState(ctx, ws.ID, "running", "container-1"); err != nil {
-		t.Fatalf("set workspace state: %v", err)
+	if err := st.SetComputerState(ctx, cx.ID, "running", "container-1"); err != nil {
+		t.Fatalf("set computer state: %v", err)
 	}
-	got, err := st.Workspace(ctx, ws.ID)
+	got, err := st.Computer(ctx, cx.ID)
 	if err != nil {
-		t.Fatalf("read workspace: %v", err)
+		t.Fatalf("read computer: %v", err)
 	}
 	if got.State != "running" || got.ContainerID != "container-1" {
-		t.Errorf("workspace = %+v, want running container-1", got)
+		t.Errorf("computer = %+v, want running container-1", got)
 	}
-	if err := st.SetWorkspaceState(ctx, ws.ID, "stopped", ""); err != nil {
-		t.Fatalf("set workspace state: %v", err)
+	if err := st.SetComputerState(ctx, cx.ID, "stopped", ""); err != nil {
+		t.Fatalf("set computer state: %v", err)
 	}
-	if got, err = st.Workspace(ctx, ws.ID); err != nil || got.ContainerID != "container-1" {
+	if got, err = st.Computer(ctx, cx.ID); err != nil || got.ContainerID != "container-1" {
 		t.Errorf("empty container id overwrote the recorded one: %+v, %v", got, err)
 	}
-	if !reflect.DeepEqual(got.Sandbox, store.WorkspaceSandbox{}) {
-		t.Errorf("a new workspace's sandbox = %+v, want none of its fields set", got.Sandbox)
+	if !reflect.DeepEqual(got.Sandbox, store.ComputerSandbox{}) {
+		t.Errorf("a new computer's sandbox = %+v, want none of its fields set", got.Sandbox)
 	}
-	sandbox := store.WorkspaceSandbox{
+	sandbox := store.ComputerSandbox{
 		CPUs: 1.5, MemoryMB: 2048, PIDs: 512, Egress: "allowlist",
 		Allow: []string{"github.com"},
 	}
-	if got, err = st.SetWorkspaceSandbox(ctx, ws.ID, sandbox); err != nil || !reflect.DeepEqual(got.Sandbox, sandbox) {
-		t.Errorf("SetWorkspaceSandbox = %+v, %v; want the sandbox back", got.Sandbox, err)
+	if got, err = st.SetComputerSandbox(ctx, cx.ID, sandbox); err != nil || !reflect.DeepEqual(got.Sandbox, sandbox) {
+		t.Errorf("SetComputerSandbox = %+v, %v; want the sandbox back", got.Sandbox, err)
 	}
-	if got, err = st.Workspace(ctx, ws.ID); err != nil || !reflect.DeepEqual(got.Sandbox, sandbox) {
-		t.Errorf("workspace sandbox = %+v, %v; want what was set", got.Sandbox, err)
+	if got, err = st.Computer(ctx, cx.ID); err != nil || !reflect.DeepEqual(got.Sandbox, sandbox) {
+		t.Errorf("computer sandbox = %+v, %v; want what was set", got.Sandbox, err)
 	}
-	if _, err := st.SetWorkspaceSandbox(ctx, "missing", sandbox); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("SetWorkspaceSandbox on a missing workspace = %v, want ErrNotFound", err)
+	if _, err := st.SetComputerSandbox(ctx, "missing", sandbox); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("SetComputerSandbox on a missing computer = %v, want ErrNotFound", err)
 	}
 
-	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID, Title: "first"})
+	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "first"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestWorkspacesAndSessions(t *testing.T) {
 	if _, err := st.UpdateSession(ctx, sess.ID, store.SessionChanges{Title: &renamed}); err != nil {
 		t.Fatalf("rename session: %v", err)
 	}
-	sessions, err := st.Sessions(ctx, ws.ID, false)
+	sessions, err := st.Sessions(ctx, cx.ID, false)
 	if err != nil || len(sessions) != 1 || sessions[0].Title != "renamed" {
 		t.Fatalf("Sessions = %+v, %v", sessions, err)
 	}
@@ -120,40 +120,40 @@ func TestWorkspacesAndSessions(t *testing.T) {
 	}
 }
 
-// A fork with a workspace runs somewhere else, so the listing of the
-// workspace it came from has to reach it: the user interface draws it under
+// A fork with a computer runs somewhere else, so the listing of the
+// computer it came from has to reach it: the user interface draws it under
 // the session that led to it.
-func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
+func TestSessionsReachDescendantsInOtherComputers(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	parentWS, err := st.CreateWorkspace(ctx, store.Workspace{
+	parentWS, err := st.CreateComputer(ctx, store.Computer{
 		Name: "main", State: "running",
 	})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	childWS, err := st.CreateWorkspace(ctx, store.Workspace{
+	childWS, err := st.CreateComputer(ctx, store.Computer{
 		Name:  "fork",
 		State: "running",
 	})
 	if err != nil {
-		t.Fatalf("create child workspace: %v", err)
+		t.Fatalf("create child computer: %v", err)
 	}
 
-	parent, err := st.CreateSession(ctx, store.Session{WorkspaceID: parentWS.ID, Title: "parent"})
+	parent, err := st.CreateSession(ctx, store.Session{ComputerID: parentWS.ID, Title: "parent"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	child, err := st.CreateSession(ctx, store.Session{
-		WorkspaceID: childWS.ID, Title: "child", Kind: store.SessionFork,
+		ComputerID: childWS.ID, Title: "child", Kind: store.SessionFork,
 		ParentSessionID: parent.ID,
 	})
 	if err != nil {
 		t.Fatalf("create child session: %v", err)
 	}
 	grand, err := st.CreateSession(ctx, store.Session{
-		WorkspaceID: childWS.ID, Title: "grandchild", Kind: store.SessionFork,
+		ComputerID: childWS.ID, Title: "grandchild", Kind: store.SessionFork,
 		ParentSessionID: child.ID,
 	})
 	if err != nil {
@@ -187,28 +187,28 @@ func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
 	}
 }
 
-// A chat is a session with no workspace. It is listed apart from every
-// workspace's sessions, its fork is a chat too, and both keep the tools the
+// A chat is a session with no computer. It is listed apart from every
+// computer's sessions, its fork is a chat too, and both keep the tools the
 // user chose.
-func TestChatsHaveNoWorkspaceAndKeepTheirTools(t *testing.T) {
+func TestChatsHaveNoComputerAndKeepTheirTools(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+	cx, err := st.CreateComputer(ctx, store.Computer{
 		Name: "main", State: "running",
 	})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	if _, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID, Title: "work"}); err != nil {
+	if _, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "work"}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	chat, err := st.CreateSession(ctx, store.Session{Title: "question"})
 	if err != nil {
 		t.Fatalf("create chat: %v", err)
 	}
-	if !chat.Chat() || chat.WorkspaceID != "" {
-		t.Errorf("chat = %+v, want no workspace", chat)
+	if !chat.Chat() || chat.ComputerID != "" {
+		t.Errorf("chat = %+v, want no computer", chat)
 	}
 	if chat.Tools != nil {
 		t.Errorf("new chat tools = %#v, want nil for every tool", chat.Tools)
@@ -262,13 +262,13 @@ func TestRunsAndSettings(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+	cx, err := st.CreateComputer(ctx, store.Computer{
 		Name: "parent", State: "running",
 	})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	parent, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID})
+	parent, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -345,13 +345,13 @@ func TestSetSettingsWritesAllOrNothing(t *testing.T) {
 func TestAbortRunningRunsClosesRowsFromAnEarlierProcess(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
-	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+	cx, err := st.CreateComputer(ctx, store.Computer{
 		Name: "work", State: "running",
 	})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID})
+	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -379,20 +379,20 @@ func TestErrNotFound(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+	cx, err := st.CreateComputer(ctx, store.Computer{
 		Name: "w", State: "running",
 	})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID})
+	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	missing := store.NewID()
 	cases := map[string]error{
-		"workspace":  errOf(func() error { _, err := st.Workspace(ctx, missing); return err }),
+		"computer":   errOf(func() error { _, err := st.Computer(ctx, missing); return err }),
 		"session":    errOf(func() error { _, err := st.Session(ctx, missing); return err }),
 		"entry":      errOf(func() error { _, err := st.Entry(ctx, missing); return err }),
 		"run":        errOf(func() error { _, err := st.Run(ctx, missing); return err }),
@@ -401,13 +401,13 @@ func TestErrNotFound(t *testing.T) {
 		"set head":   st.SetSessionHead(ctx, sess.ID, missing),
 		"fork":       errOf(func() error { _, err := st.ForkSession(ctx, sess.ID, missing, store.ForkOptions{}); return err }),
 		"finish run": st.FinishRun(ctx, missing, store.RunDone, ""),
-		"delete":     st.DeleteWorkspace(ctx, missing),
+		"delete":     st.DeleteComputer(ctx, missing),
 		"update session": errOf(func() error {
 			_, err := st.UpdateSession(ctx, missing, store.SessionChanges{})
 			return err
 		}),
-		"update workspace": errOf(func() error {
-			_, err := st.UpdateWorkspace(ctx, missing, store.WorkspaceChanges{})
+		"update computer": errOf(func() error {
+			_, err := st.UpdateComputer(ctx, missing, store.ComputerChanges{})
 			return err
 		}),
 	}
@@ -422,13 +422,13 @@ func TestSetSessionHeadIsGuarded(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+	cx, err := st.CreateComputer(ctx, store.Computer{
 		Name: "w", State: "running",
 	})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID})
+	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -517,18 +517,18 @@ func TestUntitledSessions(t *testing.T) {
 }
 
 // An edit changes the fields it names and leaves the rest, so renaming a
-// session does not unpin it and archiving a workspace does not rename it.
+// session does not unpin it and archiving a computer does not rename it.
 func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	ws, err := st.CreateWorkspace(ctx, store.Workspace{
+	cx, err := st.CreateComputer(ctx, store.Computer{
 		Name: "main", State: "running",
 	})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID, Title: "New session", Untitled: true})
+	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "New session", Untitled: true})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -547,66 +547,66 @@ func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
 	if err != nil || got.Pinned || got.Archived || got.Title != "Named" {
 		t.Fatalf("unpin and unarchive = %+v, %v", got, err)
 	}
-	if listed, err := st.Sessions(ctx, ws.ID, true); err != nil || len(listed) != 1 || listed[0].Title != "Named" {
+	if listed, err := st.Sessions(ctx, cx.ID, true); err != nil || len(listed) != 1 || listed[0].Title != "Named" {
 		t.Errorf("Sessions = %+v, %v; want the edited session", listed, err)
 	}
 
 	name := "renamed"
-	w, err := st.UpdateWorkspace(ctx, ws.ID, store.WorkspaceChanges{Archived: &yes})
+	w, err := st.UpdateComputer(ctx, cx.ID, store.ComputerChanges{Archived: &yes})
 	if err != nil || !w.Archived || w.Pinned || w.Name != "main" {
-		t.Fatalf("archive workspace = %+v, %v; want archived and otherwise unchanged", w, err)
+		t.Fatalf("archive computer = %+v, %v; want archived and otherwise unchanged", w, err)
 	}
-	w, err = st.UpdateWorkspace(ctx, ws.ID, store.WorkspaceChanges{Name: &name, Pinned: &yes})
+	w, err = st.UpdateComputer(ctx, cx.ID, store.ComputerChanges{Name: &name, Pinned: &yes})
 	if err != nil || !w.Archived || !w.Pinned || w.Name != "renamed" || w.State != "running" {
-		t.Fatalf("rename and pin workspace = %+v, %v", w, err)
+		t.Fatalf("rename and pin computer = %+v, %v", w, err)
 	}
-	if w, err = st.Workspace(ctx, ws.ID); err != nil || !w.Pinned || !w.Archived || w.Name != "renamed" {
-		t.Errorf("Workspace = %+v, %v; want what was set", w, err)
+	if w, err = st.Computer(ctx, cx.ID); err != nil || !w.Pinned || !w.Archived || w.Name != "renamed" {
+		t.Errorf("Computer = %+v, %v; want what was set", w, err)
 	}
 }
 
-func TestWorkspacesListInOrderOfCreation(t *testing.T) {
+func TestComputersListInOrderOfCreation(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
-	if got, err := st.Workspaces(ctx); err != nil || len(got) != 0 {
-		t.Fatalf("Workspaces of a new database = %+v, %v; want none", got, err)
+	if got, err := st.Computers(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("Computers of a new database = %+v, %v; want none", got, err)
 	}
 	var want []string
 	for _, name := range []string{"first", "second", "third"} {
-		ws, err := st.CreateWorkspace(ctx, store.Workspace{Name: name, State: "running"})
+		cx, err := st.CreateComputer(ctx, store.Computer{Name: name, State: "running"})
 		if err != nil {
-			t.Fatalf("create workspace %s: %v", name, err)
+			t.Fatalf("create computer %s: %v", name, err)
 		}
-		want = append(want, ws.ID)
+		want = append(want, cx.ID)
 	}
-	got, err := st.Workspaces(ctx)
+	got, err := st.Computers(ctx)
 	if err != nil {
-		t.Fatalf("Workspaces: %v", err)
+		t.Fatalf("Computers: %v", err)
 	}
 	var ids []string
-	for _, ws := range got {
-		ids = append(ids, ws.ID)
+	for _, cx := range got {
+		ids = append(ids, cx.ID)
 	}
 	if !slices.Equal(ids, want) {
-		t.Errorf("Workspaces = %v, want %v", ids, want)
+		t.Errorf("Computers = %v, want %v", ids, want)
 	}
 }
 
-func TestDeletingAWorkspaceDeletesItsSessions(t *testing.T) {
+func TestDeletingAComputerDeletesItsSessions(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
-	ws, err := st.CreateWorkspace(ctx, store.Workspace{Name: "doomed", State: "running"})
+	cx, err := st.CreateComputer(ctx, store.Computer{Name: "doomed", State: "running"})
 	if err != nil {
-		t.Fatalf("create workspace: %v", err)
+		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID, Title: "in it"})
+	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "in it"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := st.DeleteWorkspace(ctx, ws.ID); err != nil {
-		t.Fatalf("delete workspace: %v", err)
+	if err := st.DeleteComputer(ctx, cx.ID); err != nil {
+		t.Fatalf("delete computer: %v", err)
 	}
 	if _, err := st.Session(ctx, sess.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("session of a deleted workspace = %v, want ErrNotFound", err)
+		t.Errorf("session of a deleted computer = %v, want ErrNotFound", err)
 	}
 }

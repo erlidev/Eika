@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 }
 
 // api is a server under test: the real store on a throwaway database, a
-// workspace host backed by temporary directories, and a provider the test
+// computer host backed by temporary directories, and a provider the test
 // scripts per run.
 type api struct {
 	*server.Server
@@ -103,17 +103,17 @@ func newAPI(t *testing.T) *api {
 	a.mcp = server.NewMCP(testConfig(), st, secrets, a.host, bus, testLogger())
 	t.Cleanup(a.mcp.Close)
 	a.Server = server.New(testConfig(), testLogger(), server.Deps{
-		Store:      st,
-		Workspaces: a.host,
-		Providers:  fakeProviders{build: a.buildProvider},
-		Secrets:    secrets,
-		Tools:      tools,
-		Questions:  a.questions,
-		Bus:        bus,
-		Search:     engine,
-		Pages:      pages,
-		Egress:     a.egress,
-		MCP:        a.mcp,
+		Store:     st,
+		Computers: a.host,
+		Providers: fakeProviders{build: a.buildProvider},
+		Secrets:   secrets,
+		Tools:     tools,
+		Questions: a.questions,
+		Bus:       bus,
+		Search:    engine,
+		Pages:     pages,
+		Egress:    a.egress,
+		MCP:       a.mcp,
 	}, server.Options{})
 	t.Cleanup(a.Close)
 
@@ -190,29 +190,29 @@ func (a *api) lastEndpoint() provider.Endpoint {
 	return a.endpoint
 }
 
-// newWorkspace creates a workspace.
-func (a *api) newWorkspace(t *testing.T) workspaceWire {
+// newComputer creates a computer.
+func (a *api) newComputer(t *testing.T) computerWire {
 	t.Helper()
-	rec := request(t, a.Server, "POST", "/api/workspaces", map[string]any{"name": "work"})
-	return decodeBody[workspaceWire](t, rec, 201)
+	rec := request(t, a.Server, "POST", "/api/computers", map[string]any{"name": "work"})
+	return decodeBody[computerWire](t, rec, 201)
 }
 
-// filesOf returns the directory the files of a workspace are in, which a test
+// filesOf returns the directory the files of a computer are in, which a test
 // reads and writes to see what the agent sees.
-func (a *api) filesOf(t *testing.T, workspaceID string) string {
+func (a *api) filesOf(t *testing.T, computerID string) string {
 	t.Helper()
-	dir, err := a.host.dirOf(workspaceID)
+	dir, err := a.host.dirOf(computerID)
 	if err != nil {
-		t.Fatalf("directory of workspace %s: %v", workspaceID, err)
+		t.Fatalf("directory of computer %s: %v", computerID, err)
 	}
 	return dir
 }
 
-// newSession opens a session in a workspace.
-func (a *api) newSession(t *testing.T, workspaceID string) sessionWire {
+// newSession opens a session in a computer.
+func (a *api) newSession(t *testing.T, computerID string) sessionWire {
 	t.Helper()
 	rec := request(t, a.Server, "POST", "/api/sessions", map[string]any{
-		"workspace_id": workspaceID, "title": "a session",
+		"computer_id": computerID, "title": "a session",
 	})
 	return decodeBody[sessionWire](t, rec, 201)
 }
@@ -268,7 +268,7 @@ func (a *api) waitQuestion(t *testing.T, sessionID string) builtin.Question {
 // The wire shapes the tests decode. They are written out rather than shared
 // with the handlers so that a change to a handler's struct that changes the
 // JSON fails a test instead of passing quietly.
-type workspaceWire struct {
+type computerWire struct {
 	ID       string      `json:"id"`
 	Name     string      `json:"name"`
 	Image    string      `json:"image"`
@@ -278,13 +278,13 @@ type workspaceWire struct {
 	Archived bool        `json:"archived"`
 }
 
-type workspacesWire struct {
-	Workspaces []workspaceWire `json:"workspaces"`
+type computersWire struct {
+	Computers []computerWire `json:"computers"`
 }
 
 type sessionWire struct {
 	ID              string `json:"id"`
-	WorkspaceID     string `json:"workspace_id"`
+	ComputerID      string `json:"computer_id"`
 	Title           string `json:"title"`
 	Kind            string `json:"kind"`
 	HeadEntryID     string `json:"head_entry_id"`
@@ -345,9 +345,9 @@ type settingsWire struct {
 	Settings map[string]json.RawMessage `json:"settings"`
 	Defaults struct {
 		SandboxImage string `json:"sandbox_image"`
-		// WorkspaceIdleMinutes is how long a workspace may go unused.
-		WorkspaceIdleMinutes int `json:"workspace_idle_minutes"`
-		Compaction           struct {
+		// ComputerIdleMinutes is how long a computer may go unused.
+		ComputerIdleMinutes int `json:"computer_idle_minutes"`
+		Compaction          struct {
 			Auto             bool `json:"auto"`
 			ReserveTokens    int  `json:"reserve_tokens"`
 			KeepRecentTokens int  `json:"keep_recent_tokens"`
@@ -377,37 +377,37 @@ type modelsWire struct {
 	Default string      `json:"default"`
 }
 
-func TestWorkspaceRoutes(t *testing.T) {
+func TestComputerRoutes(t *testing.T) {
 	a := newAPI(t)
 
-	ws := a.newWorkspace(t)
-	if ws.State != "running" || ws.Name != "work" {
-		t.Fatalf("created = %+v", ws)
+	cx := a.newComputer(t)
+	if cx.State != "running" || cx.Name != "work" {
+		t.Fatalf("created = %+v", cx)
 	}
 
-	list := decodeBody[workspacesWire](t, request(t, a.Server, "GET", "/api/workspaces", nil), 200)
-	if len(list.Workspaces) != 1 || list.Workspaces[0].ID != ws.ID {
-		t.Errorf("workspaces = %+v, want the one created", list.Workspaces)
+	list := decodeBody[computersWire](t, request(t, a.Server, "GET", "/api/computers", nil), 200)
+	if len(list.Computers) != 1 || list.Computers[0].ID != cx.ID {
+		t.Errorf("computers = %+v, want the one created", list.Computers)
 	}
 
-	stopped := decodeBody[workspaceWire](t, request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/stop", nil), 200)
+	stopped := decodeBody[computerWire](t, request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil), 200)
 	if stopped.State != "stopped" {
 		t.Errorf("state after stop = %q, want stopped", stopped.State)
 	}
-	started := decodeBody[workspaceWire](t, request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/start", nil), 200)
+	started := decodeBody[computerWire](t, request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/start", nil), 200)
 	if started.State != "running" {
 		t.Errorf("state after start = %q, want running", started.State)
 	}
 
-	if rec := request(t, a.Server, "DELETE", "/api/workspaces/"+ws.ID, nil); rec.Code != 204 {
+	if rec := request(t, a.Server, "DELETE", "/api/computers/"+cx.ID, nil); rec.Code != 204 {
 		t.Fatalf("delete = %d: %s", rec.Code, rec.Body.String())
 	}
-	if rec := request(t, a.Server, "GET", "/api/workspaces/"+ws.ID, nil); rec.Code != 404 {
+	if rec := request(t, a.Server, "GET", "/api/computers/"+cx.ID, nil); rec.Code != 404 {
 		t.Errorf("get after delete = %d, want 404", rec.Code)
 	}
 }
 
-func TestAWorkspaceNeedsOnlyAName(t *testing.T) {
+func TestAComputerNeedsOnlyAName(t *testing.T) {
 	a := newAPI(t)
 	for name, c := range map[string]struct {
 		body   map[string]any
@@ -415,18 +415,18 @@ func TestAWorkspaceNeedsOnlyAName(t *testing.T) {
 	}{
 		"an empty name": {map[string]any{"name": " "}, 400},
 		"no name":       {map[string]any{}, 400},
-		"a project_id, which workspaces no longer have": {map[string]any{"name": "work", "project_id": "p1"}, 400},
+		"a project_id, which computers no longer have": {map[string]any{"name": "work", "project_id": "p1"}, 400},
 		"a name": {map[string]any{"name": "work"}, 201},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if rec := request(t, a.Server, "POST", "/api/workspaces", c.body); rec.Code != c.status {
+			if rec := request(t, a.Server, "POST", "/api/computers", c.body); rec.Code != c.status {
 				t.Errorf("create = %d, want %d: %s", rec.Code, c.status, rec.Body.String())
 			}
 		})
 	}
-	list := decodeBody[workspacesWire](t, request(t, a.Server, "GET", "/api/workspaces", nil), 200)
-	if len(list.Workspaces) != 1 {
-		t.Errorf("workspaces = %d, want only the valid one", len(list.Workspaces))
+	list := decodeBody[computersWire](t, request(t, a.Server, "GET", "/api/computers", nil), 200)
+	if len(list.Computers) != 1 {
+		t.Errorf("computers = %d, want only the valid one", len(list.Computers))
 	}
 }
 
@@ -445,18 +445,18 @@ func TestTheProjectRoutesAreGone(t *testing.T) {
 	}
 }
 
-// A workspace has no owner of its own: the harness has one user, and the
-// sign-in token is the only way to a workspace. These requests come from
-// someone without it, each to a route that reads or changes the workspace.
-func TestNoOneWithoutASignInTokenReachesAWorkspace(t *testing.T) {
+// A computer has no owner of its own: the harness has one user, and the
+// sign-in token is the only way to a computer. These requests come from
+// someone without it, each to a route that reads or changes the computer.
+func TestNoOneWithoutASignInTokenReachesAComputer(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
-	sess := a.newSession(t, ws.ID)
-	base := "/api/workspaces/" + ws.ID
+	cx := a.newComputer(t)
+	sess := a.newSession(t, cx.ID)
+	base := "/api/computers/" + cx.ID
 
 	routes := []struct{ method, path string }{
-		{"GET", "/api/workspaces"},
-		{"POST", "/api/workspaces"},
+		{"GET", "/api/computers"},
+		{"POST", "/api/computers"},
 		{"GET", base},
 		{"PATCH", base},
 		{"DELETE", base},
@@ -486,18 +486,18 @@ func TestNoOneWithoutASignInTokenReachesAWorkspace(t *testing.T) {
 		}
 	}
 
-	// None of it changed the workspace.
-	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", base, nil), 200)
+	// None of it changed the computer.
+	got := decodeBody[computerWire](t, request(t, a.Server, "GET", base, nil), 200)
 	if got.Name != "work" || got.State != "running" {
-		t.Errorf("workspace = %+v, want it untouched and running", got)
+		t.Errorf("computer = %+v, want it untouched and running", got)
 	}
 }
 
-func TestWorkspaceCreationLeavesNothingBehindWhenItFails(t *testing.T) {
+func TestComputerCreationLeavesNothingBehindWhenItFails(t *testing.T) {
 	a := newAPI(t)
 	a.host.startErr = fmt.Errorf("no daemon")
 
-	if rec := request(t, a.Server, "POST", "/api/workspaces", map[string]any{"name": "work"}); rec.Code != 500 {
+	if rec := request(t, a.Server, "POST", "/api/computers", map[string]any{"name": "work"}); rec.Code != 500 {
 		t.Fatalf("status = %d, want 500: %s", rec.Code, rec.Body.String())
 	}
 	live, err := a.host.List(t.Context())
@@ -505,23 +505,23 @@ func TestWorkspaceCreationLeavesNothingBehindWhenItFails(t *testing.T) {
 		t.Fatalf("list: %v", err)
 	}
 	if len(live) != 0 {
-		t.Errorf("host holds %d workspaces, want none", len(live))
+		t.Errorf("host holds %d computers, want none", len(live))
 	}
-	rows, err := a.store.Workspaces(t.Context())
+	rows, err := a.store.Computers(t.Context())
 	if err != nil {
-		t.Fatalf("workspaces: %v", err)
+		t.Fatalf("computers: %v", err)
 	}
 	if len(rows) != 0 {
-		t.Errorf("store holds %d workspaces, want none", len(rows))
+		t.Errorf("store holds %d computers, want none", len(rows))
 	}
 }
 
 func TestReconcileRecordsWhatTheHostActuallyHas(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
+	cx := a.newComputer(t)
 
 	// The container went away while the harness was down.
-	host, err := a.host.Inspect(t.Context(), ws.ID)
+	host, err := a.host.Inspect(t.Context(), cx.ID)
 	if err != nil {
 		t.Fatalf("inspect: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestReconcileRecordsWhatTheHostActuallyHas(t *testing.T) {
 	if err := a.Reconcile(t.Context()); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID, nil), 200)
+	got := decodeBody[computerWire](t, request(t, a.Server, "GET", "/api/computers/"+cx.ID, nil), 200)
 	if got.State != "gone" {
 		t.Errorf("state = %q, want gone", got.State)
 	}
@@ -558,32 +558,32 @@ func TestReconcileAbortsRunsLeftByAnEarlierProcess(t *testing.T) {
 
 func TestReconcilePreservesStateWhenInspectFails(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
+	cx := a.newComputer(t)
 	a.host.inspectErr = fmt.Errorf("docker daemon unavailable")
 
 	if err := a.Reconcile(t.Context()); err == nil {
 		t.Fatal("Reconcile succeeded when inspection failed")
 	}
-	stored, err := a.store.Workspace(t.Context(), ws.ID)
+	stored, err := a.store.Computer(t.Context(), cx.ID)
 	if err != nil {
-		t.Fatalf("read workspace: %v", err)
+		t.Fatalf("read computer: %v", err)
 	}
 	if stored.State != "running" {
 		t.Errorf("state = %q, want running", stored.State)
 	}
 }
 
-func TestDeleteWorkspacePreservesRowWhenInspectFails(t *testing.T) {
+func TestDeleteComputerPreservesRowWhenInspectFails(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
+	cx := a.newComputer(t)
 	a.host.inspectErr = fmt.Errorf("docker daemon unavailable")
 
-	rec := request(t, a.Server, "DELETE", "/api/workspaces/"+ws.ID, nil)
+	rec := request(t, a.Server, "DELETE", "/api/computers/"+cx.ID, nil)
 	if rec.Code != 500 {
 		t.Fatalf("status = %d, want 500: %s", rec.Code, rec.Body.String())
 	}
-	if _, err := a.store.Workspace(t.Context(), ws.ID); err != nil {
-		t.Errorf("workspace row was deleted after an inspection failure: %v", err)
+	if _, err := a.store.Computer(t.Context(), cx.ID); err != nil {
+		t.Errorf("computer row was deleted after an inspection failure: %v", err)
 	}
 }
 
@@ -592,8 +592,8 @@ func TestDeleteWorkspacePreservesRowWhenInspectFails(t *testing.T) {
 // head or a fork may be put: a session made there fails on its next run.
 func TestHeadAndForkRefuseAnUnansweredTurn(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
-	sess := a.newSession(t, ws.ID)
+	cx := a.newComputer(t)
+	sess := a.newSession(t, cx.ID)
 
 	a.script(
 		providertest.Calls("looking",
@@ -643,13 +643,13 @@ func TestHeadAndForkRefuseAnUnansweredTurn(t *testing.T) {
 
 func TestSessionRoutes(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
+	cx := a.newComputer(t)
 
-	sess := a.newSession(t, ws.ID)
-	if sess.WorkspaceID != ws.ID {
+	sess := a.newSession(t, cx.ID)
+	if sess.ComputerID != cx.ID {
 		t.Fatalf("session = %+v", sess)
 	}
-	list := decodeBody[sessionsWire](t, request(t, a.Server, "GET", "/api/sessions?workspace_id="+ws.ID, nil), 200)
+	list := decodeBody[sessionsWire](t, request(t, a.Server, "GET", "/api/sessions?computer_id="+cx.ID, nil), 200)
 	if len(list.Sessions) != 1 {
 		t.Fatalf("sessions = %d, want 1", len(list.Sessions))
 	}
@@ -686,7 +686,7 @@ func TestSessionRoutes(t *testing.T) {
 
 	fork := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork",
 		map[string]any{"entry_id": path.Entries[1].ID, "title": "a fork"}), 201)
-	if fork.ID == sess.ID || fork.Title != "a fork" || fork.WorkspaceID != ws.ID {
+	if fork.ID == sess.ID || fork.Title != "a fork" || fork.ComputerID != cx.ID {
 		t.Errorf("fork = %+v", fork)
 	}
 	forkPath := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+fork.ID+"/path", nil), 200)
@@ -697,10 +697,10 @@ func TestSessionRoutes(t *testing.T) {
 	if fork.Kind != "fork" || fork.ParentSessionID != sess.ID {
 		t.Errorf("fork = %+v, want kind fork under %s", fork, sess.ID)
 	}
-	// The fork lives in the source's workspace, so it is in the plain
-	// listing; a fork with a workspace of its own would need descendants.
+	// The fork lives in the source's computer, so it is in the plain
+	// listing; a fork with a computer of its own would need descendants.
 	tree := decodeBody[sessionsWire](t, request(t, a.Server, "GET",
-		"/api/sessions?workspace_id="+ws.ID+"&descendants=true", nil), 200)
+		"/api/sessions?computer_id="+cx.ID+"&descendants=true", nil), 200)
 	if len(tree.Sessions) != 2 {
 		t.Errorf("sessions with descendants = %d, want the session and its fork", len(tree.Sessions))
 	}
@@ -721,12 +721,12 @@ func TestSessionRoutes(t *testing.T) {
 // that list the thing.
 func TestRenamePinAndArchive(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
-	sess := a.newSession(t, ws.ID)
+	cx := a.newComputer(t)
+	sess := a.newSession(t, cx.ID)
 	global := a.Bus().Subscribe(event.TopicGlobal)
 	defer global.Close()
-	wsEvents := a.Bus().Subscribe(event.WorkspaceTopic(ws.ID))
-	defer wsEvents.Close()
+	cxEvents := a.Bus().Subscribe(event.ComputerTopic(cx.ID))
+	defer cxEvents.Close()
 
 	pinned := decodeBody[sessionWire](t, request(t, a.Server, "PATCH", "/api/sessions/"+sess.ID,
 		map[string]any{"pinned": true}), 200)
@@ -748,7 +748,7 @@ func TestRenamePinAndArchive(t *testing.T) {
 			if err := e.DecodePayload(&got); err != nil {
 				t.Fatal(err)
 			}
-			if got != (event.SessionUpdated{SessionID: sess.ID, WorkspaceID: ws.ID}) {
+			if got != (event.SessionUpdated{SessionID: sess.ID, ComputerID: cx.ID}) {
 				t.Errorf("session.updated = %+v", got)
 			}
 			return true
@@ -757,22 +757,22 @@ func TestRenamePinAndArchive(t *testing.T) {
 		}
 	})
 
-	named := decodeBody[workspaceWire](t, request(t, a.Server, "PATCH", "/api/workspaces/"+ws.ID,
+	named := decodeBody[computerWire](t, request(t, a.Server, "PATCH", "/api/computers/"+cx.ID,
 		map[string]any{"name": "login fix", "archived": true}), 200)
 	if named.Name != "login fix" || !named.Archived || named.Pinned || named.State != "running" {
-		t.Errorf("updated workspace = %+v, want renamed and archived, still running", named)
+		t.Errorf("updated computer = %+v, want renamed and archived, still running", named)
 	}
-	waitFor(t, "a workspace.state event", func() bool {
+	waitFor(t, "a computer.state event", func() bool {
 		select {
-		case e := <-wsEvents.Events():
-			return e.Type == event.TypeWorkspaceState
+		case e := <-cxEvents.Events():
+			return e.Type == event.TypeComputerState
 		default:
 			return false
 		}
 	})
-	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", "/api/workspaces/"+ws.ID, nil), 200)
+	got := decodeBody[computerWire](t, request(t, a.Server, "GET", "/api/computers/"+cx.ID, nil), 200)
 	if got.Name != "login fix" || !got.Archived {
-		t.Errorf("workspace = %+v, want the edit kept", got)
+		t.Errorf("computer = %+v, want the edit kept", got)
 	}
 
 	refused := []struct {
@@ -782,9 +782,9 @@ func TestRenamePinAndArchive(t *testing.T) {
 	}{
 		{"blank title", "/api/sessions/" + sess.ID, map[string]any{"title": "  "}, 400},
 		{"long title", "/api/sessions/" + sess.ID, map[string]any{"title": strings.Repeat("x", 201)}, 400},
-		{"blank name", "/api/workspaces/" + ws.ID, map[string]any{"name": ""}, 400},
+		{"blank name", "/api/computers/" + cx.ID, map[string]any{"name": ""}, 400},
 		{"missing session", "/api/sessions/missing", map[string]any{"pinned": true}, 404},
-		{"missing workspace", "/api/workspaces/missing", map[string]any{"pinned": true}, 404},
+		{"missing computer", "/api/computers/missing", map[string]any{"pinned": true}, 404},
 	}
 	for _, tc := range refused {
 		t.Run(tc.name, func(t *testing.T) {
@@ -883,7 +883,7 @@ func TestSettingsAndModels(t *testing.T) {
 	}
 }
 
-// write puts a file in a workspace directory.
+// write puts a file in a computer directory.
 func write(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
@@ -891,7 +891,7 @@ func write(t *testing.T, dir, name, content string) {
 	}
 }
 
-func TestWorkspaceCreationCleansUpEvenWhenTheRequestIsGone(t *testing.T) {
+func TestComputerCreationCleansUpEvenWhenTheRequestIsGone(t *testing.T) {
 	a := newAPI(t)
 
 	// The client gives up while the container is being started, which is the
@@ -903,10 +903,10 @@ func TestWorkspaceCreationCleansUpEvenWhenTheRequestIsGone(t *testing.T) {
 	a.host.startHook = cancel
 	a.host.startErr = fmt.Errorf("the daemon is unreachable")
 
-	rec := requestOn(ctx, t, a.Server, "POST", "/api/workspaces",
+	rec := requestOn(ctx, t, a.Server, "POST", "/api/computers",
 		map[string]any{"name": "work"})
 	if rec.Code == 201 {
-		t.Fatalf("the workspace was created despite the start failing: %s", rec.Body.String())
+		t.Fatalf("the computer was created despite the start failing: %s", rec.Body.String())
 	}
 
 	live, err := a.host.List(t.Context())
@@ -914,6 +914,6 @@ func TestWorkspaceCreationCleansUpEvenWhenTheRequestIsGone(t *testing.T) {
 		t.Fatalf("list: %v", err)
 	}
 	if len(live) != 0 {
-		t.Errorf("host holds %d workspaces, want none", len(live))
+		t.Errorf("host holds %d computers, want none", len(live))
 	}
 }

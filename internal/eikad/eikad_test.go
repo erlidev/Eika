@@ -25,7 +25,7 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// newDaemon starts a daemon over a temporary workspace root and returns its
+// newDaemon starts a daemon over a temporary computer root and returns its
 // base URL and that root.
 func newDaemon(t *testing.T, opts eikad.Options) (string, string) {
 	t.Helper()
@@ -195,7 +195,7 @@ func TestMissingFileIsNotFound(t *testing.T) {
 
 func TestPathsAreConfinedToTheRoot(t *testing.T) {
 	dir := t.TempDir()
-	root := filepath.Join(dir, "workspace")
+	root := filepath.Join(dir, "computer")
 	if err := os.Mkdir(root, 0o755); err != nil {
 		t.Fatalf("make root: %v", err)
 	}

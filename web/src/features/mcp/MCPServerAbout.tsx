@@ -174,8 +174,8 @@ export function AboutTab({ details }: AboutTabProps) {
         </section>
       ) : (
         <Notice>
-          This server runs as <span className="font-mono">{location(server)}</span> in each
-          workspace that uses it.
+          This server runs as <span className="font-mono">{location(server)}</span> in each computer
+          that uses it.
           {(server.env_names ?? []).length > 0 &&
             ` Its variables (${(server.env_names ?? []).join(", ")}) are visible to the agent there.`}
         </Notice>

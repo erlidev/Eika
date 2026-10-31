@@ -1,5 +1,8 @@
 {
   "routes": {
+    "DELETE /api/computers/{id}": {
+      "status": 204
+    },
     "DELETE /api/mcp/servers/{id}": {
       "status": 204
     },
@@ -18,9 +21,6 @@
     "DELETE /api/sessions/{id}": {
       "status": 204
     },
-    "DELETE /api/workspaces/{id}": {
-      "status": 204
-    },
     "GET /api/auth/status": {
       "status": 200,
       "response": {
@@ -29,6 +29,154 @@
         }
       },
       "public": true
+    },
+    "GET /api/computers": {
+      "status": 200,
+      "response": {
+        "object": {
+          "computers": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "archived": "boolean",
+                  "container_id": "string",
+                  "created_at": "string",
+                  "id": "string",
+                  "image": "string",
+                  "name": "string",
+                  "pinned": "boolean",
+                  "sandbox": {
+                    "object": {
+                      "egress": {
+                        "object": {
+                          "allow": {
+                            "nullable": {
+                              "array": "string"
+                            }
+                          },
+                          "mode": "string"
+                        }
+                      },
+                      "limits": {
+                        "object": {
+                          "cpus": "number",
+                          "memory_mb": "number",
+                          "pids": "number"
+                        }
+                      }
+                    }
+                  },
+                  "state": "string",
+                  "updated_at": "string"
+                },
+                "optional": [
+                  "container_id"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/computers/{id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "archived": "boolean",
+          "container_id": "string",
+          "created_at": "string",
+          "id": "string",
+          "image": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              }
+            }
+          },
+          "state": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "container_id"
+        ]
+      }
+    },
+    "GET /api/computers/{id}/file": {
+      "status": 200,
+      "response": {
+        "object": {
+          "binary": "boolean",
+          "content": "string",
+          "path": "string",
+          "size": "number",
+          "too_large": "boolean"
+        }
+      }
+    },
+    "GET /api/computers/{id}/files": {
+      "status": 200,
+      "response": {
+        "object": {
+          "entries": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "is_dir": "boolean",
+                  "mod_time": "string",
+                  "mode": "number",
+                  "name": "string",
+                  "path": "string",
+                  "size": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/computers/{id}/usage": {
+      "status": 200,
+      "response": {
+        "object": {
+          "blocked": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "count": "number",
+                  "host": "string",
+                  "last": "string"
+                }
+              }
+            }
+          },
+          "cpu_percent": "number",
+          "cpus": "number",
+          "memory_bytes": "number",
+          "memory_limit_bytes": "number",
+          "network_rx_bytes": "number",
+          "network_tx_bytes": "number",
+          "pids": "number",
+          "pids_limit": "number",
+          "sampled_at": "string"
+        }
+      }
     },
     "GET /api/events": {
       "websocket": true
@@ -56,6 +204,11 @@
                     }
                   },
                   "command": "string",
+                  "computers": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
                   "created_at": "string",
                   "disabled_tools": {
                     "nullable": {
@@ -81,12 +234,7 @@
                   "oauth_client_secret_set": "boolean",
                   "state": "string",
                   "updated_at": "string",
-                  "url": "string",
-                  "workspaces": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  }
+                  "url": "string"
                 },
                 "optional": [
                   "error"
@@ -299,6 +447,11 @@
                 }
               },
               "command": "string",
+              "computers": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
               "created_at": "string",
               "disabled_tools": {
                 "nullable": {
@@ -324,12 +477,7 @@
               "oauth_client_secret_set": "boolean",
               "state": "string",
               "updated_at": "string",
-              "url": "string",
-              "workspaces": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
+              "url": "string"
             },
             "optional": [
               "error"
@@ -720,6 +868,7 @@
               "array": {
                 "object": {
                   "archived": "boolean",
+                  "computer_id": "string",
                   "created_at": "string",
                   "head_entry_id": "string",
                   "id": "string",
@@ -734,14 +883,13 @@
                       "array": "string"
                     }
                   },
-                  "updated_at": "string",
-                  "workspace_id": "string"
+                  "updated_at": "string"
                 },
                 "optional": [
+                  "computer_id",
                   "head_entry_id",
                   "parent_session_id",
-                  "profile_id",
-                  "workspace_id"
+                  "profile_id"
                 ]
               }
             }
@@ -870,6 +1018,7 @@
           "session": {
             "object": {
               "archived": "boolean",
+              "computer_id": "string",
               "created_at": "string",
               "head_entry_id": "string",
               "id": "string",
@@ -884,14 +1033,13 @@
                   "array": "string"
                 }
               },
-              "updated_at": "string",
-              "workspace_id": "string"
+              "updated_at": "string"
             },
             "optional": [
+              "computer_id",
               "head_entry_id",
               "parent_session_id",
-              "profile_id",
-              "workspace_id"
+              "profile_id"
             ]
           }
         },
@@ -1858,6 +2006,7 @@
                   "reserve_tokens": "number"
                 }
               },
+              "computer_idle_minutes": "number",
               "sandbox_egress": {
                 "object": {
                   "allow": {
@@ -1894,8 +2043,7 @@
                 "nullable": {
                   "array": "string"
                 }
-              },
-              "workspace_idle_minutes": "number"
+              }
             }
           },
           "settings": {
@@ -1947,7 +2095,7 @@
                 "object": {
                   "description": "string",
                   "name": "string",
-                  "needs_workspace": "boolean",
+                  "needs_computer": "boolean",
                   "server": "string",
                   "tokens": "number"
                 },
@@ -1960,56 +2108,15 @@
         }
       }
     },
-    "GET /api/workspaces": {
+    "PATCH /api/computers/{id}": {
       "status": 200,
-      "response": {
+      "request": {
         "object": {
-          "workspaces": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "archived": "boolean",
-                  "container_id": "string",
-                  "created_at": "string",
-                  "id": "string",
-                  "image": "string",
-                  "name": "string",
-                  "pinned": "boolean",
-                  "sandbox": {
-                    "object": {
-                      "egress": {
-                        "object": {
-                          "allow": {
-                            "nullable": {
-                              "array": "string"
-                            }
-                          },
-                          "mode": "string"
-                        }
-                      },
-                      "limits": {
-                        "object": {
-                          "cpus": "number",
-                          "memory_mb": "number",
-                          "pids": "number"
-                        }
-                      }
-                    }
-                  },
-                  "state": "string",
-                  "updated_at": "string"
-                },
-                "optional": [
-                  "container_id"
-                ]
-              }
-            }
-          }
+          "archived": "boolean",
+          "name": "string",
+          "pinned": "boolean"
         }
-      }
-    },
-    "GET /api/workspaces/{id}": {
-      "status": 200,
+      },
       "response": {
         "object": {
           "archived": "boolean",
@@ -2048,66 +2155,6 @@
         ]
       }
     },
-    "GET /api/workspaces/{id}/file": {
-      "status": 200,
-      "response": {
-        "object": {
-          "binary": "boolean",
-          "content": "string",
-          "path": "string",
-          "size": "number",
-          "too_large": "boolean"
-        }
-      }
-    },
-    "GET /api/workspaces/{id}/files": {
-      "status": 200,
-      "response": {
-        "object": {
-          "entries": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "is_dir": "boolean",
-                  "mod_time": "string",
-                  "mode": "number",
-                  "name": "string",
-                  "path": "string",
-                  "size": "number"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "GET /api/workspaces/{id}/usage": {
-      "status": 200,
-      "response": {
-        "object": {
-          "blocked": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "count": "number",
-                  "host": "string",
-                  "last": "string"
-                }
-              }
-            }
-          },
-          "cpu_percent": "number",
-          "cpus": "number",
-          "memory_bytes": "number",
-          "memory_limit_bytes": "number",
-          "network_rx_bytes": "number",
-          "network_tx_bytes": "number",
-          "pids": "number",
-          "pids_limit": "number",
-          "sampled_at": "string"
-        }
-      }
-    },
     "PATCH /api/mcp/servers/{id}": {
       "status": 200,
       "request": {
@@ -2140,6 +2187,11 @@
             }
           },
           "command": "string",
+          "computers": {
+            "nullable": {
+              "array": "string"
+            }
+          },
           "created_at": "string",
           "disabled_tools": {
             "nullable": {
@@ -2165,12 +2217,7 @@
           "oauth_client_secret_set": "boolean",
           "state": "string",
           "updated_at": "string",
-          "url": "string",
-          "workspaces": {
-            "nullable": {
-              "array": "string"
-            }
-          }
+          "url": "string"
         },
         "optional": [
           "error"
@@ -2256,6 +2303,7 @@
       "response": {
         "object": {
           "archived": "boolean",
+          "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
@@ -2270,24 +2318,76 @@
               "array": "string"
             }
           },
-          "updated_at": "string",
-          "workspace_id": "string"
+          "updated_at": "string"
         },
         "optional": [
+          "computer_id",
           "head_entry_id",
           "parent_session_id",
-          "profile_id",
-          "workspace_id"
+          "profile_id"
         ]
       }
     },
-    "PATCH /api/workspaces/{id}": {
+    "POST /api/auth/login": {
       "status": 200,
       "request": {
         "object": {
-          "archived": "boolean",
+          "password": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "expires_at": "string",
+          "token": "string"
+        }
+      },
+      "public": true
+    },
+    "POST /api/auth/logout": {
+      "status": 204
+    },
+    "POST /api/auth/setup": {
+      "status": 201,
+      "request": {
+        "object": {
+          "password": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "expires_at": "string",
+          "token": "string"
+        }
+      },
+      "public": true
+    },
+    "POST /api/computers": {
+      "status": 201,
+      "request": {
+        "object": {
+          "build_context": "string",
+          "dockerfile": "string",
+          "image": "string",
           "name": "string",
-          "pinned": "boolean"
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "array": "string"
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              }
+            }
+          }
         }
       },
       "response": {
@@ -2328,38 +2428,85 @@
         ]
       }
     },
-    "POST /api/auth/login": {
+    "POST /api/computers/{id}/start": {
       "status": 200,
-      "request": {
-        "object": {
-          "password": "string"
-        }
-      },
       "response": {
         "object": {
-          "expires_at": "string",
-          "token": "string"
-        }
-      },
-      "public": true
+          "archived": "boolean",
+          "container_id": "string",
+          "created_at": "string",
+          "id": "string",
+          "image": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              }
+            }
+          },
+          "state": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "container_id"
+        ]
+      }
     },
-    "POST /api/auth/logout": {
-      "status": 204
-    },
-    "POST /api/auth/setup": {
-      "status": 201,
-      "request": {
-        "object": {
-          "password": "string"
-        }
-      },
+    "POST /api/computers/{id}/stop": {
+      "status": 200,
       "response": {
         "object": {
-          "expires_at": "string",
-          "token": "string"
-        }
-      },
-      "public": true
+          "archived": "boolean",
+          "container_id": "string",
+          "created_at": "string",
+          "id": "string",
+          "image": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "sandbox": {
+            "object": {
+              "egress": {
+                "object": {
+                  "allow": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "mode": "string"
+                }
+              },
+              "limits": {
+                "object": {
+                  "cpus": "number",
+                  "memory_mb": "number",
+                  "pids": "number"
+                }
+              }
+            }
+          },
+          "state": "string",
+          "updated_at": "string"
+        },
+        "optional": [
+          "container_id"
+        ]
+      }
     },
     "POST /api/elicitations/{id}/answer": {
       "status": 204,
@@ -2420,6 +2567,11 @@
             }
           },
           "command": "string",
+          "computers": {
+            "nullable": {
+              "array": "string"
+            }
+          },
           "created_at": "string",
           "disabled_tools": {
             "nullable": {
@@ -2445,12 +2597,7 @@
           "oauth_client_secret_set": "boolean",
           "state": "string",
           "updated_at": "string",
-          "url": "string",
-          "workspaces": {
-            "nullable": {
-              "array": "string"
-            }
-          }
+          "url": "string"
         },
         "optional": [
           "error"
@@ -2474,7 +2621,7 @@
       "status": 200,
       "request": {
         "object": {
-          "workspace_id": "string"
+          "computer_id": "string"
         }
       },
       "response": {
@@ -2677,6 +2824,11 @@
                 }
               },
               "command": "string",
+              "computers": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
               "created_at": "string",
               "disabled_tools": {
                 "nullable": {
@@ -2702,12 +2854,7 @@
               "oauth_client_secret_set": "boolean",
               "state": "string",
               "updated_at": "string",
-              "url": "string",
-              "workspaces": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
+              "url": "string"
             },
             "optional": [
               "error"
@@ -2768,8 +2915,8 @@
           "arguments": {
             "map": "string"
           },
-          "name": "string",
-          "workspace_id": "string"
+          "computer_id": "string",
+          "name": "string"
         }
       },
       "response": {
@@ -2817,8 +2964,8 @@
       "status": 200,
       "request": {
         "object": {
-          "uri": "string",
-          "workspace_id": "string"
+          "computer_id": "string",
+          "uri": "string"
         }
       },
       "response": {
@@ -3200,13 +3347,14 @@
       "request": {
         "object": {
           "chat": "boolean",
-          "title": "string",
-          "workspace_id": "string"
+          "computer_id": "string",
+          "title": "string"
         }
       },
       "response": {
         "object": {
           "archived": "boolean",
+          "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
@@ -3221,14 +3369,13 @@
               "array": "string"
             }
           },
-          "updated_at": "string",
-          "workspace_id": "string"
+          "updated_at": "string"
         },
         "optional": [
+          "computer_id",
           "head_entry_id",
           "parent_session_id",
-          "profile_id",
-          "workspace_id"
+          "profile_id"
         ]
       }
     },
@@ -3266,6 +3413,7 @@
       "response": {
         "object": {
           "archived": "boolean",
+          "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
@@ -3280,14 +3428,13 @@
               "array": "string"
             }
           },
-          "updated_at": "string",
-          "workspace_id": "string"
+          "updated_at": "string"
         },
         "optional": [
+          "computer_id",
           "head_entry_id",
           "parent_session_id",
-          "profile_id",
-          "workspace_id"
+          "profile_id"
         ]
       }
     },
@@ -3301,6 +3448,7 @@
       "response": {
         "object": {
           "archived": "boolean",
+          "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
@@ -3315,14 +3463,13 @@
               "array": "string"
             }
           },
-          "updated_at": "string",
-          "workspace_id": "string"
+          "updated_at": "string"
         },
         "optional": [
+          "computer_id",
           "head_entry_id",
           "parent_session_id",
-          "profile_id",
-          "workspace_id"
+          "profile_id"
         ]
       }
     },
@@ -3357,31 +3504,52 @@
         ]
       }
     },
-    "POST /api/workspaces": {
-      "status": 201,
+    "PUT /api/auth/password": {
+      "status": 200,
       "request": {
         "object": {
-          "build_context": "string",
-          "dockerfile": "string",
-          "image": "string",
+          "current_password": "string",
+          "new_password": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "expires_at": "string",
+          "token": "string"
+        }
+      }
+    },
+    "PUT /api/computers/{id}/file": {
+      "status": 200,
+      "raw_request": true,
+      "response": {
+        "object": {
+          "is_dir": "boolean",
+          "mod_time": "string",
+          "mode": "number",
           "name": "string",
-          "sandbox": {
+          "path": "string",
+          "size": "number"
+        }
+      }
+    },
+    "PUT /api/computers/{id}/sandbox": {
+      "status": 200,
+      "request": {
+        "object": {
+          "egress": {
             "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "array": "string"
-                  },
-                  "mode": "string"
-                }
+              "allow": {
+                "array": "string"
               },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
+              "mode": "string"
+            }
+          },
+          "limits": {
+            "object": {
+              "cpus": "number",
+              "memory_mb": "number",
+              "pids": "number"
             }
           }
         }
@@ -3422,101 +3590,6 @@
         "optional": [
           "container_id"
         ]
-      }
-    },
-    "POST /api/workspaces/{id}/start": {
-      "status": 200,
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "container_id": "string",
-          "created_at": "string",
-          "id": "string",
-          "image": "string",
-          "name": "string",
-          "pinned": "boolean",
-          "sandbox": {
-            "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
-                  "mode": "string"
-                }
-              },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
-            }
-          },
-          "state": "string",
-          "updated_at": "string"
-        },
-        "optional": [
-          "container_id"
-        ]
-      }
-    },
-    "POST /api/workspaces/{id}/stop": {
-      "status": 200,
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "container_id": "string",
-          "created_at": "string",
-          "id": "string",
-          "image": "string",
-          "name": "string",
-          "pinned": "boolean",
-          "sandbox": {
-            "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
-                  "mode": "string"
-                }
-              },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
-            }
-          },
-          "state": "string",
-          "updated_at": "string"
-        },
-        "optional": [
-          "container_id"
-        ]
-      }
-    },
-    "PUT /api/auth/password": {
-      "status": 200,
-      "request": {
-        "object": {
-          "current_password": "string",
-          "new_password": "string"
-        }
-      },
-      "response": {
-        "object": {
-          "expires_at": "string",
-          "token": "string"
-        }
       }
     },
     "PUT /api/profiles/{id}": {
@@ -4062,6 +4135,7 @@
       "response": {
         "object": {
           "archived": "boolean",
+          "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
@@ -4076,14 +4150,13 @@
               "array": "string"
             }
           },
-          "updated_at": "string",
-          "workspace_id": "string"
+          "updated_at": "string"
         },
         "optional": [
+          "computer_id",
           "head_entry_id",
           "parent_session_id",
-          "profile_id",
-          "workspace_id"
+          "profile_id"
         ]
       }
     },
@@ -4110,6 +4183,7 @@
                   "reserve_tokens": "number"
                 }
               },
+              "computer_idle_minutes": "number",
               "sandbox_egress": {
                 "object": {
                   "allow": {
@@ -4146,8 +4220,7 @@
                 "nullable": {
                   "array": "string"
                 }
-              },
-              "workspace_idle_minutes": "number"
+              }
             }
           },
           "settings": {
@@ -4156,79 +4229,6 @@
             }
           }
         }
-      }
-    },
-    "PUT /api/workspaces/{id}/file": {
-      "status": 200,
-      "raw_request": true,
-      "response": {
-        "object": {
-          "is_dir": "boolean",
-          "mod_time": "string",
-          "mode": "number",
-          "name": "string",
-          "path": "string",
-          "size": "number"
-        }
-      }
-    },
-    "PUT /api/workspaces/{id}/sandbox": {
-      "status": 200,
-      "request": {
-        "object": {
-          "egress": {
-            "object": {
-              "allow": {
-                "array": "string"
-              },
-              "mode": "string"
-            }
-          },
-          "limits": {
-            "object": {
-              "cpus": "number",
-              "memory_mb": "number",
-              "pids": "number"
-            }
-          }
-        }
-      },
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "container_id": "string",
-          "created_at": "string",
-          "id": "string",
-          "image": "string",
-          "name": "string",
-          "pinned": "boolean",
-          "sandbox": {
-            "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
-                  "mode": "string"
-                }
-              },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
-            }
-          },
-          "state": "string",
-          "updated_at": "string"
-        },
-        "optional": [
-          "container_id"
-        ]
       }
     }
   },
@@ -4286,6 +4286,12 @@
         "reason": "string",
         "run_id": "string",
         "tokens_before": "number"
+      }
+    },
+    "computer.state": {
+      "object": {
+        "computer_id": "string",
+        "state": "string"
       }
     },
     "mcp.elicitation": {
@@ -4371,21 +4377,21 @@
     },
     "session.title": {
       "object": {
+        "computer_id": "string",
         "session_id": "string",
-        "title": "string",
-        "workspace_id": "string"
+        "title": "string"
       },
       "optional": [
-        "workspace_id"
+        "computer_id"
       ]
     },
     "session.updated": {
       "object": {
-        "session_id": "string",
-        "workspace_id": "string"
+        "computer_id": "string",
+        "session_id": "string"
       },
       "optional": [
-        "workspace_id"
+        "computer_id"
       ]
     },
     "tool.call": {
@@ -4505,6 +4511,7 @@
     },
     "turn.start": {
       "object": {
+        "computer_id": "string",
         "images": {
           "array": {
             "object": {
@@ -4519,19 +4526,12 @@
         },
         "message": "string",
         "run_id": "string",
-        "session_id": "string",
-        "workspace_id": "string"
+        "session_id": "string"
       },
       "optional": [
-        "images",
-        "workspace_id"
+        "computer_id",
+        "images"
       ]
-    },
-    "workspace.state": {
-      "object": {
-        "state": "string",
-        "workspace_id": "string"
-      }
     }
   }
 }

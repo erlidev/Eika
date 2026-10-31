@@ -8,7 +8,7 @@
 // that both the start and the end survive. Every action goes through the
 // executor in the call context; nothing here touches the harness filesystem.
 // A web_fetch filter is the model's JavaScript, so it runs as `eikad filter`
-// in the workspace too.
+// in the computer too.
 //
 // The entry point is Registry, which returns a tool.Registry holding all of
 // them. Adding a built-in tool means adding it there. The output limits are

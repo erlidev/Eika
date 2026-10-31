@@ -12,16 +12,16 @@ import (
 	"github.com/erlidev/eika/internal/tool/builtin"
 )
 
-// workspace is a temporary workspace with the built-in tools wired to it.
-type workspace struct {
+// computer is a temporary computer with the built-in tools wired to it.
+type computer struct {
 	t        *testing.T
 	exec     *local.Executor
 	registry *tool.Registry
 	outputs  []string
 }
 
-// newWorkspace returns a workspace rooted at a fresh temporary directory.
-func newWorkspace(t *testing.T) *workspace {
+// newComputer returns a computer rooted at a fresh temporary directory.
+func newComputer(t *testing.T) *computer {
 	t.Helper()
 	e, err := local.New(t.TempDir())
 	if err != nil {
@@ -31,11 +31,11 @@ func newWorkspace(t *testing.T) *workspace {
 	if err != nil {
 		t.Fatalf("builtin.Registry: %v", err)
 	}
-	return &workspace{t: t, exec: e, registry: r}
+	return &computer{t: t, exec: e, registry: r}
 }
 
-// write puts a file in the workspace.
-func (w *workspace) write(path, content string) {
+// write puts a file in the computer.
+func (w *computer) write(path, content string) {
 	w.t.Helper()
 	if err := w.exec.WriteFile(context.Background(), path, []byte(content)); err != nil {
 		w.t.Fatalf("write %s: %v", path, err)
@@ -43,7 +43,7 @@ func (w *workspace) write(path, content string) {
 }
 
 // call runs one tool with the given arguments.
-func (w *workspace) call(name string, args any) tool.Result {
+func (w *computer) call(name string, args any) tool.Result {
 	w.t.Helper()
 	tl, ok := w.registry.Get(name)
 	if !ok {
@@ -67,7 +67,7 @@ func (w *workspace) call(name string, args any) tool.Result {
 }
 
 // record collects tool.output events so a test can assert on streaming.
-func (w *workspace) record(_ context.Context, e event.Event) {
+func (w *computer) record(_ context.Context, e event.Event) {
 	if e.Type != event.TypeToolOutput {
 		return
 	}
@@ -115,14 +115,14 @@ func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
 
 // A chat offers the standalone tools alone. Every tool that reads or changes
 // files or runs a command must stay out of it.
-func TestOnlyToolsThatNeedNoWorkspaceAreStandalone(t *testing.T) {
+func TestOnlyToolsThatNeedNoComputerAreStandalone(t *testing.T) {
 	r, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("Registry: %v", err)
 	}
 	var standalone []string
 	for _, tl := range r.List() {
-		if !tool.NeedsWorkspace(tl) {
+		if !tool.NeedsComputer(tl) {
 			standalone = append(standalone, tl.Name())
 		}
 	}

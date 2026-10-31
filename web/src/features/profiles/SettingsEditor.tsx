@@ -22,7 +22,7 @@ import { useModels } from "@/features/providers";
 import { useTools } from "@/features/session/queries";
 
 /** EditorKind says what the layer configures: a profile serves both kinds of session. */
-export type EditorKind = "profile" | "workspace" | "chat";
+export type EditorKind = "profile" | "computer" | "chat";
 
 export type SettingsEditorProps = {
   /** idPrefix keeps the field ids of two editors on one page apart. */

@@ -5,24 +5,24 @@
 
 import type { Tool } from "@/api/types";
 
-/** OutOfChat names what a chat can never offer, having no workspace. */
+/** OutOfChat names what a chat can never offer, having no computer. */
 export type OutOfChat = {
-  /** tools are the built-in tools that need a workspace, sorted. */
+  /** tools are the built-in tools that need a computer, sorted. */
   tools: string[];
-  /** servers are the MCP servers that run as a command in a workspace, sorted. */
+  /** servers are the MCP servers that run as a command in a computer, sorted. */
   servers: string[];
 };
 
 /**
  * outOfChat lists the tools a chat can never offer: the built-in ones that
- * need a workspace, and the servers that run in one. The ones it can offer
+ * need a computer, and the servers that run in one. The ones it can offer
  * are chosen with the ToolPicker, whose groups leave these out.
  */
 export function outOfChat(tools: readonly Tool[]): OutOfChat {
   const names: string[] = [];
   const servers = new Set<string>();
   for (const t of tools) {
-    if (!t.needs_workspace) continue;
+    if (!t.needs_computer) continue;
     if (t.server === undefined) names.push(t.name);
     else servers.add(t.server);
   }

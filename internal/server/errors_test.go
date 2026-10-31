@@ -10,9 +10,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
-	"github.com/erlidev/eika/internal/workspace"
 )
 
 // Error mapping is tested from inside the package: it is the one rule every
@@ -25,8 +25,8 @@ func TestErrorMapping(t *testing.T) {
 		status int
 		code   string
 	}{
-		{"missing row", fmt.Errorf("read workspace w1: %w", store.ErrNotFound), http.StatusNotFound, codeNotFound},
-		{"missing container", fmt.Errorf("%w: w1", workspace.ErrNoWorkspace), http.StatusNotFound, codeNotFound},
+		{"missing row", fmt.Errorf("read computer w1: %w", store.ErrNotFound), http.StatusNotFound, codeNotFound},
+		{"missing container", fmt.Errorf("%w: w1", computer.ErrNoComputer), http.StatusNotFound, codeNotFound},
 		{"answered question", fmt.Errorf("answer question q1: %w", builtin.ErrNoQuestion), http.StatusNotFound, codeNotFound},
 		{"duplicate row", fmt.Errorf("create provider demo: %w", store.ErrConflict), http.StatusConflict, codeConflict},
 		{"bad answer", fmt.Errorf("answer question q1: %w", builtin.ErrBadAnswer), http.StatusBadRequest, codeInvalidRequest},
@@ -44,7 +44,7 @@ func TestErrorMapping(t *testing.T) {
 			}
 
 			rec := httptest.NewRecorder()
-			s.fail(rec, httptest.NewRequest(http.MethodGet, "/api/workspaces", nil), c.err)
+			s.fail(rec, httptest.NewRequest(http.MethodGet, "/api/computers", nil), c.err)
 			if rec.Code != c.status {
 				t.Fatalf("response status = %d, want %d", rec.Code, c.status)
 			}

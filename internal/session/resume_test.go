@@ -61,7 +61,7 @@ func TestPathResumableIgnoresEntriesOutsideTheConversation(t *testing.T) {
 
 	// A note and an event are shown in the user interface and never sent to
 	// the model, so neither answers a call nor asks for one.
-	note := store.Entry{Kind: store.KindSystem, Payload: []byte(`{"text":"workspace restarted"}`)}
+	note := store.Entry{Kind: store.KindSystem, Payload: []byte(`{"text":"computer restarted"}`)}
 	call := entryOf(t, provider.AssistantMessage("", []provider.ToolCall{
 		{ID: "call_1", Name: "bash", Arguments: provider.ToolArguments(`{"command":"ls"}`)},
 	}))

@@ -228,11 +228,11 @@ Current caveats:
 | `agent` loop, compaction, retries, overflow, queues | Pi port, well tested | Kept, with the additions in `runtime.md`. Home compaction gains deterministic sections, idle runs and history recall (`runtime.md` 11) |
 | `provider`, `provider/openai`, timings | OpenAI-compatible streaming | Kept. Adds the Responses API as the preferred protocol, backend probing, exact token counting, cache metrics, slot hints, the System One kind |
 | `tool`, registry, `ask_user` broker | Stateless tools, in-memory broker | Kept. The broker becomes durable. A subagent's questions go to Eika, who asks the user in the Inbox when needed |
-| `event` bus, WebSocket, replay | Topics global, workspace, session | Kept. Adds topics `inbox` and `activity`; drops `workspace` |
-| `workspace`, `executor`, `eikad` | Coding sandboxes | Renamed to computers. Worktree, clone and push code removed; per-exec environment kept |
-| `egress`, `netguard` | Proxy in Core | Moved into Sentry; identity per run instead of per workspace |
+| `event` bus, WebSocket, replay | Topics global, computer, session | Kept. Adds topics `inbox` and `activity`; drops `computer` |
+| `computer` (was `workspace`), `executor`, `eikad` | Coding sandboxes | Renamed to computers in phase 0. Worktree, clone and push code removed; per-exec environment kept |
+| `egress`, `netguard` | Proxy in Core | Moved into Sentry; identity per run instead of per computer |
 | `secret` | Seals everything in Core | Kept in Core for model keys; Sentry has its own vault with its own key |
-| `mcp` | Pool in Core | Reused by Sentry's plugin host; stdio servers move from workspaces to plugin cells |
+| `mcp` | Pool in Core | Reused by Sentry's plugin host; stdio servers move from computers to plugin cells |
 | `search`, `fetch` | Core tools | Kept. Fetch goes through Sentry's proxy, and results are scanned |
 | `session` tree, entries, runs | Branching tree | Kept. Adds `preamble` and `notice` entry kinds and session kinds; commit SHAs removed; the UI shows it linear |
 | `profiles` | Run configurations | Replaced by agent definitions |

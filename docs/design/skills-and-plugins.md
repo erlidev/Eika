@@ -119,7 +119,7 @@ catalog listing and change notifications. What moves is where it runs:
 | | Today | Now |
 |---|---|---|
 | Remote connections | Core's `mcp.Pool` | Sentry's plugin host, so OAuth tokens and headers live in the vault |
-| Stdio servers | A process in the session's workspace, with its environment visible to the agent | A process in a plugin cell (a computer labelled `eika.role=plugin`) that no agent can execute in. Its environment's secrets are surrogates resolved by Sentry where possible, otherwise the real values, which stay in the cell |
+| Stdio servers | A process in the session's computer, with its environment visible to the agent | A process in a plugin cell (a computer labelled `eika.role=plugin`) that no agent can execute in. Its environment's secrets are surrogates resolved by Sentry where possible, otherwise the real values, which stay in the cell |
 | Tool exposure | One `tool.Tool` per MCP tool | Catalog plus `plugin_find` and `plugin_call` (below) |
 | Permission | Static tool choices per profile | Sentry tool settings, with defaults from MCP annotations |
 

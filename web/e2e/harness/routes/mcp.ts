@@ -96,7 +96,7 @@ export function mcpRoutes(ctx: RouteContext): void {
         oauth_client_id: str(body.oauth_client_id),
         oauth_client_secret_set: str(body.oauth_client_secret) !== "",
         state: "idle",
-        workspaces: [],
+        computers: [],
         created_at: now(),
         updated_at: now(),
       },
@@ -172,7 +172,7 @@ export function mcpRoutes(ctx: RouteContext): void {
     }
     if (!s.enabled) {
       s.state = "disabled";
-      s.workspaces = [];
+      s.computers = [];
     } else if (s.kind === "http") {
       connectHTTP(d);
     } else if (s.state === "disabled") {
@@ -193,14 +193,14 @@ export function mcpRoutes(ctx: RouteContext): void {
     if ("status" in d) return d;
     if (!d.server.enabled) return fail(409, "conflict", "the server is off");
     if (d.server.kind === "stdio") {
-      const id = str(body.workspace_id);
+      const id = str(body.computer_id);
       if (id === "") {
-        return fail(400, "invalid_request", "a stdio server runs in a workspace: name one");
+        return fail(400, "invalid_request", "a stdio server runs in a computer: name one");
       }
-      const ws = running(id);
-      if ("status" in ws) return ws;
+      const cx = running(id);
+      if ("status" in cx) return cx;
       d.server.state = "connected";
-      d.server.workspaces = [...new Set([...(d.server.workspaces ?? []), ws.id])];
+      d.server.computers = [...new Set([...(d.server.computers ?? []), cx.id])];
     } else {
       connectHTTP(d);
     }

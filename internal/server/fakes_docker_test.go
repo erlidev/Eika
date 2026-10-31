@@ -15,12 +15,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/local"
 	"github.com/erlidev/eika/internal/executor/sandbox"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/server"
-	"github.com/erlidev/eika/internal/workspace"
 )
 
 // request sends one API request with the bearer token and returns the
@@ -60,15 +60,15 @@ func decodeBody[T any](t *testing.T, rec *httptest.ResponseRecorder, status int)
 	return v
 }
 
-// fakeHost is a workspace host whose workspaces are directories in a
+// fakeHost is a computer host whose computers are directories in a
 // temporary tree. It is what lets the handler tests exercise every route
-// without a Docker daemon; the real host is covered by the workspace
+// without a Docker daemon; the real host is covered by the computer
 // package's own docker-tagged tests.
 type fakeHost struct {
 	root string
 
-	mu         sync.Mutex
-	workspaces map[string]*fakeWorkspace
+	mu        sync.Mutex
+	computers map[string]*fakeComputer
 	// createErr and startErr fail the matching call when set.
 	createErr  error
 	startErr   error
@@ -81,116 +81,111 @@ type fakeHost struct {
 	// middle of a creation the harness has already got a container out of.
 	startHook func()
 	// process starts what Process is asked for, which is how a test puts a
-	// stdio MCP server in a workspace; processes records where.
+	// stdio MCP server in a computer; processes records where.
 	process   func(spec sandbox.ProcessSpec) (io.ReadWriteCloser, error)
 	processes []string
 	// egressControl is what EgressControl reports: whether the host has an
-	// internal network to put a restricted workspace on.
+	// internal network to put a restricted computer on.
 	egressControl bool
-	// confined records every confinement a workspace was created or
-	// confined with, in order, by workspace id.
-	confined map[string][]workspace.Confinement
+	// confined records every confinement a computer was created or
+	// confined with, in order, by computer id.
+	confined map[string][]computer.Confinement
 }
 
-// fakeWorkspace is one workspace of a fakeHost.
-type fakeWorkspace struct {
-	ws  workspace.Workspace
+// fakeComputer is one computer of a fakeHost.
+type fakeComputer struct {
+	cx  computer.Computer
 	dir string
 }
 
-// newFakeHost returns a host whose workspaces live under a temporary
+// newFakeHost returns a host whose computers live under a temporary
 // directory the test owns.
 func newFakeHost(t *testing.T) *fakeHost {
 	t.Helper()
 	return &fakeHost{
-		root: t.TempDir(), workspaces: map[string]*fakeWorkspace{},
-		confined: map[string][]workspace.Confinement{},
+		root: t.TempDir(), computers: map[string]*fakeComputer{},
+		confined: map[string][]computer.Confinement{},
 	}
 }
 
-// filesOf returns the directory the files of a workspace the host reported
-// are in: its container's directory, narrowed to ws.Dir as the real host's
-// daemon client is.
-func (h *fakeHost) filesOf(ws workspace.Workspace) (string, error) {
-	dir, err := h.dirOf(ws.ID)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, filepath.FromSlash(ws.Dir)), nil
+// filesOf returns the directory the files of a computer the host reported
+// are in: its container's directory.
+func (h *fakeHost) filesOf(cx computer.Computer) (string, error) {
+	return h.dirOf(cx.ID)
 }
 
-// dirOf returns the directory a workspace's container holds.
+// dirOf returns the directory a computer's container holds.
 func (h *fakeHost) dirOf(id string) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	found, ok := h.workspaces[id]
+	found, ok := h.computers[id]
 	if !ok {
-		return "", fmt.Errorf("%w: %s", workspace.ErrNoWorkspace, id)
+		return "", fmt.Errorf("%w: %s", computer.ErrNoComputer, id)
 	}
 	return found.dir, nil
 }
 
-// Create makes the workspace's directory.
-func (h *fakeHost) Create(_ context.Context, spec workspace.Spec) (workspace.Workspace, error) {
+// Create makes the computer's directory.
+func (h *fakeHost) Create(_ context.Context, spec computer.Spec) (computer.Computer, error) {
 	if h.createErr != nil {
-		return workspace.Workspace{}, h.createErr
+		return computer.Computer{}, h.createErr
 	}
 	if spec.Confinement.Proxied && !h.EgressControl() {
-		return workspace.Workspace{}, workspace.ErrNoEgressControl
+		return computer.Computer{}, computer.ErrNoEgressControl
 	}
 	dir := filepath.Join(h.root, spec.ID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return workspace.Workspace{}, err
+		return computer.Computer{}, err
 	}
-	ws := workspace.Workspace{
+	cx := computer.Computer{
 		ID:          spec.ID,
 		ContainerID: "container-" + spec.ID,
 		Image:       spec.Image,
-		State:       workspace.StateCreating,
+		State:       computer.StateCreating,
 		ProxyToken:  "proxy-token-" + spec.ID,
 		Proxied:     spec.Confinement.Proxied,
 	}
-	if ws.Image == "" {
-		ws.Image = "eika-sandbox:latest"
+	if cx.Image == "" {
+		cx.Image = "eika-sandbox:latest"
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.workspaces[ws.ID] = &fakeWorkspace{ws: ws, dir: dir}
-	h.confined[ws.ID] = append(h.confined[ws.ID], spec.Confinement)
-	return ws, nil
+	h.computers[cx.ID] = &fakeComputer{cx: cx, dir: dir}
+	h.confined[cx.ID] = append(h.confined[cx.ID], spec.Confinement)
+	return cx, nil
 }
 
-// Confine records the confinement a workspace was given.
-func (h *fakeHost) Confine(_ context.Context, ws *workspace.Workspace, c workspace.Confinement) error {
+// Confine records the confinement a computer was given.
+func (h *fakeHost) Confine(_ context.Context, cx *computer.Computer, c computer.Confinement) error {
 	if c.Proxied && !h.EgressControl() {
-		return workspace.ErrNoEgressControl
+		return computer.ErrNoEgressControl
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	found, ok := h.workspaces[ws.ID]
+	found, ok := h.computers[cx.ID]
 	if !ok {
-		return fmt.Errorf("%w: %s", workspace.ErrNoWorkspace, ws.ID)
+		return fmt.Errorf("%w: %s", computer.ErrNoComputer, cx.ID)
 	}
-	found.ws.Proxied, ws.Proxied = c.Proxied, c.Proxied
-	h.confined[ws.ID] = append(h.confined[ws.ID], c)
+	found.cx.Proxied, cx.Proxied = c.Proxied, c.Proxied
+	h.confined[cx.ID] = append(h.confined[cx.ID], c)
 	return nil
 }
 
-// confinements returns what a workspace was created and confined with.
-func (h *fakeHost) confinements(id string) []workspace.Confinement {
+// confinements returns what a computer was created and confined with.
+func (h *fakeHost) confinements(id string) []computer.Confinement {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return slices.Clone(h.confined[id])
 }
 
-// Usage reports a fixed sample of a running workspace.
-func (h *fakeHost) Usage(context.Context, workspace.Workspace) (workspace.Usage, error) {
-	return workspace.Usage{CPUPercent: 42, MemoryBytes: 256 << 20, MemoryLimitBytes: 1 << 30, PIDs: 7}, nil
+// Usage reports a fixed sample of a running computer.
+func (h *fakeHost) Usage(context.Context, computer.Computer) (computer.Usage, error) {
+	return computer.Usage{CPUPercent: 42, MemoryBytes: 256 << 20, MemoryLimitBytes: 1 << 30, PIDs: 7}, nil
 }
 
 // Capacity is a host of four cores and 8 GiB.
-func (h *fakeHost) Capacity(context.Context) (workspace.Capacity, error) {
-	return workspace.Capacity{CPUs: 4, MemoryBytes: 8 << 30}, nil
+func (h *fakeHost) Capacity(context.Context) (computer.Capacity, error) {
+	return computer.Capacity{CPUs: 4, MemoryBytes: 8 << 30}, nil
 }
 
 // EgressControl reports what the test set.
@@ -200,111 +195,111 @@ func (h *fakeHost) EgressControl() bool {
 	return h.egressControl
 }
 
-// Start marks the workspace running.
-func (h *fakeHost) Start(_ context.Context, ws *workspace.Workspace) error {
+// Start marks the computer running.
+func (h *fakeHost) Start(_ context.Context, cx *computer.Computer) error {
 	if h.startHook != nil {
 		h.startHook()
 	}
 	if h.startErr != nil {
 		return h.startErr
 	}
-	return h.update(ws, workspace.StateRunning)
+	return h.update(cx, computer.StateRunning)
 }
 
-// Stop marks the workspace stopped.
-func (h *fakeHost) Stop(_ context.Context, ws *workspace.Workspace) error {
-	return h.update(ws, workspace.StateStopped)
+// Stop marks the computer stopped.
+func (h *fakeHost) Stop(_ context.Context, cx *computer.Computer) error {
+	return h.update(cx, computer.StateStopped)
 }
 
-// Destroy forgets the workspace and removes its directory. It honours the
+// Destroy forgets the computer and removes its directory. It honours the
 // context, as a Docker client does, so that a cleanup running on the request
 // that failed would be seen to fail with it.
-func (h *fakeHost) Destroy(ctx context.Context, ws *workspace.Workspace) error {
+func (h *fakeHost) Destroy(ctx context.Context, cx *computer.Computer) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	h.mu.Lock()
-	found, ok := h.workspaces[ws.ID]
-	delete(h.workspaces, ws.ID)
+	found, ok := h.computers[cx.ID]
+	delete(h.computers, cx.ID)
 	h.mu.Unlock()
 	if ok {
 		if err := os.RemoveAll(found.dir); err != nil {
 			return err
 		}
 	}
-	ws.State = workspace.StateGone
+	cx.State = computer.StateGone
 	return nil
 }
 
-// Inspect returns one workspace.
-func (h *fakeHost) Inspect(_ context.Context, id string) (workspace.Workspace, error) {
+// Inspect returns one computer.
+func (h *fakeHost) Inspect(_ context.Context, id string) (computer.Computer, error) {
 	if h.inspectErr != nil {
-		return workspace.Workspace{}, h.inspectErr
+		return computer.Computer{}, h.inspectErr
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	found, ok := h.workspaces[id]
+	found, ok := h.computers[id]
 	if !ok {
-		return workspace.Workspace{}, fmt.Errorf("%w: %s", workspace.ErrNoWorkspace, id)
+		return computer.Computer{}, fmt.Errorf("%w: %s", computer.ErrNoComputer, id)
 	}
-	return found.ws, nil
+	return found.cx, nil
 }
 
-// List returns every workspace the host has.
-func (h *fakeHost) List(context.Context) ([]workspace.Workspace, error) {
+// List returns every computer the host has.
+func (h *fakeHost) List(context.Context) ([]computer.Computer, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	out := make([]workspace.Workspace, 0, len(h.workspaces))
-	for _, found := range h.workspaces {
-		out = append(out, found.ws)
+	out := make([]computer.Computer, 0, len(h.computers))
+	for _, found := range h.computers {
+		out = append(out, found.cx)
 	}
 	return out, nil
 }
 
-// Executor returns an executor on the workspace's directory.
-func (h *fakeHost) Executor(ws workspace.Workspace) (executor.Executor, error) {
-	dir, err := h.filesOf(ws)
+// Executor returns an executor on the computer's directory.
+func (h *fakeHost) Executor(cx computer.Computer) (executor.Executor, error) {
+	dir, err := h.filesOf(cx)
 	if err != nil {
 		return nil, err
 	}
 	return local.New(dir)
 }
 
-// Process starts what the test scripted, in a workspace the host has.
-func (h *fakeHost) Process(_ context.Context, ws workspace.Workspace, spec sandbox.ProcessSpec, _ func(string)) (io.ReadWriteCloser, error) {
+// Process starts what the test scripted, in a computer the host has.
+func (h *fakeHost) Process(_ context.Context, cx computer.Computer, spec sandbox.ProcessSpec, _ func(string)) (io.ReadWriteCloser, error) {
 	h.mu.Lock()
-	_, ok := h.workspaces[ws.ID]
+	_, ok := h.computers[cx.ID]
 	start := h.process
 	if ok {
-		h.processes = append(h.processes, ws.ID)
+		h.processes = append(h.processes, cx.ID)
 	}
 	h.mu.Unlock()
 	switch {
 	case !ok:
-		return nil, fmt.Errorf("%w: %s", workspace.ErrNoWorkspace, ws.ID)
+		return nil, fmt.Errorf("%w: %s", computer.ErrNoComputer, cx.ID)
 	case start == nil:
 		return nil, fmt.Errorf("the fake host runs no %s", spec.Command)
 	}
 	return start(spec)
 }
 
-// started returns the workspaces a process was started in, in order.
+// started returns the computers a process was started in, in order.
 func (h *fakeHost) started() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return slices.Clone(h.processes)
 }
 
-// update records a new state for a workspace.
-func (h *fakeHost) update(ws *workspace.Workspace, state workspace.State) error {
+// update records a new state for a computer.
+func (h *fakeHost) update(cx *computer.Computer, state computer.State) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	found, ok := h.workspaces[ws.ID]
+	found, ok := h.computers[cx.ID]
 	if !ok {
-		return fmt.Errorf("%w: %s", workspace.ErrNoWorkspace, ws.ID)
+		return fmt.Errorf("%w: %s", computer.ErrNoComputer, cx.ID)
 	}
-	found.ws.State = state
-	ws.State = state
+	found.cx.State = state
+	cx.State = state
 	return nil
 }
 
@@ -336,6 +331,6 @@ func (p fakeProviders) Build(kind string, e provider.Endpoint) (provider.Provide
 }
 
 var (
-	_ server.Workspaces = (*fakeHost)(nil)
-	_ server.Providers  = fakeProviders{}
+	_ server.Computers = (*fakeHost)(nil)
+	_ server.Providers = fakeProviders{}
 )

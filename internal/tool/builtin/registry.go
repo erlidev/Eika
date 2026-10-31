@@ -6,7 +6,7 @@ import (
 	"github.com/erlidev/eika/internal/tool"
 )
 
-// Deps are what the tools that reach beyond the workspace are given.
+// Deps are what the tools that reach beyond the computer are given.
 type Deps struct {
 	// Questions is the broker ask_user waits on.
 	Questions *Questions
@@ -18,7 +18,7 @@ type Deps struct {
 // Registry returns a registry holding every built-in tool. It is the one place
 // built-in tools are registered; adding a tool means adding it to this list.
 // The registry is safe to share between runs because tools are stateless: a
-// call gets its workspace from the tool.CallContext.
+// call gets its computer from the tool.CallContext.
 //
 // A nil dependency leaves its tools registered but failing, which is what a
 // run nobody can answer wants.

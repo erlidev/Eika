@@ -74,7 +74,7 @@ type serverTool struct {
 	tool     Tool
 	headers  []headerParam
 	// local marks a stdio server's tool, which runs in the call's
-	// workspace.
+	// computer.
 	local bool
 }
 
@@ -102,7 +102,7 @@ func (t *serverTool) Call(ctx context.Context, c tool.CallContext, args json.Raw
 // a network request the harness makes.
 type remoteTool struct{ *serverTool }
 
-// Standalone marks the tool as one that needs no workspace.
+// Standalone marks the tool as one that needs no computer.
 func (remoteTool) Standalone() {}
 
 var _ tool.Standalone = remoteTool{}
@@ -128,10 +128,10 @@ func toolSchema(raw json.RawMessage) json.RawMessage {
 }
 
 // Tools returns the tools a run may offer from every server it can reach:
-// the remote servers, and the stdio servers in workspaceID when there is
+// the remote servers, and the stdio servers in computerID when there is
 // one. A server not connected yet is given connectWait to connect; one that
 // cannot be reached leaves its tools out.
-func (p *Pool) Tools(ctx context.Context, workspaceID string) []tool.Tool {
+func (p *Pool) Tools(ctx context.Context, computerID string) []tool.Tool {
 	cfgs, err := p.opts.Store.MCPServers(ctx)
 	if err != nil {
 		p.log.Error("list mcp servers for a run", "error", err)
@@ -145,11 +145,11 @@ func (p *Pool) Tools(ctx context.Context, workspaceID string) []tool.Tool {
 		found []listedServer
 	)
 	for _, cfg := range cfgs {
-		if !cfg.Enabled || (cfg.Kind == KindStdio && workspaceID == "") {
+		if !cfg.Enabled || (cfg.Kind == KindStdio && computerID == "") {
 			continue
 		}
 		wg.Go(func() {
-			c, err := p.connection(waitCtx, cfg.ID, workspaceID, false)
+			c, err := p.connection(waitCtx, cfg.ID, computerID, false)
 			if err != nil {
 				return
 			}
@@ -251,9 +251,9 @@ func (p *Pool) serverTools(cfg ServerConfig, tools []Tool) []tool.Tool {
 func (p *Pool) call(ctx context.Context, t *serverTool, cc tool.CallContext, args json.RawMessage) tool.Result {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	workspace := ""
+	computer := ""
 	if t.local {
-		workspace = cc.WorkspaceID
+		computer = cc.ComputerID
 	}
 	opts := CallOptions{
 		Headers:  paramHeaders(t.headers, args),
@@ -261,7 +261,7 @@ func (p *Pool) call(ctx context.Context, t *serverTool, cc tool.CallContext, arg
 		Elicit:   p.elicitor(cc, t.server),
 	}
 	for attempt := 0; ; attempt++ {
-		c, err := p.connection(ctx, t.serverID, workspace, attempt > 0)
+		c, err := p.connection(ctx, t.serverID, computer, attempt > 0)
 		if err != nil {
 			return tool.Errorf("The MCP server %s is not available: %v", t.server, err)
 		}
@@ -325,11 +325,11 @@ func (p *Pool) recover(ctx context.Context, id string, c *conn, err error) bool 
 // connects again, and reports why.
 func (p *Pool) retire(s *server, c *conn, err error) {
 	s.mu.Lock()
-	current := s.connFor(c.workspace) == c
+	current := s.connFor(c.computer) == c
 	if current {
-		failed := &conn{workspace: c.workspace, ready: make(chan struct{}), cancelOpen: func() {}, err: err, attempted: c.attempted}
+		failed := &conn{computer: c.computer, ready: make(chan struct{}), cancelOpen: func() {}, err: err, attempted: c.attempted}
 		close(failed.ready)
-		s.setConn(c.workspace, failed)
+		s.setConn(c.computer, failed)
 	}
 	s.mu.Unlock()
 	if current {
@@ -379,11 +379,11 @@ func progressLine(pr Progress) string {
 	return line + "\n"
 }
 
-// ReadResource reads a resource of a server, in the given workspace for a
+// ReadResource reads a resource of a server, in the given computer for a
 // stdio server. A server that asks the user for input is told there is
 // nobody to ask.
-func (p *Pool) ReadResource(ctx context.Context, id, workspaceID, uri string) (*ReadResourceResult, error) {
-	c, err := p.connection(ctx, id, workspaceID, false)
+func (p *Pool) ReadResource(ctx context.Context, id, computerID, uri string) (*ReadResourceResult, error) {
+	c, err := p.connection(ctx, id, computerID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -393,8 +393,8 @@ func (p *Pool) ReadResource(ctx context.Context, id, workspaceID, uri string) (*
 }
 
 // GetPrompt renders a prompt of a server with its arguments.
-func (p *Pool) GetPrompt(ctx context.Context, id, workspaceID, name string, args map[string]string) (*GetPromptResult, error) {
-	c, err := p.connection(ctx, id, workspaceID, false)
+func (p *Pool) GetPrompt(ctx context.Context, id, computerID, name string, args map[string]string) (*GetPromptResult, error) {
+	c, err := p.connection(ctx, id, computerID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +455,7 @@ func (t listResources) Call(ctx context.Context, cc tool.CallContext, raw json.R
 		if args.Server != "" && rs.name != args.Server {
 			continue
 		}
-		c, err := t.pool.connection(ctx, rs.id, workspaceFor(rs, cc), false)
+		c, err := t.pool.connection(ctx, rs.id, computerFor(rs, cc), false)
 		if err != nil {
 			fmt.Fprintf(&b, "## %s\n(not available: %v)\n\n", rs.name, err)
 			continue
@@ -523,10 +523,10 @@ func (t readResource) Call(ctx context.Context, cc tool.CallContext, raw json.Ra
 		return tool.Errorf("no connected MCP server with resources is called %q", args.Server), nil
 	}
 	rs := t.servers[i]
-	if rs.local && cc.WorkspaceID == "" {
-		return tool.Errorf("%s runs in a workspace, and this session has none", rs.name), nil
+	if rs.local && cc.ComputerID == "" {
+		return tool.Errorf("%s runs in a computer, and this session has none", rs.name), nil
 	}
-	c, err := t.pool.connection(ctx, rs.id, workspaceFor(rs, cc), false)
+	c, err := t.pool.connection(ctx, rs.id, computerFor(rs, cc), false)
 	if err != nil {
 		return tool.Errorf("The MCP server %s is not available: %v", rs.name, err), nil
 	}
@@ -544,10 +544,10 @@ func (t readResource) Call(ctx context.Context, cc tool.CallContext, raw json.Ra
 	return tool.Result{Content: truncateMiddle(strings.Join(parts, "\n\n"), maxResultBytes), Details: details}, nil
 }
 
-// workspaceFor is the workspace a resource tool reaches a server in.
-func workspaceFor(rs resourceServer, cc tool.CallContext) string {
+// computerFor is the computer a resource tool reaches a server in.
+func computerFor(rs resourceServer, cc tool.CallContext) string {
 	if rs.local {
-		return cc.WorkspaceID
+		return cc.ComputerID
 	}
 	return ""
 }

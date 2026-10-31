@@ -20,7 +20,7 @@ const turn: EikaEvent[] = [
   ev("turn.start", {
     run_id: "r1",
     session_id: sessionID,
-    workspace_id: "w1",
+    computer_id: "w1",
     message: "list the files",
   }),
   ev("message.delta", { run_id: "r1", text: "I will " }),
@@ -134,7 +134,7 @@ describe("applyEvent", () => {
     // The two events race, so a tool that finishes fast can be reported
     // before its call reaches the client.
     const state = fold([
-      ev("turn.start", { run_id: "r1", session_id: sessionID, workspace_id: "w1", message: "go" }),
+      ev("turn.start", { run_id: "r1", session_id: sessionID, computer_id: "w1", message: "go" }),
       ev("tool.result", {
         run_id: "r1",
         call_id: "c1",
@@ -322,7 +322,7 @@ describe("applyEvent", () => {
 
   it("ignores an event type it has no rule for", () => {
     const before = newTranscript(sessionID);
-    expect(applyEvent(before, ev("workspace.state", { run_id: "r1" }))).toBe(before);
+    expect(applyEvent(before, ev("computer.state", { run_id: "r1" }))).toBe(before);
   });
 });
 
@@ -413,7 +413,7 @@ describe("a turn the endpoint cut off", () => {
     const restart = ev("turn.start", {
       run_id: "r2",
       session_id: sessionID,
-      workspace_id: "w1",
+      computer_id: "w1",
       message: "carry on",
     });
     const state = fold([...turn.slice(0, 3), ended("length"), restart]);

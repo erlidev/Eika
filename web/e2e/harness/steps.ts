@@ -36,7 +36,7 @@ export const verbs: Record<string, string> = {
   reload: "reload",
   theme: "theme light|dark",
   viewport: "viewport <w>x<h>    e.g. 390x844",
-  emit: 'emit <event json>    e.g. {"type":"workspace.state","topic":"workspace:ws-retries","payload":{...}}',
+  emit: 'emit <event json>    e.g. {"type":"computer.state","topic":"computer:cx-retries","payload":{...}}',
   shot: "shot <name> [= <target>]   screenshot the viewport, or one element",
   fullshot: "fullshot <name>      screenshot the whole scrollable page",
   fail: "fail <route> = <failure>   e.g. fail GET /api/providers = 500; also 502 bare, network, hang",

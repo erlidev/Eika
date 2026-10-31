@@ -19,9 +19,9 @@ import (
 type toolBody struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	// NeedsWorkspace reports whether the tool can run only in a session with
-	// a workspace, which keeps it out of a chat.
-	NeedsWorkspace bool `json:"needs_workspace"`
+	// NeedsComputer reports whether the tool can run only in a session with
+	// a computer, which keeps it out of a chat.
+	NeedsComputer bool `json:"needs_computer"`
 	// Server names the MCP server whose tool this is; absent for a built-in
 	// tool and for the resource tools, which reach every server of a run.
 	Server string `json:"server,omitempty"`
@@ -45,18 +45,18 @@ type setToolsRequest struct {
 }
 
 // handleListTools lists every tool a run can offer the model, ordered by
-// name, with whether it needs a workspace and what it costs a request: the
+// name, with whether it needs a computer and what it costs a request: the
 // built-in tools, and those the MCP servers offered when they were last
 // listed.
 func (s *Server) handleListTools(w http.ResponseWriter, _ *http.Request) {
 	out := toolsResponse{Tools: []toolBody{}}
 	for _, t := range s.allTools().List() {
 		out.Tools = append(out.Tools, toolBody{
-			Name:           t.Name(),
-			Description:    t.Description(),
-			NeedsWorkspace: tool.NeedsWorkspace(t),
-			Server:         mcp.ServerOf(t),
-			Tokens:         agent.ToolTokens(provider.ToolDef{Name: t.Name(), Description: t.Description(), Schema: t.Schema()}),
+			Name:          t.Name(),
+			Description:   t.Description(),
+			NeedsComputer: tool.NeedsComputer(t),
+			Server:        mcp.ServerOf(t),
+			Tokens:        agent.ToolTokens(provider.ToolDef{Name: t.Name(), Description: t.Description(), Schema: t.Schema()}),
 		})
 	}
 	writeJSON(w, s.log, http.StatusOK, out)
@@ -100,7 +100,7 @@ func (s *Server) handleSetSessionTools(w http.ResponseWriter, r *http.Request) {
 // checkToolChoice validates a tool choice and returns it sorted, without
 // repeats. Every entry names a tool a run can offer, or is
 // mcp__<server>__* for a configured MCP server. A choice for a chat names
-// nothing that needs a workspace.
+// nothing that needs a computer.
 func (s *Server) checkToolChoice(ctx context.Context, choice []string, chat bool) ([]string, error) {
 	var servers []store.MCPServer
 	if slices.ContainsFunc(choice, isServerChoice) && s.deps.MCP != nil {
@@ -117,15 +117,15 @@ func (s *Server) checkToolChoice(ctx context.Context, choice []string, chat bool
 			case i < 0:
 				return nil, invalidf("there is no MCP server %q for %s", server, name)
 			case chat && servers[i].Kind == mcp.KindStdio:
-				return nil, invalidf("the tools of %s run in a workspace, and a chat has none", server)
+				return nil, invalidf("the tools of %s run in a computer, and a chat has none", server)
 			}
 		} else {
 			t, ok := s.toolNamed(name)
 			switch {
 			case !ok:
 				return nil, invalidf("there is no tool %q", name)
-			case chat && tool.NeedsWorkspace(t):
-				return nil, invalidf("%s needs a workspace, and a chat has none", name)
+			case chat && tool.NeedsComputer(t):
+				return nil, invalidf("%s needs a computer, and a chat has none", name)
 			}
 		}
 		if !slices.Contains(names, name) {
@@ -193,11 +193,11 @@ func (s *Server) allTools() *tool.Registry {
 // runTools is the registry a run of sess offers the model: the tools every
 // run shares and the MCP tools given, narrowed to what the tool choice
 // takes and the session can run. A chat's runs never hold a tool that needs
-// a workspace. Narrowing the registry, rather than refusing a call, means
+// a computer. Narrowing the registry, rather than refusing a call, means
 // the model is never told about a tool it may not use.
 func (s *Server) runTools(sess store.Session, choice []string, mcpTools []tool.Tool) *tool.Registry {
 	return s.narrowed(func(t tool.Tool) bool {
-		if sess.Chat() && tool.NeedsWorkspace(t) {
+		if sess.Chat() && tool.NeedsComputer(t) {
 			return false
 		}
 		return toolChosen(choice, t)
@@ -247,7 +247,7 @@ func (s *Server) offeredMCP() []tool.Tool {
 }
 
 // mcpToolsFor connects the MCP servers a run of sess may use, remote ones
-// and the stdio ones in its workspace, and returns their tools. A tool
+// and the stdio ones in its computer, and returns their tools. A tool
 // choice that names no MCP tool connects none, so a stdio server is not
 // started for a run that cannot call it.
 func (s *Server) mcpToolsFor(ctx context.Context, sess store.Session, choice []string) []tool.Tool {
@@ -257,7 +257,7 @@ func (s *Server) mcpToolsFor(ctx context.Context, sess store.Session, choice []s
 	if choice != nil && !slices.ContainsFunc(choice, isMCPTool) {
 		return nil
 	}
-	return s.deps.MCP.Tools(ctx, sess.WorkspaceID)
+	return s.deps.MCP.Tools(ctx, sess.ComputerID)
 }
 
 // isMCPTool reports whether a tool name is one the MCP pool offers: a

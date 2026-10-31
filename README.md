@@ -2,7 +2,7 @@
 
 Eika is a Docker-native agentic coding harness. Agents work inside sandbox
 containers, never on the host: every file read, file write, and command goes
-through a workspace container, with CPU, memory, and network limits you set.
+through a computer container, with CPU, memory, and network limits you set.
 Around that it adds session trees, chats, web search, MCP
 servers, agent profiles, and a web UI.
 

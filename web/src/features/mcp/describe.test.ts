@@ -17,7 +17,7 @@ const server: MCPServer = {
   oauth_client_id: "",
   oauth_client_secret_set: false,
   state: "idle",
-  workspaces: null,
+  computers: null,
   created_at: "2026-03-14T10:00:00Z",
   updated_at: "2026-03-14T10:00:00Z",
 };

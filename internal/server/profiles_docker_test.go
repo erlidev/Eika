@@ -216,8 +216,8 @@ func TestProfileRoutes(t *testing.T) {
 
 func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
-	sess := a.newSession(t, ws.ID)
+	cx := a.newComputer(t)
+	sess := a.newSession(t, cx.ID)
 
 	profile := a.newProfile(t, map[string]any{
 		"name": "Terse", "chat_prompt": "You are terse.", "instructions": "Answer in one line.",
@@ -296,7 +296,7 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	if recorded.Sources["sampling.temperature"] != "session" || deref(recorded.Parameters.Sampling.Temperature) != 0.9 {
 		t.Errorf("recorded parameters = %+v, sources %v", recorded.Parameters, recorded.Sources)
 	}
-	refused(t, request(t, a.Server, "GET", "/api/sessions/"+a.newSession(t, ws.ID).ID+"/requests/"+rec.ID, nil), 404)
+	refused(t, request(t, a.Server, "GET", "/api/sessions/"+a.newSession(t, cx.ID).ID+"/requests/"+rec.ID, nil), 404)
 
 	// A request for a model names the top layer.
 	named := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/context?model=test-model", nil), 200)
@@ -428,8 +428,8 @@ func TestAToolChoiceNamesAnMCPServer(t *testing.T) {
 
 func TestForksKeepTheProfile(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
-	sess := a.newSession(t, ws.ID)
+	cx := a.newComputer(t)
+	sess := a.newSession(t, cx.ID)
 	profile := a.newProfile(t, map[string]any{"name": "Inherited"})
 	a.useProfile(t, sess.ID, profile.ID)
 	a.override(t, sess.ID, map[string]any{"instructions": "from the parent"})
@@ -492,11 +492,11 @@ func TestAnEditorSeesTheValuesOfTheModelItChoseBeforeSaving(t *testing.T) {
 	}
 }
 
-func TestAStoppedWorkspaceStillHasAPreview(t *testing.T) {
+func TestAStoppedComputerStillHasAPreview(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
-	sess := a.newSession(t, ws.ID)
-	if rec := request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/stop", nil); rec.Code != 200 {
+	cx := a.newComputer(t)
+	sess := a.newSession(t, cx.ID)
+	if rec := request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil); rec.Code != 200 {
 		t.Fatalf("stop = %d", rec.Code)
 	}
 

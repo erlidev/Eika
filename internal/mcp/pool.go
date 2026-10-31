@@ -33,7 +33,7 @@ const (
 const (
 	// KindHTTP is a remote server the harness connects to.
 	KindHTTP = "http"
-	// KindStdio is a command started in the workspace of each session
+	// KindStdio is a command started in the computer of each session
 	// that uses it.
 	KindStdio = "stdio"
 )
@@ -41,8 +41,8 @@ const (
 // ErrDisabled reports a server the user turned off.
 var ErrDisabled = errors.New("the server is turned off")
 
-// ErrNeedsWorkspace reports a stdio server asked for outside a workspace.
-var ErrNeedsWorkspace = errors.New("a stdio server runs in a workspace, and none was given")
+// ErrNeedsComputer reports a stdio server asked for outside a computer.
+var ErrNeedsComputer = errors.New("a stdio server runs in a computer, and none was given")
 
 // ServerConfig is one server the user configured, with its secrets open.
 type ServerConfig struct {
@@ -100,12 +100,12 @@ type Command struct {
 }
 
 // Launcher starts a stdio server's process where the harness runs agent
-// processes: in a workspace.
+// processes: in a computer.
 type Launcher interface {
-	// Launch starts cmd in a running workspace. Writes reach the process's
+	// Launch starts cmd in a running computer. Writes reach the process's
 	// stdin, reads come from its stdout, and Close ends it. Every line it
 	// writes to stderr is passed to stderr.
-	Launch(ctx context.Context, workspaceID string, cmd Command, stderr func(string)) (io.ReadWriteCloser, error)
+	Launch(ctx context.Context, computerID string, cmd Command, stderr func(string)) (io.ReadWriteCloser, error)
 }
 
 // Options configure a Pool.
@@ -126,7 +126,7 @@ type Options struct {
 }
 
 // Pool keeps the connections to the servers the user configured: one to
-// each remote server, and one to each stdio server in each workspace that
+// each remote server, and one to each stdio server in each computer that
 // runs it. It connects on demand, reports every change of state, and hands a
 // run the tools of the servers it can reach.
 type Pool struct {
@@ -161,8 +161,8 @@ type LogLine struct {
 type Status struct {
 	State string
 	Error string
-	// Workspaces are where a stdio server is running.
-	Workspaces []string
+	// Computers are where a stdio server is running.
+	Computers []string
 }
 
 // NewPool returns a pool over the configured servers. Start connects the
@@ -263,9 +263,9 @@ func (p *Pool) Removed(id string) {
 	p.emitState(id, name, Status{State: StateRemoved})
 }
 
-// StopWorkspace ends the stdio servers running in a workspace that is
+// StopComputer ends the stdio servers running in a computer that is
 // stopping, whose processes are about to end with it.
-func (p *Pool) StopWorkspace(workspaceID string) {
+func (p *Pool) StopComputer(computerID string) {
 	p.mu.Lock()
 	servers := make([]*server, 0, len(p.servers))
 	for _, s := range p.servers {
@@ -273,7 +273,7 @@ func (p *Pool) StopWorkspace(workspaceID string) {
 	}
 	p.mu.Unlock()
 	for _, s := range servers {
-		conns := s.takeConns(workspaceID)
+		conns := s.takeConns(computerID)
 		for _, c := range conns {
 			c.close()
 		}
@@ -284,15 +284,15 @@ func (p *Pool) StopWorkspace(workspaceID string) {
 }
 
 // Reconnect drops a server's connection and connects it again, in the given
-// workspace for a stdio server. It returns once the attempt finished.
-func (p *Pool) Reconnect(ctx context.Context, id, workspaceID string) error {
+// computer for a stdio server. It returns once the attempt finished.
+func (p *Pool) Reconnect(ctx context.Context, id, computerID string) error {
 	s, cfg, err := p.lookup(ctx, id)
 	if err != nil {
 		return err
 	}
 	key := ""
 	if cfg.Kind == KindStdio {
-		key = workspaceID
+		key = computerID
 	}
 	s.mu.Lock()
 	var old *conn
@@ -306,7 +306,7 @@ func (p *Pool) Reconnect(ctx context.Context, id, workspaceID string) error {
 	if old != nil {
 		old.close()
 	}
-	_, err = p.connection(ctx, id, workspaceID, true)
+	_, err = p.connection(ctx, id, computerID, true)
 	return err
 }
 

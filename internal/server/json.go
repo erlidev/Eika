@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
-	"github.com/erlidev/eika/internal/workspace"
 )
 
 // maxRequestBytes bounds a JSON request body. Everything the API accepts as
@@ -96,7 +96,7 @@ func invalidf(format string, args ...any) error {
 }
 
 // forbiddenf reports a request for something the API will not reach, such as
-// a path outside the workspace.
+// a path outside the computer.
 func forbiddenf(format string, args ...any) error {
 	return apiError{status: http.StatusForbidden, code: codeForbidden, message: fmt.Sprintf(format, args...)}
 }
@@ -140,14 +140,14 @@ func statusOf(err error) (int, string) {
 	switch {
 	case errors.As(err, &api):
 		return api.status, api.code
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, workspace.ErrNoWorkspace),
+	case errors.Is(err, store.ErrNotFound), errors.Is(err, computer.ErrNoComputer),
 		errors.Is(err, builtin.ErrNoQuestion),
 		errors.Is(err, mcp.ErrNoElicitation), errors.Is(err, mcp.ErrNoAuthorization):
 		return http.StatusNotFound, codeNotFound
 	case errors.Is(err, store.ErrConflict), errors.Is(err, mcp.ErrDisabled):
 		return http.StatusConflict, codeConflict
 	case errors.Is(err, builtin.ErrBadAnswer), errors.Is(err, mcp.ErrBadElicitationAnswer),
-		errors.Is(err, mcp.ErrNeedsWorkspace), errors.Is(err, workspace.ErrNoEgressControl):
+		errors.Is(err, mcp.ErrNeedsComputer), errors.Is(err, computer.ErrNoEgressControl):
 		return http.StatusBadRequest, codeInvalidRequest
 	default:
 		return http.StatusInternalServerError, codeInternal

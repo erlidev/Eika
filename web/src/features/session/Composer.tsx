@@ -40,7 +40,7 @@ export type ComposerProps = {
   model: string;
   /** imageInput is whether that model accepts images. */
   imageInput: boolean;
-  /** disabled stops the composer when the workspace is not running. */
+  /** disabled stops the composer when the computer is not running. */
   disabled?: boolean;
   /** disabledReason explains why, under the box. */
   disabledReason?: string;

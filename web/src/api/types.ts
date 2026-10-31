@@ -19,4 +19,4 @@ export * from "@/api/types/search";
 export * from "@/api/types/sessions";
 export * from "@/api/types/settings";
 export * from "@/api/types/system";
-export * from "@/api/types/workspaces";
+export * from "@/api/types/computers";

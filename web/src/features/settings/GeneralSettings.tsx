@@ -1,6 +1,6 @@
 /**
  * The harness-wide choices: the default model, the utility models, the image
- * new workspaces run, and a way back into the guided setup.
+ * new computers run, and a way back into the guided setup.
  */
 
 import { useState } from "react";
@@ -109,7 +109,7 @@ function SandboxForm({ state, save }: SandboxFormProps) {
         </p>
       )}
       <p className="text-muted-foreground text-xs">
-        The image a new workspace runs when it names none. Leave empty for{" "}
+        The image a new computer runs when it names none. Leave empty for{" "}
         <code>{state.defaults.sandbox_image}</code>, which the compose stack builds. Any image
         works: the harness copies its daemon in.
       </p>

@@ -1,10 +1,10 @@
-// Command eikad is the sandbox daemon. It runs inside every workspace
+// Command eikad is the sandbox daemon. It runs inside every computer
 // container and is the only thing the harness talks to when an agent reads a
 // file, writes a file, runs a command, or watches for
 // changes.
 //
 // It refuses to start without EIKAD_TOKEN, which the harness generates per
-// workspace, so a sandbox is never reachable without authentication.
+// computer, so a sandbox is never reachable without authentication.
 //
 // `eikad filter` is a one-shot subcommand instead: it runs a fetch filter
 // read from stdin and writes the outcome to stdout. The harness runs it
@@ -44,7 +44,7 @@ func main() {
 // run serves the daemon until the container stops it.
 func run() error {
 	listen := flag.String("listen", ":7000", "address to listen on")
-	root := flag.String("root", "/workspace", "workspace directory every path is confined to")
+	root := flag.String("root", "/workspace", "computer directory every path is confined to")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))

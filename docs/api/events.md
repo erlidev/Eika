@@ -26,7 +26,7 @@ frame a client sends is one JSON request:
 ### `subscribe`
 
 ```json
-{"type": "subscribe", "topics": ["global", "session:s1", "workspace:w1"]}
+{"type": "subscribe", "topics": ["global", "session:s1", "computer:w1"]}
 ```
 
 Replaces the connection's topics with the ones given. At most 64 topics. A
@@ -66,14 +66,14 @@ it needs with `session.replay`.
 | Field | Type | Meaning |
 |---|---|---|
 | `type` | string | Event type name, for example `tool.call`. |
-| `topic` | string | `global`, `workspace:<id>`, or `session:<id>`. |
+| `topic` | string | `global`, `computer:<id>`, or `session:<id>`. |
 | `time` | RFC 3339 timestamp, UTC | When the event was created. |
 | `payload` | object, optional | Type-specific body. |
 
-There are three kinds of topic: `global`, `workspace:<id>`, and
+There are three kinds of topic: `global`, `computer:<id>`, and
 `session:<id>`. Agent run events, question and elicitation events, and replay
-events are published on `session:<id>`; workspace lifecycle events on
-`workspace:<id>`; MCP server state and session titles and edits on `global`. A
+events are published on `session:<id>`; computer lifecycle events on
+`computer:<id>`; MCP server state and session titles and edits on `global`. A
 `bus.dropped` event reaches one connection only and carries the topic
 `global`, whatever that connection subscribed to.
 
@@ -99,7 +99,7 @@ too large, `message.reset` comes first.
 |---|---|---|
 | `run_id` | string | Identifies the turn. |
 | `session_id` | string | The session the turn runs in. |
-| `workspace_id` | string, optional | The workspace the session belongs to. Absent in a chat. |
+| `computer_id` | string, optional | The computer the session belongs to. Absent in a chat. |
 | `message` | string | The user message that started the turn. Empty when the turn was started by tools alone, or by images alone. |
 | `images` | array, optional | The images the message carries, as `session.message` stores them: `media_type`, base64 `data`, `width`, `height`. |
 
@@ -310,18 +310,18 @@ being asked.
 An MCP tool's `tool.result` carries the server's content blocks in
 `details`; `http.md` documents the shape under MCP tool calls.
 
-## Workspace events
+## Computer events
 
-### `workspace.state`
+### `computer.state`
 
-Published on `workspace:<id>` whenever a workspace reaches a new lifecycle
+Published on `computer:<id>` whenever a computer reaches a new lifecycle
 state, including the reconciliation a harness does at startup. It is also
 published, with the state unchanged, after a file is saved or a rename, pin,
-or archive through the API, so that views of the workspace refresh.
+or archive through the API, so that views of the computer refresh.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `workspace_id` | string | The workspace. |
+| `computer_id` | string | The computer. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 
 ## MCP events
@@ -353,7 +353,7 @@ refetches its session lists.
 | Field | Type | Meaning |
 |---|---|---|
 | `session_id` | string | The session. |
-| `workspace_id` | string, optional | Its workspace, absent for a chat. |
+| `computer_id` | string, optional | Its computer, absent for a chat. |
 | `title` | string | The title it now has. |
 
 ### `session.updated`
@@ -365,7 +365,7 @@ refetches its session lists.
 | Field | Type | Meaning |
 |---|---|---|
 | `session_id` | string | The session. |
-| `workspace_id` | string, optional | Its workspace, absent for a chat. |
+| `computer_id` | string, optional | Its computer, absent for a chat. |
 
 ## Stream events
 

@@ -5,49 +5,49 @@ import (
 	"sync"
 	"time"
 
+	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/store"
-	"github.com/erlidev/eika/internal/workspace"
 )
 
-// idleSweepInterval is how often the harness looks for running workspaces
+// idleSweepInterval is how often the harness looks for running computers
 // that have gone unused for the idle timeout. It bounds how late a stop is.
 const idleSweepInterval = time.Minute
 
-// idleWorkspaces stops the running workspaces no run has used for the
-// workspace_idle_minutes setting, so an unattended sandbox gives its memory
-// and CPU back. A workspace is in use while a run is going or being built in
+// idleComputers stops the running computers no run has used for the
+// computer_idle_minutes setting, so an unattended sandbox gives its memory
+// and CPU back. A computer is in use while a run is going or being built in
 // it or in a worktree it holds; nothing else counts.
 //
-// What it knows lives in memory: after a restart every running workspace
+// What it knows lives in memory: after a restart every running computer
 // gets the whole timeout again, which errs on the side of leaving one up.
-type idleWorkspaces struct {
+type idleComputers struct {
 	server *Server
 
 	mu sync.Mutex
-	// lastUsed is when each workspace was last seen in use, by workspace id.
+	// lastUsed is when each computer was last seen in use, by computer id.
 	lastUsed map[string]time.Time
 }
 
-// newIdleWorkspaces returns the idle stopper of the server.
-func newIdleWorkspaces(s *Server) *idleWorkspaces {
-	return &idleWorkspaces{server: s, lastUsed: make(map[string]time.Time)}
+// newIdleComputers returns the idle stopper of the server.
+func newIdleComputers(s *Server) *idleComputers {
+	return &idleComputers{server: s, lastUsed: make(map[string]time.Time)}
 }
 
-// used records that a workspace was in use at the given time. A chat, which
-// has no workspace, passes the empty id and is ignored.
-func (i *idleWorkspaces) used(workspaceID string, at time.Time) {
-	if workspaceID == "" {
+// used records that a computer was in use at the given time. A chat, which
+// has no computer, passes the empty id and is ignored.
+func (i *idleComputers) used(computerID string, at time.Time) {
+	if computerID == "" {
 		return
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if at.After(i.lastUsed[workspaceID]) {
-		i.lastUsed[workspaceID] = at
+	if at.After(i.lastUsed[computerID]) {
+		i.lastUsed[computerID] = at
 	}
 }
 
 // watch sweeps once a minute until ctx is cancelled.
-func (i *idleWorkspaces) watch(ctx context.Context) {
+func (i *idleComputers) watch(ctx context.Context) {
 	ticker := time.NewTicker(idleSweepInterval)
 	defer ticker.Stop()
 	for {
@@ -60,63 +60,63 @@ func (i *idleWorkspaces) watch(ctx context.Context) {
 	}
 }
 
-// sweep stops every running workspace whose last use is at least the idle
-// timeout before now. A workspace it sees running for the first time counts
+// sweep stops every running computer whose last use is at least the idle
+// timeout before now. A computer it sees running for the first time counts
 // as used now.
-func (i *idleWorkspaces) sweep(ctx context.Context, now time.Time) {
+func (i *idleComputers) sweep(ctx context.Context, now time.Time) {
 	s := i.server
 	timeout := s.idleTimeout(ctx)
 	if timeout == 0 {
 		return
 	}
-	all, err := s.deps.Store.Workspaces(ctx)
+	all, err := s.deps.Store.Computers(ctx)
 	if err != nil {
-		s.log.Error("list workspaces for the idle sweep", "error", err)
+		s.log.Error("list computers for the idle sweep", "error", err)
 		return
 	}
-	for id := range s.runs.workspacesInUse() {
+	for id := range s.runs.computersInUse() {
 		i.used(id, now)
 	}
-	for _, ws := range i.idle(all, now, timeout) {
+	for _, cx := range i.idle(all, now, timeout) {
 		// A run may have started since the look above; it keeps the
-		// workspace up until the next sweep.
-		if i.inUse(ws) {
+		// computer up until the next sweep.
+		if i.inUse(cx) {
 			continue
 		}
-		if _, err := s.changeState(ctx, ws, s.stopWorkspace); err != nil {
-			s.log.Error("stop idle workspace", "workspace_id", ws.ID, "error", err)
+		if _, err := s.changeState(ctx, cx, s.stopComputer); err != nil {
+			s.log.Error("stop idle computer", "computer_id", cx.ID, "error", err)
 			continue
 		}
-		s.log.Info("idle workspace stopped", "workspace_id", ws.ID, "idle_timeout", timeout.String())
+		s.log.Info("idle computer stopped", "computer_id", cx.ID, "idle_timeout", timeout.String())
 	}
 }
 
-// idle returns the running workspaces among all whose last use is at least
+// idle returns the running computers among all whose last use is at least
 // timeout before now. It forgets
-// the workspaces that are not running, so that one started again begins
+// the computers that are not running, so that one started again begins
 // from its start and not from a use before it stopped.
-func (i *idleWorkspaces) idle(all []store.Workspace, now time.Time, timeout time.Duration) []store.Workspace {
+func (i *idleComputers) idle(all []store.Computer, now time.Time, timeout time.Duration) []store.Computer {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	var out []store.Workspace
-	for _, ws := range all {
-		if ws.State != string(workspace.StateRunning) {
-			delete(i.lastUsed, ws.ID)
+	var out []store.Computer
+	for _, cx := range all {
+		if cx.State != string(computer.StateRunning) {
+			delete(i.lastUsed, cx.ID)
 			continue
 		}
-		at, seen := i.lastUsed[ws.ID]
+		at, seen := i.lastUsed[cx.ID]
 		if !seen || at.IsZero() {
-			i.lastUsed[ws.ID] = now
+			i.lastUsed[cx.ID] = now
 			continue
 		}
 		if now.Sub(at) >= timeout {
-			out = append(out, ws)
+			out = append(out, cx)
 		}
 	}
 	return out
 }
 
-// inUse reports whether a run is going in the workspace.
-func (i *idleWorkspaces) inUse(ws store.Workspace) bool {
-	return i.server.runs.workspacesInUse()[ws.ID]
+// inUse reports whether a run is going in the computer.
+func (i *idleComputers) inUse(cx store.Computer) bool {
+	return i.server.runs.computersInUse()[cx.ID]
 }

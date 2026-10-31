@@ -20,13 +20,13 @@ const (
 	SessionFork SessionKind = "fork"
 )
 
-// Session is one tree of entries, inside a workspace or, for a chat, in none.
+// Session is one tree of entries, inside a computer or, for a chat, in none.
 type Session struct {
 	ID string
-	// WorkspaceID is the workspace the session's runs act in, empty for a
+	// ComputerID is the computer the session's runs act in, empty for a
 	// chat.
-	WorkspaceID string
-	Title       string
+	ComputerID string
+	Title      string
 	// Untitled reports that Title is a placeholder, which the first run
 	// replaces with a title made from the first message.
 	Untitled bool
@@ -56,13 +56,13 @@ type Session struct {
 	UpdatedAt time.Time
 }
 
-// Chat reports whether the session is a chat: one with no workspace, whose
+// Chat reports whether the session is a chat: one with no computer, whose
 // runs offer the model only the tools that need none.
-func (s Session) Chat() bool { return s.WorkspaceID == "" }
+func (s Session) Chat() bool { return s.ComputerID == "" }
 
 // sessionColumns is the column list every session query selects, in the order
 // scanSession reads them.
-const sessionColumns = `id, workspace_id, title, untitled, kind, head_entry_id, parent_session_id, tools,
+const sessionColumns = `id, computer_id, title, untitled, kind, head_entry_id, parent_session_id, tools,
 	profile_id, overrides, pinned, archived, created_at, updated_at`
 
 // CreateSession inserts sess and returns it with the fields the database
@@ -87,11 +87,11 @@ func createSession(ctx context.Context, q querier, sess Session) (Session, error
 	if err != nil {
 		return Session{}, err
 	}
-	const insert = `INSERT INTO sessions (id, workspace_id, title, untitled, kind, head_entry_id, parent_session_id,
+	const insert = `INSERT INTO sessions (id, computer_id, title, untitled, kind, head_entry_id, parent_session_id,
 			tools, profile_id, overrides, pinned, archived)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING ` + sessionColumns
-	row := q.QueryRow(ctx, insert, sess.ID, nullable(sess.WorkspaceID), sess.Title, sess.Untitled, sess.Kind,
+	row := q.QueryRow(ctx, insert, sess.ID, nullable(sess.ComputerID), sess.Title, sess.Untitled, sess.Kind,
 		nullable(sess.HeadEntryID), nullable(sess.ParentSessionID), sess.Tools,
 		nullable(sess.ProfileID), overrides, sess.Pinned, sess.Archived)
 	return scanSession(row)
@@ -107,27 +107,27 @@ func (s *Store) Session(ctx context.Context, id string) (Session, error) {
 	return sess, nil
 }
 
-// Sessions returns the sessions of one workspace, oldest first. An empty
-// workspaceID returns every session, chats included.
+// Sessions returns the sessions of one computer, oldest first. An empty
+// computerID returns every session, chats included.
 //
 // withDescendants also returns the forks those sessions led to, wherever
-// they live, so a listing of one workspace does not leave out part of the
+// they live, so a listing of one computer does not leave out part of the
 // tree it belongs to. The rows come back flat and the
 // caller hangs each one under its ParentSessionID.
-func (s *Store) Sessions(ctx context.Context, workspaceID string, withDescendants bool) ([]Session, error) {
+func (s *Store) Sessions(ctx context.Context, computerID string, withDescendants bool) ([]Session, error) {
 	// One query per case: a WHERE that is true for every row when the filter
-	// is empty cannot use the workspace index.
+	// is empty cannot use the computer index.
 	const (
 		all = `SELECT ` + sessionColumns + ` FROM sessions ORDER BY created_at, id`
 		one = `SELECT ` + sessionColumns + ` FROM sessions
-			WHERE workspace_id = $1 ORDER BY created_at, id`
+			WHERE computer_id = $1 ORDER BY created_at, id`
 		// UNION, not UNION ALL: it dedupes, so a descendant that runs in the
-		// same workspace is returned once and a parent pointer that somehow
+		// same computer is returned once and a parent pointer that somehow
 		// came round on itself terminates instead of looping.
 		tree = `WITH RECURSIVE reachable AS (
-				SELECT ` + sessionColumns + ` FROM sessions WHERE workspace_id = $1
+				SELECT ` + sessionColumns + ` FROM sessions WHERE computer_id = $1
 				UNION
-				SELECT s.id, s.workspace_id, s.title, s.untitled, s.kind, s.head_entry_id,
+				SELECT s.id, s.computer_id, s.title, s.untitled, s.kind, s.head_entry_id,
 					s.parent_session_id, s.tools, s.profile_id, s.overrides, s.pinned, s.archived,
 					s.created_at, s.updated_at
 				FROM sessions s JOIN reachable r ON s.parent_session_id = r.id
@@ -139,12 +139,12 @@ func (s *Store) Sessions(ctx context.Context, workspaceID string, withDescendant
 		err  error
 	)
 	switch {
-	case workspaceID == "":
+	case computerID == "":
 		rows, err = s.pool.Query(ctx, all)
 	case withDescendants:
-		rows, err = s.pool.Query(ctx, tree, workspaceID)
+		rows, err = s.pool.Query(ctx, tree, computerID)
 	default:
-		rows, err = s.pool.Query(ctx, one, workspaceID)
+		rows, err = s.pool.Query(ctx, one, computerID)
 	}
 	if err != nil {
 		return nil, wrap("list sessions", err)
@@ -152,12 +152,12 @@ func (s *Store) Sessions(ctx context.Context, workspaceID string, withDescendant
 	return collectSessions("list sessions", rows)
 }
 
-// Chats returns every session with no workspace, oldest first. A fork of a
+// Chats returns every session with no computer, oldest first. A fork of a
 // chat is a chat, so the list holds the forks as well; the caller hangs each
 // under its ParentSessionID.
 func (s *Store) Chats(ctx context.Context) ([]Session, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+sessionColumns+` FROM sessions
-		WHERE workspace_id IS NULL ORDER BY created_at, id`)
+		WHERE computer_id IS NULL ORDER BY created_at, id`)
 	if err != nil {
 		return nil, wrap("list chats", err)
 	}
@@ -250,13 +250,13 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 func scanSession(row pgx.Row) (Session, error) {
 	var (
 		sess      Session
-		workspace *string
+		computer  *string
 		head      *string
 		parent    *string
 		profile   *string
 		overrides []byte
 	)
-	err := row.Scan(&sess.ID, &workspace, &sess.Title, &sess.Untitled, &sess.Kind, &head, &parent, &sess.Tools,
+	err := row.Scan(&sess.ID, &computer, &sess.Title, &sess.Untitled, &sess.Kind, &head, &parent, &sess.Tools,
 		&profile, &overrides, &sess.Pinned, &sess.Archived, &sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
 		return Session{}, err
@@ -264,7 +264,7 @@ func scanSession(row pgx.Row) (Session, error) {
 	if sess.Overrides, err = readOverrides(overrides); err != nil {
 		return Session{}, err
 	}
-	sess.WorkspaceID = text(workspace)
+	sess.ComputerID = text(computer)
 	sess.HeadEntryID = text(head)
 	sess.ParentSessionID = text(parent)
 	sess.ProfileID = text(profile)

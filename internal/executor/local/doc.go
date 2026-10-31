@@ -7,7 +7,7 @@
 // is excluded from production builds by the prod build tag, because agent
 // actions in a deployment must run inside a sandbox.
 //
-// The entry point is New, which takes the directory that becomes the workspace
+// The entry point is New, which takes the directory that becomes the computer
 // root. Every path is resolved with executor.Resolve and re-checked after
 // symlink evaluation, so nothing outside the root is reachable. A command runs
 // in its own process group, so a timeout kills its background children too.

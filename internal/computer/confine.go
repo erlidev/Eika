@@ -1,4 +1,4 @@
-package workspace
+package computer
 
 import (
 	"context"
@@ -27,7 +27,7 @@ type Capacity struct {
 	MemoryBytes int64
 }
 
-// Usage is what a running workspace is consuming, sampled once.
+// Usage is what a running computer is consuming, sampled once.
 type Usage struct {
 	// CPUPercent is the CPU time the container used over the sample, where
 	// 100 is one whole core.
@@ -55,7 +55,7 @@ func (h *Host) EgressControl() bool {
 }
 
 // Capacity reports how many cores and how much memory the Docker host has,
-// which bounds any limit a workspace can be given.
+// which bounds any limit a computer can be given.
 func (h *Host) Capacity(ctx context.Context) (Capacity, error) {
 	info, err := h.docker.Info(ctx)
 	if err != nil {
@@ -64,12 +64,12 @@ func (h *Host) Capacity(ctx context.Context) (Capacity, error) {
 	return Capacity{CPUs: info.NCPU, MemoryBytes: info.MemTotal}, nil
 }
 
-// Confine applies a confinement to an existing workspace, running or
-// stopped, without restarting it. A running workspace's processes are held
+// Confine applies a confinement to an existing computer, running or
+// stopped, without restarting it. A running computer's processes are held
 // to the new limits at once; a change of network drops the connections they
 // have open, and the processes it starts from then on get the proxy
 // settings that go with the new network.
-func (h *Host) Confine(ctx context.Context, ws *Workspace, c Confinement) error {
+func (h *Host) Confine(ctx context.Context, cx *Computer, c Confinement) error {
 	if c.Proxied && !h.EgressControl() {
 		return ErrNoEgressControl
 	}
@@ -77,41 +77,41 @@ func (h *Host) Confine(ctx context.Context, ws *Workspace, c Confinement) error 
 	if err != nil {
 		return err
 	}
-	if _, err := h.docker.ContainerUpdate(ctx, ws.ContainerID, container.UpdateConfig{Resources: resources}); err != nil {
-		return fmt.Errorf("update limits of workspace %s: %w", ws.ID, err)
+	if _, err := h.docker.ContainerUpdate(ctx, cx.ContainerID, container.UpdateConfig{Resources: resources}); err != nil {
+		return fmt.Errorf("update limits of computer %s: %w", cx.ID, err)
 	}
 	if h.opts.Network != "" {
-		if err := h.moveTo(ctx, *ws, h.networkFor(c.Proxied)); err != nil {
+		if err := h.moveTo(ctx, *cx, h.networkFor(c.Proxied)); err != nil {
 			return err
 		}
 	}
-	ws.Proxied = c.Proxied
-	if ws.State == StateRunning {
-		if err := h.setEnvironment(ctx, *ws); err != nil {
+	cx.Proxied = c.Proxied
+	if cx.State == StateRunning {
+		if err := h.setEnvironment(ctx, *cx); err != nil {
 			return err
 		}
 	}
-	h.log.Info("workspace confined", "workspace_id", ws.ID, "cpus", c.Limits.CPUs,
+	h.log.Info("computer confined", "computer_id", cx.ID, "cpus", c.Limits.CPUs,
 		"memory_bytes", c.Limits.MemoryBytes, "pids", c.Limits.PIDs, "proxied", c.Proxied)
 	return nil
 }
 
-// Usage samples what a running workspace is consuming. It takes about a
+// Usage samples what a running computer is consuming. It takes about a
 // second: the daemon reads the CPU counters twice to measure a rate.
-func (h *Host) Usage(ctx context.Context, ws Workspace) (Usage, error) {
-	resp, err := h.docker.ContainerStats(ctx, ws.ContainerID, false)
+func (h *Host) Usage(ctx context.Context, cx Computer) (Usage, error) {
+	resp, err := h.docker.ContainerStats(ctx, cx.ContainerID, false)
 	if err != nil {
-		return Usage{}, fmt.Errorf("read usage of workspace %s: %w", ws.ID, err)
+		return Usage{}, fmt.Errorf("read usage of computer %s: %w", cx.ID, err)
 	}
 	defer resp.Body.Close()
 	var stats container.StatsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
-		return Usage{}, fmt.Errorf("decode usage of workspace %s: %w", ws.ID, err)
+		return Usage{}, fmt.Errorf("decode usage of computer %s: %w", cx.ID, err)
 	}
 	return usageOf(stats), nil
 }
 
-// networkFor is the sandbox network a workspace joins.
+// networkFor is the sandbox network a computer joins.
 func (h *Host) networkFor(proxied bool) string {
 	if proxied {
 		return h.opts.InternalNetwork
@@ -119,7 +119,7 @@ func (h *Host) networkFor(proxied bool) string {
 	return h.opts.Network
 }
 
-// moveTo attaches a workspace's container to one sandbox network and
+// moveTo attaches a computer's container to one sandbox network and
 // detaches it from the other. It connects first, so the harness can reach
 // the daemon by name throughout, and does nothing that is already so.
 //
@@ -127,10 +127,10 @@ func (h *Host) networkFor(proxied bool) string {
 // network was recreated, as `docker compose down` and `up` do, still names
 // the old network and cannot start. Connecting again to the network of that
 // name replaces the stale entry, and a forced disconnect removes one.
-func (h *Host) moveTo(ctx context.Context, ws Workspace, target string) error {
-	info, err := h.docker.ContainerInspect(ctx, ws.ContainerID)
+func (h *Host) moveTo(ctx context.Context, cx Computer, target string) error {
+	info, err := h.docker.ContainerInspect(ctx, cx.ContainerID)
 	if err != nil {
-		return fmt.Errorf("inspect workspace %s: %w", ws.ID, err)
+		return fmt.Errorf("inspect computer %s: %w", cx.ID, err)
 	}
 	attached := map[string]*network.EndpointSettings{}
 	if info.NetworkSettings != nil {
@@ -141,10 +141,10 @@ func (h *Host) moveTo(ctx context.Context, ws Workspace, target string) error {
 		return fmt.Errorf("inspect network %s: %w", target, err)
 	}
 	if ep, ok := attached[target]; !ok || ep == nil || ep.NetworkID != current.ID {
-		if err := h.docker.NetworkConnect(ctx, target, ws.ContainerID, &network.EndpointSettings{
-			Aliases: []string{ContainerName(ws.ID)},
+		if err := h.docker.NetworkConnect(ctx, target, cx.ContainerID, &network.EndpointSettings{
+			Aliases: []string{ContainerName(cx.ID)},
 		}); err != nil {
-			return fmt.Errorf("connect workspace %s to %s: %w", ws.ID, target, err)
+			return fmt.Errorf("connect computer %s to %s: %w", cx.ID, target, err)
 		}
 	}
 	for _, other := range []string{h.opts.Network, h.opts.InternalNetwork} {
@@ -154,41 +154,41 @@ func (h *Host) moveTo(ctx context.Context, ws Workspace, target string) error {
 		if _, ok := attached[other]; !ok {
 			continue
 		}
-		if err := h.docker.NetworkDisconnect(ctx, other, ws.ContainerID, true); err != nil {
-			return fmt.Errorf("disconnect workspace %s from %s: %w", ws.ID, other, err)
+		if err := h.docker.NetworkDisconnect(ctx, other, cx.ContainerID, true); err != nil {
+			return fmt.Errorf("disconnect computer %s from %s: %w", cx.ID, other, err)
 		}
 	}
 	return nil
 }
 
-// setEnvironment gives a running workspace's daemon the environment its
-// processes need: the egress proxy for a proxied workspace, nothing for one
+// setEnvironment gives a running computer's daemon the environment its
+// processes need: the egress proxy for a proxied computer, nothing for one
 // with a route of its own.
-func (h *Host) setEnvironment(ctx context.Context, ws Workspace) error {
-	c, err := sandbox.New(sandbox.Options{BaseURL: ws.Address, Token: ws.Token, Root: Root})
+func (h *Host) setEnvironment(ctx context.Context, cx Computer) error {
+	c, err := sandbox.New(sandbox.Options{BaseURL: cx.Address, Token: cx.Token, Root: Root})
 	if err != nil {
 		return err
 	}
-	if err := c.SetEnvironment(ctx, h.environment(ws)); err != nil {
-		return fmt.Errorf("set the environment of workspace %s: %w", ws.ID, err)
+	if err := c.SetEnvironment(ctx, h.environment(cx)); err != nil {
+		return fmt.Errorf("set the environment of computer %s: %w", cx.ID, err)
 	}
 	return nil
 }
 
-// environment is what a workspace's processes inherit from the daemon. A
-// proxied workspace reaches the internet through the egress proxy, which
+// environment is what a computer's processes inherit from the daemon. A
+// proxied computer reaches the internet through the egress proxy, which
 // knows it by its id and proxy token; loopback is reached
 // directly. Both spellings are set because tools disagree on which they
 // read, and NODE_USE_ENV_PROXY makes Node's own fetch read them at all.
-func (h *Host) environment(ws Workspace) []string {
-	if !ws.Proxied || h.opts.EgressProxyURL == "" {
+func (h *Host) environment(cx Computer) []string {
+	if !cx.Proxied || h.opts.EgressProxyURL == "" {
 		return nil
 	}
 	proxy, err := url.Parse(h.opts.EgressProxyURL)
 	if err != nil {
 		return nil
 	}
-	proxy.User = url.UserPassword(ws.ID, ws.ProxyToken)
+	proxy.User = url.UserPassword(cx.ID, cx.ProxyToken)
 	noProxy := "localhost,127.0.0.1,::1"
 	return []string{
 		"HTTP_PROXY=" + proxy.String(),

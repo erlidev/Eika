@@ -12,11 +12,11 @@ import (
 	"github.com/erlidev/eika/internal/provider/providertest"
 )
 
-// chatWire is a session as a chat reports it: no workspace, and the tools its
+// chatWire is a session as a chat reports it: no computer, and the tools its
 // next run offers.
 type chatWire struct {
 	ID              string   `json:"id"`
-	WorkspaceID     *string  `json:"workspace_id"`
+	ComputerID      *string  `json:"computer_id"`
 	Title           string   `json:"title"`
 	Kind            string   `json:"kind"`
 	ParentSessionID string   `json:"parent_session_id"`
@@ -29,9 +29,9 @@ type chatsWire struct {
 
 type toolsWire struct {
 	Tools []struct {
-		Name           string `json:"name"`
-		Description    string `json:"description"`
-		NeedsWorkspace bool   `json:"needs_workspace"`
+		Name          string `json:"name"`
+		Description   string `json:"description"`
+		NeedsComputer bool   `json:"needs_computer"`
 	} `json:"tools"`
 }
 
@@ -55,12 +55,12 @@ func refused(t *testing.T, rec *httptest.ResponseRecorder, want int) {
 
 func TestChatRoutes(t *testing.T) {
 	a := newAPI(t)
-	ws := a.newWorkspace(t)
-	work := a.newSession(t, ws.ID)
+	cx := a.newComputer(t)
+	work := a.newSession(t, cx.ID)
 
 	chat := a.newChat(t, "a question")
-	if chat.WorkspaceID != nil {
-		t.Errorf("chat workspace_id = %q, want it absent", *chat.WorkspaceID)
+	if chat.ComputerID != nil {
+		t.Errorf("chat computer_id = %q, want it absent", *chat.ComputerID)
 	}
 	if !slices.Equal(chat.Tools, standaloneTools) {
 		t.Errorf("new chat tools = %v, want every standalone tool %v", chat.Tools, standaloneTools)
@@ -71,28 +71,28 @@ func TestChatRoutes(t *testing.T) {
 		body   map[string]any
 		status int
 	}{
-		{"a chat in a workspace", map[string]any{"chat": true, "workspace_id": ws.ID, "title": "x"}, 400},
-		// Leaving the workspace out is a missing workspace, never a chat
+		{"a chat in a computer", map[string]any{"chat": true, "computer_id": cx.ID, "title": "x"}, 400},
+		// Leaving the computer out is a missing computer, never a chat
 		// nobody asked for.
-		{"neither a chat nor a workspace", map[string]any{"title": "x"}, 404},
+		{"neither a chat nor a computer", map[string]any{"title": "x"}, 404},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			refused(t, request(t, a.Server, "POST", "/api/sessions", c.body), c.status)
 		})
 	}
-	refused(t, request(t, a.Server, "GET", "/api/sessions?chats=true&workspace_id="+ws.ID, nil), 400)
+	refused(t, request(t, a.Server, "GET", "/api/sessions?chats=true&computer_id="+cx.ID, nil), 400)
 
 	chats := decodeBody[chatsWire](t, request(t, a.Server, "GET", "/api/sessions?chats=true", nil), 200)
 	if len(chats.Sessions) != 1 || chats.Sessions[0].ID != chat.ID {
 		t.Errorf("chats = %+v, want the one chat", chats.Sessions)
 	}
-	inWorkspace := decodeBody[chatsWire](t, request(t, a.Server, "GET", "/api/sessions?workspace_id="+ws.ID, nil), 200)
-	if len(inWorkspace.Sessions) != 1 || inWorkspace.Sessions[0].ID != work.ID {
-		t.Errorf("workspace sessions = %+v, want the workspace's own", inWorkspace.Sessions)
+	inComputer := decodeBody[chatsWire](t, request(t, a.Server, "GET", "/api/sessions?computer_id="+cx.ID, nil), 200)
+	if len(inComputer.Sessions) != 1 || inComputer.Sessions[0].ID != work.ID {
+		t.Errorf("computer sessions = %+v, want the computer's own", inComputer.Sessions)
 	}
-	if len(inWorkspace.Sessions[0].Tools) != 4 {
-		t.Errorf("workspace session tools = %v, want all 4", inWorkspace.Sessions[0].Tools)
+	if len(inComputer.Sessions[0].Tools) != 4 {
+		t.Errorf("computer session tools = %v, want all 4", inComputer.Sessions[0].Tools)
 	}
 
 	tools := decodeBody[toolsWire](t, request(t, a.Server, "GET", "/api/tools", nil), 200)
@@ -101,7 +101,7 @@ func TestChatRoutes(t *testing.T) {
 		if tl.Description == "" {
 			t.Errorf("tool %s has no description", tl.Name)
 		}
-		if !tl.NeedsWorkspace {
+		if !tl.NeedsComputer {
 			free = append(free, tl.Name)
 		}
 	}
@@ -129,7 +129,7 @@ func TestSessionToolsAreChosenAndChecked(t *testing.T) {
 		status int
 	}{
 		{"a tool that does not exist", []string{"teleport"}, 400},
-		{"a tool that needs a workspace", []string{"web_search", "bash"}, 400},
+		{"a tool that needs a computer", []string{"web_search", "bash"}, 400},
 		{"a name rather than a list", "bash", 400},
 	}
 	for _, c := range cases {
@@ -155,10 +155,10 @@ func TestSessionToolsAreChosenAndChecked(t *testing.T) {
 		t.Errorf("tools read back = %v, want none", read.Session.Tools)
 	}
 
-	// A workspace session may narrow its tools too, to any of them.
+	// A computer session may narrow its tools too, to any of them.
 	work := a.session(t)
 	if got := put(work.ID, []string{"web_search", "bash"}); got == nil || !slices.Equal(got.Tools, []string{"bash", "web_search"}) {
-		t.Errorf("workspace session tools = %+v, want bash and web_search", got)
+		t.Errorf("computer session tools = %+v, want bash and web_search", got)
 	}
 }
 
@@ -176,7 +176,7 @@ func TestChatForksStayChats(t *testing.T) {
 
 	fork := decodeBody[chatWire](t, request(t, a.Server, "POST", "/api/sessions/"+chat.ID+"/fork",
 		map[string]any{"entry_id": last}), 201)
-	if fork.WorkspaceID != nil || fork.Kind != "fork" || fork.ParentSessionID != chat.ID {
+	if fork.ComputerID != nil || fork.Kind != "fork" || fork.ParentSessionID != chat.ID {
 		t.Errorf("fork = %+v, want a chat forked from %s", fork, chat.ID)
 	}
 	if !slices.Equal(fork.Tools, []string{"web_fetch"}) {
@@ -184,7 +184,7 @@ func TestChatForksStayChats(t *testing.T) {
 	}
 }
 
-// A chat's run has no workspace and offers the model exactly the tools the
+// A chat's run has no computer and offers the model exactly the tools the
 // user left on. A call to anything else, bash included, is refused as a tool
 // the run does not have, so the choice holds even against a model that
 // ignores the tool list it was sent.

@@ -4,7 +4,7 @@ Drive the UI in a real browser against a **mock harness** and screenshot the
 result. No Go server, Postgres, or Docker needed: `harness/mock.ts` answers
 every `/api` route and the `/api/events` WebSocket from an in-memory world,
 and plays scripted agent replies so a sent message streams like a real run.
-Routes whose UI is gone (workspaces, files, forks)
+Routes whose UI is gone (computers, files, forks)
 are not served; `harness/mock.test.ts` lists each in `unmocked` until its Go
 route is removed.
 
@@ -105,8 +105,8 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 ## Scenarios
 
 `harness/scenarios.ts` names the starting states. The workbench ones share
-fixed ids: session `ses-backoff` in workspace `ws-retries`; the sidebar lists chats only, so it opens by URL. `chat` adds two
-chats and opens chat `chat-jitter`, a session with no workspace; `chat-empty`
+fixed ids: session `ses-backoff` in computer `cx-retries`; the sidebar lists chats only, so it opens by URL. `chat` adds two
+chats and opens chat `chat-jitter`, a session with no computer; `chat-empty`
 opens one with no messages. `mcp` adds five MCP servers, one in each state, and `chat-mcp` the
 same servers beside the chats; the mock's authorization server approves at
 once, so Sign in returns straight to `/mcp/callback`. `profiles` adds two

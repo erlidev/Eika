@@ -14,10 +14,10 @@ import (
 // TurnStart is the payload of a turn.start event: one assistant turn has
 // begun, triggered by the user message in Message and Images.
 type TurnStart struct {
-	RunID       string `json:"run_id"`
-	SessionID   string `json:"session_id"`
-	WorkspaceID string `json:"workspace_id,omitempty"`
-	Message     string `json:"message"`
+	RunID      string `json:"run_id"`
+	SessionID  string `json:"session_id"`
+	ComputerID string `json:"computer_id,omitempty"`
+	Message    string `json:"message"`
 	// Images are the pictures the message carries, as the model is sent
 	// them.
 	Images []provider.Image `json:"images,omitempty"`
@@ -226,11 +226,11 @@ type QuestionAsked struct {
 	AllowFreeText bool `json:"allow_free_text"`
 }
 
-// WorkspaceState is the payload of a workspace.state event: a workspace
+// ComputerState is the payload of a computer.state event: a computer
 // reached a new lifecycle state.
-type WorkspaceState struct {
-	WorkspaceID string `json:"workspace_id"`
-	State       string `json:"state"`
+type ComputerState struct {
+	ComputerID string `json:"computer_id"`
+	State      string `json:"state"`
 }
 
 // MCPServer is the payload of an mcp.server event, on the global topic: an
@@ -270,9 +270,9 @@ type MCPElicitation struct {
 // sidebar lists every session, so the event goes to all of them.
 type SessionTitle struct {
 	SessionID string `json:"session_id"`
-	// WorkspaceID is the session's workspace, absent for a chat.
-	WorkspaceID string `json:"workspace_id,omitempty"`
-	Title       string `json:"title"`
+	// ComputerID is the session's computer, absent for a chat.
+	ComputerID string `json:"computer_id,omitempty"`
+	Title      string `json:"title"`
 }
 
 // SessionUpdated is the payload of a session.updated event, on the global
@@ -280,8 +280,8 @@ type SessionTitle struct {
 // lists every session, so the event goes to all of them.
 type SessionUpdated struct {
 	SessionID string `json:"session_id"`
-	// WorkspaceID is the session's workspace, absent for a chat.
-	WorkspaceID string `json:"workspace_id,omitempty"`
+	// ComputerID is the session's computer, absent for a chat.
+	ComputerID string `json:"computer_id,omitempty"`
 }
 
 // SessionMessage is the payload of a session.message event: one entry of a

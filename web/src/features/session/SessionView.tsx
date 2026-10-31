@@ -36,8 +36,8 @@ export function SessionView({ sessionId }: SessionViewProps) {
   const model = useSessionStore((s) => s.model);
   const chooseModel = useSessionStore((s) => s.chooseModel);
 
-  const workspaceId = session.data?.session.workspace_id;
-  const chat = session.data !== undefined && workspaceId === undefined;
+  const computerId = session.data?.session.computer_id;
+  const chat = session.data !== undefined && computerId === undefined;
 
   // Esc aborts the run from anywhere in the session view, which is why the
   // listener is on the document rather than on one control. `abortsRun`
@@ -79,7 +79,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
         sessionId={sessionId}
         empty={
           chat
-            ? "Send a message to start the chat. A chat has no workspace, so the model cannot touch files or run commands; the Tools panel says what it can use."
+            ? "Send a message to start the chat. A chat has no computer, so the model cannot touch files or run commands; the Tools panel says what it can use."
             : "Send a message to start the first turn."
         }
       />
@@ -124,7 +124,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 }
 
 /**
- * ChatBadge marks a session with no workspace. It is the first thing beside
+ * ChatBadge marks a session with no computer. It is the first thing beside
  * the title, so a chat is never taken for a session whose agent can touch
  * files.
  */
@@ -133,7 +133,7 @@ function ChatBadge() {
     <Badge variant="outline" className="h-5 shrink-0 gap-1 px-1.5 text-2xs">
       <MessageCircle aria-hidden className="size-3" />
       Chat
-      <span className="text-muted-foreground font-normal">· no workspace</span>
+      <span className="text-muted-foreground font-normal">· no computer</span>
     </Badge>
   );
 }

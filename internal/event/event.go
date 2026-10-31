@@ -39,8 +39,8 @@ const (
 	TypeRunError = "run.error"
 	// TypeQuestionAsked reports that the agent is waiting on a user answer.
 	TypeQuestionAsked = "question.asked"
-	// TypeWorkspaceState reports a workspace lifecycle transition.
-	TypeWorkspaceState = "workspace.state"
+	// TypeComputerState reports a computer lifecycle transition.
+	TypeComputerState = "computer.state"
 	// TypeMCPServer reports that an MCP server's connection, authorization,
 	// or what it serves changed.
 	TypeMCPServer = "mcp.server"
@@ -60,8 +60,8 @@ const (
 	TypeBusDropped = "bus.dropped"
 )
 
-// TopicGlobal is the topic for events that belong to no single workspace or
-// session. Workspace and session topics are "workspace:<id>" and
+// TopicGlobal is the topic for events that belong to no single computer or
+// session. Computer and session topics are "computer:<id>" and
 // "session:<id>".
 const TopicGlobal = "global"
 
@@ -91,8 +91,8 @@ func New(typ, topic string, payload any) (Event, error) {
 	return e, nil
 }
 
-// WorkspaceTopic returns the topic carrying events for one workspace.
-func WorkspaceTopic(id string) string { return "workspace:" + id }
+// ComputerTopic returns the topic carrying events for one computer.
+func ComputerTopic(id string) string { return "computer:" + id }
 
 // SessionTopic returns the topic carrying events for one session.
 func SessionTopic(id string) string { return "session:" + id }

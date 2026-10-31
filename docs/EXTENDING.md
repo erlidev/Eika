@@ -7,9 +7,9 @@ never from `init()`.
 ## Adding a tool
 
 Implement `tool.Tool` in `internal/tool/builtin/` (one file per tool) and add it
-to the list in `internal/tool/builtin/registry.go`. Tools touch a workspace only
+to the list in `internal/tool/builtin/registry.go`. Tools touch a computer only
 through the `executor.Executor` in their call context; a tool that imports
-`internal/workspace`, or that reaches the filesystem with `os`, is a bug.
+`internal/computer`, or that reaches the filesystem with `os`, is a bug.
 
 A tool is stateless: everything one call needs arrives in the `tool.CallContext`
 and the arguments. Return an error only when the harness itself failed. A bad
@@ -43,7 +43,7 @@ func (countLinesTool) Schema() json.RawMessage {
 	return json.RawMessage(`{
   "type": "object",
   "properties": {
-    "path": {"type": "string", "description": "Path relative to the workspace root."}
+    "path": {"type": "string", "description": "Path relative to the computer root."}
   },
   "required": ["path"],
   "additionalProperties": false
@@ -91,7 +91,7 @@ while it runs reports it with `c.Output(ctx, chunk)`, which becomes a
 Put every bound a tool applies in `internal/tool/builtin/limits.go`, so that one
 file answers "how much can a tool return".
 
-A tool that needs no workspace, because it only makes a network call or asks
+A tool that needs no computer, because it only makes a network call or asks
 the user something, can also be offered in a chat. Say so by implementing
 `tool.Standalone`; its `CallContext.Exec` is then nil in a chat, and the tool
 works without it or answers the model with what it cannot do there. This is
@@ -105,8 +105,8 @@ func (webSearchTool) Standalone() {}
 var _ tool.Standalone = webSearchTool{}
 ```
 
-A tool that says nothing needs a workspace and never reaches a chat. Add it to
-the list in `TestOnlyToolsThatNeedNoWorkspaceAreStandalone`, which is what
+A tool that says nothing needs a computer and never reaches a chat. Add it to
+the list in `TestOnlyToolsThatNeedNoComputerAreStandalone`, which is what
 keeps a file or command tool from being marked by mistake. The chat's Tools
 panel lists it with a switch as soon as it is registered.
 
@@ -363,9 +363,9 @@ harness.
 
 ## Using a custom sandbox image
 
-A workspace runs the image the sandbox image setting names (Settings,
-General; `eika-sandbox:latest` by default), but a `workspace.Spec` can
-override it per workspace, either with an image name or with a build
+A computer runs the image the sandbox image setting names (Settings,
+General; `eika-sandbox:latest` by default), but a `computer.Spec` can
+override it per computer, either with an image name or with a build
 context. Any image works: the harness copies its own static `eikad` binary into
 the container at `/usr/local/bin/eikad` before starting it and uses that as the
 entrypoint, so an image needs no Eika-specific content at all.
@@ -380,7 +380,7 @@ An image needs:
 
 A sandbox container drops all Linux capabilities and runs with
 `no-new-privileges`, so an image that needs to install packages at run time
-will not work; install them at build time. When the workspace's egress is
+will not work; install them at build time. When the computer's egress is
 restricted, its tools reach the internet only through the harness's proxy,
 which they find in `HTTP_PROXY` and `HTTPS_PROXY`; a tool in the image that
 ignores those variables reaches nothing, and pre-installing what it would
@@ -389,23 +389,23 @@ download is the way around that.
 Name an existing image:
 
 ```go
-ws, err := host.Create(ctx, workspace.Spec{Image: "node:22-bookworm"})
+cx, err := host.Create(ctx, computer.Spec{Image: "node:22-bookworm"})
 ```
 
 Or build one from a directory holding a Dockerfile and its context:
 
 ```go
-ws, err := host.Create(ctx, workspace.Spec{
+cx, err := host.Create(ctx, computer.Spec{
     BuildContext: "/var/lib/eika/images/rust",
     Dockerfile:   "Dockerfile", // the default
 })
 ```
 
-The built image is tagged `eika-ws-<id>:latest`. Start the workspace with
-`host.Start`, then take its executor with `host.Executor(ws)`; every tool call
+The built image is tagged `eika-cx-<id>:latest`. Start the computer with
+`host.Start`, then take its executor with `host.Executor(cx)`; every tool call
 goes through that.
 
-To change the default image for every workspace, set it under Settings,
+To change the default image for every computer, set it under Settings,
 General. To use Eika's own image as a base, extend `sandbox/Dockerfile` and
 rebuild it with `docker compose build sandbox-image` or `make sandbox`.
 
@@ -438,7 +438,7 @@ in the same change:
 ```go
 // internal/store/sessions.go
 
-const sessionColumns = `id, workspace_id, title, head_entry_id, parent_session_id,
+const sessionColumns = `id, computer_id, title, head_entry_id, parent_session_id,
 	label, created_at, updated_at`
 ```
 
@@ -536,12 +536,12 @@ Rules that keep the surface one surface:
   harness that disagree find out instead of losing a field silently.
 - Failures go through `s.fail`, which produces the one error shape,
   `{"error":{"code","message"}}`. `invalidf`, `notFoundf`, and `conflictf` are
-  for a handler's own rules; the sentinel errors of `store`, `workspace`,
+  for a handler's own rules; the sentinel errors of `store`, `computer`,
   and `builtin` map themselves in `statusOf`. Add a new sentinel there
   rather than mapping it in a handler.
-- A handler that needs a workspace's files gets an executor with
-  `s.executorFor`, which refuses a workspace that is not running. The server
-  reaches a workspace no other way.
+- A handler that needs a computer's files gets an executor with
+  `s.executorFor`, which refuses a computer that is not running. The server
+  reaches a computer no other way.
 - New dependencies belong in `Deps`, as an interface declared in `server` when
   a test has to stand in for them.
 
@@ -561,11 +561,11 @@ A type with a `MarshalJSON` of its own needs a stand-in in `standIns` there,
 since reflection cannot see what it writes.
 
 Tests go in `internal/server/api_docker_test.go` and use the fakes in
-`fakes_docker_test.go`: a real database from `storetest` and a workspace host
-backed by temporary directories. A method added to `Workspaces` is added to
+`fakes_docker_test.go`: a real database from `storetest` and a computer host
+backed by temporary directories. A method added to `Computers` is added to
 `fakeHost` too; its `Process` starts what the test sets in `process`, which is
 how `mcp_docker_test.go` runs a scripted stdio MCP server
-(`internal/mcp/mcptest`) in a workspace.
+(`internal/mcp/mcptest`) in a computer.
 
 ```
 go test -tags docker ./internal/server/...
@@ -627,7 +627,7 @@ in the shell changes.
 
 Write the component in the feature that owns its data. A panel receives the
 open session, an empty string when nothing is open, and whether the session is
-a chat, which has no workspace:
+a chat, which has no computer:
 
 ```tsx
 // web/src/features/session/InfoPanel.tsx

@@ -80,7 +80,7 @@ function ServerList({ onOpen }: ServerListProps) {
         <div className="rounded-md border border-dashed p-8 text-center">
           <p className="text-sm font-medium">No MCP servers yet</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            Add a remote server by its URL, or a command that runs one in each workspace.
+            Add a remote server by its URL, or a command that runs one in each computer.
           </p>
         </div>
       )}
@@ -104,8 +104,8 @@ function ServerList({ onOpen }: ServerListProps) {
           <DialogHeader>
             <DialogTitle>Add an MCP server</DialogTitle>
             <DialogDescription>
-              A remote server connects as soon as it is added; a stdio one starts in the workspace
-              of the first session that uses it.
+              A remote server connects as soon as it is added; a stdio one starts in the computer of
+              the first session that uses it.
             </DialogDescription>
           </DialogHeader>
           <MCPServerForm

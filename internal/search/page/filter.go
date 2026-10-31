@@ -7,7 +7,7 @@ const FilterTimeout = 2 * time.Second
 
 // FilterRequest is what a filter runs over: the page, or the section of it
 // the read selected, and the JavaScript the model wrote. It is the stdin of
-// `eikad filter`, which runs the filter inside the workspace sandbox.
+// `eikad filter`, which runs the filter inside the computer sandbox.
 type FilterRequest struct {
 	Markdown string `json:"markdown"`
 	Source   string `json:"source"`

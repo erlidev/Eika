@@ -7,12 +7,12 @@ import (
 	"strings"
 )
 
-// ErrPathOutsideRoot reports that a path resolves outside the workspace root.
+// ErrPathOutsideRoot reports that a path resolves outside the computer root.
 // Every executor rejects such a path, so a tool cannot reach the harness
-// filesystem by walking up from the workspace.
-var ErrPathOutsideRoot = errors.New("path is outside the workspace root")
+// filesystem by walking up from the computer.
+var ErrPathOutsideRoot = errors.New("path is outside the computer root")
 
-// Resolve turns a workspace-relative path into an absolute path under root.
+// Resolve turns a computer-relative path into an absolute path under root.
 // An absolute path is accepted only when it already lies inside root. The
 // check is lexical: an executor that follows symlinks checks the resolved
 // target as well.
@@ -32,7 +32,7 @@ func Resolve(root, path string) (string, error) {
 	return p, nil
 }
 
-// Rel reports the workspace-relative, slash-separated form of an absolute path
+// Rel reports the computer-relative, slash-separated form of an absolute path
 // under root. The root itself is ".".
 func Rel(root, abs string) (string, error) {
 	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(abs))

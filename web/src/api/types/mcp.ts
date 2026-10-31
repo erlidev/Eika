@@ -1,6 +1,6 @@
 /** Wire types for MCP servers, their contents, sign-in, and elicitations. */
 
-/** MCPServerKind is how an MCP server is reached: over HTTP, or as a process in a workspace. */
+/** MCPServerKind is how an MCP server is reached: over HTTP, or as a process in a computer. */
 export type MCPServerKind = "http" | "stdio";
 
 /** MCPServerState is where an MCP server's connection stands. */
@@ -30,8 +30,8 @@ export type MCPServer = {
   state: MCPServerState;
   /** error says why the server is unauthorized or in error. */
   error?: string;
-  /** workspaces are where a stdio server runs now. */
-  workspaces: string[] | null;
+  /** computers are where a stdio server runs now. */
+  computers: string[] | null;
   created_at: string;
   updated_at: string;
 };

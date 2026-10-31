@@ -1,10 +1,10 @@
 - dialog "Add an MCP server":
   - heading "Add an MCP server" [level=2]
-  - paragraph: A remote server connects as soon as it is added; a stdio one starts in the workspace of the first session that uses it.
+  - paragraph: A remote server connects as soon as it is added; a stdio one starts in the computer of the first session that uses it.
   - group "Kind":
     - text: ""
     - button "Remote (HTTP) A server at a URL. The harness connects to it, and chats can use it too." [pressed]
-    - button "Local command (stdio) A program started in each workspace whose session uses it, such as npx or uvx."
+    - button "Local command (stdio) A program started in each computer whose session uses it, such as npx or uvx."
   - text: Name
   - textbox "Name":
     - /placeholder: github

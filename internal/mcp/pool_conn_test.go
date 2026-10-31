@@ -125,7 +125,7 @@ func TestPoolKeepsTheServersLogMessages(t *testing.T) {
 	s := &mcptest.Server{Tools: []mcptest.Tool{echoTool("echo")}}
 	store := &memStore{servers: []mcp.ServerConfig{{ID: "s1", Name: "local", Kind: mcp.KindStdio, Command: "npx", Enabled: true}}}
 	pool := newPool(t, store, mcp.Options{Launcher: noisyLauncher{server: s}})
-	if got := pool.Tools(context.Background(), "ws1"); len(got) != 1 {
+	if got := pool.Tools(context.Background(), "cx1"); len(got) != 1 {
 		t.Fatalf("tools = %v", toolNames(got))
 	}
 	want := mcp.LogLine{Source: "server", Level: "warning", Text: "db: slow query"}
@@ -142,11 +142,11 @@ func TestPoolReportsAConnectionThatEndsByItself(t *testing.T) {
 	l := &launcher{server: s}
 	store := &memStore{servers: []mcp.ServerConfig{{ID: "s1", Name: "local", Kind: mcp.KindStdio, Command: "npx", Enabled: true}}}
 	pool := newPool(t, store, mcp.Options{Launcher: l})
-	if got := pool.Tools(context.Background(), "ws1"); len(got) != 1 {
+	if got := pool.Tools(context.Background(), "cx1"); len(got) != 1 {
 		t.Fatalf("tools = %v", toolNames(got))
 	}
 	l.mu.Lock()
-	process := l.pipes["ws1"][0]
+	process := l.pipes["cx1"][0]
 	l.mu.Unlock()
 	_ = process.Close()
 
@@ -155,7 +155,7 @@ func TestPoolReportsAConnectionThatEndsByItself(t *testing.T) {
 	})
 	d, _ := pool.Details(context.Background(), "s1")
 	if !slices.ContainsFunc(d.Logs, func(l mcp.LogLine) bool {
-		return l.Source == "eika" && l.Level == "error" && strings.HasPrefix(l.Text, "connection lost in workspace ws1: ")
+		return l.Source == "eika" && l.Level == "error" && strings.HasPrefix(l.Text, "connection lost in computer cx1: ")
 	}) {
 		t.Errorf("logs = %+v, want the lost connection", d.Logs)
 	}

@@ -1,6 +1,6 @@
 # sessions
 
-The list of chats, which are sessions in no workspace: create, list, rename,
+The list of chats, which are sessions in no computer: create, list, rename,
 pin, archive, delete, and the order the sidebar draws them in.
 The session that is open is the `session` feature, not this one.
 

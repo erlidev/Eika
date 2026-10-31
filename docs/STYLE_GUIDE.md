@@ -19,7 +19,7 @@ case, change it here in the same change, with a sentence of reasoning.
   abstractions for needs that do not exist yet. Two concrete uses justify an
   abstraction; one does not.
 - **Names carry meaning.** Names describe what a thing is or does in the
-  domain (`Workspace`, `startRun`), never how it is implemented
+  domain (`Computer`, `startRun`), never how it is implemented
   (`Manager`, `Helper`, `Util`, `Impl`, `Data`).
 
 ## 2. Go
@@ -30,11 +30,11 @@ case, change it here in the same change, with a sentence of reasoning.
 - `cmd/<binary>/main.go` is thin: parse flags, load config, wire packages,
   run. All logic lives in `internal/`.
 - Package names are short, lowercase, singular nouns: `tool`, `session`,
-  `workspace`. No `utils`, `common`, `helpers`, `types`, `models`.
+  `computer`. No `utils`, `common`, `helpers`, `types`, `models`.
 - One package per domain concept. A package exposes a small API and hides
   everything else. Prefer unexported by default.
 - Dependencies point inward (see `AGENTS.md`). Never import `server` from
-  anywhere; never import `workspace` from `tool`.
+  anywhere; never import `computer` from `tool`.
 - Interfaces are defined where they are consumed, not where they are
   implemented, unless they are the package's main extension point
   (`tool.Tool`, `provider.Provider`, `search.Searcher`, `executor.Executor`).
@@ -73,8 +73,8 @@ case, change it here in the same change, with a sentence of reasoning.
   path in `.golangci.yml`, with the reason.
 - Logging: `log/slog` only. Get the logger from the constructor argument or
   from `slog.Default()`; never a package-level logger variable. Log with
-  structured keys, lowercase, snake_case: `slog.Info("workspace started",
-  "workspace_id", id)`. Log at the boundary where an operation completes or
+  structured keys, lowercase, snake_case: `slog.Info("computer started",
+  "computer_id", id)`. Log at the boundary where an operation completes or
   fails, not at every step.
 - Configuration is loaded once in `main` into a `config.Config` value and
   passed down. Packages never read environment variables directly.
@@ -292,7 +292,7 @@ make obvious.
   a sandbox. `executor/local` is `//go:build !prod` and test-only.
 - The harness holds all credentials (LLM keys, git remote tokens), sealed
   with `internal/secret` before they reach the database and never returned
-  by the API. Sandboxes receive a per-workspace `eikad` token and nothing
+  by the API. Sandboxes receive a per-computer `eikad` token and nothing
   else.
 - All HTTP handlers require a bearer token except the health checks and the
   sign-in routes that hand one out.

@@ -1,4 +1,4 @@
-package workspace
+package computer
 
 import (
 	"slices"
@@ -24,13 +24,13 @@ func TestCreateResourcesSetsOnlyTheLimitsGiven(t *testing.T) {
 	}
 }
 
-func TestEnvironmentPointsAProxiedWorkspaceAtTheProxy(t *testing.T) {
+func TestEnvironmentPointsAProxiedComputerAtTheProxy(t *testing.T) {
 	h := &Host{opts: Options{EgressProxyURL: "http://eika:3128"}}
-	ws := Workspace{ID: "ws1", ProxyToken: "secret", Proxied: true}
-	env := h.environment(ws)
+	cx := Computer{ID: "cx1", ProxyToken: "secret", Proxied: true}
+	env := h.environment(cx)
 	for _, want := range []string{
-		"HTTPS_PROXY=http://ws1:secret@eika:3128",
-		"http_proxy=http://ws1:secret@eika:3128",
+		"HTTPS_PROXY=http://cx1:secret@eika:3128",
+		"http_proxy=http://cx1:secret@eika:3128",
 		"NO_PROXY=localhost,127.0.0.1,::1",
 		"NODE_USE_ENV_PROXY=1",
 	} {
@@ -38,9 +38,9 @@ func TestEnvironmentPointsAProxiedWorkspaceAtTheProxy(t *testing.T) {
 			t.Errorf("environment %v lacks %s", env, want)
 		}
 	}
-	ws.Proxied = false
-	if env := h.environment(ws); env != nil {
-		t.Errorf("an open workspace's environment = %v, want none", env)
+	cx.Proxied = false
+	if env := h.environment(cx); env != nil {
+		t.Errorf("an open computer's environment = %v, want none", env)
 	}
 }
 
