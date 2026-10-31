@@ -91,6 +91,9 @@ type fakeHost struct {
 	// confined records every confinement a computer was created or
 	// confined with, in order, by computer id.
 	confined map[string][]computer.Confinement
+	// created counts the containers made under each computer id, so that a
+	// container made again gets a proxy token of its own, as a real one does.
+	created map[string]int
 }
 
 // fakeComputer is one computer of a fakeHost.
@@ -105,7 +108,7 @@ func newFakeHost(t *testing.T) *fakeHost {
 	t.Helper()
 	return &fakeHost{
 		root: t.TempDir(), computers: map[string]*fakeComputer{},
-		confined: map[string][]computer.Confinement{},
+		confined: map[string][]computer.Confinement{}, created: map[string]int{},
 	}
 }
 
@@ -157,19 +160,20 @@ func (h *fakeHost) Create(_ context.Context, spec computer.Spec) (computer.Compu
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return computer.Computer{}, err
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.created[spec.ID]++
 	cx := computer.Computer{
 		ID:          spec.ID,
 		ContainerID: "container-" + spec.ID,
 		Image:       spec.Image,
 		State:       computer.StateCreating,
-		ProxyToken:  "proxy-token-" + spec.ID,
+		ProxyToken:  fmt.Sprintf("proxy-token-%s-%d", spec.ID, h.created[spec.ID]),
 		Proxied:     spec.Confinement.Proxied,
 	}
 	if cx.Image == "" {
 		cx.Image = "eika-sandbox:latest"
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.computers[cx.ID] = &fakeComputer{cx: cx, dir: dir}
 	h.confined[cx.ID] = append(h.confined[cx.ID], spec.Confinement)
 	return cx, nil
@@ -202,6 +206,16 @@ func (h *fakeHost) confinements(id string) []computer.Confinement {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return slices.Clone(h.confined[id])
+}
+
+// proxyToken returns the egress proxy token of a computer's container.
+func (h *fakeHost) proxyToken(id string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if found, ok := h.computers[id]; ok {
+		return found.cx.ProxyToken
+	}
+	return ""
 }
 
 // Usage reports a fixed sample of a running computer.

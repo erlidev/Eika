@@ -209,8 +209,8 @@ type proxyTokens struct {
 }
 
 // proxyToken returns the token a computer presents to the egress proxy.
-// A container's proxy token never changes and an id is never reused, so a
-// token once read stays right until the computer is destroyed.
+// A container's proxy token never changes, so a token once read stays right
+// until the container is replaced, which forgetEgress is called for.
 func (s *Server) proxyToken(ctx context.Context, id string) (string, error) {
 	s.proxyTokens.mu.Lock()
 	token, ok := s.proxyTokens.byComputer[id]
@@ -234,8 +234,8 @@ func (s *Server) proxyToken(ctx context.Context, id string) (string, error) {
 	return host.ProxyToken, nil
 }
 
-// forgetEgress drops what the harness holds about a destroyed computer's
-// network access.
+// forgetEgress drops what the harness holds about a computer's network access
+// when its container is replaced or destroyed.
 func (s *Server) forgetEgress(id string) {
 	s.proxyTokens.mu.Lock()
 	delete(s.proxyTokens.byComputer, id)

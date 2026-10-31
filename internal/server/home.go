@@ -68,6 +68,9 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 		}); err != nil {
 			return fmt.Errorf("create the home computer: %w", err)
 		}
+		// The new container has a proxy token of its own, and the harness
+		// may hold the old container's under this same id.
+		s.forgetEgress(row.ID)
 		s.log.Info("home computer created", "computer_id", row.ID)
 	default:
 		return err

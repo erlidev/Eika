@@ -178,7 +178,7 @@ func TestUsageReportsTheSampleAndTheRefusedHosts(t *testing.T) {
 	proxy := httptest.NewServer(a.egress)
 	defer proxy.Close()
 	proxyURL, _ := url.Parse(proxy.URL)
-	proxyURL.User = url.UserPassword(cx.ID, "proxy-token-"+cx.ID)
+	proxyURL.User = url.UserPassword(cx.ID, a.host.proxyToken(cx.ID))
 	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
 	resp, err := client.Get("http://example.com/")
 	if err != nil {
@@ -213,11 +213,59 @@ func TestEgressPolicyKnowsAComputerByItsProxyToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("policy: %v", err)
 	}
-	if policy.Token != "proxy-token-"+cx.ID || policy.Mode != egress.ModeAllowlist || !slices.Equal(policy.Allow, []string{"github.com"}) {
+	if policy.Token != a.host.proxyToken(cx.ID) || policy.Mode != egress.ModeAllowlist || !slices.Equal(policy.Allow, []string{"github.com"}) {
 		t.Errorf("policy = %+v", policy)
 	}
 	if _, err := a.EgressPolicy(t.Context(), "missing"); !errors.Is(err, egress.ErrUnknownComputer) {
 		t.Errorf("policy of a missing computer = %v, want ErrUnknownComputer", err)
+	}
+}
+
+func TestTheProxyKnowsARecreatedHomeByItsNewToken(t *testing.T) {
+	a := newAPI(t)
+	a.host.egressControl = true
+	home := a.home(t)
+	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 0, 0, "allowlist", []string{"github.com"})), 200)
+
+	proxy := httptest.NewServer(a.egress)
+	defer proxy.Close()
+	status := func(token string) int {
+		t.Helper()
+		proxyURL, _ := url.Parse(proxy.URL)
+		proxyURL.User = url.UserPassword(home.ID, token)
+		client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+		resp, err := client.Get("http://example.com/")
+		if err != nil {
+			t.Fatalf("get through the proxy: %v", err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	// A host that is not on the list is refused, which is how the proxy shows
+	// it accepted the credentials; a wrong token is asked for again.
+	old := a.host.proxyToken(home.ID)
+	if got := status(old); got != http.StatusForbidden {
+		t.Fatalf("status with the token the container was made with = %d, want 403", got)
+	}
+
+	// The container is lost and made again over the same id, and with it a
+	// proxy token of its own.
+	if err := a.host.Destroy(t.Context(), &computer.Computer{ID: home.ID}); err != nil {
+		t.Fatalf("remove the container: %v", err)
+	}
+	if err := a.EnsureHome(t.Context()); err != nil {
+		t.Fatalf("EnsureHome: %v", err)
+	}
+	fresh := a.host.proxyToken(home.ID)
+	if fresh == old {
+		t.Fatalf("the new container has the old token %q", old)
+	}
+	if got := status(fresh); got != http.StatusForbidden {
+		t.Errorf("status with the new token = %d, want 403: the proxy must accept it", got)
+	}
+	if got := status(old); got != http.StatusProxyAuthRequired {
+		t.Errorf("status with the old token = %d, want 407: the proxy must refuse it", got)
 	}
 }
 
