@@ -11,11 +11,23 @@
     "video": true,
     "audio": false
   },
+  "media_marker": "<__media_xdtMTSJ5607lzSBUxBccnMOwgH5baWpk__>",
   "endpoint_slots": true,
   "endpoint_props": false,
   "endpoint_metrics": true,
   "ui": true,
   "ui_settings": {},
+  "chat_template_caps": {
+    "supports_object_arguments": true,
+    "supports_parallel_tool_calls": true,
+    "supports_preserve_reasoning": true,
+    "supports_reasoning_effort": true,
+    "supports_string_content": true,
+    "supports_system_role": true,
+    "supports_tool_calls": true,
+    "supports_tools": true,
+    "supports_typed_content": true
+  },
   "bos_token": "<|endoftext|>",
   "eos_token": "<|im_end|>",
   "build_info": "b11942-338fce651",

@@ -1,0 +1,11 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "Qwen3.8-27B-exl3",
+      "object": "model",
+      "created": 1761900000,
+      "owned_by": "tabbyAPI"
+    }
+  ]
+}

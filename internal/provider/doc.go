@@ -13,5 +13,6 @@
 // whole answer. Sampling holds the optional sampling parameters a request sends
 // and layers one configuration over another. Lister is the optional
 // interface of a provider that can list its models. The only implementation
-// today is provider/openai.
+// today is provider/openai. Package probe, below this one, works out which
+// inference server an endpoint is and what it can take.
 package provider
