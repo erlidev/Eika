@@ -33,6 +33,8 @@ func Scenarios() []Scenario {
 		AgentLoop(nonce),
 		ReasoningCount(nonce),
 		ContextBreakdown(nonce),
+		ContextBlockPrefix(nonce),
+		OnResponses(ContextBlockPrefix(nonce)),
 		ToolArguments(nonce),
 		OnResponses(ToolArguments(nonce)),
 		ThinkingSwitches(nonce),
