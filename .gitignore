@@ -11,6 +11,9 @@
 /.dev/
 *.local.yaml
 
+# Reports of `make live`
+/evals/results/
+
 # Editor and OS noise
 .DS_Store
 *.swp

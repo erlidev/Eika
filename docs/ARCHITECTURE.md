@@ -571,7 +571,8 @@ An arrow means "may import".
 `make check` runs gofmt/goimports checks, `go vet`, staticcheck,
 golangci-lint if installed, the Go tests including `docker`-tagged ones,
 ESLint, `tsc`, Vitest, then the visual suite. Go targets name
-`./cmd/... ./internal/...` because `web/node_modules` contains Go files.
+`./cmd/... ./internal/... ./evals/...` because `web/node_modules` contains Go
+files. Vet and staticcheck also compile the `live`-tagged tests.
 
 - Go: stdlib tests; `providertest` and `executor/local` make the loop
   testable without Docker or a model. `docker`-tagged tests (handlers, store,
@@ -585,3 +586,11 @@ ESLint, `tsc`, Vitest, then the visual suite. Go targets name
   harness (`make visual`); `npm run shot` for screenshots.
 - `make smoke`: the real stack, from setup and a provider to a plain chat and
   then a chat on the home computer whose `bash` call runs in its container.
+- `make live`: `evals/live`, scenarios scripted against the bench's real chat
+  model through `internal/provider/openai`, behind the `live` build tag. The
+  package reads `~/.config/eika/live.env`, describes the server (build, model
+  file and revision, `/props` settings), plays each scenario and writes a JSON
+  report to the ignored `evals/results/`. Its plain code and fakes-backed
+  tests run in `make check`; the live test skips without
+  `EIKA_LIVE_ENDPOINT` and fails when that is set but silent. `evals/README.md`
+  says how to run it, add a scenario and read a report.

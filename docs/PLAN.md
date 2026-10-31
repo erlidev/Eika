@@ -305,13 +305,17 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
 - [ ] Prefix-stability test: across scripted turns, a restart and a resume, each
       request's serialised prefix is a byte-prefix of the next, except across a
       compaction.
-- [ ] Add a `make live` target and an `evals/` skeleton: a README and a runner
-      over scripted scenarios against `EIKA_LIVE_ENDPOINT`, reporting drift,
-      cache-hit rate and prefill seconds. Live tests are Go tests behind the
-      `live` build tag, skipped with a stated reason when their endpoint is not
-      set, the way Docker tests skip without a daemon. They read
-      `~/.config/eika/live.env` (section "Live test bench") and write a JSON
-      report to `evals/results/` with the server's build and model revision.
+- [ ] `make live` and the `evals/` skeleton, part 2. Part 1 landed ahead of the
+      other items (`evals/README.md`, `evals/live`, `make live`: the tagged
+      live test, the report with the server's build and model revision, and the
+      `cache_reuse` scenario reporting cache-hit rate and prefill seconds).
+      Remaining:
+      - fill `Call.Drift` (`evals/live/call.go`; the report has it as `null`)
+        from the token counter once it exists, and make `Summarise` total it
+      - replace the cached count `cache_reuse` derives (`prompt_tokens` less
+        `prompt_n`) with the one usage parsing reads
+      - any further scenarios the items after this one need; the live suite
+        below adds them to `Scenarios()`
 - [ ] Phase 1 live suite, against the bench's chat model:
       - exact counting: `/apply-template` plus `/tokenize` equals `prompt_tokens`
         under `chat`, and `input_tokens` under `responses`, over a scripted
@@ -1035,6 +1039,43 @@ Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
 
+- 2026-10-31: part 1 of the `make live` and `evals/` item, moved ahead of the
+  rest of phase 1 so every later item can verify against the real model (branch
+  `live-skeleton`). The item stays unticked; its text now says what remains.
+  - Landed. `make live` (runs `evals/forward.sh`, then
+    `go test -tags live -count=1 -v` on `evals/live`); `evals/live`, which loads
+    `~/.config/eika/live.env` without overriding the environment, connects,
+    plays the scenarios through `internal/provider/openai` and writes
+    `evals/results/<time>-<build>.json` (ignored by git); `evals/README.md`;
+    and the `cache_reuse` scenario. The package's plain code has ordinary tests
+    on a fake llama.cpp server and fixtures recorded from the bench, which
+    `make check` runs; vet and staticcheck also compile the `live` files. The
+    live test skips with a stated reason when `EIKA_LIVE_ENDPOINT` is unset and
+    fails, pointing at `evals/models/README.md`, when it is set but silent or
+    refuses the key (both checked by hand). Decision in `DECISIONS.md`
+    ("Live tests").
+  - `make live`, against llama.cpp b11942-338fce651, Qwen3.8-27B-UD-Q4_K_XL at
+    revision 4ca720788d1e01f1bff70c033e0d0028fd02e502, 2 slots, 131072 shared
+    context: `cache_reuse` passed in 1.2 s. Turn 1 (cold, a per-run nonce
+    starts the system prompt): 320 prompt tokens, 0 cached, prefill 0.151 s.
+    Turn 2: 370 prompt tokens, 348 cached (94.1%), 22 prefilled, prefill
+    0.136 s. Over both: 690 prompt tokens, 50.4% cached, 0.287 s prefill.
+    Drift `null`.
+  - Verified against the live server. `prompt_tokens` counts cached tokens
+    (18 = `cache_n` 14 + `prompt_n` 4), and `usage.prompt_tokens_details.
+    cached_tokens` equals `cache_n`, so the usage-parsing item has both places
+    to read. The provider does not expose the cached count yet, only `Timings`,
+    so the scenario derives it as `prompt_tokens - prompt_n`; that holds on
+    llama.cpp only. `/props` reports `build_info`, `model_path` (whose
+    Hugging Face snapshot directory is the revision), `total_slots`,
+    `default_generation_settings.n_ctx`, `modalities` and the `/slots` and
+    `/metrics` switches, but not the KV cache type or `--kv-unified`; the probe
+    item has to find those another way. `/v1/models` adds `n_ctx_train`,
+    `n_params` and the weights size. `reasoning_effort: none` with
+    `ThinkingSwitch` `chat_template_kwargs` turns thinking off on this
+    template, as the scenario needs for a bounded reply.
+  - Not run. The SSH branch of `evals/forward.sh` (the port answered, so it
+    never opened one); it follows the README's command and is untested.
 - 2026-10-30: the computer routes no UI calls are removed (branch
   `remove-computer-routes`). An owner-requested follow-up to phase 0, not the
   start of phase 1. Only `GET /api/computers` is left, and `POST /api/sessions`

@@ -654,3 +654,24 @@ this file says why, so neither repeats the other.
   stack: its own compose project, port, and networks beside any running
   stack, with a scripted model (`web/e2e/smoke/model.ts`) standing in for a
   provider. It is not part of `make check` because it builds images.
+- **Live tests** (`make live`) run scripted scenarios against a real model
+  and are never part of `make check`: they need a GPU server, take a model's
+  time, and a model's answers are not deterministic. They are Go tests in
+  `evals/live` behind the `live` build tag, not a script or a separate
+  program, so they share the test runner, the provider (`internal/provider/openai`,
+  the code the harness runs) and the style of the Docker tests. Without
+  `EIKA_LIVE_ENDPOINT` they skip, saying why. With it set but silent they
+  fail with a pointer to `evals/models/README.md`, because a skipped live run
+  reads as a pass. The package's plain code (env loading, report, scenario
+  helpers) has no tag and ordinary tests on a fake server, and `make lint`
+  compiles the tagged files, so the skeleton cannot rot between runs. A
+  report is JSON in the ignored `evals/results/`, with the server's build,
+  model revision and `/props` settings, so a regression can be told apart
+  from a server or model change. What no counter measures yet (drift) is
+  `null` in the report, never 0. The cached-token count is derived from the
+  provider's prefill timings until usage parsing reads it. Rejected: a shell
+  or Python runner (a second way to talk to the provider, which would not
+  exercise it); testing against a fake that mimics llama.cpp (the live suite
+  exists to catch what fakes cannot); one key in the environment only (the
+  bench's four variables live in a file, so `make live` works from any
+  shell).

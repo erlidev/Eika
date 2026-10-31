@@ -71,7 +71,8 @@ ssh -fN -o ControlMaster=auto -o ControlPath=~/.ssh/cm/%r@%h:%p -o ControlPersis
   -L 127.0.0.1:8091:10.10.10.2:8091 ubuntu-5090
 ```
 
-or allow it once on the server:
+`make live` runs that command itself when the endpoint is on loopback and its
+port does not answer. Or allow it once on the server:
 `sudo ufw allow from 192.168.0.0/24 to any port 8091 proto tcp`.
 
 One model fills the 5090 at a time: stop `llama-server` and `tabbyapi` first.

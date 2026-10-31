@@ -90,12 +90,15 @@ reset in phase 4 (`docs/PLAN.md`).
 make check   # fmt, vet, lint, Go and web tests, then the visual suite
 make dev     # harness on :8080 and Vite on :5173 against compose services
 make smoke   # the whole stack in compose, from setup to a sandboxed run
+make live    # the live tests against a real model (evals/README.md)
 ```
 
 `make check` runs the Docker-dependent Go tests when a daemon is reachable
 and skips them otherwise. `make dev` starts postgres and SearXNG on loopback
 (`compose.dev.yaml`) and runs the harness on the host with its state in
 `.dev/`. `make smoke` runs beside a `make local` stack, on port 18080.
+`make live` needs a model endpoint in `~/.config/eika/live.env` and is never
+part of `make check`.
 
 ## Documentation
 
