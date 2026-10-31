@@ -216,8 +216,7 @@ func TestProfileRoutes(t *testing.T) {
 
 func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	a := newAPI(t)
-	project, _ := a.newProject(t, "demo")
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	sess := a.newSession(t, ws.ID)
 
 	profile := a.newProfile(t, map[string]any{
@@ -429,9 +428,7 @@ func TestAToolChoiceNamesAnMCPServer(t *testing.T) {
 
 func TestForksKeepTheProfile(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	sess := a.newSession(t, ws.ID)
 	profile := a.newProfile(t, map[string]any{"name": "Inherited"})
 	a.useProfile(t, sess.ID, profile.ID)
@@ -497,8 +494,7 @@ func TestAnEditorSeesTheValuesOfTheModelItChoseBeforeSaving(t *testing.T) {
 
 func TestAStoppedWorkspaceStillHasAPreview(t *testing.T) {
 	a := newAPI(t)
-	project, _ := a.newProject(t, "demo")
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	sess := a.newSession(t, ws.ID)
 	if rec := request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/stop", nil); rec.Code != 200 {
 		t.Fatalf("stop = %d", rec.Code)

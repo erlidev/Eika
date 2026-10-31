@@ -197,7 +197,7 @@ func (s *Server) Reconcile(ctx context.Context) error {
 	if s.deps.Workspaces == nil {
 		return nil
 	}
-	recorded, err := s.deps.Store.Workspaces(ctx, "")
+	recorded, err := s.deps.Store.Workspaces(ctx)
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func (s *Server) Reconcile(ctx context.Context) error {
 		if err := s.deps.Store.SetWorkspaceState(ctx, w.ID, state, actual.containerID); err != nil {
 			return err
 		}
-		s.workspaceState(ctx, w.ID, w.ProjectID, state)
+		s.workspaceState(ctx, w.ID, state)
 		s.log.Info("workspace state reconciled", "workspace_id", w.ID, "was", w.State, "state", state)
 	}
 	return nil
@@ -235,10 +235,9 @@ func (s *Server) Reconcile(ctx context.Context) error {
 
 // workspaceState reports a workspace lifecycle transition to the clients
 // watching that workspace.
-func (s *Server) workspaceState(ctx context.Context, workspaceID, projectID, state string) {
+func (s *Server) workspaceState(ctx context.Context, workspaceID, state string) {
 	e, err := event.New(event.TypeWorkspaceState, event.WorkspaceTopic(workspaceID), event.WorkspaceState{
 		WorkspaceID: workspaceID,
-		ProjectID:   projectID,
 		State:       state,
 	})
 	if err != nil {

@@ -322,7 +322,6 @@ or archive through the API, so that views of the workspace refresh.
 | Field | Type | Meaning |
 |---|---|---|
 | `workspace_id` | string | The workspace. |
-| `project_id` | string, optional | The project it holds. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 
 ## MCP events

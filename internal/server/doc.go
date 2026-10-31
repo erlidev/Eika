@@ -1,6 +1,6 @@
 // Package server exposes the Eika harness over HTTP.
 //
-// It owns the whole HTTP surface: the JSON API for projects, workspaces,
+// It owns the whole HTTP surface: the JSON API for workspaces,
 // sessions, runs, questions, providers, models, profiles, a session's
 // configuration and the context of its model requests, MCP servers, and
 // settings;

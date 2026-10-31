@@ -18,8 +18,7 @@ func (a *api) workspaceState(t *testing.T, id string) string {
 func TestIdleWorkspacesStop(t *testing.T) {
 	t.Run("after the default timeout without a run", func(t *testing.T) {
 		a := newAPI(t)
-		project, _ := a.newProject(t, "idle")
-		ws := a.newWorkspace(t, project.ID)
+		ws := a.newWorkspace(t)
 		start := time.Now()
 
 		a.SweepIdle(t.Context(), start)
@@ -35,8 +34,7 @@ func TestIdleWorkspacesStop(t *testing.T) {
 
 	t.Run("counting from the end of the last run", func(t *testing.T) {
 		a := newAPI(t)
-		project, _ := a.newProject(t, "busy")
-		ws := a.newWorkspace(t, project.ID)
+		ws := a.newWorkspace(t)
 		sess := a.newSession(t, ws.ID)
 		// First seen ten minutes ago, so only the run keeps it up below.
 		a.SweepIdle(t.Context(), time.Now().Add(-10*time.Minute))
@@ -58,8 +56,7 @@ func TestIdleWorkspacesStop(t *testing.T) {
 
 	t.Run("after the timeout the settings name", func(t *testing.T) {
 		a := newAPI(t)
-		project, _ := a.newProject(t, "short")
-		ws := a.newWorkspace(t, project.ID)
+		ws := a.newWorkspace(t)
 		decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings",
 			map[string]any{"workspace_idle_minutes": 5}), 200)
 		start := time.Now()
@@ -73,8 +70,7 @@ func TestIdleWorkspacesStop(t *testing.T) {
 
 	t.Run("never when the timeout is zero", func(t *testing.T) {
 		a := newAPI(t)
-		project, _ := a.newProject(t, "forever")
-		ws := a.newWorkspace(t, project.ID)
+		ws := a.newWorkspace(t)
 		decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings",
 			map[string]any{"workspace_idle_minutes": 0}), 200)
 		start := time.Now()
@@ -88,8 +84,7 @@ func TestIdleWorkspacesStop(t *testing.T) {
 
 	t.Run("not while a run is going in it", func(t *testing.T) {
 		a := newAPI(t)
-		project, _ := a.newProject(t, "asking")
-		ws := a.newWorkspace(t, project.ID)
+		ws := a.newWorkspace(t)
 		sess := a.newSession(t, ws.ID)
 		start := time.Now()
 		a.SweepIdle(t.Context(), start)

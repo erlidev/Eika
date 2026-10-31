@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/erlidev/eika/internal/store"
@@ -19,21 +20,6 @@ func TestMain(m *testing.M) {
 	os.Exit(storetest.Main(m))
 }
 
-// newProject creates a project to hang test rows off.
-func newProject(t *testing.T, st *store.Store) store.Project {
-	t.Helper()
-	p, err := st.CreateProject(t.Context(), store.Project{
-		Name:          "eika-" + store.NewID(),
-		Kind:          store.ProjectRemote,
-		RemoteURL:     "https://example.invalid/eika.git",
-		DefaultBranch: "main",
-	})
-	if err != nil {
-		t.Fatalf("create project: %v", err)
-	}
-	return p
-}
-
 func TestOpenMigratesAndIsIdempotent(t *testing.T) {
 	url := storetest.URL(t)
 	for _, pass := range []string{"first", "second"} {
@@ -41,10 +27,8 @@ func TestOpenMigratesAndIsIdempotent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s open: %v", pass, err)
 		}
-		if _, err := st.CreateProject(t.Context(), store.Project{
-			Name: pass, Kind: store.ProjectLocal, HostPath: "/srv/eika", DefaultBranch: "main",
-		}); err != nil {
-			t.Fatalf("%s open, create project: %v", pass, err)
+		if _, err := st.CreateWorkspace(t.Context(), store.Workspace{Name: pass, State: "running"}); err != nil {
+			t.Fatalf("%s open, create workspace: %v", pass, err)
 		}
 		st.Close()
 	}
@@ -76,21 +60,12 @@ func TestTablesLiveInSchemaCore(t *testing.T) {
 	}
 }
 
-func TestProjectsWorkspacesAndSessions(t *testing.T) {
+func TestWorkspacesAndSessions(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	project := newProject(t, st)
-	if got, err := st.ProjectByName(ctx, project.Name); err != nil || got.ID != project.ID {
-		t.Fatalf("ProjectByName = %+v, %v", got, err)
-	}
-	if got, err := st.Projects(ctx); err != nil || len(got) != 1 {
-		t.Fatalf("Projects = %d rows, %v; want 1", len(got), err)
-	}
-
 	ws, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "fix-build", Branch: "fix-build",
-		BaseCommit: "0123456789abcdef", Image: "eika-sandbox:latest", State: "creating",
+		Name: "fix-build", Image: "eika-sandbox:latest", State: "creating",
 	})
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
@@ -152,16 +127,15 @@ func TestSessionsReachDescendantsInOtherWorkspaces(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	project := newProject(t, st)
 	parentWS, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "main", Branch: "main", State: "running",
+		Name: "main", State: "running",
 	})
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
 	childWS, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "fork", Branch: "main-fork",
-		State: "running", ParentWorkspaceID: parentWS.ID,
+		Name:  "fork",
+		State: "running",
 	})
 	if err != nil {
 		t.Fatalf("create child workspace: %v", err)
@@ -220,9 +194,8 @@ func TestChatsHaveNoWorkspaceAndKeepTheirTools(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	project := newProject(t, st)
 	ws, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "main", Branch: "main", State: "running",
+		Name: "main", State: "running",
 	})
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
@@ -289,9 +262,8 @@ func TestRunsAndSettings(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	project := newProject(t, st)
 	ws, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "parent", Branch: "main", State: "running",
+		Name: "parent", State: "running",
 	})
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
@@ -373,9 +345,8 @@ func TestSetSettingsWritesAllOrNothing(t *testing.T) {
 func TestAbortRunningRunsClosesRowsFromAnEarlierProcess(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
-	project := newProject(t, st)
 	ws, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "work", Branch: "main", State: "running",
+		Name: "work", State: "running",
 	})
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
@@ -408,9 +379,8 @@ func TestErrNotFound(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	project := newProject(t, st)
 	ws, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "w", Branch: "main", State: "running",
+		Name: "w", State: "running",
 	})
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
@@ -422,18 +392,16 @@ func TestErrNotFound(t *testing.T) {
 
 	missing := store.NewID()
 	cases := map[string]error{
-		"project":      errOf(func() error { _, err := st.Project(ctx, missing); return err }),
-		"project name": errOf(func() error { _, err := st.ProjectByName(ctx, missing); return err }),
-		"workspace":    errOf(func() error { _, err := st.Workspace(ctx, missing); return err }),
-		"session":      errOf(func() error { _, err := st.Session(ctx, missing); return err }),
-		"entry":        errOf(func() error { _, err := st.Entry(ctx, missing); return err }),
-		"run":          errOf(func() error { _, err := st.Run(ctx, missing); return err }),
-		"setting":      errOf(func() error { _, err := st.Setting(ctx, missing); return err }),
-		"append":       errOf(func() error { _, err := st.AppendEntry(ctx, missing, store.Entry{Kind: store.KindUser}); return err }),
-		"set head":     st.SetSessionHead(ctx, sess.ID, missing),
-		"fork":         errOf(func() error { _, err := st.ForkSession(ctx, sess.ID, missing, store.ForkOptions{}); return err }),
-		"finish run":   st.FinishRun(ctx, missing, store.RunDone, ""),
-		"delete":       st.DeleteProject(ctx, missing),
+		"workspace":  errOf(func() error { _, err := st.Workspace(ctx, missing); return err }),
+		"session":    errOf(func() error { _, err := st.Session(ctx, missing); return err }),
+		"entry":      errOf(func() error { _, err := st.Entry(ctx, missing); return err }),
+		"run":        errOf(func() error { _, err := st.Run(ctx, missing); return err }),
+		"setting":    errOf(func() error { _, err := st.Setting(ctx, missing); return err }),
+		"append":     errOf(func() error { _, err := st.AppendEntry(ctx, missing, store.Entry{Kind: store.KindUser}); return err }),
+		"set head":   st.SetSessionHead(ctx, sess.ID, missing),
+		"fork":       errOf(func() error { _, err := st.ForkSession(ctx, sess.ID, missing, store.ForkOptions{}); return err }),
+		"finish run": st.FinishRun(ctx, missing, store.RunDone, ""),
+		"delete":     st.DeleteWorkspace(ctx, missing),
 		"update session": errOf(func() error {
 			_, err := st.UpdateSession(ctx, missing, store.SessionChanges{})
 			return err
@@ -454,9 +422,8 @@ func TestSetSessionHeadIsGuarded(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	project := newProject(t, st)
 	ws, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "w", Branch: "main", State: "running",
+		Name: "w", State: "running",
 	})
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
@@ -491,17 +458,6 @@ func TestSetSessionHeadIsGuarded(t *testing.T) {
 	}
 	if err := st.SetSessionHead(ctx, store.NewID(), ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("clear head of a missing session = %v, want ErrNotFound", err)
-	}
-}
-
-func TestDuplicateProjectNameIsConflict(t *testing.T) {
-	st := storetest.Open(t)
-	project := newProject(t, st)
-	_, err := st.CreateProject(t.Context(), store.Project{
-		Name: project.Name, Kind: store.ProjectLocal, HostPath: "/srv", DefaultBranch: "main",
-	})
-	if !errors.Is(err, store.ErrConflict) {
-		t.Fatalf("err = %v, want ErrConflict", err)
 	}
 }
 
@@ -566,9 +522,8 @@ func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	project := newProject(t, st)
 	ws, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "main", Branch: "main", State: "running",
+		Name: "main", State: "running",
 	})
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
@@ -607,5 +562,51 @@ func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
 	}
 	if w, err = st.Workspace(ctx, ws.ID); err != nil || !w.Pinned || !w.Archived || w.Name != "renamed" {
 		t.Errorf("Workspace = %+v, %v; want what was set", w, err)
+	}
+}
+
+func TestWorkspacesListInOrderOfCreation(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	if got, err := st.Workspaces(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("Workspaces of a new database = %+v, %v; want none", got, err)
+	}
+	var want []string
+	for _, name := range []string{"first", "second", "third"} {
+		ws, err := st.CreateWorkspace(ctx, store.Workspace{Name: name, State: "running"})
+		if err != nil {
+			t.Fatalf("create workspace %s: %v", name, err)
+		}
+		want = append(want, ws.ID)
+	}
+	got, err := st.Workspaces(ctx)
+	if err != nil {
+		t.Fatalf("Workspaces: %v", err)
+	}
+	var ids []string
+	for _, ws := range got {
+		ids = append(ids, ws.ID)
+	}
+	if !slices.Equal(ids, want) {
+		t.Errorf("Workspaces = %v, want %v", ids, want)
+	}
+}
+
+func TestDeletingAWorkspaceDeletesItsSessions(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	ws, err := st.CreateWorkspace(ctx, store.Workspace{Name: "doomed", State: "running"})
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	sess, err := st.CreateSession(ctx, store.Session{WorkspaceID: ws.ID, Title: "in it"})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.DeleteWorkspace(ctx, ws.ID); err != nil {
+		t.Fatalf("delete workspace: %v", err)
+	}
+	if _, err := st.Session(ctx, sess.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("session of a deleted workspace = %v, want ErrNotFound", err)
 	}
 }

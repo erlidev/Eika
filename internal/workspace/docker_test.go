@@ -257,6 +257,11 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		if stopped.State != workspace.StateStopped {
 			t.Errorf("state = %q, want stopped", stopped.State)
 		}
+		// A harness that restarted knows the volume only through Inspect, and
+		// Destroy removes only the volume it knows.
+		if stopped.Volume != workspace.VolumeName(ws.ID) {
+			t.Errorf("inspected volume = %q, want %q", stopped.Volume, workspace.VolumeName(ws.ID))
+		}
 		if err := host.Destroy(t.Context(), &ws); err != nil {
 			t.Fatalf("destroy: %v", err)
 		}
@@ -325,7 +330,7 @@ func TestListReturnsAnInspectionFailure(t *testing.T) {
 	}
 }
 
-func TestWorkspaceFromADockerfileAndAHostPath(t *testing.T) {
+func TestWorkspaceFromADockerfile(t *testing.T) {
 	requireDocker(t)
 	host := newHost(t)
 
@@ -333,15 +338,11 @@ func TestWorkspaceFromADockerfileAndAHostPath(t *testing.T) {
 	// is copied in before the container starts.
 	build := t.TempDir()
 	if err := os.WriteFile(filepath.Join(build, "Dockerfile"),
-		[]byte("FROM alpine:3.20\nRUN mkdir -p /workspace\n"), 0o600); err != nil {
+		[]byte("FROM alpine:3.20\nRUN mkdir -p /workspace && echo baked > /workspace/from-the-image.txt\n"), 0o600); err != nil {
 		t.Fatalf("write dockerfile: %v", err)
 	}
-	hostPath := t.TempDir()
-	if err := os.WriteFile(filepath.Join(hostPath, "from-the-host.txt"), []byte("mounted"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
 
-	ws, err := host.Create(t.Context(), workspace.Spec{BuildContext: build, HostPath: hostPath})
+	ws, err := host.Create(t.Context(), workspace.Spec{BuildContext: build})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -354,30 +355,16 @@ func TestWorkspaceFromADockerfileAndAHostPath(t *testing.T) {
 		t.Fatalf("executor: %v", err)
 	}
 
-	data, err := ex.ReadFile(t.Context(), "from-the-host.txt", executor.ReadOpts{})
+	// The volume at the root starts with what the image holds there.
+	data, err := ex.ReadFile(t.Context(), "from-the-image.txt", executor.ReadOpts{})
 	if err != nil {
-		t.Fatalf("read the bind-mounted file: %v", err)
+		t.Fatalf("read the file baked into the image: %v", err)
 	}
-	if string(data) != "mounted" {
-		t.Errorf("read = %q, want mounted", data)
+	if strings.TrimSpace(string(data)) != "baked" {
+		t.Errorf("read = %q, want baked", data)
 	}
 	if got := run(t, ex, "echo built"); got != "built" {
 		t.Errorf("echo = %q, want built", got)
-	}
-
-	// The workspace writes back to the host directory.
-	if err := ex.WriteFile(t.Context(), "written-back.txt", []byte("ok")); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(filepath.Join(hostPath, "written-back.txt")); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the workspace's write did not reach the host directory")
-		}
-		time.Sleep(50 * time.Millisecond)
 	}
 
 	// The image was built for this workspace alone, so it goes with it.

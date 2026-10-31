@@ -30,17 +30,15 @@ function configured(): WorldBuilder {
 }
 
 /**
- * workbench builds the richest state: two projects, workspaces in several
+ * workbench builds the richest state: workspaces in several
  * states, and a session whose transcript uses every kind of entry. Its ids
  * are fixed: the main session is `ses-backoff`, its workspace `ws-retries`.
  */
 function workbench(): WorldBuilder {
   const b = configured();
-  const api = b.project({ id: "proj-api", name: "payments-api" });
-  const web = b.project({ name: "web-dashboard", kind: "local", host_path: "/srv/code/web" });
-  b.workspace(web, { name: "dark-mode", state: "stopped" });
-  const ws = b.workspace(api, { id: "ws-retries", name: "fix-retries" });
-  b.workspace(api, { name: "upgrade-go", state: "creating" });
+  b.workspace({ name: "dark-mode", state: "stopped" });
+  const ws = b.workspace({ id: "ws-retries", name: "fix-retries" });
+  b.workspace({ name: "upgrade-go", state: "creating" });
   const older = b.session(ws, { title: "Investigate flaky test" });
   b.conversation(older, [
     { role: "user", content: "Why does TestRetry fail sometimes?" },
@@ -498,18 +496,18 @@ export const scenarios = {
     build: () => ({ ...emptyWorld(), signedIn: false }),
   },
   empty: {
-    description: "Signed in and set up, but no providers, models, or projects.",
+    description: "Signed in and set up, but no providers or models.",
     path: "/",
     build: () => emptyWorld(),
   },
   configured: {
-    description: "One provider with two models, no projects yet.",
+    description: "One provider with two models.",
     path: "/",
     build: () => configured().world,
   },
   workbench: {
     description:
-      "Projects, workspaces (running/stopped/creating), a diff, and session ses-backoff with a full transcript. Sending a message streams a mock reply.",
+      "Workspaces (running/stopped/creating), and session ses-backoff with a full transcript. Sending a message streams a mock reply.",
     path: "/sessions/ses-backoff",
     build: () => workbench().world,
   },
@@ -909,8 +907,7 @@ export const scenarios = {
     path: "/sessions/ses-empty",
     build: () => {
       const b = configured();
-      const p = b.project({ name: "payments-api" });
-      const ws = b.workspace(p, { name: "scratch" });
+      const ws = b.workspace({ name: "scratch" });
       b.session(ws, { id: "ses-empty", title: "New session" });
       return b.world;
     },

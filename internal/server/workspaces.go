@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -13,9 +12,6 @@ import (
 	"github.com/erlidev/eika/internal/workspace"
 )
 
-// gitTimeout bounds one git command the API runs inside a workspace.
-const gitTimeout = 30 * time.Second
-
 // teardownTimeout bounds the work that has to finish even though the request
 // that asked for it is gone: removing a half-created workspace, and stopping
 // the runs in a workspace that is about to go away. Both leave a container,
@@ -24,15 +20,11 @@ const teardownTimeout = 2 * time.Minute
 
 // workspaceBody is one workspace on the wire.
 type workspaceBody struct {
-	ID                string `json:"id"`
-	ProjectID         string `json:"project_id"`
-	Name              string `json:"name"`
-	Branch            string `json:"branch"`
-	BaseCommit        string `json:"base_commit,omitempty"`
-	Image             string `json:"image"`
-	State             string `json:"state"`
-	ContainerID       string `json:"container_id,omitempty"`
-	ParentWorkspaceID string `json:"parent_workspace_id,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Image       string `json:"image"`
+	State       string `json:"state"`
+	ContainerID string `json:"container_id,omitempty"`
 	// Sandbox is what the container may consume, reach, and expose.
 	Sandbox sandboxBody `json:"sandbox"`
 	// Pinned workspaces are listed before the others.
@@ -48,20 +40,17 @@ type workspaceBody struct {
 // BuildContext are alternatives: a build context is a directory on the Docker
 // host holding Dockerfile and whatever it needs.
 type createWorkspaceRequest struct {
-	ProjectID         string `json:"project_id"`
-	Name              string `json:"name"`
-	Branch            string `json:"branch"`
-	Image             string `json:"image"`
-	BuildContext      string `json:"build_context"`
-	Dockerfile        string `json:"dockerfile"`
-	ParentWorkspaceID string `json:"parent_workspace_id"`
+	Name         string `json:"name"`
+	Image        string `json:"image"`
+	BuildContext string `json:"build_context"`
+	Dockerfile   string `json:"dockerfile"`
 	// Sandbox is the new workspace's limits and network. Left out, it gets
 	// the settings' defaults.
 	Sandbox *sandboxBody `json:"sandbox"`
 }
 
 // updateWorkspaceRequest is the body of PATCH /api/workspaces/{id}. An
-// absent field is left alone. The branch and the container do not change.
+// absent field is left alone. The container does not change.
 type updateWorkspaceRequest struct {
 	Name     *string `json:"name"`
 	Pinned   *bool   `json:"pinned"`
@@ -73,10 +62,9 @@ type workspacesResponse struct {
 	Workspaces []workspaceBody `json:"workspaces"`
 }
 
-// handleListWorkspaces lists the workspaces, of one project when the query
-// names one.
+// handleListWorkspaces lists the workspaces.
 func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
-	workspaces, err := s.deps.Store.Workspaces(r.Context(), r.URL.Query().Get("project_id"))
+	workspaces, err := s.deps.Store.Workspaces(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -88,8 +76,8 @@ func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.log, http.StatusOK, workspacesResponse{Workspaces: out})
 }
 
-// handleCreateWorkspace creates the container, starts it, puts the project's
-// code in it, and records the result.
+// handleCreateWorkspace creates the container, starts it, and records the
+// result.
 func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[createWorkspaceRequest](r)
 	if err != nil {
@@ -101,8 +89,8 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.workspaceState(r.Context(), ws.ID, ws.ProjectID, ws.State)
-	s.log.Info("workspace created", "workspace_id", ws.ID, "project_id", ws.ProjectID, "branch", ws.Branch)
+	s.workspaceState(r.Context(), ws.ID, ws.State)
+	s.log.Info("workspace created", "workspace_id", ws.ID)
 	writeJSON(w, s.log, http.StatusCreated, asWorkspace(ws))
 }
 
@@ -114,20 +102,6 @@ func (s *Server) createWorkspace(ctx context.Context, req createWorkspaceRequest
 	if err != nil {
 		return store.Workspace{}, err
 	}
-	project, err := s.deps.Store.Project(ctx, req.ProjectID)
-	if err != nil {
-		return store.Workspace{}, err
-	}
-	branch := strings.TrimSpace(req.Branch)
-	if branch == "" {
-		branch = project.DefaultBranch
-	}
-	if req.ParentWorkspaceID != "" {
-		if _, err := s.deps.Store.Workspace(ctx, req.ParentWorkspaceID); err != nil {
-			return store.Workspace{}, err
-		}
-	}
-
 	sandbox, err := s.newSandbox(ctx, req.Sandbox)
 	if err != nil {
 		return store.Workspace{}, err
@@ -142,7 +116,6 @@ func (s *Server) createWorkspace(ctx context.Context, req createWorkspaceRequest
 		Image:        image,
 		BuildContext: req.BuildContext,
 		Dockerfile:   req.Dockerfile,
-		HostPath:     project.HostPath,
 		Confinement:  confinement(sandbox),
 	}
 	host, err := s.deps.Workspaces.Create(ctx, spec)
@@ -154,22 +127,13 @@ func (s *Server) createWorkspace(ctx context.Context, req createWorkspaceRequest
 		return store.Workspace{}, err
 	}
 
-	// A project is bind-mounted and already holds the user's checkout. The
-	// workspace records the commit it starts from, which a worktree
-	// subagent's branch is cut from.
-	base := s.head(ctx, host)
-
 	ws, err := s.deps.Store.CreateWorkspace(ctx, store.Workspace{
-		ID:                host.ID,
-		ProjectID:         project.ID,
-		Name:              name,
-		Branch:            branch,
-		BaseCommit:        base,
-		Image:             host.Image,
-		State:             string(host.State),
-		ContainerID:       host.ContainerID,
-		ParentWorkspaceID: req.ParentWorkspaceID,
-		Sandbox:           sandbox,
+		ID:          host.ID,
+		Name:        name,
+		Image:       host.Image,
+		State:       string(host.State),
+		ContainerID: host.ContainerID,
+		Sandbox:     sandbox,
 	})
 	if err != nil {
 		s.discard(ctx, host)
@@ -211,7 +175,7 @@ func (s *Server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.workspaceState(r.Context(), ws.ID, ws.ProjectID, ws.State)
+	s.workspaceState(r.Context(), ws.ID, ws.State)
 	s.log.Info("workspace updated", "workspace_id", ws.ID)
 	writeJSON(w, s.log, http.StatusOK, asWorkspace(ws))
 }
@@ -272,7 +236,7 @@ func (s *Server) changeState(ctx context.Context, ws store.Workspace, op func(co
 	if err := s.deps.Store.SetWorkspaceState(ctx, ws.ID, string(host.State), host.ContainerID); err != nil {
 		return store.Workspace{}, err
 	}
-	s.workspaceState(ctx, ws.ID, ws.ProjectID, string(host.State))
+	s.workspaceState(ctx, ws.ID, string(host.State))
 	ws.State = string(host.State)
 	return ws, nil
 }
@@ -319,7 +283,7 @@ func (s *Server) destroyWorkspace(ctx context.Context, ws store.Workspace) error
 		return err
 	}
 	s.forgetEgress(ws.ID)
-	s.workspaceState(ctx, ws.ID, ws.ProjectID, string(workspace.StateGone))
+	s.workspaceState(ctx, ws.ID, string(workspace.StateGone))
 	return nil
 }
 
@@ -370,57 +334,18 @@ func teardown(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), teardownTimeout)
 }
 
-// head reads the workspace's current HEAD commit, reporting none when the
-// workspace holds no repository yet.
-func (s *Server) head(ctx context.Context, host workspace.Workspace) string {
-	ex, err := s.deps.Workspaces.Executor(host)
-	if err != nil {
-		return ""
-	}
-	out, err := gitOutput(ctx, ex, "rev-parse", "HEAD")
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(out)
-}
-
-// gitOutput runs one git command in a workspace and returns its standard
-// output. A non-zero exit carries git's own message, which is what the user
-// needs to see.
-func gitOutput(ctx context.Context, ex executor.Executor, args ...string) (string, error) {
-	var stdout, stderr bytes.Buffer
-	res, err := ex.Exec(ctx, executor.ExecSpec{
-		Command: "git",
-		Args:    args,
-		Timeout: gitTimeout,
-		Stdout:  &stdout,
-		Stderr:  &stderr,
-	})
-	if err != nil {
-		return "", err
-	}
-	if res.ExitCode != 0 {
-		return "", invalidf("git %s: exit %d: %s", args[0], res.ExitCode, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.String(), nil
-}
-
 // asWorkspace renders a stored workspace on the wire.
 func asWorkspace(ws store.Workspace) workspaceBody {
 	return workspaceBody{
-		ID:                ws.ID,
-		ProjectID:         ws.ProjectID,
-		Name:              ws.Name,
-		Branch:            ws.Branch,
-		BaseCommit:        ws.BaseCommit,
-		Image:             ws.Image,
-		State:             ws.State,
-		ContainerID:       ws.ContainerID,
-		ParentWorkspaceID: ws.ParentWorkspaceID,
-		Sandbox:           asSandbox(ws.Sandbox),
-		Pinned:            ws.Pinned,
-		Archived:          ws.Archived,
-		CreatedAt:         ws.CreatedAt,
-		UpdatedAt:         ws.UpdatedAt,
+		ID:          ws.ID,
+		Name:        ws.Name,
+		Image:       ws.Image,
+		State:       ws.State,
+		ContainerID: ws.ContainerID,
+		Sandbox:     asSandbox(ws.Sandbox),
+		Pinned:      ws.Pinned,
+		Archived:    ws.Archived,
+		CreatedAt:   ws.CreatedAt,
+		UpdatedAt:   ws.UpdatedAt,
 	}
 }

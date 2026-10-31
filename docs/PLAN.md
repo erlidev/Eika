@@ -178,7 +178,7 @@ before the routes it calls.
 - [x] Remove previews, the terminal route and eikad `/pty`. Keep eikad `exec`,
       `files`, `stat`, `list`, `process`, `environment` and `watch`.
 - [x] Remove `contextfile` (AGENTS.md discovery) and `WorkspacePrompt`.
-- [ ] Remove git projects and the `projects` table. Projects return with a new
+- [x] Remove git projects and the `projects` table. Projects return with a new
       meaning in phase 2.
 - [ ] Rename workspace to computer throughout:
       - package `computer`
@@ -1032,6 +1032,63 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-30: removed git projects and the `projects` table (branch
+  `remove-projects`).
+  - Gone: the `projects` table, `store/projects.go`, `server/projects.go`, the
+    five `/api/projects` routes, `projects` in `GET /api/system` (the setup
+    screens never read it), `project_id` in the `workspace.state` event, the
+    TypeScript project types and the mock's project builder. Of a workspace,
+    `project_id`, `branch`, `base_commit` and `parent_workspace_id` are gone
+    from the schema (edited in the baseline), the store, the API and the
+    frontend types: the branch and base commit only ever came from the
+    project and the git layer, and nothing set the parent. `Store.Workspaces`
+    lists every workspace; `?project_id=` is gone.
+  - Host-directory mounts are removed: `workspace.Spec.HostPath` and
+    `Workspace.HostPath` (Docker's bind mount and `Inspect`'s reading of it).
+  - A project carried no ownership. The harness has one user and the bearer
+    token is the only gate, so no owner moved onto the workspace. The
+    regression test is `TestNoOneWithoutASignInTokenReachesAWorkspace`: every
+    workspace and session route answers 401 to no token, a wrong token and a
+    signed-out one, and leaves the workspace untouched.
+  - Creation: `POST /api/workspaces` takes `name` (and the optional `image`,
+    `build_context`, `dockerfile`, `sandbox`); an unknown field, such as the old
+    `project_id`, is `400`. A chat attaches by that workspace's id, as
+    before. The `home` computer item replaces this path.
+  - Found on the way: `Host.Create` made a workspace's volume but never
+    mounted it, and `Inspect` learns the volume from the container's mounts,
+    so a restarted harness could not remove it. It is mounted at the root now
+    (the bind mount's old place), and the lifecycle test checks `Inspect`
+    reports it. The Docker tests pass with it. The home computer item gets a
+    working volume to build on; check how `/home/eika` copy-up behaves there.
+  - Tests: the Docker tests create a workspace directly (`api.newWorkspace`)
+    and reach its files through the fake host (`api.filesOf`) where they wrote
+    into the project's directory. They keep their `hello.txt` but no longer
+    make a git repository, which nothing reads. Store tests lose the project
+    cases and gain list-order and delete-cascade tests for workspaces; the
+    Dockerfile build test lost its host-path half (the image is checked
+    through a file baked into it).
+  - `make check` passes. Visual: two baselines changed
+    (`settings.spec.ts/general-invalid-{light,dark}.png`), because the
+    Guided setup sentence no longer says "adding a project"; nothing else
+    moved. The three ARIA snapshots that carry the sentence changed with it.
+    `make smoke` was not run: no compose file, Dockerfile, `deploy/` or
+    `server.Run` wiring changed, and the smoke spec never created a project.
+  - Left alone: `Workspace.Dir` and `sandbox.Options.Dir` (see the note
+    below), and dead git-era types in `web/src/api/types/files.ts`
+    (`WorkspaceDiff`, `PushRequest` and the like), which the frontend item
+    left behind. The README's setup list lost its "add a first project" step;
+    the rest of it waits for the README rewrite.
+  - For the rename to computer: the workspace is now `id, name, image, state,
+    container_id, sandbox, pinned, archived` and the timestamps, in
+    `store/workspaces.go`, `server/workspaces.go`, `workspace/` and the
+    frontend `Workspace` type; the Docker tests build one through
+    `api.newWorkspace` and `api.filesOf` only, so a rename touches those two
+    helpers rather than every test. `Workspace.Dir` is still unused (the fake
+    host honours it in `filesOf`); remove it in the rename or the home item.
+    The idle stopper, the MCP launcher and `server/files.go` read workspaces
+    through `Store.Workspaces`/`Workspace` and `workspaceState(ctx, id,
+    state)`.
 
 - 2026-10-30: phase 0 notes for later phases, from removing worktrees and
   subagents. Everything below is in history at `478ce9c` ("Merge branch

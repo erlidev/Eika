@@ -56,8 +56,7 @@ func TestAnUntitledSessionIsNamedAfterItsFirstMessage(t *testing.T) {
 	events := a.Bus().Subscribe(event.TopicGlobal)
 	defer events.Close()
 
-	project, _ := a.newProject(t, "demo")
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	untitled := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions", map[string]any{
 		"workspace_id": ws.ID,
 	}), 201)

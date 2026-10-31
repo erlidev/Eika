@@ -12,18 +12,6 @@ CREATE TABLE settings (
     value jsonb NOT NULL
 );
 
--- Projects are directories on the Docker host the coding harness mounted. A
--- remote project (cloned from a git remote) can no longer be created.
-CREATE TABLE projects (
-    id              text PRIMARY KEY,
-    name            text NOT NULL UNIQUE,
-    kind            text NOT NULL CHECK (kind IN ('remote', 'local')),
-    remote_url      text NOT NULL DEFAULT '',
-    host_path       text NOT NULL DEFAULT '',
-    default_branch  text NOT NULL DEFAULT 'main',
-    created_at      timestamptz NOT NULL DEFAULT now()
-);
-
 -- sandbox is what a workspace's container may consume, reach, and expose: its
 -- CPU, memory, and process limits, its egress mode and allowlist, and the
 -- ports the harness forwards to it. It is the desired state, applied when the
@@ -34,23 +22,16 @@ CREATE TABLE projects (
 -- workspace's container does.
 CREATE TABLE workspaces (
     id                  text PRIMARY KEY,
-    project_id          text NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
     name                text NOT NULL,
-    branch              text NOT NULL,
-    base_commit         text NOT NULL DEFAULT '',
     image               text NOT NULL DEFAULT '',
     state               text NOT NULL,
     container_id        text NOT NULL DEFAULT '',
-    parent_workspace_id text REFERENCES workspaces (id) ON DELETE SET NULL,
     sandbox             jsonb NOT NULL DEFAULT '{}',
     pinned              boolean NOT NULL DEFAULT false,
     archived            boolean NOT NULL DEFAULT false,
     created_at          timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now()
 );
-
-CREATE INDEX workspaces_project_idx ON workspaces (project_id);
-CREATE INDEX workspaces_parent_idx ON workspaces (parent_workspace_id);
 
 -- Model providers and models. Every credential column holds what
 -- internal/secret sealed; the harness never writes a credential here in the

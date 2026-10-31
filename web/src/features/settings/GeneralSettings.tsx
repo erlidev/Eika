@@ -126,7 +126,7 @@ function SetupAgain() {
         <div>
           <h3 className="text-sm font-medium">Guided setup</h3>
           <p className="text-muted-foreground text-xs">
-            Walk through connecting a provider, checking the sandbox, and adding a project again.
+            Walk through connecting a provider and checking the sandbox again.
           </p>
         </div>
         <Button

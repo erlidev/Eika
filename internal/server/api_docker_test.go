@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -191,24 +190,22 @@ func (a *api) lastEndpoint() provider.Endpoint {
 	return a.endpoint
 }
 
-// newProject creates a local project on a directory the test owns and returns
-// the project and that directory.
-func (a *api) newProject(t *testing.T, name string) (projectWire, string) {
+// newWorkspace creates a workspace.
+func (a *api) newWorkspace(t *testing.T) workspaceWire {
 	t.Helper()
-	dir := t.TempDir()
-	rec := request(t, a.Server, "POST", "/api/projects", map[string]any{
-		"name": name, "kind": "local", "host_path": dir,
-	})
-	return decodeBody[projectWire](t, rec, 201), dir
+	rec := request(t, a.Server, "POST", "/api/workspaces", map[string]any{"name": "work"})
+	return decodeBody[workspaceWire](t, rec, 201)
 }
 
-// newWorkspace creates a workspace in a project.
-func (a *api) newWorkspace(t *testing.T, projectID string) workspaceWire {
+// filesOf returns the directory the files of a workspace are in, which a test
+// reads and writes to see what the agent sees.
+func (a *api) filesOf(t *testing.T, workspaceID string) string {
 	t.Helper()
-	rec := request(t, a.Server, "POST", "/api/workspaces", map[string]any{
-		"project_id": projectID, "name": "work",
-	})
-	return decodeBody[workspaceWire](t, rec, 201)
+	dir, err := a.host.dirOf(workspaceID)
+	if err != nil {
+		t.Fatalf("directory of workspace %s: %v", workspaceID, err)
+	}
+	return dir
 }
 
 // newSession opens a session in a workspace.
@@ -271,29 +268,14 @@ func (a *api) waitQuestion(t *testing.T, sessionID string) builtin.Question {
 // The wire shapes the tests decode. They are written out rather than shared
 // with the handlers so that a change to a handler's struct that changes the
 // JSON fails a test instead of passing quietly.
-type projectWire struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Kind          string `json:"kind"`
-	HostPath      string `json:"host_path"`
-	DefaultBranch string `json:"default_branch"`
-}
-
-type projectsWire struct {
-	Projects []projectWire `json:"projects"`
-}
-
 type workspaceWire struct {
-	ID         string      `json:"id"`
-	ProjectID  string      `json:"project_id"`
-	Name       string      `json:"name"`
-	Branch     string      `json:"branch"`
-	BaseCommit string      `json:"base_commit"`
-	Image      string      `json:"image"`
-	State      string      `json:"state"`
-	Sandbox    sandboxWire `json:"sandbox"`
-	Pinned     bool        `json:"pinned"`
-	Archived   bool        `json:"archived"`
+	ID       string      `json:"id"`
+	Name     string      `json:"name"`
+	Image    string      `json:"image"`
+	State    string      `json:"state"`
+	Sandbox  sandboxWire `json:"sandbox"`
+	Pinned   bool        `json:"pinned"`
+	Archived bool        `json:"archived"`
 }
 
 type workspacesWire struct {
@@ -395,105 +377,17 @@ type modelsWire struct {
 	Default string      `json:"default"`
 }
 
-func TestProjectRoutes(t *testing.T) {
-	a := newAPI(t)
-
-	created, dir := a.newProject(t, "demo")
-	if created.Kind != "local" || created.HostPath != dir || created.DefaultBranch != "main" {
-		t.Fatalf("created = %+v", created)
-	}
-
-	got := decodeBody[projectWire](t, request(t, a.Server, "GET", "/api/projects/"+created.ID, nil), 200)
-	if got.ID != created.ID {
-		t.Errorf("get id = %q, want %q", got.ID, created.ID)
-	}
-	list := decodeBody[projectsWire](t, request(t, a.Server, "GET", "/api/projects", nil), 200)
-	if len(list.Projects) != 1 {
-		t.Errorf("projects = %d, want 1", len(list.Projects))
-	}
-
-	trunk := decodeBody[projectWire](t, request(t, a.Server, "POST", "/api/projects", map[string]any{
-		"name": "trunked", "kind": "local", "host_path": "/tmp", "default_branch": "trunk",
-	}), 201)
-	if trunk.DefaultBranch != "trunk" {
-		t.Errorf("default_branch = %q, want trunk", trunk.DefaultBranch)
-	}
-
-	if rec := request(t, a.Server, "DELETE", "/api/projects/"+created.ID, nil); rec.Code != 204 {
-		t.Fatalf("delete status = %d, want 204: %s", rec.Code, rec.Body.String())
-	}
-	if rec := request(t, a.Server, "GET", "/api/projects/"+created.ID, nil); rec.Code != 404 {
-		t.Errorf("get after delete = %d, want 404", rec.Code)
-	}
-}
-
-func TestProjectRoutesUpdateTheDefaultBranch(t *testing.T) {
-	a := newAPI(t)
-	local, _ := a.newProject(t, "local")
-	branch := decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+local.ID,
-		map[string]any{"default_branch": "trunk"}), 200)
-	if branch.DefaultBranch != "trunk" {
-		t.Errorf("default_branch = %q, want trunk", branch.DefaultBranch)
-	}
-	if rec := request(t, a.Server, "PATCH", "/api/projects/"+local.ID,
-		map[string]any{"default_branch": " "}); rec.Code != 400 {
-		t.Errorf("an empty default_branch = %d, want 400", rec.Code)
-	}
-}
-
-func TestProjectRoutesRejectBadRequests(t *testing.T) {
-	a := newAPI(t)
-	existing, _ := a.newProject(t, "taken")
-
-	cases := []struct {
-		name   string
-		body   map[string]any
-		status int
-		code   string
-	}{
-		{"unknown kind", map[string]any{"name": "x", "kind": "svn"}, 400, "invalid_request"},
-		{"remote, which cannot be cloned any more", map[string]any{"name": "x", "kind": "remote"}, 400, "invalid_request"},
-		{"an empty name", map[string]any{"name": " ", "kind": "local", "host_path": "/tmp"}, 400, "invalid_request"},
-		{"local without a path", map[string]any{"name": "x", "kind": "local"}, 400, "invalid_request"},
-		{"local with a relative path", map[string]any{"name": "x", "kind": "local", "host_path": "rel"}, 400, "invalid_request"},
-		{"a name that is taken", map[string]any{"name": existing.Name, "kind": "local", "host_path": "/tmp"}, 409, "conflict"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			rec := request(t, a.Server, "POST", "/api/projects", c.body)
-			if rec.Code != c.status {
-				t.Fatalf("status = %d, want %d: %s", rec.Code, c.status, rec.Body.String())
-			}
-			if code, _ := errorOf(t, rec); code != c.code {
-				t.Errorf("code = %q, want %q", code, c.code)
-			}
-		})
-	}
-	if rec := request(t, a.Server, "GET", "/api/projects/nope", nil); rec.Code != 404 {
-		t.Errorf("unknown project = %d, want 404", rec.Code)
-	}
-}
-
 func TestWorkspaceRoutes(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
 
-	ws := a.newWorkspace(t, project.ID)
-	if ws.State != "running" || ws.Branch != "main" {
+	ws := a.newWorkspace(t)
+	if ws.State != "running" || ws.Name != "work" {
 		t.Fatalf("created = %+v", ws)
 	}
-	if ws.BaseCommit == "" {
-		t.Error("base_commit is empty: a local workspace records the commit it starts from")
-	}
 
-	list := decodeBody[workspacesWire](t, request(t, a.Server, "GET", "/api/workspaces?project_id="+project.ID, nil), 200)
+	list := decodeBody[workspacesWire](t, request(t, a.Server, "GET", "/api/workspaces", nil), 200)
 	if len(list.Workspaces) != 1 || list.Workspaces[0].ID != ws.ID {
 		t.Errorf("workspaces = %+v, want the one created", list.Workspaces)
-	}
-	empty := decodeBody[workspacesWire](t, request(t, a.Server, "GET", "/api/workspaces?project_id=other", nil), 200)
-	if len(empty.Workspaces) != 0 {
-		t.Errorf("workspaces of another project = %d, want 0", len(empty.Workspaces))
 	}
 
 	stopped := decodeBody[workspaceWire](t, request(t, a.Server, "POST", "/api/workspaces/"+ws.ID+"/stop", nil), 200)
@@ -513,14 +407,97 @@ func TestWorkspaceRoutes(t *testing.T) {
 	}
 }
 
+func TestAWorkspaceNeedsOnlyAName(t *testing.T) {
+	a := newAPI(t)
+	for name, c := range map[string]struct {
+		body   map[string]any
+		status int
+	}{
+		"an empty name": {map[string]any{"name": " "}, 400},
+		"no name":       {map[string]any{}, 400},
+		"a project_id, which workspaces no longer have": {map[string]any{"name": "work", "project_id": "p1"}, 400},
+		"a name": {map[string]any{"name": "work"}, 201},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if rec := request(t, a.Server, "POST", "/api/workspaces", c.body); rec.Code != c.status {
+				t.Errorf("create = %d, want %d: %s", rec.Code, c.status, rec.Body.String())
+			}
+		})
+	}
+	list := decodeBody[workspacesWire](t, request(t, a.Server, "GET", "/api/workspaces", nil), 200)
+	if len(list.Workspaces) != 1 {
+		t.Errorf("workspaces = %d, want only the valid one", len(list.Workspaces))
+	}
+}
+
+func TestTheProjectRoutesAreGone(t *testing.T) {
+	a := newAPI(t)
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/api/projects"},
+		{"POST", "/api/projects"},
+		{"GET", "/api/projects/p1"},
+		{"PATCH", "/api/projects/p1"},
+		{"DELETE", "/api/projects/p1"},
+	} {
+		if rec := request(t, a.Server, c.method, c.path, map[string]any{}); rec.Code != 404 && rec.Code != 405 {
+			t.Errorf("%s %s = %d, want 404 or 405", c.method, c.path, rec.Code)
+		}
+	}
+}
+
+// A workspace has no owner of its own: the harness has one user, and the
+// sign-in token is the only way to a workspace. These requests come from
+// someone without it, each to a route that reads or changes the workspace.
+func TestNoOneWithoutASignInTokenReachesAWorkspace(t *testing.T) {
+	a := newAPI(t)
+	ws := a.newWorkspace(t)
+	sess := a.newSession(t, ws.ID)
+	base := "/api/workspaces/" + ws.ID
+
+	routes := []struct{ method, path string }{
+		{"GET", "/api/workspaces"},
+		{"POST", "/api/workspaces"},
+		{"GET", base},
+		{"PATCH", base},
+		{"DELETE", base},
+		{"POST", base + "/start"},
+		{"POST", base + "/stop"},
+		{"PUT", base + "/sandbox"},
+		{"GET", base + "/usage"},
+		{"GET", base + "/files"},
+		{"GET", base + "/file?path=hello.txt"},
+		{"PUT", base + "/file?path=hello.txt"},
+		{"GET", "/api/sessions/" + sess.ID},
+		{"POST", "/api/sessions/" + sess.ID + "/messages"},
+	}
+	// A token the harness once handed out and then revoked is no better than
+	// none.
+	first := decodeBody[signInWire](t, requestWith(t, a.Server, "POST", "/api/auth/setup",
+		map[string]any{"password": "correct horse battery"}, ""), 201)
+	if rec := requestWith(t, a.Server, "POST", "/api/auth/logout", nil, bearer(first.Token)); rec.Code != 204 {
+		t.Fatalf("sign-out = %d, want 204", rec.Code)
+	}
+	for _, header := range []string{"", bearer("not-a-token"), bearer(first.Token)} {
+		for _, r := range routes {
+			rec := requestWith(t, a.Server, r.method, r.path, map[string]any{"name": "taken over"}, header)
+			if rec.Code != 401 {
+				t.Errorf("%s %s with %q = %d, want 401", r.method, r.path, header, rec.Code)
+			}
+		}
+	}
+
+	// None of it changed the workspace.
+	got := decodeBody[workspaceWire](t, request(t, a.Server, "GET", base, nil), 200)
+	if got.Name != "work" || got.State != "running" {
+		t.Errorf("workspace = %+v, want it untouched and running", got)
+	}
+}
+
 func TestWorkspaceCreationLeavesNothingBehindWhenItFails(t *testing.T) {
 	a := newAPI(t)
-	project, _ := a.newProject(t, "demo")
 	a.host.startErr = fmt.Errorf("no daemon")
 
-	if rec := request(t, a.Server, "POST", "/api/workspaces", map[string]any{
-		"project_id": project.ID, "name": "work",
-	}); rec.Code != 500 {
+	if rec := request(t, a.Server, "POST", "/api/workspaces", map[string]any{"name": "work"}); rec.Code != 500 {
 		t.Fatalf("status = %d, want 500: %s", rec.Code, rec.Body.String())
 	}
 	live, err := a.host.List(t.Context())
@@ -530,7 +507,7 @@ func TestWorkspaceCreationLeavesNothingBehindWhenItFails(t *testing.T) {
 	if len(live) != 0 {
 		t.Errorf("host holds %d workspaces, want none", len(live))
 	}
-	rows, err := a.store.Workspaces(t.Context(), project.ID)
+	rows, err := a.store.Workspaces(t.Context())
 	if err != nil {
 		t.Fatalf("workspaces: %v", err)
 	}
@@ -541,8 +518,7 @@ func TestWorkspaceCreationLeavesNothingBehindWhenItFails(t *testing.T) {
 
 func TestReconcileRecordsWhatTheHostActuallyHas(t *testing.T) {
 	a := newAPI(t)
-	project, _ := a.newProject(t, "demo")
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 
 	// The container went away while the harness was down.
 	host, err := a.host.Inspect(t.Context(), ws.ID)
@@ -582,8 +558,7 @@ func TestReconcileAbortsRunsLeftByAnEarlierProcess(t *testing.T) {
 
 func TestReconcilePreservesStateWhenInspectFails(t *testing.T) {
 	a := newAPI(t)
-	project, _ := a.newProject(t, "demo")
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	a.host.inspectErr = fmt.Errorf("docker daemon unavailable")
 
 	if err := a.Reconcile(t.Context()); err == nil {
@@ -600,8 +575,7 @@ func TestReconcilePreservesStateWhenInspectFails(t *testing.T) {
 
 func TestDeleteWorkspacePreservesRowWhenInspectFails(t *testing.T) {
 	a := newAPI(t)
-	project, _ := a.newProject(t, "demo")
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	a.host.inspectErr = fmt.Errorf("docker daemon unavailable")
 
 	rec := request(t, a.Server, "DELETE", "/api/workspaces/"+ws.ID, nil)
@@ -618,9 +592,7 @@ func TestDeleteWorkspacePreservesRowWhenInspectFails(t *testing.T) {
 // head or a fork may be put: a session made there fails on its next run.
 func TestHeadAndForkRefuseAnUnansweredTurn(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	sess := a.newSession(t, ws.ID)
 
 	a.script(
@@ -671,9 +643,7 @@ func TestHeadAndForkRefuseAnUnansweredTurn(t *testing.T) {
 
 func TestSessionRoutes(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 
 	sess := a.newSession(t, ws.ID)
 	if sess.WorkspaceID != ws.ID {
@@ -751,9 +721,7 @@ func TestSessionRoutes(t *testing.T) {
 // that list the thing.
 func TestRenamePinAndArchive(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	sess := a.newSession(t, ws.ID)
 	global := a.Bus().Subscribe(event.TopicGlobal)
 	defer global.Close()
@@ -915,26 +883,6 @@ func TestSettingsAndModels(t *testing.T) {
 	}
 }
 
-// initRepo makes dir a git repository with one commit, which is what a local
-// project's host directory looks like.
-func initRepo(t *testing.T, dir string) {
-	t.Helper()
-	write(t, dir, "hello.txt", "hello\n")
-	for _, args := range [][]string{
-		{"init", "--initial-branch", "main"},
-		{"config", "user.email", "eika@example.invalid"},
-		{"config", "user.name", "Eika Test"},
-		{"add", "."},
-		{"commit", "--message", "first"},
-	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
-}
-
 // write puts a file in a workspace directory.
 func write(t *testing.T, dir, name, content string) {
 	t.Helper()
@@ -945,7 +893,6 @@ func write(t *testing.T, dir, name, content string) {
 
 func TestWorkspaceCreationCleansUpEvenWhenTheRequestIsGone(t *testing.T) {
 	a := newAPI(t)
-	project, _ := a.newProject(t, "demo")
 
 	// The client gives up while the container is being started, which is the
 	// most likely reason the creation fails at all. The container the harness
@@ -957,7 +904,7 @@ func TestWorkspaceCreationCleansUpEvenWhenTheRequestIsGone(t *testing.T) {
 	a.host.startErr = fmt.Errorf("the daemon is unreachable")
 
 	rec := requestOn(ctx, t, a.Server, "POST", "/api/workspaces",
-		map[string]any{"project_id": project.ID, "name": "work"})
+		map[string]any{"name": "work"})
 	if rec.Code == 201 {
 		t.Fatalf("the workspace was created despite the start failing: %s", rec.Body.String())
 	}

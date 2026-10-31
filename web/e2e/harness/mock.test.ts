@@ -22,11 +22,6 @@ import { scenario } from "./scenarios.ts";
 const unmocked: Record<string, string> = {
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/events": "a WebSocket, which install routes itself",
-  "GET /api/projects": "the coding UI is gone; the Go route goes with a later item",
-  "POST /api/projects": "the coding UI is gone; the Go route goes with a later item",
-  "GET /api/projects/{id}": "the coding UI is gone; the Go route goes with a later item",
-  "PATCH /api/projects/{id}": "the coding UI is gone; the Go route goes with a later item",
-  "DELETE /api/projects/{id}": "the coding UI is gone; the Go route goes with a later item",
   "GET /api/workspaces": "the coding UI is gone; the Go route goes with a later item",
   "POST /api/workspaces": "the coding UI is gone; the Go route goes with a later item",
   "GET /api/workspaces/{id}": "the coding UI is gone; the Go route goes with a later item",

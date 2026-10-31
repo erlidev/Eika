@@ -334,7 +334,7 @@ func implements(t reflect.Type, ifaces ...reflect.Type) bool {
 
 // Check reports every way v, a value decoded from JSON into an any, differs
 // from s, one problem per line, each starting with the path to the value:
-// `$.projects[0].name: number, want string`. In a request a field may be
+// `$.workspaces[0].name: number, want string`. In a request a field may be
 // missing or null, as the API's decoder allows, but an unknown field is still
 // a problem, as the decoder refuses it.
 // types resolves the Refs in s.

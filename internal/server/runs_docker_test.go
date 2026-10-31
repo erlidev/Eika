@@ -20,11 +20,10 @@ func askStep(callID, question string) providertest.Step {
 	return providertest.Calls("", providertest.Call(callID, "ask_user", map[string]any{"question": question}))
 }
 
-// session sets up a project, a workspace, and a session to run in.
+// session sets up a workspace and a session to run in.
 func (a *api) session(t *testing.T) sessionWire {
 	t.Helper()
-	project, _ := a.newProject(t, "demo")
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	return a.newSession(t, ws.ID)
 }
 

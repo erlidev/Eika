@@ -73,10 +73,10 @@ func nextWorkspaceEvent(t *testing.T, sub *event.Subscription) event.WorkspaceSt
 
 func TestFileRoutes(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	base := "/api/workspaces/" + ws.ID
+	dir := a.filesOf(t, ws.ID)
+	write(t, dir, "hello.txt", "hello\n")
 
 	if err := os.MkdirAll(filepath.Join(dir, "src", "deep"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -99,7 +99,7 @@ func TestFileRoutes(t *testing.T) {
 		for _, e := range list.Entries {
 			names = append(names, e.Name)
 		}
-		want := ".git,Assets,src,A.md,b.txt,blob.bin,hello.txt,huge.txt,out"
+		want := "Assets,src,A.md,b.txt,blob.bin,hello.txt,huge.txt,out"
 		if got := strings.Join(names, ","); got != want {
 			t.Errorf("entries = %s, want %s", got, want)
 		}

@@ -22,7 +22,7 @@ func TestAuthRejectsEverythingButTheRightToken(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			rec := requestWith(t, s, http.MethodGet, "/api/projects", nil, c.header)
+			rec := requestWith(t, s, http.MethodGet, "/api/workspaces", nil, c.header)
 			if rec.Code != http.StatusUnauthorized {
 				t.Fatalf("status = %d, want 401", rec.Code)
 			}
@@ -63,7 +63,7 @@ func TestAuthAcceptsTheTokenInTheQueryForTheEventStreamOnly(t *testing.T) {
 	// link or a log of ordinary requests. Paths that only resemble a socket's
 	// are ordinary requests.
 	for _, path := range []string{
-		"/api/projects",
+		"/api/workspaces",
 		"/api/workspaces/w1/diff",
 		"/api/workspaces/w1/file",
 		"/api/workspaces/w1/terminal",
@@ -94,7 +94,7 @@ func TestAuthRejectsEveryRequestWhenNoTokenIsConfigured(t *testing.T) {
 	cfg := testConfig()
 	cfg.AuthToken = ""
 	s := server.New(cfg, testLogger(), server.Deps{}, server.Options{})
-	rec := requestWith(t, s, http.MethodGet, "/api/projects", nil, "Bearer ")
+	rec := requestWith(t, s, http.MethodGet, "/api/workspaces", nil, "Bearer ")
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
 	}

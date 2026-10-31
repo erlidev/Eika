@@ -6,10 +6,8 @@ Reasons for the design are in `DECISIONS.md`; wire details in `api/`.
 ## Domain model
 
 ```
-Project    A host directory a workspace bind-mounts. (A remote project, once
-           cloned from GitHub etc., can no longer be created.)
-Workspace  A sandbox container working on a project. States: creating ->
-           running -> stopped (gone if the container disappeared).
+Workspace  A sandbox container with a volume of its own at /workspace. States:
+           creating -> running -> stopped (gone if the container disappeared).
 Session    A tree of entries with a head pointer, in one workspace.
 Chat       A session with no workspace: only tools that need none.
 Run        One execution of the agent loop from a session's head.
@@ -125,8 +123,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 
 | Table | Holds |
 |---|---|
-| `projects` | name (unique), kind (remote/local), remote_url, host_path, default_branch |
-| `workspaces` | project, name, branch, base_commit, image, state, container_id, parent_workspace_id, sandbox (jsonb: limits, egress), pinned, archived |
+| `workspaces` | name, image, state, container_id, sandbox (jsonb: limits, egress), pinned, archived |
 | `sessions` | workspace_id (NULL for a chat), title, untitled, kind (user/fork), head_entry_id, parent_session_id, tools, profile_id, overrides (jsonb), pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
 | `runs` | session, state, started/finished, error |
@@ -139,7 +136,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |
 
-Everything cascades from `projects`; chats are deleted on their own; MCP
+A workspace's sessions are deleted with it; chats are deleted on their own; MCP
 credentials cascade from their server. `sessions.head_entry_id` has no foreign
 key (it would be a cycle); `SetSessionHead` checks ownership in its `UPDATE`.
 
@@ -320,8 +317,8 @@ workspace reaches it only through the agent.
 ### Workspace lifecycle
 
 `workspace.Host` wraps the Docker client. `Create` builds the image if the
-spec has a build context, creates volume `eika-ws-<id>` (or bind-mounts the
-local project's *host* path), creates the container labelled
+spec has a build context, creates volume `eika-ws-<id>` mounted at the
+root, creates the container labelled
 `eika.workspace=<id>` with its sandbox settings, and copies the harness's
 static eikad to `/usr/local/bin/eikad` as the entrypoint. `Start` waits for
 `/healthz`. `Stop` keeps the volume; `Destroy` removes container, volume, and
@@ -498,8 +495,9 @@ web/src/
   with links to the layer behind each part). `ResizableSplit` remembers
   widths; below 1024px side panes become drawers. The coding UI (projects,
   workspaces, files, terminal, changes, the session tree and fork) is gone
-  from the frontend; the Go routes it called stay until a later phase 0 item
-  removes them (the terminal and preview routes are already gone).
+  from the frontend; the workspace, file and fork routes it called stay until
+  a later phase 0 item removes them (the project, terminal and preview routes
+  are already gone).
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
   events (`useSessionStream`, `useMCPEvents`,
   `useSessionUpdates`).

@@ -69,7 +69,7 @@ func (i *idleWorkspaces) sweep(ctx context.Context, now time.Time) {
 	if timeout == 0 {
 		return
 	}
-	all, err := s.deps.Store.Workspaces(ctx, "")
+	all, err := s.deps.Store.Workspaces(ctx)
 	if err != nil {
 		s.log.Error("list workspaces for the idle sweep", "error", err)
 		return

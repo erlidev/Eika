@@ -25,10 +25,10 @@ func TestErrorMapping(t *testing.T) {
 		status int
 		code   string
 	}{
-		{"missing row", fmt.Errorf("read project p1: %w", store.ErrNotFound), http.StatusNotFound, codeNotFound},
+		{"missing row", fmt.Errorf("read workspace w1: %w", store.ErrNotFound), http.StatusNotFound, codeNotFound},
 		{"missing container", fmt.Errorf("%w: w1", workspace.ErrNoWorkspace), http.StatusNotFound, codeNotFound},
 		{"answered question", fmt.Errorf("answer question q1: %w", builtin.ErrNoQuestion), http.StatusNotFound, codeNotFound},
-		{"duplicate row", fmt.Errorf("create project demo: %w", store.ErrConflict), http.StatusConflict, codeConflict},
+		{"duplicate row", fmt.Errorf("create provider demo: %w", store.ErrConflict), http.StatusConflict, codeConflict},
 		{"bad answer", fmt.Errorf("answer question q1: %w", builtin.ErrBadAnswer), http.StatusBadRequest, codeInvalidRequest},
 		{"validation", invalidf("name is required"), http.StatusBadRequest, codeInvalidRequest},
 		{"not found", notFoundf("no run is waiting"), http.StatusNotFound, codeNotFound},
@@ -44,7 +44,7 @@ func TestErrorMapping(t *testing.T) {
 			}
 
 			rec := httptest.NewRecorder()
-			s.fail(rec, httptest.NewRequest(http.MethodGet, "/api/projects", nil), c.err)
+			s.fail(rec, httptest.NewRequest(http.MethodGet, "/api/workspaces", nil), c.err)
 			if rec.Code != c.status {
 				t.Fatalf("response status = %d, want %d", rec.Code, c.status)
 			}

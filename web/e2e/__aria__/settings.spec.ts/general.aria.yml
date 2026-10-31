@@ -31,6 +31,6 @@
           - code: eika-sandbox:latest
           - text: is ready.
     - heading "Guided setup" [level=3]
-    - paragraph: Walk through connecting a provider, checking the sandbox, and adding a project again.
+    - paragraph: Walk through connecting a provider and checking the sandbox again.
     - button "Run the setup again"
   - button "Close"
