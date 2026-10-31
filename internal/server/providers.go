@@ -274,31 +274,45 @@ func (s *Server) recordProbeFailure(ctx context.Context, id string, cause error)
 	}
 }
 
-// providerFor builds a provider on the endpoint of the model a run's
+// endpoint is a model's provider as a run uses it: the stored row, the key in
+// the clear, and the client built on them.
+type endpoint struct {
+	row    store.Provider
+	key    string
+	client provider.Provider
+}
+
+// endpointFor builds the provider on the endpoint of the model a run's
 // configuration resolved to. A deployment with no model has nothing to run
 // on.
-func (s *Server) providerFor(ctx context.Context, cfg runConfig) (provider.Provider, error) {
+func (s *Server) endpointFor(ctx context.Context, cfg runConfig) (endpoint, error) {
 	if !cfg.modelOK {
-		return nil, conflictf("no model is configured; add one under Settings, Models")
+		return endpoint{}, conflictf("no model is configured; add one under Settings, Models")
 	}
-	return s.providerOf(ctx, cfg.model)
+	return s.endpointOf(ctx, cfg.model)
 }
 
 // providerOf builds a provider on the endpoint of model m.
 func (s *Server) providerOf(ctx context.Context, m store.Model) (provider.Provider, error) {
+	ep, err := s.endpointOf(ctx, m)
+	return ep.client, err
+}
+
+// endpointOf builds the provider on the endpoint of model m.
+func (s *Server) endpointOf(ctx context.Context, m store.Model) (endpoint, error) {
 	p, err := s.deps.Store.Provider(ctx, m.ProviderID)
 	if err != nil {
-		return nil, err
+		return endpoint{}, err
 	}
 	key, err := s.openKey(p)
 	if err != nil {
-		return nil, err
+		return endpoint{}, err
 	}
 	client, err := s.deps.Providers.Build(p.Kind, provider.Endpoint{BaseURL: p.BaseURL, APIKey: key})
 	if err != nil {
-		return nil, fmt.Errorf("build provider %s: %s", p.Name, scrub(err.Error(), key))
+		return endpoint{}, fmt.Errorf("build provider %s: %s", p.Name, scrub(err.Error(), key))
 	}
-	return client, nil
+	return endpoint{row: p, key: key, client: client}, nil
 }
 
 // validateProvider rejects a provider the harness could not build a client

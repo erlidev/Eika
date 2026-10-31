@@ -13,7 +13,7 @@ import {
   record,
   toolTokens,
 } from "./profiles.ts";
-import type { RecordedRequest, StoredProfile } from "./profiles.ts";
+import type { RecordedCall, StoredProfile } from "./profiles.ts";
 import type {
   ContentDetail,
   Elicitation,
@@ -122,8 +122,8 @@ export type World = {
   overrides: Record<string, ProfileSettings>;
   /** toolChoices are the sessions' own tool choices, by session id; one with none inherits. */
   toolChoices: Record<string, string[]>;
-  /** requests are each session's recorded model calls, oldest first. */
-  requests: Record<string, RecordedRequest[]>;
+  /** calls are each session's recorded model calls, oldest first. */
+  calls: Record<string, RecordedCall[]>;
 };
 
 /** fixedNow is the clock every screenshot is taken at. */
@@ -210,7 +210,7 @@ export function emptyWorld(): World {
     profiles: [defaultProfile()],
     overrides: {},
     toolChoices: {},
-    requests: {},
+    calls: {},
   };
 }
 
@@ -485,10 +485,10 @@ export class WorldBuilder {
   }
 
   /**
-   * request records the model call a session's run made when its path ended
+   * call records the model call a session's run made when its path ended
    * where it ends now, as the harness keeps one per call.
    */
-  request(session: Session, minutes: number, outputTokens: number): RecordedRequest {
+  call(session: Session, minutes: number, outputTokens: number): RecordedCall {
     return record(this.world, session, {
       id: this.id("req"),
       runId: this.id("run"),

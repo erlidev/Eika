@@ -23,8 +23,8 @@ import type {
   MCPServerDetails,
   Model,
   ModelContext,
-  ModelRequest,
-  ModelRequests,
+  ModelCall,
+  ModelCalls,
   Models,
   OAuthCallback,
   PostMessage,
@@ -237,25 +237,22 @@ export function getSessionContext(
   });
 }
 
-/** listSessionRequests lists the records of a session's model calls, oldest first. */
-export async function listSessionRequests(
-  id: string,
-  signal?: AbortSignal,
-): Promise<ModelRequest[]> {
-  const body = await request<ModelRequests>(`/api/sessions/${encodeURIComponent(id)}/requests`, {
+/** listSessionCalls lists the records of a session's model calls, oldest first. */
+export async function listSessionCalls(id: string, signal?: AbortSignal): Promise<ModelCall[]> {
+  const body = await request<ModelCalls>(`/api/sessions/${encodeURIComponent(id)}/calls`, {
     signal,
   });
-  return body.requests ?? [];
+  return body.calls ?? [];
 }
 
-/** getSessionRequest reads one recorded model call in the preview's shape. */
-export function getSessionRequest(
+/** getSessionCall reads one recorded model call in the preview's shape. */
+export function getSessionCall(
   id: string,
-  requestId: string,
+  callId: string,
   signal?: AbortSignal,
 ): Promise<ModelContext> {
   return request<ModelContext>(
-    `/api/sessions/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}`,
+    `/api/sessions/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}`,
     { signal },
   );
 }

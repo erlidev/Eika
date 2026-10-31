@@ -262,7 +262,7 @@ func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []pr
 	cached := base.WithMessages(sent)
 	room := budget
 	if window > 0 {
-		room = min(budget, window-estimateContext(cached, sent))
+		room = min(budget, window-a.predict(ctx, cached).Tokens)
 	}
 	if room >= need {
 		text, next, err := ask(cached, room)
@@ -279,7 +279,7 @@ func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []pr
 	transcript := transcriptContext(base, msgs[r.from:r.end], r.prompt)
 	room = budget
 	if window > 0 {
-		room = min(budget, window-estimateContext(transcript, transcript.Messages))
+		room = min(budget, window-a.predict(ctx, transcript).Tokens)
 	}
 	if room < need {
 		return "", usage, fmt.Errorf("the conversation to summarize does not fit the configured window of %d with room for a summary", window)

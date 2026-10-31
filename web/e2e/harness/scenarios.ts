@@ -131,9 +131,9 @@ function profiles(): WorldBuilder {
   const head = main.head_entry_id;
   const first = (w.entries[main.id] ?? [])[0];
   if (first) main.head_entry_id = first.id;
-  b.request(main, 40, 212);
+  b.call(main, 40, 212);
   main.head_entry_id = head;
-  b.request(main, 12, 318);
+  b.call(main, 12, 318);
   return b;
 }
 

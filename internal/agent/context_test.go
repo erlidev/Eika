@@ -16,6 +16,7 @@ import (
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor/local"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/counter"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/tool"
 	"github.com/erlidev/eika/internal/tool/builtin"
@@ -677,7 +678,7 @@ func TestImagesAreEstimatedByTheirSizeNotTheirData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview: %v", err)
 	}
-	image := agent.ImageTokens(1920, 1080)
+	image := counter.EstimatedImageTokens(1920, 1080)
 	if got := preview.MessageSizes[0]; got < image || got > image+50 {
 		t.Errorf("an image message is estimated at %d tokens, want about %d for the image", got, image)
 	}

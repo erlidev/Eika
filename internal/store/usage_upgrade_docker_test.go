@@ -59,12 +59,12 @@ func TestUpgradeFrom0004ReadsCallsThatStatedNothingAsNull(t *testing.T) {
 		"zero-output": {90, 0, 90, -1},
 		"silent":      {-1, -1, -1, -1},
 	}
-	records, err := st.ModelRequests(ctx, "s")
+	records, err := st.ModelCalls(ctx, "s")
 	if err != nil || len(records) != len(want) {
-		t.Fatalf("ModelRequests = %+v, %v; want every record kept", records, err)
+		t.Fatalf("ModelCalls = %+v, %v; want every record kept", records, err)
 	}
 	for _, r := range records {
-		got := counts{stated(r.InputTokens), stated(r.OutputTokens), stated(r.TotalTokens), stated(r.CachedTokens)}
+		got := counts{stated(r.PromptTokens), stated(r.CompletionTokens), stated(r.TotalTokens), stated(r.CachedTokens)}
 		if got != want[r.ID] {
 			t.Errorf("%s: in/out/total/cached = %+v, want %+v (-1 is NULL)", r.ID, got, want[r.ID])
 		}

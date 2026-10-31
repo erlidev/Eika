@@ -40,6 +40,23 @@ type Usage struct {
 // Reported reports whether the usage states any count at all.
 func (u Usage) Reported() bool { return u != Usage{} }
 
+// Prefilled returns the tokens of the prompt the server processed: the count
+// it states itself (llama.cpp's prompt_n), else the prompt less its cached
+// part when it states both, which is the same number because the prompt
+// includes the cached part. It is not reported when the cached part is
+// unknown, since the prompt alone does not say what was processed.
+func (u Usage) Prefilled() Count {
+	if u.PrefilledTokens.Reported() {
+		return u.PrefilledTokens
+	}
+	prompt, haveIn := u.InputTokens.Value()
+	cached, haveCached := u.CachedTokens.Value()
+	if !haveIn || !haveCached || cached > prompt {
+		return Count{}
+	}
+	return Reported(prompt - cached)
+}
+
 // UnmarshalJSON reads a usage, including the form stored before a field could
 // be unreported. That form has no cached_tokens key, and wrote 0 for a count
 // the server did not state; a usage of three zeros is one no real call has,

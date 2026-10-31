@@ -141,9 +141,10 @@ read clearly in config.
 ## 2. Exact token accounting
 
 Knowing exactly how much context is in use matters more than any cache optimisation.
-Today the next request is estimated from the last measured call plus 4 bytes per
-token. That figure is a guess. It can be off by 30% or more for code, CJK text and
-JSON, and it says nothing about template overhead.
+A guess of 4 bytes per token can be off by 30% or more for code, CJK text and JSON,
+and says nothing about template overhead. So the runtime sizes a request with the
+endpoint's own tokenizer where there is one (the methods below), and a guess is the
+last resort.
 
 ### Terms
 
@@ -154,13 +155,14 @@ Every model call records these, in a renamed `model_calls` table (formerly
 |---|---|---|
 | `prompt_tokens` | `usage.prompt_tokens`; `usage.input_tokens` under `responses` | Tokens the server tokenised for this request, template included, **cached tokens included** (verified, below). Ground truth |
 | `cached_tokens` | `usage.prompt_tokens_details.cached_tokens` (`input_tokens_details.cached_tokens` under `responses`), else llama.cpp's `timings.cache_n` | Part of the prompt reused from cache. NULL when the server states neither, never 0 by assumption; a stated 0 is 0. The usage field is read first because it is the one every backend carries, so the count means the same everywhere; `cache_n` is the fallback for a llama.cpp build without it (verified equal, below) |
-| `prefilled_tokens` | `timings.prompt_n`, where the server states it | Tokens actually processed. NULL otherwise: usage parsing derives nothing, and where both `prompt` and `cached` are stated and the prompt includes the cached part, `prompt - cached` is the same number |
+| `prefilled_tokens` | `timings.prompt_n`, where the server states it, else `prompt - cached` | Tokens actually processed. NULL when the cached count is unknown too: the prompt alone does not say what was processed. Usage parsing derives nothing; the record does (`Usage.Prefilled`), which is exact because the prompt includes the cached part |
 | `completion_tokens` | `usage.completion_tokens`; `usage.output_tokens` under `responses` | Generated tokens, **reasoning included** (verified, below) |
-| `reasoning_tokens` | `usage.completion_tokens_details.reasoning_tokens` (`output_tokens_details.reasoning_tokens` under `responses`) | Part of the completion that was reasoning. NULL when the server states none (llama.cpp does not). A tokenisation of the reasoning text is a separate, labelled source for the `model_calls` item to add: it needs the column, and `counter.Counter` has the text cache to do it with |
+| `reasoning_tokens` | `usage.completion_tokens_details.reasoning_tokens` (`output_tokens_details.reasoning_tokens` under `responses`) | Part of the completion that was reasoning. NULL when the server states none (llama.cpp does not). Where the endpoint can tokenise text, the record holds a tokenisation of the reasoning text instead, and `reasoning_source` says which: `reported` or `tokenised`. A tokenised count approximates the generated tokens (on llama.cpp b11942 it equalled them), so it never enters `provider.Usage` or the events |
 | `predicted_prompt_tokens`, `prediction` | the runtime | What the runtime expected before sending, and how: `exact`, `anchored` or `estimated` |
-| `window` | effective window | The window this call was judged against |
-| `queue_ms`, `prefill_ms`, `decode_ms` | inference queue, timings | Wait before the call, prompt phase, generation phase |
-| `endpoint`, `slot`, `class`, `agent`, `priority` | runtime | Attribution |
+| `context_window` | effective window | The window this call was judged against (`window` is a reserved word in SQL) |
+| `queue_ms`, `prefill_ms`, `decode_ms` | inference queue, timings | Wait before the call, prompt phase, generation phase. `queue_ms` exists and is NULL until the queue fills it; `prefill_ms` and `decode_ms` are not columns yet |
+| `endpoint`, `slot`, `class`, `agent`, `priority` | runtime | Attribution. `endpoint` is the provider's name; the others exist and are NULL until the queue and the agents fill them |
+| `drift` | the runtime | `predicted_prompt_tokens - prompt_tokens`; NULL unless both exist |
 
 The window fill after a call is `prompt_tokens + completion_tokens`: what the
 KV cache held at the end. The context meter shows this number, and it is exact.
@@ -221,12 +223,18 @@ meter. It uses the best method the endpoint offers:
    (TabbyAPI without messages support, cloud APIs). It uses the anchor plus bytes
    divided by a ratio learned from the session's history, starting at 4 until
    there is data (one ratio for now; per content class is not built). It is
-   shown with a tilde, and the compaction reserve is widened by the ratio's
-   observed error (`Counter.EstimateError`).
+   shown with a tilde, and the compaction reserve is widened, for this method
+   alone, by the ratio's observed error (`Counter.EstimateError`) times the
+   predicted size, up to half the window. A session resumed after a restart is
+   seeded from the newest measurement its messages carry (`Counter.Seed`), so the
+   first estimate starts from a measured size and not from bytes alone.
 
-After every call the runtime logs `drift = predicted - measured`. An `exact`
-prediction with any drift is a bug and appears in the Context inspector. Persistent
-drift on `anchored` retrains its constants.
+Each call stores `drift = predicted - measured` in `model_calls`, NULL when
+either is. An `exact` prediction with any drift is a bug: the loop logs it as a
+warning with the numbers and none of the request, and the Context inspector shows
+it (the breakdown item). Persistent drift on `anchored` retrains its constants.
+Counting never fails a call: a prediction that cannot finish in its time (ten
+seconds by default) is replaced by the estimate, and the stored method says so.
 
 ### Breakdown by part
 

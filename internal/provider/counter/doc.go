@@ -7,8 +7,14 @@
 // renders and tokenises the request itself, anchored when it only tokenises
 // text and the template's share is learned from measurements, estimated when
 // it tokenises nothing. Observe takes the measured usage of that request,
-// returns the drift, and trains the learned parts. Results are cached by the
-// hash of what was counted, so a prefix is tokenised once per session.
+// returns the drift, and trains the learned parts; the pair must be given the
+// same request, which for this purpose is one with the same prompt (the most
+// the model may generate is not part of it). Estimate answers by the estimated
+// method without asking the server, for a caller out of time; Seed teaches a
+// fresh counter from a measurement stored earlier; CountText counts a text of
+// the caller's own. A Switch is a Source whose routes, and the key they carry,
+// are attached only while a run uses them. Results are cached by the hash of
+// what was counted, so a prefix is tokenised once per session.
 //
 // A Source is the endpoint's tokenizer routes. Routes reaches llama.cpp, vLLM,
 // SGLang and TabbyAPI over HTTP and renders a chat request from the body its

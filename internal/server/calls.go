@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
 
-// modelRequestBody is the record of one model call on the wire, without
-// what it sent.
-type modelRequestBody struct {
+// modelCallBody is the record of one model call on the wire, without what it
+// sent. A count is null when it is not known, which is not the same as 0.
+type modelCallBody struct {
 	ID        string `json:"id"`
 	SessionID string `json:"session_id"`
 	// RunID is the run that made the call.
@@ -28,37 +29,65 @@ type modelRequestBody struct {
 	Model   string `json:"model"`
 	// MessageTokens is the estimated size of the messages sent.
 	MessageTokens int `json:"message_tokens"`
-	// InputTokens, OutputTokens, TotalTokens, and CachedTokens are what the
-	// endpoint measured: the prompt, the response, their sum, and the part of
-	// the prompt it served from its cache. Each is null when the endpoint did
-	// not state it, which is not the same as 0.
-	InputTokens  *int      `json:"input_tokens"`
-	OutputTokens *int      `json:"output_tokens"`
-	TotalTokens  *int      `json:"total_tokens"`
-	CachedTokens *int      `json:"cached_tokens"`
-	CreatedAt    time.Time `json:"created_at"`
+	// PromptTokens, CompletionTokens, TotalTokens, and CachedTokens are what
+	// the endpoint measured: the prompt (cached part included), everything
+	// generated (reasoning included), the total it stated, and the part of the
+	// prompt it served from its cache.
+	PromptTokens     *int `json:"prompt_tokens"`
+	CompletionTokens *int `json:"completion_tokens"`
+	TotalTokens      *int `json:"total_tokens"`
+	CachedTokens     *int `json:"cached_tokens"`
+	// PrefilledTokens is the part of the prompt the endpoint processed.
+	PrefilledTokens *int `json:"prefilled_tokens"`
+	// ReasoningTokens is the part of the completion that was reasoning, and
+	// ReasoningSource where it came from: "reported" by the endpoint, or
+	// "tokenised" from the reasoning text, which approximates it. The source
+	// is absent exactly when the count is null.
+	ReasoningTokens *int   `json:"reasoning_tokens"`
+	ReasoningSource string `json:"reasoning_source,omitempty"`
+	// PredictedPromptTokens is what the token counter expected the prompt to
+	// be before the call, Prediction how it knew (exact, anchored or
+	// estimated), and Drift the prediction less PromptTokens. All three are
+	// null when nothing was predicted, and Drift when nothing was measured.
+	// Any drift on an exact prediction is a bug.
+	PredictedPromptTokens *int   `json:"predicted_prompt_tokens"`
+	Prediction            string `json:"prediction,omitempty"`
+	Drift                 *int   `json:"drift"`
+	// ContextWindow is the window the call was judged against; null when the
+	// model had none configured.
+	ContextWindow *int `json:"context_window"`
+	// Endpoint is the provider's name when the call was made.
+	Endpoint string `json:"endpoint,omitempty"`
+	// QueueMS, Slot, Class, Priority and Agent are null until the inference
+	// queue and the agents fill them.
+	QueueMS   *int      `json:"queue_ms"`
+	Slot      *int      `json:"slot"`
+	Class     string    `json:"class,omitempty"`
+	Priority  string    `json:"priority,omitempty"`
+	Agent     string    `json:"agent,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
-// requestsResponse is the body of GET /api/sessions/{id}/requests.
-type requestsResponse struct {
+// callsResponse is the body of GET /api/sessions/{id}/calls.
+type callsResponse struct {
 	SessionID string `json:"session_id"`
-	// Requests are the session's recorded model calls, oldest first.
-	Requests []modelRequestBody `json:"requests"`
+	// Calls are the session's recorded model calls, oldest first.
+	Calls []modelCallBody `json:"calls"`
 }
 
 // calibrationBody is one measured model call beside the estimate of what it
 // sent, so an estimate can be scaled to what the endpoint counts.
 type calibrationBody struct {
-	RequestID string `json:"request_id"`
-	// InputTokens is what the endpoint measured the call's input as.
-	InputTokens int `json:"input_tokens"`
+	CallID string `json:"call_id"`
+	// PromptTokens is what the endpoint measured the call's prompt as.
+	PromptTokens int `json:"prompt_tokens"`
 	// EstimatedTokens is the estimate of the same input: its sections, tool
 	// schemas, and messages.
 	EstimatedTokens int `json:"estimated_tokens"`
 }
 
 // contextResponse is the body of GET /api/sessions/{id}/context, the next
-// model call of the session, and of GET /api/sessions/{id}/requests/{id}, a
+// model call of the session, and of GET /api/sessions/{id}/calls/{id}, a
 // recorded one: the system prompt by section, the tool schemas, the
 // messages, and the parameters, with the layer each parameter came from.
 type contextResponse struct {
@@ -70,8 +99,8 @@ type contextResponse struct {
 	// DroppedEffort is a reasoning effort the configuration chose that the
 	// model does not offer, which is not sent.
 	DroppedEffort string `json:"dropped_effort,omitempty"`
-	// Request is the record this is, absent for the next call.
-	Request *modelRequestBody `json:"request,omitempty"`
+	// Call is the record this is, absent for the next call.
+	Call *modelCallBody `json:"call,omitempty"`
 	// ContextWindow is the context window of the call's model, in tokens:
 	// what the request has to fit in. Zero when the model is not known,
 	// because none is configured or a recorded call's model is deleted.
@@ -91,11 +120,31 @@ type recordedParameters struct {
 }
 
 // callRecorder keeps a record of every model call a run makes in the
-// model_requests table.
+// model_calls table.
 type callRecorder struct {
 	store  *store.Store
 	run    *activeRun
 	config runConfig
+	// endpoint is the name of the provider the run's model is on.
+	endpoint string
+}
+
+// predictedTokens is the size a prediction stated, nil for a call that was
+// not predicted, whose prediction is the zero value.
+func predictedTokens(p provider.Prediction) *int {
+	if p.Method == "" {
+		return nil
+	}
+	return &p.Tokens
+}
+
+// positive returns a pointer to n, or nil for a count that is zero or less,
+// which a column that must be positive stores as NULL.
+func positive(n int) *int {
+	if n <= 0 {
+		return nil
+	}
+	return &n
 }
 
 // Record stores one model call. The conversation it sent ended at the
@@ -121,7 +170,7 @@ func (c callRecorder) Record(ctx context.Context, call agent.ModelCall) error {
 	if err != nil {
 		return fmt.Errorf("encode parameters: %w", err)
 	}
-	_, err = c.store.RecordModelRequest(ctx, store.ModelRequest{
+	_, err = c.store.RecordModelCall(ctx, store.ModelCall{
 		SessionID:     call.SessionID,
 		RunID:         c.run.runID(),
 		EntryID:       sess.HeadEntryID,
@@ -131,10 +180,19 @@ func (c callRecorder) Record(ctx context.Context, call agent.ModelCall) error {
 		Tools:         tools,
 		Parameters:    parameters,
 		MessageTokens: call.Context.MessageTokens,
-		InputTokens:   call.Usage.InputTokens.Ptr(),
-		OutputTokens:  call.Usage.OutputTokens.Ptr(),
-		TotalTokens:   call.Usage.TotalTokens.Ptr(),
-		CachedTokens:  call.Usage.CachedTokens.Ptr(),
+
+		PromptTokens:          call.Usage.InputTokens.Ptr(),
+		CompletionTokens:      call.Usage.OutputTokens.Ptr(),
+		TotalTokens:           call.Usage.TotalTokens.Ptr(),
+		CachedTokens:          call.Usage.CachedTokens.Ptr(),
+		PrefilledTokens:       call.Usage.Prefilled().Ptr(),
+		ReasoningTokens:       call.Reasoning.Ptr(),
+		ReasoningSource:       call.ReasoningSource,
+		PredictedPromptTokens: predictedTokens(call.Prediction),
+		Prediction:            string(call.Prediction.Method),
+		Drift:                 call.Drift,
+		ContextWindow:         positive(call.ContextWindow),
+		Endpoint:              c.endpoint,
 	})
 	return err
 }
@@ -182,31 +240,31 @@ func (s *Server) handleSessionContext(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleSessionRequests lists the records of a session's model calls.
-func (s *Server) handleSessionRequests(w http.ResponseWriter, r *http.Request) {
+// handleSessionCalls lists the records of a session's model calls.
+func (s *Server) handleSessionCalls(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, err := s.deps.Store.Session(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	records, err := s.deps.Store.ModelRequests(r.Context(), id)
+	records, err := s.deps.Store.ModelCalls(r.Context(), id)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	out := requestsResponse{SessionID: id, Requests: make([]modelRequestBody, 0, len(records))}
+	out := callsResponse{SessionID: id, Calls: make([]modelCallBody, 0, len(records))}
 	for _, rec := range records {
-		out.Requests = append(out.Requests, asModelRequest(rec))
+		out.Calls = append(out.Calls, asModelCall(rec))
 	}
 	writeJSON(w, s.log, http.StatusOK, out)
 }
 
-// handleSessionRequest returns one recorded model call in the shape of the
+// handleSessionCall returns one recorded model call in the shape of the
 // preview, its messages rebuilt from the session's path down to the entry
 // the call's conversation ended at.
-func (s *Server) handleSessionRequest(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSessionCall(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	rec, err := s.deps.Store.ModelRequest(ctx, r.PathValue("id"), r.PathValue("request_id"))
+	rec, err := s.deps.Store.ModelCall(ctx, r.PathValue("id"), r.PathValue("call_id"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -229,12 +287,12 @@ func (s *Server) handleSessionRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	call = call.WithMessages(messages)
-	body := asModelRequest(rec)
+	body := asModelCall(rec)
 	out := contextResponse{
 		Context:       call,
 		Sources:       params.Sources,
 		DroppedEffort: params.DroppedEffort,
-		Request:       &body,
+		Call:          &body,
 	}
 	if out.Sources == nil {
 		out.Sources = map[string]string{}
@@ -249,8 +307,8 @@ func (s *Server) handleSessionRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if measured := rec.InputTokens; measured != nil && *measured > 0 {
-		out.Calibration = &calibrationBody{RequestID: rec.ID, InputTokens: *measured, EstimatedTokens: estimatedTokens(call)}
+	if measured := rec.PromptTokens; measured != nil && *measured > 0 {
+		out.Calibration = &calibrationBody{CallID: rec.ID, PromptTokens: *measured, EstimatedTokens: estimatedTokens(call)}
 	}
 	writeJSON(w, s.log, http.StatusOK, out)
 }
@@ -258,15 +316,15 @@ func (s *Server) handleSessionRequest(w http.ResponseWriter, r *http.Request) {
 // lastCalibration returns the session's last model call the endpoint
 // measured, beside the estimate of what it sent, or nil when it has none.
 func (s *Server) lastCalibration(ctx context.Context, sessionID string) (*calibrationBody, error) {
-	records, err := s.deps.Store.ModelRequests(ctx, sessionID)
+	records, err := s.deps.Store.ModelCalls(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 	for i := len(records) - 1; i >= 0; i-- {
-		if in := records[i].InputTokens; in == nil || *in == 0 {
+		if in := records[i].PromptTokens; in == nil || *in == 0 {
 			continue
 		}
-		rec, err := s.deps.Store.ModelRequest(ctx, sessionID, records[i].ID)
+		rec, err := s.deps.Store.ModelCall(ctx, sessionID, records[i].ID)
 		if err != nil {
 			return nil, err
 		}
@@ -275,26 +333,26 @@ func (s *Server) lastCalibration(ctx context.Context, sessionID string) (*calibr
 			return nil, err
 		}
 		call.MessageTokens = rec.MessageTokens
-		return &calibrationBody{RequestID: rec.ID, InputTokens: *records[i].InputTokens, EstimatedTokens: estimatedTokens(call)}, nil
+		return &calibrationBody{CallID: rec.ID, PromptTokens: *records[i].PromptTokens, EstimatedTokens: estimatedTokens(call)}, nil
 	}
 	return nil, nil
 }
 
 // recordedContext decodes what a record kept of its call: the sections,
 // the tool schemas, and the parameters, without the messages.
-func recordedContext(rec store.ModelRequest) (agent.Context, recordedParameters, error) {
+func recordedContext(rec store.ModelCall) (agent.Context, recordedParameters, error) {
 	var (
 		call   agent.Context
 		params recordedParameters
 	)
 	if err := json.Unmarshal(rec.Sections, &call.Sections); err != nil {
-		return agent.Context{}, recordedParameters{}, fmt.Errorf("decode the sections of request %s: %w", rec.ID, err)
+		return agent.Context{}, recordedParameters{}, fmt.Errorf("decode the sections of call %s: %w", rec.ID, err)
 	}
 	if err := json.Unmarshal(rec.Tools, &call.Tools); err != nil {
-		return agent.Context{}, recordedParameters{}, fmt.Errorf("decode the tools of request %s: %w", rec.ID, err)
+		return agent.Context{}, recordedParameters{}, fmt.Errorf("decode the tools of call %s: %w", rec.ID, err)
 	}
 	if err := json.Unmarshal(rec.Parameters, &params); err != nil {
-		return agent.Context{}, recordedParameters{}, fmt.Errorf("decode the parameters of request %s: %w", rec.ID, err)
+		return agent.Context{}, recordedParameters{}, fmt.Errorf("decode the parameters of call %s: %w", rec.ID, err)
 	}
 	call.Parameters = params.Parameters
 	return call, params, nil
@@ -312,20 +370,33 @@ func estimatedTokens(c agent.Context) int {
 	return total
 }
 
-// asModelRequest renders a record on the wire.
-func asModelRequest(r store.ModelRequest) modelRequestBody {
-	return modelRequestBody{
-		ID:            r.ID,
-		SessionID:     r.SessionID,
-		RunID:         r.RunID,
-		EntryID:       r.EntryID,
-		ModelID:       r.ModelID,
-		Model:         r.Model,
-		MessageTokens: r.MessageTokens,
-		InputTokens:   r.InputTokens,
-		OutputTokens:  r.OutputTokens,
-		TotalTokens:   r.TotalTokens,
-		CachedTokens:  r.CachedTokens,
-		CreatedAt:     r.CreatedAt,
+// asModelCall renders a record on the wire.
+func asModelCall(c store.ModelCall) modelCallBody {
+	return modelCallBody{
+		ID:                    c.ID,
+		SessionID:             c.SessionID,
+		RunID:                 c.RunID,
+		EntryID:               c.EntryID,
+		ModelID:               c.ModelID,
+		Model:                 c.Model,
+		MessageTokens:         c.MessageTokens,
+		PromptTokens:          c.PromptTokens,
+		CompletionTokens:      c.CompletionTokens,
+		TotalTokens:           c.TotalTokens,
+		CachedTokens:          c.CachedTokens,
+		PrefilledTokens:       c.PrefilledTokens,
+		ReasoningTokens:       c.ReasoningTokens,
+		ReasoningSource:       c.ReasoningSource,
+		PredictedPromptTokens: c.PredictedPromptTokens,
+		Prediction:            c.Prediction,
+		Drift:                 c.Drift,
+		ContextWindow:         c.ContextWindow,
+		Endpoint:              c.Endpoint,
+		QueueMS:               c.QueueMS,
+		Slot:                  c.Slot,
+		Class:                 c.Class,
+		Priority:              c.Priority,
+		Agent:                 c.Agent,
+		CreatedAt:             c.CreatedAt,
 	}
 }

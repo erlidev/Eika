@@ -126,11 +126,11 @@ export function Inspection({
               scaled to the last measured call
             </span>
           )}
-          {(context.request?.input_tokens ?? 0) > 0 && (
+          {(context.call?.prompt_tokens ?? 0) > 0 && (
             <span className="text-muted-foreground">
               ·{" "}
               <span className="font-mono tabular-nums">
-                {(context.request?.input_tokens ?? 0).toLocaleString("en-US")}
+                {(context.call?.prompt_tokens ?? 0).toLocaleString("en-US")}
               </span>{" "}
               measured by the endpoint
             </span>

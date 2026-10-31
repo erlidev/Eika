@@ -257,10 +257,10 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       - anchored (text tokenisation plus learned per-role overhead)
       - estimated (a learned bytes-per-token ratio)
       Cache results per session by prefix hash.
-- [ ] Rename `model_requests` to `model_calls`, with the fields of runtime.md 2:
+- [x] Rename `model_requests` to `model_calls`, with the fields of runtime.md 2:
       prediction and method, measured, cached, prefilled, completion, reasoning,
       window, `queue_ms`, attribution. Record `drift` per call.
-- [ ] Replace the 4-byte estimate in `fit`, `shouldCompact` and
+- [x] Replace the 4-byte estimate in `fit`, `shouldCompact` and
       `estimateContext` with the counter. Widen the compaction reserve by the
       observed error when the method is `estimated`.
 - [ ] Break the context down by part: each part tokenised exactly where possible,
@@ -318,6 +318,7 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
         and `count_cost` were added
       - (done by the usage-parsing item) `cache_reuse` reads the cached
         count usage parsing parses, not `prompt_tokens` less `prompt_n`
+      - (done by the model-calls item) `agent_loop` and `reasoning_count`
       - any further scenarios the items after this one need; the live suite
         below adds them to `Scenarios()`
 - [ ] Phase 1 live suite, against the bench's chat model:
@@ -1046,6 +1047,96 @@ Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
 
+- 2026-10-31: `model_calls` and the counter in the loop (branch `model-calls`,
+  two commits). Both items are ticked; `make live` part 2 and the Phase 1 live
+  suite stay open.
+  - Landed, first commit. Migration `0006_model_calls.sql` renames the table, its
+    two counts (`prompt_tokens`, `completion_tokens`), and every index and
+    constraint that carried the old name, and adds `prefilled_tokens`,
+    `reasoning_tokens` with `reasoning_source` (`reported` or `tokenised`,
+    NULL together, by a check), `predicted_prompt_tokens` with `prediction`
+    (NULL together), `drift`, `context_window` (the design's `window` is a
+    reserved word), `endpoint` (the provider's name), and `queue_ms`, `slot`,
+    `class`, `priority`, `agent`, which nothing writes yet and the queue and
+    agents items only fill. Store, server, routes (`/api/sessions/{id}/calls`,
+    `.../calls/{call_id}`), wire types, `contract.json`, the UI types, the mock
+    harness and the docs follow; no object keeps the old name (a test looks).
+    `Usage.Prefilled` is `prompt_n`, else prompt less cached, NULL when cached
+    is unknown. `calibration` on the context response stays (the breakdown item
+    retires it) with `call_id` and `prompt_tokens`.
+  - Landed, second commit. The session's `Counter` is held by the server
+    (`server/counters.go`, keyed by session, rebuilt when the model, address, key
+    or probed counting kind changes, 64 at most, dropped with the session) and
+    reaches the agent as `Options.Counter`. It holds no key between runs: it
+    counts through a `counter.Switch` whose routes (with the key) are attached
+    for a run and released on every way out, and the registry compares a digest
+    of the key; the cost is that a run rebuilds its `Routes`, so the control-token
+    check of llama.cpp's prompt is repeated once per run. `agent.call` predicts before every
+    call (`counting.go`), `fit`, `shouldCompact`, the compaction's before and
+    after sizes and the summary's room all use the prediction, and the endpoint's
+    own count is observed after it; the `ModelCall` the `Recorder` gets carries
+    prediction, method, drift, the window and the reasoning count with its
+    source. Counting is bounded by `Options.CountTimeout` (ten seconds); a
+    failed or stalled prediction becomes `Counter.Estimate`, recorded as
+    `estimated`, and the call goes ahead. An `exact` prediction with drift logs
+    a warning with the numbers and no content. `shouldCompact` widens the
+    reserve by `EstimateError` times the predicted size, for `estimated` only and
+    to half the window at most. The agent's `ImageTokens` is gone
+    (`counter.EstimatedImageTokens`). Decisions in `DECISIONS.md` ("Model
+    calls").
+  - Two things the brief did not list. (1) `Counter.Seed`: the 4-byte rule
+    started from the last measurement the messages carry; a fresh counter on an
+    endpoint that counts by bytes would start from bytes alone after every
+    restart, so `Agent.Run` seeds the counter from the newest stored measurement
+    (leaving the error of estimates alone). Without it a resumed session of a
+    cloud endpoint was sized at about 2.2k against 4.7k in the test. (2) The counter's
+    request key now ignores max output: `fit` lowers it after the prediction,
+    and the prediction and the observation must pair.
+  - Existing tests of `fit`, `shouldCompact` and the compaction thresholds passed
+    unchanged with the counter behind them. `estimateContext` is gone as a
+    function (it only wrapped `predict`); `lastMeasured` stays for the seed. New
+    tests: `predicted == measured` through the real loop on `providertest`'s
+    `TokenServer` over a tool round, replayed reasoning and a compaction (and
+    the compaction's reported sizes against the server's); the bytes of the
+    requests sent are identical with a rendering, a text-only, a failing and an
+    estimating counter; a stalled tokenizer cannot hold a call; the drift
+    warning; reasoning source (reported, tokenised, none); resumed-session seed;
+    an `estimated` endpoint compacts earlier by the error shown and `exact` does
+    not; the window is judged by the counter's number (a text a 4-byte estimate
+    halves); the server's counter registry; store round trip and constraints;
+    the 0005 to 0006 upgrade.
+  - `make check` passed (35 Go packages, 441 web tests, 128 visual specs, no
+    baseline changed). `make smoke` passed (2 specs): `server.Run` itself did not
+    change, but the migration and the run path did. `make live` against
+    b11942-338fce651 passed, eight scenarios: new `agent_loop` runs the real loop
+    on one session, two turns with a tool round, and its four recorded calls are
+    **exact with zero drift** (343, 397, 430, 484 tokens; the other scenarios'
+    numbers are as before). New `reasoning_count`: a response cut off inside its
+    reasoning has 60 generated tokens, and tokenising its reasoning text gives
+    60 (five runs, deterministic at temperature 0), labelled `tokenised`; the
+    scenario allows 3. The two run the loop in process against the bench: the
+    loop, the counter, the real provider and the real server, with no database or
+    compose stack, which is as close to a full stack as is reachable here.
+  - Findings. (1) The OpenAI SDK writes the fields it takes from a map
+    (`chat_template_kwargs`, `preserve_thinking`, `top_k`, `min_p`) in a
+    different order each time, so the body of a request is not byte-stable
+    between two sends of the same request, and
+    `TestLlamaCppRendersTheRequestTheProviderSends` compared two encodings byte
+    for byte and failed about half the time run alone. It now compares them as
+    documents, as `openai`'s own `ChatBody` test does. No server reads key order,
+    and the prompt (what the cache sees) is unaffected, but the prefix-stability
+    item should compare rendered prompts and `provider.Request` values, not wire
+    bytes, unless the provider is made to sort the extras. (2)
+    `TestStreamSurvivesAServerThatClosesTheIdleConnection` failed once under the
+    parallel load of `make check` (`use of closed network connection`) and 30
+    times in a row alone; not touched. (3) Summaries of a compaction are model
+    calls that are neither recorded nor observed (they are sized by `Predict`,
+    which leaves a prediction pending that is never observed, and the counter
+    bounds those at eight); they belong with the queue item, which gives every
+    call an owner. (4) `prefill_ms` and `decode_ms` of the design's table are not
+    columns; the queue item can add them with `queue_ms`. (5) Cold start: only
+    the seed is built; the learned weights of an anchored endpoint are still
+    relearned in about five calls after a restart.
 - 2026-10-31: the token counter and the `EOF` on kept-alive POSTs (branch
   `token-counter`). The counter item is ticked; the `make live` item stays open
   for part 2's remaining scenarios and for the live suite below.

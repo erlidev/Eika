@@ -30,6 +30,8 @@ func Scenarios() []Scenario {
 		ImageInput(),
 		CountCost(nonce),
 		AnchoredCounting(nonce),
+		AgentLoop(nonce),
+		ReasoningCount(nonce),
 	}
 }
 

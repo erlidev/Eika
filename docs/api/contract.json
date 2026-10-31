@@ -1013,6 +1013,354 @@
         ]
       }
     },
+    "GET /api/sessions/{id}/calls": {
+      "status": 200,
+      "response": {
+        "object": {
+          "calls": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "agent": "string",
+                  "cached_tokens": {
+                    "nullable": "number"
+                  },
+                  "class": "string",
+                  "completion_tokens": {
+                    "nullable": "number"
+                  },
+                  "context_window": {
+                    "nullable": "number"
+                  },
+                  "created_at": "string",
+                  "drift": {
+                    "nullable": "number"
+                  },
+                  "endpoint": "string",
+                  "entry_id": "string",
+                  "id": "string",
+                  "message_tokens": "number",
+                  "model": "string",
+                  "model_id": "string",
+                  "predicted_prompt_tokens": {
+                    "nullable": "number"
+                  },
+                  "prediction": "string",
+                  "prefilled_tokens": {
+                    "nullable": "number"
+                  },
+                  "priority": "string",
+                  "prompt_tokens": {
+                    "nullable": "number"
+                  },
+                  "queue_ms": {
+                    "nullable": "number"
+                  },
+                  "reasoning_source": "string",
+                  "reasoning_tokens": {
+                    "nullable": "number"
+                  },
+                  "run_id": "string",
+                  "session_id": "string",
+                  "slot": {
+                    "nullable": "number"
+                  },
+                  "total_tokens": {
+                    "nullable": "number"
+                  }
+                },
+                "optional": [
+                  "agent",
+                  "class",
+                  "endpoint",
+                  "entry_id",
+                  "model_id",
+                  "prediction",
+                  "priority",
+                  "reasoning_source"
+                ]
+              }
+            }
+          },
+          "session_id": "string"
+        }
+      }
+    },
+    "GET /api/sessions/{id}/calls/{call_id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "calibration": {
+            "object": {
+              "call_id": "string",
+              "estimated_tokens": "number",
+              "prompt_tokens": "number"
+            }
+          },
+          "call": {
+            "object": {
+              "agent": "string",
+              "cached_tokens": {
+                "nullable": "number"
+              },
+              "class": "string",
+              "completion_tokens": {
+                "nullable": "number"
+              },
+              "context_window": {
+                "nullable": "number"
+              },
+              "created_at": "string",
+              "drift": {
+                "nullable": "number"
+              },
+              "endpoint": "string",
+              "entry_id": "string",
+              "id": "string",
+              "message_tokens": "number",
+              "model": "string",
+              "model_id": "string",
+              "predicted_prompt_tokens": {
+                "nullable": "number"
+              },
+              "prediction": "string",
+              "prefilled_tokens": {
+                "nullable": "number"
+              },
+              "priority": "string",
+              "prompt_tokens": {
+                "nullable": "number"
+              },
+              "queue_ms": {
+                "nullable": "number"
+              },
+              "reasoning_source": "string",
+              "reasoning_tokens": {
+                "nullable": "number"
+              },
+              "run_id": "string",
+              "session_id": "string",
+              "slot": {
+                "nullable": "number"
+              },
+              "total_tokens": {
+                "nullable": "number"
+              }
+            },
+            "optional": [
+              "agent",
+              "class",
+              "endpoint",
+              "entry_id",
+              "model_id",
+              "prediction",
+              "priority",
+              "reasoning_source"
+            ]
+          },
+          "context_window": "number",
+          "dropped_effort": "string",
+          "message_sizes": {
+            "nullable": {
+              "array": "number"
+            }
+          },
+          "message_tokens": "number",
+          "messages": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "content": "string",
+                  "images": {
+                    "array": {
+                      "object": {
+                        "data": {
+                          "nullable": "string"
+                        },
+                        "height": "number",
+                        "media_type": "string",
+                        "width": "number"
+                      }
+                    }
+                  },
+                  "is_error": "boolean",
+                  "metrics": {
+                    "object": {
+                      "context": {
+                        "object": {
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
+                        }
+                      },
+                      "context_window": "number",
+                      "generation_ms": "number",
+                      "run_id": "string",
+                      "timings": {
+                        "object": {
+                          "decode_ms": "number",
+                          "decode_tokens": "number",
+                          "prompt_ms": "number",
+                          "prompt_tokens": "number",
+                          "source": "string"
+                        },
+                        "optional": [
+                          "decode_ms",
+                          "decode_tokens",
+                          "prompt_ms",
+                          "prompt_tokens",
+                          "source"
+                        ]
+                      },
+                      "usage": {
+                        "object": {
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
+                        }
+                      }
+                    },
+                    "optional": [
+                      "timings"
+                    ]
+                  },
+                  "reasoning": "string",
+                  "role": "string",
+                  "summary": "boolean",
+                  "tool_call_id": "string",
+                  "tool_calls": {
+                    "array": {
+                      "object": {
+                        "arguments": "any",
+                        "arguments_malformed": "boolean",
+                        "id": "string",
+                        "name": "string"
+                      },
+                      "optional": [
+                        "arguments_malformed"
+                      ]
+                    }
+                  }
+                },
+                "optional": [
+                  "content",
+                  "images",
+                  "is_error",
+                  "metrics",
+                  "reasoning",
+                  "summary",
+                  "tool_call_id",
+                  "tool_calls"
+                ]
+              }
+            }
+          },
+          "parameters": {
+            "object": {
+              "image_input": "boolean",
+              "model": "string",
+              "preserve_thinking": "boolean",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "thinking_switch": "string"
+            },
+            "optional": [
+              "thinking_switch"
+            ]
+          },
+          "sections": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "kind": "string",
+                  "text": "string",
+                  "tokens": "number"
+                }
+              }
+            }
+          },
+          "sources": {
+            "nullable": {
+              "map": "string"
+            }
+          },
+          "tools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "description": "string",
+                  "name": "string",
+                  "schema": "any",
+                  "source": "string",
+                  "tokens": "number"
+                }
+              }
+            }
+          }
+        },
+        "optional": [
+          "calibration",
+          "call",
+          "dropped_effort"
+        ]
+      }
+    },
     "GET /api/sessions/{id}/configuration": {
       "status": 200,
       "response": {
@@ -1187,10 +1535,71 @@
         "object": {
           "calibration": {
             "object": {
+              "call_id": "string",
               "estimated_tokens": "number",
-              "input_tokens": "number",
-              "request_id": "string"
+              "prompt_tokens": "number"
             }
+          },
+          "call": {
+            "object": {
+              "agent": "string",
+              "cached_tokens": {
+                "nullable": "number"
+              },
+              "class": "string",
+              "completion_tokens": {
+                "nullable": "number"
+              },
+              "context_window": {
+                "nullable": "number"
+              },
+              "created_at": "string",
+              "drift": {
+                "nullable": "number"
+              },
+              "endpoint": "string",
+              "entry_id": "string",
+              "id": "string",
+              "message_tokens": "number",
+              "model": "string",
+              "model_id": "string",
+              "predicted_prompt_tokens": {
+                "nullable": "number"
+              },
+              "prediction": "string",
+              "prefilled_tokens": {
+                "nullable": "number"
+              },
+              "priority": "string",
+              "prompt_tokens": {
+                "nullable": "number"
+              },
+              "queue_ms": {
+                "nullable": "number"
+              },
+              "reasoning_source": "string",
+              "reasoning_tokens": {
+                "nullable": "number"
+              },
+              "run_id": "string",
+              "session_id": "string",
+              "slot": {
+                "nullable": "number"
+              },
+              "total_tokens": {
+                "nullable": "number"
+              }
+            },
+            "optional": [
+              "agent",
+              "class",
+              "endpoint",
+              "entry_id",
+              "model_id",
+              "prediction",
+              "priority",
+              "reasoning_source"
+            ]
           },
           "context_window": "number",
           "dropped_effort": "string",
@@ -1358,34 +1767,6 @@
               "thinking_switch"
             ]
           },
-          "request": {
-            "object": {
-              "cached_tokens": {
-                "nullable": "number"
-              },
-              "created_at": "string",
-              "entry_id": "string",
-              "id": "string",
-              "input_tokens": {
-                "nullable": "number"
-              },
-              "message_tokens": "number",
-              "model": "string",
-              "model_id": "string",
-              "output_tokens": {
-                "nullable": "number"
-              },
-              "run_id": "string",
-              "session_id": "string",
-              "total_tokens": {
-                "nullable": "number"
-              }
-            },
-            "optional": [
-              "entry_id",
-              "model_id"
-            ]
-          },
           "sections": {
             "nullable": {
               "array": {
@@ -1418,8 +1799,8 @@
         },
         "optional": [
           "calibration",
-          "dropped_effort",
-          "request"
+          "call",
+          "dropped_effort"
         ]
       }
     },
@@ -1740,288 +2121,6 @@
           },
           "session_id": "string"
         }
-      }
-    },
-    "GET /api/sessions/{id}/requests": {
-      "status": 200,
-      "response": {
-        "object": {
-          "requests": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "cached_tokens": {
-                    "nullable": "number"
-                  },
-                  "created_at": "string",
-                  "entry_id": "string",
-                  "id": "string",
-                  "input_tokens": {
-                    "nullable": "number"
-                  },
-                  "message_tokens": "number",
-                  "model": "string",
-                  "model_id": "string",
-                  "output_tokens": {
-                    "nullable": "number"
-                  },
-                  "run_id": "string",
-                  "session_id": "string",
-                  "total_tokens": {
-                    "nullable": "number"
-                  }
-                },
-                "optional": [
-                  "entry_id",
-                  "model_id"
-                ]
-              }
-            }
-          },
-          "session_id": "string"
-        }
-      }
-    },
-    "GET /api/sessions/{id}/requests/{request_id}": {
-      "status": 200,
-      "response": {
-        "object": {
-          "calibration": {
-            "object": {
-              "estimated_tokens": "number",
-              "input_tokens": "number",
-              "request_id": "string"
-            }
-          },
-          "context_window": "number",
-          "dropped_effort": "string",
-          "message_sizes": {
-            "nullable": {
-              "array": "number"
-            }
-          },
-          "message_tokens": "number",
-          "messages": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "content": "string",
-                  "images": {
-                    "array": {
-                      "object": {
-                        "data": {
-                          "nullable": "string"
-                        },
-                        "height": "number",
-                        "media_type": "string",
-                        "width": "number"
-                      }
-                    }
-                  },
-                  "is_error": "boolean",
-                  "metrics": {
-                    "object": {
-                      "context": {
-                        "object": {
-                          "cached_tokens": {
-                            "nullable": "number"
-                          },
-                          "input_tokens": {
-                            "nullable": "number"
-                          },
-                          "output_tokens": {
-                            "nullable": "number"
-                          },
-                          "prefilled_tokens": {
-                            "nullable": "number"
-                          },
-                          "reasoning_tokens": {
-                            "nullable": "number"
-                          },
-                          "total_tokens": {
-                            "nullable": "number"
-                          }
-                        }
-                      },
-                      "context_window": "number",
-                      "generation_ms": "number",
-                      "run_id": "string",
-                      "timings": {
-                        "object": {
-                          "decode_ms": "number",
-                          "decode_tokens": "number",
-                          "prompt_ms": "number",
-                          "prompt_tokens": "number",
-                          "source": "string"
-                        },
-                        "optional": [
-                          "decode_ms",
-                          "decode_tokens",
-                          "prompt_ms",
-                          "prompt_tokens",
-                          "source"
-                        ]
-                      },
-                      "usage": {
-                        "object": {
-                          "cached_tokens": {
-                            "nullable": "number"
-                          },
-                          "input_tokens": {
-                            "nullable": "number"
-                          },
-                          "output_tokens": {
-                            "nullable": "number"
-                          },
-                          "prefilled_tokens": {
-                            "nullable": "number"
-                          },
-                          "reasoning_tokens": {
-                            "nullable": "number"
-                          },
-                          "total_tokens": {
-                            "nullable": "number"
-                          }
-                        }
-                      }
-                    },
-                    "optional": [
-                      "timings"
-                    ]
-                  },
-                  "reasoning": "string",
-                  "role": "string",
-                  "summary": "boolean",
-                  "tool_call_id": "string",
-                  "tool_calls": {
-                    "array": {
-                      "object": {
-                        "arguments": "any",
-                        "arguments_malformed": "boolean",
-                        "id": "string",
-                        "name": "string"
-                      },
-                      "optional": [
-                        "arguments_malformed"
-                      ]
-                    }
-                  }
-                },
-                "optional": [
-                  "content",
-                  "images",
-                  "is_error",
-                  "metrics",
-                  "reasoning",
-                  "summary",
-                  "tool_call_id",
-                  "tool_calls"
-                ]
-              }
-            }
-          },
-          "parameters": {
-            "object": {
-              "image_input": "boolean",
-              "model": "string",
-              "preserve_thinking": "boolean",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "thinking_switch": "string"
-            },
-            "optional": [
-              "thinking_switch"
-            ]
-          },
-          "request": {
-            "object": {
-              "cached_tokens": {
-                "nullable": "number"
-              },
-              "created_at": "string",
-              "entry_id": "string",
-              "id": "string",
-              "input_tokens": {
-                "nullable": "number"
-              },
-              "message_tokens": "number",
-              "model": "string",
-              "model_id": "string",
-              "output_tokens": {
-                "nullable": "number"
-              },
-              "run_id": "string",
-              "session_id": "string",
-              "total_tokens": {
-                "nullable": "number"
-              }
-            },
-            "optional": [
-              "entry_id",
-              "model_id"
-            ]
-          },
-          "sections": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "kind": "string",
-                  "text": "string",
-                  "tokens": "number"
-                }
-              }
-            }
-          },
-          "sources": {
-            "nullable": {
-              "map": "string"
-            }
-          },
-          "tools": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "description": "string",
-                  "name": "string",
-                  "schema": "any",
-                  "source": "string",
-                  "tokens": "number"
-                }
-              }
-            }
-          }
-        },
-        "optional": [
-          "calibration",
-          "dropped_effort",
-          "request"
-        ]
       }
     },
     "GET /api/sessions/{id}/run": {

@@ -3,7 +3,7 @@
 The Context panel and the Context inspector: what a model request sends,
 part by part. The harness assembles the request (`GET
 /api/sessions/{id}/context` for the next one, `GET
-/api/sessions/{id}/requests/{request_id}` for a recorded one) with the same
+/api/sessions/{id}/calls/{call_id}` for a recorded one) with the same
 code a run uses; this feature only draws it.
 
 - `ContextPanel` is the summary in the context pane: the request select (the
