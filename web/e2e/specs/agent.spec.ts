@@ -96,6 +96,14 @@ test("an answer the endpoint cut off is kept, and says why it stopped", async ({
   await expect(eika.page.getByText(/Cut off at the model's output limit/)).toBeVisible();
 });
 
+test("a run that reached its limit says why and what the user can do", async ({ open }) => {
+  const eika = await open({ scenario: "agent-run-limit" });
+  await eika.send("Go through every file");
+  await expect(eika.page.getByText("Still working through the files.").first()).toBeVisible();
+  await expect(eika.page.getByText(/Stopped at the limit of model calls/)).toBeVisible();
+  await expect(eika.page.getByText(/send a message to carry on/)).toBeVisible();
+});
+
 test("a conversation compacts on request, and the summary opens from the divider", async ({
   open,
   expectShot,

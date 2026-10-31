@@ -437,6 +437,49 @@ this file says why, so neither repeats the other.
   stripping the blocks from the cached form (it is the cached prefix; changing
   it costs the cache the form exists for).
 
+### Loop limits
+
+- **A run is bounded in model calls and in wall time.** `Options.Limits` holds
+  `MaxCalls` (default 40) and `MaxWall` (default 24 hours). 40 is the home
+  session's limit in `runtime.md` section 5; the design gives a subagent 200, and
+  the agent definitions of phase 2 set each agent's own. Until they exist every
+  session is a chat on one computer, which is the home session's case, so 40 is
+  the one default. A run is one `Agent.Run`, however many turns its follow-ups
+  start. A model call is a step of the loop: a retried attempt is the same call,
+  and the summary a compaction asks for is not one, since neither is the
+  model's own choice to go on.
+- **Hitting a limit is a clean end, not a failure.** The check runs at the top
+  of the loop, before the next model call and before steering is taken from its
+  queue: every tool call of the last response has been answered and stored, the
+  conversation ends on a tool result, and the run returns `nil`. It ends its
+  last turn with `turn.end` and the stop reason `max_calls` or `max_wall_time`;
+  the transcript says which limit and that a message continues the work
+  (`docs/api/events.md`). A message sent next starts a run with a fresh count,
+  from the stopped state. Messages still queued stay queued for it (the same
+  hand-over an abort makes). A run that has made no call is never stopped,
+  because the message it began with is not stored until the first call has
+  read it. The reason is on the live event, as `length` is; it is not stored
+  with the session, and the phase 2 `notice` entry kind is where a stored one
+  belongs. Rejected: failing the run with `run.error` (it reads as a fault and
+  the UI offers a retry of what is not a retry); cancelling the run's context
+  at the wall time (a tool killed halfway is an abort, with an unknown outcome,
+  and the limit exists to stop a loop, not a command); one more call to ask the
+  model to wrap up (a model that is looping does not stop looping because it is
+  asked).
+- **An identical call is warned about, never stopped.** From the third
+  identical consecutive tool call of a run, the result the model reads ends with
+  a warning that says how many times the call has been made in a row and asks
+  for a different approach. "Identical" is the same tool and the same
+  arguments as JSON: spacing and key order do not make a call different, and
+  arguments that are not JSON are compared as written. Consecutive means in the
+  order the run made them; any other call in between starts the count again.
+  The result keeps the tool's own text first, the event a client shows carries
+  the same text, and the call still runs: a poll that repeats on purpose
+  (waiting for a build) is not broken by it. Rejected: stopping at some count
+  (`runtime.md` says never, and a legitimate poll would be stopped); a
+  separate message beside the result (a notice the model might read as the
+  user's).
+
 ### The provider probe
 
 - **A probe reads each server's own description, then verifies the counting

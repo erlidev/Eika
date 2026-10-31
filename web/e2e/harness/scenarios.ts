@@ -609,6 +609,16 @@ export const scenarios = {
       return b.world;
     },
   },
+  "agent-run-limit": {
+    description:
+      "Like workbench, but the next message's run reaches its limit of model calls and ends cleanly: what it did is kept and the transcript says why it stopped.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      b.world.replies.push([{ say: "Still working through the files." }, { cutOff: "max_calls" }]);
+      return b.world;
+    },
+  },
   "agent-running": {
     description:
       "Like workbench, but the next message starts a run that never finishes (for the running state and abort).",
