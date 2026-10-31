@@ -426,29 +426,6 @@ func TestAToolChoiceNamesAnMCPServer(t *testing.T) {
 	}
 }
 
-func TestForksKeepTheProfile(t *testing.T) {
-	a := newAPI(t)
-	cx := a.newComputer(t)
-	sess := a.newSession(t, cx.ID)
-	profile := a.newProfile(t, map[string]any{"name": "Inherited"})
-	a.useProfile(t, sess.ID, profile.ID)
-	a.override(t, sess.ID, map[string]any{"instructions": "from the parent"})
-
-	a.script(providertest.Text("an answer"))
-	a.postMessage(t, sess.ID, "hello", "", 202)
-	a.waitIdle(t, sess.ID)
-
-	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	fork := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/fork", map[string]any{
-		"entry_id": path.Entries[len(path.Entries)-1].ID,
-	}), 201)
-
-	got := a.configuration(t, fork.ID)
-	if got.ProfileID != profile.ID || deref(got.Overrides.Instructions) != "from the parent" {
-		t.Errorf("fork configuration = %+v, want the parent's profile and overrides", got)
-	}
-}
-
 func TestAnEditorSeesTheValuesOfTheModelItChoseBeforeSaving(t *testing.T) {
 	a := newAPI(t)
 	models := decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200)

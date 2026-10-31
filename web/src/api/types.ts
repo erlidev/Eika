@@ -9,7 +9,6 @@
 
 export * from "@/api/types/auth";
 export * from "@/api/types/errors";
-export * from "@/api/types/files";
 export * from "@/api/types/mcp";
 export * from "@/api/types/profiles";
 export * from "@/api/types/providers";

@@ -50,9 +50,6 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("DELETE /api/computers/{id}", s.handleDeleteComputer)
 	api.HandleFunc("POST /api/computers/{id}/start", s.handleStartComputer)
 	api.HandleFunc("POST /api/computers/{id}/stop", s.handleStopComputer)
-	api.HandleFunc("GET /api/computers/{id}/files", s.handleListFiles)
-	api.HandleFunc("GET /api/computers/{id}/file", s.handleReadFile)
-	api.HandleFunc("PUT /api/computers/{id}/file", s.handleWriteFile)
 	api.HandleFunc("PUT /api/computers/{id}/sandbox", s.handleSetComputerSandbox)
 	api.HandleFunc("GET /api/computers/{id}/usage", s.handleComputerUsage)
 
@@ -64,7 +61,6 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/sessions/{id}/outline", s.handleSessionOutline)
 	api.HandleFunc("GET /api/sessions/{id}/path", s.handleSessionPath)
 	api.HandleFunc("POST /api/sessions/{id}/head", s.handleSetSessionHead)
-	api.HandleFunc("POST /api/sessions/{id}/fork", s.handleForkSession)
 	api.HandleFunc("PUT /api/sessions/{id}/tools", s.handleSetSessionTools)
 	api.HandleFunc("GET /api/sessions/{id}/configuration", s.handleSessionConfiguration)
 	api.HandleFunc("PUT /api/sessions/{id}/profile", s.handleSetSessionProfile)

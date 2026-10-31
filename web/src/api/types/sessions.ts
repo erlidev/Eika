@@ -3,7 +3,7 @@
 import type { CompactionReason, EntryKind, Timings, Usage } from "@/api/events";
 
 /** SessionKind is who opened a session. */
-export type SessionKind = "user" | "fork";
+export type SessionKind = "user";
 
 /** Session is a tree of entries in one computer, or in none for a chat. */
 export type Session = {
@@ -11,10 +11,9 @@ export type Session = {
   /** computer_id is where the session's runs act; a chat has none. */
   computer_id?: string;
   title: string;
-  /** kind says whether the user opened it, a fork made it, or a run spawned it. */
+  /** kind says who opened the session. */
   kind: SessionKind;
   head_entry_id?: string;
-  parent_session_id?: string;
   /** tools are the tools the next run offers the model, sorted by name. */
   tools: string[];
   /** profile_id is the profile the session chose; absent, it runs with the default one. */
@@ -150,7 +149,7 @@ export type Node = {
   /**
    * resumable is whether a run can continue from this entry. An entry in the
    * middle of a turn leaves tool calls unanswered, so the harness refuses to
-   * put the head or a fork there and the tree offers neither.
+   * put the head there and the tree does not offer it.
    */
   resumable: boolean;
   created_at: string;

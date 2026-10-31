@@ -316,8 +316,8 @@ An MCP tool's `tool.result` carries the server's content blocks in
 
 Published on `computer:<id>` whenever a computer reaches a new lifecycle
 state, including the reconciliation a harness does at startup. It is also
-published, with the state unchanged, after a file is saved or a rename, pin,
-or archive through the API, so that views of the computer refresh.
+published, with the state unchanged, after a rename, pin, or archive through
+the API, so that views of the computer refresh.
 
 The `home` computer's state, when the harness records it, is published on
 `global` as well, so a client that has not seen the computer yet learns of it

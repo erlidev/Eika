@@ -425,13 +425,13 @@ name without its extension, so changing a file that a database already carries
 changes nothing. Correct a mistake with another migration.
 
 `0001_baseline.sql` is the schema as phase 0 of `docs/PLAN.md` left it. Never
-edit it: the next file is `0002`.
+edit it: every change after it is a file of its own, as `0002` is.
 
 Tables live in schema `core`, which `store.Open` creates and sets as every
 connection's `search_path`, so a migration names tables without a schema.
 
 ```sql
--- internal/store/migrations/0002_session_labels.sql
+-- internal/store/migrations/0003_session_labels.sql
 ALTER TABLE sessions ADD COLUMN label text NOT NULL DEFAULT '';
 
 CREATE INDEX sessions_label_idx ON sessions (label) WHERE label <> '';
@@ -443,7 +443,7 @@ in the same change:
 ```go
 // internal/store/sessions.go
 
-const sessionColumns = `id, computer_id, title, head_entry_id, parent_session_id,
+const sessionColumns = `id, computer_id, title, head_entry_id,
 	label, created_at, updated_at`
 ```
 

@@ -111,7 +111,7 @@ func TestComputersAndSessions(t *testing.T) {
 	if _, err := st.UpdateSession(ctx, sess.ID, store.SessionChanges{Title: &renamed}); err != nil {
 		t.Fatalf("rename session: %v", err)
 	}
-	sessions, err := st.Sessions(ctx, cx.ID, false)
+	sessions, err := st.Sessions(ctx, cx.ID)
 	if err != nil || len(sessions) != 1 || sessions[0].Title != "renamed" {
 		t.Fatalf("Sessions = %+v, %v", sessions, err)
 	}
@@ -120,76 +120,8 @@ func TestComputersAndSessions(t *testing.T) {
 	}
 }
 
-// A fork with a computer runs somewhere else, so the listing of the
-// computer it came from has to reach it: the user interface draws it under
-// the session that led to it.
-func TestSessionsReachDescendantsInOtherComputers(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-
-	parentWS, err := st.CreateComputer(ctx, store.Computer{
-		Name: "main", State: "running",
-	})
-	if err != nil {
-		t.Fatalf("create computer: %v", err)
-	}
-	childWS, err := st.CreateComputer(ctx, store.Computer{
-		Name:  "fork",
-		State: "running",
-	})
-	if err != nil {
-		t.Fatalf("create child computer: %v", err)
-	}
-
-	parent, err := st.CreateSession(ctx, store.Session{ComputerID: parentWS.ID, Title: "parent"})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	child, err := st.CreateSession(ctx, store.Session{
-		ComputerID: childWS.ID, Title: "child", Kind: store.SessionFork,
-		ParentSessionID: parent.ID,
-	})
-	if err != nil {
-		t.Fatalf("create child session: %v", err)
-	}
-	grand, err := st.CreateSession(ctx, store.Session{
-		ComputerID: childWS.ID, Title: "grandchild", Kind: store.SessionFork,
-		ParentSessionID: child.ID,
-	})
-	if err != nil {
-		t.Fatalf("create grandchild session: %v", err)
-	}
-
-	flat, err := st.Sessions(ctx, parentWS.ID, false)
-	if err != nil || len(flat) != 1 || flat[0].ID != parent.ID {
-		t.Fatalf("Sessions without descendants = %+v, %v, want the parent alone", flat, err)
-	}
-	tree, err := st.Sessions(ctx, parentWS.ID, true)
-	if err != nil {
-		t.Fatalf("Sessions with descendants: %v", err)
-	}
-	got := map[string]store.SessionKind{}
-	for _, sess := range tree {
-		got[sess.ID] = sess.Kind
-	}
-	want := map[string]store.SessionKind{
-		parent.ID: store.SessionUser,
-		child.ID:  store.SessionFork,
-		grand.ID:  store.SessionFork,
-	}
-	if len(got) != len(want) {
-		t.Fatalf("Sessions with descendants = %+v, want %d rows", tree, len(want))
-	}
-	for id, kind := range want {
-		if got[id] != kind {
-			t.Errorf("session %s kind = %q, want %q", id, got[id], kind)
-		}
-	}
-}
-
 // A chat is a session with no computer. It is listed apart from every
-// computer's sessions, its fork is a chat too, and both keep the tools the
-// user chose.
+// computer's sessions, and keeps the tools the user chose.
 func TestChatsHaveNoComputerAndKeepTheirTools(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
@@ -217,27 +149,19 @@ func TestChatsHaveNoComputerAndKeepTheirTools(t *testing.T) {
 	if err := st.SetSessionTools(ctx, chat.ID, []string{"web_search"}); err != nil {
 		t.Fatalf("set tools: %v", err)
 	}
-	entry, err := st.AppendEntry(ctx, chat.ID, store.Entry{Kind: store.KindUser, Payload: json.RawMessage(`{"role":"user","content":"hi"}`)})
-	if err != nil {
-		t.Fatalf("append entry: %v", err)
-	}
-	fork, err := st.ForkSession(ctx, chat.ID, entry.ID, store.ForkOptions{})
-	if err != nil {
-		t.Fatalf("fork chat: %v", err)
-	}
-	if !fork.Chat() || len(fork.Tools) != 1 || fork.Tools[0] != "web_search" {
-		t.Errorf("fork = %+v, want a chat with web_search", fork)
+	if got, err := st.Session(ctx, chat.ID); err != nil || len(got.Tools) != 1 || got.Tools[0] != "web_search" {
+		t.Errorf("chat = %+v, %v; want web_search kept", got, err)
 	}
 
 	chats, err := st.Chats(ctx)
 	if err != nil {
 		t.Fatalf("Chats: %v", err)
 	}
-	if len(chats) != 2 || chats[0].ID != chat.ID || chats[1].ID != fork.ID {
-		t.Fatalf("Chats = %+v, want the chat and its fork", chats)
+	if len(chats) != 1 || chats[0].ID != chat.ID {
+		t.Fatalf("Chats = %+v, want the chat alone", chats)
 	}
-	if all, err := st.Sessions(ctx, "", false); err != nil || len(all) != 3 {
-		t.Errorf("every session = %d rows, %v; want 3", len(all), err)
+	if all, err := st.Sessions(ctx, ""); err != nil || len(all) != 2 {
+		t.Errorf("every session = %d rows, %v; want 2", len(all), err)
 	}
 
 	// An empty list is no tools, which is not the same as every tool.
@@ -399,7 +323,6 @@ func TestErrNotFound(t *testing.T) {
 		"setting":    errOf(func() error { _, err := st.Setting(ctx, missing); return err }),
 		"append":     errOf(func() error { _, err := st.AppendEntry(ctx, missing, store.Entry{Kind: store.KindUser}); return err }),
 		"set head":   st.SetSessionHead(ctx, sess.ID, missing),
-		"fork":       errOf(func() error { _, err := st.ForkSession(ctx, sess.ID, missing, store.ForkOptions{}); return err }),
 		"finish run": st.FinishRun(ctx, missing, store.RunDone, ""),
 		"delete":     st.DeleteComputer(ctx, missing),
 		"update session": errOf(func() error {
@@ -465,7 +388,7 @@ func TestSetSessionHeadIsGuarded(t *testing.T) {
 func errOf(call func() error) error { return call() }
 
 // A title made in the background goes only to a session that is still
-// untitled, and a fork that copies the placeholder stays untitled.
+// untitled.
 func TestUntitledSessions(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
@@ -477,19 +400,9 @@ func TestUntitledSessions(t *testing.T) {
 	if !untitled.Untitled {
 		t.Fatalf("session = %+v, want untitled", untitled)
 	}
-	entry, err := st.AppendEntry(ctx, untitled.ID, store.Entry{
-		Kind: store.KindUser, Payload: json.RawMessage(`{"role":"user","content":"one"}`),
-	})
+	renamed, err := st.CreateSession(ctx, store.Session{Title: "New chat", Untitled: true})
 	if err != nil {
-		t.Fatalf("append entry: %v", err)
-	}
-	fork, err := st.ForkSession(ctx, untitled.ID, entry.ID, store.ForkOptions{})
-	if err != nil || !fork.Untitled || fork.Title != "New chat" {
-		t.Errorf("fork copying the placeholder = %+v, %v; want untitled", fork, err)
-	}
-	named, err := st.ForkSession(ctx, untitled.ID, entry.ID, store.ForkOptions{Title: "Named"})
-	if err != nil || named.Untitled {
-		t.Errorf("fork with a title = %+v, %v; want titled", named, err)
+		t.Fatalf("create second session: %v", err)
 	}
 
 	if ok, err := st.TitleUntitledSession(ctx, untitled.ID, "Generated"); err != nil || !ok {
@@ -505,10 +418,10 @@ func TestUntitledSessions(t *testing.T) {
 
 	// A title someone set is final, even over the placeholder.
 	chosen := "Chosen"
-	if _, err := st.UpdateSession(ctx, fork.ID, store.SessionChanges{Title: &chosen}); err != nil {
+	if _, err := st.UpdateSession(ctx, renamed.ID, store.SessionChanges{Title: &chosen}); err != nil {
 		t.Fatalf("rename session: %v", err)
 	}
-	if ok, err := st.TitleUntitledSession(ctx, fork.ID, "Generated"); err != nil || ok {
+	if ok, err := st.TitleUntitledSession(ctx, renamed.ID, "Generated"); err != nil || ok {
 		t.Errorf("TitleUntitledSession after a rename = %v, %v; want the chosen title kept", ok, err)
 	}
 	if ok, err := st.TitleUntitledSession(ctx, "missing", "Generated"); err != nil || ok {
@@ -547,7 +460,7 @@ func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
 	if err != nil || got.Pinned || got.Archived || got.Title != "Named" {
 		t.Fatalf("unpin and unarchive = %+v, %v", got, err)
 	}
-	if listed, err := st.Sessions(ctx, cx.ID, true); err != nil || len(listed) != 1 || listed[0].Title != "Named" {
+	if listed, err := st.Sessions(ctx, cx.ID); err != nil || len(listed) != 1 || listed[0].Title != "Named" {
 		t.Errorf("Sessions = %+v, %v; want the edited session", listed, err)
 	}
 
@@ -608,5 +521,55 @@ func TestDeletingAComputerDeletesItsSessions(t *testing.T) {
 	}
 	if _, err := st.Session(ctx, sess.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("session of a deleted computer = %v, want ErrNotFound", err)
+	}
+}
+
+// A database made by the baseline holds forks, which are sessions of their own
+// once forking is gone. The upgrade keeps them as user sessions and removes
+// both the kind and the column that only forks used.
+func TestUpgradeFromTheBaselineKeepsForksAsSessions(t *testing.T) {
+	ctx := t.Context()
+	databaseURL := storetest.URL(t)
+	baseline, err := os.ReadFile("migrations/0001_baseline.sql")
+	if err != nil {
+		t.Fatalf("read the baseline: %v", err)
+	}
+	conn, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	for _, stmt := range []string{
+		`CREATE SCHEMA core`,
+		`SET search_path = core`,
+		string(baseline),
+		`CREATE TABLE schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
+		`INSERT INTO schema_migrations (version) VALUES ('0001_baseline')`,
+		`INSERT INTO sessions (id, title) VALUES ('parent', 'parent')`,
+		`INSERT INTO sessions (id, title, kind, parent_session_id) VALUES ('child', 'child', 'fork', 'parent')`,
+	} {
+		if _, err := conn.Exec(ctx, stmt); err != nil {
+			t.Fatalf("set up the baseline database: %v\n%s", err, stmt)
+		}
+	}
+
+	st, err := store.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	child, err := st.Session(ctx, "child")
+	if err != nil || child.Kind != store.SessionUser || child.Title != "child" {
+		t.Errorf("former fork = %+v, %v; want a user session", child, err)
+	}
+
+	var columns int
+	err = conn.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = 'core' AND table_name = 'sessions' AND column_name = 'parent_session_id'`).Scan(&columns)
+	if err != nil || columns != 0 {
+		t.Errorf("parent_session_id columns = %d, %v; want none", columns, err)
+	}
+	if _, err := conn.Exec(ctx, `INSERT INTO sessions (id, kind) VALUES ('forked', 'fork')`); err == nil {
+		t.Error("a session of kind fork was accepted; want the kind refused")
 	}
 }

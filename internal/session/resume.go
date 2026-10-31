@@ -15,10 +15,9 @@ import (
 // of the results, is a conversation every endpoint rejects.
 //
 // An entry is resumable when the path down to it leaves no tool call
-// unanswered. That is the whole rule, and it is the one both moving the head
-// and forking are checked against, so a branch point the agent loop cannot
-// run from cannot be created through the API or offered in the user
-// interface.
+// unanswered. That is the whole rule, and it is the one moving the head is
+// checked against, so a branch point the agent loop cannot run from cannot be
+// created through the API or offered in the user interface.
 
 // pendingCalls returns the tool calls still unanswered after e, given the
 // ones its parent left unanswered. The result is a new slice, so an entry's
@@ -76,8 +75,8 @@ func resumableSet(entries []store.Entry) map[string]bool {
 }
 
 // Resumable reports whether a run can continue from one of a session's
-// entries: moving the head there, or forking there, leaves a conversation the
-// model can be asked to continue. An entry that is not the session's is
+// entries: moving the head there leaves a conversation the model can be asked
+// to continue. An entry that is not the session's is
 // store.ErrNotFound.
 func (t *Tree) Resumable(ctx context.Context, sessionID, entryID string) (bool, error) {
 	path, err := t.store.EntryPath(ctx, sessionID, entryID)

@@ -120,39 +120,6 @@
         ]
       }
     },
-    "GET /api/computers/{id}/file": {
-      "status": 200,
-      "response": {
-        "object": {
-          "binary": "boolean",
-          "content": "string",
-          "path": "string",
-          "size": "number",
-          "too_large": "boolean"
-        }
-      }
-    },
-    "GET /api/computers/{id}/files": {
-      "status": 200,
-      "response": {
-        "object": {
-          "entries": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "is_dir": "boolean",
-                  "mod_time": "string",
-                  "mode": "number",
-                  "name": "string",
-                  "path": "string",
-                  "size": "number"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "GET /api/computers/{id}/usage": {
       "status": 200,
       "response": {
@@ -876,7 +843,6 @@
                   "id": "string",
                   "kind": "string",
                   "overridden": "boolean",
-                  "parent_session_id": "string",
                   "pinned": "boolean",
                   "profile_id": "string",
                   "title": "string",
@@ -890,7 +856,6 @@
                 "optional": [
                   "computer_id",
                   "head_entry_id",
-                  "parent_session_id",
                   "profile_id"
                 ]
               }
@@ -1026,7 +991,6 @@
               "id": "string",
               "kind": "string",
               "overridden": "boolean",
-              "parent_session_id": "string",
               "pinned": "boolean",
               "profile_id": "string",
               "title": "string",
@@ -1040,7 +1004,6 @@
             "optional": [
               "computer_id",
               "head_entry_id",
-              "parent_session_id",
               "profile_id"
             ]
           }
@@ -2312,7 +2275,6 @@
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
-          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
@@ -2326,7 +2288,6 @@
         "optional": [
           "computer_id",
           "head_entry_id",
-          "parent_session_id",
           "profile_id"
         ]
       }
@@ -3366,7 +3327,6 @@
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
-          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
@@ -3380,7 +3340,6 @@
         "optional": [
           "computer_id",
           "head_entry_id",
-          "parent_session_id",
           "profile_id"
         ]
       }
@@ -3408,42 +3367,6 @@
         ]
       }
     },
-    "POST /api/sessions/{id}/fork": {
-      "status": 201,
-      "request": {
-        "object": {
-          "entry_id": "string",
-          "title": "string"
-        }
-      },
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "computer_id": "string",
-          "created_at": "string",
-          "head_entry_id": "string",
-          "id": "string",
-          "kind": "string",
-          "overridden": "boolean",
-          "parent_session_id": "string",
-          "pinned": "boolean",
-          "profile_id": "string",
-          "title": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          },
-          "updated_at": "string"
-        },
-        "optional": [
-          "computer_id",
-          "head_entry_id",
-          "parent_session_id",
-          "profile_id"
-        ]
-      }
-    },
     "POST /api/sessions/{id}/head": {
       "status": 200,
       "request": {
@@ -3460,7 +3383,6 @@
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
-          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
@@ -3474,7 +3396,6 @@
         "optional": [
           "computer_id",
           "head_entry_id",
-          "parent_session_id",
           "profile_id"
         ]
       }
@@ -3522,20 +3443,6 @@
         "object": {
           "expires_at": "string",
           "token": "string"
-        }
-      }
-    },
-    "PUT /api/computers/{id}/file": {
-      "status": 200,
-      "raw_request": true,
-      "response": {
-        "object": {
-          "is_dir": "boolean",
-          "mod_time": "string",
-          "mode": "number",
-          "name": "string",
-          "path": "string",
-          "size": "number"
         }
       }
     },
@@ -4148,7 +4055,6 @@
           "id": "string",
           "kind": "string",
           "overridden": "boolean",
-          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
           "title": "string",
@@ -4162,7 +4068,6 @@
         "optional": [
           "computer_id",
           "head_entry_id",
-          "parent_session_id",
           "profile_id"
         ]
       }
@@ -4251,7 +4156,6 @@
   },
   "error_codes": [
     "conflict",
-    "forbidden",
     "internal",
     "invalid_request",
     "not_found",

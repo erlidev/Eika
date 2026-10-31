@@ -7,17 +7,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// SessionKind says who opened a session. It is what the session tree in the
-// user interface draws a row as: a fork is shown under
-// the session it came from.
+// SessionKind says who opened a session.
 type SessionKind string
 
 // The kinds a session can have.
 const (
 	// SessionUser is a session the user opened.
 	SessionUser SessionKind = "user"
-	// SessionFork is a session forked from another at one of its entries.
-	SessionFork SessionKind = "fork"
 )
 
 // Session is one tree of entries, inside a computer or, for a chat, in none.
@@ -35,9 +31,6 @@ type Session struct {
 	// HeadEntryID is the entry a run continues from, empty in a session that
 	// has no entries yet.
 	HeadEntryID string
-	// ParentSessionID is the session this one was forked from, empty for a
-	// session the user started.
-	ParentSessionID string
 	// Tools names the tools the session's runs may offer the model. Nil is
 	// every tool the session can run; an empty, non-nil slice is none.
 	Tools []string
@@ -62,21 +55,12 @@ func (s Session) Chat() bool { return s.ComputerID == "" }
 
 // sessionColumns is the column list every session query selects, in the order
 // scanSession reads them.
-const sessionColumns = `id, computer_id, title, untitled, kind, head_entry_id, parent_session_id, tools,
+const sessionColumns = `id, computer_id, title, untitled, kind, head_entry_id, tools,
 	profile_id, overrides, pinned, archived, created_at, updated_at`
 
 // CreateSession inserts sess and returns it with the fields the database
 // assigned. An empty ID gets a fresh one; an unknown profile is ErrNotFound.
 func (s *Store) CreateSession(ctx context.Context, sess Session) (Session, error) {
-	out, err := createSession(ctx, s.pool, sess)
-	if err != nil {
-		return Session{}, wrapMissing("create session", err)
-	}
-	return out, nil
-}
-
-// createSession is the insert both CreateSession and ForkSession run.
-func createSession(ctx context.Context, q querier, sess Session) (Session, error) {
 	if sess.ID == "" {
 		sess.ID = NewID()
 	}
@@ -85,16 +69,20 @@ func createSession(ctx context.Context, q querier, sess Session) (Session, error
 	}
 	overrides, err := overridesJSON(sess.Overrides)
 	if err != nil {
-		return Session{}, err
+		return Session{}, wrapMissing("create session", err)
 	}
-	const insert = `INSERT INTO sessions (id, computer_id, title, untitled, kind, head_entry_id, parent_session_id,
+	const insert = `INSERT INTO sessions (id, computer_id, title, untitled, kind, head_entry_id,
 			tools, profile_id, overrides, pinned, archived)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING ` + sessionColumns
-	row := q.QueryRow(ctx, insert, sess.ID, nullable(sess.ComputerID), sess.Title, sess.Untitled, sess.Kind,
-		nullable(sess.HeadEntryID), nullable(sess.ParentSessionID), sess.Tools,
+	row := s.pool.QueryRow(ctx, insert, sess.ID, nullable(sess.ComputerID), sess.Title, sess.Untitled, sess.Kind,
+		nullable(sess.HeadEntryID), sess.Tools,
 		nullable(sess.ProfileID), overrides, sess.Pinned, sess.Archived)
-	return scanSession(row)
+	out, err := scanSession(row)
+	if err != nil {
+		return Session{}, wrapMissing("create session", err)
+	}
+	return out, nil
 }
 
 // Session returns the session with the given id.
@@ -109,41 +97,21 @@ func (s *Store) Session(ctx context.Context, id string) (Session, error) {
 
 // Sessions returns the sessions of one computer, oldest first. An empty
 // computerID returns every session, chats included.
-//
-// withDescendants also returns the forks those sessions led to, wherever
-// they live, so a listing of one computer does not leave out part of the
-// tree it belongs to. The rows come back flat and the
-// caller hangs each one under its ParentSessionID.
-func (s *Store) Sessions(ctx context.Context, computerID string, withDescendants bool) ([]Session, error) {
+func (s *Store) Sessions(ctx context.Context, computerID string) ([]Session, error) {
 	// One query per case: a WHERE that is true for every row when the filter
 	// is empty cannot use the computer index.
 	const (
 		all = `SELECT ` + sessionColumns + ` FROM sessions ORDER BY created_at, id`
 		one = `SELECT ` + sessionColumns + ` FROM sessions
 			WHERE computer_id = $1 ORDER BY created_at, id`
-		// UNION, not UNION ALL: it dedupes, so a descendant that runs in the
-		// same computer is returned once and a parent pointer that somehow
-		// came round on itself terminates instead of looping.
-		tree = `WITH RECURSIVE reachable AS (
-				SELECT ` + sessionColumns + ` FROM sessions WHERE computer_id = $1
-				UNION
-				SELECT s.id, s.computer_id, s.title, s.untitled, s.kind, s.head_entry_id,
-					s.parent_session_id, s.tools, s.profile_id, s.overrides, s.pinned, s.archived,
-					s.created_at, s.updated_at
-				FROM sessions s JOIN reachable r ON s.parent_session_id = r.id
-			)
-			SELECT ` + sessionColumns + ` FROM reachable ORDER BY created_at, id`
 	)
 	var (
 		rows pgx.Rows
 		err  error
 	)
-	switch {
-	case computerID == "":
+	if computerID == "" {
 		rows, err = s.pool.Query(ctx, all)
-	case withDescendants:
-		rows, err = s.pool.Query(ctx, tree, computerID)
-	default:
+	} else {
 		rows, err = s.pool.Query(ctx, one, computerID)
 	}
 	if err != nil {
@@ -152,9 +120,7 @@ func (s *Store) Sessions(ctx context.Context, computerID string, withDescendants
 	return collectSessions("list sessions", rows)
 }
 
-// Chats returns every session with no computer, oldest first. A fork of a
-// chat is a chat, so the list holds the forks as well; the caller hangs each
-// under its ParentSessionID.
+// Chats returns every session with no computer, oldest first.
 func (s *Store) Chats(ctx context.Context) ([]Session, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+sessionColumns+` FROM sessions
 		WHERE computer_id IS NULL ORDER BY created_at, id`)
@@ -252,11 +218,10 @@ func scanSession(row pgx.Row) (Session, error) {
 		sess      Session
 		computer  *string
 		head      *string
-		parent    *string
 		profile   *string
 		overrides []byte
 	)
-	err := row.Scan(&sess.ID, &computer, &sess.Title, &sess.Untitled, &sess.Kind, &head, &parent, &sess.Tools,
+	err := row.Scan(&sess.ID, &computer, &sess.Title, &sess.Untitled, &sess.Kind, &head, &sess.Tools,
 		&profile, &overrides, &sess.Pinned, &sess.Archived, &sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
 		return Session{}, err
@@ -266,7 +231,6 @@ func scanSession(row pgx.Row) (Session, error) {
 	}
 	sess.ComputerID = text(computer)
 	sess.HeadEntryID = text(head)
-	sess.ParentSessionID = text(parent)
 	sess.ProfileID = text(profile)
 	sess.CreatedAt = sess.CreatedAt.UTC()
 	sess.UpdatedAt = sess.UpdatedAt.UTC()

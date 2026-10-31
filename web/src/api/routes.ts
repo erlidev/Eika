@@ -58,7 +58,7 @@ import type {
   UpdateSession,
 } from "@/api/types";
 
-/** listChats lists the sessions with no computer, forks of chats included. */
+/** listChats lists the sessions with no computer. */
 export async function listChats(signal?: AbortSignal): Promise<Session[]> {
   const body = await request<{ sessions: Session[] }>("/api/sessions", {
     query: { chats: "true" },

@@ -96,17 +96,6 @@ function workbench(): WorldBuilder {
         "Done. The client now waits `backoff(attempt)` between tries:\n\n| attempt | delay |\n|---|---|\n| 1 | ~1s |\n| 2 | ~2s |\n| 5 | 30s (cap) |\n\n```go\nfunc backoff(n int) time.Duration {\n\td := time.Second << n\n\treturn min(d, 30*time.Second)\n}\n```",
     },
   ]);
-  // A fork of the older session hangs under the session it came from in the
-  // sidebar.
-  const forked = b.session(cx, {
-    title: "Investigate flaky test, pinned seed",
-    kind: "fork",
-    parent_session_id: older.id,
-  });
-  b.conversation(forked, [
-    { role: "user", content: "Why does TestRetry fail sometimes?" },
-    { role: "assistant", content: "Trying a different tack: pin the seed instead." },
-  ]);
   return b;
 }
 

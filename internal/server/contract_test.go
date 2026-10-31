@@ -35,7 +35,6 @@ const contractFile = "../../docs/api/contract.json"
 type wire struct {
 	status    int
 	request   any
-	raw       bool
 	response  any
 	websocket bool
 }
@@ -66,9 +65,6 @@ var routeWire = map[string]wire{
 	"DELETE /api/computers/{id}":      {status: http.StatusNoContent},
 	"POST /api/computers/{id}/start":  {status: http.StatusOK, response: computerBody{}},
 	"POST /api/computers/{id}/stop":   {status: http.StatusOK, response: computerBody{}},
-	"GET /api/computers/{id}/files":   {status: http.StatusOK, response: filesResponse{}},
-	"GET /api/computers/{id}/file":    {status: http.StatusOK, response: fileResponse{}},
-	"PUT /api/computers/{id}/file":    {status: http.StatusOK, raw: true, response: fileEntry{}},
 	"PUT /api/computers/{id}/sandbox": {status: http.StatusOK, request: sandboxBody{}, response: computerBody{}},
 	"GET /api/computers/{id}/usage":   {status: http.StatusOK, response: usageResponse{}},
 
@@ -80,7 +76,6 @@ var routeWire = map[string]wire{
 	"GET /api/sessions/{id}/outline": {status: http.StatusOK, response: outlineResponse{}},
 	"GET /api/sessions/{id}/path":    {status: http.StatusOK, response: pathResponse{}},
 	"POST /api/sessions/{id}/head":   {status: http.StatusOK, request: setHeadRequest{}, response: sessionBody{}},
-	"POST /api/sessions/{id}/fork":   {status: http.StatusCreated, request: forkRequest{}, response: sessionBody{}},
 	"PUT /api/sessions/{id}/tools":   {status: http.StatusOK, request: setToolsRequest{}, response: sessionBody{}},
 
 	"GET /api/sessions/{id}/configuration":         {status: http.StatusOK, response: sessionConfigurationResponse{}},
@@ -211,12 +206,11 @@ func contract(t *testing.T) servertest.Contract {
 	}
 	for key, w := range routeWire {
 		c.Routes[key] = servertest.Route{
-			Status:     w.status,
-			Request:    of(w.request, true),
-			RawRequest: w.raw,
-			Response:   of(w.response, false),
-			WebSocket:  w.websocket,
-			Public:     public[key],
+			Status:    w.status,
+			Request:   of(w.request, true),
+			Response:  of(w.response, false),
+			WebSocket: w.websocket,
+			Public:    public[key],
 		}
 	}
 	for typ, payload := range eventPayloads {

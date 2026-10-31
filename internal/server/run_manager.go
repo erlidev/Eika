@@ -416,7 +416,7 @@ func (r *runs) stop(ctx context.Context, sessionID string) {
 // deleting that computer has to do first: the runs reach it through an
 // executor that is about to go away.
 func (r *runs) stopSessionsOf(ctx context.Context, st *store.Store, computerID string) {
-	sessions, err := st.Sessions(ctx, computerID, false)
+	sessions, err := st.Sessions(ctx, computerID)
 	if err != nil {
 		r.server.log.Error("list sessions of computer", "computer_id", computerID, "error", err)
 		return

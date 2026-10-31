@@ -4,9 +4,8 @@ Drive the UI in a real browser against a **mock harness** and screenshot the
 result. No Go server, Postgres, or Docker needed: `harness/mock.ts` answers
 every `/api` route and the `/api/events` WebSocket from an in-memory world,
 and plays scripted agent replies so a sent message streams like a real run.
-Routes whose UI is gone (computers but the list, files, forks)
-are not served; `harness/mock.test.ts` lists each in `unmocked` until its Go
-route is removed.
+Routes no UI calls (the computers' but the list) are not served;
+`harness/mock.test.ts` lists each in `unmocked`.
 
 Chromium is needed once: `npx playwright install chromium`. `make visual`
 installs it when it is missing.

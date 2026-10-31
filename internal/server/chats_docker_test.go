@@ -15,12 +15,11 @@ import (
 // chatWire is a session as a chat reports it: no computer, and the tools its
 // next run offers.
 type chatWire struct {
-	ID              string   `json:"id"`
-	ComputerID      *string  `json:"computer_id"`
-	Title           string   `json:"title"`
-	Kind            string   `json:"kind"`
-	ParentSessionID string   `json:"parent_session_id"`
-	Tools           []string `json:"tools"`
+	ID         string   `json:"id"`
+	ComputerID *string  `json:"computer_id"`
+	Title      string   `json:"title"`
+	Kind       string   `json:"kind"`
+	Tools      []string `json:"tools"`
 }
 
 type chatsWire struct {
@@ -159,28 +158,6 @@ func TestSessionToolsAreChosenAndChecked(t *testing.T) {
 	work := a.session(t)
 	if got := put(work.ID, []string{"web_search", "bash"}); got == nil || !slices.Equal(got.Tools, []string{"bash", "web_search"}) {
 		t.Errorf("computer session tools = %+v, want bash and web_search", got)
-	}
-}
-
-func TestChatForksStayChats(t *testing.T) {
-	a := newAPI(t)
-	chat := a.newChat(t, "a question")
-	a.script(providertest.Text("an answer"))
-	a.postMessage(t, chat.ID, "hello", "", 202)
-	a.waitIdle(t, chat.ID)
-	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/path", nil), 200)
-	last := path.Entries[len(path.Entries)-1].ID
-
-	rec := request(t, a.Server, "PUT", "/api/sessions/"+chat.ID+"/tools", map[string]any{"tools": []string{"web_fetch"}})
-	decodeBody[chatWire](t, rec, 200)
-
-	fork := decodeBody[chatWire](t, request(t, a.Server, "POST", "/api/sessions/"+chat.ID+"/fork",
-		map[string]any{"entry_id": last}), 201)
-	if fork.ComputerID != nil || fork.Kind != "fork" || fork.ParentSessionID != chat.ID {
-		t.Errorf("fork = %+v, want a chat forked from %s", fork, chat.ID)
-	}
-	if !slices.Equal(fork.Tools, []string{"web_fetch"}) {
-		t.Errorf("fork tools = %v, want the chat's choice", fork.Tools)
 	}
 }
 

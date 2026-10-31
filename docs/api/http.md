@@ -35,10 +35,9 @@ Every failure has one shape:
 |---|---|---|
 | `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field is malformed. |
 | `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
-| `forbidden` | 403 | A computer path is outside the computer, directly or through a symlink, or the sandbox may not open it. |
-| `not_found` | 404 | The addressed computer, session, entry, run, question, provider, model, MCP server, elicitation, pending authorization, or computer file does not exist. |
+| `not_found` | 404 | The addressed computer, session, entry, run, question, provider, model, MCP server, elicitation, or pending authorization does not exist. |
 | `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, the home computer asked to be deleted, a computer that is not running, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
-| `too_large` | 413 | A file saved through the API is over its 2 MiB bound. |
+| `too_large` | 413 | A JSON request body is over its 1 MiB bound. |
 | `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
 
 ## Health
@@ -195,54 +194,6 @@ is not running. `200` with:
 | `sampled_at` | time | When Docker read the numbers. |
 | `blocked` | array of `{"host", "count", "last"}` | The hosts the egress proxy refused the computer lately, most recent first, at most 20. Kept in memory since the harness started. |
 
-### `GET /api/computers/{id}/files`
-
-Lists one directory of the computer: `?path=<path>`, relative to the
-computer root, and absent or empty for the root. Directories come first,
-then files, each in byte order of their names.
-
-`200` with `{"entries": [FileEntry]}`. `400` when the path is a file; `403`
-when it is outside the computer; `404` when it does not exist; `409` when the
-computer is not running.
-
-### `GET /api/computers/{id}/file`
-
-Reads one file for the editor. `?path=<path>` is required.
-
-`200` with:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `path` | string | The file, relative to the computer root. |
-| `size` | number | Its size in bytes. |
-| `binary` | boolean | A NUL byte is in its first 8 KiB. `content` is then empty. |
-| `too_large` | boolean | It is over 2 MiB. `content` is then empty. |
-| `content` | string | The file's text. |
-
-`400` when the path is missing or a directory; `403`, `404`, and `409` as for
-the listing.
-
-### `PUT /api/computers/{id}/file`
-
-Saves the raw request body as one file, `?path=<path>`, creating its parent
-directories. The body is at most 2 MiB.
-
-`200` with the saved file's `FileEntry`. `400` when the path is missing or a
-directory; `403` when it is outside the computer; `409` when the computer is
-not running; `413` when the body is over the bound. Publishes
-`computer.state`.
-
-### FileEntry
-
-| Field | Type | Meaning |
-|---|---|---|
-| `name` | string | The base name. |
-| `path` | string | Relative to the computer root, slash-separated. |
-| `size` | number | Size in bytes. |
-| `mode` | number | Go file mode bits. |
-| `mod_time` | time | Last modification. |
-| `is_dir` | boolean | Whether it is a directory. |
-
 ### Computer
 
 | Field | Type | Meaning |
@@ -265,8 +216,6 @@ not running; `413` when the body is over the bound. Publishes
 | `limits` | `{"cpus": number, "memory_mb": number, "pids": number}` | Zero is no limit. `cpus` is a fraction of cores from 0.01 to the host's; `memory_mb` is MiB from 64 to the host's memory, with no swap beyond it; `pids` counts processes and threads, from 32 to 4194304. |
 | `egress` | `{"mode": string, "allow": [string]}` | `open` reaches the internet directly. `allowlist` puts the container on the internal sandbox network, with no route out, and its processes reach the hosts `allow` names through the harness's egress proxy. `none` is the internal network with nothing allowed. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
 
-Forks are created with their parent's `limits` and `egress`.
-
 ## Sessions
 
 A session is a tree of entries in one computer, with a head the next run
@@ -275,13 +224,11 @@ or commands, and offer the model only the tools that need no computer.
 
 ### `GET /api/sessions`
 
-`?computer_id=<id>` narrows the list. `?descendants=true` adds the forks
-those sessions led to, which belong under the session they came from. It is ignored without `computer_id`, which
-already returns every session, chats included. `?chats=true` returns the
-chats alone, forks of chats included; with `computer_id` it is `400`.
+`?computer_id=<id>` narrows the list; without it every session is returned,
+chats included. `?chats=true` returns the chats alone; with `computer_id` it is
+`400`.
 
-`200` with `{"sessions": [Session]}`, oldest first. The rows are flat; a
-client hangs each one under its `parent_session_id`.
+`200` with `{"sessions": [Session]}`, oldest first.
 
 ### `POST /api/sessions`
 
@@ -327,8 +274,8 @@ where a `Node` is
 `resumable` is whether a run can continue from that entry: the path down to it
 leaves no tool call unanswered. It is false for an assistant entry whose tool
 calls are still out and for a tool result that is not the last of its set. The
-head and fork routes refuse those entries, so a client offers no branch from
-a node that is not resumable.
+head route refuses those entries, so a client offers no branch from a node
+that is not resumable.
 
 ### `GET /api/sessions/{id}/path`
 
@@ -349,24 +296,6 @@ the next run continues from there and the tree branches in place. An empty
 `200` with the `Session`. `409` while a run is going; `404` when the entry is
 not the session's; `400` when the entry is not `resumable`, because a path
 that stops with tool calls unanswered is a conversation no endpoint accepts.
-
-### `POST /api/sessions/{id}/fork`
-
-| Field | Type | Meaning |
-|---|---|---|
-| `entry_id` | string, required | The entry to fork at. |
-| `title` | string | What to call the fork. |
-
-Copies the path from the root down to the entry into a session of its own,
-sharing no rows. The fork stays in the same computer, so only the
-conversation rewinds.
-
-`201` with the new `Session`, whose `kind` is `fork` and whose
-`parent_session_id` is the source.
-
-A fork keeps its source's tools, and a fork of a chat is a chat.
-
-`400` when `entry_id` is missing or the entry is not `resumable`.
 
 ### `PUT /api/sessions/{id}/tools`
 
@@ -477,11 +406,10 @@ token per 750 pixels; only a record's `input_tokens` is measured.
 | `id` | string | The session id. |
 | `computer_id` | string, optional | Where its runs act. Absent for a chat. |
 | `title` | string | What the user calls it, or the placeholder of an untitled session until its first run names it. |
-| `kind` | string | `user` or `fork`: who opened it. |
+| `kind` | string | Who opened it: `user`. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
-| `parent_session_id` | string, optional | The session it was forked from. |
 | `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a computer in a chat. |
-| `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. A fork starts with its parent's. |
+| `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. |
 | `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. |
 | `pinned` | boolean | Listed before its siblings. |
 | `archived` | boolean | Set aside under an Archived heading; it runs like any other. |

@@ -41,8 +41,12 @@ this file says why, so neither repeats the other.
   assistant.
 - **What stayed is the sandbox work** (computers, eikad, the egress proxy,
   sealed secrets, the MCP client, search) and the loop and session tree.
-  The API still serves a computer's file routes and a session's fork route,
-  which no UI calls; no phase removes them yet.
+  The API serves neither a computer's file routes nor a session's fork route.
+  The coding UI that called them is gone, and an agent reaches a computer's
+  files through the executor, which stays. A session's branches stay (the
+  head, the entries, the outline); only copying a branch into a new session
+  is gone, and with it the `fork` session kind and
+  `sessions.parent_session_id`, dropped by migration `0002`.
 - What went is recoverable: the `PLAN.md` log names the commit
   (`478ce9c`) that last had the subagent spawner and the preview ticket flow,
   and says which parts phases 2 and 12 reuse.
@@ -147,8 +151,8 @@ this file says why, so neither repeats the other.
   keep a forgotten sandbox up forever. One harness-wide setting, not a
   per-computer column: nothing yet needs two
   timeouts. Last use lives in memory rather than a row, so a
-  restart only ever delays a stop. Rejected: Docker's own restart policies
-  and a timer in eikad, which see processes, not runs.
+  restart only ever delays a stop. Rejected: a timer in eikad, which sees
+  processes, not runs.
 - Usage is sampled every 5 s by a client that asks for it: a measurement
   no event announces, so the no-polling rule does not apply.
 - One address guard, `internal/netguard`, for web_fetch and the proxy.
@@ -245,11 +249,9 @@ this file says why, so neither repeats the other.
   cannot resume from.
 - Entry kinds `user`, `assistant`, `tool_call`, `tool_result`, `system`,
   `event` are fixed vocabulary shared with the frontend.
-- **A fork copies the path** into a new session and shares no rows, so
-  deleting or editing one never reaches the other.
-- **Only a resumable entry can be a head or fork point**: one whose path
-  leaves no tool call unanswered. `session.PathResumable` is the one rule.
-- `sessions.kind` (`user`/`fork`) is a column, not a join, because it is
+- **Only a resumable entry can be a head**: one whose path leaves no tool
+  call unanswered. `session.PathResumable` is the one rule.
+- `sessions.kind` (today only `user`) is a column, not a join, because it is
   what the session is.
 - A chat is a session with `computer_id` NULL: same tree, run manager, and
   view. Created explicitly (`chat: true`), and a computer's sessions cascade
@@ -261,9 +263,10 @@ this file says why, so neither repeats the other.
   and the README gives the reset. Phase 0 edited the baseline in place as each
   removal landed, which is also why a database made part-way through cannot
   be kept (the migrator records only a file's name). With phase 0 closed it is
-  frozen, and migrations are append-only again. Phase 4 starts fresh once more
-  for Sentry. Rejected: a migration from the old schema, which would be code
-  that runs once, for a deployment with one user.
+  frozen, and migrations are append-only again; `0002` is the first, and
+  removes session forks. Phase 4 starts fresh once more for Sentry. Rejected:
+  a migration from the old schema, which would be code that runs once, for a
+  deployment with one user.
 - **Schema `core`.** Core's tables live in their own schema rather than
   `public`, so Sentry's schema can sit beside it in the same database with
   its own grants.
@@ -347,8 +350,7 @@ this file says why, so neither repeats the other.
   depth maps) is cut.
 - **Images live inline in the entry**, as base64 in the stored message, like
   MCP images in `tool.result` details. A table of attachments with ids was
-  rejected: forks copy entries, and shared rows would need reference counting
-  for no gain at 1080p sizes.
+  rejected: a second place to store and clean up, for no gain at 1080p sizes.
 - **Image input is a model fact, off by default** (`models.image_input`), not
   a profile setting. An endpoint may refuse a request with images for a model
   that cannot read them; the harness refuses to start or steer a run with
@@ -396,7 +398,7 @@ this file says why, so neither repeats the other.
   the model offers).
 - **A compaction is an entry** (kind `compaction`) holding the summary and
   how many context messages before it are kept, not the first kept entry's
-  id: a fork copies entries under new ids, and a count survives the copy.
+  id: a count survives copying the entries.
   The context is a fold over the path: messages append, a compaction
   replaces what came before with the summary and the kept messages. Earlier
   entries stay in the tree, so moving the head above a compaction undoes it.

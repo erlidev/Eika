@@ -1,10 +1,8 @@
 package store
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -160,69 +158,6 @@ const pathQuery = `WITH RECURSIVE up AS (
 		FROM session_entries e JOIN up ON e.id = up.parent_id
 	)
 	SELECT ` + entryColumns + ` FROM up ORDER BY seq`
-
-// ForkOptions configure ForkSession.
-type ForkOptions struct {
-	// Title of the new session. Empty copies the source session's title.
-	Title string
-}
-
-// ForkSession creates a session that starts as a copy of the path from the
-// source session's root down to entryID, with its head on the copy of that
-// entry. The copies are rows of their own: a fork shares no entry with the
-// session it came from, so editing or continuing either one cannot disturb
-// the other, and deleting one cannot orphan the other. The fork keeps the
-// source's choice of tools, its profile, and its overrides.
-func (s *Store) ForkSession(ctx context.Context, sessionID, entryID string, opts ForkOptions) (Session, error) {
-	var out Session
-	err := s.tx(ctx, func(q querier) error {
-		src, err := scanSession(q.QueryRow(ctx,
-			`SELECT `+sessionColumns+` FROM sessions WHERE id = $1`, sessionID))
-		if err != nil {
-			return wrap("fork session "+sessionID, err)
-		}
-		path, err := entriesFrom(ctx, q, pathQuery, entryID)
-		if err != nil {
-			return wrap("fork session "+sessionID, err)
-		}
-		if len(path) == 0 || path[len(path)-1].SessionID != sessionID {
-			return fmt.Errorf("fork session %s at entry %s: %w", sessionID, entryID, ErrNotFound)
-		}
-
-		fork := Session{
-			ComputerID: src.ComputerID,
-			Title:      cmp.Or(opts.Title, src.Title),
-			// A fork that copies a placeholder is as untitled as its source.
-			Untitled:        opts.Title == "" && src.Untitled,
-			Kind:            SessionFork,
-			ParentSessionID: sessionID,
-			Tools:           src.Tools,
-			ProfileID:       src.ProfileID,
-			Overrides:       src.Overrides,
-		}
-		if fork, err = createSession(ctx, q, fork); err != nil {
-			return wrap("fork session "+sessionID, err)
-		}
-		parent := ""
-		for _, e := range path {
-			copied, err := insertEntry(ctx, q, fork.ID, parent, e)
-			if err != nil {
-				return wrap("fork session "+sessionID, err)
-			}
-			parent = copied.ID
-		}
-		if err := setHead(ctx, q, fork.ID, parent); err != nil {
-			return wrap("fork session "+sessionID, err)
-		}
-		fork.HeadEntryID = parent
-		out = fork
-		return nil
-	})
-	if err != nil {
-		return Session{}, err
-	}
-	return out, nil
-}
 
 // insertEntry writes one entry under parent, giving it the next sequence
 // number of its session.

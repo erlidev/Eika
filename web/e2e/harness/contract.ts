@@ -30,7 +30,6 @@ export type Shape =
 export type Route = {
   status?: number;
   request?: Shape;
-  raw_request?: boolean;
   response?: Shape;
   websocket?: boolean;
   public?: boolean;

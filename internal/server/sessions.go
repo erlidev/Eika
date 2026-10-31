@@ -21,11 +21,9 @@ type sessionBody struct {
 	// chat.
 	ComputerID string `json:"computer_id,omitempty"`
 	Title      string `json:"title"`
-	// Kind is user, fork, or agent: who opened the session. It is what the
-	// session tree draws a row as under the session it came from.
-	Kind            string `json:"kind"`
-	HeadEntryID     string `json:"head_entry_id,omitempty"`
-	ParentSessionID string `json:"parent_session_id,omitempty"`
+	// Kind is who opened the session.
+	Kind        string `json:"kind"`
+	HeadEntryID string `json:"head_entry_id,omitempty"`
 	// Tools names the tools the session's next run offers the model,
 	// ordered by name: what the session or its profile chose, narrowed to
 	// what it can run.
@@ -99,12 +97,6 @@ type setHeadRequest struct {
 	EntryID string `json:"entry_id"`
 }
 
-// forkRequest is the body of POST /api/sessions/{id}/fork.
-type forkRequest struct {
-	EntryID string `json:"entry_id"`
-	Title   string `json:"title"`
-}
-
 // sessionsResponse is the body of GET /api/sessions.
 type sessionsResponse struct {
 	Sessions []sessionBody `json:"sessions"`
@@ -134,9 +126,7 @@ type pathResponse struct {
 }
 
 // handleListSessions lists the sessions, of one computer when the query
-// names one. `descendants=true` adds the forks those sessions led to, so that
-// one request returns the whole tree a computer is the root of. `chats=true` lists the
-// chats instead, forks of chats included.
+// names one. `chats=true` lists the chats instead.
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	var (
@@ -150,8 +140,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		sessions, err = s.deps.Store.Chats(r.Context())
 	} else {
-		sessions, err = s.deps.Store.Sessions(r.Context(),
-			query.Get("computer_id"), query.Get("descendants") == "true")
+		sessions, err = s.deps.Store.Sessions(r.Context(), query.Get("computer_id"))
 	}
 	if err != nil {
 		s.fail(w, r, err)
@@ -377,41 +366,10 @@ func (s *Server) handleSetSessionHead(w http.ResponseWriter, r *http.Request) {
 	s.writeSession(w, r, http.StatusOK, sess)
 }
 
-// handleForkSession copies the branch down to an entry into a session of its
-// own, in the same computer.
-func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeJSON[forkRequest](r)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	if strings.TrimSpace(req.EntryID) == "" {
-		s.fail(w, r, invalidf("entry_id is required"))
-		return
-	}
-	id := r.PathValue("id")
-	_, err = s.deps.Store.Session(r.Context(), id)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	if err := s.checkResumable(r.Context(), id, req.EntryID); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	fork, err := s.tree.Fork(r.Context(), id, req.EntryID, store.ForkOptions{Title: strings.TrimSpace(req.Title)})
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	s.log.Info("session forked", "session_id", id, "fork_id", fork.ID, "entry_id", req.EntryID)
-	s.writeSession(w, r, http.StatusCreated, fork)
-}
-
 // checkResumable refuses an entry a run cannot continue from. A path that
 // stops with tool calls unanswered is a conversation no endpoint accepts, so
-// a head or a fork placed there would produce a session that fails on its
-// next run rather than one that branches.
+// a head placed there would produce a session that fails on its next run
+// rather than one that branches.
 func (s *Server) checkResumable(ctx context.Context, sessionID, entryID string) error {
 	ok, err := s.tree.Resumable(ctx, sessionID, entryID)
 	if err != nil {
@@ -464,19 +422,18 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 		return sessionBody{}, err
 	}
 	return sessionBody{
-		ID:              sess.ID,
-		ComputerID:      sess.ComputerID,
-		Title:           sess.Title,
-		Kind:            string(sess.Kind),
-		HeadEntryID:     sess.HeadEntryID,
-		ParentSessionID: sess.ParentSessionID,
-		Tools:           s.sessionToolNames(sess, c.tools),
-		ProfileID:       sess.ProfileID,
-		Overridden:      !sess.Overrides.Empty() || sess.Tools != nil,
-		Pinned:          sess.Pinned,
-		Archived:        sess.Archived,
-		CreatedAt:       sess.CreatedAt,
-		UpdatedAt:       sess.UpdatedAt,
+		ID:          sess.ID,
+		ComputerID:  sess.ComputerID,
+		Title:       sess.Title,
+		Kind:        string(sess.Kind),
+		HeadEntryID: sess.HeadEntryID,
+		Tools:       s.sessionToolNames(sess, c.tools),
+		ProfileID:   sess.ProfileID,
+		Overridden:  !sess.Overrides.Empty() || sess.Tools != nil,
+		Pinned:      sess.Pinned,
+		Archived:    sess.Archived,
+		CreatedAt:   sess.CreatedAt,
+		UpdatedAt:   sess.UpdatedAt,
 	}, nil
 }
 

@@ -357,9 +357,9 @@ projects with their new meaning, and persistent subagents. Design:
       phase 11 agents have no plugins (decided). The MCP screens and Core's pool
       stay, so connections and OAuth keep working for phase 11 to pick up.
 - [ ] Session columns: `kind` (home, subagent, routine, dream), `agent`, `name`,
-      `project_id`, `computer_id`, `state`, `brief`, `result`, `sensitive`,
-      `suspicious`, `last_active_at`. Entry kinds gain `preamble` and `notice`;
-      home entries record their `channel`. Unused columns and kinds are removed.
+      `project_id`, `computer_id`, `parent_session_id`, `state`, `brief`,
+      `result`, `sensitive`, `suspicious`, `last_active_at`. Entry kinds gain
+      `preamble` and `notice`; home entries record their `channel`. Unused columns and kinds are removed.
 - [ ] Preamble builder: global and project instructions, the active-projects list,
       the project or subagent brief, the delegable agents with their allowed
       classes, and the user's time zone and locale. Store it as an entry, and rebuild it only at compaction. Memory,
@@ -1035,6 +1035,46 @@ Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
 
+- 2026-10-30: the computer file routes and the session fork route are removed
+  (branch `remove-file-fork-routes`). An owner-requested follow-up to phase 0,
+  not the start of phase 1.
+  - Items. The file routes in `066c2f9`; the fork route, the `fork` kind and
+    migration `0002` in `8b8e842`; the `DECISIONS.md` corrections and this entry
+    in the commit that carries it.
+  - Files. `GET /api/computers/{id}/files` and `GET`/`PUT .../file` are gone with
+    their tests and the frontend types. Nothing in `files.go` served another
+    route, but four things existed only for it and went too: `executorFor`,
+    `forbiddenf` with the `forbidden` error code (no other route returns a 403,
+    so `http.md` no longer lists it), the contract's `raw_request` flag, and the
+    `computer.state` event after a save. The `too_large` code now describes the
+    1 MiB JSON body bound. The executor's file methods and eikad's `/files`,
+    `/stat` and `/list` stay for phase 2's file tools. No other test used
+    `api.filesOf`, so the helper went with its only test.
+  - Forks. The route, `Tree.Fork`, `Store.ForkSession`, `SessionFork`, the
+    `descendants` query and its recursive SQL, and `parent_session_id` on the
+    Session type are gone. The head, the entries and the outline stay. Tests that
+    used a fork to reach something else kept their coverage a different way:
+    untitled sessions use a second session, the compaction test branches with
+    `SetHead`, and session deletion is checked on the session itself.
+  - Schema. `0001_baseline.sql` is untouched. `0002_remove_session_forks.sql`
+    turns existing forks into `user` sessions (a fork owned its copied entries),
+    narrows `sessions_kind_check` to `'user'` and drops `parent_session_id`, which
+    takes `sessions_parent_idx` and its foreign key with it. The column had no
+    other user; `design/runtime.md` kept it as the subagent delegator, so that
+    design now says phase 2 adds it back with that meaning, and this item's
+    column list in phase 2 names it. A fresh database applies `0002` (every store
+    test opens one), and a new store test builds a baseline database holding a
+    fork and opens it. The baseline header and `EXTENDING.md` already said
+    frozen with forward migrations from here, and phase 4's fresh start is
+    unchanged.
+  - Also. The remaining `unmocked` computer routes in the mock harness now say
+    "no UI calls it". The idle computers entry no longer lists restart policies
+    as rejected: they restart containers and never stop an idle one.
+  - Left as written. The `Rejected:` line for images in `DECISIONS.md` still
+    gives "forks copy entries" as a reason; the web client still maps a 403 to
+    `forbidden`, which a proxy can still send.
+  - `make check` and `make smoke` both passed on the commit that carries this
+    entry, which changes only documentation.
 - 2026-10-30: phase 0 closed (branch `close-phase-0`).
   - Items. README rewrite, shims and `go.mod` in `ad02eae`; the `DECISIONS.md`
     entries in `fd6f916`; the re-measure below in `4a4167b`; the design
