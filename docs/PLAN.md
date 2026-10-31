@@ -227,7 +227,7 @@ setup is done, and a chat runs `bash` in it. `make check` and `make smoke` are g
 Exact token numbers, model classes, and one queue for the GPU. Design:
 `design/runtime.md` sections 1 to 5.
 
-- [ ] Responses API provider: a second implementation of `provider.Provider`
+- [x] Responses API provider: a second implementation of `provider.Provider`
       for the stateless Responses API (`store: false`, reasoning items passed
       back; a cloud endpoint is asked for `reasoning.encrypted_content` through
       `include`). The probe sets `api` per endpoint: `responses` only when a
@@ -1046,6 +1046,87 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-31: the Responses API provider (branch `responses-provider`, from
+  `phase-1`). The first Phase 1 item is ticked.
+  - Landed. `openai.Responses` is the second `provider.Provider`: `store: false`,
+    the whole input every call, reasoning items kept as the endpoint returned them
+    (`provider.KindReasoningItem`, stored in `Message.ReasoningItems`, which an old
+    entry simply lacks) and sent back unchanged, `include:
+    ["reasoning.encrypted_content"]` on a hosted endpoint only. It wraps the chat
+    provider, so the client, key rules, error classification, model list and the
+    `ChatBody` the counter renders are the same code; usage is
+    `provider.ResponsesUsage`; `timings` is read from the sibling of `response`.
+    `Endpoint` gains `API` and `Hosted`; the registry builds by `API`. A session
+    that changes `api` still sends a valid request: items are dropped when the
+    other protocol or `preserve_thinking` off is asked, and a Responses message is
+    sent to chat as its text and reasoning. The provider row has `api`
+    (migration `0007`, default `chat`), set by the probe and overridable with the
+    same reset rules as `backend`, in the API and the endpoint dialog. The
+    conformance check (`probe.CheckResponses`: a streamed tool call with the
+    model's reasoning, then the call, its result and the reasoning item sent
+    back; cache metrics required) is stored in `capabilities.responses` with the
+    model and build. It runs on an explicit probe, and at start only for a stored
+    provider whose build or model differs from the stored check; never on every
+    Core start, never without a model, bounded at four minutes; failed or skipped
+    means `chat`.
+  - Drift under `responses` on llama.cpp b11942: zero, on `exact`, in every
+    scenario. `responses_drift` (three turns, thinking on, parallel tool calls,
+    replayed reasoning items) predicted 391, 572, 675, 748 and 940 prompt tokens
+    and the server counted the same; `responses_tools_and_reasoning`,
+    `_agent_loop`, `_reasoning_count`, `_cut_off_reasoning`,
+    `_thinking_switches`, `_tool_arguments` and `_context_breakdown` repeat the
+    chat scenarios through the Responses provider with identical prompt counts
+    (for example 492 for the unusual-arguments history, 42 / 66 / 78 for the
+    thinking switches, 499 for the breakdown request, 940 for the longest loop)
+    and no drift. The one nonzero number in the suite is the first picture
+    (-6, an `estimated` prediction, as under chat: pictures are never exact until
+    measured). So llama.cpp defaults to `responses` when the check passes, which
+    it does on the bench (`responses_conformance`: reasoning item returned and
+    replayed, cache metrics and counting present). The server's conversion matches
+    `/apply-template` for reasoning items, parallel calls, re-encoded tool
+    arguments, the thinking switches and images. The one defect found was ours:
+    the chat body for an assistant message holding only reasoning had no
+    `content`, which llama.cpp refuses (400) on `/apply-template` and chat; it now
+    sends `content: ""` (regression test and live scenario).
+  - Which backends behave well. llama.cpp b11942 (recorded fixtures,
+    `internal/provider/testdata/responses/llamacpp`): yes, with quirks the
+    provider handles: `timings` outside `response`, `encrypted_content` is `""`,
+    a cut-off reported as `completed` (the stop reason is inferred when output
+    reaches the maximum), context overflow is an HTTP 400. Unverified, written
+    from documentation and marked so in the fixtures README: OpenAI
+    (`openai/*.sse`: encrypted content, `incomplete`, `failed`, context length
+    exceeded) and vLLM (`vllm/tool_call.sse`). SGLang has an experimental
+    `/v1/responses`, no fixture. TabbyAPI is believed to have none, so it fails
+    the check and stays on `chat`. None of these was reachable.
+  - `make check` passes on the final commit (35 Go packages, 463 web tests, 132
+    visual). `make live` passes
+    on all 22 scenarios (12 under chat, 8 repeated under Responses, plus
+    `responses_drift` and `responses_conformance`). One full run earlier in the session failed
+    `anchored_counting` once (call 8 estimated, drift 46); it passed 16 of 16
+    isolated reruns and the next two full runs. Not explained, and not seen under
+    `responses`; it is an `anchored`/`estimated` scenario, so no exact prediction
+    was involved. Worth watching. `make smoke` passes (2 specs): it covers the
+    new migration and the registry wiring, not the Responses check, which needs a
+    model the smoke stack does not have.
+  - Skipped or open. Hosted-API behaviour (encrypted content refused for a
+    non-reasoning model, a reasoning item needing the item after it, `strict`
+    defaulting to true) is from documentation, not run: `strict: false` is sent
+    only on a hosted endpoint, never to llama.cpp, where it was never tried.
+    The check requires cache metrics, so a vLLM without
+    `--enable-prompt-tokens-details` stays on `chat`. Existing llama.cpp
+    providers move to `responses` at the first start that finds a model; adding
+    the first model does not probe again (the next start or "Probe again" does).
+    Reasoning summaries are not requested or shown. `reasoning_items` is on the
+    wire; an item with only encrypted content adds tokens the counter cannot see
+    to an estimate. A tool call with malformed arguments gives a server 500 under
+    both protocols (existing, not changed).
+  - For later items. The inference queue and slot affinity items must check that
+    `id_slot` is honoured on `/v1/responses` (not tested here). The check asks the oldest model of the
+    provider; the model kinds item may want it to ask the chat model. A
+    `prefill_ms` column is still open from the usage item. The live suite now
+    covers both protocols for every counting scenario: a scenario added to the
+    chat list should be wrapped with `OnResponses`.
 
 - 2026-10-31: effective window and the context breakdown (branch
   `context-breakdown`, from `phase-1`). Both items are ticked.

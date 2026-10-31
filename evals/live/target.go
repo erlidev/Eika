@@ -45,6 +45,10 @@ type Target struct {
 	// Source is the endpoint's tokenizer routes, which the token counter
 	// predicts every request through.
 	Source counter.Source
+	// Responses is the harness's Responses provider on the same endpoint, and
+	// ResponsesSource the tokenizer routes that count what it sends.
+	Responses       provider.Provider
+	ResponsesSource counter.Source
 	// Counter is the token counter of the scenario being played: Execute gives
 	// each scenario its own, as each session has one. Nil when the target
 	// was not made by Connect.
@@ -125,15 +129,21 @@ func Connect(ctx context.Context, env Env) (*Target, error) {
 		return nil, fmt.Errorf("read models of %s: the server lists no model", base)
 	}
 	res := probe.Run(ctx, probe.Target{BaseURL: base + "/v1", APIKey: key, Models: models})
-	encoder, _ := p.(provider.ChatEncoder)
-	source := counter.NewRoutes(counter.Config{
+	responses, err := openai.NewResponses(provider.Endpoint{BaseURL: base + "/v1", APIKey: key, API: provider.APIResponses})
+	if err != nil {
+		return nil, fmt.Errorf("build responses provider: %w", err)
+	}
+	counting := counter.Config{
 		BaseURL: base + "/v1", APIKey: key, Model: models[0].ID,
 		Backend: res.Backend, Counting: res.Capabilities.Counting,
-	}, encoder)
+	}
+	chatEncoder, _ := p.(provider.ChatEncoder)
+	responsesEncoder, _ := responses.(provider.ChatEncoder)
 	return &Target{
 		Provider: p, Model: models[0].ID, Models: models, Probe: res,
 		Server: serverInfo(models[0].ID, res), BaseURL: base + "/v1", Key: key,
-		Source: source,
+		Source:    counter.NewRoutes(counting, chatEncoder),
+		Responses: responses, ResponsesSource: counter.NewRoutes(counting, responsesEncoder),
 	}, nil
 }
 

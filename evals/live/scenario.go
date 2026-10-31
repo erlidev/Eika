@@ -33,6 +33,19 @@ func Scenarios() []Scenario {
 		AgentLoop(nonce),
 		ReasoningCount(nonce),
 		ContextBreakdown(nonce),
+		ToolArguments(nonce),
+		OnResponses(ToolArguments(nonce)),
+		ThinkingSwitches(nonce),
+		OnResponses(ThinkingSwitches(nonce)),
+		CutOffReasoning(nonce),
+		ResponsesConformance(),
+		ResponsesDrift(nonce),
+		OnResponses(CutOffReasoning(nonce)),
+		OnResponses(ToolsAndReasoning(nonce)),
+		OnResponses(ImageInput()),
+		OnResponses(AgentLoop(nonce)),
+		OnResponses(ReasoningCount(nonce)),
+		OnResponses(ContextBreakdown(nonce)),
 	}
 }
 
