@@ -31,6 +31,14 @@ answer, then `go test -tags live -count=1 -v` on `evals/live`. The test:
 - otherwise plays every scenario, logs one line per model call, and writes the
   report. The path is the last log line.
 
+The scenarios: `provider_probe` (the probe against `/slots`), `cache_reuse`
+(a two-turn conversation: cache hit rate and prefill), `tools_and_reasoning`
+(tool definitions, a tool call and result, replayed reasoning and the thinking
+switch: every prediction must be exact with no drift), `image_input` (one small
+picture: never called exact, and counted to the token once its size was
+measured) and `count_cost` (a context of about 20k tokens counted cold and one
+exchange later: `count_seconds`).
+
 Keep scenarios small: bounded `max_tokens`, no load. The server is shared; do
 not start, stop or swap anything on it from a scenario.
 
@@ -50,13 +58,16 @@ not start, stop or swap anything on it from a scenario.
 | `calls[].cached_tokens`, `cache_hit_rate` | Prompt tokens served from the cache, as the server states them, and their share of the prompt |
 | `calls[].prefill_seconds` | Time the server spent evaluating the prompt, as it measured it |
 | `calls[].wall_seconds` | Request to end of stream, as the harness saw it |
-| `calls[].drift` | The token counter's prediction less `prompt_tokens` |
+| `calls[].predicted_tokens`, `prediction_method` | What the token counter (`internal/provider/counter`) predicted for the prompt before the call, and how: `exact`, `anchored` or `estimated` |
+| `calls[].drift` | The prediction less `prompt_tokens`. Any drift on an `exact` prediction fails the scenario |
+| `calls[].count_seconds` | What predicting the request cost: the tokenizer requests included |
 | `summary` | The same, totalled over a scenario's calls |
 
-A number that was not measured is `null`, never 0. `drift` is `null` in every
-report until the token counter exists; the counter's item fills it in
-(`Call.Drift`), and `Summarise` totals it. A total is `null` unless every call
-stated the count it adds up. The token counts are the ones usage parsing reads
+A number that was not measured is `null`, never 0. Each scenario is one session
+with a token counter of its own, which predicts every request `Target.Complete`
+sends and learns from the measurement. The summary's `drift` is the sum of the
+absolute drift, so errors in opposite directions do not cancel. A total is
+`null` unless every call stated the count it adds up. The token counts are the ones usage parsing reads
 (`provider.Usage`); the suite derives none. Compare two reports by their
 `server` block first: a change there explains a change in the numbers.
 

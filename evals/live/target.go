@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/counter"
 	"github.com/erlidev/eika/internal/provider/openai"
 	"github.com/erlidev/eika/internal/provider/probe"
 )
@@ -41,6 +42,13 @@ type Target struct {
 	BaseURL string
 	// Key is the bearer key; it never leaves the process.
 	Key string
+	// Source is the endpoint's tokenizer routes, which the token counter
+	// predicts every request through.
+	Source counter.Source
+	// Counter is the token counter of the scenario being played: Execute gives
+	// each scenario its own, as each session has one. Nil when the target
+	// was not made by Connect.
+	Counter *counter.Counter
 }
 
 // ServerInfo is what the harness's probe reports about the bench's server, as
@@ -117,9 +125,15 @@ func Connect(ctx context.Context, env Env) (*Target, error) {
 		return nil, fmt.Errorf("read models of %s: the server lists no model", base)
 	}
 	res := probe.Run(ctx, probe.Target{BaseURL: base + "/v1", APIKey: key, Models: models})
+	encoder, _ := p.(provider.ChatEncoder)
+	source := counter.NewRoutes(counter.Config{
+		BaseURL: base + "/v1", APIKey: key, Model: models[0].ID,
+		Backend: res.Backend, Counting: res.Capabilities.Counting,
+	}, encoder)
 	return &Target{
 		Provider: p, Model: models[0].ID, Models: models, Probe: res,
 		Server: serverInfo(models[0].ID, res), BaseURL: base + "/v1", Key: key,
+		Source: source,
 	}, nil
 }
 

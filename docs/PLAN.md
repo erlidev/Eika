@@ -251,7 +251,7 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       `output_tokens_details.reasoning_tokens`. NULL when not reported, never 0. Verify each
       field's meaning against a live server and record it in the log, including
       whether `prompt_tokens` counts cached tokens.
-- [ ] Add a token counter with three methods:
+- [x] Add a token counter with three methods:
       - exact (vLLM `/tokenize` with messages; llama.cpp `/apply-template` plus
         `/tokenize`)
       - anchored (text tokenisation plus learned per-role overhead)
@@ -313,8 +313,9 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       live test, the report with the server's build and model revision, and the
       `cache_reuse` scenario reporting cache-hit rate and prefill seconds).
       Remaining:
-      - fill `Call.Drift` (`evals/live/call.go`; the report has it as `null`)
-        from the token counter once it exists, and make `Summarise` total it
+      - (done by the token-counter item) `Call.Drift` is filled from the
+        counter and `Summarise` totals it; `tools_and_reasoning`, `image_input`
+        and `count_cost` were added
       - (done by the usage-parsing item) `cache_reuse` reads the cached
         count usage parsing parses, not `prompt_tokens` less `prompt_n`
       - any further scenarios the items after this one need; the live suite
@@ -1045,6 +1046,88 @@ Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
 
+- 2026-10-31: the token counter and the `EOF` on kept-alive POSTs (branch
+  `token-counter`). The counter item is ticked; the `make live` item stays open
+  for part 2's remaining scenarios and for the live suite below.
+  - Landed. `provider/counter` (`Counter` per session with `Predict` and
+    `Observe`; `Source`, `Routes` over HTTP for llama.cpp, vLLM, SGLang and
+    TabbyAPI), `provider.Prediction`, `provider.Method` and the optional
+    `provider.ChatEncoder`, which the openai provider implements with `ChatBody`
+    (the body `Stream` posts, without the stream flag: tested equal).
+    `providertest.TokenServer` is the fake endpoint with a deterministic
+    tokenizer and template. `evals/live` fills `Call.Drift` (and
+    `predicted_tokens`, `prediction_method`, `count_seconds`) for every call,
+    gives each scenario a counter of its own, totals the absolute drift, and
+    fails a scenario on drift in an `exact` prediction. Scenarios added:
+    `tools_and_reasoning`, `image_input`, `count_cost`, `anchored_counting`.
+    Nothing in `agent` or `model_requests` changed. Decisions in `DECISIONS.md`
+    ("The token counter", "Provider transport").
+  - Live, against llama.cpp b11942-338fce651 (Qwen3.8-27B-UD-Q4_K_XL): **zero
+    drift on `exact`** in every call: `cache_reuse` 320 and 370 tokens;
+    `tools_and_reasoning` (two tool definitions, two tool calls with results,
+    replayed reasoning, then the request with the thinking switch left out, which
+    renders a different preamble) 549, 614, 703; `count_cost` 20,078 and 20,228.
+    `make live` ran five times with no failure. `image_input`: see below.
+    `anchored_counting` (the bench seen as a text-only endpoint, eight calls
+    with tool rounds and replayed reasoning): the first call is an estimate
+    (51 against 296: bytes over four does not know a tool list's boilerplate),
+    calls 2 and 3 are off by 5 and 10 (2 to 3%), and calls 4 to 8 by +1, 0, -1,
+    0, -1; the scenario holds calls 5 on to 4 tokens.
+  - Images (checked on the bench, one 56, 112 and 224 pixel PNG). Neither
+    `/apply-template` nor `/tokenize` counts the picture: the template leaves
+    llama.cpp's per-start media marker, which `/tokenize` counts as 26 ordinary
+    tokens, and the picture's own tokens (11, 18 and 51 more than the text without
+    the marker) are in no route. So exact counting cannot include images. A
+    request with a picture is never called `exact`: the counter counts the
+    request without its pictures and adds a cost per picture size, learned from
+    the first measurement of that size (`anchored`, and zero drift after: 90
+    against 90 with two pictures) and a pixel estimate until then (`estimated`:
+    23 against 29 on the first). The agent's `ImageTokens` is the same estimate;
+    the `estimateContext` item can drop it. Only one unknown size per request
+    teaches the counter anything; vLLM's handling of pictures in `/tokenize` is
+    unverified.
+  - Cost, at about 20k tokens (a prompt of 20,389 tokens, over the SSH forward):
+    `/apply-template` 8 ms, `/tokenize` of the whole prompt 23 ms, so 31 ms
+    uncached. With the cache a count one exchange later is 10 ms (the render plus
+    the new messages), and the first count 58 ms, which includes the checks a new
+    session makes once (is a candidate a control token, and does cutting the
+    prompt change the count). The cache saves the tokenisation, about 70% of the
+    count; what is left is the render. At 200k tokens that is linear: about 80 ms
+    against 310 ms.
+  - The `EOF`. Cause: llama.cpp closes the connection when a streamed response
+    ends (a traced request after a stream never got a reused connection; after a
+    plain response it did). The client takes that connection from its idle pool
+    before it has seen the close, which the SSH forward delays, and the POST fails
+    with `EOF`: Go repeats only requests that are safe to repeat. Reproduced with
+    the real provider at 2 failures in 40 calls. The code already classed it right
+    (`apiError` marks anything that is not an API status `Retryable`, so the agent
+    loop recovers after its backoff; a test pins it now), but nothing else
+    recovers, the probe takes a failed request for "nobody answers", and the
+    counter adds a request after every stream. `provider.NewHTTPClient`, used
+    by the openai provider, the probe and the counter, repeats a request that
+    failed on a reused connection before any response byte, on another connection
+    (at most four times, never after a failure on a new one). 0 failures in 320
+    calls after. The forward is not the cause (it relays the close late, which
+    opens the window) and the code was ruled out by the trace.
+  - `make check` passed (35 Go packages, 441 web tests, 128 visual specs, no
+    baseline changed). `make smoke` not run: no compose file, Dockerfile,
+    `deploy/` or `server.Run` wiring changed.
+  - Unverified, written from the projects' documentation: the vLLM route (the
+    whole Chat Completions body posted to `/tokenize`, `add_special_tokens` off for
+    text), SGLang's `/tokenize` and TabbyAPI's `/v1/token/encode` as text routes,
+    and everything about pictures on vLLM. There is no recorded fixture for them;
+    the tests serve the shapes the probe fixtures already mark unverified. The
+    Responses provider's body (`ChatEncoder`) and the Responses conformance are
+    still its item's.
+  - Left for the next items. Reasoning tokens from tokenising the reasoning text
+    belong to `model_calls` (they need a labelled source column; the counter has
+    the text cache). `fit`, `shouldCompact` and `estimateContext` should hold a
+    `Counter` per session, call `Predict` before each model call and `Observe`
+    after (the pair must use the same request), read `EstimateError` for the
+    reserve when the method is `estimated`, and drop `ImageTokens`. The counter
+    keeps its learned weights in memory (relearned in about five calls after a
+    restart); `model_calls` rows carry what a later change would seed them from.
+    A ratio per content class is not built.
 - 2026-10-31: usage parsing per backend and protocol (branch `usage-parsing`).
   The item is ticked; the Responses provider that calls its Responses parser is
   still the first item of the phase.

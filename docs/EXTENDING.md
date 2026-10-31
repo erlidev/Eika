@@ -134,6 +134,19 @@ values and never leaks a vendor SDK type upwards. It closes the channel after a
 request names the model by the endpoint's identifier. Retrying is the agent
 loop's job: classify a failure as a `provider.Error` and let the loop decide.
 
+A provider also implements `provider.ChatEncoder` (`ChatBody`) so that the
+token counter can render what it sends. The body must come from the same
+code that builds the request `Stream` posts, not a second serialiser: the
+counter posts it to the server's own rendering route, and anything left out of
+it is something the count does not see. A provider of another protocol returns
+the equivalent Chat Completions body.
+
+A new tokenizer route is a case in `counter.Routes` (`Level`, `Text`, and
+`Prompt` or `Request` if the server renders a chat request), a probe that finds
+it (`probe.Counting`), and a fixture; mark it unverified until a server of that
+kind is on the bench. `counter.Source` is the interface to implement for
+anything that is not HTTP; `providertest.TokenServer` is the fake.
+
 A provider whose endpoint can list its models also implements
 `provider.Lister`. The setup screens call it to offer models to tick, with
 the context sizes it reports; without it, the user types model identifiers.

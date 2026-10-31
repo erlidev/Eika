@@ -44,6 +44,9 @@ func New(e provider.Endpoint) (provider.Provider, error) {
 		// Retries are the agent loop's job, so that every provider and the
 		// scripted fake behave the same way.
 		option.WithMaxRetries(0),
+		// The shared pool, repeating a request once when the server had closed
+		// the idle connection it went out on.
+		option.WithHTTPClient(provider.NewHTTPClient(0)),
 	}
 	return &Provider{client: openai.NewClient(opts...)}, nil
 }
@@ -64,6 +67,21 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request) (<-chan pro
 		relay(ctx, stream, out)
 	}()
 	return out, nil
+}
+
+// ChatBody returns the JSON body Stream sends for req, without the stream
+// flag. A server's rendering route takes the same body, which is how the token
+// counter sees exactly what the model will be sent.
+func (p *Provider) ChatBody(req provider.Request) ([]byte, error) {
+	params, err := p.params(req)
+	if err != nil {
+		return nil, err
+	}
+	body, err := params.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("encode chat request: %w", err)
+	}
+	return body, nil
 }
 
 // chunkStream is the part of the SDK stream this package uses.
@@ -462,6 +480,7 @@ func retryAfter(h http.Header) time.Duration {
 }
 
 var (
-	_ provider.Provider = (*Provider)(nil)
-	_ provider.Lister   = (*Provider)(nil)
+	_ provider.Provider    = (*Provider)(nil)
+	_ provider.Lister      = (*Provider)(nil)
+	_ provider.ChatEncoder = (*Provider)(nil)
 )

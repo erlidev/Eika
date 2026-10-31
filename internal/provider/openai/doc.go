@@ -21,6 +21,9 @@
 // them, and llama.cpp's prompt_n. A count the endpoint does not state stays
 // unreported. timings.go reads how fast the endpoint ran, a separate matter.
 //
+// ChatBody returns the JSON body Stream would post, from the same code, so the
+// token counter can have a server render exactly what the model is sent.
+//
 // The entry point is New, which the provider registry calls for the "openai"
 // kind.
 package openai
