@@ -276,8 +276,7 @@ or commands, and offer the model only the tools that need no computer.
 ### `GET /api/sessions`
 
 `?computer_id=<id>` narrows the list. `?descendants=true` adds the forks
-those sessions led to, wherever they run: a fork with a computer has one of
-its own, and belongs under the session it came from. It is ignored without `computer_id`, which
+those sessions led to, which belong under the session they came from. It is ignored without `computer_id`, which
 already returns every session, chats included. `?chats=true` returns the
 chats alone, forks of chats included; with `computer_id` it is `400`.
 

@@ -202,6 +202,25 @@ func TestTheProxyRefuses(t *testing.T) {
 	}
 }
 
+func TestTheRefusalForAnUnlistedHostNamesIt(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer target.Close()
+	_, proxy := serveProxy(t, policies{"cx1": {Token: "tok", Mode: egress.ModeAllowlist, Allow: []string{"example.com"}}}, anyAddress)
+
+	resp, err := through(t, target.Client(), proxy, "cx1", "tok").Get(target.URL)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	host, _, _ := net.SplitHostPort(strings.TrimPrefix(target.URL, "http://"))
+	// The model reads this, so it says which host and which list, and sends
+	// nobody to a screen the UI does not have.
+	if !strings.Contains(string(body), host+" is not on this computer's egress allowlist") || strings.Contains(strings.ToLower(string(body)), "panel") {
+		t.Errorf("body = %q, want the host and the allowlist named, and no panel", body)
+	}
+}
+
 func TestBlockedKeepsTheMostRecentHostsFirst(t *testing.T) {
 	p, proxy := serveProxy(t, policies{"cx1": {Token: "tok", Mode: egress.ModeAllowlist}}, anyAddress)
 	client := through(t, &http.Client{Transport: &http.Transport{}}, proxy, "cx1", "tok")

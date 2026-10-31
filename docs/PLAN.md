@@ -214,7 +214,7 @@ before the routes it calls.
       - fresh baseline schema
       - computers instead of workspaces
       - plugins unavailable to agents from phase 2 until phase 11 (accepted)
-- [ ] Update `make smoke`: setup, provider, then a chat on the home computer
+- [x] Update `make smoke`: setup, provider, then a chat on the home computer
       running a sandboxed `bash`.
 - [ ] Re-measure lines and test counts against the `REFACTOR_PLAN.md` baseline and
       log them.
@@ -1034,6 +1034,32 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-30: test stacks off `eika-sandbox:latest`, and the `make smoke`
+  update (branch `smoke-home`).
+  - Why the first part: `make check` failed on merged main because the Docker
+    tests read `eika-sandbox:latest`, the tag a stack from `make local` runs
+    its computers from, and it was the user's older image (GOPATH under
+    `/home/eika`). The earlier "passes" predated that tag moving. `make check`
+    now builds `sandbox/Dockerfile` as `eika-sandbox:test` (`sandbox-test`,
+    under a second cached, about 20 s after a Go change, about 33 s cold with
+    base images pulled) and passes it in `EIKA_TEST_SANDBOX_IMAGE`; `make smoke`
+    builds `eika-sandbox:smoke` and sets `EIKA_SANDBOX_IMAGE`. `latest` is
+    untouched by both (checked with `docker images` after both targets).
+    DECISIONS.md "Testing" records it; AGENTS.md no longer says `make check`
+    covers no Dockerfile.
+  - Smoke now sets up, connects the provider, runs a plain chat, then a chat on
+    the home computer whose scripted model calls `bash` with `echo smoke-ok
+    $(hostname) $(pwd)`. The spec expects the hostname of the home container
+    (first 12 characters of its id from `GET /api/computers`) and `/home/eika`
+    in the answer, so it fails unless eikad ran the command in that container.
+  - Stale strings fixed: the egress refusal no longer sends the model to a
+    "Sandbox panel" (a test pins the new wording), `http.md` and a comment in
+    `sessions.go` no longer say a fork has a computer of its own,
+    `Host.Terminal` left `computer/doc.go`, and DECISIONS's "Sandbox panel is
+    open" now reads "by a client that asks".
+  - Remaining in phase 0: README rewrite, DECISIONS entries, the line-count
+    re-measure.
 
 - 2026-10-30: the `home` computer (branch `home-computer`).
   - **Created on start, not at setup.** `POST /api/auth/setup` is registered

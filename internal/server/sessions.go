@@ -134,9 +134,8 @@ type pathResponse struct {
 }
 
 // handleListSessions lists the sessions, of one computer when the query
-// names one. `descendants=true` adds the forks and child agents those
-// sessions led to, which run in computers of their own, so that one request
-// returns the whole tree a computer is the root of. `chats=true` lists the
+// names one. `descendants=true` adds the forks those sessions led to, so that
+// one request returns the whole tree a computer is the root of. `chats=true` lists the
 // chats instead, forks of chats included.
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()

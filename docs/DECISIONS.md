@@ -110,7 +110,7 @@ this file says why, so neither repeats the other.
   timeouts. Last use lives in memory rather than a row, so a
   restart only ever delays a stop. Rejected: Docker's own restart policies
   and a timer in eikad, which see processes, not runs.
-- Usage is sampled every 5 s while the Sandbox panel is open: a measurement
+- Usage is sampled every 5 s by a client that asks for it: a measurement
   no event announces, so the no-polling rule does not apply.
 - One address guard, `internal/netguard`, for web_fetch and the proxy.
 
@@ -567,6 +567,16 @@ this file says why, so neither repeats the other.
   where pixels are the point, ARIA snapshots for what a screen says:
   baselines on every screen failed on each copy edit and made accepting them
   a habit.
+- **The test stacks never use `eika-sandbox:latest`.** That tag is what a
+  stack started with `make local` starts its computers from, so a test that
+  read it failed whenever the user's image was older than the tree, and one
+  that built it moved the user's image under a running harness. `make check`
+  builds `sandbox/Dockerfile` as `eika-sandbox:test` (`sandbox-test`, a few
+  seconds when cached, skipped without Docker) and passes it to the Docker
+  tests in `EIKA_TEST_SANDBOX_IMAGE`; a bare `go test` falls back to `latest`.
+  `make smoke` builds `eika-sandbox:smoke` and points its harness at it with
+  `EIKA_SANDBOX_IMAGE`, as it tags the harness `eika:smoke`. Rejected: a
+  required `make sandbox` before `make check`, which is the tag problem again.
 - **The compose smoke test** (`make smoke`) is the one test of the real
   stack: its own compose project, port, and networks beside any running
   stack, with a scripted model (`web/e2e/smoke/model.ts`) standing in for a

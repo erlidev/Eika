@@ -1,19 +1,26 @@
 # Override for `make smoke`: the whole stack, run as the compose project
 # eika-smoke beside any Eika stack already on this machine, with a scripted
 # model in place of a real provider. The harness image is tagged eika:smoke
-# so a running stack's image is left alone, and the sandbox networks have
-# names of their own so the two stacks' sandboxes never meet.
+# and the sandbox image eika-sandbox:smoke, so a running stack's images are
+# left alone (a stack's computers start from eika-sandbox:latest), and the
+# sandbox networks have names of their own so the two stacks' sandboxes never
+# meet.
 #
 #   docker compose -p eika-smoke -f compose.yaml -f compose.smoke.yaml up -d --build
 services:
   eika:
     image: eika:smoke
     environment:
+      EIKA_SANDBOX_IMAGE: eika-sandbox:smoke
       EIKA_SANDBOX_NETWORK: eika_smoke_sandbox
       EIKA_SANDBOX_INTERNAL_NETWORK: eika_smoke_sandbox_internal
     depends_on:
       model:
         condition: service_started
+
+  # The sandbox image the harness starts computers from, built under its own tag.
+  sandbox-image:
+    image: eika-sandbox:smoke
 
   # The OpenAI-compatible endpoint the smoke test connects as its provider.
   model:

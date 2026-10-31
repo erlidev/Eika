@@ -3,6 +3,11 @@ NPM ?= npm
 BIN := bin
 WEB := web
 SANDBOX_IMAGE ?= eika-sandbox:latest
+# The image the Docker tests run computers from, built from the same
+# Dockerfile under a tag of its own: eika-sandbox:latest is what a stack
+# started with `make local` runs its computers from, and a test must neither
+# depend on it nor move it.
+SANDBOX_TEST_IMAGE := eika-sandbox:test
 # Explicit package list: ./... would walk into web/node_modules, which ships
 # Go files of its own.
 GOPKGS := ./cmd/... ./internal/...
@@ -25,7 +30,7 @@ SMOKE_COMPOSE := EIKA_PORT=$(SMOKE_PORT) EIKA_AUTH_TOKEN=$(SMOKE_TOKEN) \
 
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
-	sandbox web-install clean visual visual-update shot playwright-browser contract \
+	sandbox sandbox-test web-install clean visual visual-update shot playwright-browser contract \
 	smoke smoke-down
 
 all: build
@@ -43,10 +48,19 @@ build-web: web-install
 ## test: run Go and frontend tests.
 test: test-go test-web
 
-test-go:
+test-go: sandbox-test
 	@docker info >/dev/null 2>&1 || \
 		echo "Docker is not reachable: the handler, store, and computer tests will skip."
-	$(GO) test $(GOTAGS) $(GOPKGS)
+	EIKA_TEST_SANDBOX_IMAGE=$(SANDBOX_TEST_IMAGE) $(GO) test $(GOTAGS) $(GOPKGS)
+
+## sandbox-test: build the image the Docker tests run computers from, under the
+## tag $(SANDBOX_TEST_IMAGE). Layers are cached, so it costs seconds when the
+## Dockerfile and eikad are unchanged. Without Docker it does nothing and the
+## tests that need the image skip.
+sandbox-test:
+	@if docker info >/dev/null 2>&1; then \
+		docker build -q -f sandbox/Dockerfile -t $(SANDBOX_TEST_IMAGE) . >/dev/null; \
+	fi
 
 ## contract: rewrite docs/api/contract.json from the Go wire types, after a
 ## change to one. The mock harness in web/e2e/harness is held to it.

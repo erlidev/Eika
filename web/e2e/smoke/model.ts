@@ -5,7 +5,7 @@
  *
  * - `GET /v1/models` lists one model, `smoke`.
  * - A chat request whose tools include `bash` and whose last message is the
- *   user's asks for `echo smoke-ok`.
+ *   user's asks for `sandboxProbe`.
  * - A chat request that ends on a tool result says what the command printed.
  * - Anything else, such as the provider test's request, answers "ok".
  *
@@ -19,6 +19,14 @@ type Message = { role: string; content?: unknown };
 type ChatRequest = { messages?: Message[]; tools?: { function?: { name?: string } }[] };
 
 const port = Number(process.env.PORT ?? "8000");
+
+/**
+ * sandboxProbe is the command the model asks `bash` to run. It prints the
+ * hostname, which Docker sets to the container's short id, and the working
+ * directory, so the answer proves which container ran it: the spec compares
+ * the hostname with the home computer's container.
+ */
+const sandboxProbe = "echo smoke-ok $(hostname) $(pwd)";
 
 /** chunk is one streamed Chat Completions chunk with one choice. */
 function chunk(delta: object, finish: string | null = null): object {
@@ -65,7 +73,7 @@ function answer(req: ChatRequest): object[] {
       index: 0,
       id: "call_smoke",
       type: "function",
-      function: { name: "bash", arguments: JSON.stringify({ command: "echo smoke-ok" }) },
+      function: { name: "bash", arguments: JSON.stringify({ command: sandboxProbe }) },
     };
     return [
       chunk({ role: "assistant", content: "Running it." }),
