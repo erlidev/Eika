@@ -10,11 +10,14 @@ SANDBOX_IMAGE ?= eika-sandbox:latest
 SANDBOX_TEST_IMAGE := eika-sandbox:test
 # Explicit package list: ./... would walk into web/node_modules, which ships
 # Go files of its own.
-GOPKGS := ./cmd/... ./internal/...
-GODIRS := cmd internal
+GOPKGS := ./cmd/... ./internal/... ./evals/...
+GODIRS := cmd internal evals
 # GOTAGS includes the tests that need Docker: the handler, store, and
 # computer tests. Without a Docker daemon they skip, saying why.
 GOTAGS := -tags docker
+# LINTTAGS adds the live tests, so vet and staticcheck compile them although
+# no check ever runs them: they are make live's, against a real model.
+LINTTAGS := -tags docker,live
 # DEV holds the state a harness running on the host keeps: the key that
 # seals credentials. It is ignored by git.
 DEV := .dev
@@ -31,7 +34,7 @@ SMOKE_COMPOSE := EIKA_PORT=$(SMOKE_PORT) EIKA_AUTH_TOKEN=$(SMOKE_TOKEN) \
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
 	sandbox sandbox-test web-install clean visual visual-update shot playwright-browser contract \
-	smoke smoke-down
+	smoke smoke-down live
 
 all: build
 
@@ -74,8 +77,8 @@ test-web: web-install
 lint: lint-go lint-web
 
 lint-go:
-	$(GO) vet $(GOTAGS) $(GOPKGS)
-	$(GO) tool staticcheck $(GOTAGS) $(GOPKGS)
+	$(GO) vet $(LINTTAGS) $(GOPKGS)
+	$(GO) tool staticcheck $(LINTTAGS) $(GOPKGS)
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run $(GOPKGS); \
 	else \
@@ -154,6 +157,16 @@ smoke-down:
 		if [ -n "$$(echo $$volumes)" ]; then docker volume rm -f $$volumes; fi; \
 	fi
 	$(SMOKE_COMPOSE) down -v
+
+## live: run the live tests (evals/live) against the real model on the bench
+## (docs/PLAN.md, "Live test bench"), with no test cache, and write a report
+## to evals/results. It opens the SSH forward to the model when the endpoint is
+## on loopback and its port does not answer. With EIKA_LIVE_ENDPOINT unset the
+## tests skip, saying why; set but silent, they fail. It is never part of
+## `make check`.
+live:
+	evals/forward.sh
+	$(GO) test -tags live -count=1 -v -run '^TestScenarios$$' ./evals/live/...
 
 ## dev: run the harness and the Vite dev server against the compose services.
 dev:

@@ -2,10 +2,12 @@
 # skip it otherwise, and go vet and staticcheck run through `go tool` either way.
 version: "2"
 
-# Lint what `make test` compiles, as go vet and staticcheck do.
+# Lint what `make test` compiles, as go vet and staticcheck do, and the live
+# tests `make live` compiles.
 run:
   build-tags:
     - docker
+    - live
 
 linters:
   default: standard

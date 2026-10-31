@@ -54,7 +54,7 @@ internal/mcp       MCP client        internal/utility   utility model tasks
 internal/event     event bus         internal/eikad     sandbox daemon wire
 internal/imaging   image input       sandbox/           sandbox image
 compose.yaml       the whole stack   deploy/            entrypoint, searxng
-docs/              documentation
+docs/              documentation     evals/             live tests, model bench
 ```
 
 Dependencies point inward. `server` may import `agent`; `agent` may import
@@ -74,6 +74,7 @@ make sandbox    build the eika-sandbox image
 make visual     compare UI screens with their baselines (web/e2e, <1 min)
 make contract   rewrite docs/api/contract.json after a Go wire type changes
 make smoke      the real stack in compose, setup to a sandboxed run (minutes)
+make live       the live tests against the real model (evals/); never in check
 ```
 
 To see the UI, run `cd web && npm run shot -- --help`: it opens a scenario
