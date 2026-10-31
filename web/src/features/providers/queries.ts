@@ -23,6 +23,7 @@ import type {
   ModelInfo,
   Models,
   ProbeProvider,
+  ProbeResponse,
   Provider,
   Providers,
   TestModel,
@@ -32,12 +33,20 @@ import type {
 } from "@/api/types";
 
 /**
+ * The models an endpoint serves are cached apart from the provider list, so
+ * that recording a probe, which refreshes the list, does not ask again.
+ */
+const providerModelsPrefix = ["provider-models"] as const;
+const providerModelsKey = (providerId: string) => [...providerModelsPrefix, providerId] as const;
+
+/**
  * refresh invalidates what a provider or model change makes stale: the two
  * lists, the system counts, and the settings, which name the default model.
  */
 async function refresh(client: QueryClient): Promise<void> {
   await Promise.all([
     client.invalidateQueries({ queryKey: queryKeys.providers() }),
+    client.invalidateQueries({ queryKey: providerModelsPrefix }),
     client.invalidateQueries({ queryKey: queryKeys.models() }),
     client.invalidateQueries({ queryKey: queryKeys.system() }),
     client.invalidateQueries({ queryKey: queryKeys.settings() }),
@@ -75,7 +84,17 @@ export function useUpdateProvider(): UseMutationResult<
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }) => updateProvider(id, input),
-    onSuccess: () => refresh(client),
+    onSuccess: (provider, { input }) => {
+      // A new endpoint or key may be a different server: probe it again. The
+      // harness records the findings, or why there are none, and the list
+      // refreshes when it answers.
+      if (input.base_url !== undefined || input.api_key !== undefined) {
+        void probeProvider({ provider_id: provider.id })
+          .catch(() => undefined)
+          .then(() => client.invalidateQueries({ queryKey: queryKeys.providers() }));
+      }
+      return refresh(client);
+    },
   });
 }
 
@@ -86,12 +105,41 @@ export function useDeleteProvider(): UseMutationResult<void, Error, string> {
 }
 
 /**
- * useProbeProvider asks an endpoint which models it serves. It is a mutation
- * rather than a query because it runs when the user asks, with what the form
- * holds at that moment.
+ * useProbeProvider asks an endpoint which models it serves and what kind of
+ * server it is. It is a mutation rather than a query because it runs when the
+ * user asks, with what the form holds at that moment. When the probe was of a
+ * stored provider's own endpoint the findings are recorded on it, so the list
+ * is refreshed.
  */
-export function useProbeProvider(): UseMutationResult<ModelInfo[], Error, ProbeProvider> {
-  return useMutation({ mutationFn: probeProvider });
+export function useProbeProvider(): UseMutationResult<ProbeResponse, Error, ProbeProvider> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: probeProvider,
+    onSuccess: (response) =>
+      response.provider ? client.invalidateQueries({ queryKey: queryKeys.providers() }) : undefined,
+    // A failed probe of a stored provider is recorded on it as well.
+    onError: () => client.invalidateQueries({ queryKey: queryKeys.providers() }),
+  });
+}
+
+/**
+ * useDiscoveredModels lists the models a stored provider's endpoint serves.
+ * Asking probes the endpoint, which records what kind of server it is on the
+ * provider, so the provider list is refreshed with it.
+ */
+export function useDiscoveredModels(providerId: string): UseQueryResult<ModelInfo[]> {
+  const client = useQueryClient();
+  return useQuery({
+    queryKey: providerModelsKey(providerId),
+    queryFn: async () => {
+      try {
+        return (await probeProvider({ provider_id: providerId })).models;
+      } finally {
+        void client.invalidateQueries({ queryKey: queryKeys.providers() });
+      }
+    },
+    staleTime: 60_000,
+  });
 }
 
 /** useCreateModel adds a model to a provider. */

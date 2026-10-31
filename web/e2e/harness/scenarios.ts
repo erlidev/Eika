@@ -612,7 +612,7 @@ export const scenarios = {
   },
   providers: {
     description:
-      "Three providers: OpenAI with a stored key and two models, a local vLLM that needs no key, and OpenRouter whose key is missing. For the Models tab, ProviderForm, and ModelPicker.",
+      "Four providers: OpenAI with a stored key and two models, a local vLLM that needs no key and states its cache, a llama.cpp bench with two slots whose cache the probe cannot tell, and OpenRouter whose key is missing and whose last probe failed. For the Models tab, ProviderForm, ModelPicker, and the endpoint settings.",
     path: "/",
     build: () => {
       const b = configured();
@@ -621,12 +621,47 @@ export const scenarios = {
         base_url: "http://localhost:8000/v1",
         api_key_set: false,
         api_key_hint: undefined,
+        backend: "vllm",
+        slots: 1,
+        kv: "shared",
+        kv_tokens: 134736,
+        capabilities: {
+          build: "0.11.0",
+          window: 40960,
+          counting: "chat",
+          cache_metrics: "unknown",
+          slot_hints: false,
+        },
+      });
+      // What the probe says about llama.cpp b11942 with two slots: the window
+      // of one request, and no word on whether the cache is unified.
+      b.world.probeFinds = {
+        backend: "llamacpp",
+        slots: 2,
+        kv: "unknown",
+        capabilities: {
+          build: "b11942-338fce651",
+          window: 131072,
+          counting: "chat",
+          cache_metrics: "reported",
+          slot_hints: true,
+        },
+      };
+      b.provider({
+        name: "Bench",
+        base_url: "http://10.0.0.2:8091/v1",
+        api_key_hint: undefined,
+        backend: "llamacpp",
+        slots: 2,
+        kv: "unknown",
+        capabilities: b.world.probeFinds.capabilities,
       });
       const router = b.provider({
         name: "OpenRouter",
         base_url: "https://openrouter.ai/api/v1",
         api_key_set: false,
         api_key_hint: undefined,
+        probe_error: "the endpoint could not be used: 401 Unauthorized: No auth credentials found",
       });
       b.model(router, { name: "claude-sonnet", model: "anthropic/claude-sonnet-4.5" });
       return b.world;

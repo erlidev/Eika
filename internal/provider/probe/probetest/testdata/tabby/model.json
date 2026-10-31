@@ -1,0 +1,22 @@
+{
+  "id": "Qwen3.8-27B-exl3",
+  "object": "model",
+  "created": 1761900000,
+  "owned_by": "tabbyAPI",
+  "logging": {
+    "log_prompt": false,
+    "log_generation_params": false,
+    "log_requests": false
+  },
+  "parameters": {
+    "max_seq_len": 131072,
+    "cache_size": 131072,
+    "max_batch_size": 4,
+    "cache_mode": "Q8",
+    "chunk_size": 2048,
+    "prompt_template": "chatml",
+    "prompt_template_content": null,
+    "use_vision": true,
+    "draft": null
+  }
+}

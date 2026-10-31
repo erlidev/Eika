@@ -25,11 +25,11 @@ import type {
   ModelContext,
   ModelRequest,
   ModelRequests,
-  ModelInfo,
   Models,
   OAuthCallback,
   PostMessage,
   ProbeProvider,
+  ProbeResponse,
   Profile,
   ProfileInput,
   Profiles,
@@ -349,13 +349,13 @@ export function deleteProvider(id: string): Promise<void> {
   return requestEmpty(`/api/providers/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-/** probeProvider asks an endpoint which models it serves. */
-export async function probeProvider(input: ProbeProvider): Promise<ModelInfo[]> {
-  const body = await request<{ models: ModelInfo[] }>("/api/providers/probe", {
-    method: "POST",
-    body: input,
-  });
-  return body.models;
+/**
+ * probeProvider asks an endpoint which models it serves and what kind of
+ * server it is. Probing a stored provider's own endpoint records the findings
+ * on it.
+ */
+export function probeProvider(input: ProbeProvider): Promise<ProbeResponse> {
+  return request<ProbeResponse>("/api/providers/probe", { method: "POST", body: input });
 }
 
 /** getModels lists the models and the one a run uses by default. */

@@ -26,24 +26,40 @@ A provider row (kept from today) gains these fields:
 | `backend` | Detected at probe time: `llamacpp`, `vllm`, `sglang`, `tabby`, `openai`, `other`. The user can override it |
 | `pool` | Hardware group name. Endpoints in one pool share hardware and are serialised against each other. Default: the provider name |
 | `api` | `responses` or `chat`: which wire protocol Core speaks to the endpoint (below). Chosen at probe time, and the user can override it |
-| `slots` | Concurrent requests the pool accepts. Default: 1 for a local backend, 8 for a cloud one |
-| `kv` | `shared` (one cache all requests draw on, with its size in tokens) or `partitioned` (a fixed share per slot). Probed; the user can override it and the size |
-| `capabilities` | Probe result (jsonb): how the endpoint counts tokens (`chat`, `text`, `none`), whether it reports cache metrics, whether it takes slot hints, the per-request context it reported |
+| `slots` | Concurrent requests the pool accepts. The probe reads it where the server states it (llama.cpp `total_slots`, SGLang `max_running_requests`, TabbyAPI `max_batch_size`); otherwise 1 for a local backend, 8 for a cloud one. The user can override it |
+| `kv` | `shared` (one cache all requests draw on, with its size in tokens), `partitioned` (a fixed share per slot) or `unknown` (the server does not say and nothing it serves tells the two apart). Probed; the user can override it and the size |
+| `capabilities` | Probe result (jsonb): how the endpoint counts tokens (`chat`, `text`, `none`), whether it reports cache metrics (`reported`, `unknown`), whether it takes slot hints, the per-request context it reported (`window`), and the server's version (`build`) |
 
 The probe (`POST /api/providers/probe`, and again on every Core start) reads the
-endpoint's own description where it has one:
+endpoint's own description where it has one. It identifies the backend by the
+routes in the second column, tried in the order llama.cpp, SGLang, TabbyAPI, vLLM
+(SGLang answers `/version` as vLLM does, so it is asked first); an endpoint none
+claims is `openai` when its address is not on the user's own network and `other`
+when it is. It checks the exact-counting routes with one tiny request each and
+never sends a prompt to a model. A probe that fails at start is logged and
+recorded on the provider (`probe_error`) and never stops Core or replaces an
+earlier result. A field the user set is never replaced by a probe; the user
+hands it back to the probe explicitly.
+
+Status of each row: **verified** means read from the live bench; **unverified**
+means written from the project's documentation or source, with a fixture marked
+so in `internal/provider/probe/probetest/testdata/README.md`, to be replaced by
+a recording when a server of that kind is on the bench.
 
 | Backend | Identify by | Window per request | KV cache | Exact counting | Cache metric |
 |---|---|---|---|---|---|
-| llama.cpp | `GET /props` | `default_generation_settings.n_ctx` | `partitioned` (`-np` divides `-c`), or `shared` with `--kv-unified` (the default when `-np` is automatic), size `-c` | `POST /apply-template` then `POST /tokenize` | `timings.cache_n`, and `prompt_tokens_details.cached_tokens` where present |
-| vLLM | `GET /version` plus `/v1/models` | `max_model_len` | `shared` (paged blocks); size from `/metrics` `cache_config_info` (blocks x block size) | `POST /tokenize` with `messages` (and `tools`, `chat_template_kwargs`) | `usage.prompt_tokens_details.cached_tokens` (needs `--enable-prompt-tokens-details`) |
-| SGLang | `GET /get_server_info` | `context_length` | `shared` (radix cache); size `max_total_num_tokens` | `/tokenize` where the version has it | `cached_tokens` in usage where reported |
-| TabbyAPI | `GET /v1/model` | `parameters.max_seq_len` | `shared` across the batch; size `parameters.cache_size` | `POST /v1/token/encode` (text, or messages with the template) | none known; shown as unknown |
-| Cloud | `/v1/models` | listing fields | not applicable | none | `prompt_tokens_details.cached_tokens` |
+| llama.cpp (**verified**, b11942) | `GET /props` (`build_info`, `total_slots`) | `default_generation_settings.n_ctx`, which `/slots` repeats for every slot (the per-slot context, not `-c`) | **not reported**: `/props`, `/slots`, `/metrics` and `/v1/models` carry no `--kv-unified` field and no total context, and an N-slot unified server reads the same as a partitioned one with N times the context. One slot is `shared` (it owns the whole cache either way) with size `n_ctx`; several are `unknown`, and the user says which | `POST /apply-template` then `POST /tokenize` (`{"content": prompt}`) | `timings.cache_n` and `usage.prompt_tokens_details.cached_tokens`, equal |
+| vLLM (unverified) | `GET /version`, confirmed by `/metrics` series named `vllm:` or `max_model_len` in `/v1/models` | `max_model_len` of `/v1/models` | `shared` (paged blocks); size `num_gpu_blocks` x `block_size`, labels of `vllm:cache_config_info` in `/metrics`; unknown size when metrics are off. Slots are not reported (`max_num_seqs` is not exported) | `POST /tokenize` with `messages` (and `tools`, `chat_template_kwargs`) | `usage.prompt_tokens_details.cached_tokens` (needs `--enable-prompt-tokens-details`); `unknown` until a response says |
+| SGLang (unverified) | `GET /get_server_info`, or `/server_info` | `context_length`, or `max_model_len` of `/v1/models` when it is null | `shared` (radix cache); size `max_total_num_tokens`; slots `max_running_requests` when set | `POST /tokenize` where the version has it (text only) | `cached_tokens` in usage where reported; `unknown` |
+| TabbyAPI (unverified) | `GET /v1/model` (`parameters.max_seq_len`) | `parameters.max_seq_len` | `shared` across the batch; size `parameters.cache_size`; slots `parameters.max_batch_size` | `POST /v1/token/encode` (text, or messages with the template) | none known; `unknown` |
+| Cloud (unverified) | `/v1/models` and nothing else | listing fields, per model | not applicable: `unknown` | none | `prompt_tokens_details.cached_tokens`; `unknown` |
 
-The field names in the KV column are verified against each backend in phase 1,
-like the rest of the table. Where a version does not report the size, the pool is
-`shared` with an unknown size, and the user can enter it.
+Where a version does not report the size, the pool is `shared` with an unknown
+size, and the user can enter it. For `unknown`, the inference queue (section 3)
+admits calls as if the cache were shared with the per-request window as its
+size: that cannot overfill a unified cache, and on a partitioned server it holds
+every request within its slot's share. It loses parallelism on a large unified
+cache, so a user who knows the cache is shared sets `shared` and its size.
 
 ### Responses or Chat Completions
 
@@ -75,8 +91,9 @@ the route.
   default.
 
 Every row in the table above is verified against a live server in phase 1, and fixtures
-of each response shape are recorded. Where a version lacks a route, the capability
-is `none`, and the runtime falls back as section 2 describes.
+of each response shape are recorded; the table says which rows are still unverified.
+Where a version lacks a route, the capability is `none`, and the runtime falls back
+as section 2 describes.
 
 The effective window of a model is the smaller of its row's `context_window` and
 the per-request context the probe reported. A model whose configured window is
@@ -236,8 +253,10 @@ provider.Stream(ctx, request with call.SlotHint())
   running calls fit the cache with this one: each counted at its predicted prompt
   plus maximum output, with a prefix shared between sessions counted once where
   the engine caches prefixes. This keeps sessions from preempting or failing each
-  other mid-generation. With the size unknown, only slots limit admission, and
-  Activity shows engine preemptions where the backend reports them.
+  other mid-generation. A pool whose `kv` is `unknown` is admitted as `shared` with
+  the per-request window as its size (section 1). With no size at all, only slots
+  limit admission, and Activity shows engine preemptions where the backend
+  reports them.
 - **Priorities**, highest first:
   1. `interactive`: the home session answering a message the user sent.
   2. `foreground`: a subagent started or messaged from an interactive turn in the

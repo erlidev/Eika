@@ -30,7 +30,7 @@ egress proxy are network calls and run in the harness.
 | `event` | Envelope, type constants, payload structs, `Emitter`, fan-out `Bus` |
 | `server` | Composition, JSON API, event stream, auth, run manager; `server/servertest` builds and checks `docs/api/contract.json` |
 | `agent` | The loop: turns, tool dispatch, queues, retries, context assembly |
-| `provider` | Model interface, kind registry, `Complete`; `openai` implementation; `providertest` scripted fake |
+| `provider` | Model interface, kind registry, `Complete`; `openai` implementation; `providertest` scripted fake; `probe` identifies the backend behind an endpoint and reads its slots, window, KV cache and capabilities, with `probetest` serving its fixtures |
 | `utility` | The harness's own one-shot model tasks (session titles), sent to the model a task is assigned |
 | `imaging` | Prepares attached images: decode, EXIF orientation, fit within 1080p (Catmull-Rom), PNG or JPEG without metadata |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
@@ -60,6 +60,13 @@ Run(ctx, session, text)
   after the turn: queued follow-ups start the next turn
 ```
 
+- **probe** (`provider/probe`) asks an endpoint what it is: `Run` tries the
+  description route of llama.cpp, SGLang, TabbyAPI and vLLM in turn, falls back
+  to a hosted API or an unknown local server, and checks the token-counting
+  routes with a one-token request. The server runs it, after listing the models,
+  on `POST /api/providers/probe` and for every provider at start (`Server.Run`),
+  and `store.RecordProbe` writes the result in one statement that leaves the
+  fields in `overridden` alone. A failed probe writes only `probe_error`.
 - **provider** turns a `Request` into a channel of `Event`s (text and
   reasoning deltas, tool calls, usage with optional `Timings`, done or
   error). `openai/timings.go` reads the speed fields of llama.cpp, vLLM, NIM,
@@ -129,7 +136,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
-| `providers` | name (unique), kind, base_url, api_key (sealed) |
+| `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, capabilities (jsonb), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
 | `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
 | `model_requests` | session, run, entry, model, sections, tools, parameters (jsonb), token counts |
@@ -588,8 +595,9 @@ files. Vet and staticcheck also compile the `live`-tagged tests.
   then a chat on the home computer whose `bash` call runs in its container.
 - `make live`: `evals/live`, scenarios scripted against the bench's real chat
   model through `internal/provider/openai`, behind the `live` build tag. The
-  package reads `~/.config/eika/live.env`, describes the server (build, model
-  file and revision, `/props` settings), plays each scenario and writes a JSON
+  package reads `~/.config/eika/live.env`, describes the server with the
+  harness's own provider probe (build, model file and revision, slots, window),
+  plays each scenario and writes a JSON
   report to the ignored `evals/results/`. Its plain code and fakes-backed
   tests run in `make check`; the live test skips without
   `EIKA_LIVE_ENDPOINT` and fails when that is set but silent. `evals/README.md`

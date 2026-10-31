@@ -341,6 +341,58 @@ this file says why, so neither repeats the other.
 - Model names are unique across providers, because runs name a model
   alone.
 
+### The provider probe
+
+- **A probe reads each server's own description, then verifies the counting
+  routes with one tiny request.** `provider/probe` identifies llama.cpp
+  (`/props`), SGLang (`/get_server_info`), TabbyAPI (`/v1/model`) and vLLM
+  (`/version`), in that order, since SGLang answers `/version` too. What no
+  one claims is a hosted API (`openai`) when its address is not on the user's
+  own network and `other` when it is. That judgement only picks the default
+  slot count, 8 or 1. Rejected: asking the user to pick a backend before
+  anything works (the probe is the connection test already); identifying by the
+  `owned_by` field of `/v1/models` (llama.cpp says `llamacpp`, vLLM `vllm`, but
+  a proxy rewrites it and the other servers do not set it).
+- **The probe never sends a prompt to a model.** It reads descriptions and
+  posts `{"content": "hi"}` to a tokenizer. Rejected: a one-token completion to
+  read `cached_tokens` and the usage shape, which costs a model call on every
+  start for a fact the usage item learns from real calls. `cache_metrics` is
+  `reported` where verified (llama.cpp) and `unknown` elsewhere.
+- **llama.cpp's cache is `unknown` with more than one slot.** On b11942 nothing
+  states whether `--kv-unified` is on or what `-c` was: `/props`, `/slots` and
+  `/v1/models` all give the per-slot context, which a unified server sets to the
+  whole cache and a partitioned one to `-c` divided by `-np`, so 2 slots of
+  131072 read the same either way. Guessing would admit calls into a cache that
+  fails the request when full (llama.cpp does not preempt), or give up the
+  parallelism of a unified one. So the probe says `unknown`, the settings say why
+  and ask, and the queue treats `unknown` as shared with the window as its
+  size, which cannot overfill either kind. One slot is `shared` with size
+  `n_ctx`: it owns the whole cache in both modes. Rejected: a `--kv-unified`
+  default (it holds only when `-np` was automatic, which `total_slots` does not
+  show); counting two concurrent requests near the limit (a live test, not a
+  probe: it takes minutes of the GPU); reading the server's command line over
+  SSH (the harness has no business on the host).
+- **Overrides are recorded by name, and the probe checks them in SQL.** A
+  provider's `backend`, `slots` and `kv` columns hold the value in force, and
+  `overridden` lists the ones the user set. `RecordProbe` writes each probed
+  column unless it is listed, in one `UPDATE`, so an override saved while a
+  probe runs is not lost. `pool` is the user's alone: empty means the provider's
+  name, so renaming a provider moves its default pool. A field is handed back
+  with `reset` and then probed. Rejected: separate `probed_*` and `override_*`
+  columns (every reader would pick between them, and the queue would have to);
+  clearing overrides when the base URL changes (they describe hardware the user
+  knows, and are one click to reset).
+- **A failed probe keeps the earlier result.** `probe_error` records why and
+  `probed_at` is the last success. The probe at start runs beside the server in
+  `Run`, one goroutine per provider, so an unreachable endpoint delays nothing
+  and a Core restarted while the GPU box is down comes up with last time's
+  settings. The probe stops after the first request that gets no answer at all.
+  A form that tries a new address or a new key writes nothing: what it learns is
+  about something that is not the stored provider.
+- **The API field and Responses conformance are not part of this.** The result
+  is a struct whose `Capabilities` the Responses item extends; a stored
+  provider's `capabilities` is JSON for that reason.
+
 ## Image input
 
 - **Images are prepared once, in the harness** (`internal/imaging`), when a
@@ -666,8 +718,10 @@ this file says why, so neither repeats the other.
   helpers) has no tag and ordinary tests on a fake server, and `make lint`
   compiles the tagged files, so the skeleton cannot rot between runs. A
   report is JSON in the ignored `evals/results/`, with the server's build,
-  model revision and `/props` settings, so a regression can be told apart
-  from a server or model change. What no counter measures yet (drift) is
+  model revision and what the harness's own provider probe read (`/props` and
+  `/v1/models` through it, not a parser of the live package's own), so a
+  regression can be told apart from a server or model change. The `provider_probe`
+  scenario checks the probe against `/slots`, a route it does not read. What no counter measures yet (drift) is
   `null` in the report, never 0. The cached-token count is derived from the
   provider's prefill timings until usage parsing reads it. Rejected: a shell
   or Python runner (a second way to talk to the provider, which would not
