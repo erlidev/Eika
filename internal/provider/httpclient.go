@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -29,6 +30,43 @@ func NewHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: staleConnRetry{}}
 }
 
+// progressKey is the context key of the function WithProgress sets.
+type progressKey struct{}
+
+// WithProgress returns a context under which every request made with a client
+// from NewHTTPClient calls fn when the response arrives and each time more of
+// its body does, whatever the bytes are: a streamed response's keep-alive
+// comments count as well as its data. The agent loop uses it to tell a server
+// that is working through a long prompt from one that has stopped, which the
+// events a provider relays cannot, since a comment or a chunk with nothing in
+// it becomes no event. fn may be called from any goroutine.
+func WithProgress(ctx context.Context, fn func()) context.Context {
+	return context.WithValue(ctx, progressKey{}, fn)
+}
+
+// Progressed tells the function WithProgress set, if there is one, that bytes
+// arrived. A provider that does not read its response through a client from
+// NewHTTPClient, such as a scripted fake, calls it itself.
+func Progressed(ctx context.Context) {
+	if fn, ok := ctx.Value(progressKey{}).(func()); ok {
+		fn()
+	}
+}
+
+// progressBody reports each read that returned bytes.
+type progressBody struct {
+	io.ReadCloser
+	ctx context.Context
+}
+
+func (b progressBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		Progressed(b.ctx)
+	}
+	return n, err
+}
+
 // staleConnRetry is the transport NewHTTPClient installs.
 type staleConnRetry struct{}
 
@@ -44,7 +82,14 @@ func (staleConnRetry) RoundTrip(req *http.Request) (*http.Response, error) {
 		var reused bool
 		trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) { reused = info.WasIdle }}
 		resp, err := http.DefaultTransport.RoundTrip(req.WithContext(httptrace.WithClientTrace(req.Context(), trace)))
-		if err == nil || !reused || !closedByServer(err) || req.Context().Err() != nil || attempt == maxStaleAttempts {
+		if err == nil {
+			if _, watched := req.Context().Value(progressKey{}).(func()); watched {
+				Progressed(req.Context())
+				resp.Body = progressBody{ReadCloser: resp.Body, ctx: req.Context()}
+			}
+			return resp, nil
+		}
+		if !reused || !closedByServer(err) || req.Context().Err() != nil || attempt == maxStaleAttempts {
 			return resp, err
 		}
 		again := req.Clone(req.Context())
@@ -64,9 +109,25 @@ func (staleConnRetry) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // closedByServer reports whether err is what a write to a connection the
 // server has closed looks like once the request is sent: the read finds the
-// end of the stream, the connection reset, or the transport has already closed
-// the connection it saw the server end and the write lost the race to it.
+// end of the stream, the connection reset, the transport has already closed
+// the connection it saw the server end and the write lost the race to it, or
+// the transport saw the end while the request was being written and reports
+// that it closed an idle connection.
 func closedByServer(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) ||
-		errors.Is(err, net.ErrClosed)
+		errors.Is(err, net.ErrClosed) || isServerClosedIdle(err)
+}
+
+// serverClosedIdleMessage is the text of net/http's errServerClosedIdle.
+const serverClosedIdleMessage = "http: server closed idle connection"
+
+// isServerClosedIdle reports whether err is the error net/http returns for a
+// request whose reused connection the server closed while the request was
+// being written. net/http keeps that value unexported and wraps nothing around
+// it, so no type or sentinel can be tested for, and the message is the only
+// thing left. Matching the whole message of an error taken as it stands, never
+// a substring of a wrapped one, is the narrowest test; a Go release that
+// rewords it fails the regression test that provokes the real error.
+func isServerClosedIdle(err error) bool {
+	return err != nil && err.Error() == serverClosedIdleMessage
 }

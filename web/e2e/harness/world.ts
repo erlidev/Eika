@@ -74,7 +74,7 @@ export type ReplyStep =
    * cutOff ends the turn on an incomplete stop reason, as an endpoint that
    * ran out of output room does. What was said before it is kept.
    */
-  | { cutOff: "length" | "content_filter" }
+  | { cutOff: "length" | "content_filter" | "max_calls" | "max_wall_time" }
   /** hang leaves the run going: no turn.end is sent. */
   | { hang: true };
 

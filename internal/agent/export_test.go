@@ -8,3 +8,13 @@ func (a *Agent) ShouldCompact(p provider.Prediction) bool { return a.shouldCompa
 
 // WidenedReserve exposes widenedReserve to the external tests.
 var WidenedReserve = widenedReserve
+
+// PrefillAllowance exposes prefillAllowance to the external tests.
+var PrefillAllowance = prefillAllowance
+
+// PrefillRate exposes the rate the agent scales its stall allowance by.
+func (a *Agent) PrefillRate() int { return a.prefillRate() }
+
+// Transcript exposes the transcript form of a summary request to the external
+// tests.
+var Transcript = transcript

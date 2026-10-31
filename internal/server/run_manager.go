@@ -242,6 +242,9 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 			Pool:     ep.row.PoolName(),
 			Endpoint: ep.row.Name,
 			Rank:     inference.NewRank(inference.Interactive),
+			// The speed the endpoint has read prompts at, which says how
+			// long a call may be silent before its first token.
+			PrefillRate: s.prefillRate(ctx, ep.row.Name),
 		},
 	})
 	if work.compact && !ag.Compactable(loaded) {

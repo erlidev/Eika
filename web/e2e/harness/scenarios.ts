@@ -53,6 +53,7 @@ function workbench(): WorldBuilder {
       role: "user",
       content:
         "The webhook client retries immediately on failure. Add exponential backoff with jitter, capped at 30s.",
+      context: "<context>\ntime: Sat 2026-03-14 12:00 +00:00 (UTC)\n</context>",
     },
     {
       role: "assistant",
@@ -605,6 +606,16 @@ export const scenarios = {
         { say: "Writing the file now. It starts like this:" },
         { cutOff: "length" },
       ]);
+      return b.world;
+    },
+  },
+  "agent-run-limit": {
+    description:
+      "Like workbench, but the next message's run reaches its limit of model calls and ends cleanly: what it did is kept and the transcript says why it stopped.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      b.world.replies.push([{ say: "Still working through the files." }, { cutOff: "max_calls" }]);
       return b.world;
     },
   },

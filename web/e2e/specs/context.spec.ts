@@ -68,6 +68,24 @@ test("a recorded request and where its parameters came from", async ({ open, exp
   await expectAria(eika, "context-recorded", "role=region[name='Part detail']");
 });
 
+test("the block the model reads after a message is in the inspector and not the transcript", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "profiles" });
+  await inspect(eika);
+  await eika.click("role=navigation[name=Parts] >> role=button[name=/^Messages/]");
+  const dialog = eika.page.getByRole("dialog", { name: "Context inspector" });
+  const first = dialog.getByRole("article", { name: "Message 1, user" });
+  await expect(first).toContainText("Context, added when sent");
+  await expect(first).toContainText("time: Sat 2026-03-14 12:00 +00:00 (UTC)");
+  await eika.click("role=button[name=Close]");
+  // What the user wrote is what the transcript shows.
+  const transcript = eika.page.getByRole("region", { name: "Session" });
+  await expect(transcript.getByText("The webhook client retries immediately")).toBeVisible();
+  await expect(transcript.getByText("<context>")).toHaveCount(0);
+  await expect(transcript.getByText("2026-03-14 12:00")).toHaveCount(0);
+});
+
 test("a part of the next request opens the setting behind it", async ({ open }) => {
   const eika = await open({ scenario: "profiles" });
   await inspect(eika);

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"slices"
 	"sync"
@@ -140,25 +141,41 @@ func (c *Counter) predict(ctx context.Context, req provider.Request) (*pending, 
 
 	if c.src.Level() == LevelChat {
 		n, err := c.exact(ctx, stripped)
-		if err == nil {
+		switch {
+		case err == nil:
 			p.base, p.method = n, provider.MethodExact
-		} else if ctx.Err() != nil {
+		case ctx.Err() != nil:
 			return nil, ctx.Err()
+		default:
+			logFallback(provider.MethodExact, err)
 		}
 	}
 	p.cen = take(stripped)
 	if p.method == "" && c.src.Level() >= LevelText && c.model.n > 0 {
 		n, err := c.anchored(ctx, p)
-		if err == nil {
+		switch {
+		case err == nil:
 			p.base, p.method = n, provider.MethodAnchored
-		} else if ctx.Err() != nil {
+		case ctx.Err() != nil:
 			return nil, ctx.Err()
+		default:
+			logFallback(provider.MethodAnchored, err)
 		}
 	}
 	if p.method == "" {
 		p.base, p.method = c.estimated(p), provider.MethodEstimated
 	}
 	return p, nil
+}
+
+// logFallback records why a prediction dropped from a method to the one below
+// it. A route that fails or times out lowers the method silently otherwise, and
+// a prediction that is suddenly estimated cannot be explained afterwards.
+func logFallback(from provider.Method, err error) {
+	if errors.Is(err, ErrUnsupported) {
+		return
+	}
+	slog.Warn("token count fell back to a lower method", "tried", string(from), "error", err)
 }
 
 // Estimate returns the size of req by the estimated method alone, without
@@ -291,6 +308,8 @@ func (c *Counter) learn(ctx context.Context, p *pending, measured int) {
 		if !p.modelled {
 			if t, x, err := c.census(ctx, p.cen); err == nil {
 				p.text, p.x, p.modelled = t, x, true
+			} else if ctx.Err() == nil {
+				slog.Warn("token count could not learn from a measurement", "error", err)
 			}
 		}
 		if p.modelled {

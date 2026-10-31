@@ -985,6 +985,7 @@
               "message": {
                 "object": {
                   "content": "string",
+                  "context": "string",
                   "images": {
                     "array": {
                       "object": {
@@ -1081,16 +1082,19 @@
                         "arguments": "any",
                         "arguments_malformed": "boolean",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "wire_id"
                       ]
                     }
                   }
                 },
                 "optional": [
                   "content",
+                  "context",
                   "images",
                   "is_error",
                   "metrics",
@@ -1361,6 +1365,7 @@
               "array": {
                 "object": {
                   "content": "string",
+                  "context": "string",
                   "images": {
                     "array": {
                       "object": {
@@ -1457,16 +1462,19 @@
                         "arguments": "any",
                         "arguments_malformed": "boolean",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "wire_id"
                       ]
                     }
                   }
                 },
                 "optional": [
                   "content",
+                  "context",
                   "images",
                   "is_error",
                   "metrics",
@@ -1872,6 +1880,7 @@
               "array": {
                 "object": {
                   "content": "string",
+                  "context": "string",
                   "images": {
                     "array": {
                       "object": {
@@ -1968,16 +1977,19 @@
                         "arguments": "any",
                         "arguments_malformed": "boolean",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "wire_id"
                       ]
                     }
                   }
                 },
                 "optional": [
                   "content",
+                  "context",
                   "images",
                   "is_error",
                   "metrics",
@@ -2147,6 +2159,7 @@
                   "message": {
                     "object": {
                       "content": "string",
+                      "context": "string",
                       "images": {
                         "array": {
                           "object": {
@@ -2243,16 +2256,19 @@
                             "arguments": "any",
                             "arguments_malformed": "boolean",
                             "id": "string",
-                            "name": "string"
+                            "name": "string",
+                            "wire_id": "string"
                           },
                           "optional": [
-                            "arguments_malformed"
+                            "arguments_malformed",
+                            "wire_id"
                           ]
                         }
                       }
                     },
                     "optional": [
                       "content",
+                      "context",
                       "images",
                       "is_error",
                       "metrics",
@@ -2278,6 +2294,7 @@
               "array": {
                 "object": {
                   "content": "string",
+                  "context": "string",
                   "images": {
                     "array": {
                       "object": {
@@ -2374,16 +2391,19 @@
                         "arguments": "any",
                         "arguments_malformed": "boolean",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "wire_id"
                       ]
                     }
                   }
                 },
                 "optional": [
                   "content",
+                  "context",
                   "images",
                   "is_error",
                   "metrics",

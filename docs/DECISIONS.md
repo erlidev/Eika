@@ -344,6 +344,190 @@ this file says why, so neither repeats the other.
 - Model names are unique across providers, because runs name a model
   alone.
 
+### Tool-call ids
+
+- **The loop mints an id for every tool call and keeps the backend's for the
+  wire only.** Local servers reuse ids: llama.cpp can answer `call_0` in every
+  response, a server may send none, a Responses server counts per response.
+  Entries, events, the resume rule (`session.PathResumable`) and, from phase
+  4, approvals and the dispatched marker are keyed by the call, so an id that
+  two calls share corrupts them: two parallel calls with the same empty id
+  were one pending call to the resume rule. `ToolCall.ID` is now Eika's
+  (`call_` and 24 hex digits, from `crypto/rand`) and `ToolCall.WireID` is the
+  backend's, set by the loop when a response's call arrives
+  (`agent.mintCall`). A tool result names its call by Eika's id; a provider
+  translates it with `provider.WireToolCallIDs` when it serialises, so the
+  result of a call carries the id the backend gave the call.
+- **Replay is byte for byte.** A request sends the backend's id exactly as it
+  came, from the first request that carries the call to every one after, so
+  the serialised prefix does not change when a call is replayed and exact
+  counting sees no drift from it. A backend that gave none (`WireID` is the
+  empty string) is sent Eika's id instead, the same on every replay: an empty
+  `call_id` is invalid under Responses and ambiguous under chat when two
+  calls share it. `WireID` is a pointer so that "the backend sent nothing"
+  (`""`) and "stored before ids were minted" (absent) differ.
+- **Old entries stay as they are.** A stored call with no `wire_id` has one id
+  that is both, and is replayed under it, empty included. Nothing rewrites
+  history, because a rewritten id is a changed prefix.
+- **A session may change protocol.** Both providers read the same
+  `ToolCall`, so a conversation stored under `chat` replays under `responses`
+  (`call_id` is the wire id) and the reverse; neither protocol's item id
+  (`fc_...`) is stored or sent, since the request is stateless.
+- Rejected: replacing the backend's id at the provider, so that the loop never
+  sees a collision (the provider cannot see the other responses of a session,
+  so it cannot make an id unique in one); a counter per session (it restarts
+  with a restart, and a mint must not depend on state that does not persist);
+  rewriting the ids of old entries (above).
+
+### The context block
+
+- **Every user-side message ends with a `<context>` block that states the time
+  to the minute, written once when the message is first sent.**
+  `Message.Context` holds it, stored with the message, and a request joins it
+  to the message's text with a blank line (`Message.ModelText`). The block is
+  `<context>`, one `name: value` line per field in a fixed order, `</context>`,
+  so the channel (phase 2) and the notices (phase 2 and later) join as more
+  lines and nothing about the shape changes: `time: Sat 2026-10-31 14:05 +00:00
+  (UTC)` today. A message that already has its block keeps it: a message read
+  back from the store, or given back to its queue by a turn that failed, is
+  never stamped again.
+- **Why stored, and why apart from the text.** The time is read once and
+  written once. A block computed when a request is built would give every
+  earlier user message a different time on every call, the serialised prefix
+  would change at the first one, and the whole prompt cache would go with it;
+  a resumed session would send different bytes from the session it resumed.
+  The agent test that moves the clock between turns and across a restart and
+  asserts each request is a byte-prefix of the next is the proof. It is kept
+  out of `Content` because everything that reads `Content` (the transcript,
+  the turn's start event, the queue's display, the title, the transcript form
+  of a summary) means what the user wrote, and each would otherwise have to
+  strip a block of its own. Rejected: the block inside `Content` with the UI
+  and the title stripping it (one missed reader shows it to the user or puts
+  a clock in a title); the block built by the provider at send time (the
+  prefix problem above).
+- **When a message is stamped.** At the first point the loop holds it: `Run`
+  for the message it starts with, `Steer` and `FollowUp` for the ones queued.
+  A queued message states the minute the user sent it, not the minute a turn
+  picked it up, which may be a long tool call later. A tool result is not a
+  user-side message and carries no block, and nor does the summary a
+  compaction leaves. The images-in-tool-results message of the design (phase
+  2) is a user message the harness writes after a tool result; it will be
+  stamped like any other.
+- **The zone is UTC until the preamble exists.** The design puts the user's
+  time zone and locale in the preamble entry (phase 2), and the zone the block
+  states its time in is that zone. Nothing records the user's zone before then:
+  the browser knows it, but no setting carries it, and a setting for one value
+  the preamble item would replace is the speculative option the style guide
+  forbids. So `Options.Location` is UTC by default, the block states the
+  zone's name and offset beside the time, so the model never reads a UTC time
+  as local, and the preamble item passes the stored zone. Messages already
+  stored keep the zone they were written in. Rejected: the harness
+  container's local zone (a container's zone is UTC unless someone set it, and
+  says nothing of the user); a guess from the browser at each message (a
+  zone that can change between messages is a changed prefix, and the block
+  would disagree with the preamble).
+- **Counting.** The block is part of what is sent, so the counter counts it:
+  the endpoint's own rendering sees it under `exact`, and the census of the
+  anchored and estimated methods, the context breakdown and the part sizes
+  read `ModelText`. The Context inspector shows the block under its message.
+- **Compaction.** The cached form of a summary request sends the messages as
+  they were, blocks included, and its prompts say what a block is: not the
+  user's words, never quoted, useful for dating what happened. The transcript
+  form is written by the harness from `Content` and holds no block. Rejected:
+  stripping the blocks from the cached form (it is the cached prefix; changing
+  it costs the cache the form exists for).
+
+### Loop limits
+
+- **A run is bounded in model calls and in wall time.** `Options.Limits` holds
+  `MaxCalls` (default 40) and `MaxWall` (default 24 hours). 40 is the home
+  session's limit in `runtime.md` section 5; the design gives a subagent 200, and
+  the agent definitions of phase 2 set each agent's own. Until they exist every
+  session is a chat on one computer, which is the home session's case, so 40 is
+  the one default. A run is one `Agent.Run`, however many turns its follow-ups
+  start. A model call is a step of the loop: a retried attempt is the same call,
+  and the summary a compaction asks for is not one, since neither is the
+  model's own choice to go on.
+- **Hitting a limit is a clean end, not a failure.** The check runs at the top
+  of the loop, before the next model call and before steering is taken from its
+  queue: every tool call of the last response has been answered and stored, the
+  conversation ends on a tool result, and the run returns `nil`. It ends its
+  last turn with `turn.end` and the stop reason `max_calls` or `max_wall_time`;
+  the transcript says which limit and that a message continues the work
+  (`docs/api/events.md`). A message sent next starts a run with a fresh count,
+  from the stopped state. Messages still queued stay queued for it (the same
+  hand-over an abort makes). A run that has made no call is never stopped,
+  because the message it began with is not stored until the first call has
+  read it. The reason is on the live event, as `length` is; it is not stored
+  with the session, and the phase 2 `notice` entry kind is where a stored one
+  belongs. Rejected: failing the run with `run.error` (it reads as a fault and
+  the UI offers a retry of what is not a retry); cancelling the run's context
+  at the wall time (a tool killed halfway is an abort, with an unknown outcome,
+  and the limit exists to stop a loop, not a command); one more call to ask the
+  model to wrap up (a model that is looping does not stop looping because it is
+  asked).
+- **An identical call is warned about, never stopped.** From the third
+  identical consecutive tool call of a run, the result the model reads ends with
+  a warning that says how many times the call has been made in a row and asks
+  for a different approach. "Identical" is the same tool and the same
+  arguments as JSON: spacing and key order do not make a call different, and
+  arguments that are not JSON are compared as written. Consecutive means in the
+  order the run made them; any other call in between starts the count again.
+  The result keeps the tool's own text first, the event a client shows carries
+  the same text, and the call still runs: a poll that repeats on purpose
+  (waiting for a build) is not broken by it. Rejected: stopping at some count
+  (`runtime.md` says never, and a legitimate poll would be stopped); a
+  separate message beside the result (a notice the model might read as the
+  user's).
+
+### The stall timeout
+
+- **An attempt that receives no bytes for as long as it is allowed is aborted
+  and retried.** The allowance is `Limits.Stall` (30 s) once the response has
+  produced a token, and before the first token it is `30 s + predicted_prefilled
+  / prefill_rate x 2`, since 200k tokens of dense prefill take minutes and a
+  limit that fires in the middle of one throws the whole prefill away and
+  starts it over. The abort cancels the attempt's context with a cause, the
+  attempt fails as a retryable `provider.Error` that wraps `agent.ErrStalled`,
+  and the loop's ordinary retry path does the rest: the lease is released
+  (`stream` gives it back on every way out, so a more urgent call can take the
+  slot during the backoff), `message.reset` is emitted, one retry of the budget
+  is spent, and a run that stalls every time fails with a retryable
+  `run.error`.
+- **The clock starts when the lease is granted.** The wait in the queue is the
+  queue's, bounded by aging and the user's patience, and a call that waited
+  five minutes behind another session has not stalled. The attempt includes
+  the provider's request and the wait for the response's headers.
+- **Any bytes are progress.** Provider events are not enough: a server reading
+  a long prompt may send only SSE comments (`: keep-alive`), and a chunk with
+  nothing in it becomes no event. `provider.WithProgress` puts a function in
+  the context, and the client every provider shares (`NewHTTPClient`) calls it
+  when the response arrives and for each read of its body that returns bytes,
+  under either API. Reasoning, tool-call fragments and usage count like text.
+  The first token (text, reasoning or a tool-call fragment) ends the prefill
+  allowance. Rejected: counting only provider events (a server that is alive
+  would be killed); a second reader of the body in the agent (the provider
+  already reads it).
+- **Nothing is assumed cached.** `predicted_prefilled` is the predicted prompt
+  in full. What is cached is a guess until the response says so (the server may
+  have evicted the prefix, and the slot book of the queue records what a slot
+  held, not what it still does), and a limit that is too long costs a wait for a
+  server that really has hung while one that is too short repeats a whole
+  prefill. The cost is that a hung server is noticed after minutes at 128k, not
+  seconds.
+- **One prefill rate.** The default is the queue's: `inference.DefaultPrefillRate`
+  (2000 a second; the bench read 66002 tokens in 22.8 s, 2894 a second), which
+  slot affinity already prices a prefix with, read through the queue's policy
+  so a changed assumption changes both. When the endpoint has recorded calls,
+  the measured rate replaces it for the run: `store.PrefillRate` sums
+  `prefilled_tokens` and `prefill_ms` over the endpoint's newest 20 calls that
+  read at least 500 tokens (a short prompt is mostly the call's fixed cost),
+  read once when the run is built (`server.prefillRate`). A server slower than
+  the default would otherwise be killed during real prefills until a
+  measurement existed. Rejected: a second constant in the agent; a rate
+  learned only inside the run (every run would start from the default, which
+  is where the risk is).
+
 ### The provider probe
 
 - **A probe reads each server's own description, then verifies the counting
@@ -950,6 +1134,12 @@ verified against `/slots` while a call ran, on b11942). The design is
   POST is not. The code classed it correctly already (`Retryable`, so the agent
   loop recovers after its backoff); the fault was that nothing else recovered
   and a token count before every call would meet it as often as the call.
+  A request whose reused connection the server closes while it is being
+  written fails with net/http's `http: server closed idle connection`, which
+  is the same fault; `closedByServer` recognises it by that whole message,
+  because net/http keeps the value unexported and wraps nothing around it, so
+  there is no type or sentinel to test for. The regression test provokes the
+  real error, so a Go release that rewords it fails the test.
   Rejected: `Connection: close` on streamed requests (a TLS handshake per
   call to a hosted API for a fault of one server); disabling keep-alives
   (same cost); leaving it to the loop (the counter and the probe have no

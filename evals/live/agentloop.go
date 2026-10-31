@@ -72,6 +72,8 @@ type loopOptions struct {
 	sampling provider.Sampling
 	// asks are the user messages, one turn each.
 	asks []string
+	// clock, when set, is the loop's clock; nil is the real one.
+	clock func() time.Time
 }
 
 // playLoop runs the real agent loop against the bench, on one session with the
@@ -98,6 +100,7 @@ func playLoop(ctx context.Context, t *Target, o loopOptions) ([]Call, []agent.Mo
 		Recorder:         records,
 		Counter:          t.Counter,
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Clock:            o.clock,
 	})
 	s := agent.NewSession("live", "")
 	var runErr error

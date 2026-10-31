@@ -222,7 +222,7 @@ and reports no `timings`.
 | Field | Type | Meaning |
 |---|---|---|
 | `run_id` | string | Identifies the turn. |
-| `stop_reason` | string, optional | Why the model stopped, for example `stop`. `length` and `content_filter` mean the endpoint cut the response off: what it did produce is kept and stored, its tool calls are dropped, and the turn ends here. A client says so rather than showing an answer that simply stops. |
+| `stop_reason` | string, optional | Why the model stopped, for example `stop`. `length` and `content_filter` mean the endpoint cut the response off: what it did produce is kept and stored, its tool calls are dropped, and the turn ends here. A client says so rather than showing an answer that simply stops. `max_calls` and `max_wall_time` mean the run reached its limit of model calls or of time and ended there, without an error: everything it did is stored, every tool call is answered, and a message sent next continues it. Messages still queued stay queued for that run. |
 | `usage` | Usage | What the turn cost, summed over every model call in it. |
 | `context` | Usage | The last model call's own usage: how much of the model's context window the conversation now fills. |
 | `generation_ms` | number | The turn's total time inside model responses. |

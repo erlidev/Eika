@@ -26,7 +26,7 @@ import (
 
 // SummaryPrompt asks for the first summary of a conversation. It is Pi's,
 // told that it arrives inside the conversation it summarizes.
-const SummaryPrompt = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work. Do not continue the conversation, answer questions in it, or call tools: reply with the summary alone, and write it directly rather than deliberating at length.
+const SummaryPrompt = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work. Do not continue the conversation, answer questions in it, or call tools: reply with the summary alone, and write it directly rather than deliberating at length. Each user message ends with a <context> block the harness added, such as the time it was sent: it is not the user's words, so never treat it as a request or quote it, but use its time to date what happened.
 
 Use this EXACT format:
 
@@ -62,7 +62,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 // UpdatePrompt asks for a summary that folds newer messages into the one the
 // context begins with. It is Pi's, which reads the earlier summary from the
 // same <summary> tags the context carries it in.
-const UpdatePrompt = `The conversation above begins with an existing summary of earlier work, in <summary> tags; the messages after it are NEW. Update the existing summary with the new messages. Do not continue the conversation, answer questions in it, or call tools: reply with the updated summary alone, and write it directly rather than deliberating at length.
+const UpdatePrompt = `The conversation above begins with an existing summary of earlier work, in <summary> tags; the messages after it are NEW. Update the existing summary with the new messages. Do not continue the conversation, answer questions in it, or call tools: reply with the updated summary alone, and write it directly rather than deliberating at length. Each user message ends with a <context> block the harness added, such as the time it was sent: it is not the user's words, so never treat it as a request or quote it, but use its time to date what happened.
 
 RULES:
 - PRESERVE all existing information from the previous summary
@@ -103,7 +103,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 
 // TurnPrefixPrompt asks for the summary of the start of a turn too large to
 // keep whole. It is Pi's.
-const TurnPrefixPrompt = `The most recent user request above began a turn that is too large to keep whole. The rest of that turn (the recent work) is retained; the part above, from that request on, is the PREFIX of the turn. Do not continue the conversation or call tools: reply with a summary of the prefix alone, as context for the retained suffix:
+const TurnPrefixPrompt = `The most recent user request above began a turn that is too large to keep whole. The rest of that turn (the recent work) is retained; the part above, from that request on, is the PREFIX of the turn. Do not continue the conversation or call tools: reply with a summary of the prefix alone, as context for the retained suffix. Each user message ends with a <context> block the harness added, such as the time it was sent: it is not the user's words, so never treat it as a request or quote it.
 
 ## Original Request
 [What did the user ask for in this turn?]

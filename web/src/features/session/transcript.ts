@@ -236,6 +236,10 @@ export function cutOffText(stopReason: string | undefined): string | undefined {
       return "Cut off at the model's output limit. Ask it to continue, or raise Max output for this model.";
     case "content_filter":
       return "Cut off by the endpoint's content filter.";
+    case "max_calls":
+      return "Stopped at the limit of model calls for one run. Everything it did is kept: send a message to carry on.";
+    case "max_wall_time":
+      return "Stopped at the time limit for one run. Everything it did is kept: send a message to carry on.";
     default:
       return undefined;
   }

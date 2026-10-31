@@ -89,6 +89,15 @@ type Options struct {
 	// Inference says how the agent's model calls wait for the GPU. The zero
 	// value takes no lease.
 	Inference Inference
+	// Clock tells the time the <context> block of a user-side message states,
+	// and the loop's wall-time limit measures against. Nil means time.Now.
+	Clock func() time.Time
+	// Location is the zone the block states its time in. Nil means UTC: the
+	// user's zone belongs to the session preamble, which does not exist yet
+	// (docs/DECISIONS.md, "The context block").
+	Location *time.Location
+	// Limits bound each run: its model calls and its wall time.
+	Limits Limits
 }
 
 // Agent runs the loop for one session at a time.
@@ -131,6 +140,13 @@ func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
 	if opts.Counter == nil {
 		opts.Counter = counter.NewEstimating()
 	}
+	if opts.Clock == nil {
+		opts.Clock = time.Now
+	}
+	if opts.Location == nil {
+		opts.Location = time.UTC
+	}
+	opts.Limits = opts.Limits.withDefaults()
 	return &Agent{provider: p, counter: opts.Counter, tools: r, opts: opts, accepting: true}
 }
 
@@ -142,7 +158,7 @@ func (a *Agent) Steer(msg provider.Message) bool {
 	if !a.accepting {
 		return false
 	}
-	a.steering.push(msg)
+	a.steering.push(a.stamp(msg))
 	return true
 }
 
@@ -154,7 +170,7 @@ func (a *Agent) FollowUp(msg provider.Message) bool {
 	if !a.accepting {
 		return false
 	}
-	a.followUps.push(msg)
+	a.followUps.push(a.stamp(msg))
 	return true
 }
 
@@ -180,12 +196,16 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Messag
 	defer a.closeQueues()
 	a.seedCounter(ctx, s, prompt)
 
-	msgs, origin := []provider.Message{userMessage}, (*queue)(nil)
+	msgs, origin := []provider.Message{a.stamp(userMessage)}, (*queue)(nil)
 	if userMessage.Empty() {
 		msgs = nil
 	}
+	g := newGuard(a.opts.Clock())
 	for {
-		if err := a.turn(ctx, s, prompt, msgs, origin); err != nil {
+		if err := a.turn(ctx, s, prompt, g, msgs, origin); err != nil {
+			if errors.Is(err, errRunLimit) {
+				return nil
+			}
 			return err
 		}
 		msgs, origin = a.nextQueued()
@@ -197,9 +217,12 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Messag
 
 // turn runs one assistant turn: deliver msgs, then alternate model calls and
 // tool calls until the model stops asking for tools. prompt is the run's
-// system prompt by section. origin is the queue msgs came from, so that an
-// aborted turn can put them back.
-func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []provider.Message, origin *queue) error {
+// system prompt by section, and g follows the run against its limits. origin is
+// the queue msgs came from, so that an aborted turn can put them back. A turn
+// that finds its run at a limit before a model call ends with errRunLimit,
+// after the turn.end event and with everything it did stored and the messages
+// it had not delivered back in their queues.
+func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, g *guard, msgs []provider.Message, origin *queue) error {
 	runID := newRunID()
 	// Undelivered messages are in the conversation, because the model call
 	// needs them, but not yet in the store. A turn that never gets a response
@@ -251,6 +274,16 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []p
 	}
 
 	for {
+		// The limits are checked before steering is taken from its queue, so a
+		// message that arrived while the last tool ran stays queued for the run
+		// that continues, and not half-delivered.
+		if reason := g.stop(a.opts.Clock(), a.opts.Limits); reason != "" {
+			restoreFrom(0)
+			a.endTurn(ctx, s, runID, reason, &gen)
+			a.opts.Logger.Info("run stopped at its limit",
+				"session_id", s.ID, "run_id", runID, "reason", reason, "model_calls", g.calls)
+			return errRunLimit
+		}
 		for _, m := range a.drainSteering() {
 			addPending(m)
 			steered = append(steered, m)
@@ -260,6 +293,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []p
 			return a.fail(ctx, s, runID, fmt.Errorf("run turn: %w", err))
 		}
 
+		g.calls++
 		resp, sent, count, err := a.call(ctx, s, runID, prompt, &gen, &pendingMark)
 		if err != nil {
 			restoreFrom(0)
@@ -304,15 +338,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []p
 		}
 
 		if len(reply.ToolCalls) == 0 {
-			a.emit(ctx, s, event.TypeTurnEnd, event.TurnEnd{
-				RunID:         runID,
-				StopReason:    stop,
-				Usage:         gen.usage(),
-				Context:       gen.context,
-				GenerationMS:  gen.elapsed.Milliseconds(),
-				ContextWindow: a.opts.ContextWindow,
-				Timings:       gen.reported(),
-			})
+			a.endTurn(ctx, s, runID, stop, &gen)
 			a.opts.Logger.Info("turn finished",
 				"session_id", s.ID, "run_id", runID, "total_tokens", gen.usage().TotalTokens)
 			return nil
@@ -323,7 +349,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []p
 				err = errors.Join(err, a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err))
 				return a.fail(ctx, s, runID, err)
 			}
-			result, err := a.callTool(ctx, s, runID, call)
+			result, err := a.callTool(ctx, s, runID, g, call)
 			if err != nil {
 				err = errors.Join(err, a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err))
 				return a.fail(ctx, s, runID, err)
@@ -334,6 +360,19 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []p
 			}
 		}
 	}
+}
+
+// endTurn reports a turn that ended, and why, as turn.end.
+func (a *Agent) endTurn(ctx context.Context, s *Session, runID, stop string, gen *generation) {
+	a.emit(ctx, s, event.TypeTurnEnd, event.TurnEnd{
+		RunID:         runID,
+		StopReason:    stop,
+		Usage:         gen.usage(),
+		Context:       gen.context,
+		GenerationMS:  gen.elapsed.Milliseconds(),
+		ContextWindow: a.opts.ContextWindow,
+		Timings:       gen.reported(),
+	})
 }
 
 // abandonToolCalls answers the calls a failed turn never ran. Every tool call
@@ -363,8 +402,11 @@ func (a *Agent) abandonToolCalls(ctx context.Context, s *Session, runID string, 
 
 // callTool runs one tool call and reports it as tool.call and tool.result
 // events. A tool that fails for a reason the model can act on returns a result
-// with IsError set; an error here is the harness's own failure.
-func (a *Agent) callTool(ctx context.Context, s *Session, runID string, c provider.ToolCall) (provider.Message, error) {
+// with IsError set; an error here is the harness's own failure. A call the run
+// has now made three or more times in a row, with the same arguments, has a
+// warning added to its result: the model reads it, the call is not stopped and
+// nor is the run.
+func (a *Agent) callTool(ctx context.Context, s *Session, runID string, g *guard, c provider.ToolCall) (provider.Message, error) {
 	a.emit(ctx, s, event.TypeToolCall, event.ToolCall{
 		RunID:     runID,
 		CallID:    c.ID,
@@ -376,6 +418,9 @@ func (a *Agent) callTool(ctx context.Context, s *Session, runID string, c provid
 	result, err := a.dispatch(ctx, s, runID, c)
 	if err != nil {
 		return provider.Message{}, fmt.Errorf("run tool %s: %w", c.Name, err)
+	}
+	if n := g.repeated(c); n >= repeatWarnAt {
+		result.Content += repeatWarning(c.Name, n)
 	}
 	a.emit(ctx, s, event.TypeToolResult, event.ToolResult{
 		RunID:      runID,
@@ -495,6 +540,33 @@ func (a *Agent) emit(ctx context.Context, s *Session, typ string, payload any) {
 		return
 	}
 	a.opts.Emitter.Emit(ctx, e)
+}
+
+// mintCall gives a call the backend named its own id. Local servers reuse ids
+// (call_0 in every response, none at all, a counter per response), so the
+// backend's id keys nothing: it is kept as the call's WireID, for the request
+// that sends the call back, and the id every entry, event and approval uses is
+// minted here. A call that already has a WireID was minted before and is left
+// alone.
+func mintCall(c provider.ToolCall) provider.ToolCall {
+	if c.WireID != nil {
+		return c
+	}
+	wire := c.ID
+	c.WireID = &wire
+	c.ID = newCallID()
+	return c
+}
+
+// newCallID returns a unique id for one tool call. It looks like the ids
+// OpenAI mints, since it is what a request sends for a call whose backend gave
+// none.
+func newCallID() string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("call_%d", time.Now().UnixNano())
+	}
+	return "call_" + hex.EncodeToString(b[:])
 }
 
 // newRunID returns an identifier for one turn.

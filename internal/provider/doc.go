@@ -19,7 +19,8 @@
 // Method say how large a request is expected to be and how that was reached;
 // ChatEncoder is the optional interface of a Provider that can state the Chat
 // Completions body of a request, which package counter renders to count it.
-// NewHTTPClient is the client every request to an endpoint goes through. The
+// NewHTTPClient is the client every request to an endpoint goes through, and
+// WithProgress has it report the bytes of a response as they arrive. The
 // only implementation today is provider/openai, in two protocols: Chat
 // Completions and the stateless Responses API, which Endpoint.API selects.
 // Package probe, below this one, works out which inference server an endpoint is

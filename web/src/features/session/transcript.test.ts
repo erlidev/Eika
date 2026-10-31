@@ -440,6 +440,15 @@ describe("a turn the endpoint cut off", () => {
     expect(last).toMatchObject({ kind: "assistant", streaming: false });
   });
 
+  it("says why a run stopped at one of its limits, and that nothing was lost", () => {
+    for (const reason of ["max_calls", "max_wall_time"]) {
+      const state = fold([...turn.slice(0, 3), ended(reason)]);
+      expect(cutOffText(state.stopReason)).toContain("send a message to carry on");
+    }
+    expect(cutOffText("max_calls")).toContain("model calls");
+    expect(cutOffText("max_wall_time")).toContain("time limit");
+  });
+
   it("says nothing for a turn that stopped because the model was finished", () => {
     expect(cutOffText(fold([...turn.slice(0, 3), ended("stop")]).stopReason)).toBeUndefined();
   });

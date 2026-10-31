@@ -114,6 +114,15 @@ const (
 type Message struct {
 	Role    Role   `json:"role"`
 	Content string `json:"content,omitempty"`
+	// Context is the <context> block a user-side message ends with: the time
+	// it was sent, and later its channel and notices. It is written once, when
+	// the message is first sent, and stored with it, so a message is sent
+	// again with the very bytes it was sent with; computing it at send time
+	// would change the prefix of every request. It is kept apart from Content
+	// because it is not what the user wrote: the interface shows Content, a
+	// title is made from Content, and only a request joins the two
+	// (ModelText).
+	Context string `json:"context,omitempty"`
 	// Images are the pictures a user message carries beside Content. A
 	// request carries them only to a model that accepts images; the agent
 	// replaces them with a note for any other.
@@ -160,6 +169,19 @@ type Image struct {
 // message is not sent.
 func (m Message) Empty() bool {
 	return m.Content == "" && len(m.Images) == 0
+}
+
+// ModelText returns the text of a user-side message as the model reads it: what
+// the user wrote, then the context block at its end. It is what a request sends
+// and what is counted for it.
+func (m Message) ModelText() string {
+	switch {
+	case m.Context == "":
+		return m.Content
+	case m.Content == "":
+		return m.Context
+	}
+	return m.Content + "\n\n" + m.Context
 }
 
 // MessageMetrics is the measured state after one assistant response. It is
@@ -231,10 +253,61 @@ func DecodeToolArguments(raw json.RawMessage, malformed bool) (ToolArguments, er
 }
 
 // ToolCall is a request from the model to run one tool.
+//
+// A call has two ids. ID is Eika's own, minted by the agent loop and unique in
+// the session: entries, events and approvals are keyed by it. WireID is the id
+// the backend gave the call, kept only so a later request can send it back as
+// the backend knows it; local servers reuse ids (call_0, none at all, a counter
+// per response), so it identifies nothing. A call that has no WireID, such as
+// every call stored before the loop minted ids, has one id that is both.
 type ToolCall struct {
-	ID        string        `json:"id"`
+	ID string `json:"id"`
+	// WireID is the backend's id for the call, nil when ID is also the id on
+	// the wire. A backend that gave none has a WireID that is the empty string.
+	WireID    *string       `json:"wire_id,omitempty"`
 	Name      string        `json:"name"`
 	Arguments ToolArguments `json:"arguments"`
+}
+
+// Wire returns the id a request sends for the call: the backend's own, so that
+// what the server sees is what it produced, byte for byte. A call the backend
+// gave no id is sent under Eika's, which is unique and so a valid id for any
+// protocol, and which a replay sends again unchanged.
+func (c ToolCall) Wire() string {
+	if c.WireID != nil && *c.WireID != "" {
+		return *c.WireID
+	}
+	return c.ID
+}
+
+// WireToolCallIDs maps the Eika id of each tool call in msgs to the id a
+// request sends for it. A tool result names the call by Eika's id; the
+// providers translate it with this, so a result carries the id of the call it
+// answers whatever the backend called it. A call whose wire id is its own id is
+// not in the map.
+func WireToolCallIDs(msgs []Message) map[string]string {
+	var ids map[string]string
+	for _, m := range msgs {
+		for _, c := range m.ToolCalls {
+			if w := c.Wire(); w != c.ID {
+				if ids == nil {
+					ids = map[string]string{}
+				}
+				ids[c.ID] = w
+			}
+		}
+	}
+	return ids
+}
+
+// WireToolCallID returns the id to send for the result of the call that Eika
+// knows as id, given the map WireToolCallIDs built: the call's wire id, or id
+// itself for a call not in the map.
+func WireToolCallID(ids map[string]string, id string) string {
+	if w, ok := ids[id]; ok {
+		return w
+	}
+	return id
 }
 
 // MarshalJSON safely represents malformed arguments and marks them so a
@@ -243,11 +316,13 @@ func (c ToolCall) MarshalJSON() ([]byte, error) {
 	arguments, malformed := c.Arguments.JSON()
 	return json.Marshal(struct {
 		ID                 string          `json:"id"`
+		WireID             *string         `json:"wire_id,omitempty"`
 		Name               string          `json:"name"`
 		Arguments          json.RawMessage `json:"arguments"`
 		ArgumentsMalformed bool            `json:"arguments_malformed,omitempty"`
 	}{
 		ID:                 c.ID,
+		WireID:             c.WireID,
 		Name:               c.Name,
 		Arguments:          arguments,
 		ArgumentsMalformed: malformed,
@@ -258,6 +333,7 @@ func (c ToolCall) MarshalJSON() ([]byte, error) {
 func (c *ToolCall) UnmarshalJSON(data []byte) error {
 	var wire struct {
 		ID                 string          `json:"id"`
+		WireID             *string         `json:"wire_id"`
 		Name               string          `json:"name"`
 		Arguments          json.RawMessage `json:"arguments"`
 		ArgumentsMalformed bool            `json:"arguments_malformed"`
@@ -269,7 +345,7 @@ func (c *ToolCall) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*c = ToolCall{ID: wire.ID, Name: wire.Name, Arguments: arguments}
+	*c = ToolCall{ID: wire.ID, WireID: wire.WireID, Name: wire.Name, Arguments: arguments}
 	return nil
 }
 

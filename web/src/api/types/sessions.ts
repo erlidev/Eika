@@ -63,7 +63,14 @@ export type Role = "system" | "user" | "assistant" | "tool";
 
 /** MessageToolCall is one tool call a model asked for. */
 export type MessageToolCall = {
+  /** id is Eika's own id for the call, the one events and results use. */
   id: string;
+  /**
+   * wire_id is the id the model server gave the call, kept to send back as the
+   * server knows it. Absent on a call stored before Eika minted ids, whose one
+   * id is both. A client does not read it.
+   */
+  wire_id?: string;
   name: string;
   arguments: unknown;
   /** arguments_malformed marks `arguments` as the model's quoted malformed text. */
@@ -96,6 +103,12 @@ export type MessageImage = {
 export type Message = {
   role: Role;
   content?: string;
+  /**
+   * context is the block the model reads at the end of a user message: the
+   * time it was sent. It is not what the user wrote, so the transcript shows
+   * `content` alone and the Context panel shows both.
+   */
+  context?: string;
   /** images are the pictures a user message carries beside its text. */
   images?: MessageImage[];
   /** reasoning is the model's thinking for this message, shown apart from its answer. */

@@ -131,6 +131,7 @@ func TestPreviewIsTheRequestARunSends(t *testing.T) {
 				},
 				Recorder: calls,
 				Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Clock:    func() time.Time { return time.Date(2026, 10, 31, 21, 8, 30, 0, time.UTC) },
 			})
 			s := agent.NewSession("s1", "w1")
 			s.Conversation.Append(provider.UserMessage("earlier"))
@@ -148,7 +149,10 @@ func TestPreviewIsTheRequestARunSends(t *testing.T) {
 
 			want := preview.Request()
 			if c.message != "" {
-				want.Messages = append(want.Messages, provider.UserMessage(c.message))
+				// The preview cannot state the time of a message not sent yet.
+				sentAt := provider.UserMessage(c.message)
+				sentAt.Context = "<context>\ntime: Sat 2026-10-31 21:08 +00:00 (UTC)\n</context>"
+				want.Messages = append(want.Messages, sentAt)
 			}
 			sent := p.Requests()[0]
 			if !reflect.DeepEqual(sent, want) {

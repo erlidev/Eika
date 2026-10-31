@@ -169,6 +169,16 @@ function MessageCard({ n, message: m, size, largest, toolName }: MessageCardProp
             {whole ? "Show less" : `Show all ${formatTokens(content.length)} characters`}
           </Button>
         )}
+        {m.context !== undefined && m.context !== "" && (
+          <div className="space-y-0.5">
+            <p className="text-muted-foreground text-2xs font-semibold tracking-wide uppercase">
+              Context, added when sent
+            </p>
+            <p className="text-muted-foreground font-mono text-xs break-words whitespace-pre-wrap">
+              {m.context}
+            </p>
+          </div>
+        )}
         {(m.tool_calls ?? []).map((c) => (
           <div key={c.id} className="space-y-1">
             <p className="text-xs">

@@ -102,7 +102,7 @@ func MeasureParts(ctx context.Context, ctr *counter.Counter, c Context) Breakdow
 			return n
 		}
 		size := MessageSize{}
-		size.Tokens = text(m.Content)
+		size.Tokens = text(m.ModelText())
 		for _, call := range m.ToolCalls {
 			size.Tokens += text(call.Name) + text(string(call.Arguments))
 		}
