@@ -17,6 +17,13 @@
 // cannot be admitted cancels running background or maintenance calls, which
 // their callers retry.
 //
+// On an endpoint a pool lists in Hinted (a llama.cpp server with several
+// slots), a call that continues a session (Need.Affinity) is placed on the slot
+// of the server that holds the session's prefix, and Lease.SlotHint names it for
+// the request. The queue keeps what each slot holds, per endpoint; a call whose
+// slot is busy waits for it as long as reading the prefix again would take, and
+// then takes a free one. Any other call names no slot.
+//
 // The package depends on the standard library alone: the callers translate
 // provider rows into Endpoint values and call SetPools and SetPolicy when
 // settings change. Snapshot reports what holds each pool and what waits

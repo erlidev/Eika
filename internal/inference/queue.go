@@ -39,10 +39,19 @@ type Need struct {
 	// call is counted as taking none.
 	Tokens int
 	// Endpoint, Class and SessionID say who the call is, for the state the
-	// queue reports and the logs.
+	// queue reports and the logs. Endpoint is also the server a slot belongs
+	// to.
 	Endpoint  string
 	Class     string
 	SessionID string
+	// Affinity asks for the slot that holds the session's prefix, and Prompt is
+	// the tokens of the prompt the call reads, which the slot's cache is
+	// expected to hold already (zero means Tokens). It is set by a call that
+	// continues SessionID's conversation, and left false by one that shares
+	// nothing with it, such as a title. It takes effect only on an endpoint the
+	// pool lists in Hinted.
+	Affinity bool
+	Prompt   int
 	// Since is when the caller first began waiting for this call. A retry
 	// passes the first attempt's, so the aging it earned is kept. Zero means
 	// now.
@@ -81,6 +90,12 @@ type pool struct {
 	active     int
 	lastActive time.Time
 
+	// books record what the slots of each hinted endpoint hold, by endpoint
+	// name, and holdUntil is when the call at the head of the line stops
+	// waiting for its busy slot, zero while none does.
+	books     map[string]*slotBook
+	holdUntil time.Time
+
 	timer   *time.Timer
 	timerAt time.Time
 }
@@ -93,6 +108,9 @@ type waiter struct {
 	since    time.Time
 	seq      uint64
 	granted  chan struct{}
+	// waitingForSlot is when the call first found its session's slot busy,
+	// zero until it does.
+	waitingForSlot time.Time
 	// lease is set, with granted closed, when the call is admitted.
 	lease *Lease
 }
@@ -126,6 +144,7 @@ func (q *Queue) SetPools(pools []Pool) {
 		named[spec.Name] = struct{}{}
 		p := q.poolLocked(spec.Name)
 		p.spec, p.configured = spec, true
+		p.describeBooks()
 	}
 	for name, p := range q.pools {
 		if _, ok := named[name]; ok {
@@ -176,6 +195,7 @@ func (q *Queue) poolLocked(name string) *pool {
 			name:    name,
 			spec:    Pool{Name: name, Slots: 1, KV: KVUnknown},
 			running: map[*Lease]struct{}{},
+			books:   map[string]*slotBook{},
 		}
 		q.pools[name] = p
 	}
@@ -342,6 +362,7 @@ func (p *pool) fitsLocked(tokens int, gone map[*Lease]struct{}) bool {
 // first waiter that does not fit, so a large call is never overtaken by a
 // stream of small ones.
 func (q *Queue) dispatchLocked(p *pool, now time.Time) {
+	p.holdUntil = time.Time{}
 	for {
 		w := q.bestLocked(p, now)
 		if w == nil {
@@ -351,29 +372,40 @@ func (q *Queue) dispatchLocked(p *pool, now time.Time) {
 			q.preemptLocked(p, w, now)
 			break
 		}
-		q.grantLocked(p, w, now)
+		// A call that waits for the busy slot of its session holds the line
+		// like any call that does not fit, so a stream of small calls cannot
+		// take the room it will need when it stops waiting.
+		place := q.placeLocked(p, w, now)
+		if !place.until.IsZero() {
+			p.holdUntil = place.until
+			break
+		}
+		q.grantLocked(p, w, now, place)
 	}
 	q.armLocked(p, now)
 }
 
-// grantLocked admits a waiter.
-func (q *Queue) grantLocked(p *pool, w *waiter, now time.Time) {
+// grantLocked admits a waiter where place puts it.
+func (q *Queue) grantLocked(p *pool, w *waiter, now time.Time, place placement) {
 	p.waiting = slices.DeleteFunc(p.waiting, func(o *waiter) bool { return o == w })
-	slot := p.freeSlot()
+	slot := place.slot
 	earned := effective(w.need.Priority, w.since, now, q.policy.Aging)
-	l := &Lease{q: q, pool: p, need: w.need, slot: slot, earned: earned, started: now, waited: now.Sub(w.enqueued)}
+	l := &Lease{q: q, pool: p, need: w.need, slot: slot, hinted: place.hinted, earned: earned, started: now, waited: now.Sub(w.enqueued)}
 	l.ctx, l.cancel = context.WithCancelCause(w.ctx)
 	p.running[l] = struct{}{}
 	p.used += w.need.Tokens
 	if w.need.Priority != Maintenance {
 		p.active++
 	}
+	if place.hinted {
+		q.holdSlotLocked(p, w, slot, now)
+	}
 	w.lease = l
 	close(w.granted)
 	if l.waited >= waitLogThreshold {
-		q.log.Info("model call admitted after waiting", "pool", p.name, "slot", slot, "endpoint", w.need.Endpoint,
-			"class", w.need.Class, "session_id", w.need.SessionID, "priority", w.need.Priority.String(),
-			"earned", earned.String(), "waited_ms", l.waited.Milliseconds())
+		q.log.Info("model call admitted after waiting", "pool", p.name, "slot", slot, "hinted", place.hinted,
+			"endpoint", w.need.Endpoint, "class", w.need.Class, "session_id", w.need.SessionID,
+			"priority", w.need.Priority.String(), "earned", earned.String(), "waited_ms", l.waited.Milliseconds())
 	}
 	if p.spec.Cache > 0 && len(p.running) == 1 && l.need.Tokens > p.spec.Cache {
 		q.log.Warn("model call is larger than the pool's cache; admitted alone", "pool", p.name,
@@ -458,7 +490,8 @@ func (q *Queue) preemptLocked(p *pool, w *waiter, now time.Time) {
 // armLocked sets the timer that wakes the pool when a waiter that cannot be
 // admitted now will become eligible by the passing of time alone: a
 // maintenance call when the pool's idle time is up, or when its aging lifts it
-// out of maintenance.
+// out of maintenance, and a call that waits for its session's slot when it
+// stops.
 func (q *Queue) armLocked(p *pool, now time.Time) {
 	var next time.Time
 	soonest := func(t time.Time) {
@@ -474,6 +507,9 @@ func (q *Queue) armLocked(p *pool, now time.Time) {
 		if p.active == 0 {
 			soonest(p.lastActive.Add(q.policy.MaintenanceIdle))
 		}
+	}
+	if !p.holdUntil.IsZero() {
+		soonest(p.holdUntil)
 	}
 	if next.IsZero() {
 		stopTimer(p)

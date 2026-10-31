@@ -19,8 +19,12 @@ type Lease struct {
 	// Queue, whose context is the caller's own.
 	cancel context.CancelCauseFunc
 
-	need    Need
-	slot    int
+	need Need
+	slot int
+	// hinted reports that slot is a slot of the server the call names, which
+	// only a call that continues a session on an endpoint taking slot hints
+	// holds. Otherwise slot is the queue's own count.
+	hinted  bool
 	earned  Priority
 	started time.Time
 	waited  time.Duration
@@ -42,10 +46,16 @@ func (l *Lease) Queued() bool { return l.q != nil }
 // Waited is how long this lease waited in the queue before it was admitted.
 func (l *Lease) Waited() time.Duration { return l.waited }
 
-// Slot is the number of the pool slot the lease holds, counted from zero. It
-// is the queue's own count: it names the slot of the server only once a call
-// sends it (slot affinity).
+// Slot is the number of the slot the lease holds, counted from zero. It names
+// the slot of the server when SlotHint says the call names it, and is the
+// queue's own count otherwise.
 func (l *Lease) Slot() int { return l.slot }
+
+// SlotHint is the slot of the server the call should run on, and whether it
+// should name one at all. It is true only for a call that continues a session
+// on an endpoint that takes slot hints; any other call, and the lease of a nil
+// Queue, names none, and the server places it.
+func (l *Lease) SlotHint() (slot int, ok bool) { return l.slot, l.hinted }
 
 // Priority is the priority the call asked for, which is the one a record of
 // the call states. The priority it was admitted at, aged by waiting, may be
@@ -77,6 +87,11 @@ func (l *Lease) Release() {
 	p := l.pool
 	delete(p.running, l)
 	p.used -= l.need.Tokens
+	if l.hinted {
+		if book := p.books[l.need.Endpoint]; book != nil {
+			book.touch(l.slot, l.need.SessionID, now)
+		}
+	}
 	if l.need.Priority != Maintenance {
 		p.active--
 		p.lastActive = now

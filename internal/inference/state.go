@@ -24,7 +24,10 @@ type PoolState struct {
 
 // RunningState is one lease held.
 type RunningState struct {
+	// Slot is the slot held, and Hinted says it is the server's own slot
+	// number the call named, rather than the queue's count.
 	Slot      int
+	Hinted    bool
 	Endpoint  string
 	Class     string
 	SessionID string
@@ -74,7 +77,7 @@ func (q *Queue) Snapshot() []PoolState {
 		}
 		for l := range p.running {
 			st.Running = append(st.Running, RunningState{
-				Slot: l.slot, Endpoint: l.need.Endpoint, Class: l.need.Class, SessionID: l.need.SessionID,
+				Slot: l.slot, Hinted: l.hinted, Endpoint: l.need.Endpoint, Class: l.need.Class, SessionID: l.need.SessionID,
 				Priority: l.need.Priority, Tokens: l.need.Tokens, Held: now.Sub(l.started), Preempted: l.preempted,
 			})
 		}
