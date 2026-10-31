@@ -303,9 +303,7 @@ times. API: `api/eikad.md`.
 
 `executor/sandbox` is an HTTP client for one daemon; `Exec` streams the
 daemon's newline-delimited frames into the caller's writers. A 404 is
-`sandbox.ErrNotFound`. `Options.Dir` narrows a client to a directory below the
-daemon's root: paths are relative to it, commands start in it, and the
-client refuses paths outside it. Nothing uses it today.
+`sandbox.ErrNotFound`.
 
 ### Files
 

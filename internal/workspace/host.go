@@ -389,7 +389,7 @@ func (h *Host) client(ws Workspace) (*sandbox.Client, error) {
 	if ws.Address == "" {
 		return nil, fmt.Errorf("workspace %s has no address: it is not running", ws.ID)
 	}
-	return sandbox.New(sandbox.Options{BaseURL: ws.Address, Token: ws.Token, Root: Root, Dir: ws.Dir})
+	return sandbox.New(sandbox.Options{BaseURL: ws.Address, Token: ws.Token, Root: Root})
 }
 
 // address is the base URL the harness reaches the workspace's daemon on: the

@@ -109,14 +109,9 @@ func newFakeHost(t *testing.T) *fakeHost {
 }
 
 // filesOf returns the directory the files of a workspace the host reported
-// are in: its container's directory, narrowed to ws.Dir as the real host's
-// daemon client is.
+// are in: its container's directory.
 func (h *fakeHost) filesOf(ws workspace.Workspace) (string, error) {
-	dir, err := h.dirOf(ws.ID)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, filepath.FromSlash(ws.Dir)), nil
+	return h.dirOf(ws.ID)
 }
 
 // dirOf returns the directory a workspace's container holds.
