@@ -169,6 +169,32 @@ func (s *Store) ModelCall(ctx context.Context, sessionID, id string) (ModelCall,
 	return c, nil
 }
 
+// The calls PrefillRate reads: the newest few that read a prompt long enough
+// for the time to be the reading and not the call's fixed cost.
+const (
+	prefillRateCalls     = 20
+	prefillRateMinTokens = 500
+)
+
+// PrefillRate returns the speed, in prompt tokens a second, the endpoint named
+// read prompts at in its newest recorded calls: the tokens it processed over
+// the time it stated for processing them. ok is false when no call states
+// both, and the caller then has no measurement.
+func (s *Store) PrefillRate(ctx context.Context, endpoint string) (tokensPerSecond int, ok bool, err error) {
+	const q = `SELECT COALESCE(SUM(prefilled_tokens), 0), COALESCE(SUM(prefill_ms), 0) FROM (
+			SELECT prefilled_tokens, prefill_ms FROM model_calls
+			WHERE endpoint = $1 AND prefill_ms > 0 AND prefilled_tokens >= $2
+			ORDER BY created_at DESC, id DESC LIMIT $3) newest`
+	var tokens, ms int64
+	if err := s.pool.QueryRow(ctx, q, endpoint, prefillRateMinTokens, prefillRateCalls).Scan(&tokens, &ms); err != nil {
+		return 0, false, wrap("read the prefill rate of endpoint "+endpoint, err)
+	}
+	if tokens <= 0 || ms <= 0 {
+		return 0, false, nil
+	}
+	return int(tokens * 1000 / ms), true, nil
+}
+
 // jsonArray is the value a jsonb array column is written from: nil or empty
 // JSON is the empty array.
 func jsonArray(raw json.RawMessage) []byte {

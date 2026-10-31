@@ -27,6 +27,10 @@ type Inference struct {
 	// raising it makes the run's next call more urgent; nil means
 	// interactive.
 	Rank *inference.Rank
+	// PrefillRate is the prompt tokens per second the endpoint has been
+	// measured to read, which scales how long a call may be silent before its
+	// first token. Zero means no measurement: the queue's own assumed rate.
+	PrefillRate int
 }
 
 // QueueRecord is what the inference queue did for one model call.

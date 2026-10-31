@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -29,6 +30,43 @@ func NewHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: staleConnRetry{}}
 }
 
+// progressKey is the context key of the function WithProgress sets.
+type progressKey struct{}
+
+// WithProgress returns a context under which every request made with a client
+// from NewHTTPClient calls fn when the response arrives and each time more of
+// its body does, whatever the bytes are: a streamed response's keep-alive
+// comments count as well as its data. The agent loop uses it to tell a server
+// that is working through a long prompt from one that has stopped, which the
+// events a provider relays cannot, since a comment or a chunk with nothing in
+// it becomes no event. fn may be called from any goroutine.
+func WithProgress(ctx context.Context, fn func()) context.Context {
+	return context.WithValue(ctx, progressKey{}, fn)
+}
+
+// Progressed tells the function WithProgress set, if there is one, that bytes
+// arrived. A provider that does not read its response through a client from
+// NewHTTPClient, such as a scripted fake, calls it itself.
+func Progressed(ctx context.Context) {
+	if fn, ok := ctx.Value(progressKey{}).(func()); ok {
+		fn()
+	}
+}
+
+// progressBody reports each read that returned bytes.
+type progressBody struct {
+	io.ReadCloser
+	ctx context.Context
+}
+
+func (b progressBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		Progressed(b.ctx)
+	}
+	return n, err
+}
+
 // staleConnRetry is the transport NewHTTPClient installs.
 type staleConnRetry struct{}
 
@@ -44,7 +82,14 @@ func (staleConnRetry) RoundTrip(req *http.Request) (*http.Response, error) {
 		var reused bool
 		trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) { reused = info.WasIdle }}
 		resp, err := http.DefaultTransport.RoundTrip(req.WithContext(httptrace.WithClientTrace(req.Context(), trace)))
-		if err == nil || !reused || !closedByServer(err) || req.Context().Err() != nil || attempt == maxStaleAttempts {
+		if err == nil {
+			if _, watched := req.Context().Value(progressKey{}).(func()); watched {
+				Progressed(req.Context())
+				resp.Body = progressBody{ReadCloser: resp.Body, ctx: req.Context()}
+			}
+			return resp, nil
+		}
+		if !reused || !closedByServer(err) || req.Context().Err() != nil || attempt == maxStaleAttempts {
 			return resp, err
 		}
 		again := req.Clone(req.Context())

@@ -480,6 +480,54 @@ this file says why, so neither repeats the other.
   separate message beside the result (a notice the model might read as the
   user's).
 
+### The stall timeout
+
+- **An attempt that receives no bytes for as long as it is allowed is aborted
+  and retried.** The allowance is `Limits.Stall` (30 s) once the response has
+  produced a token, and before the first token it is `30 s + predicted_prefilled
+  / prefill_rate x 2`, since 200k tokens of dense prefill take minutes and a
+  limit that fires in the middle of one throws the whole prefill away and
+  starts it over. The abort cancels the attempt's context with a cause, the
+  attempt fails as a retryable `provider.Error` that wraps `agent.ErrStalled`,
+  and the loop's ordinary retry path does the rest: the lease is released
+  (`stream` gives it back on every way out, so a more urgent call can take the
+  slot during the backoff), `message.reset` is emitted, one retry of the budget
+  is spent, and a run that stalls every time fails with a retryable
+  `run.error`.
+- **The clock starts when the lease is granted.** The wait in the queue is the
+  queue's, bounded by aging and the user's patience, and a call that waited
+  five minutes behind another session has not stalled. The attempt includes
+  the provider's request and the wait for the response's headers.
+- **Any bytes are progress.** Provider events are not enough: a server reading
+  a long prompt may send only SSE comments (`: keep-alive`), and a chunk with
+  nothing in it becomes no event. `provider.WithProgress` puts a function in
+  the context, and the client every provider shares (`NewHTTPClient`) calls it
+  when the response arrives and for each read of its body that returns bytes,
+  under either API. Reasoning, tool-call fragments and usage count like text.
+  The first token (text, reasoning or a tool-call fragment) ends the prefill
+  allowance. Rejected: counting only provider events (a server that is alive
+  would be killed); a second reader of the body in the agent (the provider
+  already reads it).
+- **Nothing is assumed cached.** `predicted_prefilled` is the predicted prompt
+  in full. What is cached is a guess until the response says so (the server may
+  have evicted the prefix, and the slot book of the queue records what a slot
+  held, not what it still does), and a limit that is too long costs a wait for a
+  server that really has hung while one that is too short repeats a whole
+  prefill. The cost is that a hung server is noticed after minutes at 128k, not
+  seconds.
+- **One prefill rate.** The default is the queue's: `inference.DefaultPrefillRate`
+  (2000 a second; the bench read 66002 tokens in 22.8 s, 2894 a second), which
+  slot affinity already prices a prefix with, read through the queue's policy
+  so a changed assumption changes both. When the endpoint has recorded calls,
+  the measured rate replaces it for the run: `store.PrefillRate` sums
+  `prefilled_tokens` and `prefill_ms` over the endpoint's newest 20 calls that
+  read at least 500 tokens (a short prompt is mostly the call's fixed cost),
+  read once when the run is built (`server.prefillRate`). A server slower than
+  the default would otherwise be killed during real prefills until a
+  measurement existed. Rejected: a second constant in the agent; a rate
+  learned only inside the run (every run would start from the default, which
+  is where the risk is).
+
 ### The provider probe
 
 - **A probe reads each server's own description, then verifies the counting

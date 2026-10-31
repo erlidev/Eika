@@ -236,11 +236,24 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 	}
 	// The provider's goroutine must be told to stop on every way out, or the
 	// server goes on generating for a caller that has left.
-	callCtx, stop := context.WithCancel(lease.Context())
-	defer stop()
-	resp, err := a.read(callCtx, ctx, s, runID, req, gen)
+	callCtx, stop := context.WithCancelCause(lease.Context())
+	defer stop(nil)
+	// The attempt is watched from here, after the wait for the lease, and it
+	// gives the lease back on the way out whichever way it ends. Bytes the
+	// provider's client reads count as progress before any event does.
+	watch := a.watchStall(stop, q)
+	defer watch.stop()
+	callCtx = provider.WithProgress(callCtx, watch.touch)
+	resp, err := a.read(callCtx, ctx, s, runID, req, gen, watch)
 	if err != nil && lease.Preempted() {
 		return response{}, preemptedError()
+	}
+	if err != nil && ctx.Err() == nil {
+		if stall := stalled(context.Cause(callCtx)); stall != nil {
+			a.opts.Logger.Warn("model call stalled; aborting the attempt",
+				"session_id", s.ID, "run_id", runID, "error", stall)
+			return response{}, stall
+		}
 	}
 	return resp, err
 }
@@ -252,7 +265,7 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 // response quietly, emitting and measuring nothing, which is how a summary
 // is read. callCtx bounds the provider's request and ctx is the run's own,
 // which the events go out under.
-func (a *Agent) read(callCtx, ctx context.Context, s *Session, runID string, req provider.Request, gen *generation) (response, error) {
+func (a *Agent) read(callCtx, ctx context.Context, s *Session, runID string, req provider.Request, gen *generation, watch *stallWatch) (response, error) {
 	events, err := a.provider.Stream(callCtx, req)
 	if err != nil {
 		return response{}, fmt.Errorf("call model: %w", err)
@@ -270,10 +283,12 @@ func (a *Agent) read(callCtx, ctx context.Context, s *Session, runID string, req
 	begin := func() {
 		if started.IsZero() {
 			started = time.Now()
+			watch.tokenSeen()
 		}
 	}
 	done := false
 	for e := range events {
+		watch.touch()
 		if done {
 			return response{}, errors.New("call model: provider sent an event after completion")
 		}

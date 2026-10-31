@@ -180,6 +180,19 @@ session sends the same bytes and the prefix never changes under it. A request
 joins it to the text (`Message.ModelText`); the interface, titles and the
 transcript form of a summary use `Content` alone.
 
+A run is bounded by `Options.Limits` (`agent/limits.go`): 40 model calls and 24
+hours, checked before each call. A run that reaches one ends cleanly, with every
+tool call answered, and its last `turn.end` says which (`max_calls`,
+`max_wall_time`). A tool call made three or more times in a row with the same
+arguments has a warning appended to its result and still runs. Each attempt at a
+model call is also watched (`agent/stall.go`): once the lease is granted, a
+stream that sends no bytes for `Limits.Stall` (30 s; before the first token,
+that plus twice the time reading the predicted prompt takes at the endpoint's
+prefill rate) is aborted as a retryable failure, and the lease goes back. The
+bytes are counted by the shared HTTP client (`provider.WithProgress`), so
+comments and empty chunks count too. The rate is the endpoint's measured one
+(`store.PrefillRate`, from `model_calls`), else the queue's.
+
 Queues follow Pi: steering joins after the running tool, before the next model
 call; follow-ups wait for the turn to end (`QueueOneAtATime` or `QueueAll`).
 Aborting returns an unanswered message to its queue and answers every pending

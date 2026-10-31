@@ -41,7 +41,7 @@ const (
 //
 // Two of the guards never stop a run. A call repeated identically gets a
 // warning in its result from the third (repeatWarnAt), and a stalled stream
-// aborts one attempt, which the loop retries.
+// aborts one attempt, which the loop retries (stall.go).
 type Limits struct {
 	// MaxCalls is the most model calls a run makes. The calls of a retry, and
 	// the summary a compaction asks for, are not counted: they are not the
@@ -50,6 +50,12 @@ type Limits struct {
 	// MaxWall is the longest a run lasts, measured with Options.Clock and
 	// checked before each model call.
 	MaxWall time.Duration
+	// Stall is how long a model call's stream may send nothing before the
+	// attempt is aborted and tried again, once it has produced a token. Before
+	// its first token the call is allowed more, in proportion to the prompt it
+	// has to read (prefillAllowance). The time a call waits for a lease does not
+	// count.
+	Stall time.Duration
 }
 
 // withDefaults returns l with a default in every zero field.
@@ -59,6 +65,9 @@ func (l Limits) withDefaults() Limits {
 	}
 	if l.MaxWall <= 0 {
 		l.MaxWall = DefaultMaxWall
+	}
+	if l.Stall <= 0 {
+		l.Stall = DefaultStall
 	}
 	return l
 }

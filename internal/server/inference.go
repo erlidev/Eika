@@ -46,6 +46,24 @@ func (s *Server) queuePolicy(ctx context.Context) inference.Policy {
 	return policy
 }
 
+// prefillRate is the prompt tokens a second the named endpoint has read in its
+// recorded calls, which scales how long a call to it may be silent before its
+// first token. Zero means nothing is recorded yet (or the store could not say):
+// the agent then takes the queue's assumed rate.
+func (s *Server) prefillRate(ctx context.Context, endpoint string) int {
+	rate, ok, err := s.deps.Store.PrefillRate(ctx, endpoint)
+	if err != nil {
+		if ctx.Err() == nil {
+			s.log.Warn("read the measured prefill rate; assuming the queue's", "endpoint", endpoint, "error", err)
+		}
+		return 0
+	}
+	if !ok {
+		return 0
+	}
+	return rate
+}
+
 // poolEndpoint describes a stored provider to the queue.
 func poolEndpoint(p store.Provider) inference.Endpoint {
 	return inference.Endpoint{
