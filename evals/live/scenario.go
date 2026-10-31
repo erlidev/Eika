@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/counter"
 )
 
 // Scenario is one scripted conversation with the model. Run sends its
@@ -21,9 +22,14 @@ type Scenario struct {
 
 // Scenarios returns every scenario of the suite. Add a new one here.
 func Scenarios() []Scenario {
+	nonce := time.Now().UTC().Format("150405.000000")
 	return []Scenario{
 		ProviderProbe(),
-		CacheReuse(time.Now().UTC().Format("150405.000000")),
+		CacheReuse(nonce),
+		ToolsAndReasoning(nonce),
+		ImageInput(),
+		CountCost(nonce),
+		AnchoredCounting(nonce),
 	}
 }
 
@@ -44,10 +50,20 @@ type Result struct {
 	Calls []Call `json:"calls"`
 }
 
-// Execute plays the scenario against t and returns its result.
+// Execute plays the scenario against t and returns its result. The scenario
+// is one session: it gets a token counter of its own, which predicts every
+// request it sends. A prediction called exact that drifted fails the scenario,
+// whatever else it asserts.
 func (s Scenario) Execute(ctx context.Context, t *Target) Result {
 	start := time.Now()
-	calls, err := s.Run(ctx, t)
+	session := *t
+	if t.Source != nil {
+		session.Counter = counter.New(t.Source)
+	}
+	calls, err := s.Run(ctx, &session)
+	if err == nil {
+		err = exactDrift(calls)
+	}
 	res := Result{
 		Name:    s.Name,
 		Passed:  err == nil,
@@ -77,6 +93,16 @@ func (t *Target) Complete(ctx context.Context, label string, req provider.Reques
 	defer cancel()
 	req.Model = t.Model
 
+	var predicted *provider.Prediction
+	var countTime time.Duration
+	if t.Counter != nil {
+		began := time.Now()
+		if p, err := t.Counter.Predict(ctx, req); err == nil {
+			predicted = &p
+		}
+		countTime = time.Since(began)
+	}
+
 	start := time.Now()
 	events, err := t.Provider.Stream(ctx, req)
 	if err != nil {
@@ -100,6 +126,14 @@ func (t *Target) Complete(ctx context.Context, label string, req provider.Reques
 		}
 	}
 	call := newCall(label, usage, timings, stop, time.Since(start))
+	if predicted != nil {
+		call.Predicted, call.Method = &predicted.Tokens, string(predicted.Method)
+		seconds := countTime.Seconds()
+		call.CountSeconds = &seconds
+		if out, ok := t.Counter.Observe(ctx, req, usage); ok {
+			call.Drift = &out.Drift
+		}
+	}
 	if failure != nil {
 		return call, text.String(), fmt.Errorf("%s: %w", label, failure)
 	}
