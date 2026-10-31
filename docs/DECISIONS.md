@@ -122,10 +122,21 @@ this file says why, so neither repeats the other.
   `session_entries.commit_sha`, or fork-with-workspace. Eika is an assistant,
   not a coding harness, and sandboxes become its computers (phase 0 of
   `PLAN.md`).
-- Nothing replaced the hub. A workspace holds whatever is mounted into it: a
-  local project's host directory, bind-mounted. A `remote` project cannot be
-  created (the API refuses it), since only cloning could fill one; the kind
-  and column stay until projects are removed.
+- Nothing replaced the hub. A workspace holds only its own volume.
+- **Projects are gone, and a workspace stands alone.** The `projects` table
+  held a host directory and a git remote, which nothing needs once the git
+  layer is gone and sandboxes become computers. With it went the workspace's
+  `project_id`, `branch`, `base_commit` and `parent_workspace_id` (nothing set
+  the last), the `/api/projects` routes, host-directory bind mounts
+  (`Spec.HostPath`), and the project count in `GET /api/system`. A project
+  carried no ownership: the harness has one user, and the sign-in token is the
+  only gate to a workspace, so there was nothing to move onto the workspace.
+  `POST /api/workspaces` takes a name (and optionally an image and sandbox),
+  which keeps a sandboxed `bash` reachable until the `home` computer replaces
+  it. "Project" comes back in phase 2 with a new meaning.
+- **A workspace's volume is mounted at its root.** The files live in the
+  volume rather than the container's writable layer, and `Inspect` reports the
+  volume from the container's mounts, so a restarted harness can remove it.
 - What is left of git is inside the sandbox, for whatever an agent runs in
   bash. The `git` binary stays in the Core image for phase 5's memory
   repository.

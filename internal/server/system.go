@@ -19,7 +19,6 @@ type systemResponse struct {
 	Sandbox      sandboxHost  `json:"sandbox"`
 	Providers    int          `json:"providers"`
 	Models       int          `json:"models"`
-	Projects     int          `json:"projects"`
 }
 
 // dockerStatus says whether the harness can use the Docker socket.
@@ -81,11 +80,6 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	projects, err := s.deps.Store.Projects(ctx)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	body.Providers, body.Models, body.Projects = len(providers), len(models), len(projects)
+	body.Providers, body.Models = len(providers), len(models)
 	writeJSON(w, s.log, http.StatusOK, body)
 }

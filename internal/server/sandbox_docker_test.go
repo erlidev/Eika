@@ -49,10 +49,8 @@ func sandboxOf(cpus float64, memoryMB, pids int64, mode string, allow []string) 
 
 func TestANewWorkspaceGetsTheSandboxDefaults(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
 
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	if ws.Sandbox.Limits.PIDs != 4096 || ws.Sandbox.Limits.CPUs != 0 || ws.Sandbox.Limits.MemoryMB != 0 {
 		t.Errorf("limits = %+v, want the built-in process limit and nothing else", ws.Sandbox.Limits)
 	}
@@ -70,7 +68,7 @@ func TestANewWorkspaceGetsTheSandboxDefaults(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("put settings = %d: %s", rec.Code, rec.Body.String())
 	}
-	next := a.newWorkspace(t, project.ID)
+	next := a.newWorkspace(t)
 	want := workspace.Limits{CPUs: 2, MemoryBytes: 2048 << 20, PIDs: 512}
 	if got := a.host.confinements(next.ID); len(got) != 1 || got[0].Limits != want {
 		t.Errorf("created with %+v, want %+v", got, want)
@@ -103,11 +101,9 @@ func TestSandboxSettingsAreChecked(t *testing.T) {
 
 func TestCreatingAWorkspaceChecksItsSandbox(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
 	create := func(sb map[string]any) *httptest.ResponseRecorder {
 		return request(t, a.Server, "POST", "/api/workspaces", map[string]any{
-			"project_id": project.ID, "name": "work", "sandbox": sb,
+			"name": "work", "sandbox": sb,
 		})
 	}
 	for name, sb := range map[string]map[string]any{
@@ -140,9 +136,7 @@ func TestCreatingAWorkspaceChecksItsSandbox(t *testing.T) {
 func TestChangingASandboxAppliesItToTheContainer(t *testing.T) {
 	a := newAPI(t)
 	a.host.egressControl = true
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 
 	rec := request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(2, 4096, 0, "none", []string{"github.com"}))
 	changed := decodeBody[workspaceWire](t, rec, 200)
@@ -177,9 +171,7 @@ func TestChangingASandboxAppliesItToTheContainer(t *testing.T) {
 func TestUsageReportsTheSampleAndTheRefusedHosts(t *testing.T) {
 	a := newAPI(t)
 	a.host.egressControl = true
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(0, 0, 100, "allowlist", []string{"github.com"}))
 
 	// The sandbox asks the proxy for a host that is not on its list.
@@ -214,9 +206,7 @@ func TestUsageReportsTheSampleAndTheRefusedHosts(t *testing.T) {
 func TestEgressPolicyKnowsAWorkspaceByItsProxyToken(t *testing.T) {
 	a := newAPI(t)
 	a.host.egressControl = true
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	request(t, a.Server, "PUT", "/api/workspaces/"+ws.ID+"/sandbox", sandboxOf(0, 0, 0, "allowlist", []string{"github.com"}))
 
 	policy, err := a.EgressPolicy(t.Context(), ws.ID)

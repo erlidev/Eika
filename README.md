@@ -29,7 +29,6 @@ through the rest:
 3. Pick the models agents may use. Eika lists what the endpoint serves and
    suggests each model's limits; a test button sends one short request.
 4. Check that Eika can start sandbox containers.
-5. Add a first project: a directory on this machine.
 
 Nothing needs an environment file. Everything the setup asks, and the sandbox
 image besides, is in Settings afterwards. API keys and git

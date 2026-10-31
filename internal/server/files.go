@@ -205,7 +205,7 @@ func (s *Server) workspaceChanged(ctx context.Context, id string) {
 		s.log.Warn("read workspace for a change event", "workspace_id", id, "error", err)
 		return
 	}
-	s.workspaceState(ctx, ws.ID, ws.ProjectID, ws.State)
+	s.workspaceState(ctx, ws.ID, ws.State)
 }
 
 // asFileEntry renders an executor's file description on the wire.

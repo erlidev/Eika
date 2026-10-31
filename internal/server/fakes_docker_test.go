@@ -138,19 +138,15 @@ func (h *fakeHost) Create(_ context.Context, spec workspace.Spec) (workspace.Wor
 	if spec.Confinement.Proxied && !h.EgressControl() {
 		return workspace.Workspace{}, workspace.ErrNoEgressControl
 	}
-	dir := spec.HostPath
-	if dir == "" {
-		dir = filepath.Join(h.root, spec.ID)
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return workspace.Workspace{}, err
-		}
+	dir := filepath.Join(h.root, spec.ID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return workspace.Workspace{}, err
 	}
 	ws := workspace.Workspace{
 		ID:          spec.ID,
 		ContainerID: "container-" + spec.ID,
 		Image:       spec.Image,
 		State:       workspace.StateCreating,
-		HostPath:    spec.HostPath,
 		ProxyToken:  "proxy-token-" + spec.ID,
 		Proxied:     spec.Confinement.Proxied,
 	}
@@ -231,7 +227,7 @@ func (h *fakeHost) Destroy(ctx context.Context, ws *workspace.Workspace) error {
 	found, ok := h.workspaces[ws.ID]
 	delete(h.workspaces, ws.ID)
 	h.mu.Unlock()
-	if ok && found.ws.HostPath == "" {
+	if ok {
 		if err := os.RemoveAll(found.dir); err != nil {
 			return err
 		}

@@ -168,7 +168,6 @@ export type QuestionAsked = {
 /** WorkspaceState is the payload of a workspace.state event. */
 export type WorkspaceState = {
   workspace_id: string;
-  project_id?: string;
   state: string;
 };
 

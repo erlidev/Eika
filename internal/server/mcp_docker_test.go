@@ -597,8 +597,7 @@ func TestAStdioMCPServerRunsInTheWorkspace(t *testing.T) {
 		"name": "files", "kind": "stdio", "command": "npx", "args": []string{"-y", "files"},
 		"env": map[string]string{"ROOT": "/workspace"},
 	})
-	project, _ := a.newProject(t, "demo")
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 
 	refused(t, request(t, a.Server, "POST", "/api/mcp/servers/"+server.ID+"/connect", map[string]any{}), 400)
 	d := a.connectMCP(t, server.ID, ws.ID)

@@ -28,7 +28,7 @@ header.
 Every failure has one shape:
 
 ```json
-{"error": {"code": "not_found", "message": "read project p1: not found"}}
+{"error": {"code": "not_found", "message": "read workspace w1: not found"}}
 ```
 
 | Code | Status | Meaning |
@@ -36,7 +36,7 @@ Every failure has one shape:
 | `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field is malformed. |
 | `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
 | `forbidden` | 403 | A workspace path is outside the workspace, directly or through a symlink, or the sandbox may not open it. |
-| `not_found` | 404 | The addressed project, workspace, session, entry, run, question, provider, model, MCP server, elicitation, pending authorization, or workspace file does not exist. |
+| `not_found` | 404 | The addressed workspace, session, entry, run, question, provider, model, MCP server, elicitation, pending authorization, or workspace file does not exist. |
 | `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a workspace that is not running, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
 | `too_large` | 413 | A file saved through the API is over its 2 MiB bound. |
 | `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
@@ -87,81 +87,28 @@ ends every session, and signs this browser in again: `200` with a `SignIn`.
 | `token` | string | The bearer token to send from now on. |
 | `expires_at` | time | When it stops working. |
 
-## Projects
-
-A project is a host directory its workspaces bind-mount. Eika no longer clones
-a repository, so a `remote` project cannot be created.
-
-### `GET /api/projects`
-
-`200` with `{"projects": [Project]}`, newest first.
-
-### `POST /api/projects`
-
-| Field | Type | Meaning |
-|---|---|---|
-| `name` | string, required | The project name, at most 200 characters. |
-| `kind` | `local`, required | Where the code comes from. `remote` is refused. |
-| `host_path` | string | Required. An absolute path on the Docker host, bind-mounted at the workspace root. |
-| `default_branch` | string | The branch a workspace uses when it names none. Defaults to `main`. |
-
-`201` with the `Project`. `400` for a missing or malformed field and for a
-`remote` project; `409` when the name is taken.
-
-### `GET /api/projects/{id}`
-
-`200` with the `Project`, `404` when there is none.
-
-### `PATCH /api/projects/{id}`
-
-| Field | Type | Meaning |
-|---|---|---|
-| `default_branch` | string | Replaces the branch new workspaces use. |
-
-An absent field is left alone. Where the code comes from does not change.
-`200` with the `Project`.
-
-### `DELETE /api/projects/{id}`
-
-Destroys every workspace of the project, their containers and volumes, and
-deletes the project with its sessions and entries. `204`.
-
-### Project
-
-| Field | Type | Meaning |
-|---|---|---|
-| `id` | string | The project id. |
-| `name` | string | The project name, unique. |
-| `kind` | string | Where the code comes from: `local`. |
-| `remote_url` | string, optional | The upstream of a remote project. None can be created now, so it is absent. |
-| `host_path` | string, optional | The bind-mounted directory. |
-| `default_branch` | string | The branch new workspaces use. |
-| `created_at` | time | When it was registered. |
-
 ## Workspaces
 
-A workspace is one sandbox container working on a project.
+A workspace is one sandbox container with a volume of its own at its root.
+Any holder of the sign-in token reaches every workspace; the harness has one
+user and a workspace has no owner.
 
 ### `GET /api/workspaces`
 
-`?project_id=<id>` narrows the list to one project. `200` with
-`{"workspaces": [Workspace]}`.
+`200` with `{"workspaces": [Workspace]}`, oldest first.
 
 ### `POST /api/workspaces`
 
-Creates the container, starts it with the project's directory mounted, and
-records the commit it starts from. A failure at any step destroys what was created, so
-a rejected request leaves no container and writes no row.
+Creates the container and its volume, starts it, and records it. A failure at
+any step destroys what was created, so a rejected request leaves no container
+and writes no row. A field the table does not list is `400`.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `project_id` | string, required | The project to work on. |
 | `name` | string, required | What the user calls this workspace, at most 200 characters. |
-| `branch` | string | The branch to work on. Defaults to the project's `default_branch`. |
 | `image` | string | The container image. Defaults to the `sandbox_image` setting, or the deployment's `eika-sandbox:latest`. Ignored when `build_context` is set. |
 | `build_context` | string | A directory on the Docker host holding a Dockerfile and its context; the image is built from it first. |
 | `dockerfile` | string | The Dockerfile's name within `build_context`. Defaults to `Dockerfile`. |
-| `parent_workspace_id` | string | The workspace this one was branched from, recorded for the UI. |
 | `sandbox` | Sandbox | Its limits and network. Left out, it gets the `sandbox_limits` and `sandbox_egress` settings. Checked as `PUT /api/workspaces/{id}/sandbox` checks it. |
 
 `201` with the `Workspace`.
@@ -172,13 +119,13 @@ a rejected request leaves no container and writes no row.
 
 ### `PATCH /api/workspaces/{id}`
 
-Renames, pins, or archives a workspace. It is filing only: the branch, the
-container, and its state are left as they are.
+Renames, pins, or archives a workspace. It is filing only: the container
+and its state are left as they are.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | string | Renames it. Trimmed; empty or past 200 characters is `400`. |
-| `pinned` | boolean | Lists it before the other workspaces of its project. |
+| `pinned` | boolean | Lists it before the other workspaces. |
 | `archived` | boolean | Sets it aside under an Archived heading. |
 
 An absent field is left alone. `200` with the `Workspace`, `404` when there is
@@ -289,16 +236,12 @@ not running; `413` when the body is over the bound. Publishes
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | string | The workspace id. It names the container and the volume as well. |
-| `project_id` | string | The project it holds. |
 | `name` | string | What the user calls it. |
-| `branch` | string | The branch it works on. |
-| `base_commit` | string, optional | The commit it started from. |
 | `image` | string | The image the container runs. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 | `container_id` | string, optional | The Docker container id. |
-| `parent_workspace_id` | string, optional | The workspace it was branched from. |
 | `sandbox` | Sandbox | What the container may consume and reach. A workspace from before sandboxes has no limits and open egress. |
-| `pinned` | boolean | Listed before the other workspaces of its project. |
+| `pinned` | boolean | Listed before the other workspaces. |
 | `archived` | boolean | Set aside under an Archived heading; the container is left as it is. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
@@ -1286,7 +1229,7 @@ What the setup screens check before the first workspace. `200` with:
 | `docker` | `{"reachable": boolean, "error": string}` | Whether the harness can use the Docker socket, and the client's reason when it cannot. |
 | `sandbox_image` | `{"name": string, "present": boolean}` | The image new workspaces run and whether the Docker host has it. |
 | `sandbox` | `{"cpus": number, "memory_bytes": number, "egress_control": boolean}` | The Docker host's cores and memory, which bound a sandbox's limits, zero when Docker cannot be asked; and whether a sandbox's egress can be restricted, which a harness outside the compose stack cannot. |
-| `providers`, `models`, `projects` | number | How many of each exist. |
+| `providers`, `models` | number | How many of each exist. |
 
 ## Event stream
 

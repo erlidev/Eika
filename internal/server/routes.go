@@ -43,12 +43,6 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	api.HandleFunc("PUT /api/auth/password", s.handleChangePassword)
 
-	api.HandleFunc("GET /api/projects", s.handleListProjects)
-	api.HandleFunc("POST /api/projects", s.handleCreateProject)
-	api.HandleFunc("GET /api/projects/{id}", s.handleProject)
-	api.HandleFunc("PATCH /api/projects/{id}", s.handleUpdateProject)
-	api.HandleFunc("DELETE /api/projects/{id}", s.handleDeleteProject)
-
 	api.HandleFunc("GET /api/workspaces", s.handleListWorkspaces)
 	api.HandleFunc("POST /api/workspaces", s.handleCreateWorkspace)
 	api.HandleFunc("GET /api/workspaces/{id}", s.handleWorkspace)

@@ -15,7 +15,7 @@ import (
 var ErrNotFound = errors.New("not found")
 
 // ErrConflict reports that a write collided with an existing row, such as a
-// second project with the same name.
+// second provider with the same name.
 var ErrConflict = errors.New("conflict")
 
 // schema is the PostgreSQL schema Core's tables live in. Sentry's tables live

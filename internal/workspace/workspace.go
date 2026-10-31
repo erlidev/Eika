@@ -76,10 +76,6 @@ type Spec struct {
 	// User is the user the container runs as. Empty means DefaultUser. A
 	// custom image must have that uid, or name its own user here.
 	User string
-	// HostPath bind-mounts a host directory at the workspace root instead of
-	// creating a volume. This is local project mode; the path is resolved by
-	// the Docker daemon, so it is a path on the host, not in the harness.
-	HostPath string
 	// Confinement bounds what the container may consume and reach.
 	Confinement Confinement
 	// Labels are added to the container alongside the workspace label.
@@ -102,11 +98,8 @@ type Workspace struct {
 	// ProxyToken is the password the workspace presents to the egress proxy,
 	// which knows it by its id and this token.
 	ProxyToken string
-	// Volume is the name of the volume mounted at the workspace root, empty
-	// in local project mode.
+	// Volume is the name of the volume mounted at the workspace root.
 	Volume string
-	// HostPath is the bind-mounted host directory in local project mode.
-	HostPath string
 	// Address is the base URL of the workspace's eikad daemon as the harness
 	// reaches it.
 	Address string

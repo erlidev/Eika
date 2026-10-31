@@ -2,7 +2,7 @@
  * The in-memory world a mock harness serves: every table the HTTP API reads,
  * plus the session trees a replay walks. A scenario is a function that builds
  * one; routes then read and mutate it, so a flow driven through the UI (create
- * a project, send a message) changes what the next request sees.
+ * a workspace, send a message) changes what the next request sees.
  */
 
 import type { EikaEvent } from "../../src/api/events.ts";
@@ -24,7 +24,6 @@ import type {
   Model,
   ProfileSettings,
   QueuedMessage,
-  Project,
   Provider,
   Question,
   Run,
@@ -90,7 +89,6 @@ export type World = {
   providerKinds: string[];
   models: Model[];
   defaultModel?: string;
-  projects: Project[];
   workspaces: Workspace[];
   sessions: Session[];
   /** untitled are the sessions created without a title, which their first run names. */
@@ -178,12 +176,10 @@ export function emptyWorld(): World {
       sandbox: { cpus: 8, memory_bytes: 16 * 2 ** 30, egress_control: true },
       providers: 0,
       models: 0,
-      projects: 0,
     },
     providers: [],
     providerKinds: ["openai", "anthropic"],
     models: [],
-    projects: [],
     workspaces: [],
     sessions: [],
     untitled: [],
@@ -364,25 +360,9 @@ export class WorldBuilder {
     return row;
   }
 
-  project(input: Partial<Project> & { name: string }): Project {
-    const row: Project = {
-      id: this.id("proj"),
-      kind: "remote",
-      remote_url: `https://github.com/example/${input.name}.git`,
-      default_branch: "main",
-      created_at: minutesAgo(500),
-      ...input,
-    };
-    this.world.projects.unshift(row);
-    return row;
-  }
-
-  workspace(project: Project, input: Partial<Workspace> & { name: string }): Workspace {
+  workspace(input: Partial<Workspace> & { name: string }): Workspace {
     const row: Workspace = {
       id: this.id("ws"),
-      project_id: project.id,
-      branch: `eika/${input.name}`,
-      base_commit: "3f9c2a1d8e7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a",
       image: "eika-sandbox:latest",
       state: "running",
       container_id: "c0ffee",
@@ -563,7 +543,6 @@ export function pathOf(world: World, session: Session): Entry[] {
 export function syncSystem(world: World): void {
   world.system.providers = world.providers.length;
   world.system.models = world.models.length;
-  world.system.projects = world.projects.length;
 }
 
 /**

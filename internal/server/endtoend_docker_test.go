@@ -41,15 +41,12 @@ func typesOf(events []event.Event) []string {
 	return out
 }
 
-// TestEndToEnd walks the whole harness: a local project on a directory, a
-// workspace on it, a session in the workspace, one message whose model asks
-// for a shell command, the events that reach a client on the WebSocket, and
-// the entries the run leaves in the tree.
+// TestEndToEnd walks the whole harness: a workspace, a session in it, one
+// message whose model asks for a shell command, the events that reach a client
+// on the WebSocket, and the entries the run leaves in the tree.
 func TestEndToEnd(t *testing.T) {
 	a := newAPI(t)
-	project, dir := a.newProject(t, "demo")
-	initRepo(t, dir)
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 	sess := a.newSession(t, ws.ID)
 
 	conn := stream(t, a.Server, "topics="+event.SessionTopic(sess.ID))
@@ -161,8 +158,7 @@ func TestEventStreamReplaysASessionFromAnEntry(t *testing.T) {
 
 func TestEventStreamReportsWorkspaceState(t *testing.T) {
 	a := newAPI(t)
-	project, _ := a.newProject(t, "demo")
-	ws := a.newWorkspace(t, project.ID)
+	ws := a.newWorkspace(t)
 
 	conn := stream(t, a.Server, "topics="+event.WorkspaceTopic(ws.ID))
 	a.waitSubscribed(t)

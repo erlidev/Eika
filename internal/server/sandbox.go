@@ -128,7 +128,7 @@ func (s *Server) handleSetWorkspaceSandbox(w http.ResponseWriter, r *http.Reques
 		s.fail(w, r, err)
 		return
 	}
-	s.workspaceState(r.Context(), ws.ID, ws.ProjectID, ws.State)
+	s.workspaceState(r.Context(), ws.ID, ws.State)
 	s.log.Info("workspace sandbox set", "workspace_id", ws.ID, "cpus", sandbox.CPUs,
 		"memory_mb", sandbox.MemoryMB, "pids", sandbox.PIDs, "egress", egressMode(sandbox))
 	writeJSON(w, s.log, http.StatusOK, asWorkspace(ws))

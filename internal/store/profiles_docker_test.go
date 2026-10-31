@@ -64,7 +64,7 @@ func newModel(t *testing.T, st *store.Store, name string) store.Model {
 func newSession(t *testing.T, st *store.Store, sess store.Session) store.Session {
 	t.Helper()
 	ws, err := st.CreateWorkspace(t.Context(), store.Workspace{
-		ProjectID: newProject(t, st).ID, Name: "main", Branch: "main", State: "running",
+		Name: "main", State: "running",
 	})
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)

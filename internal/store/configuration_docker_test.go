@@ -125,19 +125,3 @@ func TestPasswordAndSessions(t *testing.T) {
 		t.Errorf("deleting a session that is gone = %v, want nil", err)
 	}
 }
-
-func TestProjectDefaultBranchUpdate(t *testing.T) {
-	st := storetest.Open(t)
-	p := newProject(t, st)
-	p.DefaultBranch = "trunk"
-	got, err := st.UpdateProject(t.Context(), p)
-	if err != nil {
-		t.Fatalf("UpdateProject: %v", err)
-	}
-	if got.DefaultBranch != "trunk" {
-		t.Errorf("project = %+v", got)
-	}
-	if _, err := st.UpdateProject(t.Context(), store.Project{ID: "absent"}); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("UpdateProject of an unknown project = %v, want ErrNotFound", err)
-	}
-}

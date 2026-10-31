@@ -59,12 +59,6 @@ var routeWire = map[string]wire{
 
 	"GET /api/events": {websocket: true},
 
-	"GET /api/projects":         {status: http.StatusOK, response: projectsResponse{}},
-	"POST /api/projects":        {status: http.StatusCreated, request: createProjectRequest{}, response: projectBody{}},
-	"GET /api/projects/{id}":    {status: http.StatusOK, response: projectBody{}},
-	"PATCH /api/projects/{id}":  {status: http.StatusOK, request: updateProjectRequest{}, response: projectBody{}},
-	"DELETE /api/projects/{id}": {status: http.StatusNoContent},
-
 	"GET /api/workspaces":              {status: http.StatusOK, response: workspacesResponse{}},
 	"POST /api/workspaces":             {status: http.StatusCreated, request: createWorkspaceRequest{}, response: workspaceBody{}},
 	"GET /api/workspaces/{id}":         {status: http.StatusOK, response: workspaceBody{}},

@@ -25,14 +25,8 @@ func newTree(t *testing.T) (*session.Tree, store.Session) {
 	t.Helper()
 	st := storetest.Open(t)
 	ctx := t.Context()
-	project, err := st.CreateProject(ctx, store.Project{
-		Name: "eika", Kind: store.ProjectRemote, DefaultBranch: "main",
-	})
-	if err != nil {
-		t.Fatalf("create project: %v", err)
-	}
 	ws, err := st.CreateWorkspace(ctx, store.Workspace{
-		ProjectID: project.ID, Name: "fix-build", Branch: "fix-build", State: "running",
+		Name: "fix-build", State: "running",
 	})
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)

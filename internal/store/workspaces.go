@@ -13,14 +13,9 @@ import (
 // itself is owned by internal/workspace; this row is what survives a harness
 // restart and what the UI lists.
 type Workspace struct {
-	ID        string
-	ProjectID string
+	ID string
 	// Name is the human-readable name the UI shows.
 	Name string
-	// Branch is the git branch the workspace works on.
-	Branch string
-	// BaseCommit is the commit the workspace was cloned at.
-	BaseCommit string
 	// Image is the container image the workspace runs.
 	Image string
 	// State mirrors workspace.State: creating, running, stopped, or gone.
@@ -28,9 +23,6 @@ type Workspace struct {
 	// ContainerID is the Docker container id, empty before the container
 	// exists.
 	ContainerID string
-	// ParentWorkspaceID is the workspace this one was made from, empty for a
-	// workspace the user created.
-	ParentWorkspaceID string
 	// Sandbox is what the container may consume, reach, and expose.
 	Sandbox WorkspaceSandbox
 	// Pinned workspaces are listed before the others.
@@ -59,8 +51,8 @@ type WorkspaceSandbox struct {
 
 // workspaceColumns is the column list every workspace query selects, in the
 // order scanWorkspace reads them.
-const workspaceColumns = `id, project_id, name, branch, base_commit, image, state, container_id,
-	parent_workspace_id, sandbox, pinned, archived, created_at, updated_at`
+const workspaceColumns = `id, name, image, state, container_id, sandbox, pinned, archived,
+	created_at, updated_at`
 
 // CreateWorkspace inserts w and returns it with the fields the database
 // assigned. An empty ID gets a fresh one.
@@ -73,12 +65,11 @@ func (s *Store) CreateWorkspace(ctx context.Context, w Workspace) (Workspace, er
 		return Workspace{}, fmt.Errorf("encode sandbox of workspace %s: %w", w.ID, err)
 	}
 	const q = `INSERT INTO workspaces
-		(id, project_id, name, branch, base_commit, image, state, container_id, parent_workspace_id,
-		 sandbox, pinned, archived)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		(id, name, image, state, container_id, sandbox, pinned, archived)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING ` + workspaceColumns
-	row := s.pool.QueryRow(ctx, q, w.ID, w.ProjectID, w.Name, w.Branch, w.BaseCommit, w.Image,
-		w.State, w.ContainerID, nullable(w.ParentWorkspaceID), sandbox, w.Pinned, w.Archived)
+	row := s.pool.QueryRow(ctx, q, w.ID, w.Name, w.Image, w.State, w.ContainerID, sandbox,
+		w.Pinned, w.Archived)
 	out, err := scanWorkspace(row)
 	if err != nil {
 		return Workspace{}, wrap("create workspace "+w.ID, err)
@@ -96,25 +87,9 @@ func (s *Store) Workspace(ctx context.Context, id string) (Workspace, error) {
 	return w, nil
 }
 
-// Workspaces returns the workspaces of one project, oldest first. An empty
-// projectID returns every workspace.
-func (s *Store) Workspaces(ctx context.Context, projectID string) ([]Workspace, error) {
-	// One query per case: a WHERE that is true for every row when the filter
-	// is empty cannot use the project index.
-	const (
-		all = `SELECT ` + workspaceColumns + ` FROM workspaces ORDER BY created_at, id`
-		one = `SELECT ` + workspaceColumns + ` FROM workspaces
-			WHERE project_id = $1 ORDER BY created_at, id`
-	)
-	var (
-		rows pgx.Rows
-		err  error
-	)
-	if projectID == "" {
-		rows, err = s.pool.Query(ctx, all)
-	} else {
-		rows, err = s.pool.Query(ctx, one, projectID)
-	}
+// Workspaces returns every workspace, oldest first.
+func (s *Store) Workspaces(ctx context.Context) ([]Workspace, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+workspaceColumns+` FROM workspaces ORDER BY created_at, id`)
 	if err != nil {
 		return nil, wrap("list workspaces", err)
 	}
@@ -209,18 +184,16 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) error {
 func scanWorkspace(row pgx.Row) (Workspace, error) {
 	var (
 		w       Workspace
-		parent  *string
 		sandbox []byte
 	)
-	err := row.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Branch, &w.BaseCommit, &w.Image,
-		&w.State, &w.ContainerID, &parent, &sandbox, &w.Pinned, &w.Archived, &w.CreatedAt, &w.UpdatedAt)
+	err := row.Scan(&w.ID, &w.Name, &w.Image, &w.State, &w.ContainerID, &sandbox,
+		&w.Pinned, &w.Archived, &w.CreatedAt, &w.UpdatedAt)
 	if err != nil {
 		return Workspace{}, err
 	}
 	if err := json.Unmarshal(sandbox, &w.Sandbox); err != nil {
 		return Workspace{}, fmt.Errorf("decode sandbox of workspace %s: %w", w.ID, err)
 	}
-	w.ParentWorkspaceID = text(parent)
 	w.CreatedAt = w.CreatedAt.UTC()
 	w.UpdatedAt = w.UpdatedAt.UTC()
 	return w, nil

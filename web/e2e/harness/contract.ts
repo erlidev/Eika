@@ -83,7 +83,7 @@ export function matchRoute(
 
 /**
  * check reports every way value differs from shape, one line per problem,
- * each starting with its path: `$.projects[0].name: number, want string`. In
+ * each starting with its path: `$.workspaces[0].name: number, want string`. In
  * a request a field may be missing or null, as the harness's decoder allows,
  * but an unknown field is still a problem, as the decoder refuses it.
  */

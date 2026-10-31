@@ -29,6 +29,6 @@
         - paragraph: Sandbox image
         - paragraph: Not checked, since the harness did not answer.
     - heading "Guided setup" [level=3]
-    - paragraph: Walk through connecting a provider, checking the sandbox, and adding a project again.
+    - paragraph: Walk through connecting a provider and checking the sandbox again.
     - button "Run the setup again"
   - button "Close"

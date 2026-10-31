@@ -4,7 +4,7 @@ Drive the UI in a real browser against a **mock harness** and screenshot the
 result. No Go server, Postgres, or Docker needed: `harness/mock.ts` answers
 every `/api` route and the `/api/events` WebSocket from an in-memory world,
 and plays scripted agent replies so a sent message streams like a real run.
-Routes whose UI is gone (projects, workspaces, files, forks)
+Routes whose UI is gone (workspaces, files, forks)
 are not served; `harness/mock.test.ts` lists each in `unmocked` until its Go
 route is removed.
 
@@ -71,7 +71,7 @@ One action per `--step`, or one per line in a `--steps <file>`:
 | `shot <name> [= <target>]` / `fullshot <name>` | Screenshot the viewport, one element, or the full page.          |
 | `aria`                                         | Save the accessibility tree as `page.aria.yml`.                  |
 
-A **target** is what the UI calls something: `Settings`, `New project`,
+A **target** is what the UI calls something: `Settings`, `New chat`,
 `Password`, `30s`. It is tried as a button, link, tab, menu item, option,
 tree item, checkbox, switch, radio, and combobox name, then a field label, a
 placeholder, and exact text, in that order; while a modal dialog is open,
@@ -105,8 +105,7 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 ## Scenarios
 
 `harness/scenarios.ts` names the starting states. The workbench ones share
-fixed ids: session `ses-backoff` in workspace `ws-retries` of project
-`proj-api`; the sidebar lists chats only, so it opens by URL. `chat` adds two
+fixed ids: session `ses-backoff` in workspace `ws-retries`; the sidebar lists chats only, so it opens by URL. `chat` adds two
 chats and opens chat `chat-jitter`, a session with no workspace; `chat-empty`
 opens one with no messages. `mcp` adds five MCP servers, one in each state, and `chat-mcp` the
 same servers beside the chats; the mock's authorization server approves at
@@ -218,9 +217,8 @@ service runs `smoke/model.ts`, a scripted OpenAI-compatible endpoint: it
 lists one model, `smoke`, answers a user message by calling
 `bash` with `echo smoke-ok`, and answers the tool result with "The command
 printed smoke-ok." `smoke/smoke.spec.ts` (config `playwright.smoke.config.ts`)
-walks the guided setup with that endpoint, adds a local project from a
-temporary git checkout, creates a workspace and a session, sends a message,
-and waits for that answer, which only a real sandbox run produces. It then
-deletes its workspaces, and `make smoke-down` removes the stack, its volumes,
-and any sandbox left on its networks. A first run builds the images and takes
+walks the guided setup with that endpoint, opens a chat, sends a message,
+and waits for the model's "ok". A chat reaches no sandbox until the home
+computer returns. `make smoke-down` removes the stack, its volumes, and any
+sandbox left on its networks. A first run builds the images and takes
 a few minutes; later runs take well under one.

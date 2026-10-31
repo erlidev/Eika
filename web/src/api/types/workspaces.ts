@@ -3,17 +3,13 @@
 /** WorkspaceLifecycle is a workspace's lifecycle state. */
 export type WorkspaceLifecycle = "creating" | "running" | "stopped" | "gone";
 
-/** Workspace is a checkout of a project: one sandbox container holding it. */
+/** Workspace is one sandbox container with a volume of its own. */
 export type Workspace = {
   id: string;
-  project_id: string;
   name: string;
-  branch: string;
-  base_commit?: string;
   image: string;
   state: WorkspaceLifecycle;
   container_id?: string;
-  parent_workspace_id?: string;
   /** sandbox is what the container may consume, reach, and expose. */
   sandbox: Sandbox;
   /** pinned workspaces are listed before the others. */
@@ -88,13 +84,10 @@ export type BlockedHost = {
 
 /** CreateWorkspace is the body of POST /api/workspaces. */
 export type CreateWorkspace = {
-  project_id: string;
   name: string;
-  branch?: string;
   image?: string;
   build_context?: string;
   dockerfile?: string;
-  parent_workspace_id?: string;
   /** sandbox left out gives the new workspace the settings' defaults. */
   sandbox?: Sandbox;
 };

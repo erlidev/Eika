@@ -52,7 +52,6 @@ type systemWire struct {
 	} `json:"sandbox_image"`
 	Providers int `json:"providers"`
 	Models    int `json:"models"`
-	Projects  int `json:"projects"`
 }
 
 // listingProvider is a provider whose endpoint can list its models.
@@ -88,7 +87,7 @@ func TestSetupSignInAndSignOut(t *testing.T) {
 	if first.Token == "" || first.ExpiresAt == "" {
 		t.Fatalf("setup = %+v", first)
 	}
-	if rec := requestWith(t, a.Server, "GET", "/api/projects", nil, bearer(first.Token)); rec.Code != 200 {
+	if rec := requestWith(t, a.Server, "GET", "/api/workspaces", nil, bearer(first.Token)); rec.Code != 200 {
 		t.Errorf("the setup token = %d, want 200", rec.Code)
 	}
 	// Setup is claimed once; a second browser signs in instead.
@@ -109,10 +108,10 @@ func TestSetupSignInAndSignOut(t *testing.T) {
 	if rec := requestWith(t, a.Server, "POST", "/api/auth/logout", nil, bearer(first.Token)); rec.Code != 204 {
 		t.Fatalf("sign-out = %d, want 204", rec.Code)
 	}
-	if rec := requestWith(t, a.Server, "GET", "/api/projects", nil, bearer(first.Token)); rec.Code != 401 {
+	if rec := requestWith(t, a.Server, "GET", "/api/workspaces", nil, bearer(first.Token)); rec.Code != 401 {
 		t.Errorf("a signed-out token = %d, want 401", rec.Code)
 	}
-	if rec := requestWith(t, a.Server, "GET", "/api/projects", nil, bearer(second.Token)); rec.Code != 200 {
+	if rec := requestWith(t, a.Server, "GET", "/api/workspaces", nil, bearer(second.Token)); rec.Code != 200 {
 		t.Errorf("the other session = %d, want 200", rec.Code)
 	}
 
@@ -125,10 +124,10 @@ func TestSetupSignInAndSignOut(t *testing.T) {
 	third := decodeBody[signInWire](t, requestWith(t, a.Server, "PUT", "/api/auth/password", map[string]any{
 		"current_password": password, "new_password": "a new password",
 	}, bearer(second.Token)), 200)
-	if rec := requestWith(t, a.Server, "GET", "/api/projects", nil, bearer(second.Token)); rec.Code != 401 {
+	if rec := requestWith(t, a.Server, "GET", "/api/workspaces", nil, bearer(second.Token)); rec.Code != 401 {
 		t.Errorf("a session from before the change = %d, want 401", rec.Code)
 	}
-	if rec := requestWith(t, a.Server, "GET", "/api/projects", nil, bearer(third.Token)); rec.Code != 200 {
+	if rec := requestWith(t, a.Server, "GET", "/api/workspaces", nil, bearer(third.Token)); rec.Code != 200 {
 		t.Errorf("the session the change made = %d, want 200", rec.Code)
 	}
 	if rec := requestWith(t, a.Server, "POST", "/api/auth/login", map[string]any{"password": password}, ""); rec.Code != 401 {
@@ -136,7 +135,7 @@ func TestSetupSignInAndSignOut(t *testing.T) {
 	}
 
 	// The API token is not a session and works throughout.
-	if rec := request(t, a.Server, "GET", "/api/projects", nil); rec.Code != 200 {
+	if rec := request(t, a.Server, "GET", "/api/workspaces", nil); rec.Code != 200 {
 		t.Errorf("the API token = %d, want 200", rec.Code)
 	}
 	// The event stream takes a session token in the query, as it takes the
@@ -470,8 +469,8 @@ func TestSystemReport(t *testing.T) {
 	if !got.Docker.Reachable || got.SandboxImage.Name != "eika-sandbox:latest" || !got.SandboxImage.Present {
 		t.Errorf("system = %+v", got)
 	}
-	if got.Providers != 1 || got.Models != 1 || got.Projects != 0 {
-		t.Errorf("counts = %d providers, %d models, %d projects", got.Providers, got.Models, got.Projects)
+	if got.Providers != 1 || got.Models != 1 {
+		t.Errorf("counts = %d providers, %d models", got.Providers, got.Models)
 	}
 
 	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{"sandbox_image": "custom:2"}), 200)
@@ -481,8 +480,7 @@ func TestSystemReport(t *testing.T) {
 	}
 
 	// A new workspace runs the image the settings name.
-	project, _ := a.newProject(t, "demo")
-	if ws := a.newWorkspace(t, project.ID); ws.Image != "custom:2" {
+	if ws := a.newWorkspace(t); ws.Image != "custom:2" {
 		t.Errorf("workspace image = %q, want the setting's", ws.Image)
 	}
 

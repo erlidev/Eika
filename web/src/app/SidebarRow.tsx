@@ -1,5 +1,5 @@
 /**
- * The sidebar's rows. Every project, workspace, and session is one `Row`:
+ * The sidebar's rows. Every workspace and session is one `Row`:
  * a label that opens or folds it, a button or two for what is done most,
  * and a menu with everything else, which a right-click opens as well. The
  * buttons always show, so what a row offers is visible without a hover. A row

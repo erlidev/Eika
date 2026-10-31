@@ -230,7 +230,6 @@ type QuestionAsked struct {
 // reached a new lifecycle state.
 type WorkspaceState struct {
 	WorkspaceID string `json:"workspace_id"`
-	ProjectID   string `json:"project_id,omitempty"`
 	State       string `json:"state"`
 }
 

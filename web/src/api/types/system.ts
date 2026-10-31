@@ -8,7 +8,6 @@ export type SystemStatus = {
   sandbox: SandboxHost;
   providers: number;
   models: number;
-  projects: number;
 };
 
 /** SandboxHost is what the Docker host has, which bounds a sandbox's limits. */

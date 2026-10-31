@@ -148,19 +148,13 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 	// failed Create leaves nothing behind.
 	rollback := func() { h.discard(ctx, ws, built) }
 
-	mounts := make([]mount.Mount, 0, 2)
-	if spec.HostPath != "" {
-		ws.HostPath = spec.HostPath
-		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: spec.HostPath, Target: Root})
-	} else {
-		ws.Volume = VolumeName(ws.ID)
-		if _, err := h.docker.VolumeCreate(ctx, volume.CreateOptions{
-			Name:   ws.Volume,
-			Labels: map[string]string{Label: ws.ID},
-		}); err != nil {
-			rollback()
-			return Workspace{}, fmt.Errorf("create volume %s: %w", ws.Volume, err)
-		}
+	ws.Volume = VolumeName(ws.ID)
+	if _, err := h.docker.VolumeCreate(ctx, volume.CreateOptions{
+		Name:   ws.Volume,
+		Labels: map[string]string{Label: ws.ID},
+	}); err != nil {
+		rollback()
+		return Workspace{}, fmt.Errorf("create volume %s: %w", ws.Volume, err)
 	}
 
 	labels := map[string]string{Label: ws.ID}
@@ -180,7 +174,7 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Workspace, error) {
 		ExposedPorts: nat.PortSet{port: struct{}{}},
 	}
 	hostCfg := &container.HostConfig{
-		Mounts: mounts,
+		Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: ws.Volume, Target: Root}},
 		// Docker's own init is PID 1 and reaps the orphans a shell leaves
 		// behind; eikad runs under it as an ordinary process.
 		Init: &useInit,
@@ -360,11 +354,7 @@ func (h *Host) Inspect(ctx context.Context, id string) (Workspace, error) {
 		if m.Destination != Root {
 			continue
 		}
-		if m.Type == mount.TypeBind {
-			ws.HostPath = m.Source
-		} else {
-			ws.Volume = m.Name
-		}
+		ws.Volume = m.Name
 	}
 	if info.State != nil && info.State.Running {
 		ws.State = StateRunning
