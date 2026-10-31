@@ -58,6 +58,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PUT /api/sessions/{id}/profile", s.handleSetSessionProfile)
 	api.HandleFunc("PUT /api/sessions/{id}/overrides", s.handleSetSessionOverrides)
 	api.HandleFunc("GET /api/sessions/{id}/context", s.handleSessionContext)
+	api.HandleFunc("GET /api/sessions/{id}/prediction", s.handleSessionPrediction)
 	api.HandleFunc("GET /api/sessions/{id}/calls", s.handleSessionCalls)
 	api.HandleFunc("GET /api/sessions/{id}/calls/{call_id}", s.handleSessionCall)
 

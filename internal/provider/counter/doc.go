@@ -12,7 +12,9 @@
 // the model may generate is not part of it). Estimate answers by the estimated
 // method without asking the server, for a caller out of time; Seed teaches a
 // fresh counter from a measurement stored earlier; CountText counts a text of
-// the caller's own. A Switch is a Source whose routes, and the key they carry,
+// the caller's own. Size, ToolSizes and ImageSize size the parts of a request
+// for the context breakdown and never scale one to fit a total, and Peek
+// sizes a request for a preview without leaving a prediction for Observe. A Switch is a Source whose routes, and the key they carry,
 // are attached only while a run uses them. Results are cached by the hash of
 // what was counted, so a prefix is tokenised once per session.
 //

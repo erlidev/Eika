@@ -61,8 +61,9 @@ export function ContextInspector({
         <DialogHeader className="border-b px-4 py-3 pr-12">
           <DialogTitle>Context inspector</DialogTitle>
           <DialogDescription>
-            Everything one model request sends, part by part. Sizes are estimates, four bytes to a
-            token.
+            Everything one model request sends, part by part. Each part is counted with the
+            endpoint&apos;s own tokenizer where it has one, and a ~ marks a size that is only an
+            estimate.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">

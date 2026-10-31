@@ -1093,12 +1093,63 @@
       "status": 200,
       "response": {
         "object": {
-          "calibration": {
+          "breakdown": {
             "object": {
-              "call_id": "string",
-              "estimated_tokens": "number",
-              "prompt_tokens": "number"
-            }
+              "messages": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "reasoning_tokens": "number",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate",
+                      "reasoning_tokens"
+                    ]
+                  }
+                }
+              },
+              "parts": "number",
+              "prompt_source": "string",
+              "prompt_tokens": {
+                "nullable": "number"
+              },
+              "remainder": {
+                "nullable": "number"
+              },
+              "sections": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "kind": "string",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate"
+                    ]
+                  }
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "name": "string",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate"
+                    ]
+                  }
+                }
+              }
+            },
+            "optional": [
+              "prompt_source"
+            ]
           },
           "call": {
             "object": {
@@ -1327,6 +1378,12 @@
               "thinking_switch"
             ]
           },
+          "prediction": {
+            "object": {
+              "method": "string",
+              "tokens": "number"
+            }
+          },
           "sections": {
             "nullable": {
               "array": {
@@ -1358,9 +1415,10 @@
           }
         },
         "optional": [
-          "calibration",
+          "breakdown",
           "call",
-          "dropped_effort"
+          "dropped_effort",
+          "prediction"
         ]
       }
     },
@@ -1536,12 +1594,63 @@
       "status": 200,
       "response": {
         "object": {
-          "calibration": {
+          "breakdown": {
             "object": {
-              "call_id": "string",
-              "estimated_tokens": "number",
-              "prompt_tokens": "number"
-            }
+              "messages": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "reasoning_tokens": "number",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate",
+                      "reasoning_tokens"
+                    ]
+                  }
+                }
+              },
+              "parts": "number",
+              "prompt_source": "string",
+              "prompt_tokens": {
+                "nullable": "number"
+              },
+              "remainder": {
+                "nullable": "number"
+              },
+              "sections": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "kind": "string",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate"
+                    ]
+                  }
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "name": "string",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate"
+                    ]
+                  }
+                }
+              }
+            },
+            "optional": [
+              "prompt_source"
+            ]
           },
           "call": {
             "object": {
@@ -1770,6 +1879,12 @@
               "thinking_switch"
             ]
           },
+          "prediction": {
+            "object": {
+              "method": "string",
+              "tokens": "number"
+            }
+          },
           "sections": {
             "nullable": {
               "array": {
@@ -1801,9 +1916,10 @@
           }
         },
         "optional": [
-          "calibration",
+          "breakdown",
           "call",
-          "dropped_effort"
+          "dropped_effort",
+          "prediction"
         ]
       }
     },
@@ -2123,6 +2239,17 @@
             }
           },
           "session_id": "string"
+        }
+      }
+    },
+    "GET /api/sessions/{id}/prediction": {
+      "status": 200,
+      "response": {
+        "object": {
+          "context_window": "number",
+          "method": "string",
+          "model": "string",
+          "tokens": "number"
         }
       }
     },

@@ -89,10 +89,60 @@ export type ModelCalls = {
 };
 
 /**
+ * PartSize is the size of one part of a request. approximate is set when the
+ * number is not the endpoint's own tokenisation of the part: estimated from
+ * bytes, a picture's cost assumed, or a tool sized as JSON text.
+ */
+export type PartSize = { tokens: number; approximate?: boolean };
+
+/** SectionSize is the size of one section of the system prompt. */
+export type SectionSize = PartSize & { kind: SectionKind };
+
+/** ToolSize is the size of one tool definition. */
+export type ToolSize = PartSize & { name: string };
+
+/** MessageSize is the size of one message; reasoning_tokens is replayed reasoning, counted apart. */
+export type MessageSize = PartSize & { reasoning_tokens?: number };
+
+/** PromptSource says what a breakdown's prompt count is: the endpoint's count of a call, or an exact prediction. */
+export type PromptSource = "measured" | "predicted";
+
+/**
+ * Breakdown is where a request's tokens go, part by part, each counted on its
+ * own and none scaled to fit. The lists follow the order of the request's
+ * sections, tools and messages. remainder is prompt_tokens less parts: what the
+ * template and the formatting cost. It is negative when the parts add up to
+ * more than the endpoint counted, which says a part was counted wrongly.
+ */
+export type Breakdown = {
+  sections: SectionSize[];
+  tools: ToolSize[];
+  messages: MessageSize[];
+  /** parts is the sum of every part, replayed reasoning included. */
+  parts: number;
+  /** prompt_tokens is the whole request the parts fall short of; null when there is none, which is not 0. */
+  prompt_tokens: number | null;
+  prompt_source?: PromptSource;
+  remainder: number | null;
+};
+
+/** PredictedSize is what the token counter expects a request to cost and how it knows. */
+export type PredictedSize = { tokens: number; method: Prediction };
+
+/** NextPrediction is the body of GET /api/sessions/{id}/prediction. */
+export type NextPrediction = PredictedSize & {
+  /** model is the name of the model the prediction is for. */
+  model: string;
+  /** context_window is the model's effective window. */
+  context_window: number;
+};
+
+/**
  * ModelContext is one model request by section: the next one
  * (GET /api/sessions/{id}/context) or a recorded one
- * (GET /api/sessions/{id}/calls/{call_id}). Token counts are
- * estimates, four bytes to a token.
+ * (GET /api/sessions/{id}/calls/{call_id}). The token counts on sections,
+ * tools and messages are the agent's planning estimates, four bytes to a
+ * token; `breakdown` is what to show.
  */
 export type ModelContext = {
   sections: ContextSection[] | null;
@@ -109,6 +159,8 @@ export type ModelContext = {
   call?: ModelCall;
   /** context_window is the model's window in tokens; 0 when the model is not known. */
   context_window: number;
-  /** calibration is a measured call to scale the estimates to. */
-  calibration?: { call_id: string; prompt_tokens: number; estimated_tokens: number };
+  /** breakdown is where the request's tokens go. */
+  breakdown: Breakdown;
+  /** prediction is what the counter expects the next request to cost; absent for a recorded call, whose own is on call. */
+  prediction?: PredictedSize;
 };

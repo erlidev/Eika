@@ -12,6 +12,7 @@ import {
   getRunStatus,
   getSession,
   getSessionOutline,
+  getSessionPrediction,
   listTools,
   postMessage,
   setSessionHead,
@@ -22,6 +23,7 @@ import type {
   ElicitationAnswer,
   Entry,
   MessageImage,
+  NextPrediction,
   PostMessage,
   Run,
   RunStatus,
@@ -62,6 +64,25 @@ export function useRunStatus(id: string | undefined) {
     queryKey: queryKeys.runStatus(id ?? ""),
     queryFn: ({ signal }) => getRunStatus(id ?? "", signal),
     enabled: id !== undefined,
+  });
+}
+
+/**
+ * useNextPrediction reads how large the session's next request is expected to
+ * be and how that is known, as a run that names `model` would send it. The
+ * stream invalidates it when a turn ends or the conversation is compacted. A
+ * session with no model has no prediction, which is an error here and no more
+ * than an absent meter on screen.
+ */
+export function useNextPrediction(
+  sessionId: string | undefined,
+  model: string,
+): UseQueryResult<NextPrediction> {
+  return useQuery({
+    queryKey: queryKeys.sessionPrediction(sessionId ?? "", model),
+    queryFn: ({ signal }) => getSessionPrediction(sessionId ?? "", model, signal),
+    enabled: sessionId !== undefined,
+    retry: false,
   });
 }
 

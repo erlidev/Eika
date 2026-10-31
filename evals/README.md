@@ -39,9 +39,11 @@ picture: never called exact, and counted to the token once its size was
 measured), `count_cost` (a context of about 20k tokens counted cold and one
 exchange later: `count_seconds`), `agent_loop` (the real agent loop on one
 session, two turns with a tool: the call records of the loop must show exact
-predictions with no drift) and `reasoning_count` (a response cut off inside its
+predictions with no drift), `reasoning_count` (a response cut off inside its
 reasoning: the loop's tokenised count, labelled as such, within a few tokens of
-the completion tokens the server generated).
+the completion tokens the server generated) and `context_breakdown` (the parts
+of a plain request counted one by one, plus the template's remainder, equal the
+server's prompt count, and the remainder is small and not negative).
 
 Keep scenarios small: bounded `max_tokens`, no load. The server is shared; do
 not start, stop or swap anything on it from a scenario.

@@ -64,10 +64,34 @@ func TestARecordedCallKeepsWhatTheEndpointDidNotStateNull(t *testing.T) {
 		}
 	}
 
-	// The call that stated nothing is not a calibration: the last call that
-	// did is.
+	// A recorded call's breakdown states its remainder against what the
+	// endpoint measured, and says null, not 0, for a call that measured nothing.
+	for i, want := range []string{"90", "90", "null"} {
+		recorded := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/calls/"+records.Calls[i].ID, nil), 200)
+		b := recorded.Breakdown
+		if b == nil {
+			t.Fatalf("call %d has no breakdown", i+1)
+		}
+		if count(b.PromptTokens) != want || (want == "null") != (b.Remainder == nil) || (want == "null") != (b.PromptSource == "") {
+			t.Errorf("call %d: prompt %s, source %q, remainder %v; want %s with a remainder and source exactly when there is a prompt",
+				i+1, count(b.PromptTokens), b.PromptSource, b.Remainder, want)
+		}
+		if b.PromptTokens != nil && (b.PromptSource != "measured" || *b.Remainder != *b.PromptTokens-b.Parts) {
+			t.Errorf("call %d: remainder %d, want the measured %d less the parts' %d", i+1, *b.Remainder, *b.PromptTokens, b.Parts)
+		}
+		if len(b.Messages) != len(recorded.Messages) || len(b.Sections) != len(recorded.Sections) || len(b.Tools) != len(recorded.Tools) {
+			t.Errorf("call %d: breakdown has %d sections, %d tools, %d messages for %d, %d, %d parts",
+				i+1, len(b.Sections), len(b.Tools), len(b.Messages), len(recorded.Sections), len(recorded.Tools), len(recorded.Messages))
+		}
+	}
+
+	// The next request is previewed with a prediction, and with no measurement
+	// to state a remainder against, since this provider is only estimated.
 	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/context", nil), 200)
-	if preview.Calibration == nil || preview.Calibration.CallID != records.Calls[1].ID || preview.Calibration.PromptTokens != 90 {
-		t.Errorf("calibration = %+v, want the second call's 90 measured input tokens", preview.Calibration)
+	if preview.Prediction == nil || preview.Prediction.Method != "estimated" || preview.Prediction.Tokens <= 0 {
+		t.Errorf("prediction = %+v, want an estimate", preview.Prediction)
+	}
+	if b := preview.Breakdown; b == nil || b.PromptTokens != nil || b.Remainder != nil || !b.Approximate() {
+		t.Errorf("breakdown = %+v, want approximate parts and no remainder against an estimate", b)
 	}
 }

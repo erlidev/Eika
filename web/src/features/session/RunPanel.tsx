@@ -10,7 +10,7 @@ import { LoadError, Notice } from "@/components/Notice";
 import { queuedText } from "@/features/session/attachments";
 import { ContextBreakdown } from "@/features/session/ContextMeter";
 import { AskUserBody } from "@/features/session/renderers/AskUserRenderer";
-import { useRunStatus } from "@/features/session/queries";
+import { useNextPrediction, useRunStatus } from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
 import type { ToolItem } from "@/features/session/transcript";
 import { formatAgo } from "@/lib/format";
@@ -37,6 +37,8 @@ function questionCall(callId: string, question: string): ToolItem {
 export function RunPanel({ sessionId }: RunPanelProps) {
   const status = useRunStatus(sessionId);
   const meter = useSessionStore((s) => s.meter);
+  const model = useSessionStore((s) => s.model);
+  const prediction = useNextPrediction(sessionId, model);
   if (status.isPending) {
     return (
       <div className="p-3">
@@ -82,7 +84,7 @@ export function RunPanel({ sessionId }: RunPanelProps) {
       </Section>
 
       <Section title="Context">
-        <ContextBreakdown meter={meter} />
+        <ContextBreakdown meter={meter} prediction={prediction.data} />
       </Section>
 
       <Section title={`Questions (${String(questions.length)})`}>

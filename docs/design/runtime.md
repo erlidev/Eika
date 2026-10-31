@@ -232,7 +232,7 @@ meter. It uses the best method the endpoint offers:
 Each call stores `drift = predicted - measured` in `model_calls`, NULL when
 either is. An `exact` prediction with any drift is a bug: the loop logs it as a
 warning with the numbers and none of the request, and the Context inspector shows
-it (the breakdown item). Persistent drift on `anchored` retrains its constants.
+it (as an error notice). Persistent drift on `anchored` retrains its constants.
 Counting never fails a call: a prediction that cannot finish in its time (ten
 seconds by default) is replaced by the estimate, and the stored method says so.
 
@@ -251,12 +251,28 @@ template and formatting = measured prompt_tokens - sum(parts)
 Nothing is scaled to make the sum fit, so a negative or growing remainder exposes an
 accounting bug. Tool schemas are counted by rendering the request with and without
 tools when the endpoint supports exact counting, and otherwise as their JSON text,
-marked approximate.
+marked approximate. Rendered, each tool is what the template adds when it is added to
+the tools before it, so the sizes add up to the whole list's and the first carries the
+template's wrapper around the list; a list of more than 64 tools is sized as text.
+A picture is never exact (above), so a message with one is marked approximate until
+its size has been measured. A part the time to count ran out for is estimated and marked.
+
+The parts are counted when a client asks (`GET /api/sessions/{id}/context` and
+`.../calls/{call_id}`), never in the loop, and each is remembered by the hash of its
+content in the session's counter. A recorded call states its remainder against its
+measured `prompt_tokens`. The next request has no measurement, so its remainder is
+stated against its prediction when that is `exact` (the endpoint rendered and tokenised
+that very request) and is absent otherwise. The preamble is not a part yet: the
+sections of the system prompt are the base prompt and the instructions, and the
+preamble joins them when it exists.
 
 ### Where it shows
 
 - Status bar meter: the last call's window fill out of the effective window, the
-  cached tokens of that call, and the predicted next request with its method.
+  cached tokens of that call, and the predicted next request with its method
+  (`GET /api/sessions/{id}/prediction`, a tilde on `estimated`). Before any call has
+  been measured the fill and the cache read `n/a` and the prediction stands alone; a
+  count the endpoint did not state is never shown as 0.
 - Context panel: the parts with exact or approximate markers, and the remainder line.
 - Activity and Settings: per-day prefill seconds and tokens, cache-hit rate
   (`cached / prompt` over calls that report it), and compute by priority.

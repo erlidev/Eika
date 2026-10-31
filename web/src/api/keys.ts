@@ -24,6 +24,13 @@ export const queryKeys = {
     model === undefined
       ? (["session", id, "context"] as const)
       : (["session", id, "context", model] as const),
+  /**
+   * sessionPrediction sits under the context prefix, so whatever invalidates the
+   * previews of a session (a turn that ends, a compaction, a change of tools)
+   * invalidates its prediction too.
+   */
+  sessionPrediction: (id: string, model: string) =>
+    ["session", id, "context", "prediction", model] as const,
   /** sessionCalls is the prefix of the session's recorded model calls and each one. */
   sessionCalls: (id: string) => ["session", id, "calls"] as const,
   sessionCall: (id: string, callId: string) => ["session", id, "calls", callId] as const,

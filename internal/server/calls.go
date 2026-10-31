@@ -75,21 +75,15 @@ type callsResponse struct {
 	Calls []modelCallBody `json:"calls"`
 }
 
-// calibrationBody is one measured model call beside the estimate of what it
-// sent, so an estimate can be scaled to what the endpoint counts.
-type calibrationBody struct {
-	CallID string `json:"call_id"`
-	// PromptTokens is what the endpoint measured the call's prompt as.
-	PromptTokens int `json:"prompt_tokens"`
-	// EstimatedTokens is the estimate of the same input: its sections, tool
-	// schemas, and messages.
-	EstimatedTokens int `json:"estimated_tokens"`
-}
-
 // contextResponse is the body of GET /api/sessions/{id}/context, the next
 // model call of the session, and of GET /api/sessions/{id}/calls/{id}, a
 // recorded one: the system prompt by section, the tool schemas, the
-// messages, and the parameters, with the layer each parameter came from.
+// messages, and the parameters, with the layer each parameter came from, and
+// how many tokens each part is.
+//
+// The agent's own size estimates (a section's, a tool's and a message's
+// tokens, four bytes to a token) are what the loop plans a compaction cut
+// with. They are on the wire as they are and a client shows Breakdown instead.
 type contextResponse struct {
 	agent.Context
 	// Sources names the layer each parameter came from, keyed model,
@@ -106,10 +100,12 @@ type contextResponse struct {
 	// against. Zero when the model is not known, because none is configured
 	// or a recorded call kept no window and its model is deleted.
 	ContextWindow int `json:"context_window"`
-	// Calibration is the measured call the estimates can be scaled to: the
-	// recorded call itself, or the session's last measured one; absent when
-	// there is none.
-	Calibration *calibrationBody `json:"calibration,omitempty"`
+	// Breakdown is where the request's tokens go, part by part.
+	Breakdown *breakdownBody `json:"breakdown,omitempty"`
+	// Prediction is what the token counter expects the next request to cost,
+	// and how it knows. Absent for a recorded call, which carries its own on
+	// Call.
+	Prediction *predictionBody `json:"prediction,omitempty"`
 }
 
 // recordedParameters is what a record keeps as its parameters: those the
@@ -219,29 +215,20 @@ func (s *Server) handleSessionContext(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	opts := agent.Options{Logger: s.log}
-	loaded, err := session.NewStore(s.tree).Load(ctx, sess.ID)
+	next, ctr, release, err := s.previewNext(ctx, sess, cfg)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	ag := s.newAgent(nil, sess, cfg, nil, s.offeredMCP(), opts)
-	next, err := ag.Preview(loaded)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	calibration, err := s.lastCalibration(ctx, sess.ID)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
+	defer release()
+	pred := predictedNext(ctx, ctr, next)
 	writeJSON(w, s.log, http.StatusOK, contextResponse{
 		Context:       next,
 		Sources:       cfg.parameterSources(),
 		DroppedEffort: cfg.droppedEffort,
-		Calibration:   calibration,
 		ContextWindow: cfg.window(),
+		Breakdown:     breakdownOfNext(ctx, ctr, next, pred),
+		Prediction:    &pred,
 	})
 }
 
@@ -302,50 +289,39 @@ func (s *Server) handleSessionCall(w http.ResponseWriter, r *http.Request) {
 	if out.Sources == nil {
 		out.Sources = map[string]string{}
 	}
-	// The window the call was judged against is the one it recorded; a record
-	// that kept none falls back to what its model is configured with.
-	switch {
-	case rec.ContextWindow != nil:
-		out.ContextWindow = *rec.ContextWindow
-	case rec.ModelID != "":
+	// The call's model may be gone, which leaves it without an endpoint to count
+	// with: its parts are then estimated, and say so.
+	var model store.Model
+	modelKnown := false
+	if rec.ModelID != "" {
 		m, err := s.deps.Store.Model(ctx, rec.ModelID)
 		switch {
 		case err == nil:
-			out.ContextWindow = m.ContextWindow
+			model, modelKnown = m, true
 		case !errors.Is(err, store.ErrNotFound):
 			s.fail(w, r, err)
 			return
 		}
 	}
+	// The window the call was judged against is the one it recorded; a record
+	// that kept none falls back to what its model is configured with.
+	switch {
+	case rec.ContextWindow != nil:
+		out.ContextWindow = *rec.ContextWindow
+	case modelKnown:
+		out.ContextWindow = model.ContextWindow
+	}
+	ctr, release := s.counterFor(ctx, rec.SessionID, model, modelKnown)
+	defer release()
+	countCtx, cancel := context.WithTimeout(ctx, agent.DefaultCountTimeout)
+	defer cancel()
+	parts := agent.MeasureParts(countCtx, ctr, call)
+	var prompt *int
 	if measured := rec.PromptTokens; measured != nil && *measured > 0 {
-		out.Calibration = &calibrationBody{CallID: rec.ID, PromptTokens: *measured, EstimatedTokens: estimatedTokens(call)}
+		prompt = measured
 	}
+	out.Breakdown = newBreakdown(parts, prompt, promptMeasured)
 	writeJSON(w, s.log, http.StatusOK, out)
-}
-
-// lastCalibration returns the session's last model call the endpoint
-// measured, beside the estimate of what it sent, or nil when it has none.
-func (s *Server) lastCalibration(ctx context.Context, sessionID string) (*calibrationBody, error) {
-	records, err := s.deps.Store.ModelCalls(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	for i := len(records) - 1; i >= 0; i-- {
-		if in := records[i].PromptTokens; in == nil || *in == 0 {
-			continue
-		}
-		rec, err := s.deps.Store.ModelCall(ctx, sessionID, records[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		call, _, err := recordedContext(rec)
-		if err != nil {
-			return nil, err
-		}
-		call.MessageTokens = rec.MessageTokens
-		return &calibrationBody{CallID: rec.ID, PromptTokens: *records[i].PromptTokens, EstimatedTokens: estimatedTokens(call)}, nil
-	}
-	return nil, nil
 }
 
 // recordedContext decodes what a record kept of its call: the sections,
@@ -366,18 +342,6 @@ func recordedContext(rec store.ModelCall) (agent.Context, recordedParameters, er
 	}
 	call.Parameters = params.Parameters
 	return call, params, nil
-}
-
-// estimatedTokens is the estimated size of everything a call sends.
-func estimatedTokens(c agent.Context) int {
-	total := c.MessageTokens
-	for _, s := range c.Sections {
-		total += s.Tokens
-	}
-	for _, t := range c.Tools {
-		total += t.Tokens
-	}
-	return total
 }
 
 // asModelCall renders a record on the wire.

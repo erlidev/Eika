@@ -74,6 +74,7 @@ var routeWire = map[string]wire{
 	"PUT /api/sessions/{id}/profile":         {status: http.StatusOK, request: setSessionProfileRequest{}, response: sessionConfigurationResponse{}},
 	"PUT /api/sessions/{id}/overrides":       {status: http.StatusOK, request: profileSettingsBody{}, response: sessionConfigurationResponse{}},
 	"GET /api/sessions/{id}/context":         {status: http.StatusOK, response: contextResponse{}},
+	"GET /api/sessions/{id}/prediction":      {status: http.StatusOK, response: predictionResponse{}},
 	"GET /api/sessions/{id}/calls":           {status: http.StatusOK, response: callsResponse{}},
 	"GET /api/sessions/{id}/calls/{call_id}": {status: http.StatusOK, response: contextResponse{}},
 	"GET /api/profiles":                      {status: http.StatusOK, response: profilesResponse{}},

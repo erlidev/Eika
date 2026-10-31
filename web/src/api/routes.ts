@@ -25,6 +25,7 @@ import type {
   ModelContext,
   ModelCall,
   ModelCalls,
+  NextPrediction,
   Models,
   OAuthCallback,
   PostMessage,
@@ -232,6 +233,22 @@ export function getSessionContext(
   signal?: AbortSignal,
 ): Promise<ModelContext> {
   return request<ModelContext>(`/api/sessions/${encodeURIComponent(id)}/context`, {
+    query: { model: model === "" ? undefined : model },
+    signal,
+  });
+}
+
+/**
+ * getSessionPrediction asks what the session's next request is expected to
+ * cost and how that is known, as a run that names `model` ("" for none)
+ * would send it, without the request itself.
+ */
+export function getSessionPrediction(
+  id: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<NextPrediction> {
+  return request<NextPrediction>(`/api/sessions/${encodeURIComponent(id)}/prediction`, {
     query: { model: model === "" ? undefined : model },
     signal,
   });

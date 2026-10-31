@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 
-import type { Message } from "@/api/types";
+import type { Message, MessageSize } from "@/api/types";
 import { MessageImages } from "@/components/MessageImages";
 import { OutputBlock } from "@/components/OutputBlock";
 import { Button } from "@/components/ui/button";
+import { tilde } from "@/features/context/segments";
 import { formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +18,12 @@ const roleTone: Record<Message["role"], string> = {
   system: "bg-muted text-muted-foreground border-transparent",
 };
 
-type MessagesProps = { messages: readonly Message[]; sizes: readonly number[] };
+type MessagesProps = { messages: readonly Message[]; sizes: readonly MessageSize[] };
+
+/** sizeOf is what a message costs: its text, tool calls and pictures, and its replayed reasoning. */
+function sizeOf(size: MessageSize | undefined): number {
+  return (size?.tokens ?? 0) + (size?.reasoning_tokens ?? 0);
+}
 
 /** Messages is the conversation as the request sends it, every message whole. */
 export function Messages({ messages, sizes }: MessagesProps) {
@@ -31,7 +37,7 @@ export function Messages({ messages, sizes }: MessagesProps) {
   }
   const names = new Map<string, string>();
   for (const m of messages) for (const c of m.tool_calls ?? []) names.set(c.id, c.name);
-  const largest = Math.max(...sizes, 1);
+  const largest = Math.max(...sizes.map(sizeOf), 1);
   const roles = (["user", "assistant", "tool"] as const).filter((r) =>
     messages.some((m) => m.role === r),
   );
@@ -64,7 +70,7 @@ export function Messages({ messages, sizes }: MessagesProps) {
               <MessageCard
                 n={i + 1}
                 message={m}
-                size={sizes[i] ?? 0}
+                size={sizes[i]}
                 largest={largest}
                 toolName={m.tool_call_id === undefined ? undefined : names.get(m.tool_call_id)}
               />
@@ -79,7 +85,7 @@ export function Messages({ messages, sizes }: MessagesProps) {
 type MessageCardProps = {
   n: number;
   message: Message;
-  size: number;
+  size: MessageSize | undefined;
   largest: number;
   toolName: string | undefined;
 };
@@ -112,11 +118,12 @@ function MessageCard({ n, message: m, size, largest, toolName }: MessageCardProp
           >
             <span
               className="bg-primary/60 block h-full"
-              style={{ width: `${String((size / largest) * 100)}%` }}
+              style={{ width: `${String((sizeOf(size) / largest) * 100)}%` }}
             />
           </span>
           <span className="text-muted-foreground font-mono text-xs tabular-nums">
-            ~{formatTokens(size)}
+            {tilde(size?.approximate === true)}
+            {formatTokens(sizeOf(size))}
           </span>
         </span>
       </header>
@@ -125,6 +132,13 @@ function MessageCard({ n, message: m, size, largest, toolName }: MessageCardProp
           <div className="space-y-0.5">
             <p className="text-muted-foreground text-2xs font-semibold tracking-wide uppercase">
               Reasoning, replayed
+              {size?.reasoning_tokens !== undefined && (
+                <span className="font-mono normal-case tabular-nums">
+                  {" "}
+                  · {tilde(size.approximate === true)}
+                  {formatTokens(size.reasoning_tokens)} tokens
+                </span>
+              )}
             </p>
             <p className="text-muted-foreground text-xs whitespace-pre-wrap italic">
               {m.reasoning}

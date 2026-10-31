@@ -6,6 +6,7 @@
  */
 
 import type {
+  Breakdown,
   ConfigLayer,
   Configuration,
   ContextSection,
@@ -13,6 +14,7 @@ import type {
   Model,
   ModelContext,
   ModelCall,
+  PredictedSize,
   Profile,
   Profiles,
   ProfileSettings,
@@ -480,9 +482,8 @@ export function previewContext(w: World, session: Session, requested: string): M
     sources.thinking_switch = "model";
     sources.image_input = "model";
   }
-  const last = (w.calls[session.id] ?? []).findLast((r) => (r.record.prompt_tokens ?? 0) > 0);
   const sizes = messages.map((m) => estimate(JSON.stringify(m)));
-  return {
+  const request: Unsized = {
     sections,
     tools,
     messages,
@@ -497,34 +498,134 @@ export function previewContext(w: World, session: Session, requested: string): M
     },
     sources,
     ...(config.dropped_effort === undefined ? {} : { dropped_effort: config.dropped_effort }),
-    ...(last ? { calibration: calibration(last) } : {}),
     context_window: model ? windowOf(w, model).effective : 0,
+  };
+  return { ...request, ...countedNext(request, countingOf(w, model)) };
+}
+
+/** Unsized is a request before it is counted. */
+type Unsized = Omit<ModelContext, "breakdown" | "prediction">;
+
+/** Counting is how an endpoint counts tokens, as the probe records it. */
+type Counting = "chat" | "text" | "none";
+
+/** countingOf is how the endpoint of a model counts tokens. */
+function countingOf(w: World, model: Model | undefined): Counting {
+  const provider = w.providers.find((p) => p.id === model?.provider_id);
+  return provider?.capabilities.counting ?? "none";
+}
+
+/**
+ * The mock endpoint's tokenizer and template: a token is 3.5 bytes, a message
+ * costs 5 tokens of markup, a request 16, and the template's wrapper around the
+ * tool list 24 (which the first tool carries). An endpoint that tokenises
+ * nothing is estimated at four bytes to a token, which is wrong by a little,
+ * as the real estimate is.
+ */
+const template = { request: 16, message: 5, toolsWrapper: 24, toolBoundary: 3 };
+
+function bytes(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+function tokenize(text: string): number {
+  return text === "" ? 0 : Math.ceil(bytes(text) / 3.5);
+}
+
+/** textOf is the text a message sends: its content and the name and arguments of its tool calls. */
+function textOf(m: Message): string[] {
+  return [
+    m.content ?? "",
+    ...(m.tool_calls ?? []).flatMap((c) => [c.name, JSON.stringify(c.arguments)]),
+  ];
+}
+
+/** Parts are the sizes of a request's parts as an endpoint of some kind counts them. */
+type Parts = Pick<Breakdown, "sections" | "tools" | "messages" | "parts">;
+
+/**
+ * sizeParts counts the parts of a request as internal/agent's MeasureParts
+ * does: text exactly where the endpoint tokenises it, the tools by rendering
+ * where it renders requests and as JSON text where it does not, and everything
+ * estimated, and marked so, where it tokenises nothing.
+ */
+function sizeParts(c: Unsized, counting: Counting): Parts {
+  const exact = counting !== "none";
+  const count = (text: string) => (exact ? tokenize(text) : Math.ceil(bytes(text) / 4));
+  const approximate = exact ? {} : { approximate: true as const };
+  const sections = (c.sections ?? []).map((s) => ({
+    kind: s.kind,
+    tokens: count(s.text),
+    ...approximate,
+  }));
+  const tools = (c.tools ?? []).map((t, i) => {
+    const text = count(
+      JSON.stringify({ name: t.name, description: t.description, schema: t.schema }),
+    );
+    return counting === "chat"
+      ? { name: t.name, tokens: text + (i === 0 ? template.toolsWrapper : template.toolBoundary) }
+      : { name: t.name, tokens: text, approximate: true as const };
+  });
+  const messages = (c.messages ?? []).map((m) => ({
+    tokens: textOf(m).reduce((n, text) => n + count(text), 0),
+    ...(m.reasoning ? { reasoning_tokens: count(m.reasoning) } : {}),
+    ...approximate,
+  }));
+  const parts =
+    sections.reduce((n, s) => n + s.tokens, 0) +
+    tools.reduce((n, t) => n + t.tokens, 0) +
+    messages.reduce((n, m) => n + m.tokens + (m.reasoning_tokens ?? 0), 0);
+  return { sections, tools, messages, parts };
+}
+
+/** promptOf is what the mock endpoint counts a request as: every part, tokenised, and the template. */
+function promptOf(c: Unsized): number {
+  const parts = sizeParts(c, "chat");
+  return parts.parts + template.request + template.message * (c.messages ?? []).length;
+}
+
+/** breakdownOf states a remainder against a prompt count, or leaves it null when there is none. */
+function breakdownOf(
+  parts: Parts,
+  prompt: number | null,
+  source: "measured" | "predicted",
+): Breakdown {
+  return {
+    ...parts,
+    prompt_tokens: prompt,
+    ...(prompt === null ? {} : { prompt_source: source }),
+    remainder: prompt === null ? null : prompt - parts.parts,
   };
 }
 
-/** estimated is the estimated size of everything a request sends. */
-function estimated(c: ModelContext): number {
-  return (
-    c.message_tokens +
-    (c.sections ?? []).reduce((n, s) => n + s.tokens, 0) +
-    (c.tools ?? []).reduce((n, t) => n + t.tokens, 0)
-  );
-}
-
-/** calibration is a recorded call's measurement beside its estimate. */
-function calibration(r: RecordedCall): NonNullable<ModelContext["calibration"]> {
+/**
+ * countedNext counts the next request: its parts, and its prediction by the
+ * best method the endpoint offers. The remainder is stated against the
+ * prediction only when that is exact.
+ */
+function countedNext(
+  c: Unsized,
+  counting: Counting,
+): { breakdown: Breakdown; prediction: PredictedSize } {
+  const parts = sizeParts(c, counting);
+  const full = promptOf(c);
+  const prediction: PredictedSize =
+    counting === "chat"
+      ? { tokens: full, method: "exact" }
+      : counting === "text"
+        ? { tokens: full, method: "anchored" }
+        : { tokens: parts.parts, method: "estimated" };
   return {
-    call_id: r.record.id,
-    // The mock records only calls whose input it measured.
-    prompt_tokens: r.record.prompt_tokens ?? 0,
-    estimated_tokens: estimated(r.context),
+    breakdown: breakdownOf(parts, prediction.method === "exact" ? full : null, "predicted"),
+    prediction,
   };
 }
 
 /**
  * record keeps a model call a run made: what it sent and what the endpoint
- * measured. The mock measures a sixth more than the estimate, as an endpoint
- * that counts special tokens would.
+ * measured. The mock endpoint measures what its tokenizer and template make of
+ * the request, and states how much of it came from its cache: the whole of
+ * the session's last prompt, which is the prefix this one extends.
  */
 export function record(
   w: World,
@@ -539,8 +640,11 @@ export function record(
     at?: string;
   },
 ): RecordedCall {
-  const inputTokens = Math.round(estimated(input.context) * 1.16);
   const model = w.models.find((m) => m.model === input.context.parameters.model);
+  const inputTokens = promptOf(input.context);
+  const predicted = countedNext(input.context, countingOf(w, model)).prediction;
+  const previous = (w.calls[session.id] ?? []).at(-1)?.record.prompt_tokens ?? 0;
+  const endpoint = w.providers.find((p) => p.id === model?.provider_id)?.name;
   const recorded: RecordedCall = {
     record: {
       id: input.id,
@@ -555,12 +659,14 @@ export function record(
       prompt_tokens: inputTokens,
       completion_tokens: input.outputTokens,
       total_tokens: inputTokens + input.outputTokens,
-      cached_tokens: null,
-      prefilled_tokens: null,
+      cached_tokens: Math.min(previous, inputTokens),
+      prefilled_tokens: inputTokens - Math.min(previous, inputTokens),
       reasoning_tokens: null,
-      predicted_prompt_tokens: null,
-      drift: null,
+      predicted_prompt_tokens: predicted.tokens,
+      prediction: predicted.method,
+      drift: predicted.tokens - inputTokens,
       context_window: model ? windowOf(w, model).effective : null,
+      ...(endpoint === undefined ? {} : { endpoint }),
       queue_ms: null,
       slot: null,
       created_at: input.at ?? fixedNow,
@@ -571,7 +677,22 @@ export function record(
   return recorded;
 }
 
-/** recordedContext is GET /api/sessions/{id}/calls/{call_id}. */
-export function recordedContext(r: RecordedCall): ModelContext {
-  return { ...r.context, call: r.record, calibration: calibration(r) };
+/**
+ * recordedContext is GET /api/sessions/{id}/calls/{call_id}: what the call
+ * sent, its parts counted as the endpoint counts them now, against what the
+ * endpoint measured then.
+ */
+export function recordedContext(w: World, r: RecordedCall): ModelContext {
+  const model = w.models.find((m) => m.model === r.context.parameters.model);
+  const sent: ModelContext = { ...r.context };
+  delete sent.prediction;
+  return {
+    ...sent,
+    call: r.record,
+    breakdown: breakdownOf(
+      sizeParts(r.context, countingOf(w, model)),
+      r.record.prompt_tokens,
+      "measured",
+    ),
+  };
 }

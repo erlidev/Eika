@@ -32,6 +32,7 @@ func Scenarios() []Scenario {
 		AnchoredCounting(nonce),
 		AgentLoop(nonce),
 		ReasoningCount(nonce),
+		ContextBreakdown(nonce),
 	}
 }
 

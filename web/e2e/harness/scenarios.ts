@@ -102,9 +102,11 @@ function workbench(): WorldBuilder {
 /**
  * profiles adds two profiles to a workbench, puts ses-backoff on one with an
  * override of its own, and records two of its model calls: one when only
- * its first message had been sent, and one at its head.
+ * its first message had been sent, and one at its head. Its endpoint counts
+ * tokens the way `counting` says: by rendering requests (chat), by tokenising
+ * text (text), or not at all (none).
  */
-function profiles(): WorldBuilder {
+function profiles(counting: "chat" | "text" | "none" = "chat"): WorldBuilder {
   const b = workbench();
   const w = b.world;
   const mini = w.models.find((m) => m.name === "gpt-5-mini");
@@ -128,6 +130,12 @@ function profiles(): WorldBuilder {
   main.profile_id = reviewer.id;
   w.overrides[main.id] = { ...noSettings(), sampling: { temperature: 0.7 } };
   syncSession(w, main);
+  // An endpoint that renders and tokenises requests (llama.cpp, vLLM), so the
+  // context view counts every part exactly and predicts the next request
+  // exactly. A scenario that wants another way of counting says so.
+  for (const p of w.providers) {
+    p.capabilities = { ...p.capabilities, counting, cache_metrics: "reported" };
+  }
   const head = main.head_entry_id;
   const first = (w.entries[main.id] ?? [])[0];
   if (first) main.head_entry_id = first.id;
@@ -952,6 +960,25 @@ export const scenarios = {
       "Like workbench, with two more profiles: ses-backoff runs with Reviewer and overrides its temperature, and two of its model calls are recorded. For the Profiles tab, the status bar's profile, and the Context panel.",
     path: "/sessions/ses-backoff",
     build: () => profiles().world,
+  },
+  "context-estimated": {
+    description:
+      "Like profiles, but the endpoint has no tokenizer: every part of a request is estimated from bytes and marked so, the next request's size is an estimate, and no remainder can be stated for it.",
+    path: "/sessions/ses-backoff",
+    build: () => profiles("none").world,
+  },
+  "context-drift": {
+    description:
+      "Like profiles, but the counter's exact prediction for the session's last recorded call was 3 tokens short of what the endpoint counted: the inspector shows it as a bug.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const w = profiles().world;
+      const last = (w.calls["ses-backoff"] ?? []).at(-1);
+      if (!last) throw new Error("ses-backoff has no recorded call");
+      last.record.predicted_prompt_tokens = (last.record.prompt_tokens ?? 0) - 3;
+      last.record.drift = -3;
+      return w;
+    },
   },
   home: {
     description:

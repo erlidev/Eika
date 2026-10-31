@@ -103,11 +103,18 @@ type contextWire struct {
 	DroppedEffort string            `json:"dropped_effort"`
 	Call          *modelCallWire    `json:"call"`
 	ContextWindow int               `json:"context_window"`
-	Calibration   *struct {
-		CallID          string `json:"call_id"`
-		PromptTokens    int    `json:"prompt_tokens"`
-		EstimatedTokens int    `json:"estimated_tokens"`
-	} `json:"calibration"`
+	Breakdown     *breakdownWire    `json:"breakdown"`
+	Prediction    *struct {
+		Tokens int    `json:"tokens"`
+		Method string `json:"method"`
+	} `json:"prediction"`
+}
+
+type breakdownWire struct {
+	agent.Breakdown
+	PromptTokens *int   `json:"prompt_tokens"`
+	PromptSource string `json:"prompt_source"`
+	Remainder    *int   `json:"remainder"`
 }
 
 // profiles lists the profiles.
@@ -270,7 +277,7 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	if !slices.Equal(kinds, []agent.SectionKind{agent.SectionBase, agent.SectionInstructions}) {
 		t.Errorf("sections = %v", kinds)
 	}
-	if preview.Sources["sampling.temperature"] != "session" || preview.Sources["model"] != "default" || preview.Calibration != nil {
+	if preview.Sources["sampling.temperature"] != "session" || preview.Sources["model"] != "default" || preview.Breakdown == nil || preview.Prediction == nil {
 		t.Errorf("preview = %+v", preview)
 	}
 
