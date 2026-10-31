@@ -28,10 +28,14 @@ type providerBody struct {
 	Slots    int    `json:"slots"`
 	KV       string `json:"kv"`
 	KVTokens int    `json:"kv_tokens,omitempty"`
+	// API is the wire protocol spoken to the endpoint, chat or responses:
+	// the Responses check's choice, or the user's own. Its outcome is in
+	// capabilities.responses.
+	API string `json:"api"`
 	// Capabilities are what the last successful probe found beyond those.
 	Capabilities probe.Capabilities `json:"capabilities"`
 	// Overridden names the fields the user set, which a probe leaves alone:
-	// any of backend, pool, slots and kv.
+	// any of backend, pool, slots, kv and api.
 	Overridden []string `json:"overridden"`
 	// ProbedAt is when a probe last succeeded; absent if none has.
 	ProbedAt *time.Time `json:"probed_at,omitempty"`
@@ -63,7 +67,7 @@ type updateProviderRequest struct {
 	BaseURL *string `json:"base_url"`
 	// APIKey replaces the stored key; the empty string removes it.
 	APIKey *string `json:"api_key"`
-	// Backend, Pool, Slots and KV set what a probe would otherwise find;
+	// Backend, Pool, Slots, KV and API set what a probe would otherwise find;
 	// a probe leaves a field set here alone. Pool "" means the provider's
 	// name. KVTokens is the size of a shared cache and is set with KV.
 	Backend  *string `json:"backend"`
@@ -71,8 +75,9 @@ type updateProviderRequest struct {
 	Slots    *int    `json:"slots"`
 	KV       *string `json:"kv"`
 	KVTokens *int    `json:"kv_tokens"`
-	// Reset hands fields (backend, pool, slots, kv) back to the probe. Their
-	// values stay until the next probe.
+	API      *string `json:"api"`
+	// Reset hands fields (backend, pool, slots, kv, api) back to the probe.
+	// Their values stay until the next probe.
 	Reset []string `json:"reset"`
 }
 
@@ -99,20 +104,25 @@ type probeResponse struct {
 
 // probeBody is one probe's findings.
 type probeBody struct {
-	Backend      string             `json:"backend"`
-	Slots        int                `json:"slots"`
-	KV           string             `json:"kv"`
-	KVTokens     int                `json:"kv_tokens,omitempty"`
+	Backend  string `json:"backend"`
+	Slots    int    `json:"slots"`
+	KV       string `json:"kv"`
+	KVTokens int    `json:"kv_tokens,omitempty"`
+	// API is the protocol the Responses check chose; chat for an endpoint
+	// nothing is stored for, which has no model of the user's to check with.
+	API          string             `json:"api"`
 	Capabilities probe.Capabilities `json:"capabilities"`
 }
 
-// asProbe renders a probe's findings on the wire.
-func asProbe(r probe.Result) probeBody {
+// asProbe renders a probe's findings on the wire, with the protocol its
+// Responses check chose.
+func asProbe(r probe.Result, api provider.API) probeBody {
 	return probeBody{
 		Backend:      string(r.Backend),
 		Slots:        r.Slots,
 		KV:           string(r.KV),
 		KVTokens:     r.KVTokens,
+		API:          string(api),
 		Capabilities: r.Capabilities,
 	}
 }
@@ -130,6 +140,7 @@ func (s *Server) asProvider(p store.Provider) providerBody {
 		Slots:        p.Slots,
 		KV:           p.KV,
 		KVTokens:     p.KVTokens,
+		API:          p.API,
 		Capabilities: probe.Capabilities{Counting: probe.CountNone, CacheMetrics: probe.CacheUnknown},
 		Overridden:   append([]string{}, p.Overridden...),
 		ProbedAt:     p.ProbedAt,

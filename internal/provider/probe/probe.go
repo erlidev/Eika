@@ -104,6 +104,10 @@ type Capabilities struct {
 	CacheMetrics CacheMetrics `json:"cache_metrics"`
 	// SlotHints is whether a request may name the slot it wants.
 	SlotHints bool `json:"slot_hints"`
+	// Responses is the outcome of the Responses conformance check, absent
+	// until it has run. Run does not run it: it asks the model, which the
+	// routes Run reads never do.
+	Responses *Conformance `json:"responses,omitempty"`
 }
 
 // Details is what a server says about the model it loaded. Only llama.cpp

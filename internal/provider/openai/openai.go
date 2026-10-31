@@ -320,7 +320,10 @@ func message(m provider.Message, preserveThinking bool) (openai.ChatCompletionMe
 		if preserveThinking && m.Reasoning != "" {
 			msg.SetExtraFields(map[string]any{"reasoning_content": m.Reasoning})
 		}
-		if m.Content != "" {
+		// An assistant message needs content or tool calls: llama.cpp refuses
+		// one with neither, which is what a response cut off inside its
+		// reasoning leaves, and every later request would fail the same way.
+		if m.Content != "" || len(m.ToolCalls) == 0 {
 			msg.Content.OfString = param.NewOpt(m.Content)
 		}
 		for _, c := range m.ToolCalls {

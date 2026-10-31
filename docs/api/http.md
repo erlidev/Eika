@@ -284,7 +284,7 @@ ModelContext that has `call`; `404` for a record of another session.
 |---|---|---|
 | `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base` or `instructions`. The system prompt is the sections' texts joined by a blank line. |
 | `tools` | array | The tool schemas sent: `{name, description, schema, source, tokens}`, where `source` is `builtin` or `mcp`. |
-| `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` only when the model preserves thinking. |
+| `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` and `reasoning_items` only when the model preserves thinking. |
 | `message_tokens` | number | The estimated size of the messages. |
 | `message_sizes` | number array | The estimated size of each message, in the order of `messages`. |
 | `parameters` | object | `{model, sampling, thinking_switch, preserve_thinking, image_input}`: the endpoint's identifier of the model, the sampling parameters sent (a Sampling), the model's thinking switch, whether earlier reasoning is replayed, and whether images are sent (without it each message's images are a note in its text). |
@@ -388,7 +388,11 @@ model is configured; `400` for a model that does not exist.
 
 A provider message can include `reasoning` on an assistant entry whenever the
 endpoint streamed it. The session view shows it apart from the answer; Eika
-replays it to the provider only when `preserve_thinking` is on. An assistant
+replays it to the provider only when `preserve_thinking` is on. An entry of a
+provider speaking the Responses API also holds `reasoning_items`: the reasoning
+items the endpoint returned, each exactly as it sent it (a hosted API's carry
+encrypted content), which a later request sends back as they are. A client
+does not read them; entries made before the field existed lack it. An assistant
 message can also include `metrics` with `run_id`, turn `usage`, last-call
 `context`, `generation_ms`, `context_window`, and an optional `timings`
 (`docs/api/events.md`). This UI metadata restores the context view and the
@@ -576,7 +580,7 @@ base URL it was entered for: a `base_url` that differs from the stored one,
 without an `api_key`, clears the stored key, so it is never sent to the new
 endpoint.
 
-`backend`, `pool`, `slots`, `kv` and `kv_tokens` set what a probe would
+`backend`, `pool`, `slots`, `kv`, `kv_tokens` and `api` set what a probe would
 otherwise find. A field set here is listed in the provider's `overridden` and a
 probe leaves it alone, until `reset` hands it back.
 
@@ -587,7 +591,8 @@ probe leaves it alone, until `reset` hands it back.
 | `slots` | integer | Concurrent requests the endpoint takes, 1 to 1024. |
 | `kv` | string | `shared`, `partitioned` or `unknown`. |
 | `kv_tokens` | integer | The size of a shared cache in tokens, 0 when unknown. Refused with a `kv` that is not `shared`. Setting either `kv` or `kv_tokens` sets the cache. |
-| `reset` | array of string | Fields (`backend`, `pool`, `slots`, `kv`) handed back to the probe. Their values stay until the next probe. |
+| `api` | string | `responses` or `chat`: the wire protocol spoken to the endpoint. |
+| `reset` | array of string | Fields (`backend`, `pool`, `slots`, `kv`, `api`) handed back to the probe. Their values stay until the next probe. |
 
 `200` with the `Provider`; `400` for a bad field; `409` when the name is
 taken.
@@ -605,6 +610,16 @@ slots, per-request window, KV cache and capabilities, read from the server's
 own description (`docs/design/runtime.md` section 1). The harness probes every
 stored provider again at each start.
 
+Probing a stored provider also runs the Responses conformance check, which is
+the one part of a probe that asks a model: two small requests to the first model
+the user configured on the provider, with a small output limit and a time limit
+each. The explicit probe always runs it. A probe at start runs it only when the
+provider has no recorded outcome, or the outcome was made against another server
+build or another model than the one it would ask now, so a start of the
+harness sends the model nothing in the usual case. A provider with no model is
+not asked (`verdict` `skipped`), and an endpoint nothing stores has no model of
+the user's to ask, so a form probe leaves `api` at `chat`.
+
 | Field | Type | Meaning |
 |---|---|---|
 | `provider_id` | string | A stored provider to probe with its stored key. |
@@ -615,7 +630,8 @@ stored provider again at each start.
 `200` with `{"models": [ModelInfo], "probe": Probe, "provider": Provider}`.
 `models` are sorted by id. `probe` is what the endpoint said about itself,
 before any override: `backend`, `slots`, `kv`, `kv_tokens` (absent when
-unknown) and `capabilities`. `provider` is the stored provider after the
+unknown), `api` (the protocol the Responses check chose: `responses` only when
+it passed) and `capabilities`. `provider` is the stored provider after the
 findings were recorded on it, which the route does only for a stored provider
 probed at its stored `base_url` and without a new `api_key`; it is absent
 otherwise, and nothing is written. Recording keeps every field the user set.
@@ -636,11 +652,24 @@ harness runs in a container. `400` too for a kind that cannot list.
 | `slots` | integer | Concurrent requests the endpoint takes. The server's own number where it states one, else 1 for a local backend and 8 for a hosted one. |
 | `kv` | string | How the KV cache is divided: `shared`, `partitioned`, or `unknown` (the server does not say; llama.cpp with several slots). |
 | `kv_tokens` | integer, optional | The size of a shared cache in tokens; absent when unknown. |
-| `capabilities` | object | The last successful probe's other findings: `build` (the server's version, optional), `window` (the context one request may use, optional), `counting` (`chat`, `text` or `none`: how the endpoint counts tokens), `cache_metrics` (`reported` or `unknown`) and `slot_hints` (a request may name its slot). |
-| `overridden` | array of string | The fields the user set, which a probe leaves alone: any of `backend`, `pool`, `slots`, `kv`. |
+| `api` | string | The wire protocol Eika speaks to the endpoint: `chat` (Chat Completions) or `responses` (the stateless Responses API). `chat` until a Responses check has passed, and the user's own choice when `overridden` names it. |
+| `capabilities` | object | The last successful probe's other findings: `build` (the server's version, optional), `window` (the context one request may use, optional), `counting` (`chat`, `text` or `none`: how the endpoint counts tokens), `cache_metrics` (`reported` or `unknown`), `slot_hints` (a request may name its slot) and `responses` (optional, the Responses check's outcome, below). |
+| `overridden` | array of string | The fields the user set, which a probe leaves alone: any of `backend`, `pool`, `slots`, `kv`, `api`. |
 | `probed_at` | time, optional | When a probe last succeeded; absent until one has. |
 | `probe_error` | string, optional | Why the latest probe failed, with the key removed; absent after a success. Earlier findings stay. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
+
+`capabilities.responses` is what the Responses check found out:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `verdict` | string | `passed`, `failed` or `skipped`. Only `passed` chooses the Responses API. |
+| `reason` | string, optional | Why it failed or was skipped, with the key removed. |
+| `model`, `build` | string, optional | The model asked and the server's build when it was. A change of either makes the outcome stale, and the next probe runs the check again. |
+| `checked_at` | time | When it ran. |
+| `reasoning` | boolean | The model returned a reasoning item and the second request sent it back. False for a model that did not reason. |
+| `cache_metrics` | boolean | The second response stated how many prompt tokens were cached. |
+| `counted`, `drift` | boolean, number | The second request was also counted by the token counter before it was sent, and how far that count was from the endpoint's own. Any drift fails the check. |
 
 ### ModelInfo
 

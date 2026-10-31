@@ -154,6 +154,11 @@ func TestACounterIsRebuiltWhenTheEndpointChanges(t *testing.T) {
 		"another counting kind": func() (endpoint, store.Model) {
 			return endpointOn(t, "http://127.0.0.1:1/v1", "k", probe.CountText), model
 		},
+		"another protocol": func() (endpoint, store.Model) {
+			ep := endpointOn(t, "http://127.0.0.1:1/v1", "k", probe.CountChat)
+			ep.row.API = string(provider.APIResponses)
+			return ep, model
+		},
 	}
 	for name, change := range changes {
 		t.Run(name, func(t *testing.T) {

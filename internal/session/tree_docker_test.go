@@ -3,9 +3,12 @@
 package session_test
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -394,6 +397,49 @@ func TestArgumentLessToolCallSurvivesTheDatabase(t *testing.T) {
 	}
 	if got := string(messages[0].ToolCalls[0].Arguments); got != "{}" {
 		t.Errorf("arguments = %q, want an empty object", got)
+	}
+}
+
+func TestReasoningItemsSurviveTheDatabase(t *testing.T) {
+	tree, sess := newTree(t)
+	ctx := t.Context()
+	// The database keeps the document, not its bytes: key order and spacing
+	// change on the way, a value never does. An item sent back after a restart
+	// must read as the one the endpoint returned.
+	blob := strings.Repeat("gAAAAABpA4tSq1m0fX9cJbq7vKZ3_eY8wL2nHk5RdTzP0uOa1VxCe6BsMgNyF4jI-hD+9lQpWrA/Eo2UtKc7ZGfYXb3iJvSnH8mT1dRqLw", 800)
+	items := []json.RawMessage{
+		json.RawMessage(`{"id":"rs_1","type":"reasoning","summary":[],"content":[{"type":"reasoning_text","text":"a <b> & \"q\"\nline é ☕  "}],"encrypted_content":""}`),
+		json.RawMessage(`{"summary":[],"type":"reasoning","status":null,"encrypted_content":"` + blob + `==","id":"rs_2","n":1.50}`),
+	}
+	msg := provider.AssistantMessageWithReasoning("hello", "think", nil)
+	msg.ReasoningItems = items
+	if _, err := tree.AppendMessage(ctx, sess.ID, msg); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	messages, err := tree.Messages(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	if len(messages) != 1 || len(messages[0].ReasoningItems) != len(items) {
+		t.Fatalf("Messages = %+v, want both items", messages)
+	}
+	for i, got := range messages[0].ReasoningItems {
+		var gotDoc, wantDoc map[string]any
+		if err := json.Unmarshal(got, &gotDoc); err != nil {
+			t.Fatalf("item %d: %v", i, err)
+		}
+		if err := json.Unmarshal(items[i], &wantDoc); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(gotDoc, wantDoc) {
+			t.Errorf("item %d = %s, want the document %s", i, got, items[i])
+		}
+	}
+	var second struct {
+		Encrypted string `json:"encrypted_content"`
+	}
+	if err := json.Unmarshal(messages[0].ReasoningItems[1], &second); err != nil || second.Encrypted != blob+"==" {
+		t.Errorf("encrypted content changed on the way through the database (%d bytes back, err %v)", len(second.Encrypted), err)
 	}
 }
 

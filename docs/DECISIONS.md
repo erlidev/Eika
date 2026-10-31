@@ -356,11 +356,13 @@ this file says why, so neither repeats the other.
   anything works (the probe is the connection test already); identifying by the
   `owned_by` field of `/v1/models` (llama.cpp says `llamacpp`, vLLM `vllm`, but
   a proxy rewrites it and the other servers do not set it).
-- **The probe never sends a prompt to a model.** It reads descriptions and
+- **`probe.Run` never sends a prompt to a model.** It reads descriptions and
   posts `{"content": "hi"}` to a tokenizer. Rejected: a one-token completion to
   read `cached_tokens` and the usage shape, which costs a model call on every
   start for a fact the usage item learns from real calls. `cache_metrics` is
-  `reported` where verified (llama.cpp) and `unknown` elsewhere.
+  `reported` where verified (llama.cpp) and `unknown` elsewhere. The Responses
+  conformance check does ask the model, as its own entry point and only when
+  needed ("The Responses API").
 - **llama.cpp's cache is `unknown` with more than one slot.** On b11942 nothing
   states whether `--kv-unified` is on or what `-c` was: `/props`, `/slots` and
   `/v1/models` all give the per-slot context, which a unified server sets to the
@@ -394,7 +396,8 @@ this file says why, so neither repeats the other.
   about something that is not the stored provider.
 - **The API field and Responses conformance are not part of this.** The result
   is a struct whose `Capabilities` the Responses item extends; a stored
-  provider's `capabilities` is JSON for that reason.
+  provider's `capabilities` is JSON for that reason. They are in "The
+  Responses API".
 
 ### Usage counts
 
@@ -739,6 +742,126 @@ this file says why, so neither repeats the other.
   loop, and the probe takes one failed request as "nobody answers"); retrying
   at the SDK (`WithMaxRetries` also repeats after real server errors, which the
   loop owns).
+
+### The Responses API
+
+- **A second implementation of `provider.Provider` beside the chat one, in
+  package `openai`, wrapping it.** `openai.Responses` holds the chat `Provider`
+  of the same endpoint and uses its SDK client, authentication, HTTP client,
+  error classification (`apiError`), model list and `ChatBody`. The registry
+  builds one or the other from `Endpoint.API`. Rejected: a package of its own
+  (it would copy the client, the key rules, the retry classification and the
+  model list, or import them back); one `Provider` with a protocol flag (every
+  method would branch, and the two bodies share nothing but the endpoint).
+- **The stream is read as raw events, not through the SDK's typed Responses
+  stream.** The SDK decodes an item into a union that drops fields it does not
+  model; a reasoning item must go back as the endpoint returned it
+  (`encrypted_content` is opaque to everything but the server that made it).
+  The SDK's server-sent-event decoder and its request path are used, and the
+  items stay `json.RawMessage`. Rejected: the typed stream and a re-encoded
+  item, which is not "as returned" for a field added next year.
+- **Counting stays one serialiser.** `Responses.ChatBody` is the chat
+  provider's, so exact counting renders the chat request for either protocol.
+  That is only right if the server converts Responses input to chat the way the
+  chat body says, which phase 1 checks by drift (live scenarios `responses_*`
+  repeat every counting scenario under Responses) and the conformance check
+  checks again on every endpoint it runs against. Rejected: a Responses-to-chat
+  conversion of our own to render (a second serialiser to keep equal to the
+  server's, and wrong the day the server changes its mind).
+- **Reasoning items are kept on the assistant message, beside the text.**
+  `Message.ReasoningItems` holds each item exactly as returned, in a
+  `reasoning_items` array of the stored entry; `Reasoning` stays the text, which
+  the UI, the counter, the compaction summary and Chat Completions read. The
+  entry's `jsonb` keeps the document and not its bytes (key order and spacing
+  change, a string never does, and a test stores a 80 kB encrypted blob and
+  reads it back); an old entry has no key and reads as before. Rejected: items
+  replacing the text (every reader of it changes, and a protocol switch loses
+  the reasoning); items in a table of their own (an entry is one message, and a
+  fork or a resume would have to join them); the whole output list instead of
+  the reasoning items (the answer and the calls already have fields, and two
+  copies of a tool call can disagree).
+- **A session that changes `api` still sends a valid request.** Chat
+  Completions sends `Reasoning` and ignores the items. A Responses provider
+  sends the items, and for a message that has only text (made under chat) it
+  builds an item holding the text for a server on the user's hardware, so the
+  conversation renders as it did and counts as the chat body counts it, and
+  sends none to a hosted API, which accepts only items it returned. A hosted API
+  also refuses a reasoning item with nothing after it, so one in a message cut
+  off in its reasoning is not sent there; a local server takes it, as it does
+  under chat. Rejected: dropping stored reasoning on a switch (a cache miss and
+  a different prompt than the one counted); a synthesised item for a hosted API
+  (refused).
+- **A hosted API is asked for `reasoning.encrypted_content` when the model
+  preserves thinking.** `store: false` returns no reasoning to pass back
+  otherwise, and nothing reads it unless it is sent back, which only a model
+  with `preserve_thinking` does. Asking for it of a model that does not reason is
+  believed to be refused (unverified: no hosted API is on the bench), so it is
+  not asked of every request. Rejected: always asking a hosted API, which risks
+  a refused request for the model it is not meant for.
+- **What a hosted API takes is what the specification defines.** A request to
+  one carries temperature, top_p, max output, `reasoning.effort` and `include`;
+  a server on the user's hardware also takes `top_k`, `min_p`, the penalties,
+  `seed`, `stop`, `preserve_thinking`, and the template and thinking switches as
+  top-level fields, as it takes them beside Chat Completions' (llama.cpp
+  b11942 accepted `top_k`, `min_p`, `seed`, the penalties, `preserve_thinking`,
+  `chat_template_kwargs` and `reasoning.effort`, and `stop` took effect). A hosted API gets `strict: false` on its
+  tools, since the Responses API defaults to strict and refuses a schema that is
+  not closed; a local server is not sent the field (not tried on the bench).
+  `Endpoint.Hosted` is the probe's backend `openai`. Rejected: sending every
+  field to every endpoint (a hosted API refuses an unknown one); a field per
+  backend (the same two classes cover the five).
+- **A cut-off is reported as `length` even where the server calls it complete.**
+  The Responses API says `response.incomplete` with `max_output_tokens`;
+  llama.cpp b11942 says `response.completed` with no reason for a response cut
+  at its limit (recorded). The provider reports `length` when the output count
+  has reached the limit the request set, so the loop keeps the text and drops a
+  tool call cut mid-arguments, as under chat. A response that ended on its own
+  at exactly the limit is taken as cut off too, which costs at most one tool call
+  that the model asks for again.
+- **`api` is a provider column, set by a conformance check and overridable.**
+  `chat` or `responses`, with the same override rules as `backend`: `overridden`
+  names it, a probe leaves it alone, `reset` hands it back. Migration `0007`
+  adds it with `chat` for every existing row. The check's outcome is in
+  `capabilities.responses` (verdict, reason, the model and build it ran on,
+  whether the reasoning round trip, the cache metrics and exact counting were
+  exercised); the probe chooses `responses` only for `passed`. Rejected: the
+  protocol on the model row (it is a property of the endpoint, and models share
+  one); a global setting (a cloud endpoint and a local one differ).
+- **The conformance check asks the user's model, and only when needed.**
+  `probe.CheckResponses` sends two requests with an output limit of 512 and 256
+  tokens and 90 seconds each: a streamed call to a tool with the model's
+  reasoning, then the call, its result and the reasoning item sent back as
+  stored. It passes when both complete, both state their usage, the second
+  states a cached count (cache metrics are the design's condition), and, where
+  the endpoint counts exactly, the second request was counted to the token
+  before it was sent. A model that does not reason has no item to send back; the
+  outcome records `reasoning: false` and may still pass. It runs on the
+  explicit probe, and at start only for a stored provider whose recorded outcome
+  was made on another server build or another model than the one it would ask
+  now (the provider's oldest configured model), so a start of Core sends the
+  model nothing in the usual case. A provider with no model is `skipped`, and a
+  failed or skipped check means `chat`. Rejected: running at every start (a
+  real prompt per provider on every restart, on a GPU that may be serving a
+  turn); a canned request inside `probe.Run` (which never asks a model, so a
+  probe stays free to run anywhere); a fixed model list (the outcome depends on
+  the model's template); checking on a model's creation (the second request
+  needs the model's own thinking settings, which a form is still editing); not
+  requiring cache metrics (the design makes them a condition, so Activity can
+  read the cache for either protocol; vLLM without
+  `--enable-prompt-tokens-details` therefore stays on `chat` unless the user
+  sets `responses`).
+- **llama.cpp is `responses` by default because the check passes and the drift
+  is zero.** Every counting scenario run under the Responses API on the bench
+  (b11942) predicted the prompt to the token and reported the same counts as
+  under chat for the same conversation (Log, 2026-10-31). The check includes the
+  drift, so a build whose conversion differs fails it and stays on `chat`. A
+  new Core on an existing database moves such a provider to `responses` at its
+  first start that finds a model.
+- **A reasoning-only assistant message is sent with empty content under
+  Chat Completions.** llama.cpp refuses an assistant message with neither
+  content nor tool calls (400), which is what a response cut off in its
+  reasoning leaves; every later request of the session failed. `content: ""` is
+  accepted and renders as before.
 
 ## Image input
 

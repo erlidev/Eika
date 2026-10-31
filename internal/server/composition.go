@@ -86,7 +86,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	s = New(cfg, log, Deps{
 		Store:     st,
 		Computers: host,
-		Providers: provider.NewRegistry(openai.New),
+		Providers: provider.NewRegistry(openai.New, openai.NewResponses),
 		Secrets:   secrets,
 		Tools:     tools,
 		Questions: questions,

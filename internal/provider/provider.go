@@ -122,10 +122,20 @@ type Message struct {
 	// from Content because it is not the assistant's answer: a client shows
 	// it as its own block, and only a provider configured to preserve
 	// thinking replays it on a later request.
-	Reasoning  string     `json:"reasoning,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-	IsError    bool       `json:"is_error,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
+	// ReasoningItems are the reasoning items a Responses endpoint returned
+	// for this message, each exactly as the endpoint sent it: the text
+	// Reasoning shows is read from them, and a later request sends them back
+	// as they are, because a hosted API accepts only what it returned
+	// (encrypted_content is opaque). They are absent on a message a Chat
+	// Completions endpoint produced; a provider speaking Responses then
+	// builds an item from Reasoning where the endpoint allows it, and
+	// sends none otherwise. Like Reasoning they are sent only by a provider
+	// configured to preserve thinking.
+	ReasoningItems []json.RawMessage `json:"reasoning_items,omitempty"`
+	ToolCalls      []ToolCall        `json:"tool_calls,omitempty"`
+	ToolCallID     string            `json:"tool_call_id,omitempty"`
+	IsError        bool              `json:"is_error,omitempty"`
 	// Metrics records the measured usage of an assistant response for session
 	// replay. Providers do not receive this metadata.
 	Metrics *MessageMetrics `json:"metrics,omitempty"`
@@ -371,6 +381,9 @@ const (
 	KindReasoningDelta EventKind = "reasoning_delta"
 	// KindToolCallDelta carries the next fragment of a tool call's arguments.
 	KindToolCallDelta EventKind = "tool_call_delta"
+	// KindReasoningItem carries one reasoning item of a Responses endpoint
+	// exactly as it was returned, for a later request to send back.
+	KindReasoningItem EventKind = "reasoning_item"
 	// KindToolCall carries one fully assembled tool call.
 	KindToolCall EventKind = "tool_call"
 	// KindUsage carries the token usage of the response.
@@ -388,6 +401,8 @@ type Event struct {
 	Text string
 	// ReasoningDelta is the next piece of preserved reasoning.
 	ReasoningDelta string
+	// ReasoningItem is the item of a KindReasoningItem event, as returned.
+	ReasoningItem json.RawMessage
 	// Index identifies the tool call a KindToolCallDelta event belongs to.
 	Index int
 	// ToolCallID and ToolName identify the tool call a KindToolCallDelta

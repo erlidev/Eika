@@ -33,6 +33,10 @@ type Provider struct {
 	// unknown. KVTokens is the size of a shared cache, zero when unknown.
 	KV       string
 	KVTokens int
+	// API is the wire protocol spoken to the endpoint: chat or responses. A
+	// probe sets it from the Responses conformance check, and the user may
+	// override it.
+	API string
 	// Capabilities is the last successful probe's findings that are not
 	// settings, as the probe package encodes them.
 	Capabilities json.RawMessage
@@ -58,7 +62,7 @@ func (p Provider) PoolName() string {
 
 // providerColumns is the column list every provider query selects, in the
 // order scanProvider reads them.
-const providerColumns = `id, name, kind, base_url, api_key, backend, pool, slots, kv, kv_tokens,
+const providerColumns = `id, name, kind, base_url, api_key, backend, pool, slots, kv, kv_tokens, api,
 	capabilities, overridden, probed_at, probe_error, created_at, updated_at`
 
 // CreateProvider inserts p and returns it with the fields the database
@@ -136,7 +140,7 @@ func (s *Store) DeleteProvider(ctx context.Context, id string) error {
 // scanProvider reads one provider row.
 func scanProvider(row pgx.Row) (Provider, error) {
 	var p Provider
-	if err := row.Scan(&p.ID, &p.Name, &p.Kind, &p.BaseURL, &p.APIKey, &p.Backend, &p.Pool, &p.Slots, &p.KV, &p.KVTokens,
+	if err := row.Scan(&p.ID, &p.Name, &p.Kind, &p.BaseURL, &p.APIKey, &p.Backend, &p.Pool, &p.Slots, &p.KV, &p.KVTokens, &p.API,
 		&p.Capabilities, &p.Overridden, &p.ProbedAt, &p.ProbeError, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return Provider{}, err
 	}
@@ -154,6 +158,7 @@ const (
 	OverrideBackend = "backend"
 	OverrideSlots   = "slots"
 	OverrideKV      = "kv"
+	OverrideAPI     = "api"
 	// OverridePool is accepted by ProviderOverride.Reset only: whether the
 	// pool is set shows in Provider.Pool itself.
 	OverridePool = "pool"
@@ -161,10 +166,13 @@ const (
 
 // ProbeResult is what a probe found, as RecordProbe stores it.
 type ProbeResult struct {
-	Backend      string
-	Slots        int
-	KV           string
-	KVTokens     int
+	Backend  string
+	Slots    int
+	KV       string
+	KVTokens int
+	// API is the protocol the Responses conformance check chose, or empty
+	// when no check ran and the stored one stands.
+	API          string
 	Capabilities json.RawMessage
 	At           time.Time
 }
@@ -179,13 +187,14 @@ func (s *Store) RecordProbe(ctx context.Context, id string, r ProbeResult) (Prov
 			slots     = CASE WHEN 'slots' = ANY(overridden) THEN slots ELSE $3 END,
 			kv        = CASE WHEN 'kv' = ANY(overridden) THEN kv ELSE $4 END,
 			kv_tokens = CASE WHEN 'kv' = ANY(overridden) THEN kv_tokens ELSE $5 END,
+			api       = CASE WHEN 'api' = ANY(overridden) OR $8 = '' THEN api ELSE $8 END,
 			capabilities = $6, probed_at = $7, probe_error = ''
 		WHERE id = $1
 		RETURNING ` + providerColumns
 	if r.Capabilities == nil {
 		r.Capabilities = json.RawMessage(`{}`)
 	}
-	out, err := scanProvider(s.pool.QueryRow(ctx, q, id, r.Backend, r.Slots, r.KV, r.KVTokens, r.Capabilities, r.At))
+	out, err := scanProvider(s.pool.QueryRow(ctx, q, id, r.Backend, r.Slots, r.KV, r.KVTokens, r.Capabilities, r.At, r.API))
 	if err != nil {
 		return Provider{}, wrap("record probe of provider "+id, err)
 	}
@@ -216,6 +225,8 @@ type ProviderOverride struct {
 	// cache, and KVTokens is kept only for a shared one.
 	KV       *string
 	KVTokens *int
+	// API is the wire protocol: chat or responses.
+	API *string
 	// Reset hands the named fields (the Override constants) back to the
 	// probe. Their values stay until the next probe writes them.
 	Reset []string
@@ -236,10 +247,10 @@ func (s *Store) OverrideProvider(ctx context.Context, id string, o ProviderOverr
 			p.Overridden = []string{}
 		}
 		const update = `UPDATE providers SET backend = $2, pool = $3, slots = $4, kv = $5, kv_tokens = $6,
-			overridden = $7, updated_at = now()
+			overridden = $7, api = $8, updated_at = now()
 			WHERE id = $1
 			RETURNING ` + providerColumns
-		out, err = scanProvider(q.QueryRow(ctx, update, id, p.Backend, p.Pool, p.Slots, p.KV, p.KVTokens, p.Overridden))
+		out, err = scanProvider(q.QueryRow(ctx, update, id, p.Backend, p.Pool, p.Slots, p.KV, p.KVTokens, p.Overridden, p.API))
 		if err != nil {
 			return wrap("override provider "+id, err)
 		}
@@ -261,6 +272,10 @@ func applyOverride(p *Provider, o ProviderOverride) {
 	}
 	if o.Pool != nil {
 		p.Pool = *o.Pool
+	}
+	if o.API != nil {
+		p.API = *o.API
+		mark(OverrideAPI)
 	}
 	if o.Slots != nil {
 		p.Slots = *o.Slots

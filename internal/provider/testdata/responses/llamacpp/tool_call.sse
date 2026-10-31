@@ -1,0 +1,135 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_Z6iKHRZUwkKi54V8NEUuUWOPZezMTGYq","object":"response","status":"in_progress"}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{"id":"resp_Z6iKHRZUwkKi54V8NEUuUWOPZezMTGYq","object":"response","status":"in_progress"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp","summary":[],"type":"reasoning","content":[],"encrypted_content":"","status":"in_progress"}}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"The","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" user","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" is","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" asking","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" to","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" list","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" the","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" files","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" in","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" /","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"tmp","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" using","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" the","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" ls","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" tool","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":",","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" and","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" then","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" tell","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" them","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" how","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" many","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" there","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" are","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" Let","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"'s","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" call","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" the","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" ls","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" tool","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"\n","item_id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp"}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"id":"fc_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","arguments":"","call_id":"call_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","name":"ls","type":"function_call","status":"in_progress"}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","delta":"{","item_id":"fc_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","output_index":1}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","delta":"\"path\":\"","item_id":"fc_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","output_index":1}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","delta":"/tmp","item_id":"fc_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","output_index":1}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","delta":"\"","item_id":"fc_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","output_index":1}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","delta":"}","item_id":"fc_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","output_index":1}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp","summary":[],"type":"reasoning","content":[{"text":"The user is asking to list the files in /tmp using the ls tool, and then tell them how many there are. Let's call the ls tool.\n","type":"reasoning_text"}],"encrypted_content":""}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"id":"fc_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","type":"function_call","status":"completed","arguments":"{\"path\":\"/tmp\"}","call_id":"call_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","name":"ls"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_Z6iKHRZUwkKi54V8NEUuUWOPZezMTGYq","object":"response","created_at":1793459264,"status":"completed","model":"qwen3.8-27b","output":[{"id":"rs_ac9QKLaYBUrmiCC7JtF8UhunKXfFChhp","summary":[],"type":"reasoning","content":[{"text":"The user is asking to list the files in /tmp using the ls tool, and then tell them how many there are. Let's call the ls tool.\n","type":"reasoning_text"}],"encrypted_content":""},{"id":"fc_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","type":"function_call","status":"completed","arguments":"{\"path\":\"/tmp\"}","call_id":"call_YgrJpvwhoAzClkf28PeIO8UH2bajADOx","name":"ls"}],"usage":{"input_tokens":332,"output_tokens":60,"total_tokens":392,"input_tokens_details":{"cached_tokens":0}}},"timings":{"cache_n":0,"prompt_n":332,"prompt_ms":157.062,"prompt_per_token_ms":0.4730783132530121,"prompt_per_second":2113.8149265894995,"predicted_n":60,"predicted_ms":742.704,"predicted_per_token_ms":12.588203389830507,"predicted_per_second":79.43945367198776}}
+

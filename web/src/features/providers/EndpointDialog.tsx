@@ -9,8 +9,8 @@
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 
-import { backends, kvs } from "@/api/types";
-import type { Backend, EndpointField, KV, Provider } from "@/api/types";
+import { apis, backends, kvs } from "@/api/types";
+import type { API, Backend, EndpointField, KV, Provider } from "@/api/types";
 import { ActionError, Notice } from "@/components/Notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  apiLabels,
   backendLabels,
+  conformanceSummary,
   endpointForm,
   endpointProblem,
   endpointUpdate,
@@ -127,7 +129,8 @@ function EndpointForm({ provider, onDone }: EndpointFormProps) {
         <DialogTitle>Endpoint of {provider.name}</DialogTitle>
         <DialogDescription>
           What Eika found out about the server behind this provider. A value you set is kept when
-          the endpoint is probed again.
+          the endpoint is probed again. Probing also asks the provider&apos;s first model two small
+          questions, to check the Responses API.
         </DialogDescription>
       </DialogHeader>
 
@@ -198,6 +201,34 @@ function EndpointForm({ provider, onDone }: EndpointFormProps) {
             </SelectContent>
           </Select>
           {hint("backend")}
+        </div>
+
+        <div className="space-y-1">
+          <Label htmlFor="endpoint-api" className="text-xs">
+            API
+          </Label>
+          <Select
+            value={form.api}
+            onValueChange={(next) => {
+              const known = apis.find((a: API) => a === next);
+              if (known) set({ api: known });
+            }}
+          >
+            <SelectTrigger id="endpoint-api" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {apis.map((a) => (
+                <SelectItem key={a} value={a}>
+                  {apiLabels[a]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            {conformanceSummary(provider.capabilities.responses)}
+          </p>
+          {hint("api")}
         </div>
 
         <div className="space-y-1">
@@ -300,7 +331,7 @@ function EndpointForm({ provider, onDone }: EndpointFormProps) {
       {probe.isSuccess && (
         <Notice tone="success">
           Probed: {backendLabels[probe.data.probe.backend]}, {String(probe.data.probe.slots)} slot
-          {probe.data.probe.slots === 1 ? "" : "s"}.
+          {probe.data.probe.slots === 1 ? "" : "s"}, {apiLabels[probe.data.probe.api]}.
         </Notice>
       )}
 

@@ -49,6 +49,7 @@ type endpointPrint struct {
 	baseURL, model string
 	backend        probe.Backend
 	counting       probe.Counting
+	api            string
 	keyDigest      [sha256.Size]byte
 }
 
@@ -88,6 +89,7 @@ func printOf(cfg counter.Config) endpointPrint {
 func (c *sessionCounters) forRun(sessionID string, ep endpoint, model store.Model) (*counter.Counter, func()) {
 	cfg := counterConfig(ep, model)
 	fp := printOf(cfg)
+	fp.api = ep.row.API
 	encoder, _ := ep.client.(provider.ChatEncoder)
 
 	c.mu.Lock()

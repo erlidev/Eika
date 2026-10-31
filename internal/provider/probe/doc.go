@@ -8,6 +8,13 @@
 // exactly. It reads documented routes of each project and verifies the token
 // routes with one tiny request; it never sends a prompt to a model.
 //
+// CheckResponses is the one entry point that does. It sends the endpoint's model
+// two small requests through a Responses provider (a streamed tool call with the
+// model's reasoning, then that call, its result and the reasoning item sent back)
+// and reports whether the Responses API works the way the loop needs: the
+// Conformance it returns says so, with the model and server build it was made
+// against, which is how a later probe knows whether to ask again.
+//
 // The Result a probe returns is what the harness stores on a provider row. A
 // field the user overrode is not replaced by it (internal/server and
 // internal/store apply that rule), and a field the server does not state is

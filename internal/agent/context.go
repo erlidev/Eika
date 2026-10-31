@@ -165,7 +165,7 @@ func (c Context) WithMessages(msgs []provider.Message) Context {
 		// otherwise, so neither is part of the request.
 		m.Metrics = nil
 		if !c.Parameters.PreserveThinking {
-			m.Reasoning = ""
+			m.Reasoning, m.ReasoningItems = "", nil
 		}
 		if !c.Parameters.ImageInput {
 			m = withoutImages(m)
@@ -219,13 +219,20 @@ func ToolTokens(def provider.ToolDef) int {
 
 // messageTokens estimates the size of one message: its JSON without the
 // images, and each image at what a model reads it as. The base64 an image
-// travels in is no measure of that.
+// travels in is no measure of that. Reasoning items repeat the reasoning text
+// a message already holds, so they count only when it holds none, as an item
+// of a hosted API does with its encrypted content.
 func messageTokens(m provider.Message) int {
-	images := m.Images
-	m.Images = nil
+	images, items := m.Images, m.ReasoningItems
+	m.Images, m.ReasoningItems = nil, nil
 	tokens := 0
 	for _, img := range images {
 		tokens += counter.EstimatedImageTokens(img.Width, img.Height)
+	}
+	if m.Reasoning == "" {
+		for _, item := range items {
+			tokens += EstimateTokens(string(item))
+		}
 	}
 	data, err := json.Marshal(m)
 	if err != nil {
