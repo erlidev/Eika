@@ -8,6 +8,7 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.8.1
 	github.com/dop251/goja v0.0.0-20260917113740-793a2a65c13b
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/openai/openai-go/v3 v3.61.0
 	golang.org/x/image v0.45.0
 	golang.org/x/net v0.58.0
@@ -35,7 +36,6 @@ require (
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/jackc/pgx/v5 v5.11.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/atomicwriter v0.1.0 // indirect
