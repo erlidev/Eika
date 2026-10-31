@@ -43,10 +43,14 @@ export type ModelRequest = {
   model_id?: string;
   model: string;
   message_tokens: number;
-  /** input_tokens, output_tokens, and total_tokens are measured; 0 when not reported. */
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
+  /**
+   * input_tokens, output_tokens, total_tokens, and cached_tokens are what the
+   * endpoint measured; null when it did not state them, which is not 0.
+   */
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  cached_tokens: number | null;
   created_at: string;
 };
 

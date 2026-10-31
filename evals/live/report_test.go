@@ -13,6 +13,14 @@ import (
 
 func ptr[T any](v T) *T { return &v }
 
+// intOf is a measured count, or -1 for one nothing measured.
+func intOf(p *int) int {
+	if p == nil {
+		return -1
+	}
+	return *p
+}
+
 func TestSummariseTotalsWhatEveryCallMeasured(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -21,36 +29,36 @@ func TestSummariseTotalsWhatEveryCallMeasured(t *testing.T) {
 		rate      *float64
 		prefill   *float64
 		drift     *int
-		promptSum int
+		promptSum *int
 	}{
 		{
 			name: "all measured",
 			calls: []live.Call{
-				{PromptTokens: 100, CachedTokens: ptr(0), PrefillSeconds: ptr(1.0), Drift: ptr(2)},
-				{PromptTokens: 100, CachedTokens: ptr(50), PrefillSeconds: ptr(0.5), Drift: ptr(-1)},
+				{PromptTokens: ptr(100), CachedTokens: ptr(0), PrefillSeconds: ptr(1.0), Drift: ptr(2)},
+				{PromptTokens: ptr(100), CachedTokens: ptr(50), PrefillSeconds: ptr(0.5), Drift: ptr(-1)},
 			},
-			cached: ptr(50), rate: ptr(0.25), prefill: ptr(1.5), drift: ptr(1), promptSum: 200,
+			cached: ptr(50), rate: ptr(0.25), prefill: ptr(1.5), drift: ptr(1), promptSum: ptr(200),
 		},
 		{
 			name: "one call without a cache count",
 			calls: []live.Call{
-				{PromptTokens: 100, CachedTokens: ptr(0), PrefillSeconds: ptr(1.0)},
-				{PromptTokens: 100, PrefillSeconds: ptr(0.5)},
+				{PromptTokens: ptr(100), CachedTokens: ptr(0), PrefillSeconds: ptr(1.0)},
+				{PromptTokens: ptr(100), PrefillSeconds: ptr(0.5)},
 			},
-			prefill: ptr(1.5), promptSum: 200,
+			prefill: ptr(1.5), promptSum: ptr(200),
 		},
 		{
 			name:      "nothing measured",
-			calls:     []live.Call{{PromptTokens: 7}},
-			promptSum: 7,
+			calls:     []live.Call{{PromptTokens: ptr(7)}},
+			promptSum: ptr(7),
 		},
 		{name: "no calls"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := live.Summarise(tt.calls)
-			if s.PromptTokens != tt.promptSum || s.Calls != len(tt.calls) {
-				t.Errorf("calls %d, prompt tokens %d", s.Calls, s.PromptTokens)
+			if !equal(s.PromptTokens, tt.promptSum) || s.Calls != len(tt.calls) {
+				t.Errorf("calls %d, prompt tokens %v", s.Calls, s.PromptTokens)
 			}
 			if !equal(s.CachedTokens, tt.cached) || !equal(s.CacheHitRate, tt.rate) ||
 				!equal(s.PrefillSeconds, tt.prefill) || !equal(s.Drift, tt.drift) {
@@ -71,7 +79,7 @@ func TestReportWritesJSONWithTheServerAndAbsentDrift(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "results", "nested")
 	started := time.Date(2026, 10, 31, 12, 30, 5, 0, time.UTC)
 	report := live.NewReport(started, live.ServerInfo{Build: "b11942-338fce651", Model: "qwen3.8-27b", ModelRevision: "4ca7"})
-	call := live.Call{Label: "turn 1", PromptTokens: 10}
+	call := live.Call{Label: "turn 1", PromptTokens: ptr(10)}
 	report.Add(live.Result{Name: "s", Passed: true, Calls: []live.Call{call}, Summary: live.Summarise([]live.Call{call})})
 
 	file, err := report.Write(dir)

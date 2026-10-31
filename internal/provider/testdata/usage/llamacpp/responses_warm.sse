@@ -1,0 +1,342 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_EY40UdDs227enRzlaExeWydn6xPpmPwb","object":"response","status":"in_progress"}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{"id":"resp_EY40UdDs227enRzlaExeWydn6xPpmPwb","object":"response","status":"in_progress"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn","summary":[],"type":"reasoning","content":[],"encrypted_content":"","status":"in_progress"}}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"We","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" need","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" to","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" answer","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" user","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":":","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" \"","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"What","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" is","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" a","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" cache","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" hit","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"?","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" Think","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" briefly","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".\"","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" Need","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" final","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" at","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" most","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" two","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" short","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" sentences","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" Need","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" likely","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" concise","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" Ensure","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" E","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"ika","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"?","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" Just","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" answer","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" Two","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" short","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" sentences","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" max","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" \"","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"A","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" cache","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" hit","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" occurs","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" when","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" the","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" requested","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" data","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" is","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" already","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" in","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" the","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" cache","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" It","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" lets","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" the","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" system","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" serve","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" it","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" quickly","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" without","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" fetching","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" from","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" slower","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" storage","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".\"","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" That","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"'s","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" two","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" sentences","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" Short","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" enough","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"\n","item_id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn"}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"content":[],"id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","role":"assistant","status":"in_progress","type":"message"}}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"part":{"type":"output_text","text":""}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":"A"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" cache"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" hit"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" occurs"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" when"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" the"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" requested"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" data"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" is"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" already"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" in"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" the"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" cache"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":"."}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" It"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" lets"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" the"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" system"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" serve"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" it"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" quickly"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" without"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" fetching"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" from"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" slower"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":" storage"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"delta":"."}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn","summary":[],"type":"reasoning","content":[{"text":"We need to answer user: \"What is a cache hit? Think briefly.\" Need final at most two short sentences. Need likely concise. Ensure Eika? Just answer. Two short sentences max. \"A cache hit occurs when the requested data is already in the cache. It lets the system serve it quickly without fetching from slower storage.\" That's two sentences. Short enough.\n","type":"reasoning_text"}],"encrypted_content":""}}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"text":"A cache hit occurs when the requested data is already in the cache. It lets the system serve it quickly without fetching from slower storage."}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","item_id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","output_index":1,"content_index":0,"part":{"type":"output_text","annotations":[],"logprobs":[],"text":"A cache hit occurs when the requested data is already in the cache. It lets the system serve it quickly without fetching from slower storage."}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","status":"completed","id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","content":[{"type":"output_text","annotations":[],"logprobs":[],"text":"A cache hit occurs when the requested data is already in the cache. It lets the system serve it quickly without fetching from slower storage."}],"role":"assistant"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_EY40UdDs227enRzlaExeWydn6xPpmPwb","object":"response","created_at":1793430332,"status":"completed","model":"qwen3.8-27b","output":[{"id":"rs_qXT1uqYvbjnRMKKnWmWQ1YkFFFmdVNmn","summary":[],"type":"reasoning","content":[{"text":"We need to answer user: \"What is a cache hit? Think briefly.\" Need final at most two short sentences. Need likely concise. Ensure Eika? Just answer. Two short sentences max. \"A cache hit occurs when the requested data is already in the cache. It lets the system serve it quickly without fetching from slower storage.\" That's two sentences. Short enough.\n","type":"reasoning_text"}],"encrypted_content":""},{"type":"message","status":"completed","id":"msg_ACGBGtwlDksWqasLdB8ebyvm0WHitPU0","content":[{"type":"output_text","annotations":[],"logprobs":[],"text":"A cache hit occurs when the requested data is already in the cache. It lets the system serve it quickly without fetching from slower storage."}],"role":"assistant"}],"usage":{"input_tokens":90,"output_tokens":107,"total_tokens":197,"input_tokens_details":{"cached_tokens":86}}},"timings":{"cache_n":86,"prompt_n":4,"prompt_ms":60.182,"prompt_per_token_ms":15.0455,"prompt_per_second":66.46505599680968,"predicted_n":107,"predicted_ms":1327.894,"predicted_per_token_ms":12.527301886792452,"predicted_per_second":79.8256487340104}}
+

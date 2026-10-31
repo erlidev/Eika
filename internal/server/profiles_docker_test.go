@@ -76,7 +76,10 @@ type modelRequestWire struct {
 	ModelID       string `json:"model_id"`
 	Model         string `json:"model"`
 	MessageTokens int    `json:"message_tokens"`
-	InputTokens   int    `json:"input_tokens"`
+	InputTokens   *int   `json:"input_tokens"`
+	OutputTokens  *int   `json:"output_tokens"`
+	TotalTokens   *int   `json:"total_tokens"`
+	CachedTokens  *int   `json:"cached_tokens"`
 }
 
 type requestsWire struct {

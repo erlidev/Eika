@@ -16,6 +16,11 @@
 // chat_template_kwargs or thinking extension, never more than one, because an
 // endpoint may reject a field it does not know.
 //
+// Usage is read from each chunk by provider.ChatUsage: the prompt, completion
+// and total counts, the cached and reasoning counts where the endpoint states
+// them, and llama.cpp's prompt_n. A count the endpoint does not state stays
+// unreported. timings.go reads how fast the endpoint ran, a separate matter.
+//
 // The entry point is New, which the provider registry calls for the "openai"
 // kind.
 package openai

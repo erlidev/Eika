@@ -28,11 +28,14 @@ type modelRequestBody struct {
 	Model   string `json:"model"`
 	// MessageTokens is the estimated size of the messages sent.
 	MessageTokens int `json:"message_tokens"`
-	// InputTokens, OutputTokens, and TotalTokens are what the endpoint
-	// measured, zero when it reported nothing.
-	InputTokens  int       `json:"input_tokens"`
-	OutputTokens int       `json:"output_tokens"`
-	TotalTokens  int       `json:"total_tokens"`
+	// InputTokens, OutputTokens, TotalTokens, and CachedTokens are what the
+	// endpoint measured: the prompt, the response, their sum, and the part of
+	// the prompt it served from its cache. Each is null when the endpoint did
+	// not state it, which is not the same as 0.
+	InputTokens  *int      `json:"input_tokens"`
+	OutputTokens *int      `json:"output_tokens"`
+	TotalTokens  *int      `json:"total_tokens"`
+	CachedTokens *int      `json:"cached_tokens"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -128,9 +131,10 @@ func (c callRecorder) Record(ctx context.Context, call agent.ModelCall) error {
 		Tools:         tools,
 		Parameters:    parameters,
 		MessageTokens: call.Context.MessageTokens,
-		InputTokens:   call.Usage.InputTokens,
-		OutputTokens:  call.Usage.OutputTokens,
-		TotalTokens:   call.Usage.TotalTokens,
+		InputTokens:   call.Usage.InputTokens.Ptr(),
+		OutputTokens:  call.Usage.OutputTokens.Ptr(),
+		TotalTokens:   call.Usage.TotalTokens.Ptr(),
+		CachedTokens:  call.Usage.CachedTokens.Ptr(),
 	})
 	return err
 }
@@ -245,8 +249,8 @@ func (s *Server) handleSessionRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if rec.InputTokens > 0 {
-		out.Calibration = &calibrationBody{RequestID: rec.ID, InputTokens: rec.InputTokens, EstimatedTokens: estimatedTokens(call)}
+	if measured := rec.InputTokens; measured != nil && *measured > 0 {
+		out.Calibration = &calibrationBody{RequestID: rec.ID, InputTokens: *measured, EstimatedTokens: estimatedTokens(call)}
 	}
 	writeJSON(w, s.log, http.StatusOK, out)
 }
@@ -259,7 +263,7 @@ func (s *Server) lastCalibration(ctx context.Context, sessionID string) (*calibr
 		return nil, err
 	}
 	for i := len(records) - 1; i >= 0; i-- {
-		if records[i].InputTokens == 0 {
+		if in := records[i].InputTokens; in == nil || *in == 0 {
 			continue
 		}
 		rec, err := s.deps.Store.ModelRequest(ctx, sessionID, records[i].ID)
@@ -271,7 +275,7 @@ func (s *Server) lastCalibration(ctx context.Context, sessionID string) (*calibr
 			return nil, err
 		}
 		call.MessageTokens = rec.MessageTokens
-		return &calibrationBody{RequestID: rec.ID, InputTokens: rec.InputTokens, EstimatedTokens: estimatedTokens(call)}, nil
+		return &calibrationBody{RequestID: rec.ID, InputTokens: *records[i].InputTokens, EstimatedTokens: estimatedTokens(call)}, nil
 	}
 	return nil, nil
 }
@@ -321,6 +325,7 @@ func asModelRequest(r store.ModelRequest) modelRequestBody {
 		InputTokens:   r.InputTokens,
 		OutputTokens:  r.OutputTokens,
 		TotalTokens:   r.TotalTokens,
+		CachedTokens:  r.CachedTokens,
 		CreatedAt:     r.CreatedAt,
 	}
 }

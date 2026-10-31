@@ -237,12 +237,15 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       show zero drift under `responses` on llama.cpp (the server's own
       Responses-to-chat conversion must match the request `/apply-template`
       renders), or llama.cpp stays on `chat` by default. Record fixtures per
-      backend and note in the log which backends behave well.
+      backend and note in the log which backends behave well. Usage comes from
+      `provider.ResponsesUsage` (landed with the usage-parsing item, tested over
+      llama.cpp's recorded `/v1/responses` streams in
+      `internal/provider/testdata/usage`); pass it the `response.completed` event.
 - [x] Provider probe: detect the backend, the per-request window, the KV cache and capabilities for
       llama.cpp, vLLM, SGLang, TabbyAPI and generic OpenAI-compatible cloud
       endpoints. Record response fixtures for each. Add the provider columns
       `backend`, `pool`, `slots`, `kv` and `capabilities`.
-- [ ] Parse usage per backend and protocol: `prompt_tokens`, cached tokens,
+- [x] Parse usage per backend and protocol: `prompt_tokens`, cached tokens,
       `prompt_n` and `cache_n`, reasoning tokens, and under `responses`
       `input_tokens`, `input_tokens_details.cached_tokens` and
       `output_tokens_details.reasoning_tokens`. NULL when not reported, never 0. Verify each
@@ -312,8 +315,8 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       Remaining:
       - fill `Call.Drift` (`evals/live/call.go`; the report has it as `null`)
         from the token counter once it exists, and make `Summarise` total it
-      - replace the cached count `cache_reuse` derives (`prompt_tokens` less
-        `prompt_n`) with the one usage parsing reads
+      - (done by the usage-parsing item) `cache_reuse` reads the cached
+        count usage parsing parses, not `prompt_tokens` less `prompt_n`
       - any further scenarios the items after this one need; the live suite
         below adds them to `Scenarios()`
 - [ ] Phase 1 live suite, against the bench's chat model:
@@ -1042,6 +1045,77 @@ Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
 
+- 2026-10-31: usage parsing per backend and protocol (branch `usage-parsing`).
+  The item is ticked; the Responses provider that calls its Responses parser is
+  still the first item of the phase.
+  - Landed. `provider.Count` (a token count that is a number or *not
+    reported*, JSON `null`, comparable); `provider.Usage` now holds six of them
+    (prompt, completion, total, cached, prefilled, reasoning);
+    `provider.ChatUsage` and `provider.ResponsesUsage` read a Chat Completions
+    chunk and a Responses event; `provider.Tally` sums a run of calls and
+    reports a count only if every call did. The openai provider uses
+    `ChatUsage` (merging what several chunks state). The agent's turn totals,
+    compaction cost and `model_requests` rows carry `null`, not 0, for what the
+    endpoint did not state; `event.Usage` is now an alias of `provider.Usage`,
+    and `contract.json`, the UI types, the meter (`n/a`, never 0) and the mock
+    harness follow. Migration `0005_model_request_usage.sql` makes the three
+    count columns of `model_requests` nullable, turns rows of three zeros into
+    NULL, and adds the one new column, `cached_tokens` (nullable); no other
+    column and no rename (that is the `model_calls` item). Session entries stored
+    before the change read back unchanged: a usage without `cached_tokens` is the
+    old form, and three zeros in it read as nothing stated. `evals/live` takes its
+    counts from `provider.Usage`: `cache_reuse` no longer derives cached as
+    `prompt_tokens - prompt_n`, `Call` gained `reasoning_tokens`, and a total is
+    null unless every call stated it.
+  - Verified against the bench (llama.cpp b11942-338fce651, Qwen3.8-27B
+    UD-Q4_K_XL, reasoning on), streamed, cold and warm, on both routes; recorded
+    in `internal/provider/testdata/usage/llamacpp`. (1) `prompt_tokens` **includes**
+    cached tokens, on both routes: chat cold 90 = `cache_n` 0 + `prompt_n` 90,
+    warm 90 = 86 + 4; responses `input_tokens` 90 = 0 + 90 then 86 + 4, and the
+    same 90 tokens as chat for the same prompt. (2) `usage.prompt_tokens_details.
+    cached_tokens` equals `timings.cache_n` in all six recordings; the usage
+    field is read first and `cache_n` is the fallback (reason in
+    `DECISIONS.md`, "Usage counts"). On `/v1/responses` the `timings` object is a
+    sibling of `response` in the `response.completed` event, not inside it.
+    (3) No reasoning count on either route: no `completion_tokens_details`, no
+    `output_tokens_details`, so `reasoning_tokens` is NULL on llama.cpp. (4)
+    `completion_tokens` / `output_tokens` **include** the reasoning: a request cut
+    off at 20 tokens, all of them reasoning chunks, reported 20 on both routes, and
+    the full runs reported 100 over 68 reasoning and 29 answer chunks (chat) and 107
+    over 77 and 27 (responses). (5) A repeat of an identical prompt still
+    prefills 4 tokens (86 cached of 90), so a warm cache never reads as the whole
+    prompt cached.
+  - Unverified fixtures, written from each project's documentation or source and
+    marked in `internal/provider/testdata/usage/README.md`: OpenAI chat and
+    responses (cached and reasoning counts), vLLM chat (with and without
+    `--enable-prompt-tokens-details`) and responses, SGLang chat (with and
+    without `--enable-cache-report`; its top-level `reasoning_tokens` is 0 whether
+    or not reasoning was counted, so it is not read), TabbyAPI chat (timings in
+    usage, no cached or reasoning count). Replace them with recordings when those
+    servers are on the bench.
+  - `make check` passed (every Go package ok, 441 web tests, 128 visual specs;
+    no baseline changed). `make live` against b11942-338fce651: `cache_reuse`
+    and `provider_probe` passed (turn 1: 320 prompt, 0 cached, 0.151 s; turn 2: 370
+    prompt, 348 cached = 94.1%, 22 prefilled, 0.135 s; reasoning tokens null).
+    The `EOF` on a kept-alive POST in turn 2 happened again on the first of
+    three runs (see the probe entry); it passed on the next. `make smoke` was
+    not run: no compose file, Dockerfile, `deploy/` or `server.Run` wiring
+    changed, and the migration is applied by every store test on a fresh and on
+    an upgraded database.
+  - Left open. The Responses provider is not built; `ResponsesUsage` is tested
+    over recorded streams only. The probe's `cache_metrics` capability is still
+    set from what the server describes, not from what a response showed: now
+    that usage parsing says whether a backend states a cached count, the probe
+    or the first call could record it. Reasoning tokens stay NULL on llama.cpp;
+    tokenising the reasoning text is the token counter's. A usage block of three
+    zeros is skipped as a placeholder (gateways send them); a server that really
+    reported all three as 0 would read as stating nothing.
+  - For later items. `model_calls` (the rename) adds `prefilled_tokens` and
+    `reasoning_tokens` beside `cached_tokens`, and `Usage` already carries both.
+    Anything that adds or compares usage uses `Count.Plus`, `Usage.Add` or
+    `Tally`, or checks `Value()`: `Or` is for a stated fallback, such as an
+    estimate, never for reading NULL as 0. The cache-hit rate of the Activity page
+    is `cached / prompt` over calls that state both.
 - 2026-10-31: the provider probe and the KV cache per pool, one piece of code
   (branch `provider-probe`). Both items are ticked.
   - Landed. `internal/provider/probe` (`Run` identifies llama.cpp, SGLang,

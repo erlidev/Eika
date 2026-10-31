@@ -393,6 +393,53 @@ this file says why, so neither repeats the other.
   is a struct whose `Capabilities` the Responses item extends; a stored
   provider's `capabilities` is JSON for that reason.
 
+### Usage counts
+
+- **A token count is a number or "not reported", never 0.** `provider.Usage`
+  holds `provider.Count`s: a comparable value, JSON `null` when not reported,
+  `*int` in the store and the wire types. A server that does not say how many
+  prompt tokens were cached has not said none, and a cache-hit rate or a
+  prediction drift computed from a 0 would be a number nobody measured.
+  Rejected: `*int` fields in `Usage`, whose pointers compare by address and
+  break the "same usage as last chunk" check in the stream relay; a parallel
+  `Reported` bitset, which can disagree with the value it describes; keeping 0
+  and adding a flag only for the new fields, which leaves the old three
+  fields reading "stated nothing" as "cost nothing".
+- **A sum is not reported if any term was not.** `Count.Plus`, `Usage.Add` and
+  `Tally` all work so, which makes a turn's `cached_tokens` null when one of its
+  calls did not state it, rather than a smaller number that looks complete.
+  Rejected: summing only the calls that stated it and saying so beside the
+  number, which every reader of the total would have to remember to check.
+- **Each field means one thing, whichever protocol it came from.** The prompt
+  count includes the cached part and the completion count includes
+  reasoning. This was checked on llama.cpp b11942 under both
+  `/v1/chat/completions` and `/v1/responses` (`docs/design/runtime.md`
+  section 2) and is the documented meaning of the OpenAI fields the other
+  backends copy; their fixtures are written from documentation and marked
+  unverified. A field of a backend whose meaning is not known is not read: SGLang's
+  top-level `reasoning_tokens` is 0 whether or not reasoning was counted, so it
+  is left alone. Nothing sums a prompt count and a cached count, and
+  `prefilled_tokens` is read only where the server states it.
+- **Two fields stating the cached count: the usage one wins.**
+  `prompt_tokens_details.cached_tokens` (`input_tokens_details` under
+  Responses) is the field the OpenAI API defines and vLLM, SGLang and the cloud
+  APIs carry, so a cached count means the same on every backend. llama.cpp's
+  `timings.cache_n` is the fallback for a build without the usage field. On
+  b11942 the two are equal in every recording.
+- **A usage block of zeros states nothing.** Gateways send
+  `{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}` in chunks before
+  the last; no call has an empty prompt, so a block whose three headline counts
+  are all 0 is skipped. A 0 beside a real count is a statement and stays.
+- **Stored entries before this change stay readable.** A stored usage without a
+  `cached_tokens` key predates unreported counts, and three zeros in it mean the
+  endpoint stated nothing. In `model_requests`, `0005` makes the three counts
+  nullable, turns rows of three zeros into NULL, and adds `cached_tokens`.
+  Rejected: a data migration of the session entries' JSON, which the reader
+  makes unnecessary.
+- **Reasoning tokens are not estimated here.** llama.cpp states none, so the
+  count is not reported. Tokenising the reasoning text is the token counter's
+  to add, as a separate, labelled source.
+
 ## Image input
 
 - **Images are prepared once, in the harness** (`internal/imaging`), when a
@@ -722,8 +769,8 @@ this file says why, so neither repeats the other.
   `/v1/models` through it, not a parser of the live package's own), so a
   regression can be told apart from a server or model change. The `provider_probe`
   scenario checks the probe against `/slots`, a route it does not read. What no counter measures yet (drift) is
-  `null` in the report, never 0. The cached-token count is derived from the
-  provider's prefill timings until usage parsing reads it. Rejected: a shell
+  `null` in the report, never 0. The token counts are the ones usage parsing
+  reads (see "Usage counts"). Rejected: a shell
   or Python runner (a second way to talk to the provider, which would not
   exercise it); testing against a fake that mimics llama.cpp (the live suite
   exists to catch what fakes cannot); one key in the environment only (the

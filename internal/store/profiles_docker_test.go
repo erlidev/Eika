@@ -16,6 +16,15 @@ import (
 // ptr returns a pointer to v, for the optional profile settings.
 func ptr[T any](v T) *T { return &v }
 
+// stated returns a stored count, or -1 for one that is NULL, which no stored
+// count is.
+func stated(p *int) int {
+	if p == nil {
+		return -1
+	}
+	return *p
+}
+
 // sameJSON reports whether two documents are equal as JSON, which is all a
 // jsonb column promises about what it gives back.
 func sameJSON(t *testing.T, a, b []byte) bool {
@@ -343,7 +352,7 @@ func TestModelRequestsAreRecordedPerSession(t *testing.T) {
 		Sections:      json.RawMessage(`[{"kind":"base","text":"You are Eika.","tokens":4}]`),
 		Tools:         json.RawMessage(`[{"name":"bash","description":"run","schema":{"type":"object"},"source":"builtin","tokens":9}]`),
 		Parameters:    json.RawMessage(`{"model":"gpt-x","sampling":{"temperature":0.2},"preserve_thinking":false}`),
-		MessageTokens: 5, InputTokens: 120, OutputTokens: 30, TotalTokens: 150,
+		MessageTokens: 5, InputTokens: new(120), OutputTokens: new(30), TotalTokens: new(150), CachedTokens: new(0),
 	}
 	first, err := st.RecordModelRequest(ctx, given)
 	if err != nil {
@@ -352,6 +361,9 @@ func TestModelRequestsAreRecordedPerSession(t *testing.T) {
 	second, err := st.RecordModelRequest(ctx, store.ModelRequest{SessionID: sess.ID, RunID: run.ID, ModelID: "absent", Model: "gone"})
 	if err != nil {
 		t.Fatalf("RecordModelRequest without an entry: %v", err)
+	}
+	if second.InputTokens != nil || second.OutputTokens != nil || second.TotalTokens != nil || second.CachedTokens != nil {
+		t.Errorf("record of a call that stated no usage = %+v, want every count NULL, not 0", second)
 	}
 	if second.ModelID != "" || second.Model != "gone" || string(second.Sections) != "[]" || string(second.Parameters) != "{}" {
 		t.Errorf("record of an unknown model = %+v, want it kept by name with empty documents", second)
@@ -376,7 +388,7 @@ func TestModelRequestsAreRecordedPerSession(t *testing.T) {
 		t.Fatalf("ModelRequest: %v", err)
 	}
 	if got.RunID != run.ID || got.EntryID != entry.ID || got.ModelID != model.ID || got.Model != "gpt-x" ||
-		got.MessageTokens != 5 || got.InputTokens != 120 || got.OutputTokens != 30 || got.TotalTokens != 150 {
+		got.MessageTokens != 5 || stated(got.InputTokens) != 120 || stated(got.OutputTokens) != 30 || stated(got.TotalTokens) != 150 || got.CachedTokens == nil || *got.CachedTokens != 0 {
 		t.Errorf("record = %+v, want what was given", got)
 	}
 	for name, pair := range map[string][2]json.RawMessage{
@@ -399,7 +411,7 @@ func TestModelRequestsAreRecordedPerSession(t *testing.T) {
 	if len(list) != 2 || list[0].ID != first.ID || list[1].ID != second.ID {
 		t.Fatalf("ModelRequests = %+v, want both records oldest first", list)
 	}
-	if list[0].Sections != nil || list[0].Tools != nil || !sameJSON(t, list[0].Parameters, given.Parameters) || list[0].InputTokens != 120 {
+	if list[0].Sections != nil || list[0].Tools != nil || !sameJSON(t, list[0].Parameters, given.Parameters) || stated(list[0].InputTokens) != 120 {
 		t.Errorf("listed record = %+v, want a summary without sections or tools", list[0])
 	}
 	if others, err := st.ModelRequests(ctx, other.ID); err != nil || len(others) != 0 {

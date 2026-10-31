@@ -480,7 +480,7 @@ export function previewContext(w: World, session: Session, requested: string): M
     sources.thinking_switch = "model";
     sources.image_input = "model";
   }
-  const last = (w.requests[session.id] ?? []).findLast((r) => r.record.input_tokens > 0);
+  const last = (w.requests[session.id] ?? []).findLast((r) => (r.record.input_tokens ?? 0) > 0);
   const sizes = messages.map((m) => estimate(JSON.stringify(m)));
   return {
     sections,
@@ -515,7 +515,8 @@ function estimated(c: ModelContext): number {
 function calibration(r: RecordedRequest): NonNullable<ModelContext["calibration"]> {
   return {
     request_id: r.record.id,
-    input_tokens: r.record.input_tokens,
+    // The mock records only calls whose input it measured.
+    input_tokens: r.record.input_tokens ?? 0,
     estimated_tokens: estimated(r.context),
   };
 }
@@ -554,6 +555,7 @@ export function record(
       input_tokens: inputTokens,
       output_tokens: input.outputTokens,
       total_tokens: inputTokens + input.outputTokens,
+      cached_tokens: null,
       created_at: input.at ?? fixedNow,
     },
     context: input.context,

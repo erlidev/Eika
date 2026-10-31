@@ -142,7 +142,8 @@ export function RequestSelect({ id, requests, className }: RequestSelectProps) {
 
 /** requestLabel names a recorded call in the select: its number, model, and measured input. */
 function requestLabel(r: ModelRequest, n: number): string {
-  const measured = r.input_tokens > 0 ? ` · ${formatTokens(r.input_tokens)} in` : "";
+  const measured =
+    r.input_tokens !== null && r.input_tokens > 0 ? ` · ${formatTokens(r.input_tokens)} in` : "";
   return `#${String(n)} · ${r.model}${measured} · ${formatAgo(r.created_at)}`;
 }
 

@@ -44,9 +44,10 @@ not start, stop or swap anything on it from a scenario.
 | `server.backend` | What the harness's provider probe took the server for (`llamacpp` on the bench) |
 | `server.flags` | What the probe read: `slots`, `context` (the window one request may use; `/props` reports it per slot), `train_context`, `kv` (`unknown` for a llama.cpp server with several slots), `vision`. The KV cache type and `--kv-unified` are not reported by llama.cpp; they are in `command.txt` on the server |
 | `scenarios[].passed`, `error` | Whether the scenario ran to its end and met its assertions |
-| `calls[].prompt_tokens` | The prompt size the server counted, cached tokens included |
-| `calls[].prefilled_tokens` | Prompt tokens the server evaluated (llama.cpp `prompt_n`) |
-| `calls[].cached_tokens`, `cache_hit_rate` | Prompt tokens served from the cache, and their share of the prompt |
+| `calls[].prompt_tokens`, `completion_tokens` | The prompt size the server counted, cached tokens included, and the tokens generated, reasoning included |
+| `calls[].reasoning_tokens` | The part of the completion the server says was reasoning; `null` on llama.cpp, which does not say |
+| `calls[].prefilled_tokens` | Prompt tokens the server says it evaluated (llama.cpp `prompt_n`) |
+| `calls[].cached_tokens`, `cache_hit_rate` | Prompt tokens served from the cache, as the server states them, and their share of the prompt |
 | `calls[].prefill_seconds` | Time the server spent evaluating the prompt, as it measured it |
 | `calls[].wall_seconds` | Request to end of stream, as the harness saw it |
 | `calls[].drift` | The token counter's prediction less `prompt_tokens` |
@@ -54,10 +55,9 @@ not start, stop or swap anything on it from a scenario.
 
 A number that was not measured is `null`, never 0. `drift` is `null` in every
 report until the token counter exists; the counter's item fills it in
-(`Call.Drift`), and `Summarise` totals it. `cached_tokens` is derived as
-`prompt_tokens - prefilled_tokens`, which holds on llama.cpp (its
-`prompt_tokens` counts cached tokens, checked on b11942); the usage-parsing item
-replaces it with the count the server reports. Compare two reports by their
+(`Call.Drift`), and `Summarise` totals it. A total is `null` unless every call
+stated the count it adds up. The token counts are the ones usage parsing reads
+(`provider.Usage`); the suite derives none. Compare two reports by their
 `server` block first: a change there explains a change in the numbers.
 
 ## Adding a scenario

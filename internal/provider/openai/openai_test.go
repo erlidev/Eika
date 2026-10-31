@@ -199,7 +199,7 @@ func TestStreamText(t *testing.T) {
 	if text.String() != "Hello" {
 		t.Errorf("text = %q, want %q", text.String(), "Hello")
 	}
-	if usage != (provider.Usage{InputTokens: 5, OutputTokens: 2, TotalTokens: 7}) {
+	if want := (provider.Usage{InputTokens: provider.Reported(5), OutputTokens: provider.Reported(2), TotalTokens: provider.Reported(7)}); usage != want {
 		t.Errorf("usage = %+v", usage)
 	}
 	if last.Kind != provider.KindDone || last.StopReason != "stop" {
@@ -591,7 +591,7 @@ func TestStreamRelaysUsageAsSoonAsAChunkReportsIt(t *testing.T) {
 	var reported []int
 	for _, e := range events {
 		if e.Kind == provider.KindUsage {
-			reported = append(reported, e.Usage.OutputTokens)
+			reported = append(reported, e.Usage.OutputTokens.Or(-1))
 		}
 	}
 	if len(reported) != 3 || reported[0] != 1 || reported[2] != 3 {

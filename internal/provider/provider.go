@@ -314,13 +314,6 @@ type Request struct {
 	PreserveThinking bool
 }
 
-// Usage reports the tokens one response cost.
-type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
-}
-
 // TimingSource says who measured a set of Timings. The two are not equally
 // exact: an endpoint times its own phases from the inside, while the harness
 // can only time the stream that reaches it.

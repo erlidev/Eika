@@ -1,0 +1,1 @@
+{"model":"qwen3.8-27b","stream":true,"store":false,"max_output_tokens":300,"temperature":0,"instructions":"Session u1-nonce-5521. You are Eika, a personal assistant. Answer in at most two short sentences.","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"What is a cache hit? Think briefly."}]}]}

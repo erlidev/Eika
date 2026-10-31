@@ -1,0 +1,1 @@
+{"type":"response.completed","sequence_number":42,"response":{"id":"resp_example","object":"response","created_at":1700000000,"status":"completed","model":"example-model","output":[],"usage":{"input_tokens":512,"input_tokens_details":{"cached_tokens":496},"output_tokens":48,"output_tokens_details":{"reasoning_tokens":30},"total_tokens":560}}}

@@ -33,6 +33,9 @@ type reply struct {
 	promptMS           float64
 	timings            bool
 	text               string
+	// usageCached, when set, is the cached count the usage block states
+	// beside the prompt count, as a server with prompt_tokens_details does.
+	usageCached *int
 }
 
 func requestFor(text string) provider.Request {
@@ -75,8 +78,12 @@ func sse(r reply) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", text)
 	b.WriteString("data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}]}\n\n")
-	tail := fmt.Sprintf(`{"choices":[],"usage":{"completion_tokens":%d,"prompt_tokens":%d,"total_tokens":%d}`,
-		r.completion, r.prompt, r.prompt+r.completion)
+	details := ""
+	if r.usageCached != nil {
+		details = fmt.Sprintf(`,"prompt_tokens_details":{"cached_tokens":%d}`, *r.usageCached)
+	}
+	tail := fmt.Sprintf(`{"choices":[],"usage":{"completion_tokens":%d,"prompt_tokens":%d,"total_tokens":%d%s}`,
+		r.completion, r.prompt, r.prompt+r.completion, details)
 	if r.timings {
 		tail += fmt.Sprintf(`,"timings":{"cache_n":%d,"prompt_n":%d,"prompt_ms":%g,"predicted_n":%d,"predicted_ms":40}`,
 			r.cacheN, r.promptN, r.promptMS, r.completion)
@@ -124,8 +131,8 @@ func TestCompleteReadsCacheAndPrefillFromARecordedStream(t *testing.T) {
 	// llama.cpp b11942: prompt_tokens 18 counts the 14 cached ones, and
 	// prompt_n 4 is what it evaluated.
 	c := res.Calls[0]
-	if c.PromptTokens != 18 || c.CompletionTokens != 4 {
-		t.Errorf("tokens = %d prompt, %d completion", c.PromptTokens, c.CompletionTokens)
+	if intOf(c.PromptTokens) != 18 || intOf(c.CompletionTokens) != 4 {
+		t.Errorf("tokens = %d prompt, %d completion", intOf(c.PromptTokens), intOf(c.CompletionTokens))
 	}
 	if c.PrefilledTokens == nil || *c.PrefilledTokens != 4 || c.CachedTokens == nil || *c.CachedTokens != 14 {
 		t.Errorf("%v, want 4 prefilled and 14 cached", c)
@@ -161,8 +168,43 @@ func TestCompleteWithoutTimingsLeavesCacheAndPrefillAbsent(t *testing.T) {
 	if res.Summary.CachedTokens != nil || res.Summary.CacheHitRate != nil || res.Summary.PrefillSeconds != nil {
 		t.Errorf("summary invented a number: %+v", res.Summary)
 	}
-	if res.Summary.PromptTokens != 30 {
-		t.Errorf("summary prompt tokens = %d, want 30", res.Summary.PromptTokens)
+	if intOf(res.Summary.PromptTokens) != 30 {
+		t.Errorf("summary prompt tokens = %v, want 30", res.Summary.PromptTokens)
+	}
+}
+
+func TestCompleteTakesTheCachedCountFromUsageNotFromPrefill(t *testing.T) {
+	// A server with no prompt_n (so nothing to subtract from the prompt count)
+	// that states the cached count in its usage block: the count is read, and
+	// a stated 0 stays a 0 rather than an absent value.
+	zero, some := 0, 30
+	cs := newChatServer(t,
+		reply{prompt: 40, completion: 3, text: "a", usageCached: &zero},
+		reply{prompt: 50, completion: 3, text: "b", usageCached: &some},
+	)
+	res := live.Scenario{
+		Name: "usage cached",
+		Run: func(ctx context.Context, tg *live.Target) ([]live.Call, error) {
+			first, _, err := tg.Complete(ctx, "first", requestFor("hi"))
+			if err != nil {
+				return []live.Call{first}, err
+			}
+			second, _, err := tg.Complete(ctx, "second", requestFor("hi again"))
+			return []live.Call{first, second}, err
+		},
+	}.Execute(context.Background(), connect(t, cs.URL))
+	if !res.Passed {
+		t.Fatalf("scenario failed: %s", res.Error)
+	}
+	first, second := res.Calls[0], res.Calls[1]
+	if first.CachedTokens == nil || *first.CachedTokens != 0 || first.CacheHitRate == nil || *first.CacheHitRate != 0 {
+		t.Errorf("first = %+v, want a stated 0 cached and a hit rate of 0", first)
+	}
+	if second.CachedTokens == nil || *second.CachedTokens != 30 || second.PrefilledTokens != nil || second.ReasoningTokens != nil {
+		t.Errorf("second = %+v, want 30 cached and no prefilled or reasoning count, which nothing stated", second)
+	}
+	if s := res.Summary; s.CachedTokens == nil || *s.CachedTokens != 30 || s.CacheHitRate == nil || math.Abs(*s.CacheHitRate-30.0/90.0) > 1e-9 {
+		t.Errorf("summary = %+v, want 30 of 90 cached", s)
 	}
 }
 
@@ -179,7 +221,7 @@ func TestCacheReuseReportsBothTurnsAndBoundsTheOutput(t *testing.T) {
 		t.Fatalf("calls = %+v", res.Calls)
 	}
 	s := res.Summary
-	if s.Calls != 2 || s.PromptTokens != 840 || s.CachedTokens == nil || *s.CachedTokens != 398 {
+	if s.Calls != 2 || intOf(s.PromptTokens) != 840 || s.CachedTokens == nil || *s.CachedTokens != 398 {
 		t.Errorf("summary = %+v", s)
 	}
 	if s.PrefillSeconds == nil || math.Abs(*s.PrefillSeconds-0.98) > 1e-9 {
@@ -227,13 +269,13 @@ func TestCacheReuseFailsWhenTheSecondTurnMissesTheCache(t *testing.T) {
 	}
 }
 
-func TestCacheReuseFailsWhenTheServerReportsNoTimings(t *testing.T) {
+func TestCacheReuseFailsWhenTheServerReportsNoCachedCount(t *testing.T) {
 	cs := newChatServer(t,
 		reply{prompt: 400, completion: 20, text: "a"},
 		reply{prompt: 440, completion: 20, text: "b"},
 	)
 	res := live.CacheReuse("fixed").Execute(context.Background(), connect(t, cs.URL))
-	if res.Passed || !strings.Contains(res.Error, "no prompt timings") {
+	if res.Passed || !strings.Contains(res.Error, "no cached token count") {
 		t.Fatalf("passed = %v, error = %q", res.Passed, res.Error)
 	}
 }

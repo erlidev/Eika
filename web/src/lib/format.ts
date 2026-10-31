@@ -19,6 +19,30 @@ export function formatTokens(n: number): string {
 }
 
 /**
+ * formatReported renders a token count the endpoint may not have stated: "n/a"
+ * for null, so a count that was never stated does not read as 0.
+ */
+export function formatReported(n: number | null): string {
+  return n === null ? "n/a" : formatTokens(n);
+}
+
+/**
+ * contextFill is how much of the model's window a call's usage fills: the
+ * total the endpoint stated, or its prompt and response together when it
+ * stated both. It is undefined when it stated neither, which is not an empty
+ * window.
+ */
+export function contextFill(u: {
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+}): number | undefined {
+  if (u.total_tokens !== null && u.total_tokens > 0) return u.total_tokens;
+  if (u.input_tokens !== null && u.output_tokens !== null) return u.input_tokens + u.output_tokens;
+  return undefined;
+}
+
+/**
  * formatRate renders a generation speed in tokens per second. It returns an
  * empty string for a measurement that cannot make a rate, so a caller never
  * shows a division by zero as a speed.

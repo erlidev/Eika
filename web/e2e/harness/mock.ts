@@ -558,7 +558,14 @@ export class MockHarness {
         tokens_before: tokensBefore,
         tokens_after: 6_412,
         reason: "manual",
-        usage: { input_tokens: 612, output_tokens: 431, total_tokens: 1043 },
+        usage: {
+          input_tokens: 612,
+          output_tokens: 431,
+          total_tokens: 1043,
+          cached_tokens: null,
+          prefilled_tokens: null,
+          reasoning_tokens: null,
+        },
       };
       this.append(session, { role: "user" }, compaction);
       this.finish(run, "done");
@@ -605,11 +612,17 @@ export class MockHarness {
           input_tokens: 1842,
           output_tokens: outputTokens,
           total_tokens: 1842 + outputTokens,
+          cached_tokens: null,
+          prefilled_tokens: null,
+          reasoning_tokens: null,
         },
         context: {
           input_tokens: 1842,
           output_tokens: outputTokens,
           total_tokens: 1842 + outputTokens,
+          cached_tokens: null,
+          prefilled_tokens: null,
+          reasoning_tokens: null,
         },
         generation_ms: generationMs,
         context_window: 400_000,
@@ -671,11 +684,17 @@ export class MockHarness {
                 input_tokens: 1842,
                 output_tokens: outputTokens,
                 total_tokens: 1842 + outputTokens,
+                cached_tokens: null,
+                prefilled_tokens: null,
+                reasoning_tokens: null,
               },
               context: {
                 input_tokens: 1842,
                 output_tokens: outputTokens,
                 total_tokens: 1842 + outputTokens,
+                cached_tokens: null,
+                prefilled_tokens: null,
+                reasoning_tokens: null,
               },
               generation_ms: generationMs,
               context_window: 400_000,
@@ -853,6 +872,9 @@ export class MockHarness {
         input_tokens: 1842,
         output_tokens: Math.max(outputTokens, 311),
         total_tokens: 1842 + Math.max(outputTokens, 311),
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
       };
       send("turn.end", {
         stop_reason: stopReason,

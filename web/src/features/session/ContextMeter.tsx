@@ -15,7 +15,7 @@
 
 import { useTranscriptPreferences } from "@/features/session/preferences";
 import type { Meter } from "@/features/session/transcript";
-import { formatRate, formatTokens } from "@/lib/format";
+import { contextFill, formatRate, formatReported, formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type ContextMeterProps = {
@@ -31,23 +31,29 @@ function fullBand(fraction: number): { bar: string; text: string } {
 
 export function ContextMeter({ meter }: ContextMeterProps) {
   const window = meter.contextWindow;
-  const used = meter.context.total_tokens;
-  if (used === 0) return null;
+  const used = contextFill(meter.context);
+  if (used === undefined || used === 0) return null;
+  const { input_tokens: prompt, output_tokens: response } = meter.context;
   const fraction = window > 0 ? Math.min(1, used / window) : 0;
   const percent = Math.round(fraction * 100);
   const band = fullBand(fraction);
   // The prompt is what a turn carries forward; the response is what it just
-  // added to it. Two segments say which is which without a legend.
-  const promptFraction = used === 0 ? 0 : fraction * (meter.context.input_tokens / used);
+  // added to it. Two segments say which is which without a legend. An
+  // endpoint that did not state the prompt cannot say where the split falls,
+  // so the bar is one segment.
+  const promptFraction = prompt === null ? fraction : fraction * (prompt / used);
 
   // The tooltip repeats the bar in words and adds the split it cannot show.
   // What the turn cost belongs in the run panel: it is a different number,
   // and one the endpoint only updates when a model call ends.
+  const split = [
+    ...(prompt === null ? [] : [`${formatTokens(prompt)} prompt`]),
+    ...(response === null ? [] : [`${formatTokens(response)} response`]),
+  ].join(", ");
   const title =
     window > 0
-      ? `Context: ${formatTokens(used)} of ${formatTokens(window)} (${String(percent)}%) · ` +
-        `${formatTokens(meter.context.input_tokens)} prompt, ` +
-        `${formatTokens(meter.context.output_tokens)} response`
+      ? `Context: ${formatTokens(used)} of ${formatTokens(window)} (${String(percent)}%)` +
+        (split === "" ? "" : ` · ${split}`)
       : `Context: ${formatTokens(used)} · no window configured`;
 
   return (
@@ -96,14 +102,15 @@ export type ContextBreakdownProps = {
  */
 export function ContextBreakdown({ meter }: ContextBreakdownProps) {
   const showSpeed = useTranscriptPreferences((s) => s.speed);
-  if (!meter || meter.context.total_tokens === 0) {
+  const used = meter ? contextFill(meter.context) : undefined;
+  if (!meter || used === undefined || used === 0) {
     return <p className="text-muted-foreground">No model call has reported its usage yet.</p>;
   }
   const window = meter.contextWindow;
-  const used = meter.context.total_tokens;
   const fraction = window > 0 ? Math.min(1, used / window) : 0;
   const band = fullBand(fraction);
-  const promptFraction = fraction * (meter.context.input_tokens / used);
+  const prompt = meter.context.input_tokens;
+  const promptFraction = prompt === null ? fraction : fraction * (prompt / used);
 
   return (
     <div className="space-y-2">
@@ -126,9 +133,9 @@ export function ContextBreakdown({ meter }: ContextBreakdownProps) {
       )}
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
         <dt className="text-muted-foreground">Prompt</dt>
-        <dd className="font-mono tabular-nums">{formatTokens(meter.context.input_tokens)}</dd>
+        <dd className="font-mono tabular-nums">{formatReported(meter.context.input_tokens)}</dd>
         <dt className="text-muted-foreground">Response</dt>
-        <dd className="font-mono tabular-nums">{formatTokens(meter.context.output_tokens)}</dd>
+        <dd className="font-mono tabular-nums">{formatReported(meter.context.output_tokens)}</dd>
         {window > 0 && (
           <>
             <dt className="text-muted-foreground">Free</dt>
@@ -142,8 +149,8 @@ export function ContextBreakdown({ meter }: ContextBreakdownProps) {
           Turn cost
         </dt>
         <dd className="font-mono tabular-nums">
-          {formatTokens(meter.usage.input_tokens)} in · {formatTokens(meter.usage.output_tokens)}{" "}
-          out
+          {formatReported(meter.usage.input_tokens)} in ·{" "}
+          {formatReported(meter.usage.output_tokens)} out
         </dd>
         {showSpeed && <SpeedRows meter={meter} />}
       </dl>

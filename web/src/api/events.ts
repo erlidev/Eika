@@ -90,11 +90,23 @@ export type ToolResult = {
   duration_ms: number;
 };
 
-/** Usage reports the tokens a turn cost. */
+/**
+ * Usage reports the tokens a model call or a turn cost, as the endpoint
+ * stated them. A count the endpoint did not state is null, which is not 0: a
+ * turn's count is null when any of its calls did not state it. input_tokens is
+ * the whole prompt, cached tokens included; output_tokens is everything
+ * generated, reasoning included.
+ */
 export type Usage = {
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  /** cached_tokens is the part of the prompt served from the endpoint's cache. */
+  cached_tokens: number | null;
+  /** prefilled_tokens is the part of the prompt the endpoint processed, where it says so. */
+  prefilled_tokens: number | null;
+  /** reasoning_tokens is the part of output_tokens that was reasoning. */
+  reasoning_tokens: number | null;
 };
 
 /**
