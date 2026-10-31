@@ -322,6 +322,14 @@ type Request struct {
 	// PreserveThinking asks a compatible Chat Completions endpoint to return
 	// reasoning data and replays that data with later assistant messages.
 	PreserveThinking bool
+	// SlotHint is the slot of the server the request should run on, so that
+	// the session's prefix stays in that slot's cache. It is nil for a request
+	// that names none, which is every request to a server that has no slots to
+	// name. It steers where the server runs the request and never what it
+	// reads, so it is not part of the body the token counter renders
+	// (ChatEncoder), and a provider on an endpoint that does not take it
+	// (Endpoint.SlotHints) sends none.
+	SlotHint *int
 }
 
 // TimingSource says who measured a set of Timings. The two are not equally

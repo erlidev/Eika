@@ -44,7 +44,16 @@ func NewResponses(e provider.Endpoint) (provider.Provider, error) {
 // provider events. The returned channel is closed after a done or error event;
 // a caller that stops reading must cancel ctx.
 func (p *Responses) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
-	body, err := p.body(req, true)
+	return streamWithSlot(ctx, req, p.chat.slotHints, p.stream)
+}
+
+// stream is one attempt at a request, naming its slot when withSlot says so.
+func (p *Responses) stream(ctx context.Context, req provider.Request, withSlot bool) (<-chan provider.Event, error) {
+	var slot *int
+	if withSlot {
+		slot = req.SlotHint
+	}
+	body, err := p.body(req, true, slot)
 	if err != nil {
 		return nil, err
 	}
@@ -84,8 +93,8 @@ func (p *Responses) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 
 // body builds the request. Keys are sorted, so a request is byte-stable, and
 // no character is escaped that JSON does not require, so the text a server
-// reads is the text the conversation holds.
-func (p *Responses) body(req provider.Request, stream bool) ([]byte, error) {
+// reads is the text the conversation holds. It names slot when it is not nil.
+func (p *Responses) body(req provider.Request, stream bool, slot *int) ([]byte, error) {
 	if req.Model == "" {
 		return nil, errors.New("build response: request names no model")
 	}
@@ -108,6 +117,9 @@ func (p *Responses) body(req provider.Request, stream bool) ([]byte, error) {
 		fields["tools"] = tools
 	}
 	p.sampling(req, fields)
+	if slot != nil {
+		fields[slotField] = *slot
+	}
 
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
