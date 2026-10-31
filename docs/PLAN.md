@@ -195,7 +195,7 @@ before the routes it calls.
       freezes that content at first creation. A chat may attach to it, which
       gives `bash`, so the sandboxed path stays exercised until phase 2
       replaces chats.
-- [ ] Rewrite `README.md` for the assistant, and update the layout tables in
+- [x] Rewrite `README.md` for the assistant, and update the layout tables in
       `ARCHITECTURE.md`, `EXTENDING.md`, `docs/api/` and `AGENTS.md`. Settle the
       compatibility shims `REFACTOR_PLAN.md`'s log left to the owner
       (`config.movedToUI`, the README upgrade section, the `deploy/.env`
@@ -208,7 +208,7 @@ before the routes it calls.
       `STYLE_GUIDE.md` or `DECISIONS.md` now (for example, that `make check`
       did not catch the live-region change `make smoke` caught), so deleting
       the file in phase 15 loses nothing.
-- [ ] Add `DECISIONS.md` entries:
+- [x] Add `DECISIONS.md` entries:
       - scope (personal assistant)
       - coding layer removed
       - fresh baseline schema
@@ -216,7 +216,7 @@ before the routes it calls.
       - plugins unavailable to agents from phase 2 until phase 11 (accepted)
 - [x] Update `make smoke`: setup, provider, then a chat on the home computer
       running a sandboxed `bash`.
-- [ ] Re-measure lines and test counts against the `REFACTOR_PLAN.md` baseline and
+- [x] Re-measure lines and test counts against the `REFACTOR_PLAN.md` baseline and
       log them.
 
 **Exit:** on a fresh stack, the harness has made the home computer by the time
@@ -1034,6 +1034,51 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-30: phase 0 re-measured against the `REFACTOR_PLAN.md` baseline
+  (branch `close-phase-0`; README and shims `ad02eae`, DECISIONS `fd6f916`).
+  - Method. The baseline table does not say how it was measured, so the method
+    was found by trying: concatenating the files and counting lines
+    (`cat | wc -l`) reproduces the baseline's Go (36,738 and 23,629), TypeScript
+    (29,794), `internal/server` (9,840 lines in 28 files) and docs (4,241)
+    figures to the digit, on `be89235` unpacked into a scratch directory. Go
+    is `cmd` and `internal`, tests being `*_test.go`. TypeScript is every
+    `.ts` and `.tsx` under `web/src` except `components/ui`, test files
+    included. Docs are `AGENTS.md`, `README.md`, `docs/*.md` and `docs/api/*.md`,
+    without `PLAN.md` and `REFACTOR_PLAN.md`, which the baseline tree did not
+    have, nor `docs/design/`. The `doc.go` row counts `//` lines, 23 on the
+    baseline tree as recorded. Where the baseline's figure could not be
+    reproduced it is said below.
+  - Lines.
+
+    | Area | Baseline `be89235` | Now | Change |
+    |---|---|---|---|
+    | Go, non-test | 36,738 | 34,856 | -1,882 |
+    | Go, tests | 23,629 | 22,855 | -774 |
+    | TypeScript, `web/src` (no `components/ui`) | 29,794 | 27,370 | -2,424 |
+    | `internal/server` | 9,840 in 28 files | 8,865 in 37 files | -975 |
+    | Docs (as above) | 4,241 | 4,362 | +121 |
+    | `docs/api/http.md`, `EXTENDING.md`, `ARCHITECTURE.md` | 1,472, 767, 576 | 1,265, 763, 581 | |
+    | `doc.go` with over 10 comment lines | 23 of 37 | 20 of 35 | |
+    | Feature READMEs over 20 lines | 13 of 16 | 10 of 11 | |
+    | TODO / FIXME in code | 0 | 0 | |
+
+    The Go packages went from 39 to 38. The five largest Go files are now
+    `mcp/mcptest/server.go` 749, `mcp/client.go` 671, `search/engine.go` 612,
+    `server/run_manager.go` 580 and `mcp/tools.go` 553 (the baseline's largest,
+    `server/mcp.go` at 1,367, was split by `REFACTOR_PLAN.md`; the baseline
+    list left `mcptest/server.go` out, which the same `find` includes). The
+    largest TypeScript files are `e2e/harness/scenarios.ts` 955, `mock.ts` 875,
+    `session/transcript.ts` 821, `transcript.test.ts` 717 and `world.ts` 594.
+  - Tests. `make check` runs 36 Vitest files and 419 tests (baseline: 35 and
+    386) and 122 visual tests (baseline: 127). The baseline recorded no Go
+    count; counting `func Test` in `cmd` and `internal` gives 634, against 618 on
+    the baseline tree. Subtests are not counted in either.
+  - Not reproduced exactly: cross-feature imports that bypass `index.ts`. The
+    baseline says 11; a scan of `from "@/features/<a>/<file>"` outside
+    feature `<a>` finds 12 on the baseline tree and 12 now, so none of that
+    work was done (the `REFACTOR_PLAN.md` item moved into phase 3 here, and
+    `web/eslint.config.js` has no rule for it yet).
 
 - 2026-10-30: test stacks off `eika-sandbox:latest`, and the `make smoke`
   update (branch `smoke-home`).
