@@ -3,9 +3,6 @@ package computer
 import (
 	"slices"
 	"testing"
-	"time"
-
-	"github.com/docker/docker/api/types/container"
 )
 
 func TestCreateResourcesSetsOnlyTheLimitsGiven(t *testing.T) {
@@ -41,38 +38,5 @@ func TestEnvironmentPointsAProxiedComputerAtTheProxy(t *testing.T) {
 	cx.Proxied = false
 	if env := h.environment(cx); env != nil {
 		t.Errorf("an open computer's environment = %v, want none", env)
-	}
-}
-
-func TestUsageOfReadsASampleAsDockerStatsDoes(t *testing.T) {
-	var s container.StatsResponse
-	s.Read = time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
-	s.CPUStats.CPUUsage.TotalUsage = 3_000_000
-	s.PreCPUStats.CPUUsage.TotalUsage = 1_000_000
-	s.CPUStats.SystemUsage = 20_000_000
-	s.PreCPUStats.SystemUsage = 10_000_000
-	s.CPUStats.OnlineCPUs = 4
-	s.MemoryStats.Usage = 300 << 20
-	s.MemoryStats.Limit = 1 << 30
-	s.MemoryStats.Stats = map[string]uint64{"inactive_file": 100 << 20}
-	s.PidsStats.Current = 12
-	s.Networks = map[string]container.NetworkStats{"a": {RxBytes: 10, TxBytes: 5}, "b": {RxBytes: 1, TxBytes: 2}}
-
-	u := usageOf(s)
-	// A fifth of the host's time on four cores is 80% of one core.
-	if u.CPUPercent != 80 {
-		t.Errorf("cpu = %v%%, want 80%%", u.CPUPercent)
-	}
-	if u.MemoryBytes != 200<<20 || u.MemoryLimitBytes != 1<<30 {
-		t.Errorf("memory = %d of %d, want 200 MiB of 1 GiB", u.MemoryBytes, u.MemoryLimitBytes)
-	}
-	if u.PIDs != 12 || u.NetworkRxBytes != 11 || u.NetworkTxBytes != 7 || !u.SampledAt.Equal(s.Read) {
-		t.Errorf("usage = %+v", u)
-	}
-	// The first sample of a container has nothing to measure a rate against.
-	s.PreCPUStats = container.CPUStats{}
-	s.PreCPUStats.CPUUsage.TotalUsage = 5_000_000
-	if u := usageOf(s); u.CPUPercent != 0 {
-		t.Errorf("cpu with no earlier sample = %v, want 0", u.CPUPercent)
 	}
 }

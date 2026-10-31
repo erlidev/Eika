@@ -63,8 +63,6 @@ test("there is no home chat to start until the harness has made the computer", a
     image: "eika-sandbox:latest",
     state: "creating",
     sandbox: defaultSandbox(),
-    pinned: false,
-    archived: false,
     home: true,
     created_at: "2026-03-14T14:59:00.000Z",
     updated_at: "2026-03-14T14:59:00.000Z",

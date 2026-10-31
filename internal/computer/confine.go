@@ -2,11 +2,9 @@ package computer
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
-	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
@@ -25,27 +23,6 @@ type Capacity struct {
 	CPUs int
 	// MemoryBytes is the host's total memory.
 	MemoryBytes int64
-}
-
-// Usage is what a running computer is consuming, sampled once.
-type Usage struct {
-	// CPUPercent is the CPU time the container used over the sample, where
-	// 100 is one whole core.
-	CPUPercent float64
-	// MemoryBytes is the memory the container holds, without the page cache
-	// the kernel can reclaim, which is how Docker counts it too.
-	MemoryBytes int64
-	// MemoryLimitBytes is what the container may hold: its limit, or the
-	// host's memory when it has none.
-	MemoryLimitBytes int64
-	// PIDs is the number of processes and threads in the container.
-	PIDs int64
-	// NetworkRxBytes and NetworkTxBytes are the bytes the container received
-	// and sent since it started, over every network it is on.
-	NetworkRxBytes int64
-	NetworkTxBytes int64
-	// SampledAt is when the daemon read the numbers, in UTC.
-	SampledAt time.Time
 }
 
 // EgressControl reports whether the host can proxy a sandbox: it runs its
@@ -94,21 +71,6 @@ func (h *Host) Confine(ctx context.Context, cx *Computer, c Confinement) error {
 	h.log.Info("computer confined", "computer_id", cx.ID, "cpus", c.Limits.CPUs,
 		"memory_bytes", c.Limits.MemoryBytes, "pids", c.Limits.PIDs, "proxied", c.Proxied)
 	return nil
-}
-
-// Usage samples what a running computer is consuming. It takes about a
-// second: the daemon reads the CPU counters twice to measure a rate.
-func (h *Host) Usage(ctx context.Context, cx Computer) (Usage, error) {
-	resp, err := h.docker.ContainerStats(ctx, cx.ContainerID, false)
-	if err != nil {
-		return Usage{}, fmt.Errorf("read usage of computer %s: %w", cx.ID, err)
-	}
-	defer resp.Body.Close()
-	var stats container.StatsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
-		return Usage{}, fmt.Errorf("decode usage of computer %s: %w", cx.ID, err)
-	}
-	return usageOf(stats), nil
 }
 
 // networkFor is the sandbox network a computer joins.
@@ -238,36 +200,4 @@ func (h *Host) updateResources(ctx context.Context, l Limits) (container.Resourc
 		r.Memory, r.MemorySwap = capacity.MemoryBytes, capacity.MemoryBytes
 	}
 	return r, nil
-}
-
-// usageOf reads a Docker stats sample the way `docker stats` does.
-func usageOf(s container.StatsResponse) Usage {
-	u := Usage{
-		MemoryLimitBytes: int64(s.MemoryStats.Limit),
-		PIDs:             int64(s.PidsStats.Current),
-		SampledAt:        s.Read.UTC(),
-	}
-	cpuDelta := float64(s.CPUStats.CPUUsage.TotalUsage) - float64(s.PreCPUStats.CPUUsage.TotalUsage)
-	systemDelta := float64(s.CPUStats.SystemUsage) - float64(s.PreCPUStats.SystemUsage)
-	cores := float64(s.CPUStats.OnlineCPUs)
-	if cores == 0 {
-		cores = float64(len(s.CPUStats.CPUUsage.PercpuUsage))
-	}
-	if cpuDelta > 0 && systemDelta > 0 {
-		u.CPUPercent = cpuDelta / systemDelta * cores * 100
-	}
-	// cgroup v2 names the reclaimable cache inactive_file, v1
-	// total_inactive_file.
-	cache := s.MemoryStats.Stats["inactive_file"]
-	if v, ok := s.MemoryStats.Stats["total_inactive_file"]; ok {
-		cache = v
-	}
-	if s.MemoryStats.Usage > cache {
-		u.MemoryBytes = int64(s.MemoryStats.Usage - cache)
-	}
-	for _, n := range s.Networks {
-		u.NetworkRxBytes += int64(n.RxBytes)
-		u.NetworkTxBytes += int64(n.TxBytes)
-	}
-	return u
 }

@@ -12,8 +12,8 @@
 // and puts it on the open sandbox network or the internal one, whose only way
 // out is the harness's egress proxy; Host.Confine changes both on an existing
 // container without restarting it, and Start gives eikad the proxy settings
-// a proxied container's processes need. Host.Usage samples what a container
-// consumes, and Host.Capacity what the Docker host has.
+// a proxied container's processes need. Host.Capacity reports what the Docker
+// host has.
 //
 // Containers carry the label eika.computer=<id>, so List reconciles the
 // harness with what is actually running after a restart. Only server imports

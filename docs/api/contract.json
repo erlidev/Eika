@@ -1,8 +1,5 @@
 {
   "routes": {
-    "DELETE /api/computers/{id}": {
-      "status": 204
-    },
     "DELETE /api/mcp/servers/{id}": {
       "status": 204
     },
@@ -38,14 +35,12 @@
             "nullable": {
               "array": {
                 "object": {
-                  "archived": "boolean",
                   "container_id": "string",
                   "created_at": "string",
                   "home": "boolean",
                   "id": "string",
                   "image": "string",
                   "name": "string",
-                  "pinned": "boolean",
                   "sandbox": {
                     "object": {
                       "egress": {
@@ -76,74 +71,6 @@
               }
             }
           }
-        }
-      }
-    },
-    "GET /api/computers/{id}": {
-      "status": 200,
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "container_id": "string",
-          "created_at": "string",
-          "home": "boolean",
-          "id": "string",
-          "image": "string",
-          "name": "string",
-          "pinned": "boolean",
-          "sandbox": {
-            "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
-                  "mode": "string"
-                }
-              },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
-            }
-          },
-          "state": "string",
-          "updated_at": "string"
-        },
-        "optional": [
-          "container_id"
-        ]
-      }
-    },
-    "GET /api/computers/{id}/usage": {
-      "status": 200,
-      "response": {
-        "object": {
-          "blocked": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "count": "number",
-                  "host": "string",
-                  "last": "string"
-                }
-              }
-            }
-          },
-          "cpu_percent": "number",
-          "cpus": "number",
-          "memory_bytes": "number",
-          "memory_limit_bytes": "number",
-          "network_rx_bytes": "number",
-          "network_tx_bytes": "number",
-          "pids": "number",
-          "pids_limit": "number",
-          "sampled_at": "string"
         }
       }
     },
@@ -2073,54 +2000,6 @@
         }
       }
     },
-    "PATCH /api/computers/{id}": {
-      "status": 200,
-      "request": {
-        "object": {
-          "archived": "boolean",
-          "name": "string",
-          "pinned": "boolean"
-        }
-      },
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "container_id": "string",
-          "created_at": "string",
-          "home": "boolean",
-          "id": "string",
-          "image": "string",
-          "name": "string",
-          "pinned": "boolean",
-          "sandbox": {
-            "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
-                  "mode": "string"
-                }
-              },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
-            }
-          },
-          "state": "string",
-          "updated_at": "string"
-        },
-        "optional": [
-          "container_id"
-        ]
-      }
-    },
     "PATCH /api/mcp/servers/{id}": {
       "status": 200,
       "request": {
@@ -2324,156 +2203,6 @@
         }
       },
       "public": true
-    },
-    "POST /api/computers": {
-      "status": 201,
-      "request": {
-        "object": {
-          "build_context": "string",
-          "dockerfile": "string",
-          "image": "string",
-          "name": "string",
-          "sandbox": {
-            "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "array": "string"
-                  },
-                  "mode": "string"
-                }
-              },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
-            }
-          }
-        }
-      },
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "container_id": "string",
-          "created_at": "string",
-          "home": "boolean",
-          "id": "string",
-          "image": "string",
-          "name": "string",
-          "pinned": "boolean",
-          "sandbox": {
-            "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
-                  "mode": "string"
-                }
-              },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
-            }
-          },
-          "state": "string",
-          "updated_at": "string"
-        },
-        "optional": [
-          "container_id"
-        ]
-      }
-    },
-    "POST /api/computers/{id}/start": {
-      "status": 200,
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "container_id": "string",
-          "created_at": "string",
-          "home": "boolean",
-          "id": "string",
-          "image": "string",
-          "name": "string",
-          "pinned": "boolean",
-          "sandbox": {
-            "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
-                  "mode": "string"
-                }
-              },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
-            }
-          },
-          "state": "string",
-          "updated_at": "string"
-        },
-        "optional": [
-          "container_id"
-        ]
-      }
-    },
-    "POST /api/computers/{id}/stop": {
-      "status": 200,
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "container_id": "string",
-          "created_at": "string",
-          "home": "boolean",
-          "id": "string",
-          "image": "string",
-          "name": "string",
-          "pinned": "boolean",
-          "sandbox": {
-            "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
-                  "mode": "string"
-                }
-              },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
-            }
-          },
-          "state": "string",
-          "updated_at": "string"
-        },
-        "optional": [
-          "container_id"
-        ]
-      }
     },
     "POST /api/elicitations/{id}/answer": {
       "status": 204,
@@ -3444,66 +3173,6 @@
           "expires_at": "string",
           "token": "string"
         }
-      }
-    },
-    "PUT /api/computers/{id}/sandbox": {
-      "status": 200,
-      "request": {
-        "object": {
-          "egress": {
-            "object": {
-              "allow": {
-                "array": "string"
-              },
-              "mode": "string"
-            }
-          },
-          "limits": {
-            "object": {
-              "cpus": "number",
-              "memory_mb": "number",
-              "pids": "number"
-            }
-          }
-        }
-      },
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "container_id": "string",
-          "created_at": "string",
-          "home": "boolean",
-          "id": "string",
-          "image": "string",
-          "name": "string",
-          "pinned": "boolean",
-          "sandbox": {
-            "object": {
-              "egress": {
-                "object": {
-                  "allow": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
-                  "mode": "string"
-                }
-              },
-              "limits": {
-                "object": {
-                  "cpus": "number",
-                  "memory_mb": "number",
-                  "pids": "number"
-                }
-              }
-            }
-          },
-          "state": "string",
-          "updated_at": "string"
-        },
-        "optional": [
-          "container_id"
-        ]
       }
     },
     "PUT /api/profiles/{id}": {

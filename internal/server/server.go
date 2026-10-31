@@ -52,8 +52,6 @@ type Computers interface {
 	// Confine applies a computer's limits and network to its container,
 	// running or stopped, without restarting it.
 	Confine(ctx context.Context, cx *computer.Computer, c computer.Confinement) error
-	// Usage samples what a running computer is consuming.
-	Usage(ctx context.Context, cx computer.Computer) (computer.Usage, error)
 	// Capacity is what the Docker host has to give, which bounds a limit.
 	Capacity(ctx context.Context) (computer.Capacity, error)
 	// EgressControl reports whether a computer's egress can be restricted.

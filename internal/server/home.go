@@ -38,7 +38,7 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 	s.homeMu.Lock()
 	defer s.homeMu.Unlock()
 
-	sandbox, err := s.newSandbox(ctx, nil)
+	sandbox, err := s.homeSandbox(ctx)
 	if err != nil {
 		return fmt.Errorf("choose the home computer's sandbox: %w", err)
 	}
@@ -121,7 +121,7 @@ func (s *Server) applyHomeSandbox(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	sandbox, err := s.newSandbox(ctx, nil)
+	sandbox, err := s.homeSandbox(ctx)
 	if err != nil {
 		return err
 	}
@@ -201,11 +201,11 @@ func (s *Server) startComputer(ctx context.Context, cx store.Computer, host *com
 	return s.deps.Computers.Start(ctx, host)
 }
 
-// runExecutor returns the executor a run in a computer acts through. The home
-// computer is the one a run may find stopped or gone and still use: the idle
-// stopper stops it like any other, and nothing in the UI starts a computer by
-// hand, so a run starts it, and makes its container again over the volume when
-// that is missing. Any other computer that is not running refuses the run.
+// runExecutor returns the executor a run in a computer acts through. The
+// computer may be stopped, since the idle stopper stops it and nothing else
+// starts it, so a run starts it; and the home computer's container may be
+// gone, so a run makes it again over the volume. A computer that cannot be
+// started refuses the run, saying why.
 func (s *Server) runExecutor(ctx context.Context, id string) (executor.Executor, error) {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
@@ -223,11 +223,12 @@ func (s *Server) runExecutor(ctx context.Context, id string) (executor.Executor,
 	if err != nil {
 		return nil, err
 	}
-	if host.State == computer.StateStopped && cx.Home {
+	if host.State == computer.StateStopped {
 		if cx, err = s.changeState(ctx, cx, func(ctx context.Context, cx store.Computer, host *computer.Computer) error {
 			return s.startComputer(ctx, cx, host)
 		}); err != nil {
-			return nil, err
+			s.log.Error("start computer for a run", "computer_id", id, "error", err)
+			return nil, conflictf("computer %s could not be started: %v", id, err)
 		}
 		s.idle.used(cx.ID, time.Now())
 		if host, err = s.deps.Computers.Inspect(ctx, cx.ID); err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/server"
+	"github.com/erlidev/eika/internal/store"
 )
 
 // homeOf returns the home computer as the API lists it, and fails the test
@@ -169,7 +170,7 @@ func TestEnsureHomeStartsAStoppedContainer(t *testing.T) {
 		t.Fatalf("EnsureHome: %v", err)
 	}
 	home := a.homeOf(t)
-	request(t, a.Server, "POST", "/api/computers/"+home.ID+"/stop", nil)
+	a.stopIdle(t)
 	if got := a.computerState(t, home.ID); got != "stopped" {
 		t.Fatalf("state after stop = %q, want stopped", got)
 	}
@@ -233,25 +234,6 @@ func TestKeepHomeRetriesUntilTheHostCanMakeIt(t *testing.T) {
 	}
 	if home := a.homeOf(t); home.State != "running" {
 		t.Errorf("home = %+v, want running", home)
-	}
-}
-
-func TestHomeCannotBeDeleted(t *testing.T) {
-	a := newAPI(t)
-	if err := a.EnsureHome(t.Context()); err != nil {
-		t.Fatalf("EnsureHome: %v", err)
-	}
-	home := a.homeOf(t)
-
-	rec := request(t, a.Server, "DELETE", "/api/computers/"+home.ID, nil)
-	if rec.Code != 409 {
-		t.Fatalf("DELETE home status = %d, want 409: %s", rec.Code, rec.Body.String())
-	}
-	if code, message := errorOf(t, rec); code != "conflict" || !strings.Contains(message, "home computer") {
-		t.Errorf("error = %q %q, want a conflict naming the home computer", code, message)
-	}
-	if after := a.homeOf(t); after.ID != home.ID || a.containers(t) != 1 {
-		t.Errorf("after the refused delete: home %s, %d containers; want it untouched", after.ID, a.containers(t))
 	}
 }
 
@@ -328,15 +310,56 @@ func TestBashOnHomeMakesAMissingContainerAgain(t *testing.T) {
 	}
 }
 
-func TestAStoppedComputerThatIsNotHomeStaysStopped(t *testing.T) {
+// seedComputer records a computer that is not home, with a running container.
+// Nothing in the harness makes one yet: a project's own computer will.
+func (a *api) seedComputer(t *testing.T) computerWire {
+	t.Helper()
+	id := store.NewID()
+	cx, err := a.host.Create(t.Context(), computer.Spec{ID: id})
+	if err != nil {
+		t.Fatalf("create the container: %v", err)
+	}
+	if err := a.host.Start(t.Context(), &cx); err != nil {
+		t.Fatalf("start the container: %v", err)
+	}
+	if _, err := a.store.CreateComputer(t.Context(), store.Computer{
+		ID: id, Name: "project", Image: cx.Image, State: string(cx.State), ContainerID: cx.ContainerID,
+	}); err != nil {
+		t.Fatalf("record the computer: %v", err)
+	}
+	return computerWire{ID: id, Name: "project", State: string(cx.State)}
+}
+
+func TestARunStartsAStoppedComputerThatIsNotHome(t *testing.T) {
 	a := newAPI(t)
-	cx := a.newComputer(t)
-	sess := a.newSession(t, cx.ID)
-	request(t, a.Server, "POST", "/api/computers/"+cx.ID+"/stop", nil)
+	other := a.seedComputer(t)
+	a.stopIdle(t)
+	if got := a.computerState(t, other.ID); got != "stopped" {
+		t.Fatalf("computer after the idle timeout = %q, want stopped", got)
+	}
+
+	if got := a.bashIn(t, other.ID, "started-for-the-run"); !strings.Contains(got, "started-for-the-run") {
+		t.Errorf("bash result = %q, want its output", got)
+	}
+	if got := a.computerState(t, other.ID); got != "running" {
+		t.Errorf("computer after the run = %q, want running", got)
+	}
+}
+
+func TestARunSaysWhyAComputerCouldNotBeStarted(t *testing.T) {
+	a := newAPI(t)
+	home := a.home(t)
+	sess := a.newSession(t, home.ID)
+	a.stopIdle(t)
+	a.host.startErr = errors.New("cannot allocate memory")
 
 	a.script(providertest.Text("unreachable"))
-	a.postMessage(t, sess.ID, "hello", "", 409)
-	if got := a.computerState(t, cx.ID); got != "stopped" {
+	rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages", map[string]any{"text": "hello"})
+	if code, message := errorOf(t, rec); rec.Code != 409 || code != "conflict" ||
+		!strings.Contains(message, "could not be started") || !strings.Contains(message, "cannot allocate memory") {
+		t.Errorf("run = %d %q %q, want a conflict naming the start failure", rec.Code, code, message)
+	}
+	if got := a.computerState(t, home.ID); got != "stopped" {
 		t.Errorf("state after the refused run = %q, want stopped", got)
 	}
 }

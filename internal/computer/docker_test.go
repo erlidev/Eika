@@ -161,16 +161,6 @@ func TestComputerLifecycle(t *testing.T) {
 		}
 	})
 
-	t.Run("reports what it uses", func(t *testing.T) {
-		usage, err := host.Usage(t.Context(), cx)
-		if err != nil {
-			t.Fatalf("usage: %v", err)
-		}
-		if usage.MemoryBytes <= 0 || usage.MemoryLimitBytes != 512<<20 || usage.PIDs < 1 || usage.SampledAt.IsZero() {
-			t.Errorf("usage = %+v, want memory under a 512 MiB limit and at least one process", usage)
-		}
-	})
-
 	t.Run("changes its limits while it runs", func(t *testing.T) {
 		if err := host.Confine(t.Context(), &cx, computer.Confinement{Limits: computer.Limits{CPUs: 0.5, MemoryBytes: 256 << 20}}); err != nil {
 			t.Fatalf("confine: %v", err)

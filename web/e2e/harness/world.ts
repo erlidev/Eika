@@ -367,8 +367,6 @@ export class WorldBuilder {
       state: "running",
       container_id: "c0ffee",
       sandbox: defaultSandbox(),
-      pinned: false,
-      archived: false,
       home: false,
       created_at: minutesAgo(400),
       updated_at: minutesAgo(30),

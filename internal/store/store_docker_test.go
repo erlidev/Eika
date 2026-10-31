@@ -324,15 +324,16 @@ func TestErrNotFound(t *testing.T) {
 		"append":     errOf(func() error { _, err := st.AppendEntry(ctx, missing, store.Entry{Kind: store.KindUser}); return err }),
 		"set head":   st.SetSessionHead(ctx, sess.ID, missing),
 		"finish run": st.FinishRun(ctx, missing, store.RunDone, ""),
-		"delete":     st.DeleteComputer(ctx, missing),
 		"update session": errOf(func() error {
 			_, err := st.UpdateSession(ctx, missing, store.SessionChanges{})
 			return err
 		}),
-		"update computer": errOf(func() error {
-			_, err := st.UpdateComputer(ctx, missing, store.ComputerChanges{})
+		"set computer state": st.SetComputerState(ctx, missing, "running", ""),
+		"set computer sandbox": errOf(func() error {
+			_, err := st.SetComputerSandbox(ctx, missing, store.ComputerSandbox{})
 			return err
 		}),
+		"home computer": errOf(func() error { _, err := st.HomeComputer(ctx); return err }),
 	}
 	for name, err := range cases {
 		if !errors.Is(err, store.ErrNotFound) {
@@ -430,7 +431,7 @@ func TestUntitledSessions(t *testing.T) {
 }
 
 // An edit changes the fields it names and leaves the rest, so renaming a
-// session does not unpin it and archiving a computer does not rename it.
+// session does not unpin it.
 func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
@@ -463,19 +464,6 @@ func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
 	if listed, err := st.Sessions(ctx, cx.ID); err != nil || len(listed) != 1 || listed[0].Title != "Named" {
 		t.Errorf("Sessions = %+v, %v; want the edited session", listed, err)
 	}
-
-	name := "renamed"
-	w, err := st.UpdateComputer(ctx, cx.ID, store.ComputerChanges{Archived: &yes})
-	if err != nil || !w.Archived || w.Pinned || w.Name != "main" {
-		t.Fatalf("archive computer = %+v, %v; want archived and otherwise unchanged", w, err)
-	}
-	w, err = st.UpdateComputer(ctx, cx.ID, store.ComputerChanges{Name: &name, Pinned: &yes})
-	if err != nil || !w.Archived || !w.Pinned || w.Name != "renamed" || w.State != "running" {
-		t.Fatalf("rename and pin computer = %+v, %v", w, err)
-	}
-	if w, err = st.Computer(ctx, cx.ID); err != nil || !w.Pinned || !w.Archived || w.Name != "renamed" {
-		t.Errorf("Computer = %+v, %v; want what was set", w, err)
-	}
 }
 
 func TestComputersListInOrderOfCreation(t *testing.T) {
@@ -506,8 +494,13 @@ func TestComputersListInOrderOfCreation(t *testing.T) {
 }
 
 func TestDeletingAComputerDeletesItsSessions(t *testing.T) {
-	st := storetest.Open(t)
 	ctx := t.Context()
+	databaseURL := storetest.URL(t)
+	st, err := store.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
 	cx, err := st.CreateComputer(ctx, store.Computer{Name: "doomed", State: "running"})
 	if err != nil {
 		t.Fatalf("create computer: %v", err)
@@ -516,11 +509,68 @@ func TestDeletingAComputerDeletesItsSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := st.DeleteComputer(ctx, cx.ID); err != nil {
+	// The store has no call that deletes a computer, so the row goes the way
+	// an operator's SQL would take it.
+	conn, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	if _, err := conn.Exec(ctx, `DELETE FROM core.computers WHERE id = $1`, cx.ID); err != nil {
 		t.Fatalf("delete computer: %v", err)
 	}
 	if _, err := st.Session(ctx, sess.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("session of a deleted computer = %v, want ErrNotFound", err)
+	}
+}
+
+// A database at 0002 holds computers with the filing columns. The upgrade
+// drops the columns and keeps every computer.
+func TestUpgradeFrom0002KeepsComputersWithoutFiling(t *testing.T) {
+	ctx := t.Context()
+	databaseURL := storetest.URL(t)
+	conn, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	statements := []string{`CREATE SCHEMA core`, `SET search_path = core`}
+	for _, name := range []string{"0001_baseline", "0002_remove_session_forks"} {
+		sql, err := os.ReadFile("migrations/" + name + ".sql")
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		statements = append(statements, string(sql))
+	}
+	statements = append(statements,
+		`CREATE TABLE schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
+		`INSERT INTO schema_migrations (version) VALUES ('0001_baseline'), ('0002_remove_session_forks')`,
+		`INSERT INTO computers (id, name, state, pinned, archived, home) VALUES ('filed', 'filed', 'running', true, true, false)`,
+		`INSERT INTO computers (id, name, state, home) VALUES ('home', 'home', 'running', true)`,
+	)
+	for _, stmt := range statements {
+		if _, err := conn.Exec(ctx, stmt); err != nil {
+			t.Fatalf("set up the 0002 database: %v\n%s", err, stmt)
+		}
+	}
+
+	st, err := store.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	all, err := st.Computers(ctx)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("Computers = %+v, %v; want both computers kept", all, err)
+	}
+	if home, err := st.HomeComputer(ctx); err != nil || home.ID != "home" {
+		t.Errorf("HomeComputer = %+v, %v; want the home computer", home, err)
+	}
+	var columns int
+	err = conn.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = 'core' AND table_name = 'computers' AND column_name IN ('pinned', 'archived')`).Scan(&columns)
+	if err != nil || columns != 0 {
+		t.Errorf("filing columns = %d, %v; want none", columns, err)
 	}
 }
 

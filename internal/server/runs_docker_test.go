@@ -23,7 +23,7 @@ func askStep(callID, question string) providertest.Step {
 // session sets up a computer and a session to run in.
 func (a *api) session(t *testing.T) sessionWire {
 	t.Helper()
-	cx := a.newComputer(t)
+	cx := a.home(t)
 	return a.newSession(t, cx.ID)
 }
 
@@ -239,14 +239,22 @@ func TestRunRejectsBadMessages(t *testing.T) {
 	}
 }
 
-func TestRunFailsWhenTheComputerIsNotRunning(t *testing.T) {
+func TestARunStartsTheComputerTheIdleStopperStopped(t *testing.T) {
 	a := newAPI(t)
 	sess := a.session(t)
-	if rec := request(t, a.Server, "POST", "/api/computers/"+sess.ComputerID+"/stop", nil); rec.Code != 200 {
-		t.Fatalf("stop = %d", rec.Code)
+	a.stopIdle(t)
+	if got := a.computerState(t, sess.ComputerID); got != "stopped" {
+		t.Fatalf("computer = %q, want stopped", got)
 	}
-	a.script(providertest.Text("unreachable"))
-	a.postMessage(t, sess.ID, "hello", "", 409)
+
+	a.script(providertest.Text("here"))
+	a.postMessage(t, sess.ID, "hello", "", 202)
+	if state := a.waitIdle(t, sess.ID); state.Run == nil || state.Run.State != "done" {
+		t.Fatalf("run = %+v, want it done", state.Run)
+	}
+	if got := a.computerState(t, sess.ComputerID); got != "running" {
+		t.Errorf("computer after the run = %q, want running", got)
+	}
 }
 
 func TestRunRecordsAProviderFailure(t *testing.T) {

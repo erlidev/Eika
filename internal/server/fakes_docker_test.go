@@ -3,7 +3,6 @@
 package server_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,22 +27,6 @@ import (
 func request(t *testing.T, s *server.Server, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	return requestWith(t, s, method, path, body, "Bearer "+testToken)
-}
-
-// requestOn sends one API request on a context of the caller's choosing,
-// which is how a test stands in for a client that gave up.
-func requestOn(ctx context.Context, t *testing.T, s *server.Server, method, path string, body any) *httptest.ResponseRecorder {
-	t.Helper()
-	data, err := json.Marshal(body)
-	if err != nil {
-		t.Fatalf("encode request body: %v", err)
-	}
-	r := httptest.NewRequestWithContext(ctx, method, path, bytes.NewReader(data))
-	r.Header.Set("Authorization", "Bearer "+testToken)
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, r)
-	checkContract(t, r, rec)
-	return rec
 }
 
 // decodeBody decodes a JSON response body into T, failing the test when the
@@ -216,11 +199,6 @@ func (h *fakeHost) proxyToken(id string) string {
 		return found.cx.ProxyToken
 	}
 	return ""
-}
-
-// Usage reports a fixed sample of a running computer.
-func (h *fakeHost) Usage(context.Context, computer.Computer) (computer.Usage, error) {
-	return computer.Usage{CPUPercent: 42, MemoryBytes: 256 << 20, MemoryLimitBytes: 1 << 30, PIDs: 7}, nil
 }
 
 // Capacity is a host of four cores and 8 GiB.
