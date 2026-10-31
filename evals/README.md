@@ -36,8 +36,12 @@ The scenarios: `provider_probe` (the probe against `/slots`), `cache_reuse`
 (tool definitions, a tool call and result, replayed reasoning and the thinking
 switch: every prediction must be exact with no drift), `image_input` (one small
 picture: never called exact, and counted to the token once its size was
-measured) and `count_cost` (a context of about 20k tokens counted cold and one
-exchange later: `count_seconds`).
+measured), `count_cost` (a context of about 20k tokens counted cold and one
+exchange later: `count_seconds`), `agent_loop` (the real agent loop on one
+session, two turns with a tool: the call records of the loop must show exact
+predictions with no drift) and `reasoning_count` (a response cut off inside its
+reasoning: the loop's tokenised count, labelled as such, within a few tokens of
+the completion tokens the server generated).
 
 Keep scenarios small: bounded `max_tokens`, no load. The server is shared; do
 not start, stop or swap anything on it from a scenario.

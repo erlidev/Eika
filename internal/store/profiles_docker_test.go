@@ -353,6 +353,8 @@ func TestModelCallsAreRecordedPerSession(t *testing.T) {
 		Tools:         json.RawMessage(`[{"name":"bash","description":"run","schema":{"type":"object"},"source":"builtin","tokens":9}]`),
 		Parameters:    json.RawMessage(`{"model":"gpt-x","sampling":{"temperature":0.2},"preserve_thinking":false}`),
 		MessageTokens: 5, PromptTokens: new(120), CompletionTokens: new(30), TotalTokens: new(150), CachedTokens: new(0),
+		PrefilledTokens: new(120), ReasoningTokens: new(11), ReasoningSource: "tokenised",
+		PredictedPromptTokens: new(123), Prediction: "estimated", Drift: new(3), ContextWindow: new(8192), Endpoint: "local",
 	}
 	first, err := st.RecordModelCall(ctx, given)
 	if err != nil {
@@ -362,7 +364,9 @@ func TestModelCallsAreRecordedPerSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecordModelCall without an entry: %v", err)
 	}
-	if second.PromptTokens != nil || second.CompletionTokens != nil || second.TotalTokens != nil || second.CachedTokens != nil {
+	if second.PromptTokens != nil || second.CompletionTokens != nil || second.TotalTokens != nil || second.CachedTokens != nil ||
+		second.PrefilledTokens != nil || second.ReasoningTokens != nil || second.ReasoningSource != "" ||
+		second.PredictedPromptTokens != nil || second.Prediction != "" || second.Drift != nil || second.ContextWindow != nil || second.Endpoint != "" {
 		t.Errorf("record of a call that stated no usage = %+v, want every count NULL, not 0", second)
 	}
 	if second.ModelID != "" || second.Model != "gone" || string(second.Sections) != "[]" || string(second.Parameters) != "{}" {
@@ -388,7 +392,9 @@ func TestModelCallsAreRecordedPerSession(t *testing.T) {
 		t.Fatalf("ModelCall: %v", err)
 	}
 	if got.RunID != run.ID || got.EntryID != entry.ID || got.ModelID != model.ID || got.Model != "gpt-x" ||
-		got.MessageTokens != 5 || stated(got.PromptTokens) != 120 || stated(got.CompletionTokens) != 30 || stated(got.TotalTokens) != 150 || got.CachedTokens == nil || *got.CachedTokens != 0 {
+		got.MessageTokens != 5 || stated(got.PrefilledTokens) != 120 || stated(got.ReasoningTokens) != 11 || got.ReasoningSource != "tokenised" ||
+		stated(got.PredictedPromptTokens) != 123 || got.Prediction != "estimated" || stated(got.Drift) != 3 || stated(got.ContextWindow) != 8192 || got.Endpoint != "local" ||
+		stated(got.PromptTokens) != 120 || stated(got.CompletionTokens) != 30 || stated(got.TotalTokens) != 150 || got.CachedTokens == nil || *got.CachedTokens != 0 {
 		t.Errorf("record = %+v, want what was given", got)
 	}
 	for name, pair := range map[string][2]json.RawMessage{

@@ -7,6 +7,22 @@ import (
 	"github.com/erlidev/eika/internal/provider"
 )
 
+// NewEstimating returns a Counter for an endpoint with no tokenizer route, or
+// for a caller that does not know of one: it predicts by the estimated method
+// alone and still learns its ratio from measurements.
+func NewEstimating() *Counter { return New(noRoutes{}) }
+
+// noRoutes is the Source of an endpoint that tokenises nothing.
+type noRoutes struct{}
+
+func (noRoutes) Level() Level { return LevelNone }
+func (noRoutes) Prompt(context.Context, provider.Request) (string, error) {
+	return "", ErrUnsupported
+}
+func (noRoutes) Request(context.Context, provider.Request) (int, error) { return 0, ErrUnsupported }
+func (noRoutes) Text(context.Context, string) (int, error)              { return 0, ErrUnsupported }
+func (noRoutes) Boundaries(context.Context, string) ([]int, error)      { return nil, nil }
+
 // ErrUnsupported is what a Source returns from a method its endpoint has no
 // route for.
 var ErrUnsupported = errors.New("the endpoint has no route for this")
@@ -28,7 +44,9 @@ const (
 )
 
 // Source is the tokenizer routes of one endpoint, as the counter uses them. A
-// method the endpoint lacks returns ErrUnsupported. Routes is the HTTP
+// method the endpoint lacks returns ErrUnsupported. Every method gives up
+// when its context ends, because the counter holds its lock while it waits and
+// a caller bounds a prediction with a deadline. Routes is the HTTP
 // implementation; providertest ships a fake with a deterministic tokenizer.
 type Source interface {
 	// Level says what the endpoint can count.

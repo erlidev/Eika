@@ -21,8 +21,13 @@ type Call struct {
 	// CompletionTokens is the tokens the model generated, reasoning included.
 	CompletionTokens *int `json:"completion_tokens"`
 	// ReasoningTokens is the part of CompletionTokens the server states was
-	// reasoning. llama.cpp states none, so it is null there.
+	// reasoning. llama.cpp states none, so it is null there, except in a call
+	// the agent loop made: it records a count of the reasoning text by the
+	// server's tokenizer instead, and ReasoningSource says so.
 	ReasoningTokens *int `json:"reasoning_tokens"`
+	// ReasoningSource is "reported" or "tokenised" for a call made by the
+	// agent loop, and empty for a call that was not.
+	ReasoningSource string `json:"reasoning_source,omitempty"`
 	// PrefilledTokens is the prompt tokens the server evaluated for this
 	// call (llama.cpp's prompt_n).
 	PrefilledTokens *int `json:"prefilled_tokens"`

@@ -78,6 +78,11 @@ func (r *Routes) Level() Level {
 	case probe.LlamaCpp, probe.VLLM:
 		switch r.cfg.Counting {
 		case probe.CountChat:
+			if r.encoder == nil {
+				// A provider that cannot state its Chat Completions body
+				// leaves nothing to render, but its text can still be counted.
+				return LevelText
+			}
 			return LevelChat
 		case probe.CountText:
 			return LevelText

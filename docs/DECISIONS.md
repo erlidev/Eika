@@ -305,13 +305,16 @@ this file says why, so neither repeats the other.
 - **Retries live in the agent loop**; the SDK's are off
   (`WithMaxRetries(0)`), so the fake provider exercises the same path.
   Retryable: 408, 409, 429, 5xx, transport errors.
-- **The context window is judged by measurement.** The next request's size
-  is the last call's measured context plus a 4-bytes-per-token estimate of
-  what was added since (Pi's rule). A request whose estimate reaches the
-  window fails before the call; one that fits but leaves less than the
-  requested max output gets max output lowered to what is left, since an
-  endpoint refuses input plus max output over its window. The earlier byte
-  bound (a token per byte) failed sessions at a quarter of their window.
+- **The context window is judged by the token counter.** The next request's
+  size is the session's counter's prediction ("The token counter", "Model
+  calls"): the endpoint's own count where it renders requests, and otherwise
+  the newest measurement plus an estimate of what was added since (Pi's rule,
+  which is what `estimated` is). A request whose prediction reaches the window
+  fails before the call; one that fits but leaves less than the requested max
+  output gets max output lowered to what is left, since an endpoint refuses
+  input plus max output over its window. The earlier byte bound (a token per
+  byte) failed sessions at a quarter of their window, and the 4-byte estimate
+  of the rest of the request was 30% off for code and JSON.
 - Reasoning is always streamed as `reasoning.delta`; `preserve_thinking`
   only controls replaying it to the endpoint. Tying the two would force
   users who want to watch reasoning to send it to APIs that reject it.
@@ -437,8 +440,8 @@ this file says why, so neither repeats the other.
   Rejected: a data migration of the session entries' JSON, which the reader
   makes unnecessary.
 - **Reasoning tokens are not estimated here.** llama.cpp states none, so the
-  count is not reported. Tokenising the reasoning text is the token counter's
-  to add, as a separate, labelled source.
+  count is not reported. Tokenising the reasoning text is the model call record's
+  to add, as a separate, labelled source ("Model calls").
 
 ### Model calls
 
@@ -470,6 +473,65 @@ this file says why, so neither repeats the other.
   `class`, `priority` and `agent` are added now so the inference queue and the
   agents items add no migration, and nothing writes them. `endpoint` is the
   provider's name at the time of the call, as `model` is the model's.
+- **One counter per session, held by the server.** A run builds its agent
+  afresh for every message, so the counter that learns lives in
+  `server/counters.go`, keyed by session and built from the provider row's
+  probed `backend` and `capabilities.counting` (`counter.Config`) and the
+  provider's `ChatEncoder`. A session moved to another model, address, key or
+  counting kind gets a new one, since what it learned described the old
+  endpoint. At most 64 are kept, least recently used out, and a deleted
+  session's is dropped: a dropped counter costs its session about five calls
+  of learning. The counter's `Routes` keeps the provider's key for as long as
+  it is held, which departs from "a key is in memory only while used"; it is
+  bounded, and a changed key replaces the counter. A provider that is not a
+  `ChatEncoder`, or an endpoint with no capabilities yet, still gets a counter,
+  which estimates (and counts text where the endpoint can). Rejected: a
+  counter on `agent.Session` (loaded afresh each run); one per agent (it would
+  learn nothing across turns); persisting the learned constants (the decision
+  of "The token counter" stands: they are relearned in a few calls, and the
+  next bullet covers the case that mattered).
+- **A resumed session is seeded from its stored measurement.** The assistant
+  messages of a conversation carry the usage of the call that produced them.
+  `Agent.Run` hands the newest to `Counter.Seed` when the counter has learned
+  nothing, so the first prediction after a restart on an endpoint that
+  counts by bytes is the stored count plus the bytes added since, as the 4-byte
+  rule used it, and not the bytes alone. A seed teaches the ratio and the
+  anchor and leaves the running error of estimates alone, since nothing was
+  predicted. An endpoint that renders requests needs no seed.
+- **Predict and Observe see the same request, and counting cannot fail a
+  call.** The prediction is made on the request the loop assembles; `fit` may
+  then lower its max output, so the counter's request key leaves max output
+  out (no template renders it). `Predict` runs under `Options.CountTimeout`
+  (ten seconds); when it cannot answer, `Counter.Estimate` gives the estimated
+  method's number without a network request, and the record says `estimated`.
+  Everything the counter does after the call is bounded the same way. The
+  routes honour their context because the counter holds its lock while it
+  waits. Rejected: failing the run when counting fails (a model call is worth
+  more than its size); running `Predict` in the background and sending without
+  it (the prediction decides whether the call is sent at all).
+- **An exact prediction that drifted is a warning with numbers.** The loop
+  logs `predicted`, `measured` and `drift` with the session, run and model, and
+  never the request. The drift is on the stored call for the Context
+  inspector, which is the next item's.
+- **The compaction reserve widens only for `estimated`.** The reserve grows
+  by the running relative error of the counter's estimates times the predicted
+  size, and never past half the window, so a poor estimator compacts early
+  rather than every call. An `exact` or `anchored` prediction is trusted to its
+  number. `fit`'s lowering of max output, the threshold and the window check
+  keep their meaning. Rejected: widening the anchored method too (its drift
+  is a few tokens once learned, and the live suite holds it to that); a fixed
+  safety margin (it would cost exact endpoints context they do not need to
+  give up). A part-by-part estimate (`Section.Tokens`, `MessageSizes`) is still
+  four bytes a token and picture cost from `counter.EstimatedImageTokens`; it
+  decides where a compaction cuts and what the inspector shows until the
+  breakdown item replaces it. The agent's own `ImageTokens` is gone.
+- **Reasoning tokens from the reasoning text, labelled.** Where the endpoint
+  states no reasoning count, the recorder tokenises the reasoning text with
+  the counter's text route and stores it with `reasoning_source = tokenised`.
+  On the bench's llama.cpp a response cut off inside its reasoning tokenised
+  to exactly the completion tokens the server generated (60 and 60). No text
+  or no text route means no count (NULL), not 0: an endpoint may have hidden
+  its thinking. The number never enters `provider.Usage` or the events.
 - **A migration renames, it does not copy.** `0006` renames the table, the
   two columns, and every index and constraint named after the old table, so no
   object keeps the old name, and rows are untouched. Rejected: a new table
@@ -535,8 +597,10 @@ this file says why, so neither repeats the other.
   at once cannot be split).
 - **The learned constants live in the session's `Counter`, in memory.** The
   weights, the ratio and the picture costs are rebuilt from the first calls after
-  a restart (about five, in the fake) and cost no storage. The data to seed them
-  exists: each `model_calls` row will carry its prediction and measurement.
+  a restart (about five, in the fake) and cost no storage. Each `model_calls` row
+  carries its prediction and measurement, so persisting them stays possible; a
+  restarted session on an endpoint that counts by bytes is seeded from its stored
+  measurement instead ("Model calls").
   Rejected: persisting them now (a new table before anything reads it); sharing
   them among sessions of an endpoint (the tool list sits in the base, and sessions
   differ in theirs).
@@ -545,9 +609,9 @@ this file says why, so neither repeats the other.
   extends it, with the running relative error of estimated predictions exposed
   as `EstimateError` for the compaction reserve. A ratio per content class
   (prose, JSON, code) is not built: nothing measures one yet.
-- **Reasoning tokens from the reasoning text are not here.** llama.cpp states
-  none; counting the text of the reasoning needs a labelled source column on
-  `model_calls`, which that item adds.
+- **Reasoning tokens from the reasoning text are the loop's.** The counter
+  offers `CountText`; the labelled column is `model_calls.reasoning_source`
+  ("Model calls").
 - **A summary of drift is the sum of absolute drift.** Errors in opposite
   directions must not cancel to a clean report. A scenario fails on drift in any
   prediction called exact.

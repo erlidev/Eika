@@ -49,6 +49,21 @@ func TestARecordedCallKeepsWhatTheEndpointDidNotStateNull(t *testing.T) {
 		t.Errorf("prompt/completion/total/cached/prefilled of the three calls = %v, want %v: a stated 0 stays 0, prefilled is the prompt less the cached part where the endpoint did not state it, and a count never stated is null", got, want)
 	}
 
+	// A provider the harness has not probed is counted by estimate, and the
+	// drift is there where there is a measurement to compare it with and
+	// null where there is not: it is never the prediction itself.
+	for i, r := range records.Calls {
+		if r.Prediction != "estimated" || r.PredictedPromptTokens == nil || *r.PredictedPromptTokens <= 0 {
+			t.Errorf("call %d: prediction %q of %v, want an estimate", i+1, r.Prediction, r.PredictedPromptTokens)
+		}
+		if measured := r.PromptTokens != nil; measured != (r.Drift != nil) {
+			t.Errorf("call %d: measured %t but drift %v; drift exists exactly when both numbers do", i+1, measured, r.Drift)
+		}
+		if r.Drift != nil && *r.Drift != *r.PredictedPromptTokens-*r.PromptTokens {
+			t.Errorf("call %d: drift %d, want predicted %d less measured %d", i+1, *r.Drift, *r.PredictedPromptTokens, *r.PromptTokens)
+		}
+	}
+
 	// The call that stated nothing is not a calibration: the last call that
 	// did is.
 	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/context", nil), 200)

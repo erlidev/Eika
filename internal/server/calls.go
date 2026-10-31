@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -128,6 +129,15 @@ type callRecorder struct {
 	endpoint string
 }
 
+// predictedTokens is the size a prediction stated, nil for a call that was
+// not predicted, whose prediction is the zero value.
+func predictedTokens(p provider.Prediction) *int {
+	if p.Method == "" {
+		return nil
+	}
+	return &p.Tokens
+}
+
 // positive returns a pointer to n, or nil for a count that is zero or less,
 // which a column that must be positive stores as NULL.
 func positive(n int) *int {
@@ -171,15 +181,18 @@ func (c callRecorder) Record(ctx context.Context, call agent.ModelCall) error {
 		Parameters:    parameters,
 		MessageTokens: call.Context.MessageTokens,
 
-		PromptTokens:     call.Usage.InputTokens.Ptr(),
-		CompletionTokens: call.Usage.OutputTokens.Ptr(),
-		TotalTokens:      call.Usage.TotalTokens.Ptr(),
-		CachedTokens:     call.Usage.CachedTokens.Ptr(),
-		PrefilledTokens:  call.Usage.Prefilled().Ptr(),
-		ReasoningTokens:  call.Reasoning.Ptr(),
-		ReasoningSource:  call.ReasoningSource,
-		ContextWindow:    positive(call.ContextWindow),
-		Endpoint:         c.endpoint,
+		PromptTokens:          call.Usage.InputTokens.Ptr(),
+		CompletionTokens:      call.Usage.OutputTokens.Ptr(),
+		TotalTokens:           call.Usage.TotalTokens.Ptr(),
+		CachedTokens:          call.Usage.CachedTokens.Ptr(),
+		PrefilledTokens:       call.Usage.Prefilled().Ptr(),
+		ReasoningTokens:       call.Reasoning.Ptr(),
+		ReasoningSource:       call.ReasoningSource,
+		PredictedPromptTokens: predictedTokens(call.Prediction),
+		Prediction:            string(call.Prediction.Method),
+		Drift:                 call.Drift,
+		ContextWindow:         positive(call.ContextWindow),
+		Endpoint:              c.endpoint,
 	})
 	return err
 }

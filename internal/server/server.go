@@ -113,6 +113,8 @@ type Server struct {
 	deps Deps
 	tree *session.Tree
 	runs *runs
+	// counters keeps each session's token counter across its runs.
+	counters *sessionCounters
 	// titles names untitled sessions after their first message.
 	titles *titles
 	// idle stops the running computers no run has used for a while.
@@ -143,6 +145,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	if deps.Store != nil {
 		s.tree = session.NewTree(deps.Store)
 	}
+	s.counters = newSessionCounters()
 	s.runs = newRuns(s)
 	s.titles = newTitles(s)
 	s.idle = newIdleComputers(s)

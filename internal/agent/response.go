@@ -87,31 +87,34 @@ type response struct {
 
 // call sends the conversation to the model, streaming the response as
 // message.delta events, and retries a retryable failure with backoff. It
-// returns the response and the request it answered.
+// returns the response, the request it answered, and what the token counter
+// expected of that request.
 //
-// With automatic compaction on, a request that would leave less of the
-// window free than the reserve is compacted before it is sent, and a request
-// the endpoint refuses as too large is compacted and sent again, once each.
-// pendingMark is the turn's index of its first undelivered message, or -1;
-// a compaction moves it.
-func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Section, gen *generation, pendingMark *int) (response, Context, error) {
+// The request is sized by the session's counter before it is sent, and the
+// size is measured against the endpoint's own count after. With automatic
+// compaction on, a request that would leave less of the window free than the
+// reserve is compacted before it is sent, and a request the endpoint refuses
+// as too large is compacted and sent again, once each. pendingMark is the
+// turn's index of its first undelivered message, or -1; a compaction moves it.
+func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Section, gen *generation, pendingMark *int) (response, Context, counted, error) {
 	compacted, recovered := false, false
 	for {
 		msgs := s.Conversation.Messages()
 		sent := a.base(prompt).WithMessages(msgs)
-		tokens := estimateContext(sent, msgs)
-		if !compacted && a.shouldCompact(tokens) {
+		predicted := sent.Request()
+		pred := a.predict(ctx, sent)
+		if !compacted && a.shouldCompact(pred) {
 			compacted = true
 			// A compaction that fails leaves the conversation as it was,
 			// which may still fit: the window bound decides.
 			if err := a.autoCompact(ctx, s, runID, prompt, pendingMark, event.CompactThreshold); err != nil && ctx.Err() != nil {
-				return response{}, Context{}, fmt.Errorf("call model: %w", ctx.Err())
+				return response{}, Context{}, counted{}, fmt.Errorf("call model: %w", ctx.Err())
 			}
 			continue
 		}
-		sent, err := fit(sent, tokens, a.opts.ContextWindow)
+		sent, err := fit(sent, pred.Tokens, a.opts.ContextWindow)
 		if err != nil {
-			return response{}, Context{}, err
+			return response{}, Context{}, counted{}, err
 		}
 		resp, err := a.retrying(ctx, s, runID, true, func() (response, error) {
 			return a.stream(ctx, s, runID, sent.Request(), gen)
@@ -121,16 +124,18 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 			err = errSilentOverflow
 		}
 		if err == nil {
-			return resp, sent, nil
+			// What was sent differs from what was predicted in its max
+			// output alone, which fit may have lowered and no prompt renders.
+			return resp, sent, a.measure(ctx, s, runID, predicted, pred, resp.usage), nil
 		}
 		overflowed := provider.ContextOverflow(err) || errors.Is(err, errSilentOverflow)
 		if !auto || ctx.Err() != nil || !overflowed {
-			return response{}, Context{}, err
+			return response{}, Context{}, counted{}, err
 		}
 		recovered, compacted = true, true
 		a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
 		if cerr := a.autoCompact(ctx, s, runID, prompt, pendingMark, event.CompactOverflow); cerr != nil {
-			return response{}, Context{}, errors.Join(err, cerr)
+			return response{}, Context{}, counted{}, errors.Join(err, cerr)
 		}
 	}
 }

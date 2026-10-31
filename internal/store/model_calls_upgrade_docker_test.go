@@ -86,3 +86,41 @@ func TestUpgradeFrom0005RenamesModelRequestsToModelCalls(t *testing.T) {
 		t.Errorf("%d tables, indexes or constraints are still named model_requests", leftovers)
 	}
 }
+
+// A reasoning count is stored with where it came from, and a prediction with
+// its method, so a number cannot be read without knowing how far to trust it.
+func TestAModelCallKeepsNumbersAndTheirLabelsTogether(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	sess := newSession(t, st, store.Session{})
+	run, err := st.StartRun(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+	base := store.ModelCall{SessionID: sess.ID, RunID: run.ID, Model: "m"}
+	cases := []struct {
+		name string
+		call func(c store.ModelCall) store.ModelCall
+	}{
+		{"reasoning tokens without a source", func(c store.ModelCall) store.ModelCall { c.ReasoningTokens = new(5); return c }},
+		{"a reasoning source without tokens", func(c store.ModelCall) store.ModelCall { c.ReasoningSource = "reported"; return c }},
+		{"a reasoning source that is neither", func(c store.ModelCall) store.ModelCall {
+			c.ReasoningTokens, c.ReasoningSource = new(5), "guessed"
+			return c
+		}},
+		{"a prediction without a method", func(c store.ModelCall) store.ModelCall { c.PredictedPromptTokens = new(5); return c }},
+		{"a method without a prediction", func(c store.ModelCall) store.ModelCall { c.Prediction = "exact"; return c }},
+		{"a method that is not one", func(c store.ModelCall) store.ModelCall {
+			c.PredictedPromptTokens, c.Prediction = new(5), "hoped"
+			return c
+		}},
+	}
+	for _, tc := range cases {
+		if _, err := st.RecordModelCall(ctx, tc.call(base)); err == nil {
+			t.Errorf("%s was recorded", tc.name)
+		}
+	}
+	if _, err := st.RecordModelCall(ctx, base); err != nil {
+		t.Errorf("a call that predicted and measured nothing: %v", err)
+	}
+}

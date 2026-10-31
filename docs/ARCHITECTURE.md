@@ -87,7 +87,11 @@ Run(ctx, session, text)
   the last call are tokenised. Pictures are not counted by any route, so
   they are taken out of the request, the text is counted, and each picture
   size costs what a measurement showed (`anchored`), or a pixel estimate until
-  one has (`estimated`): a request with a picture is never `exact`.
+  one has (`estimated`): a request with a picture is never `exact`. The agent
+  holds the session's counter (`agent.Options.Counter`, kept across runs by
+  `server/counters.go`); `Estimate` answers without asking the server when a
+  prediction cannot finish in time, `Seed` teaches a fresh counter from a stored
+  measurement, and `CountText` tokenises a text of the caller's own.
   `provider.NewHTTPClient`, which the provider, the probe and the counter share,
   repeats a request whose idle connection the server had closed.
 - **provider** turns a `Request` into a channel of `Event`s (text and
@@ -121,23 +125,29 @@ the session's next run.
 
 Retryable failures (408, 409, 429, 5xx, transport) back off exponentially up
 to `MaxRetries`, honouring `Retry-After`, and emit `message.reset`. Others end
-with `run.error`. Before every call the request is estimated as Pi does: the
-last measured context plus 4-byte tokens for each message after it. A request
-of the whole window or more fails before the call; one that fits with less
-room than its max output gets max output lowered to the room left.
+with `run.error`. Before every call the request is sized by the session's
+token counter (`agent/counting.go`): `Predict`, bounded by `Options.CountTimeout`
+(ten seconds), falls back to the counter's estimate when it cannot answer, and
+never fails the call. A request of the whole window or more fails before the
+call; one that fits with less room than its max output gets max output lowered
+to the room left. After the call `Observe` takes the endpoint's own prompt count
+back, the `ModelCall` handed to the `Recorder` carries the prediction, its
+method and its drift, and an `exact` prediction with any drift is logged as a
+warning with its numbers. A session resumed with a counter that has learned
+nothing is seeded from the newest measurement its messages carry.
 
 **Images** are `provider.Message.Images` on a user message.
 `POST .../messages` runs each through `imaging.Prepare` before the run is
 claimed; `runs.begin` refuses images for a model without `image_input`, and
 `enqueue` checks the running model's. `Options.ImageInput` decides whether
 `Context.WithMessages` sends them or a note in their place, `messageTokens`
-counts each at `ImageTokens` (one token per 750 pixels) rather than its
-base64, and the OpenAI provider sends them as `image_url` data-URL parts
+counts each at one token per 750 pixels rather than its
+base64 (`counter.EstimatedImageTokens`), and the OpenAI provider sends them as `image_url` data-URL parts
 before the text. `turn.start` carries them for the live transcript.
 
 **Compaction** (`agent/compaction.go`, `agent/summary.go`) is Pi's. With
-`CompactionSettings.Auto`, a call whose estimate passes `window - reserve`
-compacts first, and a call the endpoint refuses as too large
+`CompactionSettings.Auto`, a call whose predicted size passes `window - reserve`
+compacts first (when the prediction is only `estimated`, the reserve grows by the error estimates have shown, to at most half the window), and a call the endpoint refuses as too large
 (`provider.ContextOverflow`, or a silent truncation) is compacted and sent
 again, once. `Agent.Compact` compacts on request. `planCompaction` walks back
 from the newest stored message until about `keep` tokens are kept and cuts

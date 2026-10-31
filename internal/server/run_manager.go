@@ -222,6 +222,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 		Store:      sessionStore,
 		Logger:     s.log,
 		Recorder:   callRecorder{store: s.deps.Store, run: active, config: cfg, endpoint: ep.row.Name},
+		Counter:    s.counters.forRun(sessionID, ep, cfg.model),
 		Compaction: s.compaction(ctx, cfg.model),
 	})
 	if work.compact && !ag.Compactable(loaded) {

@@ -39,6 +39,10 @@ type reply struct {
 	// textTokens is what the server's tokenizer counts in the request, when it
 	// differs from the prompt count because the request holds a picture.
 	textTokens int
+	// reasoning is streamed as reasoning_content before the text, and the
+	// tokenizer counts it as reasoningTokens when asked about it alone.
+	reasoning       string
+	reasoningTokens int
 }
 
 func requestFor(text string) provider.Request {
@@ -65,6 +69,18 @@ func newChatServer(t *testing.T, replies ...reply) *chatServer {
 			cs.mu.Lock()
 			n := len(cs.requests)
 			cs.mu.Unlock()
+			// A text the tokenizer is asked about on its own is the reasoning of
+			// a scripted reply, which has the count its reply gives it.
+			var asked struct {
+				Content string `json:"content"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&asked)
+			for _, rep := range replies {
+				if rep.reasoning != "" && asked.Content == rep.reasoning {
+					_, _ = fmt.Fprintf(w, `{"tokens":[%s]}`, strings.TrimSuffix(strings.Repeat("7,", rep.reasoningTokens), ","))
+					return
+				}
+			}
 			count := 0
 			if n < len(replies) {
 				if count = replies[n].textTokens; count == 0 {
@@ -102,7 +118,11 @@ func newChatServer(t *testing.T, replies ...reply) *chatServer {
 // finish chunk, then a chunk with the usage and the timings.
 func sse(r reply) string {
 	text, _ := json.Marshal(r.text)
+	reasoning, _ := json.Marshal(r.reasoning)
 	var b strings.Builder
+	if r.reasoning != "" {
+		fmt.Fprintf(&b, "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":%s}}]}\n\n", reasoning)
+	}
 	fmt.Fprintf(&b, "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", text)
 	b.WriteString("data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}]}\n\n")
 	details := ""

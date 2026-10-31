@@ -15,6 +15,7 @@ import (
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/counter"
 	"github.com/erlidev/eika/internal/tool"
 )
 
@@ -74,11 +75,23 @@ type Options struct {
 	// Recorder is told about every model call that returned a response. Nil
 	// records nothing.
 	Recorder Recorder
+	// Counter predicts the size of every request before it is sent and learns
+	// from what the endpoint measured. It belongs to one session and is kept
+	// across the runs of that session, which is how the constants it learns
+	// survive from one turn to the next. Nil means a counter of the agent's
+	// own that estimates by bytes, the way an endpoint with no tokenizer is
+	// counted.
+	Counter *counter.Counter
+	// CountTimeout bounds the token counting around one model call. Zero means
+	// ten seconds. A call whose prediction does not finish in time is sent with
+	// the counter's estimate.
+	CountTimeout time.Duration
 }
 
 // Agent runs the loop for one session at a time.
 type Agent struct {
 	provider  provider.Provider
+	counter   *counter.Counter
 	tools     *tool.Registry
 	opts      Options
 	steering  queue
@@ -109,7 +122,13 @@ func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	return &Agent{provider: p, tools: r, opts: opts, accepting: true}
+	if opts.CountTimeout <= 0 {
+		opts.CountTimeout = defaultCountTimeout
+	}
+	if opts.Counter == nil {
+		opts.Counter = counter.NewEstimating()
+	}
+	return &Agent{provider: p, counter: opts.Counter, tools: r, opts: opts, accepting: true}
 }
 
 // Steer queues a user message to be delivered as soon as the tool call that
@@ -156,6 +175,7 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Messag
 	a.accepting = true
 	a.mu.Unlock()
 	defer a.closeQueues()
+	a.seedCounter(ctx, s, prompt)
 
 	msgs, origin := []provider.Message{userMessage}, (*queue)(nil)
 	if userMessage.Empty() {
@@ -237,7 +257,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []p
 			return a.fail(ctx, s, runID, fmt.Errorf("run turn: %w", err))
 		}
 
-		resp, sent, err := a.call(ctx, s, runID, prompt, &gen, &pendingMark)
+		resp, sent, count, err := a.call(ctx, s, runID, prompt, &gen, &pendingMark)
 		if err != nil {
 			restoreFrom(0)
 			return a.fail(ctx, s, runID, err)
@@ -254,7 +274,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []p
 		msgs, steered, origin = nil, nil, nil
 		// Everything the call sent is stored and its reply is not yet, which
 		// is the moment Recorder promises.
-		a.record(ctx, s, runID, sent, resp.usage)
+		a.record(ctx, s, runID, sent, resp, count)
 		reply, stop := resp.message, resp.stop
 		if gen.context.Reported() {
 			reply.Metrics = &provider.MessageMetrics{

@@ -131,9 +131,33 @@ func (c *Counter) Predict(ctx context.Context, req provider.Request) (provider.P
 		p.base, p.method = c.estimated(p), provider.MethodEstimated
 	}
 
-	cost, known := c.imageCost(images)
+	c.finish(req, p)
+	return p.pred, nil
+}
+
+// Estimate returns the size of req by the estimated method alone, without
+// asking the endpoint anything. It is the prediction of last resort for a
+// caller whose Predict could not finish in the time it had, and Observe treats
+// it like any other prediction of req.
+func (c *Counter) Estimate(req provider.Request) provider.Prediction {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	stripped, images := stripImages(req)
+	p := &pending{images: images}
+	p.head, p.messages = keys(stripped)
+	p.cen = take(stripped)
+	p.base, p.method = c.estimated(p), provider.MethodEstimated
+	c.finish(req, p)
+	return p.pred
+}
+
+// finish adds the pictures to the count of the text, sets the method the
+// whole can claim, and remembers p for Observe.
+func (c *Counter) finish(req provider.Request, p *pending) {
+	cost, known := c.imageCost(p.images)
 	p.pred = provider.Prediction{Tokens: p.base + cost, Method: p.method}
-	if len(images) > 0 && p.method == provider.MethodExact {
+	if len(p.images) > 0 && p.method == provider.MethodExact {
 		// The server counts the text and not the pictures, so the whole is no
 		// longer what it will say.
 		p.pred.Method = provider.MethodAnchored
@@ -142,7 +166,6 @@ func (c *Counter) Predict(ctx context.Context, req provider.Request) (provider.P
 		p.pred.Method = provider.MethodEstimated
 	}
 	c.remember(requestKey(req), p)
-	return p.pred, nil
 }
 
 // remember keeps p until its measurement arrives.
@@ -177,14 +200,58 @@ func (c *Counter) Observe(ctx context.Context, req provider.Request, usage provi
 	if p.pred.Method == provider.MethodEstimated && measured > 0 {
 		c.estimateError = 0.8*c.estimateError + 0.2*math.Abs(float64(out.Drift))/float64(measured)
 	}
+	c.learn(ctx, p, measured)
+	return out, true
+}
 
+// Seed teaches a counter that has measured nothing from the measurement of an
+// earlier request of the same conversation, such as the one a stored session
+// carries after a restart: the learned constants are in memory, and a session
+// resumed on an endpoint that counts no better than by bytes would otherwise
+// be sized from nothing. It does nothing for a counter that has learned
+// already, and it leaves the running error of estimates alone, since nothing
+// was predicted. It reports whether it learned.
+func (c *Counter) Seed(ctx context.Context, req provider.Request, usage provider.Usage) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	measured, stated := usage.InputTokens.Value()
+	if !stated || c.anchor != nil || c.model.n > 0 {
+		return false
+	}
+	stripped, images := stripImages(req)
+	p := &pending{images: images, method: provider.MethodEstimated}
+	p.head, p.messages = keys(stripped)
+	p.cen = take(stripped)
+	c.learn(ctx, p, measured)
+	return c.anchor != nil
+}
+
+// CountText returns the exact token count of text, for a caller that wants a
+// number for a text of its own, such as a model's reasoning. It reports false
+// when the endpoint has no route that tokenises text or the route fails: the
+// caller then has no count, and nothing here estimates one.
+func (c *Counter) CountText(ctx context.Context, text string) (int, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.src.Level() < LevelText {
+		return 0, false
+	}
+	n, err := c.text(ctx, text)
+	return n, err == nil
+}
+
+// learn takes the measured prompt of p's request into everything that learns:
+// the picture costs, the bytes per token, the anchored model and the anchor.
+func (c *Counter) learn(ctx context.Context, p *pending, measured int) {
 	cost, known := c.imageCost(p.images)
 	if !known {
 		c.learnImages(p, measured)
 		// The next request that holds these pictures is predicted exactly from
 		// the text; this one cannot teach the model anything about its text.
 		c.anchor = nil
-		return out, true
+		return
 	}
 	text := measured - cost
 	c.ratio.add(p.cen.bytes, text)
@@ -202,7 +269,6 @@ func (c *Counter) Observe(ctx context.Context, req provider.Request, usage provi
 		head: p.head, messages: p.messages, measured: text,
 		bytes: p.cen.bytes, text: p.text, x: p.x, modelled: p.modelled,
 	}
-	return out, true
 }
 
 // EstimateError is the running mean relative error of the estimated
@@ -372,9 +438,11 @@ func (a *anchor) extendedBy(head [32]byte, messages [][32]byte) bool {
 		slices.Equal(a.messages, messages[:len(a.messages)])
 }
 
-// estimatedImageTokens is the cost taken for a picture of a size not yet
-// measured, near what vision models charge for the sizes Eika sends.
-func estimatedImageTokens(w, h int) int {
+// EstimatedImageTokens is the cost taken for a picture of w by h pixels whose
+// size has not been measured, near what vision models charge for the sizes
+// Eika sends: one token per 750 pixels. A size that is not known is taken to
+// be as large as the harness sends.
+func EstimatedImageTokens(w, h int) int {
 	const pixelsPerToken = 750
 	if w <= 0 || h <= 0 {
 		w, h = 1920, 1080
@@ -391,7 +459,7 @@ func (c *Counter) imageCost(images []provider.Image) (int, bool) {
 			continue
 		}
 		known = false
-		total += estimatedImageTokens(img.Width, img.Height)
+		total += EstimatedImageTokens(img.Width, img.Height)
 	}
 	return total, known
 }
@@ -443,13 +511,17 @@ func stripImages(req provider.Request) (provider.Request, []provider.Image) {
 }
 
 // requestKey identifies a request by everything in it that can change the
-// prompt or the count, pictures included.
+// prompt or the count, pictures included. The most the model may generate is
+// not among them: a template does not render it, and the agent lowers it to
+// the room a window leaves after it has predicted the prompt, so the request
+// that is observed differs from the one that was predicted in that field alone.
 func requestKey(req provider.Request) [32]byte {
 	messages := slices.Clone(req.Messages)
 	for i := range messages {
 		messages[i].Metrics = nil
 	}
 	req.Messages = messages
+	req.Sampling.MaxOutput = nil
 	raw, _ := json.Marshal(req)
 	return sha256.Sum256(raw)
 }

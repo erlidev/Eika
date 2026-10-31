@@ -85,9 +85,11 @@ type modelCallWire struct {
 	ReasoningSource  string `json:"reasoning_source"`
 	Drift            *int   `json:"drift"`
 	Prediction       string `json:"prediction"`
-	ContextWindow    *int   `json:"context_window"`
-	Endpoint         string `json:"endpoint"`
-	QueueMS          *int   `json:"queue_ms"`
+
+	PredictedPromptTokens *int   `json:"predicted_prompt_tokens"`
+	ContextWindow         *int   `json:"context_window"`
+	Endpoint              string `json:"endpoint"`
+	QueueMS               *int   `json:"queue_ms"`
 }
 
 type callsWire struct {
