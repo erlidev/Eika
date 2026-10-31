@@ -37,8 +37,11 @@ type QueueRecord struct {
 	// Waited is the time the call spent waiting for leases, summed over its
 	// attempts: a call that was preempted and queued again waited for both.
 	Waited time.Duration
-	// Slot is the queue's slot of the lease that served the call.
-	Slot int
+	// Slot is the slot of the server the call named, nil when it named none:
+	// only a call that continues a session on an endpoint that takes slot
+	// hints does, and the queue's own count of slots says nothing to anyone
+	// else.
+	Slot *int
 	// Priority is what the call asked for, and Class the model class the run
 	// was resolved from, empty if none.
 	Priority string
@@ -52,8 +55,17 @@ type queued struct {
 	// tokens is the room the call is expected to take in the cache: its
 	// predicted prompt plus its maximum output.
 	tokens int
+	// prompt is the tokens of the prompt the counter predicted, which the
+	// server's slot is expected to hold a prefix of already.
+	prompt int
 	since  time.Time
 	record QueueRecord
+}
+
+// newQueued returns the state of a model call whose request c carries a prompt
+// of the given predicted size.
+func (a *Agent) newQueued(prompt int, c Context) *queued {
+	return &queued{tokens: a.callTokens(prompt, c), prompt: prompt}
 }
 
 // callTokens is what a call occupies in a shared cache at worst: the prompt
@@ -80,7 +92,12 @@ func (a *Agent) acquire(ctx context.Context, s *Session, q *queued) (*inference.
 		Endpoint:  in.Endpoint,
 		Class:     in.Class,
 		SessionID: s.ID,
-		Since:     q.since,
+		// Every call of a run continues its session's conversation: a
+		// compaction summary reads the same prefix, and after it the old
+		// prefix is dead whichever slot it was in.
+		Affinity: true,
+		Prompt:   q.prompt,
+		Since:    q.since,
 	})
 	if err != nil || !lease.Queued() {
 		return lease, err
@@ -88,9 +105,11 @@ func (a *Agent) acquire(ctx context.Context, s *Session, q *queued) (*inference.
 	q.record = QueueRecord{
 		Queued:   true,
 		Waited:   q.record.Waited + lease.Waited(),
-		Slot:     lease.Slot(),
 		Priority: lease.Priority().String(),
 		Class:    in.Class,
+	}
+	if slot, ok := lease.SlotHint(); ok {
+		q.record.Slot = &slot
 	}
 	return lease, nil
 }

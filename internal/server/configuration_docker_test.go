@@ -53,6 +53,15 @@ type providerWire struct {
 			Counted      bool   `json:"counted"`
 			Drift        int    `json:"drift"`
 		} `json:"responses"`
+		SlotAffinity *struct {
+			Verdict      string `json:"verdict"`
+			Reason       string `json:"reason"`
+			Model        string `json:"model"`
+			Build        string `json:"build"`
+			CheckedAt    string `json:"checked_at"`
+			PromptTokens int    `json:"prompt_tokens"`
+			CachedTokens int    `json:"cached_tokens"`
+		} `json:"slot_affinity"`
 	} `json:"capabilities"`
 	Overridden []string `json:"overridden"`
 	ProbedAt   string   `json:"probed_at"`

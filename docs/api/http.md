@@ -354,7 +354,7 @@ model is configured; `400` for a model that does not exist.
 | `drift` | number or null | `predicted_prompt_tokens` less `prompt_tokens`; `null` unless both exist. Any drift on an `exact` prediction is a bug. |
 | `context_window` | number or null | The window the call was judged against; `null` when the model had none configured. |
 | `endpoint` | string, optional | The provider's name when the call was made. |
-| `queue_ms`, `slot` | number or null | Milliseconds the call waited for a lease on its pool (summed over its attempts, so a call that was preempted and queued again counts both waits), and the queue's slot number of the lease that served it. That is the server's own slot only once slot affinity sends it. `null` for a call recorded before the queue existed. |
+| `queue_ms`, `slot` | number or null | Milliseconds the call waited for a lease on its pool (summed over its attempts, so a call that was preempted and queued again counts both waits), and the server's own slot number that the request named (`id_slot`). `slot` is `null` for a call that named none: one to an endpoint that takes no slot hints (anything but a llama.cpp server with several slots on which the slot affinity check passed), and one recorded before the queue existed. |
 | `class`, `priority`, `agent` | string, optional | Attribution. `priority` is what the call asked for: `interactive`, `foreground`, `background` or `maintenance`. `class` is the model class the run was resolved from and is absent for a run that named its model. `agent` is absent until the agents record it. |
 | `prefill_ms`, `decode_ms` | number or null | Milliseconds the endpoint took to read the prompt (as it stated it) and to generate (its own measure, else the harness's from the first token). `null` when nothing measured them. |
 | `created_at` | time | When the call returned. |
@@ -621,6 +621,12 @@ harness sends the model nothing in the usual case. A provider with no chat
 model is not asked (`verdict` `skipped`), and an endpoint nothing stores has no model of
 the user's to ask, so a form probe leaves `api` at `chat`.
 
+On a llama.cpp server with more than one slot the probe also runs the slot
+affinity check, by the same rules: three small requests to the same model, the
+first and the last naming slot 0 and the second slot 1, to see whether the last
+finds the first's prefix still cached. Its outcome decides whether requests
+name slots at all.
+
 | Field | Type | Meaning |
 |---|---|---|
 | `provider_id` | string | A stored provider to probe with its stored key. |
@@ -654,7 +660,7 @@ harness runs in a container. `400` too for a kind that cannot list.
 | `kv` | string | How the KV cache is divided: `shared`, `partitioned`, or `unknown` (the server does not say; llama.cpp with several slots). |
 | `kv_tokens` | integer, optional | The size of a shared cache in tokens; absent when unknown. |
 | `api` | string | The wire protocol Eika speaks to the endpoint: `chat` (Chat Completions) or `responses` (the stateless Responses API). `chat` until a Responses check has passed, and the user's own choice when `overridden` names it. |
-| `capabilities` | object | The last successful probe's other findings: `build` (the server's version, optional), `window` (the context one request may use, optional), `counting` (`chat`, `text` or `none`: how the endpoint counts tokens), `cache_metrics` (`reported` or `unknown`), `slot_hints` (a request may name its slot) and `responses` (optional, the Responses check's outcome, below). |
+| `capabilities` | object | The last successful probe's other findings: `build` (the server's version, optional), `window` (the context one request may use, optional), `counting` (`chat`, `text` or `none`: how the endpoint counts tokens), `cache_metrics` (`reported` or `unknown`), `slot_hints` (the server takes a request that names its slot), `responses` (optional, the Responses check's outcome, below) and `slot_affinity` (optional, the slot affinity check's outcome, below). |
 | `overridden` | array of string | The fields the user set, which a probe leaves alone: any of `backend`, `pool`, `slots`, `kv`, `api`. |
 | `probed_at` | time, optional | When a probe last succeeded; absent until one has. |
 | `probe_error` | string, optional | Why the latest probe failed, with the key removed; absent after a success. Earlier findings stay. |
@@ -671,6 +677,19 @@ harness runs in a container. `400` too for a kind that cannot list.
 | `reasoning` | boolean | The model returned a reasoning item and the second request sent it back. False for a model that did not reason. |
 | `cache_metrics` | boolean | The second response stated how many prompt tokens were cached. |
 | `counted`, `drift` | boolean, number | The second request was also counted by the token counter before it was sent, and how far that count was from the endpoint's own. Any drift fails the check. |
+
+`capabilities.slot_affinity` is what the slot affinity check found out. It is
+present only for a llama.cpp server with more than one slot, the only server
+whose requests name the slot they run on (`id_slot`), and only after the check
+has run:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `verdict` | string | `passed`, `failed` or `skipped`. Only `passed` makes the harness name slots; any other, and a server the check has not run on, is sent no `id_slot`. |
+| `reason` | string, optional | Why it failed or was skipped, with the key removed. A check is skipped when the provider has no chat model, and when its requests never got a lease on a busy pool (the earlier outcome then stands and the check runs again at the next probe). |
+| `model`, `build` | string, optional | The model asked and the server's build when it was. A change of either makes the outcome stale, and the next probe runs the check again. |
+| `checked_at` | time | When it ran. |
+| `prompt_tokens`, `cached_tokens` | number, optional | The prompt of the first request, and how much of it the last request, which named the same slot after a request on the other, found cached. The check passes when that is at least 80%. |
 
 ### ModelInfo
 
@@ -1257,7 +1276,7 @@ its providers' `pool`, `slots`, `kv` and `kv_tokens`. `200` with:
 | `used_tokens` | number | The sum of the running calls' predicted prompt plus maximum output, which `cache_tokens` bounds. |
 | `idle` | boolean | The pool has run nothing but maintenance for `maintenance_idle_seconds`, so it admits maintenance calls. |
 | `idle_seconds` | number or null | How long it has been idle; `null` when it never ran anything else. |
-| `running` | array | The calls holding a slot, by `slot`: `endpoint`, `class` and `session_id` (optional), `priority`, `tokens`, `held_ms`, and `preempted` (cancelled for an interactive call, not yet let go). |
+| `running` | array | The calls holding a slot, by `slot`: `slot_named` (`slot` is the server's own slot number, which the call named as `id_slot` so that it runs where its session's prefix is; otherwise it is the queue's count), `endpoint`, `class` and `session_id` (optional), `priority`, `tokens`, `held_ms`, and `preempted` (cancelled for an interactive call, not yet let go). |
 | `waiting` | array | The calls waiting, in the order they will be admitted: `endpoint`, `class` and `session_id` (optional), `priority` (what it asked for), `earned` (what its waiting has raised it to), `tokens`, `waited_ms` (for this slot), `total_waited_ms` (since the caller first began waiting, which a retry carries), and `gated` (a maintenance call waiting for an idle pool). |
 
 ## Event stream

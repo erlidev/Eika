@@ -129,8 +129,8 @@ func TestAModelCallWaitsForALeaseAndRecordsTheWait(t *testing.T) {
 		t.Fatalf("recorded %d calls, want 1", len(calls))
 	}
 	got := calls[0].Queue
-	if !got.Queued || got.Waited < 50*time.Millisecond || got.Slot != 0 || got.Priority != "interactive" {
-		t.Errorf("queue record = %+v, want a wait of at least 50ms on slot 0 at interactive", got)
+	if !got.Queued || got.Waited < 50*time.Millisecond || got.Slot != nil || got.Priority != "interactive" {
+		t.Errorf("queue record = %+v, want a wait of at least 50ms at interactive and no slot, since the endpoint has none to name", got)
 	}
 	if running(q) != 0 {
 		t.Error("the run left its lease behind")

@@ -309,8 +309,8 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	}
 	rec := records.Calls[0]
 	if rec.Endpoint != "test" || rec.ContextWindow == nil || rec.QueueMS == nil || *rec.QueueMS < 0 ||
-		rec.Slot == nil || *rec.Slot != 0 || rec.Priority != "interactive" {
-		t.Errorf("call attribution = endpoint %q, window %v, queue_ms %v, slot %v, priority %q; want the provider's name, the model's window, and the queue's wait, slot 0 and interactive",
+		rec.Slot != nil || rec.Priority != "interactive" {
+		t.Errorf("call attribution = endpoint %q, window %v, queue_ms %v, slot %v, priority %q; want the provider's name, the model's window, the queue's wait, no slot (the provider is not llama.cpp) and interactive",
 			rec.Endpoint, rec.ContextWindow, rec.QueueMS, rec.Slot, rec.Priority)
 	}
 	recorded := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/calls/"+rec.ID, nil), 200)

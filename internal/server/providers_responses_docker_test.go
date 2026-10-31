@@ -34,8 +34,18 @@ func conforming() []providertest.Step {
 
 // responsesBench stores a provider on a fake llama.cpp server whose scripted
 // provider answers the conformance check as the steps say, and gives it one
-// model, which the check asks.
+// model, which the check asks. The user sets its slots to one, so that the
+// slot affinity check, which only a server with several slots gets, asks the
+// model nothing and the steps are the Responses check's alone.
 func responsesBench(t *testing.T, a *api, steps ...providertest.Step) (providerWire, listingProvider) {
+	t.Helper()
+	p, served := slottedBench(t, a, steps...)
+	decodeBody[providerWire](t, request(t, a.Server, "PATCH", "/api/providers/"+p.ID, map[string]any{"slots": 1}), 200)
+	return p, served
+}
+
+// slottedBench is responsesBench on the two slots the recorded server has.
+func slottedBench(t *testing.T, a *api, steps ...providertest.Step) (providerWire, listingProvider) {
 	t.Helper()
 	baseURL := probetest.LlamaCpp(t, "").URL + "/v1"
 	served := listingProvider{Provider: providertest.New(steps...), models: []provider.ModelInfo{{ID: "qwen3.8-27b"}}}
@@ -164,7 +174,9 @@ func TestStartAsksTheModelOnlyWhenTheCheckIsStale(t *testing.T) {
 
 func TestTheUsersApiSurvivesAProbeUntilTheyHandItBack(t *testing.T) {
 	a := newAPI(t)
-	p, _ := responsesBench(t, a, providertest.Fail(errors.New("no route")), providertest.Fail(errors.New("no route")))
+	// The recorded server has two slots, so the slot check asks too and finds nothing
+	// scripted; the user's only override is the api.
+	p, _ := slottedBench(t, a, providertest.Fail(errors.New("no route")), providertest.Fail(errors.New("no route")))
 
 	set := decodeBody[providerWire](t, request(t, a.Server, "PATCH", "/api/providers/"+p.ID, map[string]any{"api": "responses"}), 200)
 	if set.API != "responses" || !slices.Equal(set.Overridden, []string{"api"}) {
