@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 )
 
@@ -84,6 +85,11 @@ type response struct {
 	stop    string
 	// usage is what the endpoint measured for this response alone.
 	usage provider.Usage
+	// timings is how long the endpoint took to read the prompt and to
+	// generate, as far as anything measured it.
+	timings provider.Timings
+	// queue is what the inference queue did for the call that produced it.
+	queue QueueRecord
 }
 
 // call sends the conversation to the model, streaming the response as
@@ -117,9 +123,11 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 		if err != nil {
 			return response{}, Context{}, counted{}, err
 		}
+		q := &queued{tokens: a.callTokens(pred.Tokens, sent)}
 		resp, err := a.retrying(ctx, s, runID, true, func() (response, error) {
-			return a.stream(ctx, s, runID, sent.Request(), gen)
+			return a.stream(ctx, s, runID, sent.Request(), gen, q)
 		})
+		resp.queue = q.record
 		auto := a.opts.Compaction.Auto && !recovered
 		if err == nil && auto && silentOverflow(resp, a.opts.ContextWindow) {
 			err = errSilentOverflow
@@ -163,9 +171,13 @@ func (a *Agent) autoCompact(ctx context.Context, s *Session, runID string, promp
 // retry budget, backing off in between. reset announces each retry with
 // message.reset, for an attempt that streams to the client. An overflow is
 // never retried: the same request fails the same way.
+//
+// An attempt that an interactive call preempted is retried at once, without
+// a backoff and without spending the budget: the endpoint did not fail, and
+// the retry waits in the queue for its turn. The run never reports it.
 func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bool, attempt func() (response, error)) (response, error) {
 	backoff := a.opts.RetryBackoff
-	for n := 0; ; n++ {
+	for n := 0; ; {
 		resp, err := attempt()
 		if err == nil {
 			return resp, nil
@@ -173,9 +185,18 @@ func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bo
 		if ctx.Err() != nil {
 			return response{}, fmt.Errorf("call model: %w", ctx.Err())
 		}
+		if errors.Is(err, inference.ErrPreempted) {
+			if reset {
+				a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
+			}
+			a.opts.Logger.Info("model call preempted by an interactive call, queueing again",
+				"session_id", s.ID, "run_id", runID)
+			continue
+		}
 		if !provider.Retryable(err) || provider.ContextOverflow(err) || n >= a.opts.MaxRetries {
 			return response{}, err
 		}
+		n++
 		if reset {
 			a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
 		}
@@ -184,7 +205,7 @@ func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bo
 			wait = min(after, maxRetryBackoff)
 		}
 		a.opts.Logger.Warn("model call failed, retrying",
-			"session_id", s.ID, "run_id", runID, "attempt", n+1, "wait", wait, "error", err)
+			"session_id", s.ID, "run_id", runID, "attempt", n, "wait", wait, "error", err)
 		select {
 		case <-time.After(wait):
 		case <-ctx.Done():
@@ -194,14 +215,39 @@ func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bo
 	}
 }
 
-// stream consumes one provider response. It emits the answer and the model's
+// stream makes one attempt at a model call: it waits for a lease, reads the
+// provider's response under it, and gives the lease back whichever way the
+// attempt ends, so that a retry takes a new one and a more urgent call can get
+// in between. The lease is held for the call alone; the caller's tool calls
+// and backoff are outside it. An attempt that an interactive call preempted
+// fails with inference.ErrPreempted, which retrying does not count as a
+// failure.
+func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation, q *queued) (response, error) {
+	lease, err := a.acquire(ctx, s, q)
+	if err != nil {
+		return response{}, fmt.Errorf("call model: %w", err)
+	}
+	defer lease.Release()
+	// The provider's goroutine must be told to stop on every way out, or the
+	// server goes on generating for a caller that has left.
+	callCtx, stop := context.WithCancel(lease.Context())
+	defer stop()
+	resp, err := a.read(callCtx, ctx, s, runID, req, gen)
+	if err != nil && lease.Preempted() {
+		return response{}, preemptedError()
+	}
+	return resp, err
+}
+
+// read consumes one provider response. It emits the answer and the model's
 // reasoning as they arrive, and a turn.progress event each time the endpoint
 // reports usage, timed from the response's first token so that what a client
 // derives from it is measured rather than estimated. A nil gen reads the
 // response quietly, emitting and measuring nothing, which is how a summary
-// is read.
-func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation) (response, error) {
-	events, err := a.provider.Stream(ctx, req)
+// is read. callCtx bounds the provider's request and ctx is the run's own,
+// which the events go out under.
+func (a *Agent) read(callCtx, ctx context.Context, s *Session, runID string, req provider.Request, gen *generation) (response, error) {
+	events, err := a.provider.Stream(callCtx, req)
 	if err != nil {
 		return response{}, fmt.Errorf("call model: %w", err)
 	}
@@ -278,13 +324,14 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 		// carries a call with no result makes the next request malformed.
 		calls = nil
 	}
+	elapsed := elapsedSince(started)
+	timings = withHarnessDecode(timings, usage, elapsed)
 	if gen != nil {
-		elapsed := elapsedSince(started)
-		gen.add(usage, elapsed, withHarnessDecode(timings, usage, elapsed))
+		gen.add(usage, elapsed, timings)
 	}
 	message := provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls)
 	message.ReasoningItems = reasoningItems
-	return response{message: message, stop: stop, usage: usage}, nil
+	return response{message: message, stop: stop, usage: usage, timings: timings}, nil
 }
 
 // empty reports whether an assistant message carries nothing at all.
