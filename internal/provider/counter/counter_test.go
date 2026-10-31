@@ -3,6 +3,7 @@ package counter_test
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -359,4 +360,54 @@ type failingServer struct{ *providertest.TokenServer }
 
 func (failingServer) Prompt(context.Context, provider.Request) (string, error) {
 	return "", fmt.Errorf("connection refused")
+}
+
+// flakyText is a text-level server whose text route fails once switched.
+type flakyText struct {
+	*providertest.TokenServer
+	fail *bool
+}
+
+func (f flakyText) Text(ctx context.Context, text string) (int, error) {
+	if *f.fail {
+		return 0, fmt.Errorf("post /tokenize: http: server closed idle connection")
+	}
+	return f.TokenServer.Text(ctx, text)
+}
+
+// logged runs fn with the default logger writing to the returned text.
+func logged(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf strings.Builder
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	fn()
+	return buf.String()
+}
+
+func TestAFallbackToALowerMethodLogsItsCause(t *testing.T) {
+	fail := false
+	server := scriptedServer(providertest.RoutesText)
+	s := newSession(t, server)
+	s.counter = counter.New(flakyText{server, &fail})
+	s.user("hello, what is in my home directory?")
+	s.send()
+	s.user("and the tmp directory?")
+	if got := s.send(); got.Prediction.Method != provider.MethodAnchored {
+		t.Fatalf("second call: method %s, want anchored while the route works", got.Prediction.Method)
+	}
+
+	fail = true
+	s.user("and tomorrow?")
+	var got counter.Outcome
+	out := logged(t, func() { got = s.send() })
+	if got.Prediction.Method != provider.MethodEstimated {
+		t.Fatalf("method %s, want estimated once the text route fails", got.Prediction.Method)
+	}
+	for _, want := range []string{"level=WARN", "token count fell back", "tried=anchored", "server closed idle connection"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log %q lacks %q: a fallback must say why it happened", out, want)
+		}
+	}
 }
