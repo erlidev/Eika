@@ -4,6 +4,7 @@ package server_test
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -133,22 +134,25 @@ func TestAnUntitledSessionIsNamedAfterItsFirstMessage(t *testing.T) {
 	}
 }
 
-func TestATitleWaitsForAFastModel(t *testing.T) {
+func TestAFailedTitleIsTriedAgainByTheNextRun(t *testing.T) {
 	a := newAPI(t)
-	titler := providertest.New(providertest.Text("Explain the scheduler"))
-	name := a.addTitleModel(t, titler)
+	titler := providertest.New(
+		providertest.Fail(&provider.Error{Op: "stream", StatusCode: 500, Err: errors.New("model busy")}),
+		providertest.Text("Explain the scheduler"),
+	)
+	a.assignTitleModel(t, a.addTitleModel(t, titler))
 
 	chat := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions", map[string]any{"chat": true}), 201)
 	a.script(providertest.Text("first answer"), providertest.Text("second answer"))
 	a.postMessage(t, chat.ID, "how does the scheduler pick a task?", "", 202)
 	a.waitIdle(t, chat.ID)
-	if title := a.sessionTitle(t, chat.ID); title != "New chat" || titler.Calls() != 0 {
-		t.Errorf("title = %q after %d title calls, want the placeholder and no call without a model", title, titler.Calls())
+	waitFor(t, "the first title attempt", func() bool { return titler.Calls() == 1 })
+	if title := a.sessionTitle(t, chat.ID); title != "New chat" {
+		t.Errorf("title = %q after a failed attempt, want the placeholder", title)
 	}
 
-	// Once a model is assigned, the next run names the session after its
-	// first message, not the one that run starts with.
-	a.assignTitleModel(t, name)
+	// The next run names the session after its first message, not the one
+	// that run starts with.
 	a.postMessage(t, chat.ID, "and preemption?", "", 202)
 	waitFor(t, "the chat to be titled", func() bool { return a.sessionTitle(t, chat.ID) == "Explain the scheduler" })
 	if reqs := titler.Requests(); reqs[0].Messages[0].Content != "how does the scheduler pick a task?" {

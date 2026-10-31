@@ -17,19 +17,25 @@ func (a *api) startChat(t *testing.T) (chatID string) {
 	t.Helper()
 	chat := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions", map[string]any{"chat": true}), 201)
 	a.script(providertest.Text("an answer"))
-	a.postMessage(t, chat.ID, "how does the scheduler pick a task?", "", 202)
+	// The run names its model, so that a title model that is the default is
+	// not the run's.
+	decodeBody[runWire](t, request(t, a.Server, "POST", "/api/sessions/"+chat.ID+"/messages",
+		map[string]any{"text": "how does the scheduler pick a task?", "model": "test-model"}), 202)
 	a.waitIdle(t, chat.ID)
 	return chat.ID
 }
 
-// A missing fast model must not turn titles off: the class falls back to main.
-// Titles are skipped only when the fallback lands on the model the user gave
-// the deep class and that model is a hosted API; a fast model the user chose
-// is used whatever it is, and deep alone feeds nothing.
+// A missing fast model must not turn titles off: the class falls back to main,
+// and main to the default model. Titles are skipped only when the fallback
+// lands on the model the user gave the deep class and that model is a hosted
+// API, whether it got there through main or the default; a fast model the user
+// chose is used whatever it is.
 func TestTitlesRunOnFastAndFallBackToMain(t *testing.T) {
 	const titled = "Explain the scheduler"
 	for name, c := range map[string]struct {
-		hosted  bool
+		hosted bool
+		// def makes the titler the default model.
+		def     bool
 		classes func(titler string) map[string]any
 		titled  bool
 	}{
@@ -66,11 +72,40 @@ func TestTitlesRunOnFastAndFallBackToMain(t *testing.T) {
 			classes: func(titler string) map[string]any { return map[string]any{"fast": titler, "deep": titler} },
 			titled:  true,
 		},
-		"only deep is assigned": {
+		"no class is assigned and the default is a local model": {
+			def:     true,
+			classes: func(string) map[string]any { return map[string]any{} },
+			titled:  true,
+		},
+		"only deep is assigned and the default is a local model": {
+			def:     true,
+			classes: func(string) map[string]any { return map[string]any{"deep": "test-model"} },
+			titled:  true,
+		},
+		"no class is assigned and the default is a hosted model that is not deep": {
+			hosted: true,
+			def:    true,
+			classes: func(string) map[string]any {
+				return map[string]any{"deep": "test-model"}
+			},
+			titled: true,
+		},
+		"no class is assigned and the default is a hosted model": {
+			hosted:  true,
+			def:     true,
+			classes: func(string) map[string]any { return map[string]any{} },
+			titled:  true,
+		},
+		"main is unset and the default is a hosted deep model": {
+			hosted:  true,
+			def:     true,
 			classes: func(titler string) map[string]any { return map[string]any{"deep": titler} },
 		},
-		"no class is assigned": {
-			classes: func(string) map[string]any { return map[string]any{} },
+		"fast is a hosted deep model by choice beside a default": {
+			hosted:  true,
+			def:     true,
+			classes: func(titler string) map[string]any { return map[string]any{"fast": titler, "deep": titler} },
+			titled:  true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -82,6 +117,9 @@ func TestTitlesRunOnFastAndFallBackToMain(t *testing.T) {
 			}
 			model := a.addTitleModelOn(t, titler, backend)
 			a.assignClasses(t, c.classes(model))
+			if c.def {
+				decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{"default_model": model}), 200)
+			}
 
 			chat := a.startChat(t)
 			if !c.titled {
@@ -104,12 +142,18 @@ func TestTitlesRunOnFastAndFallBackToMain(t *testing.T) {
 func TestTheSettingsResolveEveryClass(t *testing.T) {
 	a := newAPI(t)
 	got := decodeBody[settingsWire](t, request(t, a.Server, "GET", "/api/settings", nil), 200)
-	if len(got.Classes) != 4 || got.TitlesModel != "" {
-		t.Fatalf("classes = %+v, titles model %q; want four classes, none served", got.Classes, got.TitlesModel)
+	// Before any class is assigned the chat classes are served by the default
+	// model, and titles are made by it.
+	if len(got.Classes) != 4 || got.TitlesModel != "test-model" {
+		t.Fatalf("classes = %+v, titles model %q; want four classes and titles on the default model", got.Classes, got.TitlesModel)
 	}
 	for _, c := range got.Classes {
-		if c.Model != "" || c.Via != "" {
-			t.Errorf("class %s = %+v, want no model before any is assigned", c.Class, c)
+		model, via := "test-model", "default"
+		if c.Class == "decision" {
+			model, via = "", ""
+		}
+		if c.Model != model || c.Via != via {
+			t.Errorf("class %s = model %q via %q, want %q via %q", c.Class, c.Model, c.Via, model, via)
 		}
 	}
 

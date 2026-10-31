@@ -63,21 +63,27 @@ func (c modelClass) fallback() (modelClass, bool) {
 type classChoice struct {
 	Model store.Model
 	// Via is the class whose assignment supplied the model: the class asked
-	// for, or the one it fell back to.
+	// for, or the one it fell back to. It is empty when ViaDefault is set.
 	Via modelClass
+	// ViaDefault says the model is the default model, which a chat class
+	// reaches when neither it nor the classes it falls back to have a model.
+	ViaDefault bool
 }
 
-// fellBack reports whether the model came from another class than the one
-// asked for.
+// fellBack reports whether the model came from anything but the assignment of
+// the class asked for.
 func (c classChoice) fellBack(asked modelClass) bool {
-	return c.Via != asked
+	return c.ViaDefault || c.Via != asked
 }
 
 // resolveClass returns the model class c is served by: the model assigned to
-// it, else the one assigned to the class it falls back to. An assignment that
-// names no model of the class's kind, such as a deleted model, counts as none.
-// It reports false when no class in the chain has a model.
-func resolveClass(c modelClass, assigned map[modelClass]string, models []store.Model) (classChoice, bool) {
+// it, else the one assigned to the class it falls back to, and for a chat
+// class at the end of that chain the default model (defaultModel, the name of
+// the chat model a run uses when none is named; empty for none). An assignment
+// that names no model of the class's kind, such as a deleted model, counts as
+// none. It reports false when nothing in the chain has a model.
+func resolveClass(c modelClass, assigned map[modelClass]string, models []store.Model, defaultModel string) (classChoice, bool) {
+	kind := c.kind()
 	for {
 		if i := slices.IndexFunc(models, func(m store.Model) bool {
 			return assigned[c] != "" && m.Name == assigned[c] && m.Kind == c.kind()
@@ -86,10 +92,18 @@ func resolveClass(c modelClass, assigned map[modelClass]string, models []store.M
 		}
 		next, ok := c.fallback()
 		if !ok {
-			return classChoice{}, false
+			break
 		}
 		c = next
 	}
+	if kind == store.ModelKindChat && defaultModel != "" {
+		if i := slices.IndexFunc(models, func(m store.Model) bool {
+			return m.Name == defaultModel && m.Kind == store.ModelKindChat
+		}); i >= 0 {
+			return classChoice{Model: models[i], ViaDefault: true}, true
+		}
+	}
+	return classChoice{}, false
 }
 
 // classAssignments reads the model_classes setting: the model name each class
@@ -100,6 +114,16 @@ func (s *Server) classAssignments(ctx context.Context) map[modelClass]string {
 	return assigned
 }
 
+// defaultModelName is the name of the default model among models, as a run
+// resolves it, and empty when there is no chat model.
+func (s *Server) defaultModelName(ctx context.Context, models []store.Model) string {
+	m, _ := s.defaultModel(ctx, models)
+	return m.Name
+}
+
+// viaDefault is the Via of a class served by the default model.
+const viaDefault = "default"
+
 // classBody is one model class and its model, on the wire.
 type classBody struct {
 	Class string `json:"class"`
@@ -109,7 +133,8 @@ type classBody struct {
 	// none does.
 	Model string `json:"model"`
 	// Via is the class whose assignment supplied Model when that is not this
-	// one, which is a fallback. Empty when the class has its own model or none.
+	// one, which is a fallback, or "default" when the default model did.
+	// Empty when the class has its own model or none.
 	Via string `json:"via,omitempty"`
 	// ProviderID and Pool are the endpoint and the hardware group Model is
 	// served from. Classes with one Pool contend for its slots.
@@ -127,13 +152,16 @@ func (s *Server) classBodies(ctx context.Context) ([]classBody, error) {
 	if err != nil {
 		return nil, err
 	}
-	assigned := s.classAssignments(ctx)
+	assigned, def := s.classAssignments(ctx), s.defaultModelName(ctx, models)
 	out := make([]classBody, 0, len(modelClasses))
 	for _, c := range modelClasses {
 		body := classBody{Class: string(c), Kind: c.kind()}
-		if choice, ok := resolveClass(c, assigned, models); ok {
+		if choice, ok := resolveClass(c, assigned, models, def); ok {
 			body.Model, body.ProviderID = choice.Model.Name, choice.Model.ProviderID
-			if choice.fellBack(c) {
+			switch {
+			case choice.ViaDefault:
+				body.Via = viaDefault
+			case choice.fellBack(c):
 				body.Via = string(choice.Via)
 			}
 			if i := slices.IndexFunc(providers, func(p store.Provider) bool { return p.ID == choice.Model.ProviderID }); i >= 0 {

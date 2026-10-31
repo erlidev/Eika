@@ -60,8 +60,8 @@ export type ModelClass = {
   kind: "chat" | "decision";
   /** model is the name of the model that serves the class; empty when none does. */
   model: string;
-  /** via is the class whose assignment supplied model, when that is not this one: a fallback. */
-  via?: ModelClassName;
+  /** via is the class whose assignment supplied model, when that is not this one, or "default" when the default model did: a fallback. */
+  via?: ModelClassName | "default";
   /** provider_id and pool are the endpoint and hardware group of model; classes with one pool contend for its slots. */
   provider_id?: string;
   pool?: string;

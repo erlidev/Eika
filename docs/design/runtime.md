@@ -134,16 +134,19 @@ Agents and harness tasks never name a model. They name a class, and the setting
 | `fast` | chat | Titles, summaries for notifications, the reviewer when no decision model is set, routine pre-checks |
 | `decision` | decision | Sentry's reviewer and monitor, injection screening, routing, "is this worth a notification" |
 
-A class with no model falls back along `deep -> main` and `fast -> main`. `decision`
+A class with no model falls back along `deep -> main` and `fast -> main`, and a chat
+class with no model along that chain falls back to the default model
+(`default_model`, or the first chat model when it names none), so `fast -> main ->
+default model` works before the user has set a class. `decision`
 falls back to a chat model emulating the protocol (`sentry.md` 9.3). The UI shows
 which classes share an endpoint, since a shared endpoint means they contend for
 the same slots.
 
 `model_classes` replaces `utility_models`. The session title task moves to `fast`.
 For chat classes the fallback is deliberate: a missing `fast` model must not
-disable titles. Titles are still skipped when `fast` would fall back onto the
-model assigned to `deep`, if that is a hosted API (a "cloud" model: its
-provider's backend is `openai`). A model the user assigned to `fast` is used
+disable titles. Titles are still skipped when `fast` would fall back, through `main`
+or the default model, onto the model assigned to `deep`, if that is a hosted API (a
+"cloud" model: its provider's backend is `openai`). A model the user assigned to `fast` is used
 whatever it is. A class whose model row is deleted counts as unset.
 
 A model's `kind` is chosen when it is added and does not change. A `decision`

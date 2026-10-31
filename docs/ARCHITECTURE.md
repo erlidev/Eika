@@ -325,8 +325,9 @@ POST /api/sessions/{id}/messages          GET /api/events
   model test refuses one, since its request is a chat. The harness's own
   tasks name a class, not a model. The `model_classes` setting maps `deep`,
   `main`, `fast` (chat models) and `decision` (a decision model) to model
-  names; `resolveClass` applies the fallbacks `deep -> main` and
-  `fast -> main`, and `GET /api/settings` reports each class with the model
+  names; `resolveClass` applies the fallbacks `deep -> main`,
+  `fast -> main` and, for a chat class left with no model, the default model,
+  and `GET /api/settings` reports each class with the model
   and pool that serve it, so the UI never repeats the rule. Nothing asks
   for `decision` before Sentry. A session still picks its own model
   (`default_model`, profile, override); agents move to classes in phase 2.
@@ -334,7 +335,8 @@ POST /api/sessions/{id}/messages          GET /api/events
   `untitled` and called `New session` or `New chat`. When a run begins on
   one, `titles` starts a goroutine (at most one per session, cancelled and
   joined by `Close`) that resolves the `fast` class (`titleModel`: it
-  falls back to `main`, and is skipped when it would fall back onto the
+  falls back to `main` and then the default model, and is skipped when it
+  would fall back onto the
   model assigned to `deep` and that is a hosted API), builds its provider,
   and calls `utility.Title` with the
   first user message: one request, no tools, effort `none` in the model's

@@ -22,7 +22,7 @@
     - paragraph: Hard reasoning, and anything an agent definition marks deep. May be a cloud model. Falls back to main.
     - text: Main
     - combobox "Main": bench-chat
-    - paragraph: The main agent and most tasks.
+    - paragraph: The main agent and most tasks. Falls back to the default model.
     - paragraph: Shares the Bench pool with fast.
     - text: Fast
     - combobox "Fast": Not set

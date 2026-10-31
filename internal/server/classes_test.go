@@ -13,37 +13,50 @@ func TestResolveClass(t *testing.T) {
 		{Name: "tiny", Kind: store.ModelKindChat},
 		{Name: "judge", Kind: store.ModelKindDecision},
 	}
+	assign := func(pairs ...modelClass) map[modelClass]string {
+		out := map[modelClass]string{}
+		for i := 0; i+1 < len(pairs); i += 2 {
+			out[pairs[i]] = string(pairs[i+1])
+		}
+		return out
+	}
 	for name, c := range map[string]struct {
 		class    modelClass
 		assigned map[modelClass]string
+		def      string
 		want     string
 		via      modelClass
+		viaDef   bool
 	}{
-		"a class with a model":                      {classFast, map[modelClass]string{classFast: "tiny", classMain: "mid"}, "tiny", classFast},
-		"deep falls back to main":                   {classDeep, map[modelClass]string{classMain: "mid"}, "mid", classMain},
-		"fast falls back to main":                   {classFast, map[modelClass]string{classMain: "mid"}, "mid", classMain},
-		"main does not fall back to deep":           {classMain, map[modelClass]string{classDeep: "big"}, "", ""},
-		"fast does not fall back to deep":           {classFast, map[modelClass]string{classDeep: "big"}, "", ""},
-		"deep is its own when assigned":             {classDeep, map[modelClass]string{classDeep: "big", classMain: "mid"}, "big", classDeep},
-		"a deleted model counts as none":            {classFast, map[modelClass]string{classFast: "gone", classMain: "mid"}, "mid", classMain},
-		"nothing assigned":                          {classFast, nil, "", ""},
-		"decision has a decision model":             {classDecision, map[modelClass]string{classDecision: "judge"}, "judge", classDecision},
-		"decision does not fall back to a chat one": {classDecision, map[modelClass]string{classMain: "mid"}, "", ""},
-		"a decision model never serves a chat class": {
-			classFast, map[modelClass]string{classFast: "judge", classMain: "mid"}, "mid", classMain,
-		},
-		"a chat model never serves decision": {classDecision, map[modelClass]string{classDecision: "mid"}, "", ""},
+		"a class with a model":                         {class: classFast, assigned: assign(classFast, "tiny", classMain, "mid"), def: "big", want: "tiny", via: classFast},
+		"deep falls back to main":                      {class: classDeep, assigned: assign(classMain, "mid"), want: "mid", via: classMain},
+		"fast falls back to main":                      {class: classFast, assigned: assign(classMain, "mid"), def: "big", want: "mid", via: classMain},
+		"main does not fall back to deep":              {class: classMain, assigned: assign(classDeep, "big")},
+		"fast does not fall back to deep":              {class: classFast, assigned: assign(classDeep, "big")},
+		"deep is its own when assigned":                {class: classDeep, assigned: assign(classDeep, "big", classMain, "mid"), want: "big", via: classDeep},
+		"a deleted model counts as none":               {class: classFast, assigned: assign(classFast, "gone", classMain, "mid"), want: "mid", via: classMain},
+		"nothing assigned and no default":              {class: classFast},
+		"main with no model is the default model":      {class: classMain, def: "big", want: "big", viaDef: true},
+		"fast reaches the default through main":        {class: classFast, assigned: assign(classDeep, "mid"), def: "big", want: "big", viaDef: true},
+		"deep reaches the default through main":        {class: classDeep, def: "big", want: "big", viaDef: true},
+		"a default that does not exist counts as none": {class: classMain, def: "gone"},
+		"a decision default counts as none":            {class: classMain, def: "judge"},
+		"decision has a decision model":                {class: classDecision, assigned: assign(classDecision, "judge"), want: "judge", via: classDecision},
+		"decision does not fall back to a chat one":    {class: classDecision, assigned: assign(classMain, "mid"), def: "big"},
+		"a decision model never serves a chat class":   {class: classFast, assigned: assign(classFast, "judge", classMain, "mid"), want: "mid", via: classMain},
+		"a chat model never serves decision":           {class: classDecision, assigned: assign(classDecision, "mid")},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, ok := resolveClass(c.class, c.assigned, models)
+			got, ok := resolveClass(c.class, c.assigned, models, c.def)
 			if c.want == "" {
 				if ok {
-					t.Fatalf("resolved to %q via %s, want no model", got.Model.Name, got.Via)
+					t.Fatalf("resolved to %q via %q, want no model", got.Model.Name, got.Via)
 				}
 				return
 			}
-			if !ok || got.Model.Name != c.want || got.Via != c.via {
-				t.Errorf("resolved to %q via %q (found %v), want %q via %q", got.Model.Name, got.Via, ok, c.want, c.via)
+			if !ok || got.Model.Name != c.want || got.Via != c.via || got.ViaDefault != c.viaDef {
+				t.Errorf("resolved to %q via %q, default %v (found %v), want %q via %q, default %v",
+					got.Model.Name, got.Via, got.ViaDefault, ok, c.want, c.via, c.viaDef)
 			}
 		})
 	}

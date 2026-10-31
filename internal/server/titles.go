@@ -123,7 +123,7 @@ func (t *titles) stop() {
 
 // titleModel returns the model that makes session titles: the fast class. A
 // missing fast model must not turn titles off, so the class falls back to
-// main. A title is not worth the cost of a hosted reasoning model, so titles
+// main, and main to the default model. A title is not worth the cost of a hosted reasoning model, so titles
 // are skipped when the fallback lands on the model the user assigned the deep
 // class and that model is on a hosted API. A fast model the user assigned
 // outright is used whatever it is.
@@ -133,7 +133,7 @@ func (s *Server) titleModel(ctx context.Context) (store.Model, bool, error) {
 		return store.Model{}, false, err
 	}
 	assigned := s.classAssignments(ctx)
-	choice, ok := resolveClass(classFast, assigned, models)
+	choice, ok := resolveClass(classFast, assigned, models, s.defaultModelName(ctx, models))
 	if !ok {
 		return store.Model{}, false, nil
 	}

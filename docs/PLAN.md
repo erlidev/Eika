@@ -1052,9 +1052,9 @@ later items.
     fixed when the model is added). `model_classes` (class to model name)
     replaces `utility_models`; the migration carries `session_title` to `fast`
     and a user who had assigned none keeps no class set. `internal/server/
-    classes.go` resolves a class: `deep -> main` and `fast -> main`, `main` and
-    `decision` have no fallback, an assignment whose model is gone counts as
-    unset. `internal/utility` lost `Task` and `Known`; titles run on `fast`
+    classes.go` resolves a class: `deep -> main` and `fast -> main`, then the
+    default model for a chat class (see "Revised before merge"), `decision` has
+    no fallback, an assignment whose model is gone counts as unset. `internal/utility` lost `Task` and `Known`; titles run on `fast`
     (`titleModel`). `GET` and `PUT /api/settings` now also report `classes`
     (each class with the model, the class it fell back from and the pool) and
     `titles_model`, so the UI shows which classes share a pool without a
@@ -1101,10 +1101,25 @@ later items.
     with thinking off through the template switch and got "Fix Infinite Login
     Loop". It runs `utility.Title` directly, not the server's class
     resolution, which the server tests cover.
-  - Skipped or open. `main` is not defaulted from `default_model`: a session
-    still picks its model that way, and a class setting is empty until the user
-    makes one, so titles stay off for a user who set no class, as before. Agents
-    (phase 2) decide whether `main` should read the default. The mock harness
+  - Revised before merge: `main` resolves to the default model when it has none,
+    so `fast -> main -> default model` makes titles work with no class set (I had
+    left `main` unset, which kept titles off for such a user, against the rule).
+    The default is the `default_model` setting, or the first chat model when it
+    names none or names a deleted or decision model; I used the effective default
+    a run uses, not the bare setting, because nothing in the guided setup writes
+    `default_model` and the bare setting would leave a fresh install without
+    titles. If a bare-setting reading was meant, it is `defaultModelName` in
+    `classes.go`. `classes[].via` is `default` for it, and the classes UI says
+    "Uses X, the default model". The skip rule applies through this path (a
+    hosted default that is also the `deep` model skips titles). Tests: nine new
+    resolver cases, six new docker title cases, the classes settings test; the
+    old "waits for a fast model" docker test is now "a failed title is tried
+    again by the next run", since a model now always serves titles. Changed
+    baselines, each looked at: `general-invalid` light and dark and
+    `classes-phone` (the rows now say what serves them), and the `general-classes`
+    ARIA snapshot (the Main hint). `make check` passes again (474 web tests, 138
+    visual).
+  - Skipped or open. The mock harness
     does not refuse a decision model for a profile, session or run, which the UI
     never offers; the Go tests do. The decision class is stored and resolved and
     nothing calls it. No emulation was built (`sentry.md` 9.3).
