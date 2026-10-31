@@ -229,27 +229,22 @@ Current caveats:
 | `provider`, `provider/openai`, timings | OpenAI-compatible streaming | Kept. Adds the Responses API as the preferred protocol, backend probing, exact token counting, cache metrics, slot hints, the System One kind |
 | `tool`, registry, `ask_user` broker | Stateless tools, in-memory broker | Kept. The broker becomes durable. A subagent's questions go to Eika, who asks the user in the Inbox when needed |
 | `event` bus, WebSocket, replay | Topics global, computer, session | Kept. Adds topics `inbox` and `activity`; drops `computer` |
-| `computer` (was `workspace`), `executor`, `eikad` | Coding sandboxes | Renamed to computers in phase 0. Worktree, clone and push code removed; per-exec environment kept |
+| `computer`, `executor`, `eikad` | Built in phase 0 (`ARCHITECTURE.md`) | Kept. Per-run egress identity and plugin cells are added (`runtime.md` 10) |
 | `egress`, `netguard` | Proxy in Core | Moved into Sentry; identity per run instead of per computer |
 | `secret` | Seals everything in Core | Kept in Core for model keys; Sentry has its own vault with its own key |
 | `mcp` | Pool in Core | Reused by Sentry's plugin host; stdio servers move from computers to plugin cells |
 | `search`, `fetch` | Core tools | Kept. Fetch goes through Sentry's proxy, and results are scanned |
-| `session` tree, entries, runs | Branching tree | Kept. Adds `preamble` and `notice` entry kinds and session kinds; commit SHAs removed; the UI shows it linear |
+| `session` tree, entries, runs | Branching tree | Kept. Adds `preamble` and `notice` entry kinds and session kinds; the UI shows it linear |
 | `profiles` | Run configurations | Replaced by agent definitions |
 | `utility` models | Task-to-model map | Replaced by model classes |
-| `subagent` spawner | One-shot children in git worktrees | Replaced by named, persistent, asynchronous subagents (`runtime.md` 9) |
-| `projects` (git), hub, worktrees, merge, diff, commit, push, previews, `contextfile` | Coding | Removed. "Project" is redefined |
-| Frontend | Dense three-pane workbench | New mobile-first shell; client, stream, reducer, Markdown, composer, settings and MCP screens kept |
-| Migrations 0001 to 0017 | Incremental | Squashed into a new baseline (fresh start) |
+| Subagents | Removed in phase 0 | Named, persistent, asynchronous subagents (`runtime.md` 9) |
+| Frontend | Chats workbench, without the coding UI | New mobile-first shell; client, stream, reducer, Markdown, composer, settings and MCP screens kept |
 
 ## Decisions this design rests on
 
 These came out of the design discussion. Each is recorded in `DECISIONS.md` when
 the phase that implements it lands.
 
-- The coding UI is removed. Sandboxes stay as Eika's computers, and git projects,
-  worktrees, the hub, and the files, terminal and diff panels go.
-- The database starts fresh from a new baseline migration.
 - Sentry is its own binary and container, with its own Postgres schema, role and
   key file.
 - llama.cpp, TabbyAPI/exllamav3 and vLLM/SGLang must all work. Exact token accounting

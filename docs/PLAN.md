@@ -195,7 +195,7 @@ before the routes it calls.
       freezes that content at first creation. A chat may attach to it, which
       gives `bash`, so the sandboxed path stays exercised until phase 2
       replaces chats.
-- [ ] Rewrite `README.md` for the assistant, and update the layout tables in
+- [x] Rewrite `README.md` for the assistant, and update the layout tables in
       `ARCHITECTURE.md`, `EXTENDING.md`, `docs/api/` and `AGENTS.md`. Settle the
       compatibility shims `REFACTOR_PLAN.md`'s log left to the owner
       (`config.movedToUI`, the README upgrade section, the `deploy/.env`
@@ -208,7 +208,7 @@ before the routes it calls.
       `STYLE_GUIDE.md` or `DECISIONS.md` now (for example, that `make check`
       did not catch the live-region change `make smoke` caught), so deleting
       the file in phase 15 loses nothing.
-- [ ] Add `DECISIONS.md` entries:
+- [x] Add `DECISIONS.md` entries:
       - scope (personal assistant)
       - coding layer removed
       - fresh baseline schema
@@ -216,7 +216,7 @@ before the routes it calls.
       - plugins unavailable to agents from phase 2 until phase 11 (accepted)
 - [x] Update `make smoke`: setup, provider, then a chat on the home computer
       running a sandboxed `bash`.
-- [ ] Re-measure lines and test counts against the `REFACTOR_PLAN.md` baseline and
+- [x] Re-measure lines and test counts against the `REFACTOR_PLAN.md` baseline and
       log them.
 
 **Exit:** on a fresh stack, the harness has made the home computer by the time
@@ -1034,6 +1034,101 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-30: phase 0 closed (branch `close-phase-0`).
+  - Items. README rewrite, shims and `go.mod` in `ad02eae`; the `DECISIONS.md`
+    entries in `fd6f916`; the re-measure below in `4a4167b`; the design
+    documents emptied of what phase 0 built in `75df9ca`; this entry in the
+    commit that carries it. Every item of phase 0 is ticked.
+  - Shims, as decided. `config.movedToUI` and `checkMovedKeys` are removed with
+    their test; the README upgrade section is removed. The `deploy/.env` lines
+    in `.gitignore` and `.dockerignore` are kept: nothing reads that file now,
+    but earlier versions had people keep provider keys in it and the
+    repository cannot say whether a checkout still holds one. `go.mod` has
+    `jackc/pgx/v5` in the direct block, and `go mod tidy` changes nothing
+    else. The README says an existing database must be reset and gives
+    `docker compose down -v`; it was not run.
+  - `make check` and `make smoke`. Both passed on `75df9ca`, and both were run
+    again on the commit that carries this entry, which changes only this
+    file: `make check` green (Go with the Docker tests, 36 Vitest files and 419
+    tests, 122 visual tests), `make smoke` green (both of its tests).
+  - Exit check, by hand, on a fresh `eika-smoke` stack (the `SMOKE_COMPOSE`
+    command from the Makefile, then `make smoke-down`), driven through the
+    UI by a Playwright script outside the repository and read from its
+    screenshots, not from `npm run shot`, which only reaches the mock
+    harness. Before any setup, with the harness up and no password set
+    (`GET /api/auth/status` said `password_set: false`),
+    `GET /api/computers` already listed `home` as `running` with a container,
+    its volume mounted at `/home/eika`. The UI then walked setup (password,
+    provider, models, "Check the computer": Docker and the sandbox image
+    ready), opened "New home chat" (header "Home computer", the empty state says
+    the model can run commands and keep files in `/home/eika`), and sent a
+    message. The scripted model called `bash`; the expanded tool card showed
+    `$ echo smoke-ok $(hostname) $(pwd)`, the output `smoke-ok 57434d81bc0f
+    /home/eika` and `exit code 0`, and the reply repeated it. `57434d81bc0f`
+    is the first twelve characters of the home container's id, which is what
+    `docker exec` into that container also printed as its hostname, while the
+    harness container's hostname was another. `docker ps` showed
+    `eika-cx-<id>` with the volume `eika-cx-<id>` at `/home/eika`, and the
+    container's user was uid 1000 with `HOME` `/home/eika`. The check passed.
+    The stack and its volumes were removed; the user's `eika` project and the
+    stray `eika-cx-rbyatlnnlii7v5tegnha` volume were not touched.
+  - Docs checks. The route and event docs tests pass, and a manual pass found
+    `docs/api/` current except for `api/README.md` saying there were two
+    WebSockets; fixed. Every `make` target in `README.md` and `AGENTS.md`
+    exists in the Makefile.
+  - Findings. `lib/lineDiff` and `DiffRows` still exist (the profile prompt
+    editor uses them), so `design/interface.md` no longer lists them as
+    removed. The API still serves the computer file routes and the session fork
+    route, which no UI calls and no phase removes; `DECISIONS.md` says so, so
+    phase 2 or 3 can decide. The baseline migration is frozen from here
+    (`EXTENDING.md`), while phase 4's item says every schema change "from phase 4
+    on" is a forward migration: phases 1 to 3 add `0002` and later, and phase 4
+    resets once more. Cross-feature imports are still 12 (below).
+  - Not run: the live bench (`make live`), which starts in phase 1; and the
+    reset command.
+  - Re-measure method. The baseline table does not say how it was measured,
+    so the method was found by trying: concatenating the files and counting lines
+    (`cat | wc -l`) reproduces the baseline's Go (36,738 and 23,629), TypeScript
+    (29,794), `internal/server` (9,840 lines in 28 files) and docs (4,241)
+    figures to the digit, on `be89235` unpacked into a scratch directory. Go
+    is `cmd` and `internal`, tests being `*_test.go`. TypeScript is every
+    `.ts` and `.tsx` under `web/src` except `components/ui`, test files
+    included. Docs are `AGENTS.md`, `README.md`, `docs/*.md` and `docs/api/*.md`,
+    without `PLAN.md` and `REFACTOR_PLAN.md`, which the baseline tree did not
+    have, nor `docs/design/`. The `doc.go` row counts `//` lines, 23 on the
+    baseline tree as recorded. Where the baseline's figure could not be
+    reproduced it is said below.
+  - Lines.
+
+    | Area | Baseline `be89235` | Now | Change |
+    |---|---|---|---|
+    | Go, non-test | 36,738 | 34,856 | -1,882 |
+    | Go, tests | 23,629 | 22,855 | -774 |
+    | TypeScript, `web/src` (no `components/ui`) | 29,794 | 27,370 | -2,424 |
+    | `internal/server` | 9,840 in 28 files | 8,865 in 37 files | -975 |
+    | Docs (as above) | 4,241 | 4,369 | +128 |
+    | `docs/api/http.md`, `EXTENDING.md`, `ARCHITECTURE.md` | 1,472, 767, 576 | 1,265, 762, 587 | |
+    | `doc.go` with over 10 comment lines | 23 of 37 | 20 of 35 | |
+    | Feature READMEs over 20 lines | 13 of 16 | 10 of 11 | |
+    | TODO / FIXME in code | 0 | 0 | |
+
+    The Go packages went from 39 to 38. The five largest Go files are now
+    `mcp/mcptest/server.go` 749, `mcp/client.go` 671, `search/engine.go` 612,
+    `server/run_manager.go` 580 and `mcp/tools.go` 553 (the baseline's largest,
+    `server/mcp.go` at 1,367, was split by `REFACTOR_PLAN.md`; the baseline
+    list left `mcptest/server.go` out, which the same `find` includes). The
+    largest TypeScript files are `e2e/harness/scenarios.ts` 955, `mock.ts` 875,
+    `session/transcript.ts` 821, `transcript.test.ts` 717 and `world.ts` 594.
+  - Tests. `make check` runs 36 Vitest files and 419 tests (baseline: 35 and
+    386) and 122 visual tests (baseline: 127). The baseline recorded no Go
+    count; counting `func Test` in `cmd` and `internal` gives 634, against 618 on
+    the baseline tree. Subtests are not counted in either.
+  - Not reproduced exactly: cross-feature imports that bypass `index.ts`. The
+    baseline says 11; a scan of `from "@/features/<a>/<file>"` outside
+    feature `<a>` finds 12 on the baseline tree and 12 now, so none of that
+    work was done (the `REFACTOR_PLAN.md` item moved into phase 3 here, and
+    `web/eslint.config.js` has no rule for it yet).
 
 - 2026-10-30: test stacks off `eika-sandbox:latest`, and the `make smoke`
   update (branch `smoke-home`).

@@ -8,15 +8,44 @@ this file says why, so neither repeats the other.
 
 ## Scope
 
-- **Origin.** A Go port of the [Pi coding agent](https://github.com/badlogic/pi-mono)
-  core (loop, tools, session trees) plus sandboxed computers,
-  subagents, web search, MCP, and a web UI, built so agents can modify Eika.
-- **Deferred:** skills and templates, a Responses API provider, a forge API for pull
-  requests (the UI builds a compare link from `remote_url`).
+- **Eika is a personal assistant that runs on hardware the user owns.** One
+  person talks to it, and it works in sandboxed computers on their behalf.
+  Memory, skills, a scheduler, a permission authority (Sentry), a browser and
+  chat channels are planned in `PLAN.md` and `design/`, and built phase by
+  phase; today there are chats, the `home` computer, a sandboxed `bash`, web
+  search and MCP. It is not a coding harness: it is not meant to edit a
+  repository, review a diff, or serve a developer's workbench. Not goals for
+  now: several users, payments, voice, a native mobile app, and agents that
+  write their own skills.
+- **Origin.** The agent loop, tools and session trees are a Go port of the
+  [Pi coding agent](https://github.com/badlogic/pi-mono) core.
+- **Deferred:** everything in `PLAN.md` after phase 0, in its phase order.
 - **Extensibility is source-level.** Implement an interface, register it in
   one registry file, rebuild. No runtime plugin loader, no `init()`
   registration.
 - **Single user.** One password; an optional `EIKA_AUTH_TOKEN` for scripts.
+
+## The coding layer is removed
+
+- **Phase 0 of `PLAN.md` removed everything that made Eika a coding
+  harness.** In the UI: the files, terminal, changes, workspaces and
+  projects features, the session tree panel and fork UI, the diff libraries,
+  Monaco and xterm, and the sidebar of projects and workspaces; the sidebar
+  lists chats. On the server: the git layer, worktrees, subagents, previews,
+  the terminal and eikad `/pty`, context-file discovery, and projects. Each
+  has its own entry below (Sandboxes, Git, Tools, Subagents). The reason is
+  the scope: an assistant is talked to, and its agent is the only thing that
+  uses a computer, so every way for a person to work in one by hand is
+  surface to defend in an install that holds private data, for a use it does
+  not have. Rejected: keeping the coding layer as a second mode beside the
+  assistant.
+- **What stayed is the sandbox work** (computers, eikad, the egress proxy,
+  sealed secrets, the MCP client, search) and the loop and session tree.
+  The API still serves a computer's file routes and a session's fork route,
+  which no UI calls; no phase removes them yet.
+- What went is recoverable: the `PLAN.md` log names the commit
+  (`478ce9c`) that last had the subagent spawner and the preview ticket flow,
+  and says which parts phases 2 and 12 reuse.
 
 ## Stack and dependencies
 
@@ -54,6 +83,17 @@ this file says why, so neither repeats the other.
 
 ## Sandboxes
 
+- **Computers, not workspaces.** A sandbox is Eika's own machine, with a
+  disk that outlives its container, not a checkout of a repository made for
+  one task. "Workspace" carried the second meaning (a branch, a base commit,
+  a project) everywhere it appeared, and "project" returns in phase 2 for
+  something else (a home for related sessions), so the word was freed
+  rather than reused. The rename was made throughout in one pass, without
+  aliases: package `computer`, `/api/computers`, the event `computer.state`
+  and topic `computer:<id>`, containers and volumes `eika-cx-<id>`, the label
+  `eika.computer`, the setting `computer_idle_minutes`, and `computer_id` on
+  the wire. The old label is not recognised, so an old install's containers
+  are not adopted. The default computer is `home` (below).
 - **Every agent action on files or processes runs in the computer
   container** through `executor.Executor`. Network actions (model calls,
   search, fetch, the egress proxy, remote MCP) run in the harness; model
@@ -75,8 +115,7 @@ this file says why, so neither repeats the other.
   publishes eikad on loopback for `make dev`.
 - **The sandbox config is a row** (`computers.sandbox`): desired state,
   applied at create, on `PUT .../sandbox`, and on every start, so partial
-  applies converge. Children share the parent's container, so they cannot
-  escape its confinement. Default: 4096 processes, nothing else.
+  applies converge. Default: 4096 processes, nothing else.
 - **Limits change live** with `ContainerUpdate`: recreating would reset
   everything outside the volume at `/home/eika`. Docker cannot lift a CPU or memory limit,
   so "no limit" on an existing container means the whole host. Swap equals
@@ -215,11 +254,16 @@ this file says why, so neither repeats the other.
 - A chat is a session with `computer_id` NULL: same tree, run manager, and
   view. Created explicitly (`chat: true`), and a computer's sessions cascade
   with it rather than becoming chats.
-- **Fresh baseline schema.** Turning Eika into an assistant drops most of the
-  coding schema, so its 17 migrations were squashed into `0001_baseline.sql`
-  and existing databases are not migrated: a deployment starts fresh. Until
-  phase 0 closes the baseline is edited in place; after that, migrations are
-  append-only again. Phase 4 starts fresh once more for Sentry.
+- **Fresh baseline schema.** Turning Eika into an assistant dropped most of
+  the coding schema (projects, worktrees, subagents, commit SHAs) and renamed
+  the table at its centre, so its 17 migrations were squashed into
+  `0001_baseline.sql` and no database is migrated: a deployment starts fresh,
+  and the README gives the reset. Phase 0 edited the baseline in place as each
+  removal landed, which is also why a database made part-way through cannot
+  be kept (the migrator records only a file's name). With phase 0 closed it is
+  frozen, and migrations are append-only again. Phase 4 starts fresh once more
+  for Sentry. Rejected: a migration from the old schema, which would be code
+  that runs once, for a deployment with one user.
 - **Schema `core`.** Core's tables live in their own schema rather than
   `public`, so Sentry's schema can sit beside it in the same database with
   its own grants.
@@ -498,6 +542,15 @@ this file says why, so neither repeats the other.
   an https `public_url`), dynamic registration.
 - Elicitation is supported; roots, sampling, and logging are deprecated in
   `2026-07-28` and not declared.
+- **No agent can use a plugin from phase 2 until phase 11 (accepted).** Today
+  a chat gets MCP tools through its tool choice, which a profile or the
+  session sets. Phase 2 replaces profiles with agent definitions that have
+  fixed tool lists, and a plugin call must be decided by Sentry (phase 4)
+  and sent through its plugin host (phase 11) rather than made from Core, so
+  until then no agent definition holds one. The pool, the MCP screens, OAuth
+  and the server logs stay in Core and keep working: a server can be added
+  and connected, and no agent calls it. Rejected: a stopgap for choosing
+  plugin tools in agent definitions, which phase 11 would replace.
 
 ## Search
 
@@ -530,12 +583,10 @@ this file says why, so neither repeats the other.
   not depend on a feature). Any 401 forgets it.
 - Moving the head rebuilds the transcript, since replay only adds; the
   composer text lives in the session store so a rewind can refill it.
-- Rewind is in the transcript, forking in the tree panel. Nothing is deleted.
-- Forks nest under their parent session in the sidebar.
+- Rewind is in the transcript. Nothing is deleted.
 - Destructive actions confirm in `ConfirmDialog`, not `window.confirm`.
-- A sidebar row's quick buttons (a computer's start or stop and new
-  session) always show; hiding them until hover made starting a computer a
-  hunt, and touch screens have no hover.
+- A sidebar row's quick buttons always show; hiding them until hover made
+  them a hunt, and touch screens have no hover.
 - Transcript display preferences are per browser, not harness settings.
 - **A message is written as markdown source and shown rendered once sent.**
   The composer marks the source up as it is typed with a styled copy drawn

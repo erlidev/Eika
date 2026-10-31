@@ -68,13 +68,6 @@ type Config struct {
 	PublicURL string `yaml:"public_url"`
 }
 
-// movedToUI names the file keys earlier versions read that are now settings
-// in the web UI, with where to find each. A file that still sets one fails
-// with that pointer rather than a bare unknown-field error.
-var movedToUI = map[string]string{
-	"models": "models are added in the web UI under Settings, Models",
-}
-
 // ErrNoConfigFile reports that a named configuration file does not exist.
 var ErrNoConfigFile = errors.New("config file not found")
 
@@ -116,9 +109,6 @@ func Load(path string) (Config, error) {
 			}
 			return Config{}, fmt.Errorf("read config %s: %w", path, err)
 		}
-		if err := checkMovedKeys(data); err != nil {
-			return Config{}, fmt.Errorf("parse config %s: %w", path, err)
-		}
 		dec := yaml.NewDecoder(bytes.NewReader(data))
 		dec.KnownFields(true)
 		// An empty or comment-only file decodes to io.EOF; that means the
@@ -139,21 +129,6 @@ func Load(path string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
-}
-
-// checkMovedKeys rejects a file that sets a key the web UI owns now.
-func checkMovedKeys(data []byte) error {
-	var keys map[string]any
-	if err := yaml.Unmarshal(data, &keys); err != nil {
-		// The strict decode that follows reports a malformed file better.
-		return nil
-	}
-	for key, where := range movedToUI {
-		if _, ok := keys[key]; ok {
-			return fmt.Errorf("%s is no longer read from the file: %s; remove it", key, where)
-		}
-	}
-	return nil
 }
 
 // applyEnv overlays the EIKA_* environment variables onto c.

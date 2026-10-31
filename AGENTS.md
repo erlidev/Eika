@@ -1,8 +1,10 @@
 # Working on Eika
 
-Eika is a Docker-native agentic coding harness written in Go (backend) and
-React + TypeScript (frontend). This file is the entry point for any agent or
-human changing the codebase. Read it fully before editing.
+Eika is a personal assistant that runs locally in Docker, written in Go
+(backend) and React + TypeScript (frontend). It is being built in phases
+(`docs/PLAN.md`); today it runs chats, the `home` computer and a sandboxed
+`bash`. This file is the entry point for any agent or human changing the
+codebase. Read it fully before editing.
 
 ## Start here
 
@@ -49,8 +51,10 @@ internal/store     Postgres          internal/config    deployment config
 internal/secret    sealed secrets    web/               frontend
 internal/egress    sandbox egress    internal/netguard  public-only dials
 internal/mcp       MCP client        internal/utility   utility model tasks
-sandbox/           sandbox image     compose.yaml       the whole stack
-deploy/            entrypoint, searxng  docs/           documentation
+internal/event     event bus         internal/eikad     sandbox daemon wire
+internal/imaging   image input       sandbox/           sandbox image
+compose.yaml       the whole stack   deploy/            entrypoint, searxng
+docs/              documentation
 ```
 
 Dependencies point inward. `server` may import `agent`; `agent` may import

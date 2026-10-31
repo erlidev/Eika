@@ -38,20 +38,15 @@ Kept:
 - `Markdown`, the composer and `MarkdownField`, attachments and images
 - `ToolCard` and the renderer registry
 - the elicitation form (moved into Inbox cards)
-- provider, model and MCP settings screens, connect and setup (minus the project
-  step)
+- provider, model and MCP settings screens, connect and setup
 - `Notice`, `ConfirmDialog` and `ResizableSplit`
 - the Context inspector
 - the mock harness, the contract checking and `npm run shot`
+- `lib/lineDiff` and `DiffRows`, which the prompt editor uses to show a custom
+  prompt against the built-in one
 
-Removed in phase 0:
-
-- files, terminal, changes, sandbox, workspaces, git projects
-- the workbench's projects, workspaces and sessions sidebar
-- the panels that only those used, the session tree panel and the fork UI
-- `lib/unifiedDiff`, `lineDiff`, `github`, `DiffRows`
-- Monaco and xterm. The Memory and Skills editors use `MarkdownField` and a plain
-  textarea for frontmatter-free files. Monaco is dropped as a dependency.
+The Memory and Skills editors use `MarkdownField` and a plain textarea for
+frontmatter-free files.
 
 ## 3. Mobile first
 

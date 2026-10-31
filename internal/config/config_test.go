@@ -102,20 +102,6 @@ auth_token: "s3cret"
 	}
 }
 
-func TestLoadPointsSettingsThatMovedToTheUI(t *testing.T) {
-	clearEnv(t)
-	for key, body := range map[string]string{
-		"models": "models:\n  - name: gpt-5\n",
-	} {
-		t.Run(key, func(t *testing.T) {
-			_, err := config.Load(writeConfig(t, body))
-			if err == nil || !strings.Contains(err.Error(), "web UI") {
-				t.Errorf("load = %v, want an error pointing at the web UI", err)
-			}
-		})
-	}
-}
-
 func TestLoadFileErrors(t *testing.T) {
 	clearEnv(t)
 	t.Run("missing file", func(t *testing.T) {

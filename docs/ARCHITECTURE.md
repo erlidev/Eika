@@ -176,7 +176,7 @@ session's computer.
 
 ### Chats
 
-A chat's run gets no executor and no commit function. `sessionTools` drops
+A chat's run gets no executor. `sessionTools` drops
 every tool that `NeedsComputer`, then applies the tool choice, so the model is
 never offered a computer tool; the loop also refuses one. The system prompt
 is the same base prompt every session has. web_fetch refuses filters in a chat.
@@ -246,8 +246,7 @@ POST /api/sessions/{id}/messages          GET /api/events
   as 400. Anything unmapped is logged and returned as `internal error`.
 - **Run manager**: one goroutine per run, one run per session (a
   placeholder is reserved under the lock before slow work). The client gets
-  the run row immediately and follows events. Assistant entries record HEAD
-  via `git rev-parse HEAD` through the executor. `FinishRun` retries on a
+  the run row immediately and follows events. `FinishRun` retries on a
   context that outlives the run and continues in the background past 30 s.
   Startup aborts stale `running` rows. Stopping or deleting a computer or
   session, and shutdown, abort the runs involved first.
@@ -273,7 +272,6 @@ compose stack, which sets only `EIKA_DATABASE_URL`. Notable fields:
   after the one derived from `listen`.
 - `public_url`: when https, serves the OAuth Client ID Metadata Document.
 - `auth_token`: optional fixed API token.
-- A file that still sets `models` is refused with a pointer to the UI.
 
 Everything a user chooses is a database row. Stored credentials are sealed
 with the 32-byte key in `secret_key_file` (`/var/lib/eika/secret.key`,
@@ -374,7 +372,8 @@ capacity (`Host.Capacity`). `Host.Usage` samples `docker stats`;
 ```
 
 `egress.Proxy` takes `CONNECT` and absolute `http://` requests, identifies the
-sandbox from `Proxy-Authorization`, asks `Server.EgressPolicy` per request,
+sandbox from `Proxy-Authorization` (the computer's id and a proxy token of its
+own, made at create and read back by `Inspect`), asks `Server.EgressPolicy` per request,
 dials through `netguard`, and answers refusals with 403, remembered per
 computer (`Proxy.Blocked`). It serves only when both networks exist
 (`Host.EgressControl`). Switching modes connects the container to the new
@@ -513,11 +512,10 @@ web/src/
   Chats get Tools; every session gets Run and Context (window fill, token bar
   by part, key parameters; the Context inspector dialog shows a request whole
   with links to the layer behind each part). `ResizableSplit` remembers
-  widths; below 1024px side panes become drawers. The coding UI (projects,
-  computers, files, terminal, changes, the session tree and fork) is gone
-  from the frontend; the computer, file and fork routes it called stay until
-  a later phase 0 item removes them (the project, terminal and preview routes
-  are already gone).
+  widths; below 1024px side panes become drawers. The UI has no panel for a
+  computer's files, no terminal, and no session tree or fork. The API still
+  serves the file and fork routes, which the UI does not call; rewind uses the
+  outline and head routes.
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
   events (`useSessionStream`, `useMCPEvents`,
   `useSessionUpdates`).
@@ -565,6 +563,8 @@ An arrow means "may import".
   it a `Store` and a `Launcher`.
 - `search` imports nothing from `internal/`; goja (`search/filter`) is linked
   into eikad only.
+- `internal/imports_test.go` holds these rules as a list of boundaries; an
+  exception names the importing package and says why.
 
 ## Testing
 
@@ -578,7 +578,10 @@ ESLint, `tsc`, Vitest, then the visual suite. Go targets name
   computers) use `storetest` and skip without a daemon.
 - Contract: `docs/api/contract.json` is generated from the wire types; handler
   tests check responses against it and the mock harness checks requests,
-  responses, and events.
+  responses, and events. `docs_test.go` in `server` keeps `docs/api/http.md`
+  listing every route in `routes.go` and nothing else, and `events.md` listing
+  every event type.
 - Frontend: Vitest for logic; Playwright specs in `web/e2e/` against the mock
   harness (`make visual`); `npm run shot` for screenshots.
-- `make smoke`: the real stack from setup to a sandboxed bash call.
+- `make smoke`: the real stack, from setup and a provider to a plain chat and
+  then a chat on the home computer whose `bash` call runs in its container.
