@@ -123,7 +123,7 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 		if err != nil {
 			return response{}, Context{}, counted{}, err
 		}
-		q := &queued{tokens: a.callTokens(pred.Tokens, sent)}
+		q := a.newQueued(pred.Tokens, sent)
 		resp, err := a.retrying(ctx, s, runID, true, func() (response, error) {
 			return a.stream(ctx, s, runID, sent.Request(), gen, q)
 		})
@@ -228,6 +228,12 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 		return response{}, fmt.Errorf("call model: %w", err)
 	}
 	defer lease.Release()
+	// The lease says which slot of the server the call should run on, when the
+	// endpoint has slots to name. It is set on this copy of the request, after
+	// the request was sized, and not on what the counter keeps.
+	if slot, ok := lease.SlotHint(); ok {
+		req.SlotHint = &slot
+	}
 	// The provider's goroutine must be told to stop on every way out, or the
 	// server goes on generating for a caller that has left.
 	callCtx, stop := context.WithCancel(lease.Context())

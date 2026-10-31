@@ -76,7 +76,12 @@ Run(ctx, session, text)
   recorded outcome (`capabilities.responses`) was made against another server
   build or another model than the one it would ask now; the outcome picks the
   provider's `api` (`responses` only when it passed), which a user's own choice
-  overrides. `server/providers_responses.go` runs it.
+  overrides. `server/providers_responses.go` runs it. `probe.CheckSlotAffinity`
+  is the second such check, for a llama.cpp server with several slots: three
+  small requests that name slots to see whether a named slot keeps its prefix
+  across a request on the other, on the same schedule, recorded in
+  `capabilities.slot_affinity` (`server/providers_slots.go`). Only a pass makes
+  the harness send `id_slot`.
 - **inference** (`inference`) is the queue between the loop and the GPU.
   `Queue.Acquire(ctx, Need)` blocks until the call's pool has a slot (and, on
   a pool with a cache size, room: predicted prompt plus maximum output of
@@ -85,7 +90,13 @@ Run(ctx, session, text)
   (`queue_ms`) is outside the response's timings, and releases it on every way
   out; a preempted attempt fails with a retryable error the retry path takes
   without spending its budget. Titles, the model test and the Responses check
-  hold a lease around their call through `Queue.Do`. The server describes the
+  hold a lease around their call through `Queue.Do`. On a llama.cpp endpoint
+  with several slots that passed the slot affinity check, the queue also keeps
+  a book of what each slot of the server holds (`inference/affinity.go`): a call
+  that continues a session (`Need.Affinity`) gets the slot with the session's
+  prefix, `Lease.SlotHint` says which, the loop sets it on the request as
+  `Request.SlotHint`, and the OpenAI providers send it as `id_slot` on both
+  routes. Every other call names no slot. The server describes the
   queue from the provider rows and three settings (`server/inference.go`) and
   serves its state on `GET /api/inference`.
   `internal/modelcalls_test.go` lists the files that send a model request.
@@ -235,7 +246,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, api (`chat` or `responses`), capabilities (jsonb, with the Responses check's outcome), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
 | `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
-| `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot`, `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
+| `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot` (the server's slot the request named, NULL when it named none), `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |

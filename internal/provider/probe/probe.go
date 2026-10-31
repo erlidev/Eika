@@ -102,12 +102,17 @@ type Capabilities struct {
 	Counting Counting `json:"counting"`
 	// CacheMetrics says whether the endpoint reports cached prompt tokens.
 	CacheMetrics CacheMetrics `json:"cache_metrics"`
-	// SlotHints is whether a request may name the slot it wants.
+	// SlotHints is whether a request may name the slot it wants: the server
+	// takes the field. Whether naming one helps is SlotAffinity's verdict.
 	SlotHints bool `json:"slot_hints"`
 	// Responses is the outcome of the Responses conformance check, absent
 	// until it has run. Run does not run it: it asks the model, which the
 	// routes Run reads never do.
 	Responses *Conformance `json:"responses,omitempty"`
+	// SlotAffinity is the outcome of the slot affinity check, absent until it
+	// has run, and for a server whose requests cannot name a slot. Like
+	// Responses it asks the model, so Run does not run it.
+	SlotAffinity *SlotAffinity `json:"slot_affinity,omitempty"`
 }
 
 // Details is what a server says about the model it loaded. Only llama.cpp

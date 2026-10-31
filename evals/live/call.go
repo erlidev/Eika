@@ -60,6 +60,9 @@ type Call struct {
 	CountSeconds *float64 `json:"count_seconds"`
 	// StopReason is why the model stopped, such as stop or length.
 	StopReason string `json:"stop_reason,omitempty"`
+	// Slot is the id_slot the request named; nil for a request that named
+	// none.
+	Slot *int `json:"id_slot,omitempty"`
 }
 
 // String states the call on one line, with "n/a" for what nothing measured.
@@ -81,8 +84,12 @@ func (c Call) String() string {
 	if method == "" {
 		method = "not predicted"
 	}
-	return fmt.Sprintf("%s: prompt %s tokens, cached %s, hit rate %s, prefill %s, wall %.2f s, predicted %s (%s), drift %s",
+	line := fmt.Sprintf("%s: prompt %s tokens, cached %s, hit rate %s, prefill %s, wall %.2f s, predicted %s (%s), drift %s",
 		c.Label, count(c.PromptTokens), count(c.CachedTokens), rate, prefill, c.WallSeconds, count(c.Predicted), method, count(c.Drift))
+	if c.Slot != nil {
+		line += fmt.Sprintf(", id_slot %d", *c.Slot)
+	}
+	return line
 }
 
 // newCall builds a Call from what the provider reported for one response.

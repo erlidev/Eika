@@ -210,7 +210,7 @@ func (s *Server) handleProbeProvider(w http.ResponseWriter, r *http.Request) {
 	// it keeps the protocol every provider starts with.
 	api := provider.APIChat
 	if record {
-		res, api = s.withConformance(r.Context(), p, key, res, true)
+		res, api = s.withChecks(r.Context(), p, key, res, true)
 	}
 	out := probeResponse{Models: models, Probe: asProbe(res, api)}
 	if record {

@@ -60,6 +60,9 @@ func TestScenarios(t *testing.T) {
 			for _, c := range res.Calls {
 				t.Log(c)
 			}
+			for _, n := range res.Notes {
+				t.Log(n)
+			}
 			if res.Error != "" {
 				t.Error(res.Error)
 			}

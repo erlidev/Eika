@@ -39,6 +39,11 @@ type Endpoint struct {
 	// Window is the per-request context the probe reported, zero when it
 	// stated none. An unknown KV is admitted against it.
 	Window int
+	// SlotHints reports that the server takes a request naming the slot it
+	// runs on (llama.cpp with several slots), and Slots is then the number of
+	// slots the server has. A slot number means something on one server only,
+	// so the queue keeps the endpoint's own books.
+	SlotHints bool
 }
 
 // poolName is the pool the endpoint belongs to.
@@ -75,6 +80,11 @@ type Pool struct {
 	// its predicted prompt plus maximum output. Zero means only Slots limit
 	// admission.
 	Cache int
+	// Hinted are the endpoints of the pool that take slot hints, by name. Each
+	// has slot numbers of its own: the pool's Slots limit how many calls run
+	// at once on all of them, and a hinted endpoint may have more slots than
+	// that, to keep more sessions' prefixes warm.
+	Hinted []SlotEndpoint
 }
 
 // Pools groups endpoints into pools, merging the rows of one pool by taking
@@ -99,10 +109,14 @@ func Pools(endpoints []Endpoint) []Pool {
 		if b := e.budget(); b > 0 && (p.Cache == 0 || b < p.Cache) {
 			p.Cache = b
 		}
+		if e.SlotHints && slots > 1 {
+			p.Hinted = append(p.Hinted, SlotEndpoint{Name: e.Name, Slots: slots})
+		}
 	}
 	out := make([]Pool, 0, len(byName))
 	for _, p := range byName {
 		slices.Sort(p.Endpoints)
+		slices.SortFunc(p.Hinted, func(a, b SlotEndpoint) int { return cmp.Compare(a.Name, b.Name) })
 		out = append(out, *p)
 	}
 	slices.SortFunc(out, func(a, b Pool) int { return cmp.Compare(a.Name, b.Name) })
@@ -147,17 +161,25 @@ type Policy struct {
 	// PreemptRunning lets an interactive call that cannot be admitted cancel
 	// running background and maintenance calls, which their callers retry.
 	PreemptRunning bool
+	// PrefillRate is the prompt tokens per second a server is assumed to read,
+	// which prices a session's prefix: a call waits for the busy slot that
+	// holds it for as long as reading it again would take. Zero means
+	// DefaultPrefillRate.
+	PrefillRate int
 }
 
 // DefaultPolicy returns the policy the settings start with.
 func DefaultPolicy() Policy {
-	return Policy{MaintenanceIdle: DefaultMaintenanceIdle, Aging: DefaultAging}
+	return Policy{MaintenanceIdle: DefaultMaintenanceIdle, Aging: DefaultAging, PrefillRate: DefaultPrefillRate}
 }
 
 // normalised returns p with its fields made usable.
 func (p Policy) normalised() Policy {
 	if p.Aging <= 0 {
 		p.Aging = DefaultAging
+	}
+	if p.PrefillRate <= 0 {
+		p.PrefillRate = DefaultPrefillRate
 	}
 	p.MaintenanceIdle = max(p.MaintenanceIdle, 0)
 	return p

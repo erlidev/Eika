@@ -168,6 +168,25 @@ export type Conformance = {
   drift: number;
 };
 
+/**
+ * SlotAffinity is what the slot affinity check found out on a llama.cpp
+ * server with several slots: whether a request that names a slot finds its
+ * prefix there after a request ran on another, asked of one model on one build
+ * of the server. Only `passed` lets the harness name slots.
+ */
+export type SlotAffinity = {
+  verdict: "passed" | "failed" | "skipped";
+  /** reason says why the check failed or was skipped. */
+  reason?: string;
+  /** model is the model the check asked, and build the server's build then. */
+  model?: string;
+  build?: string;
+  checked_at: string;
+  /** prompt_tokens is the first request's prompt, and cached_tokens how much of it the last found cached. */
+  prompt_tokens?: number;
+  cached_tokens?: number;
+};
+
 /** Capabilities is what the last successful probe found beyond the settings. */
 export type Capabilities = {
   /** build is the version the server reported, such as llama.cpp's b11942-338fce651. */
@@ -178,10 +197,12 @@ export type Capabilities = {
   counting: "chat" | "text" | "none";
   /** cache_metrics says whether the endpoint reports cached prompt tokens. */
   cache_metrics: "reported" | "unknown";
-  /** slot_hints is whether a request may name the slot it wants. */
+  /** slot_hints is whether a request may name the slot it wants: the server takes the field. */
   slot_hints: boolean;
   /** responses is the outcome of the Responses check; absent until it has run. */
   responses?: Conformance;
+  /** slot_affinity is the outcome of the slot affinity check; absent until it has run and for servers with no slots to name. */
+  slot_affinity?: SlotAffinity;
 };
 
 /** ProviderField names a probed field the user can set in place of the probe. */

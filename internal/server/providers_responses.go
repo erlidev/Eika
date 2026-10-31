@@ -26,6 +26,8 @@ func providerEndpoint(p store.Provider, key string) provider.Endpoint {
 		APIKey:  key,
 		API:     provider.API(p.API),
 		Hosted:  hostedEndpoint(p),
+
+		SlotHints: takesSlotHints(p),
 	}
 }
 

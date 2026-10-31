@@ -240,7 +240,7 @@ func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []pr
 			c.Parameters.Sampling.ReasoningEffort = effort
 			// A summary is a model call of the run that needed it, queued at
 			// the run's own priority.
-			q := &queued{tokens: a.callTokens(prompt, c)}
+			q := a.newQueued(prompt, c)
 			resp, err := a.retrying(ctx, s, "", false, func() (response, error) {
 				return a.stream(ctx, s, "", c.Request(), nil, q)
 			})

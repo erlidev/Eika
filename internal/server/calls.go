@@ -60,9 +60,9 @@ type modelCallBody struct {
 	// Endpoint is the provider's name when the call was made.
 	Endpoint string `json:"endpoint,omitempty"`
 	// QueueMS is how long the call waited for a lease on its pool, Slot the
-	// queue's slot number of the lease that served it (the server's own slot
-	// only once slot affinity sends it), Class the model class the run was
-	// resolved from and Priority what the call asked for: interactive,
+	// slot of the server the request named (id_slot), null when it named none
+	// because its endpoint has no slots to name, Class the model class the run
+	// was resolved from and Priority what the call asked for: interactive,
 	// foreground, background or maintenance. They are null or absent for a
 	// call recorded before the queue existed, and Class for a run that named
 	// its model. Agent is null until the agents fill it.
@@ -221,13 +221,13 @@ func queueMS(q agent.QueueRecord) *int {
 	return new(int(q.Waited.Milliseconds()))
 }
 
-// slotOf is the queue slot that served a call, nil for a call that took no
-// lease.
+// slotOf is the slot of the server a call named, nil for a call that named
+// none: one that took no lease, or ran on an endpoint with no slots to name.
 func slotOf(q agent.QueueRecord) *int {
 	if !q.Queued {
 		return nil
 	}
-	return new(q.Slot)
+	return q.Slot
 }
 
 // prefillMS is the time the endpoint said it took to read the prompt, nil

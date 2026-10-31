@@ -25,6 +25,9 @@ import (
 // endpoint and lists the models it serves.
 type Provider struct {
 	client openai.Client
+	// slotHints reports that the endpoint takes id_slot, so a request's
+	// SlotHint is sent.
+	slotHints bool
 }
 
 // New returns a Provider on one endpoint. An empty key is sent as it is,
@@ -48,14 +51,25 @@ func New(e provider.Endpoint) (provider.Provider, error) {
 		// the idle connection it went out on.
 		option.WithHTTPClient(provider.NewHTTPClient(0)),
 	}
-	return &Provider{client: openai.NewClient(opts...)}, nil
+	return &Provider{client: openai.NewClient(opts...), slotHints: e.SlotHints}, nil
 }
 
 // Stream sends one request and converts the SDK's chunks into provider events.
 // The returned channel is closed after a done or error event; a caller that
-// stops reading must cancel ctx.
+// stops reading must cancel ctx. A request's slot hint goes out as id_slot to
+// an endpoint that takes it, and a server that refuses the field is sent the
+// request again without it.
 func (p *Provider) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
-	params, err := p.params(req)
+	return streamWithSlot(ctx, req, p.slotHints, p.stream)
+}
+
+// stream is one attempt at a request, naming its slot when withSlot says so.
+func (p *Provider) stream(ctx context.Context, req provider.Request, withSlot bool) (<-chan provider.Event, error) {
+	var slot *int
+	if withSlot {
+		slot = req.SlotHint
+	}
+	params, err := p.params(req, slot)
 	if err != nil {
 		return nil, err
 	}
@@ -71,9 +85,11 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request) (<-chan pro
 
 // ChatBody returns the JSON body Stream sends for req, without the stream
 // flag. A server's rendering route takes the same body, which is how the token
-// counter sees exactly what the model will be sent.
+// counter sees exactly what the model will be sent. It never names a slot:
+// that decides where the server runs the request and not what it reads, and
+// the rendering route has no use for it.
 func (p *Provider) ChatBody(req provider.Request) ([]byte, error) {
-	params, err := p.params(req)
+	params, err := p.params(req, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -213,8 +229,9 @@ func reasoningContent(delta openai.ChatCompletionChunkChoiceDelta) string {
 	return fields.ReasoningContent
 }
 
-// params builds the SDK request for one provider request.
-func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams, error) {
+// params builds the SDK request for one provider request, naming slot when it
+// is not nil.
+func (p *Provider) params(req provider.Request, slot *int) (openai.ChatCompletionNewParams, error) {
 	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(req.Messages)+1)
 	if req.System != "" {
 		messages = append(messages, openai.SystemMessage(req.System))
@@ -285,6 +302,9 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 	}
 	if req.PreserveThinking {
 		extra["preserve_thinking"] = true
+	}
+	if slot != nil {
+		extra[slotField] = *slot
 	}
 	if len(extra) > 0 {
 		params.SetExtraFields(extra)

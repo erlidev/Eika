@@ -126,6 +126,7 @@
                           "priority": "string",
                           "session_id": "string",
                           "slot": "number",
+                          "slot_named": "boolean",
                           "tokens": "number"
                         },
                         "optional": [
@@ -771,12 +772,31 @@
                           "reason"
                         ]
                       },
+                      "slot_affinity": {
+                        "object": {
+                          "build": "string",
+                          "cached_tokens": "number",
+                          "checked_at": "string",
+                          "model": "string",
+                          "prompt_tokens": "number",
+                          "reason": "string",
+                          "verdict": "string"
+                        },
+                        "optional": [
+                          "build",
+                          "cached_tokens",
+                          "model",
+                          "prompt_tokens",
+                          "reason"
+                        ]
+                      },
                       "slot_hints": "boolean",
                       "window": "number"
                     },
                     "optional": [
                       "build",
                       "responses",
+                      "slot_affinity",
                       "window"
                     ]
                   },
@@ -2788,12 +2808,31 @@
                   "reason"
                 ]
               },
+              "slot_affinity": {
+                "object": {
+                  "build": "string",
+                  "cached_tokens": "number",
+                  "checked_at": "string",
+                  "model": "string",
+                  "prompt_tokens": "number",
+                  "reason": "string",
+                  "verdict": "string"
+                },
+                "optional": [
+                  "build",
+                  "cached_tokens",
+                  "model",
+                  "prompt_tokens",
+                  "reason"
+                ]
+              },
               "slot_hints": "boolean",
               "window": "number"
             },
             "optional": [
               "build",
               "responses",
+              "slot_affinity",
               "window"
             ]
           },
@@ -3631,12 +3670,31 @@
                   "reason"
                 ]
               },
+              "slot_affinity": {
+                "object": {
+                  "build": "string",
+                  "cached_tokens": "number",
+                  "checked_at": "string",
+                  "model": "string",
+                  "prompt_tokens": "number",
+                  "reason": "string",
+                  "verdict": "string"
+                },
+                "optional": [
+                  "build",
+                  "cached_tokens",
+                  "model",
+                  "prompt_tokens",
+                  "reason"
+                ]
+              },
               "slot_hints": "boolean",
               "window": "number"
             },
             "optional": [
               "build",
               "responses",
+              "slot_affinity",
               "window"
             ]
           },
@@ -3721,12 +3779,31 @@
                       "reason"
                     ]
                   },
+                  "slot_affinity": {
+                    "object": {
+                      "build": "string",
+                      "cached_tokens": "number",
+                      "checked_at": "string",
+                      "model": "string",
+                      "prompt_tokens": "number",
+                      "reason": "string",
+                      "verdict": "string"
+                    },
+                    "optional": [
+                      "build",
+                      "cached_tokens",
+                      "model",
+                      "prompt_tokens",
+                      "reason"
+                    ]
+                  },
                   "slot_hints": "boolean",
                   "window": "number"
                 },
                 "optional": [
                   "build",
                   "responses",
+                  "slot_affinity",
                   "window"
                 ]
               },
@@ -3768,12 +3845,31 @@
                       "reason"
                     ]
                   },
+                  "slot_affinity": {
+                    "object": {
+                      "build": "string",
+                      "cached_tokens": "number",
+                      "checked_at": "string",
+                      "model": "string",
+                      "prompt_tokens": "number",
+                      "reason": "string",
+                      "verdict": "string"
+                    },
+                    "optional": [
+                      "build",
+                      "cached_tokens",
+                      "model",
+                      "prompt_tokens",
+                      "reason"
+                    ]
+                  },
                   "slot_hints": "boolean",
                   "window": "number"
                 },
                 "optional": [
                   "build",
                   "responses",
+                  "slot_affinity",
                   "window"
                 ]
               },

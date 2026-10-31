@@ -55,6 +55,8 @@ func poolEndpoint(p store.Provider) inference.Endpoint {
 		KV:       inference.KV(p.KV),
 		KVTokens: p.KVTokens,
 		Window:   probedWindow(p),
+
+		SlotHints: takesSlotHints(p),
 	}
 }
 
@@ -145,7 +147,7 @@ func (s *Server) handleInference(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, l := range st.Running {
 			pool.Running = append(pool.Running, inferenceRunningBody{
-				Slot: l.Slot, Endpoint: l.Endpoint, Class: l.Class, SessionID: l.SessionID,
+				Slot: l.Slot, SlotNamed: l.Hinted, Endpoint: l.Endpoint, Class: l.Class, SessionID: l.SessionID,
 				Priority: l.Priority.String(), Tokens: l.Tokens, HeldMS: l.Held.Milliseconds(), Preempted: l.Preempted,
 			})
 		}

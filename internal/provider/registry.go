@@ -22,6 +22,11 @@ type Endpoint struct {
 	// it is asked for; a local server takes sampling fields of its own beside
 	// them.
 	Hosted bool
+	// SlotHints reports that the server takes a request naming the slot it
+	// should run on (llama.cpp with several slots). Only then does a provider
+	// send a request's SlotHint; to any other server the field is unknown and
+	// may be refused.
+	SlotHints bool
 }
 
 // Constructor builds a Provider for one endpoint.

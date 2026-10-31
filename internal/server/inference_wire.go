@@ -53,7 +53,12 @@ type inferencePoolBody struct {
 
 // inferenceRunningBody is a call holding a slot.
 type inferenceRunningBody struct {
+	// Slot is the slot held. SlotNamed says it is the server's own slot
+	// number, which the call named (id_slot) so that it runs where its
+	// session's prefix is; otherwise it is the queue's count of the pool's
+	// slots.
 	Slot      int    `json:"slot"`
+	SlotNamed bool   `json:"slot_named"`
 	Endpoint  string `json:"endpoint"`
 	Class     string `json:"class,omitempty"`
 	SessionID string `json:"session_id,omitempty"`

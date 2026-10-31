@@ -362,7 +362,9 @@ this file says why, so neither repeats the other.
   start for a fact the usage item learns from real calls. `cache_metrics` is
   `reported` where verified (llama.cpp) and `unknown` elsewhere. The Responses
   conformance check does ask the model, as its own entry point and only when
-  needed ("The Responses API").
+  needed ("The Responses API"), and so does the slot affinity check ("Slot
+  affinity"), which `capabilities.slot_hints` (the server takes the field) does
+  not stand for.
 - **llama.cpp's cache is `unknown` with more than one slot.** On b11942 nothing
   states whether `--kv-unified` is on or what `-c` was: `/props`, `/slots` and
   `/v1/models` all give the per-slot context, which a unified server sets to the
@@ -659,8 +661,9 @@ this file says why, so neither repeats the other.
   stands, and it is not current, so the next probe tries again. Rejected: a
   `failed` verdict, which would put a busy pool's provider on `chat`.
 - **What is recorded.** `queue_ms` is the time a call waited for leases, summed
-  over its attempts; `slot` is the queue's own slot number (the server's slot
-  only once slot affinity sends it); `priority` is what the call asked for;
+  over its attempts; `slot` is the server's own slot number that the request
+  named (`id_slot`), and null for a call that named none (see "Slot
+  affinity"); `priority` is what the call asked for;
   `class` is the model class a run was resolved from, which no run names yet,
   so it stays absent; `prefill_ms` and `decode_ms` (migration `0009`) are the
   endpoint's `timings`, the decode time the harness's own from the first token
@@ -675,7 +678,97 @@ this file says why, so neither repeats the other.
 - Compaction summaries, though queued, are still neither recorded nor
   observed; they remain unowned by the Recorder until the agents item.
 
-### Effective window
+### Slot affinity
+
+A llama.cpp server with several slots keeps each slot's prompt in its own KV
+cache, so a session's next call is cheap only if it runs on the slot that holds
+the session's prefix. The queue places the call there and the request names the
+slot (`id_slot`, which both `/v1/chat/completions` and `/v1/responses` read;
+verified against `/slots` while a call ran, on b11942). The design is
+`docs/design/runtime.md` section 3; these are the choices it left.
+
+- **A book per endpoint, in the queue.** Each endpoint of a pool that takes slot
+  hints has one entry per slot of its server: the session whose call last ran
+  there, its prompt size and when. It is the "LRU map from session to slot",
+  held as slot to session because a slot holds one prefix, so a map with more
+  sessions than slots would remember prefixes the server no longer has. A call
+  with a slot of its own gets it when it is free. A session without one takes
+  the free slot whose owner went longest without a call (an empty slot
+  first), and the map follows: the slot it left is given up, since a stale
+  shorter copy is not worth sending it back to. The lease says which slot
+  (`Lease.SlotHint`), the loop sets it on the request after the request was
+  sized, and the provider sends it. There is no backend check in the loop: the
+  pool states which endpoints take hints, and a call to any other gets no
+  number.
+- **Busy slot: wait as long as reading the prefix again would take, then move.**
+  When a session's slot is busy (its own earlier call, such as an idle
+  compaction still generating when the user writes) and another is free, waiting
+  costs a queue delay of unknown length and taking the other costs a prefill of
+  the whole prompt. The call waits for the slot for `prompt / prefill rate`
+  (`Policy.PrefillRate`, 2000 tokens a second, from the 22.8 s the bench took
+  for 66002) and then takes the free slot. That is the rule for buying or renting
+  with an unknown horizon: it never costs more than twice the better choice
+  whatever the occupant does. While it waits it holds the line like any call that
+  does not fit, so a stream of small calls cannot take the slot it will need.
+  Rejected: always waiting (a compaction of a minute behind a user message);
+  always moving (a 60k prefix prefilled for a wait of a second); backfilling
+  past it (it could find the pool full when it gives up).
+- **Compaction summaries share the session's slot, titles share nothing.** A
+  summary's request is the session's conversation with one instruction added,
+  so it reads the session's prefix in the session's slot, and after it the old
+  prefix is dead whichever slot held it. A title (and the model test and the
+  checks) shares no prefix with any session and takes `Affinity` false: it names
+  no slot, never claims a slot in the book and never moves a session's entry, so
+  the server places it by its own rules (the slot whose cache shares most with
+  the prompt, else the one used longest ago) and the sessions keep what the
+  server leaves them. Such a call still takes a lease and the pool's capacity.
+- **Slot numbers belong to an endpoint.** A pool's endpoints are one machine's
+  capacity but not one server: slot 1 of one means nothing on another. Each
+  hinted endpoint has its own book and the lease carries the number of its own
+  server's; an endpoint without hints in the same pool is named no slot. A hinted
+  endpoint may have more slots than the pool runs calls at once (rows of a pool
+  take the fewest), and then keeps more sessions' prefixes warm than run
+  together. Rejected: one numbering per pool (a session pinned to slot 1 would
+  be sent slot 1 of a server that never held its prefix) and no hints in a pool of
+  several endpoints (it loses the common case of one server and a decision
+  model beside it). Two provider rows that reach one server are two endpoints to
+  the queue and may name the same slot at once; the server then makes the second
+  wait for it. Give one server one row.
+- **`model_calls.slot` is the number the request named, null otherwise.** A
+  column that held the queue's count for a vLLM call and the server's for a
+  llama.cpp one would answer neither question.
+- **The hint steers where, never what.** `id_slot` is not in the body the
+  counter renders (`ChatEncoder.ChatBody`), so `/apply-template` and the exact
+  prediction are the request's without it; a test shows the body is the same with
+  and without, and the live suite shows zero drift on requests that carry it.
+  A server that refuses the field with a 400 that names it is sent the request
+  again without it, once, so a hint is never the reason a call fails (llama.cpp
+  does not refuse: it takes any number modulo its slot count).
+- **Hints are sent only where measured to help.** Whether a named slot keeps its
+  prefix depends on how the server was started, which it does not state, and on
+  the bench it does not: with a unified KV cache and `--cache-idle-slots` (both
+  the default) llama.cpp saves an idle slot's prompt to a host cache and clears it
+  whenever another slot starts a task, and then restores a prompt from that cache
+  only for a request that names no slot (`get_available_slot`, which takes an
+  empty named slot as it is). Alternating sessions pinned to their slots found
+  nothing cached on any call (25920 prompt tokens prefilled against 10825
+  with no hint). So a llama.cpp server with several slots gets `id_slot` only
+  after the slot affinity check passed (`probe.CheckSlotAffinity`, in
+  `capabilities.slot_affinity`): three small requests to the user's model, the
+  first and last naming slot 0 and the second slot 1, and the last must find at
+  least 80% of the first's prompt cached. It runs as the Responses check does, on
+  the explicit probe and at start only when its recorded outcome is for another
+  build or model, at maintenance priority at start, and until it has passed a
+  server is sent no `id_slot`, so a new provider behaves as it did before this
+  item. The server's own selection (the longest common prefix, else the slot used
+  longest ago) is what runs then. Rejected: sending hints to every llama.cpp
+  server (it makes the bench strictly worse), switching them off after a few
+  cold calls seen at run time (a compaction or an edited conversation looks
+  the same as a server that lost the prefix, and the state would be in no setting
+  or probe a person can see), and a setting (nothing tells a person which way to
+  set it). Starting the server with `--no-cache-idle-slots` should make it pass:
+  that is read from the source of the build, not run, because the bench's server
+  is not ours to restart.
 
 - **A run is judged against the smaller of two numbers.** The model row's
   `context_window` is what the user says the model has; the provider's probed

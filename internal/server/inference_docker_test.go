@@ -109,7 +109,7 @@ func TestTwoRunsOnOnePoolTakeTurnsAndTheSecondRecordsItsWait(t *testing.T) {
 	}
 	q1, s1, p1 := wait(first.ID)
 	q2, s2, p2 := wait(second.ID)
-	if q1 == nil || q2 == nil || *q2 < 30 || *q1 >= *q2 || s1 == nil || s2 == nil || *s1 != 0 || *s2 != 0 || p1 != "interactive" || p2 != "interactive" {
+	if q1 == nil || q2 == nil || *q2 < 30 || *q1 >= *q2 || s1 != nil || s2 != nil || p1 != "interactive" || p2 != "interactive" {
 		t.Errorf("recorded waits = %v and %v ms on slots %v and %v, want the second to have waited for the first", deref(q1), deref(q2), deref(s1), deref(s2))
 	}
 	if st := a.inference(t).Pools[0]; len(st.Running) != 0 || len(st.Waiting) != 0 {
