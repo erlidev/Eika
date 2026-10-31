@@ -551,6 +551,33 @@ this file says why, so neither repeats the other.
   object keeps the old name, and rows are untouched. Rejected: a new table
   and a copy (the rows are the deployment's history).
 
+### Effective window
+
+- **A run is judged against the smaller of two numbers.** The model row's
+  `context_window` is what the user says the model has; the provider's probed
+  `capabilities.window` is the per-request context the endpoint said it serves
+  (llama.cpp's per-slot `n_ctx`, vLLM's `max_model_len`). `server/window.go`
+  takes the smaller (`effectiveWindow`; no probe means the configured one) and
+  `runConfig.window()` hands it to `agent.Options.ContextWindow`, which `fit`,
+  `shouldCompact`, the summary's room, the counter's reserve, `silentOverflow`,
+  `model_calls.context_window`, the events' `context_window` and the meter all
+  already read. There is no second place that picks a window. Rejected: the
+  agent taking both numbers and choosing (every reader of the window would need
+  the rule, and a call's recorded window would not say which was meant).
+- **The configured number is never rewritten.** A probe that finds less does
+  not edit the model row: the user's number may be right for a later restart
+  of the server, and a probe that failed to read the field would otherwise lose
+  it. Settings warns on the model instead (`effective_window` below
+  `context_window` on the wire, `probed_window` beside it), in words that say
+  what to do: set the window to what the endpoint holds, or restart the server
+  with a larger context. Rejected: silently lowering the row; refusing to save
+  a larger window (the probe can be stale, and a window set before the server
+  was started is legitimate).
+- **A recorded call keeps its own window.** `GET .../calls/{call_id}` answers
+  with the `context_window` the call was judged against, and the model's
+  configured one only for a record that kept none, so a probe that changed
+  since does not rewrite what an old call was measured against.
+
 ### The token counter
 
 - **A package of its own over an optional capability of the provider.**

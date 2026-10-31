@@ -137,6 +137,11 @@ method and its drift, and an `exact` prediction with any drift is logged as a
 warning with its numbers. A session resumed with a counter that has learned
 nothing is seeded from the newest measurement its messages carry.
 
+The window every one of those checks uses is `Options.ContextWindow`, which the
+server sets to the model's effective window: the smaller of its row's
+`context_window` and the per-request context its provider's probe reported
+(`server/window.go`). With no probed window it is the configured one.
+
 **Images** are `provider.Message.Images` on a user message.
 `POST .../messages` runs each through `imaging.Prepare` before the run is
 claimed; `runs.begin` refuses images for a model without `image_input`, and

@@ -211,6 +211,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	if err != nil {
 		return store.Run{}, err
 	}
+	cfg = cfg.withProbe(ep.row)
 	// The counter keeps what it learned from run to run; its routes, which
 	// carry the key, are attached until this run ends, whichever way.
 	counted, releaseRoutes := s.counters.forRun(sessionID, ep, cfg.model)

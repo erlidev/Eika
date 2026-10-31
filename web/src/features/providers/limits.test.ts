@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { Model } from "@/api/types";
-import { chosenProblem, suggestLimits, suggestModelName } from "@/features/providers/limits";
+import {
+  chosenProblem,
+  suggestLimits,
+  suggestModelName,
+  windowWarning,
+} from "@/features/providers/limits";
 import { presetOf, uniqueProviderName } from "@/features/providers/presets";
 
 describe("suggestLimits", () => {
@@ -107,5 +112,25 @@ describe("chosenProblem", () => {
       "context_window",
     );
     expect(chosenProblem([{ ...choice, max_output: 500_000 }], existing)?.field).toBe("max_output");
+  });
+});
+
+describe("windowWarning", () => {
+  it("is silent when the endpoint holds the whole window", () => {
+    expect(
+      windowWarning({ context_window: 32_768, probed_window: 131_072, effective_window: 32_768 }),
+    ).toBeNull();
+    expect(windowWarning({ context_window: 32_768, effective_window: 32_768 })).toBeNull();
+  });
+
+  it("says what to do when the endpoint holds less", () => {
+    const text = windowWarning({
+      context_window: 200_000,
+      probed_window: 131_072,
+      effective_window: 131_072,
+    });
+    expect(text).toContain("200,000");
+    expect(text).toContain("131,072");
+    expect(text).toContain("Set the context window to 131,072");
   });
 });

@@ -21,7 +21,7 @@ import type {
   SessionConfiguration,
   ToolSchema,
 } from "../../src/api/types.ts";
-import { fixedNow, pathOf } from "./world.ts";
+import { fixedNow, pathOf, windowOf } from "./world.ts";
 import type { World } from "./world.ts";
 
 /** StoredProfile is a profile as the world keeps it, without what it inherits. */
@@ -498,7 +498,7 @@ export function previewContext(w: World, session: Session, requested: string): M
     sources,
     ...(config.dropped_effort === undefined ? {} : { dropped_effort: config.dropped_effort }),
     ...(last ? { calibration: calibration(last) } : {}),
-    context_window: model?.context_window ?? 0,
+    context_window: model ? windowOf(w, model).effective : 0,
   };
 }
 
@@ -560,7 +560,7 @@ export function record(
       reasoning_tokens: null,
       predicted_prompt_tokens: null,
       drift: null,
-      context_window: model?.context_window ?? null,
+      context_window: model ? windowOf(w, model).effective : null,
       queue_ms: null,
       slot: null,
       created_at: input.at ?? fixedNow,

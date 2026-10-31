@@ -267,7 +267,7 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       plus the "template and formatting" remainder, with no scaling. Update the
       Context inspector and the status bar meter: measured fill, cached tokens,
       predicted next request with its method, effective window.
-- [ ] Effective window is the smaller of the configured window and the probed
+- [x] Effective window is the smaller of the configured window and the probed
       per-request context. Settings warns on a mismatch.
 - [x] KV cache per pool (runtime.md 1): the provider column `kv`, `shared` with
       its size in tokens, or `partitioned`. `shared` is the usual case (vLLM,

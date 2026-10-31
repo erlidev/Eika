@@ -5,13 +5,13 @@
  * user can try again carries its Retry button as the action.
  */
 
-import { CircleAlert, CircleCheck, Info, Loader2 } from "lucide-react";
+import { CircleAlert, CircleCheck, Info, Loader2, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { failureText } from "@/lib/failure";
 import { cn } from "@/lib/utils";
 
-export type NoticeTone = "info" | "success" | "error" | "pending";
+export type NoticeTone = "info" | "success" | "warning" | "error" | "pending";
 
 export type NoticeProps = {
   tone?: NoticeTone;
@@ -21,12 +21,19 @@ export type NoticeProps = {
   action?: React.ReactNode;
 };
 
-const icons = { info: Info, success: CircleCheck, error: CircleAlert, pending: Loader2 };
+const icons = {
+  info: Info,
+  success: CircleCheck,
+  warning: TriangleAlert,
+  error: CircleAlert,
+  pending: Loader2,
+};
 
 const tones: Record<NoticeTone, string> = {
   info: "bg-muted/50 text-muted-foreground",
   pending: "bg-muted/50 text-muted-foreground",
   success: "border-success/25 bg-success/5 text-success",
+  warning: "border-warning/30 bg-warning/5 text-warning",
   error: "border-destructive/30 bg-destructive/5 text-destructive",
 };
 

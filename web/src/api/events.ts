@@ -138,7 +138,7 @@ export type TurnProgress = {
   context: Usage;
   /** generation_ms is the turn's time inside model responses, so far. */
   generation_ms: number;
-  /** context_window is the configured window of the model that produced the usage. */
+  /** context_window is the effective window of the model that produced the usage. */
   context_window: number;
   /** timings is how fast the most recent model call ran, when anything measured it. */
   timings?: Timings;
@@ -153,7 +153,7 @@ export type TurnEnd = {
   context: Usage;
   /** generation_ms is the turn's total time inside model responses. */
   generation_ms: number;
-  /** context_window is the configured window of the model that ran the turn. */
+  /** context_window is the effective window of the model that ran the turn. */
   context_window: number;
   /** timings is how fast the turn's last model call ran. */
   timings?: Timings;

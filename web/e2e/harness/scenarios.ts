@@ -667,6 +667,42 @@ export const scenarios = {
       return b.world;
     },
   },
+  "bench-window": {
+    description:
+      "A llama.cpp bench that serves 131,072 tokens per request, with one model whose context window is set to 200,000 (Settings warns) and one set within it (no warning). For the Models tab.",
+    path: "/",
+    build: () => {
+      const b = configured();
+      const bench = b.provider({
+        name: "Bench",
+        base_url: "http://10.0.0.2:8091/v1",
+        api_key_hint: undefined,
+        backend: "llamacpp",
+        slots: 2,
+        kv: "unknown",
+        capabilities: {
+          build: "b11942-338fce651",
+          window: 131072,
+          counting: "chat",
+          cache_metrics: "reported",
+          slot_hints: true,
+        },
+      });
+      b.model(bench, {
+        name: "qwen-long",
+        model: "qwen3.8-27b",
+        context_window: 200000,
+        max_output: 16384,
+      });
+      b.model(bench, {
+        name: "qwen-short",
+        model: "qwen3.8-27b",
+        context_window: 65536,
+        max_output: 8192,
+      });
+      return b.world;
+    },
+  },
   "agent-web": {
     description:
       "Like workbench with an abandoned branch in the session tree; the next message plays a reply that uses web_search, web_fetch, bash to read, search, and write files, and a tool with no renderer of its own. Expand a card by its summary to see its body.",

@@ -56,6 +56,23 @@ test("models: each provider says what its endpoint is", async ({ open }) => {
   await expect(card("OpenRouter")).toContainText("Last probe failed · Hosted API · 8 slots");
 });
 
+test("models: a window larger than the endpoint holds is warned about, with what to do", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "bench-window" });
+  await eika.click("Settings");
+  const row = (name: string) =>
+    eika.page.locator("li", { has: eika.page.getByText(name, { exact: true }) }).last();
+  await expect(row("qwen-long")).toContainText(
+    "Its context window is set to 200,000 tokens, but the endpoint holds 131,072 for one request",
+  );
+  await expect(row("qwen-long")).toContainText("Set the context window to 131,072");
+  // A window the endpoint holds in full has nothing to warn about, and neither
+  // has a model on an endpoint that states none.
+  await expect(row("qwen-short").getByRole("status")).toHaveCount(0);
+  await expect(row("gpt-5-mini").getByRole("status")).toHaveCount(0);
+});
+
 test("endpoint settings: what the user sets survives the next probe", async ({
   open,
   expectAria,

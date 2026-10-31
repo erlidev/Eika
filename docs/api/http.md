@@ -291,7 +291,7 @@ ModelContext that has `call`; `404` for a record of another session.
 | `sources` | object | The layer each parameter came from, keyed `model`, `thinking_switch`, `preserve_thinking`, `image_input`, and `sampling.<parameter>`. |
 | `dropped_effort` | string, optional | A reasoning effort the configuration chose that the model does not offer, which is not sent. |
 | `call` | ModelCall, optional | The record this is; absent for the next request. |
-| `context_window` | number | The context window of the call's model, in tokens: what the request and its answer must fit in. 0 when no model is configured, or a recorded call's model is deleted. |
+| `context_window` | number | The effective window, in tokens: what the request and its answer must fit in. For a recorded call, the window it was judged against. 0 when no model is configured, or a recorded call kept none and its model is deleted. |
 | `calibration` | object, optional | `{call_id, prompt_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
 
 Every `tokens` figure is an estimate, four bytes to a token and an image one
@@ -671,6 +671,8 @@ the model is there. `400` with what the endpoint answered when it failed.
 |---|---|---|
 | `id`, `provider_id`, `name`, `model` | string | The model, its provider, Eika's name for it, and the endpoint's. |
 | `context_window`, `max_output` | number | Its limits. |
+| `probed_window` | number, optional | The context one request may use on the model's endpoint, as its provider's last probe read it. Absent when the endpoint states none. |
+| `effective_window` | number | The window runs on the model are judged against: the smaller of `context_window` and `probed_window`, or `context_window` when there is no probed one. Less than `context_window` means the endpoint holds less than the model row allows. |
 | `reasoning_effort` | string, optional | As on `POST`. |
 | `reasoning_efforts` | string array | As on `POST`; always present, empty when the model offers no choices. |
 | `thinking_switch` | string | As on `POST`; always present. |

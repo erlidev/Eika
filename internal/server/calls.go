@@ -101,9 +101,10 @@ type contextResponse struct {
 	DroppedEffort string `json:"dropped_effort,omitempty"`
 	// Call is the record this is, absent for the next call.
 	Call *modelCallBody `json:"call,omitempty"`
-	// ContextWindow is the context window of the call's model, in tokens:
-	// what the request has to fit in. Zero when the model is not known,
-	// because none is configured or a recorded call's model is deleted.
+	// ContextWindow is the effective window, in tokens: what the request has
+	// to fit in. For a recorded call it is the window the call was judged
+	// against. Zero when the model is not known, because none is configured
+	// or a recorded call kept no window and its model is deleted.
 	ContextWindow int `json:"context_window"`
 	// Calibration is the measured call the estimates can be scaled to: the
 	// recorded call itself, or the session's last measured one; absent when
@@ -214,6 +215,10 @@ func (s *Server) handleSessionContext(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if cfg, err = s.probed(ctx, cfg); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	opts := agent.Options{Logger: s.log}
 	loaded, err := session.NewStore(s.tree).Load(ctx, sess.ID)
 	if err != nil {
@@ -236,7 +241,7 @@ func (s *Server) handleSessionContext(w http.ResponseWriter, r *http.Request) {
 		Sources:       cfg.parameterSources(),
 		DroppedEffort: cfg.droppedEffort,
 		Calibration:   calibration,
-		ContextWindow: cfg.model.ContextWindow,
+		ContextWindow: cfg.window(),
 	})
 }
 
@@ -297,7 +302,12 @@ func (s *Server) handleSessionCall(w http.ResponseWriter, r *http.Request) {
 	if out.Sources == nil {
 		out.Sources = map[string]string{}
 	}
-	if rec.ModelID != "" {
+	// The window the call was judged against is the one it recorded; a record
+	// that kept none falls back to what its model is configured with.
+	switch {
+	case rec.ContextWindow != nil:
+		out.ContextWindow = *rec.ContextWindow
+	case rec.ModelID != "":
 		m, err := s.deps.Store.Model(ctx, rec.ModelID)
 		switch {
 		case err == nil:

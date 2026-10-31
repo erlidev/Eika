@@ -40,9 +40,18 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	providers, err := s.deps.Store.Providers(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	probed := make(map[string]int, len(providers))
+	for _, p := range providers {
+		probed[p.ID] = probedWindow(p)
+	}
 	out := make([]modelBody, 0, len(models))
 	for _, m := range models {
-		out = append(out, asModel(m))
+		out = append(out, asModel(m, probed[m.ProviderID]))
 	}
 	def, _ := s.defaultModel(r.Context(), models)
 	writeJSON(w, s.log, http.StatusOK, modelsResponse{Models: out, Default: def.Name})
@@ -85,8 +94,13 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	body, err := s.modelBodyOf(r.Context(), created)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	s.log.Info("model created", "model_id", created.ID, "name", created.Name, "provider_id", created.ProviderID)
-	writeJSON(w, s.log, http.StatusCreated, asModel(created))
+	writeJSON(w, s.log, http.StatusCreated, body)
 }
 
 // handleUpdateModel changes a model. Renaming a model keeps it the default
@@ -148,8 +162,13 @@ func (s *Server) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	body, err := s.modelBodyOf(r.Context(), updated)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	s.log.Info("model updated", "model_id", updated.ID, "name", updated.Name)
-	writeJSON(w, s.log, http.StatusOK, asModel(updated))
+	writeJSON(w, s.log, http.StatusOK, body)
 }
 
 // handleDeleteModel removes a model. When it was the default, the first
