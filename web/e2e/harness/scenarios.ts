@@ -647,12 +647,23 @@ export const scenarios = {
         backend: "llamacpp",
         slots: 2,
         kv: "unknown",
+        api: "responses",
         capabilities: {
           build: "b11942-338fce651",
           window: 131072,
           counting: "chat",
           cache_metrics: "reported",
           slot_hints: true,
+          responses: {
+            verdict: "passed",
+            model: "qwen3.8-27b",
+            build: "b11942-338fce651",
+            checked_at: "2026-10-31T12:00:00Z",
+            reasoning: true,
+            cache_metrics: true,
+            counted: true,
+            drift: 0,
+          },
         },
       };
       b.provider({
@@ -662,6 +673,7 @@ export const scenarios = {
         backend: "llamacpp",
         slots: 2,
         kv: "unknown",
+        api: "responses",
         capabilities: b.world.probeFinds.capabilities,
       });
       const router = b.provider({

@@ -360,6 +360,29 @@ func TestToolSchemasSayWhereEachToolComesFrom(t *testing.T) {
 	}
 }
 
+func TestReasoningItemsAreEstimatedOnlyWhereTheyAddToTheText(t *testing.T) {
+	// A local server's item repeats the reasoning text the message holds; a
+	// hosted API's holds nothing but encrypted content.
+	item := json.RawMessage(`{"id":"rs_1","type":"reasoning","summary":[],"encrypted_content":"` + strings.Repeat("gAAAA", 200) + `"}`)
+	estimate := func(m provider.Message) int {
+		t.Helper()
+		c := agent.Context{Parameters: agent.Parameters{PreserveThinking: true}}.WithMessages([]provider.Message{m})
+		return c.MessageTokens
+	}
+	text := provider.AssistantMessageWithReasoning("answer", "a private thought", nil)
+	withItem := text
+	withItem.ReasoningItems = []json.RawMessage{item}
+	if got, want := estimate(withItem), estimate(text); got != want {
+		t.Errorf("a message with its item = %d tokens, want the %d of its text alone", got, want)
+	}
+	encrypted := provider.AssistantMessage("answer", nil)
+	encryptedItem := encrypted
+	encryptedItem.ReasoningItems = []json.RawMessage{item}
+	if got, plain := estimate(encryptedItem), estimate(encrypted); got <= plain {
+		t.Errorf("a message with an encrypted item = %d tokens, want more than the %d without", got, plain)
+	}
+}
+
 func TestRequestMessagesAreWhatTheProviderReceives(t *testing.T) {
 	cases := []struct {
 		name          string

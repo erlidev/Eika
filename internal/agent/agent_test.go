@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -704,6 +705,58 @@ func TestRunForwardsReasoningConfiguration(t *testing.T) {
 	}
 	if req.Messages[1].Metrics != nil {
 		t.Errorf("provider received stored UI metrics: %+v", req.Messages[1].Metrics)
+	}
+}
+
+func TestRunKeepsReasoningItemsAsReturnedAndSendsThemBackOnlyWhenPreserved(t *testing.T) {
+	item := json.RawMessage(`{"id":"rs_1","type":"reasoning","summary":[],"encrypted_content":"gAAAA+/==","status":null}`)
+	for _, preserve := range []bool{true, false} {
+		t.Run(map[bool]string{true: "preserved", false: "not preserved"}[preserve], func(t *testing.T) {
+			p := providertest.New(
+				providertest.Stream(
+					provider.Event{Kind: provider.KindReasoningDelta, ReasoningDelta: "think"},
+					provider.Event{Kind: provider.KindReasoningItem, ReasoningItem: item},
+					provider.TextDelta("one"),
+					provider.Done("stop")),
+				providertest.Text("two"))
+			a := agent.New(p, nil, agent.Options{
+				PreserveThinking: preserve,
+				Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+			})
+			s := agent.NewSession("s1", "w1")
+			if err := a.Run(context.Background(), s, provider.UserMessage("first")); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			// The conversation always keeps what the endpoint returned, so
+			// that a later change of setting can still send it.
+			stored := s.Conversation.Messages()[1]
+			if stored.Reasoning != "think" || !reflect.DeepEqual(stored.ReasoningItems, []json.RawMessage{item}) {
+				t.Fatalf("stored message = %+v, want the reasoning text and the item as returned", stored)
+			}
+			if err := a.Run(context.Background(), s, provider.UserMessage("second")); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			sent := p.Requests()[1].Messages[1]
+			if preserve && (!reflect.DeepEqual(sent.ReasoningItems, []json.RawMessage{item}) || sent.Reasoning != "think") {
+				t.Errorf("second request message = %+v, want the reasoning and the item", sent)
+			}
+			if !preserve && (sent.Reasoning != "" || sent.ReasoningItems != nil) {
+				t.Errorf("second request message = %+v, want no reasoning when the model does not preserve it", sent)
+			}
+		})
+	}
+}
+
+func TestRunKeepsAResponseThatOnlyReasoned(t *testing.T) {
+	item := json.RawMessage(`{"id":"rs_1","type":"reasoning","summary":[]}`)
+	p := providertest.New(providertest.Stream(provider.Event{Kind: provider.KindReasoningItem, ReasoningItem: item}, provider.Done("length")))
+	a := agent.New(p, nil, agent.Options{PreserveThinking: true, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	s := agent.NewSession("s1", "w1")
+	if err := a.Run(context.Background(), s, provider.UserMessage("first")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if msgs := s.Conversation.Messages(); len(msgs) != 2 || len(msgs[1].ReasoningItems) != 1 {
+		t.Errorf("conversation = %+v, want the cut-off reasoning kept", msgs)
 	}
 }
 

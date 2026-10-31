@@ -42,9 +42,10 @@ func (s *Server) probeEndpoint(ctx context.Context, p store.Provider, key string
 	return models, probe.Run(runCtx, probe.Target{BaseURL: p.BaseURL, APIKey: key, Models: models}), nil
 }
 
-// recordProbe stores a probe's findings on a stored provider. Fields the user
-// overrode keep their values.
-func (s *Server) recordProbe(ctx context.Context, id string, res probe.Result) (store.Provider, error) {
+// recordProbe stores a probe's findings on a stored provider, with the
+// protocol its Responses check chose. Fields the user overrode keep their
+// values.
+func (s *Server) recordProbe(ctx context.Context, id string, res probe.Result, api provider.API) (store.Provider, error) {
 	capabilities, err := json.Marshal(res.Capabilities)
 	if err != nil {
 		return store.Provider{}, fmt.Errorf("encode capabilities: %w", err)
@@ -54,19 +55,24 @@ func (s *Server) recordProbe(ctx context.Context, id string, res probe.Result) (
 		Slots:        res.Slots,
 		KV:           string(res.KV),
 		KVTokens:     res.KVTokens,
+		API:          string(api),
 		Capabilities: capabilities,
 		At:           time.Now().UTC(),
 	})
 }
 
 // probeStored probes one stored provider and records the outcome: the
-// findings, or why there are none. A failure leaves every earlier result.
+// findings, or why there are none. A failure leaves every earlier result. It
+// asks the model only if the Responses check is out of date (see
+// withConformance); the explicit probe route always does.
 func (s *Server) probeStored(ctx context.Context, p store.Provider) error {
 	key, err := s.openKey(p)
 	if err == nil {
 		var res probe.Result
 		if _, res, err = s.probeEndpoint(ctx, p, key); err == nil {
-			_, err = s.recordProbe(ctx, p.ID, res)
+			var api provider.API
+			res, api = s.withConformance(ctx, p, key, res, false)
+			_, err = s.recordProbe(ctx, p.ID, res, api)
 			return err
 		}
 	}

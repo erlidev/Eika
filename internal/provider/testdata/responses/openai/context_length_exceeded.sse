@@ -1,0 +1,6 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_6801a2b3c4d8","object":"response","created_at":1761900300,"status":"in_progress","model":"o4-mini","output":[],"store":false}}
+
+event: error
+data: {"type":"error","sequence_number":1,"code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","param":"input"}
+

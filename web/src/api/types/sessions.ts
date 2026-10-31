@@ -100,6 +100,12 @@ export type Message = {
   images?: MessageImage[];
   /** reasoning is the model's thinking for this message, shown apart from its answer. */
   reasoning?: string;
+  /**
+   * reasoning_items are the reasoning items a Responses endpoint returned,
+   * exactly as it sent them, so a later request can send them back. The UI
+   * does not read them.
+   */
+  reasoning_items?: unknown[];
   tool_calls?: MessageToolCall[];
   tool_call_id?: string;
   is_error?: boolean;

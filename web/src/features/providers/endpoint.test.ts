@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { Provider } from "@/api/types";
+import type { Conformance, Provider } from "@/api/types";
 import {
+  conformanceSummary,
   endpointForm,
   endpointProblem,
   endpointUpdate,
@@ -20,6 +21,7 @@ const bench: Provider = {
   pool: "Bench",
   slots: 2,
   kv: "unknown",
+  api: "chat",
   capabilities: {
     build: "b11942-338fce651",
     window: 131072,
@@ -64,7 +66,60 @@ describe("kvSummary", () => {
   });
 });
 
+describe("conformanceSummary", () => {
+  const passed: Conformance = {
+    verdict: "passed",
+    model: "qwen3.8-27b",
+    build: "b11942-338fce651",
+    checked_at: "2026-10-31T12:00:00Z",
+    reasoning: true,
+    cache_metrics: true,
+    counted: true,
+    drift: 0,
+  };
+
+  it("says the check has not run", () => {
+    expect(conformanceSummary(undefined)).toBe("The Responses API has not been checked yet.");
+  });
+
+  it("names the model and the build the check ran against", () => {
+    expect(conformanceSummary(passed)).toBe(
+      "The Responses API passed its check with qwen3.8-27b on b11942-338fce651.",
+    );
+  });
+
+  it("says when a model returned no reasoning to send back", () => {
+    expect(conformanceSummary({ ...passed, reasoning: false })).toBe(
+      "The Responses API passed its check with qwen3.8-27b on b11942-338fce651, which returned no reasoning to send back.",
+    );
+  });
+
+  it("gives the reason a check failed or was skipped", () => {
+    expect(conformanceSummary({ ...passed, verdict: "failed", reason: "404 page not found" })).toBe(
+      "The Responses API failed its check with qwen3.8-27b on b11942-338fce651: 404 page not found",
+    );
+    expect(
+      conformanceSummary({
+        verdict: "skipped",
+        reason: "no model is configured on this provider",
+        checked_at: passed.checked_at,
+        reasoning: false,
+        cache_metrics: false,
+        counted: false,
+        drift: 0,
+      }),
+    ).toBe("The Responses API was not checked: no model is configured on this provider");
+  });
+});
+
 describe("endpointUpdate", () => {
+  it("sends the api only when the user changed it", () => {
+    expect(endpointUpdate(bench, { ...endpointForm(bench), api: "responses" })).toEqual({
+      api: "responses",
+    });
+    expect(endpointUpdate(bench, endpointForm(bench))).toEqual({});
+  });
+
   it("sends nothing for an untouched form, so nothing becomes an override", () => {
     expect(endpointUpdate(bench, endpointForm(bench))).toEqual({});
   });

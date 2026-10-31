@@ -117,6 +117,39 @@ export type KV = "shared" | "partitioned" | "unknown";
 /** kvs lists every KV, in the order a menu offers them. */
 export const kvs: readonly KV[] = ["shared", "partitioned", "unknown"];
 
+/**
+ * API is the wire protocol spoken to an endpoint: the stateless Responses API
+ * or Chat Completions. The Responses check chooses it, and the user can
+ * override the choice.
+ */
+export type API = "responses" | "chat";
+
+/** apis lists every API, in the order a menu offers them. */
+export const apis: readonly API[] = ["responses", "chat"];
+
+/**
+ * Conformance is what the Responses check found out: whether the endpoint
+ * takes a streamed tool-call round trip with the reasoning it returned and
+ * states its usage with a cached count, asked of one model on one build of the
+ * server. Only `passed` chooses the Responses API.
+ */
+export type Conformance = {
+  verdict: "passed" | "failed" | "skipped";
+  /** reason says why the check failed or was skipped. */
+  reason?: string;
+  /** model is the model the check asked, and build the server's build then. */
+  model?: string;
+  build?: string;
+  checked_at: string;
+  /** reasoning is whether the model returned a reasoning item that was sent back. */
+  reasoning: boolean;
+  /** cache_metrics is whether the usage stated how many prompt tokens were cached. */
+  cache_metrics: boolean;
+  /** counted is whether exact counting was also compared with the endpoint's own count. */
+  counted: boolean;
+  drift: number;
+};
+
 /** Capabilities is what the last successful probe found beyond the settings. */
 export type Capabilities = {
   /** build is the version the server reported, such as llama.cpp's b11942-338fce651. */
@@ -129,10 +162,12 @@ export type Capabilities = {
   cache_metrics: "reported" | "unknown";
   /** slot_hints is whether a request may name the slot it wants. */
   slot_hints: boolean;
+  /** responses is the outcome of the Responses check; absent until it has run. */
+  responses?: Conformance;
 };
 
 /** ProviderField names a probed field the user can set in place of the probe. */
-export type EndpointField = "backend" | "pool" | "slots" | "kv";
+export type EndpointField = "backend" | "pool" | "slots" | "kv" | "api";
 
 /** Provider is one model provider: an endpoint and whether it holds a key. */
 export type Provider = {
@@ -151,6 +186,8 @@ export type Provider = {
   kv: KV;
   /** kv_tokens is the size of a shared cache in tokens; absent when unknown. */
   kv_tokens?: number;
+  /** api is the wire protocol spoken to the endpoint; the outcome of its check is in capabilities.responses. */
+  api: API;
   capabilities: Capabilities;
   /** overridden names the fields the user set, which a probe leaves alone. */
   overridden: EndpointField[];
@@ -182,8 +219,9 @@ export type UpdateProvider = {
   base_url?: string;
   /** api_key replaces the stored key; "" removes it. */
   api_key?: string;
-  /** backend, pool, slots and kv set what a probe would otherwise find; a probe leaves them alone. */
+  /** backend, pool, slots, kv and api set what a probe would otherwise find; a probe leaves them alone. */
   backend?: Backend;
+  api?: API;
   /** pool "" means the provider's name. */
   pool?: string;
   slots?: number;
@@ -220,6 +258,8 @@ export type ProbeFindings = {
   slots: number;
   kv: KV;
   kv_tokens?: number;
+  /** api is the protocol the Responses check chose; chat for an endpoint nothing stores. */
+  api: API;
   capabilities: Capabilities;
 };
 

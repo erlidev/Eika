@@ -25,10 +25,10 @@ A provider row (kept from today) gains these fields:
 |---|---|
 | `backend` | Detected at probe time: `llamacpp`, `vllm`, `sglang`, `tabby`, `openai`, `other`. The user can override it |
 | `pool` | Hardware group name. Endpoints in one pool share hardware and are serialised against each other. Default: the provider name |
-| `api` | `responses` or `chat`: which wire protocol Core speaks to the endpoint (below). Chosen at probe time, and the user can override it |
+| `api` | `responses` or `chat`: which wire protocol Core speaks to the endpoint (below). Chosen by the Responses conformance check, `chat` until one passes, and the user can override it |
 | `slots` | Concurrent requests the pool accepts. The probe reads it where the server states it (llama.cpp `total_slots`, SGLang `max_running_requests`, TabbyAPI `max_batch_size`); otherwise 1 for a local backend, 8 for a cloud one. The user can override it |
 | `kv` | `shared` (one cache all requests draw on, with its size in tokens), `partitioned` (a fixed share per slot) or `unknown` (the server does not say and nothing it serves tells the two apart). Probed; the user can override it and the size |
-| `capabilities` | Probe result (jsonb): how the endpoint counts tokens (`chat`, `text`, `none`), whether it reports cache metrics (`reported`, `unknown`), whether it takes slot hints, the per-request context it reported (`window`), and the server's version (`build`) |
+| `capabilities` | Probe result (jsonb): how the endpoint counts tokens (`chat`, `text`, `none`), whether it reports cache metrics (`reported`, `unknown`), whether it takes slot hints, the per-request context it reported (`window`), the server's version (`build`), and the outcome of the Responses check (`responses`: verdict, reason, the model and build it ran on) |
 
 The probe (`POST /api/providers/probe`, and again on every Core start) reads the
 endpoint's own description where it has one. It identifies the backend by the
@@ -36,7 +36,8 @@ routes in the second column, tried in the order llama.cpp, SGLang, TabbyAPI, vLL
 (SGLang answers `/version` as vLLM does, so it is asked first); an endpoint none
 claims is `openai` when its address is not on the user's own network and `other`
 when it is. It checks the exact-counting routes with one tiny request each and
-never sends a prompt to a model. A probe that fails at start is logged and
+never sends a prompt to a model; the Responses conformance check (below) is the
+one separate step that does. A probe that fails at start is logged and
 recorded on the provider (`probe_error`) and never stops Core or replaces an
 earlier result. A field the user set is never replaced by a probe; the user
 hands it back to the probe explicitly.
@@ -71,12 +72,20 @@ conventions that each Chat Completions backend handles a little differently. Cha
 Completions stays as the fallback and as the only choice for endpoints that lack
 the route.
 
-- **Default.** `responses` only when the probe's conformance check passes, for
+- **Default.** `responses` only when the conformance check passes, for
   llama.cpp as for any other endpoint: a streamed tool-call round trip with a
-  reasoning item, and usage with cache metrics. Otherwise `chat`. llama.cpp is
-  expected to pass, but its support differs by version. The user can override per
-  provider. A cloud endpoint is asked for `reasoning.encrypted_content` through
-  `include`, since `store: false` otherwise returns no reasoning to pass back.
+  reasoning item sent back, usage with cache metrics, and, where the endpoint
+  counts exactly, the second request counted to the token. Otherwise `chat`. The
+  check asks the user's model (the provider's oldest configured one) two small
+  requests, so it runs on an explicit probe and, at start, only when its recorded
+  outcome (`capabilities.responses`) was made on another server build or model;
+  a provider with no model is skipped and stays on `chat`. llama.cpp passes on
+  b11942 with zero drift under `responses` (the Log has the numbers); a build
+  whose Responses-to-chat conversion differs would fail on its drift and stay on
+  `chat`. The user can override per provider. A hosted API is asked for
+  `reasoning.encrypted_content` through `include` (when the model preserves its
+  thinking, the only time the reasoning is sent back), since `store: false`
+  otherwise returns no reasoning to pass back.
 - **One provider interface.** Both protocols implement `provider.Provider`, so the
   loop, accounting and compaction do not see which one is in use. Exact token
   counting (section 2) works from the equivalent chat-format request, which either

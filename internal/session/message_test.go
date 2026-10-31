@@ -47,6 +47,21 @@ func TestMessageEntryRoundTrip(t *testing.T) {
 			kind: store.KindAssistant,
 		},
 		{
+			// A Responses endpoint's reasoning items, kept as it returned them.
+			name: "assistant with reasoning items",
+			msg: func() provider.Message {
+				m := provider.AssistantMessageWithReasoning("on it", "private analysis", []provider.ToolCall{
+					{ID: "call_5", Name: "ls", Arguments: provider.ToolArguments(`{}`)},
+				})
+				m.ReasoningItems = []json.RawMessage{
+					json.RawMessage(`{"id":"rs_1","type":"reasoning","summary":[],"content":[{"type":"reasoning_text","text":"a <b> & \"q\"\n"}],"encrypted_content":""}`),
+					json.RawMessage(`{"id":"rs_2","type":"reasoning","encrypted_content":"gAAAA+/==","status":null,"extra":{"n":1.5}}`),
+				}
+				return m
+			}(),
+			kind: store.KindAssistant,
+		},
+		{
 			name: "assistant with tool calls",
 			msg: provider.AssistantMessage("looking", []provider.ToolCall{
 				{ID: "call_1", Name: "read", Arguments: provider.ToolArguments(`{"path":"go.mod","limit":20}`)},
@@ -97,6 +112,18 @@ func TestMessageEntryRoundTrip(t *testing.T) {
 				t.Errorf("round trip = %+v, want %+v", got, c.msg)
 			}
 		})
+	}
+}
+
+func TestEntryStoredBeforeReasoningItemsStillReads(t *testing.T) {
+	t.Parallel()
+	e := store.Entry{Kind: store.KindAssistant, Payload: json.RawMessage(`{"role":"assistant","content":"hi","reasoning":"think","metrics":{"run_id":"r","usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4},"context":{"input_tokens":3,"output_tokens":1,"total_tokens":4},"generation_ms":1,"context_window":8}}`)}
+	got, ok, err := session.Message(e)
+	if err != nil || !ok {
+		t.Fatalf("Message: %v, ok=%v", err, ok)
+	}
+	if got.Content != "hi" || got.Reasoning != "think" || got.ReasoningItems != nil {
+		t.Errorf("message = %+v, want the text and reasoning it was stored with and no items", got)
 	}
 }
 
@@ -244,6 +271,16 @@ func TestMessageEntryRejectsUnknownRole(t *testing.T) {
 func sameMessage(a, b provider.Message) bool {
 	if a.Role != b.Role || a.Content != b.Content || a.Reasoning != b.Reasoning || a.ToolCallID != b.ToolCallID || a.IsError != b.IsError {
 		return false
+	}
+	if len(a.ReasoningItems) != len(b.ReasoningItems) {
+		return false
+	}
+	for i := range a.ReasoningItems {
+		var left, right any
+		if json.Unmarshal(a.ReasoningItems[i], &left) != nil || json.Unmarshal(b.ReasoningItems[i], &right) != nil ||
+			string(mustJSON(left)) != string(mustJSON(right)) {
+			return false
+		}
 	}
 	if (a.Metrics == nil) != (b.Metrics == nil) {
 		return false

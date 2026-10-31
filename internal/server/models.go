@@ -215,7 +215,7 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	client, err := s.deps.Providers.Build(p.Kind, provider.Endpoint{BaseURL: p.BaseURL, APIKey: key})
+	client, err := s.deps.Providers.Build(p.Kind, providerEndpoint(p, key))
 	if err != nil {
 		s.fail(w, r, invalidf("%s", scrub(err.Error(), key)))
 		return

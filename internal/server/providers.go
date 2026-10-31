@@ -200,9 +200,15 @@ func (s *Server) handleProbeProvider(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	out := probeResponse{Models: models, Probe: asProbe(res)}
+	// A form checking an unsaved endpoint has no model of the user's to ask:
+	// it keeps the protocol every provider starts with.
+	api := provider.APIChat
 	if record {
-		stored, err := s.recordProbe(r.Context(), p.ID, res)
+		res, api = s.withConformance(r.Context(), p, key, res, true)
+	}
+	out := probeResponse{Models: models, Probe: asProbe(res, api)}
+	if record {
+		stored, err := s.recordProbe(r.Context(), p.ID, res, api)
 		if err != nil {
 			s.fail(w, r, err)
 			return
@@ -308,7 +314,7 @@ func (s *Server) endpointOf(ctx context.Context, m store.Model) (endpoint, error
 	if err != nil {
 		return endpoint{}, err
 	}
-	client, err := s.deps.Providers.Build(p.Kind, provider.Endpoint{BaseURL: p.BaseURL, APIKey: key})
+	client, err := s.deps.Providers.Build(p.Kind, providerEndpoint(p, key))
 	if err != nil {
 		return endpoint{}, fmt.Errorf("build provider %s: %s", p.Name, scrub(err.Error(), key))
 	}
@@ -335,10 +341,13 @@ func (s *Server) validateProvider(p store.Provider) error {
 // finds, and returns what to store, or nil when the request sets none.
 func validateOverride(p store.Provider, req updateProviderRequest) (*store.ProviderOverride, error) {
 	o := store.ProviderOverride{
-		Backend: req.Backend, Pool: req.Pool, Slots: req.Slots, KV: req.KV, KVTokens: req.KVTokens, Reset: req.Reset,
+		Backend: req.Backend, Pool: req.Pool, Slots: req.Slots, KV: req.KV, KVTokens: req.KVTokens, API: req.API, Reset: req.Reset,
 	}
-	if o.Backend == nil && o.Pool == nil && o.Slots == nil && o.KV == nil && o.KVTokens == nil && len(o.Reset) == 0 {
+	if o.Backend == nil && o.Pool == nil && o.Slots == nil && o.KV == nil && o.KVTokens == nil && o.API == nil && len(o.Reset) == 0 {
 		return nil, nil
+	}
+	if o.API != nil && !provider.API(*o.API).Valid() {
+		return nil, invalidf("api must be one of responses, chat")
 	}
 	if o.Backend != nil && !probe.Backend(*o.Backend).Valid() {
 		return nil, invalidf("backend must be one of llamacpp, vllm, sglang, tabby, openai, other")
@@ -369,8 +378,8 @@ func validateOverride(p store.Provider, req updateProviderRequest) (*store.Provi
 		}
 	}
 	for _, field := range o.Reset {
-		if !slices.Contains([]string{store.OverrideBackend, store.OverridePool, store.OverrideSlots, store.OverrideKV}, field) {
-			return nil, invalidf("reset names %q, which is not one of backend, pool, slots, kv", field)
+		if !slices.Contains([]string{store.OverrideBackend, store.OverridePool, store.OverrideSlots, store.OverrideKV, store.OverrideAPI}, field) {
+			return nil, invalidf("reset names %q, which is not one of backend, pool, slots, kv, api", field)
 		}
 	}
 	return &o, nil

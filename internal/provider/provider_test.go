@@ -12,12 +12,15 @@ import (
 
 func TestRegistryBuild(t *testing.T) {
 	built := 0
-	r := provider.NewRegistry(func(e provider.Endpoint) (provider.Provider, error) {
+	chat := func(e provider.Endpoint) (provider.Provider, error) {
 		built++
 		if e.BaseURL == "broken" {
 			return nil, errors.New("no key")
 		}
 		return nil, nil
+	}
+	r := provider.NewRegistry(chat, func(provider.Endpoint) (provider.Provider, error) {
+		return nil, errors.New("responses")
 	})
 
 	if _, err := r.Build("openai", provider.Endpoint{BaseURL: "http://api"}); err != nil {
@@ -25,6 +28,20 @@ func TestRegistryBuild(t *testing.T) {
 	}
 	if built != 1 {
 		t.Errorf("constructor called %d times, want 1", built)
+	}
+	if _, err := r.Build("openai", provider.Endpoint{BaseURL: "http://api", API: provider.APIChat}); err != nil || built != 2 {
+		t.Errorf("Build with the chat api = %v after %d calls, want the chat constructor", err, built)
+	}
+	if _, err := r.Build("openai", provider.Endpoint{BaseURL: "http://api", API: provider.APIResponses}); err == nil || err.Error() != "responses" {
+		t.Errorf("Build with the responses api = %v, want the responses constructor", err)
+	}
+	if _, err := r.Build("openai", provider.Endpoint{BaseURL: "http://api", API: "soap"}); err == nil {
+		t.Error("Build of an unknown api returned no error")
+	}
+	chatOnly := provider.NewRegistry(chat, nil)
+	if _, err := chatOnly.Build("openai", provider.Endpoint{BaseURL: "http://api", API: provider.APIResponses}); err == nil ||
+		!strings.Contains(err.Error(), "does not speak the responses api") {
+		t.Errorf("Build of a protocol the kind does not speak = %v, want an error saying so", err)
 	}
 	if _, err := r.Build("openai", provider.Endpoint{BaseURL: "broken"}); err == nil {
 		t.Error("Build of a broken endpoint returned no error")

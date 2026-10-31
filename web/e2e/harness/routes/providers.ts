@@ -17,7 +17,7 @@ function thinkingSwitch(value: unknown): ThinkingSwitch {
   return value === "chat_template_kwargs" || value === "thinking" ? value : "reasoning_effort";
 }
 
-const endpointFields: EndpointField[] = ["backend", "pool", "slots", "kv"];
+const endpointFields: EndpointField[] = ["backend", "pool", "slots", "kv", "api"];
 
 /** overrideProblem mirrors validateOverride in internal/server/providers.go. */
 function overrideProblem(body: Record<string, unknown>): Reply | undefined {
@@ -31,6 +31,9 @@ function overrideProblem(body: Record<string, unknown>): Reply | undefined {
   if (typeof body.kv_tokens === "number" && body.kv_tokens > 0 && body.kv !== "shared") {
     return bad("kv_tokens is the size of a shared cache; set kv to shared with it");
   }
+  if (typeof body.api === "string" && !["responses", "chat"].includes(body.api)) {
+    return bad("api must be one of responses, chat");
+  }
   return undefined;
 }
 
@@ -42,6 +45,10 @@ function applyOverride(row: Provider, body: Record<string, unknown>): void {
   if (typeof body.backend === "string") {
     row.backend = body.backend as Backend;
     mark("backend");
+  }
+  if (body.api === "responses" || body.api === "chat") {
+    row.api = body.api;
+    mark("api");
   }
   if (typeof body.pool === "string") {
     // The harness stores "" for the default, which reads as the provider's name.
@@ -82,6 +89,7 @@ export function providerRoutes(ctx: RouteContext): void {
     if (row && sameEndpoint && typeof body.api_key !== "string") {
       if (!row.overridden.includes("backend")) row.backend = finds.backend;
       if (!row.overridden.includes("slots")) row.slots = finds.slots;
+      if (!row.overridden.includes("api")) row.api = finds.api;
       if (!row.overridden.includes("kv")) {
         row.kv = finds.kv;
         if (finds.kv_tokens !== undefined) row.kv_tokens = finds.kv_tokens;
@@ -150,6 +158,7 @@ export function providerRoutes(ctx: RouteContext): void {
       pool: str(body.name),
       slots: 1,
       kv: "unknown",
+      api: "chat",
       capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
       overridden: [],
       created_at: now(),

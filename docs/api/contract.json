@@ -663,6 +663,7 @@
             "nullable": {
               "array": {
                 "object": {
+                  "api": "string",
                   "api_key_hint": "string",
                   "api_key_set": "boolean",
                   "backend": "string",
@@ -672,11 +673,30 @@
                       "build": "string",
                       "cache_metrics": "string",
                       "counting": "string",
+                      "responses": {
+                        "object": {
+                          "build": "string",
+                          "cache_metrics": "boolean",
+                          "checked_at": "string",
+                          "counted": "boolean",
+                          "drift": "number",
+                          "model": "string",
+                          "reason": "string",
+                          "reasoning": "boolean",
+                          "verdict": "string"
+                        },
+                        "optional": [
+                          "build",
+                          "model",
+                          "reason"
+                        ]
+                      },
                       "slot_hints": "boolean",
                       "window": "number"
                     },
                     "optional": [
                       "build",
+                      "responses",
                       "window"
                     ]
                   },
@@ -949,6 +969,9 @@
                     ]
                   },
                   "reasoning": "string",
+                  "reasoning_items": {
+                    "array": "any"
+                  },
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -972,6 +995,7 @@
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "reasoning_items",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -1309,6 +1333,9 @@
                     ]
                   },
                   "reasoning": "string",
+                  "reasoning_items": {
+                    "array": "any"
+                  },
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -1332,6 +1359,7 @@
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "reasoning_items",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -1810,6 +1838,9 @@
                     ]
                   },
                   "reasoning": "string",
+                  "reasoning_items": {
+                    "array": "any"
+                  },
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -1833,6 +1864,7 @@
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "reasoning_items",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -2081,6 +2113,9 @@
                         ]
                       },
                       "reasoning": "string",
+                      "reasoning_items": {
+                        "array": "any"
+                      },
                       "role": "string",
                       "summary": "boolean",
                       "tool_call_id": "string",
@@ -2104,6 +2139,7 @@
                       "is_error",
                       "metrics",
                       "reasoning",
+                      "reasoning_items",
                       "summary",
                       "tool_call_id",
                       "tool_calls"
@@ -2208,6 +2244,9 @@
                     ]
                   },
                   "reasoning": "string",
+                  "reasoning_items": {
+                    "array": "any"
+                  },
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -2231,6 +2270,7 @@
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "reasoning_items",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -2582,6 +2622,7 @@
       "status": 200,
       "request": {
         "object": {
+          "api": "string",
           "api_key": "string",
           "backend": "string",
           "base_url": "string",
@@ -2597,6 +2638,7 @@
       },
       "response": {
         "object": {
+          "api": "string",
           "api_key_hint": "string",
           "api_key_set": "boolean",
           "backend": "string",
@@ -2606,11 +2648,30 @@
               "build": "string",
               "cache_metrics": "string",
               "counting": "string",
+              "responses": {
+                "object": {
+                  "build": "string",
+                  "cache_metrics": "boolean",
+                  "checked_at": "string",
+                  "counted": "boolean",
+                  "drift": "number",
+                  "model": "string",
+                  "reason": "string",
+                  "reasoning": "boolean",
+                  "verdict": "string"
+                },
+                "optional": [
+                  "build",
+                  "model",
+                  "reason"
+                ]
+              },
               "slot_hints": "boolean",
               "window": "number"
             },
             "optional": [
               "build",
+              "responses",
               "window"
             ]
           },
@@ -3417,6 +3478,7 @@
       },
       "response": {
         "object": {
+          "api": "string",
           "api_key_hint": "string",
           "api_key_set": "boolean",
           "backend": "string",
@@ -3426,11 +3488,30 @@
               "build": "string",
               "cache_metrics": "string",
               "counting": "string",
+              "responses": {
+                "object": {
+                  "build": "string",
+                  "cache_metrics": "boolean",
+                  "checked_at": "string",
+                  "counted": "boolean",
+                  "drift": "number",
+                  "model": "string",
+                  "reason": "string",
+                  "reasoning": "boolean",
+                  "verdict": "string"
+                },
+                "optional": [
+                  "build",
+                  "model",
+                  "reason"
+                ]
+              },
               "slot_hints": "boolean",
               "window": "number"
             },
             "optional": [
               "build",
+              "responses",
               "window"
             ]
           },
@@ -3490,17 +3571,37 @@
           },
           "probe": {
             "object": {
+              "api": "string",
               "backend": "string",
               "capabilities": {
                 "object": {
                   "build": "string",
                   "cache_metrics": "string",
                   "counting": "string",
+                  "responses": {
+                    "object": {
+                      "build": "string",
+                      "cache_metrics": "boolean",
+                      "checked_at": "string",
+                      "counted": "boolean",
+                      "drift": "number",
+                      "model": "string",
+                      "reason": "string",
+                      "reasoning": "boolean",
+                      "verdict": "string"
+                    },
+                    "optional": [
+                      "build",
+                      "model",
+                      "reason"
+                    ]
+                  },
                   "slot_hints": "boolean",
                   "window": "number"
                 },
                 "optional": [
                   "build",
+                  "responses",
                   "window"
                 ]
               },
@@ -3514,6 +3615,7 @@
           },
           "provider": {
             "object": {
+              "api": "string",
               "api_key_hint": "string",
               "api_key_set": "boolean",
               "backend": "string",
@@ -3523,11 +3625,30 @@
                   "build": "string",
                   "cache_metrics": "string",
                   "counting": "string",
+                  "responses": {
+                    "object": {
+                      "build": "string",
+                      "cache_metrics": "boolean",
+                      "checked_at": "string",
+                      "counted": "boolean",
+                      "drift": "number",
+                      "model": "string",
+                      "reason": "string",
+                      "reasoning": "boolean",
+                      "verdict": "string"
+                    },
+                    "optional": [
+                      "build",
+                      "model",
+                      "reason"
+                    ]
+                  },
                   "slot_hints": "boolean",
                   "window": "number"
                 },
                 "optional": [
                   "build",
+                  "responses",
                   "window"
                 ]
               },

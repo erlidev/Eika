@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -206,6 +207,7 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 	}
 	var text strings.Builder
 	var reasoning strings.Builder
+	var reasoningItems []json.RawMessage
 	var calls []provider.ToolCall
 	var usage provider.Usage
 	var timings provider.Timings
@@ -236,6 +238,8 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 			if gen != nil {
 				a.emit(ctx, s, event.TypeReasoningDelta, event.ReasoningDelta{RunID: runID, Text: e.ReasoningDelta})
 			}
+		case provider.KindReasoningItem:
+			reasoningItems = append(reasoningItems, e.ReasoningItem)
 		case provider.KindToolCallDelta:
 			begin()
 		case provider.KindToolCall:
@@ -278,16 +282,14 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 		elapsed := elapsedSince(started)
 		gen.add(usage, elapsed, withHarnessDecode(timings, usage, elapsed))
 	}
-	return response{
-		message: provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls),
-		stop:    stop,
-		usage:   usage,
-	}, nil
+	message := provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls)
+	message.ReasoningItems = reasoningItems
+	return response{message: message, stop: stop, usage: usage}, nil
 }
 
 // empty reports whether an assistant message carries nothing at all.
 func empty(m provider.Message) bool {
-	return m.Content == "" && m.Reasoning == "" && len(m.ToolCalls) == 0
+	return m.Content == "" && m.Reasoning == "" && len(m.ReasoningItems) == 0 && len(m.ToolCalls) == 0
 }
 
 // cutOff reports whether a stop reason means the model stopped before it was

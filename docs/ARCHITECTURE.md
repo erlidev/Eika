@@ -30,7 +30,7 @@ egress proxy are network calls and run in the harness.
 | `event` | Envelope, type constants, payload structs, `Emitter`, fan-out `Bus` |
 | `server` | Composition, JSON API, event stream, auth, run manager; `server/servertest` builds and checks `docs/api/contract.json` |
 | `agent` | The loop: turns, tool dispatch, queues, retries, context assembly |
-| `provider` | Model interface, kind registry, `Complete`; `openai` implementation; `providertest` scripted fake; `probe` identifies the backend behind an endpoint and reads its slots, window, KV cache and capabilities, with `probetest` serving its fixtures; `counter` predicts a request's token count (exact, anchored or estimated) and learns from the measured one |
+| `provider` | Model interface, kind registry, `Complete`; `openai` implementation in two protocols (Chat Completions and the stateless Responses API); `providertest` scripted fake; `probe` identifies the backend behind an endpoint, reads its slots, window, KV cache and capabilities, and runs the Responses conformance check, with `probetest` serving its fixtures; `counter` predicts a request's token count (exact, anchored or estimated) and learns from the measured one |
 | `utility` | The harness's own one-shot model tasks (session titles), sent to the model a task is assigned |
 | `imaging` | Prepares attached images: decode, EXIF orientation, fit within 1080p (Catmull-Rom), PNG or JPEG without metadata |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
@@ -67,6 +67,15 @@ Run(ctx, session, text)
   on `POST /api/providers/probe` and for every provider at start (`Server.Run`),
   and `store.RecordProbe` writes the result in one statement that leaves the
   fields in `overridden` alone. A failed probe writes only `probe_error`.
+  `probe.CheckResponses` is the one thing here that asks a model: two small
+  requests (a streamed tool call with the model's reasoning, then the call, its
+  result and the reasoning item sent back), which must complete, state their
+  usage with a cached count, and be counted to the token by the counter. It
+  runs on the explicit probe, and at start only for a stored provider whose
+  recorded outcome (`capabilities.responses`) was made against another server
+  build or another model than the one it would ask now; the outcome picks the
+  provider's `api` (`responses` only when it passed), which a user's own choice
+  overrides. `server/providers_responses.go` runs it.
 - **counter** (`provider/counter`) predicts the size of a `provider.Request`
   before it is sent. One `Counter` belongs to one session: `Predict` returns a
   `provider.Prediction` (tokens and method) and `Observe` takes the measured
@@ -110,6 +119,19 @@ Run(ctx, session, text)
   Chat Completions chunk and a Responses event by each field's documented
   meaning, and `provider.Tally` sums a run of calls so that a count any call
   did not state is not stated for the total.
+  Both protocols implement `provider.Provider`, in package `openai` on the
+  same SDK client: `Provider` speaks Chat Completions and `Responses` the
+  stateless Responses API (`store: false`, the whole input every call). The
+  registry builds one or the other from `Endpoint.API`, which `server` takes
+  from the provider row's `api`, and `Endpoint.Hosted` (a hosted API, not a
+  server on the user's hardware) decides which fields a Responses request may
+  carry. `Responses` borrows the chat provider's HTTP client, error
+  classification, model list and `ChatBody`, so the token counter renders one
+  chat body whichever protocol sends. An assistant message keeps the reasoning
+  items the endpoint returned as `Message.ReasoningItems`, exactly as sent,
+  beside the reasoning text; they are stored in the entry, sent back when the
+  model preserves thinking, and ignored by Chat Completions, which sends the
+  text.
 - **tool**: a call gets a `CallContext` (executor, emitter, ids). A
   `tool.Standalone` tool runs with a nil executor in chats;
   `Registry.Filter` narrows the shared registry per run. `bash` is the only
@@ -197,7 +219,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
-| `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, capabilities (jsonb), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
+| `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, api (`chat` or `responses`), capabilities (jsonb, with the Responses check's outcome), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
 | `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
 | `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; `queue_ms`, `slot`, `class`, `priority` and `agent` stay NULL until the inference queue and the agents fill them |
@@ -251,7 +273,7 @@ is the same base prompt every session has. web_fetch refuses filters in a chat.
 ```
 cmd/eika -> server.Run
   store.Open, secret.Load, computer.NewHost,
-  provider.NewRegistry(openai.New), builtin.Registry, event.NewBus, NewMCP
+  provider.NewRegistry(openai.New, openai.NewResponses), builtin.Registry, event.NewBus, NewMCP
   -> server.New(Deps) -> Reconcile -> Serve
 
 POST /api/sessions/{id}/messages          GET /api/events

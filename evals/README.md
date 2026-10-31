@@ -44,6 +44,19 @@ reasoning: the loop's tokenised count, labelled as such, within a few tokens of
 the completion tokens the server generated) and `context_breakdown` (the parts
 of a plain request counted one by one, plus the template's remainder, equal the
 server's prompt count, and the remainder is small and not negative).
+`tool_arguments` (a history whose tool calls have spaced, reordered, nested and
+non-ASCII arguments), `thinking_switches` (the same short request with every way
+a model's thinking is asked for or turned off) and `cut_off_reasoning` (the
+request after a response cut off inside its reasoning) count requests a server
+may render differently from how they were read: each must be exact with no
+drift. The ones that run under both protocols exist twice, the second named
+`responses_<name>` (`OnResponses`): the same requests through the Responses
+provider, counted from the chat body, which fails if the server's conversion of
+the input left out or changed anything the chat request holds. `responses_drift`
+is a three-turn conversation with thinking on, parallel tool calls and replayed
+reasoning items under the Responses API, and `responses_conformance` runs the
+harness's Responses conformance check for real (two small model requests) and
+requires it to pass.
 
 Keep scenarios small: bounded `max_tokens`, no load. The server is shared; do
 not start, stop or swap anything on it from a scenario.

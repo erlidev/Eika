@@ -128,6 +128,19 @@ row names its kind. The server builds a client for one run, probe, or test by
 calling the kind's constructor with a `provider.Endpoint`, the row's base URL
 and its key opened from the database, and drops the client afterwards.
 
+A kind speaks one or more protocols (`provider.API`: `chat` for Chat
+Completions, `responses` for the stateless Responses API), with a constructor
+for each. The `openai` kind has both, `openai.New` and `openai.NewResponses`,
+and the provider row's `api` picks one: `Endpoint.API` carries it, and
+`Endpoint.Hosted` says the endpoint is a hosted API, which takes only the
+request fields its specification defines. A kind that speaks one protocol
+registers no constructor for the other, and the registry refuses to build it.
+Both protocols of a kind implement `provider.Provider`, so nothing above the
+provider sees which is in use: they must therefore map the same things (the
+list below), classify failures the same way, and share what does not differ
+(the HTTP client, `ChatBody`, the model list), as `openai.Responses` borrows
+them from `openai.Provider`.
+
 A provider converts a `provider.Request` into a stream of `provider.Event`
 values and never leaks a vendor SDK type upwards. It closes the channel after a
 `KindDone` or `KindError` event and stops when the context is cancelled. The
@@ -199,10 +212,10 @@ Register it in `internal/provider/registry.go`. Constructors are parameters of
 file cannot import them back:
 
 ```go
-func NewRegistry(openAI, echo Constructor) *Registry {
-	return &Registry{kinds: map[string]Constructor{
-		"openai": openAI,
-		"echo":   echo,
+func NewRegistry(openAIChat, openAIResponses, echo Constructor) *Registry {
+	return &Registry{kinds: map[string]kind{
+		"openai": {chat: openAIChat, responses: openAIResponses},
+		"echo":   {chat: echo},
 	}}
 }
 ```
@@ -225,9 +238,20 @@ identifier runs. Add the backend to `Backend`, to the `backend` check of the
 folder's README, and a constructor in `probetest`. A field the server does not
 state is the documented default or `unknown`, never a guess.
 
+A new protocol of an existing kind that an endpoint may or may not take is
+chosen per provider row, so it needs a check that tells the two apart:
+`probe.CheckResponses` is the Responses one (a streamed tool-call round trip
+with the reasoning item sent back, usage with cache metrics, exact counting),
+run by `server/providers_responses.go` and recorded in
+`capabilities.responses`. It asks the user's model, so it runs only when a
+probe needs it. Record each backend's streams in
+`internal/provider/testdata/responses/<backend>/`, marked recorded or
+unverified in the README there.
+
 Test a provider against an `httptest` server that serves its wire format, as
-`internal/provider/openai/openai_test.go` does. Test everything that consumes a
-provider with `provider/providertest`, the scripted fake.
+`internal/provider/openai/openai_test.go` and `responses_test.go` do. Test
+everything that consumes a provider with `provider/providertest`, the scripted
+fake.
 
 What a provider maps from the request:
 
@@ -239,7 +263,27 @@ What a provider maps from the request:
   `Request.ThinkingSwitch` names, or however the API disables thinking.
 - Emit `KindReasoningDelta` for reasoning always; the agent streams it and
   stores it in `Message.Reasoning`. When `preserve_thinking` is on, send
-  stored reasoning back on later assistant messages.
+  stored reasoning back on later assistant messages. A protocol whose
+  reasoning is an item the endpoint must be sent back as it returned it (the
+  Responses API, where a hosted API's item is encrypted) emits each as a
+  `KindReasoningItem` event holding the item's JSON untouched; the agent keeps
+  them in `Message.ReasoningItems`, and the provider sends them back as they
+  are. A message from a protocol that has no item has only its text, so a
+  provider must accept a message of either origin and send a valid request:
+  Chat Completions sends the text, a Responses provider builds an item from the
+  text for a server on the user's hardware and sends nothing for a hosted API,
+  which refuses an item it did not return. An item with nothing after it in its
+  message (a response cut off in its reasoning) is not sent to a hosted API.
+- Report why a response ended in `KindDone`'s stop reason, and `length` when
+  the output limit cut it off: the agent keeps what arrived, drops any tool
+  call the response was in the middle of, and ends the turn. An endpoint that
+  never says so (llama.cpp reports a response cut off by `max_output_tokens` as
+  completed) is told by its output count reaching the limit the request set.
+- Classify a failure as a `provider.Error`: retryable for a transport failure,
+  a timeout, a rate limit and a server error, never for a refusal. Put the
+  endpoint's own wording, and its error code, in the text, since
+  `provider.ContextOverflow` matches an overflow by what the endpoint says
+  (`context_length_exceeded`, `exceeds the available context size`).
 - `Message.Images` on a user message: PNG or JPEG data with its size, sent
   only to a model with image input (the agent replaces them with a note for
   any other). Send them the way the API takes pictures, before the text.
