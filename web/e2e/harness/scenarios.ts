@@ -53,6 +53,7 @@ function workbench(): WorldBuilder {
       role: "user",
       content:
         "The webhook client retries immediately on failure. Add exponential backoff with jitter, capped at 30s.",
+      context: "<context>\ntime: Sat 2026-03-14 12:00 +00:00 (UTC)\n</context>",
     },
     {
       role: "assistant",

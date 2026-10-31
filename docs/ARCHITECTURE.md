@@ -171,6 +171,15 @@ Run(ctx, session, text)
   size estimate for each. Runs and `Agent.Preview` share it; a `Recorder`
   sees every call that returned.
 
+Every user-side message ends with a `<context>` block (`agent/contextblock.go`)
+that states the time it was sent to the minute, in `Options.Location` (UTC until
+the preamble carries the user's zone), read from `Options.Clock`. It is written
+once, when the loop first holds the message (`Run`, `Steer`, `FollowUp`), kept in
+`Message.Context` beside `Content` and stored with the message, so a resumed
+session sends the same bytes and the prefix never changes under it. A request
+joins it to the text (`Message.ModelText`); the interface, titles and the
+transcript form of a summary use `Content` alone.
+
 Queues follow Pi: steering joins after the running tool, before the next model
 call; follow-ups wait for the turn to end (`QueueOneAtATime` or `QueueAll`).
 Aborting returns an unanswered message to its queue and answers every pending

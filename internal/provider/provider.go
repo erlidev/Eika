@@ -114,6 +114,15 @@ const (
 type Message struct {
 	Role    Role   `json:"role"`
 	Content string `json:"content,omitempty"`
+	// Context is the <context> block a user-side message ends with: the time
+	// it was sent, and later its channel and notices. It is written once, when
+	// the message is first sent, and stored with it, so a message is sent
+	// again with the very bytes it was sent with; computing it at send time
+	// would change the prefix of every request. It is kept apart from Content
+	// because it is not what the user wrote: the interface shows Content, a
+	// title is made from Content, and only a request joins the two
+	// (ModelText).
+	Context string `json:"context,omitempty"`
 	// Images are the pictures a user message carries beside Content. A
 	// request carries them only to a model that accepts images; the agent
 	// replaces them with a note for any other.
@@ -160,6 +169,19 @@ type Image struct {
 // message is not sent.
 func (m Message) Empty() bool {
 	return m.Content == "" && len(m.Images) == 0
+}
+
+// ModelText returns the text of a user-side message as the model reads it: what
+// the user wrote, then the context block at its end. It is what a request sends
+// and what is counted for it.
+func (m Message) ModelText() string {
+	switch {
+	case m.Context == "":
+		return m.Content
+	case m.Content == "":
+		return m.Context
+	}
+	return m.Content + "\n\n" + m.Context
 }
 
 // MessageMetrics is the measured state after one assistant response. It is

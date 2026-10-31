@@ -387,6 +387,11 @@ model is configured; `400` for a model that does not exist.
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
 | `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `threshold`, or `overflow`), and `usage`. The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
 
+A user message can include `context`: the block the model reads after the
+message's text, which states the time it was sent. It is not what the user
+wrote, so a client shows `content` and not `context`; the Context inspector
+shows both. Messages stored before the field existed lack it.
+
 A provider message can include `reasoning` on an assistant entry whenever the
 endpoint streamed it. The session view shows it apart from the answer; Eika
 replays it to the provider only when `preserve_thinking` is on. An entry of a

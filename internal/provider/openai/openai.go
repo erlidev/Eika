@@ -333,7 +333,7 @@ func message(m provider.Message, preserveThinking bool, wire map[string]string) 
 	switch m.Role {
 	case provider.RoleUser:
 		if len(m.Images) == 0 {
-			return openai.UserMessage(m.Content), nil
+			return openai.UserMessage(m.ModelText()), nil
 		}
 		return openai.UserMessage(userParts(m)), nil
 	case provider.RoleTool:
@@ -376,8 +376,8 @@ func userParts(m provider.Message) []openai.ChatCompletionContentPartUnionParam 
 			URL: "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data),
 		}))
 	}
-	if m.Content != "" {
-		parts = append(parts, openai.TextContentPart(m.Content))
+	if text := m.ModelText(); text != "" {
+		parts = append(parts, openai.TextContentPart(text))
 	}
 	return parts
 }

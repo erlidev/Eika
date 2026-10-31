@@ -95,7 +95,7 @@ func take(req provider.Request) census {
 		case provider.RoleTool:
 			c.shape[termTool]++
 		}
-		add(m.Content)
+		add(m.ModelText())
 		for _, call := range m.ToolCalls {
 			c.shape[termCall]++
 			add(call.Name)

@@ -8,3 +8,7 @@ func (a *Agent) ShouldCompact(p provider.Prediction) bool { return a.shouldCompa
 
 // WidenedReserve exposes widenedReserve to the external tests.
 var WidenedReserve = widenedReserve
+
+// Transcript exposes the transcript form of a summary request to the external
+// tests.
+var Transcript = transcript

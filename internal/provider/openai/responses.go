@@ -301,8 +301,8 @@ func userItem(m provider.Message) map[string]any {
 			"image_url": "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data),
 		})
 	}
-	if m.Content != "" || len(parts) == 0 {
-		parts = append(parts, map[string]any{"type": "input_text", "text": m.Content})
+	if text := m.ModelText(); text != "" || len(parts) == 0 {
+		parts = append(parts, map[string]any{"type": "input_text", "text": text})
 	}
 	return map[string]any{"type": "message", "role": "user", "content": parts}
 }

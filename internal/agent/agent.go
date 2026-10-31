@@ -89,6 +89,13 @@ type Options struct {
 	// Inference says how the agent's model calls wait for the GPU. The zero
 	// value takes no lease.
 	Inference Inference
+	// Clock tells the time the <context> block of a user-side message states,
+	// and the loop's wall-time limit measures against. Nil means time.Now.
+	Clock func() time.Time
+	// Location is the zone the block states its time in. Nil means UTC: the
+	// user's zone belongs to the session preamble, which does not exist yet
+	// (docs/DECISIONS.md, "The context block").
+	Location *time.Location
 }
 
 // Agent runs the loop for one session at a time.
@@ -131,6 +138,12 @@ func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
 	if opts.Counter == nil {
 		opts.Counter = counter.NewEstimating()
 	}
+	if opts.Clock == nil {
+		opts.Clock = time.Now
+	}
+	if opts.Location == nil {
+		opts.Location = time.UTC
+	}
 	return &Agent{provider: p, counter: opts.Counter, tools: r, opts: opts, accepting: true}
 }
 
@@ -142,7 +155,7 @@ func (a *Agent) Steer(msg provider.Message) bool {
 	if !a.accepting {
 		return false
 	}
-	a.steering.push(msg)
+	a.steering.push(a.stamp(msg))
 	return true
 }
 
@@ -154,7 +167,7 @@ func (a *Agent) FollowUp(msg provider.Message) bool {
 	if !a.accepting {
 		return false
 	}
-	a.followUps.push(msg)
+	a.followUps.push(a.stamp(msg))
 	return true
 }
 
@@ -180,7 +193,7 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Messag
 	defer a.closeQueues()
 	a.seedCounter(ctx, s, prompt)
 
-	msgs, origin := []provider.Message{userMessage}, (*queue)(nil)
+	msgs, origin := []provider.Message{a.stamp(userMessage)}, (*queue)(nil)
 	if userMessage.Empty() {
 		msgs = nil
 	}

@@ -103,6 +103,12 @@ export type MessageImage = {
 export type Message = {
   role: Role;
   content?: string;
+  /**
+   * context is the block the model reads at the end of a user message: the
+   * time it was sent. It is not what the user wrote, so the transcript shows
+   * `content` alone and the Context panel shows both.
+   */
+  context?: string;
   /** images are the pictures a user message carries beside its text. */
   images?: MessageImage[];
   /** reasoning is the model's thinking for this message, shown apart from its answer. */

@@ -249,6 +249,13 @@ type fixture struct {
 // newFixture builds an agent over the built-in tools plus any extra tools.
 func newFixture(t *testing.T, steps []providertest.Step, extra ...tool.Tool) *fixture {
 	t.Helper()
+	return newFixtureWith(t, agent.Options{}, steps, extra...)
+}
+
+// newFixtureWith is newFixture with options of the test's own. The fixture
+// fills in the ones the test leaves zero.
+func newFixtureWith(t *testing.T, opts agent.Options, steps []providertest.Step, extra ...tool.Tool) *fixture {
+	t.Helper()
 	e, err := local.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("local.New: %v", err)
@@ -265,14 +272,17 @@ func newFixture(t *testing.T, steps []providertest.Step, extra ...tool.Tool) *fi
 	p := providertest.New(steps...)
 	rec := &recorder{}
 	store := newMemoryStore()
-	a := agent.New(p, r, agent.Options{
-		Executor:      e,
-		Emitter:       rec,
-		Store:         store,
-		ContextWindow: 400_000,
-		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RetryBackoff:  time.Millisecond,
-	})
+	opts.Executor, opts.Emitter, opts.Store = e, rec, store
+	if opts.ContextWindow == 0 {
+		opts.ContextWindow = 400_000
+	}
+	if opts.Logger == nil {
+		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if opts.RetryBackoff == 0 {
+		opts.RetryBackoff = time.Millisecond
+	}
+	a := agent.New(p, r, opts)
 	return &fixture{agent: a, provider: p, events: rec, store: store, exec: e, session: agent.NewSession("session-1", "computer-1")}
 }
 

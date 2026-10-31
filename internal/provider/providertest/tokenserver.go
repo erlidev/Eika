@@ -109,7 +109,7 @@ func (s *TokenServer) Render(req provider.Request) string {
 	for i, m := range req.Messages {
 		switch m.Role {
 		case provider.RoleUser:
-			turn("user", m.Content)
+			turn("user", m.ModelText())
 		case provider.RoleTool:
 			turn("function_result", m.Content)
 		case provider.RoleAssistant:

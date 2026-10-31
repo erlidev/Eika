@@ -379,6 +379,64 @@ this file says why, so neither repeats the other.
   with a restart, and a mint must not depend on state that does not persist);
   rewriting the ids of old entries (above).
 
+### The context block
+
+- **Every user-side message ends with a `<context>` block that states the time
+  to the minute, written once when the message is first sent.**
+  `Message.Context` holds it, stored with the message, and a request joins it
+  to the message's text with a blank line (`Message.ModelText`). The block is
+  `<context>`, one `name: value` line per field in a fixed order, `</context>`,
+  so the channel (phase 2) and the notices (phase 2 and later) join as more
+  lines and nothing about the shape changes: `time: Sat 2026-10-31 14:05 +00:00
+  (UTC)` today. A message that already has its block keeps it: a message read
+  back from the store, or given back to its queue by a turn that failed, is
+  never stamped again.
+- **Why stored, and why apart from the text.** The time is read once and
+  written once. A block computed when a request is built would give every
+  earlier user message a different time on every call, the serialised prefix
+  would change at the first one, and the whole prompt cache would go with it;
+  a resumed session would send different bytes from the session it resumed.
+  The agent test that moves the clock between turns and across a restart and
+  asserts each request is a byte-prefix of the next is the proof. It is kept
+  out of `Content` because everything that reads `Content` (the transcript,
+  the turn's start event, the queue's display, the title, the transcript form
+  of a summary) means what the user wrote, and each would otherwise have to
+  strip a block of its own. Rejected: the block inside `Content` with the UI
+  and the title stripping it (one missed reader shows it to the user or puts
+  a clock in a title); the block built by the provider at send time (the
+  prefix problem above).
+- **When a message is stamped.** At the first point the loop holds it: `Run`
+  for the message it starts with, `Steer` and `FollowUp` for the ones queued.
+  A queued message states the minute the user sent it, not the minute a turn
+  picked it up, which may be a long tool call later. A tool result is not a
+  user-side message and carries no block, and nor does the summary a
+  compaction leaves. The images-in-tool-results message of the design (phase
+  2) is a user message the harness writes after a tool result; it will be
+  stamped like any other.
+- **The zone is UTC until the preamble exists.** The design puts the user's
+  time zone and locale in the preamble entry (phase 2), and the zone the block
+  states its time in is that zone. Nothing records the user's zone before then:
+  the browser knows it, but no setting carries it, and a setting for one value
+  the preamble item would replace is the speculative option the style guide
+  forbids. So `Options.Location` is UTC by default, the block states the
+  zone's name and offset beside the time, so the model never reads a UTC time
+  as local, and the preamble item passes the stored zone. Messages already
+  stored keep the zone they were written in. Rejected: the harness
+  container's local zone (a container's zone is UTC unless someone set it, and
+  says nothing of the user); a guess from the browser at each message (a
+  zone that can change between messages is a changed prefix, and the block
+  would disagree with the preamble).
+- **Counting.** The block is part of what is sent, so the counter counts it:
+  the endpoint's own rendering sees it under `exact`, and the census of the
+  anchored and estimated methods, the context breakdown and the part sizes
+  read `ModelText`. The Context inspector shows the block under its message.
+- **Compaction.** The cached form of a summary request sends the messages as
+  they were, blocks included, and its prompts say what a block is: not the
+  user's words, never quoted, useful for dating what happened. The transcript
+  form is written by the harness from `Content` and holds no block. Rejected:
+  stripping the blocks from the cached form (it is the cached prefix; changing
+  it costs the cache the form exists for).
+
 ### The provider probe
 
 - **A probe reads each server's own description, then verifies the counting

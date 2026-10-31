@@ -236,7 +236,7 @@ func messageTokens(m provider.Message) int {
 	}
 	data, err := json.Marshal(m)
 	if err != nil {
-		return tokens + EstimateTokens(m.Content+m.Reasoning)
+		return tokens + EstimateTokens(m.ModelText()+m.Reasoning)
 	}
 	return tokens + EstimateTokens(string(data))
 }
