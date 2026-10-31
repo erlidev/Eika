@@ -58,8 +58,8 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PUT /api/sessions/{id}/profile", s.handleSetSessionProfile)
 	api.HandleFunc("PUT /api/sessions/{id}/overrides", s.handleSetSessionOverrides)
 	api.HandleFunc("GET /api/sessions/{id}/context", s.handleSessionContext)
-	api.HandleFunc("GET /api/sessions/{id}/requests", s.handleSessionRequests)
-	api.HandleFunc("GET /api/sessions/{id}/requests/{request_id}", s.handleSessionRequest)
+	api.HandleFunc("GET /api/sessions/{id}/calls", s.handleSessionCalls)
+	api.HandleFunc("GET /api/sessions/{id}/calls/{call_id}", s.handleSessionCall)
 
 	api.HandleFunc("POST /api/sessions/{id}/messages", s.handlePostMessage)
 	api.HandleFunc("GET /api/sessions/{id}/run", s.handleSessionRun)

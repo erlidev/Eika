@@ -49,7 +49,7 @@ export function useSessionStream(sessionId: string | undefined): void {
           queryKey: queryKeys.sessionContext(e.topic.slice("session:".length)),
         });
         void client.invalidateQueries({
-          queryKey: queryKeys.sessionRequests(e.topic.slice("session:".length)),
+          queryKey: queryKeys.sessionCalls(e.topic.slice("session:".length)),
         });
       }
     }

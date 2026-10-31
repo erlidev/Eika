@@ -292,7 +292,25 @@ type ModelCall struct {
 	// Usage is what the endpoint measured for this call alone, and zero when
 	// it reported nothing.
 	Usage provider.Usage
+	// Reasoning is how many tokens of the completion were reasoning, and
+	// ReasoningSource where that number came from (ReasoningReported or
+	// ReasoningTokenised). Both are empty when the endpoint states no count.
+	Reasoning       provider.Count
+	ReasoningSource string
+	// ContextWindow is the window the call was judged against, zero when
+	// there was none.
+	ContextWindow int
 }
+
+// The sources a ModelCall's reasoning count can have.
+const (
+	// ReasoningReported is the endpoint's own count.
+	ReasoningReported = "reported"
+	// ReasoningTokenised is a count of the reasoning text by the endpoint's
+	// tokenizer, for an endpoint that states none. It approximates what the
+	// model generated, so it is never presented as a reported number.
+	ReasoningTokenised = "tokenised"
+)
 
 // record tells the Recorder about one finished model call. A record is for
 // inspection and the conversation it describes is already stored, so a
@@ -304,7 +322,13 @@ func (a *Agent) record(ctx context.Context, s *Session, runID string, c Context,
 	}
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteTimeout)
 	defer cancel()
-	call := ModelCall{RunID: runID, SessionID: s.ID, Context: c, Usage: usage}
+	call := ModelCall{
+		RunID: runID, SessionID: s.ID, Context: c, Usage: usage,
+		Reasoning: usage.ReasoningTokens, ContextWindow: a.opts.ContextWindow,
+	}
+	if call.Reasoning.Reported() {
+		call.ReasoningSource = ReasoningReported
+	}
 	if err := a.opts.Recorder.Record(recordCtx, call); err != nil {
 		a.opts.Logger.Error("record model call", "session_id", s.ID, "run_id", runID, "error", err)
 	}

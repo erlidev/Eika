@@ -97,7 +97,7 @@ export function Pane({ view, context, total, edit, onView }: PaneProps) {
         tokens={context.message_tokens}
         total={total}
         note={
-          context.request === undefined
+          context.call === undefined
             ? "The conversation so far. A message sent now is added after these."
             : "The conversation this call sent."
         }

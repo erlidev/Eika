@@ -66,8 +66,8 @@ export function estimatedTotal(parts: readonly Segment[]): number {
  */
 export function scale(c: ModelContext): number | undefined {
   const m = c.calibration;
-  if (m === undefined || m.input_tokens <= 0 || m.estimated_tokens <= 0) return undefined;
-  return m.input_tokens / m.estimated_tokens;
+  if (m === undefined || m.prompt_tokens <= 0 || m.estimated_tokens <= 0) return undefined;
+  return m.prompt_tokens / m.estimated_tokens;
 }
 
 /** share is a part's fraction of the whole, in percent, for the bar's width. */

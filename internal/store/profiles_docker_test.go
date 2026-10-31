@@ -324,7 +324,7 @@ func TestDeletingAProfileOrAModelFallsBackToTheDefault(t *testing.T) {
 	}
 }
 
-func TestModelRequestsAreRecordedPerSession(t *testing.T) {
+func TestModelCallsAreRecordedPerSession(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 	model := newModel(t, st, "gpt-x")
@@ -347,22 +347,22 @@ func TestModelRequestsAreRecordedPerSession(t *testing.T) {
 		t.Fatalf("AppendEntry: %v", err)
 	}
 
-	given := store.ModelRequest{
+	given := store.ModelCall{
 		SessionID: sess.ID, RunID: run.ID, EntryID: entry.ID, ModelID: model.ID, Model: model.Name,
 		Sections:      json.RawMessage(`[{"kind":"base","text":"You are Eika.","tokens":4}]`),
 		Tools:         json.RawMessage(`[{"name":"bash","description":"run","schema":{"type":"object"},"source":"builtin","tokens":9}]`),
 		Parameters:    json.RawMessage(`{"model":"gpt-x","sampling":{"temperature":0.2},"preserve_thinking":false}`),
-		MessageTokens: 5, InputTokens: new(120), OutputTokens: new(30), TotalTokens: new(150), CachedTokens: new(0),
+		MessageTokens: 5, PromptTokens: new(120), CompletionTokens: new(30), TotalTokens: new(150), CachedTokens: new(0),
 	}
-	first, err := st.RecordModelRequest(ctx, given)
+	first, err := st.RecordModelCall(ctx, given)
 	if err != nil {
-		t.Fatalf("RecordModelRequest: %v", err)
+		t.Fatalf("RecordModelCall: %v", err)
 	}
-	second, err := st.RecordModelRequest(ctx, store.ModelRequest{SessionID: sess.ID, RunID: run.ID, ModelID: "absent", Model: "gone"})
+	second, err := st.RecordModelCall(ctx, store.ModelCall{SessionID: sess.ID, RunID: run.ID, ModelID: "absent", Model: "gone"})
 	if err != nil {
-		t.Fatalf("RecordModelRequest without an entry: %v", err)
+		t.Fatalf("RecordModelCall without an entry: %v", err)
 	}
-	if second.InputTokens != nil || second.OutputTokens != nil || second.TotalTokens != nil || second.CachedTokens != nil {
+	if second.PromptTokens != nil || second.CompletionTokens != nil || second.TotalTokens != nil || second.CachedTokens != nil {
 		t.Errorf("record of a call that stated no usage = %+v, want every count NULL, not 0", second)
 	}
 	if second.ModelID != "" || second.Model != "gone" || string(second.Sections) != "[]" || string(second.Parameters) != "{}" {
@@ -371,24 +371,24 @@ func TestModelRequestsAreRecordedPerSession(t *testing.T) {
 
 	refused := []struct {
 		name string
-		r    store.ModelRequest
+		r    store.ModelCall
 	}{
-		{"a run of another session", store.ModelRequest{SessionID: sess.ID, RunID: otherRun.ID, Model: "m"}},
-		{"an entry of another session", store.ModelRequest{SessionID: sess.ID, RunID: run.ID, EntryID: otherEntry.ID, Model: "m"}},
-		{"an unknown session", store.ModelRequest{SessionID: "absent", RunID: run.ID, Model: "m"}},
+		{"a run of another session", store.ModelCall{SessionID: sess.ID, RunID: otherRun.ID, Model: "m"}},
+		{"an entry of another session", store.ModelCall{SessionID: sess.ID, RunID: run.ID, EntryID: otherEntry.ID, Model: "m"}},
+		{"an unknown session", store.ModelCall{SessionID: "absent", RunID: run.ID, Model: "m"}},
 	}
 	for _, c := range refused {
-		if _, err := st.RecordModelRequest(ctx, c.r); !errors.Is(err, store.ErrNotFound) {
+		if _, err := st.RecordModelCall(ctx, c.r); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("recording %s = %v, want ErrNotFound", c.name, err)
 		}
 	}
 
-	got, err := st.ModelRequest(ctx, sess.ID, first.ID)
+	got, err := st.ModelCall(ctx, sess.ID, first.ID)
 	if err != nil {
-		t.Fatalf("ModelRequest: %v", err)
+		t.Fatalf("ModelCall: %v", err)
 	}
 	if got.RunID != run.ID || got.EntryID != entry.ID || got.ModelID != model.ID || got.Model != "gpt-x" ||
-		got.MessageTokens != 5 || stated(got.InputTokens) != 120 || stated(got.OutputTokens) != 30 || stated(got.TotalTokens) != 150 || got.CachedTokens == nil || *got.CachedTokens != 0 {
+		got.MessageTokens != 5 || stated(got.PromptTokens) != 120 || stated(got.CompletionTokens) != 30 || stated(got.TotalTokens) != 150 || got.CachedTokens == nil || *got.CachedTokens != 0 {
 		t.Errorf("record = %+v, want what was given", got)
 	}
 	for name, pair := range map[string][2]json.RawMessage{
@@ -400,37 +400,37 @@ func TestModelRequestsAreRecordedPerSession(t *testing.T) {
 			t.Errorf("record %s = %s, want %s", name, pair[0], pair[1])
 		}
 	}
-	if _, err := st.ModelRequest(ctx, other.ID, first.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.ModelCall(ctx, other.ID, first.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("reading a record through another session = %v, want ErrNotFound", err)
 	}
 
-	list, err := st.ModelRequests(ctx, sess.ID)
+	list, err := st.ModelCalls(ctx, sess.ID)
 	if err != nil {
-		t.Fatalf("ModelRequests: %v", err)
+		t.Fatalf("ModelCalls: %v", err)
 	}
 	if len(list) != 2 || list[0].ID != first.ID || list[1].ID != second.ID {
-		t.Fatalf("ModelRequests = %+v, want both records oldest first", list)
+		t.Fatalf("ModelCalls = %+v, want both records oldest first", list)
 	}
-	if list[0].Sections != nil || list[0].Tools != nil || !sameJSON(t, list[0].Parameters, given.Parameters) || stated(list[0].InputTokens) != 120 {
+	if list[0].Sections != nil || list[0].Tools != nil || !sameJSON(t, list[0].Parameters, given.Parameters) || stated(list[0].PromptTokens) != 120 {
 		t.Errorf("listed record = %+v, want a summary without sections or tools", list[0])
 	}
-	if others, err := st.ModelRequests(ctx, other.ID); err != nil || len(others) != 0 {
+	if others, err := st.ModelCalls(ctx, other.ID); err != nil || len(others) != 0 {
 		t.Errorf("records of another session = %+v, %v; want none", others, err)
 	}
 
 	if err := st.DeleteModel(ctx, model.ID); err != nil {
 		t.Fatalf("DeleteModel: %v", err)
 	}
-	if got, err := st.ModelRequest(ctx, sess.ID, first.ID); err != nil || got.ModelID != "" || got.Model != "gpt-x" {
+	if got, err := st.ModelCall(ctx, sess.ID, first.ID); err != nil || got.ModelID != "" || got.Model != "gpt-x" {
 		t.Errorf("record after deleting its model = %+v, %v; want the name kept", got, err)
 	}
 	if err := st.DeleteSession(ctx, sess.ID); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
-	if _, err := st.ModelRequest(ctx, sess.ID, first.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.ModelCall(ctx, sess.ID, first.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("a record outlived its session: %v", err)
 	}
-	if list, err := st.ModelRequests(ctx, sess.ID); err != nil || len(list) != 0 {
+	if list, err := st.ModelCalls(ctx, sess.ID); err != nil || len(list) != 0 {
 		t.Errorf("records after deleting the session = %+v, %v; want none", list, err)
 	}
 }

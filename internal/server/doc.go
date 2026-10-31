@@ -32,7 +32,7 @@
 // from. A tool choice is resolved against the registry and the MCP pool by
 // toolChosen in tools.go. The run manager, the context preview, and the
 // profile and session configuration routes (profiles.go) all use it, and
-// every model call a run makes is recorded in model_requests (requests.go).
+// every model call a run makes is recorded in model_calls (calls.go).
 //
 // The home computer's sandbox, its limits and egress, is checked in
 // sandbox.go when the settings are saved and applied to its container by

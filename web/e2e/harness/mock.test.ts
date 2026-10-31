@@ -274,11 +274,11 @@ describe("the mock answers as the harness does", () => {
       expect(reply.status, `${key}: ${JSON.stringify(reply.body)}`).toBe(statusOf(key));
     }
     await mock.idle();
-    const listed = await call(mock, "GET", "/api/sessions/ses-backoff/requests");
-    expect(listed.status).toBe(statusOf("GET /api/sessions/{id}/requests"));
-    const recorded = (listed.body as { requests: { id: string }[] }).requests.at(-1)?.id ?? "";
-    const one = await call(mock, "GET", `/api/sessions/ses-backoff/requests/${recorded}`);
-    expect(one.status).toBe(statusOf("GET /api/sessions/{id}/requests/{request_id}"));
+    const listed = await call(mock, "GET", "/api/sessions/ses-backoff/calls");
+    expect(listed.status).toBe(statusOf("GET /api/sessions/{id}/calls"));
+    const recorded = (listed.body as { calls: { id: string }[] }).calls.at(-1)?.id ?? "";
+    const one = await call(mock, "GET", `/api/sessions/ses-backoff/calls/${recorded}`);
+    expect(one.status).toBe(statusOf("GET /api/sessions/{id}/calls/{call_id}"));
     const deleted = await call(mock, "DELETE", `/api/profiles/${profile}`);
     expect(deleted.status).toBe(statusOf("DELETE /api/profiles/{id}"));
     const last = await call(mock, "DELETE", "/api/profiles/prof-default");

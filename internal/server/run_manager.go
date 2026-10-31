@@ -203,7 +203,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	if len(work.message.Images) > 0 && !cfg.model.ImageInput {
 		return store.Run{}, noImageInput(cfg.model.Name)
 	}
-	p, err := s.providerFor(ctx, cfg)
+	ep, err := s.endpointFor(ctx, cfg)
 	if err != nil {
 		return store.Run{}, err
 	}
@@ -217,11 +217,11 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	// them to its tool choice, together with the tools of the MCP servers it
 	// reaches now, and adds only its own executor, which is also where a
 	// web_fetch filter runs.
-	ag := s.newAgent(p, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
+	ag := s.newAgent(ep.client, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
 		Emitter:    s.deps.Bus,
 		Store:      sessionStore,
 		Logger:     s.log,
-		Recorder:   callRecorder{store: s.deps.Store, run: active, config: cfg},
+		Recorder:   callRecorder{store: s.deps.Store, run: active, config: cfg, endpoint: ep.row.Name},
 		Compaction: s.compaction(ctx, cfg.model),
 	})
 	if work.compact && !ag.Compactable(loaded) {

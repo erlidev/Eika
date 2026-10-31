@@ -167,7 +167,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, capabilities (jsonb), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
 | `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
-| `model_requests` | session, run, entry, model, sections, tools, parameters (jsonb), token counts (prompt, completion, total, cached; NULL where the endpoint did not state them) |
+| `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; `queue_ms`, `slot`, `class`, `priority` and `agent` stay NULL until the inference queue and the agents fill them |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |

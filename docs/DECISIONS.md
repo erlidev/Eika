@@ -290,7 +290,7 @@ this file says why, so neither repeats the other.
 - **Schema `core`.** Core's tables live in their own schema rather than
   `public`, so Sentry's schema can sit beside it in the same database with
   its own grants.
-- Every model call is a `model_requests` row holding the system prompt
+- Every model call is a `model_calls` row holding the system prompt
   sections, schemas, and parameters; messages are not copied, since they are
   the session path.
 - A cut-off response (`length`, `content_filter`) is kept and ends the turn,
@@ -432,13 +432,48 @@ this file says why, so neither repeats the other.
   are all 0 is skipped. A 0 beside a real count is a statement and stays.
 - **Stored entries before this change stay readable.** A stored usage without a
   `cached_tokens` key predates unreported counts, and three zeros in it mean the
-  endpoint stated nothing. In `model_requests`, `0005` makes the three counts
+  endpoint stated nothing. In the model call table, `0005` makes the three counts
   nullable, turns rows of three zeros into NULL, and adds `cached_tokens`.
   Rejected: a data migration of the session entries' JSON, which the reader
   makes unnecessary.
 - **Reasoning tokens are not estimated here.** llama.cpp states none, so the
   count is not reported. Tokenising the reasoning text is the token counter's
   to add, as a separate, labelled source.
+
+### Model calls
+
+- **One row per model call, named for what it is.** `model_requests` became
+  `model_calls` (`0006`), with the routes `GET /api/sessions/{id}/calls` and
+  `.../calls/{call_id}` and the Go and TypeScript types renamed with it; a
+  request is what is sent, a call is what happened to it. The two counts took
+  the design's names (`prompt_tokens`, `completion_tokens`). The table keeps
+  `total_tokens`, which the design omits: the server states it, and a column
+  of a stated number is not worth dropping. Rejected: keeping the old route
+  names behind a new table name (every reader would carry both).
+- **The design's `window` is `context_window`**, since `window` is a reserved
+  word in SQL, and the model row and the context response already call it so.
+- **Prefilled is the server's count, or the prompt less the cached part.**
+  `Usage.Prefilled` returns `timings.prompt_n` where stated and otherwise the
+  difference when both counts are, which is the same number because the prompt
+  includes the cached part (verified, "Usage counts"). It is NULL when the
+  cached count is unknown: the prompt alone does not say what was processed.
+- **Reasoning tokens carry their source.** `reasoning_source` is `reported`
+  (the server's count) or `tokenised` (a count of the reasoning text by the
+  endpoint's tokenizer, for a server such as llama.cpp that states none), and
+  is NULL exactly when the count is, by a check constraint. A tokenised count
+  approximates what was generated, so it is stored beside the reported
+  numbers but never in `provider.Usage` or the events, where a reader would
+  take it for the server's. Rejected: one column with the best number available
+  (the reader cannot tell them apart); a separate column for each source (every
+  aggregate would pick one).
+- **Columns with no source yet exist and are NULL.** `queue_ms`, `slot`,
+  `class`, `priority` and `agent` are added now so the inference queue and the
+  agents items add no migration, and nothing writes them. `endpoint` is the
+  provider's name at the time of the call, as `model` is the model's.
+- **A migration renames, it does not copy.** `0006` renames the table, the
+  two columns, and every index and constraint named after the old table, so no
+  object keeps the old name, and rows are untouched. Rejected: a new table
+  and a copy (the rows are the deployment's history).
 
 ### The token counter
 
@@ -660,7 +695,7 @@ this file says why, so neither repeats the other.
   and a hidden call to it per session costs more than a title is worth.
 - A utility call is one request outside any run: no tools, no history,
   thinking off through the model's `thinking_switch` (effort `none`). It is
-  not a `model_requests` row, which records what a session's runs sent.
+  not a `model_calls` row, which records what a session's runs sent.
 - **Session titles**: a session created without a title is `untitled` (a
   column) and shows a placeholder; the first run on it titles it in the
   background from the first user message. The flag is a column because

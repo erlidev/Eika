@@ -12,7 +12,7 @@ import type {
   Message,
   Model,
   ModelContext,
-  ModelRequest,
+  ModelCall,
   Profile,
   Profiles,
   ProfileSettings,
@@ -27,8 +27,8 @@ import type { World } from "./world.ts";
 /** StoredProfile is a profile as the world keeps it, without what it inherits. */
 export type StoredProfile = Omit<Profile, "inherited">;
 
-/** RecordedRequest is one model call a run made, and what it sent. */
-export type RecordedRequest = { record: ModelRequest; context: ModelContext };
+/** RecordedCall is one model call a run made, and what it sent. */
+export type RecordedCall = { record: ModelCall; context: ModelContext };
 
 /** builtinPrompts is internal/agent's ChatPrompt. */
 const builtinPrompts = {
@@ -480,7 +480,7 @@ export function previewContext(w: World, session: Session, requested: string): M
     sources.thinking_switch = "model";
     sources.image_input = "model";
   }
-  const last = (w.requests[session.id] ?? []).findLast((r) => (r.record.input_tokens ?? 0) > 0);
+  const last = (w.calls[session.id] ?? []).findLast((r) => (r.record.prompt_tokens ?? 0) > 0);
   const sizes = messages.map((m) => estimate(JSON.stringify(m)));
   return {
     sections,
@@ -512,11 +512,11 @@ function estimated(c: ModelContext): number {
 }
 
 /** calibration is a recorded call's measurement beside its estimate. */
-function calibration(r: RecordedRequest): NonNullable<ModelContext["calibration"]> {
+function calibration(r: RecordedCall): NonNullable<ModelContext["calibration"]> {
   return {
-    request_id: r.record.id,
+    call_id: r.record.id,
     // The mock records only calls whose input it measured.
-    input_tokens: r.record.input_tokens ?? 0,
+    prompt_tokens: r.record.prompt_tokens ?? 0,
     estimated_tokens: estimated(r.context),
   };
 }
@@ -538,10 +538,10 @@ export function record(
     entryId?: string;
     at?: string;
   },
-): RecordedRequest {
+): RecordedCall {
   const inputTokens = Math.round(estimated(input.context) * 1.16);
   const model = w.models.find((m) => m.model === input.context.parameters.model);
-  const recorded: RecordedRequest = {
+  const recorded: RecordedCall = {
     record: {
       id: input.id,
       session_id: session.id,
@@ -552,19 +552,26 @@ export function record(
       ...(model ? { model_id: model.id } : {}),
       model: model?.name ?? input.context.parameters.model,
       message_tokens: input.context.message_tokens,
-      input_tokens: inputTokens,
-      output_tokens: input.outputTokens,
+      prompt_tokens: inputTokens,
+      completion_tokens: input.outputTokens,
       total_tokens: inputTokens + input.outputTokens,
       cached_tokens: null,
+      prefilled_tokens: null,
+      reasoning_tokens: null,
+      predicted_prompt_tokens: null,
+      drift: null,
+      context_window: model?.context_window ?? null,
+      queue_ms: null,
+      slot: null,
       created_at: input.at ?? fixedNow,
     },
     context: input.context,
   };
-  (w.requests[session.id] ??= []).push(recorded);
+  (w.calls[session.id] ??= []).push(recorded);
   return recorded;
 }
 
-/** recordedContext is GET /api/sessions/{id}/requests/{request_id}. */
-export function recordedContext(r: RecordedRequest): ModelContext {
-  return { ...r.context, request: r.record, calibration: calibration(r) };
+/** recordedContext is GET /api/sessions/{id}/calls/{call_id}. */
+export function recordedContext(r: RecordedCall): ModelContext {
+  return { ...r.context, call: r.record, calibration: calibration(r) };
 }

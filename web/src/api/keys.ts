@@ -24,10 +24,9 @@ export const queryKeys = {
     model === undefined
       ? (["session", id, "context"] as const)
       : (["session", id, "context", model] as const),
-  /** sessionRequests is the prefix of the session's recorded requests and each one. */
-  sessionRequests: (id: string) => ["session", id, "requests"] as const,
-  sessionRequest: (id: string, requestId: string) =>
-    ["session", id, "requests", requestId] as const,
+  /** sessionCalls is the prefix of the session's recorded model calls and each one. */
+  sessionCalls: (id: string) => ["session", id, "calls"] as const,
+  sessionCall: (id: string, callId: string) => ["session", id, "calls", callId] as const,
   profiles: () => ["profiles"] as const,
   /** profileInherited sits under the profiles prefix, so a profile change refreshes it. */
   profileInherited: (modelId: string) => ["profiles", "inherited", modelId] as const,

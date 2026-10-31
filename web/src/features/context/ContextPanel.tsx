@@ -86,7 +86,7 @@ function Summary({ context, onInspect }: SummaryProps) {
   const parts = segments(context);
   const total = estimatedTotal(parts);
   const ratio = scale(context);
-  const measured = context.request?.input_tokens ?? 0;
+  const measured = context.call?.prompt_tokens ?? 0;
   const p = context.parameters;
   const keys: [string, string][] = [
     ["model", p.model === "" ? "none" : p.model],
@@ -109,7 +109,7 @@ function Summary({ context, onInspect }: SummaryProps) {
           <span className="text-muted-foreground">tokens estimated</span>
         </p>
         <p className="text-muted-foreground">
-          {ratio !== undefined && context.request === undefined && (
+          {ratio !== undefined && context.call === undefined && (
             <>
               <span className="font-mono tabular-nums">~{formatTokens(total * ratio)}</span> scaled
               to the last measured call.{" "}
@@ -121,9 +121,9 @@ function Summary({ context, onInspect }: SummaryProps) {
               measured by the endpoint.{" "}
             </>
           )}
-          {context.request === undefined
+          {context.call === undefined
             ? "What a message sent now is added to."
-            : `Sent to ${context.request.model}.`}
+            : `Sent to ${context.call.model}.`}
         </p>
       </div>
 

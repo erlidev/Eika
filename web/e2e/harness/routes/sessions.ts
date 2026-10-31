@@ -241,14 +241,14 @@ export function sessionRoutes(ctx: RouteContext): void {
     }
     return ok(previewContext(w, row, model));
   });
-  on("GET", "/api/sessions/{id}/requests", ({ params }) => {
+  on("GET", "/api/sessions/{id}/calls", ({ params }) => {
     const row = find(w.sessions, params[0], "session");
     if ("status" in row) return row;
-    return ok({ session_id: row.id, requests: (w.requests[row.id] ?? []).map((r) => r.record) });
+    return ok({ session_id: row.id, calls: (w.calls[row.id] ?? []).map((r) => r.record) });
   });
-  on("GET", "/api/sessions/{id}/requests/{request_id}", ({ params }) => {
-    const found = (w.requests[params[0] ?? ""] ?? []).find((r) => r.record.id === params[1]);
-    if (!found) return fail(404, "not_found", "model request not found");
+  on("GET", "/api/sessions/{id}/calls/{call_id}", ({ params }) => {
+    const found = (w.calls[params[0] ?? ""] ?? []).find((r) => r.record.id === params[1]);
+    if (!found) return fail(404, "not_found", "model call not found");
     return ok(recordedContext(found));
   });
 }

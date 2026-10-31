@@ -265,18 +265,18 @@ message does. The MCP tools are those the servers last listed; a preview
 connects nothing. `200` with a ModelContext. `400` for a
 model that does not exist.
 
-### `GET /api/sessions/{id}/requests`
+### `GET /api/sessions/{id}/calls`
 
 The records of the session's model calls: one per call a run made that
-returned a response. `200` with `{"session_id": string, "requests":
-[ModelRequest]}`, oldest first. The records go with their session.
+returned a response. `200` with `{"session_id": string, "calls":
+[ModelCall]}`, oldest first. The records go with their session.
 
-### `GET /api/sessions/{id}/requests/{request_id}`
+### `GET /api/sessions/{id}/calls/{call_id}`
 
 One recorded call, in the shape of the preview: its sections, tool schemas,
 and parameters as it sent them, and its messages rebuilt from the session's
 path down to the entry the call's conversation ended at. `200` with a
-ModelContext that has `request`; `404` for a record of another session.
+ModelContext that has `call`; `404` for a record of another session.
 
 ### ModelContext
 
@@ -290,14 +290,14 @@ ModelContext that has `request`; `404` for a record of another session.
 | `parameters` | object | `{model, sampling, thinking_switch, preserve_thinking, image_input}`: the endpoint's identifier of the model, the sampling parameters sent (a Sampling), the model's thinking switch, whether earlier reasoning is replayed, and whether images are sent (without it each message's images are a note in its text). |
 | `sources` | object | The layer each parameter came from, keyed `model`, `thinking_switch`, `preserve_thinking`, `image_input`, and `sampling.<parameter>`. |
 | `dropped_effort` | string, optional | A reasoning effort the configuration chose that the model does not offer, which is not sent. |
-| `request` | ModelRequest, optional | The record this is; absent for the next request. |
+| `call` | ModelCall, optional | The record this is; absent for the next request. |
 | `context_window` | number | The context window of the call's model, in tokens: what the request and its answer must fit in. 0 when no model is configured, or a recorded call's model is deleted. |
-| `calibration` | object, optional | `{request_id, input_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
+| `calibration` | object, optional | `{call_id, prompt_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
 
 Every `tokens` figure is an estimate, four bytes to a token and an image one
-token per 750 pixels; only a record's `input_tokens`, when it is not `null`, is measured.
+token per 750 pixels; only a record's `prompt_tokens`, when it is not `null`, is measured.
 
-### ModelRequest
+### ModelCall
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -308,7 +308,17 @@ token per 750 pixels; only a record's `input_tokens`, when it is not `null`, is 
 | `model_id` | string, optional | The model, absent once it is deleted. |
 | `model` | string | The model's name when the call was made. |
 | `message_tokens` | number | The estimated size of the messages sent. |
-| `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens` | number or null | What the endpoint measured for the call, as `Usage` in `docs/api/events.md` defines them: `null` when the endpoint did not state a count, never `0` in its place. |
+| `prompt_tokens`, `completion_tokens`, `total_tokens`, `cached_tokens` | number or null | What the endpoint measured for the call: the prompt (the cached part included), everything generated (reasoning included), the total it stated, and the part of the prompt it served from its cache. They are `Usage`'s `input_tokens`, `output_tokens`, `total_tokens` and `cached_tokens` in `docs/api/events.md`. `null` when the endpoint did not state a count, never `0` in its place. |
+| `prefilled_tokens` | number or null | The part of the prompt the endpoint processed: the count it states, else the prompt less the cached part. `null` when neither is known. |
+| `reasoning_tokens` | number or null | The part of the completion that was reasoning. |
+| `reasoning_source` | string, optional | Where `reasoning_tokens` came from: `reported` by the endpoint, or `tokenised` from the reasoning text, which approximates what the model generated. Absent exactly when the count is `null`. |
+| `predicted_prompt_tokens` | number or null | What the token counter expected the prompt to be before the call. `null` for a call made before predictions were recorded. |
+| `prediction` | string, optional | How the prediction was reached: `exact`, `anchored` or `estimated`. Absent with `predicted_prompt_tokens`. |
+| `drift` | number or null | `predicted_prompt_tokens` less `prompt_tokens`; `null` unless both exist. Any drift on an `exact` prediction is a bug. |
+| `context_window` | number or null | The window the call was judged against; `null` when the model had none configured. |
+| `endpoint` | string, optional | The provider's name when the call was made. |
+| `queue_ms`, `slot` | number or null | Wait before the call and the slot that served it. `null` until the inference queue records them. |
+| `class`, `priority`, `agent` | string, optional | Attribution; absent until the inference queue and the agents record them. |
 | `created_at` | time | When the call returned. |
 
 ### Session

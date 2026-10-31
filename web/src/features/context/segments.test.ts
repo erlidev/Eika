@@ -57,7 +57,7 @@ describe("segments", () => {
 describe("scale", () => {
   it("is the measured input over the estimate of the same call", () => {
     const measured = request({
-      calibration: { request_id: "r1", input_tokens: 150, estimated_tokens: 100 },
+      calibration: { call_id: "r1", prompt_tokens: 150, estimated_tokens: 100 },
     });
     expect(scale(measured)).toBe(1.5);
   });
@@ -65,7 +65,7 @@ describe("scale", () => {
   it("is undefined without a measured call", () => {
     expect(scale(request())).toBeUndefined();
     const unmeasured = request({
-      calibration: { request_id: "r1", input_tokens: 0, estimated_tokens: 100 },
+      calibration: { call_id: "r1", prompt_tokens: 0, estimated_tokens: 100 },
     });
     expect(scale(unmeasured)).toBeUndefined();
   });

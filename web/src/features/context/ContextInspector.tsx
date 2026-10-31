@@ -10,7 +10,7 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
-import type { ModelContext, ModelRequest, SessionConfiguration } from "@/api/types";
+import type { ModelCall, ModelContext, SessionConfiguration } from "@/api/types";
 import { LoadError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import {
@@ -141,9 +141,9 @@ export function RequestSelect({ id, requests, className }: RequestSelectProps) {
 }
 
 /** requestLabel names a recorded call in the select: its number, model, and measured input. */
-function requestLabel(r: ModelRequest, n: number): string {
+function requestLabel(r: ModelCall, n: number): string {
   const measured =
-    r.input_tokens !== null && r.input_tokens > 0 ? ` · ${formatTokens(r.input_tokens)} in` : "";
+    r.prompt_tokens !== null && r.prompt_tokens > 0 ? ` · ${formatTokens(r.prompt_tokens)} in` : "";
   return `#${String(n)} · ${r.model}${measured} · ${formatAgo(r.created_at)}`;
 }
 
