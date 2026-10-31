@@ -236,6 +236,13 @@ What a provider maps from the request:
   `Event.Timings` when it measures its own speed (token count and
   milliseconds per phase; see `openai/timings.go`). Leave an unmeasured phase
   zero: the agent times generation itself.
+- Fill `Event.Usage` with the counts the endpoint states and leave the rest
+  not reported: a `provider.Count` is a number or nothing, and nothing is not
+  0. Read a Chat Completions chunk with `provider.ChatUsage` and a Responses
+  event with `provider.ResponsesUsage`; a protocol with other fields gets a
+  reader beside them that keeps each field's meaning (`Usage` says what they
+  are) and a fixture per backend in `internal/provider/testdata/usage`, marked
+  unverified in its README unless it was recorded.
 
 ## Adding a search backend
 

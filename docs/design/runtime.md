@@ -152,11 +152,11 @@ Every model call records these, in a renamed `model_calls` table (formerly
 
 | Field | Source | Meaning |
 |---|---|---|
-| `prompt_tokens` | `usage.prompt_tokens` | Tokens the server tokenised for this request, template included. Ground truth |
-| `cached_tokens` | backend field (see the table above) | Part of the prompt reused from cache. NULL when unknown, never 0 by assumption |
-| `prefilled_tokens` | `prompt - cached`, or `timings.prompt_n` | Tokens actually processed. NULL when cached is unknown |
-| `completion_tokens` | usage | Generated tokens, reasoning included |
-| `reasoning_tokens` | `completion_tokens_details.reasoning_tokens`, else a tokenisation of the reasoning text | Part of the completion that was reasoning |
+| `prompt_tokens` | `usage.prompt_tokens`; `usage.input_tokens` under `responses` | Tokens the server tokenised for this request, template included, **cached tokens included** (verified, below). Ground truth |
+| `cached_tokens` | `usage.prompt_tokens_details.cached_tokens` (`input_tokens_details.cached_tokens` under `responses`), else llama.cpp's `timings.cache_n` | Part of the prompt reused from cache. NULL when the server states neither, never 0 by assumption; a stated 0 is 0. The usage field is read first because it is the one every backend carries, so the count means the same everywhere; `cache_n` is the fallback for a llama.cpp build without it (verified equal, below) |
+| `prefilled_tokens` | `timings.prompt_n`, where the server states it | Tokens actually processed. NULL otherwise: usage parsing derives nothing, and where both `prompt` and `cached` are stated and the prompt includes the cached part, `prompt - cached` is the same number |
+| `completion_tokens` | `usage.completion_tokens`; `usage.output_tokens` under `responses` | Generated tokens, **reasoning included** (verified, below) |
+| `reasoning_tokens` | `usage.completion_tokens_details.reasoning_tokens` (`output_tokens_details.reasoning_tokens` under `responses`) | Part of the completion that was reasoning. NULL when the server states none (llama.cpp does not). A tokenisation of the reasoning text is the token counter's to add, as its own labelled source |
 | `predicted_prompt_tokens`, `prediction` | the runtime | What the runtime expected before sending, and how: `exact`, `anchored` or `estimated` |
 | `window` | effective window | The window this call was judged against |
 | `queue_ms`, `prefill_ms`, `decode_ms` | inference queue, timings | Wait before the call, prompt phase, generation phase |
@@ -168,7 +168,23 @@ KV cache held at the end. The context meter shows this number, and it is exact.
 One rule is checked in phase 1 against each backend: whether `prompt_tokens`
 includes cached tokens. llama.cpp's `prompt_n` counts processed tokens only and
 `cache_n` the reused ones. The accounting code reads each backend's fields by its
-documented meaning and never sums fields of unknown meaning.
+documented meaning and never sums fields of unknown meaning. A count the server
+does not state is NULL here and in `provider.Usage` (`provider.Count`), and a sum
+over calls is NULL when any call's count was.
+
+What each backend states, and what was verified:
+
+| Backend | Prompt | Cached | Reasoning | Status |
+|---|---|---|---|---|
+| llama.cpp b11942, `/v1/chat/completions` | `usage.prompt_tokens`, **includes cached** | `usage.prompt_tokens_details.cached_tokens` = `timings.cache_n`; `timings.prompt_n` is the processed part | none: NULL. `completion_tokens` includes the reasoning | **verified** on the bench, streamed, cold and warm, reasoning on: prompt 90 = cache_n 0 + prompt_n 90 cold, 90 = 86 + 4 warm; a request cut off at 20 tokens inside the reasoning had `completion_tokens` 20 |
+| llama.cpp b11942, `/v1/responses` | `response.usage.input_tokens`, **includes cached** | `input_tokens_details.cached_tokens` = `timings.cache_n`, and `timings` is a sibling of `response` in the `response.completed` event | none: NULL (no `output_tokens_details`). `output_tokens` includes the reasoning | **verified**: the same numbers as `chat` for the same prompt (90 tokens, 0 then 86 cached); output 107 over 77 reasoning and 27 answer chunks, and 20 for a response cut off inside the reasoning |
+| OpenAI and other cloud APIs | `prompt_tokens` / `input_tokens` | `prompt_tokens_details.cached_tokens` / `input_tokens_details.cached_tokens` | `completion_tokens_details.reasoning_tokens` / `output_tokens_details.reasoning_tokens` | unverified, from the API reference |
+| vLLM | `prompt_tokens` / `input_tokens` | `prompt_tokens_details.cached_tokens`, only with `--enable-prompt-tokens-details` (else `null`: NULL) | none on chat; `output_tokens_details.reasoning_tokens` on responses | unverified, from the source |
+| SGLang | `prompt_tokens` | `prompt_tokens_details.cached_tokens`, only with `--enable-cache-report` | none read: its top-level `reasoning_tokens` is 0 whether or not reasoning was counted | unverified, from the source |
+| TabbyAPI | `prompt_tokens` | none | none | unverified, from the source |
+
+The first two rows hold at the bench's one build; `cache_n` and the usage field
+agreed in all six recordings (`internal/provider/testdata/usage`).
 
 ### Predicting the next request
 

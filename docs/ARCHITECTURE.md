@@ -71,7 +71,12 @@ Run(ctx, session, text)
   reasoning deltas, tool calls, usage with optional `Timings`, done or
   error). `openai/timings.go` reads the speed fields of llama.cpp, vLLM, NIM,
   LM Studio, TabbyAPI, Groq, and Ollama. Usage is relayed as soon as a chunk
-  carries it.
+  carries it. `provider.Usage` holds six `Count`s (prompt, completion, total,
+  cached, prefilled, reasoning), each a number or *not reported*, which is not
+  0. `provider.ChatUsage` and `provider.ResponsesUsage` read them from a
+  Chat Completions chunk and a Responses event by each field's documented
+  meaning, and `provider.Tally` sums a run of calls so that a count any call
+  did not state is not stated for the total.
 - **tool**: a call gets a `CallContext` (executor, emitter, ids). A
   `tool.Standalone` tool runs with a nil executor in chats;
   `Registry.Filter` narrows the shared registry per run. `bash` is the only
@@ -139,7 +144,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, capabilities (jsonb), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
 | `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
-| `model_requests` | session, run, entry, model, sections, tools, parameters (jsonb), token counts |
+| `model_requests` | session, run, entry, model, sections, tools, parameters (jsonb), token counts (prompt, completion, total, cached; NULL where the endpoint did not state them) |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |
