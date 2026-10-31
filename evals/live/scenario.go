@@ -103,7 +103,7 @@ func (t *Target) Complete(ctx context.Context, label string, req provider.Reques
 	if failure != nil {
 		return call, text.String(), fmt.Errorf("%s: %w", label, failure)
 	}
-	if usage.InputTokens == 0 {
+	if !usage.InputTokens.Reported() {
 		return call, text.String(), fmt.Errorf("%s: the server reported no usage", label)
 	}
 	return call, text.String(), nil

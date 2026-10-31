@@ -107,7 +107,7 @@ func parseTimings(raw string, usage provider.Usage) (provider.Timings, bool) {
 	if err := json.Unmarshal([]byte(raw), &w); err != nil {
 		return provider.Timings{}, false
 	}
-	in, out := float64(usage.InputTokens), float64(usage.OutputTokens)
+	in, out := float64(usage.InputTokens.Or(0)), float64(usage.OutputTokens.Or(0))
 	for _, u := range []usageWire{w.Usage, w.XGroq.Usage} {
 		if in == 0 {
 			in = u.PromptTokens

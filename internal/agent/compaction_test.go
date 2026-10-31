@@ -418,6 +418,39 @@ func TestCompactThatFailsLeavesTheConversation(t *testing.T) {
 	}
 }
 
+func TestCompactReportsWhatTheSummaryCostOnlyWhenTheEndpointStatedIt(t *testing.T) {
+	cases := []struct {
+		name string
+		step providertest.Step
+		want provider.Usage
+	}{
+		{"usage stated", providertest.Stream(
+			provider.TextDelta("SUMMARY"),
+			provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(900, 40, 940)},
+			provider.Done("stop"),
+		), providertest.Usage(900, 40, 940)},
+		{"usage not stated", providertest.Text("SUMMARY"), provider.Usage{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := providertest.New(c.step)
+			cp := newCompactor(p, compactorOptions{compaction: agent.CompactionSettings{KeepRecentTokens: 150}})
+			s := sessionOf(history(4, 100))
+			if err := cp.agent.Compact(context.Background(), s, ""); err != nil {
+				t.Fatalf("Compact: %v", err)
+			}
+			var end event.CompactionEnd
+			cp.events.payloadOf(t, event.TypeCompactionEnd, &end)
+			if end.Usage != c.want {
+				t.Errorf("compaction.end usage = %+v, want %+v", end.Usage, c.want)
+			}
+			if stored := cp.store.compactions["s1"]; len(stored) != 1 || stored[0].Usage != c.want {
+				t.Errorf("stored compaction = %+v, want usage %+v", stored, c.want)
+			}
+		})
+	}
+}
+
 func TestRunCompactsBeforeACallThatWouldPassTheThreshold(t *testing.T) {
 	// A 12,000 token window caps the reserve at 3,000, so the 10,000 tokens
 	// of history pass the threshold of 9,000.
@@ -468,7 +501,7 @@ func TestRunGoesOnWhenAThresholdCompactionFails(t *testing.T) {
 func TestRunRecoversFromAContextOverflow(t *testing.T) {
 	overflow := errors.New(`400 Bad Request: {"error":{"message":"prompt is too long: 213462 tokens > 200000 maximum"}}`)
 	silent := providertest.Stream(
-		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 99_500, TotalTokens: 99_500}},
+		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: provider.Reported(99_500), TotalTokens: provider.Reported(99_500)}},
 		provider.Done("length"),
 	)
 	cases := []struct {
@@ -523,7 +556,7 @@ func TestRunLowersMaxOutputToTheRoomLeft(t *testing.T) {
 
 func TestCompactedKeepsTheNewestMessagesWithoutTheirMeasurements(t *testing.T) {
 	before := history(5, 10)
-	before[3].Metrics = &provider.MessageMetrics{RunID: "r1", Context: provider.Usage{TotalTokens: 9000}}
+	before[3].Metrics = &provider.MessageMetrics{RunID: "r1", Context: provider.Usage{TotalTokens: provider.Reported(9000)}}
 	got := agent.Compacted(before, agent.Compaction{Summary: "S", Kept: 2})
 	if tags(got)[0] != "summary" || !reflect.DeepEqual(tags(got)[1:], []string{"a3", "u4"}) {
 		t.Fatalf("compacted = %v, want the summary, a3, and u4", tags(got))

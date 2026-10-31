@@ -34,11 +34,14 @@ type ModelRequest struct {
 	Parameters json.RawMessage
 	// MessageTokens is the estimated size of the messages sent.
 	MessageTokens int
-	// InputTokens, OutputTokens, and TotalTokens are what the endpoint
-	// measured for the call, zero when it reported nothing.
-	InputTokens  int
-	OutputTokens int
-	TotalTokens  int
+	// InputTokens, OutputTokens, TotalTokens, and CachedTokens are what the
+	// endpoint measured for the call: the prompt, the response, their sum,
+	// and the part of the prompt it served from its cache. Each is nil when
+	// the endpoint did not state it, which is not the same as 0.
+	InputTokens  *int
+	OutputTokens *int
+	TotalTokens  *int
+	CachedTokens *int
 	CreatedAt    time.Time
 }
 
@@ -46,11 +49,11 @@ type ModelRequest struct {
 // scanModelRequest reads them: every column but the large documents, which
 // read back as NULL.
 const modelRequestSummary = `id, session_id, run_id, entry_id, model_id, model, NULL::jsonb, NULL::jsonb,
-	parameters, message_tokens, input_tokens, output_tokens, total_tokens, created_at`
+	parameters, message_tokens, input_tokens, output_tokens, total_tokens, cached_tokens, created_at`
 
 // modelRequestColumns is the column list that reads a whole record.
 const modelRequestColumns = `id, session_id, run_id, entry_id, model_id, model, sections, tools,
-	parameters, message_tokens, input_tokens, output_tokens, total_tokens, created_at`
+	parameters, message_tokens, input_tokens, output_tokens, total_tokens, cached_tokens, created_at`
 
 // RecordModelRequest stores the record of one model call and returns it as
 // stored. An empty ID gets a fresh one. A run or an entry that is not the
@@ -63,15 +66,15 @@ func (s *Store) RecordModelRequest(ctx context.Context, r ModelRequest) (ModelRe
 	// The checks are part of the insert, so that no record can name a run
 	// or an entry of another session.
 	const q = `INSERT INTO model_requests (id, session_id, run_id, entry_id, model_id, model, sections, tools,
-			parameters, message_tokens, input_tokens, output_tokens, total_tokens)
-		SELECT $1, $2, $3, $4, (SELECT id FROM models WHERE id = $5), $6, $7, $8, $9, $10, $11, $12, $13
+			parameters, message_tokens, input_tokens, output_tokens, total_tokens, cached_tokens)
+		SELECT $1, $2, $3, $4, (SELECT id FROM models WHERE id = $5), $6, $7, $8, $9, $10, $11, $12, $13, $14
 		WHERE EXISTS (SELECT 1 FROM runs WHERE id = $3 AND session_id = $2)
 			AND ($4::text IS NULL OR EXISTS (
 				SELECT 1 FROM session_entries WHERE id = $4 AND session_id = $2))
 		RETURNING ` + modelRequestColumns
 	out, err := scanModelRequest(s.pool.QueryRow(ctx, q, r.ID, r.SessionID, r.RunID, nullable(r.EntryID),
 		r.ModelID, r.Model, jsonArray(r.Sections), jsonArray(r.Tools), jsonObject(r.Parameters),
-		r.MessageTokens, r.InputTokens, r.OutputTokens, r.TotalTokens))
+		r.MessageTokens, r.InputTokens, r.OutputTokens, r.TotalTokens, r.CachedTokens))
 	if err != nil {
 		return ModelRequest{}, wrap("record model request of session "+r.SessionID, err)
 	}
@@ -134,7 +137,7 @@ func scanModelRequest(row pgx.Row) (ModelRequest, error) {
 		parameters []byte
 	)
 	err := row.Scan(&r.ID, &r.SessionID, &r.RunID, &entry, &model, &r.Model, &sections, &tools,
-		&parameters, &r.MessageTokens, &r.InputTokens, &r.OutputTokens, &r.TotalTokens, &r.CreatedAt)
+		&parameters, &r.MessageTokens, &r.InputTokens, &r.OutputTokens, &r.TotalTokens, &r.CachedTokens, &r.CreatedAt)
 	if err != nil {
 		return ModelRequest{}, err
 	}

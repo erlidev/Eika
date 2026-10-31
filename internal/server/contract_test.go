@@ -153,6 +153,18 @@ type eventToolCall struct {
 	ArgumentsMalformed bool            `json:"arguments_malformed,omitempty"`
 }
 
+// providerUsage is the wire form of provider.Usage, whose UnmarshalJSON also
+// reads the form stored before a count could be unreported. Every count is a
+// number, or null when the endpoint did not state it.
+type providerUsage struct {
+	InputTokens     *int `json:"input_tokens"`
+	OutputTokens    *int `json:"output_tokens"`
+	TotalTokens     *int `json:"total_tokens"`
+	CachedTokens    *int `json:"cached_tokens"`
+	PrefilledTokens *int `json:"prefilled_tokens"`
+	ReasoningTokens *int `json:"reasoning_tokens"`
+}
+
 // providerToolCall is the wire form provider.ToolCall's MarshalJSON writes.
 type providerToolCall struct {
 	ID                 string          `json:"id"`
@@ -167,6 +179,8 @@ var standIns = map[reflect.Type]reflect.Type{
 	reflect.TypeFor[event.ToolCall]():         reflect.TypeFor[eventToolCall](),
 	reflect.TypeFor[provider.ToolCall]():      reflect.TypeFor[providerToolCall](),
 	reflect.TypeFor[provider.ToolArguments](): reflect.TypeFor[json.RawMessage](),
+	reflect.TypeFor[provider.Count]():         reflect.TypeFor[*int](),
+	reflect.TypeFor[provider.Usage]():         reflect.TypeFor[providerUsage](),
 }
 
 // contract builds the contract from the tables above.
@@ -285,6 +299,8 @@ func TestStandInsMatchTheirEncoding(t *testing.T) {
 		event.ToolCall{RunID: "r", CallID: "c", Name: "bash", Arguments: `{"command":`},
 		provider.ToolCall{ID: "c", Name: "bash", Arguments: `{"command":"ls"}`},
 		provider.ToolCall{ID: "c", Name: "bash", Arguments: `not json`},
+		provider.Usage{},
+		provider.Usage{InputTokens: provider.Reported(90), OutputTokens: provider.Reported(0), CachedTokens: provider.Reported(86)},
 	}
 	for _, sample := range samples {
 		shape, err := servertest.Of(reflect.TypeOf(sample), servertest.Options{StandIns: standIns})

@@ -16,7 +16,9 @@ import (
 // producing it. turn.progress and turn.end report both, so a client can state
 // a decode rate that was measured rather than guessed.
 type generation struct {
-	usage   event.Usage
+	// tally is the usage of every finished call of the turn. A count that
+	// any one of them did not report is not reported for the turn.
+	tally   provider.Tally
 	elapsed time.Duration
 	// context is the last model call's own usage: the prompt it sent plus
 	// what it produced, which is what fills the model's context window.
@@ -27,19 +29,23 @@ type generation struct {
 	timings provider.Timings
 }
 
-// add folds one finished model response into the turn's totals.
+// usage is what the turn has cost so far, summed over its finished calls.
+func (g *generation) usage() event.Usage { return g.tally.Total() }
+
+// add folds one finished model response into the turn's totals. A response
+// that reported no usage leaves the turn's counts not reported, since the
+// turn then cost more than its total says.
 func (g *generation) add(u provider.Usage, elapsed time.Duration, t provider.Timings) {
-	g.usage.InputTokens += u.InputTokens
-	g.usage.OutputTokens += u.OutputTokens
-	g.usage.TotalTokens += u.TotalTokens
-	g.elapsed += elapsed
-	if u != (provider.Usage{}) {
-		g.context = event.Usage{
-			InputTokens:  u.InputTokens,
-			OutputTokens: u.OutputTokens,
-			TotalTokens:  u.TotalTokens,
-		}
+	g.tally.Add(u)
+	if u.Reported() {
+		g.context = u
 	}
+	g.observe(elapsed, t)
+}
+
+// observe folds in how long a response took and how fast it ran.
+func (g *generation) observe(elapsed time.Duration, t provider.Timings) {
+	g.elapsed += elapsed
 	if t.Known() {
 		g.timings = t
 	}
@@ -60,23 +66,15 @@ func (g *generation) reported() *provider.Timings {
 // counted: the clock starts when it arrives, so the window it opens holds the
 // tokens that came after it. A response of one token measures nothing.
 func withHarnessDecode(t provider.Timings, u provider.Usage, elapsed time.Duration) provider.Timings {
-	if t.HasDecode() || u.OutputTokens < 2 || elapsed <= 0 {
+	// A response whose token count was not reported has no rate to state.
+	out, ok := u.OutputTokens.Value()
+	if t.HasDecode() || !ok || out < 2 || elapsed <= 0 {
 		return t
 	}
-	t.DecodeTokens = u.OutputTokens - 1
+	t.DecodeTokens = out - 1
 	t.DecodeMS = float64(elapsed.Microseconds()) / 1000
 	t.Source = provider.TimedByHarness
 	return t
-}
-
-// providerUsage converts the event protocol's usage shape to the provider
-// message shape stored with an assistant response.
-func providerUsage(u event.Usage) provider.Usage {
-	return provider.Usage{
-		InputTokens:  u.InputTokens,
-		OutputTokens: u.OutputTokens,
-		TotalTokens:  u.TotalTokens,
-	}
 }
 
 // response is one model response the agent consumed.
@@ -240,7 +238,7 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 		case provider.KindUsage:
 			// A usage event can carry only timings: an endpoint may measure
 			// its own speed in a chunk that repeats no token counts.
-			if e.Usage != (provider.Usage{}) {
+			if e.Usage.Reported() {
 				usage = e.Usage
 			}
 			if e.Timings.Known() {
@@ -300,10 +298,17 @@ func cutOff(stop string) bool {
 func (a *Agent) emitProgress(ctx context.Context, s *Session, runID string, gen *generation, usage provider.Usage, timings provider.Timings, started time.Time) {
 	total := *gen
 	elapsed := elapsedSince(started)
-	total.add(usage, elapsed, withHarnessDecode(timings, usage, elapsed))
+	// A response still in flight that has stated no usage yet is not a
+	// finished call that stated none: the turn's counts stay what its
+	// finished calls say until it does.
+	if usage.Reported() {
+		total.add(usage, elapsed, withHarnessDecode(timings, usage, elapsed))
+	} else {
+		total.observe(elapsed, timings)
+	}
 	a.emit(ctx, s, event.TypeTurnProgress, event.TurnProgress{
 		RunID:         runID,
-		Usage:         total.usage,
+		Usage:         total.usage(),
 		Context:       total.context,
 		GenerationMS:  total.elapsed.Milliseconds(),
 		ContextWindow: a.opts.ContextWindow,

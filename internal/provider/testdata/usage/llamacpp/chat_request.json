@@ -1,0 +1,1 @@
+{"model":"qwen3.8-27b","stream":true,"stream_options":{"include_usage":true},"max_completion_tokens":300,"temperature":0,"messages":[{"role":"system","content":"Session u1-nonce-4417. You are Eika, a personal assistant. Answer in at most two short sentences."},{"role":"user","content":"What is a cache hit? Think briefly."}]}

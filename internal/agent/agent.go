@@ -256,11 +256,11 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []p
 		// is the moment Recorder promises.
 		a.record(ctx, s, runID, sent, resp.usage)
 		reply, stop := resp.message, resp.stop
-		if gen.context != (event.Usage{}) {
+		if gen.context.Reported() {
 			reply.Metrics = &provider.MessageMetrics{
 				RunID:         runID,
-				Usage:         providerUsage(gen.usage),
-				Context:       providerUsage(gen.context),
+				Usage:         gen.usage(),
+				Context:       gen.context,
 				GenerationMS:  gen.elapsed.Milliseconds(),
 				ContextWindow: a.opts.ContextWindow,
 				Timings:       gen.reported(),
@@ -284,14 +284,14 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, msgs []p
 			a.emit(ctx, s, event.TypeTurnEnd, event.TurnEnd{
 				RunID:         runID,
 				StopReason:    stop,
-				Usage:         gen.usage,
+				Usage:         gen.usage(),
 				Context:       gen.context,
 				GenerationMS:  gen.elapsed.Milliseconds(),
 				ContextWindow: a.opts.ContextWindow,
 				Timings:       gen.reported(),
 			})
 			a.opts.Logger.Info("turn finished",
-				"session_id", s.ID, "run_id", runID, "total_tokens", gen.usage.TotalTokens)
+				"session_id", s.ID, "run_id", runID, "total_tokens", gen.usage().TotalTokens)
 			return nil
 		}
 		for i, call := range reply.ToolCalls {

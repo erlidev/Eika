@@ -1,0 +1,75 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_wt8GS0BFzNERpWP7xI0nPGXscf3xqtUm","object":"response","status":"in_progress"}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{"id":"resp_wt8GS0BFzNERpWP7xI0nPGXscf3xqtUm","object":"response","status":"in_progress"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG","summary":[],"type":"reasoning","content":[],"encrypted_content":"","status":"in_progress"}}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"We","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" need","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" to","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" answer","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" user","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":":","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" \"","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"What","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" is","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" a","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" cache","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" hit","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"?","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" Think","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" briefly","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":".\"","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" Need","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" final","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" at","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":" most","item_id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG","summary":[],"type":"reasoning","content":[{"text":"We need to answer user: \"What is a cache hit? Think briefly.\" Need final at most","type":"reasoning_text"}],"encrypted_content":""}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_wt8GS0BFzNERpWP7xI0nPGXscf3xqtUm","object":"response","created_at":1793430332,"status":"completed","model":"qwen3.8-27b","output":[{"id":"rs_96SY4ObqRhyLvX9D3RvjthowL3voJGuG","summary":[],"type":"reasoning","content":[{"text":"We need to answer user: \"What is a cache hit? Think briefly.\" Need final at most","type":"reasoning_text"}],"encrypted_content":""}],"usage":{"input_tokens":90,"output_tokens":20,"total_tokens":110,"input_tokens_details":{"cached_tokens":86}}},"timings":{"cache_n":86,"prompt_n":4,"prompt_ms":60.45,"prompt_per_token_ms":15.1125,"prompt_per_second":66.17038875103391,"predicted_n":20,"predicted_ms":239.064,"predicted_per_token_ms":12.582315789473684,"predicted_per_second":79.4766255061406}}
+

@@ -40,8 +40,22 @@ const turn: EikaEvent[] = [
   ev("turn.end", {
     run_id: "r1",
     stop_reason: "stop",
-    usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 },
-    context: { input_tokens: 10, output_tokens: 4, total_tokens: 14 },
+    usage: {
+      input_tokens: 10,
+      output_tokens: 4,
+      total_tokens: 14,
+      cached_tokens: null,
+      prefilled_tokens: null,
+      reasoning_tokens: null,
+    },
+    context: {
+      input_tokens: 10,
+      output_tokens: 4,
+      total_tokens: 14,
+      cached_tokens: null,
+      prefilled_tokens: null,
+      reasoning_tokens: null,
+    },
     generation_ms: 1000,
     context_window: 400_000,
   }),
@@ -85,7 +99,14 @@ describe("applyEvent", () => {
   it("ends the turn with its usage and stops streaming", () => {
     const state = fold(turn);
     expect(state.activeTurnId).toBe("");
-    expect(state.meter?.usage).toEqual({ input_tokens: 10, output_tokens: 4, total_tokens: 14 });
+    expect(state.meter?.usage).toEqual({
+      input_tokens: 10,
+      output_tokens: 4,
+      total_tokens: 14,
+      cached_tokens: null,
+      prefilled_tokens: null,
+      reasoning_tokens: null,
+    });
     expect(state.stopReason).toBe("stop");
     expect(state.needsReplay).toBe(true);
     expect(items(state).every((item) => item.kind !== "assistant" || !item.streaming)).toBe(true);
@@ -390,8 +411,22 @@ describe("a turn the endpoint cut off", () => {
     return ev("turn.end", {
       run_id: "r1",
       stop_reason: reason,
-      usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 },
-      context: { input_tokens: 100, output_tokens: 10, total_tokens: 110 },
+      usage: {
+        input_tokens: 100,
+        output_tokens: 10,
+        total_tokens: 110,
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
+      },
+      context: {
+        input_tokens: 100,
+        output_tokens: 10,
+        total_tokens: 110,
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
+      },
       generation_ms: 1000,
       context_window: 400_000,
     });
@@ -426,8 +461,22 @@ describe("the meter", () => {
   function progress(outputTokens: number, generationMs: number): EikaEvent {
     return ev("turn.progress", {
       run_id: "r1",
-      usage: { input_tokens: 100, output_tokens: outputTokens, total_tokens: 100 + outputTokens },
-      context: { input_tokens: 100, output_tokens: outputTokens, total_tokens: 100 + outputTokens },
+      usage: {
+        input_tokens: 100,
+        output_tokens: outputTokens,
+        total_tokens: 100 + outputTokens,
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
+      },
+      context: {
+        input_tokens: 100,
+        output_tokens: outputTokens,
+        total_tokens: 100 + outputTokens,
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
+      },
       generation_ms: generationMs,
       context_window: 400_000,
     });
@@ -453,8 +502,22 @@ describe("the meter", () => {
     const ended = ev("turn.end", {
       run_id: "r1",
       stop_reason: "stop",
-      usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 },
-      context: { input_tokens: 100, output_tokens: 10, total_tokens: 110 },
+      usage: {
+        input_tokens: 100,
+        output_tokens: 10,
+        total_tokens: 110,
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
+      },
+      context: {
+        input_tokens: 100,
+        output_tokens: 10,
+        total_tokens: 110,
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
+      },
       generation_ms: 1000,
       context_window: 400_000,
     });
@@ -468,8 +531,22 @@ describe("the meter", () => {
     const ended = ev("turn.end", {
       run_id: "r1",
       stop_reason: "stop",
-      usage: { input_tokens: 100, output_tokens: 100, total_tokens: 200 },
-      context: { input_tokens: 100, output_tokens: 100, total_tokens: 200 },
+      usage: {
+        input_tokens: 100,
+        output_tokens: 100,
+        total_tokens: 200,
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
+      },
+      context: {
+        input_tokens: 100,
+        output_tokens: 100,
+        total_tokens: 200,
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
+      },
       generation_ms: 4000,
       context_window: 400_000,
     });
@@ -492,8 +569,22 @@ describe("the meter", () => {
           content: "older",
           metrics: {
             run_id: "r0",
-            usage: { input_tokens: 20, output_tokens: 2, total_tokens: 22 },
-            context: { input_tokens: 20, output_tokens: 2, total_tokens: 22 },
+            usage: {
+              input_tokens: 20,
+              output_tokens: 2,
+              total_tokens: 22,
+              cached_tokens: null,
+              prefilled_tokens: null,
+              reasoning_tokens: null,
+            },
+            context: {
+              input_tokens: 20,
+              output_tokens: 2,
+              total_tokens: 22,
+              cached_tokens: null,
+              prefilled_tokens: null,
+              reasoning_tokens: null,
+            },
             generation_ms: 500,
             context_window: 8192,
           },
@@ -515,8 +606,22 @@ describe("the meter", () => {
           content: "done",
           metrics: {
             run_id: "r-stored",
-            usage: { input_tokens: 90, output_tokens: 10, total_tokens: 100 },
-            context: { input_tokens: 90, output_tokens: 10, total_tokens: 100 },
+            usage: {
+              input_tokens: 90,
+              output_tokens: 10,
+              total_tokens: 100,
+              cached_tokens: null,
+              prefilled_tokens: null,
+              reasoning_tokens: null,
+            },
+            context: {
+              input_tokens: 90,
+              output_tokens: 10,
+              total_tokens: 100,
+              cached_tokens: null,
+              prefilled_tokens: null,
+              reasoning_tokens: null,
+            },
             generation_ms: 1200,
             context_window: 8192,
           },
@@ -545,8 +650,22 @@ describe("generation speed", () => {
   function timed(carried: unknown, run = "r1"): EikaEvent {
     return ev("turn.progress", {
       run_id: run,
-      usage: { input_tokens: 1200, output_tokens: 256, total_tokens: 1456 },
-      context: { input_tokens: 1200, output_tokens: 256, total_tokens: 1456 },
+      usage: {
+        input_tokens: 1200,
+        output_tokens: 256,
+        total_tokens: 1456,
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
+      },
+      context: {
+        input_tokens: 1200,
+        output_tokens: 256,
+        total_tokens: 1456,
+        cached_tokens: null,
+        prefilled_tokens: null,
+        reasoning_tokens: null,
+      },
       generation_ms: 3200,
       context_window: 400_000,
       timings: carried,
@@ -584,8 +703,22 @@ describe("generation speed", () => {
           content: "done",
           metrics: {
             run_id: "r-stored",
-            usage: { input_tokens: 1200, output_tokens: 256, total_tokens: 1456 },
-            context: { input_tokens: 1200, output_tokens: 256, total_tokens: 1456 },
+            usage: {
+              input_tokens: 1200,
+              output_tokens: 256,
+              total_tokens: 1456,
+              cached_tokens: null,
+              prefilled_tokens: null,
+              reasoning_tokens: null,
+            },
+            context: {
+              input_tokens: 1200,
+              output_tokens: 256,
+              total_tokens: 1456,
+              cached_tokens: null,
+              prefilled_tokens: null,
+              reasoning_tokens: null,
+            },
             generation_ms: 3200,
             context_window: 400_000,
             timings,
@@ -606,7 +739,14 @@ describe("generation speed", () => {
 });
 
 describe("compaction", () => {
-  const usage = { input_tokens: 600, output_tokens: 400, total_tokens: 1000 };
+  const usage = {
+    input_tokens: 600,
+    output_tokens: 400,
+    total_tokens: 1000,
+    cached_tokens: null,
+    prefilled_tokens: null,
+    reasoning_tokens: null,
+  };
   const start = (runId: string, reason = "manual") =>
     ev("compaction.start", { run_id: runId, reason, tokens_before: 48_000 });
   const end = (runId: string, extra: Record<string, unknown> = {}) =>

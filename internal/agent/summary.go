@@ -160,7 +160,7 @@ func (c CompactionSettings) prompts() CompactionPrompts {
 func (a *Agent) summarize(ctx context.Context, s *Session, base Context, msgs []provider.Message, plan compactionPlan, instructions string) (string, provider.Usage, error) {
 	prompts := a.opts.Compaction.prompts()
 	reserve := a.opts.Compaction.reserveTokens(a.opts.ContextWindow)
-	var usage provider.Usage
+	var cost provider.Tally
 	var history string
 	switch {
 	case plan.historyEnd() > plan.start:
@@ -171,10 +171,10 @@ func (a *Agent) summarize(ctx context.Context, s *Session, base Context, msgs []
 		if instructions = strings.TrimSpace(instructions); instructions != "" {
 			prompt += "\n\nAdditional focus: " + instructions
 		}
-		text, u, err := a.summary(ctx, s, base, msgs, summaryRequest{end: plan.historyEnd(), prompt: prompt, budget: reserve * 8 / 10})
-		usage = addUsage(usage, u)
+		text, spent, err := a.summary(ctx, s, base, msgs, summaryRequest{end: plan.historyEnd(), prompt: prompt, budget: reserve * 8 / 10})
+		cost.AddTally(spent)
 		if err != nil {
-			return "", usage, err
+			return "", cost.Total(), err
 		}
 		history = text
 	case plan.previous():
@@ -183,22 +183,22 @@ func (a *Agent) summarize(ctx context.Context, s *Session, base Context, msgs []
 		history = summaryText(msgs[0])
 	}
 	if !plan.split() {
-		return history, usage, nil
+		return history, cost.Total(), nil
 	}
-	prefix, u, err := a.summary(ctx, s, base, msgs, summaryRequest{
+	prefix, spent, err := a.summary(ctx, s, base, msgs, summaryRequest{
 		end:    plan.first,
 		from:   plan.turnStart,
 		prompt: prompts.TurnPrefix,
 		budget: reserve / 2,
 	})
-	usage = addUsage(usage, u)
+	cost.AddTally(spent)
 	if err != nil {
-		return "", usage, err
+		return "", cost.Total(), err
 	}
 	if history == "" {
 		history = "No prior history."
 	}
-	return history + splitTurnSeparator + prefix, usage, nil
+	return history + splitTurnSeparator + prefix, cost.Total(), nil
 }
 
 // summaryRequest is one summary to ask for.
@@ -219,7 +219,7 @@ type summaryRequest struct {
 // off if thinking used up the budget, and in the transcript form if the
 // cached form does not fit or is answered with tool calls. A summary that is
 // still cut off on the last attempt is used as far as it goes.
-func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []provider.Message, r summaryRequest) (string, provider.Usage, error) {
+func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []provider.Message, r summaryRequest) (string, provider.Tally, error) {
 	window := a.opts.ContextWindow
 	budget := r.budget
 	if m := base.Parameters.Sampling.MaxOutput; m != nil {
@@ -230,7 +230,7 @@ func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []pr
 		efforts = append(efforts, new(f))
 	}
 	need := min(budget, minSummaryBudget)
-	var usage provider.Usage
+	var usage provider.Tally
 	partial := ""
 	// ask tries every effort in one form. It reports whether the form
 	// cannot work at all, so the next one should be tried.
@@ -241,10 +241,10 @@ func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []pr
 			resp, err := a.retrying(ctx, s, "", false, func() (response, error) {
 				return a.stream(ctx, s, "", c.Request(), nil)
 			})
-			usage = addUsage(usage, resp.usage)
 			if err != nil {
 				return "", provider.ContextOverflow(err), err
 			}
+			usage.Add(resp.usage)
 			text := strings.TrimSpace(provider.StripReasoning(resp.message.Content))
 			switch {
 			case text != "" && !cutOff(resp.stop):
@@ -297,7 +297,7 @@ func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []pr
 // partialSummary returns the longest summary an attempt produced before it
 // was cut off, which beats failing the run for want of a complete one, or
 // an error when there is none.
-func (a *Agent) partialSummary(partial string, budget int, usage provider.Usage) (string, provider.Usage, error) {
+func (a *Agent) partialSummary(partial string, budget int, usage provider.Tally) (string, provider.Tally, error) {
 	if partial == "" {
 		return "", usage, fmt.Errorf("the model produced no summary within %d output tokens", budget)
 	}
@@ -398,13 +398,4 @@ func truncateRunes(text string, n int) string {
 // summaryText returns the summary a summary message carries.
 func summaryText(m provider.Message) string {
 	return strings.TrimSuffix(strings.TrimPrefix(m.Content, summaryPrefix), summarySuffix)
-}
-
-// addUsage returns the sum of two usages.
-func addUsage(a, b provider.Usage) provider.Usage {
-	return provider.Usage{
-		InputTokens:  a.InputTokens + b.InputTokens,
-		OutputTokens: a.OutputTokens + b.OutputTokens,
-		TotalTokens:  a.TotalTokens + b.TotalTokens,
-	}
 }

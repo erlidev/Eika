@@ -1,0 +1,1 @@
+{"id":"chatcmpl-example","object":"chat.completion.chunk","created":1700000000,"model":"example-model","choices":[],"usage":{"prompt_tokens":512,"prompt_time":0.21,"prompt_tokens_per_sec":2438.1,"completion_tokens":48,"completion_time":0.9,"completion_tokens_per_sec":53.3,"total_tokens":560,"total_time":1.11}}

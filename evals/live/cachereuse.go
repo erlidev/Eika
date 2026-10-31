@@ -72,7 +72,7 @@ func CacheReuse(nonce string) Scenario {
 			}
 
 			if second.CacheHitRate == nil {
-				return calls, fmt.Errorf("turn 2: the server reported no prompt timings, so the cache hit cannot be measured")
+				return calls, fmt.Errorf("turn 2: the server reported no cached token count, so the cache hit cannot be measured")
 			}
 			if *second.CacheHitRate < cacheReuseMinHitRate {
 				return calls, fmt.Errorf("turn 2 took %.0f%% of its prompt from the cache, want at least %.0f%%: the second request did not reuse the first's prefix",

@@ -6,6 +6,7 @@ import (
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -36,8 +37,8 @@ func TestMessageEntryRoundTrip(t *testing.T) {
 				m := provider.AssistantMessageWithReasoning("on it", "private analysis", nil)
 				m.Metrics = &provider.MessageMetrics{
 					RunID:         "run-1",
-					Usage:         provider.Usage{InputTokens: 10, OutputTokens: 2, TotalTokens: 12},
-					Context:       provider.Usage{InputTokens: 10, OutputTokens: 2, TotalTokens: 12},
+					Usage:         providertest.Usage(10, 2, 12),
+					Context:       providertest.Usage(10, 2, 12),
 					GenerationMS:  500,
 					ContextWindow: 8192,
 				}

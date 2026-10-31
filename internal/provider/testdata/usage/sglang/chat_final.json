@@ -1,0 +1,1 @@
+{"id":"example","object":"chat.completion.chunk","created":1700000000,"model":"example-model","choices":[],"usage":{"prompt_tokens":512,"total_tokens":560,"completion_tokens":48,"prompt_tokens_details":{"cached_tokens":496},"reasoning_tokens":0}}

@@ -52,6 +52,16 @@ func Call(id, name string, args any) provider.ToolCall {
 	return provider.ToolCall{ID: id, Name: name, Arguments: provider.ToolArguments(raw)}
 }
 
+// Usage returns a usage that states the three headline counts and nothing
+// else, as an endpoint that reports no cache or reasoning detail does.
+func Usage(input, output, total int) provider.Usage {
+	return provider.Usage{
+		InputTokens:  provider.Reported(input),
+		OutputTokens: provider.Reported(output),
+		TotalTokens:  provider.Reported(total),
+	}
+}
+
 // Fail returns a step whose call fails with err before any event.
 func Fail(err error) Step { return Step{Err: err} }
 

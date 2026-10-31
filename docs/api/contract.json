@@ -834,9 +834,24 @@
                   "tokens_before": "number",
                   "usage": {
                     "object": {
-                      "input_tokens": "number",
-                      "output_tokens": "number",
-                      "total_tokens": "number"
+                      "cached_tokens": {
+                        "nullable": "number"
+                      },
+                      "input_tokens": {
+                        "nullable": "number"
+                      },
+                      "output_tokens": {
+                        "nullable": "number"
+                      },
+                      "prefilled_tokens": {
+                        "nullable": "number"
+                      },
+                      "reasoning_tokens": {
+                        "nullable": "number"
+                      },
+                      "total_tokens": {
+                        "nullable": "number"
+                      }
                     }
                   }
                 }
@@ -864,9 +879,24 @@
                     "object": {
                       "context": {
                         "object": {
-                          "input_tokens": "number",
-                          "output_tokens": "number",
-                          "total_tokens": "number"
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
                         }
                       },
                       "context_window": "number",
@@ -890,9 +920,24 @@
                       },
                       "usage": {
                         "object": {
-                          "input_tokens": "number",
-                          "output_tokens": "number",
-                          "total_tokens": "number"
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
                         }
                       }
                     },
@@ -1177,9 +1222,24 @@
                     "object": {
                       "context": {
                         "object": {
-                          "input_tokens": "number",
-                          "output_tokens": "number",
-                          "total_tokens": "number"
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
                         }
                       },
                       "context_window": "number",
@@ -1203,9 +1263,24 @@
                       },
                       "usage": {
                         "object": {
-                          "input_tokens": "number",
-                          "output_tokens": "number",
-                          "total_tokens": "number"
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
                         }
                       }
                     },
@@ -1285,17 +1360,26 @@
           },
           "request": {
             "object": {
+              "cached_tokens": {
+                "nullable": "number"
+              },
               "created_at": "string",
               "entry_id": "string",
               "id": "string",
-              "input_tokens": "number",
+              "input_tokens": {
+                "nullable": "number"
+              },
               "message_tokens": "number",
               "model": "string",
               "model_id": "string",
-              "output_tokens": "number",
+              "output_tokens": {
+                "nullable": "number"
+              },
               "run_id": "string",
               "session_id": "string",
-              "total_tokens": "number"
+              "total_tokens": {
+                "nullable": "number"
+              }
             },
             "optional": [
               "entry_id",
@@ -1385,9 +1469,24 @@
                       "tokens_before": "number",
                       "usage": {
                         "object": {
-                          "input_tokens": "number",
-                          "output_tokens": "number",
-                          "total_tokens": "number"
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
                         }
                       }
                     }
@@ -1415,9 +1514,24 @@
                         "object": {
                           "context": {
                             "object": {
-                              "input_tokens": "number",
-                              "output_tokens": "number",
-                              "total_tokens": "number"
+                              "cached_tokens": {
+                                "nullable": "number"
+                              },
+                              "input_tokens": {
+                                "nullable": "number"
+                              },
+                              "output_tokens": {
+                                "nullable": "number"
+                              },
+                              "prefilled_tokens": {
+                                "nullable": "number"
+                              },
+                              "reasoning_tokens": {
+                                "nullable": "number"
+                              },
+                              "total_tokens": {
+                                "nullable": "number"
+                              }
                             }
                           },
                           "context_window": "number",
@@ -1441,9 +1555,24 @@
                           },
                           "usage": {
                             "object": {
-                              "input_tokens": "number",
-                              "output_tokens": "number",
-                              "total_tokens": "number"
+                              "cached_tokens": {
+                                "nullable": "number"
+                              },
+                              "input_tokens": {
+                                "nullable": "number"
+                              },
+                              "output_tokens": {
+                                "nullable": "number"
+                              },
+                              "prefilled_tokens": {
+                                "nullable": "number"
+                              },
+                              "reasoning_tokens": {
+                                "nullable": "number"
+                              },
+                              "total_tokens": {
+                                "nullable": "number"
+                              }
                             }
                           }
                         },
@@ -1512,9 +1641,24 @@
                     "object": {
                       "context": {
                         "object": {
-                          "input_tokens": "number",
-                          "output_tokens": "number",
-                          "total_tokens": "number"
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
                         }
                       },
                       "context_window": "number",
@@ -1538,9 +1682,24 @@
                       },
                       "usage": {
                         "object": {
-                          "input_tokens": "number",
-                          "output_tokens": "number",
-                          "total_tokens": "number"
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
                         }
                       }
                     },
@@ -1591,17 +1750,26 @@
             "nullable": {
               "array": {
                 "object": {
+                  "cached_tokens": {
+                    "nullable": "number"
+                  },
                   "created_at": "string",
                   "entry_id": "string",
                   "id": "string",
-                  "input_tokens": "number",
+                  "input_tokens": {
+                    "nullable": "number"
+                  },
                   "message_tokens": "number",
                   "model": "string",
                   "model_id": "string",
-                  "output_tokens": "number",
+                  "output_tokens": {
+                    "nullable": "number"
+                  },
                   "run_id": "string",
                   "session_id": "string",
-                  "total_tokens": "number"
+                  "total_tokens": {
+                    "nullable": "number"
+                  }
                 },
                 "optional": [
                   "entry_id",
@@ -1655,9 +1823,24 @@
                     "object": {
                       "context": {
                         "object": {
-                          "input_tokens": "number",
-                          "output_tokens": "number",
-                          "total_tokens": "number"
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
                         }
                       },
                       "context_window": "number",
@@ -1681,9 +1864,24 @@
                       },
                       "usage": {
                         "object": {
-                          "input_tokens": "number",
-                          "output_tokens": "number",
-                          "total_tokens": "number"
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
                         }
                       }
                     },
@@ -1763,17 +1961,26 @@
           },
           "request": {
             "object": {
+              "cached_tokens": {
+                "nullable": "number"
+              },
               "created_at": "string",
               "entry_id": "string",
               "id": "string",
-              "input_tokens": "number",
+              "input_tokens": {
+                "nullable": "number"
+              },
               "message_tokens": "number",
               "model": "string",
               "model_id": "string",
-              "output_tokens": "number",
+              "output_tokens": {
+                "nullable": "number"
+              },
               "run_id": "string",
               "session_id": "string",
-              "total_tokens": "number"
+              "total_tokens": {
+                "nullable": "number"
+              }
             },
             "optional": [
               "entry_id",
@@ -4010,9 +4217,24 @@
         "tokens_before": "number",
         "usage": {
           "object": {
-            "input_tokens": "number",
-            "output_tokens": "number",
-            "total_tokens": "number"
+            "cached_tokens": {
+              "nullable": "number"
+            },
+            "input_tokens": {
+              "nullable": "number"
+            },
+            "output_tokens": {
+              "nullable": "number"
+            },
+            "prefilled_tokens": {
+              "nullable": "number"
+            },
+            "reasoning_tokens": {
+              "nullable": "number"
+            },
+            "total_tokens": {
+              "nullable": "number"
+            }
           }
         }
       },
@@ -4173,9 +4395,24 @@
       "object": {
         "context": {
           "object": {
-            "input_tokens": "number",
-            "output_tokens": "number",
-            "total_tokens": "number"
+            "cached_tokens": {
+              "nullable": "number"
+            },
+            "input_tokens": {
+              "nullable": "number"
+            },
+            "output_tokens": {
+              "nullable": "number"
+            },
+            "prefilled_tokens": {
+              "nullable": "number"
+            },
+            "reasoning_tokens": {
+              "nullable": "number"
+            },
+            "total_tokens": {
+              "nullable": "number"
+            }
           }
         },
         "context_window": "number",
@@ -4200,9 +4437,24 @@
         },
         "usage": {
           "object": {
-            "input_tokens": "number",
-            "output_tokens": "number",
-            "total_tokens": "number"
+            "cached_tokens": {
+              "nullable": "number"
+            },
+            "input_tokens": {
+              "nullable": "number"
+            },
+            "output_tokens": {
+              "nullable": "number"
+            },
+            "prefilled_tokens": {
+              "nullable": "number"
+            },
+            "reasoning_tokens": {
+              "nullable": "number"
+            },
+            "total_tokens": {
+              "nullable": "number"
+            }
           }
         }
       },
@@ -4215,9 +4467,24 @@
       "object": {
         "context": {
           "object": {
-            "input_tokens": "number",
-            "output_tokens": "number",
-            "total_tokens": "number"
+            "cached_tokens": {
+              "nullable": "number"
+            },
+            "input_tokens": {
+              "nullable": "number"
+            },
+            "output_tokens": {
+              "nullable": "number"
+            },
+            "prefilled_tokens": {
+              "nullable": "number"
+            },
+            "reasoning_tokens": {
+              "nullable": "number"
+            },
+            "total_tokens": {
+              "nullable": "number"
+            }
           }
         },
         "context_window": "number",
@@ -4241,9 +4508,24 @@
         },
         "usage": {
           "object": {
-            "input_tokens": "number",
-            "output_tokens": "number",
-            "total_tokens": "number"
+            "cached_tokens": {
+              "nullable": "number"
+            },
+            "input_tokens": {
+              "nullable": "number"
+            },
+            "output_tokens": {
+              "nullable": "number"
+            },
+            "prefilled_tokens": {
+              "nullable": "number"
+            },
+            "reasoning_tokens": {
+              "nullable": "number"
+            },
+            "total_tokens": {
+              "nullable": "number"
+            }
           }
         }
       },

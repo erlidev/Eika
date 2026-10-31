@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  contextFill,
   describeArgument,
   firstLine,
   formatAgo,
   formatDuration,
   formatBytes,
   formatRate,
+  formatReported,
   formatTokens,
   shortId,
 } from "@/lib/format";
@@ -31,6 +33,34 @@ describe("formatTokens", () => {
     expect(formatTokens(4200)).toBe("4.2k");
     expect(formatTokens(42_000)).toBe("42k");
     expect(formatTokens(4_200_000)).toBe("4.2M");
+  });
+});
+
+describe("formatReported", () => {
+  it("renders a stated count, and n/a for one that was not stated", () => {
+    expect(formatReported(0)).toBe("0");
+    expect(formatReported(4200)).toBe("4.2k");
+    expect(formatReported(null)).toBe("n/a");
+  });
+});
+
+describe("contextFill", () => {
+  const usage = (input: number | null, output: number | null, total: number | null) => ({
+    input_tokens: input,
+    output_tokens: output,
+    total_tokens: total,
+  });
+
+  it("is the stated total, else the prompt and response together", () => {
+    expect(contextFill(usage(90, 10, 100))).toBe(100);
+    expect(contextFill(usage(90, 10, null))).toBe(100);
+    expect(contextFill(usage(null, null, 100))).toBe(100);
+  });
+
+  it("is undefined when the endpoint did not state enough to say", () => {
+    expect(contextFill(usage(null, null, null))).toBeUndefined();
+    expect(contextFill(usage(90, null, null))).toBeUndefined();
+    expect(contextFill(usage(null, 10, null))).toBeUndefined();
   });
 });
 

@@ -411,12 +411,12 @@ func TestRecorderLearnsEveryModelCallOnce(t *testing.T) {
 	rateLimited := &provider.Error{Op: "stream", StatusCode: 429, Retryable: true, Err: errors.New("slow down")}
 	toolCall := providertest.Stream(
 		provider.Event{Kind: provider.KindToolCall, ToolCall: providertest.Call("c1", "bash", map[string]any{"command": "true"})},
-		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15}},
+		provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(10, 5, 15)},
 		provider.Done("tool_calls"),
 	)
 	answer := providertest.Stream(
 		provider.TextDelta("done"),
-		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 30, OutputTokens: 2, TotalTokens: 32}},
+		provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(30, 2, 32)},
 		provider.Done("stop"),
 	)
 	cases := []struct {
@@ -431,7 +431,7 @@ func TestRecorderLearnsEveryModelCallOnce(t *testing.T) {
 		{
 			name:        "a call that was retried is recorded once",
 			steps:       []providertest.Step{providertest.Fail(rateLimited), toolCall, answer},
-			wantUsage:   []provider.Usage{{InputTokens: 10, OutputTokens: 5, TotalTokens: 15}, {InputTokens: 30, OutputTokens: 2, TotalTokens: 32}},
+			wantUsage:   []provider.Usage{providertest.Usage(10, 5, 15), providertest.Usage(30, 2, 32)},
 			wantSent:    []int{1, 3},
 			wantRequest: []int{1, 2},
 		},
@@ -451,7 +451,7 @@ func TestRecorderLearnsEveryModelCallOnce(t *testing.T) {
 			name:        "a recorder that fails does not stop the run",
 			steps:       []providertest.Step{toolCall, answer},
 			recordErr:   errors.New("the database is down"),
-			wantUsage:   []provider.Usage{{InputTokens: 10, OutputTokens: 5, TotalTokens: 15}, {InputTokens: 30, OutputTokens: 2, TotalTokens: 32}},
+			wantUsage:   []provider.Usage{providertest.Usage(10, 5, 15), providertest.Usage(30, 2, 32)},
 			wantSent:    []int{1, 3},
 			wantRequest: []int{0, 1},
 		},

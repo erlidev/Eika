@@ -172,8 +172,8 @@ counted.
 | Field | Type | Meaning |
 |---|---|---|
 | `run_id` | string | Identifies the turn. |
-| `usage` | object | `input_tokens`, `output_tokens`, and `total_tokens`, summed over every model call in the turn so far. |
-| `context` | object | The **most recent** model call's own usage, in the same shape. This is what fills the model's context window; `usage` is what the turn costs, which is larger. |
+| `usage` | Usage | What the turn has cost, summed over every model call in it so far. |
+| `context` | Usage | The **most recent** model call's own usage. This is what fills the model's context window; `usage` is what the turn costs, which is larger. |
 | `generation_ms` | number | The turn's time inside model responses so far. |
 | `context_window` | number | The configured window of the model that produced this usage. Zero means it is not configured. |
 | `timings` | object, optional | How fast the **most recent** model call ran. See below. |
@@ -223,11 +223,33 @@ and reports no `timings`.
 |---|---|---|
 | `run_id` | string | Identifies the turn. |
 | `stop_reason` | string, optional | Why the model stopped, for example `stop`. `length` and `content_filter` mean the endpoint cut the response off: what it did produce is kept and stored, its tool calls are dropped, and the turn ends here. A client says so rather than showing an answer that simply stops. |
-| `usage` | object | `input_tokens`, `output_tokens`, and `total_tokens`, summed over every model call in the turn. |
-| `context` | object | The last model call's own usage: how much of the model's context window the conversation now fills. |
+| `usage` | Usage | What the turn cost, summed over every model call in it. |
+| `context` | Usage | The last model call's own usage: how much of the model's context window the conversation now fills. |
 | `generation_ms` | number | The turn's total time inside model responses. |
 | `context_window` | number | The configured window of the model that ran the turn. Zero means it is not configured. |
 | `timings` | object, optional | How fast the turn's last model call ran, in the shape `turn.progress` documents. |
+
+### Usage
+
+The `usage` and `context` objects of `turn.progress`, `turn.end` and
+`compaction.end`, and the `usage` and `context` of a stored message's `metrics`,
+are all this shape. Every field is a whole number or `null`. `null` means the
+endpoint did not state the count; it is never `0` in its place, and a stated `0`
+stays `0`. A turn's `usage` is the sum of its calls, so a count is `null` there
+when any of the calls did not state it.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `input_tokens` | number or null | The whole prompt as the endpoint tokenised it, **cached tokens included**. |
+| `output_tokens` | number or null | Everything the model generated, **reasoning included**. |
+| `total_tokens` | number or null | What the endpoint states as the sum of the two. |
+| `cached_tokens` | number or null | The part of `input_tokens` served from the endpoint's cache. |
+| `prefilled_tokens` | number or null | The part of `input_tokens` the endpoint processed, where it says so (llama.cpp's `prompt_n`). |
+| `reasoning_tokens` | number or null | The part of `output_tokens` that was reasoning. llama.cpp does not state it. |
+
+A message stored before a count could be `null` has no `cached_tokens` key; it
+reads as `null`, and a stored `0` in all of `input_tokens`, `output_tokens` and
+`total_tokens` reads as nothing stated.
 
 ### `run.error`
 
@@ -267,7 +289,7 @@ lets the turn go on with the conversation as it was.
 | `tokens_after` | number, optional | The estimated size of the context that replaced it. |
 | `summary` | string, optional | The summary the context now begins with. |
 | `kept` | number, optional | How many messages of the context before stay after the summary. |
-| `usage` | object | What writing the summary cost, in the shape of `turn.end`'s `usage`. |
+| `usage` | Usage | What writing the summary cost. |
 | `error` | string, optional | Why the compaction failed. |
 
 ### `question.asked`

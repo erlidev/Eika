@@ -95,7 +95,7 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 	sendUsage := func() bool {
 		// Timings without usage still say something true, and an endpoint
 		// that hangs them off a chunk of its own would otherwise lose them.
-		if usage == (provider.Usage{}) && !timings.Known() {
+		if !usage.Reported() && !timings.Known() {
 			return true
 		}
 		if usage == reported && timings == reportedTimings {
@@ -107,12 +107,8 @@ func relay(ctx context.Context, stream chunkStream, out chan<- provider.Event) {
 
 	for stream.Next() {
 		chunk := stream.Current()
-		if u := chunk.Usage; u.TotalTokens != 0 || u.PromptTokens != 0 || u.CompletionTokens != 0 {
-			usage = provider.Usage{
-				InputTokens:  int(u.PromptTokens),
-				OutputTokens: int(u.CompletionTokens),
-				TotalTokens:  int(u.TotalTokens),
-			}
+		if u, ok := provider.ChatUsage([]byte(chunk.RawJSON())); ok {
+			usage = usage.Merge(u)
 		}
 		if t, ok := parseTimings(chunk.RawJSON(), usage); ok {
 			timings = t

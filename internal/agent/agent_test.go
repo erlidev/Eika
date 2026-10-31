@@ -1187,9 +1187,9 @@ func TestTurnReportsMeasuredUsageWhileItStreams(t *testing.T) {
 	// usage statistics: every snapshot becomes a turn.progress event.
 	f := newFixture(t, []providertest.Step{providertest.Stream(
 		provider.TextDelta("one "),
-		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 100, OutputTokens: 1, TotalTokens: 101}},
+		provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(100, 1, 101)},
 		provider.TextDelta("two"),
-		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 100, OutputTokens: 2, TotalTokens: 102}},
+		provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(100, 2, 102)},
 		provider.Done("stop"),
 	)})
 	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
@@ -1210,8 +1210,8 @@ func TestTurnReportsMeasuredUsageWhileItStreams(t *testing.T) {
 	if len(progress) != 2 {
 		t.Fatalf("turn.progress events = %d, want one per reported usage", len(progress))
 	}
-	if progress[0].Usage.OutputTokens != 1 || progress[1].Usage.OutputTokens != 2 {
-		t.Errorf("progress output tokens = %d then %d, want 1 then 2",
+	if progress[0].Usage.OutputTokens != provider.Reported(1) || progress[1].Usage.OutputTokens != provider.Reported(2) {
+		t.Errorf("progress output tokens = %+v then %+v, want 1 then 2",
 			progress[0].Usage.OutputTokens, progress[1].Usage.OutputTokens)
 	}
 	if progress[1].GenerationMS < progress[0].GenerationMS {
@@ -1223,10 +1223,10 @@ func TestTurnReportsMeasuredUsageWhileItStreams(t *testing.T) {
 
 	var end event.TurnEnd
 	f.events.payloadOf(t, event.TypeTurnEnd, &end)
-	if end.Usage.OutputTokens != 2 || end.Usage.TotalTokens != 102 {
+	if end.Usage.OutputTokens != provider.Reported(2) || end.Usage.TotalTokens != provider.Reported(102) {
 		t.Errorf("turn.end usage = %+v, want the last reported snapshot", end.Usage)
 	}
-	if end.Context.TotalTokens != 102 {
+	if end.Context.TotalTokens != provider.Reported(102) {
 		t.Errorf("turn.end context = %+v, want the last call's own usage", end.Context)
 	}
 	if end.ContextWindow != 400_000 {
@@ -1237,22 +1237,27 @@ func TestTurnReportsMeasuredUsageWhileItStreams(t *testing.T) {
 	}
 	stored := f.store.Messages(f.session.ID)
 	last := stored[len(stored)-1]
-	if last.Metrics == nil || last.Metrics.RunID == "" || last.Metrics.Context.TotalTokens != 102 || last.Metrics.ContextWindow != 400_000 {
+	if last.Metrics == nil || last.Metrics.RunID == "" || last.Metrics.Context.TotalTokens != provider.Reported(102) || last.Metrics.ContextWindow != 400_000 {
 		t.Errorf("stored assistant metrics = %+v, want the final context measurement", last.Metrics)
 	}
 }
 
-func TestTurnSumsGenerationOverEveryModelCall(t *testing.T) {
+func TestTurnCarriesTheCachedCountAndSumsOnlyWhatEveryCallReported(t *testing.T) {
+	// The first call states how much of its prompt came from the cache and the
+	// second does not. The turn's cached total would read as 8 if the second
+	// were counted as 0, which says the cache served less than it may have.
+	first := providertest.Usage(10, 3, 13)
+	first.CachedTokens = provider.Reported(8)
+	first.ReasoningTokens = provider.Reported(0)
 	f := newFixture(t, []providertest.Step{
 		{Events: []provider.Event{
-			provider.TextDelta("running it"),
 			{Kind: provider.KindToolCall, ToolCall: providertest.Call("c1", "read_file", map[string]any{"path": "missing.txt"})},
-			{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 10, OutputTokens: 3, TotalTokens: 13}},
+			{Kind: provider.KindUsage, Usage: first},
 			provider.Done("tool_calls"),
 		}},
 		providertest.Stream(
 			provider.TextDelta("done"),
-			provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 20, OutputTokens: 4, TotalTokens: 24}},
+			provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(20, 4, 24)},
 			provider.Done("stop"),
 		),
 	})
@@ -1261,11 +1266,85 @@ func TestTurnSumsGenerationOverEveryModelCall(t *testing.T) {
 	}
 	var end event.TurnEnd
 	f.events.payloadOf(t, event.TypeTurnEnd, &end)
-	if end.Usage.OutputTokens != 7 || end.Usage.TotalTokens != 37 {
+	if end.Usage.InputTokens != provider.Reported(30) || end.Usage.TotalTokens != provider.Reported(37) {
+		t.Errorf("turn.end usage = %+v, want the counts both calls reported summed", end.Usage)
+	}
+	if end.Usage.CachedTokens.Reported() || end.Usage.ReasoningTokens.Reported() {
+		t.Errorf("turn.end usage = %+v, want the counts one call did not report left unreported", end.Usage)
+	}
+	if end.Context.CachedTokens.Reported() {
+		t.Errorf("turn.end context = %+v, want the last call's own usage, which stated no cached count", end.Context)
+	}
+}
+
+func TestTurnReportsNoUsageForAnEndpointThatStatesNone(t *testing.T) {
+	f := newFixture(t, []providertest.Step{providertest.Text("hello")})
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var end event.TurnEnd
+	f.events.payloadOf(t, event.TypeTurnEnd, &end)
+	if end.Usage.Reported() || end.Context.Reported() {
+		t.Errorf("turn.end usage = %+v, context = %+v, want nothing reported", end.Usage, end.Context)
+	}
+	if raw := string(f.events.all()[len(f.events.all())-1].Payload); !strings.Contains(raw, `"input_tokens":null`) {
+		t.Errorf("turn.end payload = %s, want an unreported count to be null on the wire", raw)
+	}
+	stored := f.store.Messages(f.session.ID)
+	if m := stored[len(stored)-1].Metrics; m != nil {
+		t.Errorf("stored metrics = %+v, want none for a response with no usage", m)
+	}
+}
+
+func TestTurnLeavesATurnTotalUnreportedWhenOneCallStatedNoUsage(t *testing.T) {
+	f := newFixture(t, []providertest.Step{
+		{Events: []provider.Event{
+			{Kind: provider.KindToolCall, ToolCall: providertest.Call("c1", "read_file", map[string]any{"path": "missing.txt"})},
+			provider.Done("tool_calls"),
+		}},
+		providertest.Stream(
+			provider.TextDelta("done"),
+			provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(20, 4, 24)},
+			provider.Done("stop"),
+		),
+	})
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var end event.TurnEnd
+	f.events.payloadOf(t, event.TypeTurnEnd, &end)
+	if end.Usage.Reported() {
+		t.Errorf("turn.end usage = %+v, want the turn's cost unreported: its first call stated none", end.Usage)
+	}
+	if end.Context.TotalTokens != provider.Reported(24) {
+		t.Errorf("turn.end context = %+v, want the call that did state its usage", end.Context)
+	}
+}
+
+func TestTurnSumsGenerationOverEveryModelCall(t *testing.T) {
+	f := newFixture(t, []providertest.Step{
+		{Events: []provider.Event{
+			provider.TextDelta("running it"),
+			{Kind: provider.KindToolCall, ToolCall: providertest.Call("c1", "read_file", map[string]any{"path": "missing.txt"})},
+			{Kind: provider.KindUsage, Usage: providertest.Usage(10, 3, 13)},
+			provider.Done("tool_calls"),
+		}},
+		providertest.Stream(
+			provider.TextDelta("done"),
+			provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(20, 4, 24)},
+			provider.Done("stop"),
+		),
+	})
+	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var end event.TurnEnd
+	f.events.payloadOf(t, event.TypeTurnEnd, &end)
+	if end.Usage.OutputTokens != provider.Reported(7) || end.Usage.TotalTokens != provider.Reported(37) {
 		t.Errorf("turn.end usage = %+v, want both calls summed", end.Usage)
 	}
 	// The window holds one conversation, not the sum of every prompt in it.
-	if end.Context.TotalTokens != 24 {
+	if end.Context.TotalTokens != provider.Reported(24) {
 		t.Errorf("turn.end context = %+v, want the last call's own usage", end.Context)
 	}
 }
@@ -1282,7 +1361,7 @@ func TestTurnReportsTheEndpointsOwnTimings(t *testing.T) {
 		provider.TextDelta("answer"),
 		provider.Event{
 			Kind:    provider.KindUsage,
-			Usage:   provider.Usage{InputTokens: 1200, OutputTokens: 256, TotalTokens: 1456},
+			Usage:   providertest.Usage(1200, 256, 1456),
 			Timings: reported,
 		},
 		provider.Done("stop"),
@@ -1309,7 +1388,7 @@ func TestTurnTimesAnEndpointThatReportsNoTimings(t *testing.T) {
 	// the first token on, so the first token is not one of the tokens counted.
 	f := newFixture(t, []providertest.Step{providertest.Stream(
 		provider.TextDelta("answer"),
-		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 40, OutputTokens: 9, TotalTokens: 49}},
+		provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(40, 9, 49)},
 		provider.Done("stop"),
 	)})
 	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {
@@ -1338,7 +1417,7 @@ func TestTurnTimesNothingWhenTheResponseIsOneToken(t *testing.T) {
 	// measured interval and no rate to state.
 	f := newFixture(t, []providertest.Step{providertest.Stream(
 		provider.TextDelta("ok"),
-		provider.Event{Kind: provider.KindUsage, Usage: provider.Usage{InputTokens: 40, OutputTokens: 1, TotalTokens: 41}},
+		provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(40, 1, 41)},
 		provider.Done("stop"),
 	)})
 	if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("hi")); err != nil {

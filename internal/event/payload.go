@@ -162,12 +162,10 @@ type TurnEnd struct {
 	Timings *provider.Timings `json:"timings,omitempty"`
 }
 
-// Usage reports the tokens a turn cost, summed over every model call it made.
-type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
-}
+// Usage reports the tokens a model call or a turn cost, as the endpoint
+// stated them. A count the endpoint did not state is null on the wire, never
+// 0, and so is the sum of a count that any call of the turn did not state.
+type Usage = provider.Usage
 
 // The reasons a compaction happens.
 const (

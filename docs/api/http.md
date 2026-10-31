@@ -295,7 +295,7 @@ ModelContext that has `request`; `404` for a record of another session.
 | `calibration` | object, optional | `{request_id, input_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
 
 Every `tokens` figure is an estimate, four bytes to a token and an image one
-token per 750 pixels; only a record's `input_tokens` is measured.
+token per 750 pixels; only a record's `input_tokens`, when it is not `null`, is measured.
 
 ### ModelRequest
 
@@ -308,7 +308,7 @@ token per 750 pixels; only a record's `input_tokens` is measured.
 | `model_id` | string, optional | The model, absent once it is deleted. |
 | `model` | string | The model's name when the call was made. |
 | `message_tokens` | number | The estimated size of the messages sent. |
-| `input_tokens`, `output_tokens`, `total_tokens` | number | What the endpoint measured for the call, 0 when it reported nothing. |
+| `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens` | number or null | What the endpoint measured for the call, as `Usage` in `docs/api/events.md` defines them: `null` when the endpoint did not state a count, never `0` in its place. |
 | `created_at` | time | When the call returned. |
 
 ### Session

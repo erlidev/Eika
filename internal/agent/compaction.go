@@ -270,7 +270,7 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 
 	summary, usage, err := a.summarize(ctx, s, base, msgs, plan, instructions)
 	record.Usage = usage
-	end.Usage = event.Usage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, TotalTokens: usage.TotalTokens}
+	end.Usage = usage
 	if err != nil {
 		return failed(err)
 	}
@@ -310,11 +310,17 @@ func lastMeasured(msgs []provider.Message) (int, int) {
 		if msgs[i].Role != provider.RoleAssistant || m == nil {
 			continue
 		}
-		tokens := m.Context.TotalTokens
-		if tokens == 0 {
-			tokens = m.Context.InputTokens + m.Context.OutputTokens
+		// The fill is the total the endpoint stated, or its prompt and
+		// response counts together when it stated both. A call that stated
+		// less is not a measurement of the fill, and an older one that did is
+		// used instead, with everything after it estimated.
+		tokens, ok := m.Context.TotalTokens.Value()
+		if !ok || tokens == 0 {
+			in, haveIn := m.Context.InputTokens.Value()
+			out, haveOut := m.Context.OutputTokens.Value()
+			tokens, ok = in+out, haveIn && haveOut
 		}
-		if tokens > 0 {
+		if ok && tokens > 0 {
 			return tokens, i
 		}
 	}
@@ -366,6 +372,11 @@ var errSilentOverflow = errors.New("call model: the endpoint filled its context 
 // the request to its window and then had no room to answer, as Xiaomi MiMo
 // does; Pi's third overflow case.
 func silentOverflow(r response, window int) bool {
-	return window > 0 && cutOff(r.stop) && r.usage.OutputTokens == 0 && empty(r.message) &&
-		float64(r.usage.InputTokens) >= 0.99*float64(window)
+	// The empty response is the evidence that nothing was produced; the
+	// output count only rules out a response that produced something unseen,
+	// so a count the endpoint did not state does not.
+	out, stated := r.usage.OutputTokens.Value()
+	in, haveIn := r.usage.InputTokens.Value()
+	return window > 0 && cutOff(r.stop) && (!stated || out == 0) && empty(r.message) &&
+		haveIn && float64(in) >= 0.99*float64(window)
 }
