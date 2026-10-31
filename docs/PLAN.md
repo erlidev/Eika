@@ -1067,7 +1067,11 @@ later items.
   - Landed, second commit. The session's `Counter` is held by the server
     (`server/counters.go`, keyed by session, rebuilt when the model, address, key
     or probed counting kind changes, 64 at most, dropped with the session) and
-    reaches the agent as `Options.Counter`. `agent.call` predicts before every
+    reaches the agent as `Options.Counter`. It holds no key between runs: it
+    counts through a `counter.Switch` whose routes (with the key) are attached
+    for a run and released on every way out, and the registry compares a digest
+    of the key; the cost is that a run rebuilds its `Routes`, so the control-token
+    check of llama.cpp's prompt is repeated once per run. `agent.call` predicts before every
     call (`counting.go`), `fit`, `shouldCompact`, the compaction's before and
     after sizes and the summary's room all use the prediction, and the endpoint's
     own count is observed after it; the `ModelCall` the `Recorder` gets carries

@@ -476,20 +476,34 @@ this file says why, so neither repeats the other.
 - **One counter per session, held by the server.** A run builds its agent
   afresh for every message, so the counter that learns lives in
   `server/counters.go`, keyed by session and built from the provider row's
-  probed `backend` and `capabilities.counting` (`counter.Config`) and the
-  provider's `ChatEncoder`. A session moved to another model, address, key or
-  counting kind gets a new one, since what it learned described the old
-  endpoint. At most 64 are kept, least recently used out, and a deleted
-  session's is dropped: a dropped counter costs its session about five calls
-  of learning. The counter's `Routes` keeps the provider's key for as long as
-  it is held, which departs from "a key is in memory only while used"; it is
-  bounded, and a changed key replaces the counter. A provider that is not a
-  `ChatEncoder`, or an endpoint with no capabilities yet, still gets a counter,
-  which estimates (and counts text where the endpoint can). Rejected: a
-  counter on `agent.Session` (loaded afresh each run); one per agent (it would
-  learn nothing across turns); persisting the learned constants (the decision
-  of "The token counter" stands: they are relearned in a few calls, and the
-  next bullet covers the case that mattered).
+  probed `backend` and `capabilities.counting` and the provider's
+  `ChatEncoder`. A session moved to another model, address, key or counting
+  kind gets a new one, since what it learned described the old endpoint. At
+  most 64 are kept, least recently used out, and a deleted session's is
+  dropped: a dropped counter costs its session about five calls of learning.
+  A provider that is not a `ChatEncoder`, or an endpoint with no capabilities
+  yet, still gets a counter, which estimates (and counts text where the
+  endpoint can).
+- **A held counter holds no key.** The counter counts through a
+  `counter.Switch`; the `Routes`, which carry the provider's key, are built
+  for a run, attached to the switch for as long as it lasts, and released on
+  every way out (`drive`, and `abandon` for a reservation that never became a
+  run). What the registry keeps to tell that an endpoint changed is a digest of
+  the key inside `endpointPrint`, not the key, and a changed key gives a new
+  counter. Users of one session at once share the first one's routes, and the
+  last to release drops them. Detached, the counter predicts by estimate. A test
+  walks everything reachable from the registry for the key after a run ends.
+  The cost is that each run builds its `Routes`, so the control-token check of
+  a llama.cpp prompt (two small `/tokenize` requests per distinct token) is
+  repeated once per run, not once per session. Rejected: keeping the key in a
+  held `Routes` (up to 64 long-lived copies of an unsealed key); sealing it in
+  the registry (the harness already opens it for every run, and a digest is
+  all that comparing needs).
+- **Rejected for the counter's home:** a counter on `agent.Session` (loaded
+  afresh each run); one per agent (it would learn nothing across turns);
+  persisting the learned constants (the decision of "The token counter"
+  stands: they are relearned in a few calls, and the next bullet covers the
+  case that mattered).
 - **A resumed session is seeded from its stored measurement.** The assistant
   messages of a conversation carry the usage of the call that produced them.
   `Agent.Run` hands the newest to `Counter.Seed` when the counter has learned

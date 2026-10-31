@@ -89,7 +89,8 @@ Run(ctx, session, text)
   size costs what a measurement showed (`anchored`), or a pixel estimate until
   one has (`estimated`): a request with a picture is never `exact`. The agent
   holds the session's counter (`agent.Options.Counter`, kept across runs by
-  `server/counters.go`); `Estimate` answers without asking the server when a
+  `server/counters.go`, which attaches the routes, and the key, through a
+  `counter.Switch` for the length of a run only); `Estimate` answers without asking the server when a
   prediction cannot finish in time, `Seed` teaches a fresh counter from a stored
   measurement, and `CountText` tokenises a text of the caller's own.
   `provider.NewHTTPClient`, which the provider, the probe and the counter share,

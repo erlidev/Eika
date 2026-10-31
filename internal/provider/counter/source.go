@@ -3,9 +3,102 @@ package counter
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/erlidev/eika/internal/provider"
 )
+
+// Switch is a Source whose routes are attached only while something uses them.
+// A Counter built on a Switch keeps everything it learned between uses, and
+// the routes it counts through, with the endpoint's key, are held only from
+// Attach until the matching release. Detached, it has no tokenizer route, so a
+// prediction is an estimate.
+//
+// Several users may attach at once; the first one's routes serve them all, so
+// they must be for the same endpoint, and the routes are dropped when the last
+// one releases.
+type Switch struct {
+	mu    sync.Mutex
+	src   Source
+	users int
+}
+
+// Attach makes src the routes of the Switch for one user and returns the
+// function that ends that use, which is safe to call more than once.
+func (s *Switch) Attach(src Source) (release func()) {
+	s.mu.Lock()
+	if s.users == 0 {
+		s.src = src
+	}
+	s.users++
+	s.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if s.users--; s.users == 0 {
+				s.src = nil
+			}
+		})
+	}
+}
+
+// Attached reports whether any user holds the routes.
+func (s *Switch) Attached() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.src != nil
+}
+
+// current returns the attached routes, nil when there are none.
+func (s *Switch) current() Source {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.src
+}
+
+// Level is the attached routes' level, none when nothing is attached.
+func (s *Switch) Level() Level {
+	if src := s.current(); src != nil {
+		return src.Level()
+	}
+	return LevelNone
+}
+
+// Prompt renders req with the attached routes.
+func (s *Switch) Prompt(ctx context.Context, req provider.Request) (string, error) {
+	if src := s.current(); src != nil {
+		return src.Prompt(ctx, req)
+	}
+	return "", ErrUnsupported
+}
+
+// Request counts req with the attached routes.
+func (s *Switch) Request(ctx context.Context, req provider.Request) (int, error) {
+	if src := s.current(); src != nil {
+		return src.Request(ctx, req)
+	}
+	return 0, ErrUnsupported
+}
+
+// Text counts text with the attached routes.
+func (s *Switch) Text(ctx context.Context, text string) (int, error) {
+	if src := s.current(); src != nil {
+		return src.Text(ctx, text)
+	}
+	return 0, ErrUnsupported
+}
+
+// Boundaries cuts prompt with the attached routes.
+func (s *Switch) Boundaries(ctx context.Context, prompt string) ([]int, error) {
+	if src := s.current(); src != nil {
+		return src.Boundaries(ctx, prompt)
+	}
+	return nil, nil
+}
+
+var _ Source = (*Switch)(nil)
 
 // NewEstimating returns a Counter for an endpoint with no tokenizer route, or
 // for a caller that does not know of one: it predicts by the estimated method

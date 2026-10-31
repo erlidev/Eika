@@ -129,6 +129,55 @@ func TestRoutesWithoutAnEncoderCountTextOnly(t *testing.T) {
 	}
 }
 
+func TestSwitchServesTheRoutesOnlyWhileTheyAreAttached(t *testing.T) {
+	ctx := context.Background()
+	server := providertest.NewTokenServer(providertest.RoutesPrompt)
+	var sw counter.Switch
+	c := counter.New(&sw)
+	req := provider.Request{Model: "fake", Messages: []provider.Message{provider.UserMessage("hello there, how are you")}}
+
+	if pred, err := c.Predict(ctx, req); err != nil || pred.Method != provider.MethodEstimated {
+		t.Fatalf("detached: %+v, %v; want an estimate", pred, err)
+	}
+	release := sw.Attach(server)
+	if !sw.Attached() {
+		t.Fatal("not attached after Attach")
+	}
+	if pred, err := c.Predict(ctx, req); err != nil || pred.Method != provider.MethodExact {
+		t.Fatalf("attached: %+v, %v; want exact", pred, err)
+	}
+	release()
+	release() // a second call does nothing
+	if sw.Attached() {
+		t.Error("still attached after release")
+	}
+	if pred, err := c.Predict(ctx, req); err != nil || pred.Method != provider.MethodEstimated {
+		t.Errorf("released: %+v, %v; want an estimate", pred, err)
+	}
+}
+
+// Two uses at once do not clear each other's routes: they are dropped when the
+// last one ends.
+func TestSwitchKeepsTheRoutesUntilTheLastUserReleases(t *testing.T) {
+	var sw counter.Switch
+	first := sw.Attach(providertest.NewTokenServer(providertest.RoutesPrompt))
+	second := sw.Attach(providertest.NewTokenServer(providertest.RoutesPrompt))
+	first()
+	first()
+	if !sw.Attached() {
+		t.Fatal("the first release dropped the routes the second user holds")
+	}
+	second()
+	if sw.Attached() {
+		t.Error("routes kept after every user released")
+	}
+	third := sw.Attach(providertest.NewTokenServer(providertest.RoutesText))
+	defer third()
+	if sw.Level() != counter.LevelText {
+		t.Errorf("Level = %v, want the routes attached last", sw.Level())
+	}
+}
+
 func TestEstimatingCounterPredictsByBytesAndLearns(t *testing.T) {
 	c := counter.NewEstimating()
 	req := provider.Request{Model: "fake", Messages: []provider.Message{provider.UserMessage("a question of some length")}}

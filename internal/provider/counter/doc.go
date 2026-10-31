@@ -12,8 +12,9 @@
 // the model may generate is not part of it). Estimate answers by the estimated
 // method without asking the server, for a caller out of time; Seed teaches a
 // fresh counter from a measurement stored earlier; CountText counts a text of
-// the caller's own. Results are cached by the hash of what was counted, so a
-// prefix is tokenised once per session.
+// the caller's own. A Switch is a Source whose routes, and the key they carry,
+// are attached only while a run uses them. Results are cached by the hash of
+// what was counted, so a prefix is tokenised once per session.
 //
 // A Source is the endpoint's tokenizer routes. Routes reaches llama.cpp, vLLM,
 // SGLang and TabbyAPI over HTTP and renders a chat request from the body its
