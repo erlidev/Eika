@@ -29,7 +29,9 @@ human changing the codebase. Read it fully before editing.
   extension point changed, `docs/api/` if the API or event protocol changed.
   A changed wire type also means `make contract`, which the tests require.
 - Run `make smoke` after changing a compose file, a Dockerfile, `deploy/`,
-  or how `server.Run` wires the process: `make check` covers none of them.
+  or how `server.Run` wires the process. `make check` builds
+  `sandbox/Dockerfile` for its Docker tests, but covers no compose file, no
+  other Dockerfile, no `deploy/`, and not the wiring.
 - Do not add a dependency without a one-line justification in the commit
   message and confirmation that nothing in the standard library covers it.
 - Do not introduce a second way to do something that already has one way

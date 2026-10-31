@@ -567,6 +567,16 @@ this file says why, so neither repeats the other.
   where pixels are the point, ARIA snapshots for what a screen says:
   baselines on every screen failed on each copy edit and made accepting them
   a habit.
+- **The test stacks never use `eika-sandbox:latest`.** That tag is what a
+  stack started with `make local` starts its computers from, so a test that
+  read it failed whenever the user's image was older than the tree, and one
+  that built it moved the user's image under a running harness. `make check`
+  builds `sandbox/Dockerfile` as `eika-sandbox:test` (`sandbox-test`, a few
+  seconds when cached, skipped without Docker) and passes it to the Docker
+  tests in `EIKA_TEST_SANDBOX_IMAGE`; a bare `go test` falls back to `latest`.
+  `make smoke` builds `eika-sandbox:smoke` and points its harness at it with
+  `EIKA_SANDBOX_IMAGE`, as it tags the harness `eika:smoke`. Rejected: a
+  required `make sandbox` before `make check`, which is the tag problem again.
 - **The compose smoke test** (`make smoke`) is the one test of the real
   stack: its own compose project, port, and networks beside any running
   stack, with a scripted model (`web/e2e/smoke/model.ts`) standing in for a

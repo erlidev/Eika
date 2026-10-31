@@ -20,9 +20,16 @@ import (
 	"github.com/erlidev/eika/internal/executor/sandbox"
 )
 
-// sandboxImage is the image the Docker tests run computers from. It must
-// carry git; build it with `make sandbox`.
-const sandboxImage = "eika-sandbox:latest"
+// sandboxImage is the image the Docker tests run computers from. `make check`
+// builds it from sandbox/Dockerfile under a tag of its own and names it in
+// EIKA_TEST_SANDBOX_IMAGE; a bare `go test` falls back to the tag `make
+// sandbox` builds. The image must carry the tools the tests run.
+var sandboxImage = func() string {
+	if image := os.Getenv("EIKA_TEST_SANDBOX_IMAGE"); image != "" {
+		return image
+	}
+	return "eika-sandbox:latest"
+}()
 
 // requireDocker skips a test that has no Docker daemon to talk to.
 func requireDocker(t *testing.T) string {
@@ -38,7 +45,7 @@ func requireDocker(t *testing.T) string {
 func requireImage(t *testing.T) {
 	t.Helper()
 	if err := exec.Command("docker", "image", "inspect", sandboxImage).Run(); err != nil {
-		t.Skip(sandboxImage + " is missing: run `make sandbox`")
+		t.Skip(sandboxImage + " is missing: run `make sandbox-test`")
 	}
 }
 
