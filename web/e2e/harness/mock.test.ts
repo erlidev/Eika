@@ -16,24 +16,20 @@ import { scenario } from "./scenarios.ts";
 
 /**
  * unmocked are the routes the mock does not serve, with why: the UI never
- * calls them. The routes of the removed coding UI are listed until their
- * Go route goes. A test that calls one sees the mock's 404.
+ * calls them. A test that calls one sees the mock's 404.
  */
 const unmocked: Record<string, string> = {
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/events": "a WebSocket, which install routes itself",
-  "POST /api/computers": "the coding UI is gone; the Go route goes with a later item",
-  "GET /api/computers/{id}": "the coding UI is gone; the Go route goes with a later item",
-  "PATCH /api/computers/{id}": "the coding UI is gone; the Go route goes with a later item",
-  "DELETE /api/computers/{id}": "the coding UI is gone; the Go route goes with a later item",
-  "POST /api/computers/{id}/start": "the coding UI is gone; the Go route goes with a later item",
-  "POST /api/computers/{id}/stop": "the coding UI is gone; the Go route goes with a later item",
-  "PUT /api/computers/{id}/sandbox": "the coding UI is gone; the Go route goes with a later item",
-  "GET /api/computers/{id}/usage": "the coding UI is gone; the Go route goes with a later item",
-  "GET /api/computers/{id}/files": "the coding UI is gone; the Go route goes with a later item",
-  "GET /api/computers/{id}/file": "the coding UI is gone; the Go route goes with a later item",
-  "PUT /api/computers/{id}/file": "the coding UI is gone; the Go route goes with a later item",
-  "POST /api/sessions/{id}/fork": "the coding UI is gone; the Go route goes with a later item",
+  "POST /api/computers": "no UI calls it",
+  "GET /api/computers/{id}": "no UI calls it",
+  "PATCH /api/computers/{id}": "no UI calls it",
+  "DELETE /api/computers/{id}": "no UI calls it",
+  "POST /api/computers/{id}/start": "no UI calls it",
+  "POST /api/computers/{id}/stop": "no UI calls it",
+  "PUT /api/computers/{id}/sandbox": "no UI calls it",
+  "GET /api/computers/{id}/usage": "no UI calls it",
+  "POST /api/sessions/{id}/fork": "no UI calls it",
 };
 
 /** open builds a mock on a named scenario whose replies play without pauses. */

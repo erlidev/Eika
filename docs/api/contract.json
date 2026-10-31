@@ -120,39 +120,6 @@
         ]
       }
     },
-    "GET /api/computers/{id}/file": {
-      "status": 200,
-      "response": {
-        "object": {
-          "binary": "boolean",
-          "content": "string",
-          "path": "string",
-          "size": "number",
-          "too_large": "boolean"
-        }
-      }
-    },
-    "GET /api/computers/{id}/files": {
-      "status": 200,
-      "response": {
-        "object": {
-          "entries": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "is_dir": "boolean",
-                  "mod_time": "string",
-                  "mode": "number",
-                  "name": "string",
-                  "path": "string",
-                  "size": "number"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "GET /api/computers/{id}/usage": {
       "status": 200,
       "response": {
@@ -3525,20 +3492,6 @@
         }
       }
     },
-    "PUT /api/computers/{id}/file": {
-      "status": 200,
-      "raw_request": true,
-      "response": {
-        "object": {
-          "is_dir": "boolean",
-          "mod_time": "string",
-          "mode": "number",
-          "name": "string",
-          "path": "string",
-          "size": "number"
-        }
-      }
-    },
     "PUT /api/computers/{id}/sandbox": {
       "status": 200,
       "request": {
@@ -4251,7 +4204,6 @@
   },
   "error_codes": [
     "conflict",
-    "forbidden",
     "internal",
     "invalid_request",
     "not_found",

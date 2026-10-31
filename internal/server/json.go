@@ -14,8 +14,7 @@ import (
 )
 
 // maxRequestBytes bounds a JSON request body. Everything the API accepts as
-// JSON is small; a file saved from the editor is a raw body with a bound of
-// its own, maxFileBytes.
+// JSON is small.
 const maxRequestBytes = 1 << 20
 
 // writeJSON writes v as a JSON response with the given status code. An
@@ -60,7 +59,6 @@ func decodeJSONWithin[T any](r *http.Request, limit int64) (T, error) {
 const (
 	codeInvalidRequest = "invalid_request"
 	codeUnauthorized   = "unauthorized"
-	codeForbidden      = "forbidden"
 	codeNotFound       = "not_found"
 	codeConflict       = "conflict"
 	codeTooLarge       = "too_large"
@@ -93,12 +91,6 @@ func (e apiError) Error() string { return e.message }
 // invalidf reports a request the API will not act on.
 func invalidf(format string, args ...any) error {
 	return apiError{status: http.StatusBadRequest, code: codeInvalidRequest, message: fmt.Sprintf(format, args...)}
-}
-
-// forbiddenf reports a request for something the API will not reach, such as
-// a path outside the computer.
-func forbiddenf(format string, args ...any) error {
-	return apiError{status: http.StatusForbidden, code: codeForbidden, message: fmt.Sprintf(format, args...)}
 }
 
 // tooLargef reports a request body over the route's bound.

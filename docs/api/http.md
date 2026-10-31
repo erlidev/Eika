@@ -35,10 +35,9 @@ Every failure has one shape:
 |---|---|---|
 | `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field is malformed. |
 | `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
-| `forbidden` | 403 | A computer path is outside the computer, directly or through a symlink, or the sandbox may not open it. |
-| `not_found` | 404 | The addressed computer, session, entry, run, question, provider, model, MCP server, elicitation, pending authorization, or computer file does not exist. |
+| `not_found` | 404 | The addressed computer, session, entry, run, question, provider, model, MCP server, elicitation, or pending authorization does not exist. |
 | `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, the home computer asked to be deleted, a computer that is not running, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
-| `too_large` | 413 | A file saved through the API is over its 2 MiB bound. |
+| `too_large` | 413 | A JSON request body is over its 1 MiB bound. |
 | `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
 
 ## Health
@@ -194,54 +193,6 @@ is not running. `200` with:
 | `network_rx_bytes`, `network_tx_bytes` | number | Bytes received and sent since the container started. |
 | `sampled_at` | time | When Docker read the numbers. |
 | `blocked` | array of `{"host", "count", "last"}` | The hosts the egress proxy refused the computer lately, most recent first, at most 20. Kept in memory since the harness started. |
-
-### `GET /api/computers/{id}/files`
-
-Lists one directory of the computer: `?path=<path>`, relative to the
-computer root, and absent or empty for the root. Directories come first,
-then files, each in byte order of their names.
-
-`200` with `{"entries": [FileEntry]}`. `400` when the path is a file; `403`
-when it is outside the computer; `404` when it does not exist; `409` when the
-computer is not running.
-
-### `GET /api/computers/{id}/file`
-
-Reads one file for the editor. `?path=<path>` is required.
-
-`200` with:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `path` | string | The file, relative to the computer root. |
-| `size` | number | Its size in bytes. |
-| `binary` | boolean | A NUL byte is in its first 8 KiB. `content` is then empty. |
-| `too_large` | boolean | It is over 2 MiB. `content` is then empty. |
-| `content` | string | The file's text. |
-
-`400` when the path is missing or a directory; `403`, `404`, and `409` as for
-the listing.
-
-### `PUT /api/computers/{id}/file`
-
-Saves the raw request body as one file, `?path=<path>`, creating its parent
-directories. The body is at most 2 MiB.
-
-`200` with the saved file's `FileEntry`. `400` when the path is missing or a
-directory; `403` when it is outside the computer; `409` when the computer is
-not running; `413` when the body is over the bound. Publishes
-`computer.state`.
-
-### FileEntry
-
-| Field | Type | Meaning |
-|---|---|---|
-| `name` | string | The base name. |
-| `path` | string | Relative to the computer root, slash-separated. |
-| `size` | number | Size in bytes. |
-| `mode` | number | Go file mode bits. |
-| `mod_time` | time | Last modification. |
-| `is_dir` | boolean | Whether it is a directory. |
 
 ### Computer
 

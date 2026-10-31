@@ -50,9 +50,6 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("DELETE /api/computers/{id}", s.handleDeleteComputer)
 	api.HandleFunc("POST /api/computers/{id}/start", s.handleStartComputer)
 	api.HandleFunc("POST /api/computers/{id}/stop", s.handleStopComputer)
-	api.HandleFunc("GET /api/computers/{id}/files", s.handleListFiles)
-	api.HandleFunc("GET /api/computers/{id}/file", s.handleReadFile)
-	api.HandleFunc("PUT /api/computers/{id}/file", s.handleWriteFile)
 	api.HandleFunc("PUT /api/computers/{id}/sandbox", s.handleSetComputerSandbox)
 	api.HandleFunc("GET /api/computers/{id}/usage", s.handleComputerUsage)
 

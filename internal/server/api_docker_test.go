@@ -197,17 +197,6 @@ func (a *api) newComputer(t *testing.T) computerWire {
 	return decodeBody[computerWire](t, rec, 201)
 }
 
-// filesOf returns the directory the files of a computer are in, which a test
-// reads and writes to see what the agent sees.
-func (a *api) filesOf(t *testing.T, computerID string) string {
-	t.Helper()
-	dir, err := a.host.dirOf(computerID)
-	if err != nil {
-		t.Fatalf("directory of computer %s: %v", computerID, err)
-	}
-	return dir
-}
-
 // newSession opens a session in a computer.
 func (a *api) newSession(t *testing.T, computerID string) sessionWire {
 	t.Helper()
@@ -465,9 +454,6 @@ func TestNoOneWithoutASignInTokenReachesAComputer(t *testing.T) {
 		{"POST", base + "/stop"},
 		{"PUT", base + "/sandbox"},
 		{"GET", base + "/usage"},
-		{"GET", base + "/files"},
-		{"GET", base + "/file?path=hello.txt"},
-		{"PUT", base + "/file?path=hello.txt"},
 		{"GET", "/api/sessions/" + sess.ID},
 		{"POST", "/api/sessions/" + sess.ID + "/messages"},
 	}
@@ -881,14 +867,6 @@ func TestSettingsAndModels(t *testing.T) {
 	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages",
 		map[string]any{"text": "hi", "model": "gone"}); rec.Code != 400 {
 		t.Errorf("unknown model = %d, want 400", rec.Code)
-	}
-}
-
-// write puts a file in a computer directory.
-func write(t *testing.T, dir, name, content string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
-		t.Fatalf("write %s: %v", name, err)
 	}
 }
 

@@ -306,10 +306,10 @@ daemon's newline-delimited frames into the caller's writers. A 404 is
 
 ### Files
 
-File routes call the executor after `executor.Resolve` (eikad re-checks after
-symlinks): refused paths are 403, missing 404. Saves publish
-`computer.state`. There is no terminal and no preview: the person using a
-computer reaches it only through the agent.
+The API has no routes for a computer's files, and there is no terminal and no
+preview: the person using a computer reaches it only through the agent, whose
+tools call the executor. The executor checks a path with `executor.Resolve`
+and eikad re-checks it after following symlinks.
 
 ### Computer lifecycle
 

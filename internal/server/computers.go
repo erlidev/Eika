@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/computer"
-	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/store"
 )
 
@@ -305,22 +304,6 @@ func (s *Server) stopRunsIn(ctx context.Context, cx store.Computer) {
 	if s.deps.MCP != nil {
 		s.deps.MCP.StopComputer(cx.ID)
 	}
-}
-
-// executorFor returns the executor of a running computer.
-func (s *Server) executorFor(ctx context.Context, id string) (executor.Executor, error) {
-	cx, err := s.deps.Store.Computer(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	host, err := s.deps.Computers.Inspect(ctx, cx.ID)
-	if err != nil {
-		return nil, err
-	}
-	if host.State != computer.StateRunning {
-		return nil, notRunning(cx, host.State)
-	}
-	return s.deps.Computers.Executor(host)
 }
 
 // discard removes a computer the harness created but could not finish. It

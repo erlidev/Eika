@@ -29,8 +29,6 @@ type Route struct {
 	Status int `json:"status,omitempty"`
 	// Request is the JSON body the route reads, or nil when it reads none.
 	Request *Shape `json:"request,omitempty"`
-	// RawRequest marks a route that reads its body as bytes, not JSON.
-	RawRequest bool `json:"raw_request,omitempty"`
 	// Response is the body of a success, or nil when a success has none.
 	Response *Shape `json:"response,omitempty"`
 	// WebSocket marks a route that upgrades; it has no JSON bodies.

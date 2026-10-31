@@ -41,8 +41,9 @@ this file says why, so neither repeats the other.
   assistant.
 - **What stayed is the sandbox work** (computers, eikad, the egress proxy,
   sealed secrets, the MCP client, search) and the loop and session tree.
-  The API still serves a computer's file routes and a session's fork route,
-  which no UI calls; no phase removes them yet.
+  The API no longer serves a computer's file routes: an agent reaches files
+  through the executor. It still serves a session's fork route, which no UI
+  calls; no phase removes it yet.
 - What went is recoverable: the `PLAN.md` log names the commit
   (`478ce9c`) that last had the subagent spawner and the preview ticket flow,
   and says which parts phases 2 and 12 reuse.
