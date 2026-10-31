@@ -350,8 +350,7 @@ this file says why, so neither repeats the other.
   depth maps) is cut.
 - **Images live inline in the entry**, as base64 in the stored message, like
   MCP images in `tool.result` details. A table of attachments with ids was
-  rejected: forks copy entries, and shared rows would need reference counting
-  for no gain at 1080p sizes.
+  rejected: a second place to store and clean up, for no gain at 1080p sizes.
 - **Image input is a model fact, off by default** (`models.image_input`), not
   a profile setting. An endpoint may refuse a request with images for a model
   that cannot read them; the harness refuses to start or steer a run with
