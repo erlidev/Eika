@@ -64,9 +64,25 @@ func (staleConnRetry) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // closedByServer reports whether err is what a write to a connection the
 // server has closed looks like once the request is sent: the read finds the
-// end of the stream, the connection reset, or the transport has already closed
-// the connection it saw the server end and the write lost the race to it.
+// end of the stream, the connection reset, the transport has already closed
+// the connection it saw the server end and the write lost the race to it, or
+// the transport saw the end while the request was being written and reports
+// that it closed an idle connection.
 func closedByServer(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) ||
-		errors.Is(err, net.ErrClosed)
+		errors.Is(err, net.ErrClosed) || isServerClosedIdle(err)
+}
+
+// serverClosedIdleMessage is the text of net/http's errServerClosedIdle.
+const serverClosedIdleMessage = "http: server closed idle connection"
+
+// isServerClosedIdle reports whether err is the error net/http returns for a
+// request whose reused connection the server closed while the request was
+// being written. net/http keeps that value unexported and wraps nothing around
+// it, so no type or sentinel can be tested for, and the message is the only
+// thing left. Matching the whole message of an error taken as it stands, never
+// a substring of a wrapped one, is the narrowest test; a Go release that
+// rewords it fails the regression test that provokes the real error.
+func isServerClosedIdle(err error) bool {
+	return err != nil && err.Error() == serverClosedIdleMessage
 }
