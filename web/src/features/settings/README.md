@@ -7,10 +7,10 @@ Everything the user configures after setup, in one dialog of tabs.
   model" notice can all open it on the right tab.
 - Models is `features/providers/ModelsPanel`. General is `GeneralSettings.tsx`:
   `DefaultModelSelect.tsx`, `UtilityModels.tsx` (a model per utility task,
-  or off; both list models with `ModelSelectItems.tsx`), the sandbox image
-  with `SystemCheck.tsx`, and a way back into the guided setup. Computer is
-  `ComputerSettings.tsx`: the limits and network a sandbox is created with,
-  with the fields from `features/sandbox`; `sandboxDefaults` in `queries.ts`
+  or off; both list models with `ModelSelectItems.tsx`), the image the
+  home computer is created from, with `SystemCheck.tsx`, and a way back into the guided setup. Computer is
+  `ComputerSettings.tsx`: the home computer's limits and network, which a
+  save applies to its container, with the fields from `features/sandbox`; `sandboxDefaults` in `queries.ts`
   reads them from the table. Search is
   `SearchSettings.tsx`: the web provider order, the search API keys, the
   quotas, the sources' health, and a box to try a search, over

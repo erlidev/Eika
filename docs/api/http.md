@@ -849,16 +849,20 @@ same body as `GET`. Keys are 1 to 64 characters. The harness reads and
 validates these keys; any other key is the UI's own and is stored as it
 comes. One invalid value is `400` and writes nothing. The keys are written
 in one transaction, so a write the database refuses is a `500` that also
-writes nothing.
+writes nothing. A write that carries `sandbox_limits` or `sandbox_egress` then
+applies them to the home computer. If Docker refuses, the answer is a `500`
+and the values stay saved: the home row holds them and its container takes
+them at its next start. Before the home computer is recorded the write only
+stores them.
 
 | Key | Value | Meaning |
 |---|---|---|
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a model. |
 | `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
-| `sandbox_image` | string | The image a new computer runs when it names none. |
+| `sandbox_image` | string | The image the home computer's container is created from. A container that exists keeps its image, so a change reaches the home computer only when its container is made again. |
 | `computer_idle_minutes` | number, 0 to 10080 | How long a running computer may go without a run in it before the harness stops it as `POST /api/computers/{id}/stop` does. 0 never stops one. Checked once a minute. |
-| `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The limits a new computer gets when its request names none, checked as a Sandbox's are. A field the object leaves out is 0, no limit. |
-| `sandbox_egress` | `{"mode", "allow"}` | The egress a new computer gets when its request names none. A restricted mode is `400` on a harness without the internal sandbox network. |
+| `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The home computer's limits, checked as a Sandbox's are. A field the object leaves out is 0, no limit. A write applies them to its container, running or stopped, without a restart; a stopped container also takes them at its next start. |
+| `sandbox_egress` | `{"mode", "allow"}` | The home computer's egress, applied as the limits are. A restricted mode is `400` on a harness without the internal sandbox network. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
 | `utility_models` | object | The model each of the harness's own tasks is sent to, by task, `{"session_title": "gpt-5-mini"}`. Each key must be a task and each value the name of a model or `""` for none; a task with none does not run. Renaming a model renames it here. Tasks: `session_title` names an untitled session after its first message (see `session.title` in `events.md`). |
 | `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
@@ -1169,7 +1173,7 @@ What the setup screens check before the first computer. `200` with:
 | Field | Type | Meaning |
 |---|---|---|
 | `docker` | `{"reachable": boolean, "error": string}` | Whether the harness can use the Docker socket, and the client's reason when it cannot. |
-| `sandbox_image` | `{"name": string, "present": boolean}` | The image new computers run and whether the Docker host has it. |
+| `sandbox_image` | `{"name": string, "present": boolean}` | The image the home computer is created from and whether the Docker host has it. |
 | `sandbox` | `{"cpus": number, "memory_bytes": number, "egress_control": boolean}` | The Docker host's cores and memory, which bound a sandbox's limits, zero when Docker cannot be asked; and whether a sandbox's egress can be restricted, which a harness outside the compose stack cannot. |
 | `providers`, `models` | number | How many of each exist. |
 

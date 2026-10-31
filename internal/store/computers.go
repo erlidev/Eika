@@ -101,12 +101,22 @@ func (s *Store) EnsureHomeComputer(ctx context.Context, w Computer) (home Comput
 	if err != nil {
 		return Computer{}, false, wrap("ensure home computer", err)
 	}
-	row := s.pool.QueryRow(ctx, `SELECT `+computerColumns+` FROM computers WHERE home`)
-	home, err = scanComputer(row)
+	home, err = s.HomeComputer(ctx)
 	if err != nil {
-		return Computer{}, false, wrap("read home computer", err)
+		return Computer{}, false, err
 	}
 	return home, tag.RowsAffected() == 1, nil
+}
+
+// HomeComputer returns the home computer, or ErrNotFound while the harness
+// has not recorded it yet.
+func (s *Store) HomeComputer(ctx context.Context) (Computer, error) {
+	row := s.pool.QueryRow(ctx, `SELECT `+computerColumns+` FROM computers WHERE home`)
+	w, err := scanComputer(row)
+	if err != nil {
+		return Computer{}, wrap("read home computer", err)
+	}
+	return w, nil
 }
 
 // Computer returns the computer with the given id.

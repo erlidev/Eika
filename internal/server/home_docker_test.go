@@ -30,6 +30,24 @@ func (a *api) homeOf(t *testing.T) computerWire {
 	return homes[0]
 }
 
+// home makes the home computer and returns it as the API lists it.
+func (a *api) home(t *testing.T) computerWire {
+	t.Helper()
+	if err := a.EnsureHome(t.Context()); err != nil {
+		t.Fatalf("EnsureHome: %v", err)
+	}
+	return a.homeOf(t)
+}
+
+// stopIdle stops the running computers the way the idle stopper does, by
+// sweeping once to see them and again after the timeout.
+func (a *api) stopIdle(t *testing.T) {
+	t.Helper()
+	start := time.Now()
+	a.SweepIdle(t.Context(), start)
+	a.SweepIdle(t.Context(), start.Add(15*time.Minute))
+}
+
 // containers counts the computer containers the host holds.
 func (a *api) containers(t *testing.T) int {
 	t.Helper()

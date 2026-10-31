@@ -1,6 +1,6 @@
 # sandbox
 
-The limits and network a sandbox is created with, as the Computer tab of the
+The limits and network of the home computer, as the Computer tab of the
 settings edits them.
 
 - `SandboxFields.tsx` holds the fields: `LimitsFields` (sliders from no

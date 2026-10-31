@@ -69,9 +69,10 @@ type fakeHost struct {
 
 	mu        sync.Mutex
 	computers map[string]*fakeComputer
-	// createErr and startErr fail the matching call when set.
+	// createErr, startErr and confineErr fail the matching call when set.
 	createErr  error
 	startErr   error
+	confineErr error
 	inspectErr error
 	// images are the images HasImage reports present; imageErr fails it,
 	// the way a Docker socket the harness cannot use does.
@@ -106,6 +107,14 @@ func newFakeHost(t *testing.T) *fakeHost {
 		root: t.TempDir(), computers: map[string]*fakeComputer{},
 		confined: map[string][]computer.Confinement{},
 	}
+}
+
+// failConfine makes every Confine fail with err until it is called with nil,
+// the way a Docker daemon that refuses a container update does.
+func (h *fakeHost) failConfine(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.confineErr = err
 }
 
 // failCreate makes every Create fail with err until it is called with nil,
@@ -168,6 +177,12 @@ func (h *fakeHost) Create(_ context.Context, spec computer.Spec) (computer.Compu
 
 // Confine records the confinement a computer was given.
 func (h *fakeHost) Confine(_ context.Context, cx *computer.Computer, c computer.Confinement) error {
+	h.mu.Lock()
+	confineErr := h.confineErr
+	h.mu.Unlock()
+	if confineErr != nil {
+		return confineErr
+	}
 	if c.Proxied && !h.EgressControl() {
 		return computer.ErrNoEgressControl
 	}

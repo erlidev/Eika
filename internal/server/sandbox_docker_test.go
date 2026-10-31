@@ -220,3 +220,137 @@ func TestEgressPolicyKnowsAComputerByItsProxyToken(t *testing.T) {
 		t.Errorf("policy of a missing computer = %v, want ErrUnknownComputer", err)
 	}
 }
+
+// settingsSandbox is a PUT /api/settings body that sets the home computer's
+// limits and egress.
+func settingsSandbox(cpus float64, memoryMB, pids int64, mode string, allow []string) map[string]any {
+	sb := sandboxOf(cpus, memoryMB, pids, mode, allow)
+	return map[string]any{"sandbox_limits": sb["limits"], "sandbox_egress": sb["egress"]}
+}
+
+func TestSavingTheSandboxSettingsConfinesTheHomeContainer(t *testing.T) {
+	a := newAPI(t)
+	a.host.egressControl = true
+	home := a.home(t)
+	before := len(a.host.confinements(home.ID))
+
+	rec := request(t, a.Server, "PUT", "/api/settings", settingsSandbox(2, 4096, 0, "none", []string{"github.com"}))
+	decodeBody[settingsWire](t, rec, 200)
+
+	want := computer.Confinement{Limits: computer.Limits{CPUs: 2, MemoryBytes: 4096 << 20}, Proxied: true}
+	confined := a.host.confinements(home.ID)
+	if len(confined) != before+1 || confined[len(confined)-1] != want {
+		t.Fatalf("confinements = %+v, want %+v applied at once", confined, want)
+	}
+	got := a.homeOf(t).Sandbox
+	if got.Limits.CPUs != 2 || got.Limits.MemoryMB != 4096 || got.Egress.Mode != "none" || !slices.Equal(got.Egress.Allow, []string{"github.com"}) {
+		t.Errorf("home sandbox = %+v, want what was saved", got)
+	}
+
+	// A write the settings refuse changes nothing, and neither does one that
+	// names no sandbox key.
+	if rec := request(t, a.Server, "PUT", "/api/settings", settingsSandbox(9, 0, 0, "open", nil)); rec.Code != 400 {
+		t.Fatalf("too many cores = %d, want 400", rec.Code)
+	}
+	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{"theme": "light"}), 200)
+	if got := len(a.host.confinements(home.ID)); got != before+1 {
+		t.Errorf("%d confinements, want %d: only a valid sandbox write confines", got, before+1)
+	}
+	if got := a.homeOf(t).Sandbox; got.Limits.CPUs != 2 {
+		t.Errorf("home sandbox = %+v, want it unchanged", got)
+	}
+
+	// Clearing the settings goes back to the defaults.
+	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{"sandbox_limits": nil, "sandbox_egress": nil}), 200)
+	reset := computer.Confinement{Limits: computer.Limits{PIDs: 4096}}
+	if confined := a.host.confinements(home.ID); confined[len(confined)-1] != reset {
+		t.Errorf("last confinement = %+v, want the defaults %+v", confined[len(confined)-1], reset)
+	}
+}
+
+func TestAStoppedHomeTakesTheSavedSandboxWhenItStarts(t *testing.T) {
+	a := newAPI(t)
+	home := a.home(t)
+	a.stopIdle(t)
+	if got := a.computerState(t, home.ID); got != "stopped" {
+		t.Fatalf("home = %q, want stopped", got)
+	}
+
+	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 1024, 200, "open", nil)), 200)
+	want := computer.Confinement{Limits: computer.Limits{MemoryBytes: 1 << 30, PIDs: 200}}
+	confined := a.host.confinements(home.ID)
+	if last := confined[len(confined)-1]; last != want {
+		t.Fatalf("confinement of the stopped container = %+v, want %+v", last, want)
+	}
+
+	// The run that starts it confines it once more, from the row.
+	n := len(confined)
+	a.bashIn(t, home.ID, "awake")
+	confined = a.host.confinements(home.ID)
+	if len(confined) != n+1 || confined[n] != want {
+		t.Errorf("confinements after the start = %+v, want %+v applied again", confined[n:], want)
+	}
+}
+
+func TestSavingTheSandboxSettingsBeforeHomeExistsIsPickedUpByEnsureHome(t *testing.T) {
+	a := newAPI(t)
+	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 0, 77, "open", nil)), 200)
+	if a.containers(t) != 0 {
+		t.Fatalf("containers = %d, want none made by a settings write", a.containers(t))
+	}
+
+	home := a.home(t)
+	if home.Sandbox.Limits.PIDs != 77 {
+		t.Errorf("home sandbox = %+v, want the saved process limit", home.Sandbox)
+	}
+	if got := a.host.confinements(home.ID); len(got) == 0 || got[0].Limits.PIDs != 77 {
+		t.Errorf("home was created with %+v, want the saved limits", got)
+	}
+}
+
+func TestSavingTheSandboxSettingsWhileHomeHasNoContainerUpdatesTheRow(t *testing.T) {
+	a := newAPI(t)
+	home := a.home(t)
+	if err := a.host.Destroy(t.Context(), &computer.Computer{ID: home.ID}); err != nil {
+		t.Fatalf("remove the container: %v", err)
+	}
+
+	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 0, 88, "open", nil)), 200)
+	if got := a.homeOf(t).Sandbox.Limits.PIDs; got != 88 {
+		t.Fatalf("home process limit = %d, want the saved 88", got)
+	}
+	if err := a.EnsureHome(t.Context()); err != nil {
+		t.Fatalf("EnsureHome: %v", err)
+	}
+	if confined := a.host.confinements(home.ID); confined[len(confined)-1].Limits.PIDs != 88 {
+		t.Errorf("the new container was confined with %+v, want the saved limits", confined)
+	}
+}
+
+func TestADockerFailureLeavesTheSandboxSettingsSavedForTheNextStart(t *testing.T) {
+	a := newAPI(t)
+	home := a.home(t)
+
+	a.host.failConfine(errors.New("update container: no space left on device"))
+	rec := request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 512, 300, "open", nil))
+	if rec.Code != 500 {
+		t.Fatalf("put settings = %d, want 500: %s", rec.Code, rec.Body.String())
+	}
+	// The row and the settings hold the new values, though the container
+	// kept the old ones.
+	if got := a.homeOf(t).Sandbox.Limits; got.MemoryMB != 512 || got.PIDs != 300 {
+		t.Errorf("home limits = %+v, want the saved ones", got)
+	}
+	saved := decodeBody[settingsWire](t, request(t, a.Server, "GET", "/api/settings", nil), 200)
+	if string(saved.Settings["sandbox_limits"]) == "" {
+		t.Error("sandbox_limits is not saved")
+	}
+	a.host.failConfine(nil)
+
+	a.stopIdle(t)
+	a.bashIn(t, home.ID, "converged")
+	want := computer.Confinement{Limits: computer.Limits{MemoryBytes: 512 << 20, PIDs: 300}}
+	if confined := a.host.confinements(home.ID); confined[len(confined)-1] != want {
+		t.Errorf("last confinement = %+v, want %+v from the row at the next start", confined[len(confined)-1], want)
+	}
+}

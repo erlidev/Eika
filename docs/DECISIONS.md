@@ -186,6 +186,21 @@ this file says why, so neither repeats the other.
   missing) cannot take them. Nothing else recreates a container: limits and
   egress change the running one (`ContainerUpdate`, network connect), and a
   harness restart leaves containers alone.
+- **The Computer settings are `home`'s limits and egress.** Saving
+  `sandbox_limits` or `sandbox_egress` records them on the home row and
+  confines its container, running or stopped, without a restart
+  (`applyHomeSandbox`). `EnsureHome` makes `home` before anyone can reach
+  Settings, so settings that only said what a computer made later would get
+  were a tab that did nothing. The table is written first and then the row,
+  and a container that refuses the update is a `500` with the values kept:
+  the next start confines it from the row. Before the row exists, a save
+  only stores the setting, and `EnsureHome` reads it. Rejected: applying
+  before saving, which would lose the user's values when Docker fails.
+- **The image is not applied to an existing `home`.** `sandbox_image` is read
+  when the container is created, and nothing replaces a container, so `home`
+  stays on the image it was created from until its container goes missing,
+  and a sandbox image upgrade does not reach it. The Settings text says so.
+  Deferred: replacing the container over its volume.
 - **A run starts a stopped `home`.** The idle stopper stops `home` like any
   computer, and the next run, which needs it, starts it (`runExecutor`): a
   stopped computer is a `409` the user clears by starting it, and nothing in

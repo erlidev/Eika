@@ -1,6 +1,6 @@
 /**
  * Whether the harness can start sandboxes: it reaches the Docker socket, and
- * the image new computers run is there. Each failure says how to fix it.
+ * the image the home computer is created from is there. Each failure says how to fix it.
  */
 
 import { CircleAlert, CircleCheck, Loader2, RefreshCw } from "lucide-react";

@@ -352,8 +352,9 @@ any other error stops reconciliation without changing states.
 
 ### Limits and egress
 
-`Host.Create` applies the computer's `sandbox` row; `PUT .../sandbox` writes
-the row then `Host.Confine`s; every start re-applies it.
+`Host.Create` applies the computer's `sandbox` row. Saving `sandbox_limits` or
+`sandbox_egress` in the settings writes the home row and then `Host.Confine`s
+its container (`Server.applyHomeSandbox`); every start re-applies the row.
 
 Limits are `NanoCPUs`, `Memory` (= `MemorySwap`), and `PidsLimit`, changed
 live with `ContainerUpdate`; "no limit" on an existing container is the host's

@@ -92,6 +92,55 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 	return s.record(ctx, row.ID, host)
 }
 
+// applyHomeSandbox makes the home computer follow the sandbox settings: it
+// records the limits and egress they now give on the home row and applies them
+// to the container, running or stopped, without restarting it. This is the one
+// way an existing computer's sandbox changes. The settings are saved before
+// this runs, and the row before the container is touched, so a container that
+// took only part of the change gets the rest when it next starts. The image is
+// not part of it: it applies when the container is created.
+//
+// While no home row exists the settings are all there is to do: EnsureHome
+// reads them when it records the row. While the row exists but the container
+// does not, the row alone is updated, and EnsureHome creates the container
+// from it.
+func (s *Server) applyHomeSandbox(ctx context.Context) error {
+	// The same order runExecutor takes them in.
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+	s.homeMu.Lock()
+	defer s.homeMu.Unlock()
+
+	home, err := s.deps.Store.HomeComputer(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	sandbox, err := s.newSandbox(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if home, err = s.deps.Store.SetComputerSandbox(ctx, home.ID, sandbox); err != nil {
+		return err
+	}
+	host, err := s.deps.Computers.Inspect(ctx, home.ID)
+	if errors.Is(err, computer.ErrNoComputer) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.deps.Computers.Confine(ctx, &host, confinement(sandbox)); err != nil {
+		return err
+	}
+	s.computerState(ctx, home.ID, home.State)
+	s.log.Info("home computer sandbox set", "computer_id", home.ID, "cpus", sandbox.CPUs,
+		"memory_mb", sandbox.MemoryMB, "pids", sandbox.PIDs, "egress", egressMode(sandbox))
+	return nil
+}
+
 // record writes the state a computer's container is in and announces it. The
 // home computer's is announced on the global topic too: a client learns that
 // it exists, and that it is ready, without asking again.
@@ -155,12 +204,12 @@ func (s *Server) startComputer(ctx context.Context, cx store.Computer, host *com
 // hand, so a run starts it, and makes its container again over the volume when
 // that is missing. Any other computer that is not running refuses the run.
 func (s *Server) runExecutor(ctx context.Context, id string) (executor.Executor, error) {
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
 	cx, err := s.deps.Store.Computer(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	s.startMu.Lock()
-	defer s.startMu.Unlock()
 	host, err := s.deps.Computers.Inspect(ctx, cx.ID)
 	if errors.Is(err, computer.ErrNoComputer) && cx.Home {
 		if err := s.EnsureHome(ctx); err != nil {
