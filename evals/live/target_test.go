@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/erlidev/eika/evals/live"
+	"github.com/erlidev/eika/internal/provider/probe/probetest"
 )
 
 const testKey = "test-bench-key"
@@ -23,27 +24,11 @@ func fixture(t *testing.T, name string) []byte {
 	return raw
 }
 
-// benchServer serves the descriptions recorded from llama.cpp b11942 behind a
-// bearer key, as the bench does.
+// benchServer serves the routes the probe reads, as recorded from llama.cpp
+// b11942, behind a bearer key, as the bench does.
 func benchServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	props, models := fixture(t, "props.json"), fixture(t, "models.json")
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+testKey {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-			return
-		}
-		switch r.URL.Path {
-		case "/props":
-			_, _ = w.Write(props)
-		case "/v1/models":
-			_, _ = w.Write(models)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	return srv
+	return probetest.LlamaCpp(t, testKey)
 }
 
 func TestConnectWithoutAnEndpointIsNotConfigured(t *testing.T) {
@@ -82,6 +67,7 @@ func TestConnectDescribesTheServer(t *testing.T) {
 			t.Fatalf("endpoint %q: %v", endpoint, err)
 		}
 		want := live.ServerInfo{
+			Backend:       "llamacpp",
 			Build:         "b11942-338fce651",
 			Model:         "qwen3.8-27b",
 			ModelFile:     "Qwen3.8-27B-UD-Q4_K_XL.gguf",
@@ -90,7 +76,7 @@ func TestConnectDescribesTheServer(t *testing.T) {
 			Parameters:    27320697856,
 			SizeBytes:     17548181504,
 			Flags: live.Flags{
-				Slots: 2, Context: 131072, TrainContext: 262144,
+				Slots: 2, Context: 131072, TrainContext: 262144, KV: "unknown",
 				Vision: true, SlotsEndpoint: true, MetricsEndpoint: true,
 			},
 		}

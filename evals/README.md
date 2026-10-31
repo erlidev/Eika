@@ -5,7 +5,7 @@ of `make check`. The bench they run on (which models, where) is in
 `docs/PLAN.md`, "Live test bench".
 
 ```
-evals/live/     Go package: env loading, server description, scenarios, report
+evals/live/     Go package: env loading, server description (the harness's provider probe), scenarios, report
 evals/models/   how to start the bench's models (README.md, guard.py)
 evals/results/  one JSON report per run; ignored by git
 evals/forward.sh  opens the SSH forward to the chat model when it is closed
@@ -41,7 +41,8 @@ not start, stop or swap anything on it from a scenario.
 | Field | Meaning |
 |---|---|
 | `server.build`, `model`, `model_file`, `model_revision` | What answered: the llama.cpp build, the model name requests carry, its weights file and the Hugging Face revision that file came from |
-| `server.flags` | What `/props` states: `slots`, `context` (shared by all slots), `train_context`, `vision`. The KV cache type and `--kv-unified` are not reported by llama.cpp; they are in `command.txt` on the server |
+| `server.backend` | What the harness's provider probe took the server for (`llamacpp` on the bench) |
+| `server.flags` | What the probe read: `slots`, `context` (the window one request may use; `/props` reports it per slot), `train_context`, `kv` (`unknown` for a llama.cpp server with several slots), `vision`. The KV cache type and `--kv-unified` are not reported by llama.cpp; they are in `command.txt` on the server |
 | `scenarios[].passed`, `error` | Whether the scenario ran to its end and met its assertions |
 | `calls[].prompt_tokens` | The prompt size the server counted, cached tokens included |
 | `calls[].prefilled_tokens` | Prompt tokens the server evaluated (llama.cpp `prompt_n`) |
@@ -70,5 +71,8 @@ replaces it with the count the server reports. Compare two reports by their
 3. Test it in a file without the `live` tag against a fake server
    (`scenario_test.go` has one that speaks llama.cpp's stream), so `make check`
    covers its logic. A fixture recorded from a real server goes in
-   `testdata/`, scrubbed of keys and of anything host-specific.
+   `testdata/`, scrubbed of keys and of anything host-specific. The server's own
+   descriptions (`/props`, `/slots`, `/v1/models`) are the probe's fixtures in
+   `internal/provider/probe/probetest/testdata/llamacpp/`, which `benchServer` in
+   the tests serves.
 4. Run `make live`.

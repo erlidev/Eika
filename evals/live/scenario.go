@@ -21,7 +21,10 @@ type Scenario struct {
 
 // Scenarios returns every scenario of the suite. Add a new one here.
 func Scenarios() []Scenario {
-	return []Scenario{CacheReuse(time.Now().UTC().Format("150405.000000"))}
+	return []Scenario{
+		ProviderProbe(),
+		CacheReuse(time.Now().UTC().Format("150405.000000")),
+	}
 }
 
 // Result is the outcome of one scenario.
