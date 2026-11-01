@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -110,18 +109,8 @@ func TestLlamaCppRendersTheRequestTheProviderSends(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChatBody: %v", err)
 	}
-	// The SDK writes the fields it takes from a map in an order that differs
-	// from one encoding to the next, which no server reads, so the bodies are
-	// compared as documents, as openai's own test of ChatBody does.
-	var gotDoc, wantDoc any
-	if err := json.Unmarshal([]byte(sent[0]), &gotDoc); err != nil {
-		t.Fatalf("/apply-template body is not JSON: %v", err)
-	}
-	if err := json.Unmarshal(want, &wantDoc); err != nil {
-		t.Fatalf("ChatBody is not JSON: %v", err)
-	}
-	if !reflect.DeepEqual(gotDoc, wantDoc) {
-		t.Errorf("/apply-template body is not the provider's chat body:\n got  %s\n want %s", sent[0], want)
+	if sent[0] != string(want) {
+		t.Errorf("/apply-template body is not the provider's chat body, byte for byte:\n got  %s\n want %s", sent[0], want)
 	}
 	for _, needle := range []string{`"be brief"`, `"ls"`, `"chat_template_kwargs"`, `"enable_thinking":false`, `"preserve_thinking":true`, `"reasoning_content":"mulling it over"`, `"tool_call_id":"c1"`} {
 		if !strings.Contains(sent[0], needle) {

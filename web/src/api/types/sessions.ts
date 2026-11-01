@@ -75,6 +75,11 @@ export type MessageToolCall = {
   arguments: unknown;
   /** arguments_malformed marks `arguments` as the model's quoted malformed text. */
   arguments_malformed?: boolean;
+  /**
+   * arguments_text is the exact text of the arguments, stored where the value
+   * above would not give it back byte for byte. A client does not read it.
+   */
+  arguments_text?: string;
 };
 
 /** MessageMetrics restores the measured context state with an assistant entry. */

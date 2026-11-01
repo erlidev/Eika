@@ -763,14 +763,14 @@ func TestRunKeepsReasoningItemsAsReturnedAndSendsThemBackOnlyWhenPreserved(t *te
 			// The conversation always keeps what the endpoint returned, so
 			// that a later change of setting can still send it.
 			stored := s.Conversation.Messages()[1]
-			if stored.Reasoning != "think" || !reflect.DeepEqual(stored.ReasoningItems, []json.RawMessage{item}) {
+			if stored.Reasoning != "think" || !reflect.DeepEqual(stored.ReasoningItems, provider.ReasoningItems{item}) {
 				t.Fatalf("stored message = %+v, want the reasoning text and the item as returned", stored)
 			}
 			if err := a.Run(context.Background(), s, provider.UserMessage("second")); err != nil {
 				t.Fatalf("Run: %v", err)
 			}
 			sent := p.Requests()[1].Messages[1]
-			if preserve && (!reflect.DeepEqual(sent.ReasoningItems, []json.RawMessage{item}) || sent.Reasoning != "think") {
+			if preserve && (!reflect.DeepEqual(sent.ReasoningItems, provider.ReasoningItems{item}) || sent.Reasoning != "think") {
 				t.Errorf("second request message = %+v, want the reasoning and the item", sent)
 			}
 			if !preserve && (sent.Reasoning != "" || sent.ReasoningItems != nil) {

@@ -74,7 +74,7 @@ func TestCheckResponsesPassesAToolCallRoundTripWithReasoning(t *testing.T) {
 	if len(msgs) != 3 || msgs[1].Role != provider.RoleAssistant || msgs[2].Role != provider.RoleTool || msgs[2].ToolCallID != "call_1" {
 		t.Fatalf("second request messages = %+v", msgs)
 	}
-	if !reflect.DeepEqual(msgs[1].ReasoningItems, []json.RawMessage{reasoningItem}) || msgs[1].Reasoning != "echo it" || len(msgs[1].ToolCalls) != 1 {
+	if !reflect.DeepEqual(msgs[1].ReasoningItems, provider.ReasoningItems{reasoningItem}) || msgs[1].Reasoning != "echo it" || len(msgs[1].ToolCalls) != 1 {
 		t.Errorf("assistant message = %+v, want the reasoning item, the reasoning text and the call", msgs[1])
 	}
 }

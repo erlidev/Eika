@@ -448,7 +448,7 @@ func TestResponsesChatBodyIsTheChatProvidersBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(document(t, got), document(t, want)) {
+	if !bytes.Equal(got, want) {
 		t.Errorf("ChatBody differs between the protocols:\n got  %s\n want %s", got, want)
 	}
 }

@@ -174,16 +174,18 @@ type providerToolCall struct {
 	Name               string          `json:"name"`
 	Arguments          json.RawMessage `json:"arguments"`
 	ArgumentsMalformed bool            `json:"arguments_malformed,omitempty"`
+	ArgumentsText      *string         `json:"arguments_text,omitempty"`
 }
 
 // standIns give the wire form of each type that encodes itself. A sample of
 // each is checked against its stand-in by TestStandInsMatchTheirEncoding.
 var standIns = map[reflect.Type]reflect.Type{
-	reflect.TypeFor[event.ToolCall]():         reflect.TypeFor[eventToolCall](),
-	reflect.TypeFor[provider.ToolCall]():      reflect.TypeFor[providerToolCall](),
-	reflect.TypeFor[provider.ToolArguments](): reflect.TypeFor[json.RawMessage](),
-	reflect.TypeFor[provider.Count]():         reflect.TypeFor[*int](),
-	reflect.TypeFor[provider.Usage]():         reflect.TypeFor[providerUsage](),
+	reflect.TypeFor[event.ToolCall]():          reflect.TypeFor[eventToolCall](),
+	reflect.TypeFor[provider.ToolCall]():       reflect.TypeFor[providerToolCall](),
+	reflect.TypeFor[provider.ToolArguments]():  reflect.TypeFor[json.RawMessage](),
+	reflect.TypeFor[provider.ReasoningItems](): reflect.TypeFor[[]json.RawMessage](),
+	reflect.TypeFor[provider.Count]():          reflect.TypeFor[*int](),
+	reflect.TypeFor[provider.Usage]():          reflect.TypeFor[providerUsage](),
 }
 
 // contract builds the contract from the tables above.
@@ -302,6 +304,8 @@ func TestStandInsMatchTheirEncoding(t *testing.T) {
 		event.ToolCall{RunID: "r", CallID: "c", Name: "bash", Arguments: `{"command":`},
 		provider.ToolCall{ID: "c", Name: "bash", Arguments: `{"command":"ls"}`},
 		provider.ToolCall{ID: "c", Name: "bash", Arguments: `not json`},
+		provider.ToolCall{ID: "c", Name: "bash", Arguments: `{"command": "ls && ls"}`},
+		provider.AssistantMessage("", nil),
 		provider.Usage{},
 		provider.Usage{InputTokens: provider.Reported(90), OutputTokens: provider.Reported(0), CachedTokens: provider.Reported(86)},
 	}

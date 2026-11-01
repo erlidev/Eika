@@ -3,7 +3,6 @@ package openai_test
 import (
 	"encoding/json"
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -27,10 +26,7 @@ func TestChatBodyIsTheBodyStreamSends(t *testing.T) {
 		},
 	}
 	collect(t, p, req)
-	var sent map[string]any
-	if err := json.Unmarshal(<-s.body, &sent); err != nil {
-		t.Fatalf("decode the request Stream sent: %v", err)
-	}
+	sent := string(<-s.body)
 
 	encoder, ok := p.(provider.ChatEncoder)
 	if !ok {
@@ -40,16 +36,10 @@ func TestChatBodyIsTheBodyStreamSends(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChatBody: %v", err)
 	}
-	var body map[string]any
-	if err := json.Unmarshal(raw, &body); err != nil {
-		t.Fatalf("ChatBody is not JSON: %v", err)
-	}
-	if sent["stream"] != true {
-		t.Errorf("Stream sent stream = %v, want true", sent["stream"])
-	}
-	delete(sent, "stream")
-	if !reflect.DeepEqual(body, sent) {
-		t.Errorf("ChatBody differs from what Stream sends:\n got  %v\n want %v", body, sent)
+	// The body is the one Stream sends, byte for byte, with the stream flag
+	// Stream adds at its end.
+	if want := strings.TrimSuffix(string(raw), "}") + `,"stream":true}`; sent != want {
+		t.Errorf("ChatBody differs from what Stream sends:\n got  %s\n want %s", sent, want)
 	}
 }
 

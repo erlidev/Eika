@@ -111,17 +111,7 @@ func playLoop(ctx context.Context, t *Target, o loopOptions) ([]Call, []agent.Mo
 		}
 	}
 	recorded := records.all()
-	calls := make([]Call, 0, len(recorded))
-	for i, r := range recorded {
-		c := newCall(fmt.Sprintf("loop call %d", i+1), r.Usage, provider.Timings{}, "", 0)
-		c.ReasoningTokens, c.ReasoningSource = r.Reasoning.Ptr(), r.ReasoningSource
-		if p := r.Prediction; p.Method != "" {
-			tokens := p.Tokens
-			c.Predicted, c.Method, c.Drift = &tokens, string(p.Method), r.Drift
-		}
-		calls = append(calls, c)
-	}
-	return calls, recorded, runErr
+	return callsOf(recorded), recorded, runErr
 }
 
 // AgentLoop is the scenario that runs the real agent loop against the bench

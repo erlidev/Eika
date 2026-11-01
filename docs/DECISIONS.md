@@ -437,6 +437,74 @@ this file says why, so neither repeats the other.
   stripping the blocks from the cached form (it is the cached prefix; changing
   it costs the cache the form exists for).
 
+### Prefix stability
+
+- **A request is sent as the same bytes every time.** A server's prompt cache is
+  keyed by what it reads, so what the harness sends of the conversation must be
+  the same bytes on every call. The Responses provider already encoded its
+  fields in sorted order. The Chat provider did not: the SDK writes the fields
+  it takes from a map (`SetExtraFields`: `top_k`, `min_p`, `chat_template_kwargs`,
+  `thinking`, `preserve_thinking`, `id_slot`) in whatever order the map is
+  walked, so one request went out in several byte layouts and a test that
+  compared two encodings failed about half the time. No server reads key order
+  and the rendered prompt did not change, so it cost nothing in the cache, but
+  "deterministic" is a claim the wire has to make true. `withExtraFields` now
+  serialises the SDK's own fields and appends the extras in the order of their
+  names, so `ChatBody` and `Stream` produce identical bytes (the latter with
+  `stream` at its end), under both protocols. Rejected: replacing the SDK for
+  the chat provider (the encoding of messages, tools and images is the part it
+  does right); comparing decoded documents instead (the byte comparison is the
+  invariant, a decoded one hides any later reordering); sending the extras one
+  `WithJSONSet` at a time (the counter's `ChatBody` could not share that
+  path).
+- **A message comes back from its entry as the bytes that were sent.** The
+  prefix-stability test (`internal/session/prefix_test.go`) found that it did
+  not, at the start of every run, because the server loads the session from the
+  database each time: the arguments of every earlier tool call, and every
+  reasoning item, were a different prefix from the one the server had cached.
+  Two causes. `encoding/json` compacts a `RawMessage` and writes `<`, `>` and
+  `&` as `<`, `>` and `&`, so `{"command": "a && b"}` was stored as
+  `{"command":"a && b"}`; and the entry's payload was `jsonb`, which
+  writes a document back with its keys ordered by length and a space after
+  every colon, so even `{"path":"/tmp"}` came back as `{"path": "/tmp"}`. Now a
+  tool call whose arguments `encoding/json` would not write back unchanged also
+  stores them as `arguments_text`, a string, which comes back exactly (a reader
+  still sees `arguments` as a value); a reasoning item that would change is
+  stored as a string of its text (`provider.ReasoningItems`); and migration
+  `0010` makes the payload column `json`, which keeps the text it was given.
+  Nothing queries inside a payload. Rejected: `arguments_text` for every call
+  (the common call is compact and stable, and arguments can be a whole file);
+  turning arguments into a string everywhere (the API and the UI read an
+  object); escaping nothing by marshalling with `SetEscapeHTML(false)` (the
+  compaction remains, and every writer of a message would need it); keeping
+  `jsonb` and sorting keys at send time (the model's order is what it produced
+  and what the cache holds).
+- **The test.** It runs the real loop and both real providers against a fake
+  server that keeps the raw body of every request, through a scripted
+  conversation: parallel tool calls that share a backend id, reasoning, an
+  image, a steering message and a follow-up joining mid-run, a retry after a
+  500, a stall, a response cut off at the limit, a refused call, an interrupted
+  run and its resume, three restarts, a manual compaction, and a clock that
+  moves throughout. The session is stored and loaded at the start of every run,
+  in a store that writes entries as JSON and in PostgreSQL. Each request's
+  `messages` (chat) or `input` (responses) must begin with the previous
+  request's array byte for byte, and everything else it carries (system prompt,
+  tools, template kwargs, sampling) must be the same bytes, except the output
+  limit, which `fit` lowers as the window fills: no server reads it as part of
+  the prompt, and the fake template ignores it (the live scenario
+  `prefix_across_compaction` shows llama.cpp's cache ignores it too). A failed
+  attempt and a refused call extend the last accepted request, and a retry
+  repeats its failed attempt. Across a compaction the array is replaced by
+  design; the summary request shares the previous request's prefix, and the
+  chain holds again from the first request after it. A second check renders
+  each request with the fake server's template and requires the same of the
+  prompt, and requires the prompt the token counter had rendered to be the
+  prompt the call reads (under `responses`, the server's conversion of the
+  input). Rejected: comparing the values the providers were given (the
+  violations above were all in the encoding between them and the wire);
+  normalising the minted tool-call ids (a replay must keep them, and they are
+  what the test is for); an in-memory store alone (it cannot show a column).
+
 ### Loop limits
 
 - **A run is bounded in model calls and in wall time.** `Options.Limits` holds
@@ -1176,9 +1244,11 @@ verified against `/slots` while a call ran, on b11942). The design is
   `Message.ReasoningItems` holds each item exactly as returned, in a
   `reasoning_items` array of the stored entry; `Reasoning` stays the text, which
   the UI, the counter, the compaction summary and Chat Completions read. The
-  entry's `jsonb` keeps the document and not its bytes (key order and spacing
-  change, a string never does, and a test stores a 80 kB encrypted blob and
-  reads it back); an old entry has no key and reads as before. Rejected: items
+  entry's payload keeps the text of the item (a `json` column; "Prefix
+  stability" says why not `jsonb`, which reordered the item's keys, and why an
+  item `encoding/json` would change is stored as a string of its text), and a
+  test stores an 80 kB encrypted blob and reads it back; an old entry has no
+  key and reads as before. Rejected: items
   replacing the text (every reader of it changes, and a protocol switch loses
   the reasoning); items in a table of their own (an entry is one message, and a
   fork or a resume would have to join them); the whole output list instead of

@@ -22,7 +22,10 @@
 // unreported. timings.go reads how fast the endpoint ran, a separate matter.
 //
 // ChatBody returns the JSON body Stream would post, from the same code, so the
-// token counter can have a server render exactly what the model is sent.
+// token counter can have a server render exactly what the model is sent. A
+// request is encoded as the same bytes every time, under both protocols: a
+// server's prompt cache reads them, and the SDK's own order for the fields it
+// takes from a map is not stable.
 //
 // Responses is the second implementation, for the stateless Responses API
 // (store false, the whole input on every call). It wraps Provider and shares its
