@@ -35,6 +35,8 @@ func Scenarios() []Scenario {
 		ContextBreakdown(nonce),
 		ContextBlockPrefix(nonce),
 		OnResponses(ContextBlockPrefix(nonce)),
+		PrefixAcrossCompaction(nonce),
+		OnResponses(PrefixAcrossCompaction(nonce)),
 		ToolArguments(nonce),
 		OnResponses(ToolArguments(nonce)),
 		ThinkingSwitches(nonce),
