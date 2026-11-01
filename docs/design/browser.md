@@ -1,5 +1,8 @@
 # Browser
 
+Deferred (`DEFERRED.md`). This is the target if it returns, in stages, and it still
+reads as written for a separate Sentry container.
+
 The browser covers everything without a plugin. It is also where the most hostile
 content enters: any page can carry instructions written for agents. So it is the
 most isolated part of Eika. It runs in its own container, is controlled only

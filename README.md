@@ -81,8 +81,7 @@ docker compose down -v
 This removes the database and the key that encrypts stored credentials, so
 you set Eika up again. Computers from earlier versions (containers labelled
 `eika.workspace`) are not adopted; remove them and their volumes yourself.
-Later schema changes are forward migrations, apart from one more planned
-reset in phase 4 (`docs/PLAN.md`).
+Later schema changes are forward migrations.
 
 ## Development
 
@@ -108,5 +107,5 @@ part of `make check`.
 - `docs/EXTENDING.md` — adding a tool, provider, search source, or UI panel.
 - `docs/STYLE_GUIDE.md` — coding and documentation rules.
 - `docs/api/` — HTTP, WebSocket, and sandbox daemon wire contract.
-- `docs/PLAN.md` and `docs/design/` — where Eika is going, and the phases that
+- `docs/PLAN.md`, `docs/DEFERRED.md` and `docs/design/` — where Eika is going, and the phases that
   get it there.

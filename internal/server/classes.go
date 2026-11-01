@@ -26,7 +26,7 @@ const (
 	// classFast is titles and other small tasks.
 	classFast modelClass = "fast"
 	// classDecision is Sentry's reviewer and monitor, screening and routing.
-	// Nothing asks for it before phase 4.
+	// Nothing asks for it until they return (docs/DEFERRED.md).
 	classDecision modelClass = "decision"
 )
 
