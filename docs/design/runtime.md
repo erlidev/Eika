@@ -11,7 +11,7 @@ assistant needs:
 - a prefix-stable context layout
 - loop guards and a clock
 - the Sentry gate
-- durable runs
+- clean restarts
 - agents, one home session, projects and persistent subagents
 - compaction and history recall built for a session that never ends
 
@@ -100,8 +100,9 @@ the route.
   its fixtures recorded. A backend whose support is partial stays on `chat` by
   default.
 
-Every row in the table above is verified against a live server in phase 1, and fixtures
-of each response shape are recorded; the table says which rows are still unverified.
+Fixtures of each response shape are recorded. Only llama.cpp has been checked against a
+live server; the other rows stay unverified until such a server is on the bench
+(`DEFERRED.md`).
 Where a version lacks a route, the capability is `none`, and the runtime falls back
 as section 2 describes.
 
@@ -131,14 +132,13 @@ Agents and harness tasks never name a model. They name a class, and the setting
 |---|---|---|
 | `deep` | chat | Hard reasoning, and anything an agent definition marks deep. May be a cloud model |
 | `main` | chat | The main agent and most tasks |
-| `fast` | chat | Titles, summaries for notifications, the reviewer when no decision model is set, routine pre-checks |
-| `decision` | decision | Sentry's reviewer and monitor, injection screening, routing, "is this worth a notification" |
+| `fast` | chat | Titles and summaries for notifications |
+| `decision` | decision | Nothing yet. Sentry's reviewer and monitor, injection screening and routing when they return (`DEFERRED.md`) |
 
 A class with no model falls back along `deep -> main` and `fast -> main`, and a chat
 class with no model along that chain falls back to the default model
 (`default_model`, or the first chat model when it names none), so `fast -> main ->
-default model` works before the user has set a class. `decision`
-falls back to a chat model emulating the protocol (`sentry.md` 9.3). The UI shows
+default model` works before the user has set a class. The UI shows
 which classes share an endpoint, since a shared endpoint means they contend for
 the same slots.
 
@@ -308,14 +308,13 @@ preamble joins them when it exists.
   conversation that includes compaction.
 - `make live`, opt-in and not part of `make check`: runs N scripted requests
   against `EIKA_LIVE_ENDPOINT` and requires zero drift on `exact` and stated bounds
-  on `anchored`. It is run against llama.cpp, vLLM and TabbyAPI before each phase
-  that touches accounting is closed.
+  on `anchored`. It is run against llama.cpp before each phase that touches
+  accounting is closed, and against another backend only when one is on the bench.
 
 ## 3. The inference queue
 
 Every model call in Core goes through `internal/inference`. That covers agent turns,
-compaction, titles, dream steps and chat-model emulation of decisions. Sentry makes
-its own calls to its own endpoints; see `sentry.md` 9.4.
+compaction and titles.
 
 ```
 call := queue.Acquire(ctx, Need{Endpoint, Priority, SessionID, Affinity, Tokens, Prompt})  // blocks
@@ -341,7 +340,7 @@ provider.Stream(ctx, request with call.SlotHint())   // a slot only where the en
   2. `foreground`: a subagent started or messaged from an interactive turn in the
      last 10 minutes, or one the user is watching.
   3. `background`: routines, wakeups, other subagents.
-  4. `maintenance`: dreaming, titles, idle compaction, index work. Runs only when
+  4. `maintenance`: titles, idle compaction, index work. Runs only when
      the pool has been idle for `maintenance_idle_seconds` (default 120).
 - **Preemption happens at call boundaries.** A waiting higher-priority call gets the
   next free lease. Generations already running are not cancelled by default, since
@@ -388,7 +387,7 @@ preamble    one entry written when the session starts and replaced only by compa
               user instructions (global, then project)
               pinned memories, then the memory index (global, then project)
               skills catalog, plugin catalog
-              the agents Eika can delegate to, with the model classes allowed for each
+              the agents Eika can delegate to
               project brief, or the subagent's brief for a subagent session
               the user's time zone and locale
 summary     after a compaction only: the compaction summary (section 11)
@@ -446,16 +445,16 @@ retries, overflow handling, cut-off handling and the Recorder. Changes:
 | Change | Detail |
 |---|---|
 | `Options.Executor` becomes `Options.Computer` | A handle with the executor plus computer id and directory. Tools that need none still mark themselves `Standalone` |
-| `Options.Gate` | Sentry client. `dispatch` asks `Gate.Decide` before every tool call and `Gate.Ingest` on every result from an untrusted source. The model is never told about the gate: a deny returns a normal `Blocked: <reason>` error result (`sentry.md` 4), and an `ask` parks the call, which looks like a slow tool (below). The loop stays standard |
+| `Options.Gate` | The Sentry gate. `dispatch` asks `Gate.Decide` before every tool call and `Gate.Ingest` on every result from an untrusted source. The model is never told about the gate: a deny returns a normal `Blocked: <reason>` error result (`sentry.md` 4), and an `ask` parks the call, which looks like a slow tool (below). The loop stays standard |
 | `Options.Clock` | Injected time for the `<context>` block, for the wall-time limit and for tests. The block states its time in `Options.Location`, UTC until the preamble carries the user's zone |
 | `Options.Limits` | Max model calls per run (home 40, subagent 200; the default is 40 until agent definitions set their own), identical consecutive tool calls (a warning notice in the result from the 3rd, never a stop), wall time per run (default 24 h, for every run, not only a subagent's), stream stall timeout. A run that reaches a limit ends cleanly with every call answered, and its last `turn.end` says which |
 | Stall timeout | No bytes for `stall` seconds aborts the attempt as retryable. Before the first token the limit scales with predicted prefill: `30 s + predicted_prefilled / measured_prefill_rate x 2`, since 200k tokens of dense prefill can take minutes. The clock starts when the lease is granted, nothing is assumed cached, and the rate is the queue's until the endpoint has recorded calls |
 | Parking | A tool waiting on an approval or on an answer blocks its goroutine, as `ask_user` does today. It holds no inference lease, since leases cover model calls only. Run state becomes `waiting`, so Activity shows it |
-| Durable questions and approvals | The `ask_user` broker, Eika's Inbox questions and the approval wait persist their pending items (a `questions` row; approvals live in Sentry), so a restart does not lose them |
-| Resume after restart | On start, subagent, routine and dream runs that were `running` or `waiting` resume from their last resumable entry with a notice ("Eika restarted at <time>; continue"). A tool call whose approval is still pending is re-dispatched and Sentry returns the same approval (approvals are keyed by session and tool-call id). A non-read call is marked `dispatched` before it runs; one that was dispatched and has no result is never run again, and gets the result "Eika restarted while this ran; its outcome is unknown. Check before retrying.", so a send cannot happen twice. An interrupted home reply is not resumed: the transcript gets a notice and the user's message stays answerable |
-| Tool-call ids | The loop mints its own id for every tool call and keeps the backend's id only for the wire. Local servers reuse ids (`call_0`, empty, per-response counters), and approvals, entries and the dispatched marker need a unique key |
-| Images in tool results | Screenshots reach a vision-capable model as a user message with the image right after the tool result, under either API, since neither takes images in a tool result. A model without `image_input` gets the text and a note in place of each image. This resolves the item `DECISIONS.md` lists as deferred |
-| Compaction | Rebuilt for the home session: deterministic sections, a rolling summary, and idle compaction (section 11). Subagent, routine and dream sessions keep today's Pi compaction with their definition's prompts |
+| Approvals | Approvals are durable rows (`sentry.md` 7). A subagent's `ask_user` waits in memory, since a restart ends the run that asked |
+| After a restart | Nothing resumes on its own. On start, every run that was `running` or `waiting` is ended: each tool call left unanswered gets the result "Eika restarted while this ran; its outcome is unknown. Check before retrying.", which keeps the session resumable and means no call runs twice. Pending approvals behind those calls expire. A subagent goes `idle`, Eika gets a notice naming it, and it carries on with `subagent_message` if the work is still wanted. A routine run is recorded as interrupted. An interrupted home reply ends with a notice, and the user's message stays answerable |
+| Tool-call ids | The loop mints its own id for every tool call and keeps the backend's id only for the wire. Local servers reuse ids (`call_0`, empty, per-response counters), and approvals and entries need a unique key |
+| Images in tool results | Deferred with the browser (`DEFERRED.md`) |
+| Compaction | Rebuilt for the home session: deterministic sections, a rolling summary, and idle compaction (section 11). Subagent and routine sessions keep today's Pi compaction with their definition's prompts |
 | Reasoning replay | `preserve_thinking` gains the `chat_template_kwargs` form where a template takes it there |
 
 Parallel tool calls stay sequential in execution. The first version adds no
@@ -465,31 +464,26 @@ batching.
 
 An agent definition replaces a profile. Built-in definitions live in Go with their
 prompts embedded as Markdown (`internal/agentdef/prompts/*.md`). The user can
-override the prompt, class, limits and tool list in Settings, stored as an
-`agents` row that names the built-in it overrides. The user can also add agents of
-their own.
+override an agent's class and prompt in Settings, stored as an `agents` row that
+names the built-in. There are no user-defined agents for now (`DEFERRED.md`).
 
 | Field | Meaning |
 |---|---|
 | `name`, `description` | Identity. The description is what the main agent sees when it delegates |
-| `class` | Model class. The user sets it for every agent, so `eika`, `browser` and `dreamer` included |
-| `classes` | For `worker` and `researcher`: the classes Eika may choose from with `subagent_start {class}`, set by the user. `class` is the default when Eika names none |
+| `class` | Model class, which the user sets for every agent |
 | `prompt` | System prompt body |
 | `tools` | Fixed, sorted list of built-in tool names |
-| `access` | Booleans that Sentry and the preamble read: `memory` (none, read, write), `private_data` (may hold B), `external_effects` (may cause C), `computer` (none, project, home) |
-| `skills`, `plugins` | Which catalogs its preamble lists: all, none, or a list |
 | `limits`, `compaction` | As in section 5 |
-| `report` | How a subagent of this definition reports back: `always`, `on_completion`, `silent` |
 
 Built-ins:
 
-| Agent | Class | Tools | Access | Role |
-|---|---|---|---|---|
-| `eika` | main | memory_search, memory_read, memory_write, memory_forget, history_search, history_read, skill_use, skill_file, subagent_start, subagent_message, subagent_status, subagent_cancel, inbox_ask, project_list, project_open, project_create, project_update, routine_create, routine_list, routine_update, routine_delete, wake_me, plugin_find, plugin_call, web_search, request_secret | memory write, private data, external effects, no computer | Converses, remembers, plans, delegates |
-| `worker` | main (allowed: `main`, `deep`) | bash, file_read, file_write, file_edit, web_search, web_fetch, skill_use, skill_file, memory_search (project), report | memory read (it reports what it learned, and Eika saves it), private data, external effects via Sentry, computer: project | Does work on a computer |
-| `researcher` | fast (allowed: `fast`, `main`) | web_search, web_fetch, report | no memory, no private data, no effects | Reads the web and returns findings |
-| `browser` | main (vision if available) | browser_* (`browser.md`), report, ask_user | no memory; private data through logged-in sites; effects gated per action | Drives the browser |
-| `dreamer` | main | memory_list, memory_read, memory_write, memory_merge, memory_archive, history_search, history_read, dream_report | memory write, no network, no effects | Consolidates memory (`memory.md` 7) |
+| Agent | Class | Tools | Role |
+|---|---|---|---|
+| `eika` | main | memory_search, memory_read, memory_write, memory_forget, history_search, history_read, skill_use, subagent_start, subagent_message, subagent_status, subagent_cancel, project_list, project_open, project_create, project_update, routine_create, routine_list, routine_update, routine_delete, wake_me, plugin_find, plugin_call, web_search | Converses, remembers, plans, delegates. Holds private data, and is the only agent with memory and plugins. No computer |
+| `worker` | main | bash, file_read, file_write, file_edit, web_search, web_fetch, skill_use, report, ask_user | Does work on a computer, in a project's directory. What it learns goes in its report, and Eika saves it |
+| `researcher` | fast | web_search, web_fetch, report, ask_user | Reads the web and returns findings. No private data and no effects |
+
+The `browser` and `dreamer` agents come back with their phases (`DEFERRED.md`).
 
 - The main agent has no `bash`, so its context stays small and its prefix steady.
   Work on a computer goes to `worker`.
@@ -503,9 +497,8 @@ Built-ins:
   decision. Subagent briefs carry the same instruction, and a subagent's
   `ask_user` is for the same case.
 - The main agent has no `ask_user`. It talks to the user in the home session, so a
-  question is simply its reply. When the user may not be watching, it uses
-  `inbox_ask` (section 9). Subagents keep `ask_user`, which goes to Eika, not to
-  the user.
+  question is simply its reply, and a reply to a background turn sends a push.
+  Subagents keep `ask_user`, which goes to Eika, not to the user.
 - `file_read`, `file_write` and `file_edit` come back. They are thin tools over the
   executor, added because small local models edit files far more reliably with
   them than with heredocs. Today's `DECISIONS.md` reasons for bash-only applied
@@ -517,8 +510,8 @@ The session tree, entries, runs, steering and follow-up queues, and compaction
 entries are kept. Changes:
 
 - `sessions` gains these columns:
-  - `kind`: `home`, `subagent`, `routine` or `dream`. It replaces
-    `user`, the only kind left.
+  - `kind`: `home`, `subagent` or `routine`. It replaces `user`, the only kind
+    left.
   - `agent`: the definition name.
   - `name`: a subagent's handle (`plumber`, `flights-lisbon`), unique under its
     home session.
@@ -529,8 +522,7 @@ entries are kept. Changes:
   - `state`: `idle`, `running`, `waiting`, `failed` or `cancelled`, set by code.
   - `brief`: a subagent's first brief.
   - `result`: a subagent's latest report.
-  - `sensitive` and `suspicious`: Sentry's labels, mirrored for the UI
-    (`sentry.md` 6).
+  - `sensitive`: fixed at creation (`sentry.md` 6).
   - `last_active_at`.
   It loses `computer_id`, `tools`, `profile_id` and `overrides`.
 - Entry kinds gain `preamble` (the snapshot above) and `notice` (harness text shown
@@ -544,12 +536,12 @@ entries are kept. Changes:
 - **Every channel feeds it.** Web first; Discord or Matrix later
   (`interface.md` 6). Each user-side `<context>` names the channel the message came
   from, and the reply goes back to that channel. Proactive messages (reports,
-  wakeups, routine results) go to the setting `notify_channel`. A message that
-  arrives while a run is going uses the steering and follow-up queues, as today.
+  wakeups, routine results) appear in the home session and send a push. A message
+  that arrives while a run is going uses the steering and follow-up queues, as today.
 - **Room for more later.** The home session is found by `(owner, name)`, not
   assumed unique, so further home sessions (another person, another persona) need
   no schema change. There is one for now.
-- **No direct sessions.** The user talks only to Eika. Subagent, routine and dream
+- **No direct sessions.** The user talks only to Eika. Subagent and routine
   sessions can be watched live, read-only, with a cancel button
   (`interface.md` 1). Steering goes through Eika, which calls `subagent_message`,
   so Eika's own view of its work stays accurate.
@@ -568,14 +560,11 @@ renovation", "Job search", "Taxes 2026", "Eika itself". It holds:
 | `name`, `slug`, `description` | Identity. The description is the one line the main agent's preamble lists |
 | `status` | `active`, `paused`, `done` or `archived`. Only active projects appear in the home preamble |
 | `instructions` | User-written text. Agents read it and never write it |
-| `private` | Set by the user. Reading the project's files or memories marks a session `sensitive` (`sentry.md` 6) |
-| `computer_id`, `directory` | Where its files live. The default is `/home/eika/projects/<slug>` on the `home` computer. A project can ask for a computer of its own (another image, stricter egress) |
-| `agent` | Default agent for sessions started in it (usually `worker`) |
-| `skills`, `plugins` | Which ones its sessions list |
-| `created_by` | `user` or `eika` |
+| `private` | Set by the user. A session in the project is `sensitive` (`sentry.md` 6) |
+| `directory` | Where its files live, by default `/home/eika/projects/<slug>` on the `home` computer |
 
-Memory has a project scope (`memory.md`). A pinned project memory named `status`
-is the living summary that agents keep current. Routines can belong to a project.
+A project's living summary is a `STATUS.md` in its directory, which its workers keep
+current. Routines can belong to a project.
 
 ### How Eika uses projects
 
@@ -583,13 +572,13 @@ This works the way a person uses Claude Code: open the project, hand work to a
 subagent with a brief, and come back to that subagent later.
 
 - `project_list` returns active projects with their one-liner and status.
-- `project_open {project}` returns the description, instructions, pinned project
-  memories, the project's subagents (name, agent, state, the first line of the
-  last report), and routines. Opening a project changes nothing in the main
-  agent's prefix: the answer is a tool result.
+- `project_open {project}` returns the description, instructions, `STATUS.md`, the
+  project's subagents (name, agent, state, the first line of the last report), and
+  routines. Opening a project changes nothing in the main agent's prefix: the answer
+  is a tool result.
 - `subagent_start {..., project}` starts a subagent in the project. Its preamble
-  carries the project brief, its instructions and its memory index, so the
-  subagent gets the project's context without the main agent carrying it.
+  carries the project brief and its instructions, so the subagent gets the project's
+  context without the main agent carrying it.
 - `project_create` and `project_update` let Eika create projects and change
   descriptions and status, but not instructions. Creating a project needs no
   approval, since it changes nothing outside Eika.
@@ -607,8 +596,7 @@ session, and local contexts can be scarce:
 
 - **Asynchronous by default.** `subagent_start` returns at once. A blocking spawn
   would hold the main context idle for the whole run, and on a setup with few
-  slots it would evict that context and re-prefill it afterwards. `wait: true`
-  exists for short work whose answer is needed in the same turn.
+  slots it would evict that context and re-prefill it afterwards.
 - **Persistent and named.** A subagent keeps its session after it reports. A later
   `subagent_message` to the same name resumes it in its own context, so "plumber"
   or "flights-lisbon" is also the thread of that work. There is no separate thread
@@ -626,11 +614,10 @@ eika  --subagent_message plumber "get a second quote"-->  same session resumes
 
 | Tool (Eika's) | Behaviour |
 |---|---|
-| `subagent_start {agent, name, brief, class?, project?, report?, wait?}` | Starts a named subagent and returns its name. `class` must be one the agent allows (the preamble lists them), else an error names the allowed ones. A name already in use returns that subagent's status instead, so Eika messages it rather than starting a duplicate |
-| `subagent_message {subagent, text}` | Steers a running subagent through its steering queue, or resumes an idle, failed or cancelled one with a new message in its own context (its compaction summary and tail; the slot cache where it still holds). To a subagent waiting on a question, the text is the answer |
+| `subagent_start {agent, name, brief, project?}` | Starts a named subagent and returns its name. A name already in use returns that subagent's status instead, so Eika messages it rather than starting a duplicate |
+| `subagent_message {subagent, text}` | Resumes an idle, failed or cancelled subagent with a new message in its own context (its compaction summary and tail; the slot cache where it still holds). To a subagent waiting on a question, the text is the answer. A running one answers that it is running, and Eika can cancel it or wait for its report |
 | `subagent_status {subagent?}` | Without a name, the board: each subagent's name, agent, project, state, last activity, the first line of its last report, and anything it waits on. With a name: its brief, full last report, pending questions, approvals and wakeups |
 | `subagent_cancel {subagent}` | Stops its current run. It stays resumable |
-| `inbox_ask {question, options?, subagent?}` | Puts a question to the user in the Inbox and returns at once. The answer arrives as a notice and starts a background home turn. Eika uses it rarely: for a subagent's question it cannot answer itself that is about unclear user intent, or when the user is not in the chat |
 
 Inside a subagent, `report {summary, outputs[], follow_ups[]}` ends the current
 assignment.
@@ -642,13 +629,13 @@ assignment.
   own session: "Draft your report now with the report tool." If it still does not
   call `report`, its final message becomes the report, as the removed spawner's
   `summaryOf` did (`PLAN.md` log, "phase 0 notes for later phases").
-  Every report becomes a notice in Eika's
-  next `<context>`: "plumber (worker) reported: <summary>; follow-ups: …". With
-  `report: always`, a background turn on the home session tells the user.
+  Every report becomes a notice in Eika's next `<context>`: "plumber (worker)
+  reported: <summary>; follow-ups: …", and starts a background turn on the home
+  session, where Eika tells the user what matters.
 - **Questions** a subagent asks with `ask_user` go to Eika. The subagent parks
   (`waiting`), the question becomes a notice, and a background home turn starts.
-  Eika answers with `subagent_message`, or asks the user in the Inbox with
-  `inbox_ask` and relays the answer. Eika decides what the user needs to see.
+  Eika answers with `subagent_message`, or asks the user in its reply and relays the
+  answer. Eika decides what the user needs to see.
 - **Approvals** a subagent needs go to the Inbox through Sentry, not through Eika.
   To the subagent this is a slow tool call. The board shows it as waiting on the
   user, and no notice is sent.
@@ -656,20 +643,13 @@ assignment.
   session.
 - **The board** is a deterministic section of every home compaction summary
   (section 11), and `subagent_status` gives it live between compactions.
-  A subagent idle for `subagent_board_days` (default 30) leaves the board. It
-  stays resumable by name and searchable with `history_search {subagent}`.
-- **Labels.** A report from a subagent whose session holds `sensitive` carries
-  that label into the home session (`sentry.md` 6).
-- **Limits.** Depth 1 by default: Eika starts subagents, and subagents do not. The
-  setting `subagent_max_depth` allows 2 for `worker -> researcher`; a nested
-  subagent belongs to its parent, not to Eika's board. At most
+- **Limits.** Eika starts subagents, and subagents do not. At most
   `subagent_max_running` subagents are runnable at once (default 4). They still
   execute one at a time on a one-slot pool. The reserve-under-lock logic of
   the removed spawner carries over.
 - **Abort and shutdown** carry over from the removed spawner. Aborting a home reply does
   not cancel its subagents, since they outlive the turn that started them. Halt
-  stops everything. `Shutdown` stops runs, and durable runs resume on start
-  (section 5).
+  stops everything. `Shutdown` stops runs (section 5).
 
 ## 10. Computers
 
@@ -677,18 +657,12 @@ The `computer` package and the `home` computer are built (`ARCHITECTURE.md`,
 "Sandboxes"). What is still to come:
 
 - `home` holds project directories and spilled outputs.
-- **Per-run egress identity.** Every `exec` carries `HTTP(S)_PROXY` credentials
-  that Sentry issued for that run, so the proxy attributes traffic to the session
-  rather than the container. Processes a run starts in the background keep that
-  run's identity; its credentials stay valid until the computer stops. They are
-  attribution, not authentication: the agent can read its own environment.
-  eikad already accepts environment per exec.
 - Computers join `eika_sandbox_internal` only. The `open` egress mode, which
   bypasses the proxy, is removed. A permissive allowlist (`*`) remains, so traffic
-  still passes Sentry, and its blocklist and halt still apply.
+  still passes the proxy, and the blocklist and halt still apply.
 - Skills are mounted read-only at `/skills`; see `skills-and-plugins.md`.
-- Plugin cells are computers too, labelled `eika.role=plugin`. No agent tool can
-  target them.
+- Stdio plugins share one computer labelled `eika.role=plugin`. No agent tool can
+  target it.
 
 ## 11. Compaction and recall
 
@@ -703,10 +677,9 @@ continuity. Three tiers, from most to least curated:
 
 The design combines Pi's compaction, which Eika runs today (an LLM summary in fixed
 sections, updated in place at each compaction), with ideas from Pi-VCC, an
-algorithmic compactor for Pi: deterministic sections, cuts at turn boundaries, a
-brief transcript with references, and search over the compacted history. Code
-writes what can be read from rows. The model writes only what needs judgement.
-References lead back to the originals.
+algorithmic compactor for Pi: a deterministic section, cuts at turn boundaries, and
+search over the compacted history. Code writes what can be read from rows. The model
+writes only what needs judgement.
 
 ### The summary
 
@@ -715,13 +688,8 @@ References lead back to the originals.
 [Subagents]      deterministic, from session rows: open subagents, then those that
                  reported since the last compaction. Name (agent, project), state,
                  last activity, the first line of the last report
-[Ledger]         deterministic, since the last compaction: projects created or
-                 changed, memories saved, routines and wakeups set, questions and
-                 approvals still open
 [Conversation]   LLM, rolling update (below)
-[Recent turns]   deterministic brief transcript of the end of the compacted span,
-                 about 80 lines; tool calls as one-liners with (#id) references
-footer           "history_search and history_read #<id> recover anything compacted"
+footer           "history_search and history_read recover anything compacted"
 </summary>
 ```
 
@@ -740,14 +708,13 @@ agent:
 ```
 
 Its rules: absolute dates, exact names, numbers and ids, subagents by name, and
-nothing the board, the ledger or memory already says.
+nothing the board or memory already says.
 
 Chapters were considered: one summary per compacted span, written once and frozen,
 with a growing list of chapter titles. They bound how often a fact is rewritten,
 but they need the current state kept outside the summary, and they add a concept.
-Rolling comes first; chapters are a deferred option if the compaction evals show
-drift. Every compaction entry keeps its own summary, so earlier versions stay
-readable through `history_read {compaction}`.
+Rolling comes first. `[Ledger]`, `[Recent turns]` and `(#id)` references return if
+real use shows the summary losing commitments (`DEFERRED.md`).
 
 ### When
 
@@ -780,43 +747,30 @@ memory with `memory_write` when it learns something worth keeping
    writes the compaction entry, and rebuilds the preamble. The rebuild picks up
    memory and agent-definition changes, including new tools (section 4).
 
-A compaction never blocks the user and never fails for want of a model. If step 1
-fails, the compaction proceeds with the deterministic sections and the previous
-`[Conversation]` unchanged, and a maintenance retry later folds in the span it
-missed, read back from history.
+A compaction never blocks the user. If step 1 fails at idle, the session stays as it
+is and the next idle period tries again. The threshold and the overflow retry stay
+as safety nets.
 
-Subagent, routine and dream sessions keep Pi's compaction as it is today, with
-their agent definition's prompts.
+Subagent and routine sessions keep Pi's compaction as it is today, with their agent
+definition's prompts.
 
 ### History recall
 
 - **Index.** `entries.tsv`, Postgres full-text search over user and assistant text,
-  tool-call names and arguments, notices and compaction summaries, plus `pg_trgm`
-  for regular expressions and identifiers. Both ship with Postgres. Tool results
-  are indexed apart and searched only on request. Subagent sessions are indexed
-  too.
-- **`history_search {query, since?, until?, subagent?, project?, include_results?, page?}`.**
-  Words or a regular expression. Ranked by `ts_rank_cd`, newest first on ties.
-  Five hit groups per page; each hit shows the neighbouring turn as context, with
-  the entry id, time, and the session or subagent name. Without a query, it lists
-  the entries just before the oldest one still in context.
-- **`history_read {entry | around, subagent?, compaction?, limit?, full?}`.**
-  A window of messages, untruncated with `full`. `compaction: N` returns that
-  compaction's summary.
-- Every `(#id)` in a summary, a notice or a search result is an argument for
-  `history_read`.
-- **Labels carry over.** A hit drawn from a private source sets `sensitive` on the
-  session (`sentry.md` 6). A hit from an untrusted tool result comes back inside
-  the `<untrusted>` wrapper it was ingested with.
+  tool-call names and arguments, notices and compaction summaries. Subagent sessions
+  are indexed too. Tool results are not.
+- **`history_search {query, since?, until?, subagent?, project?, page?}`.**
+  Ranked by `ts_rank_cd`, newest first on ties. Five hit groups per page; each hit
+  shows the neighbouring turn as context, with the entry id, time, and the session
+  or subagent name. Without a query, it lists the entries just before the oldest one
+  still in context.
+- **`history_read {entry | around, subagent?, limit?, full?}`.**
+  A window of messages, untruncated with `full`.
 
 ### Tests
 
-- A golden test of the deterministic sections, built from fixture rows.
-- A compaction whose summary call fails still compacts, and the retry folds the
-  span in later.
-- History search over fixture sessions: ranking, regular expressions, paging,
-  scopes, labels.
+- A golden test of the `[Subagents]` section, built from fixture rows.
+- A compaction whose summary call fails leaves the session as it was.
+- History search over fixture sessions: ranking, paging and scopes.
 - The prefix-stability test covers the home session across compactions: system,
   tools and preamble stay byte-identical when nothing they draw on changed.
-- `evals/compaction` (opt-in): a scripted multi-week home history, questions asked
-  after N compactions, with and without the history tools, recorded per model.

@@ -10,9 +10,9 @@ this file says why, so neither repeats the other.
 
 - **Eika is a personal assistant that runs on hardware the user owns.** One
   person talks to it, and it works in sandboxed computers on their behalf.
-  Memory, skills, a scheduler, a permission authority (Sentry), a browser and
-  chat channels are planned in `PLAN.md` and `design/`, and built phase by
-  phase; today there are chats, the `home` computer, a sandboxed `bash`, web
+  Memory, plugins, a scheduler, skills and a permission authority (Sentry) are
+  planned in `PLAN.md` and `design/`, and built phase by phase; a browser and
+  chat channels are in `DEFERRED.md`. Today there are chats, the `home` computer, a sandboxed `bash`, web
   search and MCP. It is not a coding harness: it is not meant to edit a
   repository, review a diff, or serve a developer's workbench. Not goals for
   now: several users, payments, voice, a native mobile app, and agents that
@@ -24,6 +24,71 @@ this file says why, so neither repeats the other.
   one registry file, rebuild. No runtime plugin loader, no `init()`
   registration.
 - **Single user.** One password; an optional `EIKA_AUTH_TOKEN` for scripts.
+
+## What the first version leaves out
+
+The plan grew to 16 phases, and the design to three new containers with services
+in Python and TypeScript, before anything past phase 1 was built. On 2026-11-01 it was cut
+to what a working assistant needs, and the rest moved to `DEFERRED.md` with a trigger
+for each piece.
+
+- **Sentry is a package in Core, not a container.** A separate process protects
+  against a compromised Core, which the threat model leaves out of scope, and Core's
+  Docker socket can reach Sentry's volumes anyway, so `Core cannot read the vault`
+  would hold only for a Core that behaves. The cost was most of phase 4: a second
+  binary, roles, schema, migrator, wire contract and event relay, plus a second
+  database reset. The separation is kept in code by the boundary test and the `Gate`
+  interface. Rejected: keeping the container for defence in depth, since it buys
+  little until the Docker socket proxy exists; they return together. This reverses
+  the 2026-10-29 decision.
+- **The reviewer is deferred, so external effects ask.** This reverses the 2026-10-30
+  decision to land it in phase 4 on the emulated backend. The review moved it there
+  so labels would not become a stream of approvals. With fixed labels, a label only
+  changes `bash` and `web_fetch` in private projects, and no agent can send anything
+  until plugins, so asks stay low and can be counted from `audit` before deciding.
+  When it returns it uses `/v1/systemone` alone, since the design's numbers have
+  emulation allowing 50% of steered attacks against d3-flash's 17%. The cost is
+  real: until then, every external send and delete asks unless an `always` grant
+  covers it.
+- **Labels are fixed when a session is created.** Without the reviewer or the browser,
+  tracking reads changes almost nothing: `eika` has no `bash` or `web_fetch`, so
+  only private-project workers feel a label, and those are known at creation. This
+  removes `/v1/labels`, `private?`, `suspicious`, and clearing a label at compaction,
+  which was unsound anyway: the rolling summary can still hold what the label was for.
+  `web_search` stays `allow` in `eika` sessions, which are always labelled, so a
+  private fact can reach a search engine in a query.
+- **An `always` grant may cover an external send**, matched to one tool and target.
+  It used to be barred from a `sensitive` session. Every `eika` session is `sensitive`
+  now, so the bar would have left `once` as the only answer to every send, for ever.
+- **Plugins come before the scheduler and skills.** They are most of what makes an
+  assistant useful, and a routine needs them to have anything to report. They reach
+  only `eika`, on the pool Core already has, with no plugin host and one shared
+  plugin computer rather than a cell per plugin.
+- **Deferred whole: the browser, the vault and surrogates, the injection screen and
+  Guard, the monitor, dreaming and channels.** The browser is the largest single
+  build, and search, `web_fetch` and plugins cover most tasks. The vault is only
+  needed by the browser and by secrets used from `bash`, and plugin credentials stay
+  sealed in Core. The screen is evidence, never a barrier, at 49% on InjecAgent and 22
+  to 37% on BIPIA, and it brings a Python service. Channels are first in line to
+  return.
+- **Web Push gives way to ntfy.** One HTTP POST against VAPID keys, RFC 8291 and a
+  subscription per device, and a payload that says the same thing.
+- **Restarts end runs rather than resume them.** Named subagents already resume by
+  message, so a restart needs only a clean ending: every unanswered call gets "outcome
+  unknown", and Eika decides what to continue. This also removes the `dispatched`
+  marker, since no call is ever re-dispatched.
+- **Questions go through the chat.** A subagent's question reaches Eika as a notice,
+  and Eika asks the user in its reply. `inbox_ask` and the `questions` table were a
+  second way for Eika to talk to the user. The Inbox moves to phase 4, since nothing
+  fills it before approvals.
+- **Memory keeps Markdown files and git**, against a Postgres-only option that would
+  have removed `Reconcile` and the double write. Files the user can read won. Memory is
+  global, and only `eika` reads or writes it: subagents get what they need from their
+  brief, so there is no project scope, and a project's living summary is a `STATUS.md`
+  in its directory.
+- **Phase 1's built work stays**, including what would have been cut had it not been
+  built (`PLAN.md` log, 2026-11-01). It is finished and tested, and removing it would
+  be more work and more risk than keeping it. Only further verification was cut.
 
 ## The coding layer is removed
 
@@ -142,8 +207,7 @@ this file says why, so neither repeats the other.
 - The proxy identifies a sandbox by its computer id and a proxy token of its
   own, generated at create and kept in the container's configuration:
   per-computer, secret, and recoverable after restart, so no grant table. It
-  was the hub token until the hub was due to go; phase 4 replaces it with
-  Sentry's principals.
+  was the hub token until the hub was due to go, and it stays.
 - Proxy variables go through eikad's `PUT /environment`, because a
   container's env is immutable and egress can change while it runs. Open
   sandboxes get no proxy, so they keep private addresses.
@@ -284,12 +348,12 @@ this file says why, so neither repeats the other.
   removal landed, which is also why a database made part-way through cannot
   be kept (the migrator records only a file's name). With phase 0 closed it is
   frozen, and migrations are append-only again; `0002` is the first, and
-  removes session forks. Phase 4 starts fresh once more for Sentry. Rejected:
+  removes session forks. Rejected:
   a migration from the old schema, which would be code that runs once, for a
   deployment with one user.
 - **Schema `core`.** Core's tables live in their own schema rather than
-  `public`, so Sentry's schema can sit beside it in the same database with
-  its own grants.
+  `public`, so a schema of Sentry's can sit beside it in the same database with
+  its own grants, if Sentry becomes a process of its own (`DEFERRED.md`).
 - Every model call is a `model_calls` row holding the system prompt
   sections, schemas, and parameters; messages are not copied, since they are
   the session path.
@@ -1485,8 +1549,8 @@ verified against `/slots` while a call ran, on b11942). The design is
   effort, thinking switch, preserved thinking or image input.
 - **The model test refuses a decision model and sends nothing.** The test is
   a chat request, which a decision model cannot answer, and the one request
-  it can answer, a `/v1/systemone` question, is built with the Sentry client
-  (`internal/systemone`, phase 4) and was not verified against a server
+  it can answer, a `/v1/systemone` question, is built with the reviewer's client
+  (`internal/systemone`, deferred) and was not verified against a server
   here. The test moves there. A one-off request in the model test was
   rejected: it would be a second client for the protocol.
 - **The Responses check asks the provider's oldest chat model**, never a
@@ -1611,12 +1675,11 @@ verified against `/slots` while a call ran, on b11942). The design is
 - **No agent can use a plugin from phase 2 until phase 11 (accepted).** Today
   a chat gets MCP tools through its tool choice, which a profile or the
   session sets. Phase 2 replaces profiles with agent definitions that have
-  fixed tool lists, and a plugin call must be decided by Sentry (phase 4)
-  and sent through its plugin host (phase 11) rather than made from Core, so
-  until then no agent definition holds one. The pool, the MCP screens, OAuth
-  and the server logs stay in Core and keep working: a server can be added
-  and connected, and no agent calls it. Rejected: a stopgap for choosing
-  plugin tools in agent definitions, which phase 11 would replace.
+  fixed tool lists, and a plugin call must be decided by Sentry (phase 4). Phase 11
+  now comes right after memory, so the gap is short. The pool, the MCP screens, OAuth
+  and the server logs stay in Core and keep working: a server can be added and
+  connected, and no agent calls it. Rejected: a stopgap for choosing plugin tools in
+  agent definitions, which phase 11 would replace.
 
 ## Search
 
