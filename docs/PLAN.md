@@ -1057,6 +1057,51 @@ Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
 
+- 2026-11-01: live suite, partly (branch `live-suite`, from `phase-1`). Both
+  live-suite items stay UNTICKED. Landed: the bench runner, `evals/bench`
+  (decision in `DECISIONS.md`, protocol in `evals/README.md`), tested on a
+  fake host only (refusal changes nothing, a taken container is stopped and
+  started again, a variant is a container of its own and the chat container is
+  never edited, a variant that exits, a failed restore leaves the journal and
+  the next `Open` refuses, a lost connection reopened or left to the watchdog,
+  a second run refused, flags, redaction, quoting, llama.cpp log parsing).
+  Nothing was run against the server, and nothing was changed on it.
+  - What the server's setup showed (read-only). `llama-qwen` is exited (0) with
+    `unless-stopped`, port `10.10.10.2:8091->8080`; `llama-server` (image
+    `llama-server-gpu:0.0.9`, no `-np`, bf16 KV, MTP draft) holds 28.8 GB with no
+    published port; `run.sh` does `docker rm -f llama-qwen`, so the runner must
+    not use it. No container has a health check: health is `GET /health` from
+    the server to the container's address on network `proxy`. A stopped
+    container is not restarted by `unless-stopped` after a reboot.
+  - TabbyAPI (`tabbyapi:0.0.8`, exited, `unless-stopped`, network `proxy`, no
+    published port, `--gpus` all, config.yml bind-mounted): port 5000, Caddy site
+    `tabbyapi.erli.xyz`; model `Swift-1.5-Qwen3.8-27B-exl3-SC-4.50bpw` (a different
+    quant from the llama.cpp unsloth file, not "the same weights"), `max_seq_len`
+    153600, `cache_size` 307200, `cache_mode` 8,8, MTP draft, auth on
+    (`disable_auth: false`; the key is in `api_tokens.yml`, never read). The
+    runner would reach it by forwarding the container's address on `proxy`.
+    Needed from the owner: `EIKA_TABBY_KEY` in `live.env`. `/health` on Tabby is
+    unverified.
+  - The server's log states, per task, `prompt eval time ... / N tokens`
+    (prefilled), `eval time ... / M tokens` (generated) and `stop processing:
+    n_tokens = T`; the meter check matches calls to tasks by (N, M) and checks T
+    against prompt + M (offset to be read off the first live run).
+  - NOT built, left for the next session: `Scenarios()` additions (exact
+    counting over the scripted conversation, shared KV through the loop,
+    `partitioned`, the TabbyAPI accounting scenario with its bound); the
+    runner-driven suites and `TestServerSuites`; `evals/benchctl` (status,
+    restore; `bench.Recover` exists); the two-session real-server test and the
+    meter-against-logs check (to live in `internal/server`, `docker,live`, where
+    `newAPI` is; the real server has no background priority yet, only
+    maintenance titles); the watchdog script run against fake binaries; the
+    `bench` block in the report; `make live` wiring. Order on the server, once
+    the owner frees it: `make live` unchanged; then suite `no-cache-idle-slots`
+    (`--no-cache-idle-slots`, expect the slot-affinity check to pass), suite
+    `partitioned` (`--no-kv-unified`, window 65536, kv unknown), a `-np 1`
+    variant for the one-slot test, then `tabbyapi`; each ends with a restore.
+    `prefix_across_compaction` still has never run on the bench.
+  - `make check` passes on the final commit.
+
 - 2026-10-31: prefix-stability test (branch `prefix-stability`, from `phase-1`;
   `7c4981d`, `fc67144`, `389b9c0`, the live scenario commit and this entry). The
   item is ticked. The decisions are in `DECISIONS.md` ("Prefix stability").

@@ -1721,3 +1721,27 @@ verified against `/slots` while a call ran, on b11942). The design is
   exists to catch what fakes cannot); one key in the environment only (the
   bench's four variables live in a file, so `make live` works from any
   shell).
+
+- **The bench runner changes the server only by what it can undo.** Server
+  operations for the live suites live in `evals/bench`, behind a `Transport`
+  (one SSH ControlMaster per run) so tests drive a fake host. A run records
+  the GPU's holders and the running containers first and refuses with a
+  `BusyError` unless only `llama-qwen` holds the GPU; a container is stopped
+  only when named in `Options.Take`, and nothing else ever is. A changed
+  model is a container of its own (`eika-bench-<run>`, `--restart no`, the
+  chat container's image, mounts and network, the key through `--env-file` so
+  it is never read), so `command.txt`, `komodo.toml` and the Deployment are
+  never edited, and the chat container is only stopped and `docker start`ed,
+  which keeps its id and flags, the facts Komodo reads. A container stopped
+  with `docker stop` is not restarted by `unless-stopped` after a reboot, so a
+  reboot mid-run brings back nothing the run took. The run writes a journal
+  before each change (under the user cache directory), a lock on the server
+  and a heartbeat that a detached watchdog watches; `Close`, an interrupt and
+  the watchdog (after 3 minutes without a heartbeat) run the same idempotent
+  restore, and a bench that still differs from its snapshot makes the next
+  `Open` refuse. Rejected: editing the Deployment (Komodo's view would stop
+  being true), restoring with `run.sh` (it removes the container), stopping
+  whatever holds the GPU (the swap to `llama-server` was nobody's decision to
+  repeat), and no watchdog (a killed process or a lost connection would leave
+  the GPU swapped). Built and tested on a fake host only; not yet run against
+  the server.

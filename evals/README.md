@@ -83,6 +83,40 @@ neither failing or cut off. It costs two cold prefills of that size, about
 Keep scenarios small: bounded `max_tokens`, no load. The server is shared; do
 not start, stop or swap anything on it from a scenario.
 
+## Server operations (`evals/bench`)
+
+Some suites need the server changed (other flags, the second backend). The
+`bench` package does that and nothing else is allowed to; it is built and
+tested on a fake host, and **has not yet run against the server**. A run:
+
+1. `Open` reads and records the running containers and the GPU's holders. It
+   refuses (`BusyError`) when anything but `llama-qwen` holds the GPU, naming
+   what it found, unless the container is in `Options.Take`; it stops nothing
+   else, ever. It refuses (`LeftModifiedError`) when an earlier run left a
+   journal that differs from the server, the lock `/tmp/eika-bench.lock` is
+   held, or a container labelled `eika.bench` is left.
+2. Only then it takes the lock, writes the journal (default
+   `~/.cache/eika/bench-journal.json`) and starts the watchdog: a detached
+   script on the server that restores the bench when the run's heartbeat file
+   goes 3 minutes stale (killed process, lost connection).
+3. `Serve(spec)`: `Baseline()` starts `llama-qwen` as it is, `Tabby()` starts
+   the existing `tabbyapi` container as it is, `Variant(name, edits...)` runs
+   the chat container's image, mounts and network as `eika-bench-<run>` with
+   its recorded flags edited (`--restart no`, label `eika.bench`, the key from
+   the server's own `.env` through `--env-file`). `command.txt`,
+   `komodo.toml` and the Deployment are never touched. It waits for health
+   with a bound and returns the URL (an SSH forward) and an `Info` for the
+   report (container, image, image id, flags, edits).
+4. `Close` (also deferred after a failure, and run on SIGINT or SIGTERM)
+   removes the variant, stops what it started, waits for the GPU to empty,
+   starts what it stopped, waits for health and compares the server with the
+   snapshot. A failure is a `RestoreError` that says `BENCH NOT RESTORED`; the
+   journal stays and the next `Open` refuses.
+
+`Logs` and `ServerTime` read a container's log; `ParseServerLog` reads
+llama.cpp's per-task counts (prefilled, generated, slot tokens) for the
+meter-against-the-server's-logs check.
+
 ## Reading a report
 
 `evals/results/<time>-<build>.json`:
