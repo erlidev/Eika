@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -141,10 +142,10 @@ type Message struct {
 	// builds an item from Reasoning where the endpoint allows it, and
 	// sends none otherwise. Like Reasoning they are sent only by a provider
 	// configured to preserve thinking.
-	ReasoningItems []json.RawMessage `json:"reasoning_items,omitempty"`
-	ToolCalls      []ToolCall        `json:"tool_calls,omitempty"`
-	ToolCallID     string            `json:"tool_call_id,omitempty"`
-	IsError        bool              `json:"is_error,omitempty"`
+	ReasoningItems ReasoningItems `json:"reasoning_items,omitempty"`
+	ToolCalls      []ToolCall     `json:"tool_calls,omitempty"`
+	ToolCallID     string         `json:"tool_call_id,omitempty"`
+	IsError        bool           `json:"is_error,omitempty"`
 	// Metrics records the measured usage of an assistant response for session
 	// replay. Providers do not receive this metadata.
 	Metrics *MessageMetrics `json:"metrics,omitempty"`
@@ -310,26 +311,48 @@ func WireToolCallID(ids map[string]string, id string) string {
 	return id
 }
 
+// survivesEncoding reports whether encoding/json writes raw, a valid JSON
+// document, as the very bytes it was given. It does not: it compacts a
+// document and writes <, > and & as <, > and &. A request sends
+// the text of a tool call's arguments and of a reasoning item as the model
+// produced it, and the prompt cache reads those bytes, so text that would
+// change is stored as a string, which comes back as it went in.
+func survivesEncoding(raw []byte) bool {
+	out, err := json.Marshal(json.RawMessage(raw))
+	return err == nil && bytes.Equal(out, raw)
+}
+
 // MarshalJSON safely represents malformed arguments and marks them so a
 // later decode cannot confuse them with a valid top-level JSON string.
+// Arguments whose text encoding/json would not write back unchanged
+// (whitespace, a key order, a & in a command) are also written, exactly, as
+// arguments_text, which UnmarshalJSON restores them from.
 func (c ToolCall) MarshalJSON() ([]byte, error) {
 	arguments, malformed := c.Arguments.JSON()
+	var text *string
+	if !malformed && len(c.Arguments) > 0 && !survivesEncoding(arguments) {
+		exact := string(c.Arguments)
+		text = &exact
+	}
 	return json.Marshal(struct {
 		ID                 string          `json:"id"`
 		WireID             *string         `json:"wire_id,omitempty"`
 		Name               string          `json:"name"`
 		Arguments          json.RawMessage `json:"arguments"`
 		ArgumentsMalformed bool            `json:"arguments_malformed,omitempty"`
+		ArgumentsText      *string         `json:"arguments_text,omitempty"`
 	}{
 		ID:                 c.ID,
 		WireID:             c.WireID,
 		Name:               c.Name,
 		Arguments:          arguments,
 		ArgumentsMalformed: malformed,
+		ArgumentsText:      text,
 	})
 }
 
-// UnmarshalJSON restores exact argument text using arguments_malformed.
+// UnmarshalJSON restores exact argument text using arguments_malformed and
+// arguments_text.
 func (c *ToolCall) UnmarshalJSON(data []byte) error {
 	var wire struct {
 		ID                 string          `json:"id"`
@@ -337,6 +360,7 @@ func (c *ToolCall) UnmarshalJSON(data []byte) error {
 		Name               string          `json:"name"`
 		Arguments          json.RawMessage `json:"arguments"`
 		ArgumentsMalformed bool            `json:"arguments_malformed"`
+		ArgumentsText      *string         `json:"arguments_text"`
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
@@ -345,7 +369,46 @@ func (c *ToolCall) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	if wire.ArgumentsText != nil && !wire.ArgumentsMalformed && json.Valid([]byte(*wire.ArgumentsText)) {
+		arguments = ToolArguments(*wire.ArgumentsText)
+	}
 	*c = ToolCall{ID: wire.ID, WireID: wire.WireID, Name: wire.Name, Arguments: arguments}
+	return nil
+}
+
+// ReasoningItems are the reasoning items of a message, each as the endpoint
+// returned it. They are stored as they are, except that an item encoding/json
+// would not write back unchanged is written as a string holding its exact text
+// (survivesEncoding), so that a message read from its entry sends the bytes it
+// sent when it was new.
+type ReasoningItems []json.RawMessage
+
+// MarshalJSON writes the items, those that would change as strings.
+func (r ReasoningItems) MarshalJSON() ([]byte, error) {
+	items := make([]json.RawMessage, len(r))
+	for i, item := range r {
+		items[i] = item
+		if len(item) > 0 && !survivesEncoding(item) {
+			items[i], _ = json.Marshal(string(item))
+		}
+	}
+	return json.Marshal(items)
+}
+
+// UnmarshalJSON reads the items, restoring those written as strings to the
+// text they hold. An item is a JSON object, so a string is always such text.
+func (r *ReasoningItems) UnmarshalJSON(data []byte) error {
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err != nil {
+		return err
+	}
+	for i, item := range items {
+		var text string
+		if len(item) > 0 && item[0] == '"' && json.Unmarshal(item, &text) == nil {
+			items[i] = json.RawMessage(text)
+		}
+	}
+	*r = items
 	return nil
 }
 

@@ -264,7 +264,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 |---|---|
 | `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), home |
 | `sessions` | computer_id (NULL for a chat), title, untitled, kind (user), head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
-| `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
+| `session_entries` | session, parent_id, seq, kind, payload (json: the text it was written as, so a message reads back as the bytes it was sent as) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
 | `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, api (`chat` or `responses`), capabilities (jsonb, with the Responses check's outcome), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |

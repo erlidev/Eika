@@ -457,6 +457,28 @@ this file says why, so neither repeats the other.
   invariant, a decoded one hides any later reordering); sending the extras one
   `WithJSONSet` at a time (the counter's `ChatBody` could not share that
   path).
+- **A message comes back from its entry as the bytes that were sent.** The
+  prefix-stability test (`internal/session/prefix_test.go`) found that it did
+  not, at the start of every run, because the server loads the session from the
+  database each time: the arguments of every earlier tool call, and every
+  reasoning item, were a different prefix from the one the server had cached.
+  Two causes. `encoding/json` compacts a `RawMessage` and writes `<`, `>` and
+  `&` as `<`, `>` and `&`, so `{"command": "a && b"}` was stored as
+  `{"command":"a && b"}`; and the entry's payload was `jsonb`, which
+  writes a document back with its keys ordered by length and a space after
+  every colon, so even `{"path":"/tmp"}` came back as `{"path": "/tmp"}`. Now a
+  tool call whose arguments `encoding/json` would not write back unchanged also
+  stores them as `arguments_text`, a string, which comes back exactly (a reader
+  still sees `arguments` as a value); a reasoning item that would change is
+  stored as a string of its text (`provider.ReasoningItems`); and migration
+  `0010` makes the payload column `json`, which keeps the text it was given.
+  Nothing queries inside a payload. Rejected: `arguments_text` for every call
+  (the common call is compact and stable, and arguments can be a whole file);
+  turning arguments into a string everywhere (the API and the UI read an
+  object); escaping nothing by marshalling with `SetEscapeHTML(false)` (the
+  compaction remains, and every writer of a message would need it); keeping
+  `jsonb` and sorting keys at send time (the model's order is what it produced
+  and what the cache holds).
 
 ### Loop limits
 
@@ -1197,9 +1219,11 @@ verified against `/slots` while a call ran, on b11942). The design is
   `Message.ReasoningItems` holds each item exactly as returned, in a
   `reasoning_items` array of the stored entry; `Reasoning` stays the text, which
   the UI, the counter, the compaction summary and Chat Completions read. The
-  entry's `jsonb` keeps the document and not its bytes (key order and spacing
-  change, a string never does, and a test stores a 80 kB encrypted blob and
-  reads it back); an old entry has no key and reads as before. Rejected: items
+  entry's payload keeps the text of the item (a `json` column; "Prefix
+  stability" says why not `jsonb`, which reordered the item's keys, and why an
+  item `encoding/json` would change is stored as a string of its text), and a
+  test stores an 80 kB encrypted blob and reads it back; an old entry has no
+  key and reads as before. Rejected: items
   replacing the text (every reader of it changes, and a protocol switch loses
   the reasoning); items in a table of their own (an entry is one message, and a
   fork or a resume would have to join them); the whole output list instead of

@@ -406,7 +406,12 @@ answer's generation speed after replay, and is never sent to the provider. A too
 `arguments` is normally an object. If a model returns malformed JSON, it is a
 string with the exact malformed text, and the tool call has
 `arguments_malformed: true`. The marker is absent for valid JSON, including a
-valid top-level JSON string. A tool call's `id` is Eika's own, unique in the
+valid top-level JSON string. A tool call whose arguments `encoding/json` would
+not write back as the bytes the model sent (whitespace, a key order, `&` in a
+command) also has `arguments_text`, their exact text, which Eika sends to the
+model so that a prompt cache sees the same bytes on every request; a client
+reads `arguments`. A reasoning item that would change is stored as a string
+holding its exact text. A tool call's `id` is Eika's own, unique in the
 session, and is what events and the `tool_call_id` of its result carry. Its
 `wire_id` is the id the model server gave it, kept only so a later request can
 send it back as the server knows it, and is absent on a call stored before Eika

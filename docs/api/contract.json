@@ -1081,12 +1081,14 @@
                       "object": {
                         "arguments": "any",
                         "arguments_malformed": "boolean",
+                        "arguments_text": "string",
                         "id": "string",
                         "name": "string",
                         "wire_id": "string"
                       },
                       "optional": [
                         "arguments_malformed",
+                        "arguments_text",
                         "wire_id"
                       ]
                     }
@@ -1461,12 +1463,14 @@
                       "object": {
                         "arguments": "any",
                         "arguments_malformed": "boolean",
+                        "arguments_text": "string",
                         "id": "string",
                         "name": "string",
                         "wire_id": "string"
                       },
                       "optional": [
                         "arguments_malformed",
+                        "arguments_text",
                         "wire_id"
                       ]
                     }
@@ -1976,12 +1980,14 @@
                       "object": {
                         "arguments": "any",
                         "arguments_malformed": "boolean",
+                        "arguments_text": "string",
                         "id": "string",
                         "name": "string",
                         "wire_id": "string"
                       },
                       "optional": [
                         "arguments_malformed",
+                        "arguments_text",
                         "wire_id"
                       ]
                     }
@@ -2255,12 +2261,14 @@
                           "object": {
                             "arguments": "any",
                             "arguments_malformed": "boolean",
+                            "arguments_text": "string",
                             "id": "string",
                             "name": "string",
                             "wire_id": "string"
                           },
                           "optional": [
                             "arguments_malformed",
+                            "arguments_text",
                             "wire_id"
                           ]
                         }
@@ -2390,12 +2398,14 @@
                       "object": {
                         "arguments": "any",
                         "arguments_malformed": "boolean",
+                        "arguments_text": "string",
                         "id": "string",
                         "name": "string",
                         "wire_id": "string"
                       },
                       "optional": [
                         "arguments_malformed",
+                        "arguments_text",
                         "wire_id"
                       ]
                     }
