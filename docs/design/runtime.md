@@ -410,17 +410,27 @@ design):
   into an old prefix. Changes since then show up as notices at the tail.
 - There is no clock in the prefix. Time goes into each user-side message, to the
   minute.
-- JSON serialisation is deterministic, as `provider/openai` already guarantees. Tool
-  order is sorted.
+- JSON serialisation is deterministic: a request is encoded as the same bytes every
+  time under both protocols (`provider/openai` writes the fields the SDK takes from a
+  map in sorted order; a test sends one request many times and compares the bytes). A
+  stored message reads back as the bytes it was sent as: a tool call's arguments and a
+  reasoning item are kept as text where `encoding/json` would change them, and an
+  entry's payload column is `json`, not `jsonb`. Tool order is sorted.
 - Tools never appear or disappear mid-session. Plugins and skills are reached through
   fixed generic tools (`skills-and-plugins.md`), so installing one never breaks a
   live prefix.
 - Untrusted content enters only as a tool result, wrapped by Sentry in
   `<untrusted source="...">` boundaries after scanning (`sentry.md` 6).
-- **Prefix-stability test** (`make check`): for a scripted sequence of turns,
-  including notices, approvals, a restart and a resume, each request's serialised
-  prefix is a byte-prefix of the next, except across a compaction. It is the
-  invariant that keeps prefill cheap, and it is cheap to test.
+- **Prefix-stability test** (`make check`, `internal/session/prefix_test.go`): for a
+  scripted sequence of turns, including a steering message, a follow-up, a retry, a
+  stall, a cut-off response, a refused call, a restart, a resume and a compaction,
+  each request's `messages` or `input` begins with the previous request's, byte for
+  byte, and the rest of the request is the same bytes but for the output limit (`fit`
+  lowers it as the window fills, and no server reads it as part of the prompt). It
+  runs the real loop and providers against a fake server, with the session stored and
+  loaded at the start of every run, in PostgreSQL as well as in JSON entries. Phase 2
+  adds notices and approvals to its script. It is the invariant that keeps prefill
+  cheap, and it is cheap to test.
 
 Large tool output is spilled. Output over the tool's budget (today 32 KiB head and
 tail for bash) is written whole to `/home/eika/.eika/outputs/<call id>.txt` on the

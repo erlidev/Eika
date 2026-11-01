@@ -479,6 +479,31 @@ this file says why, so neither repeats the other.
   compaction remains, and every writer of a message would need it); keeping
   `jsonb` and sorting keys at send time (the model's order is what it produced
   and what the cache holds).
+- **The test.** It runs the real loop and both real providers against a fake
+  server that keeps the raw body of every request, through a scripted
+  conversation: parallel tool calls that share a backend id, reasoning, an
+  image, a steering message and a follow-up joining mid-run, a retry after a
+  500, a stall, a response cut off at the limit, a refused call, an interrupted
+  run and its resume, three restarts, a manual compaction, and a clock that
+  moves throughout. The session is stored and loaded at the start of every run,
+  in a store that writes entries as JSON and in PostgreSQL. Each request's
+  `messages` (chat) or `input` (responses) must begin with the previous
+  request's array byte for byte, and everything else it carries (system prompt,
+  tools, template kwargs, sampling) must be the same bytes, except the output
+  limit, which `fit` lowers as the window fills: no server reads it as part of
+  the prompt, and the fake template ignores it (the live scenario
+  `prefix_across_compaction` shows llama.cpp's cache ignores it too). A failed
+  attempt and a refused call extend the last accepted request, and a retry
+  repeats its failed attempt. Across a compaction the array is replaced by
+  design; the summary request shares the previous request's prefix, and the
+  chain holds again from the first request after it. A second check renders
+  each request with the fake server's template and requires the same of the
+  prompt, and requires the prompt the token counter had rendered to be the
+  prompt the call reads (under `responses`, the server's conversion of the
+  input). Rejected: comparing the values the providers were given (the
+  violations above were all in the encoding between them and the wire);
+  normalising the minted tool-call ids (a replay must keep them, and they are
+  what the test is for); an in-memory store alone (it cannot show a column).
 
 ### Loop limits
 
