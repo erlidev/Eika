@@ -978,5 +978,11 @@ log. Work that was cut is in `docs/DEFERRED.md`, not here.
   small commands proves too slow in practice.
 - **Payments**, one-time cards for example: out of scope. Payment is always a
   hand-off.
+- **A Live2D avatar you can speak to:** not designed yet, and it depends on
+  voice. The web app would render a model with the official Cubism SDK for Web,
+  local TTS would voice it, and the model would direct its expressions and
+  gestures with inline tags in its replies. Check the licenses first: the Cubism
+  Core runtime is proprietary, and avatar models often forbid redistribution, so
+  neither should land in this repository by default.
 - **More than one home session** (another person, another persona). The schema
   allows it; nothing else is built.
