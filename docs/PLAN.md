@@ -307,9 +307,10 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
         (`provider/openai/toolcalls.go`), so the loop mints a unique id per call
         and keeps the backend's id for the wire only. Approval keys
         (phase 4) and entries use Eika's id.
-- [ ] Prefix-stability test: across scripted turns, a restart and a resume, each
+- [x] Prefix-stability test: across scripted turns, a restart and a resume, each
       request's serialised prefix is a byte-prefix of the next, except across a
-      compaction.
+      compaction. (`internal/session/prefix_test.go`; it found two real
+      violations, fixed: see the Log.)
 - [ ] `make live` and the `evals/` skeleton, part 2. Part 1 landed ahead of the
       other items (`evals/README.md`, `evals/live`, `make live`: the tagged
       live test, the report with the server's build and model revision, and the
@@ -1055,6 +1056,75 @@ log.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-10-31: prefix-stability test (branch `prefix-stability`, from `phase-1`;
+  `7c4981d`, `fc67144`, `389b9c0`, the live scenario commit and this entry). The
+  item is ticked. The decisions are in `DECISIONS.md` ("Prefix stability").
+  - The finding to settle first. `runtime.md` was wrong and the `model_calls`
+    report was right: the OpenAI SDK writes the fields it takes from a map
+    (`top_k`, `min_p`, `chat_template_kwargs`, `thinking`, `preserve_thinking`,
+    `id_slot`) in the order the map is walked, so a chat request went out in
+    several byte layouts (a test that sends one request 60 times failed on the
+    second). The Responses provider already sorted. `withExtraFields` now
+    serialises the SDK's own fields and appends the extras by name, for `Stream`
+    and `ChatBody`, without replacing the SDK (`7c4981d`). The byte comparisons
+    are back in `TestLlamaCppRendersTheRequestTheProviderSends`, `ChatBody`'s test
+    and the Responses one; the design says what is now true.
+  - What the test found (`fc67144`), none of it visible to any earlier test:
+    the server loads the session from the database at the start of every run, so
+    the conversation a request sends is read back from entries, and it was not
+    the bytes the previous request had sent. (1) `encoding/json` compacts a
+    `RawMessage` and writes `<`, `>` and `&` as `<...`, so the arguments of
+    a tool call (`a && b > f`, whitespace, a key order) and a reasoning item came
+    back changed. (2) The payload column was `jsonb`, which reorders keys by
+    length and adds a space after every colon, so even `{"path":"/tmp"}` came back
+    as `{"path": "/tmp"}`. Every tool call of an earlier turn was therefore a
+    different prefix on each new user message: the cache was lost at the first
+    tool call, and the bench's `context_block_prefix` and `agent_loop` never saw
+    it because they hold the conversation in memory. Fix: `arguments_text` (the
+    exact text, only where `encoding/json` would change it), reasoning items stored
+    as strings where they would change (`provider.ReasoningItems`), and migration
+    `0010` making the payload `json`. Wire change: `make contract`, `http.md`, the
+    web type. The earlier Responses decision that accepted `jsonb` is amended.
+  - The test (`389b9c0`). `internal/session/prefix_test.go`, the fake server in
+    `prefix_server_test.go`, run on a JSON entry store everywhere and on
+    PostgreSQL under the docker tag (`prefix_docker_test.go`), under `chat` and
+    `responses`, with `preserve_thinking` on and off. The script and the
+    relations it checks are in `DECISIONS.md`. Exempt, with its reason: the output
+    limit that `fit` lowers (the test fails if `fit` never lowers it, so the
+    exemption is exercised). `id_slot` is not in the list: this test sends no slot
+    (the endpoint takes no hints), and the slot affinity tests cover the field.
+    `fit`'s lowering changes nothing the fake template, or llama.cpp's cache,
+    reads (live scenario below). Also checked: a failed attempt and a refused call
+    extend the last accepted request, a retry repeats its failed attempt, the
+    summary request shares the previous request's prefix, the prompt the counter
+    had rendered is the prompt the call reads (under `responses` that is the
+    server's conversion of the input, with zero drift), and the chain holds again
+    from the first request after a compaction.
+  - Not covered, on purpose: a change of `preserve_thinking` or of the thinking
+    switch between runs changes the prefix by design and is not a violation; the
+    approvals and notices of phase 2 join the script when they exist; the test
+    has no inference queue, so no `id_slot`.
+  - Live: `prefix_across_compaction` and its `responses_` twin
+    (`evals/live/prefix.go`): five turns, the loop's state rebuilt from stored
+    entries before the third and again with a compaction between the third and
+    fourth, an output limit of its own for each loop, every call exact with zero
+    drift and at least 90% of the previous prompt found cached, the cold call
+    after the compaction reported. Each loop's different output limit is also the
+    live check that the server ignores the limit `fit` lowers. NOT RUN against the
+    bench: the SSH forward listened on 127.0.0.1:8091 but the server behind it
+    reset every connection (`/health` failed for over half an hour while this
+    item was worked), and the bench is not ours to restart. The scenario is
+    tested on the fake chat server (it passes, and fails on a lost prefix after a
+    restart or after the compaction); `make live` must run it, both protocols,
+    before the Phase 1 live suite closes, and the numbers of that run belong in
+    the next Log entry.
+  - `make check` passes on the final commit. `make smoke` passes (2 specs; the
+    migration changed the run path).
+  - For later items. The home session's compaction (phase 2) and the preamble
+    entry must keep the invariant: the test's compaction is Pi's manual one, so a
+    new compaction path adds a step to the script. Any new field of `Message`
+    that holds JSON must survive `survivesEncoding`.
 
 - 2026-10-31: loop hardening (branch `loop-hardening`, from `phase-1`; `3c2137b`,
   `48b9b2f`, `e4dafbc`, `742a14b`, `34d95fc`, `2953f8e`, `c32f343` and this entry).
