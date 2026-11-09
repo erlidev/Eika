@@ -89,7 +89,7 @@ func newChatServer(t *testing.T, replies ...reply) *chatServer {
 			}
 			_, _ = fmt.Fprintf(w, `{"tokens":[%s]}`, strings.TrimSuffix(strings.Repeat("7,", count), ","))
 			return
-		case "/v1/chat/completions":
+		case "/v1/chat/completions", "/v1/responses":
 		default:
 			bench.Config.Handler.ServeHTTP(w, r)
 			return
@@ -108,10 +108,29 @@ func newChatServer(t *testing.T, replies ...reply) *chatServer {
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
+		if r.URL.Path == "/v1/responses" {
+			_, _ = fmt.Fprint(w, responsesSSE(replies[n]))
+			return
+		}
 		_, _ = fmt.Fprint(w, sse(replies[n]))
 	}))
 	t.Cleanup(cs.Close)
 	return cs
+}
+
+// responsesSSE uses the same scripted measurements in the Responses wire
+// shape. Cached usage is absent unless the script states it.
+func responsesSSE(r reply) string {
+	usage := map[string]any{"input_tokens": r.prompt, "output_tokens": r.completion, "total_tokens": r.prompt + r.completion}
+	if r.usageCached != nil {
+		usage["input_tokens_details"] = map[string]any{"cached_tokens": *r.usageCached}
+	}
+	text, _ := json.Marshal(map[string]any{"type": "response.output_text.delta", "delta": r.text, "output_index": 0, "content_index": 0})
+	done, _ := json.Marshal(map[string]any{"type": "response.completed", "response": map[string]any{
+		"id": "resp_test", "status": "completed", "usage": usage,
+		"output": []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": r.text}}}},
+	}})
+	return fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\nevent: response.completed\ndata: %s\n\n", text, done)
 }
 
 // sse renders a reply as llama.cpp streams it: a delta with the text, the

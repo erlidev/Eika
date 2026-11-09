@@ -10,6 +10,7 @@ import (
 
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/counter"
 )
 
 // The scenarios of the inference queue run its leases on a pool of their own
@@ -92,11 +93,13 @@ func QueuePriority(nonce string) Scenario {
 	return Scenario{
 		Name: "queue_priority",
 		Run: func(ctx context.Context, t *Target) ([]Call, error) {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
 			q := inference.New(nil)
 			q.SetPools([]inference.Pool{{Name: "bench", Slots: 1}})
 			system := fmt.Sprintf("Session %s. Answer with one short word.", nonce)
 
-			holder, err := q.Acquire(ctx, inference.Need{Pool: "bench", Priority: inference.Foreground})
+			holder, err := q.Acquire(ctx, inference.Need{Pool: "bench", Priority: inference.Foreground, SessionID: "background"})
 			if err != nil {
 				return nil, err
 			}
@@ -109,9 +112,16 @@ func QueuePriority(nonce string) Scenario {
 				errs  []error
 				wg    sync.WaitGroup
 			)
+			defer func() {
+				cancel()
+				holder.Release()
+				wg.Wait()
+			}()
 			line := func(label string, priority inference.Priority) {
+				session := *t
+				session.Counter = counter.New(t.Source)
 				wg.Go(func() {
-					call, err := leased(ctx, t, q, inference.Need{Pool: "bench", Priority: priority},
+					call, err := leased(ctx, &session, q, inference.Need{Pool: "bench", Priority: priority, SessionID: label},
 						label, quietRequest(system, "Say "+label+"."), func() {
 							mu.Lock()
 							order = append(order, label)

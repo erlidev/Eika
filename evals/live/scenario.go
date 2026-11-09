@@ -26,6 +26,10 @@ func Scenarios() []Scenario {
 	return []Scenario{
 		ProviderProbe(),
 		CacheReuse(nonce),
+		UsageFields(nonce),
+		OnResponses(UsageFields(nonce)),
+		CountingConversation(nonce),
+		OnResponses(CountingConversation(nonce)),
 		ToolsAndReasoning(nonce),
 		ImageInput(),
 		CountCost(nonce),

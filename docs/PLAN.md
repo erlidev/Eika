@@ -311,20 +311,9 @@ Exact token numbers, model classes, and one queue for the GPU. Design:
       request's serialised prefix is a byte-prefix of the next, except across a
       compaction. (`internal/session/prefix_test.go`; it found two real
       violations, fixed: see the Log.)
-- [ ] Phase 1 live suite, on the bench's chat model. Part 1 of the `make live` and
-      `evals/` item landed ahead of the others (`evals/README.md`, `evals/live`,
-      `make live`), and the items since added their scenarios to `Scenarios()`.
-      `make live` passes on the 22 scenarios the Responses item recorded, before
-      the later items added theirs. Remaining:
-      - exact counting: `/apply-template` plus `/tokenize` equals `prompt_tokens`
-        under `chat`, and `input_tokens` under `responses`, over a scripted
-        conversation with tools, reasoning, images and a compaction
-      - `prefix_across_compaction` run on the bench for the first time
-      - usage fields: whether `prompt_tokens` counts cached tokens, and NULL
-        where a field is missing
-      - a full `make live` once `llama-qwen` is running again (the owner frees
-        the server: `llama-server` holds the GPU, see the Log of 2026-11-01), with
-        the result recorded
+- [x] Phase 1 live suite, on the bench's chat model. `make live` passed
+      with the counting conversation, compaction prefix and usage field
+      scenarios on both protocols. The results are in the Log.
 
       Cut on 2026-11-01 (`docs/DEFERRED.md`): the runner-driven suites, namely
       TabbyAPI, the `partitioned` run and the `--no-cache-idle-slots` slot affinity
@@ -684,6 +673,46 @@ log. Work that was cut is in `docs/DEFERRED.md`, not here.
 Newest first. One entry per session: date, items done (commit hashes), the
 `make check` and `make live` results, anything skipped and why, and findings for
 later items.
+
+- 2026-11-09: Phase 1 live suite completed on `phase1-live-suite` from
+  `phase-1`; no commit. Added `counting_conversation` and `usage_fields` for
+  chat and Responses, and ran `prefix_across_compaction` on both protocols.
+  - The bench stopped `llama-server`, ran `llama-qwen`, and restored
+    `llama-server`. The server build was `b11942-338fce651`; the model was
+    `qwen3.8-27b` (`Qwen3.8-27B-UD-Q4_K_XL.gguf`), revision
+    `4ca720788d1e01f1bff70c033e0d0028fd02e502`.
+  - Full `make live` passed (38 PASS, 0 FAIL). Every exact call had zero
+    drift. The image estimate had drift -6; the next anchored prediction had
+    drift 0. Both `usage_fields` protocols recorded `prompt_includes_cached`
+    as true. `queue_priority` passed.
+  - Exit check: the live checks passed. The owner still must compare the
+    meter with the server logs by hand.
+
+- 2026-11-09: remaining live scenarios prepared on `phase1-live-suite`; no
+  commit and the live-suite item stays UNTICKED.
+  - Added `counting_conversation` and `responses_counting_conversation` using
+    the existing tool and reasoning history, picture helper, and session
+    compaction fold. The summary and cut are fixed; the existing
+    `prefix_across_compaction` scenarios test the real summary calls. The
+    bench's image routes count text only, so image calls use a measured cost
+    and stay `anchored`, never `exact`.
+  - Added `usage_fields` and `responses_usage_fields`: a positive cache hit
+    verifies whether the rendered prompt count includes cached tokens. The
+    report records `prompt_includes_cached`; unmeasured fields stay `null`.
+    Offline tests cover missing fields and inconsistent counts.
+  - `prefix_across_compaction` was already registered for both protocols;
+    added Responses pass and lost-prefix tests. `queue_priority` was already
+    registered; it now names its two sessions, gives them separate counters,
+    and cancels and joins waiting calls on an early failure.
+  - The requested checks ran: formatting, Go lint, web lint, type checks,
+    web tests (475), and `go vet ./evals/...` pass. The in-process token-server
+    conversation test and report tests pass. `test-go` cannot pass here:
+    local HTTP listeners and Docker socket access return operation not
+    permitted. Both eval packages compile with the `live` tag without running
+    live scenarios. `make check`, `make live`, `make smoke`, and `make visual`
+    were not run, as requested. No bench connection or model revision was
+    measured. The owner must run the full suite, record the bench revisions
+    and results, and compare the meter with the server's logs by hand.
 
 - 2026-11-01: plan cut down (branch `plan-cut`, from `phase-1`). No code changed
   but one comment. 140 open items became 68, and everything cut is in
