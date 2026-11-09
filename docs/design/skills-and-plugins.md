@@ -124,14 +124,21 @@ agents reach it:
 
 ### Permissions
 
-The defaults come from MCP tool annotations, which `sentry.md` 3 maps to effects.
-The Plugins page shows, per tool, the effect and the verdict that follows from it,
-and lets the user change the effect or block the tool (`sentry.md` 5).
+Each tool has a setting: `allow`, `ask` or `block`. The default comes from the
+tool's MCP annotations: `readOnlyHint` gives `allow`, and anything else gives `ask`.
+The Plugins page shows the setting per tool and lets the user change it. An
+approval card's "always" changes it too, or pins one argument, such as a recipient
+(`sentry.md` 5 and 7). A server that marks a sending tool read-only gets it
+allowed, which is why the page lists every tool's setting when a plugin is added.
+
+A plugin can be marked trusted: its results are still scored by the screen, and
+nothing is removed from them. It suits a plugin that holds only the user's own
+notes.
 
 ### Result filtering
 
 Every result goes through ingest (`sentry.md` 6): secret redaction, one-time-code
-removal (for mail and messaging plugins) and wrapping. Audio and images in results
+removal (for mail and messaging plugins), the injection screen and wrapping. Audio and images in results
 keep today's handling: kept in details, replaced in the model's text.
 
 ### Elicitation and OAuth

@@ -522,7 +522,6 @@ entries are kept. Changes:
   - `state`: `idle`, `running`, `waiting`, `failed` or `cancelled`, set by code.
   - `brief`: a subagent's first brief.
   - `result`: a subagent's latest report.
-  - `sensitive`: fixed at creation (`sentry.md` 6).
   - `last_active_at`.
   It loses `computer_id`, `tools`, `profile_id` and `overrides`.
 - Entry kinds gain `preamble` (the snapshot above) and `notice` (harness text shown
@@ -560,7 +559,6 @@ renovation", "Job search", "Taxes 2026", "Eika itself". It holds:
 | `name`, `slug`, `description` | Identity. The description is the one line the main agent's preamble lists |
 | `status` | `active`, `paused`, `done` or `archived`. Only active projects appear in the home preamble |
 | `instructions` | User-written text. Agents read it and never write it |
-| `private` | Set by the user. A session in the project is `sensitive` (`sentry.md` 6) |
 | `directory` | Where its files live, by default `/home/eika/projects/<slug>` on the `home` computer |
 
 A project's living summary is a `STATUS.md` in its directory, which its workers keep
@@ -628,17 +626,19 @@ assignment.
 - **Reports.** A run that ends without calling `report` is sent one message in its
   own session: "Draft your report now with the report tool." If it still does not
   call `report`, its final message becomes the report, as the removed spawner's
-  `summaryOf` did (`PLAN.md` log, "phase 0 notes for later phases").
+  `summaryOf` did (`PLAN_LOG.md`, "phase 0 notes for later phases").
   Every report becomes a notice in Eika's next `<context>`: "plumber (worker)
   reported: <summary>; follow-ups: …", and starts a background turn on the home
-  session, where Eika tells the user what matters.
+  session, where Eika tells the user what matters. A report and a question pass
+  the injection screen on the way (`sentry.md` 6), since a subagent may have read
+  something hostile; a removed part shows as `[removed:suspect]`.
 - **Questions** a subagent asks with `ask_user` go to Eika. The subagent parks
   (`waiting`), the question becomes a notice, and a background home turn starts.
   Eika answers with `subagent_message`, or asks the user in its reply and relays the
   answer. Eika decides what the user needs to see.
-- **Approvals** a subagent needs go to the Inbox through Sentry, not through Eika.
-  To the subagent this is a slow tool call. The board shows it as waiting on the
-  user, and no notice is sent.
+- **Approvals.** No built-in subagent has a tool that asks (`sentry.md` 5). If one
+  ever does, the approval goes to the Inbox through Sentry, not through Eika: a
+  slow tool call to the subagent, and "waiting on the user" on the board.
 - **Wakeups** a subagent sets with `wake_me` resume that subagent, not the home
   session.
 - **The board** is a deterministic section of every home compaction summary

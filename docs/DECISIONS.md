@@ -41,8 +41,9 @@ for each piece.
   interface. Rejected: keeping the container for defence in depth, since it buys
   little until the Docker socket proxy exists; they return together. This reverses
   the 2026-10-29 decision.
-- **The reviewer is deferred, so external effects ask.** This reverses the 2026-10-30
-  decision to land it in phase 4 on the emulated backend. The review moved it there
+- **The reviewer is deferred, so external effects ask.** Narrowed on 2026-11-09 to
+  plugin tools that are not read-only ("Safety without asking", below). This
+  reverses the 2026-10-30 decision to land it in phase 4 on the emulated backend. The review moved it there
   so labels would not become a stream of approvals. With fixed labels, a label only
   changes `bash` and `web_fetch` in private projects, and no agent can send anything
   until plugins, so asks stay low and can be counted from `audit` before deciding.
@@ -50,7 +51,8 @@ for each piece.
   emulation allowing 50% of steered attacks against d3-flash's 17%. The cost is
   real: until then, every external send and delete asks unless an `always` grant
   covers it.
-- **Labels are fixed when a session is created.** Without the reviewer or the browser,
+- **Labels are fixed when a session is created.** Superseded on 2026-11-09: there
+  are no labels ("Safety without asking", below). Without the reviewer or the browser,
   tracking reads changes almost nothing: `eika` has no `bash` or `web_fetch`, so
   only private-project workers feel a label, and those are known at creation. This
   removes `/v1/labels`, `private?`, `suspicious`, and clearing a label at compaction,
@@ -60,12 +62,14 @@ for each piece.
 - **An `always` grant may cover an external send**, matched to one tool and target.
   It used to be barred from a `sensitive` session. Every `eika` session is `sensitive`
   now, so the bar would have left `once` as the only answer to every send, for ever.
+  This stands, without the labels: "always" is how an ask stops.
 - **Plugins come before the scheduler and skills.** They are most of what makes an
   assistant useful, and a routine needs them to have anything to report. They reach
   only `eika`, on the pool Core already has, with no plugin host and one shared
   plugin computer rather than a cell per plugin.
 - **Deferred whole: the browser, the vault and surrogates, the injection screen and
-  Guard, the monitor, dreaming and channels.** The browser is the largest single
+  Guard, the monitor, dreaming and channels.** The screen came back on 2026-11-09
+  ("Safety without asking", below). The browser is the largest single
   build, and search, `web_fetch` and plugins cover most tasks. The vault is only
   needed by the browser and by secrets used from `bash`, and plugin credentials stay
   sealed in Core. The screen is evidence, never a barrier, at 49% on InjecAgent and 22
@@ -80,15 +84,95 @@ for each piece.
 - **Questions go through the chat.** A subagent's question reaches Eika as a notice,
   and Eika asks the user in its reply. `inbox_ask` and the `questions` table were a
   second way for Eika to talk to the user. The Inbox moves to phase 4, since nothing
-  fills it before approvals.
+  fills it before approvals. (It is phase 5 since 2026-11-09: pending memories are
+  the first thing in it.)
 - **Memory keeps Markdown files and git**, against a Postgres-only option that would
   have removed `Reconcile` and the double write. Files the user can read won. Memory is
   global, and only `eika` reads or writes it: subagents get what they need from their
   brief, so there is no project scope, and a project's living summary is a `STATUS.md`
   in its directory.
 - **Phase 1's built work stays**, including what would have been cut had it not been
-  built (`PLAN.md` log, 2026-11-01). It is finished and tested, and removing it would
+  built (`PLAN_LOG.md`, 2026-11-01). It is finished and tested, and removing it would
   be more work and more risk than keeping it. Only further verification was cut.
+
+## Safety without asking
+
+Decided 2026-11-09, before any of phase 4 was built. The cut above left Sentry
+deterministic and made up for the missing reviewer with approvals: a `sensitive`
+label on every `eika` session and every private project, and an ask before a
+labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
+
+- **Approvals are not the safety mechanism.** A user who is asked before every
+  fetch and command in a private project approves without reading within a week,
+  and then the ask protects nothing and still costs attention. Safety has to come
+  from things that run without the user: a screen on what agents read, capability
+  per agent, hard blocks, and halt. Rejected: keeping the asks until the reviewer
+  returns, since the reviewer was to return only when asks had become annoying,
+  which makes the annoyance the plan.
+- **Two things ask, and the list is closed.** A plugin tool that is not read-only,
+  and creating or enabling a routine. Both are deterministic, both are about an
+  effect outside Eika that cannot be undone or an action taken while nobody
+  watches, and both stop: "always" for a tool or for one recipient, and once per
+  routine. Adding a third needs an entry here that says why no rule or screen could
+  do the job.
+- **The injection screen is back, in phase 4, and it removes what it flags.** The
+  cut deferred it as "evidence, never a barrier". That holds, and evidence is still
+  worth having when it costs 55 ms on a CPU, since the alternative on offer was
+  nothing or an ask. It runs on every `web_fetch` result, search result and plugin
+  result, on exactly the text that enters the context, and on subagent reports on
+  their way to `eika`. A window at or over the threshold is replaced by a
+  placeholder and kept in a list the user can read. Rejected: flagging without
+  removing, which needs something downstream to act on the flag, and that was the
+  `suspicious` label and its asks. Rejected: dropping the whole result, since a
+  false positive would then cost a page instead of a paragraph. Rejected: a push per
+  removal, which is the same fatigue by another road.
+- **The screen fails open by default.** With the guard down, content passes
+  wrapped and marked `unscanned`, with a banner and one push. An assistant that
+  stops reading the web when a sidecar restarts is worse than one that reads it
+  with one layer missing for a minute. `screen_required` is the setting for a user
+  who wants the other trade.
+- **Labels are gone, with private projects.** A label's only effect was an ask.
+  `eika`, the agent with the most private data, has no `bash` or `web_fetch` for a
+  label to gate, and for a worker the label meant an approval per command. The
+  honest replacement for "this project must not leak" is a rule, a computer of its
+  own in allowlist mode, which is in `DEFERRED.md` until someone needs it. This
+  also removes `sessions.sensitive`, the project `private` field and the `private`
+  plugin flag before any of them was built.
+- **Reads, commands and egress never ask.** `web_search`, `web_fetch`, `bash`, file
+  tools and connections from a computer are `allow` or `deny`. What a user would be
+  shown on such a card (a URL, a command) is not something they can judge in the
+  two seconds they would give it.
+- **A routine's runs need no grant.** The `routine` scope existed to cover a
+  labelled routine's asks. A routine now asks once, when it is created or enabled,
+  and its runs follow the same rules as any other run.
+- **Memory writes are screened, with no provenance field.** The design looked for
+  instruction-shaped words ("always", "ignore", "you must") outside a span quoted
+  from the user's message in the same turn. A preference Eika paraphrased, or saved
+  a turn later, went pending, and each pending memory is a question to the user; a
+  planted instruction that avoided the words went active. The screen is a trained
+  classifier for the same question. Credentials are still denied by pattern, and a
+  pending memory sits in the Inbox without a push. The phase 5 live suite checks
+  that ordinary preferences do not go pending.
+- **The guard chunks, and it is a plain service.** Windows are counted in the
+  model's tokens, so the tokenizer's owner does the splitting: `POST /screen` takes
+  whole texts and returns scores with byte offsets. Rejected: text-embeddings-
+  inference as the only server, since it truncates each input to one window and
+  would put a ModernBERT tokenizer into Core. Its `/predict` shape is still served,
+  so it can stand in where it works. CPU by default: it keeps the main GPU's memory
+  for the chat model, and a fetch waits longer on the network than on the screen.
+- **What this leaves open is written down, and measured.** A worker that reads a
+  page with `curl`, a planted instruction the screen misses (about half on
+  InjecAgent, more on BIPIA), and an injected `eika` that briefs a researcher to
+  fetch a URL with private data in it. `design/sentry.md` 6 lists them,
+  `evals/injection` counts them with the screen on and off, and `DEFERRED.md` has
+  the rules to add if the counts are bad. None of them is an ask.
+- **Approvals, grants and the Inbox's cards move to the phases that first use
+  them**: phase 11 for approvals, phase 5 for the Inbox page. Phase 4 would
+  otherwise have built an approval flow with no caller and tested it with a
+  test-only tool.
+- **The plan's log is its own file**, `PLAN_LOG.md`, and closed phases are a
+  paragraph in the plan. Every agent that starts an item reads the plan, and most
+  of it had become history.
 
 ## The coding layer is removed
 
@@ -121,7 +205,7 @@ for each piece.
   plan item uses. A computer is made by the harness, stopped by its idle
   stopper, and given its limits by the settings. A project's own computer
   (phase 2) brings back whatever route it needs.
-- What went is recoverable: the `PLAN.md` log names the commit
+- What went is recoverable: `PLAN_LOG.md` names the commit
   (`478ce9c`) that last had the subagent spawner and the preview ticket flow,
   and says which parts phases 2 and 12 reuse.
 

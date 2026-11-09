@@ -10,7 +10,7 @@ where the field converged in 2026:
 - on-demand reads and search
 - agent writes during the session
 - consolidation in the background ("dreaming")
-- provenance gating against poisoning
+- a screen on writes against poisoning
 
 Each idea is credited where it appears. The approaches compared were Claude Code
 auto memory, Codex Memories, Letta Context Repositories, OpenClaw and Hermes.
@@ -62,7 +62,6 @@ Memories are files, and files are the source of truth:
 name: prefers-metric-units
 description: Use when giving measurements, recipes or weather; the user wants metric.
 type: preference
-provenance: user
 source: session:01J9... entry:01J9...
 created: 2026-10-29T14:03:00Z
 updated: 2026-10-29T14:03:00Z
@@ -78,7 +77,6 @@ Exceptions: none so far.
 | `name` | Slug, `^[a-z0-9][a-z0-9-]{0,63}$`, unique; also the file name |
 | `description` | The "when it is relevant" note, 20 to 200 characters. It is the index line, so it must say when to use the memory, not restate it |
 | `type` | `user` (who the user is), `preference`, `person`, `fact`, `procedure` |
-| `provenance` | `user` (the user stated it), `inferred` (an agent concluded it), `external` (flagged as possibly derived from untrusted content; section 6) |
 | `source` | Where it was learned; links back in the UI |
 | `expires` | Optional date for facts that go stale ("the user is travelling until ...") |
 | `pinned` | Loaded in full. At most 12; the total is capped (section 3) |
@@ -110,10 +108,9 @@ Index (memory_read <name> for details, memory_search for anything not listed):
 - **Order** is deterministic: by type, then name, never by score. This keeps the
   same memories in the same bytes, so two compactions share as much prefix as
   possible. A memory past its `expires` date drops out at the next rebuild.
-- Only `state = active` memories with `provenance` `user` or `inferred` appear in
-  the index or as pinned. `external` memories are searchable but never
-  auto-loaded. OpenClaw's rule is that untrusted content cannot launder itself
-  into the always-loaded core.
+- Only `state = active` memories appear in the index or as pinned. `pending`
+  memories are searchable, with a marker, but never auto-loaded. OpenClaw's rule
+  is that untrusted content cannot launder itself into the always-loaded core.
 - Memories written during a session do not change its preamble. The tail notice
   says "memory saved: <name>". A memory the user changed shows as "memory updated
   since this session started: <name>" in the next `<context>`.
@@ -126,7 +123,7 @@ Every write goes to Sentry as a `memory_write` action first.
 |---|---|---|
 | `memory_search` | `query`, `type?`, `limit?` (10) | FTS rank. Returns name, description and the first 200 characters |
 | `memory_read` | `name` | Full file |
-| `memory_write` | `name`, `description`, `type`, `body`, `expires?`, `replace?` | Creates, or replaces when `replace` is true. A name collision without `replace` returns the existing memory so the agent merges instead. Sets provenance by the rules of section 6 |
+| `memory_write` | `name`, `description`, `type`, `body`, `expires?`, `replace?` | Creates, or replaces when `replace` is true. A name collision without `replace` returns the existing memory so the agent merges instead. The write is checked by the rules of section 6 |
 | `memory_forget` | `name`, `reason` | Archives the memory (moves it to `state = archived`, file kept in history). The user's "forget X" maps here; the UI can purge |
 | `history_search`, `history_read` | See `runtime.md` 11 | Search and read every past entry, verbatim |
 
@@ -160,8 +157,8 @@ Other prompts:
   later. There is no flush before compaction, so nothing waits to be saved.
 - Only `eika` writes memories. Subagents have no memory tools: what they learn goes
   in their report, and Eika decides what to save. One writer keeps the write policy
-  in one prompt, and a report that carries injected text meets the provenance checks
-  when Eika saves it.
+  in one prompt, and a report that carries injected text meets the screen twice: on
+  its way to Eika, and when Eika saves from it.
 
 ## 5. Recall
 
@@ -171,34 +168,34 @@ well as or better than an automatic top-k injection. On LongMemEval-V2, Codex wi
 special memory beat the strongest RAG baseline, and Letta's filesystem agent beat
 Mem0's graph variant on LoCoMo. So nothing is injected automatically.
 
-## 6. Provenance and poisoning
+## 6. Poisoning
 
-The write path decides provenance mechanically, never by asking the model:
+A memory in the index is read at the start of every session, so a planted one is
+the attack that lasts. A write never asks the user. It is checked in this order:
 
-Sessions are not labelled for having read untrusted content (`sentry.md` 6), so
-provenance comes from what the write contains, checked in this order:
+| Check at write time | Result |
+|---|---|
+| The body or description holds a credential pattern | The write is denied, with a reason |
+| The injection screen scores the body at or over the threshold (`sentry.md` 6) | `pending`: in the Inbox, searchable with a marker, never in the index |
+| Otherwise | `active` |
 
-| Condition at write time | Provenance | State |
-|---|---|---|
-| The body has instruction-shaped text ("always", "ignore", "you must") outside a span quoted from the user | `external` | `pending`: in the Inbox review queue, searchable with a marker, never in the index |
-| The body's statement is quoted from the user's messages in this turn (every instruction-shaped span lies inside such a quote, checked by substring after normalising whitespace and case) | `user` | `active` |
-| `type = procedure` drawn from a report rather than the user | `inferred` | `pending`, since procedures steer future behaviour |
-| Otherwise | `inferred` | `active` |
+There is no provenance field. An earlier design looked for instruction-shaped words
+outside a span quoted from the user, which sent paraphrased preferences to pending
+and passed an instruction that avoided the words. The screen is a classifier
+trained on that question. An ordinary rule the user states ("always use metric")
+must not go pending, and the phase's live suite checks that it does not; if it
+does, memory writes get a threshold of their own.
 
-The instruction-shape check runs on every agent write, not only on flagged
-ones. A real preference ("always use metric") passes because the user said it,
-and the instruction-shaped words sit inside the quote. Quoting some other part
-of the user's message does not help a body whose instruction comes from
-elsewhere. Secret redaction runs on every write too, and a
-hit denies it.
+The Inbox shows pending memories with their source session. The user accepts,
+edits or rejects, and nothing is pushed: a pending memory can wait.
 
-The Inbox's memory queue shows pending memories with their source. The user
-accepts (provenance becomes `user`), edits, or rejects.
+This is the second screen a planted instruction meets. The first is ingest, on the
+page or plugin result it came from, and on the report that carried it to Eika.
 
 ## 7. Dreaming
 
 Deferred (`DEFERRED.md`). This section is written for the fuller memory it was
-designed with: use counts, a project scope and a `sensitivity` field. The design
+designed with: use counts, a project scope, provenance and a `sensitivity` field. The design
 below is the target if it returns.
 
 Dreaming is consolidation in the background. Agents that only append to memory
@@ -252,7 +249,7 @@ Guardrails:
 
 The Memory page, described in `interface.md`:
 
-- filter by type, provenance and state
+- filter by type and state
 - search
 - edit in a Markdown editor with frontmatter fields as a form
 - pin, archive, purge

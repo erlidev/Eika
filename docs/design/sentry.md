@@ -2,15 +2,17 @@
 
 Sentry is the sole permission authority. Every consequential thing an agent does
 passes through it first: tool calls, plugin calls, memory writes, network egress
-from any container, and outbound messages. The model never sees a real credential.
-Approvals go to the user through the UI and never through the conversation.
+from any container, and outbound messages. It works on its own wherever it can: it
+screens what agents read, blocks a short list of things outright, and asks the user
+only by the two rules of section 5.
 
 **Scope of the first version.** Sentry is a package inside Core
-(`internal/sentry`). It is deterministic, with no model in its path. Sections 1 to 7
-and 10 to 15 describe that version. Sections 8 and 9, the injection screen and the
-monitor are the target for later, marked deferred where they appear, and return as
-`DEFERRED.md` says. They were written for a separate `eika-sentry` container, and
-still read that way.
+(`internal/sentry`). Its decisions are deterministic. The one model in it is the
+injection screen, a small classifier that scores content on the way in and never
+decides an action. Sections 1 to 7 and 10 to 15 describe that version. Sections 8
+and 9 and the monitor are the target for later, marked deferred where they appear,
+and return as `DEFERRED.md` says. They were written for a separate `eika-sentry`
+container, and still read that way.
 
 The design takes the separate host-side Sentinel and surrogate tokens from Meta's
 Muse; the out-of-model check, two-tier sensitive-data classifier and credential
@@ -24,21 +26,22 @@ structure has to contain it.
 |---|---|
 | Isolated | A package in Core's process behind one interface, the `Gate`, held apart by the boundary test. No agent has a route to it: an agent reaches the world only through tools, and the gate decides before a tool runs. It does not protect against a compromised Core, which holds the Docker socket anyway (`README.md`, caveats) |
 | Sole grantor | Core's tool dispatch and plugin calls cannot happen without a `Decide` answer, and every network path out of a computer goes through the proxy |
+| Automatic | Screening, redaction, the hard blocks and halt need no one. Two rules ask the user, and each has a way to stop asking (section 5) |
 | Out of conversation | Approvals are UI objects. The model learns only the outcome |
 | Invisible to the model | Nothing the model reads names Sentry, approvals or permissions, and the agentic loop stays standard (section 4, "What the model sees") |
-| Quiet | The user is asked only about effects outside Eika, and grants carry one answer to many calls (section 5, "Asking less") |
-| Fast | Nothing in the path calls a model |
-| Fail closed | If the gate cannot answer, side-effecting tools return a generic blocked result. Read-only built-ins with no egress keep working |
-| Auditable | Every decision is an append-only audit row |
+| Fast | `Decide` calls no model. Ingest calls the screen, a classifier that takes milliseconds per window (section 13) |
+| Fail closed | If the gate cannot answer, side-effecting tools return a generic blocked result. Read-only built-ins with no egress keep working. The screen is the exception, and fails open unless the user says otherwise (section 6) |
+| Auditable | Every decision that is not a plain allow, and every removal, is an append-only audit row |
 
 ## 2. Process, storage and interface
 
 - **Process.** `internal/sentry` runs in Core. A separate process would protect only
   against a compromised Core, and Core's Docker socket can reach anything such a
   process kept, so the container returns with the Docker socket proxy
-  (`DEFERRED.md`).
+  (`DEFERRED.md`). The screen's model runs in the `guard` service (section 6).
 - **Storage.** Tables in schema `core`, by forward migration: approvals, grants,
-  the blocklist, tool settings, the audit log and the halt state.
+  tool settings, the blocklist, trusted sources, withheld content, the audit log and
+  the halt state.
 - **Credentials.** Third-party credentials stay in Core, sealed with
   `internal/secret`, as MCP OAuth tokens already are.
 - **Interface.** Core calls one Go interface, and `internal/sentry` depends on no
@@ -48,12 +51,13 @@ structure has to contain it.
   type Gate interface {
       // Decide parks on an ask until the user answers or the approval expires.
       Decide(ctx context.Context, a Action) (Verdict, error)
-      // Ingest redacts and wraps one untrusted result before it reaches a model.
-      Ingest(ctx context.Context, source, content string) (string, error)
+      // Ingest redacts, screens and wraps one untrusted result before it reaches
+      // a model.
+      Ingest(ctx context.Context, source Source, content string) (string, error)
   }
   ```
-- **User routes.** Answering approvals, editing grants, tool settings and the
-  blocklist, and halting are ordinary authenticated `/api` routes.
+- **User routes.** Answering approvals, editing grants, tool settings, trusted
+  sources and the blocklist, and halting are ordinary authenticated `/api` routes.
 
 ## 3. Actions
 
@@ -66,47 +70,37 @@ Action {
   principal  {session, run, subagent?, routine?, computer?}
   kind       tool | plugin | egress
   name       tool name, plugin/tool, host
-  effect     read | write | send | delete | pay | account | credential | schedule
-  target     destinations: recipients, domains, paths, memory scope
   args       the call's arguments, or a digest for egress
 }
 ```
 
-`kind` says how `name` is read. Memory writes, routines and messages are tools
-with the matching `effect`. Core registers each run's display names (agent,
+`kind` says how `name` is read. Core registers each run's display names (agent,
 subagent, project) once when the run starts, so cards can name them without every
-action carrying them. There is no `intent` or rationale field.
-
-Built-in tools declare their `effect` and how to read `target` from their
-arguments, in code next to the tool. Plugin tools take effect from MCP
-annotations: `readOnlyHint` maps to read, `destructiveHint` to delete,
-`openWorldHint` to send. Unannotated tools default to `write`. The user can
-override a plugin tool's effect, or block the tool (section 5).
+action carrying them. There is no `intent` or rationale field, and no effect
+taxonomy: the policy is short enough to name tools directly (section 5).
 
 ## 4. Decision pipeline
 
 ```
 decide(action)
-  0 halted?                                    -> deny "halted"
-  1 hard rules (built in, not editable)        -> deny | handoff
-  2 defaults by effect x label, with tool settings and the blocklist
-    (section 5)                                -> allow | ask | deny | handoff
-  3 ask: a matching grant -> allow; otherwise an approval -> UI + push, the call
-    parks                                      -> allow (+grant) | deny
+  0 halted?                                         -> deny "halted"
+  1 a canary in the arguments? (section 8)          -> halt, deny
+  2 a credential in outbound arguments? (section 6) -> deny
+  3 the rule for this action (section 5)            -> allow | ask | deny
+  4 ask: a matching grant -> allow; otherwise an approval -> UI + push, the call
+    parks                                           -> allow (+grant) | deny
 ```
 
-Steps 0 to 2 and the grant lookup need no model. Step 3 may wait on the user. A
-grant only ever stands in for an answer to an `ask`, and never overrides a hard
-rule.
+Nothing here calls a model. Step 4 may wait on the user. A grant only ever stands
+in for an answer to an `ask`, and never overrides steps 0 to 2.
 
 Verdicts:
 
 | Verdict | Effect on the call |
 |---|---|
-| `allow` | Proceeds. Any redaction Sentry returns is applied |
+| `allow` | Proceeds |
 | `ask` | Looks for a matching grant. Without one, creates an approval; the tool parks until the user answers or it expires (default 24 h, then deny) |
 | `deny` | The tool returns a blocked result with a simple reason, so the agent can adapt |
-| `handoff` | Only the user can do this. The result is a blocked result saying so, and an Inbox card tells the user |
 
 ### What the model sees
 
@@ -117,170 +111,161 @@ the standard one: a tool call goes out and a result comes back.
 - **Allowed:** a normal result.
 - **Asked:** the call takes longer. A parked call looks like a slow tool, and
   nothing is added to the context when the user answers.
-- **Blocked** (a `deny`, a `handoff`, an approval the user refused or that
-  expired, a hard rule, Sentry unreachable): one generic result in a fixed shape,
+- **Blocked** (a `deny`, an approval the user refused or that expired, a hard
+  block, Sentry unreachable): one generic result in a fixed shape,
   `Blocked: <reason>`, where the reason is a single plain sentence such as
-  "sending email to outside recipients is not allowed", "this needs the user to
-  do it themselves", "the user declined this" or "this is not available right
-  now". It never names Sentry, rules or grants.
-  The agent adapts, or tells the user.
-- **Redactions** appear as their placeholder (`[redacted:<kind>]`) with no
-  explanation.
-- **The one trace** is the `<untrusted>` wrapper on scanned content and its
+  "this holds something that looks like a credential; send it without", "the user
+  declined this" or "this is not available right now". It never names Sentry, rules
+  or grants. The agent adapts, or tells the user.
+- **Redactions and removals** appear as their placeholder (`[redacted:<kind>]`,
+  `[removed:suspect]`) with no explanation.
+- **The one trace** is the `<untrusted>` wrapper on ingested content and its
   one-line system-prompt reminder (section 6). It marks content as data and names
   no component.
-- Everything else Sentry does (approval cards, alerts, the audit log, the halt
-  button) is shown to the user only.
+- Everything else Sentry does (approval cards, the withheld list, the audit log,
+  the halt button) is shown to the user only.
 
 ## 5. Policy
 
-### Hard rules
+The whole policy is this table. There are no labels, no effect classes and no rule
+language.
 
-These are built in and cannot be switched off or granted:
+| Action | Verdict |
+|---|---|
+| Built-in tools that stay inside Eika: files, `bash`, memory, history, projects, subagents, wakeups, notifying the user | allow |
+| `web_search`, `web_fetch` | allow, unless the host is blocklisted. The result goes through ingest (section 6) |
+| An egress connection from a computer | allow or deny, never ask (section 10) |
+| A plugin tool set to `allow` | allow. The result goes through ingest |
+| A plugin tool set to `ask` | ask |
+| A plugin tool set to `block` | deny |
+| Creating or enabling a routine | ask |
+| Any call while halted, any call holding a canary, an outbound call holding a credential | deny (section 4, steps 0 to 2) |
 
-- Deny moving money between accounts, trading securities, and acting in someone
-  else's account (from Duet's list). Plugin tools can be marked as such.
-- Hand off creating accounts, changing passwords or 2FA, entering payment details,
-  and accepting legal terms. Plugin tools can be marked as such.
+### What asks
 
-Agents cannot change their own permissions, because nothing lets them: there is
-no agent tool for grants, tool settings or the blocklist, and a routine an agent creates
-starts disabled and is itself an `ask` (`scheduler.md`). So this is structure,
-not a rule to check.
+Two things, and each can stop:
 
-### Defaults by effect and label
+1. **A plugin tool that is not read-only.** A plugin tool's setting defaults from
+   its MCP annotations: `readOnlyHint` gives `allow`, and everything else gives
+   `ask`, since an unannotated tool may send, change or delete something outside
+   Eika. The approval card offers "always" (section 7), and the Plugins page sets
+   any tool to `allow`, `ask` or `block`.
+2. **Creating or enabling a routine** (`scheduler.md` 5). A routine acts later,
+   without the user watching, so its schedule and prompt are confirmed once. Its
+   runs are decided like any other run.
 
-A session is **labelled** when it is `sensitive` (section 6).
+A third kind of ask may only be added with a `DECISIONS.md` entry that says why no
+rule or screen could do the job.
 
-| Effect | clean | labelled |
-|---|---|---|
-| read | allow | allow |
-| write own data (project files, memory) | allow | allow |
-| send to the user (notify, own channels) | allow | allow |
-| send external (email, post, message) | ask † | ask † |
-| delete external | ask † | ask † |
-| schedule (create or enable a routine) | ask | ask |
-| egress (a connection) | allow | allow |
-| web search | allow | allow ‡ |
-| `web_fetch` | allow | ask † |
-| run a command or script (`bash`) | allow | ask † |
-| pay, account, credential | handoff | handoff |
+### What never asks
 
-† The reviewer takes these rows when it returns (section 9), and asks the user only
-when it is unsure.
+Reading the web, running commands, writing files, reaching a new host and saving a
+memory never wait on the user. This is on purpose. A prompt for every fetch or
+command trains the user to approve without reading, and then protects nothing. What
+stands in for those prompts:
 
-‡ `eika` has no other way to look something up, and its sessions are always labelled,
-so `ask` here would mean a prompt for every search. The cost is that a private fact
-can reach a search engine in a query. The reviewer takes this row too.
+- the screen on what agents read (section 6)
+- capability per agent: only `eika` has memory and plugins, and `eika` has neither
+  `bash` nor `web_fetch` (`runtime.md` 6)
+- the hard blocks: credentials outbound, canaries, the blocklist, netguard
+- halt, and the audit log
 
-**What a label costs.** `eika` has neither `bash` nor `web_fetch`, so the only actions
-a label changes are `bash` and `web_fetch` in private projects. A project is marked
-private on purpose, and an `always` grant covers the project's `bash` if the asks get
-in the way. Memory writes follow the provenance rules of `memory.md` 6 on top of this
-table.
+What it leaves open is in section 6, "What this does not stop".
 
-### Tool settings and the blocklist
+### The user's controls
 
-There is no rule language. The user's controls over policy are:
-
-- **Grants** (section 7): a standing yes to a narrow `ask`.
-- **Tool settings.** For each plugin tool the Plugins page shows its effect and
-  the verdict that follows, and lets the user change the effect (for a tool that
-  is mislabelled) or **block** it, so that a call returns a blocked result.
+- **Tool settings.** `allow`, `ask` or `block` per plugin tool, on the Plugins page.
+- **Grants** (section 7): a standing yes to one tool with one argument pinned.
 - **The blocklist.** Hosts and sites the user never wants reached. It applies to the
-  egress proxy, `web_fetch` and hosted search. Everything else is allowed.
-- **Private projects** (`runtime.md` 8), which decide what labels a session.
+  egress proxy, `web_fetch` and hosted search.
+- **Trusted sources.** A host or a plugin whose results are scored but never
+  removed (section 6).
+- **The screen's threshold and `screen_required`** (section 6).
 
-Rules (match rows with verdicts) were dropped: grants, defaults and tool settings
-cover what they were for, with one fewer concept to learn and no precedence to
-get wrong.
+Agents cannot change any of these: there is no agent tool for grants, tool
+settings, trusted sources or the blocklist.
 
-### Asking less
+## 6. Ingest, the injection screen and outbound content
 
-Eika should run for long stretches without the user. The levers, in the order an
-action meets them:
+### No labels
 
-1. **Only effects outside Eika reach the user.** Reads, own-file writes, egress, and
-   in sessions that are not labelled `bash` and fetches never ask.
-2. **One answer covers many calls.** An `always` grant is narrow, for one tool and
-   target, and turns one answer into every later one (section 7).
-3. **An approval does not stop other work.** Subagents run in parallel and Eika
-   carries on with other lines.
-4. **The model asks little, and about intent.** Eika's and the subagents' prompts
-   say to decide small details themselves and state the assumption in the reply or
-   report. They ask when it is unclear what the user wants in a way that changes
-   the result, and the prompt cautions them about irreversible actions
-   (`runtime.md` 6). That caution is guidance to the model, not a factor in
-   Sentry's decisions.
+Sessions carry no taint. Earlier designs marked a session `sensitive` when it could
+hold private data, and asked before its fetches and commands. That turned every
+private project into a stream of approvals, which is the fatigue this design
+avoids, and `eika`, which holds the most private data, has no `bash` or `web_fetch`
+to gate. So nothing is tracked per session. Untrusted content is handled where it
+enters, and external effects are handled where they leave.
 
-The audit log shows how many asks there are, which is what decides whether the
-reviewer returns (`DEFERRED.md`).
-
-## 6. Taint, ingress scanning and outbound content
-
-### Labels
-
-Taint tracks one thing: whether a session may hold sensitive data. It is a fact about
-the session, fixed when the session is created, and nothing tracks reads:
-
-```
-sensitive = the session runs agent `eika`, or belongs to a private project
-```
-
-A session of `eika` holds memory, the user's instructions and plugin output, so it is
-always `sensitive`, and a report needs no label of its own to reach it. A worker in a
-private project is `sensitive` because of what it can read. A `researcher` has no
-private data by construction, and a worker elsewhere reads only its project.
-`sessions.sensitive` shows it in the UI. Compaction does not touch it.
-
-Untrusted content (web pages, search results, plugin output, downloads) does not
-label a session. It is wrapped when it enters (below). A label for "has read
-untrusted content" was considered and dropped: nearly every useful session reads the
-web, so it would have marked almost everything.
-
-The rule of two becomes this: a session holding sensitive data needs the user before
-an external effect.
-
-Labels go to the decision path and never to the model, which learns nothing about
-them.
-
-Current caveat: a session that is not labelled and reads an injected page can still
-do what the defaults allow without asking, such as writing its own files or reaching
-a new host. External sends and deletes still ask.
-
-Dynamic labels, with a `suspicious` flag from the injection screen, are deferred
-(`DEFERRED.md`). They are also where finer tracking would go. CaMeL-style per-value
-capabilities would be more precise still, but they need a planner-interpreter
-architecture and roughly three times the tokens (Google DeepMind, 2025).
-
-### Ingress
+### Ingest
 
 `Gate.Ingest`, called by Core for every result from an untrusted source before it
 enters a model's context:
 
 1. **Secret redaction** (deterministic). It scans with gitleaks-style patterns for
    well-known key formats. Matches are replaced by `[redacted:<kind>]`.
-2. **One-time codes** (deterministic, from phase 11). Content from mail and messaging
+2. **One-time codes** (deterministic, with plugins). Content from mail and messaging
    plugins has one-time codes, password-reset links and magic sign-in links removed
    (Muse's email connector does the same). The agent learns "a sign-in code arrived"
    but never the code.
-3. **Wrap.** The result returns as
+3. **The screen.** The text that is about to enter the context goes to the `guard`
+   service, which splits it into windows of 512 tokens and scores each. A window at
+   or over the threshold is replaced by `[removed:suspect]`. The rest is untouched.
+4. **Wrap.** The result returns as
    `<untrusted source="web:example.com" id="...">...</untrusted>`, with a
    one-line reminder in the agent's system prompt that such content is data, never
-   instructions. This is the only trace of the layer the model sees.
+   instructions.
+
+What goes through it:
+
+| Source | Redact | Screen | Wrap |
+|---|---|---|---|
+| `web_fetch` results | yes | yes | yes |
+| `web_search`, each result on its own | yes | yes | yes |
+| Plugin results | yes | yes | yes |
+| A subagent's report and questions, on their way to `eika` | yes | yes | no: a wrapped report would teach Eika to distrust its own subagents |
+| A memory body at write (`memory.md` 6) | a hit denies | a hit makes it pending | no |
+| A routine's prompt at creation, a skill at install | no | a hit is shown on the card or the install page | no |
+| `bash` output and file reads | no | no | no (below) |
+
+The screen runs after the tool's own truncation, on exactly the bytes the model
+will get, so there is no sampling and no part of a long page goes unscored.
+
+**A removal** writes the removed text to `core.withheld` with its source, session
+and score, adds an audit row, and marks the tool's card in the UI. It sends no push
+and stops no run. The user finds it under Settings, Security, where each entry can
+be read and its source trusted.
+
+**Trusted sources.** A host or a plugin the user trusts is still scored and logged,
+and never has anything removed. It is the way out of a false removal on a site the
+user reads often, or a plugin that holds only the user's own notes.
+
+**When the guard does not answer**, content passes wrapped and marked `unscanned`,
+a banner shows in the UI, and one push goes out when the state changes. The setting
+`screen_required` turns this around: tools whose results need screening return a
+blocked result until the guard is back. The default favours a working assistant,
+because the screen is one layer among several and not the barrier.
+
+### The `guard` service
+
+A small Python service in the stack (`guard/`), on a network only Core can reach,
+with the model baked into the image at a pinned revision so it needs no network.
+
+```
+POST /screen {"texts": ["...", ...]}
+  -> {"results": [{"windows": [{"start": 0, "end": 1873, "score": 0.02}, ...]}, ...]}
+GET /health -> {"status": "ok", "model": "<name>@<revision>", "device": "cpu"}
+```
+
+It owns the tokenizer, so it does the chunking: 512-token windows, no overlap,
+scored in batches of 64, with byte offsets into the text it was given. It also
+serves text-embeddings-inference's `/predict`, so a TEI deployment that can load
+the model may replace it. `EIKA_GUARD_URL` points Core at another instance, such as
+one on a GPU.
 
 ### Injection screen model
 
-Deferred (`DEFERRED.md`). When it returns, it runs between steps 2 and 3 of ingress:
-content is chunked to the classifier's window (512 tokens for the recommended model)
-and scored in parallel by the Guard sidecar, and a document's score is its highest
-window's. Content above 64 KiB is scored on its first and last 16 KiB plus 8 sampled
-chunks, with the byte ranges chosen before tokenizing. A hit does not block: it wraps
-the content with a warning, sets a `suspicious` flag on the session, and raises an
-alert. If Guard is down, content is wrapped and marked `unscanned`, never dropped.
-
-Eika calls whichever classifier endpoint is configured and does not choose the
-model. This subsection is a recommendation, from our measurements.
+Eika calls whichever classifier endpoint is configured. The `guard` image ships the
+recommendation below, from our measurements.
 
 Recommended: `Horizon-Labs/prompt-injection-guard-small` (Apache-2.0, 141M,
 ModernBERT, labels `SAFE` and `INJECTION`), flagging at 0.9. The `-base` model (308M,
@@ -319,11 +304,13 @@ What the numbers mean for this layer:
   of renewable energy?" inside an email) are caught 20 to 40% of the time,
   persuasion jailbreaks (PAIR) about 18%, and random-search jailbreaks score high
   but mostly under 0.9. Horizon was trained on LLMail-Inject and in-the-wild
-  jailbreaks, so those sets do not measure it. The screen is evidence for the
-  `suspicious` flag, never the barrier.
-- **Thresholds are per model.** The flag threshold is a setting. 0.9 gave 1% false
-  positives on the benign set for the small model (0.93 for base). At 0.5 it flags
-  4 to 8% of ordinary email.
+  jailbreaks, so those sets do not measure it. The screen lowers how much hostile
+  text reaches a model. It is not a barrier, which is why capability per agent and
+  the hard blocks do not depend on it.
+- **Thresholds are per model.** The removal threshold is a setting. 0.9 gave 1%
+  false positives on the benign set for the small model (0.93 for base). At 0.5 it
+  flags 4 to 8% of ordinary email. A false removal costs one window of a page, about
+  350 words, and the withheld list shows it.
 - **Windows need no overlap with Horizon.** A payload split so only its first 6
   tokens fall in one window is still caught 99% of the time (Prompt Guard 2: 48%).
   A model that fails this test needs windows overlapping by half.
@@ -332,54 +319,84 @@ What the numbers mean for this layer:
   int8 ONNX flipped one decision in five for Prompt Guard 2, so an int8 build
   should be compared with bf16 decisions before it is trusted.
 - **Provenance is thin.** The publisher appeared in September 2026, so these
-  results hold for the revision measured; `evals/sentry/screen` is the way to
-  check another revision or model.
+  results hold for the revision measured, the image pins that revision, and the
+  model runs without network access. The suite that produced these numbers returns
+  as `evals/screen` when another revision or model is to be checked
+  (`DEFERRED.md`).
+
+### What this does not stop
+
+The screen misses things, and nothing asks about reads or commands, so these stay
+possible. `evals/injection` measures how often.
+
+- **An instruction the screen misses, in a worker.** The worker can run commands
+  and reach any public host that is not blocklisted, so it can send out what it can
+  read: its project's files and its brief. A project that holds something that must
+  not leak wants a computer of its own in allowlist mode (`DEFERRED.md`).
+- **An instruction the screen misses, in what `eika` reads** (a search result, a
+  plugin result, a report). Eika cannot run commands or fetch, but it can brief a
+  researcher, and a brief can carry private data into a URL. Plugin tools that are
+  not read-only still ask, so an injected send reaches a card, unless a grant
+  already covers that tool and argument.
+- **A page a worker reads with `curl`** instead of `web_fetch`. Command output is
+  not screened, since the model was not measured on logs and code and a false
+  removal there costs a working command. The worker's prompt says to read pages
+  with `web_fetch`, and its report is screened either way.
+- **A program already running**, or a script the agent wrote earlier, reaching a
+  host (section 10).
+
+The next step for any of these is another rule or a narrower capability, never an
+ask (`PLAN.md`, open questions).
 
 ### Outbound content
 
-Every `send` action's content is checked deterministically:
+The arguments of calls that leave Eika are checked deterministically: a plugin
+call's arguments, a `web_fetch` URL and a `web_search` query.
 
-- **Never share**: credentials, by the patterns ingress uses. The verdict is `deny`,
-  with a reason the agent can act on: rewrite without them.
+- **Never share**: credentials, by the patterns ingest uses. The verdict is `deny`,
+  with a reason the agent can act on: send it without them.
 
-Other sensitive formats (card, account and ID numbers) are not checked. A hard deny
-would stop Eika sending the user's own account number to their accountant
-(`DEFERRED.md`).
+`bash` commands and file writes are not checked, since a command may hold a key the
+user gave the agent to use. Other sensitive formats (card, account and ID numbers)
+are not checked either: a hard deny would stop Eika sending the user's own account
+number to their accountant (`DEFERRED.md`).
 
-## 7. Grants and approvals
+## 7. Approvals, tool settings and grants
 
-### Grants
-
-A grant is a capability: `{match, scope, expires, created_by_approval}`. `match` is
-a tool or plugin-tool name and a target pattern (a recipient, domain or path
-glob), copied from the approved action and optionally widened by the user, such as
-every recipient at one domain. Scopes come
-from Muse:
-
-| Scope | Lifetime |
-|---|---|
-| `once` | This action key only |
-| `routine` | Every run of one routine; created when the user enables it |
-| `always` | Until revoked. Matched to one tool and one target. For `bash` the target is the project. Not offered for delete or schedule |
-
-Grants are listed in the UI by tool and target, and are revocable at once.
-Revoking a grant does not undo an action already taken. The UI says so.
+These arrive with plugins, the first thing that asks.
 
 ### Approvals
 
 An approval is a durable row in `core.approvals`:
-`{id, action, reason, created, expires, state, answer}`.
+`{id, action, created, expires, state, answer}`.
 
-- The UI card shows the agent and subagent, the action in plain words, the full
-  destination and every recipient, the content, why it was asked, and whether the
-  session is labelled. This follows Duet.
-- The answers are: approve once, always (when the scope allows), deny, and deny and
-  cancel the subagent.
+- The card shows the agent, the plugin and tool in plain words, and the arguments
+  in full, every recipient included. This follows Duet. A routine's card shows its
+  schedule in words, its next five times and its prompt.
+- The answers are: once, always for this tool, always when one argument has this
+  value, and deny.
 - An answer is accepted only through the user's authenticated API. No agent has a
   route to it.
 - Each approval sends a push (`interface.md` 4). Expiry denies.
+- An approval does not stop other work: subagents run in parallel and Eika carries
+  on with other lines.
 - A restart ends the run behind a pending approval (`runtime.md` 5), and the approval
   expires with a note on its card. Eika can ask again when it resumes the work.
+
+### Standing answers
+
+| Answer | What it stores | Offered when |
+|---|---|---|
+| Once | Nothing | Always |
+| Always for this tool | The tool's setting becomes `allow` | The tool is not annotated destructive. The Plugins page can still set such a tool to `allow`, as a deliberate act |
+| Always when `<argument>` is `<value>` | A grant: `{plugin, tool, argument, value, created_by_approval}` | The call has a short string argument to pin, such as a recipient or a calendar. The user picks which |
+
+A grant matches a call to the same tool whose pinned argument has exactly that
+value. Grants and tool settings are listed together by plugin and tool, and are
+revocable at once. Revoking does not undo an action already taken. The UI says so.
+
+There are no scopes: `routine`, `subagent` and `until` grants are not built
+(`DEFERRED.md`).
 
 ## 8. Vault and surrogates
 
@@ -438,22 +455,27 @@ creates entries, either in Settings, Vault or through a secret request.
 
 ### Canaries
 
-At setup Sentry plants canaries in two places:
+Not deferred: the first canary is in the first version.
 
-- a fake API key in the `home` computer's environment, shaped like an OpenAI API
-  key (`sk-proj-` followed by random characters of a real key's length), so
-  scanners and an agent hunting for keys take it as real
-- a fake vault-looking file in `/home/eika`
+At setup Sentry plants a fake API key in the `home` computer's environment, shaped
+like an OpenAI API key (`sk-proj-` followed by random characters of a real key's
+length), so scanners and an agent hunting for keys take it as real. It is unique
+and recorded. `Decide` looks for its literal value in the arguments of every tool
+call, `bash` commands and file writes included, and a hit halts Eika with a push
+(section 11). No ordinary task has a reason to carry it. Canaries cost nothing and
+catch the class of attack classifiers miss.
 
-Each canary is unique and recorded. Any canary in egress, plugin arguments,
-outbound content or browser typing is a severe alert and halts Eika (section 11).
-Canaries cost nothing and catch the class of attack classifiers miss.
+The fake vault-looking file in `/home/eika`, and the checks in egress bodies and
+browser typing, return with the vault.
 
 ## 9. System One decision models and the reviewer
 
 Deferred (`DEFERRED.md`). The reviewer returns on `/v1/systemone` alone, without the
 other backends below. Where this section says the reviewer lands in phase 4, or runs
-on the emulated backend, that was the plan before the cut.
+on the emulated backend, that was the plan before the cut. It also speaks of
+`sensitive` and `suspicious` sessions, which no longer exist (section 6): the
+reviewer would return judging plugin calls that now ask, with no labels in its
+state.
 
 ### Protocol
 
@@ -653,11 +675,12 @@ Changes:
   the host is on the blocklist, netguard refuses the address, Eika is halted, or the
   computer is in allowlist mode and does not list the host. Otherwise it is allowed,
   a map lookup. Refused hosts are remembered so the UI can show them.
-- **What the model does with the network is judged where it acts.** In a labelled
-  session, `bash` and `web_fetch` are decided as actions (section 5). The connection
-  is not the place to catch it: a page load opens dozens. Current caveat: a program
-  already running, or a script the agent wrote earlier and starts with an
-  innocent-looking command, can reach any public host not on the blocklist.
+- **Allowlist mode per computer.** A computer in allowlist mode reaches only the
+  hosts it lists. It is the rule for a project whose files must not leave: no ask,
+  and nothing for an injected worker to talk its way past.
+- **Caveat.** Outside allowlist mode a computer can reach any public host that is
+  not on the blocklist, and so can a program already running or a script the agent
+  wrote earlier (section 6, "What this does not stop").
 - **Core's own fetches.** `web_fetch` and search backends other than local SearXNG
   check the same blocklist and halt state before they dial.
 
@@ -699,39 +722,65 @@ asynchronously, off the critical path.
 
 ## 12. Audit
 
-`core.audit` is append-only: one row per decision, approval, grant change and halt.
-It stores the action and its digest, never secret values. There is no UI for it yet.
+`core.audit` is append-only: one row per decision that is not a plain allow, and per
+removal, approval, grant or setting change, and halt. Plain allows are not recorded:
+the session's own events already hold every tool call. It stores the action and its
+digest, never secret values. Settings, Security shows the withheld list and the
+recent rows; there is no timeline UI.
 
 ## 13. Performance budget
 
-Nothing in the path calls a model, and `decide` is a function call, so there is no
-budget to hold. The budgets for ingest with a classifier and for the reviewer return
-with them (`git log` on this file has the figures).
+`Decide` is a function call and calls no model, so it has no budget to hold.
+
+Ingest calls the screen once per result, with every window in one request:
+
+| Content | Windows | CPU (6 threads, bf16) | GPU |
+|---|---|---|---|
+| A search result | 1 | about 55 ms | 2 ms |
+| A fetched page at the default cap | up to about 20 | about 1 s | under 50 ms |
+
+A fetch spends longer on the network than that, so the default is CPU and the main
+GPU's memory stays with the chat model. Ingest waits at most 5 s for the guard, then
+treats it as down (section 6). The reviewer's budget returns with it (`git log` on
+this file has the figures).
 
 ## 14. Packages
 
 ```
-internal/sentry              the Gate, actions, verdicts, wiring
-internal/sentry/policy       hard rules, defaults, tool settings, blocklist
-internal/sentry/grant        grants
-internal/sentry/approval     approvals, waits, expiry
-internal/sentry/scan         redaction, one-time codes, outbound
-internal/sentry/audit        audit log
+internal/sentry              the Gate, actions, verdicts, the policy table, halt,
+                             the blocklist, audit rows
+internal/sentry/scan         redaction, one-time codes, never-share, the canary
+internal/sentry/screen       the guard client, window removal, the withheld list,
+                             trusted sources
+internal/sentry/approval     approvals, waits, expiry, grants, tool settings
+                             (with plugins)
 internal/egress, netguard    stay where they are
+guard/                       the screen's service (Python)
 ```
 
 Boundary test (phase 0's import-rule test, extended): `internal/sentry` never
-imports `server`, `agent` or `computer`.
+imports `server`, `agent` or `computer`. Sub-packages are split off when the code
+asks for it, not before.
 
 ## 15. Testing
 
-- **Unit.** Every row of the defaults table; hard rules; tool settings and the
-  blocklist; grant scopes and matching; approval expiry and idempotency; redaction
-  and one-time-code removal.
-- **Docker tests.** A scripted model tries to send to an unapproved recipient and the
-  run parks; answering the approval resumes it. A restart ends the run and expires
-  its approval.
-- **Injection evals** (`evals/sentry`, deferred with the reviewer). Each scenario
-  comes in three variants: innocent, injected and over-reach (Duet's method). Each is
-  run against real local models, with recorded attack success, utility and approval
-  rate.
+- **Unit.** Every row of the policy table; the pipeline's order; never-share and
+  the canary; redaction and one-time-code removal; window removal by byte offset,
+  on multi-byte text too; trusted sources; the guard down, with `screen_required`
+  on and off; and, with plugins, tool-setting defaults from annotations, grant
+  matching, approval expiry and idempotency.
+- **`guard` tests** (Python, in the image build): chunk boundaries and offsets, a
+  text longer than one batch, and a fixed set of texts whose scores must not move
+  when the pinned revision has not.
+- **Docker tests.** A fixture page with an injected paragraph is fetched and the
+  model's context holds the placeholder, not the paragraph. With the guard stopped
+  the same fetch arrives marked `unscanned`. With plugins: a scripted model calls a
+  tool that is not read-only and the run parks; answering the approval resumes it;
+  "always for this recipient" lets the next call through and a different recipient
+  parks again. A restart ends the run and expires its approval.
+- **Injection evals** (`evals/injection`), against the real chat model and the real
+  guard. Each scenario comes in three variants: innocent, injected, and legitimate
+  but alarming (Duet's method). Each runs with the screen on and off, and records
+  attack success, task success, removals and asks. Asks must be zero outside
+  plugin sends and routine creation. The numbers go in `PLAN_LOG.md`, including
+  what got through.

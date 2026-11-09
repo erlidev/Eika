@@ -31,7 +31,7 @@ and Hermes. Triggers, nudges, pre-checks and active hours are deferred
 | `prompt` | The instruction for each run |
 | `max_runtime` | How long it may run, 24 h by default |
 | `missed` | Run at most once on return, within a grace window of 6 h |
-| `created_by`, `approved_grant` | `user` or an agent, and the Sentry grant (scope `routine`) its runs act under |
+| `created_by`, `approved_at` | `user` or an agent, and when the user approved it |
 
 Each run is a new `routine` session, and its result reaches the user in the home
 session with a push.
@@ -66,14 +66,20 @@ pending wakeups.
 
 ## 5. Safety
 
-- **Creating a routine is a `schedule` action.** Sentry asks the user. The
-  approval card shows when it runs, what it does, as which agent, and the grant
-  it would run under. Enabling it creates that grant with scope `routine`.
+- **Creating or enabling a routine asks, once.** It is one of the two things that
+  ask (`sentry.md` 5): a routine acts later, with nobody watching. The approval
+  card shows the schedule in words, the next five times it would run, the agent and
+  the prompt in full. A routine the user creates in the UI is approved by that act.
+- **Runs follow the ordinary rules.** There is no grant for a routine. A run reads,
+  fetches and works like any other run, and a plugin tool it calls is decided by
+  that tool's setting and grants. A routine that mails a digest each morning asks
+  on its first run, and "always for this recipient" settles the rest. `wake_me`
+  does not ask: it only resumes the session that set it.
 - **Recursion guard.** Sessions of kind `routine` cannot create routines or
   wakeups beyond their own session. The tools return an error saying so.
-- **Prompt scan at creation.** A routine's prompt goes through the deterministic
-  scans, since an injected routine is the classic persistence attack. The approval
-  card shows the prompt in full.
+- **Prompt screen at creation.** A routine's prompt goes through the injection
+  screen, since an injected routine is the classic persistence attack. A hit does
+  not block: the card carries a warning above the prompt.
 
 ## 6. Tools and UI
 

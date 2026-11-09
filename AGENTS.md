@@ -16,7 +16,8 @@ codebase. Read it fully before editing.
 5. `docs/PLAN.md` and `docs/design/`: the phased plan that turns Eika into a
    persistent local assistant. Work on it starts from the plan's ground rules.
    `docs/DEFERRED.md` holds what was cut from it: do not start that work unless it
-   has been moved into the plan.
+   has been moved into the plan. `docs/PLAN_LOG.md` is the plan's log: add to it,
+   and read it only for the entry an item points to.
 
 ## Rules that are never optional
 
