@@ -62,6 +62,24 @@ against the bench's model, thinking off, and requires a short single-line title.
 over real model calls: a call holds the slot, a background call and then an
 interactive one line up, and the interactive call must be admitted and answered
 first (`queue_seconds` in the report is each call's wait for its lease).
+`usage_fields` and `responses_usage_fields` repeat the cache conversation and
+compare the exact rendered count with the reported prompt count on a cache hit.
+They record `prompt_includes_cached` and require it to be true. If the server
+also states a prefilled count, prefilled plus cached must equal prompt. Missing
+counts stay `null`; the offline tests check this under both protocols.
+`counting_conversation` and `responses_counting_conversation` use one scripted
+history with tool rounds, replayed reasoning, a picture, and a compaction. Text
+calls before and after the compaction must be exact with zero drift. The first
+picture measures its cost; the next call with that picture must have zero drift
+with the measured cost. Image calls are never labelled exact: llama.cpp's
+`/apply-template` and `/tokenize` do not count the image tokens. This scenario
+uses the session's compaction fold with a fixed summary and cut.
+`prefix_across_compaction` and `responses_prefix_across_compaction` test the
+real loop's summary calls and stored history across two restarts and a manual
+compaction. All five recorded calls must be exact with zero drift. Each call
+must find at least 90% of the previous prompt cached, except the first after
+the compaction. The report states that call's cache count. Both scenarios are
+registered in the default suite; they need no server change.
 `slot_hint_honoured` (and `responses_slot_hint_honoured`) asks the server to run
 requests on slot 1, 1, 0, 0 and on a slot it does not have, reads `/slots` while
 each runs, and requires the slot named to be the only one processing it (and the
@@ -128,6 +146,7 @@ meter-against-the-server's-logs check.
 | `server.flags` | What the probe read: `slots`, `context` (the window one request may use; `/props` reports it per slot), `train_context`, `kv` (`unknown` for a llama.cpp server with several slots), `vision`. The KV cache type and `--kv-unified` are not reported by llama.cpp; they are in `command.txt` on the server |
 | `scenarios[].passed`, `error` | Whether the scenario ran to its end and met its assertions |
 | `calls[].prompt_tokens`, `completion_tokens` | The prompt size the server counted, cached tokens included, and the tokens generated, reasoning included |
+| `calls[].prompt_includes_cached` | Whether `usage_fields` verified that the reported prompt count includes a positive cached count; `null` when not verified. `prompt_tokens` is the report name for Responses `input_tokens` too |
 | `calls[].reasoning_tokens` | The part of the completion the server says was reasoning; `null` on llama.cpp, which does not say |
 | `calls[].prefilled_tokens` | Prompt tokens the server says it evaluated (llama.cpp `prompt_n`) |
 | `calls[].cached_tokens`, `cache_hit_rate` | Prompt tokens served from the cache, as the server states them, and their share of the prompt |

@@ -43,30 +43,7 @@ func ToolsAndReasoning(nonce string) Scenario {
 	return Scenario{
 		Name: "tools_and_reasoning",
 		Run: func(ctx context.Context, t *Target) ([]Call, error) {
-			schema := func(props string) []byte {
-				return []byte(`{"type":"object","properties":{` + props + `},"required":["path"]}`)
-			}
-			req := provider.Request{
-				System:           fmt.Sprintf("Session %s.\nYou are Eika, a personal assistant. Use the tools to look at files, then answer briefly.", nonce),
-				ThinkingSwitch:   provider.SwitchTemplate,
-				PreserveThinking: true,
-				Sampling:         quiet(),
-				Tools: []provider.ToolDef{
-					{Name: "list_dir", Description: "List the entries of a directory.", Schema: schema(`"path":{"type":"string","description":"Directory to list."}`)},
-					{Name: "read_file", Description: "Read a text file and return its content.", Schema: schema(`"path":{"type":"string","description":"File to read."}`)},
-				},
-				Messages: []provider.Message{
-					provider.UserMessage("What is in /home/eika, and what do my notes say?"),
-					provider.AssistantMessageWithReasoning("I will start with the directory.",
-						"The user wants the directory first, then the notes. List /home/eika to find the notes file.",
-						[]provider.ToolCall{{ID: "call_1", Name: "list_dir", Arguments: `{"path":"/home/eika"}`}}),
-					provider.ToolResultMessage("call_1", "notes.md\ntodo.txt\nprojects/", false),
-					provider.AssistantMessageWithReasoning("",
-						"There is a notes.md. Read it.",
-						[]provider.ToolCall{{ID: "call_2", Name: "read_file", Arguments: `{"path":"/home/eika/notes.md"}`}}),
-					provider.ToolResultMessage("call_2", "Call the bank on Monday.\nBuy milk.", false),
-				},
-			}
+			req := toolsAndReasoningRequest(nonce)
 
 			first, reply, err := t.Complete(ctx, "after two tool rounds", req)
 			calls := []Call{first}
@@ -330,4 +307,31 @@ func prose(rng *rand.Rand, n int) string {
 	}
 	b.WriteByte('.')
 	return b.String()
+}
+
+func toolsAndReasoningRequest(nonce string) provider.Request {
+	schema := func(props string) []byte {
+		return []byte(`{"type":"object","properties":{` + props + `},"required":["path"]}`)
+	}
+	return provider.Request{
+		System:           fmt.Sprintf("Session %s.\nYou are Eika, a personal assistant. Use the tools to look at files, then answer briefly.", nonce),
+		ThinkingSwitch:   provider.SwitchTemplate,
+		PreserveThinking: true,
+		Sampling:         quiet(),
+		Tools: []provider.ToolDef{
+			{Name: "list_dir", Description: "List the entries of a directory.", Schema: schema(`"path":{"type":"string","description":"Directory to list."}`)},
+			{Name: "read_file", Description: "Read a text file and return its content.", Schema: schema(`"path":{"type":"string","description":"File to read."}`)},
+		},
+		Messages: []provider.Message{
+			provider.UserMessage("What is in /home/eika, and what do my notes say?"),
+			provider.AssistantMessageWithReasoning("I will start with the directory.",
+				"The user wants the directory first, then the notes. List /home/eika to find the notes file.",
+				[]provider.ToolCall{{ID: "call_1", Name: "list_dir", Arguments: `{"path":"/home/eika"}`}}),
+			provider.ToolResultMessage("call_1", "notes.md\ntodo.txt\nprojects/", false),
+			provider.AssistantMessageWithReasoning("",
+				"There is a notes.md. Read it.",
+				[]provider.ToolCall{{ID: "call_2", Name: "read_file", Arguments: `{"path":"/home/eika/notes.md"}`}}),
+			provider.ToolResultMessage("call_2", "Call the bank on Monday.\nBuy milk.", false),
+		},
+	}
 }

@@ -20,7 +20,7 @@ Desktop: left rail  Chat, Activity, Inbox, Projects, Memory, Skills, Plugins,
 | Projects | List, then a project page: description, instructions editor, and its subagents (watch, read-only) and routines |
 | Memory | `memory.md` 8, with the Instructions editor |
 | Skills | Install from a zip, read, enable |
-| Plugins | The MCP screens of today (connection, OAuth, tools, log), plus per-tool effect and verdict |
+| Plugins | The MCP screens of today (connection, OAuth, tools, log), plus per-tool `allow`, `ask` or `block` settings |
 | Schedules | `scheduler.md` 6 |
 | Settings | Providers and models (kept), model classes, agents (class and prompt), grants and the blocklist, notifications, appearance, account, and system health (Docker, endpoints with their probed capabilities) |
 | Developer (in Settings) | Context inspector, model call log with token accounting and drift |

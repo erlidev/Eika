@@ -18,6 +18,9 @@ type Call struct {
 	// PromptTokens is the size of the prompt the server counted, cached
 	// tokens included.
 	PromptTokens *int `json:"prompt_tokens"`
+	// PromptIncludesCached is verified by usage_fields against the rendered
+	// count with a positive cache hit. It is null when not verified.
+	PromptIncludesCached *bool `json:"prompt_includes_cached"`
 	// CompletionTokens is the tokens the model generated, reasoning included.
 	CompletionTokens *int `json:"completion_tokens"`
 	// ReasoningTokens is the part of CompletionTokens the server states was

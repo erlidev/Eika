@@ -127,10 +127,10 @@ model or TabbyAPI. They stay on the bench for the work in `docs/DEFERRED.md`.
 
 ## Phase 0: Groundwork
 
-Closed. The coding layer is gone (git, worktrees, previews, the terminal, the
-workbench UI), workspaces are computers, the `home` computer is ensured on every
-start, the schema is one baseline in `core`, and the import-boundary and docs
-tests exist. Items: `git show ab667e0:docs/PLAN.md`.
+Closed. The coding layer is gone (git, worktrees, previews and the terminal),
+workspaces are computers, the `home` computer is ensured on every start, the
+schema is one baseline in `core`, and the import-boundary and docs tests exist.
+The workbench UI remains; phase 3 removes it. Items: `git show ab667e0:docs/PLAN.md`.
 
 ## Phase 1: Inference and accounting
 
@@ -147,18 +147,14 @@ shared caches); slot affinity, sent only to a server that passes its check, whic
 the bench's does not; loop hardening with Eika's own tool-call ids; and the
 prefix-stability test.
 
-- [ ] Phase 1 live suite, on the bench's chat model. `make live` passes on the 22
-      scenarios the Responses item recorded, before the later items added theirs.
-      Remaining:
-      - exact counting: `/apply-template` plus `/tokenize` equals `prompt_tokens`
-        under `chat`, and `input_tokens` under `responses`, over a scripted
-        conversation with tools, reasoning, images and a compaction
-      - `prefix_across_compaction` run on the bench for the first time
-      - usage fields: whether `prompt_tokens` counts cached tokens, and NULL
-        where a field is missing
-      - a full `make live` once `llama-qwen` is running again (the owner frees
-        the server: `llama-server` holds the GPU, `PLAN_LOG.md` 2026-11-01), with
-        the result recorded
+- [x] Phase 1 live suite, on the bench's chat model. `make live` passed
+      with the counting conversation, compaction prefix and usage field
+      scenarios on both protocols. The results are in `PLAN_LOG.md`.
+
+      Cut on 2026-11-01 (`docs/DEFERRED.md`): the runner-driven suites, namely
+      TabbyAPI, the `partitioned` run and the `--no-cache-idle-slots` slot affinity
+      run. The queue with two real sessions moves to phase 2's live suite, since
+      the real server has no background priority until then.
 - [ ] Delete `docs/REFACTOR_PLAN.md` and the references to it. Phase 0 moved its
       lasting lessons into `STYLE_GUIDE.md` and `DECISIONS.md`.
 

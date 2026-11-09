@@ -1525,3 +1525,17 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   - give Sentry its own container
   - support llama.cpp, TabbyAPI and vLLM or SGLang, with exact token accounting
     before backend-specific caching
+
+- 2026-11-09: Phase 1 live suite completed on `phase1-live-suite` from
+  `phase-1`; no commit. Added `counting_conversation` and `usage_fields` for
+  chat and Responses, and ran `prefix_across_compaction` on both protocols.
+  - The bench stopped `llama-server`, ran `llama-qwen`, and restored
+    `llama-server`. The server build was `b11942-338fce651`; the model was
+    `qwen3.8-27b` (`Qwen3.8-27B-UD-Q4_K_XL.gguf`), revision
+    `4ca720788d1e01f1bff70c033e0d0028fd02e502`.
+  - Full `make live` passed (38 PASS, 0 FAIL). Every exact call had zero
+    drift. The image estimate had drift -6; the next anchored prediction had
+    drift 0. Both `usage_fields` protocols recorded `prompt_includes_cached`
+    as true. `queue_priority` passed.
+  - Exit check: the live checks passed. The owner still must compare the
+    meter with the server logs by hand.

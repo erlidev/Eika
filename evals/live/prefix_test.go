@@ -70,3 +70,25 @@ func TestPrefixAcrossCompactionFailsWhenARestartLosesThePrefix(t *testing.T) {
 		t.Fatalf("passed = %v, error = %q, want a failure at the call after the restart", res.Passed, res.Error)
 	}
 }
+
+func TestResponsesPrefixAcrossCompaction(t *testing.T) {
+	for _, lost := range []bool{false, true} {
+		t.Run(fmt.Sprint(lost), func(t *testing.T) {
+			replies := prefixReplies(20, 108)
+			if lost {
+				replies[6].cacheN = 30
+			}
+			for i := range replies {
+				replies[i].usageCached = ptr(replies[i].cacheN)
+			}
+			cs := newChatServer(t, replies...)
+			res := live.OnResponses(live.PrefixAcrossCompaction("fixed")).Execute(context.Background(), connect(t, cs.URL))
+			if res.Passed == lost {
+				t.Fatalf("lost = %t, passed = %t, error = %q", lost, res.Passed, res.Error)
+			}
+			if lost && !strings.Contains(res.Error, "prefix changed") {
+				t.Fatalf("unexpected error: %s", res.Error)
+			}
+		})
+	}
+}

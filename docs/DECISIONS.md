@@ -1696,7 +1696,7 @@ verified against `/slots` while a call ran, on b11942). The design is
   `subagent.*` events were removed in phase 0 of `PLAN.md`, together with
   `workspaces.worktree_of`, the `subagents` table, and sessions of kind
   `agent`. They return in phase 2 with a new design (`design/`). The log in
-  `PLAN.md` says where the pieces worth reusing live in history.
+  `PLAN_LOG.md` says where the pieces worth reusing live in history.
 
 ## Server and API
 

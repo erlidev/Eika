@@ -258,9 +258,8 @@ GET /health -> {"status": "ok", "model": "<name>@<revision>", "device": "cpu"}
 
 It owns the tokenizer, so it does the chunking: 512-token windows, no overlap,
 scored in batches of 64, with byte offsets into the text it was given. It also
-serves text-embeddings-inference's `/predict`, so a TEI deployment that can load
-the model may replace it. `EIKA_GUARD_URL` points Core at another instance, such as
-one on a GPU.
+serves text-embeddings-inference's `/predict`. `EIKA_GUARD_URL` points Core at
+another instance that serves `/screen`, such as one on a GPU.
 
 ### Injection screen model
 

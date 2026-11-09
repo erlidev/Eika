@@ -133,7 +133,7 @@ Agents and harness tasks never name a model. They name a class, and the setting
 | `deep` | chat | Hard reasoning, and anything an agent definition marks deep. May be a cloud model |
 | `main` | chat | The main agent and most tasks |
 | `fast` | chat | Titles and summaries for notifications |
-| `decision` | decision | Nothing yet. Sentry's reviewer and monitor, injection screening and routing when they return (`DEFERRED.md`) |
+| `decision` | decision | Nothing yet. Sentry's reviewer and monitor, and routing when they return (`DEFERRED.md`). Injection screening uses a separate classifier service in phase 4 |
 
 A class with no model falls back along `deep -> main` and `fast -> main`, and a chat
 class with no model along that chain falls back to the default model
