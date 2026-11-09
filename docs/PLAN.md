@@ -155,8 +155,8 @@ prefix-stability test.
       TabbyAPI, the `partitioned` run and the `--no-cache-idle-slots` slot affinity
       run. The queue with two real sessions moves to phase 2's live suite, since
       the real server has no background priority until then.
-- [ ] Delete `docs/REFACTOR_PLAN.md` and the references to it. Phase 0 moved its
-      lasting lessons into `STYLE_GUIDE.md` and `DECISIONS.md`.
+- [x] Delete the superseded refactor plan and its references. Its lasting
+      lessons are in `STYLE_GUIDE.md` and `DECISIONS.md`.
 
 **Exit:** `make live` shows zero drift on `exact` against llama.cpp. With two
 sessions on a one-slot pool, an interactive call goes before a waiting background

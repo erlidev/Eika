@@ -9,6 +9,9 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-09: deleted the superseded refactor plan. Its coding rules are in
+  `STYLE_GUIDE.md`; added its guidance on tests before restructuring.
+
 - 2026-11-09: plan rewritten around safety that does not ask (no code changed).
   Reasons in `DECISIONS.md`, "Safety without asking".
   - The injection screen is back, in phase 4, as a `guard` service in the stack. It
