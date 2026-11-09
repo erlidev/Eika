@@ -61,12 +61,13 @@ structure has to contain it.
 
 ## 3. Actions
 
-Core describes every action in one shape:
+Core describes every action in one shape. Tool-call ids come from the loop
+([Architecture](../ARCHITECTURE.md#agent-core)):
 
 ```
 Action {
   key        stable id: session id + Eika's tool-call id (minted by the loop, never
-             the backend's, `runtime.md` 5), or container + connection id
+             the backend's), or container + connection id
   principal  {session, run, subagent?, routine?, computer?}
   kind       tool | plugin | egress
   name       tool name, plugin/tool, host

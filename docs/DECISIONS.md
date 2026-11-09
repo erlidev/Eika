@@ -481,8 +481,9 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   first streamed token. The prompt phase is never harness-timed: prefill is
   indistinguishable from queueing.
 - **Context is assembled in one place** (`agent/context.go`), so the
-  preview is the exact next request, not a second derivation. Section sizes
-  are 4-bytes-per-token estimates, scaled to the last measured call.
+  preview uses the same request assembly. The context breakdown counts parts
+  separately and states the template remainder without scaling ("Context
+  breakdown").
 - No package reads provider keys from the environment; the OpenAI provider
   sets key and base URL explicitly so `OPENAI_*` never applies. A key belongs
   to its base URL: changing the URL clears it, and probes elsewhere never
@@ -692,7 +693,8 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   The result keeps the tool's own text first, the event a client shows carries
   the same text, and the call still runs: a poll that repeats on purpose
   (waiting for a build) is not broken by it. Rejected: stopping at some count
-  (`runtime.md` says never, and a legitimate poll would be stopped); a
+  (a legitimate poll would be stopped; see
+  [Architecture](ARCHITECTURE.md#context-layout-and-prefix-stability)); a
   separate message beside the result (a notice the model might read as the
   user's).
 
@@ -821,9 +823,9 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
 - **Each field means one thing, whichever protocol it came from.** The prompt
   count includes the cached part and the completion count includes
   reasoning. This was checked on llama.cpp b11942 under both
-  `/v1/chat/completions` and `/v1/responses` (`docs/design/runtime.md`
-  section 2) and is the documented meaning of the OpenAI fields the other
-  backends copy; their fixtures are written from documentation and marked
+  `/v1/chat/completions` and `/v1/responses`
+  ([Architecture](ARCHITECTURE.md#model-call-accounting)) and is the documented
+  meaning of the OpenAI fields the other backends copy; their fixtures are written from documentation and marked
   unverified. A field of a backend whose meaning is not known is not read: SGLang's
   top-level `reasoning_tokens` is 0 whether or not reasoning was counted, so it
   is left alone. Nothing sums a prompt count and a cached count, and
@@ -960,7 +962,7 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
 ### The inference queue
 
 `internal/inference` is the one queue every model call of Core waits in
-(`docs/design/runtime.md` section 3).
+([Architecture](ARCHITECTURE.md#inference-admission-and-priority)).
 
 - **A leaf package on the standard library.** It imports nothing of the
   module, so the agent, the probe, the utility tasks and the server all hold
@@ -1084,8 +1086,8 @@ A llama.cpp server with several slots keeps each slot's prompt in its own KV
 cache, so a session's next call is cheap only if it runs on the slot that holds
 the session's prefix. The queue places the call there and the request names the
 slot (`id_slot`, which both `/v1/chat/completions` and `/v1/responses` read;
-verified against `/slots` while a call ran, on b11942). The design is
-`docs/design/runtime.md` section 3; these are the choices it left.
+verified against `/slots` while a call ran, on b11942). Current behavior is in
+[Architecture](ARCHITECTURE.md#inference-admission-and-priority).
 
 - **A book per endpoint, in the queue.** Each endpoint of a pool that takes slot
   hints has one entry per slot of its server: the session whose call last ran

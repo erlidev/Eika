@@ -622,8 +622,9 @@ built. `204`.
 Asks an endpoint which models it serves, which is the setup screens'
 connection test and model list, and what kind of server it is: its backend,
 slots, per-request window, KV cache and capabilities, read from the server's
-own description (`docs/design/runtime.md` section 1). The harness probes every
-stored provider again at each start.
+own description
+([Architecture](../ARCHITECTURE.md#endpoints-models-and-classes)). The harness
+probes every stored provider again at each start.
 
 Probing a stored provider also runs the Responses conformance check, which is
 the one part of a probe that asks a model: two small requests to the first chat
@@ -1268,8 +1269,9 @@ What the setup screens check before the first computer. `200` with:
 
 ### `GET /api/inference`
 
-What holds each hardware pool and what waits behind it (`docs/design/runtime.md`
-section 3). Read-only; the queue's settings are `maintenance_idle_seconds`,
+What holds each hardware pool and what waits behind it
+([Architecture](../ARCHITECTURE.md#inference-admission-and-priority)). Read-only;
+the queue's settings are `maintenance_idle_seconds`,
 `aging_seconds` and `preempt_running` under Settings, and a pool is described by
 its providers' `pool`, `slots`, `kv` and `kv_tokens`. `200` with:
 

@@ -64,6 +64,8 @@ and skills.
             4 Sentry ─ 5 Memory ─ 11 Plugins ─ 7 Scheduler ─ 6 Skills
 ```
 
+Phases 0 and 1 are done. Phase 2 is next.
+
 Why this order:
 
 - Accounting and the inference queue (phase 1) underlie every model call.
@@ -134,34 +136,15 @@ The workbench UI remains; phase 3 removes it. Items: `git show ab667e0:docs/PLAN
 
 ## Phase 1: Inference and accounting
 
-Built, with one item open. Design: `design/runtime.md` sections 1 to 5.
-
-What exists: the Responses provider beside Chat Completions, chosen per endpoint
-by a conformance probe; the backend probe (llama.cpp verified, the others written
-from documentation and marked unverified); usage parsing with NULL for what a
-server does not report; the token counter (`exact`, `anchored`, `estimated`) behind
-`fit` and compaction; `model_calls` with drift; the context breakdown and meter;
-the effective window; KV cache per pool; model classes (`deep`, `main`, `fast`,
-`decision`); `internal/inference` (pools, slots, four priorities, admission on
-shared caches); slot affinity, sent only to a server that passes its check, which
-the bench's does not; loop hardening with Eika's own tool-call ids; and the
-prefix-stability test.
-
-- [x] Phase 1 live suite, on the bench's chat model. `make live` passed
-      with the counting conversation, compaction prefix and usage field
-      scenarios on both protocols. The results are in `PLAN_LOG.md`.
-
-      Cut on 2026-11-01 (`docs/DEFERRED.md`): the runner-driven suites, namely
-      TabbyAPI, the `partitioned` run and the `--no-cache-idle-slots` slot affinity
-      run. The queue with two real sessions moves to phase 2's live suite, since
-      the real server has no background priority until then.
-- [x] Delete the superseded refactor plan and its references. Its lasting
-      lessons are in `STYLE_GUIDE.md` and `DECISIONS.md`.
-
-**Exit:** `make live` shows zero drift on `exact` against llama.cpp. With two
-sessions on a one-slot pool, an interactive call goes before a waiting background
-call (`queue_priority`, through a client-side pool). The meter's numbers match the
-server's logs, read by hand.
+Closed. Built the Responses provider and conformance checks, backend probe,
+nullable usage counts, token counter and drift records, context breakdown and
+meter, effective windows, model classes, inference pools and priorities, checked
+slot affinity, loop guards, unique tool-call ids and prefix-stability tests.
+Current behavior: [Architecture](ARCHITECTURE.md#endpoints-models-and-classes);
+choices: [Decisions](DECISIONS.md#agent-loop-and-providers). Additional backend
+and cache-mode live suites remain
+[deferred](DEFERRED.md#phase-1-built-kept-and-not-verified-further); the real queue
+test with two sessions belongs to Phase 2.
 
 ## Phase 2: Agents, home session, projects, subagents
 

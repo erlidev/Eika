@@ -49,6 +49,61 @@ egress proxy are network calls and run in the harness.
 Health: `GET /healthz` (container check) and `GET /api/healthz` (frontend)
 return `{"status":"ok"}`. `/api` is the JSON API.
 
+## Endpoints, models and classes
+
+A provider row describes an endpoint: `backend`, `pool`, `api`, `slots`, `kv`,
+`kv_tokens` and the probed `capabilities`. An empty pool name uses the provider's
+name. Endpoints in one pool share admission limits. `api` selects `chat` or
+`responses`; only a passed Responses conformance check selects `responses`
+automatically. The user can override the probed fields. Capabilities include
+counting (`chat`, `text`, `none`), cache metrics (`reported`, `unknown`), slot
+hints, the per-request window, build, and the Responses and slot affinity checks.
+The checks record their verdict, reason, model and build.
+
+The backend probe reads these routes. **Verified** means checked on the live
+bench; the other rows describe the implemented parsers and fixtures, with no
+live verification. Fixture sources are in
+[the probe fixtures](../internal/provider/probe/probetest/testdata/README.md).
+
+| Backend | Identify by | Window per request | KV cache | Exact counting | Cache metric |
+|---|---|---|---|---|---|
+| llama.cpp (**verified**, b11942) | `GET /props` (`build_info`, `total_slots`) | `default_generation_settings.n_ctx`, which `/slots` repeats for every slot (the per-slot context, not `-c`) | **not reported**: `/props`, `/slots`, `/metrics` and `/v1/models` carry no `--kv-unified` field and no total context, and an N-slot unified server reads the same as a partitioned one with N times the context. One slot is `shared` (it owns the whole cache either way) with size `n_ctx`; several are `unknown`, and the user says which | `POST /apply-template` then `POST /tokenize` (`{"content": prompt}`) | `timings.cache_n` and `usage.prompt_tokens_details.cached_tokens`, equal |
+| vLLM (unverified) | `GET /version`, confirmed by `/metrics` series named `vllm:` or `max_model_len` in `/v1/models` | `max_model_len` of `/v1/models` | `shared` (paged blocks); size `num_gpu_blocks` x `block_size`, labels of `vllm:cache_config_info` in `/metrics`; unknown size when metrics are off. Slots are not reported (`max_num_seqs` is not exported) | `POST /tokenize` with `messages` (and `tools`, `chat_template_kwargs`) | `usage.prompt_tokens_details.cached_tokens` (needs `--enable-prompt-tokens-details`); `unknown` until a response says |
+| SGLang (unverified) | `GET /get_server_info`, or `/server_info` | `context_length`, or `max_model_len` of `/v1/models` when it is null | `shared` (radix cache); size `max_total_num_tokens`; slots `max_running_requests` when set | `POST /tokenize` where the version has it (text only) | `cached_tokens` in usage where reported; `unknown` |
+| TabbyAPI (unverified) | `GET /v1/model` (`parameters.max_seq_len`) | `parameters.max_seq_len` | `shared` across the batch; size `parameters.cache_size`; slots `parameters.max_batch_size` | `POST /v1/token/encode` (text, or messages with the template) | none known; `unknown` |
+| Cloud (unverified) | `/v1/models` and nothing else | listing fields, per model | not applicable: `unknown` | none | `prompt_tokens_details.cached_tokens`; `unknown` |
+
+With several llama.cpp slots the cache mode and total size are unknown until
+the user sets them. A single slot owns the whole cache and is `shared`.
+The effective request window is the smaller of the model's configured window
+and the probe's per-request window. Settings warns when the configured value
+is larger. With no probed window, the configured value applies.
+
+### Model kinds and classes
+
+A model has an immutable `kind`: `chat` or `decision`. Decision models are
+excluded from conversation settings, model pickers and the chat model test.
+The `decision` class accepts only decision models; the chat classes accept only
+chat models. No current task calls a decision model.
+
+The `model_classes` setting maps class names to model names:
+
+| Class | Kind | Current use |
+|---|---|---|
+| `deep` | chat | Available assignment; agents do not use classes yet |
+| `main` | chat | Fallback for `deep` and `fast` |
+| `fast` | chat | Session titles |
+| `decision` | decision | No caller; its client is deferred |
+
+Unset or deleted assignments fall back along `deep -> main` and `fast -> main`,
+then to the default chat model (`default_model`, or the first chat model if that
+setting names none, a deleted model or a decision model). `decision` has no
+fallback. Settings reports the resolved models and pools, so classes that share
+hardware are visible. Sessions and profiles still select models directly.
+Titles are skipped if an unset `fast` falls back onto the model assigned to
+`deep` and that model's backend is `openai`. An explicit `fast` assignment is
+always used.
+
 ## Agent core
 
 ```
@@ -110,8 +165,11 @@ Run(ctx, session, text)
   squares over the measured calls: a base, a weight per role, per tool call,
   and for replayed reasoning; the last measurement is the anchor while a
   request extends it) and `estimated` (a learned bytes-per-token ratio, with
-  its running error exposed for the compaction reserve). A request is
-  rendered from `provider.ChatEncoder.ChatBody`, the one serialiser the
+  its running error exposed for the compaction reserve). The estimated method
+  starts at four bytes per token and learns one ratio from measured calls.
+  Before an anchored model has a measurement it also uses `estimated`; after
+  compaction the fitted template model predicts without the old anchor.
+  A request is rendered from `provider.ChatEncoder.ChatBody`, the one serialiser the
   OpenAI provider also sends, so the template sees the same messages, tools,
   thinking switch and replayed reasoning. A `Source` is the endpoint's routes
   (`Routes` over HTTP; `providertest.TokenServer` is the fake). Counts are
@@ -129,8 +187,8 @@ Run(ctx, session, text)
   context breakdown it also sizes parts: `Size` counts a text (exact, or
   estimated and said so), `ToolSizes` sizes each tool by rendering the request
   with growing tool prefixes where the endpoint renders (otherwise as JSON text,
-  not exact), `ImageSize` is a picture's learned cost, and `Peek` sizes a
-  request for a preview without leaving a prediction for `Observe`.
+  not exact; lists over 64 tools also use text), `ImageSize` is a picture's
+  learned cost, and `Peek` sizes a request for a preview without leaving a prediction for `Observe`.
   `provider.NewHTTPClient`, which the provider, the probe and the counter share,
   repeats a request whose idle connection the server had closed.
 - **provider** turns a `Request` into a channel of `Event`s (text and
@@ -143,6 +201,8 @@ Run(ctx, session, text)
   Chat Completions chunk and a Responses event by each field's documented
   meaning, and `provider.Tally` sums a run of calls so that a count any call
   did not state is not stated for the total.
+  Hosted Responses requests ask for `reasoning.encrypted_content` when thinking
+  is preserved, so reasoning can be replayed with `store: false`.
   Both protocols implement `provider.Provider`, in package `openai` on the
   same SDK client: `Provider` speaks Chat Completions and `Responses` the
   stateless Responses API (`store: false`, the whole input every call). The
@@ -169,7 +229,62 @@ Run(ctx, session, text)
   `agent.Context`: system prompt sections (base prompt,
   instructions), tool schemas (built-in or MCP), messages, parameters, and a
   size estimate for each. Runs and `Agent.Preview` share it; a `Recorder`
-  sees every call that returned.
+  sees each conversation call that returned; summary calls do not use it.
+
+### Inference admission and priority
+
+Provider rows in one pool use the fewest slots and smallest known cache limit
+that they report. Settings and probe results update admission limits at once;
+leases already running continue. A shared cache admits calls against predicted
+prompt plus maximum output. An unknown cache uses the probed request window as
+its shared limit. Partitioned caches, or caches with no known size, use slots
+alone. Calls count in full, even if their prefixes match. The first eligible
+call by priority must fit before another can enter. A call larger than the
+whole cache runs alone when the pool is empty, with a warning.
+
+The queue supports `interactive`, `foreground`, `background`, and `maintenance`,
+in that order. Current session runs and model tests use `interactive`; titles
+use `maintenance`. Startup conformance checks use `maintenance`, and explicit
+probes use `interactive`. Foreground and background have no production callers
+yet. Compaction summary calls use the run's priority. `Rank` is read per call;
+raising a background home turn to interactive is Phase 2 work.
+
+A waiting call gains one priority level per `aging_seconds` (default 300).
+Ties use the oldest wait, which is kept across retries. Maintenance waits until
+no higher-priority call has run for `maintenance_idle_seconds` (default 120);
+a pool that has never run such a call is idle. Maintenance calls can run
+together. After one aging period a maintenance call no longer needs an idle
+pool. `preempt_running` defaults to false. If enabled, an interactive call can
+cancel running background or maintenance calls to make room. The loop retries
+without backoff or retry-budget cost; `Queue.Do` has a 16-attempt bound.
+
+Slot affinity uses a book per endpoint. A session gets its previous server
+slot when free, or waits up to the time needed to read its prefix again
+(`prompt / Policy.PrefillRate`, default 2000 tokens/s). It then takes another
+free slot and the book follows. A new session takes the least recently used
+free slot. Only a passed affinity check permits `id_slot` under either protocol.
+The bench's llama.cpp b11942 check fails, so its requests name no slot.
+`GET /api/inference` reports running and waiting calls and the policy. Activity
+views and per-day compute aggregates are later UI work.
+
+### Context layout and prefix stability
+
+Requests contain the base system prompt, instructions, sorted tool schemas,
+and the conversation. After compaction the conversation starts with its
+summary and then the retained messages. There is no preamble entry, memory
+index, skills catalog or generic plugin catalog yet.
+
+Both protocols serialize request fields deterministically. Stored tool arguments
+and reasoning items retain their original text when JSON encoding would change
+it; entry payloads use PostgreSQL `json`. Replaying a stored conversation thus
+keeps its wire bytes. The prefix test (`internal/session/prefix_test.go`) runs
+the real loop and both providers against a fake server, with JSON entries and
+with PostgreSQL. It covers steering, follow-ups, retries, stalls, cut-off and
+refused responses, interruption, restart, resume and compaction. Each request
+extends or repeats the accepted conversation prefix. Compaction starts a new
+chain; its summary request reuses the old prefix. The output limit may decrease
+as the window fills. Agent definitions, preamble replacement and notices remain
+in [the runtime design](design/runtime.md#4-context-layout).
 
 Every user-side message ends with a `<context>` block (`agent/contextblock.go`)
 that states the time it was sent to the minute, in `Options.Location` (UTC until
@@ -253,11 +368,51 @@ again at `FallbackEffort`. The conversation becomes a summary message
 `compaction` entry, and `compaction.start` and `compaction.end` go out.
 Reserve and keep are capped at a quarter of the window.
 
+### Model-call accounting
+
+`model_calls` records the requests made by a session's loop. It does not record
+utility calls, probes or compaction summary calls. The latter take queue leases
+but are not yet observed by the counter or recorded. Counts are NULL when no
+source supplies them; a stated zero stays zero. A run total is unknown for a
+field if any call did not report that field.
+
+| Stored field | Meaning and source |
+|---|---|
+| `prompt_tokens` | Server's prompt count, including cached tokens; `input_tokens` under Responses |
+| `cached_tokens` | Usage details first, else llama.cpp `timings.cache_n`; NULL if neither is stated |
+| `prefilled_tokens` | `timings.prompt_n`, else prompt minus cached when both are known |
+| `completion_tokens`, `total_tokens` | Server's generated count (reasoning included) and stated total |
+| `reasoning_tokens`, `reasoning_source` | Reported reasoning count, else tokenizer count of reasoning text; source `reported` or `tokenised`. The latter is approximate and stays out of usage events |
+| `predicted_prompt_tokens`, `prediction`, `drift` | Counter prediction, method, and predicted minus measured prompt; drift is NULL unless both counts exist |
+| `context_window` | Effective window used to judge this request |
+| `queue_ms`, `slot`, `priority` | Wait summed across attempts, server slot named by the request (NULL when none), and requested priority |
+| `endpoint`, `class`, `agent` | Provider name at call time; class and agent remain NULL until session runs use them |
+| `prefill_ms`, `decode_ms` | Endpoint timings; decode falls back to harness time from the first token |
+
+The meter's last-call fill is `prompt_tokens + completion_tokens`, against the
+effective window. Before a measurement, fill and cache read `n/a`. The predicted
+next request shows its method, with a tilde for `estimated`. The Context panel
+shows part counts and the template remainder; the inspector shows drift.
+
+Usage parsing has the following verification status. The live recordings and
+unverified fixture sources are in
+[the usage fixtures](../internal/provider/testdata/usage/README.md).
+
+| Backend | Prompt | Cached | Reasoning | Status |
+|---|---|---|---|---|
+| llama.cpp b11942, `/v1/chat/completions` | `usage.prompt_tokens`, **includes cached** | `usage.prompt_tokens_details.cached_tokens` = `timings.cache_n`; `timings.prompt_n` is the processed part | none: NULL. `completion_tokens` includes the reasoning | **verified** on the bench, streamed, cold and warm, reasoning on: prompt 90 = cache_n 0 + prompt_n 90 cold, 90 = 86 + 4 warm; a request cut off at 20 tokens inside the reasoning had `completion_tokens` 20 |
+| llama.cpp b11942, `/v1/responses` | `response.usage.input_tokens`, **includes cached** | `input_tokens_details.cached_tokens` = `timings.cache_n`, and `timings` is a sibling of `response` in the `response.completed` event | none: NULL (no `output_tokens_details`). `output_tokens` includes the reasoning | **verified**: the same numbers as `chat` for the same prompt (90 tokens, 0 then 86 cached); output 107 over 77 reasoning and 27 answer chunks, and 20 for a response cut off inside the reasoning |
+| OpenAI and other cloud APIs | `prompt_tokens` / `input_tokens` | `prompt_tokens_details.cached_tokens` / `input_tokens_details.cached_tokens` | `completion_tokens_details.reasoning_tokens` / `output_tokens_details.reasoning_tokens` | unverified, from the API reference |
+| vLLM | `prompt_tokens` / `input_tokens` | `prompt_tokens_details.cached_tokens`, only with `--enable-prompt-tokens-details` (else `null`: NULL) | none on chat; `output_tokens_details.reasoning_tokens` on responses | unverified, from the source |
+| SGLang | `prompt_tokens` | `prompt_tokens_details.cached_tokens`, only with `--enable-cache-report` | none read: its top-level `reasoning_tokens` is 0 whether or not reasoning was counted | unverified, from the source |
+| TabbyAPI | `prompt_tokens` | none | none | unverified, from the source |
+
 ## Persistence
 
 `store` owns the database: a pgx pool, embedded migrations applied by `Open`,
 and SQL in one file per entity. Its tables live in schema `core` (every
-connection's `search_path`), squashed into one baseline migration. Missing rows are `store.ErrNotFound`,
+connection's `search_path`). Forward migrations extend the baseline schema.
+Missing rows are `store.ErrNotFound`,
 duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 
 | Table | Holds |
@@ -268,7 +423,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
 | `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, api (`chat` or `responses`), capabilities (jsonb, with the Responses check's outcome), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
-| `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
+| `models` | provider, name (unique), kind (chat or decision), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
 | `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot` (the server's slot the request named, NULL when it named none), `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
@@ -710,7 +865,7 @@ An arrow means "may import".
  agent -> tool, provider, inference       session -> agent, store
  provider/probe -> inference              inference: a leaf (standard library only)
  utility -> provider                      imaging -> provider
- provider/counter -> provider, provider/probe   (evals/live, later agent -> counter)
+ provider/counter -> provider, provider/probe   agent -> provider/counter
  tool -> executor
  executor/sandbox -> eikad (wire types)   computer -> executor, executor/sandbox
  tool/builtin -> search, search/fetch     search/fetch, egress -> netguard

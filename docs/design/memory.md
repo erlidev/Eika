@@ -101,7 +101,7 @@ Index (memory_read <name> for details, memory_search for anything not listed):
 (41 more memories; search to find them)
 ```
 
-- **Budget.** Pinned plus index 3,000 tokens, counted exactly (`runtime.md` 2).
+- **Budget.** Pinned plus index 3,000 tokens, counted exactly ([Architecture](../ARCHITECTURE.md#agent-core)).
 - **Selection** when over budget: pinned first, then the most recently updated. The
   rest is summarised as a count. Codex's silent head-and-tail truncation is the
   failure to avoid: an index Eika cuts is always cut with a visible count.

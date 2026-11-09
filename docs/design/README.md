@@ -13,13 +13,17 @@ Its design stays here, marked deferred, as the target if it returns: most of
 | Document | Covers |
 |---|---|
 | `README.md` | Goals, principles, vocabulary, topology, threat model, and what is kept or removed |
-| `runtime.md` | Model classes, endpoints, exact token accounting, the inference queue, context layout, the loop, agents, the home session, projects, subagents, durability, compaction and history recall |
+| `runtime.md` | Remaining context layout and loop changes, agents, the home session, projects, subagents, durability, compaction and history recall |
 | `sentry.md` | The permission authority: policy, what asks, ingest and the injection screen, approvals and grants, egress, halting; deferred: vault, surrogates, review, monitoring |
 | `memory.md` | Instructions, memories, the index, search, episodic recall, screened writes, dreaming |
 | `skills-and-plugins.md` | Agent Skills and MCP plugins |
 | `scheduler.md` | Routines and wakeups |
 | `browser.md` | The browser container, the browser agent, live view and takeover |
 | `interface.md` | The web app, mobile, notifications, external chat channels, remote access |
+
+Phase 1's implemented runtime is in
+[Architecture](../ARCHITECTURE.md#endpoints-models-and-classes), with reasons in
+[Decisions](../DECISIONS.md#agent-loop-and-providers).
 
 ## Goals
 

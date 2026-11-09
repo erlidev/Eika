@@ -422,8 +422,9 @@ All of phase 1's code stays. These were cut before more time went into them:
 - `evals/bench` stays for them, unused. It has only run against a fake host, and
   `evals/benchctl`, which its error message names, was never built. Build `benchctl`
   before the first real run.
-- vLLM, SGLang, TabbyAPI and cloud rows stay marked unverified in `design/runtime.md`
-  until such a server is on the bench.
+- vLLM, SGLang, TabbyAPI and cloud rows stay marked unverified in
+  [Architecture](ARCHITECTURE.md#endpoints-models-and-classes) until such a server
+  is on the bench.
 - Slot affinity stays off on the bench, since `id_slot` is only sent once its check
   passes, and that needs `--no-cache-idle-slots`.
 
