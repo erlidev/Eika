@@ -23,8 +23,9 @@ import type {
   MCPServerDetails,
   Model,
   ModelContext,
-  ModelRequest,
-  ModelRequests,
+  ModelCall,
+  ModelCalls,
+  NextPrediction,
   Models,
   OAuthCallback,
   PostMessage,
@@ -237,25 +238,38 @@ export function getSessionContext(
   });
 }
 
-/** listSessionRequests lists the records of a session's model calls, oldest first. */
-export async function listSessionRequests(
+/**
+ * getSessionPrediction asks what the session's next request is expected to
+ * cost and how that is known, as a run that names `model` ("" for none)
+ * would send it, without the request itself.
+ */
+export function getSessionPrediction(
   id: string,
+  model: string,
   signal?: AbortSignal,
-): Promise<ModelRequest[]> {
-  const body = await request<ModelRequests>(`/api/sessions/${encodeURIComponent(id)}/requests`, {
+): Promise<NextPrediction> {
+  return request<NextPrediction>(`/api/sessions/${encodeURIComponent(id)}/prediction`, {
+    query: { model: model === "" ? undefined : model },
     signal,
   });
-  return body.requests ?? [];
 }
 
-/** getSessionRequest reads one recorded model call in the preview's shape. */
-export function getSessionRequest(
+/** listSessionCalls lists the records of a session's model calls, oldest first. */
+export async function listSessionCalls(id: string, signal?: AbortSignal): Promise<ModelCall[]> {
+  const body = await request<ModelCalls>(`/api/sessions/${encodeURIComponent(id)}/calls`, {
+    signal,
+  });
+  return body.calls ?? [];
+}
+
+/** getSessionCall reads one recorded model call in the preview's shape. */
+export function getSessionCall(
   id: string,
-  requestId: string,
+  callId: string,
   signal?: AbortSignal,
 ): Promise<ModelContext> {
   return request<ModelContext>(
-    `/api/sessions/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}`,
+    `/api/sessions/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}`,
     { signal },
   );
 }

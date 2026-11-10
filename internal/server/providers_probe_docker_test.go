@@ -4,6 +4,7 @@ package server_test
 
 import (
 	"errors"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -211,7 +212,7 @@ func TestStartProbesEveryProviderAndSurvivesFailures(t *testing.T) {
 		t.Errorf("good provider after the second start = %+v", p)
 	}
 	after := providerNamed(t, a, bad.ID)
-	if after.ProbeError == "" || after.Backend != earlier.Backend || after.Capabilities != earlier.Capabilities || after.ProbedAt != earlier.ProbedAt {
+	if after.ProbeError == "" || after.Backend != earlier.Backend || !reflect.DeepEqual(after.Capabilities, earlier.Capabilities) || after.ProbedAt != earlier.ProbedAt {
 		t.Errorf("unreachable provider after the second start = %+v, want its earlier result and the error", after)
 	}
 }

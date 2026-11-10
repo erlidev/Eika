@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/counter"
 )
 
 // Scenario is one scripted conversation with the model. Run sends its
@@ -21,9 +22,45 @@ type Scenario struct {
 
 // Scenarios returns every scenario of the suite. Add a new one here.
 func Scenarios() []Scenario {
+	nonce := time.Now().UTC().Format("150405.000000")
 	return []Scenario{
 		ProviderProbe(),
-		CacheReuse(time.Now().UTC().Format("150405.000000")),
+		CacheReuse(nonce),
+		UsageFields(nonce),
+		OnResponses(UsageFields(nonce)),
+		CountingConversation(nonce),
+		OnResponses(CountingConversation(nonce)),
+		ToolsAndReasoning(nonce),
+		ImageInput(),
+		CountCost(nonce),
+		AnchoredCounting(nonce),
+		AgentLoop(nonce),
+		ReasoningCount(nonce),
+		ContextBreakdown(nonce),
+		ContextBlockPrefix(nonce),
+		OnResponses(ContextBlockPrefix(nonce)),
+		PrefixAcrossCompaction(nonce),
+		OnResponses(PrefixAcrossCompaction(nonce)),
+		ToolArguments(nonce),
+		OnResponses(ToolArguments(nonce)),
+		ThinkingSwitches(nonce),
+		OnResponses(ThinkingSwitches(nonce)),
+		CutOffReasoning(nonce),
+		ResponsesConformance(),
+		SessionTitle(),
+		QueuePriority(nonce),
+		SharedAdmission(nonce),
+		SlotHintHonoured(nonce, provider.APIChat),
+		SlotHintHonoured(nonce, provider.APIResponses),
+		SlotAffinity(nonce, provider.APIChat),
+		SlotAffinity(nonce, provider.APIResponses),
+		ResponsesDrift(nonce),
+		OnResponses(CutOffReasoning(nonce)),
+		OnResponses(ToolsAndReasoning(nonce)),
+		OnResponses(ImageInput()),
+		OnResponses(AgentLoop(nonce)),
+		OnResponses(ReasoningCount(nonce)),
+		OnResponses(ContextBreakdown(nonce)),
 	}
 }
 
@@ -42,18 +79,42 @@ type Result struct {
 	// Calls are the model calls the scenario made, in order, including the
 	// ones before a failure.
 	Calls []Call `json:"calls"`
+	// Notes are the findings a scenario states in words, such as what a
+	// control run cost, in the order it stated them.
+	Notes []string `json:"notes,omitempty"`
 }
 
-// Execute plays the scenario against t and returns its result.
+// Note records a finding of the scenario being played, to be reported with
+// its result. It does nothing on a target that is not playing one.
+func (t *Target) Note(format string, args ...any) {
+	if t.notes != nil {
+		*t.notes = append(*t.notes, fmt.Sprintf(format, args...))
+	}
+}
+
+// Execute plays the scenario against t and returns its result. The scenario
+// is one session: it gets a token counter of its own, which predicts every
+// request it sends. A prediction called exact that drifted fails the scenario,
+// whatever else it asserts.
 func (s Scenario) Execute(ctx context.Context, t *Target) Result {
 	start := time.Now()
-	calls, err := s.Run(ctx, t)
+	session := *t
+	if t.Source != nil {
+		session.Counter = counter.New(t.Source)
+	}
+	var notes []string
+	session.notes = &notes
+	calls, err := s.Run(ctx, &session)
+	if err == nil {
+		err = exactDrift(calls)
+	}
 	res := Result{
 		Name:    s.Name,
 		Passed:  err == nil,
 		Seconds: time.Since(start).Seconds(),
 		Summary: Summarise(calls),
 		Calls:   calls,
+		Notes:   notes,
 	}
 	if res.Calls == nil {
 		res.Calls = []Call{}
@@ -76,6 +137,16 @@ func (t *Target) Complete(ctx context.Context, label string, req provider.Reques
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	req.Model = t.Model
+
+	var predicted *provider.Prediction
+	var countTime time.Duration
+	if t.Counter != nil {
+		began := time.Now()
+		if p, err := t.Counter.Predict(ctx, req); err == nil {
+			predicted = &p
+		}
+		countTime = time.Since(began)
+	}
 
 	start := time.Now()
 	events, err := t.Provider.Stream(ctx, req)
@@ -100,6 +171,17 @@ func (t *Target) Complete(ctx context.Context, label string, req provider.Reques
 		}
 	}
 	call := newCall(label, usage, timings, stop, time.Since(start))
+	if req.SlotHint != nil {
+		call.Slot = new(*req.SlotHint)
+	}
+	if predicted != nil {
+		call.Predicted, call.Method = &predicted.Tokens, string(predicted.Method)
+		seconds := countTime.Seconds()
+		call.CountSeconds = &seconds
+		if out, ok := t.Counter.Observe(ctx, req, usage); ok {
+			call.Drift = &out.Drift
+		}
+	}
 	if failure != nil {
 		return call, text.String(), fmt.Errorf("%s: %w", label, failure)
 	}

@@ -20,6 +20,10 @@ export type SettingsDefaults = {
   compaction: CompactionSettings;
   /** computer_idle_minutes is how long a running computer may go without a run. */
   computer_idle_minutes: number;
+  /** maintenance_idle_seconds, aging_seconds and preempt_running are the inference queue's settings. */
+  maintenance_idle_seconds: number;
+  aging_seconds: number;
+  preempt_running: boolean;
 };
 
 /**
@@ -47,8 +51,32 @@ export type CompactionPrompts = {
   turn_prefix: string;
 };
 
+/** ModelClassName is a role the harness asks a model for. */
+export type ModelClassName = "deep" | "main" | "fast" | "decision";
+
+/** modelClassNames lists every class, in the order the settings show them. */
+export const modelClassNames: readonly ModelClassName[] = ["deep", "main", "fast", "decision"];
+
+/** ModelClass is one class and the model that serves it, fallbacks applied. */
+export type ModelClass = {
+  class: ModelClassName;
+  /** kind is the kind of model the class takes. */
+  kind: "chat" | "decision";
+  /** model is the name of the model that serves the class; empty when none does. */
+  model: string;
+  /** via is the class whose assignment supplied model, when that is not this one, or "default" when the default model did: a fallback. */
+  via?: ModelClassName | "default";
+  /** provider_id and pool are the endpoint and hardware group of model; classes with one pool contend for its slots. */
+  provider_id?: string;
+  pool?: string;
+};
+
 /** SettingsState is the body of GET and PUT /api/settings. */
 export type SettingsState = {
   settings: Settings;
   defaults: SettingsDefaults;
+  /** classes is every model class and its model now, fallbacks applied. */
+  classes: ModelClass[];
+  /** titles_model is the name of the model that makes session titles; empty when none does. */
+  titles_model: string;
 };

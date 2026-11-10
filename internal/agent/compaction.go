@@ -70,7 +70,7 @@ type Compaction struct {
 	// Kept is how many messages at the end of the context before the
 	// compaction stay after the summary.
 	Kept int `json:"kept"`
-	// TokensBefore and TokensAfter are the context's estimated size before
+	// TokensBefore and TokensAfter are the context's predicted size before
 	// and after.
 	TokensBefore int `json:"tokens_before"`
 	TokensAfter  int `json:"tokens_after"`
@@ -253,7 +253,7 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 	if !ok {
 		return stored, ErrNothingToCompact
 	}
-	record := Compaction{TokensBefore: estimateContext(sent, msgs), Reason: reason}
+	record := Compaction{TokensBefore: a.predict(ctx, sent).Tokens, Reason: reason}
 	a.emit(ctx, s, event.TypeCompactionStart, event.CompactionStart{
 		RunID:        runID,
 		Reason:       reason,
@@ -277,7 +277,7 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 	record.Summary = summary
 	record.Kept = stored - plan.first
 	next := append(Compacted(msgs[:stored], record), msgs[stored:]...)
-	record.TokensAfter = estimateContext(base.WithMessages(next), next)
+	record.TokensAfter = a.predict(ctx, base.WithMessages(next)).Tokens
 	if a.opts.Store != nil {
 		if err := a.opts.Store.AppendCompaction(ctx, s.ID, record); err != nil {
 			return failed(fmt.Errorf("store compaction: %w", err))
@@ -292,12 +292,21 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 	return record.Kept + 1, nil
 }
 
-// shouldCompact reports whether a request of about tokens tokens leaves less
-// of the window free than the reserve, so compaction runs first.
-func (a *Agent) shouldCompact(tokens int) bool {
+// shouldCompact reports whether a request of the predicted size leaves less of
+// the window free than the reserve, so compaction runs first. A prediction that
+// was only estimated may be off, so the reserve grows by the error estimates
+// have shown; an exact or anchored one is trusted to its number.
+func (a *Agent) shouldCompact(pred provider.Prediction) bool {
 	window := a.opts.ContextWindow
 	c := a.opts.Compaction
-	return c.Auto && window > 0 && tokens > window-c.reserveTokens(window)
+	if !c.Auto || window <= 0 {
+		return false
+	}
+	reserve := c.reserveTokens(window)
+	if pred.Method == provider.MethodEstimated {
+		reserve = widenedReserve(reserve, window, pred.Tokens, a.counter.EstimateError())
+	}
+	return pred.Tokens > window-reserve
 }
 
 // lastMeasured returns the context the newest measured model call filled and
@@ -325,26 +334,6 @@ func lastMeasured(msgs []provider.Message) (int, int) {
 		}
 	}
 	return 0, -1
-}
-
-// estimateContext estimates the size of c, the request that sends msgs, as
-// Pi does: the context the newest measured call filled, plus an estimate of
-// every message after it. Without a measurement the whole request is
-// estimated.
-func estimateContext(c Context, msgs []provider.Message) int {
-	tokens, at := lastMeasured(msgs)
-	if at < 0 {
-		for _, s := range c.Sections {
-			tokens += s.Tokens
-		}
-		for _, t := range c.Tools {
-			tokens += t.Tokens
-		}
-	}
-	for _, size := range c.MessageSizes[at+1:] {
-		tokens += size
-	}
-	return tokens
 }
 
 // fit applies the context window to a request of about tokens tokens: one

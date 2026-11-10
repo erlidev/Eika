@@ -4,7 +4,7 @@
  * the wording is tested here and the components only place it.
  */
 
-import type { Backend, KV, Provider, UpdateProvider } from "@/api/types";
+import type { API, Backend, Conformance, KV, Provider, UpdateProvider } from "@/api/types";
 
 /** backendLabels are the backends' names as their projects write them. */
 export const backendLabels: Record<Backend, string> = {
@@ -22,6 +22,35 @@ export const kvLabels: Record<KV, string> = {
   partitioned: "Partitioned",
   unknown: "Not known",
 };
+
+/** apiLabels name the wire protocols. */
+export const apiLabels: Record<API, string> = {
+  responses: "Responses API",
+  chat: "Chat Completions",
+};
+
+/**
+ * conformanceSummary says what the Responses check found, in a sentence: that
+ * it has not run, or which model and build it ran against and how it ended.
+ */
+export function conformanceSummary(c: Conformance | undefined): string {
+  if (c === undefined) return "The Responses API has not been checked yet.";
+  const against = [
+    c.model !== undefined && c.model !== "" ? `with ${c.model}` : "",
+    c.build !== undefined && c.build !== "" ? `on ${c.build}` : "",
+  ]
+    .filter((part) => part !== "")
+    .join(" ");
+  const where = against === "" ? "" : ` ${against}`;
+  switch (c.verdict) {
+    case "passed":
+      return `The Responses API passed its check${where}${c.reasoning ? "" : ", which returned no reasoning to send back"}.`;
+    case "failed":
+      return `The Responses API failed its check${where}: ${c.reason ?? "no reason given"}`;
+    case "skipped":
+      return `The Responses API was not checked: ${c.reason ?? "no reason given"}`;
+  }
+}
 
 /** formatCount renders a whole number with thousands separators, such as 131,072. */
 export function formatCount(n: number): string {
@@ -87,6 +116,7 @@ export type EndpointForm = {
   kv: KV;
   /** kvTokens is the shared cache's size; NaN while the field holds no number, 0 for not known. */
   kvTokens: number;
+  api: API;
 };
 
 /** endpointForm starts the form from a provider as it stands. */
@@ -97,6 +127,7 @@ export function endpointForm(p: Provider): EndpointForm {
     slots: p.slots,
     kv: p.kv,
     kvTokens: p.kv_tokens ?? 0,
+    api: p.api,
   };
 }
 
@@ -133,6 +164,7 @@ export function endpointProblem(form: EndpointForm): EndpointProblem | null {
 export function endpointUpdate(p: Provider, form: EndpointForm): UpdateProvider {
   const out: UpdateProvider = {};
   if (form.backend !== p.backend) out.backend = form.backend;
+  if (form.api !== p.api) out.api = form.api;
   if (form.slots !== p.slots) out.slots = form.slots;
   if (form.kv !== p.kv || (form.kv === "shared" && form.kvTokens !== (p.kv_tokens ?? 0))) {
     out.kv = form.kv;

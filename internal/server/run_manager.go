@@ -8,6 +8,7 @@ import (
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/executor"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
@@ -125,6 +126,10 @@ type activeRun struct {
 	computerID string
 	cancel     context.CancelFunc
 	done       chan struct{}
+	// releaseCounter ends the run's use of its session's token counter routes,
+	// which carry the provider's key. Set before the run starts and called on
+	// every way out of it; nil until the run has a counter.
+	releaseCounter func()
 
 	mu    sync.Mutex
 	id    string
@@ -203,10 +208,15 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	if len(work.message.Images) > 0 && !cfg.model.ImageInput {
 		return store.Run{}, noImageInput(cfg.model.Name)
 	}
-	p, err := s.providerFor(ctx, cfg)
+	ep, err := s.endpointFor(ctx, cfg)
 	if err != nil {
 		return store.Run{}, err
 	}
+	cfg = cfg.withProbe(ep.row)
+	// The counter keeps what it learned from run to run; its routes, which
+	// carry the key, are attached until this run ends, whichever way.
+	counted, releaseRoutes := s.counters.forRun(sessionID, ep, cfg.model)
+	active.releaseCounter = releaseRoutes
 	sessionStore := session.NewStore(s.tree)
 	loaded, err := sessionStore.Load(ctx, sessionID)
 	if err != nil {
@@ -217,12 +227,25 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	// them to its tool choice, together with the tools of the MCP servers it
 	// reaches now, and adds only its own executor, which is also where a
 	// web_fetch filter runs.
-	ag := s.newAgent(p, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
+	ag := s.newAgent(ep.client, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
 		Emitter:    s.deps.Bus,
 		Store:      sessionStore,
 		Logger:     s.log,
-		Recorder:   callRecorder{store: s.deps.Store, run: active, config: cfg},
+		Recorder:   callRecorder{store: s.deps.Store, run: active, config: cfg, endpoint: ep.row.Name},
+		Counter:    counted,
 		Compaction: s.compaction(ctx, cfg.model),
+		// A run, and the compaction a user asks for, answers a person who is
+		// waiting; a run that is not interactive says so by raising or
+		// lowering this rank, as the home session will.
+		Inference: agent.Inference{
+			Queue:    s.queue(ctx),
+			Pool:     ep.row.PoolName(),
+			Endpoint: ep.row.Name,
+			Rank:     inference.NewRank(inference.Interactive),
+			// The speed the endpoint has read prompts at, which says how
+			// long a call may be silent before its first token.
+			PrefillRate: s.prefillRate(ctx, ep.row.Name),
+		},
 	})
 	if work.compact && !ag.Compactable(loaded) {
 		return store.Run{}, conflictf("%v", agent.ErrNothingToCompact)
@@ -288,6 +311,7 @@ func (r *runs) reserve(sessionID, computerID string, cancel context.CancelFunc) 
 // abandon releases a reservation whose run never began, which frees the
 // session and releases whoever is waiting on it.
 func (r *runs) abandon(active *activeRun) {
+	active.releaseCounterRoutes()
 	r.forget(active)
 	active.cancel()
 	close(active.done)
@@ -296,6 +320,7 @@ func (r *runs) abandon(active *activeRun) {
 // drive runs the agent loop, or the compaction the run is, and records how it
 // ended.
 func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Session, work job) {
+	defer active.releaseCounterRoutes()
 	defer close(active.done)
 	defer active.cancel()
 	runID := active.runID()
@@ -531,6 +556,14 @@ func retryFinish(ctx context.Context, backoff time.Duration, finish func(context
 			timer.Stop()
 			return errors.Join(err, ctx.Err())
 		}
+	}
+}
+
+// releaseCounterRoutes ends the run's use of its counter's routes, if it has
+// any. It is safe to call more than once.
+func (a *activeRun) releaseCounterRoutes() {
+	if a.releaseCounter != nil {
+		a.releaseCounter()
 	}
 }
 

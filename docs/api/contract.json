@@ -86,6 +86,86 @@
       },
       "public": true
     },
+    "GET /api/inference": {
+      "status": 200,
+      "response": {
+        "object": {
+          "policy": {
+            "object": {
+              "aging_seconds": "number",
+              "maintenance_idle_seconds": "number",
+              "preempt_running": "boolean"
+            }
+          },
+          "pools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "cache_tokens": {
+                    "nullable": "number"
+                  },
+                  "endpoints": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "idle": "boolean",
+                  "idle_seconds": {
+                    "nullable": "number"
+                  },
+                  "kv": "string",
+                  "name": "string",
+                  "running": {
+                    "nullable": {
+                      "array": {
+                        "object": {
+                          "class": "string",
+                          "endpoint": "string",
+                          "held_ms": "number",
+                          "preempted": "boolean",
+                          "priority": "string",
+                          "session_id": "string",
+                          "slot": "number",
+                          "slot_named": "boolean",
+                          "tokens": "number"
+                        },
+                        "optional": [
+                          "class",
+                          "session_id"
+                        ]
+                      }
+                    }
+                  },
+                  "slots": "number",
+                  "used_tokens": "number",
+                  "waiting": {
+                    "nullable": {
+                      "array": {
+                        "object": {
+                          "class": "string",
+                          "earned": "string",
+                          "endpoint": "string",
+                          "gated": "boolean",
+                          "priority": "string",
+                          "session_id": "string",
+                          "tokens": "number",
+                          "total_waited_ms": "number",
+                          "waited_ms": "number"
+                        },
+                        "optional": [
+                          "class",
+                          "session_id"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "GET /api/mcp/servers": {
       "status": 200,
       "response": {
@@ -438,12 +518,15 @@
                 "object": {
                   "context_window": "number",
                   "created_at": "string",
+                  "effective_window": "number",
                   "id": "string",
                   "image_input": "boolean",
+                  "kind": "string",
                   "max_output": "number",
                   "model": "string",
                   "name": "string",
                   "preserve_thinking": "boolean",
+                  "probed_window": "number",
                   "provider_id": "string",
                   "reasoning_effort": "string",
                   "reasoning_efforts": {
@@ -455,6 +538,7 @@
                   "updated_at": "string"
                 },
                 "optional": [
+                  "probed_window",
                   "reasoning_effort"
                 ]
               }
@@ -660,6 +744,7 @@
             "nullable": {
               "array": {
                 "object": {
+                  "api": "string",
                   "api_key_hint": "string",
                   "api_key_set": "boolean",
                   "backend": "string",
@@ -669,11 +754,49 @@
                       "build": "string",
                       "cache_metrics": "string",
                       "counting": "string",
+                      "responses": {
+                        "object": {
+                          "build": "string",
+                          "cache_metrics": "boolean",
+                          "checked_at": "string",
+                          "counted": "boolean",
+                          "drift": "number",
+                          "model": "string",
+                          "reason": "string",
+                          "reasoning": "boolean",
+                          "verdict": "string"
+                        },
+                        "optional": [
+                          "build",
+                          "model",
+                          "reason"
+                        ]
+                      },
+                      "slot_affinity": {
+                        "object": {
+                          "build": "string",
+                          "cached_tokens": "number",
+                          "checked_at": "string",
+                          "model": "string",
+                          "prompt_tokens": "number",
+                          "reason": "string",
+                          "verdict": "string"
+                        },
+                        "optional": [
+                          "build",
+                          "cached_tokens",
+                          "model",
+                          "prompt_tokens",
+                          "reason"
+                        ]
+                      },
                       "slot_hints": "boolean",
                       "window": "number"
                     },
                     "optional": [
                       "build",
+                      "responses",
+                      "slot_affinity",
                       "window"
                     ]
                   },
@@ -862,6 +985,7 @@
               "message": {
                 "object": {
                   "content": "string",
+                  "context": "string",
                   "images": {
                     "array": {
                       "object": {
@@ -946,6 +1070,9 @@
                     ]
                   },
                   "reasoning": "string",
+                  "reasoning_items": {
+                    "array": "any"
+                  },
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -954,21 +1081,27 @@
                       "object": {
                         "arguments": "any",
                         "arguments_malformed": "boolean",
+                        "arguments_text": "string",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "arguments_text",
+                        "wire_id"
                       ]
                     }
                   }
                 },
                 "optional": [
                   "content",
+                  "context",
                   "images",
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "reasoning_items",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -1010,6 +1143,434 @@
         },
         "optional": [
           "head"
+        ]
+      }
+    },
+    "GET /api/sessions/{id}/calls": {
+      "status": 200,
+      "response": {
+        "object": {
+          "calls": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "agent": "string",
+                  "cached_tokens": {
+                    "nullable": "number"
+                  },
+                  "class": "string",
+                  "completion_tokens": {
+                    "nullable": "number"
+                  },
+                  "context_window": {
+                    "nullable": "number"
+                  },
+                  "created_at": "string",
+                  "decode_ms": {
+                    "nullable": "number"
+                  },
+                  "drift": {
+                    "nullable": "number"
+                  },
+                  "endpoint": "string",
+                  "entry_id": "string",
+                  "id": "string",
+                  "message_tokens": "number",
+                  "model": "string",
+                  "model_id": "string",
+                  "predicted_prompt_tokens": {
+                    "nullable": "number"
+                  },
+                  "prediction": "string",
+                  "prefill_ms": {
+                    "nullable": "number"
+                  },
+                  "prefilled_tokens": {
+                    "nullable": "number"
+                  },
+                  "priority": "string",
+                  "prompt_tokens": {
+                    "nullable": "number"
+                  },
+                  "queue_ms": {
+                    "nullable": "number"
+                  },
+                  "reasoning_source": "string",
+                  "reasoning_tokens": {
+                    "nullable": "number"
+                  },
+                  "run_id": "string",
+                  "session_id": "string",
+                  "slot": {
+                    "nullable": "number"
+                  },
+                  "total_tokens": {
+                    "nullable": "number"
+                  }
+                },
+                "optional": [
+                  "agent",
+                  "class",
+                  "endpoint",
+                  "entry_id",
+                  "model_id",
+                  "prediction",
+                  "priority",
+                  "reasoning_source"
+                ]
+              }
+            }
+          },
+          "session_id": "string"
+        }
+      }
+    },
+    "GET /api/sessions/{id}/calls/{call_id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "breakdown": {
+            "object": {
+              "messages": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "reasoning_tokens": "number",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate",
+                      "reasoning_tokens"
+                    ]
+                  }
+                }
+              },
+              "parts": "number",
+              "prompt_source": "string",
+              "prompt_tokens": {
+                "nullable": "number"
+              },
+              "remainder": {
+                "nullable": "number"
+              },
+              "sections": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "kind": "string",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate"
+                    ]
+                  }
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "name": "string",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate"
+                    ]
+                  }
+                }
+              }
+            },
+            "optional": [
+              "prompt_source"
+            ]
+          },
+          "call": {
+            "object": {
+              "agent": "string",
+              "cached_tokens": {
+                "nullable": "number"
+              },
+              "class": "string",
+              "completion_tokens": {
+                "nullable": "number"
+              },
+              "context_window": {
+                "nullable": "number"
+              },
+              "created_at": "string",
+              "decode_ms": {
+                "nullable": "number"
+              },
+              "drift": {
+                "nullable": "number"
+              },
+              "endpoint": "string",
+              "entry_id": "string",
+              "id": "string",
+              "message_tokens": "number",
+              "model": "string",
+              "model_id": "string",
+              "predicted_prompt_tokens": {
+                "nullable": "number"
+              },
+              "prediction": "string",
+              "prefill_ms": {
+                "nullable": "number"
+              },
+              "prefilled_tokens": {
+                "nullable": "number"
+              },
+              "priority": "string",
+              "prompt_tokens": {
+                "nullable": "number"
+              },
+              "queue_ms": {
+                "nullable": "number"
+              },
+              "reasoning_source": "string",
+              "reasoning_tokens": {
+                "nullable": "number"
+              },
+              "run_id": "string",
+              "session_id": "string",
+              "slot": {
+                "nullable": "number"
+              },
+              "total_tokens": {
+                "nullable": "number"
+              }
+            },
+            "optional": [
+              "agent",
+              "class",
+              "endpoint",
+              "entry_id",
+              "model_id",
+              "prediction",
+              "priority",
+              "reasoning_source"
+            ]
+          },
+          "context_window": "number",
+          "dropped_effort": "string",
+          "message_sizes": {
+            "nullable": {
+              "array": "number"
+            }
+          },
+          "message_tokens": "number",
+          "messages": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "content": "string",
+                  "context": "string",
+                  "images": {
+                    "array": {
+                      "object": {
+                        "data": {
+                          "nullable": "string"
+                        },
+                        "height": "number",
+                        "media_type": "string",
+                        "width": "number"
+                      }
+                    }
+                  },
+                  "is_error": "boolean",
+                  "metrics": {
+                    "object": {
+                      "context": {
+                        "object": {
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
+                        }
+                      },
+                      "context_window": "number",
+                      "generation_ms": "number",
+                      "run_id": "string",
+                      "timings": {
+                        "object": {
+                          "decode_ms": "number",
+                          "decode_tokens": "number",
+                          "prompt_ms": "number",
+                          "prompt_tokens": "number",
+                          "source": "string"
+                        },
+                        "optional": [
+                          "decode_ms",
+                          "decode_tokens",
+                          "prompt_ms",
+                          "prompt_tokens",
+                          "source"
+                        ]
+                      },
+                      "usage": {
+                        "object": {
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
+                        }
+                      }
+                    },
+                    "optional": [
+                      "timings"
+                    ]
+                  },
+                  "reasoning": "string",
+                  "reasoning_items": {
+                    "array": "any"
+                  },
+                  "role": "string",
+                  "summary": "boolean",
+                  "tool_call_id": "string",
+                  "tool_calls": {
+                    "array": {
+                      "object": {
+                        "arguments": "any",
+                        "arguments_malformed": "boolean",
+                        "arguments_text": "string",
+                        "id": "string",
+                        "name": "string",
+                        "wire_id": "string"
+                      },
+                      "optional": [
+                        "arguments_malformed",
+                        "arguments_text",
+                        "wire_id"
+                      ]
+                    }
+                  }
+                },
+                "optional": [
+                  "content",
+                  "context",
+                  "images",
+                  "is_error",
+                  "metrics",
+                  "reasoning",
+                  "reasoning_items",
+                  "summary",
+                  "tool_call_id",
+                  "tool_calls"
+                ]
+              }
+            }
+          },
+          "parameters": {
+            "object": {
+              "image_input": "boolean",
+              "model": "string",
+              "preserve_thinking": "boolean",
+              "sampling": {
+                "object": {
+                  "frequency_penalty": "number",
+                  "max_output": "number",
+                  "min_p": "number",
+                  "presence_penalty": "number",
+                  "reasoning_effort": "string",
+                  "seed": "number",
+                  "stop": {
+                    "array": "string"
+                  },
+                  "temperature": "number",
+                  "top_k": "number",
+                  "top_p": "number"
+                },
+                "optional": [
+                  "frequency_penalty",
+                  "max_output",
+                  "min_p",
+                  "presence_penalty",
+                  "reasoning_effort",
+                  "seed",
+                  "stop",
+                  "temperature",
+                  "top_k",
+                  "top_p"
+                ]
+              },
+              "thinking_switch": "string"
+            },
+            "optional": [
+              "thinking_switch"
+            ]
+          },
+          "prediction": {
+            "object": {
+              "method": "string",
+              "tokens": "number"
+            }
+          },
+          "sections": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "kind": "string",
+                  "text": "string",
+                  "tokens": "number"
+                }
+              }
+            }
+          },
+          "sources": {
+            "nullable": {
+              "map": "string"
+            }
+          },
+          "tools": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "description": "string",
+                  "name": "string",
+                  "schema": "any",
+                  "source": "string",
+                  "tokens": "number"
+                }
+              }
+            }
+          }
+        },
+        "optional": [
+          "breakdown",
+          "call",
+          "dropped_effort",
+          "prediction"
         ]
       }
     },
@@ -1185,12 +1746,130 @@
       "status": 200,
       "response": {
         "object": {
-          "calibration": {
+          "breakdown": {
             "object": {
-              "estimated_tokens": "number",
-              "input_tokens": "number",
-              "request_id": "string"
-            }
+              "messages": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "reasoning_tokens": "number",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate",
+                      "reasoning_tokens"
+                    ]
+                  }
+                }
+              },
+              "parts": "number",
+              "prompt_source": "string",
+              "prompt_tokens": {
+                "nullable": "number"
+              },
+              "remainder": {
+                "nullable": "number"
+              },
+              "sections": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "kind": "string",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate"
+                    ]
+                  }
+                }
+              },
+              "tools": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "approximate": "boolean",
+                      "name": "string",
+                      "tokens": "number"
+                    },
+                    "optional": [
+                      "approximate"
+                    ]
+                  }
+                }
+              }
+            },
+            "optional": [
+              "prompt_source"
+            ]
+          },
+          "call": {
+            "object": {
+              "agent": "string",
+              "cached_tokens": {
+                "nullable": "number"
+              },
+              "class": "string",
+              "completion_tokens": {
+                "nullable": "number"
+              },
+              "context_window": {
+                "nullable": "number"
+              },
+              "created_at": "string",
+              "decode_ms": {
+                "nullable": "number"
+              },
+              "drift": {
+                "nullable": "number"
+              },
+              "endpoint": "string",
+              "entry_id": "string",
+              "id": "string",
+              "message_tokens": "number",
+              "model": "string",
+              "model_id": "string",
+              "predicted_prompt_tokens": {
+                "nullable": "number"
+              },
+              "prediction": "string",
+              "prefill_ms": {
+                "nullable": "number"
+              },
+              "prefilled_tokens": {
+                "nullable": "number"
+              },
+              "priority": "string",
+              "prompt_tokens": {
+                "nullable": "number"
+              },
+              "queue_ms": {
+                "nullable": "number"
+              },
+              "reasoning_source": "string",
+              "reasoning_tokens": {
+                "nullable": "number"
+              },
+              "run_id": "string",
+              "session_id": "string",
+              "slot": {
+                "nullable": "number"
+              },
+              "total_tokens": {
+                "nullable": "number"
+              }
+            },
+            "optional": [
+              "agent",
+              "class",
+              "endpoint",
+              "entry_id",
+              "model_id",
+              "prediction",
+              "priority",
+              "reasoning_source"
+            ]
           },
           "context_window": "number",
           "dropped_effort": "string",
@@ -1205,6 +1884,7 @@
               "array": {
                 "object": {
                   "content": "string",
+                  "context": "string",
                   "images": {
                     "array": {
                       "object": {
@@ -1289,6 +1969,9 @@
                     ]
                   },
                   "reasoning": "string",
+                  "reasoning_items": {
+                    "array": "any"
+                  },
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -1297,21 +1980,27 @@
                       "object": {
                         "arguments": "any",
                         "arguments_malformed": "boolean",
+                        "arguments_text": "string",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "arguments_text",
+                        "wire_id"
                       ]
                     }
                   }
                 },
                 "optional": [
                   "content",
+                  "context",
                   "images",
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "reasoning_items",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -1358,33 +2047,11 @@
               "thinking_switch"
             ]
           },
-          "request": {
+          "prediction": {
             "object": {
-              "cached_tokens": {
-                "nullable": "number"
-              },
-              "created_at": "string",
-              "entry_id": "string",
-              "id": "string",
-              "input_tokens": {
-                "nullable": "number"
-              },
-              "message_tokens": "number",
-              "model": "string",
-              "model_id": "string",
-              "output_tokens": {
-                "nullable": "number"
-              },
-              "run_id": "string",
-              "session_id": "string",
-              "total_tokens": {
-                "nullable": "number"
-              }
-            },
-            "optional": [
-              "entry_id",
-              "model_id"
-            ]
+              "method": "string",
+              "tokens": "number"
+            }
           },
           "sections": {
             "nullable": {
@@ -1417,9 +2084,10 @@
           }
         },
         "optional": [
-          "calibration",
+          "breakdown",
+          "call",
           "dropped_effort",
-          "request"
+          "prediction"
         ]
       }
     },
@@ -1497,6 +2165,7 @@
                   "message": {
                     "object": {
                       "content": "string",
+                      "context": "string",
                       "images": {
                         "array": {
                           "object": {
@@ -1581,6 +2250,9 @@
                         ]
                       },
                       "reasoning": "string",
+                      "reasoning_items": {
+                        "array": "any"
+                      },
                       "role": "string",
                       "summary": "boolean",
                       "tool_call_id": "string",
@@ -1589,21 +2261,27 @@
                           "object": {
                             "arguments": "any",
                             "arguments_malformed": "boolean",
+                            "arguments_text": "string",
                             "id": "string",
-                            "name": "string"
+                            "name": "string",
+                            "wire_id": "string"
                           },
                           "optional": [
-                            "arguments_malformed"
+                            "arguments_malformed",
+                            "arguments_text",
+                            "wire_id"
                           ]
                         }
                       }
                     },
                     "optional": [
                       "content",
+                      "context",
                       "images",
                       "is_error",
                       "metrics",
                       "reasoning",
+                      "reasoning_items",
                       "summary",
                       "tool_call_id",
                       "tool_calls"
@@ -1624,6 +2302,7 @@
               "array": {
                 "object": {
                   "content": "string",
+                  "context": "string",
                   "images": {
                     "array": {
                       "object": {
@@ -1708,6 +2387,9 @@
                     ]
                   },
                   "reasoning": "string",
+                  "reasoning_items": {
+                    "array": "any"
+                  },
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -1716,21 +2398,27 @@
                       "object": {
                         "arguments": "any",
                         "arguments_malformed": "boolean",
+                        "arguments_text": "string",
                         "id": "string",
-                        "name": "string"
+                        "name": "string",
+                        "wire_id": "string"
                       },
                       "optional": [
-                        "arguments_malformed"
+                        "arguments_malformed",
+                        "arguments_text",
+                        "wire_id"
                       ]
                     }
                   }
                 },
                 "optional": [
                   "content",
+                  "context",
                   "images",
                   "is_error",
                   "metrics",
                   "reasoning",
+                  "reasoning_items",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -1742,286 +2430,15 @@
         }
       }
     },
-    "GET /api/sessions/{id}/requests": {
+    "GET /api/sessions/{id}/prediction": {
       "status": 200,
       "response": {
         "object": {
-          "requests": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "cached_tokens": {
-                    "nullable": "number"
-                  },
-                  "created_at": "string",
-                  "entry_id": "string",
-                  "id": "string",
-                  "input_tokens": {
-                    "nullable": "number"
-                  },
-                  "message_tokens": "number",
-                  "model": "string",
-                  "model_id": "string",
-                  "output_tokens": {
-                    "nullable": "number"
-                  },
-                  "run_id": "string",
-                  "session_id": "string",
-                  "total_tokens": {
-                    "nullable": "number"
-                  }
-                },
-                "optional": [
-                  "entry_id",
-                  "model_id"
-                ]
-              }
-            }
-          },
-          "session_id": "string"
-        }
-      }
-    },
-    "GET /api/sessions/{id}/requests/{request_id}": {
-      "status": 200,
-      "response": {
-        "object": {
-          "calibration": {
-            "object": {
-              "estimated_tokens": "number",
-              "input_tokens": "number",
-              "request_id": "string"
-            }
-          },
           "context_window": "number",
-          "dropped_effort": "string",
-          "message_sizes": {
-            "nullable": {
-              "array": "number"
-            }
-          },
-          "message_tokens": "number",
-          "messages": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "content": "string",
-                  "images": {
-                    "array": {
-                      "object": {
-                        "data": {
-                          "nullable": "string"
-                        },
-                        "height": "number",
-                        "media_type": "string",
-                        "width": "number"
-                      }
-                    }
-                  },
-                  "is_error": "boolean",
-                  "metrics": {
-                    "object": {
-                      "context": {
-                        "object": {
-                          "cached_tokens": {
-                            "nullable": "number"
-                          },
-                          "input_tokens": {
-                            "nullable": "number"
-                          },
-                          "output_tokens": {
-                            "nullable": "number"
-                          },
-                          "prefilled_tokens": {
-                            "nullable": "number"
-                          },
-                          "reasoning_tokens": {
-                            "nullable": "number"
-                          },
-                          "total_tokens": {
-                            "nullable": "number"
-                          }
-                        }
-                      },
-                      "context_window": "number",
-                      "generation_ms": "number",
-                      "run_id": "string",
-                      "timings": {
-                        "object": {
-                          "decode_ms": "number",
-                          "decode_tokens": "number",
-                          "prompt_ms": "number",
-                          "prompt_tokens": "number",
-                          "source": "string"
-                        },
-                        "optional": [
-                          "decode_ms",
-                          "decode_tokens",
-                          "prompt_ms",
-                          "prompt_tokens",
-                          "source"
-                        ]
-                      },
-                      "usage": {
-                        "object": {
-                          "cached_tokens": {
-                            "nullable": "number"
-                          },
-                          "input_tokens": {
-                            "nullable": "number"
-                          },
-                          "output_tokens": {
-                            "nullable": "number"
-                          },
-                          "prefilled_tokens": {
-                            "nullable": "number"
-                          },
-                          "reasoning_tokens": {
-                            "nullable": "number"
-                          },
-                          "total_tokens": {
-                            "nullable": "number"
-                          }
-                        }
-                      }
-                    },
-                    "optional": [
-                      "timings"
-                    ]
-                  },
-                  "reasoning": "string",
-                  "role": "string",
-                  "summary": "boolean",
-                  "tool_call_id": "string",
-                  "tool_calls": {
-                    "array": {
-                      "object": {
-                        "arguments": "any",
-                        "arguments_malformed": "boolean",
-                        "id": "string",
-                        "name": "string"
-                      },
-                      "optional": [
-                        "arguments_malformed"
-                      ]
-                    }
-                  }
-                },
-                "optional": [
-                  "content",
-                  "images",
-                  "is_error",
-                  "metrics",
-                  "reasoning",
-                  "summary",
-                  "tool_call_id",
-                  "tool_calls"
-                ]
-              }
-            }
-          },
-          "parameters": {
-            "object": {
-              "image_input": "boolean",
-              "model": "string",
-              "preserve_thinking": "boolean",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "thinking_switch": "string"
-            },
-            "optional": [
-              "thinking_switch"
-            ]
-          },
-          "request": {
-            "object": {
-              "cached_tokens": {
-                "nullable": "number"
-              },
-              "created_at": "string",
-              "entry_id": "string",
-              "id": "string",
-              "input_tokens": {
-                "nullable": "number"
-              },
-              "message_tokens": "number",
-              "model": "string",
-              "model_id": "string",
-              "output_tokens": {
-                "nullable": "number"
-              },
-              "run_id": "string",
-              "session_id": "string",
-              "total_tokens": {
-                "nullable": "number"
-              }
-            },
-            "optional": [
-              "entry_id",
-              "model_id"
-            ]
-          },
-          "sections": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "kind": "string",
-                  "text": "string",
-                  "tokens": "number"
-                }
-              }
-            }
-          },
-          "sources": {
-            "nullable": {
-              "map": "string"
-            }
-          },
-          "tools": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "description": "string",
-                  "name": "string",
-                  "schema": "any",
-                  "source": "string",
-                  "tokens": "number"
-                }
-              }
-            }
-          }
-        },
-        "optional": [
-          "calibration",
-          "dropped_effort",
-          "request"
-        ]
+          "method": "string",
+          "model": "string",
+          "tokens": "number"
+        }
       }
     },
     "GET /api/sessions/{id}/run": {
@@ -2117,8 +2534,28 @@
       "status": 200,
       "response": {
         "object": {
+          "classes": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "class": "string",
+                  "kind": "string",
+                  "model": "string",
+                  "pool": "string",
+                  "provider_id": "string",
+                  "via": "string"
+                },
+                "optional": [
+                  "pool",
+                  "provider_id",
+                  "via"
+                ]
+              }
+            }
+          },
           "defaults": {
             "object": {
+              "aging_seconds": "number",
               "compaction": {
                 "object": {
                   "auto": "boolean",
@@ -2134,6 +2571,8 @@
                 }
               },
               "computer_idle_minutes": "number",
+              "maintenance_idle_seconds": "number",
+              "preempt_running": "boolean",
               "sandbox_egress": {
                 "object": {
                   "allow": {
@@ -2177,7 +2616,8 @@
             "nullable": {
               "map": "any"
             }
-          }
+          },
+          "titles_model": "string"
         }
       }
     },
@@ -2325,12 +2765,15 @@
         "object": {
           "context_window": "number",
           "created_at": "string",
+          "effective_window": "number",
           "id": "string",
           "image_input": "boolean",
+          "kind": "string",
           "max_output": "number",
           "model": "string",
           "name": "string",
           "preserve_thinking": "boolean",
+          "probed_window": "number",
           "provider_id": "string",
           "reasoning_effort": "string",
           "reasoning_efforts": {
@@ -2342,6 +2785,7 @@
           "updated_at": "string"
         },
         "optional": [
+          "probed_window",
           "reasoning_effort"
         ]
       }
@@ -2350,6 +2794,7 @@
       "status": 200,
       "request": {
         "object": {
+          "api": "string",
           "api_key": "string",
           "backend": "string",
           "base_url": "string",
@@ -2365,6 +2810,7 @@
       },
       "response": {
         "object": {
+          "api": "string",
           "api_key_hint": "string",
           "api_key_set": "boolean",
           "backend": "string",
@@ -2374,11 +2820,49 @@
               "build": "string",
               "cache_metrics": "string",
               "counting": "string",
+              "responses": {
+                "object": {
+                  "build": "string",
+                  "cache_metrics": "boolean",
+                  "checked_at": "string",
+                  "counted": "boolean",
+                  "drift": "number",
+                  "model": "string",
+                  "reason": "string",
+                  "reasoning": "boolean",
+                  "verdict": "string"
+                },
+                "optional": [
+                  "build",
+                  "model",
+                  "reason"
+                ]
+              },
+              "slot_affinity": {
+                "object": {
+                  "build": "string",
+                  "cached_tokens": "number",
+                  "checked_at": "string",
+                  "model": "string",
+                  "prompt_tokens": "number",
+                  "reason": "string",
+                  "verdict": "string"
+                },
+                "optional": [
+                  "build",
+                  "cached_tokens",
+                  "model",
+                  "prompt_tokens",
+                  "reason"
+                ]
+              },
               "slot_hints": "boolean",
               "window": "number"
             },
             "optional": [
               "build",
+              "responses",
+              "slot_affinity",
               "window"
             ]
           },
@@ -2973,6 +3457,7 @@
         "object": {
           "context_window": "number",
           "image_input": "boolean",
+          "kind": "string",
           "max_output": "number",
           "model": "string",
           "name": "string",
@@ -2989,12 +3474,15 @@
         "object": {
           "context_window": "number",
           "created_at": "string",
+          "effective_window": "number",
           "id": "string",
           "image_input": "boolean",
+          "kind": "string",
           "max_output": "number",
           "model": "string",
           "name": "string",
           "preserve_thinking": "boolean",
+          "probed_window": "number",
           "provider_id": "string",
           "reasoning_effort": "string",
           "reasoning_efforts": {
@@ -3006,6 +3494,7 @@
           "updated_at": "string"
         },
         "optional": [
+          "probed_window",
           "reasoning_effort"
         ]
       }
@@ -3015,6 +3504,7 @@
       "request": {
         "object": {
           "image_input": "boolean",
+          "kind": "string",
           "model": "string",
           "preserve_thinking": "boolean",
           "provider_id": "string",
@@ -3182,6 +3672,7 @@
       },
       "response": {
         "object": {
+          "api": "string",
           "api_key_hint": "string",
           "api_key_set": "boolean",
           "backend": "string",
@@ -3191,11 +3682,49 @@
               "build": "string",
               "cache_metrics": "string",
               "counting": "string",
+              "responses": {
+                "object": {
+                  "build": "string",
+                  "cache_metrics": "boolean",
+                  "checked_at": "string",
+                  "counted": "boolean",
+                  "drift": "number",
+                  "model": "string",
+                  "reason": "string",
+                  "reasoning": "boolean",
+                  "verdict": "string"
+                },
+                "optional": [
+                  "build",
+                  "model",
+                  "reason"
+                ]
+              },
+              "slot_affinity": {
+                "object": {
+                  "build": "string",
+                  "cached_tokens": "number",
+                  "checked_at": "string",
+                  "model": "string",
+                  "prompt_tokens": "number",
+                  "reason": "string",
+                  "verdict": "string"
+                },
+                "optional": [
+                  "build",
+                  "cached_tokens",
+                  "model",
+                  "prompt_tokens",
+                  "reason"
+                ]
+              },
               "slot_hints": "boolean",
               "window": "number"
             },
             "optional": [
               "build",
+              "responses",
+              "slot_affinity",
               "window"
             ]
           },
@@ -3255,17 +3784,56 @@
           },
           "probe": {
             "object": {
+              "api": "string",
               "backend": "string",
               "capabilities": {
                 "object": {
                   "build": "string",
                   "cache_metrics": "string",
                   "counting": "string",
+                  "responses": {
+                    "object": {
+                      "build": "string",
+                      "cache_metrics": "boolean",
+                      "checked_at": "string",
+                      "counted": "boolean",
+                      "drift": "number",
+                      "model": "string",
+                      "reason": "string",
+                      "reasoning": "boolean",
+                      "verdict": "string"
+                    },
+                    "optional": [
+                      "build",
+                      "model",
+                      "reason"
+                    ]
+                  },
+                  "slot_affinity": {
+                    "object": {
+                      "build": "string",
+                      "cached_tokens": "number",
+                      "checked_at": "string",
+                      "model": "string",
+                      "prompt_tokens": "number",
+                      "reason": "string",
+                      "verdict": "string"
+                    },
+                    "optional": [
+                      "build",
+                      "cached_tokens",
+                      "model",
+                      "prompt_tokens",
+                      "reason"
+                    ]
+                  },
                   "slot_hints": "boolean",
                   "window": "number"
                 },
                 "optional": [
                   "build",
+                  "responses",
+                  "slot_affinity",
                   "window"
                 ]
               },
@@ -3279,6 +3847,7 @@
           },
           "provider": {
             "object": {
+              "api": "string",
               "api_key_hint": "string",
               "api_key_set": "boolean",
               "backend": "string",
@@ -3288,11 +3857,49 @@
                   "build": "string",
                   "cache_metrics": "string",
                   "counting": "string",
+                  "responses": {
+                    "object": {
+                      "build": "string",
+                      "cache_metrics": "boolean",
+                      "checked_at": "string",
+                      "counted": "boolean",
+                      "drift": "number",
+                      "model": "string",
+                      "reason": "string",
+                      "reasoning": "boolean",
+                      "verdict": "string"
+                    },
+                    "optional": [
+                      "build",
+                      "model",
+                      "reason"
+                    ]
+                  },
+                  "slot_affinity": {
+                    "object": {
+                      "build": "string",
+                      "cached_tokens": "number",
+                      "checked_at": "string",
+                      "model": "string",
+                      "prompt_tokens": "number",
+                      "reason": "string",
+                      "verdict": "string"
+                    },
+                    "optional": [
+                      "build",
+                      "cached_tokens",
+                      "model",
+                      "prompt_tokens",
+                      "reason"
+                    ]
+                  },
                   "slot_hints": "boolean",
                   "window": "number"
                 },
                 "optional": [
                   "build",
+                  "responses",
+                  "slot_affinity",
                   "window"
                 ]
               },
@@ -4117,8 +4724,28 @@
       },
       "response": {
         "object": {
+          "classes": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "class": "string",
+                  "kind": "string",
+                  "model": "string",
+                  "pool": "string",
+                  "provider_id": "string",
+                  "via": "string"
+                },
+                "optional": [
+                  "pool",
+                  "provider_id",
+                  "via"
+                ]
+              }
+            }
+          },
           "defaults": {
             "object": {
+              "aging_seconds": "number",
               "compaction": {
                 "object": {
                   "auto": "boolean",
@@ -4134,6 +4761,8 @@
                 }
               },
               "computer_idle_minutes": "number",
+              "maintenance_idle_seconds": "number",
+              "preempt_running": "boolean",
               "sandbox_egress": {
                 "object": {
                   "allow": {
@@ -4177,7 +4806,8 @@
             "nullable": {
               "map": "any"
             }
-          }
+          },
+          "titles_model": "string"
         }
       }
     }

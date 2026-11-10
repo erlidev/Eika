@@ -30,8 +30,9 @@ egress proxy are network calls and run in the harness.
 | `event` | Envelope, type constants, payload structs, `Emitter`, fan-out `Bus` |
 | `server` | Composition, JSON API, event stream, auth, run manager; `server/servertest` builds and checks `docs/api/contract.json` |
 | `agent` | The loop: turns, tool dispatch, queues, retries, context assembly |
-| `provider` | Model interface, kind registry, `Complete`; `openai` implementation; `providertest` scripted fake; `probe` identifies the backend behind an endpoint and reads its slots, window, KV cache and capabilities, with `probetest` serving its fixtures |
-| `utility` | The harness's own one-shot model tasks (session titles), sent to the model a task is assigned |
+| `provider` | Model interface, kind registry, `Complete`; `openai` implementation in two protocols (Chat Completions and the stateless Responses API); `providertest` scripted fake; `probe` identifies the backend behind an endpoint, reads its slots, window, KV cache and capabilities, and runs the Responses conformance check, with `probetest` serving its fixtures; `counter` predicts a request's token count (exact, anchored or estimated) and learns from the measured one |
+| `inference` | The queue every model call waits in: pools of slots (and a shared cache), four priorities with aging, an idle gate for maintenance, optional preemption of running low-priority calls, one lease per model call; standard library only |
+| `utility` | The harness's own one-shot model tasks (session titles), sent to the model of the class the task runs on |
 | `imaging` | Prepares attached images: decode, EXIF orientation, fit within 1080p (Catmull-Rom), PNG or JPEG without metadata |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
 | `executor` | The interface every agent action uses, path validation; `local` (tests only), `sandbox` (eikad client) |
@@ -47,6 +48,61 @@ egress proxy are network calls and run in the harness.
 
 Health: `GET /healthz` (container check) and `GET /api/healthz` (frontend)
 return `{"status":"ok"}`. `/api` is the JSON API.
+
+## Endpoints, models and classes
+
+A provider row describes an endpoint: `backend`, `pool`, `api`, `slots`, `kv`,
+`kv_tokens` and the probed `capabilities`. An empty pool name uses the provider's
+name. Endpoints in one pool share admission limits. `api` selects `chat` or
+`responses`; only a passed Responses conformance check selects `responses`
+automatically. The user can override the probed fields. Capabilities include
+counting (`chat`, `text`, `none`), cache metrics (`reported`, `unknown`), slot
+hints, the per-request window, build, and the Responses and slot affinity checks.
+The checks record their verdict, reason, model and build.
+
+The backend probe reads these routes. **Verified** means checked on the live
+bench; the other rows describe the implemented parsers and fixtures, with no
+live verification. Fixture sources are in
+[the probe fixtures](../internal/provider/probe/probetest/testdata/README.md).
+
+| Backend | Identify by | Window per request | KV cache | Exact counting | Cache metric |
+|---|---|---|---|---|---|
+| llama.cpp (**verified**, b11942) | `GET /props` (`build_info`, `total_slots`) | `default_generation_settings.n_ctx`, which `/slots` repeats for every slot (the per-slot context, not `-c`) | **not reported**: `/props`, `/slots`, `/metrics` and `/v1/models` carry no `--kv-unified` field and no total context, and an N-slot unified server reads the same as a partitioned one with N times the context. One slot is `shared` (it owns the whole cache either way) with size `n_ctx`; several are `unknown`, and the user says which | `POST /apply-template` then `POST /tokenize` (`{"content": prompt}`) | `timings.cache_n` and `usage.prompt_tokens_details.cached_tokens`, equal |
+| vLLM (unverified) | `GET /version`, confirmed by `/metrics` series named `vllm:` or `max_model_len` in `/v1/models` | `max_model_len` of `/v1/models` | `shared` (paged blocks); size `num_gpu_blocks` x `block_size`, labels of `vllm:cache_config_info` in `/metrics`; unknown size when metrics are off. Slots are not reported (`max_num_seqs` is not exported) | `POST /tokenize` with `messages` (and `tools`, `chat_template_kwargs`) | `usage.prompt_tokens_details.cached_tokens` (needs `--enable-prompt-tokens-details`); `unknown` until a response says |
+| SGLang (unverified) | `GET /get_server_info`, or `/server_info` | `context_length`, or `max_model_len` of `/v1/models` when it is null | `shared` (radix cache); size `max_total_num_tokens`; slots `max_running_requests` when set | `POST /tokenize` where the version has it (text only) | `cached_tokens` in usage where reported; `unknown` |
+| TabbyAPI (unverified) | `GET /v1/model` (`parameters.max_seq_len`) | `parameters.max_seq_len` | `shared` across the batch; size `parameters.cache_size`; slots `parameters.max_batch_size` | `POST /v1/token/encode` (text, or messages with the template) | none known; `unknown` |
+| Cloud (unverified) | `/v1/models` and nothing else | listing fields, per model | not applicable: `unknown` | none | `prompt_tokens_details.cached_tokens`; `unknown` |
+
+With several llama.cpp slots the cache mode and total size are unknown until
+the user sets them. A single slot owns the whole cache and is `shared`.
+The effective request window is the smaller of the model's configured window
+and the probe's per-request window. Settings warns when the configured value
+is larger. With no probed window, the configured value applies.
+
+### Model kinds and classes
+
+A model has an immutable `kind`: `chat` or `decision`. Decision models are
+excluded from conversation settings, model pickers and the chat model test.
+The `decision` class accepts only decision models; the chat classes accept only
+chat models. No current task calls a decision model.
+
+The `model_classes` setting maps class names to model names:
+
+| Class | Kind | Current use |
+|---|---|---|
+| `deep` | chat | Available assignment; agents do not use classes yet |
+| `main` | chat | Fallback for `deep` and `fast` |
+| `fast` | chat | Session titles |
+| `decision` | decision | No caller; its client is deferred |
+
+Unset or deleted assignments fall back along `deep -> main` and `fast -> main`,
+then to the default chat model (`default_model`, or the first chat model if that
+setting names none, a deleted model or a decision model). `decision` has no
+fallback. Settings reports the resolved models and pools, so classes that share
+hardware are visible. Sessions and profiles still select models directly.
+Titles are skipped if an unset `fast` falls back onto the model assigned to
+`deep` and that model's backend is `openai`. An explicit `fast` assignment is
+always used.
 
 ## Agent core
 
@@ -67,6 +123,74 @@ Run(ctx, session, text)
   on `POST /api/providers/probe` and for every provider at start (`Server.Run`),
   and `store.RecordProbe` writes the result in one statement that leaves the
   fields in `overridden` alone. A failed probe writes only `probe_error`.
+  `probe.CheckResponses` is the one thing here that asks a model: two small
+  requests (a streamed tool call with the model's reasoning, then the call, its
+  result and the reasoning item sent back), which must complete, state their
+  usage with a cached count, and be counted to the token by the counter. It
+  runs on the explicit probe, and at start only for a stored provider whose
+  recorded outcome (`capabilities.responses`) was made against another server
+  build or another model than the one it would ask now; the outcome picks the
+  provider's `api` (`responses` only when it passed), which a user's own choice
+  overrides. `server/providers_responses.go` runs it. `probe.CheckSlotAffinity`
+  is the second such check, for a llama.cpp server with several slots: three
+  small requests that name slots to see whether a named slot keeps its prefix
+  across a request on the other, on the same schedule, recorded in
+  `capabilities.slot_affinity` (`server/providers_slots.go`). Only a pass makes
+  the harness send `id_slot`.
+- **inference** (`inference`) is the queue between the loop and the GPU.
+  `Queue.Acquire(ctx, Need)` blocks until the call's pool has a slot (and, on
+  a pool with a cache size, room: predicted prompt plus maximum output of
+  every running call), and returns a `Lease` whose `Context` the model call is
+  made with. The agent takes one per attempt inside `stream`, so queue time
+  (`queue_ms`) is outside the response's timings, and releases it on every way
+  out; a preempted attempt fails with a retryable error the retry path takes
+  without spending its budget. Titles, the model test and the Responses check
+  hold a lease around their call through `Queue.Do`. On a llama.cpp endpoint
+  with several slots that passed the slot affinity check, the queue also keeps
+  a book of what each slot of the server holds (`inference/affinity.go`): a call
+  that continues a session (`Need.Affinity`) gets the slot with the session's
+  prefix, `Lease.SlotHint` says which, the loop sets it on the request as
+  `Request.SlotHint`, and the OpenAI providers send it as `id_slot` on both
+  routes. Every other call names no slot. The server describes the
+  queue from the provider rows and three settings (`server/inference.go`) and
+  serves its state on `GET /api/inference`.
+  `internal/modelcalls_test.go` lists the files that send a model request.
+- **counter** (`provider/counter`) predicts the size of a `provider.Request`
+  before it is sent. One `Counter` belongs to one session: `Predict` returns a
+  `provider.Prediction` (tokens and method) and `Observe` takes the measured
+  usage back, returns the drift and trains the learned parts. The methods:
+  `exact` (the endpoint renders and tokenises the request: llama.cpp
+  `/apply-template` then `/tokenize`, vLLM `/tokenize` with messages),
+  `anchored` (the text tokenised exactly, the template's share fitted by least
+  squares over the measured calls: a base, a weight per role, per tool call,
+  and for replayed reasoning; the last measurement is the anchor while a
+  request extends it) and `estimated` (a learned bytes-per-token ratio, with
+  its running error exposed for the compaction reserve). The estimated method
+  starts at four bytes per token and learns one ratio from measured calls.
+  Before an anchored model has a measurement it also uses `estimated`; after
+  compaction the fitted template model predicts without the old anchor.
+  A request is rendered from `provider.ChatEncoder.ChatBody`, the one serialiser the
+  OpenAI provider also sends, so the template sees the same messages, tools,
+  thinking switch and replayed reasoning. A `Source` is the endpoint's routes
+  (`Routes` over HTTP; `providertest.TokenServer` is the fake). Counts are
+  cached by hash per session: a rendered prompt is cut at the control tokens
+  the server names and each prefix remembered, so only the messages added since
+  the last call are tokenised. Pictures are not counted by any route, so
+  they are taken out of the request, the text is counted, and each picture
+  size costs what a measurement showed (`anchored`), or a pixel estimate until
+  one has (`estimated`): a request with a picture is never `exact`. The agent
+  holds the session's counter (`agent.Options.Counter`, kept across runs by
+  `server/counters.go`, which attaches the routes, and the key, through a
+  `counter.Switch` for the length of a run only); `Estimate` answers without asking the server when a
+  prediction cannot finish in time, `Seed` teaches a fresh counter from a stored
+  measurement, and `CountText` tokenises a text of the caller's own. For the
+  context breakdown it also sizes parts: `Size` counts a text (exact, or
+  estimated and said so), `ToolSizes` sizes each tool by rendering the request
+  with growing tool prefixes where the endpoint renders (otherwise as JSON text,
+  not exact; lists over 64 tools also use text), `ImageSize` is a picture's
+  learned cost, and `Peek` sizes a request for a preview without leaving a prediction for `Observe`.
+  `provider.NewHTTPClient`, which the provider, the probe and the counter share,
+  repeats a request whose idle connection the server had closed.
 - **provider** turns a `Request` into a channel of `Event`s (text and
   reasoning deltas, tool calls, usage with optional `Timings`, done or
   error). `openai/timings.go` reads the speed fields of llama.cpp, vLLM, NIM,
@@ -77,6 +201,23 @@ Run(ctx, session, text)
   Chat Completions chunk and a Responses event by each field's documented
   meaning, and `provider.Tally` sums a run of calls so that a count any call
   did not state is not stated for the total.
+  Hosted Responses requests ask for `reasoning.encrypted_content` when thinking
+  is preserved, so reasoning can be replayed with `store: false`.
+  Both protocols implement `provider.Provider`, in package `openai` on the
+  same SDK client: `Provider` speaks Chat Completions and `Responses` the
+  stateless Responses API (`store: false`, the whole input every call). The
+  registry builds one or the other from `Endpoint.API`, which `server` takes
+  from the provider row's `api`, and `Endpoint.Hosted` (a hosted API, not a
+  server on the user's hardware) decides which fields a Responses request may
+  carry. `Responses` borrows the chat provider's HTTP client, error
+  classification, model list and `ChatBody`, so the token counter renders one
+  chat body whichever protocol sends. An assistant message keeps the reasoning
+  items the endpoint returned as `Message.ReasoningItems`, exactly as sent,
+  beside the reasoning text; they are stored in the entry, sent back when the
+  model preserves thinking, and ignored by Chat Completions, which sends the
+  text. A tool call has two ids: `ID` is Eika's, minted by the loop and unique
+  in the session, and `WireID` the backend's, which both protocols send back
+  unchanged (`ToolCall.Wire`); entries, events and approvals use `ID`.
 - **tool**: a call gets a `CallContext` (executor, emitter, ids). A
   `tool.Standalone` tool runs with a nil executor in chats;
   `Registry.Filter` narrows the shared registry per run. `bash` is the only
@@ -88,7 +229,84 @@ Run(ctx, session, text)
   `agent.Context`: system prompt sections (base prompt,
   instructions), tool schemas (built-in or MCP), messages, parameters, and a
   size estimate for each. Runs and `Agent.Preview` share it; a `Recorder`
-  sees every call that returned.
+  sees each conversation call that returned; summary calls do not use it.
+
+### Inference admission and priority
+
+Provider rows in one pool use the fewest slots and smallest known cache limit
+that they report. Settings and probe results update admission limits at once;
+leases already running continue. A shared cache admits calls against predicted
+prompt plus maximum output. An unknown cache uses the probed request window as
+its shared limit. Partitioned caches, or caches with no known size, use slots
+alone. Calls count in full, even if their prefixes match. The first eligible
+call by priority must fit before another can enter. A call larger than the
+whole cache runs alone when the pool is empty, with a warning.
+
+The queue supports `interactive`, `foreground`, `background`, and `maintenance`,
+in that order. Current session runs and model tests use `interactive`; titles
+use `maintenance`. Startup conformance checks use `maintenance`, and explicit
+probes use `interactive`. Foreground and background have no production callers
+yet. Compaction summary calls use the run's priority. `Rank` is read per call;
+raising a background home turn to interactive is Phase 2 work.
+
+A waiting call gains one priority level per `aging_seconds` (default 300).
+Ties use the oldest wait, which is kept across retries. Maintenance waits until
+no higher-priority call has run for `maintenance_idle_seconds` (default 120);
+a pool that has never run such a call is idle. Maintenance calls can run
+together. After one aging period a maintenance call no longer needs an idle
+pool. `preempt_running` defaults to false. If enabled, an interactive call can
+cancel running background or maintenance calls to make room. The loop retries
+without backoff or retry-budget cost; `Queue.Do` has a 16-attempt bound.
+
+Slot affinity uses a book per endpoint. A session gets its previous server
+slot when free, or waits up to the time needed to read its prefix again
+(`prompt / Policy.PrefillRate`, default 2000 tokens/s). It then takes another
+free slot and the book follows. A new session takes the least recently used
+free slot. Only a passed affinity check permits `id_slot` under either protocol.
+The bench's llama.cpp b11942 check fails, so its requests name no slot.
+`GET /api/inference` reports running and waiting calls and the policy. Activity
+views and per-day compute aggregates are later UI work.
+
+### Context layout and prefix stability
+
+Requests contain the base system prompt, instructions, sorted tool schemas,
+and the conversation. After compaction the conversation starts with its
+summary and then the retained messages. There is no preamble entry, memory
+index, skills catalog or generic plugin catalog yet.
+
+Both protocols serialize request fields deterministically. Stored tool arguments
+and reasoning items retain their original text when JSON encoding would change
+it; entry payloads use PostgreSQL `json`. Replaying a stored conversation thus
+keeps its wire bytes. The prefix test (`internal/session/prefix_test.go`) runs
+the real loop and both providers against a fake server, with JSON entries and
+with PostgreSQL. It covers steering, follow-ups, retries, stalls, cut-off and
+refused responses, interruption, restart, resume and compaction. Each request
+extends or repeats the accepted conversation prefix. Compaction starts a new
+chain; its summary request reuses the old prefix. The output limit may decrease
+as the window fills. Agent definitions, preamble replacement and notices remain
+in [the runtime design](design/runtime.md#4-context-layout).
+
+Every user-side message ends with a `<context>` block (`agent/contextblock.go`)
+that states the time it was sent to the minute, in `Options.Location` (UTC until
+the preamble carries the user's zone), read from `Options.Clock`. It is written
+once, when the loop first holds the message (`Run`, `Steer`, `FollowUp`), kept in
+`Message.Context` beside `Content` and stored with the message, so a resumed
+session sends the same bytes and the prefix never changes under it. A request
+joins it to the text (`Message.ModelText`); the interface, titles and the
+transcript form of a summary use `Content` alone.
+
+A run is bounded by `Options.Limits` (`agent/limits.go`): 40 model calls and 24
+hours, checked before each call. A run that reaches one ends cleanly, with every
+tool call answered, and its last `turn.end` says which (`max_calls`,
+`max_wall_time`). A tool call made three or more times in a row with the same
+arguments has a warning appended to its result and still runs. Each attempt at a
+model call is also watched (`agent/stall.go`): once the lease is granted, a
+stream that sends no bytes for `Limits.Stall` (30 s; before the first token,
+that plus twice the time reading the predicted prompt takes at the endpoint's
+prefill rate) is aborted as a retryable failure, and the lease goes back. The
+bytes are counted by the shared HTTP client (`provider.WithProgress`), so
+comments and empty chunks count too. The rate is the endpoint's measured one
+(`store.PrefillRate`, from `model_calls`), else the queue's.
 
 Queues follow Pi: steering joins after the running tool, before the next model
 call; follow-ups wait for the turn to end (`QueueOneAtATime` or `QueueAll`).
@@ -98,23 +316,46 @@ the session's next run.
 
 Retryable failures (408, 409, 429, 5xx, transport) back off exponentially up
 to `MaxRetries`, honouring `Retry-After`, and emit `message.reset`. Others end
-with `run.error`. Before every call the request is estimated as Pi does: the
-last measured context plus 4-byte tokens for each message after it. A request
-of the whole window or more fails before the call; one that fits with less
-room than its max output gets max output lowered to the room left.
+with `run.error`. Before every call the request is sized by the session's
+token counter (`agent/counting.go`): `Predict`, bounded by `Options.CountTimeout`
+(ten seconds), falls back to the counter's estimate when it cannot answer, and
+never fails the call. A request of the whole window or more fails before the
+call; one that fits with less room than its max output gets max output lowered
+to the room left. After the call `Observe` takes the endpoint's own prompt count
+back, the `ModelCall` handed to the `Recorder` carries the prediction, its
+method and its drift, and an `exact` prediction with any drift is logged as a
+warning with its numbers. A session resumed with a counter that has learned
+nothing is seeded from the newest measurement its messages carry.
+
+The window every one of those checks uses is `Options.ContextWindow`, which the
+server sets to the model's effective window: the smaller of its row's
+`context_window` and the per-request context its provider's probe reported
+(`server/window.go`). With no probed window it is the configured one.
+
+**The context breakdown** is not computed by the loop. When a client asks for
+the context of the next request or of a recorded call (`server/calls.go`,
+`server/breakdown.go`), `agent.MeasureParts` counts each part of it (the
+sections of the system prompt, each tool, each message and its replayed
+reasoning) with the session's counter, remembered by content hash, and the
+server states the remainder, `prompt - sum(parts)`, as the template and
+formatting: against the measured prompt for a recorded call, against the
+prediction for the next request when that is `exact`, and absent otherwise.
+Nothing is scaled and a negative remainder is returned as it is. The status
+bar's meter reads `GET /api/sessions/{id}/prediction`, which sizes the request
+once without counting the parts.
 
 **Images** are `provider.Message.Images` on a user message.
 `POST .../messages` runs each through `imaging.Prepare` before the run is
 claimed; `runs.begin` refuses images for a model without `image_input`, and
 `enqueue` checks the running model's. `Options.ImageInput` decides whether
 `Context.WithMessages` sends them or a note in their place, `messageTokens`
-counts each at `ImageTokens` (one token per 750 pixels) rather than its
-base64, and the OpenAI provider sends them as `image_url` data-URL parts
+counts each at one token per 750 pixels rather than its
+base64 (`counter.EstimatedImageTokens`), and the OpenAI provider sends them as `image_url` data-URL parts
 before the text. `turn.start` carries them for the live transcript.
 
 **Compaction** (`agent/compaction.go`, `agent/summary.go`) is Pi's. With
-`CompactionSettings.Auto`, a call whose estimate passes `window - reserve`
-compacts first, and a call the endpoint refuses as too large
+`CompactionSettings.Auto`, a call whose predicted size passes `window - reserve`
+compacts first (when the prediction is only `estimated`, the reserve grows by the error estimates have shown, to at most half the window), and a call the endpoint refuses as too large
 (`provider.ContextOverflow`, or a silent truncation) is compacted and sent
 again, once. `Agent.Compact` compacts on request. `planCompaction` walks back
 from the newest stored message until about `keep` tokens are kept and cuts
@@ -127,24 +368,64 @@ again at `FallbackEffort`. The conversation becomes a summary message
 `compaction` entry, and `compaction.start` and `compaction.end` go out.
 Reserve and keep are capped at a quarter of the window.
 
+### Model-call accounting
+
+`model_calls` records the requests made by a session's loop. It does not record
+utility calls, probes or compaction summary calls. The latter take queue leases
+but are not yet observed by the counter or recorded. Counts are NULL when no
+source supplies them; a stated zero stays zero. A run total is unknown for a
+field if any call did not report that field.
+
+| Stored field | Meaning and source |
+|---|---|
+| `prompt_tokens` | Server's prompt count, including cached tokens; `input_tokens` under Responses |
+| `cached_tokens` | Usage details first, else llama.cpp `timings.cache_n`; NULL if neither is stated |
+| `prefilled_tokens` | `timings.prompt_n`, else prompt minus cached when both are known |
+| `completion_tokens`, `total_tokens` | Server's generated count (reasoning included) and stated total |
+| `reasoning_tokens`, `reasoning_source` | Reported reasoning count, else tokenizer count of reasoning text; source `reported` or `tokenised`. The latter is approximate and stays out of usage events |
+| `predicted_prompt_tokens`, `prediction`, `drift` | Counter prediction, method, and predicted minus measured prompt; drift is NULL unless both counts exist |
+| `context_window` | Effective window used to judge this request |
+| `queue_ms`, `slot`, `priority` | Wait summed across attempts, server slot named by the request (NULL when none), and requested priority |
+| `endpoint`, `class`, `agent` | Provider name at call time; class and agent remain NULL until session runs use them |
+| `prefill_ms`, `decode_ms` | Endpoint timings; decode falls back to harness time from the first token |
+
+The meter's last-call fill is `prompt_tokens + completion_tokens`, against the
+effective window. Before a measurement, fill and cache read `n/a`. The predicted
+next request shows its method, with a tilde for `estimated`. The Context panel
+shows part counts and the template remainder; the inspector shows drift.
+
+Usage parsing has the following verification status. The live recordings and
+unverified fixture sources are in
+[the usage fixtures](../internal/provider/testdata/usage/README.md).
+
+| Backend | Prompt | Cached | Reasoning | Status |
+|---|---|---|---|---|
+| llama.cpp b11942, `/v1/chat/completions` | `usage.prompt_tokens`, **includes cached** | `usage.prompt_tokens_details.cached_tokens` = `timings.cache_n`; `timings.prompt_n` is the processed part | none: NULL. `completion_tokens` includes the reasoning | **verified** on the bench, streamed, cold and warm, reasoning on: prompt 90 = cache_n 0 + prompt_n 90 cold, 90 = 86 + 4 warm; a request cut off at 20 tokens inside the reasoning had `completion_tokens` 20 |
+| llama.cpp b11942, `/v1/responses` | `response.usage.input_tokens`, **includes cached** | `input_tokens_details.cached_tokens` = `timings.cache_n`, and `timings` is a sibling of `response` in the `response.completed` event | none: NULL (no `output_tokens_details`). `output_tokens` includes the reasoning | **verified**: the same numbers as `chat` for the same prompt (90 tokens, 0 then 86 cached); output 107 over 77 reasoning and 27 answer chunks, and 20 for a response cut off inside the reasoning |
+| OpenAI and other cloud APIs | `prompt_tokens` / `input_tokens` | `prompt_tokens_details.cached_tokens` / `input_tokens_details.cached_tokens` | `completion_tokens_details.reasoning_tokens` / `output_tokens_details.reasoning_tokens` | unverified, from the API reference |
+| vLLM | `prompt_tokens` / `input_tokens` | `prompt_tokens_details.cached_tokens`, only with `--enable-prompt-tokens-details` (else `null`: NULL) | none on chat; `output_tokens_details.reasoning_tokens` on responses | unverified, from the source |
+| SGLang | `prompt_tokens` | `prompt_tokens_details.cached_tokens`, only with `--enable-cache-report` | none read: its top-level `reasoning_tokens` is 0 whether or not reasoning was counted | unverified, from the source |
+| TabbyAPI | `prompt_tokens` | none | none | unverified, from the source |
+
 ## Persistence
 
 `store` owns the database: a pgx pool, embedded migrations applied by `Open`,
 and SQL in one file per entity. Its tables live in schema `core` (every
-connection's `search_path`), squashed into one baseline migration. Missing rows are `store.ErrNotFound`,
+connection's `search_path`). Forward migrations extend the baseline schema.
+Missing rows are `store.ErrNotFound`,
 duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 
 | Table | Holds |
 |---|---|
 | `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), home |
 | `sessions` | computer_id (NULL for a chat), title, untitled, kind (user), head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
-| `session_entries` | session, parent_id, seq, kind, payload (jsonb) |
+| `session_entries` | session, parent_id, seq, kind, payload (json: the text it was written as, so a message reads back as the bytes it was sent as) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
-| `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, capabilities (jsonb), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
-| `models` | provider, name (unique), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
+| `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, api (`chat` or `responses`), capabilities (jsonb, with the Responses check's outcome), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
+| `models` | provider, name (unique), kind (chat or decision), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
-| `model_requests` | session, run, entry, model, sections, tools, parameters (jsonb), token counts (prompt, completion, total, cached; NULL where the endpoint did not state them) |
+| `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot` (the server's slot the request named, NULL when it named none), `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |
@@ -195,7 +476,7 @@ is the same base prompt every session has. web_fetch refuses filters in a chat.
 ```
 cmd/eika -> server.Run
   store.Open, secret.Load, computer.NewHost,
-  provider.NewRegistry(openai.New), builtin.Registry, event.NewBus, NewMCP
+  provider.NewRegistry(openai.New, openai.NewResponses), builtin.Registry, event.NewBus, NewMCP
   -> server.New(Deps) -> Reconcile -> Serve
 
 POST /api/sessions/{id}/messages          GET /api/events
@@ -228,7 +509,7 @@ POST /api/sessions/{id}/messages          GET /api/events
   the registry and MCP pool. `newAgent` turns a configuration into
   `agent.Options`, used by runs and the context preview alike.
 - **Settings** the harness reads (`default_model`, `default_profile`,
-  `utility_models`, `sandbox_image`, `sandbox_limits`, `sandbox_egress`,
+  `model_classes`, `sandbox_image`, `sandbox_limits`, `sandbox_egress`,
   `search_order`, `search_limits`, `setup_complete`,
   `compaction`) are
   validated on write and fall back to defaults on read. Renaming a model
@@ -239,11 +520,28 @@ POST /api/sessions/{id}/messages          GET /api/events
   `Agent.Compact` instead of `Agent.Run`: it claims the session like any run,
   takes no queued messages, and is `409` when `Compactable` finds nothing to
   summarize.
-- **Utility models** (`titles.go`): a session created without a title is
+- **Model kinds and classes** (`classes.go`): a model row has a `kind`,
+  `chat` or `decision`, fixed when it is added. A decision model is never a
+  chat model: `defaultModel`, the run configuration (`configBase.models`),
+  profile and session `model_id`, the model of a message, the Responses
+  check and the setup's model count all see chat models only, and the
+  model test refuses one, since its request is a chat. The harness's own
+  tasks name a class, not a model. The `model_classes` setting maps `deep`,
+  `main`, `fast` (chat models) and `decision` (a decision model) to model
+  names; `resolveClass` applies the fallbacks `deep -> main`,
+  `fast -> main` and, for a chat class left with no model, the default model,
+  and `GET /api/settings` reports each class with the model
+  and pool that serve it, so the UI never repeats the rule. Nothing asks
+  for `decision` before Sentry. A session still picks its own model
+  (`default_model`, profile, override); agents move to classes in phase 2.
+- **Titles** (`titles.go`): a session created without a title is
   `untitled` and called `New session` or `New chat`. When a run begins on
   one, `titles` starts a goroutine (at most one per session, cancelled and
-  joined by `Close`) that reads the model `utility_models` assigns
-  `session_title`, builds its provider, and calls `utility.Title` with the
+  joined by `Close`) that resolves the `fast` class (`titleModel`: it
+  falls back to `main` and then the default model, and is skipped when it
+  would fall back onto the
+  model assigned to `deep` and that is a hosted API), builds its provider,
+  and calls `utility.Title` with the
   first user message: one request, no tools, effort `none` in the model's
   thinking switch when it offers `none`. `TitleUntitledSession` writes the
   title only if the session is still untitled, then `session.title` goes out
@@ -512,7 +810,7 @@ web/src/
   (`features/setup`) or sign-in (`features/connect`). With a token the setup
   shows until a password exists and `setup_complete` is true.
 - **Settings** (`features/settings`): providers and models, profiles,
-  defaults and utility models, the computer's limits and network, search, MCP, password. The profile editor
+  defaults and model classes, the computer's limits and network, search, MCP, password. The profile editor
   (`features/profiles/SettingsEditor`) has Model, Prompt, Tools, and Sampling
   tabs, a cost strip, and a chip per field naming where its value comes from.
   `ToolPicker` is shared by profiles, sessions, and chats. Small stores hold
@@ -522,8 +820,11 @@ web/src/
   menu that a right-click also opens, renaming in place), session (transcript,
   status bar, composer), and a tab strip of panels from `app/panels.tsx`.
   Chats get Tools; every session gets Run and Context (window fill, token bar
-  by part, key parameters; the Context inspector dialog shows a request whole
-  with links to the layer behind each part). `ResizableSplit` remembers
+  by part with the template's remainder as a line of its own, key parameters;
+  the Context inspector dialog shows a request whole with links to the layer
+  behind each part). The status bar's meter shows the last call's fill against
+  the effective window, its cached tokens, and the predicted next request with
+  its method. `ResizableSplit` remembers
   widths; below 1024px side panes become drawers. The UI has no panel for a
   computer's files, no terminal, and no session tree or fork, and the API has
   no routes for a computer's files or a session fork; rewind uses the outline
@@ -561,8 +862,10 @@ An arrow means "may import".
  cmd/eika -> server                     cmd/eikad -> eikad, search/filter
  server -> agent, session, store, computer, search, mcp, egress,
            utility, imaging
- agent -> tool, provider                 session -> agent, store
+ agent -> tool, provider, inference       session -> agent, store
+ provider/probe -> inference              inference: a leaf (standard library only)
  utility -> provider                      imaging -> provider
+ provider/counter -> provider, provider/probe   agent -> provider/counter
  tool -> executor
  executor/sandbox -> eikad (wire types)   computer -> executor, executor/sandbox
  tool/builtin -> search, search/fetch     search/fetch, egress -> netguard
@@ -602,7 +905,9 @@ files. Vet and staticcheck also compile the `live`-tagged tests.
   model through `internal/provider/openai`, behind the `live` build tag. The
   package reads `~/.config/eika/live.env`, describes the server with the
   harness's own provider probe (build, model file and revision, slots, window),
-  plays each scenario and writes a JSON
+  plays each scenario with a token counter of its own (the report records each
+  call's prediction, its method and its drift, and a scenario fails on drift in
+  an `exact` prediction) and writes a JSON
   report to the ignored `evals/results/`. Its plain code and fakes-backed
   tests run in `make check`; the live test skips without
   `EIKA_LIVE_ENDPOINT` and fails when that is set but silent. `evals/README.md`

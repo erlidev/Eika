@@ -46,6 +46,9 @@ const (
 	// testMaxTokens leaves a reasoning model room to think and still say a
 	// word, at a cost too small to matter.
 	testMaxTokens = 512
+	// testPromptTokens is the room the test's prompt and its picture take in
+	// a shared cache, which the queue admits the test against.
+	testPromptTokens = 1024
 	// keyHintLength is how many trailing characters of a key the UI may see,
 	// so the user can tell which key is stored.
 	keyHintLength = 4
@@ -99,6 +102,7 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.syncInference(r.Context())
 	s.log.Info("provider created", "provider_id", created.ID, "name", created.Name, "kind", created.Kind)
 	writeJSON(w, s.log, http.StatusCreated, s.asProvider(created))
 }
@@ -159,6 +163,7 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.syncInference(r.Context())
 	s.log.Info("provider updated", "provider_id", updated.ID, "key_changed", req.APIKey != nil, "key_cleared", keyCleared,
 		"overridden", updated.Overridden)
 	writeJSON(w, s.log, http.StatusOK, s.asProvider(updated))
@@ -172,6 +177,7 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.syncInference(r.Context())
 	s.log.Info("provider deleted", "provider_id", id)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -200,9 +206,15 @@ func (s *Server) handleProbeProvider(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	out := probeResponse{Models: models, Probe: asProbe(res)}
+	// A form checking an unsaved endpoint has no model of the user's to ask:
+	// it keeps the protocol every provider starts with.
+	api := provider.APIChat
 	if record {
-		stored, err := s.recordProbe(r.Context(), p.ID, res)
+		res, api = s.withChecks(r.Context(), p, key, res, true)
+	}
+	out := probeResponse{Models: models, Probe: asProbe(res, api)}
+	if record {
+		stored, err := s.recordProbe(r.Context(), p.ID, res, api)
 		if err != nil {
 			s.fail(w, r, err)
 			return
@@ -274,31 +286,39 @@ func (s *Server) recordProbeFailure(ctx context.Context, id string, cause error)
 	}
 }
 
-// providerFor builds a provider on the endpoint of the model a run's
-// configuration resolved to. A deployment with no model has nothing to run
-// on.
-func (s *Server) providerFor(ctx context.Context, cfg runConfig) (provider.Provider, error) {
-	if !cfg.modelOK {
-		return nil, conflictf("no model is configured; add one under Settings, Models")
-	}
-	return s.providerOf(ctx, cfg.model)
+// endpoint is a model's provider as a run uses it: the stored row, the key in
+// the clear, and the client built on them.
+type endpoint struct {
+	row    store.Provider
+	key    string
+	client provider.Provider
 }
 
-// providerOf builds a provider on the endpoint of model m.
-func (s *Server) providerOf(ctx context.Context, m store.Model) (provider.Provider, error) {
+// endpointFor builds the provider on the endpoint of the model a run's
+// configuration resolved to. A deployment with no model has nothing to run
+// on.
+func (s *Server) endpointFor(ctx context.Context, cfg runConfig) (endpoint, error) {
+	if !cfg.modelOK {
+		return endpoint{}, conflictf("no model is configured; add one under Settings, Models")
+	}
+	return s.endpointOf(ctx, cfg.model)
+}
+
+// endpointOf builds the provider on the endpoint of model m.
+func (s *Server) endpointOf(ctx context.Context, m store.Model) (endpoint, error) {
 	p, err := s.deps.Store.Provider(ctx, m.ProviderID)
 	if err != nil {
-		return nil, err
+		return endpoint{}, err
 	}
 	key, err := s.openKey(p)
 	if err != nil {
-		return nil, err
+		return endpoint{}, err
 	}
-	client, err := s.deps.Providers.Build(p.Kind, provider.Endpoint{BaseURL: p.BaseURL, APIKey: key})
+	client, err := s.deps.Providers.Build(p.Kind, providerEndpoint(p, key))
 	if err != nil {
-		return nil, fmt.Errorf("build provider %s: %s", p.Name, scrub(err.Error(), key))
+		return endpoint{}, fmt.Errorf("build provider %s: %s", p.Name, scrub(err.Error(), key))
 	}
-	return client, nil
+	return endpoint{row: p, key: key, client: client}, nil
 }
 
 // validateProvider rejects a provider the harness could not build a client
@@ -321,10 +341,13 @@ func (s *Server) validateProvider(p store.Provider) error {
 // finds, and returns what to store, or nil when the request sets none.
 func validateOverride(p store.Provider, req updateProviderRequest) (*store.ProviderOverride, error) {
 	o := store.ProviderOverride{
-		Backend: req.Backend, Pool: req.Pool, Slots: req.Slots, KV: req.KV, KVTokens: req.KVTokens, Reset: req.Reset,
+		Backend: req.Backend, Pool: req.Pool, Slots: req.Slots, KV: req.KV, KVTokens: req.KVTokens, API: req.API, Reset: req.Reset,
 	}
-	if o.Backend == nil && o.Pool == nil && o.Slots == nil && o.KV == nil && o.KVTokens == nil && len(o.Reset) == 0 {
+	if o.Backend == nil && o.Pool == nil && o.Slots == nil && o.KV == nil && o.KVTokens == nil && o.API == nil && len(o.Reset) == 0 {
 		return nil, nil
+	}
+	if o.API != nil && !provider.API(*o.API).Valid() {
+		return nil, invalidf("api must be one of responses, chat")
 	}
 	if o.Backend != nil && !probe.Backend(*o.Backend).Valid() {
 		return nil, invalidf("backend must be one of llamacpp, vllm, sglang, tabby, openai, other")
@@ -355,8 +378,8 @@ func validateOverride(p store.Provider, req updateProviderRequest) (*store.Provi
 		}
 	}
 	for _, field := range o.Reset {
-		if !slices.Contains([]string{store.OverrideBackend, store.OverridePool, store.OverrideSlots, store.OverrideKV}, field) {
-			return nil, invalidf("reset names %q, which is not one of backend, pool, slots, kv", field)
+		if !slices.Contains([]string{store.OverrideBackend, store.OverridePool, store.OverrideSlots, store.OverrideKV, store.OverrideAPI}, field) {
+			return nil, invalidf("reset names %q, which is not one of backend, pool, slots, kv, api", field)
 		}
 	}
 	return &o, nil

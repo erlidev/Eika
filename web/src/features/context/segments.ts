@@ -1,19 +1,31 @@
 /**
  * What the Context panel and inspector draw, as pure functions: one request
- * split into the parts that fill the context window, the estimate scaled to
- * what the endpoint measured, the tools by where they come from and their
- * parameters, the request as one JSON document, and the setting behind each
- * part.
+ * split into the parts that fill the context window with the endpoint's own
+ * count of each and what the template adds, the size of the whole request and
+ * how it is known, the tools by where they come from and their parameters, the
+ * request as one JSON document, and the setting behind each part.
  */
 
-import type { ModelContext, SectionKind, ToolSchema } from "@/api/types";
+import type {
+  ContextSection,
+  MessageSize,
+  ModelContext,
+  PredictedSize,
+  SectionKind,
+  ToolSchema,
+} from "@/api/types";
 import type { EditorSection } from "@/features/profiles/form";
 
 /** SegmentKind names one part of a request, in the order the bar draws them. */
-export type SegmentKind = SectionKind | "builtin_tools" | "mcp_tools" | "messages";
+export type SegmentKind =
+  SectionKind | "builtin_tools" | "mcp_tools" | "messages" | "reasoning" | "template";
 
-/** Segment is one part of a request and its estimated size. */
-export type Segment = { kind: SegmentKind; label: string; tokens: number };
+/**
+ * Segment is one part of a request and its size. approximate says the size is
+ * not the endpoint's own count of it. The template segment is the remainder,
+ * which is negative when the parts add up to more than the endpoint counted.
+ */
+export type Segment = { kind: SegmentKind; label: string; tokens: number; approximate: boolean };
 
 /** segmentLabels are how the panel names each part. */
 export const segmentLabels: Record<SegmentKind, string> = {
@@ -22,52 +34,185 @@ export const segmentLabels: Record<SegmentKind, string> = {
   builtin_tools: "Built-in tools",
   mcp_tools: "MCP tools",
   messages: "Messages",
+  reasoning: "Replayed reasoning",
+  template: "Template and formatting",
 };
 
-/** segmentOrder is the bar's order: the system prompt, the tools, the conversation. */
+/** segmentOrder is the bar's order: the system prompt, the tools, the conversation, what the template adds. */
 const segmentOrder: readonly SegmentKind[] = [
   "base",
   "instructions",
   "builtin_tools",
   "mcp_tools",
   "messages",
+  "reasoning",
+  "template",
 ];
 
 /**
- * segments splits a request into the parts the bar draws, leaving out a
- * part the request does not have.
+ * segments splits a request into the parts the bar draws, from the
+ * breakdown's own counts, leaving out a part the request does not have. The
+ * template segment is the remainder, left out while there is nothing to state
+ * it against: it is the endpoint's count less the parts, never a share
+ * scaled to fit.
  */
 export function segments(c: ModelContext): Segment[] {
+  const b = c.breakdown;
   const tokens: Record<SegmentKind, number> = {
     base: 0,
     instructions: 0,
     builtin_tools: 0,
     mcp_tools: 0,
-    messages: c.message_tokens,
+    messages: 0,
+    reasoning: 0,
+    template: b.remainder ?? 0,
   };
-  for (const s of c.sections ?? []) tokens[s.kind] += s.tokens;
-  for (const t of c.tools ?? [])
-    tokens[t.source === "mcp" ? "mcp_tools" : "builtin_tools"] += t.tokens;
+  const approximate: Record<SegmentKind, boolean> = {
+    base: false,
+    instructions: false,
+    builtin_tools: false,
+    mcp_tools: false,
+    messages: false,
+    reasoning: false,
+    template: false,
+  };
+  for (const s of b.sections) {
+    tokens[s.kind] += s.tokens;
+    approximate[s.kind] ||= s.approximate === true;
+  }
+  b.tools.forEach((t, i) => {
+    const kind = c.tools?.[i]?.source === "mcp" ? "mcp_tools" : "builtin_tools";
+    tokens[kind] += t.tokens;
+    approximate[kind] ||= t.approximate === true;
+  });
+  for (const m of b.messages) {
+    tokens.messages += m.tokens;
+    approximate.messages ||= m.approximate === true;
+    tokens.reasoning += m.reasoning_tokens ?? 0;
+    approximate.reasoning ||= m.approximate === true && (m.reasoning_tokens ?? 0) > 0;
+  }
   return segmentOrder
-    .filter((kind) => tokens[kind] > 0 || (kind === "messages" && (c.messages ?? []).length > 0))
-    .map((kind) => ({ kind, label: segmentLabels[kind], tokens: tokens[kind] }));
-}
-
-/** estimatedTotal is the estimated size of everything a request sends. */
-export function estimatedTotal(parts: readonly Segment[]): number {
-  return parts.reduce((n, s) => n + s.tokens, 0);
+    .filter(
+      (kind) =>
+        tokens[kind] > 0 ||
+        (kind === "messages" && (c.messages ?? []).length > 0) ||
+        (kind === "template" && b.remainder !== null),
+    )
+    .map((kind) => ({
+      kind,
+      label: segmentLabels[kind],
+      tokens: tokens[kind],
+      approximate: approximate[kind],
+    }));
 }
 
 /**
- * scale is how much the endpoint's count exceeds the estimate, from a call
- * it measured, or undefined when none was measured. The estimates count
- * bytes; a tokenizer counts otherwise, so the ratio of one real call is the
- * best correction there is.
+ * barTotal is what the parts bar divides: every part and what the template
+ * adds, which is nothing when the parts already add up to more than the
+ * endpoint counted.
  */
-export function scale(c: ModelContext): number | undefined {
-  const m = c.calibration;
-  if (m === undefined || m.input_tokens <= 0 || m.estimated_tokens <= 0) return undefined;
-  return m.input_tokens / m.estimated_tokens;
+export function barTotal(parts: readonly Segment[]): number {
+  return parts.reduce((n, s) => n + Math.max(0, s.tokens), 0);
+}
+
+/** RequestSize is how large a request is and how that is known. */
+export type RequestSize = {
+  tokens: number;
+  /**
+   * basis is what the number is: `measured` by the endpoint for a recorded
+   * call, `predicted` by the token counter, or only the `parts` added up,
+   * which falls short of the request by what the template adds.
+   */
+  basis: "measured" | "predicted" | "parts";
+  /** method is how a prediction was reached. */
+  method?: PredictedSize["method"];
+};
+
+/** predictionOf is what the counter expected of a request: the next one's, or a recorded call's own. */
+export function predictionOf(c: ModelContext): PredictedSize | undefined {
+  if (c.prediction !== undefined) return c.prediction;
+  const call = c.call;
+  if (call?.predicted_prompt_tokens != null && call.prediction !== undefined) {
+    return { tokens: call.predicted_prompt_tokens, method: call.prediction };
+  }
+  return undefined;
+}
+
+/**
+ * requestSize is the best number for the whole request: what the endpoint
+ * measured, else what the counter predicted, else the parts.
+ */
+export function requestSize(c: ModelContext): RequestSize {
+  const b = c.breakdown;
+  if (b.prompt_tokens !== null && b.prompt_source === "measured") {
+    return { tokens: b.prompt_tokens, basis: "measured" };
+  }
+  const predicted = predictionOf(c);
+  if (predicted !== undefined) {
+    return { tokens: predicted.tokens, basis: "predicted", method: predicted.method };
+  }
+  return { tokens: b.parts, basis: "parts" };
+}
+
+/**
+ * exactDrift is how far an exact prediction was off, or undefined when it was
+ * not off (or was not exact). Any drift on an exact prediction is a bug in the
+ * counting or in the request that was counted, so it is shown as one.
+ */
+export function exactDrift(c: ModelContext): number | undefined {
+  const call = c.call;
+  if (call?.prediction !== "exact" || call.drift === null || call.drift === 0) return undefined;
+  return call.drift;
+}
+
+/** SizedSection is a section with the endpoint's count of it in place of the estimate. */
+export type SizedSection = ContextSection & { approximate: boolean };
+
+/** sizedSections are a request's sections with their counted sizes. */
+export function sizedSections(c: ModelContext): SizedSection[] {
+  return (c.sections ?? []).map((s, i) => ({
+    ...s,
+    tokens: c.breakdown.sections[i]?.tokens ?? 0,
+    approximate: c.breakdown.sections[i]?.approximate === true,
+  }));
+}
+
+/** SizedTool is a tool with the endpoint's count of it in place of the estimate. */
+export type SizedTool = ToolSchema & { approximate: boolean };
+
+/** sizedTools are a request's tools with their counted sizes. */
+export function sizedTools(c: ModelContext): SizedTool[] {
+  return (c.tools ?? []).map((t, i) => ({
+    ...t,
+    tokens: c.breakdown.tools[i]?.tokens ?? 0,
+    approximate: c.breakdown.tools[i]?.approximate === true,
+  }));
+}
+
+/** messageSizes are the counted sizes of a request's messages, one for each. */
+export function messageSizes(c: ModelContext): MessageSize[] {
+  return (c.messages ?? []).map((_, i) => c.breakdown.messages[i] ?? { tokens: 0 });
+}
+
+/** remainderNote says what the template's line is and what it is not. */
+export function remainderNote(context: ModelContext): string {
+  const b = context.breakdown;
+  if (b.remainder === null) {
+    return "n/a: no measurement of this request to state it against.";
+  }
+  const basis =
+    b.prompt_source === "predicted"
+      ? "the exact predicted size of the request"
+      : "what the endpoint measured";
+  const base = `${basis} less the parts above. Nothing is scaled to make them add up.`;
+  return b.remainder < 0
+    ? `${base} It is negative: the parts add up to more than the endpoint counted, so a part is counted wrongly.`
+    : base;
+}
+
+/** tilde marks a size that is not the endpoint's own count. */
+export function tilde(approximate: boolean): string {
+  return approximate ? "~" : "";
 }
 
 /** share is a part's fraction of the whole, in percent, for the bar's width. */
@@ -82,8 +227,10 @@ export type ToolGroup = {
   label: string;
   /** server is the MCP server whose tools the group holds, if it is one. */
   server?: string;
-  tools: ToolSchema[];
+  tools: SizedTool[];
   tokens: number;
+  /** approximate says some tool of the group was not counted by the endpoint. */
+  approximate: boolean;
 };
 
 /**
@@ -102,22 +249,23 @@ export function serverOf(name: string): string | undefined {
  * toolGroupsOf sorts a request's tools by where they come from: the built-in
  * ones, then each MCP server's by name, then the resource tools.
  */
-export function toolGroupsOf(tools: readonly ToolSchema[]): ToolGroup[] {
-  const builtin: ToolSchema[] = [];
-  const resources: ToolSchema[] = [];
-  const servers = new Map<string, ToolSchema[]>();
+export function toolGroupsOf(tools: readonly SizedTool[]): ToolGroup[] {
+  const builtin: SizedTool[] = [];
+  const resources: SizedTool[] = [];
+  const servers = new Map<string, SizedTool[]>();
   for (const t of tools) {
     const server = serverOf(t.name);
     if (server !== undefined) servers.set(server, [...(servers.get(server) ?? []), t]);
     else if (t.source === "mcp") resources.push(t);
     else builtin.push(t);
   }
-  const group = (id: string, label: string, list: ToolSchema[], server?: string): ToolGroup => ({
+  const group = (id: string, label: string, list: SizedTool[], server?: string): ToolGroup => ({
     id,
     label,
     ...(server === undefined ? {} : { server }),
     tools: list,
     tokens: list.reduce((n, t) => n + t.tokens, 0),
+    approximate: list.some((t) => t.approximate),
   });
   return [
     ...(builtin.length > 0 ? [group("builtin", "Built-in", builtin)] : []),
@@ -251,6 +399,8 @@ export function editTargetOf(kind: SegmentKind): EditTarget | undefined {
     case "mcp_tools":
       return { key: "tools", section: "tools" };
     case "messages":
+    case "reasoning":
+    case "template":
       return undefined;
   }
 }
@@ -276,6 +426,8 @@ export const segmentColors: Record<SegmentKind, string> = {
   builtin_tools: "bg-chart-5",
   mcp_tools: "bg-chart-4",
   messages: "bg-primary/40",
+  reasoning: "bg-chart-2",
+  template: "bg-muted-foreground/40",
 };
 
 /** percent words a share of a whole, with a decimal below ten percent. */
@@ -307,7 +459,10 @@ export function viewOf(kind: SegmentKind): View {
     case "mcp_tools":
       return "tools";
     case "messages":
+    case "reasoning":
       return "messages";
+    case "template":
+      return "system";
     default:
       return `section:${kind}`;
   }

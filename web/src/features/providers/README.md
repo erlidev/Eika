@@ -15,7 +15,11 @@ serves, with the limits and reasoning settings a run uses.
   URL asks for the key again.
 - `ModelPicker.tsx` lists what the endpoint serves, lets the user tick models
   or type one, suggests limits with `limits.ts`, and adds them. Image input
-  starts ticked for a model the endpoint says reads images.
+  starts ticked for a model the endpoint says reads images. Outside the guided
+  setup it can mark a chosen model a decision model (`offerDecision`): a model
+  that answers typed questions, not chat. `kind.ts` keeps such a model out of
+  every place a conversation picks one: `chatModels` for those lists,
+  `modelsOfKind` for the decision class.
 - `ModelDialog.tsx` changes one model, its reasoning vocabulary included:
   endpoints disagree on the words `reasoning_effort` takes, so the model
   carries the list and `efforts.ts` holds the rules for editing and cycling

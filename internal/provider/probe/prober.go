@@ -40,9 +40,9 @@ func newProber(t Target) *prober {
 		root:   root,
 		key:    t.APIKey,
 		models: t.Models,
-		// No Transport of its own: it shares the default pool, like the
-		// provider's client.
-		client: &http.Client{Timeout: requestTimeout},
+		// The provider's own client: the default pool, and a request repeated
+		// once when the server had closed the connection it went out on.
+		client: provider.NewHTTPClient(requestTimeout),
 	}
 }
 

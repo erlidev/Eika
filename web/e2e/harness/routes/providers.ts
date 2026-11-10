@@ -8,6 +8,7 @@ import type {
   Provider,
   ThinkingSwitch,
 } from "../../../src/api/types.ts";
+import { windowOf } from "../world.ts";
 import { fail, ok, str, strings } from "./context.ts";
 import type { Reply, RouteContext } from "./context.ts";
 
@@ -16,7 +17,7 @@ function thinkingSwitch(value: unknown): ThinkingSwitch {
   return value === "chat_template_kwargs" || value === "thinking" ? value : "reasoning_effort";
 }
 
-const endpointFields: EndpointField[] = ["backend", "pool", "slots", "kv"];
+const endpointFields: EndpointField[] = ["backend", "pool", "slots", "kv", "api"];
 
 /** overrideProblem mirrors validateOverride in internal/server/providers.go. */
 function overrideProblem(body: Record<string, unknown>): Reply | undefined {
@@ -30,6 +31,9 @@ function overrideProblem(body: Record<string, unknown>): Reply | undefined {
   if (typeof body.kv_tokens === "number" && body.kv_tokens > 0 && body.kv !== "shared") {
     return bad("kv_tokens is the size of a shared cache; set kv to shared with it");
   }
+  if (typeof body.api === "string" && !["responses", "chat"].includes(body.api)) {
+    return bad("api must be one of responses, chat");
+  }
   return undefined;
 }
 
@@ -41,6 +45,10 @@ function applyOverride(row: Provider, body: Record<string, unknown>): void {
   if (typeof body.backend === "string") {
     row.backend = body.backend as Backend;
     mark("backend");
+  }
+  if (body.api === "responses" || body.api === "chat") {
+    row.api = body.api;
+    mark("api");
   }
   if (typeof body.pool === "string") {
     // The harness stores "" for the default, which reads as the provider's name.
@@ -81,6 +89,7 @@ export function providerRoutes(ctx: RouteContext): void {
     if (row && sameEndpoint && typeof body.api_key !== "string") {
       if (!row.overridden.includes("backend")) row.backend = finds.backend;
       if (!row.overridden.includes("slots")) row.slots = finds.slots;
+      if (!row.overridden.includes("api")) row.api = finds.api;
       if (!row.overridden.includes("kv")) {
         row.kv = finds.kv;
         if (finds.kv_tokens !== undefined) row.kv_tokens = finds.kv_tokens;
@@ -149,6 +158,7 @@ export function providerRoutes(ctx: RouteContext): void {
       pool: str(body.name),
       slots: 1,
       kv: "unknown",
+      api: "chat",
       capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
       overridden: [],
       created_at: now(),
@@ -191,23 +201,55 @@ export function providerRoutes(ctx: RouteContext): void {
     w.models = w.models.filter((m) => m.provider_id !== params[0]);
     return { status: 204 };
   });
+  /** served is a model with the windows its provider's probe gives it. */
+  const served = (m: Model): Model => {
+    const { probed, effective } = windowOf(w, m);
+    return {
+      ...m,
+      ...(probed === undefined ? {} : { probed_window: probed }),
+      effective_window: effective,
+    };
+  };
   on("GET", "/api/models", () =>
-    ok({ models: w.models, ...(w.defaultModel ? { default: w.defaultModel } : {}) }),
+    ok({ models: w.models.map(served), ...(w.defaultModel ? { default: w.defaultModel } : {}) }),
   );
-  on("POST", "/api/models/test", ({ body }) =>
-    ok({ reply: `Hello from ${str(body.model)}.`, stop_reason: "stop", latency_ms: 412 }),
-  );
+  on("POST", "/api/models/test", ({ body }) => {
+    if (body.kind === "decision") {
+      return fail(
+        400,
+        "invalid_request",
+        "a decision model answers typed questions, not chat, so a chat request cannot test it; nothing asks it before Sentry",
+      );
+    }
+    return ok({ reply: `Hello from ${str(body.model)}.`, stop_reason: "stop", latency_ms: 412 });
+  });
   on("POST", "/api/models", ({ body }) => {
     const name = str(body.name) || str(body.model);
     if (w.models.some((m) => m.name === name)) {
       return fail(409, "conflict", `a model named ${name} exists`);
     }
+    const kind = body.kind === "decision" ? "decision" : "chat";
+    if (
+      kind === "decision" &&
+      (str(body.reasoning_effort) !== "" ||
+        strings(body.reasoning_efforts).length > 0 ||
+        body.preserve_thinking === true ||
+        body.image_input === true)
+    ) {
+      return fail(
+        400,
+        "invalid_request",
+        "a decision model has no reasoning, preserved thinking or image input: it answers typed questions, not chat",
+      );
+    }
     const row: Model = {
       id: ctx.nextId("mod"),
       provider_id: str(body.provider_id),
+      kind,
       name,
       model: str(body.model),
       context_window: Number(body.context_window) || 0,
+      effective_window: Number(body.context_window) || 0,
       max_output: Number(body.max_output) || 0,
       reasoning_effort: str(body.reasoning_effort),
       reasoning_efforts: strings(body.reasoning_efforts),
@@ -218,14 +260,14 @@ export function providerRoutes(ctx: RouteContext): void {
       updated_at: now(),
     };
     w.models.push(row);
-    w.defaultModel ??= row.name;
-    return ok(row, 201);
+    if (kind === "chat") w.defaultModel ??= row.name;
+    return ok(served(row), 201);
   });
   on("PATCH", "/api/models/{id}", ({ params, body }) => {
     const row = find(w.models, params[0], "model");
     if ("status" in row) return row;
     Object.assign(row, body, { updated_at: now() });
-    return ok(row);
+    return ok(served(row));
   });
   on("DELETE", "/api/models/{id}", ({ params }) => {
     w.models = w.models.filter((m) => m.id !== params[0]);

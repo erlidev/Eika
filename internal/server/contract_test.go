@@ -70,17 +70,18 @@ var routeWire = map[string]wire{
 	"POST /api/sessions/{id}/head":   {status: http.StatusOK, request: setHeadRequest{}, response: sessionBody{}},
 	"PUT /api/sessions/{id}/tools":   {status: http.StatusOK, request: setToolsRequest{}, response: sessionBody{}},
 
-	"GET /api/sessions/{id}/configuration":         {status: http.StatusOK, response: sessionConfigurationResponse{}},
-	"PUT /api/sessions/{id}/profile":               {status: http.StatusOK, request: setSessionProfileRequest{}, response: sessionConfigurationResponse{}},
-	"PUT /api/sessions/{id}/overrides":             {status: http.StatusOK, request: profileSettingsBody{}, response: sessionConfigurationResponse{}},
-	"GET /api/sessions/{id}/context":               {status: http.StatusOK, response: contextResponse{}},
-	"GET /api/sessions/{id}/requests":              {status: http.StatusOK, response: requestsResponse{}},
-	"GET /api/sessions/{id}/requests/{request_id}": {status: http.StatusOK, response: contextResponse{}},
-	"GET /api/profiles":                            {status: http.StatusOK, response: profilesResponse{}},
-	"GET /api/profiles/inherited":                  {status: http.StatusOK, response: configurationBody{}},
-	"POST /api/profiles":                           {status: http.StatusCreated, request: profileRequest{}, response: profileBody{}},
-	"PUT /api/profiles/{id}":                       {status: http.StatusOK, request: profileRequest{}, response: profileBody{}},
-	"DELETE /api/profiles/{id}":                    {status: http.StatusNoContent},
+	"GET /api/sessions/{id}/configuration":   {status: http.StatusOK, response: sessionConfigurationResponse{}},
+	"PUT /api/sessions/{id}/profile":         {status: http.StatusOK, request: setSessionProfileRequest{}, response: sessionConfigurationResponse{}},
+	"PUT /api/sessions/{id}/overrides":       {status: http.StatusOK, request: profileSettingsBody{}, response: sessionConfigurationResponse{}},
+	"GET /api/sessions/{id}/context":         {status: http.StatusOK, response: contextResponse{}},
+	"GET /api/sessions/{id}/prediction":      {status: http.StatusOK, response: predictionResponse{}},
+	"GET /api/sessions/{id}/calls":           {status: http.StatusOK, response: callsResponse{}},
+	"GET /api/sessions/{id}/calls/{call_id}": {status: http.StatusOK, response: contextResponse{}},
+	"GET /api/profiles":                      {status: http.StatusOK, response: profilesResponse{}},
+	"GET /api/profiles/inherited":            {status: http.StatusOK, response: configurationBody{}},
+	"POST /api/profiles":                     {status: http.StatusCreated, request: profileRequest{}, response: profileBody{}},
+	"PUT /api/profiles/{id}":                 {status: http.StatusOK, request: profileRequest{}, response: profileBody{}},
+	"DELETE /api/profiles/{id}":              {status: http.StatusNoContent},
 
 	"POST /api/sessions/{id}/messages": {status: http.StatusAccepted, request: messageRequest{}, response: runBody{}},
 	"GET /api/sessions/{id}/run":       {status: http.StatusOK, response: runStateResponse{}},
@@ -105,6 +106,7 @@ var routeWire = map[string]wire{
 	"GET /api/settings":           {status: http.StatusOK, response: settingsResponse{}},
 	"PUT /api/settings":           {status: http.StatusOK, request: map[string]json.RawMessage{}, response: settingsResponse{}},
 	"GET /api/system":             {status: http.StatusOK, response: systemResponse{}},
+	"GET /api/inference":          {status: http.StatusOK, response: inferenceResponse{}},
 
 	"GET /api/mcp/servers":                       {status: http.StatusOK, response: mcpServersResponse{}},
 	"POST /api/mcp/servers":                      {status: http.StatusCreated, request: createMCPServerRequest{}, response: mcpServerBody{}},
@@ -168,19 +170,22 @@ type providerUsage struct {
 // providerToolCall is the wire form provider.ToolCall's MarshalJSON writes.
 type providerToolCall struct {
 	ID                 string          `json:"id"`
+	WireID             *string         `json:"wire_id,omitempty"`
 	Name               string          `json:"name"`
 	Arguments          json.RawMessage `json:"arguments"`
 	ArgumentsMalformed bool            `json:"arguments_malformed,omitempty"`
+	ArgumentsText      *string         `json:"arguments_text,omitempty"`
 }
 
 // standIns give the wire form of each type that encodes itself. A sample of
 // each is checked against its stand-in by TestStandInsMatchTheirEncoding.
 var standIns = map[reflect.Type]reflect.Type{
-	reflect.TypeFor[event.ToolCall]():         reflect.TypeFor[eventToolCall](),
-	reflect.TypeFor[provider.ToolCall]():      reflect.TypeFor[providerToolCall](),
-	reflect.TypeFor[provider.ToolArguments](): reflect.TypeFor[json.RawMessage](),
-	reflect.TypeFor[provider.Count]():         reflect.TypeFor[*int](),
-	reflect.TypeFor[provider.Usage]():         reflect.TypeFor[providerUsage](),
+	reflect.TypeFor[event.ToolCall]():          reflect.TypeFor[eventToolCall](),
+	reflect.TypeFor[provider.ToolCall]():       reflect.TypeFor[providerToolCall](),
+	reflect.TypeFor[provider.ToolArguments]():  reflect.TypeFor[json.RawMessage](),
+	reflect.TypeFor[provider.ReasoningItems](): reflect.TypeFor[[]json.RawMessage](),
+	reflect.TypeFor[provider.Count]():          reflect.TypeFor[*int](),
+	reflect.TypeFor[provider.Usage]():          reflect.TypeFor[providerUsage](),
 }
 
 // contract builds the contract from the tables above.
@@ -299,6 +304,8 @@ func TestStandInsMatchTheirEncoding(t *testing.T) {
 		event.ToolCall{RunID: "r", CallID: "c", Name: "bash", Arguments: `{"command":`},
 		provider.ToolCall{ID: "c", Name: "bash", Arguments: `{"command":"ls"}`},
 		provider.ToolCall{ID: "c", Name: "bash", Arguments: `not json`},
+		provider.ToolCall{ID: "c", Name: "bash", Arguments: `{"command": "ls && ls"}`},
+		provider.AssistantMessage("", nil),
 		provider.Usage{},
 		provider.Usage{InputTokens: provider.Reported(90), OutputTokens: provider.Reported(0), CachedTokens: provider.Reported(86)},
 	}

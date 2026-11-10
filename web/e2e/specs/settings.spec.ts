@@ -35,6 +35,8 @@ for (const theme of ["light", "dark"] as const) {
       await eika.click("Settings");
       await eika.click("General");
       await eika.fill("Sandbox image", "my image");
+      // The classes above the field fill the dialog, so the problem is scrolled to.
+      await eika.page.getByText(/An image reference has no spaces/).scrollIntoViewIfNeeded();
       await expect(eika.page.getByText(/An image reference has no spaces/)).toBeVisible();
       await expectShot(eika, `general-invalid-${theme}`, "role=dialog");
     });
@@ -54,6 +56,23 @@ test("models: each provider says what its endpoint is", async ({ open }) => {
   );
   // A failed probe is said first, and the earlier findings stay.
   await expect(card("OpenRouter")).toContainText("Last probe failed · Hosted API · 8 slots");
+});
+
+test("models: a window larger than the endpoint holds is warned about, with what to do", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "bench-window" });
+  await eika.click("Settings");
+  const row = (name: string) =>
+    eika.page.locator("li", { has: eika.page.getByText(name, { exact: true }) }).last();
+  await expect(row("qwen-long")).toContainText(
+    "Its context window is set to 200,000 tokens, but the endpoint holds 131,072 for one request",
+  );
+  await expect(row("qwen-long")).toContainText("Set the context window to 131,072");
+  // A window the endpoint holds in full has nothing to warn about, and neither
+  // has a model on an endpoint that states none.
+  await expect(row("qwen-short").getByRole("status")).toHaveCount(0);
+  await expect(row("gpt-5-mini").getByRole("status")).toHaveCount(0);
 });
 
 test("endpoint settings: what the user sets survives the next probe", async ({
@@ -178,6 +197,81 @@ test("general", async ({ open, expectAria }) => {
   await expectAria(eika, "general", "role=dialog");
 });
 
+test("general: model classes show what they fall back to and which share a pool", async ({
+  open,
+  expectAria,
+}) => {
+  const eika = await open({ scenario: "classes" });
+  await eika.click("Settings");
+  await eika.click("General");
+  await expect(eika.page.getByRole("combobox", { name: "Fast" })).toHaveText("Not set");
+  await expect(eika.page.getByText("Uses bench-chat, the main model.")).toBeVisible();
+  // Main and fast are served from the bench's pool, so they contend for its slots.
+  await expect(eika.page.getByText("Shares the Bench pool with fast.")).toBeVisible();
+  await expect(eika.page.getByText("Shares the Bench pool with main.")).toBeVisible();
+  await expectAria(eika, "general-classes", "role=dialog");
+});
+
+test("general: a class offers only models of its kind", async ({ open }) => {
+  const eika = await open({ scenario: "classes" });
+  await eika.click("Settings");
+  await eika.click("General");
+  const options = async (name: string) => {
+    await eika.click(`role=combobox[name='${name}']`);
+    const names = await eika.page.getByRole("option").allTextContents();
+    await eika.page.keyboard.press("Escape");
+    return names;
+  };
+  for (const chat of ["Deep", "Main", "Fast"]) {
+    expect(await options(chat), `the ${chat} class`).toEqual([
+      "Not set",
+      "gpt-5",
+      "gpt-5-mini",
+      "bench-chat",
+    ]);
+  }
+  expect(await options("Decision")).toEqual(["Not set", "d3-flash"]);
+  // The default model is a conversation's model too.
+  expect(await options("Default model")).toEqual(["gpt-5", "gpt-5-mini", "bench-chat"]);
+});
+
+test("general: titles are skipped when fast would fall back onto a hosted deep model", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "classes" });
+  await eika.click("Settings");
+  await eika.click("General");
+  await eika.select("role=combobox[name='Main']", "gpt-5");
+  await expect(
+    eika.page.getByText(/Session titles are skipped: fast falls back onto gpt-5/),
+  ).toBeVisible();
+  // A fast model of the user's own turns them on again, whatever deep is.
+  await eika.select("role=combobox[name='Fast']", "gpt-5");
+  await expect(eika.page.getByText("Session titles are made by gpt-5.")).toBeVisible();
+});
+
+test("models: a decision model is marked, has no test and is never the default", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "classes" });
+  await eika.click("Settings");
+  const row = eika.page.locator("li", { has: eika.page.getByText("d3-flash", { exact: true }) });
+  await expect(row.getByText("Decision", { exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Test" })).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Make default" })).toHaveCount(0);
+  await eika.click("Edit d3-flash");
+  const dialog = eika.page.getByRole("dialog", { name: "Edit d3-flash" });
+  await expect(dialog.getByText(/answers typed questions, not chat/)).toBeVisible();
+  await expect(dialog.getByLabel("Accepts images")).toHaveCount(0);
+});
+
+test("a decision model is not offered for a session", async ({ open }) => {
+  const eika = await open({ scenario: "classes" });
+  await eika.click("role=combobox[name='Model']");
+  const names = await eika.page.getByRole("option").allTextContents();
+  expect(names).toEqual(["gpt-5", "gpt-5-mini", "bench-chat"]);
+});
+
 test("search: providers, keys, and quotas", async ({ open, expectShot }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("Settings");
@@ -267,6 +361,14 @@ test.describe("on a phone", () => {
     const eika = await open({ scenario: "providers", viewport: phone });
     await eika.click("Settings");
     await expectShot(eika, "models-phone");
+  });
+
+  test("general: the classes and the pools they share", async ({ open, expectShot }) => {
+    const eika = await open({ scenario: "classes", viewport: phone });
+    await eika.click("Settings");
+    await eika.click("General");
+    await eika.page.getByText("Model classes", { exact: true }).scrollIntoViewIfNeeded();
+    await expectShot(eika, "classes-phone");
   });
 
   test("search: each provider on one line", async ({ open, expectShot }) => {

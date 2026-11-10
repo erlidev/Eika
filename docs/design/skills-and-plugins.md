@@ -33,7 +33,7 @@ works in other clients unchanged:
 | `allowed-tools` | Optional and experimental in the spec. Stored and shown. It grants nothing in the first version (see deferred) |
 
 Eika's own settings for a skill live in the `skills` row, not in the file:
-enabled, scope, which agents list it, and where it came from.
+enabled, and when it was installed.
 
 Parsing is lenient, the way the spec's client guide advises. A name and directory
 mismatch is a warning, and an unquoted colon in a description is retried quoted.
@@ -44,28 +44,17 @@ unparseable, and the reason shows in the UI.
 
 ```
 /var/lib/eika/skills/<name>/...         volume eika-skills, read-only to every computer
-core.skills: name, scope (global | project:<slug>), enabled, agents[], source
-             (upload | git:<url>@<commit> | path), sha, installed_at, warnings
+core.skills: name, enabled, sha, installed_at, warnings
 ```
-
-A project-scope skill overrides a global one of the same name inside that
-project's sessions.
 
 ### Installing
 
-All of these happen in the UI. No agent tool installs or edits a skill.
+This happens in the UI, and no agent tool installs or edits a skill. Drop a `.zip`
+onto the Skills page, or pick one.
 
-- Drop a folder or a `.zip` onto the Skills page, or pick one.
-- Paste a `SKILL.md`.
-- A git URL (fetched by Sentry's proxy, pinned to the commit). Updating shows the
-  diff before it applies.
-- Import from a path on the `home` computer, so a skill Eika drafted in a project
-  directory can be installed by the user after reading it.
-
-Every install shows the full `SKILL.md`, the file list and Sentry's injection screen
-over the instructions, and the user enables the skill explicitly. Skills from the
-internet are untrusted until the user reads them. This is the trust gate the
-spec's client guide recommends.
+Every install shows the full `SKILL.md` and the file list, and the user enables the
+skill explicitly. Skills from the internet are untrusted until the user reads them.
+This is the trust gate the spec's client guide recommends.
 
 ### How agents see them
 
@@ -77,34 +66,25 @@ spec's client guide recommends.
   - trip-planner: ...
   ```
 
-  Each line costs about 50 to 100 tokens. Above 40 enabled skills, the catalog
-  lists names only and the descriptions are found through `skill_use` with
-  `query`.
+  Each line costs about 50 to 100 tokens.
 - **`skill_use {name}`** returns the body, with frontmatter stripped, wrapped as
   `<skill name="..." dir="/skills/<name>">...</skill>`, followed by the list of
-  resource files without their contents (tier 3 of progressive disclosure). A
-  repeated activation in the same session returns a short "already loaded" note.
+  resource files without their contents (tier 3 of progressive disclosure).
   `skill_use {query}` searches names and descriptions.
-- **`skill_file {name, path}`** reads one resource file. Scripts run on the
-  computer from `/skills/<name>/scripts/...` with `bash`, so the agent needs a
-  computer to run them.
+- Resource files are read, and scripts run, on the computer from
+  `/skills/<name>/`, so the agent needs a computer to use them.
 - The tool takes no enum of skill names. An enum would put the catalog inside the
   tool schema, and installing a skill would then change every session's tools.
   Names are checked at call time instead.
-- A skill installed mid-session appears as a tail notice ("new skill available:
-  <name>, <description>"). It enters the catalog at the next compaction or session.
-- **Compaction keeps loaded skills.** The rebuilt preamble includes the bodies of
-  skills the session loaded, up to 8,000 tokens in total, newest first, the way
-  Claude Code re-attaches skills after compaction.
-- **Invocation by the user.** `/name` in the composer loads the skill into the
-  next turn, as a skill block in the `<context>`.
+- A skill installed mid-session enters the catalog at the next compaction.
 
 ### Deferred
 
-- Honouring `allowed-tools` as a task-scoped Sentry grant while the skill is
-  loaded. Skills are user-installed, so this is the user's grant, but loading a
-  skill must not become a way for a model to gain permissions. It waits for real
-  use cases.
+`DEFERRED.md` lists what was trimmed. Two ideas predate the cut:
+
+- Honouring `allowed-tools` as a task-scoped grant while the skill is loaded. Skills
+  are user-installed, so this is the user's grant, but loading a skill must not
+  become a way for a model to gain permissions. It waits for real use cases.
 - Skill proposals: an agent drafts a skill in a project directory and the Inbox
   offers to install it. Agents still never install skills themselves.
 
@@ -113,24 +93,19 @@ spec's client guide recommends.
 ### Model
 
 A plugin is one MCP server, either remote (Streamable HTTP or HTTP+SSE) or stdio.
-`internal/mcp` carries over unchanged: transports, eras, OAuth 2.1, elicitation,
-catalog listing and change notifications. What moves is where it runs:
+`internal/mcp` carries over unchanged, and so does Core's pool: transports, eras,
+OAuth 2.1, elicitation, catalog listing and change notifications. What changes is how
+agents reach it:
 
 | | Today | Now |
 |---|---|---|
-| Remote connections | Core's `mcp.Pool` | Sentry's plugin host, so OAuth tokens and headers live in the vault |
-| Stdio servers | A process in the session's computer, with its environment visible to the agent | A process in a plugin cell (a computer labelled `eika.role=plugin`) that no agent can execute in. Its environment's secrets are surrogates resolved by Sentry where possible, otherwise the real values, which stay in the cell |
-| Tool exposure | One `tool.Tool` per MCP tool | Catalog plus `plugin_find` and `plugin_call` (below) |
+| Stdio servers | A process in the session's computer, with its environment visible to the agent | A process in one shared plugin computer (labelled `eika.role=plugin`) that no agent can execute in |
+| Tool exposure | One `tool.Tool` per MCP tool | Catalog plus `plugin_find` and `plugin_call` (below), for `eika` only |
 | Permission | Static tool choices per profile | Sentry tool settings, with defaults from MCP annotations |
-
-One plugin cell runs per stdio plugin, from the sandbox image or a user-chosen
-image. Its egress goes through Sentry's proxy with its own principal, so a plugin
-cannot reach hosts the user did not allow.
 
 ### How agents see them
 
-- **Catalog in the preamble**, frozen per session, one block per enabled plugin
-  the agent's definition lists:
+- **Catalog in the preamble**, frozen per session, one block per enabled plugin:
 
   ```
   ## Plugins (plugin_find to see a tool's arguments, plugin_call to use it)
@@ -139,49 +114,42 @@ cannot reach hosts the user did not allow.
   ```
 
   Tool names go in, descriptions do not. A plugin with more than 8 tools lists the
-  8 most-used and a count.
+  first 8 and a count.
 - **`plugin_find {plugin?, query?}`** returns matching tools with their descriptions
   and full input schemas, as text in the result. The schema reaches the model
   without entering the tools array.
 - **`plugin_call {plugin, tool, arguments}`** with a free-form `arguments` object.
-  Core forwards it to Sentry, which validates the arguments against the real
-  schema (returning a normal error naming the bad field), decides, attaches
-  credentials, calls, filters the result through ingest, and returns it.
-- **Pinned plugin tools.** An agent definition may list specific plugin tools as
-  native tools (`calendar.list_events`). They are rendered into the tools array like
-  built-ins. This suits the few tools an agent uses constantly, at the price of
-  prefix churn only when the user edits the definition.
-- Resources and prompts: `plugin_find` lists them, and
-  `plugin_call {plugin, resource: uri}` reads one. Resource subscriptions feed
-  triggers (`scheduler.md`).
+  Core decides it through the gate, attaches credentials, calls, puts the result
+  through ingest, and returns it. Bad arguments come back as the server's error.
 
 ### Permissions
 
-The defaults come from MCP tool annotations, which `sentry.md` 3 maps to effects.
-The Plugins page shows, per tool, the effect and the verdict that follows from it,
-and lets the user change the effect or block the tool (`sentry.md` 5).
-Marking a plugin **private** makes its reads set the `sensitive` label. Marking it **trusted**
-skips the injection screen for its results; use this only for servers you run.
+Each tool has a setting: `allow`, `ask` or `block`. The default comes from the
+tool's MCP annotations: `readOnlyHint` gives `allow`, and anything else gives `ask`.
+The Plugins page shows the setting per tool and lets the user change it. An
+approval card's "always" changes it too, or pins one argument, such as a recipient
+(`sentry.md` 5 and 7). A server that marks a sending tool read-only gets it
+allowed, which is why the page lists every tool's setting when a plugin is added.
+
+A plugin can be marked trusted: its results are still scored by the screen, and
+nothing is removed from them. It suits a plugin that holds only the user's own
+notes.
 
 ### Result filtering
 
-Every result goes through Sentry ingest (`sentry.md` 6): secret redaction,
-one-time-code removal (especially mail and messaging plugins), the injection
-screen and wrapping. Audio in results keeps today's handling: kept in details,
-replaced in the model's text. Images can reach a vision model through the
-user-message path (`runtime.md` 5).
+Every result goes through ingest (`sentry.md` 6): secret redaction, one-time-code
+removal (for mail and messaging plugins), the injection screen and wrapping. Audio and images in results
+keep today's handling: kept in details, replaced in the model's text.
 
 ### Elicitation and OAuth
 
 Elicitation requests from a plugin become Inbox items, using today's form and
-URL-mode UI, moved to the Inbox. Requests the plugin makes while a subagent runs
-park that subagent. OAuth sign-in happens from the Plugins page. The redirect lands on
-Core's UI route and posts to Sentry through `/v1/user/*`, and tokens are sealed
-in the vault.
+URL-mode UI, moved to the Inbox. OAuth sign-in stays as it is today, from the Plugins
+page, with tokens sealed in Core.
 
 ### Health
 
-Plugin state (`connecting`, `ready`, `auth_required`, `failed`) comes from Sentry's
-event stream to the UI, the way `mcp.server` events work today. A plugin that
+Plugin state (`connecting`, `ready`, `auth_required`, `failed`) reaches the UI
+through `mcp.server` events, as today. A plugin that
 fails during a session gives a normal tool error. The catalog line stays, since
 the prefix must not change. The error says the plugin is unavailable.

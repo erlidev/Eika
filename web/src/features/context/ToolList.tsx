@@ -5,13 +5,12 @@
 
 import { useState } from "react";
 
-import type { ToolSchema } from "@/api/types";
 import { OutputBlock } from "@/components/OutputBlock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dot } from "@/features/context/parts";
-import { schemaParameters } from "@/features/context/segments";
-import type { ToolGroup, View } from "@/features/context/segments";
+import { schemaParameters, tilde } from "@/features/context/segments";
+import type { SizedTool, ToolGroup, View } from "@/features/context/segments";
 import { formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -52,7 +51,8 @@ export function ToolSizes({ groups, onView }: ToolSizesProps) {
                 />
               </span>
               <span className="text-muted-foreground text-right font-mono tabular-nums">
-                ~{formatTokens(tool.tokens)}
+                {tilde(tool.approximate)}
+                {formatTokens(tool.tokens)}
               </span>
             </button>
           </li>
@@ -68,7 +68,7 @@ type ToolListProps = { groups: readonly ToolGroup[] };
 export function ToolList({ groups }: ToolListProps) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const match = (t: ToolSchema) =>
+  const match = (t: SizedTool) =>
     q === "" || t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
   const shown = groups
     .map((g) => ({ ...g, tools: g.tools.filter(match) }))
@@ -106,7 +106,8 @@ export function ToolList({ groups }: ToolListProps) {
               <Dot kind={g.id === "builtin" ? "builtin_tools" : "mcp_tools"} />
               {g.label}
               <span className="text-muted-foreground font-sans text-xs font-normal">
-                {g.tools.length} · ~{formatTokens(g.tokens)}
+                {g.tools.length} · {tilde(g.approximate)}
+                {formatTokens(g.tokens)}
               </span>
             </h4>
           )}
@@ -119,7 +120,7 @@ export function ToolList({ groups }: ToolListProps) {
   );
 }
 
-type ToolCardProps = { tool: ToolSchema; server: string | undefined };
+type ToolCardProps = { tool: SizedTool; server: string | undefined };
 
 /** ToolCard is one tool definition: its name, description, and parameters, or its raw schema. */
 function ToolCard({ tool, server }: ToolCardProps) {
@@ -133,7 +134,8 @@ function ToolCard({ tool, server }: ToolCardProps) {
           {short}
         </h5>
         <span className="text-muted-foreground font-mono text-xs tabular-nums">
-          ~{formatTokens(tool.tokens)}
+          {tilde(tool.approximate)}
+          {formatTokens(tool.tokens)}
         </span>
         <Button
           type="button"

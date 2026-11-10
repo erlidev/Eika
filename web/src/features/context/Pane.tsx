@@ -9,13 +9,17 @@ import { Messages } from "@/features/context/Messages";
 import { EditLink } from "@/features/context/parts";
 import {
   editTargetOf,
+  messageSizes,
   parameterTarget,
   percent,
   segmentColors,
   segmentLabels,
+  sizedSections,
+  sizedTools,
+  tilde,
   toolGroupsOf,
 } from "@/features/context/segments";
-import type { SegmentKind, View } from "@/features/context/segments";
+import type { SegmentKind, SizedSection, View } from "@/features/context/segments";
 import { ToolList, ToolSizes } from "@/features/context/ToolList";
 import { LayerChip } from "@/features/profiles/fields";
 import { formatTokens } from "@/lib/format";
@@ -37,13 +41,14 @@ type PaneProps = {
 };
 
 export function Pane({ view, context, total, edit, onView }: PaneProps) {
-  const sections = context.sections ?? [];
-  const tools = context.tools ?? [];
+  const sections = sizedSections(context);
+  const tools = sizedTools(context);
   if (view === "system") {
     return (
       <PaneFrame
         title="System prompt"
         tokens={sections.reduce((n, s) => n + s.tokens, 0)}
+        approximate={sections.some((s) => s.approximate)}
         total={total}
         note={`${String(sections.length)} section${sections.length === 1 ? "" : "s"}, joined by a blank line, in the order the model reads them.`}
       >
@@ -60,7 +65,12 @@ export function Pane({ view, context, total, edit, onView }: PaneProps) {
     const section = sections.find((s) => `section:${s.kind}` === view);
     if (section === undefined) return null;
     return (
-      <PaneFrame title={segmentLabels[section.kind]} tokens={section.tokens} total={total}>
+      <PaneFrame
+        title={segmentLabels[section.kind]}
+        tokens={section.tokens}
+        approximate={section.approximate}
+        total={total}
+      >
         <SectionBlock section={section} edit={edit} bare />
       </PaneFrame>
     );
@@ -81,8 +91,13 @@ export function Pane({ view, context, total, edit, onView }: PaneProps) {
         }
         mono={group?.server !== undefined}
         tokens={tokens}
+        approximate={shown.some((g) => g.approximate)}
         total={total}
-        note="Every definition is sent with every request, whether the model calls the tool or not."
+        note={`Every definition is sent with every request, whether the model calls the tool or not.${
+          tools.some((t) => t.approximate)
+            ? " The endpoint cannot render this request with and without its tools, so each size is the definition counted as JSON text."
+            : " Each size is what the template adds when the tool is added to those before it; the first carries the template's wrapper around the list."
+        }`}
         action={<EditLinkFor edit={edit} kind="builtin_tools" what="the tools" />}
       >
         {group === undefined && tools.length > 0 && <ToolSizes groups={groups} onView={onView} />}
@@ -91,18 +106,21 @@ export function Pane({ view, context, total, edit, onView }: PaneProps) {
     );
   }
   if (view === "messages") {
+    const sizes = messageSizes(context);
+    const reasoning = sizes.reduce((n, m) => n + (m.reasoning_tokens ?? 0), 0);
     return (
       <PaneFrame
         title="Messages"
-        tokens={context.message_tokens}
+        tokens={sizes.reduce((n, m) => n + m.tokens + (m.reasoning_tokens ?? 0), 0)}
+        approximate={sizes.some((m) => m.approximate === true)}
         total={total}
-        note={
-          context.request === undefined
+        note={`${
+          context.call === undefined
             ? "The conversation so far. A message sent now is added after these."
             : "The conversation this call sent."
-        }
+        }${reasoning > 0 ? ` Includes ${formatTokens(reasoning)} tokens of replayed reasoning, counted apart from the messages' text.` : ""}`}
       >
-        <Messages messages={context.messages ?? []} sizes={context.message_sizes ?? []} />
+        <Messages messages={context.messages ?? []} sizes={sizes} />
       </PaneFrame>
     );
   }
@@ -120,6 +138,8 @@ type PaneFrameProps = {
   title: string;
   mono?: boolean;
   tokens?: number;
+  /** approximate says the size is not the endpoint's own count. */
+  approximate?: boolean;
   total?: number;
   note?: string;
   action?: React.ReactNode;
@@ -127,7 +147,16 @@ type PaneFrameProps = {
 };
 
 /** PaneFrame is a pane's heading, its size and share, a note, and its content. */
-function PaneFrame({ title, mono = false, tokens, total, note, action, children }: PaneFrameProps) {
+function PaneFrame({
+  title,
+  mono = false,
+  tokens,
+  approximate = false,
+  total,
+  note,
+  action,
+  children,
+}: PaneFrameProps) {
   return (
     <div className="space-y-3">
       <div className="space-y-0.5">
@@ -135,7 +164,8 @@ function PaneFrame({ title, mono = false, tokens, total, note, action, children 
           <h3 className={cn("text-base font-semibold", mono && "font-mono")}>{title}</h3>
           {tokens !== undefined && (
             <span className="text-muted-foreground font-mono text-xs tabular-nums">
-              ~{formatTokens(tokens)} tokens
+              {tilde(approximate)}
+              {formatTokens(tokens)} tokens
               {total !== undefined && total > 0 && ` · ${percent(tokens, total)} of the request`}
             </span>
           )}
@@ -163,7 +193,7 @@ function EditLinkFor({ edit, kind, what }: EditLinkForProps) {
 }
 
 type SectionBlockProps = {
-  section: NonNullable<ModelContext["sections"]>[number];
+  section: SizedSection;
   edit: Edit;
   /** bare leaves out the header, for a pane that shows only this section. */
   bare?: boolean;
@@ -196,7 +226,8 @@ function SectionBlock({ section, edit, bare = false }: SectionBlockProps) {
           <h4 className="text-sm font-medium">{label}</h4>
           {layer !== undefined && <LayerChip set={false} from={layer} />}
           <span className="text-muted-foreground font-mono text-xs tabular-nums">
-            ~{formatTokens(section.tokens)}
+            {tilde(section.approximate)}
+            {formatTokens(section.tokens)}
           </span>
           <div className="ml-auto">
             <EditLinkFor edit={edit} kind={section.kind} what={label.toLowerCase()} />

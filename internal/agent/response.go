@@ -2,12 +2,14 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 )
 
@@ -83,54 +85,66 @@ type response struct {
 	stop    string
 	// usage is what the endpoint measured for this response alone.
 	usage provider.Usage
+	// timings is how long the endpoint took to read the prompt and to
+	// generate, as far as anything measured it.
+	timings provider.Timings
+	// queue is what the inference queue did for the call that produced it.
+	queue QueueRecord
 }
 
 // call sends the conversation to the model, streaming the response as
 // message.delta events, and retries a retryable failure with backoff. It
-// returns the response and the request it answered.
+// returns the response, the request it answered, and what the token counter
+// expected of that request.
 //
-// With automatic compaction on, a request that would leave less of the
-// window free than the reserve is compacted before it is sent, and a request
-// the endpoint refuses as too large is compacted and sent again, once each.
-// pendingMark is the turn's index of its first undelivered message, or -1;
-// a compaction moves it.
-func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Section, gen *generation, pendingMark *int) (response, Context, error) {
+// The request is sized by the session's counter before it is sent, and the
+// size is measured against the endpoint's own count after. With automatic
+// compaction on, a request that would leave less of the window free than the
+// reserve is compacted before it is sent, and a request the endpoint refuses
+// as too large is compacted and sent again, once each. pendingMark is the
+// turn's index of its first undelivered message, or -1; a compaction moves it.
+func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Section, gen *generation, pendingMark *int) (response, Context, counted, error) {
 	compacted, recovered := false, false
 	for {
 		msgs := s.Conversation.Messages()
 		sent := a.base(prompt).WithMessages(msgs)
-		tokens := estimateContext(sent, msgs)
-		if !compacted && a.shouldCompact(tokens) {
+		predicted := sent.Request()
+		pred := a.predict(ctx, sent)
+		if !compacted && a.shouldCompact(pred) {
 			compacted = true
 			// A compaction that fails leaves the conversation as it was,
 			// which may still fit: the window bound decides.
 			if err := a.autoCompact(ctx, s, runID, prompt, pendingMark, event.CompactThreshold); err != nil && ctx.Err() != nil {
-				return response{}, Context{}, fmt.Errorf("call model: %w", ctx.Err())
+				return response{}, Context{}, counted{}, fmt.Errorf("call model: %w", ctx.Err())
 			}
 			continue
 		}
-		sent, err := fit(sent, tokens, a.opts.ContextWindow)
+		sent, err := fit(sent, pred.Tokens, a.opts.ContextWindow)
 		if err != nil {
-			return response{}, Context{}, err
+			return response{}, Context{}, counted{}, err
 		}
+		q := a.newQueued(pred.Tokens, sent)
 		resp, err := a.retrying(ctx, s, runID, true, func() (response, error) {
-			return a.stream(ctx, s, runID, sent.Request(), gen)
+			return a.stream(ctx, s, runID, sent.Request(), gen, q)
 		})
+		resp.queue = q.record
 		auto := a.opts.Compaction.Auto && !recovered
 		if err == nil && auto && silentOverflow(resp, a.opts.ContextWindow) {
 			err = errSilentOverflow
 		}
 		if err == nil {
-			return resp, sent, nil
+			// What was sent differs from what was predicted in its max
+			// output alone, which fit may have lowered and no prompt renders.
+			return resp, sent, a.measure(ctx, s, runID, predicted, pred, resp.usage), nil
 		}
 		overflowed := provider.ContextOverflow(err) || errors.Is(err, errSilentOverflow)
 		if !auto || ctx.Err() != nil || !overflowed {
-			return response{}, Context{}, err
+			return response{}, Context{}, counted{}, err
 		}
 		recovered, compacted = true, true
 		a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
 		if cerr := a.autoCompact(ctx, s, runID, prompt, pendingMark, event.CompactOverflow); cerr != nil {
-			return response{}, Context{}, errors.Join(err, cerr)
+			return response{}, Context{}, counted{}, errors.Join(err, cerr)
 		}
 	}
 }
@@ -157,9 +171,13 @@ func (a *Agent) autoCompact(ctx context.Context, s *Session, runID string, promp
 // retry budget, backing off in between. reset announces each retry with
 // message.reset, for an attempt that streams to the client. An overflow is
 // never retried: the same request fails the same way.
+//
+// An attempt that an interactive call preempted is retried at once, without
+// a backoff and without spending the budget: the endpoint did not fail, and
+// the retry waits in the queue for its turn. The run never reports it.
 func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bool, attempt func() (response, error)) (response, error) {
 	backoff := a.opts.RetryBackoff
-	for n := 0; ; n++ {
+	for n := 0; ; {
 		resp, err := attempt()
 		if err == nil {
 			return resp, nil
@@ -167,9 +185,18 @@ func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bo
 		if ctx.Err() != nil {
 			return response{}, fmt.Errorf("call model: %w", ctx.Err())
 		}
+		if errors.Is(err, inference.ErrPreempted) {
+			if reset {
+				a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
+			}
+			a.opts.Logger.Info("model call preempted by an interactive call, queueing again",
+				"session_id", s.ID, "run_id", runID)
+			continue
+		}
 		if !provider.Retryable(err) || provider.ContextOverflow(err) || n >= a.opts.MaxRetries {
 			return response{}, err
 		}
+		n++
 		if reset {
 			a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
 		}
@@ -178,7 +205,7 @@ func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bo
 			wait = min(after, maxRetryBackoff)
 		}
 		a.opts.Logger.Warn("model call failed, retrying",
-			"session_id", s.ID, "run_id", runID, "attempt", n+1, "wait", wait, "error", err)
+			"session_id", s.ID, "run_id", runID, "attempt", n, "wait", wait, "error", err)
 		select {
 		case <-time.After(wait):
 		case <-ctx.Done():
@@ -188,19 +215,64 @@ func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bo
 	}
 }
 
-// stream consumes one provider response. It emits the answer and the model's
+// stream makes one attempt at a model call: it waits for a lease, reads the
+// provider's response under it, and gives the lease back whichever way the
+// attempt ends, so that a retry takes a new one and a more urgent call can get
+// in between. The lease is held for the call alone; the caller's tool calls
+// and backoff are outside it. An attempt that an interactive call preempted
+// fails with inference.ErrPreempted, which retrying does not count as a
+// failure.
+func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation, q *queued) (response, error) {
+	lease, err := a.acquire(ctx, s, q)
+	if err != nil {
+		return response{}, fmt.Errorf("call model: %w", err)
+	}
+	defer lease.Release()
+	// The lease says which slot of the server the call should run on, when the
+	// endpoint has slots to name. It is set on this copy of the request, after
+	// the request was sized, and not on what the counter keeps.
+	if slot, ok := lease.SlotHint(); ok {
+		req.SlotHint = &slot
+	}
+	// The provider's goroutine must be told to stop on every way out, or the
+	// server goes on generating for a caller that has left.
+	callCtx, stop := context.WithCancelCause(lease.Context())
+	defer stop(nil)
+	// The attempt is watched from here, after the wait for the lease, and it
+	// gives the lease back on the way out whichever way it ends. Bytes the
+	// provider's client reads count as progress before any event does.
+	watch := a.watchStall(stop, q)
+	defer watch.stop()
+	callCtx = provider.WithProgress(callCtx, watch.touch)
+	resp, err := a.read(callCtx, ctx, s, runID, req, gen, watch)
+	if err != nil && lease.Preempted() {
+		return response{}, preemptedError()
+	}
+	if err != nil && ctx.Err() == nil {
+		if stall := stalled(context.Cause(callCtx)); stall != nil {
+			a.opts.Logger.Warn("model call stalled; aborting the attempt",
+				"session_id", s.ID, "run_id", runID, "error", stall)
+			return response{}, stall
+		}
+	}
+	return resp, err
+}
+
+// read consumes one provider response. It emits the answer and the model's
 // reasoning as they arrive, and a turn.progress event each time the endpoint
 // reports usage, timed from the response's first token so that what a client
 // derives from it is measured rather than estimated. A nil gen reads the
 // response quietly, emitting and measuring nothing, which is how a summary
-// is read.
-func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation) (response, error) {
-	events, err := a.provider.Stream(ctx, req)
+// is read. callCtx bounds the provider's request and ctx is the run's own,
+// which the events go out under.
+func (a *Agent) read(callCtx, ctx context.Context, s *Session, runID string, req provider.Request, gen *generation, watch *stallWatch) (response, error) {
+	events, err := a.provider.Stream(callCtx, req)
 	if err != nil {
 		return response{}, fmt.Errorf("call model: %w", err)
 	}
 	var text strings.Builder
 	var reasoning strings.Builder
+	var reasoningItems []json.RawMessage
 	var calls []provider.ToolCall
 	var usage provider.Usage
 	var timings provider.Timings
@@ -211,10 +283,12 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 	begin := func() {
 		if started.IsZero() {
 			started = time.Now()
+			watch.tokenSeen()
 		}
 	}
 	done := false
 	for e := range events {
+		watch.touch()
 		if done {
 			return response{}, errors.New("call model: provider sent an event after completion")
 		}
@@ -231,10 +305,12 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 			if gen != nil {
 				a.emit(ctx, s, event.TypeReasoningDelta, event.ReasoningDelta{RunID: runID, Text: e.ReasoningDelta})
 			}
+		case provider.KindReasoningItem:
+			reasoningItems = append(reasoningItems, e.ReasoningItem)
 		case provider.KindToolCallDelta:
 			begin()
 		case provider.KindToolCall:
-			calls = append(calls, e.ToolCall)
+			calls = append(calls, mintCall(e.ToolCall))
 		case provider.KindUsage:
 			// A usage event can carry only timings: an endpoint may measure
 			// its own speed in a chunk that repeats no token counts.
@@ -269,20 +345,19 @@ func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provid
 		// carries a call with no result makes the next request malformed.
 		calls = nil
 	}
+	elapsed := elapsedSince(started)
+	timings = withHarnessDecode(timings, usage, elapsed)
 	if gen != nil {
-		elapsed := elapsedSince(started)
-		gen.add(usage, elapsed, withHarnessDecode(timings, usage, elapsed))
+		gen.add(usage, elapsed, timings)
 	}
-	return response{
-		message: provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls),
-		stop:    stop,
-		usage:   usage,
-	}, nil
+	message := provider.AssistantMessageWithReasoning(text.String(), reasoning.String(), calls)
+	message.ReasoningItems = reasoningItems
+	return response{message: message, stop: stop, usage: usage, timings: timings}, nil
 }
 
 // empty reports whether an assistant message carries nothing at all.
 func empty(m provider.Message) bool {
-	return m.Content == "" && m.Reasoning == "" && len(m.ToolCalls) == 0
+	return m.Content == "" && m.Reasoning == "" && len(m.ReasoningItems) == 0 && len(m.ToolCalls) == 0
 }
 
 // cutOff reports whether a stop reason means the model stopped before it was

@@ -1,5 +1,5 @@
 /**
- * The harness-wide choices: the default model, the utility models, the image
+ * The harness-wide choices: the default model, the model classes, the image
  * the home computer is created from, and a way back into the guided setup.
  */
 
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { DefaultModelSelect } from "@/features/settings/DefaultModelSelect";
+import { ModelClasses } from "@/features/settings/ModelClasses";
 import {
   settingKeys,
   settingString,
@@ -19,7 +20,6 @@ import {
   useSettings,
 } from "@/features/settings/queries";
 import { SystemCheck } from "@/features/settings/SystemCheck";
-import { UtilityModels } from "@/features/settings/UtilityModels";
 
 export function GeneralSettings() {
   const settings = useSettings();
@@ -40,7 +40,7 @@ export function GeneralSettings() {
   return (
     <div className="space-y-6">
       <DefaultModelSelect />
-      <UtilityModels state={settings.data} />
+      <ModelClasses state={settings.data} />
       <Separator />
       {/* Keyed by the stored values, so a form starts from what is stored
           now and a save or refetch elsewhere leaves its unsaved edits alone. */}

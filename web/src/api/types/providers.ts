@@ -21,15 +21,31 @@ export const effortNone = "none";
  */
 export type ThinkingSwitch = "reasoning_effort" | "chat_template_kwargs" | "thinking";
 
+/**
+ * ModelKind is what a model answers: a chat model holds a conversation; a
+ * decision model answers typed questions at /v1/systemone and cannot, so it is
+ * never offered where a conversation is held.
+ */
+export type ModelKind = "chat" | "decision";
+
+/** modelKinds lists every ModelKind, in the order a menu offers them. */
+export const modelKinds: readonly ModelKind[] = ["chat", "decision"];
+
 /** Model is one model the user configured on a provider. */
 export type Model = {
   id: string;
   provider_id: string;
+  /** kind is chosen when the model is added and does not change. */
+  kind: ModelKind;
   /** name is what Eika calls the model, unique across providers. */
   name: string;
   /** model is the identifier the provider's endpoint knows it by. */
   model: string;
   context_window: number;
+  /** probed_window is the context one request may use on the endpoint, as its last probe read it; absent when it states none. */
+  probed_window?: number;
+  /** effective_window is the smaller of context_window and probed_window: what runs are judged against. */
+  effective_window: number;
   max_output: number;
   reasoning_effort?: ReasoningEffort;
   /** reasoning_efforts are the values this model offers, in cycling order. */
@@ -46,13 +62,15 @@ export type Model = {
 /** Models is the body of GET /api/models. */
 export type Models = {
   models: Model[];
-  /** default is the model a run uses when it names none; absent when there are no models. */
+  /** default is the chat model a run uses when it names none; absent when there are no chat models. */
   default?: string;
 };
 
 /** CreateModel is the body of POST /api/models. */
 export type CreateModel = {
   provider_id: string;
+  /** kind defaults to chat. */
+  kind?: ModelKind;
   /** name defaults to model. */
   name?: string;
   model: string;
@@ -66,11 +84,15 @@ export type CreateModel = {
 };
 
 /** UpdateModel is the body of PATCH /api/models/{id}; an absent field is left alone. */
-export type UpdateModel = Partial<Omit<CreateModel, "provider_id">>;
+export type UpdateModel = Partial<Omit<CreateModel, "provider_id" | "kind">>;
 
-/** TestModel is the body of POST /api/models/test. */
+/**
+ * TestModel is the body of POST /api/models/test. A decision model is refused:
+ * the test is a chat request, which it cannot answer.
+ */
 export type TestModel = {
   provider_id: string;
+  kind?: ModelKind;
   model: string;
   reasoning_effort?: ReasoningEffort;
   thinking_switch?: ThinkingSwitch;
@@ -113,6 +135,58 @@ export type KV = "shared" | "partitioned" | "unknown";
 /** kvs lists every KV, in the order a menu offers them. */
 export const kvs: readonly KV[] = ["shared", "partitioned", "unknown"];
 
+/**
+ * API is the wire protocol spoken to an endpoint: the stateless Responses API
+ * or Chat Completions. The Responses check chooses it, and the user can
+ * override the choice.
+ */
+export type API = "responses" | "chat";
+
+/** apis lists every API, in the order a menu offers them. */
+export const apis: readonly API[] = ["responses", "chat"];
+
+/**
+ * Conformance is what the Responses check found out: whether the endpoint
+ * takes a streamed tool-call round trip with the reasoning it returned and
+ * states its usage with a cached count, asked of one model on one build of the
+ * server. Only `passed` chooses the Responses API.
+ */
+export type Conformance = {
+  verdict: "passed" | "failed" | "skipped";
+  /** reason says why the check failed or was skipped. */
+  reason?: string;
+  /** model is the model the check asked, and build the server's build then. */
+  model?: string;
+  build?: string;
+  checked_at: string;
+  /** reasoning is whether the model returned a reasoning item that was sent back. */
+  reasoning: boolean;
+  /** cache_metrics is whether the usage stated how many prompt tokens were cached. */
+  cache_metrics: boolean;
+  /** counted is whether exact counting was also compared with the endpoint's own count. */
+  counted: boolean;
+  drift: number;
+};
+
+/**
+ * SlotAffinity is what the slot affinity check found out on a llama.cpp
+ * server with several slots: whether a request that names a slot finds its
+ * prefix there after a request ran on another, asked of one model on one build
+ * of the server. Only `passed` lets the harness name slots.
+ */
+export type SlotAffinity = {
+  verdict: "passed" | "failed" | "skipped";
+  /** reason says why the check failed or was skipped. */
+  reason?: string;
+  /** model is the model the check asked, and build the server's build then. */
+  model?: string;
+  build?: string;
+  checked_at: string;
+  /** prompt_tokens is the first request's prompt, and cached_tokens how much of it the last found cached. */
+  prompt_tokens?: number;
+  cached_tokens?: number;
+};
+
 /** Capabilities is what the last successful probe found beyond the settings. */
 export type Capabilities = {
   /** build is the version the server reported, such as llama.cpp's b11942-338fce651. */
@@ -123,12 +197,16 @@ export type Capabilities = {
   counting: "chat" | "text" | "none";
   /** cache_metrics says whether the endpoint reports cached prompt tokens. */
   cache_metrics: "reported" | "unknown";
-  /** slot_hints is whether a request may name the slot it wants. */
+  /** slot_hints is whether a request may name the slot it wants: the server takes the field. */
   slot_hints: boolean;
+  /** responses is the outcome of the Responses check; absent until it has run. */
+  responses?: Conformance;
+  /** slot_affinity is the outcome of the slot affinity check; absent until it has run and for servers with no slots to name. */
+  slot_affinity?: SlotAffinity;
 };
 
 /** ProviderField names a probed field the user can set in place of the probe. */
-export type EndpointField = "backend" | "pool" | "slots" | "kv";
+export type EndpointField = "backend" | "pool" | "slots" | "kv" | "api";
 
 /** Provider is one model provider: an endpoint and whether it holds a key. */
 export type Provider = {
@@ -147,6 +225,8 @@ export type Provider = {
   kv: KV;
   /** kv_tokens is the size of a shared cache in tokens; absent when unknown. */
   kv_tokens?: number;
+  /** api is the wire protocol spoken to the endpoint; the outcome of its check is in capabilities.responses. */
+  api: API;
   capabilities: Capabilities;
   /** overridden names the fields the user set, which a probe leaves alone. */
   overridden: EndpointField[];
@@ -178,8 +258,9 @@ export type UpdateProvider = {
   base_url?: string;
   /** api_key replaces the stored key; "" removes it. */
   api_key?: string;
-  /** backend, pool, slots and kv set what a probe would otherwise find; a probe leaves them alone. */
+  /** backend, pool, slots, kv and api set what a probe would otherwise find; a probe leaves them alone. */
   backend?: Backend;
+  api?: API;
   /** pool "" means the provider's name. */
   pool?: string;
   slots?: number;
@@ -216,6 +297,8 @@ export type ProbeFindings = {
   slots: number;
   kv: KV;
   kv_tokens?: number;
+  /** api is the protocol the Responses check chose; chat for an endpoint nothing stores. */
+  api: API;
   capabilities: Capabilities;
 };
 

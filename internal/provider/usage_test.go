@@ -417,6 +417,30 @@ func TestMergeKeepsWhatTheNewerStatementOmits(t *testing.T) {
 	}
 }
 
+func TestPrefilledIsStatedOrThePromptLessItsCachedPart(t *testing.T) {
+	cases := []struct {
+		name  string
+		usage provider.Usage
+		want  provider.Count
+	}{
+		{"stated by the server", provider.Usage{InputTokens: rep(90), CachedTokens: rep(86), PrefilledTokens: rep(4)}, rep(4)},
+		{"stated without a cached count", provider.Usage{PrefilledTokens: rep(90)}, rep(90)},
+		{"prompt less cached", provider.Usage{InputTokens: rep(90), CachedTokens: rep(86)}, rep(4)},
+		{"nothing cached", provider.Usage{InputTokens: rep(90), CachedTokens: rep(0)}, rep(90)},
+		{"cached count unknown", provider.Usage{InputTokens: rep(90)}, provider.Count{}},
+		{"prompt unknown", provider.Usage{CachedTokens: rep(86)}, provider.Count{}},
+		{"cached beyond the prompt is not believed", provider.Usage{InputTokens: rep(10), CachedTokens: rep(86)}, provider.Count{}},
+		{"nothing stated", provider.Usage{}, provider.Count{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.usage.Prefilled(); got != c.want {
+				t.Errorf("Prefilled = %+v, want %+v", got, c.want)
+			}
+		})
+	}
+}
+
 // TestUsageReadsEntriesStoredBeforeCountsCouldBeUnreported keeps old session
 // entries readable: they have no cached_tokens key and wrote 0 for anything a
 // server did not state.

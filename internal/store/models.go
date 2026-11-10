@@ -7,10 +7,20 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// The kinds of model. A chat model holds a conversation; a decision model
+// answers typed questions at /v1/systemone and cannot.
+const (
+	ModelKindChat     = "chat"
+	ModelKindDecision = "decision"
+)
+
 // Model is one model the user configured on a provider.
 type Model struct {
 	ID         string
 	ProviderID string
+	// Kind is ModelKindChat or ModelKindDecision. It is set when the model is
+	// created, and empty is chat.
+	Kind string
 	// Name is what Eika calls the model, unique across every provider.
 	Name string
 	// Model is the identifier the provider's endpoint knows the model by.
@@ -41,7 +51,7 @@ type Model struct {
 
 // modelColumns is the column list every model query selects, in the order
 // scanModel reads them.
-const modelColumns = `id, provider_id, name, model, context_window, max_output,
+const modelColumns = `id, provider_id, kind, name, model, context_window, max_output,
 	reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input, created_at, updated_at`
 
 // CreateModel inserts m and returns it with the fields the database
@@ -51,11 +61,11 @@ func (s *Store) CreateModel(ctx context.Context, m Model) (Model, error) {
 	if m.ID == "" {
 		m.ID = NewID()
 	}
-	const q = `INSERT INTO models (id, provider_id, name, model, context_window, max_output,
+	const q = `INSERT INTO models (id, provider_id, kind, name, model, context_window, max_output,
 			reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input)
-		SELECT $1, id, $3, $4, $5, $6, $7, $8, $9, $10, $11 FROM providers WHERE id = $2
+		SELECT $1, id, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM providers WHERE id = $2
 		RETURNING ` + modelColumns
-	out, err := scanModel(s.pool.QueryRow(ctx, q, m.ID, m.ProviderID, m.Name, m.Model,
+	out, err := scanModel(s.pool.QueryRow(ctx, q, m.ID, m.ProviderID, modelKind(m.Kind), m.Name, m.Model,
 		m.ContextWindow, m.MaxOutput, m.ReasoningEffort, textArray(m.ReasoningEfforts),
 		thinkingSwitch(m.ThinkingSwitch), m.PreserveThinking, m.ImageInput))
 	if err != nil {
@@ -104,7 +114,7 @@ func (s *Store) Models(ctx context.Context) ([]Model, error) {
 	return out, nil
 }
 
-// UpdateModel writes every field of m but its provider over the stored row
+// UpdateModel writes every field of m but its provider and kind over the stored row
 // and returns the row as it now stands. A name another model has is
 // ErrConflict.
 func (s *Store) UpdateModel(ctx context.Context, m Model) (Model, error) {
@@ -154,6 +164,15 @@ func textArray(list []string) []string {
 	return list
 }
 
+// modelKind is the value a kind column is written from: the empty kind is
+// chat.
+func modelKind(k string) string {
+	if k == "" {
+		return ModelKindChat
+	}
+	return k
+}
+
 // thinkingSwitch is the value a thinking_switch column is written from: the
 // empty switch is the standard field, which the column names explicitly.
 func thinkingSwitch(s string) string {
@@ -166,7 +185,7 @@ func thinkingSwitch(s string) string {
 // scanModel reads one model row.
 func scanModel(row pgx.Row) (Model, error) {
 	var m Model
-	if err := row.Scan(&m.ID, &m.ProviderID, &m.Name, &m.Model, &m.ContextWindow, &m.MaxOutput,
+	if err := row.Scan(&m.ID, &m.ProviderID, &m.Kind, &m.Name, &m.Model, &m.ContextWindow, &m.MaxOutput,
 		&m.ReasoningEffort, &m.ReasoningEfforts, &m.ThinkingSwitch, &m.PreserveThinking, &m.ImageInput, &m.CreatedAt, &m.UpdatedAt); err != nil {
 		return Model{}, err
 	}

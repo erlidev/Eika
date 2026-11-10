@@ -36,6 +36,13 @@ type reply struct {
 	// usageCached, when set, is the cached count the usage block states
 	// beside the prompt count, as a server with prompt_tokens_details does.
 	usageCached *int
+	// textTokens is what the server's tokenizer counts in the request, when it
+	// differs from the prompt count because the request holds a picture.
+	textTokens int
+	// reasoning is streamed as reasoning_content before the text, and the
+	// tokenizer counts it as reasoningTokens when asked about it alone.
+	reasoning       string
+	reasoningTokens int
 }
 
 func requestFor(text string) provider.Request {
@@ -47,7 +54,43 @@ func newChatServer(t *testing.T, replies ...reply) *chatServer {
 	bench := benchServer(t)
 	cs := &chatServer{}
 	cs.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/chat/completions" {
+		switch r.URL.Path {
+		case "/apply-template":
+			// A different prompt for each request, as a growing conversation
+			// renders: the counter remembers the count of a prompt it has seen.
+			cs.mu.Lock()
+			n := len(cs.requests)
+			cs.mu.Unlock()
+			_, _ = fmt.Fprintf(w, `{"prompt":"the rendered prompt of request %d"}`, n)
+			return
+		case "/tokenize":
+			// The tokenizer counts the prompt of the request about to be
+			// sent, which is the next scripted reply's.
+			cs.mu.Lock()
+			n := len(cs.requests)
+			cs.mu.Unlock()
+			// A text the tokenizer is asked about on its own is the reasoning of
+			// a scripted reply, which has the count its reply gives it.
+			var asked struct {
+				Content string `json:"content"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&asked)
+			for _, rep := range replies {
+				if rep.reasoning != "" && asked.Content == rep.reasoning {
+					_, _ = fmt.Fprintf(w, `{"tokens":[%s]}`, strings.TrimSuffix(strings.Repeat("7,", rep.reasoningTokens), ","))
+					return
+				}
+			}
+			count := 0
+			if n < len(replies) {
+				if count = replies[n].textTokens; count == 0 {
+					count = replies[n].prompt
+				}
+			}
+			_, _ = fmt.Fprintf(w, `{"tokens":[%s]}`, strings.TrimSuffix(strings.Repeat("7,", count), ","))
+			return
+		case "/v1/chat/completions", "/v1/responses":
+		default:
 			bench.Config.Handler.ServeHTTP(w, r)
 			return
 		}
@@ -65,17 +108,40 @@ func newChatServer(t *testing.T, replies ...reply) *chatServer {
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
+		if r.URL.Path == "/v1/responses" {
+			_, _ = fmt.Fprint(w, responsesSSE(replies[n]))
+			return
+		}
 		_, _ = fmt.Fprint(w, sse(replies[n]))
 	}))
 	t.Cleanup(cs.Close)
 	return cs
 }
 
+// responsesSSE uses the same scripted measurements in the Responses wire
+// shape. Cached usage is absent unless the script states it.
+func responsesSSE(r reply) string {
+	usage := map[string]any{"input_tokens": r.prompt, "output_tokens": r.completion, "total_tokens": r.prompt + r.completion}
+	if r.usageCached != nil {
+		usage["input_tokens_details"] = map[string]any{"cached_tokens": *r.usageCached}
+	}
+	text, _ := json.Marshal(map[string]any{"type": "response.output_text.delta", "delta": r.text, "output_index": 0, "content_index": 0})
+	done, _ := json.Marshal(map[string]any{"type": "response.completed", "response": map[string]any{
+		"id": "resp_test", "status": "completed", "usage": usage,
+		"output": []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": r.text}}}},
+	}})
+	return fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\nevent: response.completed\ndata: %s\n\n", text, done)
+}
+
 // sse renders a reply as llama.cpp streams it: a delta with the text, the
 // finish chunk, then a chunk with the usage and the timings.
 func sse(r reply) string {
 	text, _ := json.Marshal(r.text)
+	reasoning, _ := json.Marshal(r.reasoning)
 	var b strings.Builder
+	if r.reasoning != "" {
+		fmt.Fprintf(&b, "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":%s}}]}\n\n", reasoning)
+	}
 	fmt.Fprintf(&b, "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", text)
 	b.WriteString("data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}]}\n\n")
 	details := ""
@@ -105,9 +171,13 @@ func TestCompleteReadsCacheAndPrefillFromARecordedStream(t *testing.T) {
 	bench := benchServer(t)
 	stream := fixture(t, "stream.sse")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/chat/completions" {
+		switch r.URL.Path {
+		case "/v1/chat/completions":
 			w.Header().Set("Content-Type", "text/event-stream")
 			_, _ = w.Write(stream)
+			return
+		case "/tokenize":
+			_, _ = fmt.Fprintf(w, `{"tokens":[%s]}`, strings.TrimSuffix(strings.Repeat("7,", 18), ","))
 			return
 		}
 		bench.Config.Handler.ServeHTTP(w, r)
@@ -143,8 +213,9 @@ func TestCompleteReadsCacheAndPrefillFromARecordedStream(t *testing.T) {
 	if c.PrefillSeconds == nil || math.Abs(*c.PrefillSeconds-0.060765) > 1e-9 {
 		t.Errorf("%v, want 0.060765 s of prefill", c)
 	}
-	if c.Drift != nil || res.Summary.Drift != nil {
-		t.Error("drift is reported although nothing counts it")
+	if c.Method != "exact" || c.Predicted == nil || *c.Predicted != 18 || c.Drift == nil || *c.Drift != 0 ||
+		res.Summary.Drift == nil || *res.Summary.Drift != 0 {
+		t.Errorf("%v, want an exact prediction of 18 tokens with no drift", c)
 	}
 }
 
@@ -227,8 +298,8 @@ func TestCacheReuseReportsBothTurnsAndBoundsTheOutput(t *testing.T) {
 	if s.PrefillSeconds == nil || math.Abs(*s.PrefillSeconds-0.98) > 1e-9 {
 		t.Errorf("summary = %+v, want 0.98 s of prefill", s)
 	}
-	if s.Drift != nil {
-		t.Errorf("summary drift = %d, want absent", *s.Drift)
+	if s.Drift == nil || *s.Drift != 0 || s.CountSeconds == nil {
+		t.Errorf("summary = %+v, want no drift and a count time", s)
 	}
 
 	// The second request replays the first reply, and both are bounded.

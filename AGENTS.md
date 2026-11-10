@@ -15,6 +15,9 @@ codebase. Read it fully before editing.
 4. `docs/EXTENDING.md` when adding a tool, provider, search backend, or UI panel.
 5. `docs/PLAN.md` and `docs/design/`: the phased plan that turns Eika into a
    persistent local assistant. Work on it starts from the plan's ground rules.
+   `docs/DEFERRED.md` holds what was cut from it: do not start that work unless it
+   has been moved into the plan. `docs/PLAN_LOG.md` is the plan's log: add to it,
+   and read it only for the entry an item points to.
 
 ## Rules that are never optional
 
@@ -53,6 +56,7 @@ internal/egress    sandbox egress    internal/netguard  public-only dials
 internal/mcp       MCP client        internal/utility   utility model tasks
 internal/event     event bus         internal/eikad     sandbox daemon wire
 internal/imaging   image input       sandbox/           sandbox image
+internal/inference model-call queue  (standard library only)
 compose.yaml       the whole stack   deploy/            entrypoint, searxng
 docs/              documentation     evals/             live tests, model bench
 ```
@@ -92,7 +96,7 @@ there, test it, document it. Full walkthroughs are in `docs/EXTENDING.md`.
 | tool            | `tool.Tool`                  | `internal/tool/builtin/registry.go`|
 | provider        | `provider.Provider`          | `internal/provider/registry.go`    |
 | search backend  | `search.Searcher`            | `internal/search/registry.go`      |
-| utility task    | function in `internal/utility` | `Known` in `internal/utility/utility.go` + `web/src/features/settings/UtilityModels.tsx` |
+| utility task    | function in `internal/utility` | its trigger in `internal/server`, which resolves a class with `resolveClass` (`internal/server/classes.go`) |
 | API endpoint    | handler in `internal/server` | `internal/server/routes.go` + `routeWire` in `contract_test.go` + `docs/api/http.md` |
 | event type      | struct in `internal/event`   | `docs/api/events.md` + `web/src/api/events.ts` + `eventPayloads` in `internal/server/contract_test.go` |
 | UI panel        | component in `web/src/`      | `web/src/app/panels.tsx`           |

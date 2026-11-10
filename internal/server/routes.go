@@ -58,8 +58,9 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PUT /api/sessions/{id}/profile", s.handleSetSessionProfile)
 	api.HandleFunc("PUT /api/sessions/{id}/overrides", s.handleSetSessionOverrides)
 	api.HandleFunc("GET /api/sessions/{id}/context", s.handleSessionContext)
-	api.HandleFunc("GET /api/sessions/{id}/requests", s.handleSessionRequests)
-	api.HandleFunc("GET /api/sessions/{id}/requests/{request_id}", s.handleSessionRequest)
+	api.HandleFunc("GET /api/sessions/{id}/prediction", s.handleSessionPrediction)
+	api.HandleFunc("GET /api/sessions/{id}/calls", s.handleSessionCalls)
+	api.HandleFunc("GET /api/sessions/{id}/calls/{call_id}", s.handleSessionCall)
 
 	api.HandleFunc("POST /api/sessions/{id}/messages", s.handlePostMessage)
 	api.HandleFunc("GET /api/sessions/{id}/run", s.handleSessionRun)
@@ -110,6 +111,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/settings", s.handleSettings)
 	api.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	api.HandleFunc("GET /api/system", s.handleSystem)
+	api.HandleFunc("GET /api/inference", s.handleInference)
 }
 
 // health is the body of a health check response.

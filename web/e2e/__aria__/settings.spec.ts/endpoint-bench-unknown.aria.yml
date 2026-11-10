@@ -1,6 +1,6 @@
 - dialog "Endpoint of Bench":
   - heading "Endpoint of Bench" [level=2]
-  - paragraph: What Eika found out about the server behind this provider. A value you set is kept when the endpoint is probed again.
+  - paragraph: What Eika found out about the server behind this provider. A value you set is kept when the endpoint is probed again. Probing also asks the provider's first model two small questions, to check the Responses API.
   - paragraph: /Probed \d+-\d+-\d+ \d+:\d+ UTC\./
   - button "Probe again"
   - term: Window per request
@@ -11,6 +11,10 @@
   - definition: reported in every response
   - text: Backend
   - combobox "Backend": llama.cpp
+  - paragraph: Found by the probe.
+  - text: API
+  - combobox "API": Responses API
+  - paragraph: The Responses API passed its check with qwen3.8-27b on b11942-338fce651.
   - paragraph: Found by the probe.
   - text: Pool
   - textbox "Pool": Bench

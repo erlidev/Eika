@@ -35,12 +35,33 @@ type providerWire struct {
 	Slots        int    `json:"slots"`
 	KV           string `json:"kv"`
 	KVTokens     int    `json:"kv_tokens"`
+	API          string `json:"api"`
 	Capabilities struct {
 		Build        string `json:"build"`
 		Window       int    `json:"window"`
 		Counting     string `json:"counting"`
 		CacheMetrics string `json:"cache_metrics"`
 		SlotHints    bool   `json:"slot_hints"`
+		Responses    *struct {
+			Verdict      string `json:"verdict"`
+			Reason       string `json:"reason"`
+			Model        string `json:"model"`
+			Build        string `json:"build"`
+			CheckedAt    string `json:"checked_at"`
+			Reasoning    bool   `json:"reasoning"`
+			CacheMetrics bool   `json:"cache_metrics"`
+			Counted      bool   `json:"counted"`
+			Drift        int    `json:"drift"`
+		} `json:"responses"`
+		SlotAffinity *struct {
+			Verdict      string `json:"verdict"`
+			Reason       string `json:"reason"`
+			Model        string `json:"model"`
+			Build        string `json:"build"`
+			CheckedAt    string `json:"checked_at"`
+			PromptTokens int    `json:"prompt_tokens"`
+			CachedTokens int    `json:"cached_tokens"`
+		} `json:"slot_affinity"`
 	} `json:"capabilities"`
 	Overridden []string `json:"overridden"`
 	ProbedAt   string   `json:"probed_at"`
@@ -59,6 +80,7 @@ type probeWire struct {
 		Slots    int    `json:"slots"`
 		KV       string `json:"kv"`
 		KVTokens int    `json:"kv_tokens"`
+		API      string `json:"api"`
 	} `json:"probe"`
 	Provider *providerWire `json:"provider"`
 }
@@ -85,6 +107,16 @@ type listingProvider struct {
 
 func (p listingProvider) Models(context.Context) ([]provider.ModelInfo, error) {
 	return p.models, p.err
+}
+
+// Stream replays the scripted provider, and fails where a test scripted none:
+// a probe of a provider with a model asks that model, and a test that only
+// lists models has nothing to answer with.
+func (p listingProvider) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+	if p.Provider == nil {
+		return nil, errors.New("listingProvider: no model call is scripted")
+	}
+	return p.Provider.Stream(ctx, req)
 }
 
 // bearer is an Authorization header for a token.

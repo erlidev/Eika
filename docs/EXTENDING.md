@@ -128,11 +128,46 @@ row names its kind. The server builds a client for one run, probe, or test by
 calling the kind's constructor with a `provider.Endpoint`, the row's base URL
 and its key opened from the database, and drops the client afterwards.
 
+A kind speaks one or more protocols (`provider.API`: `chat` for Chat
+Completions, `responses` for the stateless Responses API), with a constructor
+for each. The `openai` kind has both, `openai.New` and `openai.NewResponses`,
+and the provider row's `api` picks one: `Endpoint.API` carries it, and
+`Endpoint.Hosted` says the endpoint is a hosted API, which takes only the
+request fields its specification defines. A kind that speaks one protocol
+registers no constructor for the other, and the registry refuses to build it.
+Both protocols of a kind implement `provider.Provider`, so nothing above the
+provider sees which is in use: they must therefore map the same things (the
+list below), classify failures the same way, and share what does not differ
+(the HTTP client, `ChatBody`, the model list), as `openai.Responses` borrows
+them from `openai.Provider`.
+
 A provider converts a `provider.Request` into a stream of `provider.Event`
 values and never leaks a vendor SDK type upwards. It closes the channel after a
 `KindDone` or `KindError` event and stops when the context is cancelled. The
 request names the model by the endpoint's identifier. Retrying is the agent
 loop's job: classify a failure as a `provider.Error` and let the loop decide.
+
+Two rules of the loop reach a provider. A tool call it relays carries the
+backend's own id in `ToolCall.ID`; the loop replaces it with an id of its own
+and keeps the backend's in `WireID`, so a request must send `ToolCall.Wire()`
+for a call, and translate the `ToolCallID` of a result with
+`provider.WireToolCallIDs`, never send `ID`. And the loop aborts a call whose stream is silent: read the response
+through a client from `provider.NewHTTPClient`, which reports every arrival of
+bytes, or call `provider.Progressed(ctx)` yourself when bytes arrive that no
+event shows.
+
+A provider also implements `provider.ChatEncoder` (`ChatBody`) so that the
+token counter can render what it sends. The body must come from the same
+code that builds the request `Stream` posts, not a second serialiser: the
+counter posts it to the server's own rendering route, and anything left out of
+it is something the count does not see. A provider of another protocol returns
+the equivalent Chat Completions body.
+
+A new tokenizer route is a case in `counter.Routes` (`Level`, `Text`, and
+`Prompt` or `Request` if the server renders a chat request), a probe that finds
+it (`probe.Counting`), and a fixture; mark it unverified until a server of that
+kind is on the bench. `counter.Source` is the interface to implement for
+anything that is not HTTP; `providertest.TokenServer` is the fake.
 
 A provider whose endpoint can list its models also implements
 `provider.Lister`. The setup screens call it to offer models to tick, with
@@ -186,10 +221,10 @@ Register it in `internal/provider/registry.go`. Constructors are parameters of
 file cannot import them back:
 
 ```go
-func NewRegistry(openAI, echo Constructor) *Registry {
-	return &Registry{kinds: map[string]Constructor{
-		"openai": openAI,
-		"echo":   echo,
+func NewRegistry(openAIChat, openAIResponses, echo Constructor) *Registry {
+	return &Registry{kinds: map[string]kind{
+		"openai": {chat: openAIChat, responses: openAIResponses},
+		"echo":   {chat: echo},
 	}}
 }
 ```
@@ -212,9 +247,27 @@ identifier runs. Add the backend to `Backend`, to the `backend` check of the
 folder's README, and a constructor in `probetest`. A field the server does not
 state is the documented default or `unknown`, never a guess.
 
+A new protocol of an existing kind that an endpoint may or may not take is
+chosen per provider row, so it needs a check that tells the two apart:
+`probe.CheckResponses` is the Responses one (a streamed tool-call round trip
+with the reasoning item sent back, usage with cache metrics, exact counting),
+run by `server/providers_responses.go` and recorded in
+`capabilities.responses`. It asks the user's model, so it runs only when a
+probe needs it. A backend feature that helps only when the server behaves a
+certain way, and whose behaviour the server does not state, is gated the same
+way: `probe.CheckSlotAffinity` measures whether naming a llama.cpp slot keeps a
+prefix there, `capabilities.slot_affinity` records it, and
+`server/providers_slots.go`'s `takesSlotHints` is the one rule that lets the
+queue place calls by slot and the client send `id_slot`. A backend that takes
+slot hints too adds itself to `namesSlots` and to the client's field, in the
+`openai` package's `slot.go`. Record each backend's streams in
+`internal/provider/testdata/responses/<backend>/`, marked recorded or
+unverified in the README there.
+
 Test a provider against an `httptest` server that serves its wire format, as
-`internal/provider/openai/openai_test.go` does. Test everything that consumes a
-provider with `provider/providertest`, the scripted fake.
+`internal/provider/openai/openai_test.go` and `responses_test.go` do. Test
+everything that consumes a provider with `provider/providertest`, the scripted
+fake.
 
 What a provider maps from the request:
 
@@ -226,7 +279,27 @@ What a provider maps from the request:
   `Request.ThinkingSwitch` names, or however the API disables thinking.
 - Emit `KindReasoningDelta` for reasoning always; the agent streams it and
   stores it in `Message.Reasoning`. When `preserve_thinking` is on, send
-  stored reasoning back on later assistant messages.
+  stored reasoning back on later assistant messages. A protocol whose
+  reasoning is an item the endpoint must be sent back as it returned it (the
+  Responses API, where a hosted API's item is encrypted) emits each as a
+  `KindReasoningItem` event holding the item's JSON untouched; the agent keeps
+  them in `Message.ReasoningItems`, and the provider sends them back as they
+  are. A message from a protocol that has no item has only its text, so a
+  provider must accept a message of either origin and send a valid request:
+  Chat Completions sends the text, a Responses provider builds an item from the
+  text for a server on the user's hardware and sends nothing for a hosted API,
+  which refuses an item it did not return. An item with nothing after it in its
+  message (a response cut off in its reasoning) is not sent to a hosted API.
+- Report why a response ended in `KindDone`'s stop reason, and `length` when
+  the output limit cut it off: the agent keeps what arrived, drops any tool
+  call the response was in the middle of, and ends the turn. An endpoint that
+  never says so (llama.cpp reports a response cut off by `max_output_tokens` as
+  completed) is told by its output count reaching the limit the request set.
+- Classify a failure as a `provider.Error`: retryable for a transport failure,
+  a timeout, a rate limit and a server error, never for a refusal. Put the
+  endpoint's own wording, and its error code, in the text, since
+  `provider.ContextOverflow` matches an overflow by what the endpoint says
+  (`context_length_exceeded`, `exceeds the available context size`).
 - `Message.Images` on a user message: PNG or JPEG data with its size, sent
   only to a model with image input (the agent replaces them with a note for
   any other). Send them the way the API takes pictures, before the text.
@@ -342,11 +415,14 @@ consumes one.
 ## Adding a utility task
 
 A utility task is a small job the harness gives a model for itself, outside
-any run: naming a session is one. The user assigns each task a model in
-Settings, General (the `utility_models` setting); a task with no model does
-not run. A task is a `utility.Task` in `internal/utility/utility.go`, listed
-in `Known`, and a function in its own file of that package that sends one
-request with `Model.request`, which turns thinking off the way a run does:
+any run: naming a session is one. A task never names a model. It runs on a
+model class (`deep`, `main`, `fast`, or `decision`), and the user assigns each
+class a model in Settings, General (the `model_classes` setting). Pick the
+class by what the task needs: `fast` for a small job, `main` for most work,
+`deep` for hard reasoning. A class with no model falls back (`deep` and
+`fast` to `main`), and a task with no model at all does not run. A task is a
+function in its own file of `internal/utility` that sends one request with
+`Model.request`, which turns thinking off the way a run does:
 
 ```go
 package utility
@@ -371,15 +447,31 @@ func Summary(ctx context.Context, m Model, answer string) (string, error) {
 }
 ```
 
-The server calls it where its trigger happens: `s.utilityModel(ctx, task)`
-reads the assigned model (false for none), and `s.utilityClient` builds it.
-A task that must not hold up a request runs in a goroutine with an owner that
-`Server.Close` stops, as `titles` in `internal/server/titles.go` does. Test
-the function with `providertest`, as `internal/utility/title_test.go` does,
-and the trigger with a `docker`-tagged server test. Give the task a label in
-`utilityTasks` in `web/src/features/settings/UtilityModels.tsx`, add it to
-the `utility_models` row in `docs/api/http.md`, and mirror it in the mock
-harness.
+Every model call goes through the inference queue (`internal/inference`), and
+a task is no exception: the server holds a lease around the call, at the
+priority the task deserves (`maintenance` for work nobody waits for, which runs
+only on an idle pool; `interactive` when a person is waiting), and the call's
+time limit starts inside the lease. `titles.ask` in `internal/server/titles.go`
+is the pattern: `s.queue(ctx).Do(ctx, callNeed(row, inference.Maintenance,
+class, tokens), func(ctx context.Context, _ *inference.Lease) error {...})`,
+with `tokens` the call's predicted prompt plus its largest answer (see
+`utility.TitleTokens`). `s.utilityClient` also returns the provider row the
+pool comes from. `internal/modelcalls_test.go` fails on a file that sends a
+model request without being listed there, with the reason it holds a lease.
+
+The server calls it where its trigger happens: `resolveClass` in
+`internal/server/classes.go` returns the model of the class the task runs on
+(false for none), with the fallbacks applied, and `s.utilityClient` builds
+it. A task with a rule of its own for when to skip, as titles have, wraps
+that in a method beside its trigger, as `titleModel` does. A task that must
+not hold up a request runs in a goroutine with an owner that `Server.Close`
+stops, as `titles` in `internal/server/titles.go` does. Test the function
+with `providertest`, as `internal/utility/title_test.go` does, and the
+trigger with a `docker`-tagged server test. The classes need no UI change; a
+new class is a decision of its own: add it to `modelClasses` in `classes.go`
+with its kind and fallback, to `classInfo` in
+`web/src/features/settings/classes.ts`, to the `model_classes` row in
+`docs/api/http.md`, and mirror it in the mock harness's `classView`.
 
 ## Using a custom sandbox image
 

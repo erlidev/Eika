@@ -31,8 +31,109 @@ answer, then `go test -tags live -count=1 -v` on `evals/live`. The test:
 - otherwise plays every scenario, logs one line per model call, and writes the
   report. The path is the last log line.
 
+The scenarios: `provider_probe` (the probe against `/slots`), `cache_reuse`
+(a two-turn conversation: cache hit rate and prefill), `tools_and_reasoning`
+(tool definitions, a tool call and result, replayed reasoning and the thinking
+switch: every prediction must be exact with no drift), `image_input` (one small
+picture: never called exact, and counted to the token once its size was
+measured), `count_cost` (a context of about 20k tokens counted cold and one
+exchange later: `count_seconds`), `agent_loop` (the real agent loop on one
+session, two turns with a tool: the call records of the loop must show exact
+predictions with no drift), `reasoning_count` (a response cut off inside its
+reasoning: the loop's tokenised count, labelled as such, within a few tokens of
+the completion tokens the server generated) and `context_breakdown` (the parts
+of a plain request counted one by one, plus the template's remainder, equal the
+server's prompt count, and the remainder is small and not negative).
+`tool_arguments` (a history whose tool calls have spaced, reordered, nested and
+non-ASCII arguments), `thinking_switches` (the same short request with every way
+a model's thinking is asked for or turned off) and `cut_off_reasoning` (the
+request after a response cut off inside its reasoning) count requests a server
+may render differently from how they were read: each must be exact with no
+drift. The ones that run under both protocols exist twice, the second named
+`responses_<name>` (`OnResponses`): the same requests through the Responses
+provider, counted from the chat body, which fails if the server's conversion of
+the input left out or changed anything the chat request holds. `responses_drift`
+is a three-turn conversation with thinking on, parallel tool calls and replayed
+reasoning items under the Responses API, and `responses_conformance` runs the
+harness's Responses conformance check for real (two small model requests) and
+requires it to pass. `session_title` runs the title task of the fast class
+against the bench's model, thinking off, and requires a short single-line title.
+`queue_priority` puts the inference queue on a client-side pool of one slot
+over real model calls: a call holds the slot, a background call and then an
+interactive one line up, and the interactive call must be admitted and answered
+first (`queue_seconds` in the report is each call's wait for its lease).
+`usage_fields` and `responses_usage_fields` repeat the cache conversation and
+compare the exact rendered count with the reported prompt count on a cache hit.
+They record `prompt_includes_cached` and require it to be true. If the server
+also states a prefilled count, prefilled plus cached must equal prompt. Missing
+counts stay `null`; the offline tests check this under both protocols.
+`counting_conversation` and `responses_counting_conversation` use one scripted
+history with tool rounds, replayed reasoning, a picture, and a compaction. Text
+calls before and after the compaction must be exact with zero drift. The first
+picture measures its cost; the next call with that picture must have zero drift
+with the measured cost. Image calls are never labelled exact: llama.cpp's
+`/apply-template` and `/tokenize` do not count the image tokens. This scenario
+uses the session's compaction fold with a fixed summary and cut.
+`prefix_across_compaction` and `responses_prefix_across_compaction` test the
+real loop's summary calls and stored history across two restarts and a manual
+compaction. All five recorded calls must be exact with zero drift. Each call
+must find at least 90% of the previous prompt cached, except the first after
+the compaction. The report states that call's cache count. Both scenarios are
+registered in the default suite; they need no server change.
+`slot_hint_honoured` (and `responses_slot_hint_honoured`) asks the server to run
+requests on slot 1, 1, 0, 0 and on a slot it does not have, reads `/slots` while
+each runs, and requires the slot named to be the only one processing it (and the
+unknown one not to fail the call); the zero drift on those requests shows the hint
+is not part of what the counter renders. `slot_affinity` (and
+`responses_slot_affinity`) plays two sessions that share a 3000-token head through
+the real agent loop on the queue's slot affinity, then the same pair with no hint,
+and reports what affinity saved in prefilled tokens in the result's `notes`. It
+runs the harness's slot affinity check first. When the check passes, the sessions
+must keep one slot each and find their previous prompt cached; when it fails,
+hints must not have beaten the control, so the harness is right not to send them.
+`shared_admission` is the one scenario that sends large prompts: two sessions
+of about 66k tokens each, which together pass the bench's 131072-token cache,
+ask at once through a pool that states `kv: shared` with that size (the probe
+reads `unknown` for the bench), and must be admitted one after the other with
+neither failing or cut off. It costs two cold prefills of that size, about
+45 seconds on the bench.
+
 Keep scenarios small: bounded `max_tokens`, no load. The server is shared; do
 not start, stop or swap anything on it from a scenario.
+
+## Server operations (`evals/bench`)
+
+Some suites need the server changed (other flags, the second backend). The
+`bench` package does that and nothing else is allowed to; it is built and
+tested on a fake host, and **has not yet run against the server**. A run:
+
+1. `Open` reads and records the running containers and the GPU's holders. It
+   refuses (`BusyError`) when anything but `llama-qwen` holds the GPU, naming
+   what it found, unless the container is in `Options.Take`; it stops nothing
+   else, ever. It refuses (`LeftModifiedError`) when an earlier run left a
+   journal that differs from the server, the lock `/tmp/eika-bench.lock` is
+   held, or a container labelled `eika.bench` is left.
+2. Only then it takes the lock, writes the journal (default
+   `~/.cache/eika/bench-journal.json`) and starts the watchdog: a detached
+   script on the server that restores the bench when the run's heartbeat file
+   goes 3 minutes stale (killed process, lost connection).
+3. `Serve(spec)`: `Baseline()` starts `llama-qwen` as it is, `Tabby()` starts
+   the existing `tabbyapi` container as it is, `Variant(name, edits...)` runs
+   the chat container's image, mounts and network as `eika-bench-<run>` with
+   its recorded flags edited (`--restart no`, label `eika.bench`, the key from
+   the server's own `.env` through `--env-file`). `command.txt`,
+   `komodo.toml` and the Deployment are never touched. It waits for health
+   with a bound and returns the URL (an SSH forward) and an `Info` for the
+   report (container, image, image id, flags, edits).
+4. `Close` (also deferred after a failure, and run on SIGINT or SIGTERM)
+   removes the variant, stops what it started, waits for the GPU to empty,
+   starts what it stopped, waits for health and compares the server with the
+   snapshot. A failure is a `RestoreError` that says `BENCH NOT RESTORED`; the
+   journal stays and the next `Open` refuses.
+
+`Logs` and `ServerTime` read a container's log; `ParseServerLog` reads
+llama.cpp's per-task counts (prefilled, generated, slot tokens) for the
+meter-against-the-server's-logs check.
 
 ## Reading a report
 
@@ -45,18 +146,24 @@ not start, stop or swap anything on it from a scenario.
 | `server.flags` | What the probe read: `slots`, `context` (the window one request may use; `/props` reports it per slot), `train_context`, `kv` (`unknown` for a llama.cpp server with several slots), `vision`. The KV cache type and `--kv-unified` are not reported by llama.cpp; they are in `command.txt` on the server |
 | `scenarios[].passed`, `error` | Whether the scenario ran to its end and met its assertions |
 | `calls[].prompt_tokens`, `completion_tokens` | The prompt size the server counted, cached tokens included, and the tokens generated, reasoning included |
+| `calls[].prompt_includes_cached` | Whether `usage_fields` verified that the reported prompt count includes a positive cached count; `null` when not verified. `prompt_tokens` is the report name for Responses `input_tokens` too |
 | `calls[].reasoning_tokens` | The part of the completion the server says was reasoning; `null` on llama.cpp, which does not say |
 | `calls[].prefilled_tokens` | Prompt tokens the server says it evaluated (llama.cpp `prompt_n`) |
 | `calls[].cached_tokens`, `cache_hit_rate` | Prompt tokens served from the cache, as the server states them, and their share of the prompt |
 | `calls[].prefill_seconds` | Time the server spent evaluating the prompt, as it measured it |
 | `calls[].wall_seconds` | Request to end of stream, as the harness saw it |
-| `calls[].drift` | The token counter's prediction less `prompt_tokens` |
+| `calls[].predicted_tokens`, `prediction_method` | What the token counter (`internal/provider/counter`) predicted for the prompt before the call, and how: `exact`, `anchored` or `estimated` |
+| `calls[].drift` | The prediction less `prompt_tokens`. Any drift on an `exact` prediction fails the scenario |
+| `calls[].count_seconds` | What predicting the request cost: the tokenizer requests included |
+| `calls[].id_slot` | The slot the request named; absent when it named none |
+| `scenarios[].notes` | What a scenario states in words, such as what a control run cost |
 | `summary` | The same, totalled over a scenario's calls |
 
-A number that was not measured is `null`, never 0. `drift` is `null` in every
-report until the token counter exists; the counter's item fills it in
-(`Call.Drift`), and `Summarise` totals it. A total is `null` unless every call
-stated the count it adds up. The token counts are the ones usage parsing reads
+A number that was not measured is `null`, never 0. Each scenario is one session
+with a token counter of its own, which predicts every request `Target.Complete`
+sends and learns from the measurement. The summary's `drift` is the sum of the
+absolute drift, so errors in opposite directions do not cancel. A total is
+`null` unless every call stated the count it adds up. The token counts are the ones usage parsing reads
 (`provider.Usage`); the suite derives none. Compare two reports by their
 `server` block first: a change there explains a change in the numbers.
 

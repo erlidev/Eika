@@ -148,7 +148,7 @@ chats included. `?chats=true` returns the chats alone; with `computer_id` it is
 |---|---|---|
 | `computer_id` | string | The computer the session's runs act in. Required unless `chat` is set. |
 | `chat` | boolean | Open a chat, which has no computer. |
-| `title` | string | What to call it, at most 200 characters. Empty or absent leaves it untitled: it is called `New session` (`New chat` for a chat) until its first run names it after the first message, when the `utility_models` setting assigns `session_title` a model. |
+| `title` | string | What to call it, at most 200 characters. Empty or absent leaves it untitled: it is called `New session` (`New chat` for a chat) until its first run names it after the first message, when a model serves the `fast` class (`model_classes` in `PUT /api/settings`). |
 
 `201` with the `Session`. `400` for `chat` with a `computer_id`; `404` when the computer does not exist, which is also what
 leaving both out gives: a chat is asked for, never a fallback.
@@ -265,18 +265,18 @@ message does. The MCP tools are those the servers last listed; a preview
 connects nothing. `200` with a ModelContext. `400` for a
 model that does not exist.
 
-### `GET /api/sessions/{id}/requests`
+### `GET /api/sessions/{id}/calls`
 
 The records of the session's model calls: one per call a run made that
-returned a response. `200` with `{"session_id": string, "requests":
-[ModelRequest]}`, oldest first. The records go with their session.
+returned a response. `200` with `{"session_id": string, "calls":
+[ModelCall]}`, oldest first. The records go with their session.
 
-### `GET /api/sessions/{id}/requests/{request_id}`
+### `GET /api/sessions/{id}/calls/{call_id}`
 
 One recorded call, in the shape of the preview: its sections, tool schemas,
 and parameters as it sent them, and its messages rebuilt from the session's
 path down to the entry the call's conversation ended at. `200` with a
-ModelContext that has `request`; `404` for a record of another session.
+ModelContext that has `call`; `404` for a record of another session.
 
 ### ModelContext
 
@@ -284,20 +284,57 @@ ModelContext that has `request`; `404` for a record of another session.
 |---|---|---|
 | `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base` or `instructions`. The system prompt is the sections' texts joined by a blank line. |
 | `tools` | array | The tool schemas sent: `{name, description, schema, source, tokens}`, where `source` is `builtin` or `mcp`. |
-| `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` only when the model preserves thinking. |
+| `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` and `reasoning_items` only when the model preserves thinking. |
 | `message_tokens` | number | The estimated size of the messages. |
 | `message_sizes` | number array | The estimated size of each message, in the order of `messages`. |
 | `parameters` | object | `{model, sampling, thinking_switch, preserve_thinking, image_input}`: the endpoint's identifier of the model, the sampling parameters sent (a Sampling), the model's thinking switch, whether earlier reasoning is replayed, and whether images are sent (without it each message's images are a note in its text). |
 | `sources` | object | The layer each parameter came from, keyed `model`, `thinking_switch`, `preserve_thinking`, `image_input`, and `sampling.<parameter>`. |
 | `dropped_effort` | string, optional | A reasoning effort the configuration chose that the model does not offer, which is not sent. |
-| `request` | ModelRequest, optional | The record this is; absent for the next request. |
-| `context_window` | number | The context window of the call's model, in tokens: what the request and its answer must fit in. 0 when no model is configured, or a recorded call's model is deleted. |
-| `calibration` | object, optional | `{request_id, input_tokens, estimated_tokens}`: a call the endpoint measured, beside the estimate of what it sent, so the estimates can be scaled to it. The record itself, or for the next request the session's last measured call. |
+| `call` | ModelCall, optional | The record this is; absent for the next request. |
+| `context_window` | number | The effective window, in tokens: what the request and its answer must fit in. For a recorded call, the window it was judged against. 0 when no model is configured, or a recorded call kept none and its model is deleted. |
+| `breakdown` | Breakdown | Where the request's tokens go, part by part. |
+| `prediction` | object, optional | `{tokens, method}`: what the token counter expects the next request to cost and how it knows (`exact`, `anchored` or `estimated`). Absent for a recorded call, whose own is on `call`. |
 
-Every `tokens` figure is an estimate, four bytes to a token and an image one
-token per 750 pixels; only a record's `input_tokens`, when it is not `null`, is measured.
+The `tokens` of a section and a tool, `message_tokens` and `message_sizes` are
+the agent's planning estimates, four bytes to a token and a picture one token
+per 750 pixels; the loop places a compaction cut with them. A client shows
+`breakdown`, which counts every part with the endpoint's own tokenizer where it
+has one.
 
-### ModelRequest
+### Breakdown
+
+Each part is tokenised on its own, and nothing is scaled to make the parts add
+up to the whole: what they leave unexplained is `remainder`, the cost of the
+template and the formatting around them.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sections` | array | The size of each system prompt section, in the order of `sections`: `{kind, tokens, approximate}`. |
+| `tools` | array | The size of each tool definition, in the order of `tools`: `{name, tokens, approximate}`. Where the endpoint can render a request, a tool is what the template adds when it is added to the tools before it, so the sizes add up to what the whole list costs and the first carries the template's wrapper around the list. Otherwise it is the definition as JSON text and `approximate` is set. |
+| `messages` | array | The size of each message, in the order of `messages`: `{tokens, approximate, reasoning_tokens}`. `tokens` is its text, its tool calls and its pictures; `reasoning_tokens` is the replayed reasoning counted apart, absent when the message sends none. |
+| `parts` | number | The sum of every part, replayed reasoning included. |
+| `prompt_tokens` | number or null | The size of the whole request the parts fall short of: the call's measured prompt for a recorded call, or for the next request its prediction when that is `exact`. `null` when there is none, never `0` in its place. |
+| `prompt_source` | string, optional | `measured` or `predicted`. Absent exactly when `prompt_tokens` is `null`. |
+| `remainder` | number or null | `prompt_tokens` less `parts`: what the template and formatting cost. It is negative when the parts add up to more than the endpoint counted, which says a part was counted wrongly, and it is never clamped. `null` exactly when `prompt_tokens` is. |
+
+`approximate` is set on a part that is not the endpoint's own tokenisation of
+it: estimated from bytes where the endpoint tokenises nothing (or the time to
+count ran out), a picture whose size was never measured, or a tool sized as
+JSON text. Pictures are not counted by any tokenizer route, so a request with a
+picture is never `exact` and its remainder includes what the picture's estimate
+gets wrong.
+
+### `GET /api/sessions/{id}/prediction`
+
+What the session's next request is expected to cost, for the status bar's
+meter: the size of the request `GET /api/sessions/{id}/context` describes,
+without the request. `?model=<name>` names the model, as there. `200` with
+`{"model": string, "tokens": number, "method": string, "context_window":
+number}`: the model's name, the expected prompt size, how it is known (`exact`,
+`anchored` or `estimated`), and the model's effective window. `409` when no
+model is configured; `400` for a model that does not exist.
+
+### ModelCall
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -308,7 +345,18 @@ token per 750 pixels; only a record's `input_tokens`, when it is not `null`, is 
 | `model_id` | string, optional | The model, absent once it is deleted. |
 | `model` | string | The model's name when the call was made. |
 | `message_tokens` | number | The estimated size of the messages sent. |
-| `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens` | number or null | What the endpoint measured for the call, as `Usage` in `docs/api/events.md` defines them: `null` when the endpoint did not state a count, never `0` in its place. |
+| `prompt_tokens`, `completion_tokens`, `total_tokens`, `cached_tokens` | number or null | What the endpoint measured for the call: the prompt (the cached part included), everything generated (reasoning included), the total it stated, and the part of the prompt it served from its cache. They are `Usage`'s `input_tokens`, `output_tokens`, `total_tokens` and `cached_tokens` in `docs/api/events.md`. `null` when the endpoint did not state a count, never `0` in its place. |
+| `prefilled_tokens` | number or null | The part of the prompt the endpoint processed: the count it states, else the prompt less the cached part. `null` when neither is known. |
+| `reasoning_tokens` | number or null | The part of the completion that was reasoning. |
+| `reasoning_source` | string, optional | Where `reasoning_tokens` came from: `reported` by the endpoint, or `tokenised` from the reasoning text, which approximates what the model generated. Absent exactly when the count is `null`. |
+| `predicted_prompt_tokens` | number or null | What the token counter expected the prompt to be before the call. `null` for a call made before predictions were recorded. |
+| `prediction` | string, optional | How the prediction was reached: `exact`, `anchored` or `estimated`. Absent with `predicted_prompt_tokens`. |
+| `drift` | number or null | `predicted_prompt_tokens` less `prompt_tokens`; `null` unless both exist. Any drift on an `exact` prediction is a bug. |
+| `context_window` | number or null | The window the call was judged against; `null` when the model had none configured. |
+| `endpoint` | string, optional | The provider's name when the call was made. |
+| `queue_ms`, `slot` | number or null | Milliseconds the call waited for a lease on its pool (summed over its attempts, so a call that was preempted and queued again counts both waits), and the server's own slot number that the request named (`id_slot`). `slot` is `null` for a call that named none: one to an endpoint that takes no slot hints (anything but a llama.cpp server with several slots on which the slot affinity check passed), and one recorded before the queue existed. |
+| `class`, `priority`, `agent` | string, optional | Attribution. `priority` is what the call asked for: `interactive`, `foreground`, `background` or `maintenance`. `class` is the model class the run was resolved from and is absent for a run that named its model. `agent` is absent until the agents record it. |
+| `prefill_ms`, `decode_ms` | number or null | Milliseconds the endpoint took to read the prompt (as it stated it) and to generate (its own measure, else the harness's from the first token). `null` when nothing measured them. |
 | `created_at` | time | When the call returned. |
 
 ### Session
@@ -339,9 +387,18 @@ token per 750 pixels; only a record's `input_tokens`, when it is not `null`, is 
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
 | `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `threshold`, or `overflow`), and `usage`. The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
 
+A user message can include `context`: the block the model reads after the
+message's text, which states the time it was sent. It is not what the user
+wrote, so a client shows `content` and not `context`; the Context inspector
+shows both. Messages stored before the field existed lack it.
+
 A provider message can include `reasoning` on an assistant entry whenever the
 endpoint streamed it. The session view shows it apart from the answer; Eika
-replays it to the provider only when `preserve_thinking` is on. An assistant
+replays it to the provider only when `preserve_thinking` is on. An entry of a
+provider speaking the Responses API also holds `reasoning_items`: the reasoning
+items the endpoint returned, each exactly as it sent it (a hosted API's carry
+encrypted content), which a later request sends back as they are. A client
+does not read them; entries made before the field existed lack it. An assistant
 message can also include `metrics` with `run_id`, turn `usage`, last-call
 `context`, `generation_ms`, `context_window`, and an optional `timings`
 (`docs/api/events.md`). This UI metadata restores the context view and the
@@ -349,7 +406,16 @@ answer's generation speed after replay, and is never sent to the provider. A too
 `arguments` is normally an object. If a model returns malformed JSON, it is a
 string with the exact malformed text, and the tool call has
 `arguments_malformed: true`. The marker is absent for valid JSON, including a
-valid top-level JSON string. A user message can include `images`, each
+valid top-level JSON string. A tool call whose arguments `encoding/json` would
+not write back as the bytes the model sent (whitespace, a key order, `&` in a
+command) also has `arguments_text`, their exact text, which Eika sends to the
+model so that a prompt cache sees the same bytes on every request; a client
+reads `arguments`. A reasoning item that would change is stored as a string
+holding its exact text. A tool call's `id` is Eika's own, unique in the
+session, and is what events and the `tool_call_id` of its result carry. Its
+`wire_id` is the id the model server gave it, kept only so a later request can
+send it back as the server knows it, and is absent on a call stored before Eika
+minted ids, whose one `id` is both. A user message can include `images`, each
 `{"media_type": string, "data": string, "width": number, "height": number}`:
 the picture as the model is sent it, `image/png` or `image/jpeg`, base64
 encoded, with its size in pixels. `content` is absent on a message of images
@@ -368,7 +434,7 @@ on the event stream.
 | `text` | string | The message. Required unless `images` holds at least one image. |
 | `images` | array | Pictures attached to the message, each `{"data": string}`: a PNG, JPEG, GIF, or WebP file, base64 encoded, of at most 20 MiB and 50 megapixels. At most 10. |
 | `mode` | `run`, `steer`, or `follow_up` | What to do with it. Empty means `run`. |
-| `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first model. |
+| `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first chat model. A decision model is `400`. |
 
 - `run` starts a run from the session's head. `409` when one is already going.
 - `steer` joins the run in progress as soon as the running tool call
@@ -529,7 +595,7 @@ base URL it was entered for: a `base_url` that differs from the stored one,
 without an `api_key`, clears the stored key, so it is never sent to the new
 endpoint.
 
-`backend`, `pool`, `slots`, `kv` and `kv_tokens` set what a probe would
+`backend`, `pool`, `slots`, `kv`, `kv_tokens` and `api` set what a probe would
 otherwise find. A field set here is listed in the provider's `overridden` and a
 probe leaves it alone, until `reset` hands it back.
 
@@ -540,7 +606,8 @@ probe leaves it alone, until `reset` hands it back.
 | `slots` | integer | Concurrent requests the endpoint takes, 1 to 1024. |
 | `kv` | string | `shared`, `partitioned` or `unknown`. |
 | `kv_tokens` | integer | The size of a shared cache in tokens, 0 when unknown. Refused with a `kv` that is not `shared`. Setting either `kv` or `kv_tokens` sets the cache. |
-| `reset` | array of string | Fields (`backend`, `pool`, `slots`, `kv`) handed back to the probe. Their values stay until the next probe. |
+| `api` | string | `responses` or `chat`: the wire protocol spoken to the endpoint. |
+| `reset` | array of string | Fields (`backend`, `pool`, `slots`, `kv`, `api`) handed back to the probe. Their values stay until the next probe. |
 
 `200` with the `Provider`; `400` for a bad field; `409` when the name is
 taken.
@@ -555,8 +622,25 @@ built. `204`.
 Asks an endpoint which models it serves, which is the setup screens'
 connection test and model list, and what kind of server it is: its backend,
 slots, per-request window, KV cache and capabilities, read from the server's
-own description (`docs/design/runtime.md` section 1). The harness probes every
-stored provider again at each start.
+own description
+([Architecture](../ARCHITECTURE.md#endpoints-models-and-classes)). The harness
+probes every stored provider again at each start.
+
+Probing a stored provider also runs the Responses conformance check, which is
+the one part of a probe that asks a model: two small requests to the first chat
+model the user configured on the provider (never a decision model, which cannot
+answer a chat request), with a small output limit and a time limit each. The explicit probe always runs it. A probe at start runs it only when the
+provider has no recorded outcome, or the outcome was made against another server
+build or another model than the one it would ask now, so a start of the
+harness sends the model nothing in the usual case. A provider with no chat
+model is not asked (`verdict` `skipped`), and an endpoint nothing stores has no model of
+the user's to ask, so a form probe leaves `api` at `chat`.
+
+On a llama.cpp server with more than one slot the probe also runs the slot
+affinity check, by the same rules: three small requests to the same model, the
+first and the last naming slot 0 and the second slot 1, to see whether the last
+finds the first's prefix still cached. Its outcome decides whether requests
+name slots at all.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -568,7 +652,8 @@ stored provider again at each start.
 `200` with `{"models": [ModelInfo], "probe": Probe, "provider": Provider}`.
 `models` are sorted by id. `probe` is what the endpoint said about itself,
 before any override: `backend`, `slots`, `kv`, `kv_tokens` (absent when
-unknown) and `capabilities`. `provider` is the stored provider after the
+unknown), `api` (the protocol the Responses check chose: `responses` only when
+it passed) and `capabilities`. `provider` is the stored provider after the
 findings were recorded on it, which the route does only for a stored provider
 probed at its stored `base_url` and without a new `api_key`; it is absent
 otherwise, and nothing is written. Recording keeps every field the user set.
@@ -589,11 +674,37 @@ harness runs in a container. `400` too for a kind that cannot list.
 | `slots` | integer | Concurrent requests the endpoint takes. The server's own number where it states one, else 1 for a local backend and 8 for a hosted one. |
 | `kv` | string | How the KV cache is divided: `shared`, `partitioned`, or `unknown` (the server does not say; llama.cpp with several slots). |
 | `kv_tokens` | integer, optional | The size of a shared cache in tokens; absent when unknown. |
-| `capabilities` | object | The last successful probe's other findings: `build` (the server's version, optional), `window` (the context one request may use, optional), `counting` (`chat`, `text` or `none`: how the endpoint counts tokens), `cache_metrics` (`reported` or `unknown`) and `slot_hints` (a request may name its slot). |
-| `overridden` | array of string | The fields the user set, which a probe leaves alone: any of `backend`, `pool`, `slots`, `kv`. |
+| `api` | string | The wire protocol Eika speaks to the endpoint: `chat` (Chat Completions) or `responses` (the stateless Responses API). `chat` until a Responses check has passed, and the user's own choice when `overridden` names it. |
+| `capabilities` | object | The last successful probe's other findings: `build` (the server's version, optional), `window` (the context one request may use, optional), `counting` (`chat`, `text` or `none`: how the endpoint counts tokens), `cache_metrics` (`reported` or `unknown`), `slot_hints` (the server takes a request that names its slot), `responses` (optional, the Responses check's outcome, below) and `slot_affinity` (optional, the slot affinity check's outcome, below). |
+| `overridden` | array of string | The fields the user set, which a probe leaves alone: any of `backend`, `pool`, `slots`, `kv`, `api`. |
 | `probed_at` | time, optional | When a probe last succeeded; absent until one has. |
 | `probe_error` | string, optional | Why the latest probe failed, with the key removed; absent after a success. Earlier findings stay. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
+
+`capabilities.responses` is what the Responses check found out:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `verdict` | string | `passed`, `failed` or `skipped`. Only `passed` chooses the Responses API. |
+| `reason` | string, optional | Why it failed or was skipped, with the key removed. A check is skipped when the provider has no chat model, and when its requests never got a lease on a busy pool (the earlier outcome then stands and the check runs again at the next probe). |
+| `model`, `build` | string, optional | The model asked and the server's build when it was. A change of either makes the outcome stale, and the next probe runs the check again. |
+| `checked_at` | time | When it ran. |
+| `reasoning` | boolean | The model returned a reasoning item and the second request sent it back. False for a model that did not reason. |
+| `cache_metrics` | boolean | The second response stated how many prompt tokens were cached. |
+| `counted`, `drift` | boolean, number | The second request was also counted by the token counter before it was sent, and how far that count was from the endpoint's own. Any drift fails the check. |
+
+`capabilities.slot_affinity` is what the slot affinity check found out. It is
+present only for a llama.cpp server with more than one slot, the only server
+whose requests name the slot they run on (`id_slot`), and only after the check
+has run:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `verdict` | string | `passed`, `failed` or `skipped`. Only `passed` makes the harness name slots; any other, and a server the check has not run on, is sent no `id_slot`. |
+| `reason` | string, optional | Why it failed or was skipped, with the key removed. A check is skipped when the provider has no chat model, and when its requests never got a lease on a busy pool (the earlier outcome then stands and the check runs again at the next probe). |
+| `model`, `build` | string, optional | The model asked and the server's build when it was. A change of either makes the outcome stale, and the next probe runs the check again. |
+| `checked_at` | time | When it ran. |
+| `prompt_tokens`, `cached_tokens` | number, optional | The prompt of the first request, and how much of it the last request, which named the same slot after a request on the other, found cached. The check passes when that is at least 80%. |
 
 ### ModelInfo
 
@@ -606,20 +717,26 @@ harness runs in a container. `400` too for a kind that cannot list.
 
 ## Models
 
-A model is one model of a provider that runs may use.
+A model is one model of a provider. A `chat` model holds a conversation, which
+is what runs use. A `decision` model answers typed questions at `/v1/systemone`
+and cannot hold a conversation, so no route that picks a model for a
+conversation accepts one: the `default_model` setting, a profile's or a
+session's `model_id`, the `model` of a message, and the `deep`, `main` and
+`fast` classes of `model_classes` all answer `400` for it.
 
 ### `GET /api/models`
 
-`200` with `{"models": [Model], "default": string}`, oldest first. `default`
-is the model a run uses when it names none: the `default_model` setting when
-it names a model that exists, the first model otherwise, absent when there are
-none.
+`200` with `{"models": [Model], "default": string}`, oldest first, models of
+both kinds. `default` is the chat model a run uses when it names none: the
+`default_model` setting when it names a chat model that exists, the first chat
+model otherwise, absent when there are none.
 
 ### `POST /api/models`
 
 | Field | Type | Meaning |
 |---|---|---|
 | `provider_id` | string, required | The provider it belongs to. |
+| `kind` | string | `chat` (the default) or `decision`. Chosen here and never changed. A decision model has no `reasoning_effort`, `reasoning_efforts`, `preserve_thinking` or `image_input`: any of them is `400`. |
 | `model` | string, required | The endpoint's identifier, such as `gpt-5`. |
 | `name` | string | What Eika and its users call it; unique across providers. Defaults to `model`. |
 | `context_window` | number, required | The total token budget. A run refuses a request that cannot fit. |
@@ -635,19 +752,23 @@ when the name is taken.
 
 ### `PATCH /api/models/{id}`
 
-Any field of `POST` but `provider_id`; an absent field is left alone.
-Renaming the default model keeps it the default. `200` with the `Model`.
+Any field of `POST` but `provider_id` and `kind`; an absent field is left alone.
+Renaming a model keeps it the default and keeps the `model_classes` that name
+it. `200` with the `Model`.
 
 ### `DELETE /api/models/{id}`
 
-`204`. When it was the default, the first remaining model is the default until
-the user picks another.
+`204`. When it was the default, the first remaining chat model is the default
+until the user picks another. A class that named it has no model of its own, so
+it falls back (`model_classes`).
 
 ### `POST /api/models/test`
 
-`{"provider_id": string, "model": string, "reasoning_effort": string,
-"thinking_switch": string, "preserve_thinking": boolean, "image_input":
-boolean}`: a model on a stored provider, saved or not. With `image_input` the
+`{"provider_id": string, "model": string, "kind": string, "reasoning_effort":
+string, "thinking_switch": string, "preserve_thinking": boolean,
+"image_input": boolean}`: a model on a stored provider, saved or not. A
+`kind` of `decision` is `400` and sends nothing: the test is a chat request,
+which a decision model cannot answer. With `image_input` the
 question carries a 16 by 16 pixel PNG, which proves the endpoint takes images
 for the model.
 Sends one short request with no tools and answers `200` with
@@ -660,7 +781,10 @@ the model is there. `400` with what the endpoint answered when it failed.
 | Field | Type | Meaning |
 |---|---|---|
 | `id`, `provider_id`, `name`, `model` | string | The model, its provider, Eika's name for it, and the endpoint's. |
+| `kind` | string | `chat` or `decision`. |
 | `context_window`, `max_output` | number | Its limits. |
+| `probed_window` | number, optional | The context one request may use on the model's endpoint, as its provider's last probe read it. Absent when the endpoint states none. |
+| `effective_window` | number | The window runs on the model are judged against: the smaller of `context_window` and `probed_window`, or `context_window` when there is no probed one. Less than `context_window` means the endpoint holds less than the model row allows. |
 | `reasoning_effort` | string, optional | As on `POST`. |
 | `reasoning_efforts` | string array | As on `POST`; always present, empty when the model offers no choices. |
 | `thinking_switch` | string | As on `POST`; always present. |
@@ -783,9 +907,12 @@ A resolved configuration, with the layer each value came from.
 
 ### `GET /api/settings`
 
-`200` with `{"settings": {key: value}, "defaults": Defaults}`: the settings
-table as one object, with values as they were stored, and the values the
-harness uses for its own keys while the table does not name them.
+`200` with `{"settings": {key: value}, "defaults": Defaults, "classes":
+[ModelClass], "titles_model": string}`: the settings table as one object, with
+values as they were stored, the values the harness uses for its own keys while
+the table does not name them, every model class with the model that serves it
+now, and the name of the model that makes session titles, empty when none does
+(see `model_classes`).
 
 ### `PUT /api/settings`
 
@@ -803,17 +930,30 @@ stores them.
 
 | Key | Value | Meaning |
 |---|---|---|
-| `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a model. |
+| `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a chat model. |
 | `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
 | `sandbox_image` | string | The image the home computer's container is created from. A container that exists keeps its image, so a change reaches the home computer only when its container is made again. |
 | `computer_idle_minutes` | number, 0 to 10080 | How long a running computer may go without a run in it before the harness aborts its runs and stops it. A later run starts it again. 0 never stops one. Checked once a minute. |
 | `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The home computer's limits, checked as a Sandbox's are. A field the object leaves out is 0, no limit. A write applies them to its container, running or stopped, without a restart; a stopped container also takes them at its next start. |
 | `sandbox_egress` | `{"mode", "allow"}` | The home computer's egress, applied as the limits are: a change between open and restricted moves the container between the sandbox networks, dropping the connections it has open, and the processes it starts from then on get the proxy settings that go with its network. A restricted mode is `400` on a harness without the internal sandbox network. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
-| `utility_models` | object | The model each of the harness's own tasks is sent to, by task, `{"session_title": "gpt-5-mini"}`. Each key must be a task and each value the name of a model or `""` for none; a task with none does not run. Renaming a model renames it here. Tasks: `session_title` names an untitled session after its first message (see `session.title` in `events.md`). |
+| `maintenance_idle_seconds` | number, 0 to 86400 | How long a pool must have run nothing but maintenance calls before it admits a maintenance call (session titles, and later dreaming). 0 admits them at once, in order. Applied to the queue as soon as it is saved. |
+| `aging_seconds` | number, 1 to 604800 | How long a waiting model call waits for each priority level it gains, so none starves. A maintenance call that has aged one level no longer waits for an idle pool. Applied at once. |
+| `preempt_running` | boolean | Whether an interactive call that cannot be admitted cancels running background and maintenance calls, which their runs retry. Off by default: a running generation is left to finish. Applied at once. |
+| `model_classes` | object | The model each class is served by, `{"main": "qwen", "fast": "gpt-5-mini"}`. The classes are `deep`, `main`, `fast` (chat models) and `decision` (a decision model); each key must be one, and each value the name of a model of that kind or `""` for none. Harness tasks name a class, never a model. A class with none falls back, `deep` and `fast` to `main`, and a chat class that still has none to the default model (`default_model`, else the first chat model); `decision` has no fallback. Renaming a model renames it here, and deleting one leaves its classes to fall back. Session titles run on `fast` (see `session.title` in `events.md`), and are skipped when `fast` falls back onto the model assigned to `deep` and that model is on a hosted API (backend `openai`). |
 | `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
 | `search_limits` | object | Quotas by bucket, `{"exa": {"month": 500}, "marginalia": {"day": 50}}`. Each bucket must exist; `day` and `month` are whole numbers from 1 to 10 000 000, and 0 or an absent field is unlimited. Anything else is `400` naming the bucket and the range. A bucket not named keeps its default. |
 | `compaction` | object | How a conversation that outgrows its model's context window is summarized: `{"auto", "reserve_tokens", "keep_recent_tokens", "prompts": {"summary", "update", "turn_prefix"}}`. `auto` compacts before a request that would leave less than `reserve_tokens` of the window free, and once after an endpoint refuses a request as too large. `reserve_tokens` and `keep_recent_tokens` are whole numbers from 1024 to 1048576, each capped at run time to a quarter of the model's window. A prompt is at most 64 KiB, and an empty one is the built-in prompt. A field left out keeps its default; an unknown field is `400`. |
+
+### ModelClass
+
+| Field | Type | Meaning |
+|---|---|---|
+| `class` | string | `deep`, `main`, `fast` or `decision`, in that order in `classes`. |
+| `kind` | string | The kind of model the class takes: `decision` for `decision`, `chat` for the rest. |
+| `model` | string | The name of the model that serves the class, fallbacks applied; empty when none does. |
+| `via` | string, optional | The class whose assignment supplied `model`, when that is not this one, or `default` when the default model did: the fallback taken. |
+| `provider_id`, `pool` | string, optional | The endpoint and the hardware pool of `model`. Classes served from one pool contend for its slots. |
 
 ### Defaults
 
@@ -821,6 +961,8 @@ stores them.
 |---|---|---|
 | `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
 | `computer_idle_minutes` | number | 15. |
+| `maintenance_idle_seconds`, `aging_seconds` | number | 120 and 300. |
+| `preempt_running` | boolean | `false`. |
 | `sandbox_limits` | object | No CPU or memory limit, and 4096 processes. |
 | `sandbox_egress` | object | `open`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |
 | `search_order` | array of strings | Every web provider in its default order: `searxng`, `exa`, `tavily`, `brave`, `marginalia`. |
@@ -1121,7 +1263,37 @@ What the setup screens check before the first computer. `200` with:
 | `docker` | `{"reachable": boolean, "error": string}` | Whether the harness can use the Docker socket, and the client's reason when it cannot. |
 | `sandbox_image` | `{"name": string, "present": boolean}` | The image the home computer is created from and whether the Docker host has it. |
 | `sandbox` | `{"cpus": number, "memory_bytes": number, "egress_control": boolean}` | The Docker host's cores and memory, which bound a sandbox's limits, zero when Docker cannot be asked; and whether a sandbox's egress can be restricted, which a harness outside the compose stack cannot. |
-| `providers`, `models` | number | How many of each exist. |
+| `providers`, `models` | number | How many providers exist, and how many chat models: the setup needs one a conversation can run on. |
+
+## Inference queue
+
+### `GET /api/inference`
+
+What holds each hardware pool and what waits behind it
+([Architecture](../ARCHITECTURE.md#inference-admission-and-priority)). Read-only;
+the queue's settings are `maintenance_idle_seconds`,
+`aging_seconds` and `preempt_running` under Settings, and a pool is described by
+its providers' `pool`, `slots`, `kv` and `kv_tokens`. `200` with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `policy` | object | `maintenance_idle_seconds`, `aging_seconds` (numbers) and `preempt_running` (boolean) now in force. |
+| `pools` | InferencePool array | Every pool the providers describe, and any other that still has a call, by name. |
+
+#### InferencePool
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | The pool. A provider's pool is its `pool` field, or its own name when that is empty. |
+| `endpoints` | string array | The providers in the pool, serialised against each other. Rows of one pool that disagree take the fewest `slots` and the smallest cache. |
+| `slots` | number | Calls the pool runs at once. |
+| `kv` | string | `shared`, `partitioned` or `unknown`. |
+| `cache_tokens` | number or null | The cache a call is admitted against: the size of a shared cache, or the probed per-request window for `unknown`. `null` when only `slots` limit admission (`partitioned`, or a shared cache of no known size). |
+| `used_tokens` | number | The sum of the running calls' predicted prompt plus maximum output, which `cache_tokens` bounds. |
+| `idle` | boolean | The pool has run nothing but maintenance for `maintenance_idle_seconds`, so it admits maintenance calls. |
+| `idle_seconds` | number or null | How long it has been idle; `null` when it never ran anything else. |
+| `running` | array | The calls holding a slot, by `slot`: `slot_named` (`slot` is the server's own slot number, which the call named as `id_slot` so that it runs where its session's prefix is; otherwise it is the queue's count), `endpoint`, `class` and `session_id` (optional), `priority`, `tokens`, `held_ms`, and `preempted` (cancelled for an interactive call, not yet let go). |
+| `waiting` | array | The calls waiting, in the order they will be admitted: `endpoint`, `class` and `session_id` (optional), `priority` (what it asked for), `earned` (what its waiting has raised it to), `tokens`, `waited_ms` (for this slot), `total_waited_ms` (since the caller first began waiting, which a retry carries), and `gated` (a maintenance call waiting for an idle pool). |
 
 ## Event stream
 

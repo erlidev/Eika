@@ -20,9 +20,22 @@
 // the model writes, before a call that would pass the threshold, after an
 // endpoint refuses a call as too large, or when Agent.Compact asks.
 //
+// The window is judged by the session's token counter (counting.go,
+// provider/counter): every request is sized before it is sent, the size
+// decides compaction and how much output is asked for, and the endpoint's own
+// count is observed afterwards, so each recorded call carries its prediction
+// and its drift. Counting is bounded by a timeout and never fails a call.
+//
+// Every model call, a compaction's summary included, waits for a lease on the
+// inference queue (Options.Inference, inference.go): one lease per attempt,
+// held for the model call alone and released on every way out. A retry takes a
+// new lease, and an attempt that an interactive call preempted is retried
+// without spending the retry budget. The call's wait, slot and priority are in
+// the ModelCall the Recorder receives.
+//
 // The loop reports progress as event.Event values through an event.Emitter and
 // persists every message through a Store. It depends on provider, tool,
-// executor, and event, and on nothing above it.
+// executor, event and inference, and on nothing above it.
 //
 // The entry points are New, Agent.Run, Agent.Compact, Agent.Preview,
 // Agent.Steer, and Agent.FollowUp.

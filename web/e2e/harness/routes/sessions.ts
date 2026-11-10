@@ -241,14 +241,28 @@ export function sessionRoutes(ctx: RouteContext): void {
     }
     return ok(previewContext(w, row, model));
   });
-  on("GET", "/api/sessions/{id}/requests", ({ params }) => {
+  on("GET", "/api/sessions/{id}/prediction", ({ params, query }) => {
     const row = find(w.sessions, params[0], "session");
     if ("status" in row) return row;
-    return ok({ session_id: row.id, requests: (w.requests[row.id] ?? []).map((r) => r.record) });
+    const requested = query.get("model") ?? "";
+    if (requested !== "" && !w.models.some((m) => m.name === requested)) {
+      return fail(400, "invalid_request", `unknown model "${requested}"`);
+    }
+    const next = previewContext(w, row, requested);
+    const model = w.models.find((m) => m.model === next.parameters.model);
+    if (model === undefined || next.prediction === undefined) {
+      return fail(409, "conflict", "no model is configured; add one under Settings, Models");
+    }
+    return ok({ model: model.name, ...next.prediction, context_window: next.context_window });
   });
-  on("GET", "/api/sessions/{id}/requests/{request_id}", ({ params }) => {
-    const found = (w.requests[params[0] ?? ""] ?? []).find((r) => r.record.id === params[1]);
-    if (!found) return fail(404, "not_found", "model request not found");
-    return ok(recordedContext(found));
+  on("GET", "/api/sessions/{id}/calls", ({ params }) => {
+    const row = find(w.sessions, params[0], "session");
+    if ("status" in row) return row;
+    return ok({ session_id: row.id, calls: (w.calls[row.id] ?? []).map((r) => r.record) });
+  });
+  on("GET", "/api/sessions/{id}/calls/{call_id}", ({ params }) => {
+    const found = (w.calls[params[0] ?? ""] ?? []).find((r) => r.record.id === params[1]);
+    if (!found) return fail(404, "not_found", "model call not found");
+    return ok(recordedContext(w, found));
   });
 }

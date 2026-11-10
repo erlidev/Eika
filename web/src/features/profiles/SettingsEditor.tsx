@@ -18,7 +18,7 @@ import { problemSections, samplingFields, sourceOf, toolGroups } from "@/feature
 import type { Draft, EditorSection, SamplingProblem } from "@/features/profiles/form";
 import { PromptEditor } from "@/features/profiles/PromptEditor";
 import { SamplingControl } from "@/features/profiles/SamplingControls";
-import { useModels } from "@/features/providers";
+import { chatModels, useModels } from "@/features/providers";
 import { useTools } from "@/features/session/queries";
 
 /** EditorKind says what the layer configures: a profile serves both kinds of session. */
@@ -63,7 +63,7 @@ export function SettingsEditor({
   const [section, setSection] = useState<EditorSection>(initialSection);
   const models = useModels();
   const tools = useTools();
-  const modelList: Model[] = models.data?.models ?? [];
+  const modelList: Model[] = chatModels(models.data?.models);
   const runs = modelList.find((m) => m.id === (draft.model_id || inherited.model_id));
   const groups = tools.data === undefined ? undefined : toolGroups(tools.data, kind === "chat");
   const counts = problemSections(problems);

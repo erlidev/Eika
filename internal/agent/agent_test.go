@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -248,6 +249,13 @@ type fixture struct {
 // newFixture builds an agent over the built-in tools plus any extra tools.
 func newFixture(t *testing.T, steps []providertest.Step, extra ...tool.Tool) *fixture {
 	t.Helper()
+	return newFixtureWith(t, agent.Options{}, steps, extra...)
+}
+
+// newFixtureWith is newFixture with options of the test's own. The fixture
+// fills in the ones the test leaves zero.
+func newFixtureWith(t *testing.T, opts agent.Options, steps []providertest.Step, extra ...tool.Tool) *fixture {
+	t.Helper()
 	e, err := local.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("local.New: %v", err)
@@ -264,14 +272,17 @@ func newFixture(t *testing.T, steps []providertest.Step, extra ...tool.Tool) *fi
 	p := providertest.New(steps...)
 	rec := &recorder{}
 	store := newMemoryStore()
-	a := agent.New(p, r, agent.Options{
-		Executor:      e,
-		Emitter:       rec,
-		Store:         store,
-		ContextWindow: 400_000,
-		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RetryBackoff:  time.Millisecond,
-	})
+	opts.Executor, opts.Emitter, opts.Store = e, rec, store
+	if opts.ContextWindow == 0 {
+		opts.ContextWindow = 400_000
+	}
+	if opts.Logger == nil {
+		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if opts.RetryBackoff == 0 {
+		opts.RetryBackoff = time.Millisecond
+	}
+	a := agent.New(p, r, opts)
 	return &fixture{agent: a, provider: p, events: rec, store: store, exec: e, session: agent.NewSession("session-1", "computer-1")}
 }
 
@@ -282,6 +293,28 @@ func roles(msgs []provider.Message) []string {
 		out = append(out, string(m.Role))
 	}
 	return out
+}
+
+// resultsByBackendID returns the tool results of msgs keyed by the id the
+// backend gave the call each one answers. The loop mints its own id for every
+// call and keeps the backend's as the call's WireID, so a test that scripted
+// the backend ids finds its results by them.
+func resultsByBackendID(msgs []provider.Message) map[string]provider.Message {
+	backend := map[string]string{}
+	for _, m := range msgs {
+		for _, c := range m.ToolCalls {
+			if c.WireID != nil {
+				backend[c.ID] = *c.WireID
+			}
+		}
+	}
+	results := map[string]provider.Message{}
+	for _, m := range msgs {
+		if m.Role == provider.RoleTool {
+			results[backend[m.ToolCallID]] = m
+		}
+	}
+	return results
 }
 
 func TestRunStreamsATextAnswer(t *testing.T) {
@@ -356,8 +389,9 @@ func TestRunExecutesToolCalls(t *testing.T) {
 
 	var call event.ToolCall
 	f.events.payloadOf(t, event.TypeToolCall, &call)
-	if call.Name != "bash" || call.CallID != "c1" {
-		t.Errorf("tool.call payload = %+v", call)
+	first := f.session.Conversation.Messages()[1].ToolCalls[0]
+	if call.Name != "bash" || call.CallID != first.ID || first.ID == "c1" {
+		t.Errorf("tool.call payload = %+v, want the id the loop minted for the call, not the backend's c1", call)
 	}
 	var result event.ToolResult
 	f.events.payloadOf(t, event.TypeToolResult, &result)
@@ -707,6 +741,58 @@ func TestRunForwardsReasoningConfiguration(t *testing.T) {
 	}
 }
 
+func TestRunKeepsReasoningItemsAsReturnedAndSendsThemBackOnlyWhenPreserved(t *testing.T) {
+	item := json.RawMessage(`{"id":"rs_1","type":"reasoning","summary":[],"encrypted_content":"gAAAA+/==","status":null}`)
+	for _, preserve := range []bool{true, false} {
+		t.Run(map[bool]string{true: "preserved", false: "not preserved"}[preserve], func(t *testing.T) {
+			p := providertest.New(
+				providertest.Stream(
+					provider.Event{Kind: provider.KindReasoningDelta, ReasoningDelta: "think"},
+					provider.Event{Kind: provider.KindReasoningItem, ReasoningItem: item},
+					provider.TextDelta("one"),
+					provider.Done("stop")),
+				providertest.Text("two"))
+			a := agent.New(p, nil, agent.Options{
+				PreserveThinking: preserve,
+				Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+			})
+			s := agent.NewSession("s1", "w1")
+			if err := a.Run(context.Background(), s, provider.UserMessage("first")); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			// The conversation always keeps what the endpoint returned, so
+			// that a later change of setting can still send it.
+			stored := s.Conversation.Messages()[1]
+			if stored.Reasoning != "think" || !reflect.DeepEqual(stored.ReasoningItems, provider.ReasoningItems{item}) {
+				t.Fatalf("stored message = %+v, want the reasoning text and the item as returned", stored)
+			}
+			if err := a.Run(context.Background(), s, provider.UserMessage("second")); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			sent := p.Requests()[1].Messages[1]
+			if preserve && (!reflect.DeepEqual(sent.ReasoningItems, provider.ReasoningItems{item}) || sent.Reasoning != "think") {
+				t.Errorf("second request message = %+v, want the reasoning and the item", sent)
+			}
+			if !preserve && (sent.Reasoning != "" || sent.ReasoningItems != nil) {
+				t.Errorf("second request message = %+v, want no reasoning when the model does not preserve it", sent)
+			}
+		})
+	}
+}
+
+func TestRunKeepsAResponseThatOnlyReasoned(t *testing.T) {
+	item := json.RawMessage(`{"id":"rs_1","type":"reasoning","summary":[]}`)
+	p := providertest.New(providertest.Stream(provider.Event{Kind: provider.KindReasoningItem, ReasoningItem: item}, provider.Done("length")))
+	a := agent.New(p, nil, agent.Options{PreserveThinking: true, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	s := agent.NewSession("s1", "w1")
+	if err := a.Run(context.Background(), s, provider.UserMessage("first")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if msgs := s.Conversation.Messages(); len(msgs) != 2 || len(msgs[1].ReasoningItems) != 1 {
+		t.Errorf("conversation = %+v, want the cut-off reasoning kept", msgs)
+	}
+}
+
 func TestGivesUpAfterTheRetryBudget(t *testing.T) {
 	rateLimited := &provider.Error{Op: "stream", StatusCode: 429, Retryable: true, Err: errors.New("slow down")}
 	f := newFixture(t, []providertest.Step{
@@ -915,13 +1001,8 @@ func TestAbortPersistsATerminalResultForEveryToolCall(t *testing.T) {
 	if err := a.Run(ctx, agent.NewSession("s1", "w1"), provider.UserMessage("start")); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
 	}
-	results := map[string]bool{}
-	for _, message := range store.Messages() {
-		if message.Role == provider.RoleTool {
-			results[message.ToolCallID] = true
-		}
-	}
-	if !results["c1"] || !results["c2"] || len(results) != 2 {
+	results := resultsByBackendID(store.Messages())
+	if len(results) != 2 || results["c1"].Role == "" || results["c2"].Role == "" {
 		t.Errorf("persisted tool results = %v, want c1 and c2", results)
 	}
 }
@@ -949,13 +1030,8 @@ func TestCompletedToolResultStoreFailurePersistsATerminalResult(t *testing.T) {
 	}
 
 	for _, messages := range [][]provider.Message{store.Messages(), s.Conversation.Messages()} {
-		var results []provider.Message
-		for _, message := range messages {
-			if message.Role == provider.RoleTool && message.ToolCallID == "c1" {
-				results = append(results, message)
-			}
-		}
-		if len(results) != 1 || !results[0].IsError || !strings.Contains(results[0].Content, "temporary store failure") {
+		results := resultsByBackendID(messages)
+		if len(results) != 1 || !results["c1"].IsError || !strings.Contains(results["c1"].Content, "temporary store failure") {
 			t.Errorf("terminal results = %+v, want one persisted c1 error", results)
 		}
 	}
@@ -1059,7 +1135,7 @@ func TestMalformedToolArgumentsBecomeARecoverableToolResult(t *testing.T) {
 	if len(messages) != 4 {
 		t.Fatalf("stored messages = %d, want user, assistant, tool result, assistant", len(messages))
 	}
-	if !messages[2].IsError || messages[2].ToolCallID != "c1" {
+	if !messages[2].IsError || messages[2].ToolCallID != messages[1].ToolCalls[0].ID {
 		t.Errorf("tool result = %+v, want a recoverable c1 error", messages[2])
 	}
 	if messages[3].Content != "recovered" {

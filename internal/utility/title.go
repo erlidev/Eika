@@ -28,6 +28,16 @@ const (
 // ErrNoTitle reports a reply that held no usable title.
 var ErrNoTitle = errors.New("the model replied with no title")
 
+// TitleTokens is the room a title call takes in a shared cache at worst: its
+// prompt, counted at three bytes to the token since text in a script that
+// needs more is rare and the cost of counting high is a little parallelism,
+// and the longest answer it may give.
+func TitleTokens(m Model, message string) int {
+	req := m.request(TitlePrompt, truncate(message, MaxTitleSource), titleMaxOutput)
+	bytes := len(req.System) + len(req.Messages[0].Content)
+	return (bytes+2)/3 + *req.Sampling.MaxOutput
+}
+
 // Title asks m for the title of a session whose first message is message.
 func Title(ctx context.Context, m Model, message string) (string, error) {
 	reply, _, err := provider.Complete(ctx, m.Provider, m.request(TitlePrompt, truncate(message, MaxTitleSource), titleMaxOutput))

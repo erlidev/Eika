@@ -18,11 +18,19 @@ type Call struct {
 	// PromptTokens is the size of the prompt the server counted, cached
 	// tokens included.
 	PromptTokens *int `json:"prompt_tokens"`
+	// PromptIncludesCached is verified by usage_fields against the rendered
+	// count with a positive cache hit. It is null when not verified.
+	PromptIncludesCached *bool `json:"prompt_includes_cached"`
 	// CompletionTokens is the tokens the model generated, reasoning included.
 	CompletionTokens *int `json:"completion_tokens"`
 	// ReasoningTokens is the part of CompletionTokens the server states was
-	// reasoning. llama.cpp states none, so it is null there.
+	// reasoning. llama.cpp states none, so it is null there, except in a call
+	// the agent loop made: it records a count of the reasoning text by the
+	// server's tokenizer instead, and ReasoningSource says so.
 	ReasoningTokens *int `json:"reasoning_tokens"`
+	// ReasoningSource is "reported" or "tokenised" for a call made by the
+	// agent loop, and empty for a call that was not.
+	ReasoningSource string `json:"reasoning_source,omitempty"`
 	// PrefilledTokens is the prompt tokens the server evaluated for this
 	// call (llama.cpp's prompt_n).
 	PrefilledTokens *int `json:"prefilled_tokens"`
@@ -38,12 +46,26 @@ type Call struct {
 	// WallSeconds is how long the call took from request to the end of the
 	// stream, as the harness saw it.
 	WallSeconds float64 `json:"wall_seconds"`
-	// Drift is the exact counter's prediction for the prompt less
-	// PromptTokens. Nothing counts yet, so it is nil: the token counter item
-	// fills it in here, and Summarise totals it.
+	// QueueSeconds is how long the call waited for a lease on the scenario's
+	// inference queue, before the request was sent. It is nil for a scenario
+	// that uses no queue, and is not part of WallSeconds.
+	QueueSeconds *float64 `json:"queue_seconds,omitempty"`
+	// Predicted is what the token counter said the prompt would be before
+	// the request was sent, and Method how it reached that: exact, anchored
+	// or estimated.
+	Predicted *int   `json:"predicted_tokens"`
+	Method    string `json:"prediction_method,omitempty"`
+	// Drift is Predicted less PromptTokens. Any drift on an exact prediction
+	// is a bug, and fails the scenario.
 	Drift *int `json:"drift"`
+	// CountSeconds is how long the prediction took, tokenizer requests
+	// included: what counting adds before the model call.
+	CountSeconds *float64 `json:"count_seconds"`
 	// StopReason is why the model stopped, such as stop or length.
 	StopReason string `json:"stop_reason,omitempty"`
+	// Slot is the id_slot the request named; nil for a request that named
+	// none.
+	Slot *int `json:"id_slot,omitempty"`
 }
 
 // String states the call on one line, with "n/a" for what nothing measured.
@@ -61,8 +83,16 @@ func (c Call) String() string {
 	if c.PrefillSeconds != nil {
 		prefill = fmt.Sprintf("%.3f s", *c.PrefillSeconds)
 	}
-	return fmt.Sprintf("%s: prompt %s tokens, cached %s, hit rate %s, prefill %s, wall %.2f s, drift %s",
-		c.Label, count(c.PromptTokens), count(c.CachedTokens), rate, prefill, c.WallSeconds, count(c.Drift))
+	method := c.Method
+	if method == "" {
+		method = "not predicted"
+	}
+	line := fmt.Sprintf("%s: prompt %s tokens, cached %s, hit rate %s, prefill %s, wall %.2f s, predicted %s (%s), drift %s",
+		c.Label, count(c.PromptTokens), count(c.CachedTokens), rate, prefill, c.WallSeconds, count(c.Predicted), method, count(c.Drift))
+	if c.Slot != nil {
+		line += fmt.Sprintf(", id_slot %d", *c.Slot)
+	}
+	return line
 }
 
 // newCall builds a Call from what the provider reported for one response.
@@ -109,8 +139,12 @@ type Summary struct {
 	CacheHitRate *float64 `json:"cache_hit_rate"`
 	// PrefillSeconds is the prefill time of all calls.
 	PrefillSeconds *float64 `json:"prefill_seconds"`
-	// Drift is the drift of all calls, nil until the token counter exists.
+	// Drift is the sum of the absolute drift of all calls, so that errors in
+	// opposite directions do not cancel. It is nil unless every call was
+	// predicted and measured.
 	Drift *int `json:"drift"`
+	// CountSeconds is the time spent predicting the requests of all calls.
+	CountSeconds *float64 `json:"count_seconds"`
 }
 
 // Summarise totals calls.
@@ -120,10 +154,43 @@ func Summarise(calls []Call) Summary {
 		PromptTokens:   total(calls, func(c Call) *int { return c.PromptTokens }),
 		CachedTokens:   total(calls, func(c Call) *int { return c.CachedTokens }),
 		PrefillSeconds: total(calls, func(c Call) *float64 { return c.PrefillSeconds }),
-		Drift:          total(calls, func(c Call) *int { return c.Drift }),
+		Drift:          total(calls, func(c Call) *int { return absolute(c.Drift) }),
+		CountSeconds:   total(calls, func(c Call) *float64 { return c.CountSeconds }),
 	}
 	s.CacheHitRate = hitRate(s.CachedTokens, s.PromptTokens)
 	return s
+}
+
+// drift states the drift, or "not measured".
+func (c Call) drift() string {
+	if c.Drift == nil {
+		return "not measured"
+	}
+	return strconv.Itoa(*c.Drift)
+}
+
+// absolute returns the magnitude of a count that may not have been measured.
+func absolute(p *int) *int {
+	if p == nil {
+		return nil
+	}
+	n := *p
+	if n < 0 {
+		n = -n
+	}
+	return &n
+}
+
+// exactDrift is the error a scenario fails with when a prediction called exact
+// was not the server's count.
+func exactDrift(calls []Call) error {
+	for _, c := range calls {
+		if c.Method == string(provider.MethodExact) && c.Drift != nil && *c.Drift != 0 {
+			return fmt.Errorf("%s: the exact prediction was %d tokens and the server counted %d (drift %d): exact counting must not drift",
+				c.Label, *c.Predicted, *c.PromptTokens, *c.Drift)
+		}
+	}
+	return nil
 }
 
 // total adds up one measurement over calls, and is nil for no calls or when

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -114,6 +115,15 @@ const (
 type Message struct {
 	Role    Role   `json:"role"`
 	Content string `json:"content,omitempty"`
+	// Context is the <context> block a user-side message ends with: the time
+	// it was sent, and later its channel and notices. It is written once, when
+	// the message is first sent, and stored with it, so a message is sent
+	// again with the very bytes it was sent with; computing it at send time
+	// would change the prefix of every request. It is kept apart from Content
+	// because it is not what the user wrote: the interface shows Content, a
+	// title is made from Content, and only a request joins the two
+	// (ModelText).
+	Context string `json:"context,omitempty"`
 	// Images are the pictures a user message carries beside Content. A
 	// request carries them only to a model that accepts images; the agent
 	// replaces them with a note for any other.
@@ -122,10 +132,20 @@ type Message struct {
 	// from Content because it is not the assistant's answer: a client shows
 	// it as its own block, and only a provider configured to preserve
 	// thinking replays it on a later request.
-	Reasoning  string     `json:"reasoning,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-	IsError    bool       `json:"is_error,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
+	// ReasoningItems are the reasoning items a Responses endpoint returned
+	// for this message, each exactly as the endpoint sent it: the text
+	// Reasoning shows is read from them, and a later request sends them back
+	// as they are, because a hosted API accepts only what it returned
+	// (encrypted_content is opaque). They are absent on a message a Chat
+	// Completions endpoint produced; a provider speaking Responses then
+	// builds an item from Reasoning where the endpoint allows it, and
+	// sends none otherwise. Like Reasoning they are sent only by a provider
+	// configured to preserve thinking.
+	ReasoningItems ReasoningItems `json:"reasoning_items,omitempty"`
+	ToolCalls      []ToolCall     `json:"tool_calls,omitempty"`
+	ToolCallID     string         `json:"tool_call_id,omitempty"`
+	IsError        bool           `json:"is_error,omitempty"`
 	// Metrics records the measured usage of an assistant response for session
 	// replay. Providers do not receive this metadata.
 	Metrics *MessageMetrics `json:"metrics,omitempty"`
@@ -150,6 +170,19 @@ type Image struct {
 // message is not sent.
 func (m Message) Empty() bool {
 	return m.Content == "" && len(m.Images) == 0
+}
+
+// ModelText returns the text of a user-side message as the model reads it: what
+// the user wrote, then the context block at its end. It is what a request sends
+// and what is counted for it.
+func (m Message) ModelText() string {
+	switch {
+	case m.Context == "":
+		return m.Content
+	case m.Content == "":
+		return m.Context
+	}
+	return m.Content + "\n\n" + m.Context
 }
 
 // MessageMetrics is the measured state after one assistant response. It is
@@ -221,36 +254,113 @@ func DecodeToolArguments(raw json.RawMessage, malformed bool) (ToolArguments, er
 }
 
 // ToolCall is a request from the model to run one tool.
+//
+// A call has two ids. ID is Eika's own, minted by the agent loop and unique in
+// the session: entries, events and approvals are keyed by it. WireID is the id
+// the backend gave the call, kept only so a later request can send it back as
+// the backend knows it; local servers reuse ids (call_0, none at all, a counter
+// per response), so it identifies nothing. A call that has no WireID, such as
+// every call stored before the loop minted ids, has one id that is both.
 type ToolCall struct {
-	ID        string        `json:"id"`
+	ID string `json:"id"`
+	// WireID is the backend's id for the call, nil when ID is also the id on
+	// the wire. A backend that gave none has a WireID that is the empty string.
+	WireID    *string       `json:"wire_id,omitempty"`
 	Name      string        `json:"name"`
 	Arguments ToolArguments `json:"arguments"`
 }
 
+// Wire returns the id a request sends for the call: the backend's own, so that
+// what the server sees is what it produced, byte for byte. A call the backend
+// gave no id is sent under Eika's, which is unique and so a valid id for any
+// protocol, and which a replay sends again unchanged.
+func (c ToolCall) Wire() string {
+	if c.WireID != nil && *c.WireID != "" {
+		return *c.WireID
+	}
+	return c.ID
+}
+
+// WireToolCallIDs maps the Eika id of each tool call in msgs to the id a
+// request sends for it. A tool result names the call by Eika's id; the
+// providers translate it with this, so a result carries the id of the call it
+// answers whatever the backend called it. A call whose wire id is its own id is
+// not in the map.
+func WireToolCallIDs(msgs []Message) map[string]string {
+	var ids map[string]string
+	for _, m := range msgs {
+		for _, c := range m.ToolCalls {
+			if w := c.Wire(); w != c.ID {
+				if ids == nil {
+					ids = map[string]string{}
+				}
+				ids[c.ID] = w
+			}
+		}
+	}
+	return ids
+}
+
+// WireToolCallID returns the id to send for the result of the call that Eika
+// knows as id, given the map WireToolCallIDs built: the call's wire id, or id
+// itself for a call not in the map.
+func WireToolCallID(ids map[string]string, id string) string {
+	if w, ok := ids[id]; ok {
+		return w
+	}
+	return id
+}
+
+// survivesEncoding reports whether encoding/json writes raw, a valid JSON
+// document, as the very bytes it was given. It does not: it compacts a
+// document and writes <, > and & as <, > and &. A request sends
+// the text of a tool call's arguments and of a reasoning item as the model
+// produced it, and the prompt cache reads those bytes, so text that would
+// change is stored as a string, which comes back as it went in.
+func survivesEncoding(raw []byte) bool {
+	out, err := json.Marshal(json.RawMessage(raw))
+	return err == nil && bytes.Equal(out, raw)
+}
+
 // MarshalJSON safely represents malformed arguments and marks them so a
 // later decode cannot confuse them with a valid top-level JSON string.
+// Arguments whose text encoding/json would not write back unchanged
+// (whitespace, a key order, a & in a command) are also written, exactly, as
+// arguments_text, which UnmarshalJSON restores them from.
 func (c ToolCall) MarshalJSON() ([]byte, error) {
 	arguments, malformed := c.Arguments.JSON()
+	var text *string
+	if !malformed && len(c.Arguments) > 0 && !survivesEncoding(arguments) {
+		exact := string(c.Arguments)
+		text = &exact
+	}
 	return json.Marshal(struct {
 		ID                 string          `json:"id"`
+		WireID             *string         `json:"wire_id,omitempty"`
 		Name               string          `json:"name"`
 		Arguments          json.RawMessage `json:"arguments"`
 		ArgumentsMalformed bool            `json:"arguments_malformed,omitempty"`
+		ArgumentsText      *string         `json:"arguments_text,omitempty"`
 	}{
 		ID:                 c.ID,
+		WireID:             c.WireID,
 		Name:               c.Name,
 		Arguments:          arguments,
 		ArgumentsMalformed: malformed,
+		ArgumentsText:      text,
 	})
 }
 
-// UnmarshalJSON restores exact argument text using arguments_malformed.
+// UnmarshalJSON restores exact argument text using arguments_malformed and
+// arguments_text.
 func (c *ToolCall) UnmarshalJSON(data []byte) error {
 	var wire struct {
 		ID                 string          `json:"id"`
+		WireID             *string         `json:"wire_id"`
 		Name               string          `json:"name"`
 		Arguments          json.RawMessage `json:"arguments"`
 		ArgumentsMalformed bool            `json:"arguments_malformed"`
+		ArgumentsText      *string         `json:"arguments_text"`
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
@@ -259,7 +369,46 @@ func (c *ToolCall) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*c = ToolCall{ID: wire.ID, Name: wire.Name, Arguments: arguments}
+	if wire.ArgumentsText != nil && !wire.ArgumentsMalformed && json.Valid([]byte(*wire.ArgumentsText)) {
+		arguments = ToolArguments(*wire.ArgumentsText)
+	}
+	*c = ToolCall{ID: wire.ID, WireID: wire.WireID, Name: wire.Name, Arguments: arguments}
+	return nil
+}
+
+// ReasoningItems are the reasoning items of a message, each as the endpoint
+// returned it. They are stored as they are, except that an item encoding/json
+// would not write back unchanged is written as a string holding its exact text
+// (survivesEncoding), so that a message read from its entry sends the bytes it
+// sent when it was new.
+type ReasoningItems []json.RawMessage
+
+// MarshalJSON writes the items, those that would change as strings.
+func (r ReasoningItems) MarshalJSON() ([]byte, error) {
+	items := make([]json.RawMessage, len(r))
+	for i, item := range r {
+		items[i] = item
+		if len(item) > 0 && !survivesEncoding(item) {
+			items[i], _ = json.Marshal(string(item))
+		}
+	}
+	return json.Marshal(items)
+}
+
+// UnmarshalJSON reads the items, restoring those written as strings to the
+// text they hold. An item is a JSON object, so a string is always such text.
+func (r *ReasoningItems) UnmarshalJSON(data []byte) error {
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err != nil {
+		return err
+	}
+	for i, item := range items {
+		var text string
+		if len(item) > 0 && item[0] == '"' && json.Unmarshal(item, &text) == nil {
+			items[i] = json.RawMessage(text)
+		}
+	}
+	*r = items
 	return nil
 }
 
@@ -312,6 +461,14 @@ type Request struct {
 	// PreserveThinking asks a compatible Chat Completions endpoint to return
 	// reasoning data and replays that data with later assistant messages.
 	PreserveThinking bool
+	// SlotHint is the slot of the server the request should run on, so that
+	// the session's prefix stays in that slot's cache. It is nil for a request
+	// that names none, which is every request to a server that has no slots to
+	// name. It steers where the server runs the request and never what it
+	// reads, so it is not part of the body the token counter renders
+	// (ChatEncoder), and a provider on an endpoint that does not take it
+	// (Endpoint.SlotHints) sends none.
+	SlotHint *int
 }
 
 // TimingSource says who measured a set of Timings. The two are not equally
@@ -371,6 +528,9 @@ const (
 	KindReasoningDelta EventKind = "reasoning_delta"
 	// KindToolCallDelta carries the next fragment of a tool call's arguments.
 	KindToolCallDelta EventKind = "tool_call_delta"
+	// KindReasoningItem carries one reasoning item of a Responses endpoint
+	// exactly as it was returned, for a later request to send back.
+	KindReasoningItem EventKind = "reasoning_item"
 	// KindToolCall carries one fully assembled tool call.
 	KindToolCall EventKind = "tool_call"
 	// KindUsage carries the token usage of the response.
@@ -388,6 +548,8 @@ type Event struct {
 	Text string
 	// ReasoningDelta is the next piece of preserved reasoning.
 	ReasoningDelta string
+	// ReasoningItem is the item of a KindReasoningItem event, as returned.
+	ReasoningItem json.RawMessage
 	// Index identifies the tool call a KindToolCallDelta event belongs to.
 	Index int
 	// ToolCallID and ToolName identify the tool call a KindToolCallDelta

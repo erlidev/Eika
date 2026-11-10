@@ -6,16 +6,24 @@ into phases and checklist items. `ARCHITECTURE.md` and `DECISIONS.md` describe w
 is built today. When a phase lands, the parts of these documents it built move
 there, and these documents keep only what is not built yet.
 
+`PLAN.md` was cut down on 2026-11-01. Work that was cut is in `docs/DEFERRED.md`.
+Its design stays here, marked deferred, as the target if it returns: most of
+`browser.md`, sections 8 and 9 of `sentry.md`, and dreaming in `memory.md`.
+
 | Document | Covers |
 |---|---|
 | `README.md` | Goals, principles, vocabulary, topology, threat model, and what is kept or removed |
-| `runtime.md` | Model classes, endpoints, exact token accounting, the inference queue, context layout, the loop, agents, the home session, projects, subagents, durability, compaction and history recall |
-| `sentry.md` | The permission authority: policy, grants, approvals, taint, vault, surrogates, egress, scanning, review, monitoring, halting |
-| `memory.md` | Instructions, memories, the index, search, episodic recall, writes and provenance, dreaming |
+| `runtime.md` | Remaining context layout and loop changes, agents, the home session, projects, subagents, durability, compaction and history recall |
+| `sentry.md` | The permission authority: policy, what asks, ingest and the injection screen, approvals and grants, egress, halting; deferred: vault, surrogates, review, monitoring |
+| `memory.md` | Instructions, memories, the index, search, episodic recall, screened writes, dreaming |
 | `skills-and-plugins.md` | Agent Skills and MCP plugins |
-| `scheduler.md` | Routines, wakeups, triggers, and background compute |
+| `scheduler.md` | Routines and wakeups |
 | `browser.md` | The browser container, the browser agent, live view and takeover |
 | `interface.md` | The web app, mobile, notifications, external chat channels, remote access |
+
+Phase 1's implemented runtime is in
+[Architecture](../ARCHITECTURE.md#endpoints-models-and-classes), with reasons in
+[Decisions](../DECISIONS.md#agent-loop-and-providers).
 
 ## Goals
 
@@ -37,8 +45,8 @@ there, and these documents keep only what is not built yet.
 
    Cloud endpoints remain optional for any model class.
 3. **Safe by structure, not by prompt.** Every consequential action is decided
-   outside the model, by Sentry, a separate process. The model never holds a real
-   credential.
+   outside the model, by Sentry, in code no agent can reach. The model never holds a
+   real credential.
 4. **Transparent.** You can read and edit every memory, skill, grant, tool setting, approval
    and model request in the UI. Token counts are measured, never guessed.
 5. **Keeps the sandbox work.** Docker sandboxes, eikad, the egress proxy, sealed
@@ -52,6 +60,10 @@ that write their own skills.
 - **Eika proposes, Sentry disposes.** Sentry is the only grantor of tool calls,
   plugin calls, memory writes and network egress. Approvals are capabilities that
   the user creates in the UI. They are never conversational.
+- **Safe without asking.** Safety comes from what runs on its own: a screen on what
+  agents read, capability per agent, hard blocks and halt. An approval the user
+  gives without reading protects nothing, so exactly two things ask, and each has
+  a way to stop (`sentry.md` 5, "What asks").
 - **The prefix is sacred.** Context is append-only. Anything dynamic goes at the
   tail. A session's tools never change. Cache hit rate is the main efficiency metric.
 - **Measured, not estimated.** Context size, cache reuse, prefill and decode come
@@ -64,25 +76,25 @@ that write their own skills.
   background work yields to the user at every model-call boundary, so
   interactive latency holds at any slot count.
 - **Autonomous by default.** Eika is meant to run for hours or days without
-  checking in. Every question is a cost to the user's day, so the design spends
-  its effort on not asking: a decision model judges actions with external effects before
-  the user is asked, grants turn one answer into many, approvals reach the user as
-  a digest rather than a stream, and Eika's own questions are rare (`sentry.md` 5,
-  "Asking less").
+  checking in. Every question is a cost to the user's day: reading, running
+  commands and remembering never ask, "always" turns one answer into many, and
+  Eika's own questions are rare (`sentry.md` 5).
 - **Sentry is invisible to the model.** No prompt, tool description or notice
   mentions it, and the agentic loop is the standard one. A blocked action is a
   generic `Blocked: <reason>` result (`sentry.md` 4).
-- **The rule of two**, narrowed (after Meta, 2025). A context holding sensitive
-  data must not cause an external effect without a human or the reviewer in the
-  loop. Sentry labels sessions that hold sensitive data and gates effects; labels
-  route to the decision model rather than the user, to limit approval fatigue.
-  Untrusted content is scanned and wrapped, not labelled, since nearly every
-  session reads some (`sentry.md` 6).
+- **The rule of two, by capability** (after Meta, 2025). A context that holds
+  private data and reads untrusted content must not cause an external effect
+  without a human in the loop. Eika holds it by which agent has which tools, not by
+  labels: only `eika` has memory and plugins, and it cannot run commands or fetch;
+  workers and researchers can, and hold only their brief. Plugin tools that are not
+  read-only ask. Untrusted content is screened and wrapped where it enters
+  (`sentry.md` 6).
 - **One conversation.** The user works with Eika in a single home session that
   never ends, like working with one person. Eika keeps several lines of work going
   through named, persistent subagents the user can watch but not talk to directly.
-- **Deterministic first, models second.** Policy, taint and secret detection are
-  code. Classifiers and reviewer models escalate; they are never the only barrier.
+- **Deterministic first, models second.** Policy and secret detection are code,
+  and no model decides an action. The one classifier, the injection screen, removes
+  suspect text on the way in and is never the only barrier.
 - **Files the user can read.** Memories and skills are Markdown on disk, versioned
   in git and indexed in Postgres.
 - **The repository's rules still hold.** `AGENTS.md` and `STYLE_GUIDE.md` apply
@@ -95,44 +107,38 @@ that write their own skills.
 Eika        The whole system, and the persona of the main agent.
 Core        The `eika` container (cmd/eika): API, UI, agent runtime, memory,
             skills, scheduler, projects. Holds the Docker socket and model keys.
-Sentry      The `eika-sentry` container (cmd/eika-sentry): policy, grants,
-            approvals, vault, surrogates, egress proxy, plugin host, scanning,
-            review, monitor, audit. Holds every third-party credential.
+Sentry      The permission authority, a package in Core (internal/sentry): policy,
+            ingest, approvals, grants, audit, halt.
+Guard       The service that runs the injection screen's model (guard/).
 Computer    A sandbox container plus volume running eikad (formerly a workspace).
             Eika's default computer is `home`.
-Browser     The `eika-browser` container: headed Chrome plus `browserd`, reachable only
-            from Sentry.
-Guard       Optional `eika-guard` container serving local classifiers and
-            decision models on CPU.
-Plugin      An MCP server. Remote plugins are connected by Sentry; stdio plugins run
-            in a plugin cell, a computer no agent can execute in.
+Plugin      An MCP server. Stdio plugins run in a shared plugin computer no agent
+            can execute in.
 Skill       An Agent Skills folder (SKILL.md plus resources), installed by the user.
-Memory      One Markdown file with frontmatter, scope global or project:<slug>.
+Memory      One Markdown file with frontmatter. Only Eika reads and writes them.
 Instructions  Text only the user writes: "About me", standing rules, per-project
             instructions. Agents read it and never write it.
-Agent       A definition: name, model class, prompt, fixed tool list, access profile.
-            Built in: eika, worker, researcher, browser, dreamer.
-Model class deep, main, fast (chat models); decision (System One).
+Agent       A definition: name, model class, prompt, fixed tool list.
+            Built in: eika, worker, researcher.
+Model class deep, main, fast (chat models); decision (System One, unused for now).
             Each class names one model row.
 Endpoint    A provider base URL with its hardware pool and slot count.
 Session     A conversation (the existing session tree). Kinds: home, subagent,
-            routine, dream.
+            routine.
 Home        The one session the user talks to Eika in, from every channel. It
             never ends; compaction and history recall keep it going.
 Subagent    A named, persistent session Eika delegates a line of work to. It
             reports back, and a later message resumes it in its own context.
-Project     A long-lived home for related sessions: instructions, memory scope, a
-            directory on a computer, routines, defaults.
-Routine     A scheduled or triggered job. A wakeup is an agent resuming its own
-            session later.
+Project     A long-lived home for related sessions: instructions, a directory on
+            a computer, routines.
+Routine     A scheduled job. A wakeup is an agent resuming its own session later.
 Run         One execution of the loop on a session.
 Action      Anything Sentry decides on. A grant is a capability, an approval a
-            pending user decision, an alert a finding, a halt a full stop.
-Taint       The session label `sensitive` (holds private data), plus the flag
-            `suspicious` (the injection screen found something).
-Surrogate   A placeholder string that stands for a vault secret.
-Inbox       The UI for approvals, questions from Eika, secret requests and alerts.
-Activity    The UI for watching subagents, routine runs and dreams.
+            pending user decision, a halt a full stop.
+Ingest      What every untrusted result passes before a model reads it:
+            redaction, the screen, the `<untrusted>` wrapper.
+Inbox       The UI for approvals, elicitations and pending memories.
+Activity    The UI for watching subagents and routine runs.
 ```
 
 ## Topology
@@ -143,36 +149,26 @@ Activity    The UI for watching subagents, routine runs and dreams.
                                v
   +------------------------ eika (Core) ---------------------------+
   | API + UI, event bus, agent runtime, inference queue,           |
-  | memory (git + index), skills, scheduler, projects, channels    |
-  | docker.sock: creates computers, plugin cells, browser          |
-  +-----+--------------------+-------------------+-----------------+
-        | unix socket         | HTTP              | eikad HTTP
-        | (decide, scan,      | (model calls)     | (exec, files)
-        |  plugins, browser)  v                   v
-        |               LLM endpoints        computers (eika-cx-<id>)
-        v               (host.docker.        eika_sandbox_internal network
-  +------------- eika-sentry -------------+          | HTTP(S)_PROXY, per-run identity
-  | policy, grants, approvals, taint,     |<---------+
-  | vault (own key, own schema),          |<------ plugin cells (stdio MCP)
-  | egress proxy :3128, plugin host,      |<------ eika-browser (all traffic)
-  | scanners, reviewer, monitor, audit    |------> eika-browser control (only Sentry)
-  +-----+--------------+------------------+------> internet (netguard)
-        |              |
-        v              v
-  eika-guard       postgres 16: schema core (role eika_core)
-  (optional)                    schema sentry (role eika_sentry)
-                   searxng
+  | memory (git + index), skills, scheduler, projects,             |
+  | Sentry (gate, approvals, grants, audit), MCP pool,             |
+  | egress proxy :3128                                             |
+  | docker.sock: creates computers                                 |
+  +-----+------------------+---------------------+-----------------+
+        |                  |                     | eikad HTTP (exec, files)
+        v                  v                     v
+  postgres 16        LLM endpoints        computers (eika-cx-<id>)
+  schema core        (host.docker.        eika_sandbox_internal network
+  searxng             internal, cloud)    HTTP(S)_PROXY back to Core
+                                          the plugin computer (stdio MCP)
 ```
 
 - Only Core publishes a port, on loopback.
-- Every network path out of a computer, a plugin cell or the browser goes through
-  Sentry's proxy.
+- Every network path out of a computer goes through the proxy.
 - Model calls go from Core to the endpoints directly. The user chose the
   endpoints, and model keys live in Core.
-- Core has no route to the browser's control port and no access to Sentry's schema
-  or key.
-- Sentry has no Docker socket. Core registers each container it creates with
-  Sentry, and Sentry issues that container its proxy identity.
+
+The Sentry, Browser and Guard containers are part of the deferred design
+(`DEFERRED.md`).
 
 ## Threat model
 
@@ -186,40 +182,37 @@ Defences, in the order they apply:
 
 | Layer | Where | What it stops |
 |---|---|---|
-| Capability per agent | Core, agent definitions | An agent cannot call a tool it was not given; the browser agent has no memory, the researcher no private data |
-| Sentry decide | Sentry, before every action | Unapproved effects, hand-off actions, actions while halted, rule-of-two violations |
-| Taint | Core labels, Sentry, the reviewer | Private data leaving through an unapproved effect; actions from a session where the injection screen found something |
-| Egress proxy | Sentry, network-enforced | Traffic that bypasses Sentry: every connection is attributed, blocklisted hosts and private addresses are refused, canaries and misused surrogates are caught (TLS interception), and halt cuts everything. It does not judge other hosts (caveat below) |
-| Vault and surrogates | Sentry | Credential theft; a surrogate resolves only for its bound domains |
-| Ingress scanning | Sentry, on untrusted results | Obvious injections, secrets and one-time codes reaching a model |
-| Isolated reviewer | Sentry, for `review` actions | Injected instructions steering an action; the reviewer never sees the untrusted content |
-| Memory provenance | Core and Sentry | Poisoned memories reaching the auto-loaded index |
-| Monitor and canaries | Sentry, asynchronous | Misbehaviour patterns; any canary in egress halts everything |
-| Halt switch | UI, Sentry | Everything, immediately |
+| Capability per agent | Core, agent definitions | An agent cannot call a tool it was not given: only `eika` has memory and plugins, and the researcher has no private data |
+| Sentry decide | Before every action | Plugin effects the user has not approved, credentials and canaries in outbound arguments, actions while halted |
+| Egress proxy | Network-enforced | Traffic that bypasses the gate: blocklisted hosts and private addresses are refused, and halt cuts everything. It does not judge other hosts (caveat below) |
+| Ingest | On untrusted results, and on reports to `eika` | Secrets and one-time codes reaching a model; text the screen flags as an injection is removed; content arrives wrapped as data |
+| Memory screen | On memory writes | Poisoned memories reaching the auto-loaded index |
+| Canary | Before every action | An agent that went looking for keys: the fake key in a tool call halts Eika |
+| Halt switch | UI | Everything, immediately |
+
+Deferred layers, in `DEFERRED.md`: vault and surrogates, the isolated reviewer, the
+monitor, and TLS interception for canaries read from the environment.
 
 Current caveats:
 
-- Core holds the Docker socket, which is root-equivalent on the host. A compromised
-  Core is out of scope. A Docker socket proxy is listed as hardening in phase 15.
-  So are the parts that pass through Core: it writes the `auth_sessions` table
-  Sentry checks approvals against and relays the user's token, and it serves
-  the UI code that encrypts secure entry. Those checks show that an answer came
-  through the UI and keep values out of Core's logs and rows. They do not stop a
-  compromised Core forging an answer or reading a value.
-- Classifiers are bypassable by adaptive attacks. They escalate; they do not block
-  on their own.
-- A subagent's report can still carry misleading data into the main agent. The
-  `sensitive` label carries along with it; untrusted origin does not.
-- A session without sensitive data that reads an injected page can do what the
-  defaults allow without asking, such as writing its own files or reaching a new
-  host (`sentry.md` 6). External sends and deletes still go to the reviewer.
-- The reviewer is a model. Sentry sends actions with external effects to it instead of the
-  user, so an adaptive attack on the reviewer's inputs matters more (it sees no
-  untrusted content, only the action).
+- Core holds the Docker socket, which is root-equivalent on the host, and Sentry and
+  every third-party credential live in Core's process. A compromised Core is out of
+  scope. A Docker socket proxy and Sentry's own container return together
+  (`DEFERRED.md`).
+- The screen misses planted instructions: about half on InjecAgent and more on
+  BIPIA (`sentry.md` 6). Wrapping marks content as data, and the model can still be
+  talked out of that.
+- A session that follows an instruction the screen missed can do what its agent's
+  tools allow without asking, such as writing its own files or reaching a new host.
+  A worker can send out its project's files, and `eika` can put private data into
+  a researcher's brief (`sentry.md` 6, "What this does not stop"). Plugin tools
+  that are not read-only still ask.
+- `bash` output and file reads are not screened, so a page read with `curl` is not.
+- A subagent's report reaches the main agent screened but unwrapped, and can carry
+  misleading data. The memory screen checks what Eika saves from it.
 - Egress is not judged per connection. A program already running, or a script the
   agent wrote earlier and starts with an innocent-looking command, can reach any
-  public host not on the blocklist, and a page script that sends data on its own
-  is not caught (`sentry.md` 10, `browser.md` 4).
+  public host not on the blocklist (`sentry.md` 10).
 
 ## Kept, changed, removed
 
@@ -227,13 +220,13 @@ Current caveats:
 |---|---|---|
 | `agent` loop, compaction, retries, overflow, queues | Pi port, well tested | Kept, with the additions in `runtime.md`. Home compaction gains deterministic sections, idle runs and history recall (`runtime.md` 11) |
 | `provider`, `provider/openai`, timings | OpenAI-compatible streaming | Kept. Adds the Responses API as the preferred protocol, backend probing, exact token counting, cache metrics, slot hints, the System One kind |
-| `tool`, registry, `ask_user` broker | Stateless tools, in-memory broker | Kept. The broker becomes durable. A subagent's questions go to Eika, who asks the user in the Inbox when needed |
+| `tool`, registry, `ask_user` broker | Stateless tools, in-memory broker | Kept. A subagent's questions go to Eika, who asks the user in chat when needed |
 | `event` bus, WebSocket, replay | Topics global, computer, session | Kept. Adds topics `inbox` and `activity`; drops `computer` |
-| `computer`, `executor`, `eikad` | Built in phase 0 (`ARCHITECTURE.md`) | Kept. Per-run egress identity and plugin cells are added (`runtime.md` 10) |
-| `egress`, `netguard` | Proxy in Core | Moved into Sentry; identity per run instead of per computer |
-| `secret` | Seals everything in Core | Kept in Core for model keys; Sentry has its own vault with its own key |
-| `mcp` | Pool in Core | Reused by Sentry's plugin host; stdio servers move from computers to plugin cells |
-| `search`, `fetch` | Core tools | Kept. Fetch goes through Sentry's proxy, and results are scanned |
+| `computer`, `executor`, `eikad` | Built in phase 0 (`ARCHITECTURE.md`) | Kept. A shared plugin computer is added (`runtime.md` 10) |
+| `egress`, `netguard` | Proxy in Core | Kept in Core, with the `open` mode removed (`sentry.md` 10) |
+| `secret` | Seals everything in Core | Kept |
+| `mcp` | Pool in Core | Kept. Agents reach it through `plugin_find` and `plugin_call`; stdio servers move from computers to the plugin computer |
+| `search`, `fetch` | Core tools | Kept. They check the blocklist and halt, and results are wrapped |
 | `session` tree, entries, runs | Branching tree | Kept. Adds `preamble` and `notice` entry kinds and session kinds; the UI shows it linear |
 | `profiles` | Run configurations | Replaced by agent definitions |
 | `utility` models | Task-to-model map | Replaced by model classes |
@@ -245,23 +238,13 @@ Current caveats:
 These came out of the design discussion. Each is recorded in `DECISIONS.md` when
 the phase that implements it lands.
 
-- Sentry is its own binary and container, with its own Postgres schema, role and
-  key file.
-- llama.cpp, TabbyAPI/exllamav3 and vLLM/SGLang must all work. Exact token accounting
-  comes first. Backend-specific cache tricks are limited to what is cheap: slot
-  affinity and reading cache metrics.
-- "Jev-style System One" means a separate model kind that takes state plus typed
-  questions and returns calibrated probabilities. Eika connects to whatever
-  `/v1/systemone` endpoint it is given: hosted Jev, a local server such as
-  llama.cpp, Laya (`laya-serve`), or a chat model emulating it with constrained
-  output. The recommended local model is vLLM-SR `d3-flash` (`sentry.md` 9,
-  "Decision model").
-- The injection screen is a dedicated classifier behind whatever endpoint is
-  configured. The recommendation is Horizon-Labs `prompt-injection-guard-small`,
-  not Prompt Guard 2, which misses injections that are not phrased as jailbreaks,
-  and not a System One model, whose answer the screened content can steer
-  (`sentry.md` 6).
-- Agents never write skills. They write memories, which Sentry gates.
+- Sentry is a package in Core until the Docker socket proxy gives a separate process
+  something to protect (`DECISIONS.md`).
+- Exact token accounting comes first. It is verified on llama.cpp; vLLM, SGLang,
+  TabbyAPI and cloud endpoints are built from their documentation and verified when
+  one is on the bench. Backend-specific cache tricks are limited to what is cheap:
+  slot affinity and reading cache metrics.
+- Agents never write skills. Eika writes memories, which the gate checks.
 - One home session for the user, across every channel, with no direct sessions.
   The user watches subagents read-only and steers them through Eika. More home
   sessions can come later without a schema change.
@@ -269,7 +252,6 @@ the phase that implements it lands.
 - Home compaction is Pi's rolling update plus deterministic sections in the style
   of Pi-VCC, with `history_search` and `history_read` over every entry. Chapters
   (frozen per-span summaries) are deferred.
-- Taint is only `sensitive`, plus the evidence-based `suspicious` flag, and labels
-  route to the decision model, not the user. A label for "has read untrusted
-  content" was dropped as too broad.
+- There are no labels. Two things ask (a plugin tool that is not read-only, and a
+  new routine), and everything else is allowed or blocked by rule.
 - Sentry is invisible to the model by default.

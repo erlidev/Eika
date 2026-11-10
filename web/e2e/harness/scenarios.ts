@@ -53,6 +53,7 @@ function workbench(): WorldBuilder {
       role: "user",
       content:
         "The webhook client retries immediately on failure. Add exponential backoff with jitter, capped at 30s.",
+      context: "<context>\ntime: Sat 2026-03-14 12:00 +00:00 (UTC)\n</context>",
     },
     {
       role: "assistant",
@@ -102,9 +103,11 @@ function workbench(): WorldBuilder {
 /**
  * profiles adds two profiles to a workbench, puts ses-backoff on one with an
  * override of its own, and records two of its model calls: one when only
- * its first message had been sent, and one at its head.
+ * its first message had been sent, and one at its head. Its endpoint counts
+ * tokens the way `counting` says: by rendering requests (chat), by tokenising
+ * text (text), or not at all (none).
  */
-function profiles(): WorldBuilder {
+function profiles(counting: "chat" | "text" | "none" = "chat"): WorldBuilder {
   const b = workbench();
   const w = b.world;
   const mini = w.models.find((m) => m.name === "gpt-5-mini");
@@ -128,12 +131,18 @@ function profiles(): WorldBuilder {
   main.profile_id = reviewer.id;
   w.overrides[main.id] = { ...noSettings(), sampling: { temperature: 0.7 } };
   syncSession(w, main);
+  // An endpoint that renders and tokenises requests (llama.cpp, vLLM), so the
+  // context view counts every part exactly and predicts the next request
+  // exactly. A scenario that wants another way of counting says so.
+  for (const p of w.providers) {
+    p.capabilities = { ...p.capabilities, counting, cache_metrics: "reported" };
+  }
   const head = main.head_entry_id;
   const first = (w.entries[main.id] ?? [])[0];
   if (first) main.head_entry_id = first.id;
-  b.request(main, 40, 212);
+  b.call(main, 40, 212);
   main.head_entry_id = head;
-  b.request(main, 12, 318);
+  b.call(main, 12, 318);
   return b;
 }
 
@@ -600,6 +609,16 @@ export const scenarios = {
       return b.world;
     },
   },
+  "agent-run-limit": {
+    description:
+      "Like workbench, but the next message's run reaches its limit of model calls and ends cleanly: what it did is kept and the transcript says why it stopped.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      b.world.replies.push([{ say: "Still working through the files." }, { cutOff: "max_calls" }]);
+      return b.world;
+    },
+  },
   "agent-running": {
     description:
       "Like workbench, but the next message starts a run that never finishes (for the running state and abort).",
@@ -639,12 +658,23 @@ export const scenarios = {
         backend: "llamacpp",
         slots: 2,
         kv: "unknown",
+        api: "responses",
         capabilities: {
           build: "b11942-338fce651",
           window: 131072,
           counting: "chat",
           cache_metrics: "reported",
           slot_hints: true,
+          responses: {
+            verdict: "passed",
+            model: "qwen3.8-27b",
+            build: "b11942-338fce651",
+            checked_at: "2026-10-31T12:00:00Z",
+            reasoning: true,
+            cache_metrics: true,
+            counted: true,
+            drift: 0,
+          },
         },
       };
       b.provider({
@@ -654,6 +684,7 @@ export const scenarios = {
         backend: "llamacpp",
         slots: 2,
         kv: "unknown",
+        api: "responses",
         capabilities: b.world.probeFinds.capabilities,
       });
       const router = b.provider({
@@ -664,6 +695,75 @@ export const scenarios = {
         probe_error: "the endpoint could not be used: 401 Unauthorized: No auth credentials found",
       });
       b.model(router, { name: "claude-sonnet", model: "anthropic/claude-sonnet-4.5" });
+      return b.world;
+    },
+  },
+  classes: {
+    description:
+      "The workbench with a llama.cpp bench (one chat model), a decision model on a server of its own, and the OpenAI models. The classes are set: deep is gpt-5, main is the bench's model, decision is d3-flash, and fast is not set, so it falls back to main on the same pool. For the model classes in Settings, General.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const b = workbench();
+      const bench = b.provider({
+        name: "Bench",
+        base_url: "http://10.0.0.2:8091/v1",
+        api_key_hint: undefined,
+        backend: "llamacpp",
+        slots: 2,
+        kv: "unknown",
+      });
+      b.model(bench, { name: "bench-chat", model: "qwen3.8-27b", context_window: 131072 });
+      const decider = b.provider({
+        name: "Decider",
+        base_url: "http://10.0.0.3:9941/v1",
+        api_key_set: false,
+        api_key_hint: undefined,
+        backend: "llamacpp",
+        slots: 2,
+        kv: "unknown",
+      });
+      b.model(decider, { name: "d3-flash", kind: "decision", context_window: 32768 });
+      b.world.settings.settings.model_classes = {
+        deep: "gpt-5",
+        main: "bench-chat",
+        decision: "d3-flash",
+      };
+      return b.world;
+    },
+  },
+  "bench-window": {
+    description:
+      "A llama.cpp bench that serves 131,072 tokens per request, with one model whose context window is set to 200,000 (Settings warns) and one set within it (no warning). For the Models tab.",
+    path: "/",
+    build: () => {
+      const b = configured();
+      const bench = b.provider({
+        name: "Bench",
+        base_url: "http://10.0.0.2:8091/v1",
+        api_key_hint: undefined,
+        backend: "llamacpp",
+        slots: 2,
+        kv: "unknown",
+        capabilities: {
+          build: "b11942-338fce651",
+          window: 131072,
+          counting: "chat",
+          cache_metrics: "reported",
+          slot_hints: true,
+        },
+      });
+      b.model(bench, {
+        name: "qwen-long",
+        model: "qwen3.8-27b",
+        context_window: 200000,
+        max_output: 16384,
+      });
+      b.model(bench, {
+        name: "qwen-short",
+        model: "qwen3.8-27b",
+        context_window: 65536,
+        max_output: 8192,
+      });
       return b.world;
     },
   },
@@ -916,6 +1016,25 @@ export const scenarios = {
       "Like workbench, with two more profiles: ses-backoff runs with Reviewer and overrides its temperature, and two of its model calls are recorded. For the Profiles tab, the status bar's profile, and the Context panel.",
     path: "/sessions/ses-backoff",
     build: () => profiles().world,
+  },
+  "context-estimated": {
+    description:
+      "Like profiles, but the endpoint has no tokenizer: every part of a request is estimated from bytes and marked so, the next request's size is an estimate, and no remainder can be stated for it.",
+    path: "/sessions/ses-backoff",
+    build: () => profiles("none").world,
+  },
+  "context-drift": {
+    description:
+      "Like profiles, but the counter's exact prediction for the session's last recorded call was 3 tokens short of what the endpoint counted: the inspector shows it as a bug.",
+    path: "/sessions/ses-backoff",
+    build: () => {
+      const w = profiles().world;
+      const last = (w.calls["ses-backoff"] ?? []).at(-1);
+      if (!last) throw new Error("ses-backoff has no recorded call");
+      last.record.predicted_prompt_tokens = (last.record.prompt_tokens ?? 0) - 3;
+      last.record.drift = -3;
+      return w;
+    },
   },
   home: {
     description:

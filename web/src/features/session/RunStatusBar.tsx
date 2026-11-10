@@ -22,9 +22,20 @@ import {
 } from "@/components/ui/select";
 import { SessionProfile, useSessionConfiguration } from "@/features/profiles";
 import { ContextMeter } from "@/features/session/ContextMeter";
-import { useAbortRun, useCompact, useRunStatus } from "@/features/session/queries";
+import {
+  useAbortRun,
+  useCompact,
+  useNextPrediction,
+  useRunStatus,
+} from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
-import { useModel, useModels, useProviders, useUpdateModel } from "@/features/providers";
+import {
+  chatModels,
+  useModel,
+  useModels,
+  useProviders,
+  useUpdateModel,
+} from "@/features/providers";
 import { nextEffort } from "@/features/providers/efforts";
 import type { Model } from "@/api/types";
 import { failureText } from "@/lib/failure";
@@ -57,6 +68,7 @@ export function RunStatusBar({
   const providers = useProviders();
   const stream = useStreamStatus();
   const meter = useSessionStore((s) => s.meter);
+  const prediction = useNextPrediction(sessionId, model);
   const dropped = useSessionStore((s) => s.dropped);
   const run = status.data?.run;
   const active = status.data?.active ?? false;
@@ -91,7 +103,9 @@ export function RunStatusBar({
         </SelectTrigger>
         <SelectContent>
           {(providers.data?.providers ?? []).map((provider) => {
-            const own = (models.data?.models ?? []).filter((m) => m.provider_id === provider.id);
+            const own = chatModels(models.data?.models).filter(
+              (m) => m.provider_id === provider.id,
+            );
             if (own.length === 0) return null;
             return (
               <SelectGroup key={provider.id}>
@@ -125,7 +139,7 @@ export function RunStatusBar({
           <EffortCycle model={chosen} />
         ))}
 
-      {meter && <ContextMeter meter={meter} />}
+      <ContextMeter meter={meter} prediction={prediction.data} />
       {!active && hasHistory && (
         <Button
           size="xs"

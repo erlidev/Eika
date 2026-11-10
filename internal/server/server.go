@@ -17,6 +17,7 @@ import (
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/sandbox"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/search"
@@ -113,10 +114,19 @@ type Server struct {
 	deps Deps
 	tree *session.Tree
 	runs *runs
+	// counters keeps each session's token counter across its runs.
+	counters *sessionCounters
 	// titles names untitled sessions after their first message.
 	titles *titles
 	// idle stops the running computers no run has used for a while.
 	idle *idleComputers
+	// inference is the queue every model call of the server waits in.
+	inference *inference.Queue
+
+	// inferenceMu serialises describing the queue from the store, and
+	// inferenceSynced records that it has been described once.
+	inferenceMu     sync.Mutex
+	inferenceSynced bool
 
 	// homeMu makes EnsureHome take turns, and startMu makes the runs that
 	// find a computer stopped take turns starting it.
@@ -143,6 +153,8 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	if deps.Store != nil {
 		s.tree = session.NewTree(deps.Store)
 	}
+	s.inference = inference.New(log)
+	s.counters = newSessionCounters()
 	s.runs = newRuns(s)
 	s.titles = newTitles(s)
 	s.idle = newIdleComputers(s)
@@ -165,6 +177,8 @@ func (s *Server) Bus() *event.Bus { return s.deps.Bus }
 func (s *Server) Run(ctx context.Context) error {
 	defer s.Close()
 	if s.deps.Store != nil {
+		// The queue knows its pools before the first run asks for a lease.
+		s.syncInference(ctx)
 		watchCtx, cancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
 		if s.deps.Providers != nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/counter"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/tool"
 )
@@ -53,6 +54,7 @@ type compactorOptions struct {
 	compaction agent.CompactionSettings
 	sampling   provider.Sampling
 	tools      *tool.Registry
+	counter    *counter.Counter
 	executor   executor.Executor
 }
 
@@ -65,6 +67,7 @@ func newCompactor(p provider.Provider, o compactorOptions) compactor {
 		ContextWindow: o.window,
 		Compaction:    o.compaction,
 		Sampling:      o.sampling,
+		Counter:       o.counter,
 		RetryBackoff:  time.Millisecond,
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})

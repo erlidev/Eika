@@ -8,6 +8,9 @@ case, change it here in the same change, with a sentence of reasoning.
 
 - **Correctness first.** A change is not done until `make check` passes and
   the behavior is covered by a test.
+- **Refactors preserve behavior.** Before restructuring untested behavior, add
+  a characterization test. Keep wire shapes, defaults, and visible output
+  unchanged unless the change explicitly calls for it.
 - **Small, whole changes.** One change does one thing completely: code,
   tests, docs. No TODOs: finish the work, or list it as deferred in
   `docs/DECISIONS.md`.

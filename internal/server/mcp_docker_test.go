@@ -474,7 +474,8 @@ func TestAnMCPServerAsksTheUserDuringARun(t *testing.T) {
 		asked = state.Elicitations[0]
 		return true
 	})
-	if asked.SessionID != chat.ID || asked.CallID != "c1" || asked.Server != "people" || asked.Mode != "form" || asked.Message != "Who?" {
+	// The call's id is the one the loop minted, not the script's "c1".
+	if asked.SessionID != chat.ID || !strings.HasPrefix(asked.CallID, "call_") || asked.Server != "people" || asked.Mode != "form" || asked.Message != "Who?" {
 		t.Errorf("elicitation = %+v", asked)
 	}
 	answer := "/api/elicitations/" + asked.ID + "/answer"

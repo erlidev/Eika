@@ -22,6 +22,7 @@ const stored: Provider = {
   pool: "OpenAI",
   slots: 8,
   kv: "unknown",
+  api: "chat",
   capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
   overridden: [],
   created_at: "2026-09-01T00:00:00Z",

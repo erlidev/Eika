@@ -6,7 +6,7 @@
  * than the model allows, so a conservative guess is the better mistake.
  */
 
-import type { Model, ModelInfo } from "@/api/types";
+import type { Model, ModelInfo, ModelKind } from "@/api/types";
 
 /** Limits are a model's context window and output limit in tokens. */
 export type Limits = { context_window: number; max_output: number };
@@ -78,9 +78,30 @@ export type ModelChoice = {
   name: string;
   context_window: number;
   max_output: number;
+  /** kind is chat unless the user says the model answers typed questions. */
+  kind: ModelKind;
   /** image_input starts as what the endpoint says, and off when it says nothing. */
   image_input: boolean;
 };
+
+/**
+ * windowWarning says what to do about a model whose configured context window
+ * is larger than the endpoint holds for one request, or null when the endpoint
+ * holds all of it. Eika already judges requests against the smaller number, so
+ * the warning is about the setting being wrong, not about requests failing.
+ */
+export function windowWarning(
+  m: Pick<Model, "context_window" | "effective_window" | "probed_window">,
+): string | null {
+  const probed = m.probed_window;
+  if (probed === undefined || m.effective_window >= m.context_window) return null;
+  const tokens = (n: number) => n.toLocaleString("en-US");
+  return (
+    `Its context window is set to ${tokens(m.context_window)} tokens, but the endpoint holds ` +
+    `${tokens(probed)} for one request, so Eika sizes requests to ${tokens(probed)}. ` +
+    `Set the context window to ${tokens(probed)} to match, or restart the server with a larger context.`
+  );
+}
 
 /** ChosenProblem is what keeps one chosen model from being added, and the field at fault. */
 export type ChosenProblem = {

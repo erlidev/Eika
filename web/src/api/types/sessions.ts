@@ -63,11 +63,23 @@ export type Role = "system" | "user" | "assistant" | "tool";
 
 /** MessageToolCall is one tool call a model asked for. */
 export type MessageToolCall = {
+  /** id is Eika's own id for the call, the one events and results use. */
   id: string;
+  /**
+   * wire_id is the id the model server gave the call, kept to send back as the
+   * server knows it. Absent on a call stored before Eika minted ids, whose one
+   * id is both. A client does not read it.
+   */
+  wire_id?: string;
   name: string;
   arguments: unknown;
   /** arguments_malformed marks `arguments` as the model's quoted malformed text. */
   arguments_malformed?: boolean;
+  /**
+   * arguments_text is the exact text of the arguments, stored where the value
+   * above would not give it back byte for byte. A client does not read it.
+   */
+  arguments_text?: string;
 };
 
 /** MessageMetrics restores the measured context state with an assistant entry. */
@@ -96,10 +108,22 @@ export type MessageImage = {
 export type Message = {
   role: Role;
   content?: string;
+  /**
+   * context is the block the model reads at the end of a user message: the
+   * time it was sent. It is not what the user wrote, so the transcript shows
+   * `content` alone and the Context panel shows both.
+   */
+  context?: string;
   /** images are the pictures a user message carries beside its text. */
   images?: MessageImage[];
   /** reasoning is the model's thinking for this message, shown apart from its answer. */
   reasoning?: string;
+  /**
+   * reasoning_items are the reasoning items a Responses endpoint returned,
+   * exactly as it sent them, so a later request can send them back. The UI
+   * does not read them.
+   */
+  reasoning_items?: unknown[];
   tool_calls?: MessageToolCall[];
   tool_call_id?: string;
   is_error?: boolean;

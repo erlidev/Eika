@@ -21,7 +21,10 @@ test("the next request at a glance", async ({ open, expectShot }) => {
   await eika.click("role=tab[name=Context]");
   const panel = eika.page.getByRole("tabpanel", { name: "Context" });
   await expect(panel.getByRole("combobox", { name: "Request" })).toHaveText("Next request, live");
-  await expect(panel).toContainText("scaled to the last measured call");
+  // The next request is predicted by the endpoint's own tokenizer, and the
+  // template's cost is the prediction less the parts, as a line of its own.
+  await expect(panel).toContainText("tokens predicted, exact");
+  await expect(panel.getByRole("list", { name: "Parts" })).toContainText("Template and formatting");
   await expect(panel.getByRole("meter", { name: "Context window" })).toHaveAttribute(
     "aria-valuemax",
     "400000",
@@ -32,7 +35,7 @@ test("the next request at a glance", async ({ open, expectShot }) => {
 test("a part opens the inspector on it", async ({ open, expectShot }) => {
   const eika = await open({ scenario: "profiles", theme: "dark" });
   await eika.click("role=tab[name=Context]");
-  await eika.click("role=button[name=/^Instructions, about/]");
+  await eika.click("role=button[name=/^Instructions, \\d+ tokens/]");
   const dialog = eika.page.getByRole("dialog", { name: "Context inspector" });
   const detail = dialog.getByRole("region", { name: "Part detail" });
   await expect(detail).toContainText("Review the change and report problems.");
@@ -49,14 +52,38 @@ test("a recorded request and where its parameters came from", async ({ open, exp
   const eika = await open({ scenario: "profiles" });
   await eika.click("role=tab[name=Context]");
   const panel = eika.page.getByRole("tabpanel", { name: "Context" });
-  await eika.select("Request", "#1 · gpt-5 · 500 in · 40m ago");
-  await expect(panel).toContainText("500 measured by the endpoint");
+  await eika.select("Request", "#1 · gpt-5 · 533 in · 40m ago");
+  await expect(panel.getByText("533", { exact: true }).first()).toBeVisible();
+  await expect(panel).toContainText("tokens measured by the endpoint");
+  // The remainder is what the endpoint measured less the parts, stated for
+  // this call, with the cache and the counter's exact prediction beside it.
+  await expect(panel.getByRole("list", { name: "Parts" })).toContainText("Template and formatting");
+  await expect(panel).toContainText("Cached");
+  await expect(panel).toContainText("533 exact");
   await eika.click("Inspect the whole request");
   await eika.click("role=navigation[name=Parts] >> role=button[name=Parameters]");
   const dialog = eika.page.getByRole("dialog", { name: "Context inspector" });
   // A record is what was sent then: nothing in it links to today's settings.
   await expect(dialog.getByRole("button", { name: /^Edit/ })).toHaveCount(0);
   await expectAria(eika, "context-recorded", "role=region[name='Part detail']");
+});
+
+test("the block the model reads after a message is in the inspector and not the transcript", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "profiles" });
+  await inspect(eika);
+  await eika.click("role=navigation[name=Parts] >> role=button[name=/^Messages/]");
+  const dialog = eika.page.getByRole("dialog", { name: "Context inspector" });
+  const first = dialog.getByRole("article", { name: "Message 1, user" });
+  await expect(first).toContainText("Context, added when sent");
+  await expect(first).toContainText("time: Sat 2026-03-14 12:00 +00:00 (UTC)");
+  await eika.click("role=button[name=Close]");
+  // What the user wrote is what the transcript shows.
+  const transcript = eika.page.getByRole("region", { name: "Session" });
+  await expect(transcript.getByText("The webhook client retries immediately")).toBeVisible();
+  await expect(transcript.getByText("<context>")).toHaveCount(0);
+  await expect(transcript.getByText("2026-03-14 12:00")).toHaveCount(0);
 });
 
 test("a part of the next request opens the setting behind it", async ({ open }) => {
@@ -101,6 +128,53 @@ test("the request copies as JSON", async ({ open }) => {
   expect(copied.system).toContain("Review the change and report problems.");
   expect(copied.tools.map((t) => t.name)).toEqual(["bash", "web_fetch"]);
   expect(copied.temperature).toBe(0.7);
+});
+
+test("an endpoint that counts nothing: every part is estimated, and the remainder is n/a", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "context-estimated" });
+  await eika.click("role=tab[name=Context]");
+  const panel = eika.page.getByRole("tabpanel", { name: "Context" });
+  await expect(panel).toContainText("tokens predicted, estimated");
+  await expect(panel.getByText(/^~\d+$/).first()).toBeVisible();
+  const parts = panel.getByRole("list", { name: "Parts" });
+  // Nothing is scaled to make up a remainder there is nothing to state it against.
+  await expect(parts.getByText("Template and formatting")).toBeVisible();
+  await expect(parts).toContainText("n/a");
+  await expect(panel).toContainText("A ~ marks a part the endpoint did not count itself");
+  // The status bar says the same, with a tilde on the estimate.
+  await expect(eika.page.getByText(/next ~\d+ estimated/)).toBeVisible();
+});
+
+test("a recorded call whose exact prediction drifted is shown as a bug", async ({ open }) => {
+  const eika = await open({ scenario: "context-drift" });
+  await eika.click("role=tab[name=Context]");
+  await eika.select("Request", "#2 · gpt-5 · 754 in · 12m ago");
+  const alert = eika.page.getByRole("alert");
+  await expect(alert).toContainText("predicted 751 tokens for this call, exactly");
+  await expect(alert).toContainText("the endpoint counted 754");
+  await expect(alert).toContainText("a drift of -3");
+  await expect(alert).toContainText("this is a bug in the counting");
+  // A call that was predicted exactly says nothing of the kind.
+  await eika.select("Request", "#1 · gpt-5 · 533 in · 40m ago");
+  await expect(eika.page.getByRole("alert")).toHaveCount(0);
+});
+
+test("the status bar's meter: the cache, the next request and how it is known", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "profiles" });
+  // Nothing has been measured in this tab yet, so the fill and the cache are
+  // n/a and the prediction stands alone, with its method.
+  const bar = eika.page.getByText(/next \d+ exact/);
+  await expect(bar).toBeVisible();
+  await expect(eika.page.getByText("cached n/a")).toBeVisible();
+  await eika.send("Now add jitter");
+  // After a turn the endpoint's own figures arrive: the fill against the
+  // effective window, and what it served from its cache.
+  await expect(eika.page.getByText(/cached 1\.8k/)).toBeVisible();
+  await expect(eika.page.getByText(/next \d+ exact/)).toBeVisible();
 });
 
 test("a turn that ends is recorded", async ({ open }) => {

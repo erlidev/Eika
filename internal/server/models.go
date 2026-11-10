@@ -9,11 +9,13 @@ import (
 	"image/draw"
 	"image/png"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/erlidev/eika/internal/imaging"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -40,9 +42,18 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	providers, err := s.deps.Store.Providers(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	probed := make(map[string]int, len(providers))
+	for _, p := range providers {
+		probed[p.ID] = probedWindow(p)
+	}
 	out := make([]modelBody, 0, len(models))
 	for _, m := range models {
-		out = append(out, asModel(m))
+		out = append(out, asModel(m, probed[m.ProviderID]))
 	}
 	def, _ := s.defaultModel(r.Context(), models)
 	writeJSON(w, s.log, http.StatusOK, modelsResponse{Models: out, Default: def.Name})
@@ -57,6 +68,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	m := store.Model{
 		ProviderID:       req.ProviderID,
+		Kind:             modelKindOf(req.Kind),
 		Name:             strings.TrimSpace(req.Name),
 		Model:            strings.TrimSpace(req.Model),
 		ContextWindow:    req.ContextWindow,
@@ -85,12 +97,17 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	body, err := s.modelBodyOf(r.Context(), created)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	s.log.Info("model created", "model_id", created.ID, "name", created.Name, "provider_id", created.ProviderID)
-	writeJSON(w, s.log, http.StatusCreated, asModel(created))
+	writeJSON(w, s.log, http.StatusCreated, body)
 }
 
-// handleUpdateModel changes a model. Renaming a model keeps it the default
-// and keeps the utility tasks assigned to it.
+// handleUpdateModel changes a model, but not its kind. Renaming a model keeps
+// it the default and keeps the classes assigned to it.
 func (s *Server) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[updateModelRequest](r)
 	if err != nil {
@@ -148,8 +165,13 @@ func (s *Server) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	body, err := s.modelBodyOf(r.Context(), updated)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	s.log.Info("model updated", "model_id", updated.ID, "name", updated.Name)
-	writeJSON(w, s.log, http.StatusOK, asModel(updated))
+	writeJSON(w, s.log, http.StatusOK, body)
 }
 
 // handleDeleteModel removes a model. When it was the default, the first
@@ -178,6 +200,18 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, invalidf("model is required"))
 		return
 	}
+	switch modelKindOf(req.Kind) {
+	case store.ModelKindChat:
+	case store.ModelKindDecision:
+		// The test is a chat request, which a decision model cannot answer: it
+		// takes typed questions at /v1/systemone. The decision client that
+		// can ask one is built with Sentry, and the test moves there.
+		s.fail(w, r, invalidf("a decision model answers typed questions, not chat, so a chat request cannot test it; nothing asks it before Sentry"))
+		return
+	default:
+		s.fail(w, r, invalidKind(req.Kind))
+		return
+	}
 	if !provider.ValidReasoningEffort(req.ReasoningEffort) {
 		s.fail(w, r, invalidEffort(req.ReasoningEffort))
 		return
@@ -196,13 +230,11 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	client, err := s.deps.Providers.Build(p.Kind, provider.Endpoint{BaseURL: p.BaseURL, APIKey: key})
+	client, err := s.deps.Providers.Build(p.Kind, providerEndpoint(p, key))
 	if err != nil {
 		s.fail(w, r, invalidf("%s", scrub(err.Error(), key)))
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), testTimeout)
-	defer cancel()
 	sampling := provider.Sampling{MaxOutput: new(testMaxTokens)}
 	if req.ReasoningEffort != "" {
 		sampling.ReasoningEffort = &req.ReasoningEffort
@@ -211,14 +243,28 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 	if req.ImageInput {
 		question.Images = []provider.Image{testImage}
 	}
-	started := time.Now()
-	reply, stop, err := provider.Complete(ctx, client, provider.Request{
-		Model:            model,
-		Messages:         []provider.Message{question},
-		Sampling:         sampling,
-		ThinkingSwitch:   provider.ThinkingSwitch(req.ThinkingSwitch),
-		PreserveThinking: req.PreserveThinking,
-	})
+	// The user is waiting on the answer, so the test is interactive. Its time
+	// limit starts when it is admitted, and the latency it reports is the
+	// model's, not the queue's.
+	var (
+		reply, stop string
+		started     time.Time
+	)
+	err = s.queue(r.Context()).Do(r.Context(), callNeed(p, inference.Interactive, "", testPromptTokens+testMaxTokens),
+		func(ctx context.Context, _ *inference.Lease) error {
+			ctx, cancel := context.WithTimeout(ctx, testTimeout)
+			defer cancel()
+			started = time.Now()
+			var err error
+			reply, stop, err = provider.Complete(ctx, client, provider.Request{
+				Model:            model,
+				Messages:         []provider.Message{question},
+				Sampling:         sampling,
+				ThinkingSwitch:   provider.ThinkingSwitch(req.ThinkingSwitch),
+				PreserveThinking: req.PreserveThinking,
+			})
+			return err
+		})
 	if err != nil {
 		s.fail(w, r, endpointFailure(p.BaseURL, err, key))
 		return
@@ -230,9 +276,26 @@ func (s *Server) handleTestModel(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// defaultModel returns the model a run uses when it names none: the one the
-// settings name, or the first. It reports false when there are no models.
+// chatModels returns the models that can hold a conversation, in order.
+func chatModels(models []store.Model) []store.Model {
+	return slices.DeleteFunc(slices.Clone(models), func(m store.Model) bool {
+		return m.Kind != store.ModelKindChat
+	})
+}
+
+// modelKindOf is the kind a request names, and chat when it names none.
+func modelKindOf(kind string) string {
+	if kind == "" {
+		return store.ModelKindChat
+	}
+	return kind
+}
+
+// defaultModel returns the model a run uses when it names none: the chat
+// model the settings name, or the first chat model. It reports false when
+// there are no chat models.
 func (s *Server) defaultModel(ctx context.Context, models []store.Model) (store.Model, bool) {
+	models = chatModels(models)
 	if len(models) == 0 {
 		return store.Model{}, false
 	}
@@ -250,6 +313,10 @@ func (s *Server) defaultModel(ctx context.Context, models []store.Model) (store.
 // validateModel rejects a model a run could not use.
 func validateModel(m store.Model) error {
 	switch {
+	case m.Kind != store.ModelKindChat && m.Kind != store.ModelKindDecision:
+		return invalidKind(m.Kind)
+	case m.Kind == store.ModelKindDecision && (m.ReasoningEffort != "" || len(m.ReasoningEfforts) > 0 || m.PreserveThinking || m.ImageInput):
+		return invalidf("a decision model has no reasoning, preserved thinking or image input: it answers typed questions, not chat")
 	case m.Model == "" || len(m.Model) > maxModelID:
 		return invalidf("model must be the endpoint's identifier for it, 1 to %d characters", maxModelID)
 	case len(m.Name) > maxModelName || strings.IndexFunc(m.Name, unicode.IsControl) >= 0:
@@ -279,6 +346,11 @@ func validateModel(m store.Model) error {
 		seen[effort] = struct{}{}
 	}
 	return nil
+}
+
+// invalidKind reports a kind the harness does not have.
+func invalidKind(kind string) error {
+	return invalidf("kind %q must be %s or %s", kind, store.ModelKindChat, store.ModelKindDecision)
 }
 
 // invalidEffort reports a reasoning_effort the harness will not send. The

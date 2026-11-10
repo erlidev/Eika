@@ -5,8 +5,8 @@ import { useState } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 
 import { queryKeys } from "@/api/keys";
-import { getSessionContext, getSessionRequest, listSessionRequests } from "@/api/routes";
-import type { ModelContext, ModelRequest } from "@/api/types";
+import { getSessionCall, getSessionContext, listSessionCalls } from "@/api/routes";
+import type { ModelCall, ModelContext } from "@/api/types";
 
 /**
  * useNextRequest previews the session's next model request, as a run that
@@ -20,20 +20,20 @@ function useNextRequest(sessionId: string, model: string): UseQueryResult<ModelC
   });
 }
 
-/** useRecordedRequests lists the session's recorded model calls, oldest first. */
-function useRecordedRequests(sessionId: string): UseQueryResult<ModelRequest[]> {
+/** useRecordedCalls lists the session's recorded model calls, oldest first. */
+function useRecordedCalls(sessionId: string): UseQueryResult<ModelCall[]> {
   return useQuery({
-    queryKey: queryKeys.sessionRequests(sessionId),
-    queryFn: ({ signal }) => listSessionRequests(sessionId, signal),
+    queryKey: queryKeys.sessionCalls(sessionId),
+    queryFn: ({ signal }) => listSessionCalls(sessionId, signal),
   });
 }
 
-/** useRecordedRequest reads one recorded call in the preview's shape; a record never changes. */
-function useRecordedRequest(sessionId: string, requestId: string): UseQueryResult<ModelContext> {
+/** useRecordedCall reads one recorded call in the preview's shape; a record never changes. */
+function useRecordedCall(sessionId: string, callId: string): UseQueryResult<ModelContext> {
   return useQuery({
-    queryKey: queryKeys.sessionRequest(sessionId, requestId),
-    queryFn: ({ signal }) => getSessionRequest(sessionId, requestId, signal),
-    enabled: requestId !== "",
+    queryKey: queryKeys.sessionCall(sessionId, callId),
+    queryFn: ({ signal }) => getSessionCall(sessionId, callId, signal),
+    enabled: callId !== "",
     staleTime: Infinity,
   });
 }
@@ -47,7 +47,7 @@ export type RequestSelection = {
   selected: string;
   select: (id: string) => void;
   /** records are the session's recorded calls, oldest first. */
-  records: UseQueryResult<ModelRequest[]>;
+  records: UseQueryResult<ModelCall[]>;
   /** shown is the selected request, assembled. */
   shown: UseQueryResult<ModelContext>;
 };
@@ -58,8 +58,8 @@ export type RequestSelection = {
  */
 export function useRequestSelection(sessionId: string, model: string): RequestSelection {
   const [selected, select] = useState(nextRequest);
-  const records = useRecordedRequests(sessionId);
+  const records = useRecordedCalls(sessionId);
   const preview = useNextRequest(sessionId, model);
-  const recorded = useRecordedRequest(sessionId, selected === nextRequest ? "" : selected);
+  const recorded = useRecordedCall(sessionId, selected === nextRequest ? "" : selected);
   return { selected, select, records, shown: selected === nextRequest ? preview : recorded };
 }

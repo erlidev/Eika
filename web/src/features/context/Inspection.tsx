@@ -15,14 +15,19 @@ import {
 import { Pane } from "@/features/context/Pane";
 import { Dot, PartsBar, WindowMeter } from "@/features/context/parts";
 import {
-  estimatedTotal,
-  scale,
+  barTotal,
+  remainderNote,
+  requestSize,
   segmentLabels,
   segments,
+  sizedSections,
+  sizedTools,
+  tilde,
   toolGroupsOf,
   viewOf,
 } from "@/features/context/segments";
 import type { SegmentKind, View } from "@/features/context/segments";
+import { CallFacts, DriftNotice, PartsNotes, RequestHeadline } from "@/features/context/Size";
 import { formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +47,8 @@ type NavItem = {
   view: View;
   label: string;
   tokens?: number;
+  /** approximate says the size is not the endpoint's own count. */
+  approximate?: boolean;
   kind?: SegmentKind;
   depth: 0 | 1 | 2;
   mono?: boolean;
@@ -49,14 +56,16 @@ type NavItem = {
 
 /** navItems lists a request's parts as the column shows them. */
 function navItems(context: ModelContext): NavItem[] {
-  const sections = context.sections ?? [];
-  const tools = context.tools ?? [];
+  const sections = sizedSections(context);
+  const tools = sizedTools(context);
   const messages = context.messages ?? [];
+  const sizes = context.breakdown.messages;
   const items: NavItem[] = [
     {
       view: "system",
       label: "System prompt",
       tokens: sections.reduce((n, s) => n + s.tokens, 0),
+      approximate: sections.some((s) => s.approximate),
       depth: 0,
     },
   ];
@@ -65,6 +74,7 @@ function navItems(context: ModelContext): NavItem[] {
       view: `section:${s.kind}`,
       label: segmentLabels[s.kind],
       tokens: s.tokens,
+      approximate: s.approximate,
       kind: s.kind,
       depth: 1,
     });
@@ -73,6 +83,7 @@ function navItems(context: ModelContext): NavItem[] {
     view: "tools",
     label: `Tools (${String(tools.length)})`,
     tokens: tools.reduce((n, t) => n + t.tokens, 0),
+    approximate: tools.some((t) => t.approximate),
     depth: 0,
   });
   for (const g of toolGroupsOf(tools)) {
@@ -80,6 +91,7 @@ function navItems(context: ModelContext): NavItem[] {
       view: `group:${g.id}`,
       label: g.label,
       tokens: g.tokens,
+      approximate: g.approximate,
       kind: g.id === "builtin" ? "builtin_tools" : "mcp_tools",
       depth: 1,
       mono: g.server !== undefined,
@@ -88,7 +100,8 @@ function navItems(context: ModelContext): NavItem[] {
   items.push({
     view: "messages",
     label: `Messages (${String(messages.length)})`,
-    tokens: context.message_tokens,
+    tokens: sizes.reduce((n, m) => n + m.tokens + (m.reasoning_tokens ?? 0), 0),
+    approximate: sizes.some((m) => m.approximate === true),
     kind: "messages",
     depth: 0,
   });
@@ -106,37 +119,19 @@ export function Inspection({
   onEdit,
 }: InspectionProps) {
   const parts = segments(context);
-  const total = estimatedTotal(parts);
-  const ratio = scale(context);
+  const total = barTotal(parts);
   const items = navItems(context);
   const current = items.some((i) => i.view === view) ? view : "system";
   const edit = { sessionId, config: live ? config : undefined, onOpen: onEdit };
+  const remainder = context.breakdown.remainder;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="space-y-2 border-b px-4 py-3">
-        <p className="flex flex-wrap items-baseline gap-x-2 text-xs">
-          <span className="font-mono text-lg font-semibold tabular-nums">
-            ~{formatTokens(total)}
-          </span>
-          <span className="text-muted-foreground">tokens estimated</span>
-          {ratio !== undefined && (
-            <span className="text-muted-foreground">
-              · <span className="font-mono tabular-nums">~{formatTokens(total * ratio)}</span>{" "}
-              scaled to the last measured call
-            </span>
-          )}
-          {(context.request?.input_tokens ?? 0) > 0 && (
-            <span className="text-muted-foreground">
-              ·{" "}
-              <span className="font-mono tabular-nums">
-                {(context.request?.input_tokens ?? 0).toLocaleString("en-US")}
-              </span>{" "}
-              measured by the endpoint
-            </span>
-          )}
-        </p>
-        <WindowMeter context={context} total={total} />
+      <div className="space-y-2 border-b px-4 py-3 text-xs">
+        <RequestHeadline context={context} />
+        <DriftNotice context={context} />
+        <CallFacts context={context} />
+        <WindowMeter context={context} used={requestSize(context).tokens} />
         <PartsBar
           parts={parts}
           total={total}
@@ -144,6 +139,7 @@ export function Inspection({
             onView(viewOf(kind));
           }}
         />
+        <PartsNotes context={context} />
         {context.dropped_effort !== undefined && context.dropped_effort !== "" && (
           <Notice>
             The reasoning effort <span className="font-mono">{context.dropped_effort}</span> is not
@@ -198,6 +194,7 @@ export function Inspection({
                   </span>
                   {item.tokens !== undefined && (
                     <span className="text-muted-foreground shrink-0 font-mono text-2xs tabular-nums">
+                      {tilde(item.approximate === true)}
                       {formatTokens(item.tokens)}
                     </span>
                   )}
@@ -205,6 +202,25 @@ export function Inspection({
               </li>
             ))}
           </ul>
+          <div
+            className="mt-2 flex items-center gap-2 border-t px-2 pt-2 text-xs"
+            title={remainderNote(context)}
+          >
+            <Dot kind="template" />
+            <span className="min-w-0 flex-1 truncate">Template and formatting</span>
+            <span
+              className={cn(
+                "text-muted-foreground shrink-0 font-mono text-2xs tabular-nums",
+                remainder !== null && remainder < 0 && "text-destructive",
+              )}
+            >
+              {remainder === null
+                ? "n/a"
+                : remainder < 0
+                  ? `-${formatTokens(-remainder)}`
+                  : formatTokens(remainder)}
+            </span>
+          </div>
         </nav>
         <div className="min-h-0 overflow-y-auto p-4" role="region" aria-label="Part detail">
           <Pane view={current} context={context} total={total} edit={edit} onView={onView} />

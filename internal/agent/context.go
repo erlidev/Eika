@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/counter"
 )
 
 // bytesPerToken is how many bytes EstimateTokens counts as one token. It is
@@ -17,8 +18,9 @@ import (
 const bytesPerToken = 4
 
 // EstimateTokens estimates how many tokens text costs, at four bytes to a
-// token. Every size the agent reports before a model has measured it comes
-// from here, so all of them are estimates of one kind.
+// token. It sizes the parts of a request (a section, a tool, a message) for
+// the Context inspector and for where a compaction cuts; the size of a whole
+// request, which the window is judged by, comes from the session's counter.
 func EstimateTokens(text string) int {
 	return (len(text) + bytesPerToken - 1) / bytesPerToken
 }
@@ -163,7 +165,7 @@ func (c Context) WithMessages(msgs []provider.Message) Context {
 		// otherwise, so neither is part of the request.
 		m.Metrics = nil
 		if !c.Parameters.PreserveThinking {
-			m.Reasoning = ""
+			m.Reasoning, m.ReasoningItems = "", nil
 		}
 		if !c.Parameters.ImageInput {
 			m = withoutImages(m)
@@ -217,34 +219,26 @@ func ToolTokens(def provider.ToolDef) int {
 
 // messageTokens estimates the size of one message: its JSON without the
 // images, and each image at what a model reads it as. The base64 an image
-// travels in is no measure of that.
+// travels in is no measure of that. Reasoning items repeat the reasoning text
+// a message already holds, so they count only when it holds none, as an item
+// of a hosted API does with its encrypted content.
 func messageTokens(m provider.Message) int {
-	images := m.Images
-	m.Images = nil
+	images, items := m.Images, m.ReasoningItems
+	m.Images, m.ReasoningItems = nil, nil
 	tokens := 0
 	for _, img := range images {
-		tokens += ImageTokens(img.Width, img.Height)
+		tokens += counter.EstimatedImageTokens(img.Width, img.Height)
+	}
+	if m.Reasoning == "" {
+		for _, item := range items {
+			tokens += EstimateTokens(string(item))
+		}
 	}
 	data, err := json.Marshal(m)
 	if err != nil {
-		return tokens + EstimateTokens(m.Content+m.Reasoning)
+		return tokens + EstimateTokens(m.ModelText()+m.Reasoning)
 	}
 	return tokens + EstimateTokens(string(data))
-}
-
-// pixelsPerToken is how many pixels ImageTokens counts as one token. Vision
-// models cut an image into patches of 28 by 28 pixels, or into tiles they
-// charge a few hundred tokens each; one token per 750 pixels is near what
-// hosted models charge for an image of the size Eika sends.
-const pixelsPerToken = 750
-
-// ImageTokens estimates what an image of w by h pixels costs a model. One
-// whose size is not known is taken to be as large as the harness sends.
-func ImageTokens(w, h int) int {
-	if w <= 0 || h <= 0 {
-		w, h = 1920, 1080
-	}
-	return (w*h + pixelsPerToken - 1) / pixelsPerToken
 }
 
 // withoutImages returns m with its images replaced by a note, which is how a
@@ -292,19 +286,55 @@ type ModelCall struct {
 	// Usage is what the endpoint measured for this call alone, and zero when
 	// it reported nothing.
 	Usage provider.Usage
+	// Prediction is the size the token counter expected the prompt to be
+	// before it was sent, and Drift the prediction less the prompt the
+	// endpoint measured, nil when it measured none. An exact prediction with
+	// any drift is a bug.
+	Prediction provider.Prediction
+	Drift      *int
+	// Reasoning is how many tokens of the completion were reasoning, and
+	// ReasoningSource where that number came from (ReasoningReported or
+	// ReasoningTokenised). Both are empty when there is no count.
+	Reasoning       provider.Count
+	ReasoningSource string
+	// ContextWindow is the window the call was judged against, zero when
+	// there was none.
+	ContextWindow int
+	// Queue is what the inference queue did for the call: how long it waited
+	// and on which slot. Its Queued is false when the agent has no queue.
+	Queue QueueRecord
+	// Timings is how long the endpoint took to read the prompt and to
+	// generate, as far as anything measured it; the zero value when nothing
+	// did.
+	Timings provider.Timings
 }
+
+// The sources a ModelCall's reasoning count can have.
+const (
+	// ReasoningReported is the endpoint's own count.
+	ReasoningReported = "reported"
+	// ReasoningTokenised is a count of the reasoning text by the endpoint's
+	// tokenizer, for an endpoint that states none. It approximates what the
+	// model generated, so it is never presented as a reported number.
+	ReasoningTokenised = "tokenised"
+)
 
 // record tells the Recorder about one finished model call. A record is for
 // inspection and the conversation it describes is already stored, so a
 // failure to keep one is logged and the run goes on. It outlives a run
 // cancelled after the response arrived, as the stored messages do.
-func (a *Agent) record(ctx context.Context, s *Session, runID string, c Context, usage provider.Usage) {
+func (a *Agent) record(ctx context.Context, s *Session, runID string, c Context, resp response, count counted) {
 	if a.opts.Recorder == nil {
 		return
 	}
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteTimeout)
 	defer cancel()
-	call := ModelCall{RunID: runID, SessionID: s.ID, Context: c, Usage: usage}
+	call := ModelCall{
+		RunID: runID, SessionID: s.ID, Context: c, Usage: resp.usage,
+		Prediction: count.prediction, Drift: count.drift, ContextWindow: a.opts.ContextWindow,
+		Queue: resp.queue, Timings: resp.timings,
+	}
+	call.Reasoning, call.ReasoningSource = a.reasoningTokens(recordCtx, resp)
 	if err := a.opts.Recorder.Record(recordCtx, call); err != nil {
 		a.opts.Logger.Error("record model call", "session_id", s.ID, "run_id", runID, "error", err)
 	}

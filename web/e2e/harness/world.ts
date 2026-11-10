@@ -13,7 +13,7 @@ import {
   record,
   toolTokens,
 } from "./profiles.ts";
-import type { RecordedRequest, StoredProfile } from "./profiles.ts";
+import type { RecordedCall, StoredProfile } from "./profiles.ts";
 import type {
   ContentDetail,
   Elicitation,
@@ -22,6 +22,8 @@ import type {
   MCPServerDetails,
   Message,
   Model,
+  ModelClass,
+  ModelClassName,
   ProfileSettings,
   QueuedMessage,
   Provider,
@@ -72,7 +74,7 @@ export type ReplyStep =
    * cutOff ends the turn on an incomplete stop reason, as an endpoint that
    * ran out of output room does. What was said before it is kept.
    */
-  | { cutOff: "length" | "content_filter" }
+  | { cutOff: "length" | "content_filter" | "max_calls" | "max_wall_time" }
   /** hang leaves the run going: no turn.end is sent. */
   | { hang: true };
 
@@ -122,8 +124,8 @@ export type World = {
   overrides: Record<string, ProfileSettings>;
   /** toolChoices are the sessions' own tool choices, by session id; one with none inherits. */
   toolChoices: Record<string, string[]>;
-  /** requests are each session's recorded model calls, oldest first. */
-  requests: Record<string, RecordedRequest[]>;
+  /** calls are each session's recorded model calls, oldest first. */
+  calls: Record<string, RecordedCall[]>;
 };
 
 /** fixedNow is the clock every screenshot is taken at. */
@@ -141,9 +143,15 @@ export function emptyWorld(): World {
     signedIn: true,
     settings: {
       settings: { setup_complete: true },
+      // The routes resolve these from the model_classes setting when they serve it.
+      classes: [],
+      titles_model: "",
       defaults: {
         sandbox_image: "eika-sandbox:latest",
         computer_idle_minutes: 15,
+        maintenance_idle_seconds: 120,
+        aging_seconds: 300,
+        preempt_running: false,
         sandbox_limits: { cpus: 0, memory_mb: 0, pids: 4096 },
         sandbox_egress: { mode: "open", allow: [...defaultAllowlist] },
         // As the harness documents them in docs/api/http.md.
@@ -204,13 +212,14 @@ export function emptyWorld(): World {
       backend: "openai",
       slots: 8,
       kv: "unknown",
+      api: "chat",
       capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
     },
     eventsOnConnect: [],
     profiles: [defaultProfile()],
     overrides: {},
     toolChoices: {},
-    requests: {},
+    calls: {},
   };
 }
 
@@ -346,6 +355,7 @@ export class WorldBuilder {
       pool: input.name,
       slots: 8,
       kv: "unknown",
+      api: "chat",
       capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
       overridden: [],
       probed_at: minutesAgo(30),
@@ -361,8 +371,11 @@ export class WorldBuilder {
     const row: Model = {
       id: this.id("mod"),
       provider_id: provider.id,
+      kind: "chat",
       model: input.name,
       context_window: 400000,
+      // The routes recompute this from the provider's probe when they serve it.
+      effective_window: input.context_window ?? 400000,
       max_output: 128000,
       reasoning_efforts: [],
       thinking_switch: "reasoning_effort",
@@ -373,7 +386,7 @@ export class WorldBuilder {
       ...input,
     };
     this.world.models.push(row);
-    this.world.defaultModel ??= row.name;
+    if (row.kind === "chat") this.world.defaultModel ??= row.name;
     return row;
   }
 
@@ -485,10 +498,10 @@ export class WorldBuilder {
   }
 
   /**
-   * request records the model call a session's run made when its path ended
+   * call records the model call a session's run made when its path ended
    * where it ends now, as the harness keeps one per call.
    */
-  request(session: Session, minutes: number, outputTokens: number): RecordedRequest {
+  call(session: Session, minutes: number, outputTokens: number): RecordedCall {
     return record(this.world, session, {
       id: this.id("req"),
       runId: this.id("run"),
@@ -555,10 +568,87 @@ export function pathOf(world: World, session: Session): Entry[] {
   return path;
 }
 
+/**
+ * windowOf is a model's windows as internal/server/window.go states them: the
+ * per-request context its provider's probe read, if any, and the smaller of
+ * that and the model's configured window.
+ */
+export function windowOf(
+  world: World,
+  model: Model,
+): { probed: number | undefined; effective: number } {
+  const stated = world.providers.find((p) => p.id === model.provider_id)?.capabilities.window;
+  const probed = stated !== undefined && stated > 0 ? stated : undefined;
+  return {
+    probed,
+    effective:
+      probed !== undefined && probed < model.context_window ? probed : model.context_window,
+  };
+}
+
 /** syncSystem recounts the system status from the tables. */
 export function syncSystem(world: World): void {
   world.system.providers = world.providers.length;
-  world.system.models = world.models.length;
+  world.system.models = world.models.filter((m) => m.kind === "chat").length;
+}
+
+/**
+ * modelClassNames is every class, in the order the settings list them. The
+ * harness cannot import the UI's own list: node loads this file without the
+ * UI's path aliases.
+ */
+export const modelClassNames: readonly ModelClassName[] = ["deep", "main", "fast", "decision"];
+
+/** classFallback is the class that serves a class with no model, as classes.go has it. */
+const classFallback: Partial<Record<ModelClassName, ModelClassName>> = {
+  deep: "main",
+  fast: "main",
+};
+
+/**
+ * classView resolves every model class and the model that makes titles from
+ * the model_classes setting, as internal/server/classes.go does: a class with
+ * no model falls back (deep and fast to main, main to the default model), and
+ * titles are skipped when fast falls back onto the model assigned to deep, if
+ * that is on a hosted API.
+ */
+export function classView(world: World): Pick<SettingsState, "classes" | "titles_model"> {
+  const stored = world.settings.settings.model_classes;
+  const assigned: Partial<Record<string, string>> =
+    typeof stored === "object" && stored !== null ? stored : {};
+  const resolve = (
+    asked: ModelClassName,
+  ): { model: Model; via: ModelClassName | "default" } | undefined => {
+    for (let c: ModelClassName | undefined = asked; c !== undefined; c = classFallback[c]) {
+      const kind = c === "decision" ? "decision" : "chat";
+      const model = world.models.find((m) => m.name === assigned[c] && m.kind === kind);
+      if (model !== undefined) return { model, via: c };
+    }
+    // A chat class with no model of its own or a fallback gets the default model.
+    const fallback = world.models.find((m) => m.name === world.defaultModel && m.kind === "chat");
+    return asked !== "decision" && fallback !== undefined
+      ? { model: fallback, via: "default" }
+      : undefined;
+  };
+  const classes = modelClassNames.map((name): ModelClass => {
+    const found = resolve(name);
+    const provider = world.providers.find((p) => p.id === found?.model.provider_id);
+    return {
+      class: name,
+      kind: name === "decision" ? "decision" : "chat",
+      model: found?.model.name ?? "",
+      ...(found === undefined || found.via === name ? {} : { via: found.via }),
+      ...(provider === undefined ? {} : { provider_id: provider.id, pool: provider.pool }),
+    };
+  });
+  const fast = resolve("fast");
+  const deep = assigned.deep;
+  const hosted =
+    fast !== undefined &&
+    fast.via !== "fast" &&
+    fast.model.name === deep &&
+    world.providers.find((p) => p.id === fast.model.provider_id)?.backend === "openai";
+  return { classes, titles_model: fast === undefined || hosted ? "" : fast.model.name };
 }
 
 /**

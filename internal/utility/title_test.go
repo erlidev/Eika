@@ -132,9 +132,3 @@ func TestTitleSendsTheStartOfALongMessage(t *testing.T) {
 		t.Errorf("sent %d bytes ending %q, want the message cut before the split character", len(sent), sent[len(sent)-3:])
 	}
 }
-
-func TestKnown(t *testing.T) {
-	if !utility.Known(utility.TaskSessionTitle) || utility.Known("summarise") {
-		t.Error("Known should accept session_title alone")
-	}
-}

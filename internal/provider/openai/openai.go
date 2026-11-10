@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"sort"
@@ -25,6 +26,9 @@ import (
 // endpoint and lists the models it serves.
 type Provider struct {
 	client openai.Client
+	// slotHints reports that the endpoint takes id_slot, so a request's
+	// SlotHint is sent.
+	slotHints bool
 }
 
 // New returns a Provider on one endpoint. An empty key is sent as it is,
@@ -44,15 +48,29 @@ func New(e provider.Endpoint) (provider.Provider, error) {
 		// Retries are the agent loop's job, so that every provider and the
 		// scripted fake behave the same way.
 		option.WithMaxRetries(0),
+		// The shared pool, repeating a request once when the server had closed
+		// the idle connection it went out on.
+		option.WithHTTPClient(provider.NewHTTPClient(0)),
 	}
-	return &Provider{client: openai.NewClient(opts...)}, nil
+	return &Provider{client: openai.NewClient(opts...), slotHints: e.SlotHints}, nil
 }
 
 // Stream sends one request and converts the SDK's chunks into provider events.
 // The returned channel is closed after a done or error event; a caller that
-// stops reading must cancel ctx.
+// stops reading must cancel ctx. A request's slot hint goes out as id_slot to
+// an endpoint that takes it, and a server that refuses the field is sent the
+// request again without it.
 func (p *Provider) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
-	params, err := p.params(req)
+	return streamWithSlot(ctx, req, p.slotHints, p.stream)
+}
+
+// stream is one attempt at a request, naming its slot when withSlot says so.
+func (p *Provider) stream(ctx context.Context, req provider.Request, withSlot bool) (<-chan provider.Event, error) {
+	var slot *int
+	if withSlot {
+		slot = req.SlotHint
+	}
+	params, err := p.params(req, slot)
 	if err != nil {
 		return nil, err
 	}
@@ -64,6 +82,23 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request) (<-chan pro
 		relay(ctx, stream, out)
 	}()
 	return out, nil
+}
+
+// ChatBody returns the JSON body Stream sends for req, without the stream
+// flag. A server's rendering route takes the same body, which is how the token
+// counter sees exactly what the model will be sent. It never names a slot:
+// that decides where the server runs the request and not what it reads, and
+// the rendering route has no use for it.
+func (p *Provider) ChatBody(req provider.Request) ([]byte, error) {
+	params, err := p.params(req, nil)
+	if err != nil {
+		return nil, err
+	}
+	body, err := params.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("encode chat request: %w", err)
+	}
+	return body, nil
 }
 
 // chunkStream is the part of the SDK stream this package uses.
@@ -195,14 +230,16 @@ func reasoningContent(delta openai.ChatCompletionChunkChoiceDelta) string {
 	return fields.ReasoningContent
 }
 
-// params builds the SDK request for one provider request.
-func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams, error) {
+// params builds the SDK request for one provider request, naming slot when it
+// is not nil.
+func (p *Provider) params(req provider.Request, slot *int) (openai.ChatCompletionNewParams, error) {
 	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(req.Messages)+1)
 	if req.System != "" {
 		messages = append(messages, openai.SystemMessage(req.System))
 	}
+	wire := provider.WireToolCallIDs(req.Messages)
 	for _, m := range req.Messages {
-		converted, err := message(m, req.PreserveThinking)
+		converted, err := message(m, req.PreserveThinking, wire)
 		if err != nil {
 			return openai.ChatCompletionNewParams{}, err
 		}
@@ -268,8 +305,8 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 	if req.PreserveThinking {
 		extra["preserve_thinking"] = true
 	}
-	if len(extra) > 0 {
-		params.SetExtraFields(extra)
+	if slot != nil {
+		extra[slotField] = *slot
 	}
 	for _, t := range req.Tools {
 		var schema shared.FunctionParameters
@@ -284,31 +321,66 @@ func (p *Provider) params(req provider.Request) (openai.ChatCompletionNewParams,
 			Parameters:  schema,
 		}))
 	}
-	return params, nil
+	return withExtraFields(params, extra)
 }
 
-// message converts one conversation message into its SDK form.
-func message(m provider.Message, preserveThinking bool) (openai.ChatCompletionMessageParamUnion, error) {
+// withExtraFields returns params as a request that serialises to its own fields
+// and then extra, in the order of the field names. The SDK writes the fields it
+// takes from a map (SetExtraFields) in whatever order the map is walked, which
+// differs from one encoding to the next, so a request sent twice would go out as
+// two different bodies, and a server's prompt cache is keyed by what it reads.
+// extra holds only fields the SDK has no struct field for, so none repeats one.
+func withExtraFields(params openai.ChatCompletionNewParams, extra map[string]any) (openai.ChatCompletionNewParams, error) {
+	if len(extra) == 0 {
+		return params, nil
+	}
+	body, err := params.MarshalJSON()
+	if err != nil {
+		return openai.ChatCompletionNewParams{}, fmt.Errorf("encode chat request: %w", err)
+	}
+	if len(body) < 2 || body[len(body)-1] != '}' {
+		return openai.ChatCompletionNewParams{}, fmt.Errorf("encode chat request: %.40q is not an object", body)
+	}
+	body = body[:len(body)-1]
+	for _, name := range slices.Sorted(maps.Keys(extra)) {
+		value, err := json.Marshal(extra[name])
+		if err != nil {
+			return openai.ChatCompletionNewParams{}, fmt.Errorf("encode chat request field %s: %w", name, err)
+		}
+		key, _ := json.Marshal(name)
+		body = append(append(append(append(body, ','), key...), ':'), value...)
+	}
+	body = append(body, '}')
+	return param.Override[openai.ChatCompletionNewParams](json.RawMessage(body)), nil
+}
+
+// message converts one conversation message into its SDK form. wire maps the
+// Eika id of each tool call in the conversation to the id sent for it
+// (provider.WireToolCallIDs).
+func message(m provider.Message, preserveThinking bool, wire map[string]string) (openai.ChatCompletionMessageParamUnion, error) {
 	switch m.Role {
 	case provider.RoleUser:
 		if len(m.Images) == 0 {
-			return openai.UserMessage(m.Content), nil
+			return openai.UserMessage(m.ModelText()), nil
 		}
 		return openai.UserMessage(userParts(m)), nil
 	case provider.RoleTool:
-		return openai.ToolMessage(m.Content, m.ToolCallID), nil
+		return openai.ToolMessage(m.Content, provider.WireToolCallID(wire, m.ToolCallID)), nil
 	case provider.RoleAssistant:
 		msg := openai.ChatCompletionAssistantMessageParam{}
 		if preserveThinking && m.Reasoning != "" {
 			msg.SetExtraFields(map[string]any{"reasoning_content": m.Reasoning})
 		}
-		if m.Content != "" {
+		// An assistant message needs content or tool calls: llama.cpp refuses
+		// one with neither, which is what a response cut off inside its
+		// reasoning leaves, and every later request would fail the same way.
+		if m.Content != "" || len(m.ToolCalls) == 0 {
 			msg.Content.OfString = param.NewOpt(m.Content)
 		}
 		for _, c := range m.ToolCalls {
 			msg.ToolCalls = append(msg.ToolCalls, openai.ChatCompletionMessageToolCallUnionParam{
 				OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
-					ID: c.ID,
+					ID: c.Wire(),
 					Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
 						Name:      c.Name,
 						Arguments: string(c.Arguments),
@@ -332,8 +404,8 @@ func userParts(m provider.Message) []openai.ChatCompletionContentPartUnionParam 
 			URL: "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data),
 		}))
 	}
-	if m.Content != "" {
-		parts = append(parts, openai.TextContentPart(m.Content))
+	if text := m.ModelText(); text != "" {
+		parts = append(parts, openai.TextContentPart(text))
 	}
 	return parts
 }
@@ -462,6 +534,7 @@ func retryAfter(h http.Header) time.Duration {
 }
 
 var (
-	_ provider.Provider = (*Provider)(nil)
-	_ provider.Lister   = (*Provider)(nil)
+	_ provider.Provider    = (*Provider)(nil)
+	_ provider.Lister      = (*Provider)(nil)
+	_ provider.ChatEncoder = (*Provider)(nil)
 )

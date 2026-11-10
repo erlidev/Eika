@@ -200,10 +200,18 @@ func TestChatRunOffersOnlyItsChosenTools(t *testing.T) {
 		t.Errorf("system prompt = %q, want the chat rules", system)
 	}
 
+	// The loop mints its own id for each call and sends the backend's back, so
+	// the results are found by the ids the script gave the calls.
+	backend := map[string]string{}
+	for _, m := range requests[1].Messages {
+		for _, c := range m.ToolCalls {
+			backend[c.ID] = c.Wire()
+		}
+	}
 	results := map[string]provider.Message{}
 	for _, m := range requests[1].Messages {
 		if m.Role == provider.RoleTool {
-			results[m.ToolCallID] = m
+			results[backend[m.ToolCallID]] = m
 		}
 	}
 	if r := results["c1"]; r.IsError || !strings.Contains(r.Content, "Tokio") {

@@ -69,35 +69,54 @@ type profiledSessionWire struct {
 	Tools      []string `json:"tools"`
 }
 
-type modelRequestWire struct {
-	ID            string `json:"id"`
-	RunID         string `json:"run_id"`
-	EntryID       string `json:"entry_id"`
-	ModelID       string `json:"model_id"`
-	Model         string `json:"model"`
-	MessageTokens int    `json:"message_tokens"`
-	InputTokens   *int   `json:"input_tokens"`
-	OutputTokens  *int   `json:"output_tokens"`
-	TotalTokens   *int   `json:"total_tokens"`
-	CachedTokens  *int   `json:"cached_tokens"`
+type modelCallWire struct {
+	ID               string `json:"id"`
+	RunID            string `json:"run_id"`
+	EntryID          string `json:"entry_id"`
+	ModelID          string `json:"model_id"`
+	Model            string `json:"model"`
+	MessageTokens    int    `json:"message_tokens"`
+	PromptTokens     *int   `json:"prompt_tokens"`
+	CompletionTokens *int   `json:"completion_tokens"`
+	TotalTokens      *int   `json:"total_tokens"`
+	CachedTokens     *int   `json:"cached_tokens"`
+	PrefilledTokens  *int   `json:"prefilled_tokens"`
+	ReasoningTokens  *int   `json:"reasoning_tokens"`
+	ReasoningSource  string `json:"reasoning_source"`
+	Drift            *int   `json:"drift"`
+	Prediction       string `json:"prediction"`
+
+	PredictedPromptTokens *int   `json:"predicted_prompt_tokens"`
+	ContextWindow         *int   `json:"context_window"`
+	Endpoint              string `json:"endpoint"`
+	QueueMS               *int   `json:"queue_ms"`
+	Slot                  *int   `json:"slot"`
+	Priority              string `json:"priority"`
 }
 
-type requestsWire struct {
-	SessionID string             `json:"session_id"`
-	Requests  []modelRequestWire `json:"requests"`
+type callsWire struct {
+	SessionID string          `json:"session_id"`
+	Calls     []modelCallWire `json:"calls"`
 }
 
 type contextWire struct {
 	agent.Context
 	Sources       map[string]string `json:"sources"`
 	DroppedEffort string            `json:"dropped_effort"`
-	Request       *modelRequestWire `json:"request"`
+	Call          *modelCallWire    `json:"call"`
 	ContextWindow int               `json:"context_window"`
-	Calibration   *struct {
-		RequestID       string `json:"request_id"`
-		InputTokens     int    `json:"input_tokens"`
-		EstimatedTokens int    `json:"estimated_tokens"`
-	} `json:"calibration"`
+	Breakdown     *breakdownWire    `json:"breakdown"`
+	Prediction    *struct {
+		Tokens int    `json:"tokens"`
+		Method string `json:"method"`
+	} `json:"prediction"`
+}
+
+type breakdownWire struct {
+	agent.Breakdown
+	PromptTokens *int   `json:"prompt_tokens"`
+	PromptSource string `json:"prompt_source"`
+	Remainder    *int   `json:"remainder"`
 }
 
 // profiles lists the profiles.
@@ -260,7 +279,7 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	if !slices.Equal(kinds, []agent.SectionKind{agent.SectionBase, agent.SectionInstructions}) {
 		t.Errorf("sections = %v", kinds)
 	}
-	if preview.Sources["sampling.temperature"] != "session" || preview.Sources["model"] != "default" || preview.Calibration != nil {
+	if preview.Sources["sampling.temperature"] != "session" || preview.Sources["model"] != "default" || preview.Breakdown == nil || preview.Prediction == nil {
 		t.Errorf("preview = %+v", preview)
 	}
 
@@ -284,13 +303,18 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	}
 
 	// The call is recorded and reads back in the preview's shape.
-	records := decodeBody[requestsWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/requests", nil), 200)
-	if len(records.Requests) != 1 || records.Requests[0].Model != "test-model" || records.Requests[0].EntryID == "" {
+	records := decodeBody[callsWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/calls", nil), 200)
+	if len(records.Calls) != 1 || records.Calls[0].Model != "test-model" || records.Calls[0].EntryID == "" {
 		t.Fatalf("requests = %+v, want the one call", records)
 	}
-	rec := records.Requests[0]
-	recorded := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/requests/"+rec.ID, nil), 200)
-	if recorded.System() != sent.System || len(recorded.Tools) != 1 || recorded.Request == nil || recorded.Request.ID != rec.ID {
+	rec := records.Calls[0]
+	if rec.Endpoint != "test" || rec.ContextWindow == nil || rec.QueueMS == nil || *rec.QueueMS < 0 ||
+		rec.Slot != nil || rec.Priority != "interactive" {
+		t.Errorf("call attribution = endpoint %q, window %v, queue_ms %v, slot %v, priority %q; want the provider's name, the model's window, the queue's wait, no slot (the provider is not llama.cpp) and interactive",
+			rec.Endpoint, rec.ContextWindow, rec.QueueMS, rec.Slot, rec.Priority)
+	}
+	recorded := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/calls/"+rec.ID, nil), 200)
+	if recorded.System() != sent.System || len(recorded.Tools) != 1 || recorded.Call == nil || recorded.Call.ID != rec.ID {
 		t.Errorf("recorded = %+v", recorded)
 	}
 	if len(recorded.Messages) != 1 || recorded.Messages[0].Content != "hello" {
@@ -299,7 +323,7 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 	if recorded.Sources["sampling.temperature"] != "session" || deref(recorded.Parameters.Sampling.Temperature) != 0.9 {
 		t.Errorf("recorded parameters = %+v, sources %v", recorded.Parameters, recorded.Sources)
 	}
-	refused(t, request(t, a.Server, "GET", "/api/sessions/"+a.newSession(t, cx.ID).ID+"/requests/"+rec.ID, nil), 404)
+	refused(t, request(t, a.Server, "GET", "/api/sessions/"+a.newSession(t, cx.ID).ID+"/calls/"+rec.ID, nil), 404)
 
 	// A request for a model names the top layer.
 	named := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/context?model=test-model", nil), 200)
@@ -342,8 +366,8 @@ func TestAProfileAndASessionChooseWhetherThinkingIsPreserved(t *testing.T) {
 	if p.Requests()[0].PreserveThinking {
 		t.Error("the run preserved thinking the session turned off")
 	}
-	records := decodeBody[requestsWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/requests", nil), 200)
-	recorded := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/requests/"+records.Requests[0].ID, nil), 200)
+	records := decodeBody[callsWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/calls", nil), 200)
+	recorded := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/calls/"+records.Calls[0].ID, nil), 200)
 	if recorded.ContextWindow != model.ContextWindow || len(recorded.MessageSizes) != len(recorded.Messages) {
 		t.Errorf("recorded = window %d, %d sizes for %d messages; want the model's window and a size per message",
 			recorded.ContextWindow, len(recorded.MessageSizes), len(recorded.Messages))

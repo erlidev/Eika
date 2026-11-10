@@ -37,7 +37,7 @@ func TestSummariseTotalsWhatEveryCallMeasured(t *testing.T) {
 				{PromptTokens: ptr(100), CachedTokens: ptr(0), PrefillSeconds: ptr(1.0), Drift: ptr(2)},
 				{PromptTokens: ptr(100), CachedTokens: ptr(50), PrefillSeconds: ptr(0.5), Drift: ptr(-1)},
 			},
-			cached: ptr(50), rate: ptr(0.25), prefill: ptr(1.5), drift: ptr(1), promptSum: ptr(200),
+			cached: ptr(50), rate: ptr(0.25), prefill: ptr(1.5), drift: ptr(3), promptSum: ptr(200),
 		},
 		{
 			name: "one call without a cache count",
