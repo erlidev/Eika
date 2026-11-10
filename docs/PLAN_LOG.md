@@ -1542,3 +1542,27 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
     as true. `queue_priority` passed.
   - Exit check: the live checks passed. The owner still must compare the
     meter with the server logs by hand.
+
+- 2026-11-09: phase 1 closed on `phase-1`. `make check` and `make smoke`
+  (2 specs) pass on `22ed8bf`. Deleted `REFACTOR_PLAN.md` (`e3eb3f0`); moved
+  phase 1's design to `ARCHITECTURE.md` and `DECISIONS.md` (`22ed8bf`).
+  - Exit: `make live` passed earlier today (38 scenarios, zero drift on every
+    exact call). Read the meter by hand against the server using a scratch Eika
+    dev build with its own Postgres on `llama-qwen`: llama.cpp
+    `b11942-338fce651`, Qwen3.8-27B UD-Q4_K_XL, 3 chat turns.
+    - Call 1: Eika prompt 1253, cached 0, prefill 387 ms; server evaluated
+      1253 tokens in 387.25 ms.
+    - Call 2: prompt 1365, cached 1305, prefilled 60, 152 ms; server reused
+      1305 and evaluated 60 tokens in 152.44 ms.
+    - Call 3: prompt 1454, cached 1394, prefilled 60, 151 ms; server evaluated
+      60 tokens in 151.39 ms. All calls were exact, with drift 0.
+    - The meter's next prompt was 1462 (exact): parts 1417 plus remainder 45,
+      matching the server's `n_tokens` 1462 after call 3.
+  - The provider's first probe at creation reported backend `other` with no
+    capabilities. An explicit probe found `llamacpp`, 2 slots, window 131072
+    and counting `chat`. Slot affinity was not exercised: the check needs a
+    chat model on the provider at probe time, so the slot stayed null. `kv`
+    stays unknown, as recorded before.
+  - No UI screenshot was taken: the dev binary does not embed the web build.
+    No UI changed in the close. The bench stopped `llama-server` for the runs
+    and restored it after.
