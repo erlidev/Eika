@@ -23,6 +23,11 @@ func TestBuiltins(t *testing.T) {
 		if !slices.IsSorted(d.Tools) {
 			t.Errorf("unsorted tools: %v", d.Tools)
 		}
+		for i := 1; i < len(d.Tools); i++ {
+			if d.Tools[i] == d.Tools[i-1] {
+				t.Errorf("%s has duplicate tool %s", d.Name, d.Tools[i])
+			}
+		}
 		for _, name := range d.Tools {
 			if _, ok := registry.Get(name); !ok {
 				t.Errorf("%s has unshipped tool %s", d.Name, name)
@@ -83,6 +88,12 @@ func TestOverride(t *testing.T) {
 		o := agentdef.Override{Prompt: new(strings.Repeat("x", n))}
 		if (o.Validate() == nil) != (n == 65536) {
 			t.Errorf("length %d: %v", n, o.Validate())
+		}
+	}
+	for _, prompt := range []string{"\x00", "before\x00after"} {
+		o := agentdef.Override{Prompt: &prompt}
+		if err := o.Validate(); err == nil {
+			t.Errorf("prompt %q with NUL was accepted", prompt)
 		}
 	}
 }

@@ -523,9 +523,29 @@ describe("agent definitions", () => {
       { class: "" },
       { class: "unknown" },
       { prompt: "é".repeat(32769) },
+      { prompt: "before\0after" },
     ]) {
       expect((await call(mock, "PUT", "/api/agents/eika", body)).status).toBe(400);
     }
     expect(mock.contractBreaks).toEqual([]);
+  });
+
+  it("refuses unknown override fields without changing the agent", async () => {
+    const mock = open("workbench");
+    await call(mock, "PUT", "/api/agents/eika", { class: "fast", prompt: "saved" });
+    const before = await call(mock, "GET", "/api/agents/eika");
+    for (const body of [
+      { class: "deep", tools: ["bash"] },
+      { prompt: "changed", name: "other" },
+      { compaction: {} },
+    ]) {
+      expect((await call(mock, "PUT", "/api/agents/eika", body)).status).toBe(400);
+    }
+    expect((await call(mock, "GET", "/api/agents/eika")).body).toEqual(before.body);
+    expect(mock.contractBreaks).toEqual([
+      "PUT /api/agents/{name} request: $.tools: unknown field",
+      "PUT /api/agents/{name} request: $.name: unknown field",
+      "PUT /api/agents/{name} request: $.compaction: unknown field",
+    ]);
   });
 });

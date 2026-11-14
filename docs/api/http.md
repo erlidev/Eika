@@ -1344,8 +1344,8 @@ Returns one `Agent`. An unknown name returns 404.
 Replaces the override with `{class?: string | null, prompt?: string | null}`.
 Null or an omitted field uses the built-in value. An empty prompt is an explicit
 value. Class must be `main`, `fast` or `deep`; `decision` is refused. Prompt is
-limited to 65,536 UTF-8 bytes. Other fields are refused. Returns the effective
-`Agent` with defaults and overrides. Unknown names return 404; invalid input
+limited to 65,536 UTF-8 bytes and cannot contain NUL. Other fields are refused.
+Returns the effective `Agent` with defaults and overrides. Unknown names return 404; invalid input
 returns 400. This route cannot add agents or change tools or compaction prompts.
 
 ### `DELETE /api/agents/{name}`

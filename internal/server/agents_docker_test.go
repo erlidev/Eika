@@ -54,7 +54,7 @@ func TestAgentRoutes(t *testing.T) {
 	}
 	for _, body := range []map[string]any{
 		{"class": "decision"}, {"class": ""}, {"class": "unknown"}, {"class": 12},
-		{"prompt": strings.Repeat("x", 65537)}, {"tools": []string{"bash"}},
+		{"prompt": strings.Repeat("x", 65537)}, {"prompt": "before\x00after"}, {"tools": []string{"bash"}},
 		{"name": "new"}, {"compaction": map[string]any{}},
 	} {
 		refused(t, request(t, a.Server, "PUT", "/api/agents/eika", body), 400)

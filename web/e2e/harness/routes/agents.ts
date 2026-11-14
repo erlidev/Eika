@@ -31,6 +31,9 @@ export function agentRoutes({ w, on }: RouteContext): void {
       return fail(400, "invalid_request", "class must be main, fast or deep");
     }
     const prompt = body.prompt ?? null;
+    if (typeof prompt === "string" && prompt.includes("\0")) {
+      return fail(400, "invalid_request", "prompt must not contain NUL");
+    }
     if (
       prompt !== null &&
       (typeof prompt !== "string" || new TextEncoder().encode(prompt).length > 65536)

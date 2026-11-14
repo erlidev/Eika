@@ -3,6 +3,7 @@ package agentdef
 import (
 	"embed"
 	"fmt"
+	"strings"
 )
 
 //go:embed prompts/*.md
@@ -32,13 +33,16 @@ type Override struct {
 	Prompt *string `json:"prompt"`
 }
 
-// Validate rejects unsupported classes and prompts larger than 64 KiB.
+// Validate rejects unsupported classes, NUL bytes and prompts larger than 64 KiB.
 func (o Override) Validate() error {
 	if o.Class != nil && *o.Class != "main" && *o.Class != "fast" && *o.Class != "deep" {
 		return fmt.Errorf("class must be main, fast or deep")
 	}
 	if o.Prompt != nil && len(*o.Prompt) > 64<<10 {
 		return fmt.Errorf("prompt must be at most 65536 bytes")
+	}
+	if o.Prompt != nil && strings.ContainsRune(*o.Prompt, '\x00') {
+		return fmt.Errorf("prompt must not contain NUL")
 	}
 	return nil
 }

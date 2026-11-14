@@ -1613,3 +1613,20 @@ Checks run in this restricted worktree:
 
 The full gate is not recorded as passed before it runs. Database execution and
 local-socket integration tests remain unverified in this environment.
+
+### P2-01 review follow-up — 2026-11-14
+
+Reject NUL in agent prompt overrides before Postgres receives them. The mock
+rejects the same prompt, and its shared contract decoder is tested against
+unknown `tools`, `name` and `compaction` fields without changing the stored
+override. API documentation states the prompt constraint.
+
+Compared the abandoned agent definitions with the shipped definitions. Adopted
+its duplicate-tool test and its guidance to evaluate sources and report
+follow-ups. Kept the phased tool lists and limits. The current prompts retain
+the other guidance and the per-agent compaction prompts.
+
+Focused Go definition, handler, contract and documentation tests passed. The
+Docker-tagged agent route test skipped because Docker was unavailable. Web
+unit tests passed (41 files, 477 tests), as did typecheck and lint. Go lint
+passed. Full `make check` remains for the user's environment.
