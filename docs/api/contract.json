@@ -3,6 +3,9 @@
     "DELETE /api/agents/{name}": {
       "status": 204
     },
+    "DELETE /api/instructions": {
+      "status": 204
+    },
     "DELETE /api/mcp/servers/{id}": {
       "status": 204
     },
@@ -13,6 +16,9 @@
       "status": 204
     },
     "DELETE /api/profiles/{id}": {
+      "status": 204
+    },
+    "DELETE /api/projects/{id}/instructions": {
       "status": 204
     },
     "DELETE /api/providers/{id}": {
@@ -284,6 +290,15 @@
               }
             }
           }
+        }
+      }
+    },
+    "GET /api/instructions": {
+      "status": 200,
+      "response": {
+        "object": {
+          "about_me": "string",
+          "rules": "string"
         }
       }
     },
@@ -887,6 +902,14 @@
           "slug": "string",
           "status": "string",
           "updated_at": "string"
+        }
+      }
+    },
+    "GET /api/projects/{id}/instructions": {
+      "status": 200,
+      "response": {
+        "object": {
+          "instructions": "string"
         }
       }
     },
@@ -4418,6 +4441,21 @@
         }
       }
     },
+    "PUT /api/instructions": {
+      "status": 200,
+      "request": {
+        "object": {
+          "about_me": "string",
+          "rules": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "about_me": "string",
+          "rules": "string"
+        }
+      }
+    },
     "PUT /api/profiles/{id}": {
       "status": 200,
       "request": {
@@ -4556,6 +4594,19 @@
         "optional": [
           "model_id"
         ]
+      }
+    },
+    "PUT /api/projects/{id}/instructions": {
+      "status": 200,
+      "request": {
+        "object": {
+          "instructions": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "instructions": "string"
+        }
       }
     },
     "PUT /api/search/keys/{name}": {

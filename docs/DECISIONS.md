@@ -1974,3 +1974,18 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - **Project metadata excludes instructions.** Migration 0012 adds metadata only.
   The create and update shapes cannot carry instructions. P2-03 adds a separate
   user instruction path; project tools use only the metadata store methods.
+
+## User instructions
+
+- **Instruction writes have separate APIs and store methods.** Migration 0013
+  stores global About me and rules in one row, and project text in rows keyed
+  by project ID. Project metadata types have no instruction field. Future
+  project tools use those metadata methods and cannot write instructions.
+  A shared metadata update with a caller flag would weaken this boundary.
+- **PUT replaces text; DELETE clears it.** Both global fields are required on
+  PUT, so a missing or null field cannot erase stored text by accident. Empty
+  text is valid. Each field is limited to 64 KiB of UTF-8 without NUL. Reads
+  return empty text before a first write; an unknown project returns 404.
+- **Legacy profile instructions stay separate.** Migration 0013 does not copy
+  them into global rules: several profiles can have different rules. Current
+  runs still use profiles. P2-07 adds instruction snapshots to the preamble.

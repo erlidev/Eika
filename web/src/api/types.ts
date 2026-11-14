@@ -8,6 +8,7 @@
  */
 
 export * from "@/api/types/auth";
+export * from "@/api/types/instructions";
 export * from "@/api/types/projects";
 export * from "@/api/types/errors";
 export * from "@/api/types/mcp";

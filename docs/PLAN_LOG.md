@@ -9,6 +9,12 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-14: P2-03 added global About me/rules and separate user-only
+  project instruction storage and authenticated APIs in migration 0013.
+  Tests cover validation, CRUD, scope isolation, metadata write separation,
+  persistence and populated database upgrades. `make check` passes.
+  Editors and preamble snapshots remain in P3-07, P3-10 and P2-07.
+
 - 2026-11-14: P2-02 added project metadata and authenticated API in migration
   0012, with fixed slugs, validated partial updates and status-based archive.
   Tests cover defaults, validation, conflicts, concurrency, authentication,

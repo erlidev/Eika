@@ -51,10 +51,16 @@ type searchKeysResponse struct {
 // a type this table names wrongly fails the handler tests, which check every
 // response they get against the contract.
 var routeWire = map[string]wire{
-	"GET /api/projects":        {status: http.StatusOK, response: projectsResponse{}},
-	"POST /api/projects":       {status: http.StatusCreated, request: createProjectRequest{}, response: projectBody{}},
-	"GET /api/projects/{id}":   {status: http.StatusOK, response: projectBody{}},
-	"PATCH /api/projects/{id}": {status: http.StatusOK, request: store.ProjectUpdate{}, response: projectBody{}},
+	"GET /api/instructions":                  {status: http.StatusOK, response: store.GlobalInstructions{}},
+	"PUT /api/instructions":                  {status: http.StatusOK, request: putInstructionsRequest{}, response: store.GlobalInstructions{}},
+	"DELETE /api/instructions":               {status: http.StatusNoContent},
+	"GET /api/projects/{id}/instructions":    {status: http.StatusOK, response: projectInstructionsBody{}},
+	"PUT /api/projects/{id}/instructions":    {status: http.StatusOK, request: putProjectInstructionsRequest{}, response: projectInstructionsBody{}},
+	"DELETE /api/projects/{id}/instructions": {status: http.StatusNoContent},
+	"GET /api/projects":                      {status: http.StatusOK, response: projectsResponse{}},
+	"POST /api/projects":                     {status: http.StatusCreated, request: createProjectRequest{}, response: projectBody{}},
+	"GET /api/projects/{id}":                 {status: http.StatusOK, response: projectBody{}},
+	"PATCH /api/projects/{id}":               {status: http.StatusOK, request: store.ProjectUpdate{}, response: projectBody{}},
 
 	"GET /api/agents":           {status: http.StatusOK, response: agentsResponse{}},
 	"GET /api/agents/{name}":    {status: http.StatusOK, response: agentBody{}},

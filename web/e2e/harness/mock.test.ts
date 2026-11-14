@@ -660,3 +660,90 @@ describe("project metadata", () => {
     expect(mock.contractBreaks).toHaveLength(3);
   });
 });
+
+describe("user instructions", () => {
+  it("keeps global and project text separate from metadata", async () => {
+    const mock = open("workbench");
+    const global = { about_me: "About me\n", rules: "Use metric" };
+    expect((await call(mock, "GET", "/api/instructions")).body).toEqual({
+      about_me: "",
+      rules: "",
+    });
+    expect((await call(mock, "PUT", "/api/instructions", global)).body).toEqual(global);
+    await call(mock, "POST", "/api/projects", { name: "One", slug: "one" });
+    await call(mock, "POST", "/api/projects", { name: "Two", slug: "two" });
+    const [one, two] = mock.world.projects;
+    if (!one || !two) throw new Error("projects not created");
+    const path = `/api/projects/${one.id}/instructions`;
+    const other = `/api/projects/${two.id}/instructions`;
+    const text = { instructions: "# Rules\nKeep this.\n" };
+    expect((await call(mock, "GET", path)).body).toEqual({ instructions: "" });
+    expect((await call(mock, "PUT", path, text)).body).toEqual(text);
+    await call(mock, "PATCH", `/api/projects/${one.id}`, { description: "Changed" });
+    expect((await call(mock, "GET", path)).body).toEqual(text);
+    expect((await call(mock, "GET", other)).body).toEqual({ instructions: "" });
+    expect((await call(mock, "GET", "/api/instructions")).body).toEqual(global);
+    for (const target of ["/api/instructions", path]) {
+      const valid = target === path ? text : global;
+      for (const method of ["GET", "PUT", "DELETE"]) {
+        expect(await mock.answer(method, target, undefined, JSON.stringify(valid))).toMatchObject({
+          status: 401,
+        });
+      }
+      for (let i = 0; i < 2; i++) {
+        expect((await call(mock, "DELETE", target)).status).toBe(204);
+      }
+    }
+    expect((await call(mock, "GET", path)).body).toEqual({ instructions: "" });
+    expect((await call(mock, "GET", "/api/instructions")).body).toEqual({
+      about_me: "",
+      rules: "",
+    });
+    for (const method of ["GET", "PUT", "DELETE"]) {
+      expect((await call(mock, method, "/api/projects/missing/instructions", text)).status).toBe(
+        404,
+      );
+    }
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
+  it("rejects incomplete, invalid and foreign instruction fields", async () => {
+    const mock = open("workbench");
+    for (const body of [
+      null,
+      {},
+      { about_me: "a" },
+      { about_me: "a", rules: null },
+      { about_me: "a", rules: 4 },
+      { about_me: "a", rules: "\0" },
+      { about_me: "a", rules: "a".repeat(65537) },
+    ]) {
+      expect((await call(mock, "PUT", "/api/instructions", body)).status).toBe(400);
+    }
+    await call(mock, "POST", "/api/projects", { name: "One", slug: "one" });
+    const one = mock.world.projects[0];
+    if (!one) throw new Error("project not created");
+    const path = `/api/projects/${one.id}/instructions`;
+    for (const body of [
+      null,
+      {},
+      { instructions: null },
+      { instructions: 4 },
+      { instructions: "\0" },
+      { instructions: "é".repeat(32769) },
+    ]) {
+      expect((await call(mock, "PUT", path, body)).status).toBe(400);
+    }
+    expect((await call(mock, "PUT", path, { instructions: "a", rules: "b" })).status).toBe(400);
+    expect(
+      (
+        await call(mock, "PUT", "/api/instructions", {
+          about_me: "a",
+          rules: "b",
+          project_id: one.id,
+        })
+      ).status,
+    ).toBe(400);
+    expect((await call(mock, "GET", path)).body).toEqual({ instructions: "" });
+  });
+});

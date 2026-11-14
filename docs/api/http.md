@@ -1398,3 +1398,45 @@ status or directory is invalid. Returns the Project, or 404 for an unknown ID.
 Invalid fields return 400. Updates apply together under a row lock. A null body,
 unknown field, `slug` or `instructions` returns 400. Creation also rejects a null
 body and unknown fields, including `instructions`.
+
+## User instructions
+
+All instruction routes require authentication. Agents have no tool that writes
+instructions. Project metadata routes do not accept instruction fields.
+Text is preserved as entered, including whitespace and Markdown. Each field
+must be valid UTF-8 without NUL, at most 65536 bytes. Invalid text, missing or
+null PUT fields, and unknown fields return 400. PUT replaces all fields in its
+scope. Empty strings clear text. These routes do not change current runs.
+
+### `GET /api/instructions`
+
+Returns global instructions, with empty strings on a new database:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `about_me` | string | User's description of themselves |
+| `rules` | string | User's standing rules |
+
+### `PUT /api/instructions`
+
+Requires `{about_me: string, rules: string}`. Returns the saved global
+instructions (200). Both fields must be present.
+
+### `DELETE /api/instructions`
+
+Clears both global fields. Returns 204, including when already empty.
+
+### `GET /api/projects/{id}/instructions`
+
+Returns `{instructions: string}` (200), with empty text before a first write.
+The project ID is required; an unknown project returns 404.
+
+### `PUT /api/projects/{id}/instructions`
+
+Requires `{instructions: string}`. Returns the saved project instructions (200).
+An unknown project returns 404. Other projects and global text stay unchanged.
+
+### `DELETE /api/projects/{id}/instructions`
+
+Clears project text. Returns 204, including when already empty. An unknown
+project returns 404. Project metadata stays unchanged.
