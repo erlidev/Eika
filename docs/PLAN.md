@@ -210,7 +210,7 @@ phase, and the exit is checked there.
       `project_create` and `project_update`. The fields are `name`, `slug`,
       `description`, `status`, `instructions` and `directory`, which defaults to
       `/home/eika/projects/<slug>` on `home`. There is no `private` field.
-      - [ ] **P2-02**: Add project storage and API.
+      - [x] **P2-02**: Add project storage and API.
       - [ ] **P2-06**: Add project tools and executor access to STATUS.md.
 - [ ] Add the file tools `file_read`, `file_write` and `file_edit` over the
       executor, with limits like bash's. Record in `DECISIONS.md` why they are

@@ -13,6 +13,7 @@ Session    A tree of entries with a head pointer, in one computer.
 Chat       A session with no computer: only tools that need none.
 Run        One execution of the agent loop from a session's head.
 Profile    A named, nullable configuration of what a run sends.
+Project    A durable area of work with metadata and a directory on home.
 ```
 
 Every agent action on files or processes happens inside a computer container
@@ -426,6 +427,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, api (`chat` or `responses`), capabilities (jsonb, with the Responses check's outcome), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
 | `models` | provider, name (unique), kind (chat or decision), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `agents` | built-in name, nullable class and prompt overrides |
+| `projects` | stable slug, name, description, status, sandbox directory, timestamps |
 | `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
 | `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot` (the server's slot the request named, NULL when it named none), `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
@@ -928,3 +930,17 @@ explicit value. The authenticated agent API returns effective values, defaults
 and overrides. It accepts only chat classes and cannot change capabilities.
 Profiles still configure current runs. Runtime adoption is P2-08; editing an
 agent definition has no effect on current profile-based runs.
+
+## Projects
+
+Migration 0012 adds `core.projects`. Each record has a stable ID and unique
+slug, a name, a description, a status, a sandbox directory and UTC timestamps.
+The default directory is `/home/eika/projects/<slug>` on the home computer.
+`store.CreateProject` validates and applies defaults; `store.UpdateProject`
+validates partial updates under a row lock. Slugs do not change.
+
+The authenticated project API lists all statuses, creates records, reads a
+record by ID and updates metadata. Archive uses the status field. These paths
+are metadata only: no handler accesses the filesystem. Project metadata has no
+instruction field. Instruction storage and its user API are P2-03; executor
+file operations and project tools are P2-05 and P2-06.

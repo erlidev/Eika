@@ -852,6 +852,44 @@
         ]
       }
     },
+    "GET /api/projects": {
+      "status": 200,
+      "response": {
+        "object": {
+          "projects": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "created_at": "string",
+                  "description": "string",
+                  "directory": "string",
+                  "id": "string",
+                  "name": "string",
+                  "slug": "string",
+                  "status": "string",
+                  "updated_at": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/projects/{id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "created_at": "string",
+          "description": "string",
+          "directory": "string",
+          "id": "string",
+          "name": "string",
+          "slug": "string",
+          "status": "string",
+          "updated_at": "string"
+        }
+      }
+    },
     "GET /api/providers": {
       "status": 200,
       "response": {
@@ -2911,6 +2949,29 @@
         ]
       }
     },
+    "PATCH /api/projects/{id}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "description": "string",
+          "directory": "string",
+          "name": "string",
+          "status": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "created_at": "string",
+          "description": "string",
+          "directory": "string",
+          "id": "string",
+          "name": "string",
+          "slug": "string",
+          "status": "string",
+          "updated_at": "string"
+        }
+      }
+    },
     "PATCH /api/providers/{id}": {
       "status": 200,
       "request": {
@@ -3779,6 +3840,30 @@
         "optional": [
           "model_id"
         ]
+      }
+    },
+    "POST /api/projects": {
+      "status": 201,
+      "request": {
+        "object": {
+          "description": "string",
+          "directory": "string",
+          "name": "string",
+          "slug": "string",
+          "status": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "created_at": "string",
+          "description": "string",
+          "directory": "string",
+          "id": "string",
+          "name": "string",
+          "slug": "string",
+          "status": "string",
+          "updated_at": "string"
+        }
       }
     },
     "POST /api/providers": {

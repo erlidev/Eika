@@ -549,3 +549,114 @@ describe("agent definitions", () => {
     ]);
   });
 });
+
+describe("project metadata", () => {
+  it("creates defaults, keeps slugs unique and applies partial updates", async () => {
+    const mock = open("workbench");
+    expect((await call(mock, "GET", "/api/projects")).body).toEqual({ projects: [] });
+    const created = await call(mock, "POST", "/api/projects", { name: "Taxes", slug: "taxes" });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      name: "Taxes",
+      slug: "taxes",
+      status: "active",
+      description: "",
+      directory: "/home/eika/projects/taxes",
+    });
+    const project = mock.world.projects[0];
+    if (!project) throw new Error("project not created");
+    const path = `/api/projects/${project.id}`;
+    expect((await call(mock, "GET", path)).body).toEqual(created.body);
+    expect(
+      (await call(mock, "POST", "/api/projects", { name: "Copy", slug: "taxes" })).status,
+    ).toBe(409);
+    for (const status of ["paused", "done", "archived", "active"]) {
+      const updated = await call(mock, "PATCH", path, { status, description: "This year" });
+      expect(updated.status).toBe(200);
+      expect(updated.body).toMatchObject({ status, slug: "taxes", description: "This year" });
+    }
+    expect(
+      (await call(mock, "PATCH", path, { description: "", directory: "/tmp/repo" })).body,
+    ).toMatchObject({ description: "", directory: "/tmp/repo", name: "Taxes" });
+    expect((await call(mock, "POST", "/api/projects", { name: "Other", slug: "aaa" })).status).toBe(
+      201,
+    );
+    expect((await call(mock, "GET", "/api/projects")).body).toMatchObject({
+      projects: [{ slug: "aaa" }, { slug: "taxes" }],
+    });
+    expect((await call(mock, "GET", "/api/projects/missing")).status).toBe(404);
+    expect((await call(mock, "PATCH", "/api/projects/missing", {})).status).toBe(404);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
+  it("refuses unsafe paths and invalid metadata without changing the record", async () => {
+    const mock = open("workbench");
+    await call(mock, "POST", "/api/projects", { name: "Taxes", slug: "taxes" });
+    const project = mock.world.projects[0];
+    if (!project) throw new Error("project not created");
+    const path = `/api/projects/${project.id}`;
+    const before = structuredClone(mock.world.projects[0]);
+    expect((await call(mock, "PATCH", path, null)).status).toBe(400);
+    expect((await call(mock, "POST", "/api/projects", null)).status).toBe(400);
+    expect((await call(mock, "PATCH", path, { name: null, status: null })).status).toBe(200);
+    for (const [method, route] of [
+      ["GET", "/api/projects"],
+      ["POST", "/api/projects"],
+      ["GET", path],
+      ["PATCH", path],
+    ]) {
+      if (!method || !route) throw new Error("route missing");
+      expect(await mock.answer(method, route, undefined, "{}")).toMatchObject({ status: 401 });
+    }
+    for (const directory of [
+      "",
+      "/",
+      "relative",
+      "/a/../b",
+      "/a/./b",
+      "/a//b",
+      "/a/",
+      "/a\\b",
+      "/a\0b",
+      "/a\nb",
+    ]) {
+      expect((await call(mock, "PATCH", path, { directory })).status, directory).toBe(400);
+    }
+    for (const body of [
+      { name: "" },
+      { name: " " },
+      { status: "bad" },
+      { status: "" },
+      { description: "a\0b" },
+    ]) {
+      expect((await call(mock, "PATCH", path, body)).status).toBe(400);
+    }
+    for (const slug of ["../bad", "UPPER", "a--b", "-a", "a-", "a/b", "a\n", "x".repeat(81)]) {
+      expect((await call(mock, "POST", "/api/projects", { name: "Bad", slug })).status).toBe(400);
+    }
+    expect(mock.world.projects[0]).toEqual(before);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
+  it("rejects instruction writes and slug changes through the contract", async () => {
+    const mock = open("workbench");
+    await call(mock, "POST", "/api/projects", { name: "Taxes", slug: "taxes" });
+    const project = mock.world.projects[0];
+    if (!project) throw new Error("project not created");
+    const path = `/api/projects/${project.id}`;
+    for (const body of [{ instructions: "attack" }, { slug: "changed" }]) {
+      expect((await call(mock, "PATCH", path, body)).status).toBe(400);
+    }
+    expect(
+      (
+        await call(mock, "POST", "/api/projects", {
+          name: "Bad",
+          slug: "bad",
+          instructions: "attack",
+        })
+      ).status,
+    ).toBe(400);
+    expect(mock.world.projects).toHaveLength(1);
+    expect(mock.contractBreaks).toHaveLength(3);
+  });
+});

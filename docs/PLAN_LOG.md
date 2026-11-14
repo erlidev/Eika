@@ -9,6 +9,17 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-14: P2-02 added project metadata and authenticated API in migration
+  0012, with fixed slugs, validated partial updates and status-based archive.
+  Tests cover defaults, validation, conflicts, concurrency, authentication,
+  refused fields and deletion, unchanged data, and populated 0011 upgrades.
+  `make check` passes.
+
+- 2026-11-14: P2-01 added built-in agent definitions, prompts, tools, limits
+  and authenticated override API; migration 0011 stores class and prompt overrides.
+  Tests cover definitions, duplicate tools, overrides, invalid prompts and fields,
+  API contracts and populated database upgrades. `make check` passes.
+
 - 2026-11-14: P3-01 retired full-page workbench, chat, home, run,
   reasoning, compaction and command palette screenshots. P3-04 replaces the
   shell and Chat baselines; P3-08 replaces the card and compaction baselines.
@@ -1577,56 +1588,3 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   - No UI screenshot was taken: the dev binary does not embed the web build.
     No UI changed in the close. The bench stopped `llama-server` for the runs
     and restored it after.
-
-## 2026-11-14 — P2-01: Agent definitions
-
-Added `internal/agentdef` with the built-ins `eika`, `researcher` and `worker`,
-embedded system and per-agent Pi compaction prompts, fixed sorted lists of
-shipped tools, and limits of 40/200 model calls. Migration 0011 adds nullable
-class and prompt overrides. The authenticated list, detail, replace and reset
-API returns effective values, built-in defaults and overrides. It accepts chat
-classes only, preserves empty prompts, bounds prompt bytes, and rejects changes
-to capabilities. Profiles and current runtime callers remain in place for
-P2-08/P2-11. No dependency was added.
-
-Added definition, store, API and populated-database upgrade tests. Updated the
-API contract, TypeScript types, mock routes, architecture, decisions, extension
-guide and runtime design. Marked only the P2-01 sub-item complete.
-
-Checks run in this restricted worktree:
-
-- `make contract`: passed; contract and HTTP documentation tests passed.
-- `go test ./internal ./internal/agent ./internal/agentdef ./internal/store`:
-  passed. Focused server contract and documentation tests passed.
-- `go test ./...`: attempted; the full suite fails because local test sockets
-  are denied (`socket: operation not permitted`).
-- `go test -tags docker ./cmd/... ./internal/... ./evals/... -run '^$'`:
-  all packages compiled. The new agent store, API and migration tests were also
-  invoked with `-v`; all three skipped because Docker is unavailable.
-- `make lint-go`: passed, including vet, staticcheck and golangci-lint
-  (`0 issues`). `make fmt-check`: passed. Writable caches under `/tmp` were used
-  after the default caches were found to be read-only; `GOPROXY=off` was set.
-- In `web`: `npm test` passed (41 files, 476 tests), `npm run typecheck` passed,
-  and `npm run lint` passed. The mock tests cover the new agent routes.
-- Full `make check`, visual tests and smoke tests remain for the user's run.
-  No UI, compose, Dockerfile, deployment or `server.Run` wiring changed.
-
-The full gate is not recorded as passed before it runs. Database execution and
-local-socket integration tests remain unverified in this environment.
-
-### P2-01 review follow-up — 2026-11-14
-
-Reject NUL in agent prompt overrides before Postgres receives them. The mock
-rejects the same prompt, and its shared contract decoder is tested against
-unknown `tools`, `name` and `compaction` fields without changing the stored
-override. API documentation states the prompt constraint.
-
-Compared the abandoned agent definitions with the shipped definitions. Adopted
-its duplicate-tool test and its guidance to evaluate sources and report
-follow-ups. Kept the phased tool lists and limits. The current prompts retain
-the other guidance and the per-agent compaction prompts.
-
-Focused Go definition, handler, contract and documentation tests passed. The
-Docker-tagged agent route test skipped because Docker was unavailable. Web
-unit tests passed (41 files, 477 tests), as did typecheck and lint. Go lint
-passed. Full `make check` remains for the user's environment.

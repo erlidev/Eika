@@ -1353,3 +1353,48 @@ returns 400. This route cannot add agents or change tools or compaction prompts.
 Removes both overrides and returns 204, including when no override exists.
 The built-in definition stays. An unknown name returns 404.
 All agent routes require bearer authentication.
+
+## Projects
+
+Project metadata excludes instructions. All routes require a bearer token.
+Archive a project with `status`; there is no delete route. IDs identify records
+in detail and update routes. Slugs are fixed after creation.
+
+### `GET /api/projects`
+
+Returns `{projects: Project[]}` in slug order, including all statuses. An empty
+list is `[]`.
+
+| Project field | Type | Meaning |
+|---|---|---|
+| `id` | string | Record ID |
+| `slug` | string | Unique, 1–80 ASCII bytes; lowercase letters and digits, with single hyphens between groups |
+| `name` | string | Display name, nonblank, at most 200 UTF-8 bytes |
+| `description` | string | Summary, at most 4096 UTF-8 bytes; empty is allowed |
+| `status` | string | `active`, `paused`, `done` or `archived` |
+| `directory` | string | Clean absolute POSIX path on the home computer, at most 4096 UTF-8 bytes |
+| `created_at`, `updated_at` | string | UTC RFC 3339 timestamps |
+
+Text cannot contain NUL. A directory cannot be `/`, have a trailing slash,
+contain backslashes, control characters, repeated slashes, or `.` or `..`
+components. The API stores paths only; it does not create or access files.
+
+### `POST /api/projects`
+
+Accepts `{slug, name, description?, status?, directory?}`. Omitted or empty
+`status` defaults to `active`; omitted or empty `directory` defaults to
+`/home/eika/projects/<slug>`. Omitted description is empty. Returns the Project
+with 201. A duplicate slug returns 409. Invalid fields return 400.
+
+### `GET /api/projects/{id}`
+
+Returns the Project, or 404 for an unknown ID.
+
+### `PATCH /api/projects/{id}`
+
+Accepts optional `name`, `description`, `status` and `directory`. Omitted or null
+fields keep their stored values. An empty description clears it; empty name,
+status or directory is invalid. Returns the Project, or 404 for an unknown ID.
+Invalid fields return 400. Updates apply together under a row lock. A null body,
+unknown field, `slug` or `instructions` returns 400. Creation also rejects a null
+body and unknown fields, including `instructions`.
