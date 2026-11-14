@@ -9,6 +9,12 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-14: P3-01 retired full-page workbench, chat, home, run,
+  reasoning, compaction and command palette screenshots. P3-04 replaces the
+  shell and Chat baselines; P3-08 replaces the card and compaction baselines.
+  Kept component, accessibility, settings, setup and MCP checks and interaction
+  tests. `make check` passes. No wire changes; smoke and live do not apply.
+
 - 2026-11-14: P2-00 split Phase 2 and 3 items by scheduled package and
   recorded the forward-upgrade policy. Corrected runtime's conflicting home
   creation and `computer_id` rules. No code or wire types changed; live tests

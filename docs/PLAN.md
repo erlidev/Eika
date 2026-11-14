@@ -311,10 +311,10 @@ sessions.
 
 The mobile-first app. Design: `design/interface.md`.
 
-- [ ] Take the pages this phase replaces out of the visual suite, so `make check`
+- [x] Take the pages this phase replaces out of the visual suite, so `make check`
       does not compare screens that are about to go. Each new page gets its
       baselines in the item that builds it.
-      - [ ] **P3-01**: Retire only replaced visual baselines.
+      - [x] **P3-01**: Retire only replaced visual baselines.
 - [ ] Add a touch density under `(pointer: coarse)` (type step, 44 px targets, no
       hover-only controls). Add a style guide section and ESLint rules where they
       apply.

@@ -8,10 +8,7 @@
 import { defaultSandbox } from "../harness/world.ts";
 import { expect, test } from "../fixtures.ts";
 
-test("the sidebar lists a session on the home computer with the chats", async ({
-  open,
-  expectShot,
-}) => {
+test("the sidebar lists a session on the home computer with the chats", async ({ open }) => {
   const eika = await open({ scenario: "home" });
   const chats = eika.page.getByRole("navigation", { name: "Chats" });
   await expect(
@@ -22,7 +19,6 @@ test("the sidebar lists a session on the home computer with the chats", async ({
   ).toBeVisible();
   const header = eika.page.getByRole("region", { name: "Session" }).locator("header");
   await expect(header.getByText("Home computer")).toBeVisible();
-  await expectShot(eika, "home-light");
 });
 
 test("a chat on the home computer is opened from the sidebar", async ({ open, expectAria }) => {
