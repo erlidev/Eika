@@ -29,6 +29,7 @@ import { fail } from "./routes/context.ts";
 import type { Handler, Reply, RouteContext } from "./routes/context.ts";
 import { mcpRoutes } from "./routes/mcp.ts";
 import { projectRoutes } from "./routes/projects.ts";
+import { instructionRoutes } from "./routes/instructions.ts";
 import { agentRoutes } from "./routes/agents.ts";
 import { profileRoutes } from "./routes/profiles.ts";
 import { providerRoutes } from "./routes/providers.ts";
@@ -501,6 +502,7 @@ export class MockHarness {
     profileRoutes(ctx);
     agentRoutes(ctx);
     projectRoutes(ctx);
+    instructionRoutes(ctx);
     runRoutes(ctx);
     mcpRoutes(ctx);
 

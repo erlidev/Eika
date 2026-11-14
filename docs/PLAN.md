@@ -196,7 +196,7 @@ phase, and the exit is checked there.
       - [ ] **P2-07**: Build and store the preamble snapshot.
 - [ ] Instructions: global "About me" and rules, plus project instructions.
       Stored as rows and edited in the UI. No agent tool writes them.
-      - [ ] **P2-03**: Add storage and authenticated APIs.
+      - [x] **P2-03**: Add storage and authenticated APIs.
       - [ ] **P3-07**: Add global instructions Settings.
       - [ ] **P3-10**: Add project instructions editor.
 - [ ] Ensure the one home session on start, as the home computer is

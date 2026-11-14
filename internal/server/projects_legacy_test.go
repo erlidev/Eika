@@ -10,7 +10,7 @@ import (
 )
 
 func TestProjectRequestsRejectLegacyFields(t *testing.T) {
-	for _, field := range []string{"kind", "host_path", "remote_url", "default_branch"} {
+	for _, field := range []string{"kind", "host_path", "remote_url", "default_branch", "instructions", "about_me", "rules"} {
 		t.Run(field, func(t *testing.T) {
 			create := fmt.Sprintf(`{"name":"Taxes","slug":"taxes",%q:"legacy"}`, field)
 			if _, err := decodeJSON[createProjectRequest](httptest.NewRequest("POST", "/api/projects", strings.NewReader(create))); err == nil {

@@ -12,6 +12,8 @@ import { eventTypes } from "../../src/api/events.ts";
 import { contract } from "./contract.ts";
 import { MockHarness, mockToken } from "./mock.ts";
 import type { Reply } from "./mock.ts";
+import { instructionRoutes } from "./routes/instructions.ts";
+import type { Handler, RouteContext } from "./routes/context.ts";
 import { scenario } from "./scenarios.ts";
 
 /**
@@ -658,5 +660,125 @@ describe("project metadata", () => {
     ).toBe(400);
     expect(mock.world.projects).toHaveLength(1);
     expect(mock.contractBreaks).toHaveLength(3);
+  });
+});
+
+describe("user instructions", () => {
+  it("rejects unknown fields in route handlers before changing stored text", async () => {
+    const mock = open("workbench");
+    await call(mock, "POST", "/api/projects", { name: "One", slug: "one" });
+    const project = mock.world.projects[0];
+    if (!project) throw new Error("project not created");
+    const handlers = new Map<string, Handler>();
+    instructionRoutes({
+      w: mock.world,
+      on: (method: string, path: string, handler: Handler) => {
+        handlers.set(`${method} ${path}`, handler);
+      },
+    } as RouteContext);
+
+    for (const [key, valid, unknown] of [
+      ["PUT /api/instructions", { about_me: "saved", rules: "rules" }, { project_id: "one" }],
+      ["PUT /api/projects/{id}/instructions", { instructions: "saved" }, { rules: "injected" }],
+    ] as const) {
+      const handler = handlers.get(key);
+      if (!handler) throw new Error(`missing ${key}`);
+      const run = (body: Record<string, unknown>) =>
+        handler({
+          params: [project.id],
+          query: new URLSearchParams(),
+          body,
+          raw: JSON.stringify(body),
+        });
+      expect((await run(valid)).status).toBe(200);
+      expect((await run({ ...valid, ...unknown })).status).toBe(400);
+    }
+    expect(mock.world.instructions).toEqual({ about_me: "saved", rules: "rules" });
+    expect(mock.world.projectInstructions[project.id]).toBe("saved");
+  });
+
+  it("keeps global and project text separate from metadata", async () => {
+    const mock = open("workbench");
+    const global = { about_me: "About me\n", rules: "Use metric" };
+    expect((await call(mock, "GET", "/api/instructions")).body).toEqual({
+      about_me: "",
+      rules: "",
+    });
+    expect((await call(mock, "PUT", "/api/instructions", global)).body).toEqual(global);
+    await call(mock, "POST", "/api/projects", { name: "One", slug: "one" });
+    await call(mock, "POST", "/api/projects", { name: "Two", slug: "two" });
+    const [one, two] = mock.world.projects;
+    if (!one || !two) throw new Error("projects not created");
+    const path = `/api/projects/${one.id}/instructions`;
+    const other = `/api/projects/${two.id}/instructions`;
+    const text = { instructions: "# Rules\nKeep this.\n" };
+    expect((await call(mock, "GET", path)).body).toEqual({ instructions: "" });
+    expect((await call(mock, "PUT", path, text)).body).toEqual(text);
+    await call(mock, "PATCH", `/api/projects/${one.id}`, { description: "Changed" });
+    expect((await call(mock, "GET", path)).body).toEqual(text);
+    expect((await call(mock, "GET", other)).body).toEqual({ instructions: "" });
+    expect((await call(mock, "GET", "/api/instructions")).body).toEqual(global);
+    for (const target of ["/api/instructions", path]) {
+      const valid = target === path ? text : global;
+      for (const method of ["GET", "PUT", "DELETE"]) {
+        expect(await mock.answer(method, target, undefined, JSON.stringify(valid))).toMatchObject({
+          status: 401,
+        });
+      }
+      for (let i = 0; i < 2; i++) {
+        expect((await call(mock, "DELETE", target)).status).toBe(204);
+      }
+    }
+    expect((await call(mock, "GET", path)).body).toEqual({ instructions: "" });
+    expect((await call(mock, "GET", "/api/instructions")).body).toEqual({
+      about_me: "",
+      rules: "",
+    });
+    for (const method of ["GET", "PUT", "DELETE"]) {
+      expect((await call(mock, method, "/api/projects/missing/instructions", text)).status).toBe(
+        404,
+      );
+    }
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
+  it("rejects incomplete, invalid and foreign instruction fields", async () => {
+    const mock = open("workbench");
+    for (const body of [
+      null,
+      {},
+      { about_me: "a" },
+      { about_me: "a", rules: null },
+      { about_me: "a", rules: 4 },
+      { about_me: "a", rules: "\0" },
+      { about_me: "a", rules: "a".repeat(65537) },
+    ]) {
+      expect((await call(mock, "PUT", "/api/instructions", body)).status).toBe(400);
+    }
+    await call(mock, "POST", "/api/projects", { name: "One", slug: "one" });
+    const one = mock.world.projects[0];
+    if (!one) throw new Error("project not created");
+    const path = `/api/projects/${one.id}/instructions`;
+    for (const body of [
+      null,
+      {},
+      { instructions: null },
+      { instructions: 4 },
+      { instructions: "\0" },
+      { instructions: "é".repeat(32769) },
+    ]) {
+      expect((await call(mock, "PUT", path, body)).status).toBe(400);
+    }
+    expect((await call(mock, "PUT", path, { instructions: "a", rules: "b" })).status).toBe(400);
+    expect(
+      (
+        await call(mock, "PUT", "/api/instructions", {
+          about_me: "a",
+          rules: "b",
+          project_id: one.id,
+        })
+      ).status,
+    ).toBe(400);
+    expect((await call(mock, "GET", path)).body).toEqual({ instructions: "" });
   });
 });

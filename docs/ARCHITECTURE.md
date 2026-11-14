@@ -942,5 +942,15 @@ validates partial updates under a row lock. Slugs do not change.
 The authenticated project API lists all statuses, creates records, reads a
 record by ID and updates metadata. Archive uses the status field. These paths
 are metadata only: no handler accesses the filesystem. Project metadata has no
-instruction field. Instruction storage and its user API are P2-03; executor
-file operations and project tools are P2-05 and P2-06.
+instruction field. Executor file operations and project tools are P2-05 and P2-06.
+
+## User instructions
+
+Migration 0013 adds `core.instructions` for global About me and rules, and
+`core.project_instructions` for project text. Reads return empty strings when
+no text is set. Each field accepts up to 64 KiB of UTF-8 text without NUL.
+
+Authenticated GET, PUT and DELETE routes read, replace and clear instructions.
+Project instruction writes use separate store methods and routes from project
+metadata. Agent tools have no instruction write path. Existing profile rules
+stay unchanged. The editors are P3-07 and P3-10; P2-07 adds preamble snapshots.

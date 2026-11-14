@@ -40,6 +40,13 @@ func (s *Server) routes() {
 
 // resourceRoutes registers the routes that read or write the database.
 func (s *Server) resourceRoutes(api *http.ServeMux) {
+	api.HandleFunc("GET /api/instructions", s.handleInstructions)
+	api.HandleFunc("PUT /api/instructions", s.handlePutInstructions)
+	api.HandleFunc("DELETE /api/instructions", s.handleDeleteInstructions)
+	api.HandleFunc("GET /api/projects/{id}/instructions", s.handleProjectInstructions)
+	api.HandleFunc("PUT /api/projects/{id}/instructions", s.handlePutProjectInstructions)
+	api.HandleFunc("DELETE /api/projects/{id}/instructions", s.handleDeleteProjectInstructions)
+
 	api.HandleFunc("GET /api/projects", s.handleListProjects)
 	api.HandleFunc("POST /api/projects", s.handleCreateProject)
 	api.HandleFunc("GET /api/projects/{id}", s.handleProject)
