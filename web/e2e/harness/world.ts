@@ -16,6 +16,7 @@ import {
 import type { RecordedCall, StoredProfile } from "./profiles.ts";
 import type {
   AgentOverride,
+  Project,
   ContentDetail,
   Elicitation,
   Entry,
@@ -123,6 +124,7 @@ export type World = {
   profiles: StoredProfile[];
   /** agentOverrides holds only user overrides of the built-in definitions. */
   agentOverrides: Record<string, AgentOverride>;
+  projects: Project[];
   /** overrides are what each session sets over its profile, by session id. */
   overrides: Record<string, ProfileSettings>;
   /** toolChoices are the sessions' own tool choices, by session id; one with none inherits. */
@@ -221,6 +223,7 @@ export function emptyWorld(): World {
     eventsOnConnect: [],
     profiles: [defaultProfile()],
     agentOverrides: {},
+    projects: [],
     overrides: {},
     toolChoices: {},
     calls: {},

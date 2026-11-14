@@ -404,18 +404,39 @@ func TestTheComputerRoutesAreGone(t *testing.T) {
 	}
 }
 
-func TestTheProjectRoutesAreGone(t *testing.T) {
+func TestLegacyProjectFieldsAndDeleteAreGone(t *testing.T) {
 	a := newAPI(t)
-	for _, c := range []struct{ method, path string }{
-		{"GET", "/api/projects"},
-		{"POST", "/api/projects"},
-		{"GET", "/api/projects/p1"},
-		{"PATCH", "/api/projects/p1"},
-		{"DELETE", "/api/projects/p1"},
-	} {
-		if rec := request(t, a.Server, c.method, c.path, map[string]any{}); rec.Code != 404 && rec.Code != 405 {
-			t.Errorf("%s %s = %d, want 404 or 405", c.method, c.path, rec.Code)
+	created := decodeBody[projectWire](t, request(t, a.Server, "POST", "/api/projects", map[string]any{
+		"name": "Taxes", "slug": "taxes",
+	}), 201)
+	path := "/api/projects/" + created.ID
+
+	for _, field := range []string{"kind", "host_path", "remote_url", "default_branch"} {
+		t.Run(field, func(t *testing.T) {
+			refused(t, request(t, a.Server, "POST", "/api/projects", map[string]any{
+				"name": "Other", "slug": "other", field: "legacy",
+			}), 400)
+			refused(t, request(t, a.Server, "PATCH", path, map[string]any{field: "legacy"}), 400)
+		})
+	}
+	project := decodeBody[map[string]any](t, request(t, a.Server, "GET", path, nil), 200)
+	for _, field := range []string{"kind", "host_path", "remote_url", "default_branch"} {
+		if _, ok := project[field]; ok {
+			t.Errorf("project contains legacy field %q", field)
 		}
+	}
+	if rec := request(t, a.Server, "DELETE", path, nil); rec.Code != 404 && rec.Code != 405 {
+		t.Errorf("DELETE %s = %d, want 404 or 405", path, rec.Code)
+	}
+	got := decodeBody[projectWire](t, request(t, a.Server, "GET", path, nil), 200)
+	if got.ID != created.ID || got.Name != created.Name || got.Slug != created.Slug || got.Directory != created.Directory {
+		t.Errorf("project changed after legacy requests: %+v", got)
+	}
+	list := decodeBody[struct {
+		Projects []projectWire `json:"projects"`
+	}](t, request(t, a.Server, "GET", "/api/projects", nil), 200)
+	if len(list.Projects) != 1 || list.Projects[0].ID != created.ID {
+		t.Errorf("projects after legacy requests = %+v", list.Projects)
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/server/servertest"
+	"github.com/erlidev/eika/internal/store"
 )
 
 // update rewrites the contract file instead of comparing it: `make contract`.
@@ -50,6 +51,11 @@ type searchKeysResponse struct {
 // a type this table names wrongly fails the handler tests, which check every
 // response they get against the contract.
 var routeWire = map[string]wire{
+	"GET /api/projects":        {status: http.StatusOK, response: projectsResponse{}},
+	"POST /api/projects":       {status: http.StatusCreated, request: createProjectRequest{}, response: projectBody{}},
+	"GET /api/projects/{id}":   {status: http.StatusOK, response: projectBody{}},
+	"PATCH /api/projects/{id}": {status: http.StatusOK, request: store.ProjectUpdate{}, response: projectBody{}},
+
 	"GET /api/agents":           {status: http.StatusOK, response: agentsResponse{}},
 	"GET /api/agents/{name}":    {status: http.StatusOK, response: agentBody{}},
 	"PUT /api/agents/{name}":    {status: http.StatusOK, request: agentdef.Override{}, response: agentBody{}},

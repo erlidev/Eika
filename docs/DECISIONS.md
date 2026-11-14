@@ -477,7 +477,7 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
 ## Phase 2 upgrade policy
 
 - **Upgrade the existing database in place.** Migrations are forward-only and
-  append-only. Migration 0010 is the current last migration. The schedule reserves
+  append-only. Migration 0010 is the Phase 2 baseline. The schedule reserves
   0011 through 0017 for later packages, but each package must check the current
   sequence after its predecessor merges before it chooses a number. No package
   resets the database or rewrites an applied migration.
@@ -1958,3 +1958,19 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - Compaction prompts are built-in per agent and are not override fields. Home
   compaction changes in P2-20 to P2-22. These definitions do not change existing
   runs.
+
+## Project records
+
+- **Slugs are stable and unique.** A project has an ID and a lowercase slug.
+  Creation requires both a name and a slug. Updates keep the slug, so links and
+  the default directory do not change when the name changes. Archive a project
+  with its status; there is no delete route.
+- **Directories name sandbox paths.** Store a clean absolute POSIX path other
+  than `/`, with no control characters, backslashes or `..` components. The
+  default is `/home/eika/projects/<slug>`. This is metadata only: the API does
+  not create directories or access files. Executor confinement applies when a
+  later tool uses the path. Restricting paths to the default subtree would
+  prevent users from selecting existing directories on the home computer.
+- **Project metadata excludes instructions.** Migration 0012 adds metadata only.
+  The create and update shapes cannot carry instructions. P2-03 adds a separate
+  user instruction path; project tools use only the metadata store methods.

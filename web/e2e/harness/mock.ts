@@ -28,6 +28,7 @@ import { computerRoutes } from "./routes/computers.ts";
 import { fail } from "./routes/context.ts";
 import type { Handler, Reply, RouteContext } from "./routes/context.ts";
 import { mcpRoutes } from "./routes/mcp.ts";
+import { projectRoutes } from "./routes/projects.ts";
 import { agentRoutes } from "./routes/agents.ts";
 import { profileRoutes } from "./routes/profiles.ts";
 import { providerRoutes } from "./routes/providers.ts";
@@ -499,6 +500,7 @@ export class MockHarness {
     sessionRoutes(ctx);
     profileRoutes(ctx);
     agentRoutes(ctx);
+    projectRoutes(ctx);
     runRoutes(ctx);
     mcpRoutes(ctx);
 
