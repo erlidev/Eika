@@ -7,12 +7,16 @@ const validText = (text: unknown): text is string =>
   !text.includes("\0") &&
   new TextEncoder().encode(text).length <= 65536;
 
+const hasOnlyFields = (body: Record<string, unknown>, fields: string[]) =>
+  Object.keys(body).every((key) => fields.includes(key));
+
 export function instructionRoutes({ w, on }: RouteContext): void {
   const invalid = () => fail(400, "invalid_request", "invalid instruction text");
   const missing = () => fail(404, "not_found", "project does not exist");
   on("GET", "/api/instructions", () => ok(w.instructions));
   on("PUT", "/api/instructions", ({ body, raw }) => {
     if (raw.trim() === "null") return invalid();
+    if (!hasOnlyFields(body, ["about_me", "rules"])) return invalid();
     if (!validText(body.about_me) || !validText(body.rules)) return invalid();
     w.instructions = { about_me: body.about_me, rules: body.rules };
     return ok(w.instructions);
@@ -28,6 +32,7 @@ export function instructionRoutes({ w, on }: RouteContext): void {
   });
   on("PUT", "/api/projects/{id}/instructions", ({ params, body, raw }) => {
     if (raw.trim() === "null") return invalid();
+    if (!hasOnlyFields(body, ["instructions"])) return invalid();
     if (!validText(body.instructions)) return invalid();
     const id = params[0];
     if (id === undefined || !w.projects.some((p) => p.id === id)) return missing();

@@ -12,6 +12,8 @@ import { eventTypes } from "../../src/api/events.ts";
 import { contract } from "./contract.ts";
 import { MockHarness, mockToken } from "./mock.ts";
 import type { Reply } from "./mock.ts";
+import { instructionRoutes } from "./routes/instructions.ts";
+import type { Handler, RouteContext } from "./routes/context.ts";
 import { scenario } from "./scenarios.ts";
 
 /**
@@ -662,6 +664,39 @@ describe("project metadata", () => {
 });
 
 describe("user instructions", () => {
+  it("rejects unknown fields in route handlers before changing stored text", async () => {
+    const mock = open("workbench");
+    await call(mock, "POST", "/api/projects", { name: "One", slug: "one" });
+    const project = mock.world.projects[0];
+    if (!project) throw new Error("project not created");
+    const handlers = new Map<string, Handler>();
+    instructionRoutes({
+      w: mock.world,
+      on: (method: string, path: string, handler: Handler) => {
+        handlers.set(`${method} ${path}`, handler);
+      },
+    } as RouteContext);
+
+    for (const [key, valid, unknown] of [
+      ["PUT /api/instructions", { about_me: "saved", rules: "rules" }, { project_id: "one" }],
+      ["PUT /api/projects/{id}/instructions", { instructions: "saved" }, { rules: "injected" }],
+    ] as const) {
+      const handler = handlers.get(key);
+      if (!handler) throw new Error(`missing ${key}`);
+      const run = (body: Record<string, unknown>) =>
+        handler({
+          params: [project.id],
+          query: new URLSearchParams(),
+          body,
+          raw: JSON.stringify(body),
+        });
+      expect((await run(valid)).status).toBe(200);
+      expect((await run({ ...valid, ...unknown })).status).toBe(400);
+    }
+    expect(mock.world.instructions).toEqual({ about_me: "saved", rules: "rules" });
+    expect(mock.world.projectInstructions[project.id]).toBe("saved");
+  });
+
   it("keeps global and project text separate from metadata", async () => {
     const mock = open("workbench");
     const global = { about_me: "About me\n", rules: "Use metric" };
