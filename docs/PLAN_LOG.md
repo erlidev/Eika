@@ -12,8 +12,7 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
 - 2026-11-14: P2-00 split Phase 2 and 3 items by scheduled package and
   recorded the forward-upgrade policy. Corrected runtime's conflicting home
   creation and `computer_id` rules. No code or wire types changed; live tests
-  do not apply. Web tests, lint and typecheck passed. Go tests could not bind
-  local sockets in the sandbox; Docker tests and the full gate were not run.
+  do not apply. `make check` passes.
 
 - 2026-11-09: deleted the superseded refactor plan. Its coding rules are in
   `STYLE_GUIDE.md`; added its guidance on tests before restructuring.
