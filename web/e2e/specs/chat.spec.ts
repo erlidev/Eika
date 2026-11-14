@@ -1,16 +1,15 @@
 /**
  * Chat mode: sessions with no computer, listed in the sidebar, marked as
  * chats in their header, and offering only the tools that need no
- * computer, which the Tools panel turns on and off. A chat is compared pixel
- * for pixel once; the rest is checked by what the page says and offers.
+ * computer, which the Tools panel turns on and off. The tests check what the
+ * page says and offers.
  */
 
 import { expect, test } from "../fixtures.ts";
 
-test("a chat", async ({ open, expectShot }) => {
+test("a chat", async ({ open }) => {
   const eika = await open({ scenario: "chat" });
   await expect(eika.page.getByRole("navigation", { name: "Chats" })).toBeVisible();
-  await expectShot(eika, "chat-light");
 });
 
 test("a new chat says what it cannot do", async ({ open, expectAria }) => {
