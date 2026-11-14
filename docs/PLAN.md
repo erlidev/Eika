@@ -178,7 +178,7 @@ phase, and the exit is checked there.
       fields. MCP tools reached sessions through profiles, so agents have no
       plugins until phase 11. The MCP screens and Core's pool stay, so connections
       and OAuth keep working for phase 11 to pick up.
-      - [ ] **P2-01**: Built-ins, overrides, API and compaction prompts; keep profiles.
+      - [x] **P2-01**: Built-ins, overrides, API and compaction prompts; keep profiles.
       - [ ] **P2-08**: Resolve classes and fixed tools at runtime; keep existing callers.
       - [ ] **P3-07**: Add agent Settings and remove profile controls.
       - [ ] **P2-11**: Remove profiles and configuration layering after their callers move.

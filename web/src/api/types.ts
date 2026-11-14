@@ -19,3 +19,29 @@ export * from "@/api/types/sessions";
 export * from "@/api/types/settings";
 export * from "@/api/types/system";
 export * from "@/api/types/computers";
+
+/** AgentOverride replaces only class and prompt; null uses the built-in. */
+export type AgentOverride = {
+  class: "deep" | "main" | "fast" | null;
+  prompt: string | null;
+};
+
+/** AgentDefinition holds the built-in identity, prompts and fixed capabilities. */
+export type AgentDefinition = {
+  name: string;
+  description: string;
+  class: "deep" | "main" | "fast";
+  prompt: string;
+  tools: string[];
+  max_turns: number;
+  compaction: { summary: string; update: string; turn_prefix: string };
+};
+
+/** Agent includes effective values and the defaults used by the editor. */
+export type Agent = AgentDefinition & {
+  builtin: AgentDefinition;
+  overrides: AgentOverride;
+};
+
+/** Agents is the response from GET /api/agents. */
+export type Agents = { agents: Agent[] };

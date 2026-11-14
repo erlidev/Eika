@@ -29,6 +29,7 @@ egress proxy are network calls and run in the harness.
 | `secret` | Seals stored credentials (AES-256-GCM) |
 | `event` | Envelope, type constants, payload structs, `Emitter`, fan-out `Bus` |
 | `server` | Composition, JSON API, event stream, auth, run manager; `server/servertest` builds and checks `docs/api/contract.json` |
+| `agentdef` | Built-in agent definitions, embedded system and compaction prompts, class and prompt overrides |
 | `agent` | The loop: turns, tool dispatch, queues, retries, context assembly |
 | `provider` | Model interface, kind registry, `Complete`; `openai` implementation in two protocols (Chat Completions and the stateless Responses API); `providertest` scripted fake; `probe` identifies the backend behind an endpoint, reads its slots, window, KV cache and capabilities, and runs the Responses conformance check, with `probetest` serving its fixtures; `counter` predicts a request's token count (exact, anchored or estimated) and learns from the measured one |
 | `inference` | The queue every model call waits in: pools of slots (and a shared cache), four priorities with aging, an idle gate for maintenance, optional preemption of running low-priority calls, one lease per model call; standard library only |
@@ -424,6 +425,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `settings` | key → jsonb value |
 | `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, api (`chat` or `responses`), capabilities (jsonb, with the Responses check's outcome), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
 | `models` | provider, name (unique), kind (chat or decision), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
+| `agents` | built-in name, nullable class and prompt overrides |
 | `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
 | `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot` (the server's slot the request named, NULL when it named none), `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
@@ -912,3 +914,17 @@ files. Vet and staticcheck also compile the `live`-tagged tests.
   tests run in `make check`; the live test skips without
   `EIKA_LIVE_ENDPOINT` and fails when that is set but silent. `evals/README.md`
   says how to run it, add a scenario and read a report.
+
+## Agent definitions
+
+`internal/agentdef` provides the built-ins `eika`, `researcher` and `worker`.
+System and compaction prompts are embedded Markdown. Definitions set the class,
+fixed sorted tools and model-call limit (40 for Eika, 200 for subagents).
+Lists contain only tools that exist. Later packages add their own tools.
+
+Migration 0011 adds `core.agents` with a built-in name and nullable class and
+prompt overrides. Missing values use built-in defaults; an empty prompt is an
+explicit value. The authenticated agent API returns effective values, defaults
+and overrides. It accepts only chat classes and cannot change capabilities.
+Profiles still configure current runs. Runtime adoption is P2-08; editing an
+agent definition has no effect on current profile-based runs.

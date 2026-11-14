@@ -88,10 +88,11 @@ changes are:
 
 ## 6. Agents
 
-An agent definition replaces a profile. Built-in definitions live in Go with their
-prompts embedded as Markdown (`internal/agentdef/prompts/*.md`). The user can
-override an agent's class and prompt in Settings, stored as an `agents` row that
-names the built-in. There are no user-defined agents for now (`DEFERRED.md`).
+Built-in definitions, class and prompt overrides, and per-agent compaction prompts
+are implemented; see [Architecture](../ARCHITECTURE.md#agent-definitions).
+Runtime adoption and Settings are still planned. The table below is the target
+tool list; each package adds its tools only when they are implemented. There are
+no user-defined agents for now (`DEFERRED.md`).
 
 | Field | Meaning |
 |---|---|

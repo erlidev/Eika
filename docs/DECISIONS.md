@@ -1943,3 +1943,18 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   repeat), and no watchdog (a killed process or a lost connection would leave
   the GPU swapped). Built and tested on a fake host only; not yet run against
   the server.
+
+## Agent definitions
+
+- Built-in definitions are code with embedded Markdown prompts. Only class and
+  system prompt can be overridden. A null override uses the built-in value;
+  an empty prompt is an explicit value. DELETE resets both fields. Only the
+  chat classes `deep`, `main` and `fast` are valid. No model must be configured
+  to edit a definition.
+- Migration 0011 adds override rows without changing profiles or conversations.
+  The agent API is available before runtime adoption (P2-08). Fixed tool lists
+  include only shipped tools. Later packages extend them when those tools exist;
+  neither future tool names nor MCP wildcards are accepted from the API.
+- Compaction prompts are built-in per agent and are not override fields. Home
+  compaction changes in P2-20 to P2-22. These definitions do not change existing
+  runs.

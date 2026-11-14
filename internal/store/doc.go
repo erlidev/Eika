@@ -3,7 +3,7 @@
 // Open connects a pool, verifies it, and applies the embedded migrations in
 // internal/store/migrations. Everything else is hand-written SQL in one file
 // per entity: computers, sessions, session entries, runs,
-// settings, providers, models, profiles, model requests, and
+// settings, providers, models, profiles, agent overrides, model requests, and
 // sign-in. Credentials arrive and leave sealed; the store never sees one in
 // the clear. Queries return the domain structs defined here; nothing in this
 // package knows about HTTP, the agent loop, or Docker. Documents another
