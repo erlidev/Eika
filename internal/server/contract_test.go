@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
@@ -49,6 +50,11 @@ type searchKeysResponse struct {
 // a type this table names wrongly fails the handler tests, which check every
 // response they get against the contract.
 var routeWire = map[string]wire{
+	"GET /api/agents":           {status: http.StatusOK, response: agentsResponse{}},
+	"GET /api/agents/{name}":    {status: http.StatusOK, response: agentBody{}},
+	"PUT /api/agents/{name}":    {status: http.StatusOK, request: agentdef.Override{}, response: agentBody{}},
+	"DELETE /api/agents/{name}": {status: http.StatusNoContent},
+
 	"GET /api/healthz":       {status: http.StatusOK, response: health{}},
 	"GET /api/auth/status":   {status: http.StatusOK, response: authStatusResponse{}},
 	"POST /api/auth/setup":   {status: http.StatusCreated, request: passwordRequest{}, response: signInResponse{}},

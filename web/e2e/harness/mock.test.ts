@@ -482,3 +482,50 @@ describe("the mock answers as the harness does", () => {
     expect(mock.contractBreaks).toEqual([]);
   });
 });
+
+describe("agent definitions", () => {
+  it("lists built-ins, replaces overrides and resets to defaults", async () => {
+    const mock = open("workbench");
+    const listed = await call(mock, "GET", "/api/agents");
+    expect(listed.status).toBe(200);
+    expect(listed.body).toMatchObject({
+      agents: [
+        { name: "eika", class: "main", tools: ["web_search"], max_turns: 40 },
+        { name: "researcher", class: "fast", max_turns: 200 },
+        { name: "worker", class: "main", max_turns: 200 },
+      ],
+    });
+    const original = await call(mock, "GET", "/api/agents/eika");
+    const updated = await call(mock, "PUT", "/api/agents/eika", { class: "deep", prompt: "" });
+    expect(updated.body).toMatchObject({
+      class: "deep",
+      prompt: "",
+      overrides: { class: "deep", prompt: "" },
+    });
+    const partial = await call(mock, "PUT", "/api/agents/eika", { prompt: "custom" });
+    expect(partial.body).toMatchObject({
+      class: "main",
+      prompt: "custom",
+      overrides: { class: null, prompt: "custom" },
+    });
+    expect((await call(mock, "PUT", "/api/agents/eika", {})).body).toEqual(original.body);
+    await call(mock, "PUT", "/api/agents/eika", { class: "fast" });
+    expect((await call(mock, "DELETE", "/api/agents/eika")).status).toBe(204);
+    expect((await call(mock, "GET", "/api/agents/eika")).body).toEqual(original.body);
+    expect((await call(mock, "DELETE", "/api/agents/eika")).status).toBe(204);
+    for (const method of ["GET", "PUT", "DELETE"]) {
+      expect(
+        (await call(mock, method, "/api/agents/browser", method === "PUT" ? {} : undefined)).status,
+      ).toBe(404);
+    }
+    for (const body of [
+      { class: "decision" },
+      { class: "" },
+      { class: "unknown" },
+      { prompt: "é".repeat(32769) },
+    ]) {
+      expect((await call(mock, "PUT", "/api/agents/eika", body)).status).toBe(400);
+    }
+    expect(mock.contractBreaks).toEqual([]);
+  });
+});

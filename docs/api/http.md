@@ -1313,3 +1313,43 @@ without credentials is `407`; one for a host the computer's mode or
 allowlist does not admit is `403`; the
 proxy connects to public addresses only, so a private one is `403` whatever
 the mode. The body of every refusal is one line saying why.
+
+## Agent definitions
+
+### `GET /api/agents`
+
+Returns `{agents: Agent[]}` in name order. Only `eika`, `researcher` and `worker`
+exist. No model assignment is needed. Profiles and current runs are unchanged.
+
+`Agent` contains these effective fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | Built-in identity |
+| `description` | string | Role description |
+| `class` | string | Chat class: `main`, `fast` or `deep` |
+| `prompt` | string | System prompt, including an explicit empty override |
+| `tools` | string[] | Fixed, sorted names of shipped tools |
+| `max_turns` | integer | Model-call limit: 40 for Eika, 200 for subagents |
+| `compaction` | object | Built-in `summary`, `update`, `turn_prefix` strings |
+| `builtin` | object | The same definition fields with built-in values |
+| `overrides` | object | Nullable `class` and `prompt` strings |
+
+### `GET /api/agents/{name}`
+
+Returns one `Agent`. An unknown name returns 404.
+
+### `PUT /api/agents/{name}`
+
+Replaces the override with `{class?: string | null, prompt?: string | null}`.
+Null or an omitted field uses the built-in value. An empty prompt is an explicit
+value. Class must be `main`, `fast` or `deep`; `decision` is refused. Prompt is
+limited to 65,536 UTF-8 bytes. Other fields are refused. Returns the effective
+`Agent` with defaults and overrides. Unknown names return 404; invalid input
+returns 400. This route cannot add agents or change tools or compaction prompts.
+
+### `DELETE /api/agents/{name}`
+
+Removes both overrides and returns 204, including when no override exists.
+The built-in definition stays. An unknown name returns 404.
+All agent routes require bearer authentication.

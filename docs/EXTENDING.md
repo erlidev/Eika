@@ -872,3 +872,32 @@ exports only the component, as `WebRenderer.tsx` does for `web_search` and
 Two rules. The summary is one short line: it is truncated, not wrapped. The
 body must render a call that has not finished, because `tool.call` arrives
 before any output does; `ResultBlock` already says "running…" for you.
+
+## Built-in agent definitions
+
+`internal/agentdef/agents.go` is the registry. Add Markdown under `prompts/`
+and a definition in `Builtins`. Only include tools registered in
+`tool/builtin/registry.go`. Add a forward migration for the allowed names in
+`core.agents`; update the mock fixture in `web/e2e/harness/agents.ts`.
+Definitions cannot be added through the API. Class and system prompt are the
+only user overrides. Compaction has summary, update and turn-prefix prompts.
+
+This reads the definition with the user's optional values applied:
+
+```go
+package example
+
+import "github.com/erlidev/eika/internal/agentdef"
+
+// Worker returns the built-in worker with the supplied overrides.
+func Worker(o agentdef.Override) (agentdef.Definition, error) {
+    if err := o.Validate(); err != nil {
+        return agentdef.Definition{}, err
+    }
+    d, _ := agentdef.Lookup("worker")
+    return o.Apply(d), nil
+}
+```
+
+Run `go test ./internal/agentdef` for definition and capability checks. Store
+and handler tests use the `docker` tag. Run `make contract` after wire changes.

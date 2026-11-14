@@ -1,5 +1,8 @@
 {
   "routes": {
+    "DELETE /api/agents/{name}": {
+      "status": 204
+    },
     "DELETE /api/mcp/servers/{id}": {
       "status": 204
     },
@@ -17,6 +20,124 @@
     },
     "DELETE /api/sessions/{id}": {
       "status": 204
+    },
+    "GET /api/agents": {
+      "status": 200,
+      "response": {
+        "object": {
+          "agents": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "builtin": {
+                    "object": {
+                      "class": "string",
+                      "compaction": {
+                        "object": {
+                          "summary": "string",
+                          "turn_prefix": "string",
+                          "update": "string"
+                        }
+                      },
+                      "description": "string",
+                      "max_turns": "number",
+                      "name": "string",
+                      "prompt": "string",
+                      "tools": {
+                        "nullable": {
+                          "array": "string"
+                        }
+                      }
+                    }
+                  },
+                  "class": "string",
+                  "compaction": {
+                    "object": {
+                      "summary": "string",
+                      "turn_prefix": "string",
+                      "update": "string"
+                    }
+                  },
+                  "description": "string",
+                  "max_turns": "number",
+                  "name": "string",
+                  "overrides": {
+                    "object": {
+                      "class": {
+                        "nullable": "string"
+                      },
+                      "prompt": {
+                        "nullable": "string"
+                      }
+                    }
+                  },
+                  "prompt": "string",
+                  "tools": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/agents/{name}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "builtin": {
+            "object": {
+              "class": "string",
+              "compaction": {
+                "object": {
+                  "summary": "string",
+                  "turn_prefix": "string",
+                  "update": "string"
+                }
+              },
+              "description": "string",
+              "max_turns": "number",
+              "name": "string",
+              "prompt": "string",
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              }
+            }
+          },
+          "class": "string",
+          "compaction": {
+            "object": {
+              "summary": "string",
+              "turn_prefix": "string",
+              "update": "string"
+            }
+          },
+          "description": "string",
+          "max_turns": "number",
+          "name": "string",
+          "overrides": {
+            "object": {
+              "class": {
+                "nullable": "string"
+              },
+              "prompt": {
+                "nullable": "string"
+              }
+            }
+          },
+          "prompt": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        }
+      }
     },
     "GET /api/auth/status": {
       "status": 200,
@@ -4134,6 +4255,67 @@
           "error",
           "finished_at"
         ]
+      }
+    },
+    "PUT /api/agents/{name}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "class": "string",
+          "prompt": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "builtin": {
+            "object": {
+              "class": "string",
+              "compaction": {
+                "object": {
+                  "summary": "string",
+                  "turn_prefix": "string",
+                  "update": "string"
+                }
+              },
+              "description": "string",
+              "max_turns": "number",
+              "name": "string",
+              "prompt": "string",
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              }
+            }
+          },
+          "class": "string",
+          "compaction": {
+            "object": {
+              "summary": "string",
+              "turn_prefix": "string",
+              "update": "string"
+            }
+          },
+          "description": "string",
+          "max_turns": "number",
+          "name": "string",
+          "overrides": {
+            "object": {
+              "class": {
+                "nullable": "string"
+              },
+              "prompt": {
+                "nullable": "string"
+              }
+            }
+          },
+          "prompt": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        }
       }
     },
     "PUT /api/auth/password": {

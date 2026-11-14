@@ -15,6 +15,7 @@ import {
 } from "./profiles.ts";
 import type { RecordedCall, StoredProfile } from "./profiles.ts";
 import type {
+  AgentOverride,
   ContentDetail,
   Elicitation,
   Entry,
@@ -120,6 +121,8 @@ export type World = {
   eventsOnConnect: EikaEvent[];
   /** profiles are the profiles, oldest first; the default_profile setting names the default. */
   profiles: StoredProfile[];
+  /** agentOverrides holds only user overrides of the built-in definitions. */
+  agentOverrides: Record<string, AgentOverride>;
   /** overrides are what each session sets over its profile, by session id. */
   overrides: Record<string, ProfileSettings>;
   /** toolChoices are the sessions' own tool choices, by session id; one with none inherits. */
@@ -217,6 +220,7 @@ export function emptyWorld(): World {
     },
     eventsOnConnect: [],
     profiles: [defaultProfile()],
+    agentOverrides: {},
     overrides: {},
     toolChoices: {},
     calls: {},

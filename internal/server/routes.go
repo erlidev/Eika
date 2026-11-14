@@ -81,6 +81,11 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PATCH /api/models/{id}", s.handleUpdateModel)
 	api.HandleFunc("DELETE /api/models/{id}", s.handleDeleteModel)
 
+	api.HandleFunc("GET /api/agents", s.handleListAgents)
+	api.HandleFunc("GET /api/agents/{name}", s.handleAgent)
+	api.HandleFunc("PUT /api/agents/{name}", s.handlePutAgent)
+	api.HandleFunc("DELETE /api/agents/{name}", s.handleResetAgent)
+
 	api.HandleFunc("GET /api/profiles", s.handleListProfiles)
 	api.HandleFunc("GET /api/profiles/inherited", s.handleInheritedProfile)
 	api.HandleFunc("POST /api/profiles", s.handleCreateProfile)
