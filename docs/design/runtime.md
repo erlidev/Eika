@@ -149,14 +149,14 @@ entries are kept. Changes:
   - `brief`: a subagent's first brief.
   - `result`: a subagent's latest report.
   - `last_active_at`.
-  It loses `computer_id`, `tools`, `profile_id` and `overrides`.
+  It keeps nullable `computer_id`; it loses `tools`, `profile_id` and `overrides`
+  only after their callers move and the upgrade preserves old data.
 - Entry kinds gain `preamble` (the snapshot above) and `notice` (harness text shown
   to the user, also sent as part of the next user-side `<context>`). User and
   assistant entries in the home session record their `channel`.
 - **One home session.** The user works with Eika the way they would with one
   person: a single conversation that never ends, while Eika keeps track of many
-  lines of work through its subagents (section 9). The home session is created at
-  setup. Compaction keeps it within its window, and history recall brings back
+  lines of work through its subagents (section 9). The home session is ensured on every start, including token-only setup. Compaction keeps it within its window, and history recall brings back
   anything compacted (section 11).
 - **Every channel feeds it.** Web first; Discord or Matrix later
   (`interface.md` 6). Each user-side `<context>` names the channel the message came

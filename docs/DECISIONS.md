@@ -474,6 +474,29 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   `arguments_malformed: true`, so the entry is always writable and the tool
   reports a normal argument error.
 
+## Phase 2 upgrade policy
+
+- **Upgrade the existing database in place.** Migrations are forward-only and
+  append-only. Migration 0010 is the current last migration. The schedule reserves
+  0011 through 0017 for later packages, but each package must check the current
+  sequence after its predecessor merges before it chooses a number. No package
+  resets the database or rewrites an applied migration.
+- **Keep old conversations readable.** Add the new session and entry shapes before
+  moving their consumers. Preserve existing session IDs, entry trees, content and
+  computer associations, including null `computer_id`. Old chats do not become the
+  new home conversation by implication. Retire creation and old fields only after
+  the UI and API callers move, with a populated upgrade test that reads the old
+  history. Do not delete old chats to satisfy a new constraint.
+- **Preserve profile settings through the transition.** Keep profile rows and the
+  existing resolution path while callers still use them. Before removing them,
+  explicitly migrate or retain their user-set values so they remain recoverable;
+  do not silently replace them with agent defaults or discard them. Test an upgrade
+  with multiple populated profiles and session overrides. Agent definitions have
+  fixed capabilities, so old tool selections do not grant new agents MCP access.
+- **Ensure home on start.** Find it by owner and name and create it idempotently,
+  without waiting for Docker. Existing conversations remain separate. This also
+  covers installations that completed setup before the home-session feature.
+
 ## Agent loop and providers
 
 - **Retries live in the agent loop**; the SDK's are off
