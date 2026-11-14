@@ -361,12 +361,24 @@ model is configured; `400` for a model that does not exist.
 
 ### Session
 
+Identity and lifecycle fields are read-only on the existing session routes.
+`POST /api/sessions` still creates a legacy `user` session.
+
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | string | The session id. |
 | `computer_id` | string, optional | Where its runs act. Absent for a chat. |
 | `title` | string | What the user calls it, or the placeholder of an untitled session until its first run names it. |
-| `kind` | string | Who opened it: `user`. |
+| `owner` | string | Storage owner key; `local` for the local user. |
+| `agent` | string, optional | Agent definition name. |
+| `name` | string, optional | Handle; unique per owner for home, per parent for subagents. |
+| `project_id` | string, optional | Associated project. |
+| `parent_session_id` | string, optional | Delegating session. |
+| `state` | string | `idle`, `running`, `waiting`, `failed` or `cancelled`. |
+| `brief` | string, optional | Initial brief. |
+| `result` | string, optional | Latest report. |
+| `last_active_at` | timestamp | Last lifecycle activity in UTC. |
+| `kind` | string | Session kind: `user` (legacy), `home`, `subagent` or `routine`. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
 | `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a computer in a chat. |
 | `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. |
@@ -377,12 +389,17 @@ model is configured; `400` for a model that does not exist.
 
 ### Entry
 
+Preamble and notice entries carry `text` and an empty `message`. Their text is
+stored without changes. Channel is independent of the message payload.
+
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | string | The entry id. |
 | `parent_id` | string, optional | The entry it follows. |
+| `channel` | string, optional | Source or destination channel, absent when unset. |
+| `text` | string, optional | Preamble or notice text, including empty text. |
 | `seq` | number | Write order within the session. |
-| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, or `compaction`. |
+| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, `compaction`, `preamble` or `notice`. |
 | `created_at` | time | When it was written. |
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
 | `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `threshold`, or `overflow`), and `usage`. The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |

@@ -17,7 +17,7 @@ type Tree struct {
 func NewTree(s *store.Store) *Tree { return &Tree{store: s} }
 
 // Append writes e under the session's current head and makes it the new head.
-// The caller supplies Kind and Payload; the tree assigns the id, the
+// The caller supplies Kind, Payload and Channel; the tree assigns the id, the
 // parent, and the sequence number.
 func (t *Tree) Append(ctx context.Context, sessionID string, e store.Entry) (store.Entry, error) {
 	return t.store.AppendEntry(ctx, sessionID, e)

@@ -14,6 +14,7 @@ import (
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/store/storetest"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestMain(m *testing.M) {
@@ -575,8 +576,8 @@ func TestUpgradeFrom0002KeepsComputersWithoutFiling(t *testing.T) {
 }
 
 // A database made by the baseline holds forks, which are sessions of their own
-// once forking is gone. The upgrade keeps them as user sessions and removes
-// both the kind and the column that only forks used.
+// once forking is gone. The upgrade keeps their history as user sessions,
+// removes the fork relationship, and adds a new delegation relationship.
 func TestUpgradeFromTheBaselineKeepsForksAsSessions(t *testing.T) {
 	ctx := t.Context()
 	databaseURL := storetest.URL(t)
@@ -597,6 +598,9 @@ func TestUpgradeFromTheBaselineKeepsForksAsSessions(t *testing.T) {
 		`INSERT INTO schema_migrations (version) VALUES ('0001_baseline')`,
 		`INSERT INTO sessions (id, title) VALUES ('parent', 'parent')`,
 		`INSERT INTO sessions (id, title, kind, parent_session_id) VALUES ('child', 'child', 'fork', 'parent')`,
+		`INSERT INTO session_entries (id, session_id, seq, kind, payload) VALUES
+			('entry', 'child', 1, 'user', '{"role":"user","content":"saved"}')`,
+		`UPDATE sessions SET head_entry_id = 'entry' WHERE id = 'child'`,
 	} {
 		if _, err := conn.Exec(ctx, stmt); err != nil {
 			t.Fatalf("set up the baseline database: %v\n%s", err, stmt)
@@ -609,17 +613,55 @@ func TestUpgradeFromTheBaselineKeepsForksAsSessions(t *testing.T) {
 	}
 	defer st.Close()
 	child, err := st.Session(ctx, "child")
-	if err != nil || child.Kind != store.SessionUser || child.Title != "child" {
+	if err != nil || child.Kind != store.SessionUser || child.Title != "child" || child.ParentSessionID != "" || child.HeadEntryID != "entry" {
 		t.Errorf("former fork = %+v, %v; want a user session", child, err)
 	}
-
-	var columns int
-	err = conn.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns
-		WHERE table_schema = 'core' AND table_name = 'sessions' AND column_name = 'parent_session_id'`).Scan(&columns)
-	if err != nil || columns != 0 {
-		t.Errorf("parent_session_id columns = %d, %v; want none", columns, err)
+	parent, err := st.Session(ctx, "parent")
+	if err != nil || parent.Kind != store.SessionUser || parent.Title != "parent" || parent.ParentSessionID != "" {
+		t.Errorf("parent = %+v, %v; want the original user session", parent, err)
 	}
-	if _, err := conn.Exec(ctx, `INSERT INTO sessions (id, kind) VALUES ('forked', 'fork')`); err == nil {
-		t.Error("a session of kind fork was accepted; want the kind refused")
+	path, err := st.SessionPath(ctx, "child")
+	if err != nil || len(path) != 1 || path[0].ID != "entry" || path[0].Kind != store.KindUser {
+		t.Fatalf("former fork path = %+v, %v; want its saved entry", path, err)
+	}
+	var message struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(path[0].Payload, &message); err != nil || message.Content != "saved" {
+		t.Errorf("former fork entry = %s, %v; want saved content", path[0].Payload, err)
+	}
+	var oldParent *string
+	if err := conn.QueryRow(ctx, `SELECT parent_session_id FROM sessions WHERE id = 'child'`).Scan(&oldParent); err != nil || oldParent != nil {
+		t.Errorf("former fork parent = %v, %v; want SQL NULL", oldParent, err)
+	}
+
+	home, err := st.CreateSession(ctx, store.Session{Kind: store.SessionHome, Agent: "eika", Name: "home"})
+	if err != nil {
+		t.Fatalf("create home: %v", err)
+	}
+	delegated, err := st.CreateSession(ctx, store.Session{
+		Kind: store.SessionSubagent, Agent: "worker", Name: "worker", ParentSessionID: home.ID,
+	})
+	if err != nil || delegated.ParentSessionID != home.ID {
+		t.Fatalf("create delegated session = %+v, %v", delegated, err)
+	}
+	read, err := st.Session(ctx, delegated.ID)
+	if err != nil || read.ParentSessionID != home.ID {
+		t.Errorf("read delegated session = %+v, %v; want its delegating home", read, err)
+	}
+	for _, tc := range []struct {
+		name, query, code string
+	}{
+		{"fork kind", `INSERT INTO sessions (id, kind, agent, name, parent_session_id) VALUES ('forked', 'fork', 'worker', 'forked', 'parent')`, "23514"},
+		{"subagent without parent", `INSERT INTO sessions (id, kind, agent, name) VALUES ('orphan', 'subagent', 'worker', 'orphan')`, "23514"},
+		{"subagent with missing parent", `INSERT INTO sessions (id, kind, agent, name, parent_session_id) VALUES ('missing', 'subagent', 'worker', 'missing', 'absent')`, "23503"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := conn.Exec(ctx, tc.query)
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != tc.code {
+				t.Errorf("insert = %v; want PostgreSQL error %s", err, tc.code)
+			}
+		})
 	}
 }

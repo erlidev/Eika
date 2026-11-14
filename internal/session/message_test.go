@@ -326,3 +326,28 @@ func arguments(raw provider.ToolArguments) json.RawMessage {
 	}
 	return json.RawMessage(raw)
 }
+
+func TestTextEntriesPreserveBytesAndStayOutOfMessages(t *testing.T) {
+	for _, kind := range []store.EntryKind{store.KindPreamble, store.KindNotice} {
+		for _, text := range []string{"", "  café <tag> & text\nsecond line\t"} {
+			e, err := session.TextEntry(kind, text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := session.TextOf(e)
+			if err != nil || got != text {
+				t.Fatalf("text = %q, %v", got, err)
+			}
+			messages, err := session.Messages([]store.Entry{e})
+			if err != nil || len(messages) != 0 {
+				t.Fatalf("messages: %+v %v", messages, err)
+			}
+		}
+	}
+	if _, err := session.TextEntry(store.KindUser, "wrong kind"); err == nil {
+		t.Fatal("accepted message kind")
+	}
+	if _, err := session.TextOf(store.Entry{Payload: json.RawMessage(`{`)}); err == nil {
+		t.Fatal("accepted malformed payload")
+	}
+}

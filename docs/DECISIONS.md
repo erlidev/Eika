@@ -442,11 +442,11 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   calls stays one entry, so the tree never gains a branch point the loop
   cannot resume from.
 - Entry kinds `user`, `assistant`, `tool_call`, `tool_result`, `system`,
-  `event` are fixed vocabulary shared with the frontend.
+  `event`, `compaction`, `preamble` and `notice` are fixed vocabulary shared
+  with the frontend.
 - **Only a resumable entry can be a head**: one whose path leaves no tool
   call unanswered. `session.PathResumable` is the one rule.
-- `sessions.kind` (today only `user`) is a column, not a join, because it is
-  what the session is.
+- `sessions.kind` is a column, not a join, because it is what the session is.
 - A chat is a session with `computer_id` NULL: same tree, run manager, and
   view. Created explicitly (`chat: true`), and a computer's sessions cascade
   with it rather than becoming chats.
@@ -473,6 +473,20 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
 - Malformed tool arguments keep their exact text, quoted, with
   `arguments_malformed: true`, so the entry is always writable and the tool
   reports a normal argument error.
+
+## Phase 2 session storage
+
+- Migration 0014 keeps `user` sessions and their configuration unchanged. New
+  kinds are `home`, `subagent` and `routine`. The local owner's key is `local`;
+  it is a storage identity, not the bearer token. Home names are unique per
+  owner. Subagent names are unique per parent, including cancelled sessions.
+- New sessions start `idle`. Existing rows get `last_active_at` from `updated_at`.
+  Activity updates belong to lifecycle code; metadata edits do not change it.
+  Parent and project references restrict deletion to retain session history.
+  Subagents require a parent and a name; home sessions have no parent.
+- Entries store an optional channel separately from their exact JSON payload.
+  Preamble and notice entries use a `text` payload. Storage and API expose them;
+  preamble assembly and notice delivery are added by their own packages.
 
 ## Phase 2 upgrade policy
 

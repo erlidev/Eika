@@ -289,11 +289,13 @@ type SessionUpdated struct {
 // connects late sees the conversation it missed in the same stream as the
 // live events.
 type SessionMessage struct {
+	// Channel names the source or destination of a home message, when set.
+	Channel   string `json:"channel,omitempty"`
 	SessionID string `json:"session_id"`
 	EntryID   string `json:"entry_id"`
 	ParentID  string `json:"parent_id,omitempty"`
 	// Kind is the entry kind: user, assistant, tool_call, tool_result,
-	// system, or event.
+	// system, event, compaction, preamble or notice.
 	Kind      string    `json:"kind"`
 	CreatedAt time.Time `json:"created_at"`
 	// Message is the entry's stored payload: a provider message for the

@@ -187,7 +187,7 @@ phase, and the exit is checked there.
       `result`, `last_active_at`. Entry kinds gain `preamble` and `notice`; home
       entries record their `channel`. Unused columns and kinds are removed. There
       is no `sensitive` column: sessions carry no label.
-      - [ ] **P2-04**: Add session fields and entry kinds; keep fields still in use.
+      - [x] **P2-04**: Add session fields and entry kinds; keep fields still in use.
       - [ ] **P2-11**: Remove obsolete fields and kinds after callers move; preserve history.
 - [ ] Preamble builder: global and project instructions, the active-projects list,
       the project or subagent brief, the delegable agents, and the user's time zone

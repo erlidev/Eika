@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-14: P2-04 added session identities, lifecycle fields, parent/project
+  references, preamble/notice entries and channel storage in migration 0014.
+  Old conversations and profile fields remain unchanged. Tests cover populated
+  upgrades, identity/parent constraints and entry round trips. A full check found
+  an obsolete fork-column assertion; the follow-up updates it for migration 0014.
+  Home creation, runtime state updates and context assembly remain in later packages.
+
 - 2026-11-14: P2-03 added global About me/rules and separate user-only
   project instruction storage and authenticated APIs in migration 0013.
   Tests cover validation, CRUD, scope isolation, metadata write separation,

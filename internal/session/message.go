@@ -124,3 +124,28 @@ func kindOf(role provider.Role) (store.EntryKind, error) {
 		return "", fmt.Errorf("record message: unknown role %q", role)
 	}
 }
+
+// TextEntry records a preamble snapshot or notice without changing its text.
+func TextEntry(kind store.EntryKind, text string) (store.Entry, error) {
+	if kind != store.KindPreamble && kind != store.KindNotice {
+		return store.Entry{}, fmt.Errorf("record text: unsupported kind %q", kind)
+	}
+	payload, err := json.Marshal(struct {
+		Text string `json:"text"`
+	}{text})
+	if err != nil {
+		return store.Entry{}, fmt.Errorf("encode text entry: %w", err)
+	}
+	return store.Entry{Kind: kind, Payload: payload}, nil
+}
+
+// TextOf reads the text of a preamble snapshot or notice.
+func TextOf(e store.Entry) (string, error) {
+	var payload struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(e.Payload, &payload); err != nil {
+		return "", fmt.Errorf("decode text entry %s: %w", e.ID, err)
+	}
+	return payload.Text, nil
+}
