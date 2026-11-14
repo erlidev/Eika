@@ -441,12 +441,12 @@ All of phase 1's code stays. These were cut before more time went into them:
 - `inbox_ask` and the `questions` table. Return if questions get lost in chat.
 - Automatic resumption of runs after a restart, and the `dispatched` marker. Return
   when restarts are common enough for the manual step to hurt.
-- From compaction: `[Ledger]`, `[Recent turns]`, `(#id)` references, and the retry
-  that folds in a span whose summary failed. Return with `evals/compaction`, if it
-  shows the summary losing commitments.
+- From compaction: `[Ledger]`, `[Recent turns]`, and the retry that folds in a
+  span whose summary failed. Return if `evals/compaction` (phase 13) shows the
+  summary losing commitments. `(#id)` references are in phase 13.
 - From history: `pg_trgm` and regular expressions, tool-result indexing and
   `history_read {compaction}`.
-- `evals/compaction`, and chapters behind it.
+- Chapters, behind `evals/compaction` (phase 13).
 - Project fields: a computer of its own, `agent`, `skills`, `plugins` and
   `created_by`.
 

@@ -19,7 +19,10 @@ Its design stays here, marked deferred, as the target if it returns: most of
 | `skills-and-plugins.md` | Agent Skills and MCP plugins |
 | `scheduler.md` | Routines and wakeups |
 | `browser.md` | The browser container, the browser agent, live view and takeover |
+| `web-fetch.md` | What `web_fetch` shows the model, reading further by line, section and search, conversion to Markdown, site readers, and the reader that answers a question about a page |
+| `compaction.md` | Compaction in every session: the record code writes, the state the model writes, stubs in the kept tail, preparing a compaction while the cache is warm, recall for every agent, and `evals/compaction` |
 | `interface.md` | The web app, mobile, notifications, external chat channels, remote access |
+| `ui.md` | The web app's design: stack, visual language, shell, each page and its components, performance budgets, and how presence, a Live2D avatar and live speech fit in |
 
 Phase 1's implemented runtime is in
 [Architecture](../ARCHITECTURE.md#endpoints-models-and-classes), with reasons in

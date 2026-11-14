@@ -124,11 +124,13 @@ agents reach it:
 
 ### Permissions
 
-Each tool has a setting: `allow`, `ask` or `block`. The default comes from the
-tool's MCP annotations: `readOnlyHint` gives `allow`, and anything else gives `ask`.
-The Plugins page shows the setting per tool and lets the user change it. An
-approval card's "always" changes it too, or pins one argument, such as a recipient
-(`sentry.md` 5 and 7). A server that marks a sending tool read-only gets it
+Each tool has a setting: `allow`, `known`, `ask` or `block`, and may have a
+destination argument, such as a recipient. The default comes from the tool's
+schema and MCP annotations (`sentry.md` 5): `readOnlyHint` gives `allow`, and a
+tool with a destination argument gives `known`, which asks only the first time it
+reaches a destination. The Plugins page shows the setting per tool and lets the
+user change it. An approval card's "always" changes it too, or records the
+destination (`sentry.md` 7). A server that marks a sending tool read-only gets it
 allowed, which is why the page lists every tool's setting when a plugin is added.
 
 A plugin can be marked trusted: its results are still scored by the screen, and

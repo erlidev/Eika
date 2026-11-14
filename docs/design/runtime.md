@@ -78,7 +78,7 @@ changes are:
 | Change | Detail |
 |---|---|
 | `Options.Executor` becomes `Options.Computer` | A handle with the executor plus computer id and directory. Tools that need none still mark themselves `Standalone` |
-| `Options.Gate` | The Sentry gate. `dispatch` asks `Gate.Decide` before every tool call and `Gate.Ingest` on every result from an untrusted source. The model is never told about the gate: a deny returns a normal `Blocked: <reason>` error result (`sentry.md` 4), and an `ask` parks the call, which looks like a slow tool (below). The loop stays standard |
+| `Options.Gate` | The Sentry gate. `dispatch` asks `Gate.Decide` before every tool call and `Gate.Ingest` on every result from an untrusted source. The model is never told about the gate: a deny returns a normal `Blocked: <reason>` error result (`sentry.md` 4), and an `ask` either waits briefly, which looks like a slow tool, or returns `Queued` (`sentry.md` 7). The loop stays standard |
 | Agent limits | Agent definitions set the call limit: home 40, subagent 200. The current default is 40; the other guards already exist |
 | Parking | A tool waiting on an approval or on an answer blocks its goroutine, as `ask_user` does today. It holds no inference lease, since leases cover model calls only. Run state becomes `waiting`, so Activity shows it |
 | Approvals | Approvals are durable rows (`sentry.md` 7). A subagent's `ask_user` waits in memory, since a restart ends the run that asked |
@@ -229,7 +229,7 @@ session, and local contexts can be scarce:
 ```
 eika (home)  --subagent_start plumber-->  subagent session (worker, project Kitchen)
   replies "on it", the turn ends              queued at foreground priority
-                                              runs; may park on approvals and questions
+                                              runs; may wait on approvals and questions
                                               ends with report {summary, outputs, follow_ups}
 home session  <--notice "plumber (worker) reported: <summary>"--
   ...days later...

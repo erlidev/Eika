@@ -166,6 +166,32 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   fetch a URL with private data in it. `design/sentry.md` 6 lists them,
   `evals/injection` counts them with the screen on and off, and `DEFERRED.md` has
   the rules to add if the counts are bad. None of them is an ask.
+- **An ask stores the call and does not stop the run** (2026-11-13). A parked call
+  held a run for up to a day and died with a restart, and a routine had nobody
+  to answer it. The approval now holds the whole call, Core runs it as stored
+  when the user confirms, and the model is told only that it is queued. Rejected:
+  asking the model again after approval, since what runs must be what the user
+  read.
+- **Plugin tools ask once per destination, not once per call** (2026-11-13). The
+  list of what asks stays closed at two. A tool with a destination argument is
+  `known` by default: a recipient the user named in the conversation, or has
+  approved before, does not ask. The cost is that an injected message to someone
+  the user already writes to goes out, and the journal is where it shows.
+  Rejected: an outbox delay on every send, which slows every honest send to
+  cover a rare one.
+- **Tripwires act on chains, not events** (2026-11-13). Reads, commands and egress
+  still never ask, so something has to watch them. A single event (a `.env` read,
+  an upload, a link followed from a page) is ordinary work and alerting on it is
+  fatigue again. Sentry records each as a mark and acts only when a source,
+  access and a sink join on one run: it blocks that action, holds that run, and
+  sends one push. Holding is a state of a run made by its own actions, not a
+  label on a session, and it ends with the run. A tripwire ships only if it
+  fires on no honest session in `evals/injection`. Rejected: default-allowlist
+  egress and a budget on composed fetch URLs, which stop the same attacks by
+  refusing honest work every day. Rejected: a model as the monitor on every
+  run, for the latency and because text in the trajectory can steer it.
+- **File changes are checkpointed, not gated** (2026-11-13). A shadow git commit
+  per run makes a destructive command recoverable without a question.
 - **Approvals, grants and the Inbox's cards move to the phases that first use
   them**: phase 11 for approvals, phase 5 for the Inbox page. Phase 4 would
   otherwise have built an approval flow with no caller and tested it with a

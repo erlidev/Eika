@@ -82,6 +82,10 @@ Why this order:
 
 Eika is usable from the end of phase 3.
 
+Phase 12 (web fetch) is outside the map: it depends on none of the phases and
+none depends on it. Phase 13 (compaction) follows phase 2, whose home compaction
+and history tools it builds on.
+
 ## Live test bench
 
 The real models `make live` and the evals run against. Endpoints, keys and URLs
@@ -315,9 +319,11 @@ The mobile-first app. Design: `design/interface.md`.
 ## Phase 4: Sentry
 
 Safety that runs on its own. Sentry is a package inside Core. It screens what
-agents read, blocks a short list of things outright, and can stop everything. It
-does not ask the user anything in this phase. Design: `design/sentry.md` sections
-1 to 6, 8 ("Canaries" only), 10, 11 (halt only) and 12 to 15.
+agents read, blocks a short list of things outright, keeps file changes
+recoverable, watches for the shape of an attack, and can stop everything. It does
+not ask the user anything in this phase. Design: `design/sentry.md` sections 1 to
+6, 7 ("Checkpoints" only), 8 ("Canaries" only), 10, 11 (without the model check)
+and 12 to 15.
 
 ### What asks
 
@@ -326,12 +332,18 @@ without the user.
 
 | Asks | When | How it stops asking |
 |---|---|---|
-| A plugin tool that is not read-only (phase 11) | Each call | "Always" on the card: for the tool, or for the tool with one argument pinned, such as a recipient. Or set the tool to allow on the Plugins page |
+| A plugin tool reaching a destination for the first time, or one set to `ask` (phase 11) | Once per destination. A destination the user named in the conversation does not ask | "Always for this destination" is the card's first answer. "Always for this tool", or the Plugins page, stops a tool that has no destination |
 | Creating or enabling a routine (phase 7) | Once per routine | It does not repeat: the routine's runs follow the same rules as any other run |
+
+An ask never stops a run: the call is stored, and it runs when the user confirms
+it (`design/sentry.md` 7).
 
 Two queues collect things without stopping any work, and neither sends a push: a
 memory the screen flagged waits as pending (phase 5), and content the screen
 removed is listed under Settings, Security.
+
+A tripwire is not an ask. It fires when a run's own actions form an attack chain,
+holds that run, and sends one push (`design/sentry.md` 11).
 
 Never asks: `web_search`, `web_fetch`, `bash`, files, egress, memory, projects,
 subagents, wakeups, and read-only plugin tools.
@@ -388,6 +400,33 @@ subagents, wakeups, and read-only plugin tools.
         allowlist mode); never `ask`
       - `web_fetch` and the hosted search backends check the same blocklist and
         halt before they dial
+- [ ] The first-seen index (`design/sentry.md` 3): where each host, URL and
+      address a session meets first appeared (`user`, `search`, `content` with its
+      window's score, or `model`), written by ingest and by `Gate.Observe` on user
+      messages, inherited by subagents, and the rule for "anchored". Ingest gains
+      the watch threshold (0.5, a setting): a window at or over it is passed
+      whole and its destinations are watched.
+- [ ] Egress counting: the proxy reports each connection's host and bytes sent
+      and received through `Observe`.
+- [ ] Tripwires (`design/sentry.md` 11), in `internal/sentry/trip`:
+      - marks as rows per run: `watched`, `hidden`, `sensitive-read`, `carried`
+        (fingerprints of private text, checked after decoding), `new-sink`,
+        `told-sink`, `upload`, `fan-out`
+      - the chains Followed, Carried out, Lifted, Drained and Blocked often. A
+        completing `web_fetch` or connection is blocked; a plugin call asks
+        (phase 11)
+      - a held run: outbound actions to destinations that are not anchored are
+        blocked or ask, everything else carries on, and the hold ends with the
+        run or with the user's answer
+      - the entry and its two answers ("this was fine", "stop the run") under
+        Settings, Security, with one push. It moves to the Inbox in phase 5
+      - each tripwire's switch, numbers, and its fired and "fine" counts in
+        Settings, Security
+- [ ] Checkpoints (`design/sentry.md` 7): `eikad` commits each project tree to a
+      shadow git directory when a run starts and ends, a run's card restores the
+      tree, and the time a checkpoint took is recorded.
+- [ ] Remote images in model output load only when their URL's source is `user`,
+      `search` or `content`; otherwise the UI shows a link.
 - [ ] Halt: an always-visible button, resume, and Core's reaction (abort runs, a
       scheduler pause hook, a banner, a push).
 - [ ] Audit: an append-only table with a row for every decision that was not a
@@ -411,6 +450,11 @@ subagents, wakeups, and read-only plugin tools.
       - a worker that reads the injected page with `curl`, which is not screened,
         to measure what that gap costs
       - the guard stopped mid-run gives `unscanned`, never a dropped result
+      - tripwires: per scenario, which fired. None may fire on an innocent or
+        alarming variant, and the report says which attacks each caught that the
+        rules let through. A tripwire that fails either test ships switched off
+      - `Decide` under 1 ms for arguments up to 64 KiB, as a benchmark in
+        `make check`
 - [ ] Update the security section of the style guide: Core holds model keys and
       third-party credentials, sealed; computers get proxy identities and nothing
       else.
@@ -424,6 +468,10 @@ subagents, wakeups, and read-only plugin tools.
 - The canary's value pasted into a command halts Eika.
 - With the guard stopped there is a banner and one push, and pages arrive
   `unscanned`. With `screen_required` on, `web_fetch` is blocked instead.
+- A worker that reads `.env` and then connects to a host a fixture page named is
+  refused, the run is held, and the phone gets one push. "This was fine" ends the
+  hold.
+- A run that deleted files is restored from its card.
 - Halt stops everything in one press.
 
 The log records `evals/injection`'s numbers, including what got through.
@@ -479,23 +527,33 @@ and `design/sentry.md` section 7.
       them there.
 - [ ] Catalog in `eika`'s preamble, and the tools `plugin_find` and `plugin_call`,
       for `eika` only.
-- [ ] Tool settings: each plugin tool is `allow`, `ask` or `block`. The default
-      comes from MCP annotations: `readOnlyHint` gives `allow`, everything else
-      `ask`. The Plugins page shows and changes them.
+- [ ] Tool settings: each plugin tool is `allow`, `known`, `ask` or `block`, and
+      may have a destination argument, proposed from its schema. Defaults follow
+      the table in `design/sentry.md` 5. The Plugins page shows and changes them.
+      A tool's description and schema are hashed and screened when the plugin is
+      added; a later change leaves the tool working and adds one Inbox entry.
 - [ ] Approvals:
-      - the `ask` verdict: the call parks as a slow tool
-      - durable rows, keyed by action (Eika's tool-call id), with wait and expiry
-        (24 h, then deny)
+      - the `ask` verdict stores the whole call. Approving runs the stored call
+        from Core
+      - the call waits up to two minutes when the user is at the UI, and
+        otherwise returns `Queued: this runs when the user confirms it`. The
+        result of a call approved later reaches the session as a notice
+      - durable rows, keyed by action (Eika's tool-call id), with expiry (24 h,
+        then deny), answerable after a restart
       - answered only through the user's authenticated API
-      - a pending approval whose run was interrupted expires, and its card says so
 - [ ] Approval cards in the Inbox: the plugin and tool in plain words, the
-      arguments in full, and the answers "once", "always for this tool", "always
-      when `<argument>` is `<value>`" and "deny". "Always for this tool" sets the
-      tool to `allow`, and is not offered for a tool annotated destructive. A
-      pinned argument is a grant row. Each approval sends an ntfy push, and there
-      is a phone baseline.
-- [ ] Grants page: grants and tool settings listed by plugin and tool, revocable
-      at once.
+      arguments in full, where the destination first appeared, and the answers
+      "always for this destination", "once", "always for this tool", "always when
+      `<argument>` is `<value>`" and "deny". Asks from one run share a card. Each
+      card sends one ntfy push, and there is a phone baseline.
+- [ ] Known destinations: recorded by "always for this destination", and when a
+      `known` tool sends to one the user named in the conversation.
+- [ ] The journal: a row for every plugin call that is not read-only and ran
+      without a card, listed under Settings, Security.
+- [ ] A held run's plugin calls to destinations that are not anchored ask, with
+      the chain on the card.
+- [ ] Grants page: known destinations, grants and tool settings listed by plugin
+      and tool, revocable at once.
 - [ ] Results go through ingest, with one-time code and sign-in link removal for
       mail and messaging plugins. A plugin can be a trusted source.
 - [ ] Elicitations become Inbox items, using today's forms.
@@ -507,8 +565,10 @@ and `design/sentry.md` section 7.
 
 **Exit:**
 - A calendar MCP is connected with OAuth.
-- Eika lists events without asking, and asks before creating one. After "always
-  for this tool" it creates the next one without asking.
+- Eika lists events without asking. A mail to someone named in the conversation
+  goes out without a card and is in the journal. A mail to an address from a
+  fixture page arrives as a card on the phone while Eika carries on, and runs as
+  shown when approved.
 - A mail fixture's injected message is removed from what Eika reads.
 - A stdio plugin's environment is unreadable from any computer an agent can reach.
 
@@ -559,6 +619,146 @@ to `docs/DEFERRED.md`. Design: `design/skills-and-plugins.md` "Skills".
 **Exit:** drop a skill zip into the UI and enable it, then ask Eika for something
 that needs it. Eika delegates, the worker loads the skill with `skill_use`, and it
 runs the skill's script on the computer.
+
+## Phase 12: Web fetch
+
+Independent of the phases above: it changes one tool and one thing in the loop, and
+can be taken up between any two of them. Design: `design/web-fetch.md`. Ingest and
+the wrapper are phase 4's; until they exist a fetch result reaches the model as it
+does today.
+
+- [ ] `evals/fetch`: the offline corpus and its scorer (`design/web-fetch.md` 11).
+      - saved pages for each page kind, starting from the pages in section 1
+      - per page: strings that must survive, strings that must not appear, counts
+        of fences, headings and table rows, size in bench tokens
+      - a report that diffs against the committed baseline, run by `make check`
+      Every later item in this phase updates the baseline in the same change.
+- [ ] Page model (4): lines, the section index with sizes, and the anchor index
+      kept through conversion.
+      - a fragment resolves through anchors, then heading text
+      - `Split` and the filter's `code()` share one fence rule
+      - `section` matching several headings returns the candidates
+- [ ] `lines` and `find` (2), in the harness, with their tests in `page`. The
+      description and schema are rewritten around `section`, `lines`, `find`;
+      `filter` stays and moves last.
+- [ ] Result layout (3):
+      - the status line on every result
+      - the overview for an over-budget page: lead, then the outline with line
+        ranges and sizes
+      - head and next range for a page with no headings; JSON cut between members
+      - cuts on block boundaries, each with the next call
+      - the byte cap reported; `svg`, `script` and `style` dropped while reading
+- [ ] Budget (5): a share of the session's context window, passed to the tool
+      through `CallContext`, and sizes from the session's token counter where the
+      endpoint has one. Measure the counting cost per fetch on the bench first; if
+      it is not negligible, keep the estimate and make it script-aware.
+- [ ] Failure detection (3, "Errors"): challenge pages, sign-in redirects, script
+      shells with the embedded-state attempt, `Retry-After`, and the
+      incomplete-extraction notice.
+- [ ] Conversion (7, "Whitespace", "The rest"): fence-safe clean-up, per-line code
+      elements, spacing between inline elements, escaping, `sub` and `sup`, math
+      from annotations, lazy images, `brush:` languages.
+- [ ] Extraction (7, "Extraction"): the exemptions, candidates tested without
+      changing the document, widening with the doubling rule, hidden panels as
+      content, and the three quality signals.
+- [ ] Tables and links (7): the three table renderings, then the link rules.
+      Measure the per-section link list on `evals/fetch` with the bench
+      tokenizer and adopt it only if it saves tokens on reference pages without
+      losing a target an agent would follow. Record the numbers in the log.
+- [ ] Site readers (8), one commit each: Hacker News, Stack Exchange, Discourse,
+      the three registries, Wikipedia, arXiv.
+- [ ] PDF and feeds (7): choose the PDF library on `evals/fetch` (text order,
+      ligatures, a scanned file reported as having no text), with a page cap and a
+      timeout. The dependency needs its justification.
+- [ ] Page cache in Postgres (4), by forward migration: conditional revalidation,
+      one fetch per concurrent miss, session pins. With a computer, the full page
+      is written under `~/.cache/eika/fetch/` and named in over-budget results.
+- [ ] Concurrent read-only tools (9). Results are appended in call order. A
+      `DECISIONS.md` entry, and the event protocol if ordering on the wire changes.
+- [ ] `evals/fetch/live` (11): the question set, the direct-path baseline, and the
+      reader-alone scores.
+- [ ] The reader (6):
+      - `utility.Read` on class `fast`, through `inference.Queue` at the run's
+        priority, with the pool check that refuses when the conversation would be
+        evicted
+      - the request form, the reply parser, and every check in "The harness
+        checks the reply"
+      - section ranking for pages over the reader budget
+      - the report layout, the tool card with the reader's model and measured
+        tokens, and the cap of 20 calls per run
+      - a `DECISIONS.md` entry: why a reader call is recorded when other utility
+        calls are not
+      Ship `question` only if `evals/fetch/live` shows fewer context tokens at
+      equal correctness on the bench model. Otherwise the item closes with the
+      numbers in the log and the parameter is not added.
+
+**Exit:** in a chat with no computer, ask something answered deep inside a long
+reference page (pkg.go.dev `net/http`). The first result shows the lead and an
+outline with line ranges, the second returns the section, and no result is cut
+without saying what follows. Ask about a Hacker News thread and get the comments.
+Fetch a Stack Overflow question and get the answers. With the reader shipped, ask
+a question of a 40,000-token page: the session's context grows by under 2,000
+tokens, and the lines the report cites read the same when fetched directly.
+
+## Phase 13: Compaction
+
+Follows phase 2: it reworks the compaction phase 2 leaves and offers its history
+tools to every agent. Design: `design/compaction.md`. Until an item below ships,
+sessions compact as phase 2 left them.
+
+- [ ] What a compaction records (`design/compaction.md` 7): the wall time of the
+      summary calls, split into queue wait, prefill and generation, and the
+      uncached tokens of the first call after. Shown on the compaction card.
+      This item comes first so that every later one has a baseline.
+- [ ] `evals/compaction` (8): the three recorded sessions, their probes with the
+      strings that score them, the drift run, and the report. Run it on today's
+      method and commit the baseline numbers to the log.
+- [ ] The record (2, "The record"): `[Requests]` and `[Activity]` built from
+      rows, with their budgets, and the hook by which a session type adds a
+      section. The home session's `[Subagents]` moves onto that hook. Golden
+      tests from fixture rows.
+- [ ] The state (2, "The state", "When the model's part fails"):
+      - the task prompts and the update prompt, with the record shown in the
+        request; the home prompts keep their sections
+      - the 4,096-token output budget
+      - the acceptance check, and `method: record` when no state is accepted
+      - `method`, `state` and `state_as_of` on the entry, by forward migration
+        if the entry's shape needs one
+      Run `evals/compaction` on the record alone and on the hybrid. The hybrid
+      replaces today's summary only if its probe score is not lower and its wall
+      time is; otherwise the item closes with the numbers in the log. A
+      `DECISIONS.md` entry either way.
+- [ ] The cut (3): budgets as shares of the window and the cut at user-turn
+      boundaries, for every session.
+- [ ] Recall for every agent (6): `history_search` and `history_read` in every
+      tool list, scoped to the session, with `#id` in hits and `history_read` of
+      a tool result by id.
+- [ ] Stubs in the kept tail (4): the rule, the stub texts on the compaction
+      entry, the fold in `session.Messages`, and sizes after stubbing in
+      `planCompaction`. The prefix-stability test covers a replay across a
+      compaction with stubs. Ship if the probe score with the history tools is
+      not lower. A `DECISIONS.md` entry.
+- [ ] Prepared compactions (5):
+      - the unapplied entry, which the fold ignores
+      - preparing at `maintenance` priority after a run, when the affinity book
+        says the prefix is held
+      - applying at run start when it is not, and at the threshold
+      - dropping a prepared compaction the conversation has outgrown
+      - the idle-minutes rule where the harness cannot tell what is held
+      Measure on the bench first: a session taken past the threshold with and
+      without preparation, and a cold return to a session at 60% fill. Record
+      the wait the user sees in both. A `DECISIONS.md` entry.
+- [ ] Set the numbers of `design/compaction.md` 2 to 5 from the eval report, and
+      decide the two "Not built" entries the report speaks to.
+
+**Exit:** take a chat past its window on the bench. The compaction card shows
+the method and how long the summary took, and the summary's `[Requests]` holds
+the first message word for word. Ask for an exact value from a tool result in
+the compacted span: the agent gets it with `history_read`. Stop the model
+server's summary call from completing: the session compacts with `method:
+record` and the run continues. Leave a session at 60% fill, use another until
+the first loses its slot, and return: the first call reads about a third of the
+old context.
 
 ## Open questions
 

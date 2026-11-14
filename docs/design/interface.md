@@ -16,7 +16,7 @@ Desktop: left rail  Chat, Activity, Inbox, Projects, Memory, Skills, Plugins,
 |---|---|
 | Chat | The one home session, the only place the user talks to Eika: a linear transcript of every channel's messages (each marked with its channel), composer, Eika's reasoning and tool calls, compaction cards, and compact subagent cards ("plumber · worker · running · Kitchen") that open the subagent's view |
 | Activity | Eika's subagents (running, waiting with the reason, idle, failed) and routine runs. Each opens a read-only live view of its session: streamed reasoning, tool calls and results, its report and approvals, with Cancel. There is no composer: steering goes through Eika in Chat |
-| Inbox | Approvals, elicitations and pending memories. Each is a card with its full context and actions (`sentry.md` 7). Badge counts unanswered items |
+| Inbox | Approvals, tripwire entries, elicitations and pending memories. Each is a card with its full context and actions (`sentry.md` 7). Badge counts unanswered items |
 | Projects | List, then a project page: description, instructions editor, and its subagents (watch, read-only) and routines |
 | Memory | `memory.md` 8, with the Instructions editor |
 | Skills | Install from a zip, read, enable |
