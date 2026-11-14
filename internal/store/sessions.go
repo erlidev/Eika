@@ -7,18 +7,53 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// SessionKind says who opened a session.
+// SessionKind identifies the role of a conversation.
 type SessionKind string
 
 // The kinds a session can have.
 const (
 	// SessionUser is a session the user opened.
 	SessionUser SessionKind = "user"
+	// SessionHome is the owner's main conversation.
+	SessionHome SessionKind = "home"
+	// SessionSubagent is a named delegated conversation.
+	SessionSubagent SessionKind = "subagent"
+	// SessionRoutine is a scheduled conversation.
+	SessionRoutine SessionKind = "routine"
 )
+
+// SessionState is the lifecycle state set by code.
+type SessionState string
+
+// The lifecycle states of a session.
+const (
+	// SessionIdle has no active run.
+	SessionIdle SessionState = "idle"
+	// SessionRunning has an active run.
+	SessionRunning SessionState = "running"
+	// SessionWaiting has a run waiting for input.
+	SessionWaiting SessionState = "waiting"
+	// SessionFailed has a failed run.
+	SessionFailed SessionState = "failed"
+	// SessionCancelled has a cancelled run.
+	SessionCancelled SessionState = "cancelled"
+)
+
+// LocalOwner is the storage identity of the local user.
+const LocalOwner = "local"
 
 // Session is one tree of entries, inside a computer or, for a chat, in none.
 type Session struct {
-	ID string
+	ID              string
+	Owner           string
+	Agent           string
+	Name            string
+	ProjectID       string
+	ParentSessionID string
+	State           SessionState
+	Brief           string
+	Result          string
+	LastActiveAt    time.Time
 	// ComputerID is the computer the session's runs act in, empty for a
 	// chat.
 	ComputerID string
@@ -26,7 +61,7 @@ type Session struct {
 	// Untitled reports that Title is a placeholder, which the first run
 	// replaces with a title made from the first message.
 	Untitled bool
-	// Kind is who opened the session. An empty kind on input is SessionUser.
+	// Kind identifies the conversation. An empty kind on input is SessionUser.
 	Kind SessionKind
 	// HeadEntryID is the entry a run continues from, empty in a session that
 	// has no entries yet.
@@ -56,7 +91,8 @@ func (s Session) Chat() bool { return s.ComputerID == "" }
 // sessionColumns is the column list every session query selects, in the order
 // scanSession reads them.
 const sessionColumns = `id, computer_id, title, untitled, kind, head_entry_id, tools,
-	profile_id, overrides, pinned, archived, created_at, updated_at`
+	profile_id, overrides, pinned, archived, created_at, updated_at,
+    owner, agent, name, project_id, parent_session_id, state, brief, result, last_active_at`
 
 // CreateSession inserts sess and returns it with the fields the database
 // assigned. An empty ID gets a fresh one; an unknown profile is ErrNotFound.
@@ -67,17 +103,28 @@ func (s *Store) CreateSession(ctx context.Context, sess Session) (Session, error
 	if sess.Kind == "" {
 		sess.Kind = SessionUser
 	}
+	if sess.Owner == "" {
+		sess.Owner = LocalOwner
+	}
+	if sess.State == "" {
+		sess.State = SessionIdle
+	}
+	var active *time.Time
+	if !sess.LastActiveAt.IsZero() {
+		value := sess.LastActiveAt.UTC()
+		active = &value
+	}
 	overrides, err := overridesJSON(sess.Overrides)
 	if err != nil {
 		return Session{}, wrapMissing("create session", err)
 	}
 	const insert = `INSERT INTO sessions (id, computer_id, title, untitled, kind, head_entry_id,
-			tools, profile_id, overrides, pinned, archived)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			tools, profile_id, overrides, pinned, archived, owner, agent, name, project_id, parent_session_id, state, brief, result, last_active_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, now()))
 		RETURNING ` + sessionColumns
 	row := s.pool.QueryRow(ctx, insert, sess.ID, nullable(sess.ComputerID), sess.Title, sess.Untitled, sess.Kind,
 		nullable(sess.HeadEntryID), sess.Tools,
-		nullable(sess.ProfileID), overrides, sess.Pinned, sess.Archived)
+		nullable(sess.ProfileID), overrides, sess.Pinned, sess.Archived, sess.Owner, sess.Agent, sess.Name, nullable(sess.ProjectID), nullable(sess.ParentSessionID), sess.State, sess.Brief, sess.Result, active)
 	out, err := scanSession(row)
 	if err != nil {
 		return Session{}, wrapMissing("create session", err)
@@ -215,24 +262,39 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 // scanSession reads one session row.
 func scanSession(row pgx.Row) (Session, error) {
 	var (
-		sess      Session
-		computer  *string
-		head      *string
-		profile   *string
-		overrides []byte
+		sess            Session
+		computer        *string
+		head            *string
+		profile         *string
+		project, parent *string
+		overrides       []byte
 	)
 	err := row.Scan(&sess.ID, &computer, &sess.Title, &sess.Untitled, &sess.Kind, &head, &sess.Tools,
-		&profile, &overrides, &sess.Pinned, &sess.Archived, &sess.CreatedAt, &sess.UpdatedAt)
+		&profile, &overrides, &sess.Pinned, &sess.Archived, &sess.CreatedAt, &sess.UpdatedAt, &sess.Owner, &sess.Agent, &sess.Name, &project, &parent, &sess.State, &sess.Brief, &sess.Result, &sess.LastActiveAt)
 	if err != nil {
 		return Session{}, err
 	}
 	if sess.Overrides, err = readOverrides(overrides); err != nil {
 		return Session{}, err
 	}
+	sess.ProjectID = text(project)
+	sess.ParentSessionID = text(parent)
+	sess.LastActiveAt = sess.LastActiveAt.UTC()
 	sess.ComputerID = text(computer)
 	sess.HeadEntryID = text(head)
 	sess.ProfileID = text(profile)
 	sess.CreatedAt = sess.CreatedAt.UTC()
 	sess.UpdatedAt = sess.UpdatedAt.UTC()
+	return sess, nil
+}
+
+// HomeSession returns the home conversation identified by owner and name.
+func (s *Store) HomeSession(ctx context.Context, owner, name string) (Session, error) {
+	row := s.pool.QueryRow(ctx, `SELECT `+sessionColumns+` FROM sessions
+		WHERE kind = 'home' AND owner = $1 AND name = $2`, owner, name)
+	sess, err := scanSession(row)
+	if err != nil {
+		return Session{}, wrap("read home session", err)
+	}
 	return sess, nil
 }

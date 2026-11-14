@@ -34,6 +34,10 @@ const (
 	// KindCompaction is a summary that replaces the conversation before it,
 	// except its newest messages, from then on.
 	KindCompaction EntryKind = "compaction"
+	// KindPreamble is a stored context snapshot.
+	KindPreamble EntryKind = "preamble"
+	// KindNotice is harness text for the user and a later context block.
+	KindNotice EntryKind = "notice"
 )
 
 // Entry is one node of a session tree. Entries form a tree through ParentID
@@ -47,22 +51,22 @@ type Entry struct {
 	// across every branch.
 	Seq  int64
 	Kind EntryKind
+	// Channel names the source or destination of a home message, empty if unset.
+	Channel string
 	// Payload is the entry's content. For an entry that carries a message it
 	// is the provider.Message JSON; internal/session owns the shapes. It is
-	// stored as jsonb, which keeps the document and not its spelling: the
-	// bytes that come back are equal as JSON to the bytes that went in, but
-	// key order, whitespace, and number formatting are the database's.
+	// stored as json, which preserves its exact spelling.
 	Payload   json.RawMessage
 	CreatedAt time.Time
 }
 
 // entryColumns is the column list every entry query selects, in the order
 // scanEntry reads them.
-const entryColumns = `id, session_id, parent_id, seq, kind, payload, created_at`
+const entryColumns = `id, session_id, parent_id, seq, kind, payload, created_at, channel`
 
 // AppendEntry appends e to the session's head and moves the head to it, in
 // one transaction. ID, SessionID, ParentID, Seq, and CreatedAt are assigned
-// here and ignored on input; Kind and Payload are the caller's.
+// here and ignored on input; Kind, Payload and Channel are the caller's.
 func (s *Store) AppendEntry(ctx context.Context, sessionID string, e Entry) (Entry, error) {
 	var out Entry
 	err := s.tx(ctx, func(q querier) error {
@@ -154,7 +158,7 @@ func (s *Store) SessionPath(ctx context.Context, sessionID string) ([]Entry, err
 const pathQuery = `WITH RECURSIVE up AS (
 		SELECT ` + entryColumns + ` FROM session_entries WHERE id = $1
 		UNION ALL
-		SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at
+		SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at, e.channel
 		FROM session_entries e JOIN up ON e.id = up.parent_id
 	)
 	SELECT ` + entryColumns + ` FROM up ORDER BY seq`
@@ -167,16 +171,16 @@ const pathQuery = `WITH RECURSIVE up AS (
 // concurrent appends without the lock would pick the same number and one of
 // them would lose the (session_id, seq) uniqueness check.
 func insertEntry(ctx context.Context, q querier, sessionID, parentID string, e Entry) (Entry, error) {
-	const insert = `INSERT INTO session_entries (id, session_id, parent_id, seq, kind, payload)
+	const insert = `INSERT INTO session_entries (id, session_id, parent_id, seq, kind, payload, channel)
 		VALUES ($1, $2, $3,
 			(SELECT coalesce(max(seq), 0) + 1 FROM session_entries WHERE session_id = $2),
-			$4, $5)
+			$4, $5, $6)
 		RETURNING ` + entryColumns
 	payload := e.Payload
 	if len(payload) == 0 {
 		payload = json.RawMessage(`{}`)
 	}
-	row := q.QueryRow(ctx, insert, NewID(), sessionID, nullable(parentID), e.Kind, []byte(payload))
+	row := q.QueryRow(ctx, insert, NewID(), sessionID, nullable(parentID), e.Kind, []byte(payload), e.Channel)
 	return scanEntry(row)
 }
 
@@ -253,7 +257,7 @@ func scanEntry(row pgx.Row) (Entry, error) {
 		parent  *string
 		payload []byte
 	)
-	err := row.Scan(&e.ID, &e.SessionID, &parent, &e.Seq, &e.Kind, &payload, &e.CreatedAt)
+	err := row.Scan(&e.ID, &e.SessionID, &parent, &e.Seq, &e.Kind, &payload, &e.CreatedAt, &e.Channel)
 	if err != nil {
 		return Entry{}, err
 	}

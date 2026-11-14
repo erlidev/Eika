@@ -1096,15 +1096,24 @@
             "nullable": {
               "array": {
                 "object": {
+                  "agent": "string",
                   "archived": "boolean",
+                  "brief": "string",
                   "computer_id": "string",
                   "created_at": "string",
                   "head_entry_id": "string",
                   "id": "string",
                   "kind": "string",
+                  "last_active_at": "string",
+                  "name": "string",
                   "overridden": "boolean",
+                  "owner": "string",
+                  "parent_session_id": "string",
                   "pinned": "boolean",
                   "profile_id": "string",
+                  "project_id": "string",
+                  "result": "string",
+                  "state": "string",
                   "title": "string",
                   "tools": {
                     "nullable": {
@@ -1114,9 +1123,15 @@
                   "updated_at": "string"
                 },
                 "optional": [
+                  "agent",
+                  "brief",
                   "computer_id",
                   "head_entry_id",
-                  "profile_id"
+                  "name",
+                  "parent_session_id",
+                  "profile_id",
+                  "project_id",
+                  "result"
                 ]
               }
             }
@@ -1130,6 +1145,7 @@
         "object": {
           "head": {
             "object": {
+              "channel": "string",
               "compaction": {
                 "object": {
                   "kept": "number",
@@ -1290,24 +1306,36 @@
                 ]
               },
               "parent_id": "string",
-              "seq": "number"
+              "seq": "number",
+              "text": "string"
             },
             "optional": [
+              "channel",
               "compaction",
-              "parent_id"
+              "parent_id",
+              "text"
             ]
           },
           "session": {
             "object": {
+              "agent": "string",
               "archived": "boolean",
+              "brief": "string",
               "computer_id": "string",
               "created_at": "string",
               "head_entry_id": "string",
               "id": "string",
               "kind": "string",
+              "last_active_at": "string",
+              "name": "string",
               "overridden": "boolean",
+              "owner": "string",
+              "parent_session_id": "string",
               "pinned": "boolean",
               "profile_id": "string",
+              "project_id": "string",
+              "result": "string",
+              "state": "string",
               "title": "string",
               "tools": {
                 "nullable": {
@@ -1317,9 +1345,15 @@
               "updated_at": "string"
             },
             "optional": [
+              "agent",
+              "brief",
               "computer_id",
               "head_entry_id",
-              "profile_id"
+              "name",
+              "parent_session_id",
+              "profile_id",
+              "project_id",
+              "result"
             ]
           }
         },
@@ -2310,6 +2344,7 @@
             "nullable": {
               "array": {
                 "object": {
+                  "channel": "string",
                   "compaction": {
                     "object": {
                       "kept": "number",
@@ -2470,11 +2505,14 @@
                     ]
                   },
                   "parent_id": "string",
-                  "seq": "number"
+                  "seq": "number",
+                  "text": "string"
                 },
                 "optional": [
+                  "channel",
                   "compaction",
-                  "parent_id"
+                  "parent_id",
+                  "text"
                 ]
               }
             }
@@ -3107,15 +3145,24 @@
       },
       "response": {
         "object": {
+          "agent": "string",
           "archived": "boolean",
+          "brief": "string",
           "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
+          "last_active_at": "string",
+          "name": "string",
           "overridden": "boolean",
+          "owner": "string",
+          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
+          "project_id": "string",
+          "result": "string",
+          "state": "string",
           "title": "string",
           "tools": {
             "nullable": {
@@ -3125,9 +3172,15 @@
           "updated_at": "string"
         },
         "optional": [
+          "agent",
+          "brief",
           "computer_id",
           "head_entry_id",
-          "profile_id"
+          "name",
+          "parent_session_id",
+          "profile_id",
+          "project_id",
+          "result"
         ]
       }
     },
@@ -4254,15 +4307,24 @@
       },
       "response": {
         "object": {
+          "agent": "string",
           "archived": "boolean",
+          "brief": "string",
           "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
+          "last_active_at": "string",
+          "name": "string",
           "overridden": "boolean",
+          "owner": "string",
+          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
+          "project_id": "string",
+          "result": "string",
+          "state": "string",
           "title": "string",
           "tools": {
             "nullable": {
@@ -4272,9 +4334,15 @@
           "updated_at": "string"
         },
         "optional": [
+          "agent",
+          "brief",
           "computer_id",
           "head_entry_id",
-          "profile_id"
+          "name",
+          "parent_session_id",
+          "profile_id",
+          "project_id",
+          "result"
         ]
       }
     },
@@ -4310,15 +4378,24 @@
       },
       "response": {
         "object": {
+          "agent": "string",
           "archived": "boolean",
+          "brief": "string",
           "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
+          "last_active_at": "string",
+          "name": "string",
           "overridden": "boolean",
+          "owner": "string",
+          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
+          "project_id": "string",
+          "result": "string",
+          "state": "string",
           "title": "string",
           "tools": {
             "nullable": {
@@ -4328,9 +4405,15 @@
           "updated_at": "string"
         },
         "optional": [
+          "agent",
+          "brief",
           "computer_id",
           "head_entry_id",
-          "profile_id"
+          "name",
+          "parent_session_id",
+          "profile_id",
+          "project_id",
+          "result"
         ]
       }
     },
@@ -5011,15 +5094,24 @@
       },
       "response": {
         "object": {
+          "agent": "string",
           "archived": "boolean",
+          "brief": "string",
           "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
+          "last_active_at": "string",
+          "name": "string",
           "overridden": "boolean",
+          "owner": "string",
+          "parent_session_id": "string",
           "pinned": "boolean",
           "profile_id": "string",
+          "project_id": "string",
+          "result": "string",
+          "state": "string",
           "title": "string",
           "tools": {
             "nullable": {
@@ -5029,9 +5121,15 @@
           "updated_at": "string"
         },
         "optional": [
+          "agent",
+          "brief",
           "computer_id",
           "head_entry_id",
-          "profile_id"
+          "name",
+          "parent_session_id",
+          "profile_id",
+          "project_id",
+          "result"
         ]
       }
     },
@@ -5276,6 +5374,7 @@
     },
     "session.message": {
       "object": {
+        "channel": "string",
         "created_at": "string",
         "entry_id": "string",
         "kind": "string",
@@ -5284,6 +5383,7 @@
         "session_id": "string"
       },
       "optional": [
+        "channel",
         "parent_id"
       ]
     },

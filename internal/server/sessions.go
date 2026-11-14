@@ -16,12 +16,21 @@ import (
 
 // sessionBody is one session on the wire.
 type sessionBody struct {
-	ID string `json:"id"`
+	ID              string             `json:"id"`
+	Owner           string             `json:"owner"`
+	Agent           string             `json:"agent,omitempty"`
+	Name            string             `json:"name,omitempty"`
+	ProjectID       string             `json:"project_id,omitempty"`
+	ParentSessionID string             `json:"parent_session_id,omitempty"`
+	State           store.SessionState `json:"state"`
+	Brief           string             `json:"brief,omitempty"`
+	Result          string             `json:"result,omitempty"`
+	LastActiveAt    time.Time          `json:"last_active_at"`
 	// ComputerID is the computer the session's runs act in, absent for a
 	// chat.
 	ComputerID string `json:"computer_id,omitempty"`
 	Title      string `json:"title"`
-	// Kind is who opened the session.
+	// Kind identifies the conversation.
 	Kind        string `json:"kind"`
 	HeadEntryID string `json:"head_entry_id,omitempty"`
 	// Tools names the tools the session's next run offers the model,
@@ -47,6 +56,8 @@ type sessionBody struct {
 type entryBody struct {
 	ID        string           `json:"id"`
 	ParentID  string           `json:"parent_id,omitempty"`
+	Channel   string           `json:"channel,omitempty"`
+	Text      *string          `json:"text,omitempty"`
 	Seq       int64            `json:"seq"`
 	Kind      string           `json:"kind"`
 	CreatedAt time.Time        `json:"created_at"`
@@ -423,18 +434,27 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 		return sessionBody{}, err
 	}
 	return sessionBody{
-		ID:          sess.ID,
-		ComputerID:  sess.ComputerID,
-		Title:       sess.Title,
-		Kind:        string(sess.Kind),
-		HeadEntryID: sess.HeadEntryID,
-		Tools:       s.sessionToolNames(sess, c.tools),
-		ProfileID:   sess.ProfileID,
-		Overridden:  !sess.Overrides.Empty() || sess.Tools != nil,
-		Pinned:      sess.Pinned,
-		Archived:    sess.Archived,
-		CreatedAt:   sess.CreatedAt,
-		UpdatedAt:   sess.UpdatedAt,
+		ID:              sess.ID,
+		Owner:           sess.Owner,
+		Agent:           sess.Agent,
+		Name:            sess.Name,
+		ProjectID:       sess.ProjectID,
+		ParentSessionID: sess.ParentSessionID,
+		State:           sess.State,
+		Brief:           sess.Brief,
+		Result:          sess.Result,
+		LastActiveAt:    sess.LastActiveAt,
+		ComputerID:      sess.ComputerID,
+		Title:           sess.Title,
+		Kind:            string(sess.Kind),
+		HeadEntryID:     sess.HeadEntryID,
+		Tools:           s.sessionToolNames(sess, c.tools),
+		ProfileID:       sess.ProfileID,
+		Overridden:      !sess.Overrides.Empty() || sess.Tools != nil,
+		Pinned:          sess.Pinned,
+		Archived:        sess.Archived,
+		CreatedAt:       sess.CreatedAt,
+		UpdatedAt:       sess.UpdatedAt,
 	}, nil
 }
 
@@ -443,6 +463,7 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 func asEntry(e store.Entry) (entryBody, error) {
 	body := entryBody{
 		ID:        e.ID,
+		Channel:   e.Channel,
 		ParentID:  e.ParentID,
 		Seq:       e.Seq,
 		Kind:      string(e.Kind),
@@ -454,6 +475,13 @@ func asEntry(e store.Entry) (entryBody, error) {
 	}
 	if ok {
 		body.Message = m
+	}
+	if e.Kind == store.KindPreamble || e.Kind == store.KindNotice {
+		text, err := session.TextOf(e)
+		if err != nil {
+			return entryBody{}, err
+		}
+		body.Text = &text
 	}
 	if e.Kind == store.KindCompaction {
 		c, err := session.CompactionOf(e)

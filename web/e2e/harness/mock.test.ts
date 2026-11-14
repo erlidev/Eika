@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { Entry, Session } from "../../src/api/types.ts";
 import { eventTypes } from "../../src/api/events.ts";
 import { contract } from "./contract.ts";
 import { MockHarness, mockToken } from "./mock.ts";
@@ -780,5 +781,59 @@ describe("user instructions", () => {
       ).status,
     ).toBe(400);
     expect((await call(mock, "GET", path)).body).toEqual({ instructions: "" });
+  });
+});
+
+describe("session storage metadata", () => {
+  it("returns identity and activity defaults and refuses writes to them", async () => {
+    const mock = open("workbench");
+    const reply = await call(mock, "POST", "/api/sessions", { chat: true });
+    expect(reply.status).toBe(201);
+    expect(reply.body).toMatchObject({ kind: "user", owner: "local", state: "idle" });
+    const row = reply.body as Session;
+    expect(row.last_active_at).toBe(row.created_at);
+    for (const field of [
+      "kind",
+      "owner",
+      "agent",
+      "name",
+      "project_id",
+      "parent_session_id",
+      "state",
+      "brief",
+      "result",
+      "last_active_at",
+    ]) {
+      const create = await call(mock, "POST", "/api/sessions", { chat: true, [field]: "changed" });
+      expect(create.status, field).toBe(400);
+      const update = await call(mock, "PATCH", `/api/sessions/${row.id}`, { [field]: "changed" });
+      expect(update.status, field).toBe(400);
+    }
+    const read = await call(mock, "GET", `/api/sessions/${row.id}`);
+    expect(read.body).toMatchObject({ session: row });
+  });
+
+  it("keeps preamble and notice text and message channels in entry responses", async () => {
+    const mock = open("workbench");
+    const row = mock.world.sessions[0];
+    if (!row) throw new Error("missing session");
+    const text = "  café <tag> & text\nnext line";
+    const entry: Entry = {
+      id: "notice-entry",
+      seq: 1,
+      kind: "notice",
+      text,
+      channel: "web",
+      created_at: row.created_at,
+      message: { role: "" },
+    };
+    mock.world.entries[row.id] = [entry];
+    row.head_entry_id = entry.id;
+    const reply = await call(mock, "GET", `/api/sessions/${row.id}`);
+    expect(reply.body).toMatchObject({ head: { text, channel: "web", kind: "notice" } });
+    const outline = await call(mock, "GET", `/api/sessions/${row.id}/outline`);
+    expect(outline.body).toMatchObject({
+      nodes: [{ preview: "café <tag> & text ...", resumable: true }],
+    });
   });
 });

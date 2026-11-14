@@ -348,10 +348,16 @@ export class MockHarness {
       entry_id: entry.id,
       parent_id: entry.parent_id,
       kind: entry.kind,
+      channel: entry.channel,
       commit: entry.commit,
       created_at: entry.created_at,
       // A compaction entry's payload is the compaction, as the harness stores it.
-      message: entry.kind === "compaction" ? entry.compaction : entry.message,
+      message:
+        entry.kind === "compaction"
+          ? entry.compaction
+          : entry.kind === "preamble" || entry.kind === "notice"
+            ? { text: entry.text ?? "" }
+            : entry.message,
     });
   }
 

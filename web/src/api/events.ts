@@ -222,10 +222,19 @@ export type SessionUpdated = {
 
 /** EntryKind is what one session entry holds. */
 export type EntryKind =
-  "user" | "assistant" | "tool_call" | "tool_result" | "system" | "event" | "compaction";
+  | "user"
+  | "assistant"
+  | "tool_call"
+  | "tool_result"
+  | "system"
+  | "event"
+  | "compaction"
+  | "preamble"
+  | "notice";
 
 /** SessionMessage is the payload of a session.message event, which a replay sends. */
 export type SessionMessage = {
+  channel?: string;
   session_id: string;
   entry_id: string;
   parent_id?: string;

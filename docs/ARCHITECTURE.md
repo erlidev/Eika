@@ -420,8 +420,8 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | Table | Holds |
 |---|---|
 | `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), home |
-| `sessions` | computer_id (NULL for a chat), title, untitled, kind (user), head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
-| `session_entries` | session, parent_id, seq, kind, payload (json: the text it was written as, so a message reads back as the bytes it was sent as) |
+| `sessions` | computer_id (NULL for a chat), title, untitled, kind (user/home/subagent/routine), owner, agent, name, project_id, parent_session_id, state, brief, result, last_active_at, head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
+| `session_entries` | session, parent_id, seq, kind, channel, payload (json: the text it was written as, so a message reads back as the bytes it was sent as) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
 | `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, api (`chat` or `responses`), capabilities (jsonb, with the Responses check's outcome), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |
@@ -442,6 +442,14 @@ key (it would be a cycle); `SetSessionHead` checks ownership in its `UPDATE`.
 `max(seq)+1`, and moves the head, so concurrent appends form one chain.
 
 ### Session trees
+
+Sessions retain the legacy `user` kind and profile fields while callers move.
+Migration 0014 adds `home`, `subagent` and `routine`, agent/name/owner identity,
+project and parent references, lifecycle state, brief, result and last activity.
+Home identity is unique by owner/name; subagent names are unique per parent.
+Existing rows keep their kind and get their last activity from `updated_at`.
+Entries can store a channel, a `preamble` snapshot or a `notice` text payload.
+The API exposes these fields. Runtime assembly and delivery use later packages.
 
 `session.Tree` appends, reads `Path` (root to head), moves the head, lists `Children`, and renders an `Outline`. `session.Store` implements
 `agent.Store`; `Load` rebuilds a conversation from the path.

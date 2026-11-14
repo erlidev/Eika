@@ -3,10 +3,22 @@
 import type { CompactionReason, EntryKind, Timings, Usage } from "@/api/events";
 
 /** SessionKind is who opened a session. */
-export type SessionKind = "user";
+export type SessionKind = "user" | "home" | "subagent" | "routine";
+
+/** SessionState is the lifecycle state set by the harness. */
+export type SessionState = "idle" | "running" | "waiting" | "failed" | "cancelled";
 
 /** Session is a tree of entries in one computer, or in none for a chat. */
 export type Session = {
+  owner: string;
+  agent?: string;
+  name?: string;
+  project_id?: string;
+  parent_session_id?: string;
+  state: SessionState;
+  brief?: string;
+  result?: string;
+  last_active_at: string;
   id: string;
   /** computer_id is where the session's runs act; a chat has none. */
   computer_id?: string;
@@ -106,7 +118,8 @@ export type MessageImage = {
 
 /** Message is one entry of a conversation, as the provider package stores it. */
 export type Message = {
-  role: Role;
+  /** An entry with no provider message has an empty role. */
+  role: Role | "";
   content?: string;
   /**
    * context is the block the model reads at the end of a user message: the
@@ -152,6 +165,9 @@ export type Compaction = {
 
 /** Entry is one stored node of a session tree, with its message. */
 export type Entry = {
+  channel?: string;
+  /** text is present on preamble and notice entries. */
+  text?: string;
   id: string;
   parent_id?: string;
   seq: number;

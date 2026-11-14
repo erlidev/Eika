@@ -422,6 +422,9 @@ export class WorldBuilder {
       id: this.id("ses"),
       computer_id: computer.id,
       kind: "user",
+      owner: "local",
+      state: "idle",
+      last_active_at: minutesAgo(5),
       tools: sessionTools(this.world, false),
       overridden: false,
       pinned: false,
@@ -440,6 +443,9 @@ export class WorldBuilder {
     const row: Session = {
       id: this.id("chat"),
       kind: "user",
+      owner: "local",
+      state: "idle",
+      last_active_at: minutesAgo(5),
       tools: sessionTools(this.world, true),
       overridden: false,
       pinned: false,
@@ -553,6 +559,8 @@ export class WorldBuilder {
 /** entryKind is the entry kind the harness stores a message under. */
 export function entryKind(message: Message): Entry["kind"] {
   switch (message.role) {
+    case "":
+      throw new Error("cannot record an empty provider message");
     case "user":
       return "user";
     case "system":

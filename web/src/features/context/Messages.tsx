@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 /** roleTone is how each author's messages are marked. */
 const roleTone: Record<Message["role"], string> = {
+  "": "bg-muted text-muted-foreground border-transparent",
   user: "border-primary/40 bg-primary/10 text-primary",
   assistant: "bg-muted text-foreground border-transparent",
   tool: "border-chart-3/40 bg-chart-3/10 text-chart-3",

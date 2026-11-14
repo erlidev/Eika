@@ -19,6 +19,13 @@ function preview(entry: Entry): string {
   if (entry.compaction) {
     return `compacted about ${String(entry.compaction.tokens_before)} tokens into a summary`;
   }
+  if (entry.text !== undefined) {
+    let text = entry.text.trim();
+    const first = text.search(/[\r\n]/);
+    if (first >= 0) text = text.slice(0, first).trim() + " ...";
+    const runes = Array.from(text);
+    return runes.length > 80 ? runes.slice(0, 80).join("").trim() + " ..." : text;
+  }
   const message = entry.message;
   if (message.content) return message.content.slice(0, 80);
   const call = message.tool_calls?.[0];
@@ -85,6 +92,9 @@ export function sessionRoutes(ctx: RouteContext): void {
       ...(cx ? { computer_id: cx.id } : {}),
       title: str(body.title) || (chat ? "New chat" : "New session"),
       kind: "user",
+      owner: "local",
+      state: "idle",
+      last_active_at: now(),
       tools: sessionTools(w, chat),
       overridden: false,
       pinned: false,
