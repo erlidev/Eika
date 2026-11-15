@@ -168,7 +168,7 @@ The home loop, end to end, in a browser. Nothing here is hardened.
 - [x] **P2-09**: Ensure home at start and add `GET /api/home`. The store already
       has the session kind and index; copy `Server.EnsureHome`. The only channel
       is `web`.
-- [ ] **P3-03**: Add the World and matching routes, for the home session and
+- [x] **P3-03**: Add the World and matching routes, for the home session and
       subagents only.
 - [ ] **P3-04**: Build navigation, the home shell and basic Chat. `SessionView`
       is reused as it is. Settings stays the existing dialog, and the workbench
@@ -482,7 +482,7 @@ The mobile-first app. Design: `design/interface.md`.
 - [ ] Mock harness: a `World` for the home session, subagents and projects;
       scenarios; phone baselines for Chat and Activity; a touch emulation pass of
       the composer spec.
-      - [ ] **P3-03**: Add World and matching routes.
+      - [x] **P3-03**: Add World and matching routes.
       - [ ] **P3-08**: Add Chat card scenarios.
       - [ ] **P3-09**: Add Activity scenarios.
       - [ ] **P3-16**: Complete phone and touch coverage and measure history.

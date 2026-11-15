@@ -471,6 +471,34 @@ export class WorldBuilder {
     return row;
   }
 
+  /** home adds the local owner's persistent conversation. */
+  home(input: Partial<Session> = {}): Session {
+    return this.chat({
+      title: "Home",
+      ...input,
+      kind: "home",
+      owner: "local",
+      name: "home",
+      agent: "eika",
+      tools: ["web_search"],
+    });
+  }
+
+  /** subagent adds a named session under home. */
+  subagent(parent: Session, input: Partial<Session> & { name: string; agent: string }): Session {
+    return this.chat({
+      title: input.name,
+      ...input,
+      kind: "subagent",
+      owner: parent.owner,
+      parent_session_id: parent.id,
+      tools:
+        input.agent === "worker"
+          ? ["bash", "file_edit", "file_read", "file_write", "web_fetch", "web_search"]
+          : ["web_fetch", "web_search"],
+    });
+  }
+
   /**
    * mcpServer adds an MCP server with nothing listed yet; pass the details it
    * has on top. Its tools join GET /api/tools as the harness offers them.
@@ -557,6 +585,9 @@ export class WorldBuilder {
         kind: entryKind(message),
         created_at: minutesAgo(at),
         message,
+        ...(session.kind === "home" && (message.role === "user" || message.role === "assistant")
+          ? { channel: "web" }
+          : {}),
         ...(parent === undefined ? {} : { parent_id: parent }),
       };
       at = Math.max(1, at - 3);
