@@ -893,6 +893,7 @@ describe("user instructions", () => {
         handler({
           params: [project.id],
           query: new URLSearchParams(),
+          rawQuery: "",
           body,
           raw: JSON.stringify(body),
         });
@@ -1184,29 +1185,40 @@ describe("entry pagination", () => {
     if (!base) throw new Error("missing fixture entry");
     mock.world.entries["home-main"] = Array.from({ length: 5 }, (_, i) => ({
       ...base,
-      id: `page-${String(i)}`,
+      id: `${"a".repeat(19)}${"abcde"[i] ?? "a"}`,
       seq: i + 1,
     }));
     const first = await call(mock, "GET", "/api/sessions/home-main/entries?limit=2");
     expect(first.status).toBe(200);
     expect(first.body).toMatchObject({
-      entries: [{ id: "page-3" }, { id: "page-4" }],
-      next_before: "page-3",
+      entries: [{ id: "aaaaaaaaaaaaaaaaaaad" }, { id: "aaaaaaaaaaaaaaaaaaae" }],
+      next_before: "aaaaaaaaaaaaaaaaaaad",
     });
     mock.world.entries["home-main"].push({ ...base, id: "new", seq: 6 });
-    const second = await call(mock, "GET", "/api/sessions/home-main/entries?limit=2&before=page-3");
+    const second = await call(
+      mock,
+      "GET",
+      "/api/sessions/home-main/entries?limit=2&before=aaaaaaaaaaaaaaaaaaad",
+    );
     expect(second.body).toMatchObject({
-      entries: [{ id: "page-1" }, { id: "page-2" }],
-      next_before: "page-1",
+      entries: [{ id: "aaaaaaaaaaaaaaaaaaab" }, { id: "aaaaaaaaaaaaaaaaaaac" }],
+      next_before: "aaaaaaaaaaaaaaaaaaab",
     });
-    const last = await call(mock, "GET", "/api/sessions/home-main/entries?before=page-1");
-    expect(last.body).toMatchObject({ entries: [{ id: "page-0" }] });
+    const last = await call(
+      mock,
+      "GET",
+      "/api/sessions/home-main/entries?before=aaaaaaaaaaaaaaaaaaab",
+    );
+    expect(last.body).toMatchObject({ entries: [{ id: "aaaaaaaaaaaaaaaaaaaa" }] });
     for (const query of [
       "limit=0",
       "limit=101",
       "limit=01",
       "before=",
       "before=missing",
+      "before=%00",
+      "limit=1;other=x",
+      "limit=%zz",
       "limit=1&limit=2",
       "extra=x",
     ]) {

@@ -892,7 +892,7 @@ export const scenarios = {
       const first = entries[0];
       if (first) {
         entries.push({
-          id: "ent-abandoned",
+          id: "cccccccccccccccccccc",
           seq: entries.length + 1,
           kind: "assistant",
           parent_id: first.id,

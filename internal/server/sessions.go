@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -364,8 +366,13 @@ type entriesResponse struct {
 	NextBefore string      `json:"next_before,omitempty"`
 }
 
+var entryCursorPattern = regexp.MustCompile(`^(?:[a-z2-7]{20}|notice-(?:[a-z2-7]{20}|[0-9a-f]{24}))$`)
+
 func entryPageQuery(r *http.Request) (string, int, error) {
-	q := r.URL.Query()
+	q, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return "", 0, invalidf("invalid pagination query")
+	}
 	for key, values := range q {
 		if (key != "before" && key != "limit") || len(values) != 1 {
 			return "", 0, invalidf("invalid pagination query")
@@ -380,7 +387,7 @@ func entryPageQuery(r *http.Request) (string, int, error) {
 		limit = n
 	}
 	before := q.Get("before")
-	if _, ok := q["before"]; ok && (before == "" || !utf8.ValidString(before)) {
+	if _, ok := q["before"]; ok && !entryCursorPattern.MatchString(before) {
 		return "", 0, invalidf("invalid before cursor")
 	}
 	return before, limit, nil

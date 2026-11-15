@@ -165,7 +165,9 @@ export function sessionRoutes(ctx: RouteContext): void {
     w.sessions = w.sessions.filter((s) => s.id !== params[0]);
     return { status: 204 };
   });
-  on("GET", "/api/sessions/{id}/entries", ({ params, query }) => {
+  on("GET", "/api/sessions/{id}/entries", ({ params, query, rawQuery }) => {
+    if (rawQuery.includes(";") || /%(?![0-9a-fA-F]{2})/.test(rawQuery))
+      return fail(400, "invalid_request", "invalid pagination query");
     for (const key of query.keys()) {
       if ((key !== "before" && key !== "limit") || query.getAll(key).length !== 1)
         return fail(400, "invalid_request", "invalid pagination query");
@@ -174,7 +176,8 @@ export function sessionRoutes(ctx: RouteContext): void {
     if (rawLimit !== null && (!/^[1-9][0-9]*$/.test(rawLimit) || Number(rawLimit) > 100))
       return fail(400, "invalid_request", "limit must be an integer from 1 to 100");
     const before = query.get("before");
-    if (before === "") return fail(400, "invalid_request", "invalid before cursor");
+    if (before !== null && !/^(?:[a-z2-7]{20}|notice-(?:[a-z2-7]{20}|[0-9a-f]{24}))$/.test(before))
+      return fail(400, "invalid_request", "invalid before cursor");
     const row = find(w.sessions, params[0], "session");
     if ("status" in row) return row;
     const all = (w.entries[row.id] ?? []).toSorted((a, b) => a.seq - b.seq);
