@@ -1202,3 +1202,6 @@ notice write retry. Startup starts no home turn. Recovered notices
 wait for the next home turn, from a user message or a later new report.
 Legacy profile and chat sessions get the missing results without an agent
 notice or state change. Computer inspection is separate and remains best effort.
+
+Session entry pages use sequence order across branches and entry IDs as backward
+cursors. The session path remains the current branch used for model context.

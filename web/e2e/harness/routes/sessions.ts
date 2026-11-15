@@ -165,6 +165,31 @@ export function sessionRoutes(ctx: RouteContext): void {
     w.sessions = w.sessions.filter((s) => s.id !== params[0]);
     return { status: 204 };
   });
+  on("GET", "/api/sessions/{id}/entries", ({ params, query }) => {
+    for (const key of query.keys()) {
+      if ((key !== "before" && key !== "limit") || query.getAll(key).length !== 1)
+        return fail(400, "invalid_request", "invalid pagination query");
+    }
+    const rawLimit = query.get("limit");
+    if (rawLimit !== null && (!/^[1-9][0-9]*$/.test(rawLimit) || Number(rawLimit) > 100))
+      return fail(400, "invalid_request", "limit must be an integer from 1 to 100");
+    const before = query.get("before");
+    if (before === "") return fail(400, "invalid_request", "invalid before cursor");
+    const row = find(w.sessions, params[0], "session");
+    if ("status" in row) return row;
+    const all = (w.entries[row.id] ?? []).toSorted((a, b) => a.seq - b.seq);
+    const cursor = before === null ? undefined : all.find((e) => e.id === before);
+    if (before !== null && cursor === undefined)
+      return fail(400, "invalid_request", "invalid before cursor");
+    const eligible = cursor ? all.filter((e) => e.seq < cursor.seq) : all;
+    const limit = rawLimit === null ? 50 : Number(rawLimit);
+    const entries = eligible.slice(-limit);
+    return ok({
+      session_id: row.id,
+      entries,
+      ...(eligible.length > limit ? { next_before: entries[0]?.id } : {}),
+    });
+  });
   on("GET", "/api/sessions/{id}/outline", ({ params }) => {
     const row = find(w.sessions, params[0], "session");
     if ("status" in row) return row;

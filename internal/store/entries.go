@@ -179,6 +179,14 @@ func (s *Store) Entries(ctx context.Context, sessionID string) ([]Entry, error) 
 	return s.queryEntries(ctx, "list entries of session "+sessionID, q, sessionID)
 }
 
+// EntriesBefore returns up to limit entries in write order before seq. A zero
+// seq starts at the newest entry. Entries from all branches are included.
+func (s *Store) EntriesBefore(ctx context.Context, sessionID string, seq int64, limit int) ([]Entry, error) {
+	const q = `SELECT ` + entryColumns + ` FROM (SELECT ` + entryColumns + ` FROM session_entries
+ WHERE session_id = $1 AND ($2::bigint = 0 OR seq < $2) ORDER BY seq DESC LIMIT $3) page ORDER BY seq`
+	return s.queryEntries(ctx, "page entries of session "+sessionID, q, sessionID, seq, limit)
+}
+
 // ChildEntries returns the entries whose parent is entryID, oldest first. An
 // empty entryID returns the session's roots.
 func (s *Store) ChildEntries(ctx context.Context, sessionID, entryID string) ([]Entry, error) {

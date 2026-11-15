@@ -213,3 +213,10 @@ export type SessionOutline = {
   head_entry_id?: string;
   nodes: Node[];
 };
+
+/** SessionEntries is a page of entries in write order. */
+export type SessionEntries = {
+  session_id: string;
+  entries: Entry[];
+  next_before?: string;
+};
