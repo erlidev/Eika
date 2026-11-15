@@ -46,20 +46,27 @@ func (s *Server) BindAgentToolsForTest(host Computers) error {
 // session. Set it before any run starts.
 func (s *Server) AfterRunReleasesForTest(f func(sessionID string)) { s.runs.released = f }
 
-// PostNoticeForTest writes a notice to a home session as a report does.
-func (s *Server) PostNoticeForTest(ctx context.Context, sessionID, text string) error {
-	return s.notices.post(ctx, sessionID, text)
+// PostNoticeForTest writes a notice with the entry id id to a home session,
+// as a report does.
+func (s *Server) PostNoticeForTest(ctx context.Context, sessionID, id, text string) error {
+	return s.notices.post(ctx, sessionID, id, text)
 }
 
 // FailNoticeWritesForTest makes the next failures notice writes fail, and
-// writes after a failure wait retry first. Set it before any notice is posted.
-func (s *Server) FailNoticeWritesForTest(failures int32, retry time.Duration) {
+// writes after a failure wait retry first. With lost set, each failing write
+// is made and only its answer lost. Set it before any notice is posted.
+func (s *Server) FailNoticeWritesForTest(failures int32, lost bool, retry time.Duration) {
 	var failed atomic.Int32
 	write := s.notices.write
 	s.notices.retry = retry
-	s.notices.write = func(ctx context.Context, sessionID string, e store.Entry) (store.Entry, error) {
+	s.notices.write = func(ctx context.Context, sessionID string, e store.Entry) (bool, error) {
 		if failed.Add(1) <= failures {
-			return store.Entry{}, errors.New("database unavailable")
+			if lost {
+				if _, err := write(ctx, sessionID, e); err != nil {
+					return false, err
+				}
+			}
+			return false, errors.New("database unavailable")
 		}
 		return write(ctx, sessionID, e)
 	}

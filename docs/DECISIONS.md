@@ -2132,7 +2132,10 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   notices back before it releases the session, since the next run's are
   indistinguishable in the book once it holds the session.
 - **A notice whose write fails is retried in the background** with backoff,
-  owned by the book and stopped at shutdown. The report itself is already the
+  owned by the book and stopped at shutdown. Its entry id derives from the
+  report (the child and its last entry), and the write adds an entry with that
+  id only once, so a retry after a commit whose answer was lost, or a rescan
+  at start (P2-18), never makes a second notice. The report itself is already the
   child's `result`. Rejected: a pending marker rescanned from the children's
   results, which needs a column to tell a posted report from one that is not.
 - **A background turn is bounded by what caused it.** It runs at `background`.

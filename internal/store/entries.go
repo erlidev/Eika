@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -65,9 +66,11 @@ type Entry struct {
 const entryColumns = `id, session_id, parent_id, seq, kind, payload, created_at, channel`
 
 // AppendEntry appends e to the session's head and moves the head to it, in
-// one transaction. ID, SessionID, ParentID, Seq, and CreatedAt are assigned
-// here and ignored on input; Kind, Payload and Channel are the caller's.
+// one transaction. SessionID, ParentID, Seq, and CreatedAt are assigned here
+// and ignored on input, and so is ID, which gets a fresh value; Kind, Payload
+// and Channel are the caller's.
 func (s *Store) AppendEntry(ctx context.Context, sessionID string, e Entry) (Entry, error) {
+	e.ID = ""
 	var out Entry
 	err := s.tx(ctx, func(q querier) error {
 		head, err := lockSessionHead(ctx, q, sessionID)
@@ -85,6 +88,42 @@ func (s *Store) AppendEntry(ctx context.Context, sessionID string, e Entry) (Ent
 	return out, nil
 }
 
+// AppendEntryOnce appends e with the id e.ID gives it, unless an entry with
+// that id exists: then it returns that entry and false, and changes nothing.
+// A write retried after its response was lost thus adds one entry, not two.
+func (s *Store) AppendEntryOnce(ctx context.Context, sessionID string, e Entry) (Entry, bool, error) {
+	if e.ID == "" {
+		return Entry{}, false, wrap("append entry once to session "+sessionID, errors.New("the entry has no id"))
+	}
+	var out Entry
+	added := false
+	err := s.tx(ctx, func(q querier) error {
+		head, err := lockSessionHead(ctx, q, sessionID)
+		if err != nil {
+			return err
+		}
+		out, err = scanEntry(q.QueryRow(ctx, `SELECT `+entryColumns+` FROM session_entries WHERE id = $1`, e.ID))
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if out, err = insertEntry(ctx, q, sessionID, head, e); err != nil {
+			return err
+		}
+		added = true
+		return setHead(ctx, q, sessionID, out.ID)
+	})
+	if err != nil {
+		return Entry{}, false, wrap("append entry once to session "+sessionID, err)
+	}
+	if out.SessionID != sessionID {
+		return Entry{}, false, wrap("append entry once to session "+sessionID, ErrConflict)
+	}
+	return out, added, nil
+}
+
 // AppendEntries appends entries under one lock and commits them together.
 func (s *Store) AppendEntries(ctx context.Context, sessionID string, entries ...Entry) error {
 	return s.tx(ctx, func(q querier) error {
@@ -93,6 +132,7 @@ func (s *Store) AppendEntries(ctx context.Context, sessionID string, entries ...
 			return err
 		}
 		for _, entry := range entries {
+			entry.ID = ""
 			added, err := insertEntry(ctx, q, sessionID, head, entry)
 			if err != nil {
 				return err
@@ -182,7 +222,7 @@ const pathQuery = `WITH RECURSIVE up AS (
 	SELECT ` + entryColumns + ` FROM up ORDER BY seq`
 
 // insertEntry writes one entry under parent, giving it the next sequence
-// number of its session.
+// number of its session, and e.ID, or a fresh id when that is empty.
 //
 // The caller must hold the session row lock that lockSessionHead takes:
 // max(seq) + 1 is only unique while one writer at a time reads it. Two
@@ -198,7 +238,11 @@ func insertEntry(ctx context.Context, q querier, sessionID, parentID string, e E
 	if len(payload) == 0 {
 		payload = json.RawMessage(`{}`)
 	}
-	row := q.QueryRow(ctx, insert, NewID(), sessionID, nullable(parentID), e.Kind, []byte(payload), e.Channel)
+	id := e.ID
+	if id == "" {
+		id = NewID()
+	}
+	row := q.QueryRow(ctx, insert, id, sessionID, nullable(parentID), e.Kind, []byte(payload), e.Channel)
 	return scanEntry(row)
 }
 

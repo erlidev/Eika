@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -33,8 +35,9 @@ type notices struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	// write appends a notice entry; a test replaces it to make writes fail.
-	write func(context.Context, string, store.Entry) (store.Entry, error)
+	// write appends a notice entry with its own id once, and reports whether
+	// it added it; a test replaces it to make writes fail.
+	write func(context.Context, string, store.Entry) (bool, error)
 	// retry is the first wait before writing a notice again after a failed
 	// write; each further wait doubles, up to maxNoticeRetry.
 	retry time.Duration
@@ -67,33 +70,61 @@ const (
 func newNotices(s *Server) *notices {
 	ctx, cancel := context.WithCancel(context.Background())
 	n := &notices{server: s, ctx: ctx, cancel: cancel, retry: firstNoticeRetry, sessions: make(map[string]*sessionNotices)}
-	n.write = func(ctx context.Context, sessionID string, e store.Entry) (store.Entry, error) {
-		return n.server.tree.Append(ctx, sessionID, e)
+	n.write = func(ctx context.Context, sessionID string, e store.Entry) (bool, error) {
+		_, added, err := n.server.deps.Store.AppendEntryOnce(ctx, sessionID, e)
+		return added, err
 	}
 	return n
 }
 
-// post writes a notice to a home session and makes sure a turn delivers it.
-func (n *notices) post(ctx context.Context, sessionID, text string) error {
+// post writes a notice with the entry id id to a home session and makes sure
+// a turn delivers it. The id names what the notice is about, so writing the
+// same notice again, as a retry after a lost response does, adds no entry.
+func (n *notices) post(ctx context.Context, sessionID, id, text string) error {
 	e, err := session.TextEntry(store.KindNotice, text)
 	if err != nil {
 		return err
 	}
+	e.ID = id
 	n.ioMu.Lock()
-	added, err := n.write(ctx, sessionID, e)
-	if err == nil {
-		n.mu.Lock()
-		if book := n.sessions[sessionID]; book != nil {
-			book.waiting = append(book.waiting, agent.Notice{ID: added.ID, Text: text})
-		}
-		n.mu.Unlock()
-	}
+	err = n.record(ctx, sessionID, e, text)
 	n.ioMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("post notice: %w", err)
 	}
-	n.server.log.Info("notice posted", "session_id", sessionID, "entry_id", added.ID)
+	n.server.log.Info("notice posted", "session_id", sessionID, "entry_id", id)
 	n.wake(sessionID)
+	return nil
+}
+
+// record writes a notice entry and adds it to the waiting list of a loaded
+// book. A notice an earlier attempt wrote is added only if no stored
+// message has delivered it and the book does not have it yet. Callers hold
+// ioMu.
+func (n *notices) record(ctx context.Context, sessionID string, e store.Entry, text string) error {
+	added, err := n.write(ctx, sessionID, e)
+	if err != nil {
+		return err
+	}
+	if !added {
+		undelivered, err := n.server.deps.Store.UndeliveredNotices(ctx, sessionID)
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(undelivered, func(u store.Entry) bool { return u.ID == e.ID }) {
+			return nil
+		}
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	book := n.sessions[sessionID]
+	if book == nil {
+		return nil
+	}
+	known := func(x agent.Notice) bool { return x.ID == e.ID }
+	if !slices.ContainsFunc(book.waiting, known) && !slices.ContainsFunc(book.held, known) {
+		book.waiting = append(book.waiting, agent.Notice{ID: e.ID, Text: text})
+	}
 	return nil
 }
 
@@ -101,9 +132,9 @@ func (n *notices) post(ctx context.Context, sessionID, text string) error {
 // in the background, waiting longer each time, until it is written or the
 // book closes. The first attempt runs on ctx, so a notice posted while the
 // server shuts down is still written.
-func (n *notices) postSoon(ctx context.Context, sessionID, text string) {
+func (n *notices) postSoon(ctx context.Context, sessionID, id, text string) {
 	first, cancel := context.WithTimeout(ctx, noticeWriteLimit)
-	err := n.post(first, sessionID, text)
+	err := n.post(first, sessionID, id, text)
 	cancel()
 	if err == nil {
 		return
@@ -126,7 +157,7 @@ func (n *notices) postSoon(ctx context.Context, sessionID, text string) {
 			case <-timer.C:
 			}
 			attempt, cancel := context.WithTimeout(n.ctx, noticeWriteLimit)
-			err := n.post(attempt, sessionID, text)
+			err := n.post(attempt, sessionID, id, text)
 			cancel()
 			if err == nil {
 				return
@@ -285,8 +316,16 @@ func reportNotice(child store.Session) string {
 	return fmt.Sprintf("%s (%s) reported: %s", child.Name, child.Agent, child.Result)
 }
 
+// reportNoticeID is the entry id of the notice a child's report becomes: the
+// child and the last entry of the assignment that reported, so the same
+// report always has the same id.
+func reportNoticeID(child store.Session) string {
+	sum := sha256.Sum256([]byte("report\x00" + child.ID + "\x00" + child.HeadEntryID))
+	return "notice-" + hex.EncodeToString(sum[:12])
+}
+
 // subagentReported posts a child's report to its home session as a notice.
 // It is the lifecycle service's Reported option.
 func (s *Server) subagentReported(ctx context.Context, child store.Session) {
-	s.notices.postSoon(ctx, child.ParentSessionID, reportNotice(child))
+	s.notices.postSoon(ctx, child.ParentSessionID, reportNoticeID(child), reportNotice(child))
 }

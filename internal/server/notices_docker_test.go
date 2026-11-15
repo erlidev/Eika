@@ -362,7 +362,7 @@ func TestANoticeTheNextRunTakesAsTheLastRunEndsIsDeliveredOnce(t *testing.T) {
 
 	d.postMessage(t, d.home.ID, "first", "", 202)
 	<-eika.arrived
-	if err := d.PostNoticeForTest(t.Context(), d.home.ID, "plumber (worker) reported: Found one"); err != nil {
+	if err := d.PostNoticeForTest(t.Context(), d.home.ID, "notice-test", "plumber (worker) reported: Found one"); err != nil {
 		t.Fatal(err)
 	}
 	for range 8 {
@@ -396,7 +396,7 @@ func TestAMessageWhileABackgroundTurnIsBuiltJoinsIt(t *testing.T) {
 	// Building the background turn's provider takes a while, and the user's
 	// message arrives meanwhile.
 	d.delay = 300 * time.Millisecond
-	if err := d.PostNoticeForTest(t.Context(), d.home.ID, "plumber (worker) reported: Found one"); err != nil {
+	if err := d.PostNoticeForTest(t.Context(), d.home.ID, "notice-test", "plumber (worker) reported: Found one"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the background turn", func() bool { return d.runState(t, d.home.ID).Active })
@@ -415,27 +415,37 @@ func TestAMessageWhileABackgroundTurnIsBuiltJoinsIt(t *testing.T) {
 	}
 }
 
-func TestAReportWhoseNoticeFailsToWriteIsWrittenLater(t *testing.T) {
-	d := newDelegating(t)
-	d.FailNoticeWritesForTest(2, 10*time.Millisecond)
-	eika := providertest.New(
-		call("start", "subagent_start", map[string]any{"agent": "researcher", "name": "flights", "brief": "Find flights"}),
-		providertest.Text("on it"),
-	)
-	researcher := providertest.New(call("done", "report", map[string]any{"summary": "Tuesday"}), providertest.Text("ok"))
-	notices := answeringNotices(eika)
-	d.use(byAgent{"You are Eika": notices, "You are a researcher": researcher})
-
-	d.postMessage(t, d.home.ID, "find flights", "", 202)
-	d.waitIdle(t, d.home.ID)
-	d.waitState(t, "flights", store.SessionIdle)
-	waitFor(t, "the notice to be written", func() bool { texts, _ := d.homeNotices(t); return len(texts) == 1 })
-	waitFor(t, "the background turn", func() bool { return len(notices.Requests()) == 1 })
-	d.settled(t)
-	texts, deliveries := d.homeNotices(t)
-	for id, text := range texts {
-		if text != "flights (researcher) reported: Tuesday" || deliveries[id] != 1 {
-			t.Errorf("notice %q delivered %d times, want once", text, deliveries[id])
+func TestAReportWhoseNoticeFailsToWriteIsWrittenLaterOnce(t *testing.T) {
+	for _, lost := range []bool{false, true} {
+		name := "the write fails"
+		if lost {
+			name = "the write is made and its answer lost"
 		}
+		t.Run(name, func(t *testing.T) {
+			d := newDelegating(t)
+			d.FailNoticeWritesForTest(2, lost, 10*time.Millisecond)
+			eika := providertest.New(
+				call("start", "subagent_start", map[string]any{"agent": "researcher", "name": "flights", "brief": "Find flights"}),
+				providertest.Text("on it"),
+			)
+			researcher := providertest.New(call("done", "report", map[string]any{"summary": "Tuesday"}), providertest.Text("ok"))
+			notices := answeringNotices(eika)
+			d.use(byAgent{"You are Eika": notices, "You are a researcher": researcher})
+
+			d.postMessage(t, d.home.ID, "find flights", "", 202)
+			d.waitIdle(t, d.home.ID)
+			d.waitState(t, "flights", store.SessionIdle)
+			waitFor(t, "the background turn", func() bool { return len(notices.Requests()) == 1 })
+			d.settled(t)
+			texts, deliveries := d.homeNotices(t)
+			if len(texts) != 1 {
+				t.Fatalf("notices = %q, want one", texts)
+			}
+			for id, text := range texts {
+				if text != "flights (researcher) reported: Tuesday" || deliveries[id] != 1 {
+					t.Errorf("notice %q delivered %d times, want once", text, deliveries[id])
+				}
+			}
+		})
 	}
 }

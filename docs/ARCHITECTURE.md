@@ -1070,7 +1070,10 @@ and direct chat runs are unchanged.
 
 `internal/server/notices.go` delivers news to the home session. A subagent's
 report becomes a notice entry in home, "plumber (worker) reported: <report>",
-written before anything else happens, so it survives a restart. It reaches Eika
+written before anything else happens, so it survives a restart. Its entry id
+derives from the child and the last entry of the assignment that reported, and
+`store.AppendEntryOnce` writes an id once, so a write retried after a lost
+answer adds no second notice. It reaches Eika
 in the `<context>` block of the next user-side message home sends, and the
 stored message lists the entry's id, which is what records it delivered: a
 notice no stored user entry lists is undelivered (`store.UndeliveredNotices`).
