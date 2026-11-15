@@ -212,10 +212,10 @@ phase, and the exit is checked there.
       `/home/eika/projects/<slug>` on `home`. There is no `private` field.
       - [x] **P2-02**: Add project storage and API.
       - [ ] **P2-06**: Add project tools and executor access to STATUS.md.
-- [ ] Add the file tools `file_read`, `file_write` and `file_edit` over the
+- [x] Add the file tools `file_read`, `file_write` and `file_edit` over the
       executor, with limits like bash's. Record in `DECISIONS.md` why they are
       back.
-      - [ ] **P2-05**: Add bounded file tools over the executor.
+      - [x] **P2-05**: Add bounded file tools over the executor.
 - [ ] Add `internal/subagent` (rewritten; runtime.md 9), part 1:
       - named, persistent subagent sessions, resumable by name
       - the tools `subagent_start`, `subagent_message` (answers a question, or

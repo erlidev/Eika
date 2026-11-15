@@ -131,18 +131,12 @@ func (e *Executor) ReadFile(_ context.Context, path string, opts executor.ReadOp
 }
 
 // WriteFile writes data to path, creating parent directories as needed.
-func (e *Executor) WriteFile(_ context.Context, path string, data []byte) error {
+func (e *Executor) WriteFile(ctx context.Context, path string, data []byte) error {
 	abs, err := e.resolve(path)
 	if err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		return fmt.Errorf("create directory for %q: %w", path, err)
-	}
-	if err := os.WriteFile(abs, data, 0o644); err != nil {
-		return fmt.Errorf("write file %q: %w", path, err)
-	}
-	return nil
+	return executor.AtomicWriteFile(ctx, e.root, abs, data)
 }
 
 // Stat describes one path.
@@ -214,7 +208,7 @@ func (e *Executor) resolve(path string) (string, error) {
 	if _, err := executor.Resolve(e.root, resolved); err != nil {
 		return "", fmt.Errorf("resolve path %q: %w", path, executor.ErrPathOutsideRoot)
 	}
-	return abs, nil
+	return resolved, nil
 }
 
 // evalExisting resolves symlinks in the longest existing prefix of abs and

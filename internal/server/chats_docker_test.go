@@ -90,8 +90,8 @@ func TestChatRoutes(t *testing.T) {
 	if len(inComputer.Sessions) != 1 || inComputer.Sessions[0].ID != work.ID {
 		t.Errorf("computer sessions = %+v, want the computer's own", inComputer.Sessions)
 	}
-	if len(inComputer.Sessions[0].Tools) != 4 {
-		t.Errorf("computer session tools = %v, want all 4", inComputer.Sessions[0].Tools)
+	if len(inComputer.Sessions[0].Tools) != 7 {
+		t.Errorf("computer session tools = %v, want all 7", inComputer.Sessions[0].Tools)
 	}
 
 	tools := decodeBody[toolsWire](t, request(t, a.Server, "GET", "/api/tools", nil), 200)
@@ -104,8 +104,8 @@ func TestChatRoutes(t *testing.T) {
 			free = append(free, tl.Name)
 		}
 	}
-	if len(tools.Tools) != 4 || !slices.Equal(free, standaloneTools) {
-		t.Errorf("tools = %+v, want 4 with %v standalone", tools.Tools, standaloneTools)
+	if len(tools.Tools) != 7 || !slices.Equal(free, standaloneTools) {
+		t.Errorf("tools = %+v, want 7 with %v standalone", tools.Tools, standaloneTools)
 	}
 }
 

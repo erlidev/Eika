@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,19 @@ func TestNewRejectsFile(t *testing.T) {
 	}
 	if _, err := local.New(path); err == nil {
 		t.Fatal("New on a file returned no error")
+	}
+}
+
+func TestWriteFileRefusesReadOnlyFile(t *testing.T) {
+	e := newExecutor(t)
+	if err := e.WriteFile(t.Context(), "locked", []byte("original")); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(filepath.Join(e.Root(), "locked"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.WriteFile(t.Context(), "locked", []byte("changed")); !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("WriteFile = %v, want a permission error", err)
 	}
 }
 

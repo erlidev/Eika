@@ -85,7 +85,7 @@ func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
 		t.Fatalf("Registry: %v", err)
 	}
 	want := []string{
-		"ask_user", "bash", "web_fetch", "web_search",
+		"ask_user", "bash", "file_edit", "file_read", "file_write", "web_fetch", "web_search",
 	}
 	got := make([]string, 0, len(want))
 	for _, tl := range r.List() {

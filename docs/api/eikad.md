@@ -65,8 +65,16 @@ Reading a directory is `400`.
 
 ## PUT /files?path=
 
-Writes the request body to the file, creating parent directories. Returns the
-resulting file as a file object. Bodies over 64 MiB are `413`.
+Replaces the file through a temporary sibling and rename, creating parent
+directories. The new contents are synced to disk before the rename. Existing
+file permissions are kept. A failed write leaves the old file intact. Returns
+the resulting file as a file object.
+
+| Status | Cause |
+|---|---|
+| `403` | The path or a symlink leaves the computer root, or the existing file is read-only (no owner write bit). |
+| `400` | The target is not a regular file (a directory, for example), a parent is not a directory, or the write was canceled. |
+| `413` | The body is over 64 MiB. |
 
 ## GET /stat?path=
 

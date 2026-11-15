@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-14: P2-05 added bounded UTF-8 file read/write/edit tools through
+  the executor and added them to the worker definition. Exact edits require
+  one match; executor writes sync, replace files atomically, keep permissions and
+  refuse read-only files.
+  Tests cover traversal, symlink confinement, byte limits, invalid inputs,
+  missing files, ambiguous edits and unchanged files on failure. `make check` passes.
+
 - 2026-11-14: P2-04 added session identities, lifecycle fields, parent/project
   references, preamble/notice entries and channel storage in migration 0014.
   Old conversations and profile fields remain unchanged. Tests cover populated
