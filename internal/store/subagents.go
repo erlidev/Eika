@@ -48,8 +48,8 @@ func (s *Store) SetSubagentResult(ctx context.Context, id, result string) (Sessi
 	return sess, nil
 }
 
-// PinReportNoticeID gives an old report its original notice id before recovery
-// changes its session head. A report that already has an id keeps it.
+// PinReportNoticeID records the id chosen for a legacy report. A report that
+// already has an id keeps it.
 func (s *Store) PinReportNoticeID(ctx context.Context, id, noticeID string) (Session, error) {
 	sess, err := scanSession(s.pool.QueryRow(ctx, `UPDATE sessions SET
         report_notice_id = CASE WHEN report_notice_id = '' THEN $2 ELSE report_notice_id END

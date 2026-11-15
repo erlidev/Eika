@@ -9,9 +9,14 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-18 follow-up pins legacy report notices to their report
+  assignment, not the current head. An unanchored old result reuses a child
+  notice or one stable recovery id. Targeted Go tests and `make lint-go` pass;
+  Docker-dependent tests skip without a test database.
+
 - 2026-11-15: P2-18 follow-up repairs unanswered tool calls in legacy profile
-  and chat sessions. Legacy report notices match the report's id, so identical
-  reports do not hide a missing notice. Targeted Go tests and `make lint-go`
+  and chat sessions. Anchored legacy report notices match the report's id, so
+  identical reports do not hide a missing notice. Targeted Go tests and `make lint-go`
   pass; Docker-dependent tests skip without a test database.
 
 - 2026-11-15: P2-18 repairs unanswered calls with outcome-unknown errors,

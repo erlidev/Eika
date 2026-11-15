@@ -1129,10 +1129,13 @@ transaction stops startup. No tool executes and no child resumes.
 
 Startup also scans every stored child report and appends its home notice with
 `AppendEntryOnce`. Migration 0016 adds the internal report notice id; startup
-pins an old report to its child/head-derived id before recovery changes the
-head. It matches notices by id, not report text, so identical reports with
-different heads keep separate notices. A report notice can be recovered after a crash between idle and posting, or
-during a notice write retry. Startup starts no home turn. Recovered notices
+pins an old report to an id before recovery changes the head. It finds a report
+entry in the child's path and matches notice ids from that assignment. If an
+old result has no report anchor, it reuses an existing child notice or assigns
+one fixed recovery id. It cannot distinguish later unanchored results, and sends
+at most one recovery notice for them. Report text is not used for matching. A
+notice can be recovered after a crash between idle and posting, or during a
+notice write retry. Startup starts no home turn. Recovered notices
 wait for the next home turn, from a user message or a later new report.
 Legacy profile and chat sessions get the missing results without an agent
 notice or state change. Computer inspection is separate and remains best effort.

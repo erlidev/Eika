@@ -2198,12 +2198,14 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   runs without an agent notice or state change.
 - **A report has a stored notice id.** Migration 0016 adds an internal
   `report_notice_id` to sessions. New reports receive a fresh id with their
-  result. Startup pins old reports to the existing child/head-derived id before
-  it changes any head. It matches notices by id, not text: identical reports
-  from different heads need separate notices. This lets recovery rescan stored
-  reports after cancellation or tool-result repair.
-  A mutable session head alone cannot identify a report across these changes.
-  The id is internal; the API does not change.
+  result, in the same write. For an old report with no stored id, startup
+  identifies its report entry and matches only ids from that assignment. An
+  old result without a report anchor reuses an existing child notice, or gets
+  one fixed recovery id for that child. Startup pins the chosen id before it
+  repairs the session. Old rows without an anchor cannot distinguish later
+  identical results; once noticed, they get no second recovery notice. Report
+  text never decides whether a notice exists. The id is internal; the API does
+  not change.
 - Startup stores recovered notices without starting a home turn. The next user
   message, or a later background turn caused by a new report, delivers them.
   This prevents a restart from retrying work whose outcome is unknown. A

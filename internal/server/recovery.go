@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
+	"github.com/erlidev/eika/internal/subagent"
 )
 
 const restartedToolResult = "Eika restarted while this ran; its outcome is unknown. Check before retrying."
@@ -22,7 +25,19 @@ func (s *Server) reconcileSessions(ctx context.Context) error {
 		if child.Kind != store.SessionSubagent || child.Agent == "" || child.Result == "" || child.ReportNoticeID != "" {
 			continue
 		}
-		if _, err := s.deps.Store.PinReportNoticeID(ctx, child.ID, reportNoticeID(child)); err != nil {
+		path, err := s.deps.Store.SessionPath(ctx, child.ID)
+		if err != nil {
+			return err
+		}
+		notices, err := s.deps.Store.Entries(ctx, child.ParentSessionID)
+		if err != nil {
+			return err
+		}
+		id, err := legacyReportNoticeID(child, path, notices)
+		if err != nil {
+			return err
+		}
+		if _, err := s.deps.Store.PinReportNoticeID(ctx, child.ID, id); err != nil {
 			return err
 		}
 	}
@@ -128,4 +143,95 @@ func unansweredResults(path []store.Entry) ([]store.Entry, error) {
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+// legacyReportNoticeID locates a report in the child's path and matches only
+// ids from that assignment. Without a report anchor, an existing legacy notice
+// is reused; otherwise a fixed child id records the one recovery notice.
+func legacyReportNoticeID(child store.Session, path, notices []store.Entry) (string, error) {
+	noticeIDs := make(map[string]bool)
+	for _, e := range notices {
+		if e.Kind == store.KindNotice {
+			noticeIDs[e.ID] = true
+		}
+	}
+	messages := make([]provider.Message, len(path))
+	for i, e := range path {
+		m, _, err := session.Message(e)
+		if err != nil {
+			return "", err
+		}
+		messages[i] = m
+	}
+	anchor := -1
+	draft := false
+	for i, m := range messages {
+		if m.Role == provider.RoleUser {
+			draft = m.Content == subagent.DraftReport
+		}
+		if m.Role != provider.RoleAssistant {
+			continue
+		}
+		for _, call := range m.ToolCalls {
+			if call.Name == "report" {
+				succeeded := false
+				for _, result := range messages[i+1:] {
+					if result.Role == provider.RoleUser {
+						break
+					}
+					if result.Role == provider.RoleTool && result.ToolCallID == call.ID {
+						succeeded = !result.IsError
+						break
+					}
+				}
+				if succeeded {
+					anchor = i
+				}
+			}
+		}
+		if draft && len(m.ToolCalls) == 0 {
+			finished := child.State == store.SessionIdle
+			for _, later := range messages[i+1:] {
+				if later.Role == provider.RoleUser && later.Content != subagent.DraftReport {
+					finished = true
+					break
+				}
+			}
+			if finished {
+				anchor = i
+			}
+		}
+	}
+	candidate := child
+	candidate.ReportNoticeID = ""
+	start, end := 0, len(path)
+	if anchor >= 0 {
+		start = anchor
+		for i := anchor + 1; i < len(path); i++ {
+			if messages[i].Role == provider.RoleUser && messages[i].Content != subagent.DraftReport {
+				end = i
+				break
+			}
+		}
+	} else {
+		candidate.HeadEntryID = ""
+		id := reportNoticeID(candidate)
+		if noticeIDs[id] {
+			return id, nil
+		}
+	}
+	// Search backwards because a notice named the head at assignment end.
+	for i := end - 1; i >= start; i-- {
+		candidate.HeadEntryID = path[i].ID
+		id := reportNoticeID(candidate)
+		if noticeIDs[id] {
+			return id, nil
+		}
+	}
+	if anchor >= 0 {
+		candidate.HeadEntryID = path[anchor].ID
+		return reportNoticeID(candidate), nil
+	}
+	sum := sha256.Sum256([]byte("legacy-report\x00" + child.ID))
+	return "notice-" + hex.EncodeToString(sum[:12]), nil
 }

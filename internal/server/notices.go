@@ -317,8 +317,8 @@ func reportNotice(child store.Session) string {
 }
 
 // reportNoticeID is the entry id of the notice a child's report becomes: the
-// stored report id, or the child and head for reports stored before migration
-// 0016. Startup pins that fallback before changing the head.
+// stored report id, or the child and a historical entry when looking up a
+// notice written before migration 0016.
 func reportNoticeID(child store.Session) string {
 	if child.ReportNoticeID != "" {
 		return child.ReportNoticeID
