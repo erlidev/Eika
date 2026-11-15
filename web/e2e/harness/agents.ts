@@ -79,7 +79,7 @@ export const builtinAgents: AgentDefinition[] = [
     description: "Does work on a computer and reports results.",
     class: "main",
     max_turns: 200,
-    tools: ["ask_user", "bash", "web_fetch", "web_search"],
+    tools: ["ask_user", "bash", "file_edit", "file_read", "file_write", "web_fetch", "web_search"],
     prompt: worker,
     compaction: { summary: workerSummary, update: workerUpdate, turn_prefix: workerTurnPrefix },
   },

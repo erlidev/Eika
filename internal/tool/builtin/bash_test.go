@@ -23,7 +23,7 @@ func TestBashRunsCommand(t *testing.T) {
 	}
 }
 
-// With no file tools, bash is how a model reads, writes, and edits files.
+// bash also supports file operations that need shell commands.
 func TestBashReadsWritesAndEditsFiles(t *testing.T) {
 	w := newComputer(t)
 	res := w.call("bash", map[string]any{"command": "mkdir -p src && cat > src/a.txt <<'EOF'\n" +

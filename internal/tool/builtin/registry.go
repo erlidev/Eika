@@ -28,6 +28,9 @@ func Registry(d Deps) (*tool.Registry, error) {
 		webSearchTool{search: d.Search},
 		webFetchTool{pages: d.Pages},
 		bashTool{},
+		fileTool{name: "file_read"},
+		fileTool{name: "file_write"},
+		fileTool{name: "file_edit"},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("build built-in tool registry: %w", err)

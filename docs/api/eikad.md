@@ -65,8 +65,10 @@ Reading a directory is `400`.
 
 ## PUT /files?path=
 
-Writes the request body to the file, creating parent directories. Returns the
-resulting file as a file object. Bodies over 64 MiB are `413`.
+Replaces the file through a temporary sibling and rename, creating parent
+directories. Existing file permissions are kept. A failed write leaves the
+old file intact. Returns the resulting file as a file object. Bodies over
+64 MiB are `413`.
 
 ## GET /stat?path=
 

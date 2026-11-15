@@ -104,6 +104,28 @@ const builtinSchemas: Record<string, unknown> = {
     required: ["command"],
     additionalProperties: false,
   },
+  file_read: {
+    type: "object",
+    properties: { path: { type: "string" } },
+    required: ["path"],
+    additionalProperties: false,
+  },
+  file_write: {
+    type: "object",
+    properties: { path: { type: "string" }, content: { type: "string" } },
+    required: ["path", "content"],
+    additionalProperties: false,
+  },
+  file_edit: {
+    type: "object",
+    properties: {
+      path: { type: "string" },
+      old_text: { type: "string" },
+      new_text: { type: "string" },
+    },
+    required: ["path", "old_text", "new_text"],
+    additionalProperties: false,
+  },
   web_fetch: {
     type: "object",
     properties: {

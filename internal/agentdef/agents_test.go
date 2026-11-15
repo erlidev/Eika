@@ -33,6 +33,11 @@ func TestBuiltins(t *testing.T) {
 				t.Errorf("%s has unshipped tool %s", d.Name, name)
 			}
 		}
+		for _, name := range []string{"file_edit", "file_read", "file_write"} {
+			if slices.Contains(d.Tools, name) != (d.Name == "worker") {
+				t.Errorf("%s file capability %s is incorrect", d.Name, name)
+			}
+		}
 		wantTurns, wantClass := 200, "main"
 		if d.Name == "eika" {
 			wantTurns = 40

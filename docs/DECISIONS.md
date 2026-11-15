@@ -1734,8 +1734,14 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 
 ## Tools
 
-- **bash is the only file tool.** Models chain steps in one shell call, and
-  one tool is less to describe than seven.
+- **File tools use the executor** (2026-11-14, P2-05). Small local models
+  make exact text edits more reliably than shell heredocs. `file_read` returns
+  up to 32 KiB; `file_write` and `file_edit` accept files up to 1 MiB. Larger
+  work uses `bash`. An edit requires one exact match and validates the whole
+  result before writing. Executor writes use a temporary sibling and rename,
+  preserving file permissions and the old file on failure. This replaces the
+  bash-only choice. Edits do not lock out concurrent shell or external writes;
+  callers must coordinate changes to the same file. No new dependency is needed.
 - One shared, stateless tool registry; the executor arrives per call.
 - The built-in registry is `tool/builtin/registry.go` and provider kinds are
   `NewRegistry` parameters: both avoid import cycles.

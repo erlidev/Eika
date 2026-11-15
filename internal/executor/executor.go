@@ -20,8 +20,8 @@ type Executor interface {
 	Exec(ctx context.Context, spec ExecSpec) (ExecResult, error)
 	// ReadFile returns the contents of a computer-relative path.
 	ReadFile(ctx context.Context, path string, opts ReadOpts) ([]byte, error)
-	// WriteFile writes data to a computer-relative path, creating parent
-	// directories as needed.
+	// WriteFile atomically replaces a computer-relative file, creating parent
+	// directories as needed. A failed write leaves an existing file intact.
 	WriteFile(ctx context.Context, path string, data []byte) error
 	// Stat describes one computer-relative path.
 	Stat(ctx context.Context, path string) (FileInfo, error)

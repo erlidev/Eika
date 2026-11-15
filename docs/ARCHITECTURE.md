@@ -222,8 +222,9 @@ Run(ctx, session, text)
   unchanged (`ToolCall.Wire`); entries, events and approvals use `ID`.
 - **tool**: a call gets a `CallContext` (executor, emitter, ids). A
   `tool.Standalone` tool runs with a nil executor in chats;
-  `Registry.Filter` narrows the shared registry per run. `bash` is the only
-  file tool. `ask_user` registers with the `Questions` broker, emits
+  `Registry.Filter` narrows the shared registry per run. `bash` runs shell
+  commands; `file_read`, `file_write` and `file_edit` handle bounded text files.
+  `ask_user` registers with the `Questions` broker, emits
   `question.asked`, and waits for the API to deliver an answer.
 - **executor**: `executor.Resolve` rejects paths leaving the root;
   `executor/local` has the `!prod` tag.
@@ -627,7 +628,12 @@ daemon's newline-delimited frames into the caller's writers. A 404 is
 The API has no routes for a computer's files, and there is no terminal and no
 preview: the person using a computer reaches it only through the agent, whose
 tools call the executor. The executor checks a path with `executor.Resolve`
-and eikad re-checks it after following symlinks.
+and eikad re-checks it after following symlinks. Text tools return at most
+32 KiB per read and accept writes and exact single-match edits up to 1 MiB.
+They reject invalid UTF-8, NUL, ambiguous matches and oversized files rather
+than return partial text. Both executor implementations replace files with a
+temporary sibling and rename through rooted filesystem operations. Failed
+writes leave existing file contents intact. See [the tool contract](api/tools.md).
 
 ### Computer lifecycle
 
@@ -950,7 +956,7 @@ validates partial updates under a row lock. Slugs do not change.
 The authenticated project API lists all statuses, creates records, reads a
 record by ID and updates metadata. Archive uses the status field. These paths
 are metadata only: no handler accesses the filesystem. Project metadata has no
-instruction field. Executor file operations and project tools are P2-05 and P2-06.
+instruction field. File tools use the executor; project tools follow in P2-06.
 
 ## User instructions
 

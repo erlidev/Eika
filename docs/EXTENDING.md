@@ -89,7 +89,10 @@ while it runs reports it with `c.Output(ctx, chunk)`, which becomes a
 `tool.output` event.
 
 Put every bound a tool applies in `internal/tool/builtin/limits.go`, so that one
-file answers "how much can a tool return".
+file answers "how much can a tool return". File tools use `ReadFile` with an
+explicit byte limit and `WriteFile` for atomic replacement. They never open a
+harness path. See [the file tool contract](api/tools.md) for their validation
+and edit rules.
 
 A tool that needs no computer, because it only makes a network call or asks
 the user something, can also be offered in a chat. Say so by implementing
