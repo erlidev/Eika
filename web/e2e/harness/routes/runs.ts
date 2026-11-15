@@ -157,6 +157,19 @@ export function runRoutes(ctx: RouteContext): void {
     if (!run) return fail(404, "not_found", "run not found");
     if (run.state !== "running") return fail(409, "conflict", "run already finished");
     ctx.finish(run, "aborted");
+    // Aborting a subagent's run records the subagent cancelled; it stays resumable.
+    const child = w.sessions.find((s) => s.id === run.session_id && s.kind === "subagent");
+    if (child) {
+      child.state = "cancelled";
+      Reflect.deleteProperty(child, "waiting_reason");
+      child.last_active_at = now();
+      ctx.emit(
+        ctx.event("session.updated", "global", {
+          session_id: child.id,
+          ...(child.computer_id === undefined ? {} : { computer_id: child.computer_id }),
+        }),
+      );
+    }
     return ok(run);
   });
   on("POST", "/api/questions/{id}/answer", ({ params, body }) => {

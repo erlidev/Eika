@@ -2,7 +2,7 @@
  * The application root. A browser that is not signed in gets the guided
  * setup when the harness is new and the sign-in screen when it is not. A
  * signed-in browser gets the setup until it is finished, then the shell, whose
- * one page today is Chat. The workbench stays in the tree and has no route.
+ * pages are Chat and Activity. The workbench stays in the tree and has no route.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,6 +13,7 @@ import { ApiError } from "@/api/client";
 import { resetEventStream } from "@/api/stream";
 import { Shell } from "@/app/Shell";
 import { Splash } from "@/components/Splash";
+import { ActivityPage } from "@/features/activity";
 import { ChatPage } from "@/features/chat";
 import { LoadFailedScreen, SignInScreen, useAuthStatus, useConnection } from "@/features/connect";
 import { callbackPath, MCPCallbackScreen, useMCPSelection } from "@/features/mcp";
@@ -82,6 +83,7 @@ function SignedIn() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<ChatPage />} />
+        <Route path="/activity/:sessionId?" element={<ActivityPage />} />
       </Route>
       <Route path={callbackPath} element={<MCPCallbackRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />

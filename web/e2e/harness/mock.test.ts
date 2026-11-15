@@ -1033,6 +1033,23 @@ describe("session storage metadata", () => {
     expect(mock.contractBreaks).toEqual([]);
   });
 
+  it("records a subagent cancelled when its run is aborted, and says so on the stream", async () => {
+    const mock = open("activity");
+    const status = await call(mock, "GET", "/api/sessions/subagent-permit/run");
+    expect(status.body).toMatchObject({ active: true, run: { id: "run-permit" } });
+    const aborted = await call(mock, "POST", "/api/runs/run-permit/abort");
+    expect(aborted.body).toMatchObject({ id: "run-permit", state: "aborted" });
+    const child = await call(mock, "GET", "/api/sessions/subagent-permit");
+    expect(child.body).toMatchObject({ session: { state: "cancelled" } });
+    expect(JSON.stringify(child.body)).not.toContain("waiting_reason");
+    expect((await call(mock, "GET", "/api/sessions/subagent-permit/run")).body).toMatchObject({
+      active: false,
+    });
+    expect((await call(mock, "POST", "/api/runs/run-permit/abort")).status).toBe(409);
+    expect((await call(mock, "POST", "/api/runs/run-nope/abort")).status).toBe(404);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
   it("returns the stored code-owned waiting reason", async () => {
     const mock = open("home-world");
     const child = mock.world.sessions.find((row) => row.id === "subagent-plumber");

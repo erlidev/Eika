@@ -1,10 +1,13 @@
 /** Server state for the list of chats. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 import { globalTopic, payloadOf } from "@/api/events";
 import { queryKeys } from "@/api/keys";
+import { eventStream } from "@/api/stream";
 import {
   createSession,
   deleteSession,
@@ -89,15 +92,40 @@ export function useDeleteSession(): UseMutationResult<void, Error, string> {
 }
 
 /**
+ * refreshAll reads every list of sessions and every open session again: what
+ * a lost event announced is not known, so nothing cached about sessions is
+ * trusted.
+ */
+function refreshAll(client: QueryClient): Promise<void> {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: ["sessions"] }),
+    client.invalidateQueries({ queryKey: ["session"] }),
+  ]).then(() => undefined);
+}
+
+/**
  * useSessionUpdates keeps every session list current as sessions change
  * without this client asking: a `session.title` event on the global topic
  * says an untitled session was named, a `session.updated` one that someone
  * renamed, pinned, or archived one. The workbench calls it once, so a change
- * arrives in the sidebar whichever session is open.
+ * arrives in the sidebar whichever session is open. Events published while
+ * the socket was down, or that the bus dropped for this client, are gone, so
+ * the lists are read again when it comes back or the bus says it dropped some.
  */
 export function useSessionUpdates(): void {
   const client = useQueryClient();
+  useEffect(
+    () =>
+      eventStream().onReopen(() => {
+        void refreshAll(client);
+      }),
+    [client],
+  );
   useStreamSubscription(globalTopic, (e) => {
+    if (payloadOf(e, "bus.dropped")) {
+      void refreshAll(client);
+      return;
+    }
     // The harness announces the home computer on the global topic when it
     // records it, which is how the sidebar learns it can offer it.
     if (payloadOf(e, "computer.state")) {

@@ -13,6 +13,9 @@ one that holds client state of its own.
   Chat (`features/chat`) renders it for the home session. A session that runs an
   agent, as home does, names no model in a request, because the harness refuses
   one (its class picks it), and its status bar has no model or profile control.
+  With `readOnly` it is the transcript alone, streamed live: Activity uses it for a
+  subagent, which Eika steers, so there is no composer, status bar, abort key or
+  rewind. `Transcript` shows nothing from a store that holds another session.
 - `SessionHeading.tsx` is the header's title: a click on it renames the
   session in place, and an archived session shows a badge with Unarchive.
 - `useSessionStream.ts` folds every event of `session:<id>` into the store and

@@ -4,7 +4,7 @@
  * no existing one has, and keep ids stable: specs and agents address them.
  */
 
-import type { Message } from "../../src/api/types.ts";
+import type { Message, Project, Run } from "../../src/api/types.ts";
 import { noSettings, syncSession } from "./profiles.ts";
 import { emptyWorld, minutesAgo, WorldBuilder } from "./world.ts";
 import type { World } from "./world.ts";
@@ -27,6 +27,157 @@ function configured(): WorldBuilder {
     reasoning_efforts: ["low", "medium", "high"],
   });
   b.model(openai, { name: "gpt-5-mini" });
+  return b;
+}
+
+/**
+ * homeWorld is the home conversation with two named subagents: `plumber`,
+ * running, and `repair`, idle with a report. Their ids are fixed.
+ */
+function homeWorld(): WorldBuilder {
+  const b = configured();
+  b.world.settings.settings.model_classes = { main: "gpt-5", fast: "gpt-5-mini" };
+  const home = b.home();
+  b.conversation(home, [
+    { role: "user", content: "Find a plumber." },
+    { role: "assistant", content: "I will look for one." },
+  ]);
+  const running = b.subagent(home, {
+    id: "subagent-plumber",
+    name: "plumber",
+    agent: "researcher",
+    state: "running",
+    brief: "Find a plumber.",
+  });
+  b.conversation(running, [{ role: "assistant", content: "Checking local options." }]);
+  const computer = b.computer({ id: "cx-repair", name: "repair" });
+  b.subagent(home, {
+    computer_id: computer.id,
+    id: "subagent-repair",
+    name: "repair",
+    agent: "worker",
+    state: "idle",
+    brief: "Inspect the repair.",
+    result: "The repair is complete.",
+  });
+  return b;
+}
+
+/**
+ * activity adds to the home world what the Activity page shows: two projects,
+ * and subagents in every state. The running and the waiting ones have a run
+ * going, which Cancel stops. Their ids are `subagent-` and their name.
+ */
+function activity(): WorldBuilder {
+  const b = homeWorld();
+  const w = b.world;
+  const home = b.home();
+  const project = (slug: string, name: string): Project => ({
+    id: `prj-${slug}`,
+    slug,
+    name,
+    description: "",
+    status: "active",
+    directory: `/home/eika/projects/${slug}`,
+    created_at: minutesAgo(600),
+    updated_at: minutesAgo(600),
+  });
+  w.projects.push(project("garden", "Garden"), project("kitchen", "Kitchen"));
+  const known = (id: string) => {
+    const row = w.sessions.find((s) => s.id === id);
+    if (row === undefined) throw new Error(`the home world has no session ${id}`);
+    return row;
+  };
+  const plumber = Object.assign(known("subagent-plumber"), {
+    project_id: "prj-kitchen",
+    last_active_at: minutesAgo(2),
+  });
+  Object.assign(known("subagent-repair"), {
+    project_id: "prj-kitchen",
+    last_active_at: minutesAgo(45),
+  });
+
+  const waiting = b.subagent(home, {
+    id: "subagent-permit",
+    name: "permit",
+    agent: "researcher",
+    state: "waiting",
+    waiting_reason: "the user's answer about which council applies",
+    project_id: "prj-kitchen",
+    brief: "Find out whether the kitchen extension needs a permit.\nCheck the council's rules.",
+    last_active_at: minutesAgo(9),
+  });
+  b.conversation(waiting, [
+    { role: "user", content: "Find out whether the kitchen extension needs a permit." },
+    { role: "assistant", content: "The rules differ by council, so I need to know which applies." },
+  ]);
+  const slow = b.subagent(home, {
+    id: "subagent-quotes",
+    name: "quotes",
+    agent: "worker",
+    state: "waiting",
+    waiting_reason: "a slow bash call, running for 4 minutes",
+    brief: "Collect three quotes for the tiling and write them to quotes.md.",
+    last_active_at: minutesAgo(5),
+  });
+  b.conversation(slow, [
+    { role: "user", content: "Collect three quotes for the tiling." },
+    {
+      role: "assistant",
+      tool_calls: [
+        { id: "call-quotes", name: "bash", arguments: { command: "./fetch-quotes.sh" } },
+      ],
+    },
+  ]);
+  const seedlings = b.subagent(home, {
+    id: "subagent-seedlings",
+    name: "seedlings",
+    agent: "researcher",
+    state: "idle",
+    project_id: "prj-garden",
+    brief: "Which tomato seedlings do well in a cold greenhouse?",
+    result:
+      "Three varieties suit a cold greenhouse: Latah, Stupice and Siberian.\n\nOutputs:\n- notes/tomatoes.md\n\nFollow-ups:\n- Check sowing dates for the region",
+    last_active_at: minutesAgo(130),
+  });
+  b.conversation(seedlings, [
+    { role: "user", content: "Which tomato seedlings do well in a cold greenhouse?" },
+    { role: "assistant", content: "Latah, Stupice and Siberian are the usual answers." },
+  ]);
+  const tiling = b.subagent(home, {
+    id: "subagent-tiling",
+    name: "tiling",
+    agent: "worker",
+    state: "failed",
+    project_id: "prj-kitchen",
+    brief: "Measure the splashback and list the tiles it needs.",
+    last_active_at: minutesAgo(70),
+  });
+  b.conversation(tiling, [
+    { role: "user", content: "Measure the splashback and list the tiles it needs." },
+    { role: "assistant", content: "The measurements file is missing, so I cannot continue." },
+  ]);
+  const paint = b.subagent(home, {
+    id: "subagent-paint",
+    name: "paint",
+    agent: "researcher",
+    state: "cancelled",
+    project_id: "prj-garden",
+    brief: "Compare fence paints.",
+    last_active_at: minutesAgo(300),
+  });
+  b.conversation(paint, [{ role: "user", content: "Compare fence paints." }]);
+
+  for (const child of [plumber, waiting, slow]) {
+    const run: Run = {
+      id: `run-${child.name ?? ""}`,
+      session_id: child.id,
+      state: "running",
+      started_at: minutesAgo(10),
+    };
+    w.runs[run.id] = run;
+    w.activeRuns[child.id] = run.id;
+  }
   return b;
 }
 
@@ -972,34 +1123,13 @@ export const scenarios = {
   "home-world": {
     description: "The home conversation and named subagents in different states.",
     path: "/",
-    build: () => {
-      const b = configured();
-      b.world.settings.settings.model_classes = { main: "gpt-5", fast: "gpt-5-mini" };
-      const home = b.home();
-      b.conversation(home, [
-        { role: "user", content: "Find a plumber." },
-        { role: "assistant", content: "I will look for one." },
-      ]);
-      const running = b.subagent(home, {
-        id: "subagent-plumber",
-        name: "plumber",
-        agent: "researcher",
-        state: "running",
-        brief: "Find a plumber.",
-      });
-      b.conversation(running, [{ role: "assistant", content: "Checking local options." }]);
-      const computer = b.computer({ id: "cx-repair", name: "repair" });
-      b.subagent(home, {
-        computer_id: computer.id,
-        id: "subagent-repair",
-        name: "repair",
-        agent: "worker",
-        state: "idle",
-        brief: "Inspect the repair.",
-        result: "The repair is complete.",
-      });
-      return b.world;
-    },
+    build: () => homeWorld().world,
+  },
+  activity: {
+    description:
+      "Activity: subagents of two projects in every state, a waiting one with each reason, and runs to cancel.",
+    path: "/activity",
+    build: () => activity().world,
   },
   "home-empty": {
     description: "Eika's conversation before any message: the home session, empty.",

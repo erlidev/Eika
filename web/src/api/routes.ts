@@ -31,6 +31,8 @@ import type {
   PostMessage,
   ProbeProvider,
   ProbeResponse,
+  Project,
+  Projects,
   Profile,
   ProfileInput,
   Profiles,
@@ -70,6 +72,18 @@ export async function listChats(signal?: AbortSignal): Promise<Session[]> {
     signal,
   });
   return body.sessions;
+}
+
+/** listSessions lists every session, oldest first: chats, computer sessions, home and subagents. */
+export async function listSessions(signal?: AbortSignal): Promise<Session[]> {
+  const body = await request<{ sessions: Session[] }>("/api/sessions", { signal });
+  return body.sessions;
+}
+
+/** listProjects lists the projects, by slug. */
+export async function listProjects(signal?: AbortSignal): Promise<Project[]> {
+  const body = await request<Projects>("/api/projects", { signal });
+  return body.projects;
 }
 
 /** listComputers lists the computers, oldest first. */

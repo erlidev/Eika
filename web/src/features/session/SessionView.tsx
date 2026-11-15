@@ -1,6 +1,7 @@
 /**
  * The centre pane: one session's transcript, the composer, and the run status
- * bar under it. It owns the session's stream subscription.
+ * bar under it. It owns the session's stream subscription. A read-only view
+ * is the transcript alone, for a session Eika steers, such as a subagent's.
  */
 
 import { House, MessageCircle } from "lucide-react";
@@ -28,9 +29,40 @@ export type SessionViewProps = {
   sessionId: string;
   /** header is false where the page around the view already titles it. */
   header?: boolean;
+  /**
+   * readOnly watches the session live with no composer, status bar, abort key
+   * or rewind: the session's run is steered and stopped elsewhere.
+   */
+  readOnly?: boolean;
 };
 
-export function SessionView({ sessionId, header = true }: SessionViewProps) {
+export function SessionView({ sessionId, header = true, readOnly = false }: SessionViewProps) {
+  return readOnly ? (
+    <WatchedSession sessionId={sessionId} />
+  ) : (
+    <Conversation sessionId={sessionId} header={header} />
+  );
+}
+
+type WatchedSessionProps = { sessionId: string };
+
+/** WatchedSession is a session's live transcript and nothing to act on it with. */
+function WatchedSession({ sessionId }: WatchedSessionProps) {
+  useSessionStream(sessionId);
+  return (
+    <section className="flex min-h-0 flex-1 flex-col" aria-label="Session">
+      <Transcript
+        sessionId={sessionId}
+        readOnly
+        empty="Nothing has been said in this session yet."
+      />
+    </section>
+  );
+}
+
+type ConversationProps = { sessionId: string; header: boolean };
+
+function Conversation({ sessionId, header }: ConversationProps) {
   useSessionStream(sessionId);
   const session = useSession(sessionId);
   const models = useModels();

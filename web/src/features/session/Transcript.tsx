@@ -33,16 +33,29 @@ export type TranscriptProps = {
   sessionId: string;
   /** empty is what the view shows before the session has any entries. */
   empty?: React.ReactNode;
+  /**
+   * readOnly is a transcript that is watched, not steered: it reads no outline
+   * and no row offers a rewind, which would move the head of a session Eika owns.
+   */
+  readOnly?: boolean;
 };
+
+const none: TranscriptItem[] = [];
 
 /** bottomSlackPx is how far from the bottom still counts as following along. */
 const bottomSlackPx = 100;
 
-export function Transcript({ sessionId, empty }: TranscriptProps) {
+export function Transcript({ sessionId, empty, readOnly = false }: TranscriptProps) {
   // Three selectors rather than the whole store: a panel that only wants the
   // questions should not re-render on every token.
-  const committed = useSessionStore((s) => s.committed);
-  const live = useSessionStore((s) => s.live);
+  const storeSessionId = useSessionStore((s) => s.sessionId);
+  const storedCommitted = useSessionStore((s) => s.committed);
+  const storedLive = useSessionStore((s) => s.live);
+  // The store holds one session, and opens the next in an effect, so for one
+  // render a view that just switched sessions would still show the last one.
+  const open = storeSessionId === sessionId;
+  const committed = open ? storedCommitted : none;
+  const live = open ? storedLive : none;
   const questions = useSessionStore((s) => s.questions);
   const elicitations = useSessionStore((s) => s.elicitations);
   const stopReason = useSessionStore((s) => s.stopReason);
@@ -53,7 +66,7 @@ export function Transcript({ sessionId, empty }: TranscriptProps) {
   // Rewinding takes the conversation back to before a message the user sent
   // and puts it back in the composer. A run in progress owns the head, so it
   // is offered only while the session is idle.
-  const outline = useSessionOutline(sessionId);
+  const outline = useSessionOutline(readOnly ? undefined : sessionId);
   const status = useRunStatus(sessionId);
   const rewind = useRewind(sessionId);
   const idle = !(status.data?.active ?? false);
