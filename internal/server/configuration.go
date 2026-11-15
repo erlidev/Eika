@@ -447,7 +447,7 @@ func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, 
 		opts.Compaction.Prompts = agent.CompactionPrompts{
 			Summary: d.Compaction.Summary, Update: d.Compaction.Update, TurnPrefix: d.Compaction.TurnPrefix,
 		}
-		if d.Name != "worker" {
+		if !s.usesComputer(sess) {
 			opts.Executor = nil
 		}
 	}

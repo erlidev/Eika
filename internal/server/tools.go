@@ -215,6 +215,19 @@ func (s *Server) runTools(sess store.Session, choice []string, mcpTools []tool.T
 	}, mcpTools)
 }
 
+// usesComputer reports whether a run of sess works in its computer and so
+// holds an executor: any session with a computer except an agent whose fixed
+// tools all run without one.
+func (s *Server) usesComputer(sess store.Session) bool {
+	if sess.Chat() {
+		return false
+	}
+	if sess.Agent == "" {
+		return true
+	}
+	return slices.ContainsFunc(s.runTools(sess, nil, nil).List(), tool.NeedsComputer)
+}
+
 // narrowed is a registry of the tools every run shares and the MCP tools
 // given that keep accepts.
 func (s *Server) narrowed(keep func(tool.Tool) bool, mcpTools []tool.Tool) *tool.Registry {

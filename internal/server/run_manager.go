@@ -198,7 +198,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 		return store.Run{}, err
 	}
 	var ex executor.Executor
-	if !sess.Chat() && (sess.Agent == "" || sess.Agent == "worker") {
+	if s.usesComputer(sess) {
 		if ex, err = s.runExecutor(ctx, sess.ComputerID); err != nil {
 			return store.Run{}, err
 		}

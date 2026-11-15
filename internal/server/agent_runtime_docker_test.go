@@ -95,3 +95,80 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 		t.Fatalf("reset prompt = %q", got)
 	}
 }
+
+func TestSessionsWithAnUnknownAgentStayListedAndRefuseRuns(t *testing.T) {
+	a := newAPI(t)
+	ctx := t.Context()
+	cx := a.home(t)
+	ghost, err := a.store.CreateSession(ctx, store.Session{ComputerID: cx.ID, Agent: "ghost", Tools: []string{"bash"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ghostChat, err := a.store.CreateSession(ctx, store.Session{Agent: "ghost", Title: "ghost chat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinary := a.newSession(t, cx.ID)
+
+	for _, route := range []string{"/api/sessions", "/api/sessions?chats=true"} {
+		list := decodeBody[sessionsWire](t, request(t, a.Server, "GET", route, nil), 200)
+		var ids []string
+		for _, s := range list.Sessions {
+			ids = append(ids, s.ID)
+		}
+		want := ghost.ID
+		if strings.Contains(route, "chats") {
+			want = ghostChat.ID
+		} else if !slices.Contains(ids, ordinary.ID) {
+			t.Errorf("%s = %v, lacks the ordinary session %s", route, ids, ordinary.ID)
+		}
+		if !slices.Contains(ids, want) {
+			t.Errorf("%s = %v, lacks the session %s with an unknown agent", route, ids, want)
+		}
+	}
+	got := decodeBody[struct {
+		Session struct {
+			Agent string   `json:"agent"`
+			Tools []string `json:"tools"`
+		} `json:"session"`
+	}](t, request(t, a.Server, "GET", "/api/sessions/"+ghost.ID, nil), 200)
+	if got.Session.Agent != "ghost" || len(got.Session.Tools) != 0 {
+		t.Errorf("session = %+v, want agent ghost with no tools", got.Session)
+	}
+	a.postMessage(t, ghost.ID, "hello", "", 400)
+}
+
+// TestAgentRunsHoldAnExecutorOnlyWhenTheirToolsNeedOne starts a run in a
+// stopped computer. Only a run that holds an executor starts the computer.
+func TestAgentRunsHoldAnExecutorOnlyWhenTheirToolsNeedOne(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		agent string
+		want  string
+	}{
+		{"worker", "worker", "running"},
+		{"eika", "eika", "stopped"},
+		{"researcher", "researcher", "stopped"},
+		{"profile session", "", "running"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newAPI(t)
+			cx := a.seedComputer(t)
+			a.stopIdle(t)
+			if got := a.computerState(t, cx.ID); got != "stopped" {
+				t.Fatalf("computer before the run = %q, want stopped", got)
+			}
+			sess, err := a.store.CreateSession(t.Context(), store.Session{ComputerID: cx.ID, Agent: tc.agent})
+			if err != nil {
+				t.Fatal(err)
+			}
+			a.assignClasses(t, map[string]any{"main": "test-model", "fast": "test-model"})
+			a.script(providertest.Text("done"))
+			a.postMessage(t, sess.ID, "hello", "", 202)
+			a.waitIdle(t, sess.ID)
+			if got := a.computerState(t, cx.ID); got != tc.want {
+				t.Errorf("computer after the run = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

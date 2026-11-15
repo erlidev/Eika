@@ -242,3 +242,23 @@ func TestAgentRunDoesNotReadMCPConfiguration(t *testing.T) {
 		t.Fatal("legacy run did not read MCP configuration")
 	}
 }
+
+func TestOnlyAgentsWhoseToolsNeedAComputerUseOne(t *testing.T) {
+	s := runtimeServer(t)
+	for _, tc := range []struct {
+		sess store.Session
+		want bool
+	}{
+		{store.Session{Agent: "worker", ComputerID: "c"}, true},
+		{store.Session{Agent: "eika", ComputerID: "c"}, false},
+		{store.Session{Agent: "researcher", ComputerID: "c"}, false},
+		{store.Session{Agent: "unknown", ComputerID: "c"}, false},
+		{store.Session{ComputerID: "c"}, true},
+		{store.Session{Agent: "worker"}, false},
+		{store.Session{}, false},
+	} {
+		if got := s.usesComputer(tc.sess); got != tc.want {
+			t.Errorf("usesComputer(%+v) = %v, want %v", tc.sess, got, tc.want)
+		}
+	}
+}

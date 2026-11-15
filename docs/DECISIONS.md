@@ -1975,7 +1975,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   legacy permissions.
 - Agent runs and previews use the same built-in tool registry, filtered to the
   definition's fixed list. MCP tools are excluded, and no MCP server connects
-  for an agent run. Only a worker gets an executor. Agent definitions set the
+  for an agent run. An agent gets an executor only when one of its fixed tools
+  needs a computer (today, the worker). Agent definitions set the
   model-call limit and compaction prompts; global compaction budgets still
   apply. Stage A has no subagent questions, so `ask_user` is added to the fixed
   lists only with P2-16. Profile sessions retain their current question tool.

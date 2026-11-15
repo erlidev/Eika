@@ -951,7 +951,8 @@ Sessions without an agent continue to use profiles.
 
 The runtime filters the shared built-in registry to the fixed tool list, in name
 order, for both schemas and dispatch. It connects no MCP servers and includes no
-MCP tools. Only a worker receives an executor. Stage A has no subagent questions;
+MCP tools. An agent receives an executor only when one of its fixed tools needs
+a computer (today, the worker). Stage A has no subagent questions;
 `ask_user` remains available to legacy profile sessions. Runs use the definition's
 call limit and compaction prompts with the current compaction algorithm and
 budget settings. Editing a definition changes the next run, including an empty
