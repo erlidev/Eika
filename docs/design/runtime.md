@@ -214,6 +214,10 @@ any of their subagents (`interface.md` 1).
 
 ## 9. Subagents
 
+The session lifecycle service is implemented in P2-12; see
+[Architecture](../ARCHITECTURE.md#subagent-lifecycle). Tool and server run
+bindings, reports, limits and question relay remain in later packages.
+
 Eika keeps track of several lines of work the way subagents traditionally work: it
 hands each one to a subagent with a brief, the subagent works in its own context,
 and it reports back. Two things differ from one-shot subagents such as Claude

@@ -19,6 +19,7 @@ export type Session = {
   brief?: string;
   result?: string;
   last_active_at: string;
+  waiting_reason?: string;
   id: string;
   /** computer_id is where the session's runs act; a chat has none. */
   computer_id?: string;

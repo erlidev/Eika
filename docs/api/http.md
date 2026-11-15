@@ -388,6 +388,7 @@ Identity and lifecycle fields are read-only on the existing session routes.
 | `state` | string | `idle`, `running`, `waiting`, `failed` or `cancelled`. |
 | `brief` | string, optional | Initial brief. |
 | `result` | string, optional | Latest report. |
+| `waiting_reason` | string? | Code-owned reason while a subagent waits; absent when empty. |
 | `last_active_at` | timestamp | Last lifecycle activity in UTC. |
 | `kind` | string | Session kind: `user` (legacy), `home`, `subagent` or `routine`. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |

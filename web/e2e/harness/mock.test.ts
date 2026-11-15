@@ -912,6 +912,7 @@ describe("session storage metadata", () => {
       "brief",
       "result",
       "last_active_at",
+      "waiting_reason",
     ]) {
       const create = await call(mock, "POST", "/api/sessions", { chat: true, [field]: "changed" });
       expect(create.status, field).toBe(400);
@@ -967,6 +968,19 @@ describe("session storage metadata", () => {
     });
     expect((await call(mock, "DELETE", "/api/sessions/home-main")).status).toBe(409);
     expect((await call(mock, "GET", "/api/sessions/missing")).status).toBe(404);
+  });
+
+  it("returns the stored code-owned waiting reason", async () => {
+    const mock = open("home-world");
+    const child = mock.world.sessions.find((row) => row.id === "subagent-plumber");
+    if (!child) throw new Error("missing child");
+    child.state = "waiting";
+    child.waiting_reason = "test wait";
+    const reply = await call(mock, "GET", `/api/sessions/${child.id}`);
+    expect(reply.status).toBe(200);
+    expect(reply.body).toMatchObject({
+      session: { state: "waiting", waiting_reason: "test wait" },
+    });
   });
 
   it("records the web channel on home messages", async () => {

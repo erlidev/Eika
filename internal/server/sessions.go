@@ -23,6 +23,7 @@ type sessionBody struct {
 	Name            string             `json:"name,omitempty"`
 	ProjectID       string             `json:"project_id,omitempty"`
 	ParentSessionID string             `json:"parent_session_id,omitempty"`
+	WaitingReason   string             `json:"waiting_reason,omitempty"`
 	State           store.SessionState `json:"state"`
 	Brief           string             `json:"brief,omitempty"`
 	Result          string             `json:"result,omitempty"`
@@ -473,6 +474,7 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 		ProjectID:       sess.ProjectID,
 		ParentSessionID: sess.ParentSessionID,
 		State:           sess.State,
+		WaitingReason:   sess.WaitingReason,
 		Brief:           sess.Brief,
 		Result:          sess.Result,
 		LastActiveAt:    sess.LastActiveAt,
