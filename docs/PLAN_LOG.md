@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-08 added agent runtime resolution beside profiles: class
+  fallback, effective prompts, fixed built-in tools, 40/200 call limits and
+  per-agent compaction prompts. Runs and previews exclude MCP; records name the
+  agent and class. Stage A keeps subagent questions for P2-16. Tests cover
+  capabilities, denied dispatch, stable schemas, limits, overrides and legacy
+  callers. `make check` passes.
+
 - 2026-11-15: plan reordered so a testable build comes first (no code changed).
   - Phases 2 and 3 run in four stages, listed in `PLAN.md`, "Schedule for phases
     2 and 3". Stage A is 11 packages and ends with the home loop working in a

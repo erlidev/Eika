@@ -246,6 +246,8 @@ export function sessionRoutes(ctx: RouteContext): void {
     const row = find(w.sessions, params[0], "session");
     if ("status" in row) return row;
     const model = query.get("model") ?? "";
+    if (row.agent && model !== "")
+      return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
     if (model !== "" && !w.models.some((m) => m.name === model)) {
       return fail(400, "invalid_request", `unknown model "${model}"`);
     }
@@ -255,6 +257,8 @@ export function sessionRoutes(ctx: RouteContext): void {
     const row = find(w.sessions, params[0], "session");
     if ("status" in row) return row;
     const requested = query.get("model") ?? "";
+    if (row.agent && requested !== "")
+      return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
     if (requested !== "" && !w.models.some((m) => m.name === requested)) {
       return fail(400, "invalid_request", `unknown model "${requested}"`);
     }

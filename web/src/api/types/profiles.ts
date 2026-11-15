@@ -27,9 +27,11 @@ export type SamplingKey = keyof Sampling;
  * ConfigLayer is where a resolved value came from, top first: the run
  * request, the session's overrides, its profile, the model row, or the
  * defaults (the default model and profile, the built-in prompts, every tool,
- * and for a sampling parameter the endpoint's own).
+ * and for a sampling parameter the endpoint's own). Agent sessions use agent
+ * for definition values and class for the selected model.
  */
-export type ConfigLayer = "request" | "session" | "profile" | "model" | "default";
+export type ConfigLayer =
+  "request" | "session" | "profile" | "model" | "default" | "agent" | "class";
 
 /**
  * ProfileSettings is what a profile sets, and what a session overrides of

@@ -33,12 +33,12 @@ func TestInstructionWritesRejectMalformedBodiesBeforeStorage(t *testing.T) {
 
 func TestDecodeInstructionJSONPreservesValidUnicodeAndLimitsBody(t *testing.T) {
 	request := httptest.NewRequest("PUT", "/", strings.NewReader(`{"instructions":"Café 🌍"}`))
-	got, err := decodeInstructionJSON[putProjectInstructionsRequest](request)
+	got, err := decodeUTF8JSON[putProjectInstructionsRequest](request)
 	if err != nil || got.Instructions == nil || *got.Instructions != "Café 🌍" {
 		t.Fatalf("decoded = %+v, error = %v", got, err)
 	}
 	request = httptest.NewRequest("PUT", "/", strings.NewReader(strings.Repeat("a", maxRequestBytes+1)))
-	_, err = decodeInstructionJSON[putProjectInstructionsRequest](request)
+	_, err = decodeUTF8JSON[putProjectInstructionsRequest](request)
 	var e apiError
 	if !errors.As(err, &e) || e.status != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized body: %v", err)

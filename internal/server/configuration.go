@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
@@ -20,6 +21,10 @@ import (
 const (
 	// layerRequest is the model a run request names.
 	layerRequest = "request"
+	// layerAgent is the effective agent definition.
+	layerAgent = "agent"
+	// layerClass is the model selected through the agent's class.
+	layerClass = "class"
 	// layerSession is what a session overrides of its profile, and its tool
 	// choice.
 	layerSession = "session"
@@ -84,6 +89,7 @@ type configLayer struct {
 
 // runConfig is a run's configuration, resolved.
 type runConfig struct {
+	definition    *agentdef.Definition
 	profile       store.Profile
 	profileSource string
 	// model is the model the run uses; ok is false when none is configured.
@@ -107,6 +113,8 @@ type runConfig struct {
 // configBase is what resolving a configuration reads from the database:
 // the models, the profiles, and the defaults the settings name.
 type configBase struct {
+	agentOverrides map[string]agentdef.Override
+	assigned       map[modelClass]string
 	// models are the chat models: the only ones a run can use. The others are
 	// kept for refusing them by name.
 	models       []store.Model
@@ -135,6 +143,11 @@ func (s *Server) loadConfigBase(ctx context.Context) (configBase, error) {
 	}
 	b.defaultModel, _ = s.defaultModel(ctx, models)
 	b.defaultProfile = s.defaultProfile(ctx, profiles)
+	b.agentOverrides, err = s.deps.Store.AgentOverrides(ctx)
+	if err != nil {
+		return configBase{}, err
+	}
+	b.assigned = s.classAssignments(ctx)
 	return b, nil
 }
 
@@ -363,6 +376,9 @@ func (s *Server) configure(ctx context.Context, sess store.Session, requested st
 // resolveSession resolves the configuration of a run of sess that names the
 // model requested, empty for none.
 func (b configBase) resolveSession(sess store.Session, requested string) (runConfig, error) {
+	if sess.Agent != "" {
+		return b.resolveAgent(sess.Agent, requested)
+	}
 	layers, profile, source, err := b.sessionLayers(sess, requested)
 	if err != nil {
 		return runConfig{}, err
@@ -425,5 +441,41 @@ func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, 
 	opts.BasePrompt = c.chatPrompt
 	opts.Instructions = c.instructions
 	opts.Executor = ex
+	if d := c.definition; d != nil {
+		opts.Limits.MaxCalls = d.MaxTurns
+		opts.Inference.Class = d.Class
+		opts.Compaction.Prompts = agent.CompactionPrompts{
+			Summary: d.Compaction.Summary, Update: d.Compaction.Update, TurnPrefix: d.Compaction.TurnPrefix,
+		}
+		if !s.usesComputer(sess) {
+			opts.Executor = nil
+		}
+	}
 	return agent.New(p, s.runTools(sess, c.tools, mcpTools), opts)
+}
+
+// resolveAgent uses only the definition and the model row selected by its class.
+func (b configBase) resolveAgent(name, requested string) (runConfig, error) {
+	d, ok := agentdef.Lookup(name)
+	if !ok {
+		return runConfig{}, invalidf("unknown agent %q", name)
+	}
+	if requested != "" {
+		return runConfig{}, invalidf("agent sessions use model classes; model must be empty")
+	}
+	d = b.agentOverrides[name].Apply(d)
+	choice, found := resolveClass(modelClass(d.Class), b.assigned, b.models, b.defaultModel.Name)
+	b.defaultModel = choice.Model
+	if !found {
+		b.models = nil
+	}
+	c, err := b.resolve(store.Profile{}, layerAgent, []configLayer{{
+		name: layerAgent, settings: store.ProfileSettings{ChatPrompt: &d.Prompt}, tools: d.Tools,
+	}})
+	if err != nil {
+		return runConfig{}, err
+	}
+	c.definition = &d
+	c.sources["model"] = layerClass
+	return c, nil
 }

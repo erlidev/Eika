@@ -329,6 +329,21 @@ func (s *Server) writeSessionConfiguration(w http.ResponseWriter, r *http.Reques
 		s.fail(w, r, err)
 		return
 	}
+	if sess.Agent != "" {
+		if _, err := draft.apply(base, sess); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		cfg, err := base.resolveSession(sess, "")
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		writeJSON(w, s.log, http.StatusOK, sessionConfigurationResponse{
+			SessionID: sess.ID, Resolved: asConfiguration(cfg), Inherited: asConfiguration(cfg),
+		})
+		return
+	}
 	layers, profile, source, err := base.sessionLayers(sess, "")
 	if err != nil {
 		s.fail(w, r, err)

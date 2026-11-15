@@ -722,9 +722,8 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
 - **A run is bounded in model calls and in wall time.** `Options.Limits` holds
   `MaxCalls` (default 40) and `MaxWall` (default 24 hours). 40 is the home
   session's limit in `runtime.md` section 5; the design gives a subagent 200, and
-  the agent definitions of phase 2 set each agent's own. Until they exist every
-  session is a chat on one computer, which is the home session's case, so 40 is
-  the one default. A run is one `Agent.Run`, however many turns its follow-ups
+  agent definitions set each agent's own limit. Legacy profile sessions keep
+  the default of 40. A run is one `Agent.Run`, however many turns its follow-ups
   start. A model call is a step of the loop: a retried attempt is the same call,
   and the summary a compaction asks for is not one, since neither is the
   model's own choice to go on.
@@ -1967,13 +1966,29 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 
 ## Agent definitions
 
+- **The session's agent selects its runtime path** (2026-11-15, P2-08).
+  A nonempty agent name resolves its definition and overrides, then its model
+  class with the existing fallback rules. Profile settings, session overrides,
+  tool choices and requested models cannot replace that configuration. An
+  explicit model request is refused. Sessions with no agent keep profile
+  resolution. This keeps existing callers working without giving new agents
+  legacy permissions.
+- Agent runs and previews use the same built-in tool registry, filtered to the
+  definition's fixed list. MCP tools are excluded, and no MCP server connects
+  for an agent run. An agent gets an executor only when one of its fixed tools
+  needs a computer (today, the worker). Agent definitions set the
+  model-call limit and compaction prompts; global compaction budgets still
+  apply. Stage A has no subagent questions, so `ask_user` is added to the fixed
+  lists only with P2-16. Profile sessions retain their current question tool.
+  Rejected: using a profile as an agent's base, which would let profile edits
+  change agent capabilities and prompts.
 - Built-in definitions are code with embedded Markdown prompts. Only class and
   system prompt can be overridden. A null override uses the built-in value;
   an empty prompt is an explicit value. DELETE resets both fields. Only the
   chat classes `deep`, `main` and `fast` are valid. No model must be configured
   to edit a definition.
 - Migration 0011 adds override rows without changing profiles or conversations.
-  The agent API is available before runtime adoption (P2-08). Fixed tool lists
+  The agent API and runtime share these definitions. Fixed tool lists
   include only shipped tools. Later packages extend them when those tools exist;
   neither future tool names nor MCP wildcards are accepted from the API.
 - Compaction prompts are built-in per agent and are not override fields. Home

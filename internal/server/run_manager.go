@@ -193,17 +193,15 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 		}
 	}()
 
-	// A chat has no computer: its run gets no executor, and the agent tells
-	// the model it has neither files nor commands.
-	var ex executor.Executor
-	if !sess.Chat() {
-		if ex, err = s.runExecutor(ctx, sess.ComputerID); err != nil {
-			return store.Run{}, err
-		}
-	}
 	cfg, err := s.configure(ctx, sess, model)
 	if err != nil {
 		return store.Run{}, err
+	}
+	var ex executor.Executor
+	if s.usesComputer(sess) {
+		if ex, err = s.runExecutor(ctx, sess.ComputerID); err != nil {
+			return store.Run{}, err
+		}
 	}
 	if len(work.message.Images) > 0 && !cfg.model.ImageInput {
 		return store.Run{}, noImageInput(cfg.model.Name)

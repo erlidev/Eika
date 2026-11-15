@@ -23,8 +23,9 @@ import type {
   SessionConfiguration,
   ToolSchema,
 } from "../../src/api/types.ts";
-import { fixedNow, pathOf, windowOf } from "./world.ts";
+import { classView, fixedNow, pathOf, windowOf } from "./world.ts";
 import type { World } from "./world.ts";
+import { builtinAgents } from "./agents.ts";
 
 /** StoredProfile is a profile as the world keeps it, without what it inherits. */
 export type StoredProfile = Omit<Profile, "inherited">;
@@ -371,6 +372,30 @@ export function inheritedProfile(w: World, modelId: string): Configuration {
   return inherited(w, defaultProfileOf(w), "default", layers, 0);
 }
 
+/** resolveAgent uses the effective definition and its model class, without legacy layers. */
+function resolveAgent(w: World, session: Session): Resolved {
+  const builtin = builtinAgents.find((d) => d.name === session.agent);
+  const override = w.agentOverrides[session.agent ?? ""];
+  const cls = override?.class ?? builtin?.class;
+  const selected = classView(w).classes.find((c) => c.class === cls)?.model;
+  const model = w.models.find((m) => m.name === selected && m.kind === "chat");
+  const profile = { ...defaultProfile(), id: "", name: "" };
+  const result = resolve(
+    { ...w, models: model ? [model] : [], defaultModel: model?.name ?? "" },
+    profile,
+    "agent",
+    [
+      {
+        name: "agent",
+        settings: { ...noSettings(), chat_prompt: override?.prompt ?? builtin?.prompt ?? "" },
+        tools: builtin?.tools ?? [],
+      },
+    ],
+  );
+  if (result.config.sources) result.config.sources.model = "class";
+  return result;
+}
+
 /**
  * sessionConfiguration is GET /api/sessions/{id}/configuration. A draft
  * changes only what the overrides fall through to.
@@ -380,6 +405,16 @@ export function sessionConfiguration(
   session: Session,
   draft: ConfigurationDraft = {},
 ): SessionConfiguration {
+  if (session.agent) {
+    const { config } = resolveAgent(w, session);
+    return {
+      session_id: session.id,
+      overrides: noSettings(),
+      tools: null,
+      resolved: config,
+      inherited: config,
+    };
+  }
   const { layers, profile, source } = sessionLayers(w, session, "");
   const drafted = { ...session };
   if (draft.profileId === "") Reflect.deleteProperty(drafted, "profile_id");
@@ -413,11 +448,16 @@ function chosen(choice: string[] | null, name: string, server: string | undefine
  */
 export function syncSession(w: World, session: Session): void {
   const { layers, profile, source } = sessionLayers(w, session, "");
-  const { config } = resolve(w, profile, source, layers);
+  const { config } = session.agent ? resolveAgent(w, session) : resolve(w, profile, source, layers);
   const chat = session.computer_id === undefined;
   session.tools = w.tools
     .filter((t) => !(chat && t.needs_computer) && chosen(config.tools, t.name, t.server))
-    .map((t) => t.name);
+    .map((t) => t.name)
+    .sort();
+  if (session.agent) {
+    session.overridden = false;
+    return;
+  }
   const overrides = w.overrides[session.id];
   session.overridden =
     w.toolChoices[session.id] !== undefined ||
@@ -465,14 +505,18 @@ function section(kind: ContextSection["kind"], text: string): ContextSection {
  */
 export function previewContext(w: World, session: Session, requested: string): ModelContext {
   const { layers, profile, source } = sessionLayers(w, session, requested);
-  const { config, model } = resolve(w, profile, source, layers);
+  const { config, model } = session.agent
+    ? resolveAgent(w, session)
+    : resolve(w, profile, source, layers);
   const sections: ContextSection[] = [];
   const base = config.chat_prompt.trim();
   if (base !== "") sections.push(section("base", base));
   if (config.instructions.trim() !== "")
     sections.push(section("instructions", config.instructions.trim()));
+  syncSession(w, session);
   const tools: ToolSchema[] = w.tools
     .filter((t) => session.tools.includes(t.name))
+    .sort((a, b) => a.name.localeCompare(b.name))
     .map((t) => {
       const schema = toolSchemaOf(w, t.name);
       return {

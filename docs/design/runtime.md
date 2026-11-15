@@ -81,7 +81,6 @@ changes are:
 |---|---|
 | `Options.Executor` becomes `Options.Computer` | A handle with the executor plus computer id and directory. Tools that need none still mark themselves `Standalone` |
 | `Options.Gate` | The Sentry gate. `dispatch` asks `Gate.Decide` before every tool call and `Gate.Ingest` on every result from an untrusted source. The model is never told about the gate: a deny returns a normal `Blocked: <reason>` error result (`sentry.md` 4), and an `ask` either waits briefly, which looks like a slow tool, or returns `Queued` (`sentry.md` 7). The loop stays standard |
-| Agent limits | Agent definitions set the call limit: home 40, subagent 200. The current default is 40; the other guards already exist |
 | Parking | A tool waiting on an approval or on an answer blocks its goroutine, as `ask_user` does today. It holds no inference lease, since leases cover model calls only. Run state becomes `waiting`, so Activity shows it |
 | Approvals | Approvals are durable rows (`sentry.md` 7). A subagent's `ask_user` waits in memory, since a restart ends the run that asked |
 | After a restart | Nothing resumes on its own. On start, every run that was `running` or `waiting` is ended: each tool call left unanswered gets the result "Eika restarted while this ran; its outcome is unknown. Check before retrying.", which keeps the session resumable and means no call runs twice. Pending approvals behind those calls expire. A subagent goes `idle`, Eika gets a notice naming it, and it carries on with `subagent_message` if the work is still wanted. A routine run is recorded as interrupted. An interrupted home reply ends with a notice, and the user's message stays answerable |
@@ -92,8 +91,8 @@ changes are:
 
 Built-in definitions, class and prompt overrides, and per-agent compaction prompts
 are implemented; see [Architecture](../ARCHITECTURE.md#agent-definitions).
-Runtime adoption and Settings are still planned. The table below is the target
-tool list; each package adds its tools only when they are implemented. There are
+Runtime adoption is implemented; Settings is still planned. The table below is
+the target tool list; each package adds its tools only when they are implemented. There are
 no user-defined agents for now (`DEFERRED.md`).
 
 | Field | Meaning |

@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
@@ -429,9 +430,16 @@ func (s *Server) writeSession(w http.ResponseWriter, r *http.Request, status int
 // run offers rather than the stored choice, so a client never re-derives
 // which tools a chat may hold or what the profile chose.
 func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, error) {
-	c, err := base.resolveSession(sess, "")
-	if err != nil {
-		return sessionBody{}, err
+	// A session whose agent is not built in has no tools and no resolved
+	// configuration; rendering it must not fail the listing of the others.
+	// Starting a run on it still fails in resolveSession.
+	var tools []string
+	if _, known := agentdef.Lookup(sess.Agent); sess.Agent == "" || known {
+		c, err := base.resolveSession(sess, "")
+		if err != nil {
+			return sessionBody{}, err
+		}
+		tools = c.tools
 	}
 	return sessionBody{
 		ID:              sess.ID,
@@ -448,9 +456,9 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 		Title:           sess.Title,
 		Kind:            string(sess.Kind),
 		HeadEntryID:     sess.HeadEntryID,
-		Tools:           s.sessionToolNames(sess, c.tools),
+		Tools:           s.sessionToolNames(sess, tools),
 		ProfileID:       sess.ProfileID,
-		Overridden:      !sess.Overrides.Empty() || sess.Tools != nil,
+		Overridden:      sess.Agent == "" && (!sess.Overrides.Empty() || sess.Tools != nil),
 		Pinned:          sess.Pinned,
 		Archived:        sess.Archived,
 		CreatedAt:       sess.CreatedAt,

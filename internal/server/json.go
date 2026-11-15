@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"unicode/utf8"
 
 	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/mcp"
@@ -52,6 +55,25 @@ func decodeJSONWithin[T any](r *http.Request, limit int64) (T, error) {
 		return v, invalidf("decode request body: %v", err)
 	}
 	return v, nil
+}
+
+// decodeUTF8JSON rejects invalid bytes before encoding/json can replace them.
+func decodeUTF8JSON[T any](r *http.Request) (T, error) {
+	var zero T
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxRequestBytes))
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return zero, tooLargef("the request body is over the limit of %d bytes", maxRequestBytes)
+		}
+		return zero, invalidf("read request body: %v", err)
+	}
+	if !utf8.Valid(raw) {
+		return zero, invalidf("request body must be valid UTF-8")
+	}
+	clone := r.Clone(r.Context())
+	clone.Body = io.NopCloser(bytes.NewReader(raw))
+	return decodeJSON[T](clone)
 }
 
 // The error codes the API reports. One code per kind of failure, so a client

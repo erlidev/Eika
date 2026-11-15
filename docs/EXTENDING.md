@@ -66,7 +66,12 @@ func (countLinesTool) Call(ctx context.Context, c tool.CallContext, raw json.Raw
 }
 ```
 
-Register it in `internal/tool/builtin/registry.go`:
+Register it in `internal/tool/builtin/registry.go`. To give an agent access,
+add the name to its sorted tool list in `internal/agentdef/agents.go` and update
+`web/e2e/harness/agents.ts`. Registration alone does not give an agent access.
+A legacy profile session can still choose any registered tool it can run.
+
+Register the example as follows:
 
 ```go
 func Registry() (*tool.Registry, error) {

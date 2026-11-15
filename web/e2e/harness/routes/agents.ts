@@ -23,9 +23,11 @@ export function agentRoutes({ w, on }: RouteContext): void {
     const agent = view(params[0]);
     return agent ? ok(agent) : missing();
   });
-  on("PUT", "/api/agents/{name}", ({ params, body }) => {
+  on("PUT", "/api/agents/{name}", ({ params, body, raw }) => {
     const agent = view(params[0]);
     if (!agent) return missing();
+    if (raw.trim() === "null")
+      return fail(400, "invalid_request", "agent override must be an object");
     const cls = body.class ?? null;
     if (cls !== null && cls !== "main" && cls !== "fast" && cls !== "deep") {
       return fail(400, "invalid_request", "class must be main, fast or deep");

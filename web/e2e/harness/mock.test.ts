@@ -522,6 +522,7 @@ describe("agent definitions", () => {
       ).toBe(404);
     }
     for (const body of [
+      null,
       { class: "decision" },
       { class: "" },
       { class: "unknown" },
@@ -550,6 +551,59 @@ describe("agent definitions", () => {
       "PUT /api/agents/{name} request: $.name: unknown field",
       "PUT /api/agents/{name} request: $.compaction: unknown field",
     ]);
+  });
+});
+
+describe("agent runtime", () => {
+  it("uses agent prompts, class fallback and fixed tools beside profiles", async () => {
+    const mock = open("workbench");
+    const session = mock.world.sessions[0];
+    if (!session) throw new Error("fixture has no session");
+    session.agent = "eika";
+    mock.world.overrides[session.id] = {
+      chat_prompt: "legacy",
+      instructions: "legacy rules",
+      preserve_thinking: true,
+      sampling: { temperature: 0.9 },
+    };
+    mock.world.toolChoices[session.id] = ["bash", "ask_user"];
+    await call(mock, "PUT", "/api/agents/eika", { class: "deep", prompt: "agent rules" });
+    mock.world.settings.settings.model_classes = { main: mock.world.defaultModel };
+    const base = `/api/sessions/${session.id}`;
+    const cfg = await call(mock, "GET", `${base}/configuration`);
+    expect(cfg.body).toMatchObject({
+      resolved: {
+        profile_id: "",
+        model: mock.world.defaultModel,
+        chat_prompt: "agent rules",
+        instructions: "",
+        tools: ["web_search"],
+        sources: { model: "class", chat_prompt: "agent", tools: "agent" },
+      },
+    });
+    const preview = await call(mock, "GET", `${base}/context`);
+    expect(preview.body).toMatchObject({
+      sections: [{ kind: "base", text: "agent rules" }],
+      tools: [{ name: "web_search" }],
+    });
+    expect(session.tools).toEqual(["web_search"]);
+    expect(session.overridden).toBe(false);
+    for (const route of ["context", "prediction"])
+      expect(
+        (await call(mock, "GET", `${base}/${route}?model=${mock.world.defaultModel ?? ""}`)).status,
+      ).toBe(400);
+    for (const route of ["messages", "compact"])
+      expect(
+        (
+          await call(mock, "POST", `${base}/${route}`, {
+            ...(route === "messages" ? { text: "hello" } : {}),
+            model: mock.world.defaultModel,
+          })
+        ).status,
+      ).toBe(400);
+    await call(mock, "PUT", "/api/agents/eika", { prompt: "" });
+    expect((await call(mock, "GET", `${base}/context`)).body).toMatchObject({ sections: [] });
+    expect(mock.contractBreaks).toEqual([]);
   });
 });
 
