@@ -1010,10 +1010,13 @@ its session and head. Home messages use the web channel.
 
 `subagent.Service` creates persistent children under a home session with their
 initial `running` state in the same write. A duplicate
-name returns the existing child. Message resumes the same session after idle,
-failed or cancelled; running and waiting children return status. The service
-owns a run context and reservation until execution ends and its final state is
-stored. Cancel stops and joins that execution. Close joins all executions before
+name returns the existing child. Message resumes the same session when it has no
+active run; a child with an active run returns status. The service owns a run
+context and reservation until execution ends and its final state is attempted.
+If that write fails, the stored running or waiting state has no active run: the
+next Message resumes it and the next Cancel records it cancelled, so a temporary
+storage failure does not strand the child. Cancel stops and joins an active
+execution. Close joins all executions before
 the store closes. Each state or reason change emits `session.updated` on `global`.
 Migration 0015 stores the waiting reason. P2-13 supplies delegation tools and the
 server run callback; P2-14 adds reports and limits. No production run uses this

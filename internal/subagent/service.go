@@ -109,8 +109,10 @@ func (s *Service) Start(ctx context.Context, parent string, child store.Session)
 	return s.begin(ctx, child, child.Brief)
 }
 
-// Message resumes an idle, failed or cancelled child. A running or waiting
-// child returns its status without accepting the text. Question relay is separate.
+// Message resumes a child with no active run. A child whose run is active
+// returns its status without accepting the text. A stored running or waiting
+// state with no active run is a lost final write and is resumed too. Question
+// relay is separate.
 func (s *Service) Message(ctx context.Context, parent, name, text string) (store.Session, error) {
 	if err := validText("text", text, 64<<10); err != nil {
 		return store.Session{}, err
@@ -124,7 +126,7 @@ func (s *Service) Message(ctx context.Context, parent, name, text string) (store
 	if err != nil {
 		return store.Session{}, err
 	}
-	if s.active[child.ID] != nil || child.State == store.SessionRunning || child.State == store.SessionWaiting {
+	if s.active[child.ID] != nil {
 		return child, nil
 	}
 	return s.begin(ctx, child, text)
@@ -191,7 +193,8 @@ func (s *Service) Waiting(ctx context.Context, parent, name, reason string) (sto
 }
 
 // Cancel stops a child's current execution and waits for its final state write.
-// A child without a current execution keeps its stored state.
+// A child without a current execution keeps its stored state, except that a
+// stored running or waiting state is a lost final write and becomes cancelled.
 func (s *Service) Cancel(ctx context.Context, parent, name string) (store.Session, error) {
 	s.mu.Lock()
 	child, err := s.store.Subagent(ctx, parent, name)
@@ -201,7 +204,10 @@ func (s *Service) Cancel(ctx context.Context, parent, name string) (store.Sessio
 	}
 	active := s.active[child.ID]
 	if active == nil {
-		s.mu.Unlock()
+		defer s.mu.Unlock()
+		if child.State == store.SessionRunning || child.State == store.SessionWaiting {
+			return s.state(ctx, child, store.SessionCancelled, "")
+		}
 		return child, nil
 	}
 	active.cancelled = true

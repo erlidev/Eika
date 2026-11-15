@@ -20,9 +20,10 @@ import (
 )
 
 type memory struct {
-	mu   sync.Mutex
-	rows map[string]store.Session
-	fail bool
+	mu    sync.Mutex
+	rows  map[string]store.Session
+	fail  bool
+	fails int
 }
 
 func newMemory() *memory {
@@ -80,6 +81,7 @@ func (m *memory) SetSubagentState(_ context.Context, id string, state store.Sess
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.fail {
+		m.fails++
 		return store.Session{}, errors.New("storage unavailable")
 	}
 	row := m.rows[id]
@@ -323,9 +325,12 @@ func TestStartValidationAndScope(t *testing.T) {
 
 func TestCancelReturnsFinalStateWriteError(t *testing.T) {
 	st := newMemory()
-	started := make(chan struct{})
+	started := make(chan struct{}, 1)
 	s := service(t, st, func(ctx context.Context, _ store.Session, _ string) error {
-		close(started)
+		select {
+		case started <- struct{}{}:
+		default:
+		}
 		<-ctx.Done()
 		return ctx.Err()
 	}, nil)
@@ -339,10 +344,77 @@ func TestCancelReturnsFinalStateWriteError(t *testing.T) {
 	if _, err := s.Cancel(t.Context(), "home", "plumber"); err == nil {
 		t.Fatal("ignored final state write error")
 	}
-	// The stored running state prevents another run before recovery.
+	// The stored running state has no active run, so a later message resumes it.
+	st.mu.Lock()
+	st.fail = false
+	st.mu.Unlock()
 	row, err := s.Message(t.Context(), "home", "plumber", "retry")
 	if err != nil || row.State != store.SessionRunning {
-		t.Fatalf("lost failed reservation: %+v %v", row, err)
+		t.Fatalf("stranded child did not resume: %+v %v", row, err)
+	}
+}
+
+func TestStrandedChildResumesAndCancelsAfterFinalWriteFails(t *testing.T) {
+	for _, tc := range []string{"message", "cancel"} {
+		t.Run(tc, func(t *testing.T) {
+			st := newMemory()
+			runs := make(chan string, 4)
+			finish := make(chan struct{})
+			s := service(t, st, func(ctx context.Context, _ store.Session, text string) error {
+				runs <- text
+				if text == child().Brief {
+					<-finish
+					return nil
+				}
+				<-ctx.Done()
+				return ctx.Err()
+			}, nil)
+			if _, err := s.Start(t.Context(), "home", child()); err != nil {
+				t.Fatal(err)
+			}
+			<-runs
+			st.mu.Lock()
+			st.fail = true
+			st.mu.Unlock()
+			close(finish)
+			// The run ends and its final write fails: running stays stored.
+			deadline := time.Now().Add(3 * time.Second)
+			for {
+				st.mu.Lock()
+				fails := st.fails
+				st.mu.Unlock()
+				if fails > 0 {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("final write was not attempted")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			st.mu.Lock()
+			st.fail = false
+			st.mu.Unlock()
+			if row, _ := st.Subagent(t.Context(), "home", "plumber"); row.State != store.SessionRunning {
+				t.Fatalf("stored state = %s, want running", row.State)
+			}
+			if tc == "cancel" {
+				row, err := s.Cancel(t.Context(), "home", "plumber")
+				if err != nil || row.State != store.SessionCancelled {
+					t.Fatalf("cancel stranded child: %+v %v", row, err)
+				}
+				awaitState(t, st, store.SessionCancelled)
+				return
+			}
+			if _, err := s.Message(t.Context(), "home", "plumber", "again"); err != nil {
+				t.Fatal(err)
+			}
+			if got := <-runs; got != "again" {
+				t.Fatalf("resumed with %q", got)
+			}
+			if row, err := s.Cancel(t.Context(), "home", "plumber"); err != nil || row.State != store.SessionCancelled {
+				t.Fatalf("cancel resumed child: %+v %v", row, err)
+			}
+		})
 	}
 }
 
