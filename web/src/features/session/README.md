@@ -10,6 +10,9 @@ one that holds client state of its own.
 
 - `SessionView.tsx` is the centre pane. It owns the stream subscription and
   composes the transcript, the composer, and the run status bar under it.
+  Chat (`features/chat`) renders it for the home session. A session that runs an
+  agent, as home does, names no model in a request, because the harness refuses
+  one (its class picks it), and its status bar has no model or profile control.
 - `SessionHeading.tsx` is the header's title: a click on it renames the
   session in place, and an archived session shows a badge with Unarchive.
 - `useSessionStream.ts` folds every event of `session:<id>` into the store and

@@ -145,7 +145,7 @@ export function minutesAgo(minutes: number): string {
 
 /** emptyWorld is a harness that is set up and signed in, with nothing configured. */
 export function emptyWorld(): World {
-  return {
+  const world: World = {
     passwordSet: true,
     signedIn: true,
     settings: {
@@ -231,6 +231,31 @@ export function emptyWorld(): World {
     overrides: {},
     toolChoices: {},
     calls: {},
+  };
+  // The harness makes the home session when it starts, so every world has it.
+  const home = homeSession();
+  world.sessions.push(home);
+  world.entries[home.id] = [];
+  return world;
+}
+
+/** homeSession is the local owner's persistent conversation, empty, as the harness makes it. */
+function homeSession(): Session {
+  return {
+    id: "home-main",
+    title: "Home",
+    kind: "home",
+    owner: "local",
+    name: "home",
+    agent: "eika",
+    state: "idle",
+    last_active_at: minutesAgo(5),
+    tools: ["web_search"],
+    overridden: false,
+    pinned: false,
+    archived: false,
+    created_at: minutesAgo(90),
+    updated_at: minutesAgo(5),
   };
 }
 
@@ -471,17 +496,11 @@ export class WorldBuilder {
     return row;
   }
 
-  /** home adds the local owner's persistent conversation. */
+  /** home changes the local owner's persistent conversation, which every world starts with. */
   home(input: Partial<Session> = {}): Session {
-    return this.chat({
-      title: "Home",
-      ...input,
-      kind: "home",
-      owner: "local",
-      name: "home",
-      agent: "eika",
-      tools: ["web_search"],
-    });
+    const row = this.world.sessions.find((s) => s.kind === "home");
+    if (row === undefined) throw new Error("the world has no home session");
+    return Object.assign(row, input);
   }
 
   /** subagent adds a named session under home. */

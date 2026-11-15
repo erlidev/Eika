@@ -745,9 +745,39 @@ Add the type to `eventPayloads` in `internal/server/contract_test.go` and run
 listed there, and the mock harness then holds any event it plays of that type
 to the payload's shape.
 
+## Adding a page
+
+A page is a route and an entry in the shell's navigation. Write the page in
+the feature that owns its data (`features/chat` is the model), export it from
+the feature's `index.ts`, then add a route under the shell in
+`web/src/app/App.tsx` and one entry to `pages` in `web/src/app/pages.ts`:
+
+```tsx
+// web/src/app/App.tsx
+<Route element={<Shell />}>
+  <Route index element={<ChatPage />} />
+  <Route path="/activity" element={<ActivityPage />} />
+</Route>
+```
+
+```ts
+// web/src/app/pages.ts
+export const pages: readonly Page[] = [
+  { id: "chat", title: "Chat", path: "/", icon: MessageCircle },
+  { id: "activity", title: "Activity", path: "/activity", icon: Activity },
+];
+```
+
+The rail, the bottom bar and the header's title follow from the array. Add a
+page only when its feature exists: a page that is not built is absent, not
+disabled. The page fills the shell's `main`, which is a flex column, and
+scrolls inside itself.
+
 ## Adding a UI panel
 
-The right-hand pane of the workbench is a tab strip built from one array. A
+The panels belong to the earlier workbench, which has no route until P3-17
+removes it, so a new one has nowhere to show. The right-hand pane of the
+workbench is a tab strip built from one array. A
 panel is a component plus one entry in `web/src/app/panels.tsx`; nothing else
 in the shell changes.
 

@@ -1,38 +1,15 @@
 /**
- * Dialogs and panels reached from the workbench, checked by what they say
+ * The session's status bar and the model dialog, checked by what they say
  * and offer.
  */
 
 import { expect, test } from "../fixtures.ts";
-
-test("command palette", async ({ open }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.press("Control+K");
-  await expect(eika.page.getByRole("dialog")).toBeVisible();
-});
-
-test("run panel", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Run");
-  await expectAria(eika, "run-panel", 'role=complementary[name="Context panels"]');
-});
 
 test("run status bar: the live connection is labelled", async ({ open }) => {
   const eika = await open({ scenario: "workbench" });
   const live = eika.page.getByRole("status", { name: "Live updates: Live" });
   await expect(live).toBeVisible();
   await expect(live).toHaveAttribute("title", "Live updates on");
-});
-
-test("the reasoning effort cycles through the model's own list", async ({ open }) => {
-  const eika = await open({ scenario: "workbench" });
-  // gpt-5 offers low, medium, high and is on medium.
-  const effort = eika.page.getByRole("button", { name: /Reasoning effort/ });
-  await expect(effort).toHaveText(/medium/);
-  await effort.click();
-  await expect(effort).toHaveText(/high/);
-  await effort.click();
-  await expect(effort).toHaveText(/low/);
 });
 
 test("a model names the field that turns its thinking off", async ({ open }) => {

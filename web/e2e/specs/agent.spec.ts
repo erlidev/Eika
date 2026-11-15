@@ -131,7 +131,7 @@ test("/compact in the message box compacts with a focus", async ({ open }) => {
   ).toBeVisible();
 });
 
-test("the page itself never scrolls under the workbench", async ({ open }) => {
+test("the page itself never scrolls under the shell", async ({ open }) => {
   // A transcript long enough to scroll used to stretch the document: the
   // visually hidden heading in each row is positioned at its place in the
   // flow, and with no containing block inside the scroller it escaped to the

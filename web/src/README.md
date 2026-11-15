@@ -25,15 +25,17 @@ Rules:
 
 ## The shell
 
-`app/Workbench.tsx` is a three-pane workbench: the chat list on the left,
-the open session in the middle, and the registered panels on the right. The
-side panes are resized by `components/ResizableSplit` and their widths are
-remembered by `lib/persisted`. Below 1024px the side panes become drawers, so
-the session keeps a usable width on a phone.
+`app/Shell.tsx` is the frame of every page: a rail from 640px and a bottom
+bar under it (`app/Navigation.tsx`, from the list in `app/pages.ts`), a header,
+and the page in an `Outlet`. It fills `100dvh`, leaves room for the safe
+areas, and keeps the page above the on-screen keyboard
+(`lib/useViewportAnchor`). `app/HaltSlot.tsx` reserves the halt button's place.
+`app/App.tsx` routes `/` to Chat (`features/chat`), the home session.
 
-`app/panels.tsx` is the panel registry the right pane's tab strip is built
-from. `app/theme.ts` is the colour scheme: it follows `prefers-color-scheme`
-until the user picks a side. `app/CommandPalette.tsx` is Cmd/Ctrl+K.
+`app/Workbench.tsx` and its sidebar, `panels.tsx` and `CommandPalette.tsx` are
+the earlier three-pane shell. They stay in the tree with no route until P3-17
+removes them. `app/theme.ts` is the colour scheme: it follows
+`prefers-color-scheme` until the user picks a side.
 
 ## Server state and the stream
 

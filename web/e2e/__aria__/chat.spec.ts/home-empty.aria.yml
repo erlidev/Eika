@@ -1,0 +1,12 @@
+- region "Session":
+  - heading "Home" [level=2]:
+    - button "Home"
+  - text: home-main Send a message to start the conversation.
+  - status
+  - textbox "Message":
+    - /placeholder: Send a message…
+  - button "Attach images" [disabled]
+  - paragraph: Enter sends · Shift+Enter newline · Esc aborts
+  - button "Send" [disabled]
+  - text: /idle Context used n\/a\/[\d,.]+[bkmBKM]+ cached n\/a next ~\d+ estimated/
+  - 'status "Live updates: Live"'

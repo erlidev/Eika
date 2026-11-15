@@ -39,7 +39,11 @@ export function SessionView({ sessionId }: SessionViewProps) {
 
   const home = useHomeComputer();
   const computerId = session.data?.session.computer_id;
-  const chat = session.data !== undefined && computerId === undefined;
+  // The home session is Eika's one conversation: it has no computer of its
+  // own, but it is not a chat, and its agent's class picks its model.
+  const isHome = session.data?.session.kind === "home";
+  const agent = (session.data?.session.agent ?? "") !== "";
+  const chat = session.data !== undefined && computerId === undefined && !isHome;
   const onHome = computerId !== undefined && computerId === home.data?.id;
 
   // Esc aborts the run from anywhere in the session view, which is why the
@@ -66,6 +70,9 @@ export function SessionView({ sessionId }: SessionViewProps) {
   const available = chatModels(models.data?.models);
   const noModel = models.data !== undefined && available.length === 0;
   const imageInput = available.find((m) => m.name === chosenModel)?.image_input ?? false;
+  // A run of an agent names no model: the harness refuses one, since the
+  // agent's class chooses it. The model above is only what the page shows.
+  const runModel = agent ? "" : chosenModel;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Session">
@@ -83,11 +90,13 @@ export function SessionView({ sessionId }: SessionViewProps) {
       <Transcript
         sessionId={sessionId}
         empty={
-          chat
-            ? "Send a message to start the chat. A chat has no computer, so the model cannot touch files or run commands; the Tools panel says what it can use."
-            : onHome
-              ? "Send a message to start the chat. It runs on the home computer, so the model can run commands and keep files in /home/eika."
-              : "Send a message to start the first turn."
+          isHome
+            ? "Send a message to start the conversation."
+            : chat
+              ? "Send a message to start the chat. A chat has no computer, so the model cannot touch files or run commands; the Tools panel says what it can use."
+              : onHome
+                ? "Send a message to start the chat. It runs on the home computer, so the model can run commands and keep files in /home/eika."
+                : "Send a message to start the first turn."
         }
       />
       {noModel && (
@@ -110,9 +119,10 @@ export function SessionView({ sessionId }: SessionViewProps) {
       )}
       <Composer
         sessionId={sessionId}
-        model={chosenModel}
+        model={runModel}
+        modelLabel={chosenModel}
         imageInput={imageInput}
-        {...(chat ? { placeholder: "Send a message…" } : {})}
+        {...(chat || isHome ? { placeholder: "Send a message…" } : {})}
         disabled={noModel}
         disabledReason="Add a model under Settings, Models to send a message."
       />
@@ -123,7 +133,8 @@ export function SessionView({ sessionId }: SessionViewProps) {
         sessionId={sessionId}
         chat={chat}
         overridden={session.data?.session.overridden ?? false}
-        model={chosenModel}
+        agent={agent}
+        model={runModel}
         onModelChange={chooseModel}
       />
     </section>

@@ -11,6 +11,8 @@ export const queryKeys = {
   computerSessions: (computerId: string) => ["sessions", "computer", computerId] as const,
   /** computers is the list of computers, of which the sidebar reads the home one. */
   computers: () => ["computers"] as const,
+  /** home is the one home session, the conversation Chat shows. */
+  home: () => ["home"] as const,
   session: (id: string) => ["session", id] as const,
   sessionOutline: (id: string) => ["session", id, "outline"] as const,
   runStatus: (sessionId: string) => ["session", sessionId, "run"] as const,

@@ -38,6 +38,8 @@ export type ComposerProps = {
   sessionId: string;
   /** model is the model a new run uses; empty means the deployment default. */
   model: string;
+  /** modelLabel names the model in what the box says about images; it defaults to `model`. */
+  modelLabel?: string;
   /** imageInput is whether that model accepts images. */
   imageInput: boolean;
   /** disabled stops the composer when the computer is not running. */
@@ -51,6 +53,7 @@ export type ComposerProps = {
 export function Composer({
   sessionId,
   model,
+  modelLabel,
   imageInput,
   disabled = false,
   disabledReason,
@@ -81,7 +84,7 @@ export function Composer({
   // attached so that choosing another model sends them.
   const imagesRefused = images.length > 0 && !imageInput;
   const blocked = disabled || empty || pending || imagesRefused;
-  const modelName = model === "" ? "the default model" : model;
+  const modelName = modelLabel ?? (model === "" ? "the default model" : model);
 
   const attach = async (files: File[]) => {
     if (files.length === 0) return;

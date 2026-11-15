@@ -12,7 +12,7 @@ codebase. Read it fully before editing.
 2. `docs/ARCHITECTURE.md`: how the system works and fits together.
 3. `docs/DECISIONS.md`: why it is built that way. Read the section for the
    area you change before reversing anything.
-4. `docs/EXTENDING.md` when adding a tool, provider, search backend, or UI panel.
+4. `docs/EXTENDING.md` when adding a tool, provider, search backend, UI page, or UI panel.
 5. `docs/PLAN.md` and `docs/design/`: the phased plan that turns Eika into a
    persistent local assistant. Work on it starts from the plan's ground rules.
    `docs/DEFERRED.md` holds what was cut from it: do not start that work unless it
@@ -99,7 +99,8 @@ there, test it, document it. Full walkthroughs are in `docs/EXTENDING.md`.
 | utility task    | function in `internal/utility` | its trigger in `internal/server`, which resolves a class with `resolveClass` (`internal/server/classes.go`) |
 | API endpoint    | handler in `internal/server` | `internal/server/routes.go` + `routeWire` in `contract_test.go` + `docs/api/http.md` |
 | event type      | struct in `internal/event`   | `docs/api/events.md` + `web/src/api/events.ts` + `eventPayloads` in `internal/server/contract_test.go` |
-| UI panel        | component in `web/src/`      | `web/src/app/panels.tsx`           |
+| UI page         | component in `web/src/features/` | route in `web/src/app/App.tsx` + `web/src/app/pages.ts` |
+| UI panel        | component in `web/src/`      | `web/src/app/panels.tsx` (the unrouted workbench) |
 
 ## When unsure
 

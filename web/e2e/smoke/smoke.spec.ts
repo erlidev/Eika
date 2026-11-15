@@ -1,9 +1,10 @@
 /**
- * The compose smoke test: the real stack, from the guided setup to a chat
- * the scripted model answers. `make smoke` starts the stack with
- * compose.smoke.yaml, runs this, and takes the stack down. The model is
- * `model.ts`, a scripted endpoint. A plain chat reaches no sandbox; a chat on
- * the home computer runs `bash` in its container.
+ * The compose smoke test: the real stack, from the guided setup to the home
+ * conversation in Chat, which the scripted model answers. `make smoke` starts
+ * the stack with compose.smoke.yaml, runs this, and takes the stack down. The
+ * model is `model.ts`, a scripted endpoint. Chat's agent offers no `bash`, so
+ * a session on the home computer, which no page opens, is driven over the API
+ * to prove `bash` runs in that computer's container.
  */
 
 import { expect, test } from "@playwright/test";
@@ -34,7 +35,10 @@ test("the harness makes the home computer before anyone sets it up", async ({ re
     .toBe("running");
 });
 
-test("setup, a chat, and a chat on the home computer", async ({ page, request }) => {
+test("setup, then Chat on the home session, and bash on the home computer", async ({
+  page,
+  request,
+}) => {
   const headers = { Authorization: `Bearer ${process.env.EIKA_SMOKE_TOKEN ?? ""}` };
   await page.goto("/");
 
@@ -58,11 +62,15 @@ test("setup, a chat, and a chat on the home computer", async ({ page, request })
   await expect(page.getByText("is ready.")).toBeVisible();
   await page.getByRole("button", { name: "Finish" }).click();
 
-  // A chat, which the scripted model answers with "ok".
-  await page
-    .getByRole("navigation", { name: "Chats" })
-    .getByRole("button", { name: "New chat" })
-    .click();
+  // The shell opens on Chat, the home session. It has no list of chats and
+  // no way to start another.
+  await expect(page.getByRole("heading", { level: 1, name: "Chat" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Session" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^New (home )?chat$/ })).toHaveCount(0);
+
+  // A message to Eika, which the scripted model answers with "ok" (the
+  // eika agent has no `bash`, so the model is not asked for a command).
   await page.getByLabel("Message").fill("Say hello");
   await page.getByLabel("Message").press("Enter");
 
@@ -70,31 +78,45 @@ test("setup, a chat, and a chat on the home computer", async ({ page, request })
   await expect(page.getByRole("paragraph").filter({ hasText: /^ok$/ })).toBeVisible({
     timeout: 60_000,
   });
+  // A reload lands on the same conversation.
+  await page.reload();
+  await expect(page.getByRole("paragraph").filter({ hasText: /^ok$/ })).toBeVisible();
 
-  // A chat on the home computer, whose model asks for a shell command.
-  await page
-    .getByRole("navigation", { name: "Chats" })
-    .getByRole("button", { name: "New home chat" })
-    .click();
-  await expect(
-    page.getByRole("region", { name: "Session" }).locator("header").getByText("Home computer"),
-  ).toBeVisible();
-  await page.getByLabel("Message").fill("Run the probe");
-  await page.getByLabel("Message").press("Enter");
+  // A session on the home computer, over the API, whose model asks for a
+  // shell command: it offers `bash`, which eikad runs in the container.
+  const computersReply = await request.get("/api/computers", { headers });
+  const computers = (
+    (await computersReply.json()) as {
+      computers: { id: string; home: boolean; container_id?: string }[];
+    }
+  ).computers;
+  const home = computers.find((cx) => cx.home);
+  expect(home?.container_id ?? "").toMatch(/^[0-9a-f]{64}$/);
+  const created = await request.post("/api/sessions", {
+    headers,
+    data: { computer_id: home?.id },
+  });
+  expect(created.status()).toBe(201);
+  const { id } = (await created.json()) as { id: string };
+  const sent = await request.post(`/api/sessions/${id}/messages`, {
+    headers,
+    data: { text: "Run the probe" },
+  });
+  expect(sent.status()).toBe(202);
 
   // The command prints the hostname Docker gave the container, the first
   // twelve characters of its id, and its working directory. Only eikad running
   // it in the home computer's container prints both: the harness has another
   // hostname and another directory.
-  const reply = await request.get("/api/computers", { headers });
-  const computers = (
-    (await reply.json()) as { computers: { home: boolean; container_id?: string }[] }
-  ).computers;
-  const containerId = computers.find((cx) => cx.home)?.container_id ?? "";
-  expect(containerId).toMatch(/^[0-9a-f]{64}$/);
-  await expect(
-    page.getByRole("paragraph").filter({
-      hasText: `The command printed smoke-ok ${containerId.slice(0, 12)} /home/eika.`,
-    }),
-  ).toBeVisible({ timeout: 60_000 });
+  const expected = `The command printed smoke-ok ${(home?.container_id ?? "").slice(0, 12)} /home/eika.`;
+  await expect
+    .poll(
+      async () => {
+        const path = await request.get(`/api/sessions/${id}/path`, { headers });
+        const body = (await path.json()) as { messages: { role: string; content?: string }[] };
+        return body.messages.some((m) => m.role === "assistant" && m.content === expected);
+      },
+      { timeout: 60_000, intervals: [1000] },
+    )
+    .toBe(true);
 });
