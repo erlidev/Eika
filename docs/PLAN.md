@@ -202,7 +202,7 @@ stage B.
 What stops a long-lived home session from losing work or growing without bound.
 
 - [x] **P2-18**: Reconcile interrupted runs and notices.
-- [ ] **P2-16**: Park and relay subagent questions.
+- [x] **P2-16**: Park and relay subagent questions.
 - [ ] **P3-07**: Add agents and instructions Settings, as tabs of the existing
       dialog, and remove profile controls.
 - [ ] **P2-20**: Build the board and rolling summary.
@@ -356,11 +356,11 @@ in the code beside what replaces them.
 - [x] Notices: a report becomes a notice in Eika's next `<context>`, naming the
       subagent, and starts a background turn on the home session.
       - [x] **P2-15**: Add durable notices and background turns.
-- [ ] Questions: `ask_user` from a subagent parks it and goes to Eika as a notice
+- [x] Questions: `ask_user` from a subagent parks it and goes to Eika as a notice
       plus a background home turn. Eika answers with `subagent_message`, or asks
       the user in its reply and relays the answer. There is no `inbox_ask` and no
       `questions` table.
-      - [ ] **P2-16**: Park and relay subagent questions.
+      - [x] **P2-16**: Park and relay subagent questions.
 - [ ] Restarts: nothing resumes on its own. After a restart, every interrupted run
       gets the result "Eika restarted while this ran; its outcome is unknown. Check
       before retrying." for each tool call left unanswered, so its session stays

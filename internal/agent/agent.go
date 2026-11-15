@@ -38,6 +38,9 @@ type Options struct {
 	// handed out once. It is asked once per message, when the message is
 	// first sent. Nil means no notices.
 	Notices func() []Notice
+	// RefreshMessage updates only the Context of an unstored message just before
+	// it is delivered. It must be safe to call again. Nil leaves it unchanged.
+	RefreshMessage func(provider.Message) provider.Message
 	// Model overrides the provider's configured model name.
 	Model string
 	// ContextWindow bounds the input and requested output of one model call.
@@ -251,7 +254,11 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, g *guard
 	}
 	texts := make([]string, 0, len(msgs))
 	var images []provider.Image
-	for _, m := range msgs {
+	for i, m := range msgs {
+		if a.opts.RefreshMessage != nil {
+			m = a.opts.RefreshMessage(m)
+			msgs[i] = m
+		}
 		addPending(m)
 		if m.Content != "" {
 			texts = append(texts, m.Content)
@@ -298,6 +305,9 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, g *guard
 			return errRunLimit
 		}
 		for _, m := range a.drainSteering() {
+			if a.opts.RefreshMessage != nil {
+				m = a.opts.RefreshMessage(m)
+			}
 			addPending(m)
 			steered = append(steered, m)
 		}
@@ -311,6 +321,12 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, g *guard
 		if err != nil {
 			restoreFrom(0)
 			return a.fail(ctx, s, runID, err)
+		}
+		// The final delivery check can update unstored message contexts while
+		// the call waits for its inference lease. Store exactly what was sent.
+		if pendingMark >= 0 {
+			messages := s.Conversation.Messages()
+			copy(pending, messages[pendingMark:])
 		}
 		// The model has seen the pending messages; they are delivered for
 		// good and can be persisted.

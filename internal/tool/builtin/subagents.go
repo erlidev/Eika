@@ -22,7 +22,7 @@ type Subagents interface {
 	StartSubagent(ctx context.Context, home string, child store.Session) (store.Session, bool, error)
 	// MessageSubagent reports whether the subagent took the text; a running
 	// one returns its status without it.
-	MessageSubagent(ctx context.Context, home, name, text string) (store.Session, bool, error)
+	MessageSubagent(ctx context.Context, home, name, text, questionID string) (store.Session, bool, error)
 	// Subagents returns one subagent by name, or all of them for "".
 	Subagents(ctx context.Context, home, name string) ([]store.Session, error)
 	CancelSubagent(ctx context.Context, home, name string) (store.Session, error)
@@ -49,7 +49,7 @@ func (t subagentTool) Description() string {
 			"A worker works on the home computer, in the project's directory when you name a project; a researcher reads the web and has no computer. " +
 			"A name already in use returns that subagent's status instead: give it more work with subagent_message."
 	case "subagent_message":
-		return "Send a message to a subagent that is not running: it resumes in its own context with the text. A running subagent does not take the text; wait for it or cancel it."
+		return "Answer a waiting question with its question_id from the notice, or send a message to a subagent that is not running: it resumes in its own context with the text. A running subagent does not take the text; wait for it or cancel it."
 	case "subagent_status":
 		return "Without a name, list every subagent with its state and the first line of its last report. With a name, also return its brief and full last report."
 	default:
@@ -69,12 +69,12 @@ func (t subagentTool) Schema() json.RawMessage {
 		props = map[string]any{
 			"agent":   map[string]any{"type": "string", "enum": []string{"researcher", "worker"}, "description": "researcher reads the web; worker works on a computer."},
 			"name":    name,
-			"brief":   text("Everything the subagent needs: the goal, what is known, constraints and what to report. It cannot ask questions yet: it decides small details itself and states its assumptions in its report, and it flags unclear intent that would change the result."),
+			"brief":   text("Everything the subagent needs: the goal, what is known, constraints and what to report. It decides small details itself and states assumptions in its report. When unclear intent would change the result, ask_user sends you its question as a notice."),
 			"project": text("Optional project slug. The subagent gets the project's instructions, and a worker works in its directory."),
 		}
 		required = []string{"agent", "name", "brief"}
 	case "subagent_message":
-		props = map[string]any{"subagent": name, "text": text("The message, such as new work or a correction.")}
+		props = map[string]any{"subagent": name, "text": text("The answer to its waiting question, or a message such as new work or a correction."), "question_id": text("Required when answering a question: use the id in its notice. Omit for new work.")}
 		required = []string{"subagent", "text"}
 	case "subagent_status":
 		props = map[string]any{"subagent": name}
@@ -136,10 +136,18 @@ func (t subagentTool) Call(ctx context.Context, c tool.CallContext, raw json.Raw
 			note = "A subagent with this name already exists and was not changed. Give it more work with subagent_message."
 		}
 	case "subagent_message":
-		row, ok, err = t.subagents.MessageSubagent(ctx, c.SessionID, args["subagent"], args["text"])
-		note = "Resumed with your message. It works in the background."
-		if !ok {
-			note = "It is running and did not take your message. Wait for it, or cancel it and message it again."
+		row, ok, err = t.subagents.MessageSubagent(ctx, c.SessionID, args["subagent"], args["text"], args["question_id"])
+		note = "Accepted your message. It continues in its own context."
+		if ok && args["question_id"] == "" {
+			note = "Accepted your message. No question is waiting; it continues in its own context."
+		}
+		switch {
+		case !ok && args["question_id"] != "":
+			note = "That question is no longer pending. The message was not accepted."
+		case !ok && row.State == store.SessionWaiting:
+			note = "A question is waiting. Include its question_id from the notice; the message was not accepted."
+		case !ok:
+			note = "It is running and did not take your message. No question is waiting. Wait for it, or cancel it and message it again."
 		}
 	case "subagent_status":
 		rows, err = t.subagents.Subagents(ctx, c.SessionID, args["subagent"])
@@ -179,6 +187,9 @@ func checkSubagentArguments(args map[string]string) error {
 		if v, ok := args[field]; ok && (strings.TrimSpace(v) == "" || len(v) > maxSubagentTextBytes || strings.ContainsRune(v, 0)) {
 			return fmt.Errorf("%s must be nonempty, without NUL, and at most %d bytes", field, maxSubagentTextBytes)
 		}
+	}
+	if v, ok := args["question_id"]; ok && (strings.TrimSpace(v) == "" || len(v) > 128 || strings.ContainsRune(v, 0)) {
+		return fmt.Errorf("question_id must be nonempty, without NUL, and at most 128 bytes")
 	}
 	if v, ok := args["agent"]; ok && v != "researcher" && v != "worker" {
 		return fmt.Errorf("agent must be researcher or worker")

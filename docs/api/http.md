@@ -1388,7 +1388,9 @@ exist. No model assignment is needed to read or edit definitions. A session's
 nonempty `agent` selects this runtime path. Each new run resolves the effective
 class and prompt; a running loop keeps its configuration. Profile sessions keep
 their current behavior. Agent tools are fixed built-ins; MCP is excluded.
-Stage A excludes subagent `ask_user` until P2-16 supplies its question path.
+Workers and researchers have `ask_user`. Questions wait in memory and reach
+home as notices; Eika answers with `subagent_message`. The question-answer HTTP
+route applies only to legacy profile sessions.
 Context and prediction routes use the same resolution and tool schemas as runs;
 a nonempty `?model=` is refused with 400. The compact route also refuses an
 explicit model and uses the agent's compaction prompts.

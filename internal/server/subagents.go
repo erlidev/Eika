@@ -3,6 +3,9 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,12 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
+	"github.com/erlidev/eika/internal/tool/builtin"
 )
 
 // runSubagent is the lifecycle service's run callback: one message in the
@@ -94,13 +99,13 @@ func (d delegation) StartSubagent(ctx context.Context, home string, child store.
 }
 
 // MessageSubagent resumes a child of home with text.
-func (d delegation) MessageSubagent(ctx context.Context, home, name, text string) (store.Session, bool, error) {
+func (d delegation) MessageSubagent(ctx context.Context, home, name, text, questionID string) (store.Session, bool, error) {
 	s := d.server()
 	priority, err := s.delegationPriority(ctx, home)
 	if err != nil {
 		return store.Session{}, false, err
 	}
-	return s.subagents.Message(ctx, home, name, text, priority)
+	return s.subagents.Message(ctx, home, name, text, priority, questionID)
 }
 
 // Subagents returns one child of home, or all of them.
@@ -265,4 +270,47 @@ func (w workdir) Stat(ctx context.Context, p string) (executor.FileInfo, error) 
 
 func (w workdir) List(ctx context.Context, p string) ([]executor.FileInfo, error) {
 	return w.Executor.List(ctx, w.at(p))
+}
+
+// AskSubagent relays child questions to home and leaves profile sessions on
+// their legacy broker. The notice id names the tool call for write retries.
+func (d delegation) AskSubagent(ctx context.Context, q builtin.Question) (string, bool, error) {
+	s := d.server()
+	child, err := s.deps.Store.Session(ctx, q.SessionID)
+	if err != nil {
+		return "", true, err
+	}
+	if child.Kind != store.SessionSubagent {
+		return "", false, nil
+	}
+	if s.subagents == nil {
+		return "", true, fmt.Errorf("subagents are unavailable")
+	}
+	sum := sha256.Sum256([]byte("question\x00" + q.SessionID + "\x00" + q.RunID + "\x00" + q.CallID))
+	id := "question-" + hex.EncodeToString(sum[:12])
+	q.ID = id
+	reason := questionReason(q, id)
+	answer, err := s.subagents.Ask(ctx, child.ID, id, reason, q.ValidateAnswer, func(ctx context.Context, child store.Session) {
+		e, err := event.New(event.TypeQuestionAsked, event.SessionTopic(child.ID), event.QuestionAsked{
+			RunID: q.RunID, SessionID: q.SessionID, CallID: q.CallID, QuestionID: q.ID,
+			Question: q.Text, Options: q.Options, AllowFreeText: q.AllowFreeText,
+		})
+		if err == nil {
+			s.deps.Bus.Emit(ctx, e)
+		}
+		text := fmt.Sprintf("%s (%s) asks: %s\nAnswer with subagent_message and question_id %s, or ask the user in your reply and relay the answer with that id.", child.Name, child.Agent, reason, id)
+		s.notices.postSoon(ctx, child.ParentSessionID, id, text)
+	})
+	return answer, true, err
+}
+
+// questionReason renders choices as JSON so their text stays unambiguous.
+func questionReason(q builtin.Question, id string) string {
+	reason := fmt.Sprintf("Question ID: %s\n%s", id, q.Text)
+	if len(q.Options) > 0 {
+		options, _ := json.Marshal(q.Options)
+		reason += "\nOptions (JSON): " + string(options)
+		reason += fmt.Sprintf("\nFree text allowed: %t", q.AllowFreeText)
+	}
+	return reason
 }

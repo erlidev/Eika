@@ -242,7 +242,7 @@ func (a *Agent) summary(ctx context.Context, s *Session, base Context, msgs []pr
 			// the run's own priority.
 			q := a.newQueued(prompt, c)
 			resp, err := a.retrying(ctx, s, "", false, func() (response, error) {
-				return a.stream(ctx, s, "", c.Request(), nil, q)
+				return a.stream(ctx, s, "", c.Request(), nil, q, nil)
 			})
 			if err != nil {
 				return "", provider.ContextOverflow(err), err

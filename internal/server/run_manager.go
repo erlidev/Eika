@@ -329,12 +329,18 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 		RefreshPreamble: refresh,
 		Location:        agent.PreambleLocation(loaded.Preamble),
 		Notices:         takeNotices,
-		Emitter:         s.deps.Bus,
-		Store:           runStore,
-		Logger:          s.log,
-		Recorder:        callRecorder{store: s.deps.Store, run: active, config: cfg, endpoint: ep.row.Name},
-		Counter:         counted,
-		Compaction:      s.compaction(ctx, cfg.model),
+		RefreshMessage: func(m provider.Message) provider.Message {
+			if home {
+				return s.notices.refresh(sessionID, m)
+			}
+			return m
+		},
+		Emitter:    s.deps.Bus,
+		Store:      runStore,
+		Logger:     s.log,
+		Recorder:   callRecorder{store: s.deps.Store, run: active, config: cfg, endpoint: ep.row.Name},
+		Counter:    counted,
+		Compaction: s.compaction(ctx, cfg.model),
 		// A run, and the compaction a user asks for, answers a person who is
 		// waiting; a subagent's run is foreground or background.
 		Inference: agent.Inference{

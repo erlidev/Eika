@@ -125,7 +125,28 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 		}
 		q := a.newQueued(pred.Tokens, sent)
 		resp, err := a.retrying(ctx, s, runID, true, func() (response, error) {
-			return a.stream(ctx, s, runID, sent.Request(), gen, q)
+			return a.stream(ctx, s, runID, sent.Request(), gen, q, func(req provider.Request) provider.Request {
+				if a.opts.RefreshMessage == nil || *pendingMark < 0 {
+					return req
+				}
+				messages := s.Conversation.Messages()
+				changed := false
+				for i := *pendingMark; i < len(messages); i++ {
+					refreshed := a.opts.RefreshMessage(messages[i])
+					if refreshed.Context != messages[i].Context {
+						changed = true
+						messages[i] = refreshed
+					}
+				}
+				if !changed {
+					return req
+				}
+				s.Conversation.Replace(messages)
+				sent = sent.WithMessages(messages)
+				predicted = sent.Request()
+				pred = a.predict(ctx, sent)
+				return sent.Request()
+			})
 		})
 		resp.queue = q.record
 		auto := a.opts.Compaction.Auto && !recovered
@@ -222,12 +243,15 @@ func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bo
 // and backoff are outside it. An attempt that an interactive call preempted
 // fails with inference.ErrPreempted, which retrying does not count as a
 // failure.
-func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation, q *queued) (response, error) {
+func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation, q *queued, prepare func(provider.Request) provider.Request) (response, error) {
 	lease, err := a.acquire(ctx, s, q)
 	if err != nil {
 		return response{}, fmt.Errorf("call model: %w", err)
 	}
 	defer lease.Release()
+	if prepare != nil {
+		req = prepare(req)
+	}
 	// The lease says which slot of the server the call should run on, when the
 	// endpoint has slots to name. It is set on this copy of the request, after
 	// the request was sized, and not on what the counter keeps.

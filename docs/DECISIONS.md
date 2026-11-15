@@ -602,7 +602,8 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   lines and nothing about the shape changes: `time: Sat 2026-10-31 14:05 +00:00
   (UTC)` today. A message that already has its block keeps it: a message read
   back from the store, or given back to its queue by a turn that failed, is
-  never stamped again.
+  never stamped again. An unstored question notice can be replaced before
+  delivery; the stamped time and stored messages stay unchanged.
 - **Why stored, and why apart from the text.** The time is read once and
   written once. A block computed when a request is built would give every
   earlier user message a different time on every call, the serialised prefix
@@ -2131,7 +2132,7 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   each start so a change applies at once. The check and the registration share
   one lock hold, so concurrent starts cannot oversubscribe, and a refused start
   creates no row. A refusal is a tool error telling Eika to wait or cancel.
-  Waiting counts as running until P2-16 parks questions without an execution.
+  Waiting retains the execution reservation: an answer continues the same run.
   This carries over the reserve-under-lock rule of the removed spawner
   (`478ce9c`) without its depth limit, since only home delegates.
 - **Aborting a home reply does not cancel its subagents.** Their runs are owned
@@ -2210,3 +2211,26 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   message, or a later background turn caused by a new report, delivers them.
   This prevents a restart from retrying work whose outcome is unknown. A
   recovery write error stops startup. Computer inspection remains best effort.
+
+## Subagent questions (P2-16)
+
+- `ask_user` parks the current tool call in memory. The lifecycle service sets
+  `waiting` with the question as its reason before it posts a home notice.
+  `subagent_message` validates the answer and sets `running` before delivering
+  it through a buffered channel, under the same lock as cancel. One answer
+  wins; a rejected answer leaves the question waiting. The run keeps its
+  execution reservation but holds no inference lease while it waits.
+- Questions use the existing notice writer and retry path, with an id derived
+  from the child, run and tool call. The legacy question broker never registers
+  these questions, so its HTTP answer route cannot answer them. There is no
+  new table or route. A restart ends the run; P2-18 repairs its tool call.
+
+- **Question answers name the specific wait** (2026-11-15). A notice carries a
+  stable question id, and `subagent_message` accepts an answer only for the
+  current id. A stale id cannot start a run or answer a later question. An
+  unstored message is checked just before delivery and marks ended questions
+  as no longer pending; this includes queued messages and notice retries. The
+  id check also covers a question that ends while the model is replying.
+  Options use JSON so a delimiter inside an option cannot change the choices.
+  The check runs again after inference admission, and a changed request is
+  measured again and stored as sent, so a queue wait cannot hide the change.

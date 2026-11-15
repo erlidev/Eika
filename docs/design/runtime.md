@@ -220,7 +220,7 @@ any of their subagents (`interface.md` 1).
 The session lifecycle service (P2-12), the delegation tools with their run
 binding (P2-13), reports and limits (P2-14) and report notices (P2-15) are
 implemented; see [Architecture](../ARCHITECTURE.md#subagent-lifecycle) and
-[Notices](../ARCHITECTURE.md#notices). Question relay remains for P2-16.
+[Notices](../ARCHITECTURE.md#notices). Question relay is documented under [Subagent questions](../ARCHITECTURE.md#subagent-questions).
 
 Eika keeps track of several lines of work the way subagents traditionally work: it
 hands each one to a subagent with a brief, the subagent works in its own context,

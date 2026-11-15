@@ -294,15 +294,18 @@ lets the turn go on with the conversation as it was.
 
 ### `question.asked`
 
-The run called `ask_user` and is blocked until
-`POST /api/questions/{id}/answer` delivers an answer or the run is aborted.
+For a subagent, this event is read-only: Eika answers through
+`subagent_message`, and the question is absent from the HTTP broker.
+
+A legacy profile run waits until `POST /api/questions/{id}/answer` delivers
+an answer. Either type of wait ends when the run is aborted.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `run_id` | string | Identifies the turn. |
 | `session_id` | string | The session that is waiting. |
 | `call_id` | string | The `ask_user` call the answer completes. |
-| `question_id` | string | What to POST the answer to. |
+| `question_id` | string | Legacy broker answer id; for a subagent, the question id in its home notice. |
 | `question` | string | The question to put to the user. |
 | `options` | string array, optional | The answers to choose from. Absent for an open question. |
 | `allow_free_text` | boolean | An answer outside `options` is accepted. |

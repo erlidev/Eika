@@ -372,6 +372,14 @@ export function inheritedProfile(w: World, modelId: string): Configuration {
   return inherited(w, defaultProfileOf(w), "default", layers, 0);
 }
 
+/**
+ * standInPrompt is what a built-in agent's session sends as its base prompt
+ * where no override is set. The real prompts are Markdown the product edits
+ * often, and their size sets the status bar's "next ~N estimated" in every
+ * baseline; /api/agents still serves the real text.
+ */
+const standInPrompt = "Stand-in prompt for a built-in agent. ".repeat(40);
+
 /** resolveAgent uses the effective definition and its model class, without legacy layers. */
 function resolveAgent(w: World, session: Session): Resolved {
   const builtin = builtinAgents.find((d) => d.name === session.agent);
@@ -387,7 +395,10 @@ function resolveAgent(w: World, session: Session): Resolved {
     [
       {
         name: "agent",
-        settings: { ...noSettings(), chat_prompt: override?.prompt ?? builtin?.prompt ?? "" },
+        settings: {
+          ...noSettings(),
+          chat_prompt: override?.prompt ?? (builtin ? standInPrompt : ""),
+        },
         tools: builtin?.tools ?? [],
       },
     ],

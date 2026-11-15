@@ -63,8 +63,8 @@ func Builtins() []Definition {
 	return []Definition{
 		definition("eika", "Converses, plans and delegates work.", "main", 40, []string{"project_create", "project_list", "project_open", "project_update",
 			"subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_search"}),
-		definition("researcher", "Reads the web and reports findings.", "fast", 200, []string{"report", "web_fetch", "web_search"}),
-		definition("worker", "Does work on a computer and reports results.", "main", 200, []string{"bash", "file_edit", "file_read", "file_write", "report", "web_fetch", "web_search"}),
+		definition("researcher", "Reads the web and reports findings.", "fast", 200, []string{"ask_user", "report", "web_fetch", "web_search"}),
+		definition("worker", "Does work on a computer and reports results.", "main", 200, []string{"ask_user", "bash", "file_edit", "file_read", "file_write", "report", "web_fetch", "web_search"}),
 	}
 }
 

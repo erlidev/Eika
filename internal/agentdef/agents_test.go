@@ -44,6 +44,10 @@ func TestBuiltins(t *testing.T) {
 				t.Errorf("%s delegation capability %s is incorrect", d.Name, name)
 			}
 		}
+		// Only a subagent asks Eika a question.
+		if slices.Contains(d.Tools, "ask_user") != (d.Name != "eika") {
+			t.Errorf("%s question capability is incorrect", d.Name)
+		}
 		// Only a subagent reports; Eika reads the reports.
 		if slices.Contains(d.Tools, "report") != (d.Name != "eika") {
 			t.Errorf("%s report capability is incorrect", d.Name)

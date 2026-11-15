@@ -1,7 +1,10 @@
 # activity
 
 The Activity page: Eika's subagents by state, and a read-only live view of each.
-Steering goes through Eika in Chat, so the view has no composer.
+Steering goes through Eika in Chat, so the view has no composer. A waiting
+question shows its reason and a read-only ask_user card with the question and
+choices. Stored arguments keep the card readable after reload; Eika supplies
+the answer with subagent_message.
 
 - `ActivityPage.tsx` is the page for `/activity` and `/activity/:sessionId`. From
   1024px the board and the open subagent sit side by side; under it the route

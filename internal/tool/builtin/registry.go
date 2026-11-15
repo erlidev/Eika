@@ -12,9 +12,11 @@ import (
 // Deps are what the tools that reach beyond the computer are given.
 type Deps struct {
 	// Questions is the broker ask_user waits on.
-	Questions    *Questions
-	Projects     Projects
-	HomeExecutor func(context.Context, string) (executor.Executor, func(), error)
+	Questions *Questions
+	// QuestionRelay handles subagent questions; false keeps the legacy broker.
+	QuestionRelay func(context.Context, Question) (string, bool, error)
+	Projects      Projects
+	HomeExecutor  func(context.Context, string) (executor.Executor, func(), error)
 	// Subagents runs the delegation tools for the calling home session.
 	Subagents Subagents
 	// Reports takes a subagent's report.
@@ -33,7 +35,7 @@ type Deps struct {
 // run nobody can answer wants.
 func Registry(d Deps) (*tool.Registry, error) {
 	r, err := tool.NewRegistry(
-		askUserTool{questions: d.Questions},
+		askUserTool{questions: d.Questions, relay: d.QuestionRelay},
 		projectTool{name: "project_list", projects: d.Projects, home: d.HomeExecutor},
 		projectTool{name: "project_open", projects: d.Projects, home: d.HomeExecutor},
 		projectTool{name: "project_create", projects: d.Projects, home: d.HomeExecutor},

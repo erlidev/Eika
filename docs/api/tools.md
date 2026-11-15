@@ -46,7 +46,7 @@ with these fields:
 | Tool | Fields | Result |
 |---|---|---|
 | `subagent_start` | `agent`: `worker` or `researcher`, `name`, `brief`, optional `project` slug | Starts the subagent and returns at once. An existing name returns that subagent unchanged, with a note to use `subagent_message`. |
-| `subagent_message` | `subagent`, `text` | Resumes an idle, failed or cancelled subagent in its own session. A running one does not take the text; the note says so. |
+| `subagent_message` | `subagent`, `text`, optional `question_id` | Answers the question with this id, or resumes an idle, failed or cancelled subagent when no id is given. A running one does not take new work; the note says so. |
 | `subagent_status` | optional `subagent` | Without a name, the board: every subagent with `report` as the first line of its last report. With one, also `brief` and the whole `report`. |
 | `subagent_cancel` | `subagent` | Stops the current run and waits for it; the subagent stays resumable. |
 
@@ -75,8 +75,8 @@ the report tool." once; if it still has not reported, its final assistant
 message becomes the report. Failed and cancelled runs are not asked.
 
 At most `subagent_max_running` subagents run at once (a setting, default 4);
-`subagent_start` and `subagent_message` past the limit return an error result
-and start nothing. Aborting Eika's reply does not stop its subagents.
+Starting or resuming an execution past the limit returns an error result.
+A waiting question keeps its reservation, so an answer needs no new one. Aborting Eika's reply does not stop its subagents.
 
 A worker's session uses the home computer. Its runs create the project
 directory when it is missing, run commands there and resolve relative paths
@@ -84,3 +84,28 @@ there; a directory outside the computer root refuses the run. A researcher has
 no computer. A subagent's run uses the run manager at `foreground` priority
 when an interactive home turn starts or messages it, else `background`.
 Aborting its run, `subagent_cancel` and shutdown record it `cancelled`.
+
+## ask_user
+
+Workers and researchers use `ask_user` to ask Eika when unclear intent would
+change the result. Arguments are `question` (required, nonempty, at most 2048
+UTF-8 bytes), optional `options` (at most 10 nonempty strings, each at most 128
+bytes), and optional `allow_free_text` (boolean, default false). NUL, invalid
+UTF-8, unpaired surrogates, duplicate or unknown fields, null values and trailing
+JSON are refused. With no options, free
+text is always allowed.
+
+The child becomes `waiting`; `waiting_reason` holds the question id, question
+and choices as a JSON array.
+A home notice carries the question and starts a background home turn when
+home is idle. Eika supplies the answer through `subagent_message`, or asks the
+user in its reply and relays the answer. An answer must carry the question id
+from the notice as `question_id`. A missing or stale id cannot answer a later
+question; a stale id cannot start new work. The note says when no question is
+waiting. An ended question notice is marked no longer pending before delivery.
+A closed question accepts only an
+exact option. An invalid answer leaves it waiting. An accepted answer becomes
+the existing tool call's text result and clears the waiting reason. Cancel
+ends the wait; a restart ends the run and repairs its unanswered call. No
+question row or new HTTP route is added. Legacy profile sessions retain the
+question broker and HTTP answer route.

@@ -60,10 +60,10 @@ func timeField(t time.Time, loc *time.Location) contextField {
 }
 
 // stamp returns a user-side message with its context block written, if it does
-// not have one. The block is written when the message is first sent and is
-// never written again: a message a failed turn gave back to its queue keeps the
-// time it was sent at, and one read back from the store keeps the very bytes it
-// had, so a resumed session sends the same prefix. Nothing is stamped that is
+// not have one. A message a failed turn gave back to its queue keeps the time
+// it was sent at; an unstored notice can be refreshed before delivery. A
+// message read back from the store keeps its bytes, so a resumed session sends
+// the same prefix. Nothing is stamped that is
 // not a user's message (a tool result is not one, and the summary a compaction
 // leaves stands for earlier messages).
 func (a *Agent) stamp(m provider.Message) provider.Message {

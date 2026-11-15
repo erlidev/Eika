@@ -943,3 +943,12 @@ func Worker(o agentdef.Override) (agentdef.Definition, error) {
 
 Run `go test ./internal/agentdef` for definition and capability checks. Store
 and handler tests use the `docker` tag. Run `make contract` after wire changes.
+
+Subagent `ask_user` calls use `Deps.QuestionRelay`, bound by `agentToolRegistry`.
+The relay parks the lifecycle service and posts a home notice. Return false
+only for legacy sessions, which keep the `Questions` broker. Do not register
+subagent questions in that broker: only Eika answers them with `subagent_message`.
+
+Home runs use `Options.RefreshMessage` to mark stale question notices just
+before an unstored message reaches the model. Keep the notice ids when changing
+the context so the existing delivery book can record each notice once.

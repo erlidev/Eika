@@ -150,6 +150,7 @@ type execution struct {
 	reported bool
 	err      error
 	result   store.Session
+	question *pendingQuestion
 }
 
 // New creates a service bounded by ctx. Close must run before storage closes.
@@ -224,8 +225,9 @@ func (s *Service) Start(ctx context.Context, parent string, child store.Session,
 // Message resumes a child with no active run at priority and reports whether
 // it accepted the text. A child whose run is active returns its status without
 // accepting the text. A stored running or waiting state with no active run is
-// a lost final write and is resumed too. Question relay is separate.
-func (s *Service) Message(ctx context.Context, parent, name, text string, priority inference.Priority) (store.Session, bool, error) {
+// a lost final write and is resumed too. A waiting question takes the text as
+// its answer only when questionID matches its id. It continues the same run.
+func (s *Service) Message(ctx context.Context, parent, name, text string, priority inference.Priority, questionID string) (store.Session, bool, error) {
 	if err := validText("text", text, 64<<10); err != nil {
 		return store.Session{}, false, err
 	}
@@ -238,7 +240,22 @@ func (s *Service) Message(ctx context.Context, parent, name, text string, priori
 	if err != nil {
 		return store.Session{}, false, err
 	}
-	if s.active[child.ID] != nil {
+	if active := s.active[child.ID]; active != nil {
+		if active.cancelled || active.question == nil || questionID == "" || active.question.id != questionID || !active.question.live() {
+			return child, false, nil
+		}
+		if err := active.question.accept(text); err != nil {
+			return child, false, err
+		}
+		child, err = s.state(ctx, child, store.SessionRunning, "")
+		if err != nil {
+			return store.Session{}, false, err
+		}
+		active.question.answer <- text
+		active.question = nil
+		return child, true, nil
+	}
+	if questionID != "" {
 		return child, false, nil
 	}
 	if err := s.room(ctx); err != nil {
