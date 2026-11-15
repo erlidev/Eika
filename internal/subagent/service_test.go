@@ -592,7 +592,7 @@ func TestRunsGetTheirPriorityAndCancelledRunsAreRecordedCancelled(t *testing.T) 
 	s := service(t, st, func(_ context.Context, _ store.Session, text string, p inference.Priority) error {
 		turns <- turn{text, p}
 		// A run stopped from outside the service, as the user's abort is.
-		return fmt.Errorf("run aborted: %w", context.Canceled)
+		return fmt.Errorf("run aborted: %w", subagent.ErrCancelled)
 	}, nil)
 	row, started, err := s.Start(t.Context(), "home", child(), inference.Background)
 	if err != nil || !started || row.State != store.SessionRunning {
@@ -609,4 +609,17 @@ func TestRunsGetTheirPriorityAndCancelledRunsAreRecordedCancelled(t *testing.T) 
 		t.Fatalf("message turn = %+v", got)
 	}
 	awaitState(t, st, store.SessionCancelled)
+}
+
+func TestACancelledContextInsideTheRunIsAFailure(t *testing.T) {
+	st := newMemory()
+	// A provider that gives up with context.Canceled has not been cancelled
+	// by anyone: the child failed.
+	s := service(t, st, func(context.Context, store.Session, string, inference.Priority) error {
+		return fmt.Errorf("provider: %w", context.Canceled)
+	}, nil)
+	if _, _, err := s.Start(t.Context(), "home", child(), fg); err != nil {
+		t.Fatal(err)
+	}
+	awaitState(t, st, store.SessionFailed)
 }

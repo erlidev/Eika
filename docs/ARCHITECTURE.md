@@ -250,8 +250,9 @@ The queue supports `interactive`, `foreground`, `background`, and `maintenance`,
 in that order. Current session runs and model tests use `interactive`; titles
 use `maintenance`. Startup conformance checks use `maintenance`, and explicit
 probes use `interactive`. Subagent runs use `foreground` when an interactive
-home turn starts or messages them, else `background`. Compaction summary calls use the run's priority. `Rank` is read per call;
-raising a background home turn to interactive is Phase 2 work.
+home turn starts or messages them, else `background`. Compaction summary calls
+use the run's priority. `Rank` is read per call; raising a background home turn
+to interactive is Phase 2 work.
 
 A waiting call gains one priority level per `aging_seconds` (default 300).
 Ties use the oldest wait, which is kept across retries. Maintenance waits until

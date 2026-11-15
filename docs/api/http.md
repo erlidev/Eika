@@ -521,8 +521,8 @@ its own, which the event stream reports with `compaction.start` and
 
 `202` with the `Run`. `409` for a subagent's session, when a run is going,
 when the computer could not be started, or when the conversation has nothing
-older than what a compaction keeps. A compaction that fails ends the run in `error`, with the conversation
-as it was.
+older than what a compaction keeps. A compaction that fails ends the run in
+`error`, with the conversation as it was.
 
 ### `POST /api/runs/{id}/abort`
 

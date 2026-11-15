@@ -13,6 +13,7 @@ import (
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
+	"github.com/erlidev/eika/internal/subagent"
 )
 
 // runSubagent is the lifecycle service's run callback: one message in the
@@ -30,11 +31,17 @@ func (s *Server) runSubagent(ctx context.Context, child store.Session, text stri
 		active.abort()
 		<-active.done
 	}
-	// A run the user aborted from its session view is cancelled, not failed.
-	if active.wasAborted() {
-		return fmt.Errorf("subagent run aborted: %w", context.Canceled)
+	return subagentOutcome(active.wasAborted(), active.outcome())
+}
+
+// subagentOutcome is how a subagent's run ended for the lifecycle service. A
+// run aborted before it completed is cancelled, not failed; an abort that
+// came after the loop finished changes nothing.
+func subagentOutcome(aborted bool, err error) error {
+	if err != nil && aborted {
+		return fmt.Errorf("subagent run aborted: %w", subagent.ErrCancelled)
 	}
-	return active.outcome()
+	return err
 }
 
 // delegationPriority is the priority of the runs a home session starts or

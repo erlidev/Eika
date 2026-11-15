@@ -2,12 +2,15 @@ package server
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/local"
+	"github.com/erlidev/eika/internal/subagent"
 )
 
 func TestWorkdirResolvesRelativePathsInTheProjectDirectory(t *testing.T) {
@@ -46,5 +49,27 @@ func TestWorkdirResolvesRelativePathsInTheProjectDirectory(t *testing.T) {
 	}
 	if _, err := w.ReadFile(t.Context(), "../../../outside", executor.ReadOpts{}); err == nil {
 		t.Fatal("read outside the root")
+	}
+}
+
+func TestSubagentOutcomeCancelsOnlyRunsTheAbortStopped(t *testing.T) {
+	stopped := errors.New("loop stopped")
+	for _, tc := range []struct {
+		name      string
+		aborted   bool
+		err       error
+		cancelled bool
+		failed    bool
+	}{
+		{"completed", false, nil, false, false},
+		{"aborted after completing", true, nil, false, false},
+		{"aborted mid-run", true, context.Canceled, true, false},
+		{"failed", false, stopped, false, true},
+		{"provider cancelled", false, context.Canceled, false, true},
+	} {
+		got := subagentOutcome(tc.aborted, tc.err)
+		if errors.Is(got, subagent.ErrCancelled) != tc.cancelled || (got != nil && !tc.cancelled) != tc.failed {
+			t.Errorf("%s: outcome = %v", tc.name, got)
+		}
 	}
 }

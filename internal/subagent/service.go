@@ -24,9 +24,13 @@ type Store interface {
 	SetSubagentState(context.Context, string, store.SessionState, string) (store.Session, error)
 }
 
+// ErrCancelled is what a Run returns, wrapped or not, when someone stopped its
+// run from outside the service, as the user's abort does. The child is
+// recorded cancelled; any other error records it failed.
+var ErrCancelled = errors.New("subagent run cancelled")
+
 // Run executes one message in the child's stored context at priority and
-// returns when done. It must stop and join its work when ctx is cancelled. An
-// error that wraps context.Canceled records the child as cancelled.
+// returns when done. It must stop and join its work when ctx is cancelled.
 type Run func(ctx context.Context, child store.Session, text string, priority inference.Priority) error
 
 // Service serializes lifecycle changes and owns each child run until it ends.
@@ -157,7 +161,7 @@ func (s *Service) execute(ctx context.Context, child store.Session, text string,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	state := store.SessionIdle
-	if active.cancelled || ctx.Err() != nil || errors.Is(err, context.Canceled) {
+	if active.cancelled || ctx.Err() != nil || errors.Is(err, ErrCancelled) {
 		state = store.SessionCancelled
 	} else if err != nil {
 		state = store.SessionFailed
