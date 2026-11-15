@@ -281,8 +281,15 @@ views and per-day compute aggregates are later UI work.
 Requests contain the base system prompt, instructions, an agent session's
 stored preamble, sorted tool schemas, and the conversation. The preamble holds
 global and project instructions, active projects for home, delegable agents,
-the project and brief, and the user's time zone and locale. A run stores the
-first snapshot; compaction stores its replacement and summary in one transaction.
+the project and brief, and the user's time zone and locale. The snapshot also
+pins the agent definition's base prompt and tool names (`session.PreambleEntry`),
+and runs build their system prompt and tools from them (`runConfig.withSnapshot`)
+rather than from the definition as it is now. A pinned list only narrows the
+definition's, so a tool a build adds waits for a compaction and one it drops is
+gone at once. A run stores the first snapshot, and pins a snapshot stored before
+definitions were (text alone) again with the same text; compaction stores its
+replacement and summary in one transaction (`Server.refreshSnapshot`), and the
+run goes on with the replacement's prompt and tools (`Options.RefreshSnapshot`).
 The replacement precedes the compaction entry, so a branch from the summary
 uses the replacement snapshot.
 After compaction the conversation starts with its summary and retained messages.
@@ -296,10 +303,12 @@ the real loop and both providers against a fake server, with JSON entries and
 with PostgreSQL. It covers steering, follow-ups, retries, stalls, cut-off and
 refused responses, interruption, restart, resume and compaction. Each request
 extends or repeats the accepted conversation prefix. Compaction starts a new
-chain; its summary request reuses the old prefix. The output limit may decrease
+chain; its summary request reuses the old prefix. The scenario's session stores
+a snapshot and compacts as home does: the cut keeps whole turns from a user
+message on, and the rebuilt system prompt, tools and preamble are the same bytes,
+since nothing they draw on changed. The output limit may decrease
 as the window fills, and the last two requests carry notices, one with a user
-message and one alone. Agent definition replacement remains in
-[the runtime design](design/runtime.md#4-context-layout).
+message and one alone.
 
 Every user-side message ends with a `<context>` block (`agent/contextblock.go`)
 that states the time it was sent to the minute, in `Options.Location` (UTC when no zone is stored), read from `Options.Clock`. It is written
@@ -378,7 +387,13 @@ compacts first (when the prediction is only `estimated`, the reserve grows by th
 again, once. `Agent.Compact` compacts on request. `planCompaction` walks back
 from the newest stored message until about `keep` tokens are kept and cuts
 at a user or assistant message; a cut inside a turn summarizes the turn's
-start apart. The summary is asked for first as the run's own request up to
+start apart. The home session cuts at a user-turn boundary instead
+(`CompactionSettings.KeepRecentShare`, 15% of the window, set by `newAgent`
+for home only): `planTurnCut` keeps from the oldest user message whose tail
+fits the share, and at least the newest turn. A newest turn larger than the
+share, or a tail with no user message, falls back to `planCompaction` with
+the share as its budget, which splits the turn. Threshold, overflow and
+manual compactions all cut this way. The summary is asked for first as the run's own request up to
 the cut plus a prompt, which the endpoint's prompt cache already holds, and
 else as Pi's serialized transcript; a cut-off or empty answer is asked for
 again at `FallbackEffort`. The conversation becomes a summary message
@@ -1006,8 +1021,11 @@ MCP tools. An agent receives an executor only when one of its fixed tools needs
 a computer (today, the worker). Workers and researchers have `ask_user`,
 which relays questions through home. Legacy profile sessions keep their broker. Runs use the definition's
 call limit and compaction prompts with the current compaction algorithm and
-budget settings. Editing a definition changes the next run, including an empty
-prompt override; an active run keeps its resolved values. Model-call records
+budget settings. Editing a definition's prompt, an empty override included,
+reaches a session at its next compaction, which rebuilds its snapshot; a new
+session starts with it. The class applies from the next run. The configuration
+response shows the definition as it is now; the context and prediction previews
+show the snapshot. Model-call records
 include the agent name and requested class, including when the class falls back.
 
 ## Projects

@@ -197,10 +197,14 @@ func (s *Server) allTools() *tool.Registry {
 // a computer. Narrowing the registry, rather than refusing a call, means
 // the model is never told about a tool it may not use.
 func (s *Server) runTools(sess store.Session, choice []string, mcpTools []tool.Tool) *tool.Registry {
+	// An agent offers its definition's fixed built-in list, never MCP tools.
+	// A choice, the list its snapshot pinned, can only narrow it: a tool the
+	// definition gained waits for the next compaction, and one it lost is
+	// gone at once.
+	var pinned []string
 	if sess.Agent != "" {
-		// Never merge MCP capabilities into an agent's fixed built-in list.
 		d, _ := agentdef.Lookup(sess.Agent)
-		choice = d.Tools
+		pinned, choice = choice, d.Tools
 		if choice == nil {
 			choice = []string{}
 		}
@@ -208,6 +212,9 @@ func (s *Server) runTools(sess store.Session, choice []string, mcpTools []tool.T
 	}
 
 	return s.narrowed(func(t tool.Tool) bool {
+		if pinned != nil && !slices.Contains(pinned, t.Name()) {
+			return false
+		}
 		if _, agentOnly := t.(tool.AgentOnly); agentOnly && sess.Agent == "" {
 			return false
 		}

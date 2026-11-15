@@ -30,7 +30,8 @@ import (
 // cheap only if it begins with the very bytes the last one did. The test runs
 // the real agent loop and the real providers against a fake server that keeps
 // the raw body of every request, through scripted turns, a restart, a resume
-// and a compaction, and requires that:
+// and a compaction of the home session's kind, cut at a user-turn boundary
+// with its snapshot rebuilt, and requires that:
 //
 //   - each request's messages (chat) or input (responses) begin with the whole
 //     array of the request before it, byte for byte, with new items only at the
@@ -41,7 +42,9 @@ import (
 //     the prompt it rendered from the one before.
 //
 // Across a compaction the array is replaced by design, and the invariant holds
-// again from the first request after it.
+// again from the first request after it. The system prompt, the tools and
+// the preamble the compaction rebuilt stay the same bytes, since nothing they
+// draw on changed, and the kept messages begin with a user message.
 
 // exempt are the request fields allowed to differ from one request to the
 // next, each with the reason. Nothing else is.
@@ -118,7 +121,34 @@ func (s *jsonStore) Load(_ context.Context, sessionIDD string) (*agent.Session, 
 	if err != nil {
 		return nil, err
 	}
-	return &agent.Session{ID: sessionIDD, ComputerID: "computer", Conversation: agent.NewConversation(msgs...)}, nil
+	snap, err := session.SnapshotOf(s.entries)
+	if err != nil {
+		return nil, err
+	}
+	return &agent.Session{
+		ID: sessionIDD, ComputerID: "computer", Preamble: snap.Text, Prompt: snap.Prompt, Tools: snap.Tools,
+		Conversation: agent.NewConversation(msgs...),
+	}, nil
+}
+
+// appendEntries stores entries as one write would.
+func appendEntries(ctx context.Context, st convStore, sessionIDD string, entries ...store.Entry) error {
+	switch st := st.(type) {
+	case *jsonStore:
+		st.mu.Lock()
+		defer st.mu.Unlock()
+		st.entries = append(st.entries, entries...)
+		return nil
+	case *session.Store:
+		for _, e := range entries {
+			if _, err := st.Tree().Append(ctx, sessionIDD, e); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("append entries: unknown store %T", st)
+	}
 }
 
 // fnTool is a tool that runs a function. It is standalone, so it runs with no
@@ -219,15 +249,17 @@ func (h *harness) newCounter() *counter.Counter {
 }
 
 const (
-	scenarioPrompt = "You are Eika, under test."
-	maxOutput      = 1500
+	scenarioPrompt   = "You are Eika, under test."
+	scenarioPreamble = "About me\nTests prefixes.\n\nTime zone\nUTC\n\nLocale\nen"
+	maxOutput        = 1500
 	// window is small enough that fit has to lower the output limit once the
 	// conversation has grown.
 	window = 2000
 )
 
-func (h *harness) newAgent() *agent.Agent {
-	p, _ := h.newProviders()
+// registry is the scenario's tools, built anew as the server builds them
+// for each run and each snapshot.
+func (h *harness) registry() *tool.Registry {
 	registry, err := tool.NewRegistry(
 		fnTool{"echo", func(_ context.Context, args json.RawMessage) string {
 			return "echo <" + string(args) + "> & caf\u00e9 \"quoted\""
@@ -248,26 +280,64 @@ func (h *harness) newAgent() *agent.Agent {
 	if err != nil {
 		h.t.Fatalf("registry: %v", err)
 	}
-	effort, temperature, topK, minP, out := provider.EffortNone, 0.7, 20, 0.05, maxOutput
+	return registry
+}
+
+// snapshotEntry is the snapshot the scenario's session stores: nothing it
+// draws on changes, so every one is the same.
+func (h *harness) snapshotEntry() store.Entry {
 	prompt := scenarioPrompt
-	ag := agent.New(p, registry, agent.Options{
+	e, err := session.PreambleEntry(scenarioPreamble, &prompt, []string{"echo", "hang", "note"})
+	if err != nil {
+		h.t.Fatalf("snapshot entry: %v", err)
+	}
+	return e
+}
+
+// refreshSnapshot stores a compaction with its replacement snapshot, as the
+// server does.
+func (h *harness) refreshSnapshot(ctx context.Context, sessionIDD string, c agent.Compaction) (agent.Snapshot, error) {
+	compaction, err := session.CompactionEntry(c)
+	if err != nil {
+		return agent.Snapshot{}, err
+	}
+	if err := appendEntries(ctx, h.store, sessionIDD, h.snapshotEntry(), compaction); err != nil {
+		return agent.Snapshot{}, err
+	}
+	prompt := scenarioPrompt
+	return agent.Snapshot{Preamble: scenarioPreamble, Prompt: &prompt, Tools: h.registry()}, nil
+}
+
+// newAgent builds the agent of a run of s from its snapshot, as the server
+// does.
+func (h *harness) newAgent(s *agent.Session) *agent.Agent {
+	p, _ := h.newProviders()
+	if s.Prompt == nil {
+		h.t.Fatal("the session has no snapshot")
+	}
+	effort, temperature, topK, minP, out := provider.EffortNone, 0.7, 20, 0.05, maxOutput
+	ag := agent.New(p, h.registry(), agent.Options{
 		Model: "qwen", ContextWindow: window, PreserveThinking: h.preserve, ImageInput: true,
 		Sampling: provider.Sampling{
 			MaxOutput: &out, Temperature: &temperature, TopK: &topK, MinP: &minP, ReasoningEffort: &effort,
 		},
-		ThinkingSwitch: provider.SwitchTemplate,
-		BasePrompt:     &prompt,
-		Store:          h.store,
-		Counter:        h.counter,
-		Recorder:       h,
-		Clock:          h.clock.Now,
-		Channel:        "web",
-		Notices:        h.takeNotices,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RetryBackoff:   time.Millisecond,
-		Limits:         agent.Limits{Stall: 150 * time.Millisecond},
-		// The scenario's session compacts as home does, with a board.
-		Compaction: agent.CompactionSettings{KeepRecentTokens: 400, Board: func(context.Context, *time.Location) (string, time.Time, error) {
+		ThinkingSwitch:  provider.SwitchTemplate,
+		BasePrompt:      s.Prompt,
+		Location:        agent.PreambleLocation(s.Preamble),
+		Store:           h.store,
+		RefreshSnapshot: h.refreshSnapshot,
+		Counter:         h.counter,
+		Recorder:        h,
+		Clock:           h.clock.Now,
+		Channel:         "web",
+		Notices:         h.takeNotices,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RetryBackoff:    time.Millisecond,
+		Limits:          agent.Limits{Stall: 150 * time.Millisecond},
+		// The scenario's session compacts as home does, with a board and a
+		// cut at a user-turn boundary: 15% of the window keeps the turns from
+		// "Go on." on.
+		Compaction: agent.CompactionSettings{KeepRecentShare: agent.DefaultKeepRecentShare, Board: func(context.Context, *time.Location) (string, time.Time, error) {
 			return "- plumber (worker): idle", h.clock.Now(), nil
 		}},
 	})
@@ -288,7 +358,7 @@ func (h *harness) run(ctx context.Context, msg provider.Message) error {
 	if err != nil {
 		h.t.Fatalf("load session: %v", err)
 	}
-	ag := h.newAgent()
+	ag := h.newAgent(s)
 	h.cur = ag
 	err = ag.Run(ctx, s, msg)
 	h.steering, h.followUps = ag.PendingSteering(), ag.PendingFollowUps()
@@ -301,7 +371,7 @@ func (h *harness) compact(ctx context.Context) {
 	if err != nil {
 		h.t.Fatalf("load session: %v", err)
 	}
-	if err := h.newAgent().Compact(ctx, s, ""); err != nil {
+	if err := h.newAgent(s).Compact(ctx, s, ""); err != nil {
 		h.t.Fatalf("compact: %v", err)
 	}
 }
@@ -332,6 +402,10 @@ func scenario(t *testing.T, api string, preserve bool, st convStore, sessionIDD 
 	}
 	h.counter = h.newCounter()
 	ctx := context.Background()
+	// The first snapshot, which the server stores before the first run.
+	if err := appendEntries(ctx, st, sessionIDD, h.snapshotEntry()); err != nil {
+		t.Fatalf("store the snapshot: %v", err)
+	}
 	t.Cleanup(func() {
 		if !t.Failed() {
 			return
@@ -718,6 +792,15 @@ func checkSummary(t *testing.T, r relation) {
 	}
 }
 
+// roleOf is the role of a message or an input item.
+func roleOf(item json.RawMessage) string {
+	var m struct {
+		Role string `json:"role"`
+	}
+	_ = json.Unmarshal(item, &m)
+	return m.Role
+}
+
 // firstContent is the content field of a message or an input item.
 func firstContent(item json.RawMessage) json.RawMessage {
 	var m struct {
@@ -748,6 +831,11 @@ func checkAfterCompaction(t *testing.T, api string, r relation) {
 	}
 	if len(items) == 0 || !strings.Contains(contentText(firstContent(items[0])), "\n\n[Conversation]\n"+summaryText+"\n</summary>") {
 		t.Errorf("request %d: the array does not begin with the compaction's summary", r.index+1)
+	}
+	// The cut is at a user-turn boundary: what the compaction kept begins
+	// with a user message.
+	if len(items) < 2 || roleOf(items[1]) != "user" {
+		t.Errorf("request %d: the kept messages do not begin with a user message", r.index+1)
 	}
 	if len(r.body.items) >= len(r.compactedFrom.items) {
 		t.Errorf("request %d has %d items after the compaction, no fewer than the %d it replaced",

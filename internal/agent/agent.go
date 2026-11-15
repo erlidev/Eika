@@ -80,8 +80,10 @@ type Options struct {
 	Emitter event.Emitter
 	// Store persists every message. Nil keeps them in the conversation only.
 	Store Store
-	// RefreshPreamble stores a compaction and its replacement snapshot together.
-	RefreshPreamble func(context.Context, string, Compaction) (string, error)
+	// RefreshSnapshot stores a compaction and the session's replacement
+	// snapshot together, and returns the snapshot, which the run goes on
+	// with. Nil stores the compaction alone, through Store.
+	RefreshSnapshot func(context.Context, string, Compaction) (Snapshot, error)
 	// Logger receives one line per finished or failed turn.
 	Logger *slog.Logger
 	// Recorder is told about every model call that returned a response. Nil
@@ -110,16 +112,30 @@ type Options struct {
 	Limits Limits
 }
 
+// Snapshot is what a session's prefix holds beside its messages and is
+// replaced only by a compaction (runtime.md 4): the preamble, and the base
+// prompt and tools of the agent definition as they were when it was taken.
+type Snapshot struct {
+	// Preamble is the stored preamble text.
+	Preamble string
+	// Prompt replaces the base prompt; nil keeps the agent's.
+	Prompt *string
+	// Tools replaces the tools; nil keeps the agent's.
+	Tools *tool.Registry
+}
+
 // Agent runs the loop for one session at a time.
 type Agent struct {
 	provider  provider.Provider
 	counter   *counter.Counter
-	tools     *tool.Registry
 	opts      Options
 	steering  queue
 	followUps queue
 
-	locationMu sync.RWMutex
+	// snapshotMu guards what a compaction's snapshot replaces: the tools,
+	// the base prompt in opts, and the location.
+	snapshotMu sync.RWMutex
+	tools      *tool.Registry
 	location   *time.Location
 
 	mu sync.Mutex
@@ -163,6 +179,35 @@ func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
 	return &Agent{provider: p, counter: opts.Counter, tools: r, opts: opts, location: opts.Location, accepting: true}
 }
 
+// useSnapshot makes a compaction's replacement snapshot the session's and
+// the run's: the next model call is built from its preamble, prompt and
+// tools, and states times in the preamble's zone.
+func (a *Agent) useSnapshot(s *Session, snap Snapshot) {
+	s.Preamble = snap.Preamble
+	a.snapshotMu.Lock()
+	defer a.snapshotMu.Unlock()
+	a.location = PreambleLocation(snap.Preamble)
+	if snap.Prompt != nil {
+		s.Prompt = snap.Prompt
+		a.opts.BasePrompt = snap.Prompt
+	}
+	if snap.Tools != nil {
+		names := []string{}
+		for _, t := range snap.Tools.List() {
+			names = append(names, t.Name())
+		}
+		s.Tools = names
+		a.tools = snap.Tools
+	}
+}
+
+// registry is the tools the agent offers now.
+func (a *Agent) registry() *tool.Registry {
+	a.snapshotMu.RLock()
+	defer a.snapshotMu.RUnlock()
+	return a.tools
+}
+
 // Steer queues a user message to be delivered as soon as the tool call that
 // is running finishes, before the next model call.
 func (a *Agent) Steer(msg provider.Message) bool {
@@ -204,12 +249,11 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Messag
 	if s == nil || s.Conversation == nil {
 		return errors.New("run agent: session has no conversation")
 	}
-	prompt := a.prompt()
 	a.mu.Lock()
 	a.accepting = true
 	a.mu.Unlock()
 	defer a.closeQueues()
-	a.seedCounter(ctx, s, prompt)
+	a.seedCounter(ctx, s, a.prompt())
 
 	first := a.stamp(userMessage)
 	msgs, origin := []provider.Message{first}, (*queue)(nil)
@@ -218,7 +262,7 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Messag
 	}
 	g := newGuard(a.opts.Clock())
 	for {
-		if err := a.turn(ctx, s, prompt, g, msgs, origin); err != nil {
+		if err := a.turn(ctx, s, g, msgs, origin); err != nil {
 			if errors.Is(err, errRunLimit) {
 				return nil
 			}
@@ -232,13 +276,13 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Messag
 }
 
 // turn runs one assistant turn: deliver msgs, then alternate model calls and
-// tool calls until the model stops asking for tools. prompt is the run's
-// system prompt by section, and g follows the run against its limits. origin is
-// the queue msgs came from, so that an aborted turn can put them back. A turn
-// that finds its run at a limit before a model call ends with errRunLimit,
-// after the turn.end event and with everything it did stored and the messages
-// it had not delivered back in their queues.
-func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, g *guard, msgs []provider.Message, origin *queue) error {
+// tool calls until the model stops asking for tools. g follows the run
+// against its limits. origin is the queue msgs came from, so that an aborted
+// turn can put them back. A turn that finds its run at a limit before a
+// model call ends with errRunLimit, after the turn.end event and with
+// everything it did stored and the messages it had not delivered back in
+// their queues.
+func (a *Agent) turn(ctx context.Context, s *Session, g *guard, msgs []provider.Message, origin *queue) error {
 	runID := newRunID()
 	// Undelivered messages are in the conversation, because the model call
 	// needs them, but not yet in the store. A turn that never gets a response
@@ -317,7 +361,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, prompt []Section, g *guard
 		}
 
 		g.calls++
-		resp, sent, count, err := a.call(ctx, s, runID, prompt, &gen, &pendingMark)
+		resp, sent, count, err := a.call(ctx, s, runID, &gen, &pendingMark)
 		if err != nil {
 			restoreFrom(0)
 			return a.fail(ctx, s, runID, err)
@@ -466,10 +510,11 @@ func (a *Agent) callTool(ctx context.Context, s *Session, runID string, g *guard
 // dispatch finds the tool and runs it. An unknown tool is the model's mistake,
 // not the harness's, so it comes back as a failed result.
 func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provider.ToolCall) (tool.Result, error) {
-	if a.tools == nil {
+	tools := a.registry()
+	if tools == nil {
 		return tool.Errorf("no tools are available in this session"), nil
 	}
-	t, ok := a.tools.Get(c.Name)
+	t, ok := tools.Get(c.Name)
 	if !ok {
 		return tool.Errorf("unknown tool %q", c.Name), nil
 	}

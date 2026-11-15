@@ -1,6 +1,7 @@
 package server
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -62,7 +63,7 @@ func TestCompactionBranchReplaysReplacementPreamble(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	added, err := preambleCompactionEntries("new", agent.Compaction{Summary: "summary"})
+	added, err := preambleCompactionEntries("new", "You are Eika.", []string{"project_list"}, agent.Compaction{Summary: "summary"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,9 +71,10 @@ func TestCompactionBranchReplaysReplacementPreamble(t *testing.T) {
 	if path[len(path)-1].Kind != store.KindCompaction || !session.PathResumable(path) {
 		t.Fatalf("compaction is not a branch point: %+v", path)
 	}
-	preamble, err := session.Preamble(path)
-	if err != nil || preamble != "new" {
-		t.Fatalf("preamble = %q, %v", preamble, err)
+	snap, err := session.SnapshotOf(path)
+	if err != nil || snap.Text != "new" || snap.Prompt == nil || *snap.Prompt != "You are Eika." ||
+		!slices.Equal(snap.Tools, []string{"project_list"}) {
+		t.Fatalf("snapshot = %+v, %v", snap, err)
 	}
 	messages, err := session.Messages(path)
 	if err != nil || len(messages) != 1 || !messages[0].Summary {

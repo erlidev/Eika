@@ -208,8 +208,8 @@ func (a *Agent) base(prompt []Section) Context {
 			ImageInput:       a.opts.ImageInput,
 		},
 	}
-	if a.tools != nil {
-		for _, def := range a.tools.Schemas() {
+	if tools := a.registry(); tools != nil {
+		for _, def := range tools.Schemas() {
 			c.Tools = append(c.Tools, ToolSchema{ToolDef: def, Source: sourceOf(def.Name), Tokens: ToolTokens(def)})
 		}
 	}

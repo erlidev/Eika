@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -104,27 +105,62 @@ func (s *Server) buildPreamble(ctx context.Context, sess store.Session) (string,
 	return renderPreamble(d), nil
 }
 
-func (s *Server) refreshPreamble(ctx context.Context, id string, c agent.Compaction) (string, error) {
+// pinned is the part of the agent definition c resolved that a snapshot
+// pins: its base prompt and its tool names.
+func (c runConfig) pinned() (string, []string) {
+	prompt := agent.ChatPrompt
+	if c.chatPrompt != nil {
+		prompt = *c.chatPrompt
+	}
+	tools := slices.Clone(c.tools)
+	if tools == nil {
+		tools = []string{}
+	}
+	return prompt, tools
+}
+
+// withSnapshot is c with the base prompt and tools of the snapshot a session
+// loaded, when it pins a definition: an agent session keeps them until a
+// compaction replaces the snapshot, whatever the definition says now
+// (runtime.md 4).
+func (c runConfig) withSnapshot(loaded *agent.Session) runConfig {
+	if loaded.Prompt == nil {
+		return c
+	}
+	c.chatPrompt, c.tools = loaded.Prompt, slices.Clone(loaded.Tools)
+	return c
+}
+
+// refreshSnapshot stores a compaction of session id together with its
+// replacement snapshot, built from what the preamble and the agent
+// definition say now, and returns the snapshot with the tools a run of the
+// session offers from it.
+func (s *Server) refreshSnapshot(ctx context.Context, id string, c agent.Compaction) (agent.Snapshot, error) {
 	sess, err := s.deps.Store.Session(ctx, id)
 	if err != nil {
-		return "", err
+		return agent.Snapshot{}, err
 	}
 	text, err := s.buildPreamble(ctx, sess)
 	if err != nil {
-		return "", err
+		return agent.Snapshot{}, err
 	}
-	entries, err := preambleCompactionEntries(text, c)
+	cfg, err := s.configure(ctx, sess, "")
 	if err != nil {
-		return "", err
+		return agent.Snapshot{}, err
 	}
-	if err := s.deps.Store.AppendEntries(ctx, id, entries...); err != nil {
-		return "", err
+	prompt, tools := cfg.pinned()
+	entries, err := preambleCompactionEntries(text, prompt, tools, c)
+	if err != nil {
+		return agent.Snapshot{}, err
 	}
-	return text, nil
+	if err := s.deps.Store.AppendEntries(ctx, sess.ID, entries...); err != nil {
+		return agent.Snapshot{}, err
+	}
+	return agent.Snapshot{Preamble: text, Prompt: &prompt, Tools: s.runTools(sess, tools, nil)}, nil
 }
 
-func preambleCompactionEntries(text string, c agent.Compaction) ([]store.Entry, error) {
-	preamble, err := session.TextEntry(store.KindPreamble, text)
+func preambleCompactionEntries(text, prompt string, tools []string, c agent.Compaction) ([]store.Entry, error) {
+	preamble, err := session.PreambleEntry(text, &prompt, tools)
 	if err != nil {
 		return nil, err
 	}
@@ -135,21 +171,29 @@ func preambleCompactionEntries(text string, c agent.Compaction) ([]store.Entry, 
 	return []store.Entry{preamble, compact}, nil
 }
 
-func (s *Server) ensurePreamble(ctx context.Context, sess store.Session, loaded *agent.Session) error {
-	if sess.Agent == "" || loaded.Preamble != "" {
+// ensurePreamble stores the first snapshot of an agent session, pinning the
+// definition cfg resolved. A snapshot stored before definitions were pinned
+// is stored again with the same text and cfg's definition, so the prefix it
+// sent is unchanged and later edits wait for a compaction.
+func (s *Server) ensurePreamble(ctx context.Context, sess store.Session, loaded *agent.Session, cfg runConfig) error {
+	if sess.Agent == "" || (loaded.Preamble != "" && loaded.Prompt != nil) {
 		return nil
 	}
-	text, err := s.buildPreamble(ctx, sess)
-	if err != nil {
-		return err
+	text := loaded.Preamble
+	if text == "" {
+		var err error
+		if text, err = s.buildPreamble(ctx, sess); err != nil {
+			return err
+		}
 	}
-	e, err := session.TextEntry(store.KindPreamble, text)
+	prompt, tools := cfg.pinned()
+	e, err := session.PreambleEntry(text, &prompt, tools)
 	if err != nil {
 		return err
 	}
 	if _, err := s.tree.Append(ctx, sess.ID, e); err != nil {
 		return err
 	}
-	loaded.Preamble = text
+	loaded.Preamble, loaded.Prompt, loaded.Tools = text, &prompt, tools
 	return nil
 }

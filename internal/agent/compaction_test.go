@@ -636,12 +636,12 @@ func TestCompactionRefreshesPreambleAfterSummary(t *testing.T) {
 	var called bool
 	a := agent.New(p, nil, agent.Options{
 		Compaction: agent.CompactionSettings{KeepRecentTokens: 150},
-		RefreshPreamble: func(_ context.Context, id string, c agent.Compaction) (string, error) {
+		RefreshSnapshot: func(_ context.Context, id string, c agent.Compaction) (agent.Snapshot, error) {
 			called = true
 			if id != "s1" || c.Summary != "summary" {
 				t.Fatalf("compaction = %s, %+v", id, c)
 			}
-			return "new snapshot", nil
+			return agent.Snapshot{Preamble: "new snapshot"}, nil
 		},
 	})
 	s := sessionOf(history(4, 100))
@@ -668,10 +668,10 @@ func TestConcurrentMessagesDuringPreambleRefresh(t *testing.T) {
 	done := make(chan struct{})
 	a := agent.New(p, nil, agent.Options{
 		Compaction: agent.CompactionSettings{KeepRecentTokens: 150},
-		RefreshPreamble: func(_ context.Context, _ string, _ agent.Compaction) (string, error) {
+		RefreshSnapshot: func(_ context.Context, _ string, _ agent.Compaction) (agent.Snapshot, error) {
 			close(started)
 			<-ready
-			return "Time zone\nUTC\n\nLocale\nen", nil
+			return agent.Snapshot{Preamble: "Time zone\nUTC\n\nLocale\nen"}, nil
 		},
 	})
 	go func() {

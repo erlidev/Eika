@@ -103,10 +103,13 @@ type response struct {
 // reserve is compacted before it is sent, and a request the endpoint refuses
 // as too large is compacted and sent again, once each. pendingMark is the
 // turn's index of its first undelivered message, or -1; a compaction moves it.
-func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Section, gen *generation, pendingMark *int) (response, Context, counted, error) {
+// The system prompt and tools are the agent's as the call is built, which a
+// compaction's snapshot may have replaced.
+func (a *Agent) call(ctx context.Context, s *Session, runID string, gen *generation, pendingMark *int) (response, Context, counted, error) {
 	compacted, recovered := false, false
 	for {
 		msgs := s.Conversation.Messages()
+		prompt := a.prompt()
 		sent := a.sessionBase(s, prompt).WithMessages(msgs)
 		predicted := sent.Request()
 		pred := a.predict(ctx, sent)
@@ -114,7 +117,7 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 			compacted = true
 			// A compaction that fails leaves the conversation as it was,
 			// which may still fit: the window bound decides.
-			if err := a.autoCompact(ctx, s, runID, prompt, pendingMark, event.CompactThreshold); err != nil && ctx.Err() != nil {
+			if err := a.autoCompact(ctx, s, runID, pendingMark, event.CompactThreshold); err != nil && ctx.Err() != nil {
 				return response{}, Context{}, counted{}, fmt.Errorf("call model: %w", ctx.Err())
 			}
 			continue
@@ -164,7 +167,7 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 		}
 		recovered, compacted = true, true
 		a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
-		if cerr := a.autoCompact(ctx, s, runID, prompt, pendingMark, event.CompactOverflow); cerr != nil {
+		if cerr := a.autoCompact(ctx, s, runID, pendingMark, event.CompactOverflow); cerr != nil {
 			return response{}, Context{}, counted{}, errors.Join(err, cerr)
 		}
 	}
@@ -173,12 +176,12 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 // autoCompact compacts the conversation in the middle of a turn, whose
 // undelivered messages begin at *pendingMark, or -1 for none. They stay
 // after the kept messages, and *pendingMark moves with them.
-func (a *Agent) autoCompact(ctx context.Context, s *Session, runID string, prompt []Section, pendingMark *int, reason string) error {
+func (a *Agent) autoCompact(ctx context.Context, s *Session, runID string, pendingMark *int, reason string) error {
 	stored := s.Conversation.Len()
 	if *pendingMark >= 0 {
 		stored = *pendingMark
 	}
-	n, err := a.compact(ctx, s, runID, prompt, stored, reason, "")
+	n, err := a.compact(ctx, s, runID, a.prompt(), stored, reason, "")
 	if err != nil {
 		return err
 	}

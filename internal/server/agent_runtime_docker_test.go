@@ -3,11 +3,13 @@
 package server_test
 
 import (
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/erlidev/eika/internal/agentdef"
+	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/server"
 	"github.com/erlidev/eika/internal/session"
@@ -117,22 +119,178 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 			t.Fatalf("%s = %d", route, rec.Code)
 		}
 	}
+	// An edit to the definition waits for the next compaction: runs and the
+	// preview keep the prompt the snapshot pinned.
 	decodeBody[map[string]any](t, request(t, a.Server, "PUT", "/api/agents/eika", map[string]any{"prompt": ""}), 200)
-	scripted = a.script(providertest.Text("empty prompt reply"))
-	a.postMessage(t, home.ID, "again", "", 202)
+	scripted = a.script(providertest.Text("big reply"), providertest.Text("small reply"), providertest.Text("SUMMARY"),
+		providertest.Text("empty prompt reply"), providertest.Text("pinned reply"))
+	// Home keeps 15% of the 32,768-token window: the small last turn, not the
+	// big one before it.
+	a.postMessage(t, home.ID, "big "+strings.Repeat("x", 24000), "", 202)
 	a.waitIdle(t, home.ID)
-	if got := scripted.Requests()[0].System; !strings.HasPrefix(got, "About me\nfirst snapshot") {
-		t.Fatalf("empty override = %q", got)
+	a.postMessage(t, home.ID, "small", "", 202)
+	a.waitIdle(t, home.ID)
+	for i, req := range scripted.Requests() {
+		if req.System != reqs[0].System {
+			t.Fatalf("request %d after the edit changed the system prompt: %q", i, req.System)
+		}
+	}
+	preview = decodeBody[struct {
+		Sections []struct {
+			Text string `json:"text"`
+		} `json:"sections"`
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}](t, request(t, a.Server, "GET", "/api/sessions/"+home.ID+"/context", nil), 200)
+	if len(preview.Sections) == 0 || preview.Sections[0].Text != "agent rules" {
+		t.Fatalf("preview sections = %+v, want the pinned prompt first", preview.Sections)
+	}
+	compactHome(t, a, home.ID)
+	a.postMessage(t, home.ID, "after", "", 202)
+	a.waitIdle(t, home.ID)
+	afterCompaction := scripted.Requests()[3].System
+	if !strings.HasPrefix(afterCompaction, "About me\nchanged snapshot") {
+		t.Fatalf("system after compaction = %q, want the empty prompt and the new preamble", afterCompaction)
 	}
 	if rec := request(t, a.Server, "DELETE", "/api/agents/eika", nil); rec.Code != 204 {
 		t.Fatal(rec.Code)
 	}
-	scripted = a.script(providertest.Text("builtin reply"))
 	a.postMessage(t, home.ID, "reset", "", 202)
 	a.waitIdle(t, home.ID)
+	if got := scripted.Requests()[4].System; got != afterCompaction {
+		t.Fatalf("reset applied before a compaction: %q", got)
+	}
 	builtin, _ := agentdef.Lookup("eika")
-	if got := scripted.Requests()[0].System; !strings.HasPrefix(got, strings.TrimSpace(builtin.Prompt)+"\n\n") {
-		t.Fatalf("reset prompt = %q", got)
+	cfg = decodeBody[struct {
+		Resolved struct {
+			ProfileID    string   `json:"profile_id"`
+			Model        string   `json:"model"`
+			ChatPrompt   string   `json:"chat_prompt"`
+			Instructions string   `json:"instructions"`
+			Tools        []string `json:"tools"`
+		} `json:"resolved"`
+	}](t, request(t, a.Server, "GET", configPath, nil), 200)
+	if cfg.Resolved.ChatPrompt != builtin.Prompt {
+		t.Fatalf("configuration prompt = %q, want the definition's as it is now", cfg.Resolved.ChatPrompt)
+	}
+}
+
+// compactHome compacts a session through the API and waits for it.
+func compactHome(t *testing.T, a *api, id string) {
+	t.Helper()
+	decodeBody[runWire](t, request(t, a.Server, "POST", "/api/sessions/"+id+"/compact", map[string]any{}), 202)
+	if state := a.waitIdle(t, id); state.Run == nil || state.Run.State != "done" {
+		t.Fatalf("compaction run = %+v", state.Run)
+	}
+}
+
+// requestTools names the tools a request offered.
+func requestTools(req provider.Request) []string {
+	var names []string
+	for _, def := range req.Tools {
+		names = append(names, def.Name)
+	}
+	return names
+}
+
+// A snapshot from before a tool joined Eika's definition keeps the list it
+// pinned, request after request, until a compaction
+// rebuilds it with the tool (runtime.md 4).
+func TestHomeToolListIsRebuiltOnlyAtCompaction(t *testing.T) {
+	a := newAPI(t)
+	ctx := t.Context()
+	home, err := a.store.EnsureHomeSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.assignClasses(t, map[string]any{"main": "test-model"})
+	eika, _ := agentdef.Lookup("eika")
+	older := []string{"project_list", "web_search"}
+	entry, err := session.PreambleEntry("Time zone\nUTC\n\nLocale\nunspecified", &eika.Prompt, older)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.AppendEntry(ctx, home.ID, entry); err != nil {
+		t.Fatal(err)
+	}
+	scripted := a.script(providertest.Text("big reply"), providertest.Text("small reply"), providertest.Text("SUMMARY"),
+		providertest.Text("next reply"), providertest.Text("after reply"))
+	a.postMessage(t, home.ID, "big "+strings.Repeat("x", 24000), "", 202)
+	a.waitIdle(t, home.ID)
+	a.postMessage(t, home.ID, "small", "", 202)
+	a.waitIdle(t, home.ID)
+	for i, req := range scripted.Requests() {
+		if got := requestTools(req); !slices.Equal(got, older) {
+			t.Fatalf("request %d tools = %v, want the pinned %v", i, got, older)
+		}
+	}
+	compactHome(t, a, home.ID)
+	if got := requestTools(scripted.Requests()[2]); !slices.Equal(got, older) {
+		t.Errorf("summary request tools = %v, want the prefix it shares", got)
+	}
+
+	// Each run is built from the store, as after a restart: both read the
+	// replacement snapshot, which lists the definition's tools now.
+	for _, text := range []string{"next", "after"} {
+		a.postMessage(t, home.ID, text, "", 202)
+		a.waitIdle(t, home.ID)
+	}
+	reqs := scripted.Requests()
+	for _, req := range reqs[3:] {
+		if got := requestTools(req); !slices.Equal(got, eika.Tools) {
+			t.Errorf("tools after compaction = %v, want %v", got, eika.Tools)
+		}
+	}
+	if reqs[3].System != reqs[4].System || !reflect.DeepEqual(reqs[3].Tools, reqs[4].Tools) {
+		t.Error("the replacement snapshot changed between runs")
+	}
+	path, err := a.store.SessionPath(ctx, home.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := session.SnapshotOf(path)
+	if err != nil || snap.Prompt == nil || *snap.Prompt != eika.Prompt || !slices.Equal(snap.Tools, eika.Tools) {
+		t.Fatalf("stored snapshot = %+v, %v", snap, err)
+	}
+}
+
+// A snapshot stored before definitions were pinned is pinned on the next
+// run with the same text, so the prefix it sent stays.
+func TestHomeSnapshotWithoutADefinitionIsPinned(t *testing.T) {
+	a := newAPI(t)
+	ctx := t.Context()
+	home, err := a.store.EnsureHomeSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.assignClasses(t, map[string]any{"main": "test-model"})
+	text := "About me\nfrom an older build"
+	entry, err := session.TextEntry(store.KindPreamble, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.AppendEntry(ctx, home.ID, entry); err != nil {
+		t.Fatal(err)
+	}
+	scripted := a.script(providertest.Text("first"), providertest.Text("second"))
+	a.postMessage(t, home.ID, "one", "", 202)
+	a.waitIdle(t, home.ID)
+	decodeBody[map[string]any](t, request(t, a.Server, "PUT", "/api/agents/eika", map[string]any{"prompt": "edited"}), 200)
+	a.postMessage(t, home.ID, "two", "", 202)
+	a.waitIdle(t, home.ID)
+	reqs := scripted.Requests()
+	eika, _ := agentdef.Lookup("eika")
+	if !strings.HasPrefix(reqs[0].System, strings.TrimSpace(eika.Prompt)+"\n\n"+text) || reqs[1].System != reqs[0].System {
+		t.Fatalf("systems = %q, %q, want the definition and the old text, unchanged by the edit", reqs[0].System, reqs[1].System)
+	}
+	path, err := a.store.SessionPath(ctx, home.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := session.SnapshotOf(path)
+	if err != nil || snap.Text != text || snap.Prompt == nil || *snap.Prompt != eika.Prompt || !slices.Equal(snap.Tools, eika.Tools) {
+		t.Fatalf("stored snapshot = %+v, %v", snap, err)
 	}
 }
 

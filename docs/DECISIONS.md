@@ -2249,7 +2249,9 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   unset (the built-in text is shown) or set, empty included. Both unset is a
   reset. Tools, limits and compaction prompts are shown or left out: the API
   refuses them. The editor checks the 64 KiB byte limit and NUL as the server
-  does, so a text it would refuse is not sent. A save applies from the next run.
+  does, so a text it would refuse is not sent. A save of the class applies from
+  the next run; a save of the prompt reaches a session at its next compaction
+  (P2-21, "Home compaction cut and snapshot refresh").
 - **Instructions are saved together.** The API replaces both texts at once, so
   the tab has one Save for About me and Rules. A save changes the stored text
   only: a running session keeps its preamble snapshot until compaction rebuilds it.
@@ -2285,3 +2287,36 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   was. The `as_of`, entry range and compaction count attributes of the
   design's `<summary>` tag, and its history footer, wait for the history
   tools (P2-23, P2-24); the board's heading states its time instead.
+
+## Home compaction cut and snapshot refresh (P2-21)
+
+- **Home cuts at a user-turn boundary, keeping a share of the window**
+  (2026-11-15). `CompactionSettings.KeepRecentShare` (15%, set by `newAgent`
+  for home only) keeps from the oldest user message whose tail fits the share,
+  and always the newest whole turn. Every user message is a boundary, steering
+  included: the calls before it are answered. A newest turn larger than the
+  share falls back to Pi's cut with the share as its budget, which splits it,
+  as `runtime.md` 11 says. The share is a constant, not a setting: P2-22 adds
+  the idle settings, and the share can join them if use asks for it. The
+  `keep_recent_tokens` setting still applies to subagent, routine and legacy
+  sessions, and to a home model whose window is unknown. Rejected: deriving
+  the share from `keep_recent_tokens`, which would make one setting mean two
+  things.
+- **The snapshot pins the definition's prompt and tools**, in the preamble
+  entry's payload (`definition: {prompt, tools}`), not a new entry kind or
+  table: the entry is already replaced only by compaction, in the same
+  transaction as the summary, so the three parts of the prefix change together
+  and never mix. Runs and the previews build from it; the class and model do
+  not snapshot, since a model change misses the cache anyway. A pinned tool
+  list only narrows the definition's: a tool a build adds waits for the next
+  compaction, one it drops is gone at once, and an agent never gets a tool
+  its definition lacks. A snapshot stored before this change has text alone;
+  the next run stores it again with the same text and the definition as it is
+  then, so the prefix it sent stays and later edits wait for a compaction.
+  The entries API still returns a preamble's text alone.
+- **A compaction inside a run swaps the definition in at once.** The refresh
+  callback returns the new preamble, prompt and tool registry, and the agent's
+  next call is built from them (`Agent.useSnapshot`); the summary call still
+  uses the prefix it shares. Rejected: keeping the old prompt and tools until
+  the run ends, which would send a new preamble beside an old prompt for the
+  rest of the run and miss the cache once more at the next run.

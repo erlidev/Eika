@@ -9,6 +9,12 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-21 cuts home at a user-turn boundary, keeping up to 15% of the
+  window and the newest whole turn; a larger turn falls back to Pi's split. The
+  preamble entry now pins the definition's prompt and tools, which only compaction
+  rebuilds, mid-run included; old snapshots are pinned with the same text. The
+  share is a constant; P2-22 may make it a setting. `make check` passes.
+
 - 2026-11-15: P2-20 compacts home into a `[Subagents]` board, rendered by code
   from the children's rows after the summary call, and a rolling `[Conversation]`
   from Eika's new summary and update prompts. Subagent and routine sessions keep

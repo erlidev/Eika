@@ -19,9 +19,11 @@ Rules:
 // and the extra instructions, each present only when it has text.
 func (a *Agent) prompt() []Section {
 	base := ChatPrompt
+	a.snapshotMu.RLock()
 	if a.opts.BasePrompt != nil {
 		base = *a.opts.BasePrompt
 	}
+	a.snapshotMu.RUnlock()
 	var sections []Section
 	if text := strings.TrimSpace(base); text != "" {
 		sections = append(sections, newSection(SectionBase, text))
