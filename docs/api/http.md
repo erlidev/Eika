@@ -292,7 +292,7 @@ ModelContext that has `call`; `404` for a record of another session.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base` or `instructions`. The system prompt is the sections' texts joined by a blank line. |
+| `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base`, `instructions` or `preamble`. The system prompt is the sections' texts joined by a blank line. |
 | `tools` | array | The tool schemas sent: `{name, description, schema, source, tokens}`, where `source` is `builtin` or `mcp`. |
 | `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` and `reasoning_items` only when the model preserves thinking. |
 | `message_tokens` | number | The estimated size of the messages. |
@@ -957,6 +957,8 @@ stores them.
 
 | Key | Value | Meaning |
 |---|---|---|
+| `time_zone` | string | IANA time zone for new agent preamble snapshots; defaults to UTC. |
+| `locale` | string | Locale for new agent preamble snapshots, 1 to 64 ASCII letters, digits or hyphens; unspecified by default. |
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a chat model. |
 | `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
 | `sandbox_image` | string | The image the home computer's container is created from. A container that exists keeps its image, so a change reaches the home computer only when its container is made again. |

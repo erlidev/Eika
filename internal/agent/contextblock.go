@@ -60,3 +60,18 @@ func (a *Agent) stamp(m provider.Message) provider.Message {
 	m.Context = contextBlock(fields...)
 	return m
 }
+
+// PreambleLocation returns the zone stored in the snapshot, or UTC.
+func PreambleLocation(text string) *time.Location {
+	text = "\n\n" + text
+	start := strings.LastIndex(text, "\n\nTime zone\n")
+	if start < 0 {
+		return time.UTC
+	}
+	zone := strings.SplitN(text[start+len("\n\nTime zone\n"):], "\n", 2)[0]
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}

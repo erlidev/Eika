@@ -107,7 +107,7 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 	compacted, recovered := false, false
 	for {
 		msgs := s.Conversation.Messages()
-		sent := a.base(prompt).WithMessages(msgs)
+		sent := a.sessionBase(s, prompt).WithMessages(msgs)
 		predicted := sent.Request()
 		pred := a.predict(ctx, sent)
 		if !compacted && a.shouldCompact(pred) {

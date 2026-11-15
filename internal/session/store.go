@@ -57,12 +57,21 @@ func (s *Store) Load(ctx context.Context, sessionID string) (*agent.Session, err
 	if err != nil {
 		return nil, err
 	}
-	messages, err := s.tree.Messages(ctx, sessionID)
+	path, err := s.tree.Path(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	messages, err := Messages(path)
+	if err != nil {
+		return nil, err
+	}
+	preamble, err := Preamble(path)
 	if err != nil {
 		return nil, err
 	}
 	return &agent.Session{
 		ID:           sess.ID,
+		Preamble:     preamble,
 		ComputerID:   sess.ComputerID,
 		Conversation: agent.NewConversation(messages...),
 	}, nil

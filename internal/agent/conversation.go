@@ -67,6 +67,7 @@ func (c *Conversation) Len() int {
 type Session struct {
 	ID           string
 	ComputerID   string
+	Preamble     string
 	Conversation *Conversation
 }
 

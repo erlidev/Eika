@@ -9,6 +9,7 @@ import (
 
 	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/provider/providertest"
+	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
 
@@ -56,15 +57,39 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 	if len(preview.Tools) != 1 || preview.Tools[0].Name != "web_search" {
 		t.Fatalf("preview tools = %+v", preview.Tools)
 	}
+	if err := a.store.SetInstructions(ctx, store.GlobalInstructions{AboutMe: "first snapshot"}); err != nil {
+		t.Fatal(err)
+	}
 	scripted := a.script(providertest.Text("reply"))
 	a.postMessage(t, home.ID, "hello", "", 202)
 	a.waitIdle(t, home.ID)
 	reqs := scripted.Requests()
-	if len(reqs) != 1 || reqs[0].System != "agent rules" || len(reqs[0].Tools) != 1 || reqs[0].Tools[0].Name != "web_search" {
+	if len(reqs) != 1 || !strings.HasPrefix(reqs[0].System, "agent rules\n\n") || len(reqs[0].Tools) != 1 || reqs[0].Tools[0].Name != "web_search" {
 		t.Fatalf("requests = %+v", reqs)
 	}
+
+	if !strings.Contains(reqs[0].System, "first snapshot") {
+		t.Fatalf("missing snapshot: %q", reqs[0].System)
+	}
+	path, err := a.store.SessionPath(ctx, home.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := session.Preamble(path)
+	if err != nil || !strings.Contains(snapshot, "first snapshot") {
+		t.Fatalf("stored snapshot = %q, %v", snapshot, err)
+	}
+	if err := a.store.SetInstructions(ctx, store.GlobalInstructions{AboutMe: "changed snapshot"}); err != nil {
+		t.Fatal(err)
+	}
+	scripted = a.script(providertest.Text("again"))
+	a.postMessage(t, home.ID, "again", "", 202)
+	a.waitIdle(t, home.ID)
+	if got := scripted.Requests()[0].System; got != reqs[0].System {
+		t.Fatalf("snapshot changed: %q", got)
+	}
 	calls, err := a.store.ModelCalls(ctx, home.ID)
-	if err != nil || len(calls) != 1 {
+	if err != nil || len(calls) != 2 {
 		t.Fatalf("recorded calls = %+v, %v", calls, err)
 	}
 	if calls[0].Agent != "eika" || calls[0].Class != "deep" {
@@ -81,7 +106,7 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 	scripted = a.script(providertest.Text("empty prompt reply"))
 	a.postMessage(t, home.ID, "again", "", 202)
 	a.waitIdle(t, home.ID)
-	if got := scripted.Requests()[0].System; got != "" {
+	if got := scripted.Requests()[0].System; !strings.HasPrefix(got, "About me\nfirst snapshot") {
 		t.Fatalf("empty override = %q", got)
 	}
 	if rec := request(t, a.Server, "DELETE", "/api/agents/eika", nil); rec.Code != 204 {
@@ -91,7 +116,7 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 	a.postMessage(t, home.ID, "reset", "", 202)
 	a.waitIdle(t, home.ID)
 	builtin, _ := agentdef.Lookup("eika")
-	if got := scripted.Requests()[0].System; got != strings.TrimSpace(builtin.Prompt) {
+	if got := scripted.Requests()[0].System; !strings.HasPrefix(got, strings.TrimSpace(builtin.Prompt)+"\n\n") {
 		t.Fatalf("reset prompt = %q", got)
 	}
 }

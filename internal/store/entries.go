@@ -85,6 +85,24 @@ func (s *Store) AppendEntry(ctx context.Context, sessionID string, e Entry) (Ent
 	return out, nil
 }
 
+// AppendEntries appends entries under one lock and commits them together.
+func (s *Store) AppendEntries(ctx context.Context, sessionID string, entries ...Entry) error {
+	return s.tx(ctx, func(q querier) error {
+		head, err := lockSessionHead(ctx, q, sessionID)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			added, err := insertEntry(ctx, q, sessionID, head, entry)
+			if err != nil {
+				return err
+			}
+			head = added.ID
+		}
+		return setHead(ctx, q, sessionID, head)
+	})
+}
+
 // SetSessionHead points a session's head at one of its own entries, which is
 // how a branch starts: the next append hangs off that entry instead of the
 // one that was last written. An empty entryID clears the head, so the session

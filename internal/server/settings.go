@@ -110,7 +110,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 // home computer; when its container refuses, the answer is an error and the
 // values stay saved.
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeJSON[map[string]json.RawMessage](r)
+	req, err := decodeUTF8JSON[map[string]json.RawMessage](r)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -201,6 +201,20 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		return nil
 	}
 	switch key {
+	case "time_zone", "locale":
+		var text string
+		if json.Unmarshal(value, &text) != nil {
+			return invalidf("%s must be a string", key)
+		}
+		if key == "time_zone" {
+			if _, err := time.LoadLocation(text); err != nil || text == "" || text == "Local" {
+				return invalidf("time_zone must be an IANA time zone")
+			}
+		} else if len(text) == 0 || len(text) > 64 || strings.IndexFunc(text, func(r rune) bool {
+			return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-'
+		}) >= 0 {
+			return invalidf("locale must be 1 to 64 letters, digits or hyphens")
+		}
 	case settingDefaultModel:
 		var name string
 		if err := json.Unmarshal(value, &name); err != nil {

@@ -132,15 +132,18 @@ func TestHomeRunRecordsWebChannelAndContext(t *testing.T) {
 	a.postMessage(t, home.ID, "hello", "", 202)
 	a.waitIdle(t, home.ID)
 	entries, err := a.store.SessionPath(t.Context(), home.ID)
-	if err != nil || len(entries) != 2 {
+	if err != nil || len(entries) != 3 {
 		t.Fatalf("entries = %+v, %v", entries, err)
 	}
-	for _, entry := range entries {
+	if entries[0].Kind != store.KindPreamble || entries[0].Channel != "" {
+		t.Fatalf("preamble entry = %+v", entries[0])
+	}
+	for _, entry := range entries[1:] {
 		if entry.Channel != "web" {
 			t.Errorf("%s channel = %q", entry.Kind, entry.Channel)
 		}
 	}
-	message, ok, err := session.Message(entries[0])
+	message, ok, err := session.Message(entries[1])
 	if err != nil || !ok || message.Role != provider.RoleUser || !strings.Contains(message.Context, "\nchannel: web\n") {
 		t.Fatalf("stored user message = %+v, %v", message, err)
 	}

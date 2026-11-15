@@ -5,7 +5,7 @@ import type { ThinkingSwitch } from "@/api/types/providers";
 import type { Message } from "@/api/types/sessions";
 
 /** SectionKind names a part of the system prompt. */
-export type SectionKind = "base" | "instructions";
+export type SectionKind = "base" | "instructions" | "preamble";
 
 /** ContextSection is one part of the system prompt, with its estimated size. */
 export type ContextSection = {

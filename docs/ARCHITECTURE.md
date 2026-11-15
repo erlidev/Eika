@@ -272,10 +272,13 @@ views and per-day compute aggregates are later UI work.
 
 ### Context layout and prefix stability
 
-Requests contain the base system prompt, instructions, sorted tool schemas,
-and the conversation. After compaction the conversation starts with its
-summary and then the retained messages. There is no preamble entry, memory
-index, skills catalog or generic plugin catalog yet.
+Requests contain the base system prompt, instructions, an agent session's
+stored preamble, sorted tool schemas, and the conversation. The preamble holds
+global and project instructions, active projects for home, delegable agents,
+the project and brief, and the user's time zone and locale. A run stores the
+first snapshot; compaction stores its replacement and summary in one transaction.
+After compaction the conversation starts with its summary and retained messages.
+Memory, skills and plugin catalogs are not present yet.
 
 Both protocols serialize request fields deterministically. Stored tool arguments
 and reasoning items retain their original text when JSON encoding would change
@@ -286,12 +289,11 @@ with PostgreSQL. It covers steering, follow-ups, retries, stalls, cut-off and
 refused responses, interruption, restart, resume and compaction. Each request
 extends or repeats the accepted conversation prefix. Compaction starts a new
 chain; its summary request reuses the old prefix. The output limit may decrease
-as the window fills. Agent definitions, preamble replacement and notices remain
+as the window fills. Agent definition replacement and notices remain
 in [the runtime design](design/runtime.md#4-context-layout).
 
 Every user-side message ends with a `<context>` block (`agent/contextblock.go`)
-that states the time it was sent to the minute, in `Options.Location` (UTC until
-the preamble carries the user's zone), read from `Options.Clock`. It is written
+that states the time it was sent to the minute, in `Options.Location` (UTC when no zone is stored), read from `Options.Clock`. It is written
 once, when the loop first holds the message (`Run`, `Steer`, `FollowUp`), kept in
 `Message.Context` beside `Content` and stored with the message, so a resumed
 session sends the same bytes and the prefix never changes under it. A request

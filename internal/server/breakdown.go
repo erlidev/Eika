@@ -96,6 +96,12 @@ func (s *Server) previewNext(ctx context.Context, sess store.Session, cfg runCon
 	if err != nil {
 		return agent.Context{}, nil, nil, err
 	}
+	if sess.Agent != "" && loaded.Preamble == "" {
+		loaded.Preamble, err = s.buildPreamble(ctx, sess)
+		if err != nil {
+			return agent.Context{}, nil, nil, err
+		}
+	}
 	ctr, release = s.counterFor(ctx, sess.ID, cfg.model, cfg.modelOK)
 	ag := s.newAgent(nil, sess, cfg, nil, s.offeredMCP(), agent.Options{Logger: s.log, Counter: ctr})
 	if next, err = ag.Preview(loaded); err != nil {

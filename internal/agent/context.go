@@ -35,6 +35,8 @@ const (
 	SectionBase SectionKind = "base"
 	// SectionInstructions is Options.Instructions.
 	SectionInstructions SectionKind = "instructions"
+	// SectionPreamble is the session snapshot.
+	SectionPreamble SectionKind = "preamble"
 )
 
 // Section is one named part of the system prompt. A system prompt is its
@@ -181,7 +183,15 @@ func (c Context) WithMessages(msgs []provider.Message) Context {
 // assemble builds the request for the next model call on s from the system
 // prompt sections of the run.
 func (a *Agent) assemble(s *Session, prompt []Section) Context {
-	return a.base(prompt).WithMessages(s.Conversation.Messages())
+	return a.sessionBase(s, prompt).WithMessages(s.Conversation.Messages())
+}
+
+func (a *Agent) sessionBase(s *Session, prompt []Section) Context {
+	c := a.base(prompt)
+	if s.Preamble != "" {
+		c.Sections = append(c.Sections, newSection(SectionPreamble, s.Preamble))
+	}
+	return c
 }
 
 // base returns the request the run's model calls share, with no messages:
