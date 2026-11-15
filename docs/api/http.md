@@ -534,6 +534,17 @@ when the computer could not be started, or when the conversation has nothing
 older than what a compaction keeps. A compaction that fails ends the run in
 `error`, with the conversation as it was.
 
+### `POST /api/sessions/{id}/cancel`
+
+Stops a subagent's current assignment through the lifecycle service, which holds
+it from before its run exists until its report is kept, so it works whenever the
+state is `running` or `waiting`. No body. The subagent ends `cancelled` and stays
+resumable; a subagent with nothing to stop is returned unchanged. It publishes
+`session.updated` on `global`.
+
+`200` with the `Session`. `404` when there is none. `409` when the session is
+not a subagent.
+
 ### `POST /api/runs/{id}/abort`
 
 Cancels the run and waits for its goroutine to stop. `200` with the final

@@ -107,7 +107,10 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 session `home-main`, as the harness makes it at start, and every scenario opens
 at `/`, where Chat shows it. `home-empty` leaves it empty; `home-world` has it
 with named subagents in different states, with stable IDs for session route
-tests. The workbench ones share a story: computers in several states, session
+tests. `activity` extends it for the Activity page: two projects (Garden, Kitchen) and
+subagents in every state, two waiting for different reasons, and a run going on
+each running or waiting one so Cancel works (aborting it records the subagent
+`cancelled`, as the harness does); it opens at `/activity`. The workbench ones share a story: computers in several states, session
 `ses-backoff` in computer `cx-retries` (which the mock's own tests address), and
 the same transcript on `home-main`, which is the one the UI can open.
 `chat` queues a web search reply. `mcp` adds five MCP servers, one in each

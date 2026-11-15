@@ -21,9 +21,11 @@ export type ToolCardProps = {
    * `question.asked` that follows it, so this has to react to the change.
    */
   open?: boolean;
+  /** readOnly draws a card that waits on the user without the controls that answer it. */
+  readOnly?: boolean;
 };
 
-export function ToolCard({ call, open = false }: ToolCardProps) {
+export function ToolCard({ call, open = false, readOnly = false }: ToolCardProps) {
   const [chosen, setChosen] = useState<boolean | null>(null);
   const expanded = chosen ?? open;
   const renderer = rendererFor(call.name);
@@ -60,7 +62,7 @@ export function ToolCard({ call, open = false }: ToolCardProps) {
         <StatusIcon call={call} />
       </CollapsibleTrigger>
       <CollapsibleContent className="border-t p-2">
-        <renderer.Body call={call} />
+        <renderer.Body call={call} readOnly={readOnly} />
       </CollapsibleContent>
     </Collapsible>
   );

@@ -2032,6 +2032,44 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   removes dead code rather than a second way in. Rejected: routing the
   workbench at another path for the visual suite, which keeps a second
   workbench alive; its specs for the chat list and panels went with its route.
+## Activity
+
+- **Cancel is a session route over the lifecycle service** (2026-11-15, P3-09).
+  The board reads `GET /api/sessions` and keeps the sessions of kind `subagent`,
+  but Cancel is `POST /api/sessions/{id}/cancel`, which calls
+  `Service.Cancel`. Aborting the run (`POST /api/runs/{id}/abort`) needs a run
+  id, and the service holds an assignment before its run exists and between its
+  first run and the report-draft retry, so Cancel would be disabled while the
+  subagent is running. The route refuses a session that is not a subagent with
+  `409`, and cancelling one with nothing to stop changes nothing.
+- **A row says what the wire knows.** The line under a name is the waiting reason,
+  else the first line of the report, else of the brief. The design's "last tool
+  call" needs a per-subagent activity field or the `activity` topic (P2-17,
+  only if `session.updated` proved too coarse); a row would otherwise subscribe to
+  every subagent's session. The open view streams every call.
+- **The read-only view is `SessionView` with a flag, and the store is guarded.**
+  `readOnly` drops the composer, status bar, abort key and rewind, and reaches
+  the tool cards, so an `ask_user` or MCP request shows what is asked with no
+  control to answer it: no control moves or stops a session Eika owns beyond Cancel. The session store holds one
+  session and opens the next in an effect, so `Transcript` renders nothing from
+  a store that holds another session than its own; switching subagents never
+  flashes the last one.
+- **Opening a session mid-turn misses the start of the turn, as Chat does.**
+  A replay sends stored entries only, and the run status carries no partial
+  text, so a view opened while a subagent is answering shows the deltas from then
+  on, and the whole answer once its entry is stored. Chat reloaded mid-turn
+  behaves the same. No mechanism was invented for it: a per-turn event replay
+  would be a server change for both views. Rejected for P3-09.
+- **A session's draft is parked while another session is open.** The store holds
+  one session's transcript; `open` parks the composer state (draft, images,
+  model choice) under the session it leaves and restores it on return, so
+  watching a subagent does not clear Chat's unsent message. Rejected: moving the
+  draft out of the store, which rewind and the composer both read through it.
+- **A reconnect or a drop refreshes every session query.** An event lost while
+  the socket was down says nothing about which state changed, so
+  `useSessionUpdates` invalidates the session lists and open sessions on
+  `onReopen` and `bus.dropped`, as the open transcript already replays.
+
 - **The keyboard is handled by padding, not by moving the composer.** The shell
   is `100dvh`, and the meta viewport asks for `interactive-widget=resizes-content`,
   which resizes the page where the browser honours it. Where it does not

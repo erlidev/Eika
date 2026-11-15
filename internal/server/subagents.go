@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"path"
 	"strings"
 	"time"
@@ -165,6 +166,33 @@ func (s *Server) finalMessage(ctx context.Context, child store.Session) (string,
 		}
 	}
 	return "", nil
+}
+
+// handleCancelSubagent stops a subagent's current assignment through the
+// lifecycle service, which holds it from before its run exists until its
+// report is kept, and answers with the subagent as it ended. Cancelling one
+// with nothing to stop changes nothing.
+func (s *Server) handleCancelSubagent(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.deps.Store.Session(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if sess.Kind != store.SessionSubagent {
+		s.fail(w, r, conflictf("session %s is not a subagent", sess.ID))
+		return
+	}
+	if s.subagents == nil {
+		s.fail(w, r, conflictf("subagents are unavailable"))
+		return
+	}
+	cancelled, err := s.subagents.Cancel(r.Context(), sess.ParentSessionID, sess.Name)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.log.Info("subagent cancelled", "session_id", sess.ID)
+	s.writeSession(w, r, http.StatusOK, cancelled)
 }
 
 // refuseSubagent refuses a message or compaction posted to a subagent's

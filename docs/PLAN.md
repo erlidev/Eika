@@ -187,7 +187,7 @@ Check by hand here: chat with Eika in the new shell on the bench model.
 - [x] **P2-15**: Add durable notices and background turns. This is the largest
       package of the stage: a run starts only from a user message today, and
       queued messages live in memory.
-- [ ] **P3-09**: Build Activity and the read-only session view, live from
+- [x] **P3-09**: Build Activity and the read-only session view, live from
       `session.updated`, with its scenarios.
 
 **Exit A:** in a desktop browser, on the bench model, "look into X and keep notes
@@ -457,10 +457,10 @@ The mobile-first app. Design: `design/interface.md`.
             second channel (`docs/DEFERRED.md`, channels).
       - [ ] **P3-06**: Add the touch composer.
       - [ ] **P3-08**: Add remaining cards and notices.
-- [ ] Activity page: subagents and their states, and a read-only live view of each
+- [x] Activity page: subagents and their states, and a read-only live view of each
       (the session view reused, no composer) with cancel. Steering goes through
       Eika.
-      - [ ] **P3-09**: Build Activity and the read-only session view.
+      - [x] **P3-09**: Build Activity and the read-only session view.
 - [ ] Projects pages: list, detail, instructions editor, and the project's
       subagents (watch only).
       - [ ] **P3-10**: Build project pages and instructions editor.
@@ -489,7 +489,7 @@ The mobile-first app. Design: `design/interface.md`.
       the composer spec.
       - [x] **P3-03**: Add World and matching routes.
       - [ ] **P3-08**: Add Chat card scenarios.
-      - [ ] **P3-09**: Add Activity scenarios.
+      - [x] **P3-09**: Add Activity scenarios.
       - [ ] **P3-16**: Complete phone and touch coverage and measure history.
 - [ ] Remove what is left of the workbench.
       - [ ] **P3-17**: Remove the unused workbench.

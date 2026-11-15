@@ -14,7 +14,9 @@ The session that is open is the `session` feature, not this one.
   called once by the workbench, refetches the lists when a `session.title`
   event says an untitled session was named or a `session.updated` event says
   someone changed one, and the computers when a `computer.state` event on the
-  global topic says the harness recorded the home computer.
+  global topic says the harness recorded the home computer. A reconnect or a
+  `bus.dropped` refetches every session query, since the event that would have
+  said what changed is gone; Activity's subagent board relies on it.
 - `order.ts` is the order. `pinnedFirst` puts pinned chats first, and
   `splitArchived` takes the archived ones out for the sidebar's folded
   Archived heading.

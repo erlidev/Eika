@@ -30,7 +30,8 @@ bar under it (`app/Navigation.tsx`, from the list in `app/pages.ts`), a header,
 and the page in an `Outlet`. It fills `100dvh`, leaves room for the safe
 areas, and keeps the page above the on-screen keyboard
 (`lib/useViewportAnchor`). `app/HaltSlot.tsx` reserves the halt button's place.
-`app/App.tsx` routes `/` to Chat (`features/chat`), the home session.
+`app/App.tsx` routes `/` to Chat (`features/chat`), the home session, and
+`/activity/:sessionId?` to Activity (`features/activity`).
 
 `app/Workbench.tsx` and its sidebar, `panels.tsx` and `CommandPalette.tsx` are
 the earlier three-pane shell. They stay in the tree with no route until P3-17
@@ -51,7 +52,9 @@ Nothing polls. An event invalidates the queries it makes stale:
 `features/session/useSessionStream` for a turn that ended (which also
 refreshes the Context panel's next request and recorded calls), and
 `features/mcp`'s `useMCPEvents` for an MCP server's state on the global
-topic.
+topic, and `features/sessions`'s `useSessionUpdates` for the session lists
+(a subagent's state change reaches Activity there) and, after a reconnect, every
+session query.
 
 ## Keyboard
 

@@ -105,6 +105,7 @@ var routeWire = map[string]wire{
 	"POST /api/sessions/{id}/messages": {status: http.StatusAccepted, request: messageRequest{}, response: runBody{}},
 	"GET /api/sessions/{id}/run":       {status: http.StatusOK, response: runStateResponse{}},
 	"POST /api/sessions/{id}/compact":  {status: http.StatusAccepted, request: compactRequest{}, response: runBody{}},
+	"POST /api/sessions/{id}/cancel":   {status: http.StatusOK, response: sessionBody{}},
 	"POST /api/runs/{id}/abort":        {status: http.StatusOK, response: runBody{}},
 	"POST /api/questions/{id}/answer":  {status: http.StatusNoContent, request: answerRequest{}},
 	"GET /api/tools":                   {status: http.StatusOK, response: toolsResponse{}},

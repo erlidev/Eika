@@ -856,8 +856,7 @@ web/src/
   (Safari); the bar gives way while a keyboard is up. `app/HaltSlot.tsx` is
   the empty place phase 4 mounts the halt button, in the rail and, on a phone,
   the header. Pages not built yet are absent, not disabled.
-- **Chat** (`features/chat`): the page at `/`, the only route besides the MCP
-  OAuth return. It reads `GET /api/home` and renders `features/session`'s
+- **Chat** (`features/chat`): the page at `/`. It reads `GET /api/home` and renders `features/session`'s
   `SessionView` for the home session, so the transcript, the composer and the
   status bar are the session view's. There is no list of chats and no way to
   start one. The status bar's meter shows the last call's fill against the
@@ -865,6 +864,16 @@ web/src/
   method. The UI has no panel for a computer's files, no terminal, and no
   session tree or fork, and the API has no routes for a computer's files or a
   session fork; rewind uses the outline and head routes.
+- **Activity** (`features/activity`): the page at `/activity` and
+  `/activity/:sessionId`. The board lists the subagents (`GET /api/sessions`,
+  kind `subagent`) by their code-owned state: Waiting with its reason, Running,
+  Idle, then Failed and cancelled. It follows `session.updated` on `global`, and
+  reads again after a reconnect or a `bus.dropped`. A subagent opens as
+  `features/session`'s `SessionView` with `readOnly`: the transcript streams, and
+  there is no composer, status bar, abort key or rewind, and a question or MCP
+  request in it takes no answer. Cancel is
+  `POST /api/sessions/{id}/cancel` (the lifecycle service's cancel); steering goes through
+  Eika in Chat.
 - **Workbench** (`app/Workbench.tsx`, `Sidebar.tsx`, `panels.tsx`,
   `CommandPalette.tsx`): the earlier three-pane shell, kept in the tree with
   no route until P3-17 removes it. Its chat list, Run, Context and Tools

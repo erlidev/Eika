@@ -15,7 +15,7 @@ import { useSessionStore } from "@/features/session/store";
 import { failureText } from "@/lib/failure";
 
 /** AskUserBody is the renderer body registered for the `ask_user` tool. */
-export function AskUserBody({ call }: ToolRendererProps) {
+export function AskUserBody({ call, readOnly = false }: ToolRendererProps) {
   const sessionId = useSessionStore((s) => s.sessionId);
   const question = useSessionStore((s) => s.questions.find((q) => q.call_id === call.callId));
   const dismissQuestion = useSessionStore((s) => s.dismissQuestion);
@@ -29,12 +29,16 @@ export function AskUserBody({ call }: ToolRendererProps) {
   const options = question?.options ?? [];
   const allowFreeText = question?.allow_free_text ?? options.length === 0;
 
-  if (!question) {
+  if (!question || readOnly) {
     return (
       <div className="space-y-2">
         <p className="text-sm">{text}</p>
         <p className="text-muted-foreground font-mono text-xs">
-          {call.done ? `answered: ${call.content ?? ""}` : "waiting for the harness…"}
+          {call.done
+            ? `answered: ${call.content ?? ""}`
+            : question
+              ? "waiting for an answer"
+              : "waiting for the harness…"}
         </p>
       </div>
     );

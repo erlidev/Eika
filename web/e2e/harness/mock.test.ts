@@ -1033,6 +1033,37 @@ describe("session storage metadata", () => {
     expect(mock.contractBreaks).toEqual([]);
   });
 
+  it("records a subagent cancelled when its run is aborted, and says so on the stream", async () => {
+    const mock = open("activity");
+    const status = await call(mock, "GET", "/api/sessions/subagent-permit/run");
+    expect(status.body).toMatchObject({ active: true, run: { id: "run-permit" } });
+    const aborted = await call(mock, "POST", "/api/runs/run-permit/abort");
+    expect(aborted.body).toMatchObject({ id: "run-permit", state: "aborted" });
+    const child = await call(mock, "GET", "/api/sessions/subagent-permit");
+    expect(child.body).toMatchObject({ session: { state: "cancelled" } });
+    expect(JSON.stringify(child.body)).not.toContain("waiting_reason");
+    expect((await call(mock, "GET", "/api/sessions/subagent-permit/run")).body).toMatchObject({
+      active: false,
+    });
+    expect((await call(mock, "POST", "/api/runs/run-permit/abort")).status).toBe(409);
+    expect((await call(mock, "POST", "/api/runs/run-nope/abort")).status).toBe(404);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
+  it("cancels a subagent through its session, and refuses what is not one", async () => {
+    const mock = open("activity");
+    const reply = await call(mock, "POST", "/api/sessions/subagent-quotes/cancel");
+    expect(reply.body).toMatchObject({ id: "subagent-quotes", state: "cancelled" });
+    expect(JSON.stringify(reply.body)).not.toContain("waiting_reason");
+    expect(mock.world.runs["run-quotes"]?.state).toBe("aborted");
+    // Nothing left to stop: the subagent is returned as it is.
+    const idle = await call(mock, "POST", "/api/sessions/subagent-seedlings/cancel");
+    expect(idle.body).toMatchObject({ state: "idle" });
+    expect((await call(mock, "POST", "/api/sessions/home-main/cancel")).status).toBe(409);
+    expect((await call(mock, "POST", "/api/sessions/missing/cancel")).status).toBe(404);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
   it("returns the stored code-owned waiting reason", async () => {
     const mock = open("home-world");
     const child = mock.world.sessions.find((row) => row.id === "subagent-plumber");

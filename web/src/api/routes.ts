@@ -31,6 +31,8 @@ import type {
   PostMessage,
   ProbeProvider,
   ProbeResponse,
+  Project,
+  Projects,
   Profile,
   ProfileInput,
   Profiles,
@@ -70,6 +72,18 @@ export async function listChats(signal?: AbortSignal): Promise<Session[]> {
     signal,
   });
   return body.sessions;
+}
+
+/** listSessions lists every session, oldest first: chats, computer sessions, home and subagents. */
+export async function listSessions(signal?: AbortSignal): Promise<Session[]> {
+  const body = await request<{ sessions: Session[] }>("/api/sessions", { signal });
+  return body.sessions;
+}
+
+/** listProjects lists the projects, by slug. */
+export async function listProjects(signal?: AbortSignal): Promise<Project[]> {
+  const body = await request<Projects>("/api/projects", { signal });
+  return body.projects;
 }
 
 /** listComputers lists the computers, oldest first. */
@@ -170,6 +184,11 @@ export function compactSession(id: string, input: CompactRequest): Promise<Run> 
     method: "POST",
     body: input,
   });
+}
+
+/** cancelSubagent stops a subagent's assignment and returns it as it ended. */
+export function cancelSubagent(id: string): Promise<Session> {
+  return request<Session>(`/api/sessions/${encodeURIComponent(id)}/cancel`, { method: "POST" });
 }
 
 /** abortRun cancels a run and waits for it to stop. */

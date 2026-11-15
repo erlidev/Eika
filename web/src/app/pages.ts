@@ -4,7 +4,7 @@
  * is a route in `App.tsx` and an entry here (docs/EXTENDING.md, "Adding a page").
  */
 
-import { MessageCircle } from "lucide-react";
+import { Activity, MessageCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /** Page is one destination of the shell's navigation. */
@@ -21,6 +21,7 @@ export type Page = {
 /** pages is every page the shell links to. */
 export const pages: readonly Page[] = [
   { id: "chat", title: "Chat", path: "/", icon: MessageCircle },
+  { id: "activity", title: "Activity", path: "/activity", icon: Activity },
 ];
 
 /** pageAt finds the page a location belongs to; a path under a page's own belongs to it. */

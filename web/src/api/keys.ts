@@ -5,6 +5,8 @@
 
 /** queryKeys names the cached server state, one entry per route. */
 export const queryKeys = {
+  /** allSessions is every session, which Activity reads the subagents of; it sits under the sessions prefix too. */
+  allSessions: () => ["sessions", "all"] as const,
   /** chats sits under the sessions prefix, so invalidating sessions refreshes it. */
   chats: () => ["sessions", "chats"] as const,
   /** computerSessions sits under the sessions prefix too, for the same reason. */
@@ -36,6 +38,8 @@ export const queryKeys = {
   /** sessionCalls is the prefix of the session's recorded model calls and each one. */
   sessionCalls: (id: string) => ["session", id, "calls"] as const,
   sessionCall: (id: string, callId: string) => ["session", id, "calls", callId] as const,
+  /** projects is the list of projects, which name what a subagent works on. */
+  projects: () => ["projects"] as const,
   profiles: () => ["profiles"] as const,
   /** profileInherited sits under the profiles prefix, so a profile change refreshes it. */
   profileInherited: (modelId: string) => ["profiles", "inherited", modelId] as const,
