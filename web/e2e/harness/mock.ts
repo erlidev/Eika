@@ -317,6 +317,13 @@ export class MockHarness {
 
   private nextId(prefix: string): string {
     this.seq += 1;
+    if (prefix === "ent") {
+      const digits = Array.from(
+        this.seq.toString(32),
+        (c) => "abcdefghijklmnopqrstuvwxyz234567"[parseInt(c, 32)],
+      ).join("");
+      return `b${digits.padStart(19, "a")}`;
+    }
     return `${prefix}-${String(this.seq)}`;
   }
 
@@ -468,6 +475,7 @@ export class MockHarness {
             (await def.handle({
               params: match.slice(1).map(decodeURIComponent),
               query: url.searchParams,
+              rawQuery: url.search.slice(1),
               body,
               raw,
               ...(invalidUtf8 ? { invalidUtf8 } : {}),

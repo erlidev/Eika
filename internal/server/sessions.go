@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -351,6 +354,86 @@ func (s *Server) handleSessionPath(w http.ResponseWriter, r *http.Request) {
 	if body.Messages, err = session.Messages(entries); err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	writeJSON(w, s.log, http.StatusOK, body)
+}
+
+// entriesResponse is a page of entries in write order.
+type entriesResponse struct {
+	SessionID  string      `json:"session_id"`
+	Entries    []entryBody `json:"entries"`
+	NextBefore string      `json:"next_before,omitempty"`
+}
+
+const maxEntryCursorBytes = 1024
+
+func entryPageQuery(r *http.Request) (string, int, error) {
+	q, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return "", 0, invalidf("invalid pagination query")
+	}
+	for key, values := range q {
+		if (key != "before" && key != "limit") || len(values) != 1 {
+			return "", 0, invalidf("invalid pagination query")
+		}
+	}
+	limit := 50
+	if values, ok := q["limit"]; ok {
+		n, err := strconv.Atoi(values[0])
+		if err != nil || n < 1 || n > 100 || strconv.Itoa(n) != values[0] {
+			return "", 0, invalidf("limit must be an integer from 1 to 100")
+		}
+		limit = n
+	}
+	before := q.Get("before")
+	if _, ok := q["before"]; ok && (before == "" || len(before) > maxEntryCursorBytes || !utf8.ValidString(before) || strings.ContainsRune(before, 0)) {
+		return "", 0, invalidf("invalid before cursor")
+	}
+	return before, limit, nil
+}
+
+func (s *Server) handleSessionEntries(w http.ResponseWriter, r *http.Request) {
+	before, limit, err := entryPageQuery(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	id := r.PathValue("id")
+	if _, err = s.deps.Store.Session(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var seq int64
+	if before != "" {
+		var cursor store.Entry
+		cursor, err = s.deps.Store.Entry(r.Context(), before)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && cursor.SessionID != id) {
+			s.fail(w, r, invalidf("invalid before cursor"))
+			return
+		}
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		seq = cursor.Seq
+	}
+	entries, err := s.deps.Store.EntriesBefore(r.Context(), id, seq, limit+1)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	body := entriesResponse{SessionID: id, Entries: make([]entryBody, 0, limit)}
+	if len(entries) > limit {
+		entries = entries[1:]
+		body.NextBefore = entries[0].ID
+	}
+	for _, e := range entries {
+		entry, err := asEntry(e)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		body.Entries = append(body.Entries, entry)
 	}
 	writeJSON(w, s.log, http.StatusOK, body)
 }

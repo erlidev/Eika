@@ -206,6 +206,18 @@ sees.
 `compaction` entry replaces the messages before it with a user message that
 carries its summary and has `"summary": true`, followed by the ones it kept.
 
+### `GET /api/sessions/{id}/entries`
+
+Returns `200` with `session_id` (string), `entries` (Entry array), and optional
+`next_before` (string). Entries are in write order across all branches. The first
+page has the newest entries. `limit` defaults to 50 and must be an integer from
+1 to 100. Pass `next_before` as `before` to get the preceding page. A cursor
+must name an entry in this session. It must be nonempty UTF-8, contain no NUL,
+and be at most 1024 bytes.
+Malformed query encoding, invalid or repeated parameters and unknown
+parameters return `400`; a missing session returns `404`. An empty page has an
+empty array and no cursor. New appends do not change earlier pages.
+
 ### `POST /api/sessions/{id}/head`
 
 `{"entry_id": string}`. Moves the head to one of the session's own entries, so

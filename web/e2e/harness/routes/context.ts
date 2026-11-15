@@ -20,6 +20,7 @@ export type Reply = { status: number; body?: unknown };
 export type Handler = (req: {
   params: string[];
   query: URLSearchParams;
+  rawQuery: string;
   body: Record<string, unknown>;
   /** raw is the body as sent, for a route whose body is not JSON. */
   raw: string;

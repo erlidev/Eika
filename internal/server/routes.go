@@ -64,6 +64,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PATCH /api/sessions/{id}", s.handleUpdateSession)
 	api.HandleFunc("DELETE /api/sessions/{id}", s.handleDeleteSession)
 	api.HandleFunc("GET /api/sessions/{id}/outline", s.handleSessionOutline)
+	api.HandleFunc("GET /api/sessions/{id}/entries", s.handleSessionEntries)
 	api.HandleFunc("GET /api/sessions/{id}/path", s.handleSessionPath)
 	api.HandleFunc("POST /api/sessions/{id}/head", s.handleSetSessionHead)
 	api.HandleFunc("PUT /api/sessions/{id}/tools", s.handleSetSessionTools)

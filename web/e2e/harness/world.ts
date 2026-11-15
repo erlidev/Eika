@@ -389,6 +389,13 @@ export class WorldBuilder {
 
   private id(prefix: string): string {
     this.seq += 1;
+    if (prefix === "ent") {
+      const digits = Array.from(
+        this.seq.toString(32),
+        (c) => "abcdefghijklmnopqrstuvwxyz234567"[parseInt(c, 32)],
+      ).join("");
+      return `a${digits.padStart(19, "a")}`;
+    }
     return `${prefix}-${String(this.seq)}`;
   }
 

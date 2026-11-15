@@ -85,6 +85,7 @@ var routeWire = map[string]wire{
 	"PATCH /api/sessions/{id}":       {status: http.StatusOK, request: updateSessionRequest{}, response: sessionBody{}},
 	"DELETE /api/sessions/{id}":      {status: http.StatusNoContent},
 	"GET /api/sessions/{id}/outline": {status: http.StatusOK, response: outlineResponse{}},
+	"GET /api/sessions/{id}/entries": {status: http.StatusOK, response: entriesResponse{}},
 	"GET /api/sessions/{id}/path":    {status: http.StatusOK, response: pathResponse{}},
 	"POST /api/sessions/{id}/head":   {status: http.StatusOK, request: setHeadRequest{}, response: sessionBody{}},
 	"PUT /api/sessions/{id}/tools":   {status: http.StatusOK, request: setToolsRequest{}, response: sessionBody{}},

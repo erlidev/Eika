@@ -2322,3 +2322,9 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   snapshot, not the one it replaces. Rejected: keeping the old prompt and tools until
   the run ends, which would send a new preamble beside an old prompt for the
   rest of the run and miss the cache once more at the next run.
+
+## Entry pagination
+
+Page entries by session sequence across branches, with an entry ID as the cursor.
+Sequence order stays stable when entries are appended and preserves old history.
+The current branch remains available through the path endpoint.

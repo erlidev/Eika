@@ -207,7 +207,7 @@ What stops a long-lived home session from losing work or growing without bound.
       dialog, and remove profile controls.
 - [x] **P2-20**: Build the board and rolling summary.
 - [x] **P2-21**: Implement the cut and snapshot refresh.
-- [ ] **P2-10**: Add backward pagination.
+- [x] **P2-10**: Add backward pagination.
 - [ ] **P3-05**: Add the paginated transcript.
 - [ ] **P2-23**: Add the history index and backfill.
 - [ ] **P2-24**: Add history search and read tools.
@@ -376,8 +376,8 @@ in the code beside what replaces them.
             notice id derives from the report, so the rescan is safe. Startup
             starts no home turn; notices wait for the next home turn.
       - [ ] **P2-19**: Test process death and explicit resume with Docker.
-- [ ] Paginated entries: `GET /api/sessions/{id}/entries?before=&limit=`.
-      - [ ] **P2-10**: Add backward pagination.
+- [x] Paginated entries: `GET /api/sessions/{id}/entries?before=&limit=`.
+      - [x] **P2-10**: Add backward pagination.
 - [ ] Home compaction (runtime.md 11):
       - the deterministic `[Subagents]` section
       - `[Conversation]` by rolling update, with an assistant-tuned prompt

@@ -893,6 +893,7 @@ describe("user instructions", () => {
         handler({
           params: [project.id],
           query: new URLSearchParams(),
+          rawQuery: "",
           body,
           raw: JSON.stringify(body),
         });
@@ -1173,5 +1174,59 @@ describe("session storage metadata", () => {
     expect(outline.body).toMatchObject({
       nodes: [{ preview: "café <tag> & text ...", resumable: true }],
     });
+  });
+});
+
+describe("entry pagination", () => {
+  it("pages backward across appends and rejects invalid cursors and limits", async () => {
+    const mock = open("home-world");
+    const entries = mock.world.entries["home-main"] ?? [];
+    const base = entries[0];
+    if (!base) throw new Error("missing fixture entry");
+    mock.world.entries["home-main"] = Array.from({ length: 5 }, (_, i) => ({
+      ...base,
+      id: i === 3 ? "notice-original" : `${"a".repeat(19)}${"abcde"[i] ?? "a"}`,
+      seq: i + 1,
+    }));
+    const first = await call(mock, "GET", "/api/sessions/home-main/entries?limit=2");
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({
+      entries: [{ id: "notice-original" }, { id: "aaaaaaaaaaaaaaaaaaae" }],
+      next_before: "notice-original",
+    });
+    mock.world.entries["home-main"].push({ ...base, id: "new", seq: 6 });
+    const second = await call(
+      mock,
+      "GET",
+      "/api/sessions/home-main/entries?limit=2&before=notice-original",
+    );
+    expect(second.body).toMatchObject({
+      entries: [{ id: "aaaaaaaaaaaaaaaaaaab" }, { id: "aaaaaaaaaaaaaaaaaaac" }],
+      next_before: "aaaaaaaaaaaaaaaaaaab",
+    });
+    const last = await call(
+      mock,
+      "GET",
+      "/api/sessions/home-main/entries?before=aaaaaaaaaaaaaaaaaaab",
+    );
+    expect(last.body).toMatchObject({ entries: [{ id: "aaaaaaaaaaaaaaaaaaaa" }] });
+    for (const query of [
+      "limit=0",
+      "limit=101",
+      "limit=01",
+      "before=",
+      "before=missing",
+      "before=%00",
+      "before=%FF",
+      `before=${"x".repeat(1025)}`,
+      "limit=1;other=x",
+      "limit=%zz",
+      "limit=1&limit=2",
+      "extra=x",
+    ]) {
+      expect((await call(mock, "GET", `/api/sessions/home-main/entries?${query}`)).status).toBe(
+        400,
+      );
+    }
   });
 });

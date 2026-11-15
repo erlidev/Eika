@@ -9,6 +9,10 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-10 adds bounded backward entry pages in write order, with
+  entry IDs as cursors. Pages include all branches; P3-05 adds the transcript.
+  `make check` passes.
+
 - 2026-11-15: P2-21 cuts home at a user-turn boundary, keeping up to 15% of the
   window and the newest whole turn; a larger turn falls back to Pi's split. The
   preamble entry now pins the definition's prompt and tools, which only compaction
