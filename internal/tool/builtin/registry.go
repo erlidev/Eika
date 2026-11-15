@@ -14,7 +14,7 @@ type Deps struct {
 	// Questions is the broker ask_user waits on.
 	Questions    *Questions
 	Projects     Projects
-	HomeExecutor func(context.Context) (executor.Executor, error)
+	HomeExecutor func(context.Context, string) (executor.Executor, func(), error)
 	// Search runs web_search; Pages reads for web_fetch.
 	Search Searcher
 	Pages  PageReader

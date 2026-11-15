@@ -50,7 +50,7 @@ func TestProjectTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := &projectFake{instructions: map[string]string{"one": "private instruction", "two": "other instruction"}, rows: []store.Project{{ID: "one", Slug: "one", ProjectFields: store.ProjectFields{Name: "One", Status: "active", Directory: ex.Root() + "/one"}}, {ID: "two", Slug: "two", ProjectFields: store.ProjectFields{Name: "Two", Status: "paused", Directory: ex.Root() + "/two"}}}}
-	home := func(context.Context) (executor.Executor, error) { return ex, nil }
+	home := func(context.Context, string) (executor.Executor, func(), error) { return ex, func() {}, nil }
 	call := func(name, args string) tool.Result {
 		t.Helper()
 		result, err := (projectTool{name: name, projects: f, home: home}).Call(ctx, tool.CallContext{}, json.RawMessage(args))

@@ -21,6 +21,7 @@ import (
 	"github.com/erlidev/eika/internal/search/wikipedia"
 	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/store"
+	"github.com/erlidev/eika/internal/tool"
 	"github.com/erlidev/eika/internal/tool/builtin"
 )
 
@@ -67,13 +68,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	var s *Server
 	questions := builtin.NewQuestions()
 	bus := event.NewBus(log)
-	tools, err := builtin.Registry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st, HomeExecutor: func(ctx context.Context) (executor.Executor, error) {
-		home, err := st.HomeComputer(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return s.runExecutor(ctx, home.ID)
-	}})
+	tools, err := projectToolRegistry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st}, func() *Server { return s })
 	if err != nil {
 		return err
 	}
@@ -188,3 +183,11 @@ var (
 	_ search.Keys        = searchBackend{}
 	_ search.UsageStore  = searchBackend{}
 )
+
+// projectToolRegistry binds project status reads to the server's home computer.
+func projectToolRegistry(deps builtin.Deps, server func() *Server) (*tool.Registry, error) {
+	deps.HomeExecutor = func(ctx context.Context, sessionID string) (executor.Executor, func(), error) {
+		return server().projectExecutor(ctx, sessionID)
+	}
+	return builtin.Registry(deps)
+}

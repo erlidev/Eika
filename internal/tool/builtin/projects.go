@@ -26,7 +26,7 @@ type Projects interface {
 type projectTool struct {
 	name     string
 	projects Projects
-	home     func(context.Context) (executor.Executor, error)
+	home     func(context.Context, string) (executor.Executor, func(), error)
 }
 
 func (t projectTool) Name() string { return t.name }
@@ -65,7 +65,7 @@ func (t projectTool) Schema() json.RawMessage {
 	b, _ := json.Marshal(map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false})
 	return b
 }
-func (t projectTool) Call(ctx context.Context, _ tool.CallContext, raw json.RawMessage) (tool.Result, error) {
+func (t projectTool) Call(ctx context.Context, c tool.CallContext, raw json.RawMessage) (tool.Result, error) {
 	var schema struct {
 		Properties map[string]json.RawMessage `json:"properties"`
 		Required   []string                   `json:"required"`
@@ -130,10 +130,11 @@ func (t projectTool) Call(ctx context.Context, _ tool.CallContext, raw json.RawM
 	if t.home == nil {
 		return tool.Errorf("%s: home computer unavailable", t.name), nil
 	}
-	ex, err := t.home(ctx)
+	ex, release, err := t.home(ctx, c.SessionID)
 	if err != nil {
 		return tool.Errorf("%s: %v", t.name, err), nil
 	}
+	defer release()
 	status, err := readTextFile(ctx, ex, path.Join(found.Directory, "STATUS.md"), maxOutputBytes)
 	if err != nil && !errors.Is(err, executor.ErrNotFound) {
 		return tool.Errorf("%s: read STATUS.md: %v", t.name, err), nil

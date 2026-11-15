@@ -78,12 +78,15 @@ func (i *idleComputers) sweep(ctx context.Context, now time.Time) {
 		i.used(id, now)
 	}
 	for _, cx := range i.idle(all, now, timeout) {
-		// A run may have started since the look above; it keeps the
-		// computer up until the next sweep.
+		// Serialize the last check and stop with a project read acquiring its lease.
+		s.startMu.Lock()
 		if i.inUse(cx) {
+			s.startMu.Unlock()
 			continue
 		}
-		if _, err := s.changeState(ctx, cx, s.stopComputer); err != nil {
+		_, err := s.changeState(ctx, cx, s.stopComputer)
+		s.startMu.Unlock()
+		if err != nil {
 			s.log.Error("stop idle computer", "computer_id", cx.ID, "error", err)
 			continue
 		}

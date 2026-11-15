@@ -128,8 +128,8 @@ type Server struct {
 	inferenceMu     sync.Mutex
 	inferenceSynced bool
 
-	// homeMu makes EnsureHome take turns, and startMu makes the runs that
-	// find a computer stopped take turns starting it.
+	// homeMu makes EnsureHome take turns. startMu serializes computer use
+	// reservations, idle stops and starts for runs.
 	homeMu  sync.Mutex
 	startMu sync.Mutex
 

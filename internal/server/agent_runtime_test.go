@@ -289,3 +289,36 @@ func TestProjectToolsAreOnlyAvailableThroughEikaDefinition(t *testing.T) {
 		}
 	}
 }
+
+func TestBorrowedComputerIsInUseUntilLastRelease(t *testing.T) {
+	s := runtimeServer(t)
+	s.idle = newIdleComputers(s)
+	s.runs = newRuns(s)
+	active, err := s.runs.reserve("home", "", func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.runs.abandon(active)
+	first, err := s.runs.borrowComputer("home", "computer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.runs.borrowComputer("home", "computer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.idle.inUse(store.Computer{ID: "computer"}) {
+		t.Fatal("borrowed computer is idle")
+	}
+	first()
+	if !s.idle.inUse(store.Computer{ID: "computer"}) {
+		t.Fatal("second borrower lost its lease")
+	}
+	second()
+	if s.idle.inUse(store.Computer{ID: "computer"}) {
+		t.Fatal("released computer is still in use")
+	}
+	if _, err := s.runs.borrowComputer("missing", "computer"); err == nil {
+		t.Fatal("borrow without a run succeeded")
+	}
+}
