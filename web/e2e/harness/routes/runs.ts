@@ -81,6 +81,8 @@ export function runRoutes(ctx: RouteContext): void {
     }
     // The model a run uses is the one the request names, else the
     // session's; a running one keeps the model it started with.
+    if (session.agent && str(body.model) !== "" && (!body.mode || body.mode === "run"))
+      return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
     const modelName = str(body.model) || sessionConfiguration(w, session).resolved.model || "";
     const model = w.models.find((m) => m.name === modelName);
     if (images.length > 0 && model?.image_input !== true) {
@@ -116,6 +118,8 @@ export function runRoutes(ctx: RouteContext): void {
     const session = find(w.sessions, params[0], "session");
     if ("status" in session) return session;
     if (w.activeRuns[session.id]) return fail(409, "conflict", "a run is already going");
+    if (session.agent && str(body.model) !== "")
+      return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
     if (w.models.length === 0) return fail(409, "conflict", "no model is configured");
     // The harness keeps about 20,000 tokens; the mock keeps two messages, so
     // a context of two or fewer beside its summary has nothing to summarize.

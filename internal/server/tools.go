@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
@@ -196,6 +197,16 @@ func (s *Server) allTools() *tool.Registry {
 // a computer. Narrowing the registry, rather than refusing a call, means
 // the model is never told about a tool it may not use.
 func (s *Server) runTools(sess store.Session, choice []string, mcpTools []tool.Tool) *tool.Registry {
+	if sess.Agent != "" {
+		// Never merge MCP capabilities into an agent's fixed built-in list.
+		d, _ := agentdef.Lookup(sess.Agent)
+		choice = d.Tools
+		if choice == nil {
+			choice = []string{}
+		}
+		mcpTools = nil
+	}
+
 	return s.narrowed(func(t tool.Tool) bool {
 		if sess.Chat() && tool.NeedsComputer(t) {
 			return false
@@ -251,7 +262,7 @@ func (s *Server) offeredMCP() []tool.Tool {
 // choice that names no MCP tool connects none, so a stdio server is not
 // started for a run that cannot call it.
 func (s *Server) mcpToolsFor(ctx context.Context, sess store.Session, choice []string) []tool.Tool {
-	if s.deps.MCP == nil {
+	if sess.Agent != "" || s.deps.MCP == nil {
 		return nil
 	}
 	if choice != nil && !slices.ContainsFunc(choice, isMCPTool) {

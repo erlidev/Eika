@@ -1,32 +1,10 @@
 package server
 
 import (
-	"bytes"
-	"errors"
-	"io"
 	"net/http"
-	"unicode/utf8"
 
 	"github.com/erlidev/eika/internal/store"
 )
-
-func decodeInstructionJSON[T any](r *http.Request) (T, error) {
-	var zero T
-	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxRequestBytes))
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			return zero, tooLargef("the request body is over the limit of %d bytes", maxRequestBytes)
-		}
-		return zero, invalidf("read request body: %v", err)
-	}
-	if !utf8.Valid(raw) {
-		return zero, invalidf("request body must be valid UTF-8")
-	}
-	clone := r.Clone(r.Context())
-	clone.Body = io.NopCloser(bytes.NewReader(raw))
-	return decodeJSON[T](clone)
-}
 
 func (s *Server) handleInstructions(w http.ResponseWriter, r *http.Request) {
 	out, err := s.deps.Store.Instructions(r.Context())
@@ -38,7 +16,7 @@ func (s *Server) handleInstructions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutInstructions(w http.ResponseWriter, r *http.Request) {
-	body, err := decodeInstructionJSON[*putInstructionsRequest](r)
+	body, err := decodeUTF8JSON[*putInstructionsRequest](r)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -73,7 +51,7 @@ func (s *Server) handleProjectInstructions(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handlePutProjectInstructions(w http.ResponseWriter, r *http.Request) {
-	body, err := decodeInstructionJSON[*putProjectInstructionsRequest](r)
+	body, err := decodeUTF8JSON[*putProjectInstructionsRequest](r)
 	if err != nil {
 		s.fail(w, r, err)
 		return

@@ -942,8 +942,21 @@ Migration 0011 adds `core.agents` with a built-in name and nullable class and
 prompt overrides. Missing values use built-in defaults; an empty prompt is an
 explicit value. The authenticated agent API returns effective values, defaults
 and overrides. It accepts only chat classes and cannot change capabilities.
-Profiles still configure current runs. Runtime adoption is P2-08; editing an
-agent definition has no effect on current profile-based runs.
+A session with a nonempty `agent` uses that definition at run start and in
+context, prediction and configuration previews. Its class resolves through the
+existing class fallbacks and the default chat model. Model sampling and thinking
+settings come from the selected model row. An explicit requested model is
+refused. Profile settings, session overrides and tool choices have no effect.
+Sessions without an agent continue to use profiles.
+
+The runtime filters the shared built-in registry to the fixed tool list, in name
+order, for both schemas and dispatch. It connects no MCP servers and includes no
+MCP tools. Only a worker receives an executor. Stage A has no subagent questions;
+`ask_user` remains available to legacy profile sessions. Runs use the definition's
+call limit and compaction prompts with the current compaction algorithm and
+budget settings. Editing a definition changes the next run, including an empty
+prompt override; an active run keeps its resolved values. Model-call records
+include the agent name and requested class, including when the class falls back.
 
 ## Projects
 

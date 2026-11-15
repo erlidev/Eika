@@ -225,7 +225,11 @@ a stdio server that needs a computer.
 ### `GET /api/sessions/{id}/configuration`
 
 What the session sets for itself over its profile, and what its next run
-resolves to. `200` with:
+resolves to. For a session with an `agent`, the definition and its class supply
+`resolved` and `inherited`; both are equal. `profile_id` is absent, `overrides`
+sets nothing, and `tools` is null. Legacy profile, override and tool-choice
+writes can still be stored, but have no effect on agent runs. Editor query
+values are validated but do not change agent configuration. `200` with:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -355,7 +359,7 @@ model is configured; `400` for a model that does not exist.
 | `context_window` | number or null | The window the call was judged against; `null` when the model had none configured. |
 | `endpoint` | string, optional | The provider's name when the call was made. |
 | `queue_ms`, `slot` | number or null | Milliseconds the call waited for a lease on its pool (summed over its attempts, so a call that was preempted and queued again counts both waits), and the server's own slot number that the request named (`id_slot`). `slot` is `null` for a call that named none: one to an endpoint that takes no slot hints (anything but a llama.cpp server with several slots on which the slot affinity check passed), and one recorded before the queue existed. |
-| `class`, `priority`, `agent` | string, optional | Attribution. `priority` is what the call asked for: `interactive`, `foreground`, `background` or `maintenance`. `class` is the model class the run was resolved from and is absent for a run that named its model. `agent` is absent until the agents record it. |
+| `class`, `priority`, `agent` | string, optional | Attribution. `priority` is what the call asked for: `interactive`, `foreground`, `background` or `maintenance`. `class` is the model class the run was resolved from and is absent for a run that named its model. `agent` is the session's agent name and is absent for legacy profile sessions. |
 | `prefill_ms`, `decode_ms` | number or null | Milliseconds the endpoint took to read the prompt (as it stated it) and to generate (its own measure, else the harness's from the first token). `null` when nothing measured them. |
 | `created_at` | time | When the call returned. |
 
@@ -380,9 +384,9 @@ Identity and lifecycle fields are read-only on the existing session routes.
 | `last_active_at` | timestamp | Last lifecycle activity in UTC. |
 | `kind` | string | Session kind: `user` (legacy), `home`, `subagent` or `routine`. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
-| `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a computer in a chat. |
+| `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a computer in a chat. An agent session uses its fixed built-in list. |
 | `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. |
-| `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. |
+| `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. False for an agent session. |
 | `pinned` | boolean | Listed before its siblings. |
 | `archived` | boolean | Set aside under an Archived heading; it runs like any other. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
@@ -451,7 +455,7 @@ on the event stream.
 | `text` | string | The message. Required unless `images` holds at least one image. |
 | `images` | array | Pictures attached to the message, each `{"data": string}`: a PNG, JPEG, GIF, or WebP file, base64 encoded, of at most 20 MiB and 50 megapixels. At most 10. |
 | `mode` | `run`, `steer`, or `follow_up` | What to do with it. Empty means `run`. |
-| `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first chat model. A decision model is `400`. |
+| `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first chat model. A decision model is `400`. For a session with an `agent`, a nonempty value is `400`; its class selects the model. |
 
 - `run` starts a run from the session's head. `409` when one is already going.
 - `steer` joins the run in progress as soon as the running tool call
@@ -918,7 +922,7 @@ A resolved configuration, with the layer each value came from.
 | `tools` | string array or null | The tool choice; null is every tool the session can run. |
 | `sampling` | Sampling | The sampling parameters sent. |
 | `dropped_effort` | string, optional | An effort chosen above the model that the model does not offer. |
-| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, or `default`, keyed `profile`, `model`, `chat_prompt`, `instructions`, `preserve_thinking`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
+| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, `default`, `agent`, or `class`, keyed `profile`, `model`, `chat_prompt`, `instructions`, `preserve_thinking`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
 
 ## Settings
 
@@ -1336,7 +1340,14 @@ the mode. The body of every refusal is one line saying why.
 ### `GET /api/agents`
 
 Returns `{agents: Agent[]}` in name order. Only `eika`, `researcher` and `worker`
-exist. No model assignment is needed. Profiles and current runs are unchanged.
+exist. No model assignment is needed to read or edit definitions. A session's
+nonempty `agent` selects this runtime path. Each new run resolves the effective
+class and prompt; a running loop keeps its configuration. Profile sessions keep
+their current behavior. Agent tools are fixed built-ins; MCP is excluded.
+Stage A excludes subagent `ask_user` until P2-16 supplies its question path.
+Context and prediction routes use the same resolution and tool schemas as runs;
+a nonempty `?model=` is refused with 400. The compact route also refuses an
+explicit model and uses the agent's compaction prompts.
 
 `Agent` contains these effective fields:
 
@@ -1361,7 +1372,8 @@ Returns one `Agent`. An unknown name returns 404.
 Replaces the override with `{class?: string | null, prompt?: string | null}`.
 Null or an omitted field uses the built-in value. An empty prompt is an explicit
 value. Class must be `main`, `fast` or `deep`; `decision` is refused. Prompt is
-limited to 65,536 UTF-8 bytes and cannot contain NUL. Other fields are refused.
+limited to 65,536 UTF-8 bytes and cannot contain NUL. The raw request body
+must be valid UTF-8. Other fields are refused.
 Returns the effective `Agent` with defaults and overrides. Unknown names return 404; invalid input
 returns 400. This route cannot add agents or change tools or compaction prompts.
 

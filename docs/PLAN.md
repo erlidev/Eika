@@ -162,7 +162,7 @@ needs. A package is ticked here and under its item.
 
 The home loop, end to end, in a browser. Nothing here is hardened.
 
-- [ ] **P2-08**: Resolve an agent's class, prompt and fixed tools at runtime.
+- [x] **P2-08**: Resolve an agent's class, prompt and fixed tools at runtime.
       Add the path beside profiles, chosen by the session's `agent`. Profiles
       keep working for the sessions that still use them.
 - [ ] **P2-09**: Ensure home at start and add `GET /api/home`. The store already
@@ -293,7 +293,7 @@ in the code beside what replaces them.
       plugins until phase 11. The MCP screens and Core's pool stay, so connections
       and OAuth keep working for phase 11 to pick up.
       - [x] **P2-01**: Built-ins, overrides, API and compaction prompts; keep profiles.
-      - [ ] **P2-08**: Resolve classes and fixed tools at runtime; keep existing callers.
+      - [x] **P2-08**: Resolve classes and fixed tools at runtime; keep existing callers.
       - [ ] **P3-07**: Add agent Settings and remove profile controls.
       - [ ] **P2-11**: Remove profiles and configuration layering after their callers move.
 - [ ] Session columns: `kind` (home, subagent, routine), `agent`, `name`,

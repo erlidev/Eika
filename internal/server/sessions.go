@@ -450,7 +450,7 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 		HeadEntryID:     sess.HeadEntryID,
 		Tools:           s.sessionToolNames(sess, c.tools),
 		ProfileID:       sess.ProfileID,
-		Overridden:      !sess.Overrides.Empty() || sess.Tools != nil,
+		Overridden:      sess.Agent == "" && (!sess.Overrides.Empty() || sess.Tools != nil),
 		Pinned:          sess.Pinned,
 		Archived:        sess.Archived,
 		CreatedAt:       sess.CreatedAt,

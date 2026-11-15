@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils";
 
 /** chipText names a layer on a chip: where a value falls through from. */
 const chipText: Record<ConfigLayer, string> = {
+  agent: "agent",
+  class: "class",
   request: "from the message",
   session: "from the session",
   profile: "from the profile",

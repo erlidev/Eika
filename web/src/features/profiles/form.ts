@@ -227,6 +227,8 @@ export function toSettings(
 
 /** layerNames say where a value falls through to, as the editor words it. */
 const layerNames: Record<ConfigLayer, string> = {
+  agent: "the agent",
+  class: "the model class",
   request: "the message",
   session: "this session",
   profile: "the profile",
