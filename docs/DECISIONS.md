@@ -2058,7 +2058,9 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   the home session. Starting an existing name returns its stored status and
   does not change its brief, agent or project. Resume accepts only idle, failed
   or cancelled children. The service keeps the run reservation until execution
-  and the final state write end. Cancel signals the run and waits for it to end.
+  and the final state write end. Creation stores the child and its initial
+  `running` state in one write, so a failed write leaves no idle child whose
+  brief never ran. Cancel signals the run and waits for it to end.
 - The service takes a blocking run callback. P2-13 binds it to the existing
   server run manager; it does not add a second agent loop. A child uses the
   service lifetime, not the request or home reply lifetime. Each stored state

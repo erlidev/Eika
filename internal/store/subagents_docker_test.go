@@ -18,9 +18,13 @@ func TestSubagentStatesAndParentScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	child, err := st.CreateSession(ctx, store.Session{Kind: store.SessionSubagent, ParentSessionID: home.ID, Agent: "researcher", Name: "plumber", Brief: "original", Result: "saved report"})
+	child, err := st.CreateSession(ctx, store.Session{Kind: store.SessionSubagent, ParentSessionID: home.ID, Agent: "researcher", Name: "plumber", Brief: "original", Result: "saved report", State: store.SessionRunning})
 	if err != nil {
 		t.Fatal(err)
+	}
+	created, err := st.Subagent(ctx, home.ID, "plumber")
+	if err != nil || created.State != store.SessionRunning || created.Brief != "original" {
+		t.Fatalf("created child: %+v %v", created, err)
 	}
 	for _, state := range []store.SessionState{store.SessionRunning, store.SessionWaiting, store.SessionIdle, store.SessionFailed, store.SessionCancelled} {
 		reason := ""

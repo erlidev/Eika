@@ -97,7 +97,8 @@ func (s *Service) Start(ctx context.Context, parent string, child store.Session)
 	name := child.Name
 	child, err = s.store.CreateSession(ctx, store.Session{Kind: store.SessionSubagent,
 		Owner: home.Owner, ParentSessionID: home.ID, Name: child.Name, Title: child.Name,
-		Agent: child.Agent, Brief: child.Brief, ProjectID: child.ProjectID, ComputerID: child.ComputerID})
+		Agent: child.Agent, Brief: child.Brief, ProjectID: child.ProjectID, ComputerID: child.ComputerID,
+		State: store.SessionRunning})
 	if errors.Is(err, store.ErrConflict) {
 		return s.store.Subagent(ctx, parent, name)
 	}

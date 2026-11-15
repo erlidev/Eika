@@ -9,6 +9,11 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-12 follow-up creates a child and its initial running state
+  in one write, so a failed write can be retried. Scripted-provider tests cover
+  duplicate starts, concurrent resume, state transitions and global events.
+  `make check` passes.
+
 - 2026-11-15: P2-12 adds named persistent child sessions and the lifecycle
   service: duplicate starts return status, resume keeps context, and cancel joins
   the run. Code owns all states and waiting reasons; changes emit global

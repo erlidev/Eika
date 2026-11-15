@@ -1008,7 +1008,8 @@ its session and head. Home messages use the web channel.
 
 ### Subagent lifecycle
 
-`subagent.Service` creates persistent children under a home session. A duplicate
+`subagent.Service` creates persistent children under a home session with their
+initial `running` state in the same write. A duplicate
 name returns the existing child. Message resumes the same session after idle,
 failed or cancelled; running and waiting children return status. The service
 owns a run context and reservation until execution ends and its final state is

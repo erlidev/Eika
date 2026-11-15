@@ -45,8 +45,13 @@ func (m *memory) CreateSession(_ context.Context, row store.Session) (store.Sess
 			return store.Session{}, store.ErrConflict
 		}
 	}
+	if m.fail && row.State == store.SessionRunning {
+		return store.Session{}, errors.New("storage unavailable")
+	}
 	row.ID = fmt.Sprint(len(m.rows))
-	row.State = store.SessionIdle
+	if row.State == "" {
+		row.State = store.SessionIdle
+	}
 	m.rows[row.ID] = row
 	return row, nil
 }
@@ -204,8 +209,8 @@ func TestDuplicateStartConcurrentResumeAndCancel(t *testing.T) {
 	}
 	out.mu.Lock()
 	defer out.mu.Unlock()
-	if len(out.rows) != 8 {
-		t.Fatalf("events = %d, want 8", len(out.rows))
+	if len(out.rows) != 7 {
+		t.Fatalf("events = %d, want 7", len(out.rows))
 	}
 	for _, e := range out.rows {
 		var payload event.SessionUpdated
@@ -338,5 +343,163 @@ func TestCancelReturnsFinalStateWriteError(t *testing.T) {
 	row, err := s.Message(t.Context(), "home", "plumber", "retry")
 	if err != nil || row.State != store.SessionRunning {
 		t.Fatalf("lost failed reservation: %+v %v", row, err)
+	}
+}
+
+func TestStartRetriesAfterInitialWriteFails(t *testing.T) {
+	st := newMemory()
+	st.fail = true
+	started := make(chan string, 1)
+	s := service(t, st, func(_ context.Context, _ store.Session, text string) error {
+		started <- text
+		return nil
+	}, nil)
+	if _, err := s.Start(t.Context(), "home", child()); err == nil {
+		t.Fatal("accepted failed initial write")
+	}
+	if _, err := st.Subagent(t.Context(), "home", "plumber"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("failed write left a child: %v", err)
+	}
+	st.mu.Lock()
+	st.fail = false
+	st.mu.Unlock()
+	row, err := s.Start(t.Context(), "home", child())
+	if err != nil || row.State != store.SessionRunning {
+		t.Fatalf("retry: %+v %v", row, err)
+	}
+	if got := <-started; got != child().Brief {
+		t.Fatalf("brief = %q", got)
+	}
+	awaitState(t, st, store.SessionIdle)
+}
+
+type gatedScript struct {
+	provider *providertest.Provider
+	started  chan struct{}
+	release  chan struct{}
+}
+
+func (p *gatedScript) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+	stream, err := p.provider.Stream(ctx, req)
+	p.started <- struct{}{}
+	select {
+	case <-p.release:
+		return stream, err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+type stateEvent struct {
+	event  event.Event
+	state  store.SessionState
+	reason string
+}
+
+func TestScriptedProviderLifecycleAndGlobalEvents(t *testing.T) {
+	st := newMemory()
+	p := &gatedScript{
+		provider: providertest.New(providertest.Text("done"), providertest.Fail(errors.New("model failed")), providertest.Text("cancelled")),
+		started:  make(chan struct{}, 3), release: make(chan struct{}),
+	}
+	var mu sync.Mutex
+	var updates []stateEvent
+	emitter := event.EmitterFunc(func(ctx context.Context, e event.Event) {
+		var payload event.SessionUpdated
+		if err := e.DecodePayload(&payload); err != nil {
+			t.Error(err)
+			return
+		}
+		row, err := st.Session(ctx, payload.SessionID)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		mu.Lock()
+		updates = append(updates, stateEvent{event: e, state: row.State, reason: row.WaitingReason})
+		mu.Unlock()
+	})
+	conversation := agent.NewConversation()
+	s := service(t, st, func(ctx context.Context, row store.Session, text string) error {
+		loop := agent.New(p, nil, agent.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		return loop.Run(ctx, &agent.Session{ID: row.ID, Conversation: conversation}, provider.UserMessage(text))
+	}, emitter)
+	first, err := s.Start(t.Context(), "home", child())
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-p.started
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() {
+			input := child()
+			input.Brief = "replacement"
+			row, err := s.Start(t.Context(), "home", input)
+			if err != nil || row.ID != first.ID || row.Brief != first.Brief || row.State != store.SessionRunning {
+				t.Errorf("duplicate start: %+v %v", row, err)
+			}
+		})
+	}
+	wg.Wait()
+	if p.provider.Calls() != 1 {
+		t.Fatalf("duplicate starts made %d model calls", p.provider.Calls())
+	}
+	p.release <- struct{}{}
+	awaitState(t, st, store.SessionIdle)
+	duplicate, err := s.Start(t.Context(), "home", child())
+	if err != nil || duplicate.ID != first.ID || duplicate.State != store.SessionIdle || p.provider.Calls() != 1 {
+		t.Fatalf("completed duplicate: %+v %v, calls %d", duplicate, err, p.provider.Calls())
+	}
+	for range 20 {
+		wg.Go(func() {
+			row, err := s.Message(t.Context(), "home", "plumber", "follow up")
+			if err != nil || row.ID != first.ID || row.State != store.SessionRunning {
+				t.Errorf("resume: %+v %v", row, err)
+			}
+		})
+	}
+	wg.Wait()
+	<-p.started
+	if p.provider.Calls() != 2 {
+		t.Fatalf("concurrent resumes made %d model calls", p.provider.Calls())
+	}
+	if _, err := s.Waiting(t.Context(), "home", "plumber", "waiting for input"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Waiting(t.Context(), "home", "plumber", ""); err != nil {
+		t.Fatal(err)
+	}
+	p.release <- struct{}{}
+	awaitState(t, st, store.SessionFailed)
+	if _, err := s.Message(t.Context(), "home", "plumber", "try again"); err != nil {
+		t.Fatal(err)
+	}
+	<-p.started
+	cancelled, err := s.Cancel(t.Context(), "home", "plumber")
+	if err != nil || cancelled.State != store.SessionCancelled {
+		t.Fatalf("cancel: %+v %v", cancelled, err)
+	}
+	if p.provider.Calls() != 3 {
+		t.Fatalf("model calls = %d", p.provider.Calls())
+	}
+	s.Close()
+	mu.Lock()
+	defer mu.Unlock()
+	want := []struct {
+		state  store.SessionState
+		reason string
+	}{
+		{store.SessionRunning, ""}, {store.SessionIdle, ""}, {store.SessionRunning, ""},
+		{store.SessionWaiting, "waiting for input"}, {store.SessionRunning, ""},
+		{store.SessionFailed, ""}, {store.SessionRunning, ""}, {store.SessionCancelled, ""},
+	}
+	if len(updates) != len(want) {
+		t.Fatalf("updates = %+v, want %d", updates, len(want))
+	}
+	for i, update := range updates {
+		var payload event.SessionUpdated
+		if update.event.Type != event.TypeSessionUpdated || update.event.Topic != event.TopicGlobal || update.event.DecodePayload(&payload) != nil || payload.SessionID != first.ID || update.state != want[i].state || update.reason != want[i].reason {
+			t.Errorf("update %d: %+v, want %+v", i, update, want[i])
+		}
 	}
 }
