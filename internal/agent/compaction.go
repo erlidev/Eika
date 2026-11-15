@@ -247,7 +247,7 @@ func (a *Agent) Compact(ctx context.Context, s *Session, instructions string) er
 // messages at the start of the new conversation are stored.
 func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []Section, stored int, reason, instructions string) (int, error) {
 	msgs := s.Conversation.Messages()
-	base := a.base(prompt)
+	base := a.sessionBase(s, prompt)
 	sent := base.WithMessages(msgs)
 	plan, ok := planCompaction(msgs, sent.MessageSizes, stored, a.opts.Compaction.keepRecentTokens(a.opts.ContextWindow))
 	if !ok {
@@ -278,7 +278,16 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 	record.Kept = stored - plan.first
 	next := append(Compacted(msgs[:stored], record), msgs[stored:]...)
 	record.TokensAfter = a.predict(ctx, base.WithMessages(next)).Tokens
-	if a.opts.Store != nil {
+	if a.opts.RefreshPreamble != nil {
+		text, err := a.opts.RefreshPreamble(ctx, s.ID, record)
+		if err != nil {
+			return failed(fmt.Errorf("store compaction: %w", err))
+		}
+		s.Preamble = text
+		a.locationMu.Lock()
+		a.location = PreambleLocation(text)
+		a.locationMu.Unlock()
+	} else if a.opts.Store != nil {
 		if err := a.opts.Store.AppendCompaction(ctx, s.ID, record); err != nil {
 			return failed(fmt.Errorf("store compaction: %w", err))
 		}

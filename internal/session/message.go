@@ -149,3 +149,18 @@ func TextOf(e store.Entry) (string, error) {
 	}
 	return payload.Text, nil
 }
+
+// Preamble returns the most recent snapshot on a session path.
+func Preamble(entries []store.Entry) (string, error) {
+	var text string
+	for _, e := range entries {
+		if e.Kind == store.KindPreamble {
+			var err error
+			text, err = TextOf(e)
+			if err != nil {
+				return "", err
+			}
+		}
+	}
+	return text, nil
+}

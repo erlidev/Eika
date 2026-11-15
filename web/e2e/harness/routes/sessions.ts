@@ -35,7 +35,7 @@ function preview(entry: Entry): string {
 /**
  * resumableEntries pairs each entry with whether a run can continue from it,
  * the way `internal/session` does: an entry is resumable when the path down
- * to it leaves no tool call unanswered.
+ * to it leaves no tool call unanswered and it is not a preamble.
  */
 function resumableEntries(entries: Entry[]): { entry: Entry; resumable: boolean }[] {
   const pending = new Map<string, string[]>();
@@ -49,7 +49,7 @@ function resumableEntries(entries: Entry[]): { entry: Entry; resumable: boolean 
       left = parent.filter((id) => id !== message.tool_call_id);
     }
     pending.set(entry.id, left);
-    return { entry, resumable: left.length === 0 };
+    return { entry, resumable: left.length === 0 && entry.kind !== "preamble" };
   });
 }
 
@@ -60,6 +60,13 @@ function resumableEntries(entries: Entry[]): { entry: Entry; resumable: boolean 
 function midTurn(entries: Entry[], entryId: string): Reply | undefined {
   const found = resumableEntries(entries).find(({ entry }) => entry.id === entryId);
   if (found === undefined || found.resumable) return undefined;
+  if (found.entry.kind === "preamble") {
+    return fail(
+      400,
+      "invalid_request",
+      `entry ${entryId} is a preamble and cannot be a branch point`,
+    );
+  }
   return fail(
     400,
     "invalid_request",

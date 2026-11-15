@@ -630,3 +630,64 @@ func TestATranscriptSaysWhereTheUserAttachedImages(t *testing.T) {
 		t.Errorf("transcript = %.200q, want the image noted after the first message", transcript)
 	}
 }
+
+func TestCompactionRefreshesPreambleAfterSummary(t *testing.T) {
+	p := providertest.New(providertest.Text("summary"))
+	var called bool
+	a := agent.New(p, nil, agent.Options{
+		Compaction: agent.CompactionSettings{KeepRecentTokens: 150},
+		RefreshPreamble: func(_ context.Context, id string, c agent.Compaction) (string, error) {
+			called = true
+			if id != "s1" || c.Summary != "summary" {
+				t.Fatalf("compaction = %s, %+v", id, c)
+			}
+			return "new snapshot", nil
+		},
+	})
+	s := sessionOf(history(4, 100))
+	s.Preamble = "old snapshot"
+	if err := a.Compact(context.Background(), s, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !called || s.Preamble != "new snapshot" {
+		t.Fatalf("refresh = %v, %q", called, s.Preamble)
+	}
+	if !strings.Contains(p.Requests()[0].System, "old snapshot") {
+		t.Fatalf("summary used wrong prefix: %q", p.Requests()[0].System)
+	}
+	preview, err := a.Preview(s)
+	if err != nil || !strings.Contains(preview.System(), "new snapshot") {
+		t.Fatalf("preview = %+v, %v", preview, err)
+	}
+}
+
+func TestConcurrentMessagesDuringPreambleRefresh(t *testing.T) {
+	p := providertest.New(providertest.Text("summary"))
+	started := make(chan struct{})
+	ready := make(chan struct{})
+	done := make(chan struct{})
+	a := agent.New(p, nil, agent.Options{
+		Compaction: agent.CompactionSettings{KeepRecentTokens: 150},
+		RefreshPreamble: func(_ context.Context, _ string, _ agent.Compaction) (string, error) {
+			close(started)
+			<-ready
+			return "Time zone\nUTC\n\nLocale\nen", nil
+		},
+	})
+	go func() {
+		defer close(done)
+		<-started
+		a.Steer(provider.UserMessage("first"))
+		close(ready)
+		for range 1000 {
+			a.Steer(provider.UserMessage("steer"))
+			a.FollowUp(provider.UserMessage("follow up"))
+		}
+	}()
+	s := sessionOf(history(4, 100))
+	err := a.Compact(context.Background(), s, "")
+	<-done
+	if err != nil {
+		t.Fatal(err)
+	}
+}

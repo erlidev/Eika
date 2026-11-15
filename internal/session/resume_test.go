@@ -3,6 +3,7 @@ package session_test
 import (
 	"testing"
 
+	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
@@ -90,5 +91,36 @@ func TestPathResumableAcceptsAnUnknownToolResult(t *testing.T) {
 
 	if session.PathResumable([]store.Entry{call, stray}) {
 		t.Error("a stray result cleared an unanswered call, want not resumable")
+	}
+}
+
+func TestPreamblesAreNotBranchPoints(t *testing.T) {
+	first, err := session.TextEntry(store.KindPreamble, "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := session.TextEntry(store.KindPreamble, "replacement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := entryOf(t, provider.UserMessage("hello"))
+	compact, err := session.CompactionEntry(agent.Compaction{Summary: "summary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := []store.Entry{first, user, replacement, compact}
+	for _, tc := range []struct {
+		name string
+		end  int
+		want bool
+	}{
+		{"initial preamble", 1, false}, {"user message", 2, true},
+		{"replacement preamble", 3, false}, {"compaction", 4, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := session.PathResumable(path[:tc.end]); got != tc.want {
+				t.Errorf("resumable = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

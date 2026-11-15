@@ -72,6 +72,8 @@ type Options struct {
 	Emitter event.Emitter
 	// Store persists every message. Nil keeps them in the conversation only.
 	Store Store
+	// RefreshPreamble stores a compaction and its replacement snapshot together.
+	RefreshPreamble func(context.Context, string, Compaction) (string, error)
 	// Logger receives one line per finished or failed turn.
 	Logger *slog.Logger
 	// Recorder is told about every model call that returned a response. Nil
@@ -94,9 +96,7 @@ type Options struct {
 	// Clock tells the time the <context> block of a user-side message states,
 	// and the loop's wall-time limit measures against. Nil means time.Now.
 	Clock func() time.Time
-	// Location is the zone the block states its time in. Nil means UTC: the
-	// user's zone belongs to the session preamble, which does not exist yet
-	// (docs/DECISIONS.md, "The context block").
+	// Location is the zone the block states its time in. Nil means UTC.
 	Location *time.Location
 	// Limits bound each run: its model calls and its wall time.
 	Limits Limits
@@ -110,6 +110,9 @@ type Agent struct {
 	opts      Options
 	steering  queue
 	followUps queue
+
+	locationMu sync.RWMutex
+	location   *time.Location
 
 	mu sync.Mutex
 	// accepting is guarded by mu. Closing it in the same critical section
@@ -149,7 +152,7 @@ func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
 		opts.Location = time.UTC
 	}
 	opts.Limits = opts.Limits.withDefaults()
-	return &Agent{provider: p, counter: opts.Counter, tools: r, opts: opts, accepting: true}
+	return &Agent{provider: p, counter: opts.Counter, tools: r, opts: opts, location: opts.Location, accepting: true}
 }
 
 // Steer queues a user message to be delivered as soon as the tool call that

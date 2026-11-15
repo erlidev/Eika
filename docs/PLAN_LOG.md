@@ -9,6 +9,18 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-07 follow-up refuses preamble entries as branch points,
+  so a replacement snapshot takes effect with its compaction. The API, store,
+  outline and mock use the same rule. `make check` passes.
+
+- 2026-11-15: P2-07 follow-up guards the time zone during compaction and
+  puts the replacement preamble before its summary entry. Tests cover concurrent
+  messages, compaction branches and replay after a server restart. `make check` passes.
+
+- 2026-11-15: P2-07 stores agent preambles and refreshes them at compaction.
+  Snapshots include instructions, active projects, briefs, agents, time zone
+  and locale; resumed runs reuse their stored text. `make check` passes.
+
 - 2026-11-15: P3-04 adds the shell (rail, bottom bar, dvh, safe areas, keyboard
   inset, halt slot) and Chat on the home session; the workbench has no route. Home
   runs an agent, so Chat sends no model and hides the model and profile controls.

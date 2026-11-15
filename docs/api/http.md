@@ -190,8 +190,9 @@ where a `Node` is
 `{id, parent_id?, kind, preview, resumable, created_at}`.
 
 `resumable` is whether a run can continue from that entry: the path down to it
-leaves no tool call unanswered. It is false for an assistant entry whose tool
-calls are still out and for a tool result that is not the last of its set. The
+leaves no tool call unanswered and the entry is not a preamble. It is false
+for every preamble, for an assistant entry whose tool calls are still out,
+and for a tool result that is not the last of its set. The
 head route refuses those entries, so a client offers no branch from a node
 that is not resumable.
 
@@ -212,8 +213,8 @@ the next run continues from there and the tree branches in place. An empty
 `entry_id` clears the head, so the session starts again from its root.
 
 `200` with the `Session`. `409` while a run is going; `404` when the entry is
-not the session's; `400` when the entry is not `resumable`, because a path
-that stops with tool calls unanswered is a conversation no endpoint accepts.
+not the session's; `400` when the entry is not `resumable`: preambles are not branch points,
+and a path with unanswered tool calls is a conversation no endpoint accepts.
 
 ### `PUT /api/sessions/{id}/tools`
 
@@ -292,7 +293,7 @@ ModelContext that has `call`; `404` for a record of another session.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base` or `instructions`. The system prompt is the sections' texts joined by a blank line. |
+| `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base`, `instructions` or `preamble`. The system prompt is the sections' texts joined by a blank line. |
 | `tools` | array | The tool schemas sent: `{name, description, schema, source, tokens}`, where `source` is `builtin` or `mcp`. |
 | `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` and `reasoning_items` only when the model preserves thinking. |
 | `message_tokens` | number | The estimated size of the messages. |
@@ -957,6 +958,8 @@ stores them.
 
 | Key | Value | Meaning |
 |---|---|---|
+| `time_zone` | string | IANA time zone for new agent preamble snapshots; defaults to UTC. |
+| `locale` | string | Locale for new agent preamble snapshots, 1 to 64 ASCII letters, digits or hyphens; unspecified by default. |
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a chat model. |
 | `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
 | `sandbox_image` | string | The image the home computer's container is created from. A container that exists keeps its image, so a change reaches the home computer only when its container is made again. |

@@ -11,6 +11,21 @@ export function settingsRoutes(ctx: RouteContext): void {
   const served = () => ({ ...w.settings, ...classView(w) });
   on("GET", "/api/settings", () => ok(served()));
   on("PUT", "/api/settings", ({ body }) => {
+    for (const key of ["time_zone", "locale"] as const) {
+      const value = body[key];
+      if (value === undefined || value === null) continue;
+      if (typeof value !== "string") return fail(400, "invalid_request", `${key} must be a string`);
+      if (key === "locale" && !/^[A-Za-z0-9-]{1,64}$/.test(value))
+        return fail(400, "invalid_request", "locale must be 1 to 64 letters, digits or hyphens");
+      if (key === "time_zone") {
+        try {
+          if (!value || value === "Local") throw new Error();
+          new Intl.DateTimeFormat("en", { timeZone: value });
+        } catch {
+          return fail(400, "invalid_request", "time_zone must be an IANA time zone");
+        }
+      }
+    }
     const named = body.default_profile;
     if (typeof named === "string" && named !== "" && !w.profiles.some((p) => p.id === named)) {
       return fail(

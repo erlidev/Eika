@@ -31,6 +31,7 @@ export type Segment = { kind: SegmentKind; label: string; tokens: number; approx
 export const segmentLabels: Record<SegmentKind, string> = {
   base: "Base prompt",
   instructions: "Instructions",
+  preamble: "Preamble",
   builtin_tools: "Built-in tools",
   mcp_tools: "MCP tools",
   messages: "Messages",
@@ -61,6 +62,7 @@ export function segments(c: ModelContext): Segment[] {
   const tokens: Record<SegmentKind, number> = {
     base: 0,
     instructions: 0,
+    preamble: 0,
     builtin_tools: 0,
     mcp_tools: 0,
     messages: 0,
@@ -70,6 +72,7 @@ export function segments(c: ModelContext): Segment[] {
   const approximate: Record<SegmentKind, boolean> = {
     base: false,
     instructions: false,
+    preamble: false,
     builtin_tools: false,
     mcp_tools: false,
     messages: false,
@@ -423,6 +426,7 @@ export function parameterTarget(key: string): EditTarget | undefined {
 export const segmentColors: Record<SegmentKind, string> = {
   base: "bg-chart-1",
   instructions: "bg-chart-3",
+  preamble: "bg-chart-3",
   builtin_tools: "bg-chart-5",
   mcp_tools: "bg-chart-4",
   messages: "bg-primary/40",
@@ -445,7 +449,7 @@ export function percent(part: number, whole: number): string {
  */
 export type View =
   | "system"
-  | `section:${"base" | "instructions"}`
+  | `section:${"base" | "instructions" | "preamble"}`
   | "tools"
   | `group:${string}`
   | "messages"

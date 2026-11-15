@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/server"
@@ -132,20 +133,76 @@ func TestHomeRunRecordsWebChannelAndContext(t *testing.T) {
 	a.postMessage(t, home.ID, "hello", "", 202)
 	a.waitIdle(t, home.ID)
 	entries, err := a.store.SessionPath(t.Context(), home.ID)
-	if err != nil || len(entries) != 2 {
+	if err != nil || len(entries) != 3 {
 		t.Fatalf("entries = %+v, %v", entries, err)
 	}
-	for _, entry := range entries {
+	if entries[0].Kind != store.KindPreamble || entries[0].Channel != "" {
+		t.Fatalf("preamble entry = %+v", entries[0])
+	}
+	for _, entry := range entries[1:] {
 		if entry.Channel != "web" {
 			t.Errorf("%s channel = %q", entry.Kind, entry.Channel)
 		}
 	}
-	message, ok, err := session.Message(entries[0])
+	message, ok, err := session.Message(entries[1])
 	if err != nil || !ok || message.Role != provider.RoleUser || !strings.Contains(message.Context, "\nchannel: web\n") {
 		t.Fatalf("stored user message = %+v, %v", message, err)
 	}
 	requests := fake.Requests()
 	if len(requests) != 1 || len(requests[0].Messages) != 1 || requests[0].Messages[0].Context != message.Context {
 		t.Fatalf("provider requests = %+v", requests)
+	}
+}
+
+func TestPreamblesCannotBeBranchPoints(t *testing.T) {
+	a := newAPI(t)
+	ctx := t.Context()
+	home, err := a.store.EnsureHomeSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendEntry := func(e store.Entry) store.Entry {
+		t.Helper()
+		saved, err := a.store.AppendEntry(ctx, home.ID, e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return saved
+	}
+	makePreamble := func(text string) store.Entry {
+		t.Helper()
+		entry, err := session.TextEntry(store.KindPreamble, text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return appendEntry(entry)
+	}
+	first := makePreamble("first")
+	user, err := session.MessageEntry(provider.UserMessage("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendEntry(user)
+	replacement := makePreamble("replacement")
+	compact, err := session.CompactionEntry(agent.Compaction{Summary: "summary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := appendEntry(compact)
+	for _, entry := range []store.Entry{first, replacement} {
+		rec := request(t, a.Server, "POST", "/api/sessions/"+home.ID+"/head", map[string]any{"entry_id": entry.ID})
+		if rec.Code != 400 || !strings.Contains(rec.Body.String(), "preamble and cannot be a branch point") {
+			t.Fatalf("branch from %s: %d %s", entry.ID, rec.Code, rec.Body.String())
+		}
+		if err := a.store.SetSessionHead(ctx, home.ID, entry.ID); err == nil {
+			t.Fatalf("store accepted preamble %s", entry.ID)
+		}
+		if err := session.NewTree(a.store).SetHead(ctx, home.ID, entry.ID); err == nil {
+			t.Fatalf("tree accepted preamble %s", entry.ID)
+		}
+	}
+	saved, err := a.store.Session(ctx, home.ID)
+	if err != nil || saved.HeadEntryID != head.ID {
+		t.Fatalf("head = %q, %v", saved.HeadEntryID, err)
 	}
 }

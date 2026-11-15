@@ -625,19 +625,10 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   compaction leaves. The images-in-tool-results message of the design (phase
   2) is a user message the harness writes after a tool result; it will be
   stamped like any other.
-- **The zone is UTC until the preamble exists.** The design puts the user's
-  time zone and locale in the preamble entry (phase 2), and the zone the block
-  states its time in is that zone. Nothing records the user's zone before then:
-  the browser knows it, but no setting carries it, and a setting for one value
-  the preamble item would replace is the speculative option the style guide
-  forbids. So `Options.Location` is UTC by default, the block states the
-  zone's name and offset beside the time, so the model never reads a UTC time
-  as local, and the preamble item passes the stored zone. Messages already
-  stored keep the zone they were written in. Rejected: the harness
-  container's local zone (a container's zone is UTC unless someone set it, and
-  says nothing of the user); a guess from the browser at each message (a
-  zone that can change between messages is a changed prefix, and the block
-  would disagree with the preamble).
+- **The preamble fixes the user's zone.** Settings `time_zone` and `locale`
+  feed new snapshots. The zone defaults to UTC and the locale to unspecified.
+  A message uses the snapshot's zone and retains its stamped time on replay.
+  The harness does not infer a zone from its container or from each browser.
 - **Counting.** The block is part of what is sent, so the counter counts it:
   the endpoint's own rendering sees it under `exact`, and the census of the
   anchored and estimated methods, the context breakdown and the part sizes
@@ -1308,9 +1299,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - **An exact prediction with any drift is shown as a bug.** The inspector
   raises an error notice for a recorded call whose `prediction` is `exact` and
   `drift` is not 0; the loop already logs it.
-- **The preamble is not a part yet.** The system prompt's sections are the base
-  prompt and the instructions; the preamble item (Phase 1) adds its own.
-  Nothing is invented for it.
+- **The preamble is a separate part.** The context inspector reports the
+  stored snapshot as its own system prompt section.
 
 ### The token counter
 
@@ -2048,3 +2038,11 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   (Safari), `useViewportAnchor` writes the covered height to `--keyboard-inset`
   from `visualViewport` and the shell pads its bottom with it. A cover under
   100px is a browser toolbar and ignored, as is any pinch zoom.
+
+## Preamble snapshots
+
+Agent sessions store the rendered preamble as an entry on their current path.
+The first run writes it and compaction writes a replacement with the summary
+in one transaction. This keeps edits out of a live prefix and lets a restart
+replay the same bytes. Legacy profile sessions do not get a preamble. The
+locale is unspecified until the user sets it; no browser locale is inferred.

@@ -389,16 +389,20 @@ func (s *Server) handleSetSessionHead(w http.ResponseWriter, r *http.Request) {
 	s.writeSession(w, r, http.StatusOK, sess)
 }
 
-// checkResumable refuses an entry a run cannot continue from. A path that
-// stops with tool calls unanswered is a conversation no endpoint accepts, so
-// a head placed there would produce a session that fails on its next run
-// rather than one that branches.
+// checkResumable refuses a preamble or a path with unanswered tool calls.
 func (s *Server) checkResumable(ctx context.Context, sessionID, entryID string) error {
 	ok, err := s.tree.Resumable(ctx, sessionID, entryID)
 	if err != nil {
 		return err
 	}
 	if !ok {
+		entry, err := s.deps.Store.Entry(ctx, entryID)
+		if err != nil {
+			return err
+		}
+		if entry.Kind == store.KindPreamble {
+			return invalidf("entry %s is a preamble and cannot be a branch point", entryID)
+		}
 		return invalidf("entry %s leaves tool calls unanswered, so a run cannot continue from it; "+
 			"choose the entry that answers the last of them", entryID)
 	}

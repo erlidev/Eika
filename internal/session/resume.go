@@ -14,10 +14,9 @@ import (
 // anything else: a path that stops at the assistant entry, or in the middle
 // of the results, is a conversation every endpoint rejects.
 //
-// An entry is resumable when the path down to it leaves no tool call
-// unanswered. That is the whole rule, and it is the one moving the head is
-// checked against, so a branch point the agent loop cannot run from cannot be
-// created through the API or offered in the user interface.
+// An entry is resumable when it is not a preamble and its path leaves no
+// tool call unanswered. A preamble cannot be a branch point because a new
+// snapshot must take effect together with its compaction.
 
 // pendingCalls returns the tool calls still unanswered after e, given the
 // ones its parent left unanswered. The result is a new slice, so an entry's
@@ -56,7 +55,7 @@ func PathResumable(path []store.Entry) bool {
 	for _, e := range path {
 		pending = pendingCalls(pending, e)
 	}
-	return len(pending) == 0
+	return len(pending) == 0 && (len(path) == 0 || path[len(path)-1].Kind != store.KindPreamble)
 }
 
 // resumableSet reports for every entry whether a run can continue from it.
@@ -69,7 +68,7 @@ func resumableSet(entries []store.Entry) map[string]bool {
 	for _, e := range entries {
 		left := pendingCalls(pending[e.ParentID], e)
 		pending[e.ID] = left
-		out[e.ID] = len(left) == 0
+		out[e.ID] = len(left) == 0 && e.Kind != store.KindPreamble
 	}
 	return out
 }

@@ -223,18 +223,27 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	if err != nil {
 		return store.Run{}, err
 	}
+	if err := s.ensurePreamble(ctx, sess, loaded); err != nil {
+		return store.Run{}, err
+	}
+	var refresh func(context.Context, string, agent.Compaction) (string, error)
+	if sess.Agent != "" {
+		refresh = s.refreshPreamble
+	}
 	// The tools every run shares hold what they reach beyond the computer:
 	// the search engine and the page reader. A run narrows
 	// them to its tool choice, together with the tools of the MCP servers it
 	// reaches now, and adds only its own executor, which is also where a
 	// web_fetch filter runs.
 	ag := s.newAgent(ep.client, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
-		Emitter:    s.deps.Bus,
-		Store:      sessionStore,
-		Logger:     s.log,
-		Recorder:   callRecorder{store: s.deps.Store, run: active, config: cfg, endpoint: ep.row.Name},
-		Counter:    counted,
-		Compaction: s.compaction(ctx, cfg.model),
+		RefreshPreamble: refresh,
+		Location:        agent.PreambleLocation(loaded.Preamble),
+		Emitter:         s.deps.Bus,
+		Store:           sessionStore,
+		Logger:          s.log,
+		Recorder:        callRecorder{store: s.deps.Store, run: active, config: cfg, endpoint: ep.row.Name},
+		Counter:         counted,
+		Compaction:      s.compaction(ctx, cfg.model),
 		// A run, and the compaction a user asks for, answers a person who is
 		// waiting; a run that is not interactive says so by raising or
 		// lowering this rank, as the home session will.

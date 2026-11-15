@@ -176,7 +176,7 @@ The home loop, end to end, in a browser. Nothing here is hardened.
 
 Check by hand here: chat with Eika in the new shell on the bench model.
 
-- [ ] **P2-07**: Build and store the preamble snapshot.
+- [x] **P2-07**: Build and store the preamble snapshot.
 - [ ] **P2-06**: Add project tools and executor access to STATUS.md.
 - [ ] **P2-12**: Add subagent session and lifecycle state. Publish
       `session.updated` on `global` for each state change.
@@ -307,7 +307,7 @@ in the code beside what replaces them.
       the project or subagent brief, the delegable agents, and the user's time zone
       and locale. Store it as an entry, and rebuild it only at compaction. Memory,
       skills and plugins add their sections in their own phases.
-      - [ ] **P2-07**: Build and store the preamble snapshot.
+      - [x] **P2-07**: Build and store the preamble snapshot.
 - [ ] Instructions: global "About me" and rules, plus project instructions.
       Stored as rows and edited in the UI. No agent tool writes them.
       - [x] **P2-03**: Add storage and authenticated APIs.

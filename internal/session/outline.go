@@ -25,8 +25,8 @@ type Node struct {
 	// Preview is the start of the entry's content on one line.
 	Preview string `json:"preview"`
 	// Resumable is whether a run can continue from this entry: the path down
-	// to it leaves no tool call unanswered. Moving the head to an entry that
-	// is not resumable is refused.
+	// to it leaves no tool call unanswered and the entry is not a preamble.
+	// Moving the head to an entry that is not resumable is refused.
 	Resumable bool      `json:"resumable"`
 	CreatedAt time.Time `json:"created_at"`
 }
