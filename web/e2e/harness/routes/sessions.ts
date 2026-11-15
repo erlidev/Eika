@@ -83,10 +83,18 @@ export function sessionRoutes(ctx: RouteContext): void {
       if (cx) return fail(400, "invalid_request", "a chat has no computer");
       // Oldest first, as the harness lists them.
       const chats = w.sessions.filter((s) => s.computer_id === undefined && s.kind !== "home");
-      return ok({ sessions: chats.toSorted((a, b) => a.created_at.localeCompare(b.created_at)) });
+      return ok({
+        sessions: chats.toSorted(
+          (a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+        ),
+      });
     }
-    if (!cx) return ok({ sessions: w.sessions });
-    return ok({ sessions: w.sessions.filter((s) => s.computer_id === cx) });
+    const sessions = cx ? w.sessions.filter((s) => s.computer_id === cx) : w.sessions;
+    return ok({
+      sessions: sessions.toSorted(
+        (a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+      ),
+    });
   });
   on("POST", "/api/sessions", ({ body }) => {
     const chat = body.chat === true;

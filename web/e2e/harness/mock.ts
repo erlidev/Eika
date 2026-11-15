@@ -532,6 +532,11 @@ export class MockHarness {
       kind: compaction === undefined ? entryKind(message) : "compaction",
       created_at: fixedNow,
       message,
+      ...(compaction === undefined &&
+      session.kind === "home" &&
+      (message.role === "user" || message.role === "assistant")
+        ? { channel: "web" }
+        : {}),
       ...(compaction === undefined ? {} : { compaction }),
       ...(session.head_entry_id === undefined ? {} : { parent_id: session.head_entry_id }),
     };

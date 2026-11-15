@@ -103,7 +103,8 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 
 ## Scenarios
 
-`harness/scenarios.ts` names the starting states. The workbench ones share
+`harness/scenarios.ts` names the starting states. `home-world` has the local home
+session and named subagents, with stable IDs for session route tests. The workbench ones share
 fixed ids: session `ses-backoff` in computer `cx-retries`; the sidebar lists chats only, so it opens by URL. `chat` adds two
 chats and opens chat `chat-jitter`, a session with no computer; `chat-empty`
 opens one with no messages. `home` adds the home computer the harness makes for itself, with

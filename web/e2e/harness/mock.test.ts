@@ -885,6 +885,45 @@ describe("session storage metadata", () => {
     expect((await call(mock, "DELETE", "/api/sessions/missing")).status).toBe(404);
   });
 
+  it("serves the home world through existing session routes", async () => {
+    const mock = open("home-world");
+    const home = await call(mock, "GET", "/api/home");
+    expect(home.body).toMatchObject({
+      session: { id: "home-main", kind: "home" },
+      head: { kind: "assistant" },
+    });
+    const sessions = await call(mock, "GET", "/api/sessions");
+    expect(sessions.body).toMatchObject({
+      sessions: [
+        { id: "home-main", kind: "home" },
+        {
+          id: "subagent-plumber",
+          kind: "subagent",
+          parent_session_id: "home-main",
+          state: "running",
+        },
+        { id: "subagent-repair", kind: "subagent", parent_session_id: "home-main", state: "idle" },
+      ],
+    });
+    const detail = await call(mock, "GET", "/api/sessions/subagent-plumber");
+    expect(detail.body).toMatchObject({
+      session: { name: "plumber", agent: "researcher" },
+      head: { kind: "assistant" },
+    });
+    expect((await call(mock, "DELETE", "/api/sessions/home-main")).status).toBe(409);
+    expect((await call(mock, "GET", "/api/sessions/missing")).status).toBe(404);
+  });
+
+  it("records the web channel on home messages", async () => {
+    const mock = open("home-world");
+    const reply = await call(mock, "POST", "/api/sessions/home-main/messages", { text: "Hello" });
+    expect(reply.status).toBe(202);
+    await mock.idle();
+    const entries = mock.world.entries["home-main"] ?? [];
+    expect(entries.slice(-2).map((entry) => entry.channel)).toEqual(["web", "web"]);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
   it("returns the home session and its head", async () => {
     const mock = open("workbench");
     const row = mock.world.sessions[0];

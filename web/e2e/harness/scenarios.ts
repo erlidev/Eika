@@ -1064,6 +1064,38 @@ export const scenarios = {
       return b.world;
     },
   },
+  "home-world": {
+    description: "The home conversation and named subagents in different states.",
+    path: "/sessions/home-main",
+    build: () => {
+      const b = configured();
+      b.world.settings.settings.model_classes = { main: "gpt-5", fast: "gpt-5-mini" };
+      const home = b.home({ id: "home-main" });
+      b.conversation(home, [
+        { role: "user", content: "Find a plumber." },
+        { role: "assistant", content: "I will look for one." },
+      ]);
+      const running = b.subagent(home, {
+        id: "subagent-plumber",
+        name: "plumber",
+        agent: "researcher",
+        state: "running",
+        brief: "Find a plumber.",
+      });
+      b.conversation(running, [{ role: "assistant", content: "Checking local options." }]);
+      const computer = b.computer({ id: "cx-repair", name: "repair" });
+      b.subagent(home, {
+        computer_id: computer.id,
+        id: "subagent-repair",
+        name: "repair",
+        agent: "worker",
+        state: "idle",
+        brief: "Inspect the repair.",
+        result: "The repair is complete.",
+      });
+      return b.world;
+    },
+  },
   "chat-empty": {
     description: "A chat with no messages yet, beside the chats of the workbench.",
     path: "/sessions/chat-new",
