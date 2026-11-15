@@ -267,8 +267,8 @@ func (h *harness) newAgent() *agent.Agent {
 		RetryBackoff:   time.Millisecond,
 		Limits:         agent.Limits{Stall: 150 * time.Millisecond},
 		// The scenario's session compacts as home does, with a board.
-		Compaction: agent.CompactionSettings{KeepRecentTokens: 400, Board: func(context.Context, *time.Location) (string, error) {
-			return "- plumber (worker): idle", nil
+		Compaction: agent.CompactionSettings{KeepRecentTokens: 400, Board: func(context.Context, *time.Location) (string, time.Time, error) {
+			return "- plumber (worker): idle", h.clock.Now(), nil
 		}},
 	})
 	for _, m := range h.steering {

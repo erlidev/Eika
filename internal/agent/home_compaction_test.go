@@ -36,21 +36,25 @@ func newHomeCompactor(t *testing.T, p *providertest.Provider, keep int, board fu
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Compaction: agent.CompactionSettings{
 			KeepRecentTokens: keep,
-			Board: func(_ context.Context, loc *time.Location) (string, error) {
+			Board: func(_ context.Context, loc *time.Location) (string, time.Time, error) {
 				if loc != zone {
 					t.Errorf("board zone = %v, want the agent's", loc)
 				}
 				h.calls = append(h.calls, p.Calls())
 				text, err := board(len(h.boards))
 				h.boards = append(h.boards, text)
-				return text, err
+				return text, boardRead, err
 			},
 		},
 	})
 	return h
 }
 
-// homeSummary is the summary a home compaction at the test clock stores.
+// boardRead is when the test's board says it read its rows.
+var boardRead = time.Date(2026, 11, 15, 13, 2, 0, 0, time.UTC)
+
+// homeSummary is the summary a home compaction stores with a board read at
+// boardRead.
 func homeSummary(board, conversation string) string {
 	return "[Subagents] as of Sun 2026-11-15 14:02 +01:00 (Europe/Berlin)\n" + board + "\n\n[Conversation]\n" + conversation
 }
@@ -81,8 +85,14 @@ func TestHomeCompactionRollsTheConversationAndRebuildsTheBoard(t *testing.T) {
 		t.Errorf("update request begins with %q, want the previous summary", got)
 	}
 	second := homeSummary(boards[1], "CONVERSATION-2")
-	if got := c.store.compactions["s1"]; len(got) != 2 || got[0].Summary != first || got[1].Summary != second {
-		t.Errorf("stored compactions = %+v, want the home summaries", got)
+	got := c.store.compactions["s1"]
+	if len(got) != 2 || got[0].Summary != first || got[1].Summary != second {
+		t.Fatalf("stored compactions = %+v, want the home summaries", got)
+	}
+	for i, c := range got {
+		if c.BoardAsOf == nil || !c.BoardAsOf.Equal(boardRead) {
+			t.Errorf("compaction %d board_as_of = %v, want the time the board was read", i, deref(c.BoardAsOf))
+		}
 	}
 	// The board is read from rows once the model has written its part.
 	if !reflect.DeepEqual(c.calls, []int{1, 2}) {

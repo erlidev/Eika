@@ -390,8 +390,9 @@ The home session's summary has two sections (`CompactionSettings.Board`,
 which `newAgent` sets for home only). `[Subagents]` is the board:
 `subagent.Board` renders it from the children's rows once the model has
 answered, under a heading with the time it holds for. Running and waiting
-children come first, then those active since the previous compaction entry on
-the path, each with agent, project, state, last activity, waiting reason and
+children come first, then those active since the previous board was read (its
+time is the compaction's `board_as_of`; an older compaction counts from its
+entry's time), each with agent, project, state, last activity, waiting reason and
 the first line of its last report; one line counts the rest. `[Conversation]`
 is the model's: Eika's summary prompt writes it, and each later compaction asks
 Eika's update prompt to fold the new messages into it, with the previous

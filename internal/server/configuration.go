@@ -437,7 +437,7 @@ func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, 
 		opts.Channel = "web"
 		// Home compacts into the board and a rolling conversation;
 		// subagent and routine sessions keep Pi's summary.
-		opts.Compaction.Board = func(ctx context.Context, loc *time.Location) (string, error) {
+		opts.Compaction.Board = func(ctx context.Context, loc *time.Location) (string, time.Time, error) {
 			return s.subagentBoard(ctx, sess.ID, loc)
 		}
 	}

@@ -2265,7 +2265,10 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   summary is assembled, after the model has answered, so it states what holds
   at that moment and is never carried from one summary to the next. Running
   and waiting children come first, then those active since the previous
-  compaction; the rest are a counted line that points to `subagent_status`.
+  board was read; the rest are a counted line that points to `subagent_status`.
+  The read time is stored with the compaction (`board_as_of`), not taken from
+  the entry: a report made between the read and the store would otherwise be
+  shown by no board.
   Reports and waiting reasons are clipped on the board; the whole text stays
   on the child. Rejected: asking the model to keep subagent state in its
   summary, which paraphrases ids and states that the rows already hold.

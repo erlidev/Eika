@@ -414,7 +414,7 @@ stored without changes. Channel is independent of the message payload.
 | `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, `compaction`, `preamble` or `notice`. |
 | `created_at` | time | When it was written. |
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
-| `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `threshold`, or `overflow`), and `usage`. The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
+| `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `threshold`, or `overflow`), `usage`, and, on a home session's compaction, `board_as_of` (RFC 3339 time its subagent board was read). The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
 
 A user message can include `context`: the block the model reads after the
 message's text, which states the time it was sent and, in the home session, its
