@@ -50,3 +50,12 @@ export const queryKeys = {
   mcpServer: (id: string) => ["mcp", id] as const,
   authStatus: () => ["auth", "status"] as const,
 };
+
+/**
+ * isSessionConfiguration matches the cached configuration of every session,
+ * saved or drafted. A configuration names the model its session resolves to,
+ * so what changes the models or the classes makes all of them stale.
+ */
+export function isSessionConfiguration(key: readonly unknown[]): boolean {
+  return key[0] === "session" && key[2] === "configuration";
+}

@@ -13,6 +13,7 @@ import { RunStatusBar } from "@/features/session/RunStatusBar";
 import { SessionHeading } from "@/features/session/SessionHeading";
 import { Transcript } from "@/features/session/Transcript";
 import { useSessionStore } from "@/features/session/store";
+import { ConfigurationError } from "@/features/session/ConfigurationError";
 import { composerModel } from "@/features/session/composerModel";
 import { useSessionStream } from "@/features/session/useSessionStream";
 import { Notice } from "@/components/Notice";
@@ -127,6 +128,13 @@ export function SessionView({ sessionId, header = true }: SessionViewProps) {
             </span>
           </Notice>
         </div>
+      )}
+      {configuration.isError && (
+        <ConfigurationError
+          error={configuration.error}
+          retry={() => void configuration.refetch()}
+          retrying={configuration.isFetching}
+        />
       )}
       <Composer
         sessionId={sessionId}

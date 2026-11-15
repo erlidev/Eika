@@ -75,3 +75,15 @@ test("a home session that does not load says so and can be tried again", async (
   await expect(eika.page.getByRole("region", { name: "Session" })).toBeVisible();
   await expect(alert).toHaveCount(0);
 });
+
+test("a configuration that does not load says so and can be tried again", async ({ open }) => {
+  const route = "GET /api/sessions/{id}/configuration";
+  const eika = await open({ scenario: "workbench", failing: { [route]: { status: 500 } } });
+  const alert = eika.page
+    .getByRole("alert")
+    .filter({ hasText: "Could not load the session's model" });
+  await expect(alert).toBeVisible();
+  eika.mock.healRoute(route);
+  await eika.click("Retry");
+  await expect(alert).toHaveCount(0);
+});
