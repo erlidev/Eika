@@ -304,7 +304,7 @@ func TestEikaDelegatesToNamedSubagents(t *testing.T) {
 		t.Errorf("resume lost the worker's context: %s", text)
 	}
 	results = toolResultsByCall(eika.Requests()[7])
-	if !strings.Contains(results["resume"], `"note":"Accepted your message. It continues in its own context."`) ||
+	if !strings.Contains(results["resume"], `"note":"Accepted your message. No question is waiting; it continues in its own context."`) ||
 		!strings.Contains(results["resume"], `"state":"running"`) || !strings.Contains(results["board"], `"report":"Found a plumber"`) ||
 		!strings.Contains(results["board"], `"report":"Flights found"`) || !strings.Contains(results["board"], `"name":"plumber"`) ||
 		!strings.Contains(results["board"], `"name":"flights"`) || !strings.Contains(results["board"], `"project":"kitchen"`) {

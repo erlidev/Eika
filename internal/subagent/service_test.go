@@ -194,7 +194,7 @@ func TestDuplicateStartConcurrentResumeAndCancel(t *testing.T) {
 			if err != nil || started || row.ID != first.ID || row.Brief != first.Brief {
 				t.Errorf("duplicate: %+v %v %v", row, started, err)
 			}
-			row, accepted, err := s.Message(t.Context(), "home", "plumber", "do not accept", fg)
+			row, accepted, err := s.Message(t.Context(), "home", "plumber", "do not accept", fg, "")
 			if err != nil || accepted || row.State != store.SessionRunning {
 				t.Errorf("running message: %+v %v %v", row, accepted, err)
 			}
@@ -210,7 +210,7 @@ func TestDuplicateStartConcurrentResumeAndCancel(t *testing.T) {
 	if _, err := s.Waiting(t.Context(), "home", "plumber", "changed reason"); err != nil {
 		t.Fatal(err)
 	}
-	row, _, err := s.Message(t.Context(), "home", "plumber", "not an answer yet", fg)
+	row, _, err := s.Message(t.Context(), "home", "plumber", "not an answer yet", fg, "")
 	if err != nil || row.State != store.SessionWaiting || row.WaitingReason != "changed reason" {
 		t.Fatalf("waiting: %+v %v", row, err)
 	}
@@ -223,7 +223,7 @@ func TestDuplicateStartConcurrentResumeAndCancel(t *testing.T) {
 	}
 	for range 20 {
 		wg.Go(func() {
-			if _, _, err := s.Message(t.Context(), "home", "plumber", "follow up", fg); err != nil {
+			if _, _, err := s.Message(t.Context(), "home", "plumber", "follow up", fg, ""); err != nil {
 				t.Error(err)
 			}
 		})
@@ -245,7 +245,7 @@ func TestDuplicateStartConcurrentResumeAndCancel(t *testing.T) {
 	if row.ID != first.ID {
 		t.Fatal(row)
 	}
-	if _, _, err := s.Message(t.Context(), "home", "plumber", "closed", fg); err == nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "closed", fg, ""); err == nil {
 		t.Fatal("resumed after close")
 	}
 	out.mu.Lock()
@@ -279,7 +279,7 @@ func TestScriptedProviderResumesSameContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	awaitState(t, st, store.SessionIdle)
-	next, _, err := s.Message(t.Context(), "home", "plumber", "follow up", fg)
+	next, _, err := s.Message(t.Context(), "home", "plumber", "follow up", fg, "")
 	if err != nil || next.ID != row.ID {
 		t.Fatalf("resume: %+v %v", next, err)
 	}
@@ -315,13 +315,13 @@ func TestFailedChildResumesAndStateWriteFailureIsReturned(t *testing.T) {
 	st.mu.Lock()
 	st.fail = true
 	st.mu.Unlock()
-	if _, _, err := s.Message(t.Context(), "home", "plumber", "retry", fg); err == nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "retry", fg, ""); err == nil {
 		t.Fatal("ignored state write error")
 	}
 	st.mu.Lock()
 	st.fail = false
 	st.mu.Unlock()
-	if _, _, err := s.Message(t.Context(), "home", "plumber", "retry", fg); err != nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "retry", fg, ""); err != nil {
 		t.Fatal(err)
 	}
 	awaitState(t, st, store.SessionFailed)
@@ -389,7 +389,7 @@ func TestCancelReturnsFinalStateWriteError(t *testing.T) {
 	st.mu.Lock()
 	st.fail = false
 	st.mu.Unlock()
-	row, _, err := s.Message(t.Context(), "home", "plumber", "retry", fg)
+	row, _, err := s.Message(t.Context(), "home", "plumber", "retry", fg, "")
 	if err != nil || row.State != store.SessionRunning {
 		t.Fatalf("stranded child did not resume: %+v %v", row, err)
 	}
@@ -446,7 +446,7 @@ func TestStrandedChildResumesAndCancelsAfterFinalWriteFails(t *testing.T) {
 				awaitState(t, st, store.SessionCancelled)
 				return
 			}
-			if _, _, err := s.Message(t.Context(), "home", "plumber", "again", fg); err != nil {
+			if _, _, err := s.Message(t.Context(), "home", "plumber", "again", fg, ""); err != nil {
 				t.Fatal(err)
 			}
 			if got := <-runs; got != "again" {
@@ -565,7 +565,7 @@ func TestScriptedProviderLifecycleAndGlobalEvents(t *testing.T) {
 	}
 	for range 20 {
 		wg.Go(func() {
-			row, _, err := s.Message(t.Context(), "home", "plumber", "follow up", fg)
+			row, _, err := s.Message(t.Context(), "home", "plumber", "follow up", fg, "")
 			if err != nil || row.ID != first.ID || row.State != store.SessionRunning {
 				t.Errorf("resume: %+v %v", row, err)
 			}
@@ -584,7 +584,7 @@ func TestScriptedProviderLifecycleAndGlobalEvents(t *testing.T) {
 	}
 	p.release <- struct{}{}
 	awaitState(t, st, store.SessionFailed)
-	if _, _, err := s.Message(t.Context(), "home", "plumber", "try again", fg); err != nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "try again", fg, ""); err != nil {
 		t.Fatal(err)
 	}
 	<-p.started
@@ -637,7 +637,7 @@ func TestRunsGetTheirPriorityAndCancelledRunsAreRecordedCancelled(t *testing.T) 
 		t.Fatalf("start turn = %+v", got)
 	}
 	awaitState(t, st, store.SessionCancelled)
-	if _, accepted, err := s.Message(t.Context(), "home", "plumber", "again", inference.Foreground); err != nil || !accepted {
+	if _, accepted, err := s.Message(t.Context(), "home", "plumber", "again", inference.Foreground, ""); err != nil || !accepted {
 		t.Fatalf("message: %v %v", accepted, err)
 	}
 	if got := <-turns; got != (turn{"again", inference.Foreground}) {
@@ -809,7 +809,7 @@ func TestEachAssignmentNeedsItsOwnReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	awaitState(t, st, store.SessionIdle)
-	if _, _, err := s.Message(t.Context(), "home", "plumber", "second", fg); err != nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "second", fg, ""); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
@@ -950,7 +950,7 @@ func TestMaxRunningReservesSlotsUnderConcurrentStarts(t *testing.T) {
 	if _, err := s.Cancel(t.Context(), "home", names[1]); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.Message(t.Context(), "home", names[1], "again", fg); err != nil {
+	if _, _, err := s.Message(t.Context(), "home", names[1], "again", fg, ""); err != nil {
 		t.Fatalf("message into the freed slot: %v", err)
 	}
 	// Slots are the running children: cancelled ones hold none.
@@ -963,10 +963,10 @@ func TestMaxRunningReservesSlotsUnderConcurrentStarts(t *testing.T) {
 	if _, _, err := s.Start(t.Context(), "home", over, fg); err != nil {
 		t.Fatalf("start in a freed slot: %v", err)
 	}
-	if _, _, err := s.Message(t.Context(), "home", names[0], "again", fg); err != nil {
+	if _, _, err := s.Message(t.Context(), "home", names[0], "again", fg, ""); err != nil {
 		t.Fatalf("message into the last free slot: %v", err)
 	}
-	if _, _, err := s.Message(t.Context(), "home", names[2], "again", fg); !errors.Is(err, subagent.ErrTooManyRunning) {
+	if _, _, err := s.Message(t.Context(), "home", names[2], "again", fg, ""); !errors.Is(err, subagent.ErrTooManyRunning) {
 		t.Fatalf("message over the limit: %v", err)
 	}
 }
@@ -1062,11 +1062,11 @@ func TestReportedIsToldOfEachAssignmentThatEndsIdleWithAReport(t *testing.T) {
 	}
 
 	// A failed run and a cancelled one end without news for Eika.
-	if _, _, err := s.Message(t.Context(), "home", "plumber", "fail", fg); err != nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "fail", fg, ""); err != nil {
 		t.Fatal(err)
 	}
 	awaitState(t, st, store.SessionFailed)
-	if _, _, err := s.Message(t.Context(), "home", "plumber", "hold", fg); err != nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "hold", fg, ""); err != nil {
 		t.Fatal(err)
 	}
 	awaitState(t, st, store.SessionRunning)
@@ -1074,7 +1074,7 @@ func TestReportedIsToldOfEachAssignmentThatEndsIdleWithAReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The next assignment's report is news again.
-	if _, _, err := s.Message(t.Context(), "home", "plumber", "again", fg); err != nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "again", fg, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := <-reported; got.Result != "done: again" {

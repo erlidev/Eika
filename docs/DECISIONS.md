@@ -602,7 +602,8 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   lines and nothing about the shape changes: `time: Sat 2026-10-31 14:05 +00:00
   (UTC)` today. A message that already has its block keeps it: a message read
   back from the store, or given back to its queue by a turn that failed, is
-  never stamped again.
+  never stamped again. An unstored question notice can be replaced before
+  delivery; the stamped time and stored messages stay unchanged.
 - **Why stored, and why apart from the text.** The time is read once and
   written once. A block computed when a request is built would give every
   earlier user message a different time on every call, the serialised prefix
@@ -2223,3 +2224,13 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   from the child, run and tool call. The legacy question broker never registers
   these questions, so its HTTP answer route cannot answer them. There is no
   new table or route. A restart ends the run; P2-18 repairs its tool call.
+
+- **Question answers name the specific wait** (2026-11-15). A notice carries a
+  stable question id, and `subagent_message` accepts an answer only for the
+  current id. A stale id cannot start a run or answer a later question. An
+  unstored message is checked just before delivery and marks ended questions
+  as no longer pending; this includes queued messages and notice retries. The
+  id check also covers a question that ends while the model is replying.
+  Options use JSON so a delimiter inside an option cannot change the choices.
+  The check runs again after inference admission, and a changed request is
+  measured again and stored as sent, so a queue wait cannot hide the change.

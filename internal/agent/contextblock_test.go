@@ -6,11 +6,13 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/counter"
 	"github.com/erlidev/eika/internal/provider/providertest"
@@ -401,5 +403,89 @@ func TestASteeredMessageTakesTheNoticesThatArrivedDuringTheRun(t *testing.T) {
 	}
 	if !strings.Contains(steered.Context, "\nnotice: plumber (worker) reported: Found one\n") || !reflect.DeepEqual(steered.Notices, []string{"n1"}) {
 		t.Errorf("steered message = %+v, want the notice", steered)
+	}
+}
+
+func TestQueuedNoticeIsRefreshedBeforeItReachesTheModel(t *testing.T) {
+	box := &noticeBox{}
+	var a *agent.Agent
+	ended := false
+	queue := callTool{name: "queue", run: func(context.Context) string {
+		box.add(agent.Notice{ID: "question-1", Text: "A question"})
+		a.Steer(provider.UserMessage("and?"))
+		ended = true
+		return "queued"
+	}}
+	f := newFixtureWith(t, agent.Options{Notices: box.take, RefreshMessage: func(m provider.Message) provider.Message {
+		if ended && len(m.Notices) > 0 {
+			m.Context = strings.Replace(m.Context, "</context>", "notice: question is no longer pending\n</context>", 1)
+		}
+		return m
+	}}, []providertest.Step{providertest.Calls("", providertest.Call("c1", "queue", map[string]any{})), providertest.Text("done")}, queue)
+	a = f.agent
+	if err := a.Run(t.Context(), f.session, provider.UserMessage("go")); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range f.store.Messages(f.session.ID) {
+		if m.Content == "and?" {
+			if !strings.Contains(m.Context, "question is no longer pending") || !reflect.DeepEqual(m.Notices, []string{"question-1"}) {
+				t.Fatalf("stored message = %+v", m)
+			}
+			for _, sent := range f.provider.Requests()[1].Messages {
+				if sent.Content == "and?" && sent.Context == m.Context {
+					return
+				}
+			}
+			t.Fatal("refreshed message did not reach the model")
+		}
+	}
+	t.Fatal("queued message was not stored")
+}
+
+func TestQuestionNoticeIsRefreshedAfterWaitingForAnInferenceSlot(t *testing.T) {
+	q := inference.New(nil)
+	q.SetPools([]inference.Pool{{Name: "gpu", Slots: 1}})
+	held, err := q.Acquire(t.Context(), inference.Need{Pool: "gpu", Priority: inference.Interactive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	box := &noticeBox{waiting: []agent.Notice{{ID: "question-1", Text: "Which day?"}}}
+	var ended atomic.Bool
+	f := newFixtureWith(t, agent.Options{Notices: box.take, Inference: agent.Inference{Queue: q, Pool: "gpu"}, RefreshMessage: func(m provider.Message) provider.Message {
+		if ended.Load() && len(m.Notices) > 0 && !strings.Contains(m.Context, "no longer pending") {
+			m.Context = strings.Replace(m.Context, "</context>", "notice: question is no longer pending\n</context>", 1)
+		}
+		return m
+	}}, []providertest.Step{providertest.Text("noted")})
+	done := make(chan error, 1)
+	go func() { done <- f.agent.Run(t.Context(), f.session, provider.UserMessage("go")) }()
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		pools := q.Snapshot()
+		if len(pools) > 0 && len(pools[0].Waiting) > 0 {
+			break
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("model call did not wait for its slot")
+		case <-tick.C:
+		}
+	}
+	ended.Store(true)
+	held.Release()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	got := f.store.Messages(f.session.ID)[0]
+	if !strings.Contains(got.Context, "question is no longer pending") {
+		t.Fatalf("stored context = %q", got.Context)
+	}
+	sent := f.provider.Requests()[0].Messages[0]
+	if sent.Context != got.Context {
+		t.Fatalf("sent context %q differs from stored %q", sent.Context, got.Context)
 	}
 }

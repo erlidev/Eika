@@ -226,8 +226,8 @@ func (s *Service) Start(ctx context.Context, parent string, child store.Session,
 // it accepted the text. A child whose run is active returns its status without
 // accepting the text. A stored running or waiting state with no active run is
 // a lost final write and is resumed too. A waiting question takes the text as
-// its answer and continues the same run.
-func (s *Service) Message(ctx context.Context, parent, name, text string, priority inference.Priority) (store.Session, bool, error) {
+// its answer only when questionID matches its id. It continues the same run.
+func (s *Service) Message(ctx context.Context, parent, name, text string, priority inference.Priority, questionID string) (store.Session, bool, error) {
 	if err := validText("text", text, 64<<10); err != nil {
 		return store.Session{}, false, err
 	}
@@ -241,7 +241,7 @@ func (s *Service) Message(ctx context.Context, parent, name, text string, priori
 		return store.Session{}, false, err
 	}
 	if active := s.active[child.ID]; active != nil {
-		if active.cancelled || active.question == nil {
+		if active.cancelled || active.question == nil || questionID == "" || active.question.id != questionID || !active.question.live() {
 			return child, false, nil
 		}
 		if err := active.question.accept(text); err != nil {
@@ -254,6 +254,9 @@ func (s *Service) Message(ctx context.Context, parent, name, text string, priori
 		active.question.answer <- text
 		active.question = nil
 		return child, true, nil
+	}
+	if questionID != "" {
+		return child, false, nil
 	}
 	if err := s.room(ctx); err != nil {
 		return store.Session{}, false, err

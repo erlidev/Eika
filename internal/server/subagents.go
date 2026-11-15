@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -98,13 +99,13 @@ func (d delegation) StartSubagent(ctx context.Context, home string, child store.
 }
 
 // MessageSubagent resumes a child of home with text.
-func (d delegation) MessageSubagent(ctx context.Context, home, name, text string) (store.Session, bool, error) {
+func (d delegation) MessageSubagent(ctx context.Context, home, name, text, questionID string) (store.Session, bool, error) {
 	s := d.server()
 	priority, err := s.delegationPriority(ctx, home)
 	if err != nil {
 		return store.Session{}, false, err
 	}
-	return s.subagents.Message(ctx, home, name, text, priority)
+	return s.subagents.Message(ctx, home, name, text, priority, questionID)
 }
 
 // Subagents returns one child of home, or all of them.
@@ -285,14 +286,11 @@ func (d delegation) AskSubagent(ctx context.Context, q builtin.Question) (string
 	if s.subagents == nil {
 		return "", true, fmt.Errorf("subagents are unavailable")
 	}
-	reason := q.Text
-	if len(q.Options) > 0 {
-		reason += "\nOptions: " + strings.Join(q.Options, "; ")
-		reason += fmt.Sprintf("\nFree text allowed: %t", q.AllowFreeText)
-	}
 	sum := sha256.Sum256([]byte("question\x00" + q.SessionID + "\x00" + q.RunID + "\x00" + q.CallID))
-	id := "notice-" + hex.EncodeToString(sum[:12])
-	answer, err := s.subagents.Ask(ctx, child.ID, reason, q.ValidateAnswer, func(ctx context.Context, child store.Session) {
+	id := "question-" + hex.EncodeToString(sum[:12])
+	q.ID = id
+	reason := questionReason(q, id)
+	answer, err := s.subagents.Ask(ctx, child.ID, id, reason, q.ValidateAnswer, func(ctx context.Context, child store.Session) {
 		e, err := event.New(event.TypeQuestionAsked, event.SessionTopic(child.ID), event.QuestionAsked{
 			RunID: q.RunID, SessionID: q.SessionID, CallID: q.CallID, QuestionID: q.ID,
 			Question: q.Text, Options: q.Options, AllowFreeText: q.AllowFreeText,
@@ -300,8 +298,19 @@ func (d delegation) AskSubagent(ctx context.Context, q builtin.Question) (string
 		if err == nil {
 			s.deps.Bus.Emit(ctx, e)
 		}
-		text := fmt.Sprintf("%s (%s) asks: %s\nAnswer with subagent_message, or ask the user in your reply and relay the answer.", child.Name, child.Agent, reason)
+		text := fmt.Sprintf("%s (%s) asks: %s\nAnswer with subagent_message and question_id %s, or ask the user in your reply and relay the answer with that id.", child.Name, child.Agent, reason, id)
 		s.notices.postSoon(ctx, child.ParentSessionID, id, text)
 	})
 	return answer, true, err
+}
+
+// questionReason renders choices as JSON so their text stays unambiguous.
+func questionReason(q builtin.Question, id string) string {
+	reason := fmt.Sprintf("Question ID: %s\n%s", id, q.Text)
+	if len(q.Options) > 0 {
+		options, _ := json.Marshal(q.Options)
+		reason += "\nOptions (JSON): " + string(options)
+		reason += fmt.Sprintf("\nFree text allowed: %t", q.AllowFreeText)
+	}
+	return reason
 }

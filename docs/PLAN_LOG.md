@@ -9,6 +9,11 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-16 follow-up identifies each question in its notice and
+  answer, marks ended questions before delivery, and rejects stale answers.
+  Choices are JSON so semicolons remain part of an option. Targeted tests and
+  `make lint-go` pass; Docker tests need the host. `make check` passes.
+
 - 2026-11-15: P2-16 parks subagent ask_user calls in memory with a waiting
   reason, posts a home notice with a stable call id, and accepts one answer
   through subagent_message. Cancel and shutdown end the wait; restart recovery

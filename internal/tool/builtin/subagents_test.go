@@ -27,11 +27,14 @@ func (f *subagentFake) StartSubagent(_ context.Context, home string, child store
 	f.rows[child.Name] = child
 	return child, true, nil
 }
-func (f *subagentFake) MessageSubagent(_ context.Context, home, name, text string) (store.Session, bool, error) {
+func (f *subagentFake) MessageSubagent(_ context.Context, home, name, text, questionID string) (store.Session, bool, error) {
 	f.calls = append(f.calls, "message "+home+" "+name+" "+text)
 	row, ok := f.rows[name]
 	if !ok {
 		return store.Session{}, false, store.ErrNotFound
+	}
+	if questionID == "question-old" {
+		return row, false, nil
 	}
 	if f.running[name] {
 		return row, false, nil
@@ -90,8 +93,12 @@ func TestSubagentTools(t *testing.T) {
 		t.Fatalf("duplicate start = %v", again)
 	}
 	running := view(call("subagent_message", `{"subagent":"flights","text":"cheaper"}`))
-	if running["state"] != "waiting" || !strings.Contains(running["note"].(string), "is running") {
+	if running["state"] != "waiting" || !strings.Contains(running["note"].(string), "Include its question_id") {
 		t.Fatalf("running message = %v", running)
+	}
+	stale := view(call("subagent_message", `{"subagent":"flights","text":"old answer","question_id":"question-old"}`))
+	if stale["note"] != "That question is no longer pending. The message was not accepted." {
+		t.Fatalf("stale answer = %v", stale)
 	}
 	resumed := view(call("subagent_message", `{"subagent":"plumber","text":"get a second quote"}`))
 	if !strings.HasPrefix(resumed["note"].(string), "Accepted") {
@@ -124,6 +131,7 @@ func TestSubagentTools(t *testing.T) {
 		{"subagent_start", `{"agent":"worker","name":"x","brief":"b","extra":"y"}`, "unknown argument"},
 		{"subagent_start", `{"agent":"worker","name":"x"}`, "brief is required"},
 		{"subagent_message", `{"subagent":"plumber","text":"\ud800"}`, "surrogate"},
+		{"subagent_message", `{"subagent":"plumber","text":"hello","question_id":""}`, "question_id"},
 		{"subagent_message", "{\"subagent\":\"plumber\",\"text\":\"\xff\"}", "UTF-8"},
 		{"subagent_status", `{"subagent":null}`, "must be a string"},
 		{"subagent_cancel", `{}`, "subagent is required"},
@@ -132,7 +140,7 @@ func TestSubagentTools(t *testing.T) {
 			t.Errorf("%s %s = %+v, want error with %q", tc.name, tc.args, r, tc.want)
 		}
 	}
-	want := []string{"start home plumber p1", "start home plumber ", "message home flights cheaper", "message home plumber get a second quote",
+	want := []string{"start home plumber p1", "start home plumber ", "message home flights cheaper", "message home flights old answer", "message home plumber get a second quote",
 		"message home nobody hi", "status home ", "status home flights", "cancel home plumber"}
 	if strings.Join(f.calls, "|") != strings.Join(want, "|") {
 		t.Fatalf("calls = %q, want %q", f.calls, want)

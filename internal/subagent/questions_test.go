@@ -24,7 +24,7 @@ func TestQuestionAnswerValidationAndSingleDelivery(t *testing.T) {
 	var s *subagent.Service
 	s = service(t, st, func(ctx context.Context, row store.Session, _ string, _ inference.Priority) error {
 		q := builtin.Question{Text: "Which council?", Options: []string{"A", "B"}}
-		answer, err := s.Ask(ctx, row.ID, q.Text, q.ValidateAnswer, func(_ context.Context, waiting store.Session) { ready <- waiting })
+		answer, err := s.Ask(ctx, row.ID, "question-1", q.Text, q.ValidateAnswer, func(_ context.Context, waiting store.Session) { ready <- waiting })
 		if err != nil {
 			return err
 		}
@@ -39,7 +39,7 @@ func TestQuestionAnswerValidationAndSingleDelivery(t *testing.T) {
 	if waiting.State != store.SessionWaiting || waiting.WaitingReason != "Which council?" {
 		t.Fatalf("waiting = %+v", waiting)
 	}
-	if _, ok, err := s.Message(t.Context(), "home", "plumber", "C", fg); ok || !errors.Is(err, builtin.ErrBadAnswer) {
+	if _, ok, err := s.Message(t.Context(), "home", "plumber", "C", fg, "question-1"); ok || !errors.Is(err, builtin.ErrBadAnswer) {
 		t.Fatalf("bad answer: %v, %v", ok, err)
 	}
 	row, _ := st.Session(t.Context(), waiting.ID)
@@ -49,7 +49,7 @@ func TestQuestionAnswerValidationAndSingleDelivery(t *testing.T) {
 	st.mu.Lock()
 	st.fail = true
 	st.mu.Unlock()
-	if _, ok, err := s.Message(t.Context(), "home", "plumber", "A", fg); ok || err == nil {
+	if _, ok, err := s.Message(t.Context(), "home", "plumber", "A", fg, "question-1"); ok || err == nil {
 		t.Fatalf("failed state write accepted answer: %v, %v", ok, err)
 	}
 	st.mu.Lock()
@@ -59,7 +59,7 @@ func TestQuestionAnswerValidationAndSingleDelivery(t *testing.T) {
 	accepted := make(chan bool, 12)
 	for range 12 {
 		wg.Go(func() {
-			row, ok, err := s.Message(t.Context(), "home", "plumber", "A", fg)
+			row, ok, err := s.Message(t.Context(), "home", "plumber", "A", fg, "question-1")
 			if err != nil || row.State != store.SessionRunning || row.WaitingReason != "" {
 				t.Errorf("answer = %+v, %v", row, err)
 			}
@@ -90,7 +90,7 @@ func TestQuestionCancelAndCloseJoinTheWait(t *testing.T) {
 			ready := make(chan struct{})
 			var s *subagent.Service
 			s = service(t, st, func(ctx context.Context, row store.Session, _ string, _ inference.Priority) error {
-				_, err := s.Ask(ctx, row.ID, "Which council?", builtin.Question{}.ValidateAnswer, func(context.Context, store.Session) { close(ready) })
+				_, err := s.Ask(ctx, row.ID, "question-1", "Which council?", builtin.Question{}.ValidateAnswer, func(context.Context, store.Session) { close(ready) })
 				return err
 			}, &events{})
 			row, _, err := s.Start(t.Context(), "home", child(), fg)
@@ -118,7 +118,7 @@ func TestQuestionAnswerAndCancelRace(t *testing.T) {
 		release := make(chan struct{})
 		var s *subagent.Service
 		s = service(t, st, func(ctx context.Context, row store.Session, _ string, _ inference.Priority) error {
-			_, err := s.Ask(ctx, row.ID, "Which council?", builtin.Question{}.ValidateAnswer, func(context.Context, store.Session) { close(ready) })
+			_, err := s.Ask(ctx, row.ID, "question-1", "Which council?", builtin.Question{}.ValidateAnswer, func(context.Context, store.Session) { close(ready) })
 			if err != nil {
 				<-release
 				return err
@@ -133,7 +133,7 @@ func TestQuestionAnswerAndCancelRace(t *testing.T) {
 		<-ready
 		var wg sync.WaitGroup
 		wg.Go(func() {
-			_, _, err := s.Message(t.Context(), "home", "plumber", "A", fg)
+			_, _, err := s.Message(t.Context(), "home", "plumber", "A", fg, "question-1")
 			if err != nil {
 				t.Error(err)
 			}
@@ -168,7 +168,7 @@ func TestQuestionWaitReleasesTheOnlyInferenceSlot(t *testing.T) {
 	var s *subagent.Service
 	s = service(t, st, func(ctx context.Context, row store.Session, text string, _ inference.Priority) error {
 		reg, err := builtin.Registry(builtin.Deps{QuestionRelay: func(ctx context.Context, asked builtin.Question) (string, bool, error) {
-			answer, err := s.Ask(ctx, row.ID, asked.Text, asked.ValidateAnswer, func(context.Context, store.Session) { close(ready) })
+			answer, err := s.Ask(ctx, row.ID, "question-1", asked.Text, asked.ValidateAnswer, func(context.Context, store.Session) { close(ready) })
 			return answer, true, err
 		}})
 		if err != nil {
@@ -188,7 +188,7 @@ func TestQuestionWaitReleasesTheOnlyInferenceSlot(t *testing.T) {
 		t.Fatalf("waiting question held the only slot: %v", err)
 	}
 	lease.Release()
-	if _, ok, err := s.Message(t.Context(), "home", "plumber", "A", fg); err != nil || !ok {
+	if _, ok, err := s.Message(t.Context(), "home", "plumber", "A", fg, "question-1"); err != nil || !ok {
 		t.Fatalf("answer: %v, %v", ok, err)
 	}
 	awaitState(t, st, store.SessionIdle)
@@ -205,4 +205,29 @@ func TestQuestionWaitReleasesTheOnlyInferenceSlot(t *testing.T) {
 	if !found {
 		t.Fatal("the answer did not complete the existing tool call")
 	}
+}
+
+func TestCancelledQuestionCannotTakeAnAnswerWhileItsNoticeIsPosting(t *testing.T) {
+	st := newMemory()
+	ready := make(chan context.CancelFunc, 1)
+	release := make(chan struct{})
+	var s *subagent.Service
+	s = service(t, st, func(ctx context.Context, row store.Session, _ string, _ inference.Priority) error {
+		questionCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		_, err := s.Ask(questionCtx, row.ID, "question-1", "Which?", builtin.Question{}.ValidateAnswer, func(context.Context, store.Session) { ready <- cancel; <-release })
+		return err
+	}, &events{})
+	if _, _, err := s.Start(t.Context(), "home", child(), fg); err != nil {
+		t.Fatal(err)
+	}
+	cancel := <-ready
+	cancel()
+	if s.PendingQuestion("question-1") {
+		t.Fatal("cancelled question is pending")
+	}
+	if _, ok, err := s.Message(t.Context(), "home", "plumber", "A", fg, "question-1"); err != nil || ok {
+		t.Fatalf("cancelled question accepted answer: %v, %v", ok, err)
+	}
+	close(release)
 }

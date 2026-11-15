@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -207,15 +208,61 @@ func (n *notices) waiting(sessionID string) bool {
 // agent's Notices option for the session's runs.
 func (n *notices) take(sessionID string) []agent.Notice {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	book := n.sessions[sessionID]
 	if book == nil || len(book.waiting) == 0 {
+		n.mu.Unlock()
 		return nil
 	}
 	taken := book.waiting
 	book.waiting = nil
 	book.held = append(book.held, taken...)
+	n.mu.Unlock()
 	return taken
+}
+
+// refresh marks questions that ended after a message was stamped but before
+// it was sent. The id stays in the message so delivery is recorded once.
+func (n *notices) refresh(sessionID string, m provider.Message) provider.Message {
+	if len(m.Notices) == 0 || !strings.HasSuffix(m.Context, "</context>") {
+		return m
+	}
+	n.mu.Lock()
+	var held []agent.Notice
+	if book := n.sessions[sessionID]; book != nil {
+		held = slices.Clone(book.held)
+	}
+	n.mu.Unlock()
+	stale := make(map[string]bool)
+	for _, id := range m.Notices {
+		question := strings.HasPrefix(id, "question-")
+		legacy := slices.ContainsFunc(held, func(notice agent.Notice) bool {
+			first, _, _ := strings.Cut(notice.Text, "\n")
+			return notice.ID == id && strings.Contains(first, ") asks: ") && strings.HasSuffix(notice.Text, "\nAnswer with subagent_message, or ask the user in your reply and relay the answer.")
+		})
+		stale[id] = legacy || (question && (n.server.subagents == nil || !n.server.subagents.PendingQuestion(id)))
+	}
+	lines := strings.Split(m.Context, "\n")
+	out := make([]string, 0, len(lines))
+	index := 0
+	for i := 0; i < len(lines); {
+		line := lines[i]
+		if strings.HasPrefix(line, "notice: ") && index < len(m.Notices) {
+			id := m.Notices[index]
+			index++
+			if stale[id] {
+				out = append(out, fmt.Sprintf("notice: Subagent question %s is no longer pending. Do not answer it.", id))
+				i++
+				for i < len(lines) && (lines[i] == "" || strings.HasPrefix(lines[i], "  ")) {
+					i++
+				}
+				continue
+			}
+		}
+		out = append(out, line)
+		i++
+	}
+	m.Context = strings.Join(out, "\n")
+	return m
 }
 
 // delivered records that a stored message delivered the notices it lists,

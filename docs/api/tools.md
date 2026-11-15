@@ -46,7 +46,7 @@ with these fields:
 | Tool | Fields | Result |
 |---|---|---|
 | `subagent_start` | `agent`: `worker` or `researcher`, `name`, `brief`, optional `project` slug | Starts the subagent and returns at once. An existing name returns that subagent unchanged, with a note to use `subagent_message`. |
-| `subagent_message` | `subagent`, `text` | Answers a waiting question, or resumes an idle, failed or cancelled subagent in its own session. A running one does not take the text; the note says so. |
+| `subagent_message` | `subagent`, `text`, optional `question_id` | Answers the question with this id, or resumes an idle, failed or cancelled subagent when no id is given. A running one does not take new work; the note says so. |
 | `subagent_status` | optional `subagent` | Without a name, the board: every subagent with `report` as the first line of its last report. With one, also `brief` and the whole `report`. |
 | `subagent_cancel` | `subagent` | Stops the current run and waits for it; the subagent stays resumable. |
 
@@ -95,10 +95,15 @@ UTF-8, unpaired surrogates, duplicate or unknown fields, null values and trailin
 JSON are refused. With no options, free
 text is always allowed.
 
-The child becomes `waiting`; `waiting_reason` holds the question and choices.
+The child becomes `waiting`; `waiting_reason` holds the question id, question
+and choices as a JSON array.
 A home notice carries the question and starts a background home turn when
 home is idle. Eika supplies the answer through `subagent_message`, or asks the
-user in its reply and relays the answer. A closed question accepts only an
+user in its reply and relays the answer. An answer must carry the question id
+from the notice as `question_id`. A missing or stale id cannot answer a later
+question; a stale id cannot start new work. The note says when no question is
+waiting. An ended question notice is marked no longer pending before delivery.
+A closed question accepts only an
 exact option. An invalid answer leaves it waiting. An accepted answer becomes
 the existing tool call's text result and clears the waiting reason. Cancel
 ends the wait; a restart ends the run and repairs its unanswered call. No

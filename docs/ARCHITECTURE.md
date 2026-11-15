@@ -303,8 +303,9 @@ message and one alone. Agent definition replacement remains in
 
 Every user-side message ends with a `<context>` block (`agent/contextblock.go`)
 that states the time it was sent to the minute, in `Options.Location` (UTC when no zone is stored), read from `Options.Clock`. It is written
-once, when the loop first holds the message (`Run`, `Steer`, `FollowUp`), kept in
-`Message.Context` beside `Content` and stored with the message, so a resumed
+when the loop first holds the message (`Run`, `Steer`, `FollowUp`). Before an
+unstored message is sent, an ended question notice can be replaced; its time
+stays as stamped. `Message.Context` is stored beside `Content`, so a resumed
 session sends the same bytes and the prefix never changes under it. A request
 joins it to the text (`Message.ModelText`); the interface, titles and the
 transcript form of a summary use `Content` alone. In the home session the block
@@ -1081,14 +1082,19 @@ and direct chat runs are unchanged.
 
 A subagent's `ask_user` calls the server's question relay instead of registering
 with the legacy `Questions` broker. `subagent.Service.Ask` sets the child to
-`waiting`, with the question and choices as its reason, and registers a buffered
+`waiting`, with the question id, question and JSON-encoded choices as its reason, and registers a buffered
 answer channel under the lifecycle lock. It then emits `question.asked` for
 read-only watchers and posts a home notice through the notice writer below.
 The notice id derives from the child, run and call ids, so write retries add
 no second notice. Idle home starts a background turn. Eika can answer with
-`subagent_message`, or ask the user in its reply and relay the answer later.
+`subagent_message` with that question id, or ask the user in its reply and
+relay the answer later with the same id. Before an unstored home message is
+sent to the model, the notice book marks a question that ended as no longer
+pending. The same check applies to queued messages and notice write retries.
 
-`Message` validates an answer against the choices, sets `running` with no
+`Message` accepts an answer only if its question id matches the current wait.
+A missing or stale id cannot answer a different question or start new work.
+It validates the answer against the choices, sets `running` with no
 waiting reason and delivers one answer under the same lock as cancel. A bad
 answer or failed state write leaves the question waiting. The original tool
 call continues; no new run or user message is added to the child. Waiting
