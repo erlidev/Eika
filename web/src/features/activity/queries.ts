@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 import { queryKeys } from "@/api/keys";
-import { abortRun, listProjects, listSessions } from "@/api/routes";
-import type { Project, Run, Session } from "@/api/types";
+import { cancelSubagent, listProjects, listSessions } from "@/api/routes";
+import type { Project, Session } from "@/api/types";
 import { isSubagent } from "@/features/activity/state";
 
 /**
@@ -31,13 +31,14 @@ export function useProjects(): UseQueryResult<Project[]> {
 }
 
 /**
- * useCancelSubagent stops a subagent's run, which the harness records as the
- * subagent cancelled. The stream says so too; the refetch does not wait for it.
+ * useCancelSubagent stops a subagent's assignment, which the harness records
+ * as the subagent cancelled. The stream says so too; the refetch does not wait
+ * for it.
  */
-export function useCancelSubagent(sessionId: string): UseMutationResult<Run, Error, string> {
+export function useCancelSubagent(sessionId: string): UseMutationResult<Session, Error, void> {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: abortRun,
+    mutationFn: () => cancelSubagent(sessionId),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ["sessions"] });
       await client.invalidateQueries({ queryKey: queryKeys.session(sessionId) });

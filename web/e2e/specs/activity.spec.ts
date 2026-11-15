@@ -268,16 +268,28 @@ test("a waiting subagent can be cancelled too; an idle one has nothing to cancel
   await expect(eika.page.getByRole("button", { name: "Cancel" })).toHaveCount(0);
 });
 
+test("Cancel works while the harness holds the assignment but no run is going", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "activity", path: "/activity/subagent-plumber" });
+  Reflect.deleteProperty(eika.mock.world.activeRuns, "subagent-plumber");
+  await eika.page.reload();
+  await eika.settle();
+  await expect(eika.page.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  await eika.click("Cancel");
+  await expect(rowOf(eika, /^Cancelled: plumber/)).toBeVisible();
+});
+
 test("a cancel the harness refuses says so, and the subagent keeps running", async ({ open }) => {
   const eika = await open({
     scenario: "activity",
     path: "/activity/subagent-plumber",
-    failing: { "POST /api/runs/{id}/abort": { status: 500 } },
+    failing: { "POST /api/sessions/{id}/cancel": { status: 500 } },
   });
   await eika.click("Cancel");
   await expect(eika.page.getByRole("alert")).toContainText("Could not cancel the subagent");
   await expect(rowOf(eika, /^Running: plumber/)).toBeVisible();
-  eika.mock.healRoute("POST /api/runs/{id}/abort");
+  eika.mock.healRoute("POST /api/sessions/{id}/cancel");
   await eika.click("Cancel");
   await expect(rowOf(eika, /^Cancelled: plumber/)).toBeVisible();
 });
@@ -319,4 +331,59 @@ test("opening another subagent shows none of the last one's transcript", async (
   const chat = eika.page.getByRole("region", { name: "Session" });
   await expect(said(chat, "I will look for one.")).toBeVisible();
   await expect(said(chat, "Latah, Stupice")).toHaveCount(0);
+});
+
+test("a question or an MCP request in a subagent shows what is asked and takes no answer", async ({
+  open,
+}) => {
+  const eika = await open({ scenario: "activity" });
+  const paint = subagent(eika, "subagent-paint");
+  const entries = eika.mock.world.entries[paint.id] ?? [];
+  const add = (tool: string, args: unknown, callId: string) => {
+    entries.push({
+      id: `ent-${callId}`,
+      seq: entries.length + 1,
+      kind: "assistant",
+      created_at: "2026-03-14T14:00:00Z",
+      message: { role: "assistant", tool_calls: [{ id: callId, name: tool, arguments: args }] },
+      ...(paint.head_entry_id === undefined ? {} : { parent_id: paint.head_entry_id }),
+    });
+    paint.head_entry_id = `ent-${callId}`;
+  };
+  add("ask_user", { question: "Which finish?" }, "call-ask");
+  add("mcp__github__create_issue", { title: "Paint" }, "call-mcp");
+  eika.mock.world.elicitations.push({
+    id: "eli-paint",
+    session_id: paint.id,
+    run_id: "run-paint",
+    call_id: "call-mcp",
+    server: "github",
+    mode: "form",
+    message: "Which labels should the issue get?",
+    requested_schema: { type: "object", properties: { label: { type: "string", title: "Label" } } },
+    asked_at: "2026-03-14T14:00:00Z",
+  });
+  await eika.goto("/activity/subagent-paint");
+  eika.mock.emit(
+    eika.mock.event("question.asked", "session:subagent-paint", {
+      session_id: paint.id,
+      run_id: "run-paint",
+      call_id: "call-ask",
+      question_id: "q-paint",
+      question: "Which finish?",
+      options: ["Matte", "Gloss"],
+      allow_free_text: true,
+    }),
+  );
+  const view = eika.page.getByRole("region", { name: "Session" });
+  await expect(view.getByText("Which finish?").first()).toBeVisible();
+  await expect(view.getByText("waiting for an answer", { exact: true })).toBeVisible();
+  await expect(
+    view.getByRole("region", { name: "github asks for input" }).getByText("Waiting for an answer."),
+  ).toBeVisible();
+  await expect(view.getByText("Which labels should the issue get?")).toBeVisible();
+  for (const control of ["Matte", "Gloss", "Send", "Decline", "Cancel", "Submit", "Accept"]) {
+    await expect(view.getByRole("button", { name: control, exact: true })).toHaveCount(0);
+  }
+  await expect(view.getByRole("textbox")).toHaveCount(0);
 });

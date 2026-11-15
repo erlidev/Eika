@@ -1050,6 +1050,20 @@ describe("session storage metadata", () => {
     expect(mock.contractBreaks).toEqual([]);
   });
 
+  it("cancels a subagent through its session, and refuses what is not one", async () => {
+    const mock = open("activity");
+    const reply = await call(mock, "POST", "/api/sessions/subagent-quotes/cancel");
+    expect(reply.body).toMatchObject({ id: "subagent-quotes", state: "cancelled" });
+    expect(JSON.stringify(reply.body)).not.toContain("waiting_reason");
+    expect(mock.world.runs["run-quotes"]?.state).toBe("aborted");
+    // Nothing left to stop: the subagent is returned as it is.
+    const idle = await call(mock, "POST", "/api/sessions/subagent-seedlings/cancel");
+    expect(idle.body).toMatchObject({ state: "idle" });
+    expect((await call(mock, "POST", "/api/sessions/home-main/cancel")).status).toBe(409);
+    expect((await call(mock, "POST", "/api/sessions/missing/cancel")).status).toBe(404);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
   it("returns the stored code-owned waiting reason", async () => {
     const mock = open("home-world");
     const child = mock.world.sessions.find((row) => row.id === "subagent-plumber");

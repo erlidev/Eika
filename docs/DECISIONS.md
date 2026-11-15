@@ -2034,23 +2034,23 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   workbench alive; its specs for the chat list and panels went with its route.
 ## Activity
 
-- **Activity adds no endpoint** (2026-11-15, P3-09). The board reads
-  `GET /api/sessions` and keeps the sessions of kind `subagent`, and Cancel is
-  `POST /api/runs/{id}/abort`, which the harness already records as the
-  subagent cancelled. A listing or a cancel route of its own would repeat both.
-  A subagent shown running or waiting with no run (a final write lost to a
-  crash) has nothing to abort, so its Cancel is disabled until P2-18 reconciles
-  interrupted runs at start. Rejected: a `POST /api/subagents/{id}/cancel` over
-  `Service.Cancel`, which would also fix that case, but is a second way to stop
-  a run before a case exists that needs it.
+- **Cancel is a session route over the lifecycle service** (2026-11-15, P3-09).
+  The board reads `GET /api/sessions` and keeps the sessions of kind `subagent`,
+  but Cancel is `POST /api/sessions/{id}/cancel`, which calls
+  `Service.Cancel`. Aborting the run (`POST /api/runs/{id}/abort`) needs a run
+  id, and the service holds an assignment before its run exists and between its
+  first run and the report-draft retry, so Cancel would be disabled while the
+  subagent is running. The route refuses a session that is not a subagent with
+  `409`, and cancelling one with nothing to stop changes nothing.
 - **A row says what the wire knows.** The line under a name is the waiting reason,
   else the first line of the report, else of the brief. The design's "last tool
   call" needs a per-subagent activity field or the `activity` topic (P2-17,
   only if `session.updated` proved too coarse); a row would otherwise subscribe to
   every subagent's session. The open view streams every call.
 - **The read-only view is `SessionView` with a flag, and the store is guarded.**
-  `readOnly` drops the composer, status bar, abort key and rewind, so no control
-  moves or stops a session Eika owns beyond Cancel. The session store holds one
+  `readOnly` drops the composer, status bar, abort key and rewind, and reaches
+  the tool cards, so an `ask_user` or MCP request shows what is asked with no
+  control to answer it: no control moves or stops a session Eika owns beyond Cancel. The session store holds one
   session and opens the next in an effect, so `Transcript` renders nothing from
   a store that holds another session than its own; switching subagents never
   flashes the last one.

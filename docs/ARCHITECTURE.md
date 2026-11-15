@@ -870,8 +870,9 @@ web/src/
   Idle, then Failed and cancelled. It follows `session.updated` on `global`, and
   reads again after a reconnect or a `bus.dropped`. A subagent opens as
   `features/session`'s `SessionView` with `readOnly`: the transcript streams, and
-  there is no composer, status bar, abort key or rewind. Cancel aborts the
-  subagent's run and the harness records it `cancelled`; steering goes through
+  there is no composer, status bar, abort key or rewind, and a question or MCP
+  request in it takes no answer. Cancel is
+  `POST /api/sessions/{id}/cancel` (the lifecycle service's cancel); steering goes through
   Eika in Chat.
 - **Workbench** (`app/Workbench.tsx`, `Sidebar.tsx`, `panels.tsx`,
   `CommandPalette.tsx`): the earlier three-pane shell, kept in the tree with

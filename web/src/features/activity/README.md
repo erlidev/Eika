@@ -14,9 +14,9 @@ Steering goes through Eika in Chat, so the view has no composer.
 - `AgentDetail.tsx` is the header (name, state, project, the waiting reason,
   Cancel), a line saying to steer through Eika in Chat, the brief folded to its
   first line, `features/session`'s `SessionView` with `readOnly`, and the report
-  as a card once there is one. Cancel aborts the subagent's run
-  (`POST /api/runs/{id}/abort`), which the harness records as the subagent
-  cancelled; it is offered only while a run is going.
+  as a card once there is one. Cancel is
+  `POST /api/sessions/{id}/cancel`, which stops the subagent's assignment through
+  the lifecycle service; it is offered whenever the state is running or waiting.
 - `state.ts` is the pure part: grouping, the order inside a group, the line, the
   state colours. `queries.ts` reads `GET /api/sessions` and keeps the subagents,
   and `GET /api/projects` for their names.

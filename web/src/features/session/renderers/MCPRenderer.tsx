@@ -23,7 +23,7 @@ function mcpDetails(details: unknown): MCPToolDetails | undefined {
 }
 
 /** MCPToolBody is the renderer body registered for every MCP tool. */
-export function MCPToolBody({ call }: ToolRendererProps) {
+export function MCPToolBody({ call, readOnly = false }: ToolRendererProps) {
   const sessionId = useSessionStore((s) => s.sessionId);
   const live = useSessionStore((s) => s.elicitations.find((x) => x.call_id === call.callId));
   // A request made before this page subscribed is in the run state only.
@@ -45,7 +45,9 @@ export function MCPToolBody({ call }: ToolRendererProps) {
       <OutputBlock label="arguments" maxHeightClass="max-h-48">
         {JSON.stringify(call.arguments ?? {}, null, 2)}
       </OutputBlock>
-      {asked !== undefined && <ElicitationForm key={asked.id} elicitation={asked} />}
+      {asked !== undefined && (
+        <ElicitationForm key={asked.id} elicitation={asked} readOnly={readOnly} />
+      )}
       {d !== undefined ? (
         <>
           <ContentBlocks

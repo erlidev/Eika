@@ -143,6 +143,7 @@ export function Transcript({ sessionId, empty, readOnly = false }: TranscriptPro
                 key={item.key}
                 item={item}
                 openTool={item.kind === "tool" && waitingCalls.has(item.callId)}
+                readOnly={readOnly}
                 onRewind={
                   idle && item.kind === "user" && rewindable.has(item.entryId ?? "")
                     ? onRewind
@@ -259,11 +260,13 @@ function Assistant({ item }: AssistantProps) {
 type ItemProps = {
   item: TranscriptItem;
   openTool: boolean;
+  /** readOnly is passed to the tool cards, which then take no answers. */
+  readOnly: boolean;
   /** onRewind is absent when this row cannot be rewound to. */
   onRewind?: (entryId: string, text: string, images: MessageImage[]) => void;
 };
 
-const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
+const Item = memo(function Item({ item, openTool, readOnly, onRewind }: ItemProps) {
   switch (item.kind) {
     case "user":
       // A message the user wrote is the one thing on screen that did not come
@@ -313,7 +316,7 @@ const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
     case "assistant":
       return <Assistant item={item} />;
     case "tool":
-      return <ToolCard call={item} open={openTool} />;
+      return <ToolCard call={item} open={openTool} readOnly={readOnly} />;
     case "compaction":
       return <Compaction item={item} />;
     case "error":

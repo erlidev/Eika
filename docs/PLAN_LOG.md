@@ -11,10 +11,10 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
 
 - 2026-11-15: P3-09 adds Activity at `/activity/:sessionId?`: subagents by
   code-owned state (waiting reason shown), live from `session.updated`, and a read-only
-  `SessionView` per subagent with Cancel (run abort); no endpoint was needed. Rows lack
-  the last tool call: the wire has none (see DECISIONS). A reconnect or `bus.dropped`
-  now refetches session queries. Baselines: Activity, and the shell's rail gained its
-  item. A running subagent with no run cannot be cancelled until P2-18. `make check` passes.
+  `SessionView` per subagent (questions and MCP requests take no answer) with Cancel, the
+  new `POST /api/sessions/{id}/cancel` over `Service.Cancel`. Rows lack the last tool call:
+  the wire has none (see DECISIONS). A reconnect or `bus.dropped` now refetches session
+  queries. Baselines: Activity, and the shell's rail item. `make check` passes.
 
 - 2026-11-15: P2-15 posts a report as a home notice (id from the report) when
   its child goes idle; the next user-side `<context>` carries it and the stored

@@ -15,7 +15,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { StateDot } from "@/features/activity/StateDot";
 import { useCancelSubagent, useProjects } from "@/features/activity/queries";
 import { firstLine, isActive, isSubagent, liveLine, stateLabel } from "@/features/activity/state";
-import { SessionView, useRunStatus, useSession } from "@/features/session";
+import { SessionView, useSession } from "@/features/session";
 
 export type AgentDetailProps = { sessionId: string };
 
@@ -88,13 +88,11 @@ function BackLink() {
 
 type HeaderProps = { agent: Session };
 
-/** Header names the subagent, says what state it is in and why, and offers Cancel while it has a run. */
+/** Header names the subagent, says what state it is in and why, and offers Cancel while it is running or waiting. */
 function Header({ agent }: HeaderProps) {
   const projects = useProjects();
-  const status = useRunStatus(agent.id);
   const cancel = useCancelSubagent(agent.id);
   const project = projects.data?.find((p) => p.id === agent.project_id)?.name;
-  const run = status.data?.active ? status.data.run : undefined;
   return (
     <header className="border-b">
       <div className="flex items-start gap-2 px-3 py-2">
@@ -117,9 +115,9 @@ function Header({ agent }: HeaderProps) {
           <Button
             size="sm"
             variant="destructive"
-            disabled={run === undefined || cancel.isPending}
+            disabled={cancel.isPending}
             onClick={() => {
-              if (run !== undefined) cancel.mutate(run.id);
+              cancel.mutate();
             }}
           >
             Cancel

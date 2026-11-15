@@ -4604,6 +4604,51 @@
         ]
       }
     },
+    "POST /api/sessions/{id}/cancel": {
+      "status": 200,
+      "response": {
+        "object": {
+          "agent": "string",
+          "archived": "boolean",
+          "brief": "string",
+          "computer_id": "string",
+          "created_at": "string",
+          "head_entry_id": "string",
+          "id": "string",
+          "kind": "string",
+          "last_active_at": "string",
+          "name": "string",
+          "overridden": "boolean",
+          "owner": "string",
+          "parent_session_id": "string",
+          "pinned": "boolean",
+          "profile_id": "string",
+          "project_id": "string",
+          "result": "string",
+          "state": "string",
+          "title": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "updated_at": "string",
+          "waiting_reason": "string"
+        },
+        "optional": [
+          "agent",
+          "brief",
+          "computer_id",
+          "head_entry_id",
+          "name",
+          "parent_session_id",
+          "profile_id",
+          "project_id",
+          "result",
+          "waiting_reason"
+        ]
+      }
+    },
     "POST /api/sessions/{id}/compact": {
       "status": 202,
       "request": {

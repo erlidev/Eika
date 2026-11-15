@@ -619,3 +619,42 @@ func TestFallbackReportIgnoresAnEarlierAssignmentsAnswer(t *testing.T) {
 		t.Errorf("second fallback report = %q, want the no-report sentence", got)
 	}
 }
+
+// cancelled is the part of a cancelled subagent the test reads.
+type cancelled struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+}
+
+func TestUserCancelsASubagentThroughTheAPI(t *testing.T) {
+	d := newDelegating(t)
+	eika := providertest.New(
+		call("start", "subagent_start", map[string]any{"agent": "worker", "name": "plumber", "brief": "Find a plumber"}),
+		providertest.Text("on it"),
+	)
+	worker := newHeldScript()
+	d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a worker": worker})
+	d.postMessage(t, d.home.ID, "find a plumber", "", 202)
+	<-worker.started
+	d.waitIdle(t, d.home.ID)
+	plumber := d.waitState(t, "plumber", store.SessionRunning)
+
+	rec := request(t, d.Server, "POST", "/api/sessions/"+plumber.ID+"/cancel", nil)
+	if got := decodeBody[cancelled](t, rec, 200); got.State != string(store.SessionCancelled) || got.Name != "plumber" {
+		t.Fatalf("cancel = %+v", got)
+	}
+	if got := d.child(t, "plumber").State; got != store.SessionCancelled {
+		t.Fatalf("stored state = %s", got)
+	}
+	// Nothing is left to stop, which changes nothing.
+	decodeBody[cancelled](t, request(t, d.Server, "POST", "/api/sessions/"+plumber.ID+"/cancel", nil), 200)
+
+	for path, want := range map[string]int{
+		"/api/sessions/" + d.home.ID + "/cancel": 409,
+		"/api/sessions/missing/cancel":           404,
+	} {
+		if rec := request(t, d.Server, "POST", path, nil); rec.Code != want {
+			t.Errorf("POST %s = %d %s, want %d", path, rec.Code, rec.Body.String(), want)
+		}
+	}
+}

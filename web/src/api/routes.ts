@@ -186,6 +186,11 @@ export function compactSession(id: string, input: CompactRequest): Promise<Run> 
   });
 }
 
+/** cancelSubagent stops a subagent's assignment and returns it as it ended. */
+export function cancelSubagent(id: string): Promise<Session> {
+  return request<Session>(`/api/sessions/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+}
+
 /** abortRun cancels a run and waits for it to stop. */
 export function abortRun(id: string): Promise<Run> {
   return request<Run>(`/api/runs/${encodeURIComponent(id)}/abort`, { method: "POST" });

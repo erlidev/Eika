@@ -1,6 +1,6 @@
 /** Runs, queues, and questions. */
 
-import type { MessageImage, Run } from "../../../src/api/types.ts";
+import type { MessageImage, Run, Session } from "../../../src/api/types.ts";
 import { fail, ok, str } from "./context.ts";
 import type { RouteContext } from "./context.ts";
 import { sessionConfiguration } from "../profiles.ts";
@@ -39,6 +39,19 @@ function mockImage(upload: unknown): MessageImage | undefined {
 /** subagentRefusal is the harness's answer to a message or compaction for a subagent. */
 function subagentRefusal(name: string | undefined) {
   return fail(409, "conflict", `subagent ${name ?? ""} takes messages from Eika only`);
+}
+
+/** cancelled records a subagent cancelled and tells every client, as the lifecycle service does. */
+function cancelled(ctx: RouteContext, child: Session): void {
+  child.state = "cancelled";
+  Reflect.deleteProperty(child, "waiting_reason");
+  child.last_active_at = ctx.now();
+  ctx.emit(
+    ctx.event("session.updated", "global", {
+      session_id: child.id,
+      ...(child.computer_id === undefined ? {} : { computer_id: child.computer_id }),
+    }),
+  );
 }
 
 export function runRoutes(ctx: RouteContext): void {
@@ -152,6 +165,20 @@ export function runRoutes(ctx: RouteContext): void {
     void ctx.compact(session, run, str(body.instructions));
     return ok(run, 202);
   });
+  on("POST", "/api/sessions/{id}/cancel", ({ params }) => {
+    const child = find(w.sessions, params[0], "session");
+    if ("status" in child) return child;
+    if (child.kind !== "subagent") {
+      return fail(409, "conflict", `session ${child.id} is not a subagent`);
+    }
+    // A subagent with nothing to stop keeps its state.
+    if (child.state !== "running" && child.state !== "waiting") return ok(child);
+    const active = w.activeRuns[child.id];
+    const run = active === undefined ? undefined : w.runs[active];
+    if (run) ctx.finish(run, "aborted");
+    cancelled(ctx, child);
+    return ok(child);
+  });
   on("POST", "/api/runs/{id}/abort", ({ params }) => {
     const run = w.runs[params[0] ?? ""];
     if (!run) return fail(404, "not_found", "run not found");
@@ -159,17 +186,7 @@ export function runRoutes(ctx: RouteContext): void {
     ctx.finish(run, "aborted");
     // Aborting a subagent's run records the subagent cancelled; it stays resumable.
     const child = w.sessions.find((s) => s.id === run.session_id && s.kind === "subagent");
-    if (child) {
-      child.state = "cancelled";
-      Reflect.deleteProperty(child, "waiting_reason");
-      child.last_active_at = now();
-      ctx.emit(
-        ctx.event("session.updated", "global", {
-          session_id: child.id,
-          ...(child.computer_id === undefined ? {} : { computer_id: child.computer_id }),
-        }),
-      );
-    }
+    if (child) cancelled(ctx, child);
     return ok(run);
   });
   on("POST", "/api/questions/{id}/answer", ({ params, body }) => {
