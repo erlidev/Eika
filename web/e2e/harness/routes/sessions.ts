@@ -176,8 +176,16 @@ export function sessionRoutes(ctx: RouteContext): void {
     if (rawLimit !== null && (!/^[1-9][0-9]*$/.test(rawLimit) || Number(rawLimit) > 100))
       return fail(400, "invalid_request", "limit must be an integer from 1 to 100");
     const before = query.get("before");
-    if (before !== null && !/^(?:[a-z2-7]{20}|notice-(?:[a-z2-7]{20}|[0-9a-f]{24}))$/.test(before))
-      return fail(400, "invalid_request", "invalid before cursor");
+    if (before !== null) {
+      const rawBefore = rawQuery.split("&").find((part) => new URLSearchParams(part).has("before"));
+      try {
+        decodeURIComponent((rawBefore?.split("=").slice(1).join("=") ?? "").replaceAll("+", " "));
+      } catch {
+        return fail(400, "invalid_request", "invalid before cursor");
+      }
+      if (before === "" || before.includes("\0") || new TextEncoder().encode(before).length > 1024)
+        return fail(400, "invalid_request", "invalid before cursor");
+    }
     const row = find(w.sessions, params[0], "session");
     if ("status" in row) return row;
     const all = (w.entries[row.id] ?? []).toSorted((a, b) => a.seq - b.seq);

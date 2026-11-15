@@ -212,9 +212,8 @@ Returns `200` with `session_id` (string), `entries` (Entry array), and optional
 `next_before` (string). Entries are in write order across all branches. The first
 page has the newest entries. `limit` defaults to 50 and must be an integer from
 1 to 100. Pass `next_before` as `before` to get the preceding page. A cursor
-must have the format of a stored entry ID and name an entry in this session.
-The formats are 20 lowercase base32 characters, `notice-` followed by 20
-lowercase base32 characters, or `notice-` followed by 24 lowercase hex digits.
+must name an entry in this session. It must be nonempty UTF-8, contain no NUL,
+and be at most 1024 bytes.
 Malformed query encoding, invalid or repeated parameters and unknown
 parameters return `400`; a missing session returns `404`. An empty page has an
 empty array and no cursor. New appends do not change earlier pages.

@@ -51,8 +51,16 @@ func TestEntryPaginationEndpoint(t *testing.T) {
 		t.Fatalf("empty: %+v", got)
 	}
 	var ids []string
-	for range 4 {
-		ids = append(ids, appendEntry(home.ID).ID)
+	for i := range 4 {
+		if i == 2 {
+			e, added, err := a.store.AppendEntryOnce(ctx, home.ID, store.Entry{ID: "notice-original", Kind: store.KindNotice, Payload: []byte(`{"text":"legacy"}`)})
+			if err != nil || !added {
+				t.Fatalf("append notice: %v, added %v", err, added)
+			}
+			ids = append(ids, e.ID)
+		} else {
+			ids = append(ids, appendEntry(home.ID).ID)
+		}
 	}
 	first := read("?limit=2")
 	if len(first.Entries) != 2 || first.Entries[0].ID != ids[2] || first.Entries[1].ID != ids[3] || first.Next != ids[2] {
