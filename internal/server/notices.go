@@ -143,7 +143,7 @@ func (n *notices) postSoon(ctx context.Context, sessionID, id, text string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.closed {
-		n.server.log.Error("notice lost at shutdown", "session_id", sessionID, "error", err)
+		n.server.log.Error("notice pending startup recovery", "session_id", sessionID, "error", err)
 		return
 	}
 	n.wg.Go(func() {
@@ -152,7 +152,7 @@ func (n *notices) postSoon(ctx context.Context, sessionID, id, text string) {
 			select {
 			case <-n.ctx.Done():
 				timer.Stop()
-				n.server.log.Error("notice lost at shutdown", "session_id", sessionID)
+				n.server.log.Error("notice pending startup recovery", "session_id", sessionID)
 				return
 			case <-timer.C:
 			}
@@ -317,9 +317,12 @@ func reportNotice(child store.Session) string {
 }
 
 // reportNoticeID is the entry id of the notice a child's report becomes: the
-// child and the last entry of the assignment that reported, so the same
-// report always has the same id.
+// stored report id, or the child and head for reports stored before migration
+// 0016. Startup pins that fallback before changing the head.
 func reportNoticeID(child store.Session) string {
+	if child.ReportNoticeID != "" {
+		return child.ReportNoticeID
+	}
 	sum := sha256.Sum256([]byte("report\x00" + child.ID + "\x00" + child.HeadEntryID))
 	return "notice-" + hex.EncodeToString(sum[:12])
 }

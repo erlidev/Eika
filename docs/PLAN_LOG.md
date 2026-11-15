@@ -9,6 +9,12 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-18 repairs unanswered calls with outcome-unknown errors,
+  aborts interrupted runs and idles children with an atomic home notice.
+  Startup rescans stored reports with persistent notice ids (migration 0016)
+  and wakes home for undelivered notices; no child resumes. Legacy sessions
+  keep abort-only recovery. `make check` passes. P2-19 retains the process-death test.
+
 - 2026-11-15: P3-09 adds Activity at `/activity/:sessionId?`: subagents by code-owned state,
   live from `session.updated`, and a read-only `SessionView` per subagent with Cancel, the new
   `POST /api/sessions/{id}/cancel` over `Service.Cancel`. Known limits (DECISIONS): rows lack

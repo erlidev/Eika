@@ -40,10 +40,22 @@ func (s *Store) SetSubagentState(ctx context.Context, id string, state SessionSt
 // the one before.
 func (s *Store) SetSubagentResult(ctx context.Context, id, result string) (Session, error) {
 	sess, err := scanSession(s.pool.QueryRow(ctx, `UPDATE sessions SET
-        result = $2, last_active_at = now(), updated_at = now()
-        WHERE id = $1 AND kind = 'subagent' RETURNING `+sessionColumns, id, result))
+        result = $2, report_notice_id = $3, last_active_at = now(), updated_at = now()
+        WHERE id = $1 AND kind = 'subagent' RETURNING `+sessionColumns, id, result, "notice-"+NewID()))
 	if err != nil {
 		return Session{}, wrap("set subagent result", err)
+	}
+	return sess, nil
+}
+
+// PinReportNoticeID gives an old report its original notice id before recovery
+// changes its session head. A report that already has an id keeps it.
+func (s *Store) PinReportNoticeID(ctx context.Context, id, noticeID string) (Session, error) {
+	sess, err := scanSession(s.pool.QueryRow(ctx, `UPDATE sessions SET
+        report_notice_id = CASE WHEN report_notice_id = '' THEN $2 ELSE report_notice_id END
+        WHERE id = $1 AND kind = 'subagent' RETURNING `+sessionColumns, id, noticeID))
+	if err != nil {
+		return Session{}, wrap("pin report notice id", err)
 	}
 	return sess, nil
 }

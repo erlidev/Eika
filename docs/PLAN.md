@@ -201,7 +201,7 @@ stage B.
 
 What stops a long-lived home session from losing work or growing without bound.
 
-- [ ] **P2-18**: Reconcile interrupted runs and notices.
+- [x] **P2-18**: Reconcile interrupted runs and notices.
 - [ ] **P2-16**: Park and relay subagent questions.
 - [ ] **P3-07**: Add agents and instructions Settings, as tabs of the existing
       dialog, and remove profile controls.
@@ -368,7 +368,7 @@ in the code beside what replaces them.
       notice naming it and carries on with `subagent_message`. An interrupted home
       reply ends with a notice. A Docker test kills Core mid-call and checks the
       call ran once.
-      - [ ] **P2-18**: Reconcile interrupted runs and notices. P2-15 leaves two
+      - [x] **P2-18**: Reconcile interrupted runs and notices. P2-15 leaves two
             gaps: a child goes idle before its notice is written, and failed
             notice writes are retried in memory only, so a crash or shutdown
             there loses the notice though the report is stored. At start,
