@@ -4,7 +4,8 @@ The Chat page: Eika's one conversation, which is the home session.
 
 - `ChatPage.tsx` reads the home session with `useHome` (`GET /api/home`) and
   renders `features/session`'s `SessionView` for its id, so the transcript, the
-  composer, the run status bar and the stream are the session view's. While
+  composer, the run status bar and the stream are the session view's. The shell's
+  header titles the page, so the view is drawn without its own (`header={false}`). While
   the home session loads it says so, and a failed read gets a Retry.
 - `queries.ts` is the one query: the home session never changes identity, so
   nothing invalidates it.

@@ -13,6 +13,7 @@ import { RunStatusBar } from "@/features/session/RunStatusBar";
 import { SessionHeading } from "@/features/session/SessionHeading";
 import { Transcript } from "@/features/session/Transcript";
 import { useSessionStore } from "@/features/session/store";
+import { composerModel } from "@/features/session/composerModel";
 import { useSessionStream } from "@/features/session/useSessionStream";
 import { Notice } from "@/components/Notice";
 import { Badge } from "@/components/ui/badge";
@@ -24,9 +25,11 @@ import { useHomeComputer } from "@/features/sessions";
 
 export type SessionViewProps = {
   sessionId: string;
+  /** header is false where the page around the view already titles it. */
+  header?: boolean;
 };
 
-export function SessionView({ sessionId }: SessionViewProps) {
+export function SessionView({ sessionId, header = true }: SessionViewProps) {
   useSessionStream(sessionId);
   const session = useSession(sessionId);
   const models = useModels();
@@ -64,27 +67,35 @@ export function SessionView({ sessionId }: SessionViewProps) {
   }, [active, run, abort]);
 
   // A model chosen in the status bar is this browser's; without one, a run
-  // uses what the session's configuration resolves to.
-  const chosenModel =
-    model === "" ? (configuration.data?.resolved.model ?? models.data?.default ?? "") : model;
+  // uses what the session's configuration resolves to. An agent's run names
+  // no model at all: the harness refuses one, since its class chooses it.
   const available = chatModels(models.data?.models);
   const noModel = models.data !== undefined && available.length === 0;
-  const imageInput = available.find((m) => m.name === chosenModel)?.image_input ?? false;
-  // A run of an agent names no model: the harness refuses one, since the
-  // agent's class chooses it. The model above is only what the page shows.
-  const runModel = agent ? "" : chosenModel;
+  const composerChoice = composerModel({
+    sessionKnown: session.data !== undefined,
+    configurationSettled: !configuration.isPending,
+    modelsKnown: models.data !== undefined,
+    agent,
+    chosen: model,
+    resolved: configuration.data?.resolved.model,
+    defaultModel: models.data?.default ?? "",
+    models: available,
+  });
+  const { runModel, label: chosenModel, imageInput } = composerChoice;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Session">
-      <header className="flex items-center gap-2 border-b px-3 py-2">
-        <SessionHeading session={session.data?.session} />
-        {chat && <ChatBadge />}
-        {onHome && <HomeBadge />}
-        {/* On a phone the id gives way: the title is what the header is for. */}
-        <span className="text-muted-foreground hidden shrink-0 font-mono text-xs sm:inline">
-          {sessionId}
-        </span>
-      </header>
+      {header && (
+        <header className="flex items-center gap-2 border-b px-3 py-2">
+          <SessionHeading session={session.data?.session} />
+          {chat && <ChatBadge />}
+          {onHome && <HomeBadge />}
+          {/* On a phone the id gives way: the title is what the header is for. */}
+          <span className="text-muted-foreground hidden shrink-0 font-mono text-xs sm:inline">
+            {sessionId}
+          </span>
+        </header>
+      )}
       {/* The transcript owns its scroller: it has to measure it to decide
           whether the user is still following the stream. */}
       <Transcript
@@ -123,8 +134,11 @@ export function SessionView({ sessionId }: SessionViewProps) {
         modelLabel={chosenModel}
         imageInput={imageInput}
         {...(chat || isHome ? { placeholder: "Send a message…" } : {})}
-        disabled={noModel}
-        disabledReason="Add a model under Settings, Models to send a message."
+        agent={agent}
+        disabled={noModel || !composerChoice.ready}
+        disabledReason={
+          noModel ? "Add a model under Settings, Models to send a message." : "Loading the session…"
+        }
       />
       {/* The status bar is the pane's footer: the model, the meter, and the
           connection are what the session is running on, not what it is

@@ -11,7 +11,10 @@ test("Chat opens on the home conversation", async ({ open }) => {
   const eika = await open({ scenario: "workbench" });
   await expect(eika.page).toHaveURL(/\/$/);
   const session = eika.page.getByRole("region", { name: "Session" });
-  await expect(session.getByRole("heading", { name: "Home" })).toBeVisible();
+  // One header: the shell's. The session view draws none of its own.
+  await expect(eika.page.getByRole("heading", { level: 1, name: "Chat" })).toBeVisible();
+  await expect(eika.page.getByRole("heading", { level: 2 })).toHaveCount(0);
+  await expect(eika.page.getByRole("banner")).toHaveCount(1);
   await expect(session.getByText("The webhook client retries immediately")).toBeVisible();
   await expect(eika.page.getByRole("main").getByLabel("Message", { exact: true })).toBeVisible();
 });
@@ -57,9 +60,7 @@ test("a link to a session of the old workbench lands on Chat", async ({ open }) 
   const eika = await open({ scenario: "workbench" });
   await eika.goto("/sessions/ses-backoff");
   await expect(eika.page).toHaveURL(/\/$/);
-  await expect(
-    eika.page.getByRole("region", { name: "Session" }).getByRole("heading", { name: "Home" }),
-  ).toBeVisible();
+  await expect(eika.page.getByRole("region", { name: "Session" })).toBeVisible();
 });
 
 test("a home session that does not load says so and can be tried again", async ({ open }) => {

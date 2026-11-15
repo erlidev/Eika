@@ -1,7 +1,8 @@
 /**
  * The Chat page: the one conversation with Eika, which is the home session.
  * It finds the session and hands it to the session view, which streams it and
- * owns the transcript and the composer.
+ * owns the transcript and the composer. The shell's header titles the page, so
+ * the view draws none of its own.
  */
 
 import { LoadError, Notice } from "@/components/Notice";
@@ -29,5 +30,5 @@ export function ChatPage() {
       </div>
     );
   }
-  return <SessionView key={home.data.session.id} sessionId={home.data.session.id} />;
+  return <SessionView key={home.data.session.id} sessionId={home.data.session.id} header={false} />;
 }

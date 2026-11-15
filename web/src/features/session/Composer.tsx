@@ -31,6 +31,7 @@ import { useCompact, usePostMessage, useRunStatus } from "@/features/session/que
 import { useSessionStore } from "@/features/session/store";
 import type { MessageMode, QueuedMessage } from "@/api/types";
 import { failureText } from "@/lib/failure";
+import { imageAdvice } from "@/features/session/composerModel";
 import { imageUrl } from "@/lib/images";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,8 @@ export type ComposerProps = {
   sessionId: string;
   /** model is the model a new run uses; empty means the deployment default. */
   model: string;
+  /** agent says the session runs an agent, whose class picks the model, so no hint tells the user to pick one. */
+  agent?: boolean;
   /** modelLabel names the model in what the box says about images; it defaults to `model`. */
   modelLabel?: string;
   /** imageInput is whether that model accepts images. */
@@ -54,6 +57,7 @@ export function Composer({
   sessionId,
   model,
   modelLabel,
+  agent = false,
   imageInput,
   disabled = false,
   disabledReason,
@@ -91,7 +95,7 @@ export function Composer({
     if (disabled) return;
     if (!imageInput) {
       setAttachError(
-        `Could not attach ${files.length === 1 ? (files[0]?.name ?? "the image") : "the images"}: ${modelName} does not accept images. Choose a model that does, or turn on Image input for it under Settings, Models.`,
+        `Could not attach ${files.length === 1 ? (files[0]?.name ?? "the image") : "the images"}: ${modelName} does not accept images. ${imageAdvice(agent)}`,
       );
       return;
     }
@@ -278,7 +282,7 @@ export function Composer({
         </div>
         {imagesRefused && !disabled && (
           <p role="alert" className="text-destructive mt-2 text-xs">
-            {modelName} does not accept images. Remove them, or choose a model that does.
+            {modelName} does not accept images. Remove them. {imageAdvice(agent)}
           </p>
         )}
         {attachError !== "" && (

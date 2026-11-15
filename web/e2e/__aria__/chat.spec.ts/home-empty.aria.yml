@@ -1,7 +1,5 @@
 - region "Session":
-  - heading "Home" [level=2]:
-    - button "Home"
-  - text: home-main Send a message to start the conversation.
+  - text: Send a message to start the conversation.
   - status
   - textbox "Message":
     - /placeholder: Send a message…
