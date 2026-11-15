@@ -82,7 +82,7 @@ export function sessionRoutes(ctx: RouteContext): void {
     if (query.get("chats") === "true") {
       if (cx) return fail(400, "invalid_request", "a chat has no computer");
       // Oldest first, as the harness lists them.
-      const chats = w.sessions.filter((s) => s.computer_id === undefined);
+      const chats = w.sessions.filter((s) => s.computer_id === undefined && s.kind !== "home");
       return ok({ sessions: chats.toSorted((a, b) => a.created_at.localeCompare(b.created_at)) });
     }
     if (!cx) return ok({ sessions: w.sessions });
@@ -144,6 +144,9 @@ export function sessionRoutes(ctx: RouteContext): void {
     return ok(row);
   });
   on("DELETE", "/api/sessions/{id}", ({ params }) => {
+    const row = find(w.sessions, params[0], "session");
+    if ("status" in row) return row;
+    if (row.kind === "home") return fail(409, "conflict", "the home session cannot be deleted");
     w.sessions = w.sessions.filter((s) => s.id !== params[0]);
     return { status: 204 };
   });

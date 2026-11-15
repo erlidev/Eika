@@ -408,6 +408,15 @@ func (s *Server) checkResumable(ctx context.Context, sessionID, entryID string) 
 // handleDeleteSession removes a session and its entries.
 func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	sess, err := s.deps.Store.Session(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if sess.Kind == store.SessionHome {
+		s.fail(w, r, conflictf("the home session cannot be deleted"))
+		return
+	}
 	// The run has to stop before the rows it writes to go away, whether or
 	// not the client is still waiting for the answer.
 	stopCtx, cancel := teardown(r.Context())

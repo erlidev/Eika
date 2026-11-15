@@ -167,10 +167,10 @@ func (s *Store) Sessions(ctx context.Context, computerID string) ([]Session, err
 	return collectSessions("list sessions", rows)
 }
 
-// Chats returns every session with no computer, oldest first.
+// Chats returns non-home sessions with no computer, oldest first.
 func (s *Store) Chats(ctx context.Context) ([]Session, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+sessionColumns+` FROM sessions
-		WHERE computer_id IS NULL ORDER BY created_at, id`)
+		WHERE computer_id IS NULL AND kind <> 'home' ORDER BY created_at, id`)
 	if err != nil {
 		return nil, wrap("list chats", err)
 	}

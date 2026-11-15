@@ -9,6 +9,10 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-09 follow-up protects home from deletion and excludes it
+  from chat listings. Added startup, restart and home-run integration tests.
+  Docker was unavailable, so the integration tests skipped locally.
+
 - 2026-11-15: P2-09 ensures the local home session at startup and adds its
   authenticated API. Home user and assistant messages record the web channel;
   user context names it. Tests cover identity, the API and channel storage.
