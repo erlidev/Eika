@@ -9,6 +9,7 @@ import (
 
 	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/provider/providertest"
+	"github.com/erlidev/eika/internal/server"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -195,5 +196,37 @@ func TestAgentRunsHoldAnExecutorOnlyWhenTheirToolsNeedOne(t *testing.T) {
 				t.Errorf("computer after the run = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestAgentPreambleSurvivesServerRestart(t *testing.T) {
+	a := newAPI(t)
+	ctx := t.Context()
+	home, err := a.store.EnsureHomeSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.assignClasses(t, map[string]any{"main": "test-model"})
+	if err := a.store.SetInstructions(ctx, store.GlobalInstructions{AboutMe: "original snapshot\nexact bytes"}); err != nil {
+		t.Fatal(err)
+	}
+	first := a.script(providertest.Text("first response"))
+	a.postMessage(t, home.ID, "hello", "", 202)
+	a.waitIdle(t, home.ID)
+	before := first.Requests()[0].System
+	if !strings.Contains(before, "original snapshot\nexact bytes") {
+		t.Fatalf("missing snapshot: %q", before)
+	}
+	if err := a.store.SetInstructions(ctx, store.GlobalInstructions{AboutMe: "changed after snapshot"}); err != nil {
+		t.Fatal(err)
+	}
+	a.Close()
+	a.Server = server.New(testConfig(), testLogger(), a.deps, server.Options{})
+	t.Cleanup(a.Close)
+	second := a.script(providertest.Text("second response"))
+	a.postMessage(t, home.ID, "after restart", "", 202)
+	a.waitIdle(t, home.ID)
+	if got := second.Requests()[0].System; got != before {
+		t.Fatalf("prefix after restart = %q, want %q", got, before)
 	}
 }

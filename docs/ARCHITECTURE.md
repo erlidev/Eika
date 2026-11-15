@@ -277,6 +277,8 @@ stored preamble, sorted tool schemas, and the conversation. The preamble holds
 global and project instructions, active projects for home, delegable agents,
 the project and brief, and the user's time zone and locale. A run stores the
 first snapshot; compaction stores its replacement and summary in one transaction.
+The replacement precedes the compaction entry, so a branch from the summary
+uses the replacement snapshot.
 After compaction the conversation starts with its summary and retained messages.
 Memory, skills and plugin catalogs are not present yet.
 

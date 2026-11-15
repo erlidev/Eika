@@ -38,6 +38,7 @@ func TestMain(m *testing.M) {
 type api struct {
 	*server.Server
 	store     *store.Store
+	deps      server.Deps
 	host      *fakeHost
 	questions *builtin.Questions
 	secrets   *secret.Box
@@ -102,7 +103,7 @@ func newAPI(t *testing.T) *api {
 	// cleanup is registered first.
 	a.mcp = server.NewMCP(testConfig(), st, secrets, a.host, bus, testLogger())
 	t.Cleanup(a.mcp.Close)
-	a.Server = server.New(testConfig(), testLogger(), server.Deps{
+	a.deps = server.Deps{
 		Store:     st,
 		Computers: a.host,
 		Providers: fakeProviders{build: a.buildProvider},
@@ -114,7 +115,8 @@ func newAPI(t *testing.T) *api {
 		Pages:     pages,
 		Egress:    a.egress,
 		MCP:       a.mcp,
-	}, server.Options{})
+	}
+	a.Server = server.New(testConfig(), testLogger(), a.deps, server.Options{})
 	t.Cleanup(a.Close)
 
 	// Every run uses test-model unless it names another. Its window is wide

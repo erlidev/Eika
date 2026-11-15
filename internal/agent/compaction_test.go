@@ -660,3 +660,34 @@ func TestCompactionRefreshesPreambleAfterSummary(t *testing.T) {
 		t.Fatalf("preview = %+v, %v", preview, err)
 	}
 }
+
+func TestConcurrentMessagesDuringPreambleRefresh(t *testing.T) {
+	p := providertest.New(providertest.Text("summary"))
+	started := make(chan struct{})
+	ready := make(chan struct{})
+	done := make(chan struct{})
+	a := agent.New(p, nil, agent.Options{
+		Compaction: agent.CompactionSettings{KeepRecentTokens: 150},
+		RefreshPreamble: func(_ context.Context, _ string, _ agent.Compaction) (string, error) {
+			close(started)
+			<-ready
+			return "Time zone\nUTC\n\nLocale\nen", nil
+		},
+	})
+	go func() {
+		defer close(done)
+		<-started
+		a.Steer(provider.UserMessage("first"))
+		close(ready)
+		for range 1000 {
+			a.Steer(provider.UserMessage("steer"))
+			a.FollowUp(provider.UserMessage("follow up"))
+		}
+	}()
+	s := sessionOf(history(4, 100))
+	err := a.Compact(context.Background(), s, "")
+	<-done
+	if err != nil {
+		t.Fatal(err)
+	}
+}

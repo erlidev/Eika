@@ -111,6 +111,9 @@ type Agent struct {
 	steering  queue
 	followUps queue
 
+	locationMu sync.RWMutex
+	location   *time.Location
+
 	mu sync.Mutex
 	// accepting is guarded by mu. Closing it in the same critical section
 	// that checks both queues prevents a message from being accepted after
@@ -149,7 +152,7 @@ func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
 		opts.Location = time.UTC
 	}
 	opts.Limits = opts.Limits.withDefaults()
-	return &Agent{provider: p, counter: opts.Counter, tools: r, opts: opts, accepting: true}
+	return &Agent{provider: p, counter: opts.Counter, tools: r, opts: opts, location: opts.Location, accepting: true}
 }
 
 // Steer queues a user message to be delivered as soon as the tool call that

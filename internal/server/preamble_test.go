@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
 
@@ -47,5 +50,32 @@ func TestPreambleSettingValidation(t *testing.T) {
 		if (err == nil) != tc.valid {
 			t.Errorf("%s=%s: %v", tc.key, tc.value, err)
 		}
+	}
+}
+
+func TestCompactionBranchReplaysReplacementPreamble(t *testing.T) {
+	old, err := session.TextEntry(store.KindPreamble, "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := session.MessageEntry(provider.UserMessage("earlier"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	added, err := preambleCompactionEntries("new", agent.Compaction{Summary: "summary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := append([]store.Entry{old, user}, added...)
+	if path[len(path)-1].Kind != store.KindCompaction || !session.PathResumable(path) {
+		t.Fatalf("compaction is not a branch point: %+v", path)
+	}
+	preamble, err := session.Preamble(path)
+	if err != nil || preamble != "new" {
+		t.Fatalf("preamble = %q, %v", preamble, err)
+	}
+	messages, err := session.Messages(path)
+	if err != nil || len(messages) != 1 || !messages[0].Summary {
+		t.Fatalf("messages = %+v, %v", messages, err)
 	}
 }

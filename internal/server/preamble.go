@@ -113,18 +113,26 @@ func (s *Server) refreshPreamble(ctx context.Context, id string, c agent.Compact
 	if err != nil {
 		return "", err
 	}
-	compact, err := session.CompactionEntry(c)
+	entries, err := preambleCompactionEntries(text, c)
 	if err != nil {
 		return "", err
 	}
-	preamble, err := session.TextEntry(store.KindPreamble, text)
-	if err != nil {
-		return "", err
-	}
-	if err := s.deps.Store.AppendEntries(ctx, id, compact, preamble); err != nil {
+	if err := s.deps.Store.AppendEntries(ctx, id, entries...); err != nil {
 		return "", err
 	}
 	return text, nil
+}
+
+func preambleCompactionEntries(text string, c agent.Compaction) ([]store.Entry, error) {
+	preamble, err := session.TextEntry(store.KindPreamble, text)
+	if err != nil {
+		return nil, err
+	}
+	compact, err := session.CompactionEntry(c)
+	if err != nil {
+		return nil, err
+	}
+	return []store.Entry{preamble, compact}, nil
 }
 
 func (s *Server) ensurePreamble(ctx context.Context, sess store.Session, loaded *agent.Session) error {

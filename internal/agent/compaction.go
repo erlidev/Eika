@@ -284,7 +284,9 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 			return failed(fmt.Errorf("store compaction: %w", err))
 		}
 		s.Preamble = text
-		a.opts.Location = PreambleLocation(text)
+		a.locationMu.Lock()
+		a.location = PreambleLocation(text)
+		a.locationMu.Unlock()
 	} else if a.opts.Store != nil {
 		if err := a.opts.Store.AppendCompaction(ctx, s.ID, record); err != nil {
 			return failed(fmt.Errorf("store compaction: %w", err))
