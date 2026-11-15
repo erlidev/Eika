@@ -35,3 +35,15 @@ func (s *Store) SetSubagentState(ctx context.Context, id string, state SessionSt
 	}
 	return sess, nil
 }
+
+// SetSubagentResult records a subagent's latest report. Each report replaces
+// the one before.
+func (s *Store) SetSubagentResult(ctx context.Context, id, result string) (Session, error) {
+	sess, err := scanSession(s.pool.QueryRow(ctx, `UPDATE sessions SET
+        result = $2, last_active_at = now(), updated_at = now()
+        WHERE id = $1 AND kind = 'subagent' RETURNING `+sessionColumns, id, result))
+	if err != nil {
+		return Session{}, wrap("set subagent result", err)
+	}
+	return sess, nil
+}

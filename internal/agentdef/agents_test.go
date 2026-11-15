@@ -44,6 +44,10 @@ func TestBuiltins(t *testing.T) {
 				t.Errorf("%s delegation capability %s is incorrect", d.Name, name)
 			}
 		}
+		// Only a subagent reports; Eika reads the reports.
+		if slices.Contains(d.Tools, "report") != (d.Name != "eika") {
+			t.Errorf("%s report capability is incorrect", d.Name)
+		}
 		wantTurns, wantClass := 200, "main"
 		if d.Name == "eika" {
 			wantTurns = 40
@@ -106,5 +110,22 @@ func TestOverride(t *testing.T) {
 		if err := o.Validate(); err == nil {
 			t.Errorf("prompt %q with NUL was accepted", prompt)
 		}
+	}
+}
+
+func TestSubagentPromptsTellThemToReportAndToUseScreenedReads(t *testing.T) {
+	for _, name := range []string{"researcher", "worker"} {
+		d, _ := agentdef.Lookup(name)
+		if !strings.Contains(d.Prompt, "report tool") || !strings.Contains(d.Prompt, "state it in your report") {
+			t.Errorf("%s prompt does not tell it to report and state assumptions", name)
+		}
+	}
+	worker, _ := agentdef.Lookup("worker")
+	if !strings.Contains(worker.Prompt, "web_fetch, not curl") {
+		t.Error("worker prompt does not send page reads through web_fetch")
+	}
+	eika, _ := agentdef.Lookup("eika")
+	if !strings.Contains(eika.Prompt, "reasonable assumption") || !strings.Contains(eika.Prompt, "Ask only") {
+		t.Error("eika prompt does not say when to decide and when to ask")
 	}
 }

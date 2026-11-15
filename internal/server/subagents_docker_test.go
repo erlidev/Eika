@@ -4,11 +4,13 @@ package server_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/erlidev/eika/internal/inference"
@@ -176,10 +178,12 @@ func TestEikaDelegatesToNamedSubagents(t *testing.T) {
 	worker := newHeldScript(
 		providertest.Calls("", providertest.Call("pwd", "bash", map[string]any{"command": "pwd"}),
 			providertest.Call("notes", "file_write", map[string]any{"path": "notes.md", "content": "quotes"})),
+		call("done", "report", map[string]any{"summary": "Found a plumber\nBob, 555-0100", "outputs": []string{"notes.md"}, "follow_ups": []string{"book Bob"}}),
 		providertest.Text("plumber found"),
+		call("again", "report", map[string]any{"summary": "Found a second quote"}),
 		providertest.Text("second quote found"),
 	)
-	researcher := providertest.New(providertest.Text("flights found"))
+	researcher := providertest.New(call("done", "report", map[string]any{"summary": "Flights found"}), providertest.Text("flights found"))
 	d.use(byAgent{"You are Eika": eika, "You are a worker": worker, "You are a researcher": researcher})
 
 	d.postMessage(t, d.home.ID, "find a plumber and flights", "", 202)
@@ -226,6 +230,12 @@ func TestEikaDelegatesToNamedSubagents(t *testing.T) {
 			t.Errorf("worker offered %s", def.Name)
 		}
 	}
+	if got, want := d.child(t, "plumber").Result, "Found a plumber\nBob, 555-0100\n\nOutputs:\n- notes.md\n\nFollow-ups:\n- book Bob"; got != want {
+		t.Errorf("plumber's report = %q, want %q", got, want)
+	}
+	if got := d.child(t, "flights").Result; got != "Flights found" {
+		t.Errorf("flights' report = %q", got)
+	}
 	work := toolResultsByCall(worker.Requests()[1])
 	if got, _ := filepath.EvalSymlinks(strings.TrimSpace(work["pwd"])); got != mustEval(t, d.directory) {
 		t.Errorf("worker ran in %q, want %q", work["pwd"], d.directory)
@@ -237,12 +247,13 @@ func TestEikaDelegatesToNamedSubagents(t *testing.T) {
 	d.postMessage(t, d.home.ID, "get a second quote", "", 202)
 	d.waitIdle(t, d.home.ID)
 	d.waitState(t, "plumber", store.SessionIdle)
-	resumed := worker.Requests()[2]
+	resumed := worker.Requests()[3]
 	if text := fmt.Sprint(resumed.Messages); !strings.Contains(text, "plumber found") || !strings.Contains(text, "get a second quote") {
 		t.Errorf("resume lost the worker's context: %s", text)
 	}
 	results = toolResultsByCall(eika.Requests()[7])
-	if !strings.Contains(results["resume"], "Resumed") || !strings.Contains(results["board"], `"name":"plumber"`) ||
+	if !strings.Contains(results["resume"], "Resumed") || !strings.Contains(results["board"], `"report":"Found a plumber"`) ||
+		!strings.Contains(results["board"], `"report":"Flights found"`) || !strings.Contains(results["board"], `"name":"plumber"`) ||
 		!strings.Contains(results["board"], `"name":"flights"`) || !strings.Contains(results["board"], `"project":"kitchen"`) {
 		t.Errorf("resume and board results = %q", results)
 	}
@@ -340,5 +351,180 @@ func TestCancelAbortAndShutdownStopSubagentRuns(t *testing.T) {
 	d.Close()
 	if got := d.child(t, "plumber").State; got != store.SessionCancelled {
 		t.Fatalf("after shutdown = %s", got)
+	}
+}
+
+// holdAfter runs the first calls of its script and holds the next one until
+// its context ends, which keeps a turn going while the test acts on it.
+type holdAfter struct {
+	*providertest.Provider
+	calls   int
+	count   atomic.Int32
+	holding chan struct{}
+}
+
+func newHoldAfter(calls int, steps ...providertest.Step) *holdAfter {
+	return &holdAfter{Provider: providertest.New(steps...), calls: calls, holding: make(chan struct{}, 1)}
+}
+
+func (h *holdAfter) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+	if int(h.count.Add(1)) <= h.calls {
+		return h.Provider.Stream(ctx, req)
+	}
+	h.holding <- struct{}{}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestSubagentThatEndsWithoutReportingIsAskedOnceThenItsFinalMessageIsTheReport(t *testing.T) {
+	d := newDelegating(t)
+	eika := providertest.New(
+		call("start-a", "subagent_start", map[string]any{"agent": "researcher", "name": "asks", "brief": "Find flights"}),
+		call("start-b", "subagent_start", map[string]any{"agent": "researcher", "name": "silent", "brief": "Find hotels"}),
+		providertest.Text("started both"),
+	)
+	// "asks" reports when it is asked to draft one; "silent" never calls report.
+	asks := providertest.New(
+		providertest.Text("Flights are cheapest on Tuesday."),
+		call("draft", "report", map[string]any{"summary": "Tuesday is cheapest", "follow_ups": []string{"book Tuesday"}}),
+		providertest.Text("reported"),
+	)
+	silent := providertest.New(
+		providertest.Text("Hotels near the station are best."),
+		providertest.Text("Understood. The station hotels are best."),
+	)
+	d.use(byAgent{"You are Eika": eika, "You are a researcher": byTask{"Find flights": asks, "Find hotels": silent}})
+
+	d.postMessage(t, d.home.ID, "plan the trip", "", 202)
+	d.waitIdle(t, d.home.ID)
+	d.waitState(t, "asks", store.SessionIdle)
+	d.waitState(t, "silent", store.SessionIdle)
+
+	if got, want := d.child(t, "asks").Result, "Tuesday is cheapest\n\nFollow-ups:\n- book Tuesday"; got != want {
+		t.Errorf("drafted report = %q, want %q", got, want)
+	}
+	if reqs := asks.Requests(); len(reqs) != 3 || !strings.Contains(fmt.Sprint(reqs[1].Messages), "Draft your report now with the report tool.") {
+		t.Errorf("asks made %d calls; the second must carry the draft request", len(reqs))
+	}
+	// A second silence ends the asking: its last message is the report.
+	if got := d.child(t, "silent").Result; got != "Understood. The station hotels are best." {
+		t.Errorf("fallback report = %q", got)
+	}
+	if reqs := silent.Requests(); len(reqs) != 2 {
+		t.Errorf("silent made %d calls, want 2: the draft request is sent once", len(reqs))
+	}
+}
+
+// byTask hands a subagent's calls to the script whose brief it was given.
+type byTask map[string]provider.Provider
+
+func (b byTask) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+	for brief, p := range b {
+		if strings.Contains(fmt.Sprint(req.Messages), brief) {
+			return p.Stream(ctx, req)
+		}
+	}
+	return nil, fmt.Errorf("no script for this brief")
+}
+
+func TestSubagentMaxRunningSettingLimitsRunsAndIsValidated(t *testing.T) {
+	d := newDelegating(t)
+	if got := decodeBody[struct {
+		Defaults struct {
+			SubagentMaxRunning int `json:"subagent_max_running"`
+		} `json:"defaults"`
+	}](t, request(t, d.Server, "GET", "/api/settings", nil), 200).Defaults.SubagentMaxRunning; got != 4 {
+		t.Errorf("default subagent_max_running = %d, want 4", got)
+	}
+	for _, bad := range []string{`0`, `33`, `-1`, `1.5`, `4.0`, `4e0`, `"4"`, `true`, `[]`, `{}`} {
+		rec := request(t, d.Server, "PUT", "/api/settings", json.RawMessage(`{"subagent_max_running":`+bad+`}`))
+		if rec.Code != 400 {
+			t.Errorf("subagent_max_running = %s: status %d, want 400", bad, rec.Code)
+		}
+	}
+	if rec := request(t, d.Server, "PUT", "/api/settings", map[string]any{"subagent_max_running": 1}); rec.Code != 200 {
+		t.Fatalf("set the limit: %d %s", rec.Code, rec.Body.String())
+	}
+
+	eika := providertest.New(
+		call("one", "subagent_start", map[string]any{"agent": "worker", "name": "one", "brief": "first"}),
+		call("two", "subagent_start", map[string]any{"agent": "researcher", "name": "two", "brief": "second"}),
+		providertest.Text("only one fits"),
+		call("again", "subagent_start", map[string]any{"agent": "researcher", "name": "two", "brief": "second"}),
+		providertest.Text("started the second"),
+	)
+	worker := newHeldScript(call("done", "report", map[string]any{"summary": "first done"}), providertest.Text("ok"))
+	researcher := providertest.New(call("done", "report", map[string]any{"summary": "second done"}), providertest.Text("ok"))
+	d.use(byAgent{"You are Eika": eika, "You are a worker": worker, "You are a researcher": researcher})
+
+	d.postMessage(t, d.home.ID, "start two", "", 202)
+	d.waitIdle(t, d.home.ID)
+	results := toolResultsByCall(eika.Requests()[2])
+	if !strings.Contains(results["one"], `"note":"Started.`) || !strings.Contains(results["two"], "at most 1") {
+		t.Fatalf("results = %q", results)
+	}
+	if _, err := d.store.Subagent(t.Context(), d.home.ID, "two"); err == nil {
+		t.Fatal("the refused subagent has a row")
+	}
+	worker.open()
+	d.waitState(t, "one", store.SessionIdle)
+	d.postMessage(t, d.home.ID, "try the second again", "", 202)
+	d.waitIdle(t, d.home.ID)
+	d.waitState(t, "two", store.SessionIdle)
+	if got := d.child(t, "two").Result; got != "second done" {
+		t.Errorf("second report = %q", got)
+	}
+}
+
+func TestAbortingTheHomeReplyLeavesItsSubagentsRunning(t *testing.T) {
+	d := newDelegating(t)
+	// Eika starts the worker, and its next call is held: the home run is
+	// still going when the user aborts it.
+	eika := newHoldAfter(1, call("start", "subagent_start", map[string]any{"agent": "worker", "name": "plumber", "brief": "Find a plumber"}))
+	worker := newHeldScript(call("done", "report", map[string]any{"summary": "Found one"}), providertest.Text("done"))
+	d.use(byAgent{"You are Eika": eika, "You are a worker": worker})
+
+	d.postMessage(t, d.home.ID, "find a plumber", "", 202)
+	<-worker.started
+	<-eika.holding
+	home := d.runState(t, d.home.ID)
+	if home.Run == nil {
+		t.Fatal("home has no run to abort")
+	}
+	if rec := request(t, d.Server, "POST", "/api/runs/"+home.Run.ID+"/abort", nil); rec.Code != 200 {
+		t.Fatalf("abort home = %d %s", rec.Code, rec.Body.String())
+	}
+	d.waitIdle(t, d.home.ID)
+	if got := d.child(t, "plumber").State; got != store.SessionRunning {
+		t.Fatalf("after the home abort the worker is %s, want running", got)
+	}
+	if d.runState(t, d.child(t, "plumber").ID).Run == nil {
+		t.Fatal("the worker's run was stopped with the home reply")
+	}
+	worker.open()
+	d.waitState(t, "plumber", store.SessionIdle)
+	if got := d.child(t, "plumber").Result; got != "Found one" {
+		t.Errorf("report after the home abort = %q", got)
+	}
+}
+
+func TestShutdownCancelsRunningSubagentsWithoutReports(t *testing.T) {
+	d := newDelegating(t)
+	eika := providertest.New(
+		call("one", "subagent_start", map[string]any{"agent": "worker", "name": "one", "brief": "first"}),
+		call("two", "subagent_start", map[string]any{"agent": "researcher", "name": "two", "brief": "second"}),
+		providertest.Text("started"),
+	)
+	worker, researcher := newHeldScript(), newHeldScript()
+	d.use(byAgent{"You are Eika": eika, "You are a worker": worker, "You are a researcher": researcher})
+	d.postMessage(t, d.home.ID, "start both", "", 202)
+	<-worker.started
+	<-researcher.started
+	d.waitIdle(t, d.home.ID)
+	d.Close()
+	for _, name := range []string{"one", "two"} {
+		if row := d.child(t, name); row.State != store.SessionCancelled || row.Result != "" {
+			t.Errorf("%s after shutdown = %s with report %q", name, row.State, row.Result)
+		}
 	}
 }

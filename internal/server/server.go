@@ -162,7 +162,9 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	if deps.Store != nil {
 		// Subagents outlive the home turn that started them, so their runs
 		// are bounded by the server, not by a request.
-		s.subagents = subagent.New(context.Background(), deps.Store, s.runSubagent, deps.Bus, log)
+		s.subagents = subagent.New(context.Background(), deps.Store, subagent.Options{
+			Run: s.runSubagent, Final: s.finalMessage, Limit: s.subagentLimit, Events: deps.Bus, Log: log,
+		})
 	}
 	s.titles = newTitles(s)
 	s.idle = newIdleComputers(s)

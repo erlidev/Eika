@@ -43,7 +43,7 @@ egress proxy are network calls and run in the harness.
 | `egress` | Egress modes, allowlist patterns, the proxy |
 | `netguard` | Public-address-only dialing |
 | `store` | PostgreSQL pool, embedded migrations, queries |
-| `subagent` | Named child sessions, serialized start/resume, code-owned states and cancel; run callback supplied by the caller |
+| `subagent` | Named child sessions, serialized start/resume, code-owned states, cancel, reports and the running limit; run callback supplied by the caller |
 | `session` | Session tree: append, head, branch, outline; `session.Store` records runs |
 | `search` | Failover chain, quotas, cache; backends in `web`, `wikipedia`, `arxiv`, `github`; `fetch` reads a URL; `filter` is the JS filter |
 | `mcp` | MCP client, transports, pool, elicitation; `mcp/oauth` authorization; `mcptest` fakes |
@@ -1019,7 +1019,26 @@ next Message resumes it and the next Cancel records it cancelled, so a temporary
 storage failure does not strand the child. Cancel stops and joins an active
 execution. Close joins all executions before
 the store closes. Each state or reason change emits `session.updated` on `global`.
-Migration 0015 stores the waiting reason. P2-14 adds reports and limits.
+Migration 0015 stores the waiting reason.
+
+A subagent ends an assignment with a report. The `report` tool (`summary`,
+optional `outputs` and `follow_ups`) is in the `worker` and `researcher`
+definitions and calls `Service.Report`, which stores the rendered text as the
+session's `result` and emits `session.updated`; a call outside an active,
+uncancelled execution is refused. A run that ends on its own without a report
+is sent "Draft your report now with the report tool." once, in its own session.
+If it still has not reported, its last assistant message becomes the report
+(`finalMessage` in the server binding), or a fixed sentence when it has none.
+Failed and cancelled runs are not asked for a report and keep the last one.
+Until P2-15, `subagent_status` is how Eika reads a report.
+
+At most `subagent_max_running` executions exist at once (setting, 1 to 32,
+default 4; a lower value is read as 1). `Start` and `Message` check the count
+under the service lock that also registers the execution, so concurrent calls
+cannot overshoot it, and a refused call leaves no row. Starting an existing name
+and messaging a running child are not refused. Children still take turns on the
+inference queue's slots. Aborting a home reply does not touch its subagents:
+their runs belong to the service, not to the reply that started them.
 
 The server owns one service for its lifetime and closes it before the run
 manager, so shutdown records running children `cancelled`. Its run callback
@@ -1035,4 +1054,5 @@ creates the project directory and wraps its executor so that commands and
 relative paths start there; the executor still confines paths to the root.
 The HTTP API refuses messages and compactions posted to a subagent's session.
 Subagents have no `ask_user` until P2-16: their prompts tell them to decide
-and state assumptions. Profile and direct chat runs are unchanged.
+and state assumptions in their report, and the worker's to read pages with
+`web_fetch`, not `curl`, so that what it reads is screened. Profile and direct chat runs are unchanged.

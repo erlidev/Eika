@@ -9,6 +9,12 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-14 adds the subagent `report` tool, stored as the child's
+  result and shown by `subagent_status`. A run that ends without one is asked
+  once to draft it, then its final message becomes the report. The setting
+  `subagent_max_running` (default 4) is claimed under the service lock; shutdown
+  joins runs and aborting home leaves children running. `make check` passes.
+
 - 2026-11-15: P2-13 adds Eika's subagent_start, _message, _status and _cancel,
   bound to the lifecycle service and run through the run manager: foreground
   from an interactive home turn, else background. Workers run on home in the

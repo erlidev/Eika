@@ -20,6 +20,7 @@ function state(settings: Record<string, unknown>): SettingsState {
     defaults: {
       sandbox_image: "eika-sandbox:latest",
       computer_idle_minutes: 15,
+      subagent_max_running: 4,
       maintenance_idle_seconds: 120,
       aging_seconds: 300,
       preempt_running: false,

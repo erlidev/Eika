@@ -5,12 +5,34 @@ import { classView, modelClassNames } from "../world.ts";
 import { fail, ok } from "./context.ts";
 import type { RouteContext } from "./context.ts";
 
+/** maxSubagentMaxRunning is the most subagents the settings accept as running at once. */
+const maxSubagentMaxRunning = 32;
+
+/**
+ * validSubagentMaxRunning checks the value as the server's decoder reads it.
+ * JSON.parse turns 4.0 and 4e0 into the integer 4, which Go refuses for a
+ * whole number, so the written text of the number is what counts.
+ */
+function validSubagentMaxRunning(value: unknown, raw: string): boolean {
+  const written = /"subagent_max_running"\s*:\s*([^,}\s]+)/.exec(raw)?.[1];
+  if (written !== undefined && !/^[1-9][0-9]*$/.test(written)) return false;
+  return typeof value === "number" && value >= 1 && value <= maxSubagentMaxRunning;
+}
+
 export function settingsRoutes(ctx: RouteContext): void {
   const { w, on } = ctx;
   /** served is the settings table with the classes resolved, as GET and PUT answer. */
   const served = () => ({ ...w.settings, ...classView(w) });
   on("GET", "/api/settings", () => ok(served()));
-  on("PUT", "/api/settings", ({ body }) => {
+  on("PUT", "/api/settings", ({ body, raw }) => {
+    const running = body.subagent_max_running;
+    if (running !== undefined && running !== null && !validSubagentMaxRunning(running, raw)) {
+      return fail(
+        400,
+        "invalid_request",
+        `subagent_max_running must be a whole number of subagents from 1 to ${String(maxSubagentMaxRunning)}`,
+      );
+    }
     for (const key of ["time_zone", "locale"] as const) {
       const value = body[key];
       if (value === undefined || value === null) continue;

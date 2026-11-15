@@ -2077,6 +2077,28 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   `Rank` can only rise today. Start and Message report whether they started
   work, so the tools tell Eika that a name exists or a subagent is busy
   instead of claiming they acted.
+- **A report is stored on the child, and the code makes sure there is one**
+  (2026-11-15, P2-14). `report {summary, outputs, follow_ups}` renders to text
+  in the session's `result`, replacing the last report; it ends no run itself,
+  so the model finishes with its own short reply. A run that ends on its own
+  without calling it is sent one draft request, and then its last assistant
+  message is stored, so Eika always gets something to read. A failed or
+  cancelled run is not asked for one. The retry and fallback live in the service
+  rather than the run callback because the service alone knows whether this
+  assignment has reported. Rejected: ending the loop at `report`, which needs a
+  terminating-tool concept in the agent loop for no gain, since the extra turn
+  is one short reply.
+- **`subagent_max_running` counts executions, under the lock that starts them**
+  (2026-11-15, P2-14). Default 4, settable from 1 to 32 in Settings, read at
+  each start so a change applies at once. The check and the registration share
+  one lock hold, so concurrent starts cannot oversubscribe, and a refused start
+  creates no row. A refusal is a tool error telling Eika to wait or cancel.
+  Waiting counts as running until P2-16 parks questions without an execution.
+  This carries over the reserve-under-lock rule of the removed spawner
+  (`478ce9c`) without its depth limit, since only home delegates.
+- **Aborting a home reply does not cancel its subagents.** Their runs are owned
+  by the service, bound to the server, so the user stopping a reply leaves them
+  working; cancel and shutdown are the ways to stop them.
 - **Only the home session delegates.** The tools are in the `eika`
   definition alone, and the binding refuses any caller that is not a home
   session, so an `eika` session elsewhere cannot start children either.

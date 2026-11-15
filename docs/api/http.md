@@ -967,6 +967,7 @@ stores them.
 | `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
 | `sandbox_image` | string | The image the home computer's container is created from. A container that exists keeps its image, so a change reaches the home computer only when its container is made again. |
 | `computer_idle_minutes` | number, 0 to 10080 | How long a running computer may go without a run in it before the harness aborts its runs and stops it. A later run starts it again. 0 never stops one. Checked once a minute. |
+| `subagent_max_running` | number, 1 to 32 | How many subagents may run at once. A start or resume past it is refused to Eika as a tool error. Read at each start, so a change applies at once. |
 | `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The home computer's limits, checked as a Sandbox's are. A field the object leaves out is 0, no limit. A write applies them to its container, running or stopped, without a restart; a stopped container also takes them at its next start. |
 | `sandbox_egress` | `{"mode", "allow"}` | The home computer's egress, applied as the limits are: a change between open and restricted moves the container between the sandbox networks, dropping the connections it has open, and the processes it starts from then on get the proxy settings that go with its network. A restricted mode is `400` on a harness without the internal sandbox network. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
@@ -994,6 +995,7 @@ stores them.
 |---|---|---|
 | `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
 | `computer_idle_minutes` | number | 15. |
+| `subagent_max_running` | number | 4. |
 | `maintenance_idle_seconds`, `aging_seconds` | number | 120 and 300. |
 | `preempt_running` | boolean | `false`. |
 | `sandbox_limits` | object | No CPU or memory limit, and 4096 processes. |
