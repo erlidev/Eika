@@ -11,7 +11,8 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
 
 - 2026-11-14: P2-05 added bounded UTF-8 file read/write/edit tools through
   the executor and added them to the worker definition. Exact edits require
-  one match; executor writes replace files atomically and keep permissions.
+  one match; executor writes sync, replace files atomically, keep permissions and
+  refuse read-only files.
   Tests cover traversal, symlink confinement, byte limits, invalid inputs,
   missing files, ambiguous edits and unchanged files on failure. `make check` passes.
 

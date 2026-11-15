@@ -2,6 +2,8 @@ package executor_test
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -61,5 +63,25 @@ func TestAtomicWriteRejectsSymlinkOutsideRoot(t *testing.T) {
 	entries, err := os.ReadDir(outside)
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("outside root changed: %v, %v", entries, err)
+	}
+}
+
+func TestAtomicWriteRefusesReadOnlyFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "locked")
+	if err := os.WriteFile(path, []byte("original"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	err := executor.AtomicWriteFile(t.Context(), root, "locked", []byte("changed"))
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("error = %v, want a permission error", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != "original" {
+		t.Fatalf("read-only file changed: %q, %v", got, err)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("temporary file left behind: %v, %v", entries, err)
 	}
 }

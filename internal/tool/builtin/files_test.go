@@ -86,7 +86,7 @@ func TestFileTools(t *testing.T) {
 				call(t, "file_edit", map[string]string{"path": "dir/text", "old_text": "new\n", "new_text": ""}, false)
 				read(t, "dir/text", "")
 				call(t, "file_write", map[string]string{"path": "empty", "content": ""}, false)
-				if res := call(t, "file_read", map[string]string{"path": "empty"}, false); res.Content != "" {
+				if res := call(t, "file_read", map[string]string{"path": "empty"}, false); res.Content != "(empty file)" {
 					t.Fatal(res)
 				}
 				call(t, "file_write", map[string]string{"path": filepath.Join(root, "empty"), "content": "absolute"}, false)

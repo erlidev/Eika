@@ -183,6 +183,25 @@ func TestFileRoundTrip(t *testing.T) {
 	}
 }
 
+func TestWritingAReadOnlyFileIsForbidden(t *testing.T) {
+	base, root := newDaemon(t, eikad.Options{})
+	if err := os.WriteFile(filepath.Join(root, "locked"), []byte("original"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if resp := do(t, http.MethodPut, base+"/files?path=locked", strings.NewReader("changed")); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("read-only write status = %d, want 403", resp.StatusCode)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, "locked")); err != nil || string(got) != "original" {
+		t.Errorf("read-only file = %q, %v", got, err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if resp := do(t, http.MethodPut, base+"/files?path=dir", strings.NewReader("x")); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("directory write status = %d, want 400", resp.StatusCode)
+	}
+}
+
 func TestMissingFileIsNotFound(t *testing.T) {
 	base, _ := newDaemon(t, eikad.Options{})
 	for _, path := range []string{"/files?path=absent", "/stat?path=absent", "/list?path=absent"} {

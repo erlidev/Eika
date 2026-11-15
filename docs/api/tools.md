@@ -14,7 +14,7 @@ root are refused. Files must contain UTF-8 text without NUL for reads and edits.
 
 | Tool | Required fields | Result |
 |---|---|---|
-| `file_read` | `path`: string | Exact text, including whitespace, from a regular file of at most 32 KiB. |
+| `file_read` | `path`: string | Exact text, including whitespace, from a regular file of at most 32 KiB. An empty file returns `(empty file)`. |
 | `file_write` | `path`: string, `content`: string | Creates or replaces a file with at most 1 MiB of text. Empty content is valid. Creates parent directories. |
 | `file_edit` | `path`: string, `old_text`: string, `new_text`: string | Replaces exactly one occurrence. Empty `old_text` is refused; empty `new_text` deletes the match. Original and result must each fit in 1 MiB. |
 
@@ -24,7 +24,9 @@ larger files return an error; use `bash` to select a range. Calls have a
 two-minute timeout. No match, multiple matches, missing files and invalid
 arguments return normal tool errors with `is_error: true`.
 
-Writes use atomic replacement and preserve existing permissions. A failed
-write leaves existing contents intact. These tools do not lock files against
+Writes use atomic replacement: the new contents are synced to disk before
+they replace the file. Existing permissions are preserved, and a file without
+the owner write bit is refused as a permission error. A failed write leaves
+existing contents intact. These tools do not lock files against
 concurrent shell commands or other writers. Coordinate changes to the same
 file; an edit can overwrite a change made after its read.

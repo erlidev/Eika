@@ -79,6 +79,9 @@ func (t fileTool) Call(ctx context.Context, c tool.CallContext, raw json.RawMess
 	case "file_read":
 		data, err = readTextFile(ctx, c.Exec, path, maxOutputBytes)
 		if err == nil {
+			if len(data) == 0 {
+				return tool.Text("(empty file)"), nil
+			}
 			return tool.Text(string(data)), nil
 		}
 	case "file_write":

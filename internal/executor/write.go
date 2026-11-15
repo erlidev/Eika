@@ -5,13 +5,16 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
 
 // AtomicWriteFile replaces a file under root with a complete new file. The
 // caller resolves symlinks first; rooted operations also prevent path races
-// from writing outside root. Existing permissions are kept.
+// from writing outside root. Existing permissions are kept, and a file without
+// the owner write bit is refused with an error wrapping fs.ErrPermission, as
+// opening it for writing would be. The data is synced before the rename.
 func AtomicWriteFile(ctx context.Context, root, path string, data []byte) error {
 	abs, err := Resolve(root, path)
 	if err != nil {
@@ -35,6 +38,9 @@ func AtomicWriteFile(ctx context.Context, root, path string, data []byte) error 
 			return fmt.Errorf("write %q: not a regular file", path)
 		}
 		mode = info.Mode().Perm()
+		if mode&0o200 == 0 {
+			return fmt.Errorf("write %q: read-only file: %w", path, fs.ErrPermission)
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("stat write target: %w", err)
 	}
@@ -54,6 +60,10 @@ func AtomicWriteFile(ctx context.Context, root, path string, data []byte) error 
 	if err := f.Chmod(mode); err != nil {
 		_ = f.Close()
 		return fmt.Errorf("set file permissions: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("sync temporary file: %w", err)
 	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close temporary file: %w", err)

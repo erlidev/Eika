@@ -68,6 +68,8 @@ Large tool output will be spilled to
 `/home/eika/.eika/outputs/<call id>.txt` on the computer, with its path in the
 result. The model can read it with `bash` or the planned `file_read` tool.
 Current bash output is truncated in the middle; it is not stored in a file.
+`file_read` is capped at 32 KiB and has no offset, so reading spilled output
+needs a range parameter, to be decided in the package that adds spilling.
 
 ## 5. The loop
 
