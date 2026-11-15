@@ -27,6 +27,19 @@ const unmocked: Record<string, string> = {
   "GET /api/inference": "the Activity page that reads the queue arrives in phase 3",
 };
 
+/** eikaTools is the eika definition's fixed tool list, as the harness lists it. */
+const eikaTools = [
+  "project_create",
+  "project_list",
+  "project_open",
+  "project_update",
+  "subagent_cancel",
+  "subagent_message",
+  "subagent_start",
+  "subagent_status",
+  "web_search",
+];
+
 /** open builds a mock on a named scenario whose replies play without pauses. */
 function open(name: string): MockHarness {
   return new MockHarness(scenario(name).build(), { stepDelayMs: 0 });
@@ -548,7 +561,7 @@ describe("agent definitions", () => {
     expect(listed.status).toBe(200);
     expect(listed.body).toMatchObject({
       agents: [
-        { name: "eika", class: "main", tools: ["web_search"], max_turns: 40 },
+        { name: "eika", class: "main", tools: eikaTools, max_turns: 40 },
         { name: "researcher", class: "fast", max_turns: 200 },
         { name: "worker", class: "main", max_turns: 200 },
       ],
@@ -632,7 +645,7 @@ describe("agent runtime", () => {
         model: mock.world.defaultModel,
         chat_prompt: "agent rules",
         instructions: "",
-        tools: ["web_search"],
+        tools: eikaTools,
         sources: { model: "class", chat_prompt: "agent", tools: "agent" },
       },
     });
@@ -968,6 +981,25 @@ describe("session storage metadata", () => {
     });
     expect((await call(mock, "DELETE", "/api/sessions/home-main")).status).toBe(409);
     expect((await call(mock, "GET", "/api/sessions/missing")).status).toBe(404);
+  });
+
+  it("refuses messages and compactions for a subagent, as the harness does", async () => {
+    const mock = open("home-world");
+    for (const [route, body] of [
+      ["messages", { text: "Hello" }],
+      ["messages", { text: "Hello", mode: "steer" }],
+      ["compact", {}],
+    ] as const) {
+      const reply = await call(mock, "POST", `/api/sessions/subagent-plumber/${route}`, body);
+      expect(reply.status).toBe(409);
+      expect(reply.body).toMatchObject({
+        error: { code: "conflict", message: "subagent plumber takes messages from Eika only" },
+      });
+    }
+    expect(mock.world.entries["subagent-plumber"]?.length).toBe(
+      scenario("home-world").build().entries["subagent-plumber"]?.length,
+    );
+    expect(mock.contractBreaks).toEqual([]);
   });
 
   it("returns the stored code-owned waiting reason", async () => {

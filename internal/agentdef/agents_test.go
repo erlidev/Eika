@@ -38,6 +38,12 @@ func TestBuiltins(t *testing.T) {
 				t.Errorf("%s file capability %s is incorrect", d.Name, name)
 			}
 		}
+		// Eika delegates; subagents never do.
+		for _, name := range []string{"subagent_cancel", "subagent_message", "subagent_start", "subagent_status"} {
+			if slices.Contains(d.Tools, name) != (d.Name == "eika") {
+				t.Errorf("%s delegation capability %s is incorrect", d.Name, name)
+			}
+		}
 		wantTurns, wantClass := 200, "main"
 		if d.Name == "eika" {
 			wantTurns = 40

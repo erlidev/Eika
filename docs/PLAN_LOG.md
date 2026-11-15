@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-13 adds Eika's subagent_start, _message, _status and _cancel,
+  bound to the lifecycle service and run through the run manager: foreground
+  from an interactive home turn, else background. Workers run on home in the
+  project directory; researchers have no computer; only home delegates. The API
+  refuses direct subagent messages. Subagents decide without ask_user.
+  `make check` and `make smoke` pass.
+
 - 2026-11-15: P2-12 follow-up creates a child and its initial running state
   in one write, so a failed write can be retried. Scripted-provider tests cover
   duplicate starts, concurrent resume, state transitions and global events.

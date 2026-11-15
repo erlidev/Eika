@@ -25,6 +25,7 @@ import (
 	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
+	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool"
 	"github.com/erlidev/eika/internal/tool/builtin"
 )
@@ -114,6 +115,8 @@ type Server struct {
 	deps Deps
 	tree *session.Tree
 	runs *runs
+	// subagents owns the home session's named subagents and their runs.
+	subagents *subagent.Service
 	// counters keeps each session's token counter across its runs.
 	counters *sessionCounters
 	// titles names untitled sessions after their first message.
@@ -156,6 +159,11 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	s.inference = inference.New(log)
 	s.counters = newSessionCounters()
 	s.runs = newRuns(s)
+	if deps.Store != nil {
+		// Subagents outlive the home turn that started them, so their runs
+		// are bounded by the server, not by a request.
+		s.subagents = subagent.New(context.Background(), deps.Store, s.runSubagent, deps.Bus, log)
+	}
 	s.titles = newTitles(s)
 	s.idle = newIdleComputers(s)
 	s.routes()
@@ -201,9 +209,13 @@ func (s *Server) Run(ctx context.Context) error {
 // Close aborts every run and session title that is still going and returns
 // once they have stopped. Run calls it on shutdown; a caller that serves
 // Handler itself calls it when it is done, before the store it gave the
-// server closes. Titles stop after the runs, since no run is left to start
-// one.
+// server closes. Subagents stop first, so each records its run cancelled
+// while the run manager still takes the abort; titles stop after the runs,
+// since no run is left to start one.
 func (s *Server) Close() {
+	if s.subagents != nil {
+		s.subagents.Close()
+	}
 	s.runs.stopAll()
 	s.titles.stop()
 }

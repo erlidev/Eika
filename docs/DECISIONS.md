@@ -2067,3 +2067,24 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   change emits the existing `session.updated` event on `global`. Clients refetch
   the session. Migration 0015 adds the waiting reason; question relay stays in
   P2-16. Legacy sessions and tool registries are unchanged.
+- **Delegation binds to the existing run manager** (2026-11-15, P2-13). A
+  subagent's message is an ordinary run on its own session, so steering,
+  compaction, preambles, accounting and abort work as for any session. The
+  callback waits for the run and maps an abort to `cancelled`. The service
+  takes the run priority from the caller: a home run at `interactive` makes
+  its subagents `foreground`, any other caller `background`. The ten-minute
+  decay of `foreground` in `runtime.md` waits for a caller that needs it, since
+  `Rank` can only rise today. Start and Message report whether they started
+  work, so the tools tell Eika that a name exists or a subagent is busy
+  instead of claiming they acted.
+- **Only the home session delegates.** The tools are in the `eika`
+  definition alone, and the binding refuses any caller that is not a home
+  session, so an `eika` session elsewhere cannot start children either.
+  Messages and compactions posted to a subagent's session through the API
+  are refused: a run outside the service would race its state.
+- **A worker works in its project's directory.** Its session uses the home
+  computer, the run creates the directory, and an executor wrapper starts
+  commands and resolves relative paths there. The executor still confines
+  every path to the computer root, and a directory outside the root refuses
+  the run. Rejected: naming the directory only in the preamble, which leaves
+  small models working in the root. A researcher gets no computer.

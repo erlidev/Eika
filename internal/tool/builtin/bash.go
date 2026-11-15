@@ -25,7 +25,7 @@ func (bashTool) Name() string { return "bash" }
 
 // Description tells the model how to use the shell for general computer work.
 func (bashTool) Description() string {
-	return `Run a shell command with sh -c in the computer root. Standard output and standard error are combined and returned with the exit code; long output is truncated in the middle.
+	return `Run a shell command with sh -c in the working directory: your project's directory if you have one, else the computer root. Standard output and standard error are combined and returned with the exit code; long output is truncated in the middle.
 
 Use file_read, file_write, and file_edit for small text files. Use the shell to explore files or work with larger files:
 - Search with rg (or grep -rn), find files with rg --files or find, and list directories with ls.

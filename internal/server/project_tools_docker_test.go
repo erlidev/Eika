@@ -49,7 +49,7 @@ func TestProjectToolsUseHomeExecutorAndKeepItRunning(t *testing.T) {
 	a := newAPI(t)
 	home := a.home(t)
 	host := &projectReadHost{fakeHost: a.host, started: make(chan struct{}), release: make(chan struct{})}
-	if err := a.BindProjectToolsForTest(host); err != nil {
+	if err := a.BindAgentToolsForTest(host); err != nil {
 		t.Fatal(err)
 	}
 	cx, err := a.host.Inspect(t.Context(), home.ID)

@@ -180,7 +180,7 @@ Check by hand here: chat with Eika in the new shell on the bench model.
 - [x] **P2-06**: Add project tools and executor access to STATUS.md.
 - [x] **P2-12**: Add subagent session and lifecycle state. Publish
       `session.updated` on `global` for each state change.
-- [ ] **P2-13**: Add delegation tools and run bindings. Subagents do not get
+- [x] **P2-13**: Add delegation tools and run bindings. Subagents do not get
       `ask_user` until P2-16: they decide, and state the assumption in the
       report.
 - [ ] **P2-14**: Add reports, limits and shutdown.
@@ -340,7 +340,7 @@ in the code beside what replaces them.
       - state set by code: running, waiting (with the reason), idle, failed,
         cancelled
       - [x] **P2-12**: Add session and lifecycle state.
-      - [ ] **P2-13**: Add delegation tools and run bindings.
+      - [x] **P2-13**: Add delegation tools and run bindings.
 - [ ] `internal/subagent`, part 2:
       - the `report` tool. A run that ends without one is sent a message to
         draft it; if it still does not call `report`, its final message becomes

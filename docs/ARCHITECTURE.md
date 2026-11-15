@@ -249,8 +249,8 @@ whole cache runs alone when the pool is empty, with a warning.
 The queue supports `interactive`, `foreground`, `background`, and `maintenance`,
 in that order. Current session runs and model tests use `interactive`; titles
 use `maintenance`. Startup conformance checks use `maintenance`, and explicit
-probes use `interactive`. Foreground and background have no production callers
-yet. Compaction summary calls use the run's priority. `Rank` is read per call;
+probes use `interactive`. Subagent runs use `foreground` when an interactive
+home turn starts or messages them, else `background`. Compaction summary calls use the run's priority. `Rank` is read per call;
 raising a background home turn to interactive is Phase 2 work.
 
 A waiting call gains one priority level per `aging_seconds` (default 300).
@@ -1018,6 +1018,20 @@ next Message resumes it and the next Cancel records it cancelled, so a temporary
 storage failure does not strand the child. Cancel stops and joins an active
 execution. Close joins all executions before
 the store closes. Each state or reason change emits `session.updated` on `global`.
-Migration 0015 stores the waiting reason. P2-13 supplies delegation tools and the
-server run callback; P2-14 adds reports and limits. No production run uses this
-service until that binding is added. Profile and direct chat runs are unchanged.
+Migration 0015 stores the waiting reason. P2-14 adds reports and limits.
+
+The server owns one service for its lifetime and closes it before the run
+manager, so shutdown records running children `cancelled`. Its run callback
+(`runSubagent` in `internal/server/subagents.go`) starts a run on the child's
+session through the run manager and waits for it; an aborted run is a cancel.
+Eika's tools `subagent_start`, `subagent_message`, `subagent_status` and
+`subagent_cancel` are agent-only built-ins bound to the service by the
+`delegation` type. The binding accepts only a home session as caller, so no
+subagent delegates, and picks the run priority from the calling run's rank:
+`foreground` from an interactive turn, `background` otherwise. A worker gets
+the home computer and a researcher none. A worker's run with a project
+creates the project directory and wraps its executor so that commands and
+relative paths start there; the executor still confines paths to the root.
+The HTTP API refuses messages and compactions posted to a subagent's session.
+Subagents have no `ask_user` until P2-16: their prompts tell them to decide
+and state assumptions. Profile and direct chat runs are unchanged.

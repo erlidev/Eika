@@ -68,7 +68,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	var s *Server
 	questions := builtin.NewQuestions()
 	bus := event.NewBus(log)
-	tools, err := projectToolRegistry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st}, func() *Server { return s })
+	tools, err := agentToolRegistry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st}, func() *Server { return s })
 	if err != nil {
 		return err
 	}
@@ -184,10 +184,12 @@ var (
 	_ search.UsageStore  = searchBackend{}
 )
 
-// projectToolRegistry binds project status reads to the server's home computer.
-func projectToolRegistry(deps builtin.Deps, server func() *Server) (*tool.Registry, error) {
+// agentToolRegistry binds project status reads to the server's home computer
+// and the delegation tools to its subagents.
+func agentToolRegistry(deps builtin.Deps, server func() *Server) (*tool.Registry, error) {
 	deps.HomeExecutor = func(ctx context.Context, sessionID string) (executor.Executor, func(), error) {
 		return server().projectExecutor(ctx, sessionID)
 	}
+	deps.Subagents = delegation{server: server}
 	return builtin.Registry(deps)
 }

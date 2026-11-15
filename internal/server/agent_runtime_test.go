@@ -263,9 +263,10 @@ func TestOnlyAgentsWhoseToolsNeedAComputerUseOne(t *testing.T) {
 	}
 }
 
-func TestProjectToolsAreOnlyAvailableThroughEikaDefinition(t *testing.T) {
+func TestProjectAndDelegationToolsAreOnlyAvailableThroughEikaDefinition(t *testing.T) {
 	s := runtimeServer(t)
-	projectNames := []string{"project_create", "project_list", "project_open", "project_update"}
+	projectNames := []string{"project_create", "project_list", "project_open", "project_update",
+		"subagent_cancel", "subagent_message", "subagent_start", "subagent_status"}
 	for _, name := range projectNames {
 		if _, ok := s.allTools().Get(name); ok {
 			t.Errorf("legacy tool list contains %s", name)

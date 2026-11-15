@@ -71,7 +71,7 @@ func (t projectTool) Call(ctx context.Context, c tool.CallContext, raw json.RawM
 		Required   []string                   `json:"required"`
 	}
 	_ = json.Unmarshal(t.Schema(), &schema)
-	args, err := projectArguments(raw, schema.Properties, schema.Required)
+	args, err := stringArguments(raw, schema.Properties, schema.Required)
 	if err != nil {
 		return tool.Errorf("%s: %v", t.name, err), nil
 	}
@@ -146,7 +146,7 @@ func projectResult(p store.Project) tool.Result {
 	b, _ := json.Marshal(map[string]string{"slug": p.Slug, "name": p.Name, "description": p.Description, "status": p.Status, "directory": p.Directory})
 	return tool.Text(string(b))
 }
-func projectArguments(raw []byte, allowed map[string]json.RawMessage, required []string) (map[string]string, error) {
+func stringArguments(raw []byte, allowed map[string]json.RawMessage, required []string) (map[string]string, error) {
 	if len(raw) > maxFileArgsBytes || !utf8.Valid(raw) {
 		return nil, fmt.Errorf("arguments must be valid UTF-8 within the size limit")
 	}

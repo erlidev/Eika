@@ -85,7 +85,8 @@ func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
 		t.Fatalf("Registry: %v", err)
 	}
 	want := []string{
-		"ask_user", "bash", "file_edit", "file_read", "file_write", "project_create", "project_list", "project_open", "project_update", "web_fetch", "web_search",
+		"ask_user", "bash", "file_edit", "file_read", "file_write", "project_create", "project_list", "project_open", "project_update",
+		"subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_fetch", "web_search",
 	}
 	got := make([]string, 0, len(want))
 	for _, tl := range r.List() {
@@ -126,7 +127,8 @@ func TestOnlyToolsThatNeedNoComputerAreStandalone(t *testing.T) {
 			standalone = append(standalone, tl.Name())
 		}
 	}
-	want := []string{"ask_user", "project_create", "project_list", "project_open", "project_update", "web_fetch", "web_search"}
+	want := []string{"ask_user", "project_create", "project_list", "project_open", "project_update",
+		"subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_fetch", "web_search"}
 	if !slices.Equal(standalone, want) {
 		t.Errorf("standalone tools = %v, want %v", standalone, want)
 	}

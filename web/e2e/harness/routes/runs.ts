@@ -36,6 +36,11 @@ function mockImage(upload: unknown): MessageImage | undefined {
   return undefined;
 }
 
+/** subagentRefusal is the harness's answer to a message or compaction for a subagent. */
+function subagentRefusal(name: string | undefined) {
+  return fail(409, "conflict", `subagent ${name ?? ""} takes messages from Eika only`);
+}
+
 export function runRoutes(ctx: RouteContext): void {
   const { w, on, find, now } = ctx;
   on("GET", "/api/sessions/{id}/run", ({ params }) => {
@@ -79,6 +84,7 @@ export function runRoutes(ctx: RouteContext): void {
       }
       images.push(image);
     }
+    if (session.kind === "subagent") return subagentRefusal(session.name);
     // The model a run uses is the one the request names, else the
     // session's; a running one keeps the model it started with.
     if (session.agent && str(body.model) !== "" && (!body.mode || body.mode === "run"))
@@ -117,6 +123,7 @@ export function runRoutes(ctx: RouteContext): void {
   on("POST", "/api/sessions/{id}/compact", ({ params, body }) => {
     const session = find(w.sessions, params[0], "session");
     if ("status" in session) return session;
+    if (session.kind === "subagent") return subagentRefusal(session.name);
     if (w.activeRuns[session.id]) return fail(409, "conflict", "a run is already going");
     if (session.agent && str(body.model) !== "")
       return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
