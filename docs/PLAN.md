@@ -178,7 +178,7 @@ Check by hand here: chat with Eika in the new shell on the bench model.
 
 - [x] **P2-07**: Build and store the preamble snapshot.
 - [x] **P2-06**: Add project tools and executor access to STATUS.md.
-- [ ] **P2-12**: Add subagent session and lifecycle state. Publish
+- [x] **P2-12**: Add subagent session and lifecycle state. Publish
       `session.updated` on `global` for each state change.
 - [ ] **P2-13**: Add delegation tools and run bindings. Subagents do not get
       `ask_user` until P2-16: they decide, and state the assumption in the
@@ -339,7 +339,7 @@ in the code beside what replaces them.
         `subagent_cancel`
       - state set by code: running, waiting (with the reason), idle, failed,
         cancelled
-      - [ ] **P2-12**: Add session and lifecycle state.
+      - [x] **P2-12**: Add session and lifecycle state.
       - [ ] **P2-13**: Add delegation tools and run bindings.
 - [ ] `internal/subagent`, part 2:
       - the `report` tool. A run that ends without one is sent a message to

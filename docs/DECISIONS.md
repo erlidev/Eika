@@ -2051,3 +2051,17 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   Eika has no computer in its session, but opening a project needs the home
   computer. The callback keeps computer lifecycle code in the server and file
   access in the executor.
+
+## Subagent lifecycle
+
+- **One service owns child runs** (2026-11-15, P2-12). Names are unique under
+  the home session. Starting an existing name returns its stored status and
+  does not change its brief, agent or project. Resume accepts only idle, failed
+  or cancelled children. The service keeps the run reservation until execution
+  and the final state write end. Cancel signals the run and waits for it to end.
+- The service takes a blocking run callback. P2-13 binds it to the existing
+  server run manager; it does not add a second agent loop. A child uses the
+  service lifetime, not the request or home reply lifetime. Each stored state
+  change emits the existing `session.updated` event on `global`. Clients refetch
+  the session. Migration 0015 adds the waiting reason; question relay stays in
+  P2-16. Legacy sessions and tool registries are unchanged.

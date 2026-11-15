@@ -386,8 +386,9 @@ refetches its session lists.
 ### `session.updated`
 
 Published on `global` when `PATCH /api/sessions/{id}` renames, pins, or
-archives a session. Like `session.title` it goes to every client, which
-refetches its session lists.
+archives a session. Subagent creation and each lifecycle state or waiting
+reason change also publish it, after the store write. Each client refetches
+its session lists and the session to read the state and optional `waiting_reason`.
 
 | Field | Type | Meaning |
 |---|---|---|

@@ -276,8 +276,8 @@ type SessionTitle struct {
 }
 
 // SessionUpdated is the payload of a session.updated event, on the global
-// topic: the user changed a session's title, pin, or archive. Every sidebar
-// lists every session, so the event goes to all of them.
+// topic: a session's metadata or lifecycle state changed. Clients refetch
+// the session to read the stored values.
 type SessionUpdated struct {
 	SessionID string `json:"session_id"`
 	// ComputerID is the session's computer, absent for a chat.

@@ -43,6 +43,7 @@ egress proxy are network calls and run in the harness.
 | `egress` | Egress modes, allowlist patterns, the proxy |
 | `netguard` | Public-address-only dialing |
 | `store` | PostgreSQL pool, embedded migrations, queries |
+| `subagent` | Named child sessions, serialized start/resume, code-owned states and cancel; run callback supplied by the caller |
 | `session` | Session tree: append, head, branch, outline; `session.Store` records runs |
 | `search` | Failover chain, quotas, cache; backends in `web`, `wikipedia`, `arxiv`, `github`; `fetch` reads a URL; `filter` is the JS filter |
 | `mcp` | MCP client, transports, pool, elicitation; `mcp/oauth` authorization; `mcptest` fakes |
@@ -425,7 +426,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | Table | Holds |
 |---|---|
 | `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), home |
-| `sessions` | computer_id (NULL for a chat), title, untitled, kind (user/home/subagent/routine), owner, agent, name, project_id, parent_session_id, state, brief, result, last_active_at, head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
+| `sessions` | computer_id (NULL for a chat), title, untitled, kind (user/home/subagent/routine), owner, agent, name, project_id, parent_session_id, state, waiting_reason, brief, result, last_active_at, head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, channel, payload (json: the text it was written as, so a message reads back as the bytes it was sent as) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
@@ -1004,3 +1005,15 @@ stay unchanged. The editors are P3-07 and P3-10; P2-07 adds preamble snapshots.
 
 The server ensures the local home session at startup. `GET /api/home` returns
 its session and head. Home messages use the web channel.
+
+### Subagent lifecycle
+
+`subagent.Service` creates persistent children under a home session. A duplicate
+name returns the existing child. Message resumes the same session after idle,
+failed or cancelled; running and waiting children return status. The service
+owns a run context and reservation until execution ends and its final state is
+stored. Cancel stops and joins that execution. Close joins all executions before
+the store closes. Each state or reason change emits `session.updated` on `global`.
+Migration 0015 stores the waiting reason. P2-13 supplies delegation tools and the
+server run callback; P2-14 adds reports and limits. No production run uses this
+service until that binding is added. Profile and direct chat runs are unchanged.

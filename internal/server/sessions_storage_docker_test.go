@@ -79,3 +79,34 @@ func TestHomeAPI(t *testing.T) {
 		t.Fatalf("home ID = %q, want %q", body.Session.ID, home.ID)
 	}
 }
+
+func TestSubagentWaitingReasonAPI(t *testing.T) {
+	a := newAPI(t)
+	home, err := a.store.EnsureHomeSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := a.store.CreateSession(t.Context(), store.Session{Kind: store.SessionSubagent, Name: "plumber", Agent: "researcher", ParentSessionID: home.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.SetSubagentState(t.Context(), child.ID, store.SessionWaiting, "test wait"); err != nil {
+		t.Fatal(err)
+	}
+	body := decodeBody[struct {
+		Session struct {
+			State  string `json:"state"`
+			Reason string `json:"waiting_reason"`
+		} `json:"session"`
+	}](t, request(t, a.Server, "GET", "/api/sessions/"+child.ID, nil), 200)
+	if body.Session.State != "waiting" || body.Session.Reason != "test wait" {
+		t.Fatal(body)
+	}
+	for _, method := range []string{"POST", "PATCH"} {
+		path := "/api/sessions"
+		if method == "PATCH" {
+			path += "/" + child.ID
+		}
+		decodeBody[map[string]any](t, request(t, a.Server, method, path, map[string]any{"waiting_reason": "user edit"}), 400)
+	}
+}

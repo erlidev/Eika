@@ -44,3 +44,25 @@ func TestEntryWirePreservesTextAndChannel(t *testing.T) {
 		t.Fatalf("message: %+v %v", body, err)
 	}
 }
+
+func TestSubagentWaitingReasonWire(t *testing.T) {
+	for _, reason := range []string{"", "test wait"} {
+		s := &Server{}
+		body, err := s.asSession(store.Session{ID: "child", Agent: "unknown", State: store.SessionWaiting, WaitingReason: reason}, configBase{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]any
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		got, present := fields["waiting_reason"]
+		if reason == "" && present || reason != "" && got != reason {
+			t.Fatalf("wire reason: %s", data)
+		}
+	}
+}

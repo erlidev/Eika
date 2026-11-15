@@ -416,7 +416,8 @@
                   "array": "string"
                 }
               },
-              "updated_at": "string"
+              "updated_at": "string",
+              "waiting_reason": "string"
             },
             "optional": [
               "agent",
@@ -427,7 +428,8 @@
               "parent_session_id",
               "profile_id",
               "project_id",
-              "result"
+              "result",
+              "waiting_reason"
             ]
           }
         },
@@ -1343,7 +1345,8 @@
                       "array": "string"
                     }
                   },
-                  "updated_at": "string"
+                  "updated_at": "string",
+                  "waiting_reason": "string"
                 },
                 "optional": [
                   "agent",
@@ -1354,7 +1357,8 @@
                   "parent_session_id",
                   "profile_id",
                   "project_id",
-                  "result"
+                  "result",
+                  "waiting_reason"
                 ]
               }
             }
@@ -1565,7 +1569,8 @@
                   "array": "string"
                 }
               },
-              "updated_at": "string"
+              "updated_at": "string",
+              "waiting_reason": "string"
             },
             "optional": [
               "agent",
@@ -1576,7 +1581,8 @@
               "parent_session_id",
               "profile_id",
               "project_id",
-              "result"
+              "result",
+              "waiting_reason"
             ]
           }
         },
@@ -3392,7 +3398,8 @@
               "array": "string"
             }
           },
-          "updated_at": "string"
+          "updated_at": "string",
+          "waiting_reason": "string"
         },
         "optional": [
           "agent",
@@ -3403,7 +3410,8 @@
           "parent_session_id",
           "profile_id",
           "project_id",
-          "result"
+          "result",
+          "waiting_reason"
         ]
       }
     },
@@ -4554,7 +4562,8 @@
               "array": "string"
             }
           },
-          "updated_at": "string"
+          "updated_at": "string",
+          "waiting_reason": "string"
         },
         "optional": [
           "agent",
@@ -4565,7 +4574,8 @@
           "parent_session_id",
           "profile_id",
           "project_id",
-          "result"
+          "result",
+          "waiting_reason"
         ]
       }
     },
@@ -4625,7 +4635,8 @@
               "array": "string"
             }
           },
-          "updated_at": "string"
+          "updated_at": "string",
+          "waiting_reason": "string"
         },
         "optional": [
           "agent",
@@ -4636,7 +4647,8 @@
           "parent_session_id",
           "profile_id",
           "project_id",
-          "result"
+          "result",
+          "waiting_reason"
         ]
       }
     },
@@ -5341,7 +5353,8 @@
               "array": "string"
             }
           },
-          "updated_at": "string"
+          "updated_at": "string",
+          "waiting_reason": "string"
         },
         "optional": [
           "agent",
@@ -5352,7 +5365,8 @@
           "parent_session_id",
           "profile_id",
           "project_id",
-          "result"
+          "result",
+          "waiting_reason"
         ]
       }
     },

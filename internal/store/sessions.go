@@ -50,6 +50,7 @@ type Session struct {
 	Name            string
 	ProjectID       string
 	ParentSessionID string
+	WaitingReason   string
 	State           SessionState
 	Brief           string
 	Result          string
@@ -92,7 +93,7 @@ func (s Session) Chat() bool { return s.ComputerID == "" }
 // scanSession reads them.
 const sessionColumns = `id, computer_id, title, untitled, kind, head_entry_id, tools,
 	profile_id, overrides, pinned, archived, created_at, updated_at,
-    owner, agent, name, project_id, parent_session_id, state, brief, result, last_active_at`
+    owner, agent, name, project_id, parent_session_id, state, brief, result, last_active_at, waiting_reason`
 
 // CreateSession inserts sess and returns it with the fields the database
 // assigned. An empty ID gets a fresh one; an unknown profile is ErrNotFound.
@@ -119,12 +120,12 @@ func (s *Store) CreateSession(ctx context.Context, sess Session) (Session, error
 		return Session{}, wrapMissing("create session", err)
 	}
 	const insert = `INSERT INTO sessions (id, computer_id, title, untitled, kind, head_entry_id,
-			tools, profile_id, overrides, pinned, archived, owner, agent, name, project_id, parent_session_id, state, brief, result, last_active_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, now()))
+			tools, profile_id, overrides, pinned, archived, owner, agent, name, project_id, parent_session_id, state, brief, result, last_active_at, waiting_reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, now()), $21)
 		RETURNING ` + sessionColumns
 	row := s.pool.QueryRow(ctx, insert, sess.ID, nullable(sess.ComputerID), sess.Title, sess.Untitled, sess.Kind,
 		nullable(sess.HeadEntryID), sess.Tools,
-		nullable(sess.ProfileID), overrides, sess.Pinned, sess.Archived, sess.Owner, sess.Agent, sess.Name, nullable(sess.ProjectID), nullable(sess.ParentSessionID), sess.State, sess.Brief, sess.Result, active)
+		nullable(sess.ProfileID), overrides, sess.Pinned, sess.Archived, sess.Owner, sess.Agent, sess.Name, nullable(sess.ProjectID), nullable(sess.ParentSessionID), sess.State, sess.Brief, sess.Result, active, sess.WaitingReason)
 	out, err := scanSession(row)
 	if err != nil {
 		return Session{}, wrapMissing("create session", err)
@@ -270,7 +271,7 @@ func scanSession(row pgx.Row) (Session, error) {
 		overrides       []byte
 	)
 	err := row.Scan(&sess.ID, &computer, &sess.Title, &sess.Untitled, &sess.Kind, &head, &sess.Tools,
-		&profile, &overrides, &sess.Pinned, &sess.Archived, &sess.CreatedAt, &sess.UpdatedAt, &sess.Owner, &sess.Agent, &sess.Name, &project, &parent, &sess.State, &sess.Brief, &sess.Result, &sess.LastActiveAt)
+		&profile, &overrides, &sess.Pinned, &sess.Archived, &sess.CreatedAt, &sess.UpdatedAt, &sess.Owner, &sess.Agent, &sess.Name, &project, &parent, &sess.State, &sess.Brief, &sess.Result, &sess.LastActiveAt, &sess.WaitingReason)
 	if err != nil {
 		return Session{}, err
 	}
