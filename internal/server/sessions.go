@@ -254,6 +254,17 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.log, http.StatusOK, body)
 }
 
+// handleHomeSession returns the local home conversation and its head.
+func (s *Server) handleHomeSession(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.deps.Store.HomeSession(r.Context(), store.LocalOwner, "home")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	r.SetPathValue("id", sess.ID)
+	s.handleSession(w, r)
+}
+
 // handleUpdateSession renames, pins, or archives a session, and tells every
 // client so that each sidebar redraws it.
 func (s *Server) handleUpdateSession(w http.ResponseWriter, r *http.Request) {
@@ -397,6 +408,15 @@ func (s *Server) checkResumable(ctx context.Context, sessionID, entryID string) 
 // handleDeleteSession removes a session and its entries.
 func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	sess, err := s.deps.Store.Session(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if sess.Kind == store.SessionHome {
+		s.fail(w, r, conflictf("the home session cannot be deleted"))
+		return
+	}
 	// The run has to stop before the rows it writes to go away, whether or
 	// not the client is still waiting for the answer.
 	stopCtx, cancel := teardown(r.Context())

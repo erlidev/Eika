@@ -63,3 +63,19 @@ func TestSessionStorageAPIAndReplay(t *testing.T) {
 		}
 	}
 }
+
+func TestHomeAPI(t *testing.T) {
+	a := newAPI(t)
+	home, err := a.store.EnsureHomeSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := decodeBody[struct {
+		Session struct {
+			ID string `json:"id"`
+		} `json:"session"`
+	}](t, request(t, a.Server, "GET", "/api/home", nil), 200)
+	if body.Session.ID != home.ID {
+		t.Fatalf("home ID = %q, want %q", body.Session.ID, home.ID)
+	}
+}

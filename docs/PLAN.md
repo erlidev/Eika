@@ -165,7 +165,7 @@ The home loop, end to end, in a browser. Nothing here is hardened.
 - [x] **P2-08**: Resolve an agent's class, prompt and fixed tools at runtime.
       Add the path beside profiles, chosen by the session's `agent`. Profiles
       keep working for the sessions that still use them.
-- [ ] **P2-09**: Ensure home at start and add `GET /api/home`. The store already
+- [x] **P2-09**: Ensure home at start and add `GET /api/home`. The store already
       has the session kind and index; copy `Server.EnsureHome`. The only channel
       is `web`.
 - [ ] **P3-03**: Add the World and matching routes, for the home session and
@@ -319,7 +319,7 @@ in the code beside what replaces them.
       talks only to Eika. Each user-side `<context>` names its channel; replies go
       back to it. The web app is the only channel until channels return
       (`docs/DEFERRED.md`), so there is no routing to build.
-      - [ ] **P2-09**: Ensure home at start, add its API and record the channel.
+      - [x] **P2-09**: Ensure home at start, add its API and record the channel.
       - [ ] **P2-11**: Retire direct chat creation after the UI moves.
 - [ ] Add projects: table, API and the tools `project_list`, `project_open`,
       `project_create` and `project_update`. The fields are `name`, `slug`,

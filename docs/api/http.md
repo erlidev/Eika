@@ -134,10 +134,15 @@ A session is a tree of entries in one computer, with a head the next run
 continues from. A chat is a session with no computer: its runs have no files
 or commands, and offer the model only the tools that need no computer.
 
+### `GET /api/home`
+
+Returns the local home session and its head in the same shape as
+`GET /api/sessions/{id}`. Returns `404` if the session does not exist.
+
 ### `GET /api/sessions`
 
 `?computer_id=<id>` narrows the list; without it every session is returned,
-chats included. `?chats=true` returns the chats alone; with `computer_id` it is
+chats included. `?chats=true` returns the chats alone, excluding the home session; with `computer_id` it is
 `400`.
 
 `200` with `{"sessions": [Session]}`, oldest first.
@@ -173,7 +178,8 @@ none. It publishes `session.updated` on `global`.
 
 ### `DELETE /api/sessions/{id}`
 
-Aborts the session's run, then deletes it and its entries. `204`.
+Aborts the session's run, then deletes it and its entries. `204`. The home
+session cannot be deleted: the route returns `409` without stopping its run.
 
 ### `GET /api/sessions/{id}/outline`
 

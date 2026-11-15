@@ -31,6 +31,8 @@ const (
 // Options configure an Agent. Executor, Emitter, Store, and Logger default to
 // something harmless, so the zero value runs a model-only agent.
 type Options struct {
+	// Channel names the source of user messages in a home conversation.
+	Channel string
 	// Model overrides the provider's configured model name.
 	Model string
 	// ContextWindow bounds the input and requested output of one model call.

@@ -11,7 +11,8 @@ import (
 // appended at the session's head. It is the production implementation of
 // agent.Store.
 type Store struct {
-	tree *Tree
+	tree    *Tree
+	channel string
 }
 
 // NewStore returns a store that appends to tree.
@@ -19,9 +20,19 @@ func NewStore(tree *Tree) *Store {
 	return &Store{tree: tree}
 }
 
+// SetChannel records the channel of user and assistant messages.
+func (s *Store) SetChannel(channel string) { s.channel = channel }
+
 // Append records one message of a run.
 func (s *Store) Append(ctx context.Context, sessionID string, m provider.Message) error {
-	if _, err := s.tree.AppendMessage(ctx, sessionID, m); err != nil {
+	e, err := MessageEntry(m)
+	if err != nil {
+		return err
+	}
+	if m.Role == provider.RoleUser || m.Role == provider.RoleAssistant {
+		e.Channel = s.channel
+	}
+	if _, err := s.tree.Append(ctx, sessionID, e); err != nil {
 		return err
 	}
 	return nil

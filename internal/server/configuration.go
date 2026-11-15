@@ -432,6 +432,9 @@ func (c runConfig) parameterSources() map[string]string {
 // the emitter, the store, the recorder, and the logger.
 func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, ex executor.Executor,
 	mcpTools []tool.Tool, opts agent.Options) *agent.Agent {
+	if sess.Kind == store.SessionHome {
+		opts.Channel = "web"
+	}
 	opts.Model = c.model.Model
 	opts.ContextWindow = c.window()
 	opts.Sampling = c.sampling

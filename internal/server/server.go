@@ -177,6 +177,9 @@ func (s *Server) Bus() *event.Bus { return s.deps.Bus }
 func (s *Server) Run(ctx context.Context) error {
 	defer s.Close()
 	if s.deps.Store != nil {
+		if _, err := s.deps.Store.EnsureHomeSession(ctx); err != nil {
+			return err
+		}
 		// The queue knows its pools before the first run asks for a lease.
 		s.syncInference(ctx)
 		watchCtx, cancel := context.WithCancel(ctx)

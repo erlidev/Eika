@@ -213,6 +213,229 @@
       },
       "public": true
     },
+    "GET /api/home": {
+      "status": 200,
+      "response": {
+        "object": {
+          "head": {
+            "object": {
+              "channel": "string",
+              "compaction": {
+                "object": {
+                  "kept": "number",
+                  "reason": "string",
+                  "summary": "string",
+                  "tokens_after": "number",
+                  "tokens_before": "number",
+                  "usage": {
+                    "object": {
+                      "cached_tokens": {
+                        "nullable": "number"
+                      },
+                      "input_tokens": {
+                        "nullable": "number"
+                      },
+                      "output_tokens": {
+                        "nullable": "number"
+                      },
+                      "prefilled_tokens": {
+                        "nullable": "number"
+                      },
+                      "reasoning_tokens": {
+                        "nullable": "number"
+                      },
+                      "total_tokens": {
+                        "nullable": "number"
+                      }
+                    }
+                  }
+                }
+              },
+              "created_at": "string",
+              "id": "string",
+              "kind": "string",
+              "message": {
+                "object": {
+                  "content": "string",
+                  "context": "string",
+                  "images": {
+                    "array": {
+                      "object": {
+                        "data": {
+                          "nullable": "string"
+                        },
+                        "height": "number",
+                        "media_type": "string",
+                        "width": "number"
+                      }
+                    }
+                  },
+                  "is_error": "boolean",
+                  "metrics": {
+                    "object": {
+                      "context": {
+                        "object": {
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
+                        }
+                      },
+                      "context_window": "number",
+                      "generation_ms": "number",
+                      "run_id": "string",
+                      "timings": {
+                        "object": {
+                          "decode_ms": "number",
+                          "decode_tokens": "number",
+                          "prompt_ms": "number",
+                          "prompt_tokens": "number",
+                          "source": "string"
+                        },
+                        "optional": [
+                          "decode_ms",
+                          "decode_tokens",
+                          "prompt_ms",
+                          "prompt_tokens",
+                          "source"
+                        ]
+                      },
+                      "usage": {
+                        "object": {
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
+                        }
+                      }
+                    },
+                    "optional": [
+                      "timings"
+                    ]
+                  },
+                  "reasoning": "string",
+                  "reasoning_items": {
+                    "array": "any"
+                  },
+                  "role": "string",
+                  "summary": "boolean",
+                  "tool_call_id": "string",
+                  "tool_calls": {
+                    "array": {
+                      "object": {
+                        "arguments": "any",
+                        "arguments_malformed": "boolean",
+                        "arguments_text": "string",
+                        "id": "string",
+                        "name": "string",
+                        "wire_id": "string"
+                      },
+                      "optional": [
+                        "arguments_malformed",
+                        "arguments_text",
+                        "wire_id"
+                      ]
+                    }
+                  }
+                },
+                "optional": [
+                  "content",
+                  "context",
+                  "images",
+                  "is_error",
+                  "metrics",
+                  "reasoning",
+                  "reasoning_items",
+                  "summary",
+                  "tool_call_id",
+                  "tool_calls"
+                ]
+              },
+              "parent_id": "string",
+              "seq": "number",
+              "text": "string"
+            },
+            "optional": [
+              "channel",
+              "compaction",
+              "parent_id",
+              "text"
+            ]
+          },
+          "session": {
+            "object": {
+              "agent": "string",
+              "archived": "boolean",
+              "brief": "string",
+              "computer_id": "string",
+              "created_at": "string",
+              "head_entry_id": "string",
+              "id": "string",
+              "kind": "string",
+              "last_active_at": "string",
+              "name": "string",
+              "overridden": "boolean",
+              "owner": "string",
+              "parent_session_id": "string",
+              "pinned": "boolean",
+              "profile_id": "string",
+              "project_id": "string",
+              "result": "string",
+              "state": "string",
+              "title": "string",
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "updated_at": "string"
+            },
+            "optional": [
+              "agent",
+              "brief",
+              "computer_id",
+              "head_entry_id",
+              "name",
+              "parent_session_id",
+              "profile_id",
+              "project_id",
+              "result"
+            ]
+          }
+        },
+        "optional": [
+          "head"
+        ]
+      }
+    },
     "GET /api/inference": {
       "status": 200,
       "response": {

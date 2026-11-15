@@ -867,6 +867,36 @@ describe("session storage metadata", () => {
     expect(read.body).toMatchObject({ session: row });
   });
 
+  it("excludes home from chats and refuses its deletion", async () => {
+    const mock = open("workbench");
+    const row = mock.world.sessions[0];
+    if (!row) throw new Error("missing session");
+    row.kind = "home";
+    row.owner = "local";
+    row.name = "home";
+    delete row.computer_id;
+    const chats = await call(mock, "GET", "/api/sessions?chats=true");
+    expect((chats.body as { sessions: Session[] }).sessions.some((s) => s.id === row.id)).toBe(
+      false,
+    );
+    const deletion = await call(mock, "DELETE", `/api/sessions/${row.id}`);
+    expect(deletion.status).toBe(409);
+    expect((await call(mock, "GET", "/api/home")).status).toBe(200);
+    expect((await call(mock, "DELETE", "/api/sessions/missing")).status).toBe(404);
+  });
+
+  it("returns the home session and its head", async () => {
+    const mock = open("workbench");
+    const row = mock.world.sessions[0];
+    if (!row) throw new Error("missing session");
+    row.kind = "home";
+    row.owner = "local";
+    row.name = "home";
+    const reply = await call(mock, "GET", "/api/home");
+    expect(reply.status).toBe(200);
+    expect(reply.body).toMatchObject({ session: row });
+  });
+
   it("keeps preamble and notice text and message channels in entry responses", async () => {
     const mock = open("workbench");
     const row = mock.world.sessions[0];

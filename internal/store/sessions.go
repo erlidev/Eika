@@ -167,10 +167,10 @@ func (s *Store) Sessions(ctx context.Context, computerID string) ([]Session, err
 	return collectSessions("list sessions", rows)
 }
 
-// Chats returns every session with no computer, oldest first.
+// Chats returns non-home sessions with no computer, oldest first.
 func (s *Store) Chats(ctx context.Context) ([]Session, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+sessionColumns+` FROM sessions
-		WHERE computer_id IS NULL ORDER BY created_at, id`)
+		WHERE computer_id IS NULL AND kind <> 'home' ORDER BY created_at, id`)
 	if err != nil {
 		return nil, wrap("list chats", err)
 	}
@@ -295,6 +295,19 @@ func (s *Store) HomeSession(ctx context.Context, owner, name string) (Session, e
 	sess, err := scanSession(row)
 	if err != nil {
 		return Session{}, wrap("read home session", err)
+	}
+	return sess, nil
+}
+
+// EnsureHomeSession creates or returns the local home conversation.
+func (s *Store) EnsureHomeSession(ctx context.Context) (Session, error) {
+	const q = `INSERT INTO sessions (id, title, kind, owner, agent, name)
+ VALUES ($1, 'Home', 'home', $2, 'eika', 'home')
+ ON CONFLICT (owner, name) WHERE kind = 'home' DO UPDATE SET name = EXCLUDED.name
+ RETURNING ` + sessionColumns
+	sess, err := scanSession(s.pool.QueryRow(ctx, q, NewID(), LocalOwner))
+	if err != nil {
+		return Session{}, wrap("ensure home session", err)
 	}
 	return sess, nil
 }
