@@ -131,11 +131,11 @@ func (c runConfig) withSnapshot(loaded *agent.Session) runConfig {
 	return c
 }
 
-// refreshSnapshot stores a compaction of session id together with its
-// replacement snapshot, built from what the preamble and the agent
-// definition say now, and returns the snapshot with the tools a run of the
-// session offers from it.
-func (s *Server) refreshSnapshot(ctx context.Context, id string, c agent.Compaction) (agent.Snapshot, error) {
+// refreshSnapshot builds the replacement snapshot of session id from what
+// the preamble and the agent definition say now, stores it together with
+// the compaction record measures against it, and returns it with the tools a
+// run of the session offers from it.
+func (s *Server) refreshSnapshot(ctx context.Context, id string, record func(agent.Snapshot) agent.Compaction) (agent.Snapshot, error) {
 	sess, err := s.deps.Store.Session(ctx, id)
 	if err != nil {
 		return agent.Snapshot{}, err
@@ -149,14 +149,15 @@ func (s *Server) refreshSnapshot(ctx context.Context, id string, c agent.Compact
 		return agent.Snapshot{}, err
 	}
 	prompt, tools := cfg.pinned()
-	entries, err := preambleCompactionEntries(text, prompt, tools, c)
+	snap := agent.Snapshot{Preamble: text, Prompt: &prompt, Tools: s.runTools(sess, tools, nil)}
+	entries, err := preambleCompactionEntries(text, prompt, tools, record(snap))
 	if err != nil {
 		return agent.Snapshot{}, err
 	}
 	if err := s.deps.Store.AppendEntries(ctx, sess.ID, entries...); err != nil {
 		return agent.Snapshot{}, err
 	}
-	return agent.Snapshot{Preamble: text, Prompt: &prompt, Tools: s.runTools(sess, tools, nil)}, nil
+	return snap, nil
 }
 
 func preambleCompactionEntries(text, prompt string, tools []string, c agent.Compaction) ([]store.Entry, error) {

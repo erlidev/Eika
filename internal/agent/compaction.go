@@ -361,16 +361,23 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 	record.Summary = summary
 	record.Kept = stored - plan.first
 	next := append(Compacted(msgs[:stored], record), msgs[stored:]...)
-	record.TokensAfter = a.predict(ctx, base.WithMessages(next)).Tokens
 	if a.opts.RefreshSnapshot != nil {
-		snap, err := a.opts.RefreshSnapshot(ctx, s.ID, record)
+		// The context after is the replacement snapshot's, whose preamble,
+		// prompt and tools may differ in size from the ones before.
+		snap, err := a.opts.RefreshSnapshot(ctx, s.ID, func(snap Snapshot) Compaction {
+			record.TokensAfter = a.predict(ctx, a.snapshotBase(snap).WithMessages(next)).Tokens
+			return record
+		})
 		if err != nil {
 			return failed(fmt.Errorf("store compaction: %w", err))
 		}
 		a.useSnapshot(s, snap)
-	} else if a.opts.Store != nil {
-		if err := a.opts.Store.AppendCompaction(ctx, s.ID, record); err != nil {
-			return failed(fmt.Errorf("store compaction: %w", err))
+	} else {
+		record.TokensAfter = a.predict(ctx, base.WithMessages(next)).Tokens
+		if a.opts.Store != nil {
+			if err := a.opts.Store.AppendCompaction(ctx, s.ID, record); err != nil {
+				return failed(fmt.Errorf("store compaction: %w", err))
+			}
 		}
 	}
 	s.Conversation.Replace(next)

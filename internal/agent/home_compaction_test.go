@@ -350,11 +350,12 @@ func TestCompactionSwapsInTheRefreshedPromptAndTools(t *testing.T) {
 		BasePrompt:    &oldPrompt,
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Compaction:    agent.CompactionSettings{Auto: true, KeepRecentShare: 0.25},
-		RefreshSnapshot: func(_ context.Context, _ string, c agent.Compaction) (agent.Snapshot, error) {
-			if err := st.AppendCompaction(context.Background(), "s1", c); err != nil {
+		RefreshSnapshot: func(_ context.Context, _ string, record func(agent.Snapshot) agent.Compaction) (agent.Snapshot, error) {
+			snap := agent.Snapshot{Preamble: "Time zone\nUTC", Prompt: &newPrompt, Tools: tools("fresh")}
+			if err := st.AppendCompaction(context.Background(), "s1", record(snap)); err != nil {
 				return agent.Snapshot{}, err
 			}
-			return agent.Snapshot{Preamble: "Time zone\nUTC", Prompt: &newPrompt, Tools: tools("fresh")}, nil
+			return snap, nil
 		},
 	})
 	s := sessionOf(history(10, 1000))
@@ -388,5 +389,57 @@ func TestCompactionSwapsInTheRefreshedPromptAndTools(t *testing.T) {
 	}
 	if s.Prompt == nil || *s.Prompt != newPrompt || !reflect.DeepEqual(s.Tools, []string{"fresh"}) {
 		t.Errorf("session snapshot = %v, %v, want the new definition", deref(s.Prompt), s.Tools)
+	}
+}
+
+func TestTokensAfterAreMeasuredAgainstTheRefreshedSnapshot(t *testing.T) {
+	compactWith := func(t *testing.T, snap agent.Snapshot) (agent.Compaction, event.CompactionEnd) {
+		t.Helper()
+		oldPrompt := "Old definition."
+		st, events := newMemoryStore(), &recorder{}
+		a := agent.New(providertest.New(providertest.Text("SUMMARY")), registry(t), agent.Options{
+			Store:      st,
+			Emitter:    events,
+			BasePrompt: &oldPrompt,
+			Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Compaction: agent.CompactionSettings{KeepRecentTokens: 150},
+			RefreshSnapshot: func(_ context.Context, _ string, record func(agent.Snapshot) agent.Compaction) (agent.Snapshot, error) {
+				if err := st.AppendCompaction(context.Background(), "s1", record(snap)); err != nil {
+					return agent.Snapshot{}, err
+				}
+				return snap, nil
+			},
+		})
+		s := sessionOf(history(4, 100))
+		s.Preamble = "Time zone\nUTC"
+		if err := a.Compact(context.Background(), s, ""); err != nil {
+			t.Fatalf("Compact: %v", err)
+		}
+		var end event.CompactionEnd
+		events.payloadOf(t, event.TypeCompactionEnd, &end)
+		stored := st.compactions["s1"]
+		if len(stored) != 1 {
+			t.Fatalf("stored compactions = %+v", stored)
+		}
+		return stored[0], end
+	}
+	same, _ := compactWith(t, agent.Snapshot{Preamble: "Time zone\nUTC"})
+	bigPrompt := filler("prompt", 2000)
+	bigger, end := compactWith(t, agent.Snapshot{Preamble: filler("preamble", 2000), Prompt: &bigPrompt})
+	if grown := bigger.TokensAfter - same.TokensAfter; grown < 3500 {
+		t.Errorf("tokens after = %d with the larger snapshot and %d with the same, want about 4,000 more",
+			bigger.TokensAfter, same.TokensAfter)
+	}
+	if end.TokensAfter != bigger.TokensAfter {
+		t.Errorf("compaction.end tokens after = %d, want the stored %d", end.TokensAfter, bigger.TokensAfter)
+	}
+	none, err := tool.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	smaller, _ := compactWith(t, agent.Snapshot{Preamble: "", Tools: none})
+	if smaller.TokensAfter >= same.TokensAfter {
+		t.Errorf("tokens after = %d with no preamble and no tools, want fewer than the %d with them",
+			smaller.TokensAfter, same.TokensAfter)
 	}
 }

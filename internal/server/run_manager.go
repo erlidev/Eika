@@ -318,7 +318,7 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	// An agent session runs on its snapshot's prompt and tools, which only a
 	// compaction replaces.
 	cfg = cfg.withSnapshot(loaded)
-	var refresh func(context.Context, string, agent.Compaction) (agent.Snapshot, error)
+	var refresh func(context.Context, string, func(agent.Snapshot) agent.Compaction) (agent.Snapshot, error)
 	if sess.Agent != "" {
 		refresh = s.refreshSnapshot
 	}

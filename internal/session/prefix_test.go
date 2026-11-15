@@ -296,16 +296,17 @@ func (h *harness) snapshotEntry() store.Entry {
 
 // refreshSnapshot stores a compaction with its replacement snapshot, as the
 // server does.
-func (h *harness) refreshSnapshot(ctx context.Context, sessionIDD string, c agent.Compaction) (agent.Snapshot, error) {
-	compaction, err := session.CompactionEntry(c)
+func (h *harness) refreshSnapshot(ctx context.Context, sessionIDD string, record func(agent.Snapshot) agent.Compaction) (agent.Snapshot, error) {
+	prompt := scenarioPrompt
+	snap := agent.Snapshot{Preamble: scenarioPreamble, Prompt: &prompt, Tools: h.registry()}
+	compaction, err := session.CompactionEntry(record(snap))
 	if err != nil {
 		return agent.Snapshot{}, err
 	}
 	if err := appendEntries(ctx, h.store, sessionIDD, h.snapshotEntry(), compaction); err != nil {
 		return agent.Snapshot{}, err
 	}
-	prompt := scenarioPrompt
-	return agent.Snapshot{Preamble: scenarioPreamble, Prompt: &prompt, Tools: h.registry()}, nil
+	return snap, nil
 }
 
 // newAgent builds the agent of a run of s from its snapshot, as the server

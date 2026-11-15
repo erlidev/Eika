@@ -636,8 +636,9 @@ func TestCompactionRefreshesPreambleAfterSummary(t *testing.T) {
 	var called bool
 	a := agent.New(p, nil, agent.Options{
 		Compaction: agent.CompactionSettings{KeepRecentTokens: 150},
-		RefreshSnapshot: func(_ context.Context, id string, c agent.Compaction) (agent.Snapshot, error) {
+		RefreshSnapshot: func(_ context.Context, id string, record func(agent.Snapshot) agent.Compaction) (agent.Snapshot, error) {
 			called = true
+			c := record(agent.Snapshot{Preamble: "new snapshot"})
 			if id != "s1" || c.Summary != "summary" {
 				t.Fatalf("compaction = %s, %+v", id, c)
 			}
@@ -668,7 +669,7 @@ func TestConcurrentMessagesDuringPreambleRefresh(t *testing.T) {
 	done := make(chan struct{})
 	a := agent.New(p, nil, agent.Options{
 		Compaction: agent.CompactionSettings{KeepRecentTokens: 150},
-		RefreshSnapshot: func(_ context.Context, _ string, _ agent.Compaction) (agent.Snapshot, error) {
+		RefreshSnapshot: func(_ context.Context, _ string, _ func(agent.Snapshot) agent.Compaction) (agent.Snapshot, error) {
 			close(started)
 			<-ready
 			return agent.Snapshot{Preamble: "Time zone\nUTC\n\nLocale\nen"}, nil

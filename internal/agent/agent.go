@@ -80,10 +80,11 @@ type Options struct {
 	Emitter event.Emitter
 	// Store persists every message. Nil keeps them in the conversation only.
 	Store Store
-	// RefreshSnapshot stores a compaction and the session's replacement
-	// snapshot together, and returns the snapshot, which the run goes on
-	// with. Nil stores the compaction alone, through Store.
-	RefreshSnapshot func(context.Context, string, Compaction) (Snapshot, error)
+	// RefreshSnapshot builds the session's replacement snapshot, asks
+	// record for the compaction measured against it, stores the two
+	// together, and returns the snapshot, which the run goes on with. Nil
+	// stores the compaction alone, through Store.
+	RefreshSnapshot func(ctx context.Context, sessionID string, record func(Snapshot) Compaction) (Snapshot, error)
 	// Logger receives one line per finished or failed turn.
 	Logger *slog.Logger
 	// Recorder is told about every model call that returned a response. Nil

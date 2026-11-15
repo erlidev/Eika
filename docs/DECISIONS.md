@@ -2317,6 +2317,8 @@ locale is unspecified until the user sets it; no browser locale is inferred.
 - **A compaction inside a run swaps the definition in at once.** The refresh
   callback returns the new preamble, prompt and tool registry, and the agent's
   next call is built from them (`Agent.useSnapshot`); the summary call still
-  uses the prefix it shares. Rejected: keeping the old prompt and tools until
+  uses the prefix it shares. The callback builds the snapshot before it stores
+  the compaction, so `tokens_after` is measured against the replacement
+  snapshot, not the one it replaces. Rejected: keeping the old prompt and tools until
   the run ends, which would send a new preamble beside an old prompt for the
   rest of the run and miss the cache once more at the next run.
