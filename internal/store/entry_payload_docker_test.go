@@ -49,3 +49,48 @@ func TestAnEntryPayloadComesBackAsTheTextItWasWrittenAs(t *testing.T) {
 		}
 	}
 }
+
+// A notice is undelivered until a user entry of its session, on any branch,
+// lists it; another session's user entries never count.
+func TestUndeliveredNoticesAreTheOnesNoUserEntryLists(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	home, err := st.CreateSession(ctx, store.Session{Kind: store.SessionHome, Name: "home", Agent: "eika"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := st.CreateSession(ctx, store.Session{Title: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notice := func(text string) store.Entry {
+		e, err := st.AppendEntry(ctx, home.ID, store.Entry{Kind: store.KindNotice, Payload: json.RawMessage(`{"text":"` + text + `"}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	user := func(sessionID string, ids ...string) {
+		raw, err := json.Marshal(map[string]any{"role": "user", "context": "<context></context>", "notices": ids})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.AppendEntry(ctx, sessionID, store.Entry{Kind: store.KindUser, Payload: raw}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, second, third := notice("one"), notice("two"), notice("three")
+	user(home.ID, first.ID)
+	user(other.ID, second.ID)
+	// A user entry on a branch the head left still delivered its notices.
+	if err := st.SetSessionHead(ctx, home.ID, third.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.UndeliveredNotices(ctx, home.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != second.ID || got[1].ID != third.ID {
+		t.Fatalf("undelivered = %+v, want two then three", got)
+	}
+}

@@ -117,6 +117,8 @@ type Server struct {
 	runs *runs
 	// subagents owns the home session's named subagents and their runs.
 	subagents *subagent.Service
+	// notices delivers subagent reports to the home session.
+	notices *notices
 	// counters keeps each session's token counter across its runs.
 	counters *sessionCounters
 	// titles names untitled sessions after their first message.
@@ -159,11 +161,13 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	s.inference = inference.New(log)
 	s.counters = newSessionCounters()
 	s.runs = newRuns(s)
+	s.notices = newNotices(s)
 	if deps.Store != nil {
 		// Subagents outlive the home turn that started them, so their runs
 		// are bounded by the server, not by a request.
 		s.subagents = subagent.New(context.Background(), deps.Store, subagent.Options{
-			Run: s.runSubagent, Final: s.finalMessage, Limit: s.subagentLimit, Events: deps.Bus, Log: log,
+			Run: s.runSubagent, Final: s.finalMessage, Limit: s.subagentLimit, Reported: s.subagentReported,
+			Events: deps.Bus, Log: log,
 		})
 	}
 	s.titles = newTitles(s)
@@ -211,10 +215,12 @@ func (s *Server) Run(ctx context.Context) error {
 // Close aborts every run and session title that is still going and returns
 // once they have stopped. Run calls it on shutdown; a caller that serves
 // Handler itself calls it when it is done, before the store it gave the
-// server closes. Subagents stop first, so each records its run cancelled
-// while the run manager still takes the abort; titles stop after the runs,
-// since no run is left to start one.
+// server closes. Notices stop starting background turns first, so that the
+// runs being stopped start none; subagents stop next, so each records its
+// run cancelled while the run manager still takes the abort; titles stop
+// after the runs, since no run is left to start one.
 func (s *Server) Close() {
+	s.notices.close()
 	if s.subagents != nil {
 		s.subagents.Close()
 	}

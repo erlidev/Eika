@@ -284,3 +284,15 @@ func scanEntry(row pgx.Row) (Entry, error) {
 	e.CreatedAt = e.CreatedAt.UTC()
 	return e, nil
 }
+
+// UndeliveredNotices returns a session's notice entries, on any branch, that
+// no user entry of the session lists among the notices it delivered (the
+// `notices` array of its message payload), oldest first.
+func (s *Store) UndeliveredNotices(ctx context.Context, sessionID string) ([]Entry, error) {
+	const q = `SELECT ` + entryColumns + ` FROM session_entries n
+		WHERE n.session_id = $1 AND n.kind = 'notice' AND NOT EXISTS (
+			SELECT 1 FROM session_entries u
+			WHERE u.session_id = $1 AND u.kind = 'user' AND (u.payload::jsonb -> 'notices') ? n.id)
+		ORDER BY n.seq`
+	return s.queryEntries(ctx, "list undelivered notices of session "+sessionID, q, sessionID)
+}

@@ -15,8 +15,10 @@ type contextField struct {
 }
 
 // contextBlock renders the <context> block a user-side message ends with: the
-// tag, one "name: value" line per field, the closing tag. A block with no
-// fields is empty text.
+// tag, one "name: value" line per field, the closing tag. A value of several
+// lines, such as a notice, indents the lines after its first by two spaces, so
+// that every field still starts a line of its own. A block with no fields is
+// empty text.
 func contextBlock(fields ...contextField) string {
 	if len(fields) == 0 {
 		return ""
@@ -24,10 +26,25 @@ func contextBlock(fields ...contextField) string {
 	var b strings.Builder
 	b.WriteString("<context>\n")
 	for _, f := range fields {
-		b.WriteString(f.name + ": " + f.value + "\n")
+		lines := strings.Split(f.value, "\n")
+		b.WriteString(f.name + ": " + lines[0] + "\n")
+		for _, line := range lines[1:] {
+			if line != "" {
+				b.WriteString("  " + line)
+			}
+			b.WriteString("\n")
+		}
 	}
 	b.WriteString("</context>")
 	return b.String()
+}
+
+// Notice is harness text for Eika's next user-side message, such as a
+// subagent's report: ID is the notice entry that records it, and Text is what
+// the <context> block says.
+type Notice struct {
+	ID   string
+	Text string
 }
 
 // timeLayout writes a time to the minute with its weekday, its offset from UTC
@@ -59,6 +76,12 @@ func (a *Agent) stamp(m provider.Message) provider.Message {
 	fields := []contextField{timeField(a.opts.Clock(), location)}
 	if a.opts.Channel != "" {
 		fields = append(fields, contextField{name: "channel", value: a.opts.Channel})
+	}
+	if a.opts.Notices != nil {
+		for _, n := range a.opts.Notices() {
+			fields = append(fields, contextField{name: "notice", value: n.Text})
+			m.Notices = append(m.Notices, n.ID)
+		}
 	}
 	m.Context = contextBlock(fields...)
 	return m

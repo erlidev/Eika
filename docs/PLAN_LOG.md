@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-15 posts a report as a home notice entry when its child goes
+  idle. The next user-side `<context>` carries it and the stored message lists
+  its id, so it is delivered once and survives restarts; an idle home gets a
+  background turn, a busy one delivers it with the run's next message or after
+  the run. Joining a background turn raises it to interactive; a `run` post steers
+  it. Notice cards stay for P3-08. `make check` passes.
+
 - 2026-11-15: P2-14 adds the subagent `report` tool, stored as the child's
   result and shown by `subagent_status`. A run that ends without one is asked
   once to draft it, then its final message becomes the report. The setting

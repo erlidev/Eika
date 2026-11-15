@@ -1034,3 +1034,55 @@ func TestStoredReportIsCappedWhetherReportedOrFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestReportedIsToldOfEachAssignmentThatEndsIdleWithAReport(t *testing.T) {
+	st := newMemory()
+	reported := make(chan store.Session, 8)
+	var s *subagent.Service
+	s = serviceWith(t, st, subagent.Options{
+		Run: func(ctx context.Context, row store.Session, text string, _ inference.Priority) error {
+			switch text {
+			case "fail":
+				return errors.New("model unavailable")
+			case "hold":
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			return s.Report(ctx, row.ID, subagent.Report{Summary: "done: " + text})
+		},
+		Final:    func(context.Context, store.Session) (string, error) { return "", nil },
+		Reported: func(_ context.Context, row store.Session) { reported <- row },
+	})
+	if _, _, err := s.Start(t.Context(), "home", child(), fg); err != nil {
+		t.Fatal(err)
+	}
+	got := <-reported
+	if got.Name != "plumber" || got.State != store.SessionIdle || got.Result != "done: Find a plumber" {
+		t.Fatalf("reported %+v, want the idle child with its report", got)
+	}
+
+	// A failed run and a cancelled one end without news for Eika.
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "fail", fg); err != nil {
+		t.Fatal(err)
+	}
+	awaitState(t, st, store.SessionFailed)
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "hold", fg); err != nil {
+		t.Fatal(err)
+	}
+	awaitState(t, st, store.SessionRunning)
+	if _, err := s.Cancel(t.Context(), "home", "plumber"); err != nil {
+		t.Fatal(err)
+	}
+	// The next assignment's report is news again.
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "again", fg); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-reported; got.Result != "done: again" {
+		t.Fatalf("second report = %q", got.Result)
+	}
+	select {
+	case extra := <-reported:
+		t.Fatalf("reported %+v for an assignment without a report", extra)
+	default:
+	}
+}

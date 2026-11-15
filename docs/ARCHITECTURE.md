@@ -251,8 +251,10 @@ in that order. Current session runs and model tests use `interactive`; titles
 use `maintenance`. Startup conformance checks use `maintenance`, and explicit
 probes use `interactive`. Subagent runs use `foreground` when an interactive
 home turn starts or messages them, else `background`. Compaction summary calls
-use the run's priority. `Rank` is read per call; raising a background home turn
-to interactive is Phase 2 work.
+use the run's priority. A background home turn that delivers notices uses
+`background`. `Rank` is read per call: a steering or follow-up message, or a
+`run` message that joins a background home turn, raises the run's next calls to
+`interactive`.
 
 A waiting call gains one priority level per `aging_seconds` (default 300).
 Ties use the oldest wait, which is kept across retries. Maintenance waits until
@@ -293,8 +295,9 @@ with PostgreSQL. It covers steering, follow-ups, retries, stalls, cut-off and
 refused responses, interruption, restart, resume and compaction. Each request
 extends or repeats the accepted conversation prefix. Compaction starts a new
 chain; its summary request reuses the old prefix. The output limit may decrease
-as the window fills. Agent definition replacement and notices remain
-in [the runtime design](design/runtime.md#4-context-layout).
+as the window fills, and the last two requests carry notices, one with a user
+message and one alone. Agent definition replacement remains in
+[the runtime design](design/runtime.md#4-context-layout).
 
 Every user-side message ends with a `<context>` block (`agent/contextblock.go`)
 that states the time it was sent to the minute, in `Options.Location` (UTC when no zone is stored), read from `Options.Clock`. It is written
@@ -302,7 +305,10 @@ once, when the loop first holds the message (`Run`, `Steer`, `FollowUp`), kept i
 `Message.Context` beside `Content` and stored with the message, so a resumed
 session sends the same bytes and the prefix never changes under it. A request
 joins it to the text (`Message.ModelText`); the interface, titles and the
-transcript form of a summary use `Content` alone.
+transcript form of a summary use `Content` alone. In the home session the block
+also names the channel (`web`) and carries one `notice:` line per notice the
+message delivers (`Options.Notices`, asked once per message), and the message
+lists the notice entry ids in `Message.Notices`.
 
 A run is bounded by `Options.Limits` (`agent/limits.go`): 40 model calls and 24
 hours, checked before each call. A run that reaches one ends cleanly, with every
@@ -456,7 +462,8 @@ project and parent references, lifecycle state, brief, result and last activity.
 Home identity is unique by owner/name; subagent names are unique per parent.
 Existing rows keep their kind and get their last activity from `updated_at`.
 Entries can store a channel, a `preamble` snapshot or a `notice` text payload.
-The API exposes these fields. Runtime assembly and delivery use later packages.
+The API exposes these fields. A notice is delivered by the user entry whose
+payload lists its id (see [Notices](#notices)).
 
 `session.Tree` appends, reads `Path` (root to head), moves the head, lists `Children`, and renders an `Outline`. `session.Store` implements
 `agent.Store`; `Load` rebuilds a conversation from the path.
@@ -1030,7 +1037,8 @@ is sent "Draft your report now with the report tool." once, in its own session.
 If it still has not reported, its last assistant message becomes the report
 (`finalMessage` in the server binding), or a fixed sentence when it has none.
 Failed and cancelled runs are not asked for a report and keep the last one.
-Until P2-15, `subagent_status` is how Eika reads a report.
+When an assignment ends with the child idle after a report, the service calls
+its `Reported` option, which posts the report to home as a notice (below).
 
 At most `subagent_max_running` executions exist at once (setting, 1 to 32,
 default 4; a lower value is read as 1). `Start` and `Message` check the count
@@ -1057,3 +1065,38 @@ Subagents have no `ask_user` until P2-16: their prompts tell them to decide
 and state assumptions in their report. The worker's prompt also tells it to read
 pages with `web_fetch`, not `curl`, so that what it reads is screened. Profile
 and direct chat runs are unchanged.
+
+### Notices
+
+`internal/server/notices.go` delivers news to the home session. A subagent's
+report becomes a notice entry in home, "plumber (worker) reported: <report>",
+written before anything else happens, so it survives a restart. It reaches Eika
+in the `<context>` block of the next user-side message home sends, and the
+stored message lists the entry's id, which is what records it delivered: a
+notice no stored user entry lists is undelivered (`store.UndeliveredNotices`).
+
+```
+report -> notice entry -> home idle?  yes: background turn (empty message,
+                                            context with the notices)
+                                      no:  the run's next steering or follow-up
+                                           message takes it, or the run ends
+                                           and a background turn starts
+```
+
+The book keeps, per home session, the notices waiting and those a message has
+taken but not stored. It reads a session's undelivered notices from the store
+on the session's first run in the process. `take` moves the waiting notices to
+the message being stamped, the run's store wrapper drops them once the message
+is stored, and when a run ends, any it took that are not in a message carried to
+the next run wait again. A background turn starts when a notice finds home
+without a run, and when a home run ends with notices waiting: unless the user
+aborted it, or it was a background turn that failed, so that a failing model is
+not asked again and again; those notices wait for the next message. A run that
+never started wakes home for a notice that arrived while it was being built.
+Background turns run at `background` priority. A message the user posts with
+mode `run` during one steers it, since the client may not know of the turn yet,
+and any message joining a run raises its next calls to `interactive`. The
+client learns of a turn it did not start from `turn.start` and refetches the
+run status. A background turn's message has no text, and the transcript shows
+no row for it. Shutdown stops background turns first. P2-18 reconciles what a
+restart interrupts; until then undelivered notices wait for the next turn.

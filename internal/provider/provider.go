@@ -124,6 +124,10 @@ type Message struct {
 	// title is made from Content, and only a request joins the two
 	// (ModelText).
 	Context string `json:"context,omitempty"`
+	// Notices are the ids of the notice entries whose text Context carries,
+	// so that storing the message is what records them as delivered. They
+	// are the harness's own bookkeeping and never reach a provider.
+	Notices []string `json:"notices,omitempty"`
 	// Images are the pictures a user message carries beside Content. A
 	// request carries them only to a model that accepts images; the agent
 	// replaces them with a note for any other.

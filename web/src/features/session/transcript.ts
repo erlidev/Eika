@@ -670,6 +670,9 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
   const message = asMessage(p.message);
   switch (p.kind) {
     case "user":
+      // A background turn's message carries only the context block the model
+      // reads, with the notices it delivers; there is nothing the user wrote.
+      if ((message?.content ?? "") === "" && (message?.images ?? []).length === 0) return [];
       return [
         {
           kind: "user",

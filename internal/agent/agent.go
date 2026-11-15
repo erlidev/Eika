@@ -33,6 +33,11 @@ const (
 type Options struct {
 	// Channel names the source of user messages in a home conversation.
 	Channel string
+	// Notices hands the next user-side message the notices its <context>
+	// block delivers, and takes them from whoever holds them: each notice is
+	// handed out once. It is asked once per message, when the message is
+	// first sent. Nil means no notices.
+	Notices func() []Notice
 	// Model overrides the provider's configured model name.
 	Model string
 	// ContextWindow bounds the input and requested output of one model call.
@@ -188,8 +193,10 @@ func (a *Agent) PendingFollowUps() []provider.Message { return a.followUps.pendi
 
 // Run appends userMessage to the session and drives turns until the model asks
 // for no more tools and no follow-up message is queued. An empty userMessage
-// sends nothing new and answers the conversation as it stands. Cancelling ctx
-// aborts the run and puts the messages it had taken from a queue back.
+// sends nothing new and answers the conversation as it stands, unless there
+// are notices to deliver: then it is sent with its <context> block alone.
+// Cancelling ctx aborts the run and puts the messages it had taken from a
+// queue back.
 func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Message) error {
 	if s == nil || s.Conversation == nil {
 		return errors.New("run agent: session has no conversation")
@@ -201,8 +208,9 @@ func (a *Agent) Run(ctx context.Context, s *Session, userMessage provider.Messag
 	defer a.closeQueues()
 	a.seedCounter(ctx, s, prompt)
 
-	msgs, origin := []provider.Message{a.stamp(userMessage)}, (*queue)(nil)
-	if userMessage.Empty() {
+	first := a.stamp(userMessage)
+	msgs, origin := []provider.Message{first}, (*queue)(nil)
+	if first.Empty() && len(first.Notices) == 0 {
 		msgs = nil
 	}
 	g := newGuard(a.opts.Clock())

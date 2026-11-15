@@ -184,7 +184,7 @@ Check by hand here: chat with Eika in the new shell on the bench model.
       `ask_user` until P2-16: they decide, and state the assumption in the
       report.
 - [x] **P2-14**: Add reports, limits and shutdown.
-- [ ] **P2-15**: Add durable notices and background turns. This is the largest
+- [x] **P2-15**: Add durable notices and background turns. This is the largest
       package of the stage: a run starts only from a user message today, and
       queued messages live in memory.
 - [ ] **P3-09**: Build Activity and the read-only session view, live from
@@ -353,9 +353,9 @@ in the code beside what replaces them.
       in a way that changes the result. The `worker` prompt says to read pages
       with `web_fetch`, not `curl`, so that what it reads is screened.
       - [x] **P2-14**: Add reports, limits and shutdown.
-- [ ] Notices: a report becomes a notice in Eika's next `<context>`, naming the
+- [x] Notices: a report becomes a notice in Eika's next `<context>`, naming the
       subagent, and starts a background turn on the home session.
-      - [ ] **P2-15**: Add durable notices and background turns.
+      - [x] **P2-15**: Add durable notices and background turns.
 - [ ] Questions: `ask_user` from a subagent parks it and goes to Eika as a notice
       plus a background home turn. Eika answers with `subagent_message`, or asks
       the user in its reply and relays the answer. There is no `inbox_ask` and no

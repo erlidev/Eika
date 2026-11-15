@@ -28,6 +28,14 @@ export function useSessionStream(sessionId: string | undefined): void {
 
   useStreamSubscription(sessionId === undefined ? undefined : sessionTopic(sessionId), (e) => {
     apply(e);
+    // A turn the client did not start, such as a background turn that
+    // delivers notices, is first known from its turn.start: the run status
+    // says a run is going, so the composer steers it instead of starting one.
+    if (e.type === "turn.start") {
+      void client.invalidateQueries({
+        queryKey: queryKeys.runStatus(e.topic.slice("session:".length)),
+      });
+    }
     if (
       e.type === "turn.end" ||
       e.type === "run.error" ||

@@ -417,9 +417,14 @@ stored without changes. Channel is independent of the message payload.
 | `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `threshold`, or `overflow`), and `usage`. The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
 
 A user message can include `context`: the block the model reads after the
-message's text, which states the time it was sent. It is not what the user
-wrote, so a client shows `content` and not `context`; the Context inspector
-shows both. Messages stored before the field existed lack it.
+message's text, which states the time it was sent and, in the home session, its
+channel and any notices it delivers (one `notice:` line each, later lines of a
+notice indented by two spaces). It is not what the user wrote, so a client
+shows `content` and not `context`; the Context inspector shows both. Messages
+stored before the field existed lack it. A home user message that delivers
+notices also has `notices`, the ids of those notice entries; a background turn
+that delivers notices sends a user message with empty `content` and only its
+`context`, which a client does not show.
 
 A provider message can include `reasoning` on an assistant entry whenever the
 endpoint streamed it. The session view shows it apart from the answer; Eika
@@ -465,11 +470,16 @@ on the event stream.
 | `mode` | `run`, `steer`, or `follow_up` | What to do with it. Empty means `run`. |
 | `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first chat model. A decision model is `400`. For a session with an `agent`, a nonempty value is `400`; its class selects the model. |
 
-- `run` starts a run from the session's head. `409` when one is already going.
+- `run` starts a run from the session's head. `409` when one is already going,
+  except a background turn of the home session that delivers notices, which
+  nobody started from a client: the message steers it instead, and the
+  response is that run.
 - `steer` joins the run in progress as soon as the running tool call
   finishes, before the next model call.
 - `follow_up` waits until the current turn ends and then starts the next one.
 - `steer` and `follow_up` are `409` when the session has no run in progress.
+  Either raises the run's next model calls to the `interactive` priority, so a
+  background home turn the user joins answers as quickly as one they started.
 
 Each image is turned upright by its EXIF orientation, fitted within 1920 by
 1080 pixels (1080 by 1920 upright) with a Catmull-Rom filter, stripped of its

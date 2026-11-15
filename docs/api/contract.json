@@ -341,6 +341,9 @@
                       "timings"
                     ]
                   },
+                  "notices": {
+                    "array": "string"
+                  },
                   "reasoning": "string",
                   "reasoning_items": {
                     "array": "any"
@@ -372,6 +375,7 @@
                   "images",
                   "is_error",
                   "metrics",
+                  "notices",
                   "reasoning",
                   "reasoning_items",
                   "summary",
@@ -1494,6 +1498,9 @@
                       "timings"
                     ]
                   },
+                  "notices": {
+                    "array": "string"
+                  },
                   "reasoning": "string",
                   "reasoning_items": {
                     "array": "any"
@@ -1525,6 +1532,7 @@
                   "images",
                   "is_error",
                   "metrics",
+                  "notices",
                   "reasoning",
                   "reasoning_items",
                   "summary",
@@ -1896,6 +1904,9 @@
                       "timings"
                     ]
                   },
+                  "notices": {
+                    "array": "string"
+                  },
                   "reasoning": "string",
                   "reasoning_items": {
                     "array": "any"
@@ -1927,6 +1938,7 @@
                   "images",
                   "is_error",
                   "metrics",
+                  "notices",
                   "reasoning",
                   "reasoning_items",
                   "summary",
@@ -2413,6 +2425,9 @@
                       "timings"
                     ]
                   },
+                  "notices": {
+                    "array": "string"
+                  },
                   "reasoning": "string",
                   "reasoning_items": {
                     "array": "any"
@@ -2444,6 +2459,7 @@
                   "images",
                   "is_error",
                   "metrics",
+                  "notices",
                   "reasoning",
                   "reasoning_items",
                   "summary",
@@ -2695,6 +2711,9 @@
                           "timings"
                         ]
                       },
+                      "notices": {
+                        "array": "string"
+                      },
                       "reasoning": "string",
                       "reasoning_items": {
                         "array": "any"
@@ -2726,6 +2745,7 @@
                       "images",
                       "is_error",
                       "metrics",
+                      "notices",
                       "reasoning",
                       "reasoning_items",
                       "summary",
@@ -2835,6 +2855,9 @@
                       "timings"
                     ]
                   },
+                  "notices": {
+                    "array": "string"
+                  },
                   "reasoning": "string",
                   "reasoning_items": {
                     "array": "any"
@@ -2866,6 +2889,7 @@
                   "images",
                   "is_error",
                   "metrics",
+                  "notices",
                   "reasoning",
                   "reasoning_items",
                   "summary",

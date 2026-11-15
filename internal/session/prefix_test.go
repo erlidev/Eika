@@ -158,9 +158,27 @@ type harness struct {
 	// carried are the messages a finished run left in its queues, which the
 	// server hands to the next run (runs.takePending).
 	steering, followUps []provider.Message
+	// notices wait for the next user-side message, as the server's do.
+	notices []agent.Notice
 
 	mu    sync.Mutex
 	drift []counted
+}
+
+// takeNotices hands the waiting notices to one message.
+func (h *harness) takeNotices() []agent.Notice {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := h.notices
+	h.notices = nil
+	return out
+}
+
+// notice makes a notice wait for the next user-side message.
+func (h *harness) notice(id, text string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.notices = append(h.notices, agent.Notice{ID: id, Text: text})
 }
 
 // counted is what the loop expected of a call and what the server measured.
@@ -243,6 +261,8 @@ func (h *harness) newAgent() *agent.Agent {
 		Counter:        h.counter,
 		Recorder:       h,
 		Clock:          h.clock.Now,
+		Channel:        "web",
+		Notices:        h.takeNotices,
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RetryBackoff:   time.Millisecond,
 		Limits:         agent.Limits{Stall: 150 * time.Millisecond},
@@ -351,6 +371,8 @@ func scenario(t *testing.T, api string, preserve bool, st convStore, sessionIDD 
 		step{kind: stepTurn, text: "c checked."},
 		// Run 8, after a restart.
 		step{kind: stepTurn, reasoning: "Last.", text: "Done."},
+		// Run 9: a background turn that delivers a notice and nothing else.
+		step{kind: stepTurn, text: "Noted."},
 	)
 
 	first := provider.UserMessage("Look at the picture, and check a and b.")
@@ -398,12 +420,23 @@ func scenario(t *testing.T, api string, preserve bool, st convStore, sessionIDD 
 	h.mustRun(provider.UserMessage("After the compaction, check c."))
 	h.restart()
 	h.clock.Advance(26 * time.Hour)
+	// A notice of two lines rides on the next message the user sends.
+	h.notice("n1", "plumber (worker) reported: Found one\n- book Bob")
 	h.mustRun(provider.UserMessage("One more thing."))
+	h.clock.Advance(5 * time.Minute)
+	h.notice("n2", "flights (researcher) reported: Tuesday")
+	h.mustRun(provider.Message{Role: provider.RoleUser})
 
 	if !h.srv.drained() {
 		t.Error("the scripted responses were not all used")
 	}
-	return h.srv.recorded(), h
+	recorded := h.srv.recorded()
+	if n := len(recorded); n < 2 ||
+		!bytes.Contains(recorded[n-2].body, []byte(`notice: plumber (worker) reported: Found one\n  - book Bob\n`)) ||
+		!bytes.Contains(recorded[n-1].body, []byte(`notice: flights (researcher) reported: Tuesday\n`)) {
+		t.Error("the last two requests do not carry their notices")
+	}
+	return recorded, h
 }
 
 // wireBody is a request body split into the array that carries the
