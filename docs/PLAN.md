@@ -4,16 +4,21 @@ This plan turns Eika from a coding harness into the always-on personal assistant
 described in `docs/design/`. Read `docs/design/README.md` first. It defines the
 vocabulary every item below uses.
 
-Agents work through this plan over many sessions. Take the first unchecked item
-in the first open phase, in the order the phases appear in this file. Read the
-design section it cites, do it, tick it, and add an entry to `docs/PLAN_LOG.md`. A
-phase is closed when every item is ticked and its exit check passes.
+Agents work through this plan over many sessions. In phases 2 and 3, take the
+first unchecked package in "Schedule for phases 2 and 3". After them, take the
+first unchecked item in the first open phase, in the order the phases appear in
+this file. Read the design section it cites, do it, tick it, and add an entry to
+`docs/PLAN_LOG.md`. A phase is closed when every item is ticked and its exit check
+passes.
+
+The order puts a build the user can test first. Work that makes it sturdier,
+nicer or better measured comes after, and never blocks the next testable build.
 
 This file holds open work only. The log is in `docs/PLAN_LOG.md`, work that was cut
 is in `docs/DEFERRED.md` with what brings it back, and a closed phase is reduced
 to a paragraph here. Phases keep their numbers, so older references stay true, but
-they run in the order of this file: plugins (phase 11) come before the scheduler
-and skills.
+they run in the order of this file: plugins (phase 11) come before the scheduler,
+and phase 4b, web fetch, compaction and skills come last.
 
 ## Ground rules
 
@@ -54,9 +59,14 @@ and skills.
   only if measurement says so) and, in the `guard` image only, `torch` and
   `transformers`. The cron parser is small enough to write with the standard
   library.
-- **Phase 2 and 3 packages run serially**, in schedule order. A UI item never
-  ships ahead of the API it uses, and an API is never removed ahead of the UI
-  that calls it. The mock harness follows the contract.
+- **Phase 2 and 3 packages run serially**, in the order of "Schedule for phases 2
+  and 3", not in the order of their numbers. A UI item never ships ahead of the
+  API it uses, and an API is never removed ahead of the UI that calls it. The
+  mock harness follows the contract.
+- **A package builds what its stage needs.** Do not pull work forward from a later
+  stage or phase to make a package complete. When a package turns out to need
+  more than a few days, split it and put the part the stage's exit does not need
+  at the end of the schedule.
 
 ## Phase map
 
@@ -64,10 +74,14 @@ and skills.
 0 Groundwork ─ 1 Inference & accounting ─ 2 Agents, home, projects, subagents ─ 3 Web shell
                                                                                    │
             ┌──────────────────────────────────────────────────────────────────────┘
-            4 Sentry ─ 5 Memory ─ 11 Plugins ─ 7 Scheduler ─ 6 Skills
+            4 Sentry ─ 5 Memory ─ 11 Plugins ─ 7 Scheduler
+                                                                │
+            ┌───────────────────────────────────────────────────┘
+            4b Tripwires and checkpoints ─ 12 Web fetch ─ 13 Compaction ─ 6 Skills
 ```
 
-Phases 0 and 1 are done. Phase 2 is next.
+Phases 0 and 1 are done. Phases 2 and 3 are next, and run interleaved in four
+stages (see "Schedule for phases 2 and 3").
 
 Why this order:
 
@@ -76,18 +90,22 @@ Why this order:
   agents read, the hard blocks and halt. It lands before memory and plugins give an
   injection something worth reaching. Nothing asks the user in phase 4, because
   nothing an agent can do yet deserves a question.
+- Phase 4 holds only what memory and plugins need. Tripwires, egress counting and
+  checkpoints (phase 4b) are a second layer over a screen that already runs, so
+  they wait until the assistant does useful work.
 - Memory (phase 5) comes early so it accumulates value while the rest is built.
 - Plugins (phase 11) are most of what makes an assistant useful, and the first
   thing that acts outside Eika. Approvals arrive here, with the first tool that
   needs one.
+- Web fetch (phase 12) and compaction (phase 13) improve tools that already work.
+  They depend on nothing after phase 2 and nothing depends on them, so they run
+  after the scheduler. Pull a single item forward only when daily use shows the
+  problem it fixes, and say so in the log.
 - Skills (phase 6) come last, and only if there is a skill worth installing by
   then.
 
-Eika is usable from the end of phase 3.
-
-Phase 12 (web fetch) is outside the map: it depends on none of the phases and
-none depends on it. Phase 13 (compaction) follows phase 2, whose home compaction
-and history tools it builds on.
+Eika is testable from the end of stage A and usable daily from the end of stage
+C, which is phase 3's exit.
 
 ## Live test bench
 
@@ -134,6 +152,101 @@ Rules:
 The injection screen is used from phase 4. Nothing in the plan calls the decision
 model or TabbyAPI. They stay on the bench for the work in `docs/DEFERRED.md`.
 
+## Schedule for phases 2 and 3
+
+The order of the open packages. The items under "Phase 2" and "Phase 3" say what
+each package builds; this section says when, and how little of it its stage
+needs. A package is ticked here and under its item.
+
+### Stage A: first testable build
+
+The home loop, end to end, in a browser. Nothing here is hardened.
+
+- [ ] **P2-08**: Resolve an agent's class, prompt and fixed tools at runtime.
+      Add the path beside profiles, chosen by the session's `agent`. Profiles
+      keep working for the sessions that still use them.
+- [ ] **P2-09**: Ensure home at start and add `GET /api/home`. The store already
+      has the session kind and index; copy `Server.EnsureHome`. The only channel
+      is `web`.
+- [ ] **P3-03**: Add the World and matching routes, for the home session and
+      subagents only.
+- [ ] **P3-04**: Build navigation, the home shell and basic Chat. `SessionView`
+      is reused as it is. Settings stays the existing dialog, and the workbench
+      stays in the tree, unrouted.
+
+Check by hand here: chat with Eika in the new shell on the bench model.
+
+- [ ] **P2-07**: Build and store the preamble snapshot.
+- [ ] **P2-06**: Add project tools and executor access to STATUS.md.
+- [ ] **P2-12**: Add subagent session and lifecycle state. Publish
+      `session.updated` on `global` for each state change.
+- [ ] **P2-13**: Add delegation tools and run bindings. Subagents do not get
+      `ask_user` until P2-16: they decide, and state the assumption in the
+      report.
+- [ ] **P2-14**: Add reports, limits and shutdown.
+- [ ] **P2-15**: Add durable notices and background turns. This is the largest
+      package of the stage: a run starts only from a user message today, and
+      queued messages live in memory.
+- [ ] **P3-09**: Build Activity and the read-only session view, live from
+      `session.updated`, with its scenarios.
+
+**Exit A:** in a desktop browser, on the bench model, "look into X and keep notes
+in a project for it" creates the project, starts a named subagent that shows in
+Activity while Chat stays responsive, and brings its report back as a notice.
+"Follow up on X" resumes the same subagent. The home session compacts with the
+compaction every session has today. Log what broke or felt wrong: it orders
+stage B.
+
+### Stage B: safe to leave running
+
+What stops a long-lived home session from losing work or growing without bound.
+
+- [ ] **P2-18**: Reconcile interrupted runs and notices.
+- [ ] **P2-16**: Park and relay subagent questions.
+- [ ] **P3-07**: Add agents and instructions Settings, as tabs of the existing
+      dialog, and remove profile controls.
+- [ ] **P2-20**: Build the board and rolling summary.
+- [ ] **P2-21**: Implement the cut and snapshot refresh.
+- [ ] **P2-10**: Add backward pagination.
+- [ ] **P3-05**: Add the paginated transcript.
+- [ ] **P2-23**: Add the history index and backfill.
+- [ ] **P2-24**: Add history search and read tools.
+
+**Exit B:** phase 2's exit, by hand, without the live suite.
+
+### Stage C: on the phone
+
+- [ ] **P3-02**: Add touch density and checks.
+- [ ] **P3-06**: Add the touch composer.
+- [ ] **P3-14**: Add sealed ntfy configuration and delivery.
+- [ ] **P3-13**: Add toasts.
+- [ ] **P3-15**: Add install and shell caching.
+- [ ] **P3-10**: Build project pages and instructions editor.
+- [ ] **P3-08**: Add remaining cards, notices and their scenarios.
+
+**Exit C:** phase 3's exit. Eika is in daily use from here.
+
+### Stage D: clean up, measure, close
+
+Removal and verification. None of it changes what the user can do.
+
+- [ ] **P3-11**: Complete Settings and retain existing flows.
+- [ ] **P3-17**: Remove the unused workbench.
+- [ ] **P2-11**: Remove profiles, configuration layering, direct chats and
+      obsolete fields and kinds, after their callers moved. Preserve history.
+- [ ] **P2-22**: Schedule idle compaction.
+- [ ] **P2-19**: Test process death and explicit resume with Docker.
+- [ ] **P3-16**: Complete phone and touch coverage and measure history.
+- [ ] **P2-25**: Run persistent home functional scenarios. `evals/live` drives
+      inference only today, so this package first gives it a real server and
+      session. The live suites of later phases build on that.
+- [ ] **P2-26**: Check real-request prefixes and queue ordering.
+- [ ] **P2-17**: Add the `activity` topic and `subagent.*` events, only if
+      `session.updated` on `global` proved too coarse for Activity. Otherwise
+      move it to `docs/DEFERRED.md`.
+- [ ] **P2-27**: Close phase 2.
+- [ ] **P3-18**: Close phase 3.
+
 ## Phase 0: Groundwork
 
 Closed. The coding layer is gone (git, worktrees, previews and the terminal),
@@ -161,12 +274,13 @@ projects with their new meaning, and persistent subagents. Design:
 
 - [x] **P2-00**: Split the checklist, record upgrade rules, and align the design.
 
-Package IDs below follow the serial Phase 2 and Phase 3 schedule. Each parent
-item stays open until every part is complete. Phase closure is P2-27 and P3-18;
-each also requires its exit checks.
+Package IDs below are names, not an order: the order is "Schedule for phases 2
+and 3". Each parent item stays open until every part is complete. Phase closure
+is P2-27 and P3-18; each also requires its exit checks.
 
 There is no transitional UI: phase 3's shell and Chat page start alongside this
-phase, and the exit is checked there.
+phase, and the exit is checked there. Until P2-11, profiles and direct chats stay
+in the code beside what replaces them.
 
 - [ ] Add `internal/agentdef`:
       - built-ins `eika`, `worker` and `researcher`, in Go, with prompts embedded
@@ -203,8 +317,9 @@ phase, and the exit is checked there.
       (`PLAN_LOG.md` 2026-10-30), found by `(owner, name)`, and add
       `GET /api/home`. Retire chats: there are no direct sessions, and the user
       talks only to Eika. Each user-side `<context>` names its channel; replies go
-      back to it.
-      - [ ] **P2-09**: Ensure home at start, add its API and route channels.
+      back to it. The web app is the only channel until channels return
+      (`docs/DEFERRED.md`), so there is no routing to build.
+      - [ ] **P2-09**: Ensure home at start, add its API and record the channel.
       - [ ] **P2-11**: Retire direct chat creation after the UI moves.
 - [ ] Add projects: table, API and the tools `project_list`, `project_open`,
       `project_create` and `project_update`. The fields are `name`, `slug`,
@@ -275,7 +390,8 @@ phase, and the exit is checked there.
       - [ ] **P2-23**: Add the history index and backfill.
       - [ ] **P2-24**: Add history search and read tools.
 - [ ] Topic `activity`, and the events `subagent.started`, `subagent.updated` and
-      `subagent.reported`.
+      `subagent.reported`. Activity runs on `session.updated` on `global` first
+      (P2-12). Build this only if that proves too coarse.
       - [ ] **P2-17**: Add activity events and API.
 - [ ] Phase 2 live suite, on the bench's chat model with a real home session
       that persists across the suite (it is not reset between scenarios, the
@@ -332,7 +448,8 @@ The mobile-first app. Design: `design/interface.md`.
       - on touch, a plain textarea with a rendered preview, where Enter makes a
         newline and a send button sends
       - [ ] **P3-04**: Bind basic Chat to home.
-      - [ ] **P3-05**: Add paginated transcript and channel labels.
+      - [ ] **P3-05**: Add the paginated transcript. Channel marks wait for a
+            second channel (`docs/DEFERRED.md`, channels).
       - [ ] **P3-06**: Add the touch composer.
       - [ ] **P3-08**: Add remaining cards and notices.
 - [ ] Activity page: subagents and their states, and a read-only live view of each
@@ -350,9 +467,11 @@ The mobile-first app. Design: `design/interface.md`.
       - developer: the inspector and model calls with drift
       - [ ] **P3-07**: Add agents and instructions settings.
       - [ ] **P3-11**: Complete Settings and retain existing flows.
-- [ ] Notifications: an in-app list and toasts.
-      - [ ] **P3-12**: Add notification storage and API.
-      - [ ] **P3-13**: Add notification list and toasts.
+- [ ] Notifications: toasts for subagent reports and background replies, from
+      events the app already receives. The stored notification list (P3-12) is
+      in `docs/DEFERRED.md`: a notice is already in Chat, and ntfy carries it to
+      the phone.
+      - [ ] **P3-13**: Add toasts.
 - [ ] ntfy: a topic URL with its secret sealed in Core, a minimal payload, and
       delivery for subagent reports and for Eika's replies to background turns. A
       push opens Chat. This takes the place of Web Push (`docs/DEFERRED.md`).
@@ -379,11 +498,11 @@ The mobile-first app. Design: `design/interface.md`.
 ## Phase 4: Sentry
 
 Safety that runs on its own. Sentry is a package inside Core. It screens what
-agents read, blocks a short list of things outright, keeps file changes
-recoverable, watches for the shape of an attack, and can stop everything. It does
-not ask the user anything in this phase. Design: `design/sentry.md` sections 1 to
-6, 7 ("Checkpoints" only), 8 ("Canaries" only), 10, 11 (without the model check)
-and 12 to 15.
+agents read, blocks a short list of things outright, and can stop everything. It
+does not ask the user anything in this phase. Design: `design/sentry.md` sections
+1 to 6 (without "The first-seen index" and the watch threshold), 8 ("Canaries"
+only), 10, 11 ("Halt" only) and 12 to 15. Keeping file changes recoverable and
+watching for the shape of an attack are phase 4b.
 
 ### What asks
 
@@ -402,8 +521,8 @@ Two queues collect things without stopping any work, and neither sends a push: a
 memory the screen flagged waits as pending (phase 5), and content the screen
 removed is listed under Settings, Security.
 
-A tripwire is not an ask. It fires when a run's own actions form an attack chain,
-holds that run, and sends one push (`design/sentry.md` 11).
+A tripwire (phase 4b) is not an ask. It fires when a run's own actions form an
+attack chain, holds that run, and sends one push (`design/sentry.md` 11).
 
 Never asks: `web_search`, `web_fetch`, `bash`, files, egress, memory, projects,
 subagents, wakeups, and read-only plugin tools.
@@ -460,33 +579,6 @@ subagents, wakeups, and read-only plugin tools.
         allowlist mode); never `ask`
       - `web_fetch` and the hosted search backends check the same blocklist and
         halt before they dial
-- [ ] The first-seen index (`design/sentry.md` 3): where each host, URL and
-      address a session meets first appeared (`user`, `search`, `content` with its
-      window's score, or `model`), written by ingest and by `Gate.Observe` on user
-      messages, inherited by subagents, and the rule for "anchored". Ingest gains
-      the watch threshold (0.5, a setting): a window at or over it is passed
-      whole and its destinations are watched.
-- [ ] Egress counting: the proxy reports each connection's host and bytes sent
-      and received through `Observe`.
-- [ ] Tripwires (`design/sentry.md` 11), in `internal/sentry/trip`:
-      - marks as rows per run: `watched`, `hidden`, `sensitive-read`, `carried`
-        (fingerprints of private text, checked after decoding), `new-sink`,
-        `told-sink`, `upload`, `fan-out`
-      - the chains Followed, Carried out, Lifted, Drained and Blocked often. A
-        completing `web_fetch` or connection is blocked; a plugin call asks
-        (phase 11)
-      - a held run: outbound actions to destinations that are not anchored are
-        blocked or ask, everything else carries on, and the hold ends with the
-        run or with the user's answer
-      - the entry and its two answers ("this was fine", "stop the run") under
-        Settings, Security, with one push. It moves to the Inbox in phase 5
-      - each tripwire's switch, numbers, and its fired and "fine" counts in
-        Settings, Security
-- [ ] Checkpoints (`design/sentry.md` 7): `eikad` commits each project tree to a
-      shadow git directory when a run starts and ends, a run's card restores the
-      tree, and the time a checkpoint took is recorded.
-- [ ] Remote images in model output load only when their URL's source is `user`,
-      `search` or `content`; otherwise the UI shows a link.
 - [ ] Halt: an always-visible button, resume, and Core's reaction (abort runs, a
       scheduler pause hook, a banner, a push).
 - [ ] Audit: an append-only table with a row for every decision that was not a
@@ -499,7 +591,7 @@ subagents, wakeups, and read-only plugin tools.
 - [ ] `make smoke` covers Sentry: a scripted model fetches a fixture page that
       carries a planted instruction, and the result it gets has the part removed.
 - [ ] `evals/injection` and the phase 4 live suite, on the bench's chat model and
-      guard:
+      guard. It builds on the server-level live harness of P2-25:
       - fixture pages in three variants (innocent, injected, and a legitimate page
         that looks alarming), read by a researcher that reports to Eika
       - recorded per variant: whether the attack succeeded with the screen on and
@@ -510,9 +602,6 @@ subagents, wakeups, and read-only plugin tools.
       - a worker that reads the injected page with `curl`, which is not screened,
         to measure what that gap costs
       - the guard stopped mid-run gives `unscanned`, never a dropped result
-      - tripwires: per scenario, which fired. None may fire on an innocent or
-        alarming variant, and the report says which attacks each caught that the
-        rules let through. A tripwire that fails either test ships switched off
       - `Decide` under 1 ms for arguments up to 64 KiB, as a benchmark in
         `make check`
 - [ ] Update the security section of the style guide: Core holds model keys and
@@ -528,10 +617,6 @@ subagents, wakeups, and read-only plugin tools.
 - The canary's value pasted into a command halts Eika.
 - With the guard stopped there is a banner and one push, and pages arrive
   `unscanned`. With `screen_required` on, `web_fetch` is blocked instead.
-- A worker that reads `.env` and then connects to a host a fixture page named is
-  refused, the run is held, and the phone gets one push. "This was fine" ends the
-  hold.
-- A run that deleted files is restored from its card.
 - Halt stops everything in one press.
 
 The log records `evals/injection`'s numbers, including what got through.
@@ -580,8 +665,13 @@ Design: `design/memory.md` sections 1 to 6, 8 and 9.
 
 Plugins come back through the gate, on the pool Core already has, and bring the
 first actions worth a question. Design: `design/skills-and-plugins.md` "Plugins"
-and `design/sentry.md` section 7.
+and `design/sentry.md` sections 3 ("The first-seen index") and 7.
 
+- [ ] The first-seen index (`design/sentry.md` 3), which approvals read: where
+      each host, URL and address a session meets first appeared (`user`,
+      `search`, `content` with its window's score, or `model`), written by ingest
+      and by `Gate.Observe` on user messages, inherited by subagents, and the
+      rule for "anchored".
 - [ ] Stdio servers run in one shared plugin computer, labelled `eika.role=plugin`,
       that no agent tool can target. The MCP launcher (`server/mcp_pool.go`) starts
       them there.
@@ -610,8 +700,6 @@ and `design/sentry.md` section 7.
       `known` tool sends to one the user named in the conversation.
 - [ ] The journal: a row for every plugin call that is not read-only and ran
       without a card, listed under Settings, Security.
-- [ ] A held run's plugin calls to destinations that are not anchored ask, with
-      the chain on the card.
 - [ ] Grants page: known destinations, grants and tool settings listed by plugin
       and tool, revocable at once.
 - [ ] Results go through ingest, with one-time code and sign-in link removal for
@@ -658,34 +746,53 @@ Design: `design/scheduler.md`.
 
 Restarting across a due time follows the `missed` policy.
 
-## Phase 6: Skills
+## Phase 4b: Tripwires and checkpoints
 
-Do this phase only if there is a skill worth installing by now. Otherwise it moves
-to `docs/DEFERRED.md`. Design: `design/skills-and-plugins.md` "Skills".
+Sentry's second layer, over a screen and a gate that already run. Design:
+`design/sentry.md` sections 6 (the watch threshold), 7 ("Checkpoints" only) and
+11 (without "Halt" and the model check). It uses the first-seen index of phase 11.
 
-- [ ] Add `internal/skill`:
-      - lenient parsing and validation of the specification
-      - the store and the `core.skills` rows
-      - install from a `.zip`
-- [ ] Mount `/skills` read-only into computers from a volume of its own
-      (`eika-skills`), never from Core's `/var/lib/eika` volume, which holds
-      `secret.key` and the memory repository. `make backup` covers it.
-- [ ] Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.
-      Resource files are read from `/skills/<name>/` on the computer.
-- [ ] Skills UI: install with the full `SKILL.md` and file list shown, the
-      screen's hits marked in the text, enable, warnings.
-- [ ] `EXTENDING.md`: writing a skill for Eika (the spec fields only).
+- [ ] The watch threshold in ingest (0.5, a setting): a window at or over it is
+      passed whole and its destinations are watched.
+- [ ] Egress counting: the proxy reports each connection's host and bytes sent
+      and received through `Observe`.
+- [ ] Tripwires (`design/sentry.md` 11), in `internal/sentry/trip`:
+      - marks as rows per run: `watched`, `hidden`, `sensitive-read`, `carried`
+        (fingerprints of private text, checked after decoding), `new-sink`,
+        `told-sink`, `upload`, `fan-out`
+      - the chains Followed, Carried out, Lifted, Drained and Blocked often. A
+        completing `web_fetch` or connection is blocked; a plugin call asks
+        (phase 11)
+      - a held run: outbound actions to destinations that are not anchored are
+        blocked or ask, everything else carries on, and the hold ends with the
+        run or with the user's answer
+      - the entry and its two answers ("this was fine", "stop the run") under
+        Settings, Security, with one push, and in the Inbox
+      - each tripwire's switch, numbers, and its fired and "fine" counts in
+        Settings, Security
+- [ ] A held run's plugin calls to destinations that are not anchored ask, with
+      the chain on the card.
+- [ ] Checkpoints (`design/sentry.md` 7): `eikad` commits each project tree to a
+      shadow git directory when a run starts and ends, a run's card restores the
+      tree, and the time a checkpoint took is recorded.
+- [ ] Remote images in model output load only when their URL's source is `user`,
+      `search` or `content`; otherwise the UI shows a link.
+- [ ] `evals/injection` records, per scenario, which tripwires fired. None may
+      fire on an innocent or alarming variant, and the report says which attacks
+      each caught that the rules let through. A tripwire that fails either test
+      ships switched off.
 
-**Exit:** drop a skill zip into the UI and enable it, then ask Eika for something
-that needs it. Eika delegates, the worker loads the skill with `skill_use`, and it
-runs the skill's script on the computer.
+**Exit:** by hand, with the phone beside you:
+- A worker that reads `.env` and then connects to a host a fixture page named is
+  refused, the run is held, and the phone gets one push. "This was fine" ends the
+  hold.
+- A run that deleted files is restored from its card.
 
 ## Phase 12: Web fetch
 
-Independent of the phases above: it changes one tool and one thing in the loop, and
-can be taken up between any two of them. Design: `design/web-fetch.md`. Ingest and
-the wrapper are phase 4's; until they exist a fetch result reaches the model as it
-does today.
+Independent of the phases above: it changes one tool and one thing in the loop.
+It runs here, after the assistant is whole, because `web_fetch` already works.
+Design: `design/web-fetch.md`. Ingest and the wrapper are phase 4's.
 
 - [ ] `evals/fetch`: the offline corpus and its scorer (`design/web-fetch.md` 11).
       - saved pages for each page kind, starting from the pages in section 1
@@ -762,9 +869,10 @@ tokens, and the lines the report cites read the same when fetched directly.
 
 ## Phase 13: Compaction
 
-Follows phase 2: it reworks the compaction phase 2 leaves and offers its history
-tools to every agent. Design: `design/compaction.md`. Until an item below ships,
-sessions compact as phase 2 left them.
+It reworks the compaction phase 2 leaves and offers its history tools to every
+agent. It runs here because phase 2's compaction already works. Design:
+`design/compaction.md`. Until an item below ships, sessions compact as phase 2
+left them.
 
 - [ ] What a compaction records (`design/compaction.md` 7): the wall time of the
       summary calls, split into queue wait, prefill and generation, and the
@@ -819,6 +927,28 @@ server's summary call from completing: the session compacts with `method:
 record` and the run continues. Leave a session at 60% fill, use another until
 the first loses its slot, and return: the first call reads about a third of the
 old context.
+
+## Phase 6: Skills
+
+Do this phase only if there is a skill worth installing by now. Otherwise it moves
+to `docs/DEFERRED.md`. Design: `design/skills-and-plugins.md` "Skills".
+
+- [ ] Add `internal/skill`:
+      - lenient parsing and validation of the specification
+      - the store and the `core.skills` rows
+      - install from a `.zip`
+- [ ] Mount `/skills` read-only into computers from a volume of its own
+      (`eika-skills`), never from Core's `/var/lib/eika` volume, which holds
+      `secret.key` and the memory repository. `make backup` covers it.
+- [ ] Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.
+      Resource files are read from `/skills/<name>/` on the computer.
+- [ ] Skills UI: install with the full `SKILL.md` and file list shown, the
+      screen's hits marked in the text, enable, warnings.
+- [ ] `EXTENDING.md`: writing a skill for Eika (the spec fields only).
+
+**Exit:** drop a skill zip into the UI and enable it, then ask Eika for something
+that needs it. Eika delegates, the worker loads the skill with `skill_use`, and it
+runs the skill's script on the computer.
 
 ## Open questions
 

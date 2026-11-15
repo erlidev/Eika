@@ -51,7 +51,7 @@ contract checks and every kept component (`interface.md` 2).
 | Sheets | Radix `Dialog` styled as a bottom sheet | Vaul is unmaintained. Sheets close by button, scrim tap or `Esc`; drag-to-dismiss is not built |
 | Routing | React Router 7, data router, `lazy` routes | One route per page (section 4) |
 | Server state | TanStack Query, invalidated by events | No polling, as today |
-| Stream | The one WebSocket (`api/stream.ts`) | Topics gain `activity` and `inbox`. Voice gets a second socket of its own (section 13) |
+| Stream | The one WebSocket (`api/stream.ts`) | Topics gain `inbox`, and `activity` only if `session.updated` on `global` proves too coarse. Voice gets a second socket of its own (section 13) |
 | Client state | Zustand, one store per feature | New stores: `presence`, `layout`, `voice`, `avatar` |
 | Markdown | `react-markdown`, `remark-gfm`, `lowlight` | Kept, with block-level memoisation while streaming (section 14) |
 | Lists | Paged, with `content-visibility: auto` | A virtualiser only under the plan's condition (5,000 entries measurably slow on a phone) |
@@ -315,7 +315,7 @@ One column, capped at `--measure`, centred. It is `features/session`'s
 | Notice | A centred, muted line with an icon: a report arrived, Eika restarted, a memory changed. A report's notice links to its subagent |
 | Compaction card | A hairline divider with a label, "Context compacted · 84k → 12k tokens", that expands to the summary, the method and the timings |
 | Background turn | A reply Eika started on its own carries a small "while you were away" label on its first block |
-| Remote image | Loaded only when its URL's source allows (`PLAN.md` phase 4); otherwise a link |
+| Remote image | Loaded only when its URL's source allows (`PLAN.md` phase 4b); otherwise a link |
 
 Behaviour:
 
@@ -377,7 +377,8 @@ same way. The tray holds at most one card open and a count for the rest
 ## 6. Activity
 
 `MasterDetail`. The list has two tabs: **Agents** (subagents now; routine runs and
-wakeups join in phase 7) and **Recent** (the in-app notification list).
+wakeups join in phase 7) and **Recent** (the in-app notification list, deferred
+with it in `DEFERRED.md`; until it returns the list has no tabs).
 
 - **Agents list.** Groups in this order, empty groups hidden: Waiting, Running,
   Idle, Failed and cancelled. A row: state dot, name, agent and project in

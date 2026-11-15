@@ -224,7 +224,7 @@ Current caveats:
 | `agent` loop, compaction, retries, overflow, queues | Pi port, well tested | Kept, with the additions in `runtime.md`. Home compaction gains deterministic sections, idle runs and history recall (`runtime.md` 11) |
 | `provider`, `provider/openai`, timings | OpenAI-compatible streaming | Kept. Adds the Responses API as the preferred protocol, backend probing, exact token counting, cache metrics, slot hints, the System One kind |
 | `tool`, registry, `ask_user` broker | Stateless tools, in-memory broker | Kept. A subagent's questions go to Eika, who asks the user in chat when needed |
-| `event` bus, WebSocket, replay | Topics global, computer, session | Kept. Adds topics `inbox` and `activity`; drops `computer` |
+| `event` bus, WebSocket, replay | Topics global, computer, session | Kept. Adds topic `inbox`, and `activity` if `session.updated` proves too coarse; drops `computer` |
 | `computer`, `executor`, `eikad` | Built in phase 0 (`ARCHITECTURE.md`) | Kept. A shared plugin computer is added (`runtime.md` 10) |
 | `egress`, `netguard` | Proxy in Core | Kept in Core, with the `open` mode removed (`sentry.md` 10) |
 | `secret` | Seals everything in Core | Kept |

@@ -29,8 +29,9 @@ Desktop: left rail  Chat, Activity, Inbox, Projects, Memory, Skills, Plugins,
 
 Kept:
 
-- `api/client.ts`, `api/connection.ts`, `api/stream.ts` (topics gain `inbox` and
-  `activity`)
+- `api/client.ts`, `api/connection.ts`, `api/stream.ts` (topics gain `inbox`.
+  Activity follows `session.updated` on `global`, and gets a topic of its own
+  only if that proves too coarse)
 - TanStack Query over events, with no polling
 - the transcript reducer (generalised beyond one open session, below)
 - `Markdown`, the composer and `MarkdownField`, attachments and images
@@ -68,7 +69,8 @@ frontmatter-free files.
 
 ## 4. Notifications
 
-- **In-app.** A toast, the Inbox badge and a notification list in Activity.
+- **In-app.** A toast and the Inbox badge. A stored notification list in Activity
+  is deferred (`DEFERRED.md`): a report is already a notice in Chat.
 - **ntfy** for the phone: Core posts to a topic URL the user sets, on ntfy.sh or
   self-hosted, and the topic secret is sealed. It needs no HTTPS on Eika's side. The
   payload says only "Eika needs your approval" or "plumber reported", and details
