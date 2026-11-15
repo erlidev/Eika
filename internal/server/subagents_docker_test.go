@@ -528,3 +528,38 @@ func TestShutdownCancelsRunningSubagentsWithoutReports(t *testing.T) {
 		}
 	}
 }
+
+func TestFallbackReportIgnoresAnEarlierAssignmentsAnswer(t *testing.T) {
+	d := newDelegating(t)
+	eika := providertest.New(
+		call("start", "subagent_start", map[string]any{"agent": "researcher", "name": "flights", "brief": "Find flights"}),
+		providertest.Text("started"),
+		call("resume", "subagent_message", map[string]any{"subagent": "flights", "text": "Now find trains"}),
+		providertest.Text("resumed"),
+	)
+	// Neither assignment calls report. The first ends with text; the second,
+	// and its draft request, with none.
+	researcher := providertest.New(
+		providertest.Text("Flights are cheapest on Tuesday."),
+		providertest.Text("Tuesday it is."),
+		providertest.Text(""),
+		providertest.Text(""),
+	)
+	d.use(byAgent{"You are Eika": eika, "You are a researcher": researcher})
+
+	d.postMessage(t, d.home.ID, "find flights", "", 202)
+	d.waitIdle(t, d.home.ID)
+	d.waitState(t, "flights", store.SessionIdle)
+	if got := d.child(t, "flights").Result; got != "Tuesday it is." {
+		t.Fatalf("first fallback report = %q", got)
+	}
+	d.postMessage(t, d.home.ID, "now trains", "", 202)
+	d.waitIdle(t, d.home.ID)
+	waitFor(t, "the second assignment's report", func() bool {
+		row := d.child(t, "flights")
+		return row.State == store.SessionIdle && row.Result != "Tuesday it is."
+	})
+	if got := d.child(t, "flights").Result; got != "The subagent ended without a report or a final message." {
+		t.Errorf("second fallback report = %q, want the no-report sentence", got)
+	}
+}

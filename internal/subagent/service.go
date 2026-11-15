@@ -29,9 +29,9 @@ type Store interface {
 // settings say otherwise.
 const DefaultMaxRunning = 4
 
-// draftReport is the message that asks a run that ended without a report for
+// DraftReport is the message that asks a run that ended without a report for
 // one.
-const draftReport = "Draft your report now with the report tool."
+const DraftReport = "Draft your report now with the report tool."
 
 // noReport is the report of a run that ended with neither a report nor a
 // final message.
@@ -299,7 +299,7 @@ func (s *Service) requireReport(ctx context.Context, child store.Session, priori
 	if ctx.Err() != nil || s.hasReported(active) {
 		return nil
 	}
-	if err := s.run(ctx, child, draftReport, priority); err != nil {
+	if err := s.run(ctx, child, DraftReport, priority); err != nil {
 		return err
 	}
 	if s.hasReported(active) {
@@ -313,9 +313,6 @@ func (s *Service) requireReport(ctx context.Context, child store.Session, priori
 	text = strings.TrimSpace(strings.ToValidUTF8(strings.ReplaceAll(text, "\x00", ""), ""))
 	if text == "" {
 		text = noReport
-	}
-	if len(text) > maxResultBytes {
-		text = strings.ToValidUTF8(text[:maxResultBytes], "")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -348,7 +345,11 @@ func (s *Service) Report(ctx context.Context, sessionID string, r Report) error 
 }
 
 // keepReport stores text as the child's latest report. Callers hold mu.
+// A text past maxResultBytes is cut there, at a character boundary.
 func (s *Service) keepReport(ctx context.Context, id, text string, active *execution) error {
+	if len(text) > maxResultBytes {
+		text = strings.ToValidUTF8(text[:maxResultBytes], "")
+	}
 	child, err := s.store.SetSubagentResult(ctx, id, text)
 	if err != nil {
 		return err

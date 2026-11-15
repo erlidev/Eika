@@ -139,8 +139,11 @@ func (s *Server) subagentLimit(ctx context.Context) int {
 	return subagent.DefaultMaxRunning
 }
 
-// finalMessage is a subagent's last assistant message with any text, which
-// stands in for a report it did not make.
+// finalMessage is the last assistant message with text that the subagent's
+// current assignment produced, which stands in for a report it did not make.
+// The scan stops at the user message that began the assignment, so a resumed
+// assignment never reports an earlier one's answer; the draft request is part
+// of the assignment.
 func (s *Server) finalMessage(ctx context.Context, child store.Session) (string, error) {
 	entries, err := s.deps.Store.SessionPath(ctx, child.ID)
 	if err != nil {
@@ -151,8 +154,14 @@ func (s *Server) finalMessage(ctx context.Context, child store.Session) (string,
 		if err != nil {
 			return "", err
 		}
-		if ok && m.Role == provider.RoleAssistant && strings.TrimSpace(m.Content) != "" {
+		if !ok {
+			continue
+		}
+		if m.Role == provider.RoleAssistant && strings.TrimSpace(m.Content) != "" {
 			return m.Content, nil
+		}
+		if m.Role == provider.RoleUser && !strings.Contains(m.Content, subagent.DraftReport) {
+			break
 		}
 	}
 	return "", nil

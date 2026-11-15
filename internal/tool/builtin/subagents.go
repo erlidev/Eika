@@ -69,7 +69,7 @@ func (t subagentTool) Schema() json.RawMessage {
 		props = map[string]any{
 			"agent":   map[string]any{"type": "string", "enum": []string{"researcher", "worker"}, "description": "researcher reads the web; worker works on a computer."},
 			"name":    name,
-			"brief":   text("Everything the subagent needs: the goal, what is known, constraints and what to report. It cannot ask questions: say how to decide small details, and it will state its assumptions in its report."),
+			"brief":   text("Everything the subagent needs: the goal, what is known, constraints and what to report. It cannot ask questions yet: it decides small details itself and states its assumptions in its report, and it flags unclear intent that would change the result."),
 			"project": text("Optional project slug. The subagent gets the project's instructions, and a worker works in its directory."),
 		}
 		required = []string{"agent", "name", "brief"}

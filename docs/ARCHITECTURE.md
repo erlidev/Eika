@@ -1054,5 +1054,6 @@ creates the project directory and wraps its executor so that commands and
 relative paths start there; the executor still confines paths to the root.
 The HTTP API refuses messages and compactions posted to a subagent's session.
 Subagents have no `ask_user` until P2-16: their prompts tell them to decide
-and state assumptions in their report, and the worker's to read pages with
-`web_fetch`, not `curl`, so that what it reads is screened. Profile and direct chat runs are unchanged.
+and state assumptions in their report. The worker's prompt also tells it to read
+pages with `web_fetch`, not `curl`, so that what it reads is screened. Profile
+and direct chat runs are unchanged.

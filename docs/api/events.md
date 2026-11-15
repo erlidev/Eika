@@ -387,8 +387,9 @@ refetches its session lists.
 
 Published on `global` when `PATCH /api/sessions/{id}` renames, pins, or
 archives a session. Subagent creation and each lifecycle state or waiting
-reason change and each stored subagent report also publish it, after the store write. Each client refetches
-its session lists and the session to read the state and optional `waiting_reason`.
+reason change and each stored subagent report also publish it, after the store
+write. Each client refetches its session lists and the session to read the state
+and optional `waiting_reason`.
 
 | Field | Type | Meaning |
 |---|---|---|

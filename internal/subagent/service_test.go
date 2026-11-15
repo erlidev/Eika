@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/event"
@@ -994,6 +995,41 @@ func TestMaxRunningDefaultsAndFloor(t *testing.T) {
 			}
 			if started != tc.want {
 				t.Fatalf("started %d, want %d", started, tc.want)
+			}
+		})
+	}
+}
+
+func TestStoredReportIsCappedWhetherReportedOrFallback(t *testing.T) {
+	const limit = 64 << 10
+	items := make([]string, 20)
+	for i := range items {
+		items[i] = strings.Repeat("é", 512)
+	}
+	big := subagent.Report{Summary: strings.Repeat("é", 16<<10), Outputs: items, FollowUps: items}
+	if len(big.Text()) <= limit {
+		t.Fatalf("test report is %d bytes, not over the cap", len(big.Text()))
+	}
+	for _, via := range []string{"report", "fallback"} {
+		t.Run(via, func(t *testing.T) {
+			st := newMemory()
+			var s *subagent.Service
+			s = serviceWith(t, st, subagent.Options{
+				Run: func(ctx context.Context, row store.Session, _ string, _ inference.Priority) error {
+					if via == "report" {
+						return s.Report(ctx, row.ID, big)
+					}
+					return nil
+				},
+				Final: func(context.Context, store.Session) (string, error) { return big.Text(), nil },
+			})
+			if _, _, err := s.Start(t.Context(), "home", child(), fg); err != nil {
+				t.Fatal(err)
+			}
+			awaitState(t, st, store.SessionIdle)
+			got := st.result("plumber")
+			if len(got) > limit || len(got) < limit-1 || !utf8.ValidString(got) || !strings.HasPrefix(big.Text(), got) {
+				t.Fatalf("stored %d bytes, valid=%v", len(got), utf8.ValidString(got))
 			}
 		})
 	}
