@@ -94,7 +94,7 @@ func TestSubagentTools(t *testing.T) {
 		t.Fatalf("running message = %v", running)
 	}
 	resumed := view(call("subagent_message", `{"subagent":"plumber","text":"get a second quote"}`))
-	if !strings.HasPrefix(resumed["note"].(string), "Resumed") {
+	if !strings.HasPrefix(resumed["note"].(string), "Accepted") {
 		t.Fatalf("resume = %v", resumed)
 	}
 	if r := call("subagent_message", `{"subagent":"nobody","text":"hi"}`); !r.IsError || !strings.Contains(r.Content, `no subagent is named "nobody"`) {

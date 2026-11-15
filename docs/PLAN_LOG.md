@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-16 parks subagent ask_user calls in memory with a waiting
+  reason, posts a home notice with a stable call id, and accepts one answer
+  through subagent_message. Cancel and shutdown end the wait; restart recovery
+  repairs the call. Worker/researcher prompts and read-only Activity agree.
+  The delegation test checks the accepted message note and running state.
+  `make check` passes. Docker, smoke and visual checks remain for the host.
+
 - 2026-11-15: P2-18 follow-up pins legacy report notices to their report
   assignment, not the current head. An unanchored old result reuses a child
   notice or one stable recovery id. Targeted Go tests and `make lint-go` pass;

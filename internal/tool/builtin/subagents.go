@@ -49,7 +49,7 @@ func (t subagentTool) Description() string {
 			"A worker works on the home computer, in the project's directory when you name a project; a researcher reads the web and has no computer. " +
 			"A name already in use returns that subagent's status instead: give it more work with subagent_message."
 	case "subagent_message":
-		return "Send a message to a subagent that is not running: it resumes in its own context with the text. A running subagent does not take the text; wait for it or cancel it."
+		return "Answer a waiting question, or send a message to a subagent that is not running: it resumes in its own context with the text. A running subagent does not take the text; wait for it or cancel it."
 	case "subagent_status":
 		return "Without a name, list every subagent with its state and the first line of its last report. With a name, also return its brief and full last report."
 	default:
@@ -69,12 +69,12 @@ func (t subagentTool) Schema() json.RawMessage {
 		props = map[string]any{
 			"agent":   map[string]any{"type": "string", "enum": []string{"researcher", "worker"}, "description": "researcher reads the web; worker works on a computer."},
 			"name":    name,
-			"brief":   text("Everything the subagent needs: the goal, what is known, constraints and what to report. It cannot ask questions yet: it decides small details itself and states its assumptions in its report, and it flags unclear intent that would change the result."),
+			"brief":   text("Everything the subagent needs: the goal, what is known, constraints and what to report. It decides small details itself and states assumptions in its report. When unclear intent would change the result, ask_user sends you its question as a notice."),
 			"project": text("Optional project slug. The subagent gets the project's instructions, and a worker works in its directory."),
 		}
 		required = []string{"agent", "name", "brief"}
 	case "subagent_message":
-		props = map[string]any{"subagent": name, "text": text("The message, such as new work or a correction.")}
+		props = map[string]any{"subagent": name, "text": text("The answer to its waiting question, or a message such as new work or a correction.")}
 		required = []string{"subagent", "text"}
 	case "subagent_status":
 		props = map[string]any{"subagent": name}
@@ -137,7 +137,7 @@ func (t subagentTool) Call(ctx context.Context, c tool.CallContext, raw json.Raw
 		}
 	case "subagent_message":
 		row, ok, err = t.subagents.MessageSubagent(ctx, c.SessionID, args["subagent"], args["text"])
-		note = "Resumed with your message. It works in the background."
+		note = "Accepted your message. It continues in its own context."
 		if !ok {
 			note = "It is running and did not take your message. Wait for it, or cancel it and message it again."
 		}

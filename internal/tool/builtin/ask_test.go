@@ -174,6 +174,15 @@ func TestAskUserRejectsBadArguments(t *testing.T) {
 		name string
 		args string
 	}{
+		{"surrogate", `{"question":"\ud800"}`},
+		{"duplicate field", `{"question":"pick","question":"other"}`},
+		{"null options", `{"question":"pick","options":null}`},
+		{"null free text", `{"question":"pick","allow_free_text":null}`},
+		{"unknown field", `{"question":"pick","extra":true}`},
+		{"invalid UTF-8", "{\"question\":\"\xff\"}"},
+		{"trailing JSON", `{"question":"pick"}{}`},
+		{"NUL", `{"question":"pick\u0000"}`},
+		{"empty option", `{"question":"pick","options":[""]}`},
 		{"no question", `{"question":"  "}`},
 		{"too many options", `{"question":"pick","options":["1","2","3","4","5","6","7","8","9","10","11"]}`},
 	}
@@ -270,5 +279,54 @@ func TestPendingQuestionsAreOldestFirst(t *testing.T) {
 		if pending[i].AskedAt.Before(pending[i-1].AskedAt) {
 			t.Errorf("question %d was asked before question %d, so the order is wrong", i, i-1)
 		}
+	}
+}
+
+func TestAskUserRelaysWithoutRegisteringALegacyQuestion(t *testing.T) {
+	q := builtin.NewQuestions()
+	reg, err := builtin.Registry(builtin.Deps{Questions: q, QuestionRelay: func(_ context.Context, asked builtin.Question) (string, bool, error) {
+		if asked.SessionID != "child" || asked.CallID != "call-1" || asked.Text != "Which finish?" || asked.AllowFreeText {
+			t.Errorf("question = %+v", asked)
+		}
+		if len(q.Pending()) != 0 {
+			t.Error("relayed question registered with the HTTP broker")
+		}
+		if err := q.Answer(asked.ID, "Matte"); !errors.Is(err, builtin.ErrNoQuestion) {
+			t.Errorf("HTTP answer = %v", err)
+		}
+		return "Matte", true, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tl, _ := reg.Get("ask_user")
+	res, err := tl.Call(t.Context(), tool.CallContext{SessionID: "child", CallID: "call-1"}, json.RawMessage(`{"question":"Which finish?","options":["Matte","Gloss"]}`))
+	if err != nil || res.IsError || res.Content != "Matte" || len(q.Pending()) != 0 {
+		t.Fatalf("result = %+v, %v", res, err)
+	}
+}
+
+func TestAskUserRelayFallsBackToLegacyBroker(t *testing.T) {
+	q := builtin.NewQuestions()
+	reg, err := builtin.Registry(builtin.Deps{Questions: q, QuestionRelay: func(context.Context, builtin.Question) (string, bool, error) { return "", false, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tl, _ := reg.Get("ask_user")
+	emitter := newCollector()
+	done := make(chan tool.Result, 1)
+	go func() {
+		res, err := tl.Call(t.Context(), tool.CallContext{SessionID: "profile", Emit: emitter}, json.RawMessage(`{"question":"Which finish?"}`))
+		if err != nil {
+			t.Error(err)
+		}
+		done <- res
+	}()
+	asked := emitter.asked(t)
+	if err := q.Answer(asked.QuestionID, "Matte"); err != nil {
+		t.Fatal(err)
+	}
+	if res := <-done; res.IsError || res.Content != "Matte" {
+		t.Fatal(res)
 	}
 }

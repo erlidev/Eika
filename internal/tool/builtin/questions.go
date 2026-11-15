@@ -62,7 +62,7 @@ func (q *Questions) Answer(id, answer string) error {
 	if !ok {
 		return fmt.Errorf("answer question %s: %w", id, ErrNoQuestion)
 	}
-	if err := pending.accepts(answer); err != nil {
+	if err := pending.ValidateAnswer(answer); err != nil {
 		return err
 	}
 	delete(q.pending, id)
@@ -102,8 +102,8 @@ func (q *Questions) forget(id string) {
 	delete(q.pending, id)
 }
 
-// accepts reports whether the question takes this answer.
-func (q *question) accepts(answer string) error {
+// ValidateAnswer reports whether the question takes this answer.
+func (q Question) ValidateAnswer(answer string) error {
 	if answer == "" {
 		return fmt.Errorf("answer question %s: %w: the answer is empty", q.ID, ErrBadAnswer)
 	}

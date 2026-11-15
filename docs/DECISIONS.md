@@ -2131,7 +2131,7 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   each start so a change applies at once. The check and the registration share
   one lock hold, so concurrent starts cannot oversubscribe, and a refused start
   creates no row. A refusal is a tool error telling Eika to wait or cancel.
-  Waiting counts as running until P2-16 parks questions without an execution.
+  Waiting retains the execution reservation: an answer continues the same run.
   This carries over the reserve-under-lock rule of the removed spawner
   (`478ce9c`) without its depth limit, since only home delegates.
 - **Aborting a home reply does not cancel its subagents.** Their runs are owned
@@ -2210,3 +2210,16 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   message, or a later background turn caused by a new report, delivers them.
   This prevents a restart from retrying work whose outcome is unknown. A
   recovery write error stops startup. Computer inspection remains best effort.
+
+## Subagent questions (P2-16)
+
+- `ask_user` parks the current tool call in memory. The lifecycle service sets
+  `waiting` with the question as its reason before it posts a home notice.
+  `subagent_message` validates the answer and sets `running` before delivering
+  it through a buffered channel, under the same lock as cancel. One answer
+  wins; a rejected answer leaves the question waiting. The run keeps its
+  execution reservation but holds no inference lease while it waits.
+- Questions use the existing notice writer and retry path, with an id derived
+  from the child, run and tool call. The legacy question broker never registers
+  these questions, so its HTTP answer route cannot answer them. There is no
+  new table or route. A restart ends the run; P2-18 repairs its tool call.

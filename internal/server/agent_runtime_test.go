@@ -103,8 +103,8 @@ func TestAgentCapabilitiesAndSchemasAreFixed(t *testing.T) {
 					t.Fatal("schema changed with legacy choice or MCP")
 				}
 			}
-			if slices.Contains(want, "ask_user") {
-				t.Fatal("subagent question path is not available in stage A")
+			if slices.Contains(want, "ask_user") != (name != "eika") {
+				t.Fatal("only subagents can ask Eika questions")
 			}
 		})
 	}

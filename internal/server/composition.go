@@ -191,6 +191,7 @@ func agentToolRegistry(deps builtin.Deps, server func() *Server) (*tool.Registry
 		return server().projectExecutor(ctx, sessionID)
 	}
 	deps.Subagents = delegation{server: server}
+	deps.QuestionRelay = delegation{server: server}.AskSubagent
 	deps.Reports = delegation{server: server}
 	return builtin.Registry(deps)
 }

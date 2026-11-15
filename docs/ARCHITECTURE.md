@@ -225,8 +225,10 @@ Run(ctx, session, text)
   `tool.Standalone` tool runs with a nil executor in chats;
   `Registry.Filter` narrows the shared registry per run. `bash` runs shell
   commands; `file_read`, `file_write` and `file_edit` handle bounded text files.
-  `ask_user` registers with the `Questions` broker, emits
-  `question.asked`, and waits for the API to deliver an answer.
+  `ask_user` relays subagent questions through home (see
+  [Subagent questions](#subagent-questions)); legacy profile sessions register
+  with the `Questions` broker and wait for the HTTP answer route. Both emit
+  `question.asked`.
 - **executor**: `executor.Resolve` rejects paths leaving the root;
   `executor/local` has the `!prod` tag.
 - **Context assembly** (`agent/context.go`) builds every request as an
@@ -984,8 +986,8 @@ Sessions without an agent continue to use profiles.
 The runtime filters the shared built-in registry to the fixed tool list, in name
 order, for both schemas and dispatch. It connects no MCP servers and includes no
 MCP tools. An agent receives an executor only when one of its fixed tools needs
-a computer (today, the worker). Stage A has no subagent questions;
-`ask_user` remains available to legacy profile sessions. Runs use the definition's
+a computer (today, the worker). Workers and researchers have `ask_user`,
+which relays questions through home. Legacy profile sessions keep their broker. Runs use the definition's
 call limit and compaction prompts with the current compaction algorithm and
 budget settings. Editing a definition changes the next run, including an empty
 prompt override; an active run keeps its resolved values. Model-call records
@@ -1070,10 +1072,31 @@ the home computer and a researcher none. A worker's run with a project
 creates the project directory and wraps its executor so that commands and
 relative paths start there; the executor still confines paths to the root.
 The HTTP API refuses messages and compactions posted to a subagent's session.
-Subagents have no `ask_user` until P2-16: their prompts tell them to decide
-and state assumptions in their report. The worker's prompt also tells it to read
+Subagents use `ask_user` when unclear intent would change the result. Small
+details are decided with assumptions stated in their report. The worker's prompt also tells it to read
 pages with `web_fetch`, not `curl`, so that what it reads is screened. Profile
 and direct chat runs are unchanged.
+
+### Subagent questions
+
+A subagent's `ask_user` calls the server's question relay instead of registering
+with the legacy `Questions` broker. `subagent.Service.Ask` sets the child to
+`waiting`, with the question and choices as its reason, and registers a buffered
+answer channel under the lifecycle lock. It then emits `question.asked` for
+read-only watchers and posts a home notice through the notice writer below.
+The notice id derives from the child, run and call ids, so write retries add
+no second notice. Idle home starts a background turn. Eika can answer with
+`subagent_message`, or ask the user in its reply and relay the answer later.
+
+`Message` validates an answer against the choices, sets `running` with no
+waiting reason and delivers one answer under the same lock as cancel. A bad
+answer or failed state write leaves the question waiting. The original tool
+call continues; no new run or user message is added to the child. Waiting
+retains the execution reservation, but holds no inference lease: leases cover
+model calls only. Cancel and shutdown end the wait. Questions live in memory;
+a restart ends the run and P2-18 repairs its unanswered call. There is no
+question table, Inbox item or direct user-answer route for subagents. Activity
+shows the reason and the read-only tool card, including after a reload.
 
 ### Notices
 

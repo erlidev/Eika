@@ -142,7 +142,12 @@ export function Transcript({ sessionId, empty, readOnly = false }: TranscriptPro
               <Item
                 key={item.key}
                 item={item}
-                openTool={item.kind === "tool" && waitingCalls.has(item.callId)}
+                openTool={
+                  item.kind === "tool" &&
+                  (waitingCalls.has(item.callId) ||
+                    // A watched subagent's stored question has no live event on reload.
+                    (readOnly && item.name === "ask_user" && !item.done))
+                }
                 readOnly={readOnly}
                 onRewind={
                   idle && item.kind === "user" && rewindable.has(item.entryId ?? "")

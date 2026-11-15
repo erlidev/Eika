@@ -350,7 +350,7 @@ test("a question or an MCP request in a subagent shows what is asked and takes n
     });
     paint.head_entry_id = `ent-${callId}`;
   };
-  add("ask_user", { question: "Which finish?" }, "call-ask");
+  add("ask_user", { question: "Which finish?", options: ["Matte", "Gloss"] }, "call-ask");
   add("mcp__github__create_issue", { title: "Paint" }, "call-mcp");
   eika.mock.world.elicitations.push({
     id: "eli-paint",
@@ -364,6 +364,10 @@ test("a question or an MCP request in a subagent shows what is asked and takes n
     asked_at: "2026-03-14T14:00:00Z",
   });
   await eika.goto("/activity/subagent-paint");
+  // Stored arguments must show the question before any live event, as on reload.
+  const storedView = eika.page.getByRole("region", { name: "Session" });
+  await expect(storedView.getByText("waiting for an answer", { exact: true })).toBeVisible();
+  await expect(storedView.getByRole("list", { name: "Answer options" })).toHaveText("MatteGloss");
   eika.mock.emit(
     eika.mock.event("question.asked", "session:subagent-paint", {
       session_id: paint.id,

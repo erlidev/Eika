@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAnswerQuestion } from "@/features/session/queries";
-import { stringArg } from "@/features/session/renderers/registry";
+import { args, stringArg } from "@/features/session/renderers/registry";
 import type { ToolRendererProps } from "@/features/session/renderers/registry";
 import { useSessionStore } from "@/features/session/store";
 import { failureText } from "@/lib/failure";
@@ -26,17 +26,32 @@ export function AskUserBody({ call, readOnly = false }: ToolRendererProps) {
   const [submitted, setSubmitted] = useState(false);
 
   const text = question?.question ?? stringArg(call, "question");
-  const options = question?.options ?? [];
+  const storedOptions = args(call).options;
+  const options =
+    question?.options ??
+    (Array.isArray(storedOptions)
+      ? storedOptions.filter((value): value is string => typeof value === "string")
+      : []);
   const allowFreeText = question?.allow_free_text ?? options.length === 0;
 
   if (!question || readOnly) {
     return (
       <div className="space-y-2">
         <p className="text-sm">{text}</p>
+        {readOnly && options.length > 0 && (
+          <ul
+            aria-label="Answer options"
+            className="text-muted-foreground list-inside list-disc text-xs"
+          >
+            {options.map((option, index) => (
+              <li key={index}>{option}</li>
+            ))}
+          </ul>
+        )}
         <p className="text-muted-foreground font-mono text-xs">
           {call.done
             ? `answered: ${call.content ?? ""}`
-            : question
+            : question || readOnly
               ? "waiting for an answer"
               : "waiting for the harness…"}
         </p>
