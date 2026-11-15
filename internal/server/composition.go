@@ -184,12 +184,13 @@ var (
 	_ search.UsageStore  = searchBackend{}
 )
 
-// agentToolRegistry binds project status reads to the server's home computer
-// and the delegation tools to its subagents.
+// agentToolRegistry binds project status reads to the server's home computer,
+// and the delegation and report tools to its subagents.
 func agentToolRegistry(deps builtin.Deps, server func() *Server) (*tool.Registry, error) {
 	deps.HomeExecutor = func(ctx context.Context, sessionID string) (executor.Executor, func(), error) {
 		return server().projectExecutor(ctx, sessionID)
 	}
 	deps.Subagents = delegation{server: server}
+	deps.Reports = delegation{server: server}
 	return builtin.Registry(deps)
 }

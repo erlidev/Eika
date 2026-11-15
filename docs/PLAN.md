@@ -183,7 +183,7 @@ Check by hand here: chat with Eika in the new shell on the bench model.
 - [x] **P2-13**: Add delegation tools and run bindings. Subagents do not get
       `ask_user` until P2-16: they decide, and state the assumption in the
       report.
-- [ ] **P2-14**: Add reports, limits and shutdown.
+- [x] **P2-14**: Add reports, limits and shutdown.
 - [ ] **P2-15**: Add durable notices and background turns. This is the largest
       package of the stage: a run starts only from a user message today, and
       queued messages live in memory.
@@ -352,7 +352,7 @@ in the code beside what replaces them.
       and state the assumption, and to ask when it is unclear what the user wants
       in a way that changes the result. The `worker` prompt says to read pages
       with `web_fetch`, not `curl`, so that what it reads is screened.
-      - [ ] **P2-14**: Add reports, limits and shutdown.
+      - [x] **P2-14**: Add reports, limits and shutdown.
 - [ ] Notices: a report becomes a notice in Eika's next `<context>`, naming the
       subagent, and starts a background turn on the home session.
       - [ ] **P2-15**: Add durable notices and background turns.

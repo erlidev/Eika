@@ -45,7 +45,7 @@ func (t subagentTool) AgentOnly()   {}
 func (t subagentTool) Description() string {
 	switch t.name {
 	case "subagent_start":
-		return "Start a named subagent on a brief. It works in the background, in its own context, and this call returns at once. " +
+		return "Start a named subagent on a brief. It works in the background, in its own context, and this call returns at once; when it is idle, subagent_status has its report. " +
 			"A worker works on the home computer, in the project's directory when you name a project; a researcher reads the web and has no computer. " +
 			"A name already in use returns that subagent's status instead: give it more work with subagent_message."
 	case "subagent_message":
@@ -69,7 +69,7 @@ func (t subagentTool) Schema() json.RawMessage {
 		props = map[string]any{
 			"agent":   map[string]any{"type": "string", "enum": []string{"researcher", "worker"}, "description": "researcher reads the web; worker works on a computer."},
 			"name":    name,
-			"brief":   text("Everything the subagent needs: the goal, what is known, constraints and what to report."),
+			"brief":   text("Everything the subagent needs: the goal, what is known, constraints and what to report. It cannot ask questions yet: it decides small details itself and states its assumptions in its report, and it flags unclear intent that would change the result."),
 			"project": text("Optional project slug. The subagent gets the project's instructions, and a worker works in its directory."),
 		}
 		required = []string{"agent", "name", "brief"}

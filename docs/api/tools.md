@@ -56,6 +56,28 @@ JSON objects with `name`, `agent`, `state`, and where set `project`,
 `waiting_on`, `last_active_at` and `report`; start, message and cancel add a
 `note` for the model. An unknown name or project is an error result.
 
+### report
+
+`report` is in the `worker` and `researcher` definitions only and needs no
+computer. It ends a subagent's assignment with its findings:
+
+| Field | Meaning |
+|---|---|
+| `summary` | Required, nonempty, at most 32 KiB, without NUL. The outcome in its first line, then detail and assumptions. |
+| `outputs` | Optional list of at most 20 strings of at most 1 KiB: files, links, figures. |
+| `follow_ups` | Optional list of the same bounds: what Eika should do next. |
+
+The result is stored as the session's `result` (`summary`, then `Outputs:` and
+`Follow-ups:` lists when not empty), replacing the last report, and
+`subagent_status` shows it. A call when no assignment is running is an error
+result. A run that ends without calling it is sent "Draft your report now with
+the report tool." once; if it still has not reported, its final assistant
+message becomes the report. Failed and cancelled runs are not asked.
+
+At most `subagent_max_running` subagents run at once (a setting, default 4);
+`subagent_start` and `subagent_message` past the limit return an error result
+and start nothing. Aborting Eika's reply does not stop its subagents.
+
 A worker's session uses the home computer. Its runs create the project
 directory when it is missing, run commands there and resolve relative paths
 there; a directory outside the computer root refuses the run. A researcher has

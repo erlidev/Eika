@@ -3058,7 +3058,8 @@
                 "nullable": {
                   "array": "string"
                 }
-              }
+              },
+              "subagent_max_running": "number"
             }
           },
           "settings": {
@@ -5452,7 +5453,8 @@
                 "nullable": {
                   "array": "string"
                 }
-              }
+              },
+              "subagent_max_running": "number"
             }
           },
           "settings": {

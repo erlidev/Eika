@@ -22,7 +22,24 @@ type Store interface {
 	Subagent(context.Context, string, string) (store.Session, error)
 	Subagents(context.Context, string) ([]store.Session, error)
 	SetSubagentState(context.Context, string, store.SessionState, string) (store.Session, error)
+	SetSubagentResult(context.Context, string, string) (store.Session, error)
 }
+
+// DefaultMaxRunning is how many subagents may run at once until the
+// settings say otherwise.
+const DefaultMaxRunning = 4
+
+// DraftReport is the message that asks a run that ended without a report for
+// one.
+const DraftReport = "Draft your report now with the report tool."
+
+// noReport is the report of a run that ended with neither a report nor a
+// final message.
+const noReport = "The subagent ended without a report or a final message."
+
+// ErrTooManyRunning is what Start and Message return, wrapped, when the
+// limit on running subagents leaves no room for another.
+var ErrTooManyRunning = errors.New("too many subagents are running")
 
 // ErrCancelled is what a Run returns, wrapped or not, when someone stopped its
 // run from outside the service, as the user's abort does. The child is
@@ -33,12 +50,83 @@ var ErrCancelled = errors.New("subagent run cancelled")
 // returns when done. It must stop and join its work when ctx is cancelled.
 type Run func(ctx context.Context, child store.Session, text string, priority inference.Priority) error
 
+// Report is what a subagent hands back when it finishes an assignment.
+type Report struct {
+	Summary   string
+	Outputs   []string
+	FollowUps []string
+}
+
+// Report limits, which the report tool also tells the model about.
+const (
+	maxSummaryBytes = 32 << 10
+	maxItemBytes    = 1 << 10
+	maxItems        = 20
+	maxResultBytes  = 64 << 10
+)
+
+// Text is the report as it is stored and shown: the summary, then the lists
+// that are not empty. The board shows the summary's first line.
+func (r Report) Text() string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(r.Summary))
+	for _, list := range []struct {
+		title string
+		items []string
+	}{{"Outputs", r.Outputs}, {"Follow-ups", r.FollowUps}} {
+		if len(list.items) == 0 {
+			continue
+		}
+		b.WriteString("\n\n" + list.title + ":")
+		for _, item := range list.items {
+			b.WriteString("\n- " + strings.TrimSpace(item))
+		}
+	}
+	return b.String()
+}
+
+func (r Report) validate() error {
+	if err := validText("summary", r.Summary, maxSummaryBytes); err != nil {
+		return err
+	}
+	for _, list := range []struct {
+		field string
+		items []string
+	}{{"outputs", r.Outputs}, {"follow_ups", r.FollowUps}} {
+		if len(list.items) > maxItems {
+			return fmt.Errorf("%s must have at most %d entries", list.field, maxItems)
+		}
+		for _, item := range list.items {
+			if err := validText(list.field+" entry", item, maxItemBytes); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Options are the application's side of the service.
+type Options struct {
+	// Run executes one message in a child's session. It is required.
+	Run Run
+	// Final returns a child's last assistant message, which becomes its report
+	// when it ends an assignment without calling report. It is required.
+	Final func(context.Context, store.Session) (string, error)
+	// Limit returns how many subagents may run at once; nil means
+	// DefaultMaxRunning. A value below one is one.
+	Limit  func(context.Context) int
+	Events event.Emitter
+	Log    *slog.Logger
+}
+
 // Service serializes lifecycle changes and owns each child run until it ends.
 type Service struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	store  Store
 	run    Run
+	final  func(context.Context, store.Session) (string, error)
+	limit  func(context.Context) int
 	events event.Emitter
 	log    *slog.Logger
 	wg     sync.WaitGroup
@@ -52,20 +140,26 @@ type execution struct {
 	cancel    context.CancelFunc
 	done      chan struct{}
 	cancelled bool
-	err       error
-	result    store.Session
+	// reported is whether the child has reported since this execution began.
+	reported bool
+	err      error
+	result   store.Session
 }
 
 // New creates a service bounded by ctx. Close must run before storage closes.
-func New(ctx context.Context, st Store, run Run, events event.Emitter, log *slog.Logger) *Service {
+func New(ctx context.Context, st Store, o Options) *Service {
 	ctx, cancel := context.WithCancel(ctx)
-	if events == nil {
-		events = event.Discard
+	if o.Events == nil {
+		o.Events = event.Discard
 	}
-	if log == nil {
-		log = slog.Default()
+	if o.Log == nil {
+		o.Log = slog.Default()
 	}
-	return &Service{ctx: ctx, cancel: cancel, store: st, run: run, events: events, log: log, active: make(map[string]*execution)}
+	if o.Limit == nil {
+		o.Limit = func(context.Context) int { return DefaultMaxRunning }
+	}
+	return &Service{ctx: ctx, cancel: cancel, store: st, run: o.Run, final: o.Final, limit: o.Limit,
+		events: o.Events, log: o.Log, active: make(map[string]*execution)}
 }
 
 // Start creates a named child and starts its brief at priority. It reports
@@ -98,6 +192,9 @@ func (s *Service) Start(ctx context.Context, parent string, child store.Session,
 		return store.Session{}, false, fmt.Errorf("subagent agent must be worker or researcher")
 	}
 	if err := validText("brief", child.Brief, 64<<10); err != nil {
+		return store.Session{}, false, err
+	}
+	if err := s.room(ctx); err != nil {
 		return store.Session{}, false, err
 	}
 	// Copy only creation fields; callers cannot set lifecycle or profile fields.
@@ -138,8 +235,22 @@ func (s *Service) Message(ctx context.Context, parent, name, text string, priori
 	if s.active[child.ID] != nil {
 		return child, false, nil
 	}
+	if err := s.room(ctx); err != nil {
+		return store.Session{}, false, err
+	}
 	child, err = s.begin(ctx, child, text, priority)
 	return child, err == nil, err
+}
+
+// room reports whether another execution may begin. Callers hold mu from this
+// check until begin has recorded the execution, so concurrent starts cannot
+// all see the same free slot.
+func (s *Service) room(ctx context.Context) error {
+	limit := max(s.limit(ctx), 1)
+	if len(s.active) >= limit {
+		return fmt.Errorf("%w: %d of at most %d are running; wait for one to finish or cancel one", ErrTooManyRunning, len(s.active), limit)
+	}
+	return nil
 }
 
 func (s *Service) begin(ctx context.Context, child store.Session, text string, priority inference.Priority) (store.Session, error) {
@@ -158,6 +269,9 @@ func (s *Service) begin(ctx context.Context, child store.Session, text string, p
 func (s *Service) execute(ctx context.Context, child store.Session, text string, priority inference.Priority, active *execution) {
 	defer s.wg.Done()
 	err := s.run(ctx, child, text, priority)
+	if err == nil {
+		err = s.requireReport(ctx, child, priority, active)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	state := store.SessionIdle
@@ -176,6 +290,73 @@ func (s *Service) execute(ctx context.Context, child store.Session, text string,
 	active.cancel()
 	delete(s.active, child.ID)
 	close(active.done)
+}
+
+// requireReport makes a run that ended on its own leave a report. It asks the
+// child to draft one, once, and if it still has not called report, takes its
+// final message as the report. A run that was stopped needs none.
+func (s *Service) requireReport(ctx context.Context, child store.Session, priority inference.Priority, active *execution) error {
+	if ctx.Err() != nil || s.hasReported(active) {
+		return nil
+	}
+	if err := s.run(ctx, child, DraftReport, priority); err != nil {
+		return err
+	}
+	if s.hasReported(active) {
+		return nil
+	}
+	text, err := s.final(ctx, child)
+	if err != nil {
+		s.log.Warn("read subagent final message", "session_id", child.ID, "error", err)
+		text = ""
+	}
+	text = strings.TrimSpace(strings.ToValidUTF8(strings.ReplaceAll(text, "\x00", ""), ""))
+	if text == "" {
+		text = noReport
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if active.cancelled || ctx.Err() != nil {
+		return nil
+	}
+	return s.keepReport(ctx, child.ID, text, active)
+}
+
+func (s *Service) hasReported(active *execution) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return active.reported
+}
+
+// Report records the report of the child session's current assignment. The
+// child is still running when it reports; its run then ends on its own, and
+// the child becomes idle.
+func (s *Service) Report(ctx context.Context, sessionID string, r Report) error {
+	if err := r.validate(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	active := s.active[sessionID]
+	if active == nil || active.cancelled {
+		return fmt.Errorf("subagent has no active assignment to report on")
+	}
+	return s.keepReport(ctx, sessionID, r.Text(), active)
+}
+
+// keepReport stores text as the child's latest report. Callers hold mu.
+// A text past maxResultBytes is cut there, at a character boundary.
+func (s *Service) keepReport(ctx context.Context, id, text string, active *execution) error {
+	if len(text) > maxResultBytes {
+		text = strings.ToValidUTF8(text[:maxResultBytes], "")
+	}
+	child, err := s.store.SetSubagentResult(ctx, id, text)
+	if err != nil {
+		return err
+	}
+	active.reported = true
+	s.updated(ctx, child)
+	return nil
 }
 
 // Waiting records a code-owned wait or returns the child to running. It accepts

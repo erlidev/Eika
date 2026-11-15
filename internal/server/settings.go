@@ -17,6 +17,7 @@ import (
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/store"
+	"github.com/erlidev/eika/internal/subagent"
 )
 
 // The settings keys the harness reads itself. Each is validated when it is
@@ -44,6 +45,8 @@ const (
 	// settingIdleMinutes is how long a running computer may go without a
 	// run before the harness stops it; 0 never stops one.
 	settingIdleMinutes = "computer_idle_minutes"
+	// settingSubagentMaxRunning is how many subagents may run at once.
+	settingSubagentMaxRunning = "subagent_max_running"
 )
 
 // The idle timeout until the user sets one, and the longest the settings
@@ -52,6 +55,10 @@ const (
 	defaultIdleMinutes = 15
 	maxIdleMinutes     = 7 * 24 * 60
 )
+
+// The most subagents the settings accept as running at once. The default is
+// subagent.DefaultMaxRunning.
+const maxSubagentMaxRunning = 32
 
 // maxSettingKey bounds a setting key.
 const maxSettingKey = 64
@@ -87,6 +94,8 @@ type settingsDefaults struct {
 	// ComputerIdleMinutes is how long a running computer may go without a
 	// run before the harness stops it.
 	ComputerIdleMinutes int `json:"computer_idle_minutes"`
+	// SubagentMaxRunning is how many subagents may run at once.
+	SubagentMaxRunning int `json:"subagent_max_running"`
 	// MaintenanceIdleSeconds, AgingSeconds and PreemptRunning are the
 	// inference queue's settings: how long a pool is idle before it admits
 	// maintenance calls, how long a waiting call waits for each priority
@@ -170,6 +179,7 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 		Compaction:    compactionDefaults(),
 		// The idle timeout is the harness's own, not the deployment's.
 		ComputerIdleMinutes:    defaultIdleMinutes,
+		SubagentMaxRunning:     subagent.DefaultMaxRunning,
 		MaintenanceIdleSeconds: int(inference.DefaultMaintenanceIdle / time.Second),
 		AgingSeconds:           int(inference.DefaultAging / time.Second),
 	}
@@ -266,6 +276,11 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		var n int
 		if err := json.Unmarshal(value, &n); err != nil || n < 0 || n > maxIdleMinutes {
 			return invalidf("%s must be a whole number of minutes from 0 to %d", key, maxIdleMinutes)
+		}
+	case settingSubagentMaxRunning:
+		var n int
+		if err := json.Unmarshal(value, &n); err != nil || n < 1 || n > maxSubagentMaxRunning {
+			return invalidf("%s must be a whole number of subagents from 1 to %d", key, maxSubagentMaxRunning)
 		}
 	case settingMaintenanceIdle:
 		var n int

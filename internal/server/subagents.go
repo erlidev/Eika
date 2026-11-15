@@ -12,6 +12,7 @@ import (
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
 )
@@ -117,6 +118,53 @@ func (d delegation) CancelSubagent(ctx context.Context, home, name string) (stor
 		return store.Session{}, err
 	}
 	return s.subagents.Cancel(ctx, home, name)
+}
+
+// Report records the report a subagent ends its assignment with.
+func (d delegation) Report(ctx context.Context, sessionID, summary string, outputs, followUps []string) error {
+	s := d.server()
+	if s.subagents == nil {
+		return fmt.Errorf("subagents are unavailable")
+	}
+	return s.subagents.Report(ctx, sessionID, subagent.Report{Summary: summary, Outputs: outputs, FollowUps: followUps})
+}
+
+// subagentLimit is how many subagents may run at once: the setting, or the
+// default.
+func (s *Server) subagentLimit(ctx context.Context) int {
+	var n int
+	if readSetting(ctx, s.deps.Store, s.log, settingSubagentMaxRunning, &n) && n >= 1 {
+		return min(n, maxSubagentMaxRunning)
+	}
+	return subagent.DefaultMaxRunning
+}
+
+// finalMessage is the last assistant message with text that the subagent's
+// current assignment produced, which stands in for a report it did not make.
+// The scan stops at the user message that began the assignment, so a resumed
+// assignment never reports an earlier one's answer; the draft request is part
+// of the assignment.
+func (s *Server) finalMessage(ctx context.Context, child store.Session) (string, error) {
+	entries, err := s.deps.Store.SessionPath(ctx, child.ID)
+	if err != nil {
+		return "", err
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		m, ok, err := session.Message(entries[i])
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			continue
+		}
+		if m.Role == provider.RoleAssistant && strings.TrimSpace(m.Content) != "" {
+			return m.Content, nil
+		}
+		if m.Role == provider.RoleUser && !strings.Contains(m.Content, subagent.DraftReport) {
+			break
+		}
+	}
+	return "", nil
 }
 
 // refuseSubagent refuses a message or compaction posted to a subagent's

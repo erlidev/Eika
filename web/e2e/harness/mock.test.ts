@@ -675,6 +675,37 @@ describe("agent runtime", () => {
   });
 });
 
+describe("subagent_max_running", () => {
+  it("accepts whole numbers from 1 to 32 and refuses what the server refuses", async () => {
+    const mock = open("workbench");
+    for (const value of ["1", "4", "32", "null"]) {
+      const put = await call(
+        mock,
+        "PUT",
+        "/api/settings",
+        undefined,
+        `{"subagent_max_running":${value}}`,
+      );
+      expect(put.status).toBe(200);
+    }
+    const stored = mock.world.settings.settings;
+    expect("subagent_max_running" in stored).toBe(false);
+    await call(mock, "PUT", "/api/settings", { subagent_max_running: 2 });
+    for (const value of ["0", "33", "-1", "1.5", "4.0", "4e0", '"4"', "true", "[]"]) {
+      const put = await call(
+        mock,
+        "PUT",
+        "/api/settings",
+        undefined,
+        `{"subagent_max_running":${value}}`,
+      );
+      expect(put.status, value).toBe(400);
+    }
+    expect(stored.subagent_max_running).toBe(2);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+});
+
 describe("project metadata", () => {
   it("creates defaults, keeps slugs unique and applies partial updates", async () => {
     const mock = open("workbench");
