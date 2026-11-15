@@ -5,6 +5,7 @@
  */
 
 import type { ConfigLayer } from "@/api/types";
+import { lineDiff } from "@/lib/lineDiff";
 
 /** layerNames say where a value falls through to, as the editor words it. */
 const layerNames: Record<ConfigLayer, string> = {
@@ -26,14 +27,15 @@ export function layerName(layer: ConfigLayer): string {
 export type PromptChange = { same: boolean; added: number; removed: number };
 
 /**
- * promptChange compares a prompt with the built-in one it replaces: how many
- * of its lines the built-in text lacks, and how many of the built-in lines
- * it lacks.
+ * promptChange compares a prompt with the built-in one it replaces, from the
+ * same line diff the editor shows: how many lines it adds and how many it
+ * drops. A moved or repeated line counts as the change the diff draws.
  */
 export function promptChange(builtin: string, text: string): PromptChange {
-  const before = builtin.split("\n");
-  const after = text.split("\n");
-  const added = after.filter((line) => !before.includes(line)).length;
-  const removed = before.filter((line) => !after.includes(line)).length;
-  return { same: builtin === text, added, removed };
+  const rows = lineDiff(builtin, text);
+  return {
+    same: builtin === text,
+    added: rows.filter((r) => r.kind === "add").length,
+    removed: rows.filter((r) => r.kind === "remove").length,
+  };
 }

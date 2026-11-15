@@ -18,8 +18,6 @@ import { estimateTokens } from "@/lib/tokens";
 
 export function InstructionsSettings() {
   const instructions = useInstructions();
-  // The save lives here, above the form, so that the form can start over from
-  // what a save stored and the notice still says how the save went.
   const save = useSaveInstructions();
   if (instructions.isPending) return <Notice tone="pending">Loading the instructions…</Notice>;
   if (instructions.isError) {
@@ -32,13 +30,7 @@ export function InstructionsSettings() {
       />
     );
   }
-  return (
-    <InstructionsForm
-      key={JSON.stringify([instructions.data.about_me, instructions.data.rules])}
-      stored={instructions.data}
-      save={save}
-    />
-  );
+  return <InstructionsForm stored={instructions.data} save={save} />;
 }
 
 type InstructionsFormProps = {
@@ -49,6 +41,15 @@ type InstructionsFormProps = {
 function InstructionsForm({ stored, save }: InstructionsFormProps) {
   const [aboutMe, setAboutMe] = useState(stored.about_me);
   const [rules, setRules] = useState(stored.rules);
+  // A newer stored text, from a save or a refetch, replaces a field only if
+  // the user has not changed it since the last one: a draft, or an edit made
+  // while a save was pending, is never overwritten.
+  const [seen, setSeen] = useState(stored);
+  if (seen.about_me !== stored.about_me || seen.rules !== stored.rules) {
+    setSeen(stored);
+    if (aboutMe === seen.about_me) setAboutMe(stored.about_me);
+    if (rules === seen.rules) setRules(stored.rules);
+  }
   const dirty = aboutMe !== stored.about_me || rules !== stored.rules;
   const problems = { aboutMe: textProblem(aboutMe), rules: textProblem(rules) };
   const invalid = problems.aboutMe !== "" || problems.rules !== "";

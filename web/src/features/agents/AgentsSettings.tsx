@@ -119,9 +119,13 @@ function AgentEditor({ agent, onBack }: AgentEditorProps) {
   const problem = prompt === null ? "" : textProblem(prompt);
   const dirty = cls !== agent.overrides.class || prompt !== agent.overrides.prompt;
   const saving = save.isPending;
+  // A save and a reset write the same override: one at a time, so the stored
+  // override is always the user's last action and not whichever answered last.
+  const busy = saving || reset.isPending;
   const running = settings.data?.classes.find((c) => c.class === (cls ?? agent.builtin.class));
 
   const submit = () => {
+    if (busy) return;
     const override: AgentOverride = { class: cls, prompt };
     save.mutate({ name: agent.name, override });
   };
@@ -198,7 +202,7 @@ function AgentEditor({ agent, onBack }: AgentEditorProps) {
           type="button"
           variant="outline"
           className="mr-auto"
-          disabled={!changes(agent) || reset.isPending}
+          disabled={!changes(agent) || busy}
           onClick={() => {
             setConfirming(true);
           }}
@@ -208,7 +212,7 @@ function AgentEditor({ agent, onBack }: AgentEditorProps) {
         <Button type="button" variant="ghost" onClick={onBack}>
           Back
         </Button>
-        <Button type="submit" disabled={saving || !dirty || problem !== ""}>
+        <Button type="submit" disabled={busy || !dirty || problem !== ""}>
           {saving ? "Saving…" : "Save agent"}
         </Button>
       </div>
@@ -219,6 +223,7 @@ function AgentEditor({ agent, onBack }: AgentEditorProps) {
         description="Its class and prompt go back to the built-in ones, and any change you have not saved is lost. The next run uses them."
         confirmLabel="Reset"
         onConfirm={() => {
+          if (busy) return;
           reset.mutate(agent.name, {
             onSuccess: () => {
               setCls(null);
