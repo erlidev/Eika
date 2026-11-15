@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/inference"
@@ -32,6 +33,12 @@ type notices struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
+	// write appends a notice entry; a test replaces it to make writes fail.
+	write func(context.Context, string, store.Entry) (store.Entry, error)
+	// retry is the first wait before writing a notice again after a failed
+	// write; each further wait doubles, up to maxNoticeRetry.
+	retry time.Duration
+
 	// ioMu orders reading a session's notices from the store with writing a
 	// new one, so that a notice is neither missed nor read twice.
 	ioMu sync.Mutex
@@ -50,9 +57,20 @@ type sessionNotices struct {
 	held []agent.Notice
 }
 
+// Bounds of writing a notice again after its write failed.
+const (
+	firstNoticeRetry = time.Second
+	maxNoticeRetry   = time.Minute
+	noticeWriteLimit = 30 * time.Second
+)
+
 func newNotices(s *Server) *notices {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &notices{server: s, ctx: ctx, cancel: cancel, sessions: make(map[string]*sessionNotices)}
+	n := &notices{server: s, ctx: ctx, cancel: cancel, retry: firstNoticeRetry, sessions: make(map[string]*sessionNotices)}
+	n.write = func(ctx context.Context, sessionID string, e store.Entry) (store.Entry, error) {
+		return n.server.tree.Append(ctx, sessionID, e)
+	}
+	return n
 }
 
 // post writes a notice to a home session and makes sure a turn delivers it.
@@ -62,7 +80,7 @@ func (n *notices) post(ctx context.Context, sessionID, text string) error {
 		return err
 	}
 	n.ioMu.Lock()
-	added, err := n.server.tree.Append(ctx, sessionID, e)
+	added, err := n.write(ctx, sessionID, e)
 	if err == nil {
 		n.mu.Lock()
 		if book := n.sessions[sessionID]; book != nil {
@@ -77,6 +95,45 @@ func (n *notices) post(ctx context.Context, sessionID, text string) error {
 	n.server.log.Info("notice posted", "session_id", sessionID, "entry_id", added.ID)
 	n.wake(sessionID)
 	return nil
+}
+
+// postSoon posts a notice, and when the write fails keeps writing it again
+// in the background, waiting longer each time, until it is written or the
+// book closes. The first attempt runs on ctx, so a notice posted while the
+// server shuts down is still written.
+func (n *notices) postSoon(ctx context.Context, sessionID, text string) {
+	first, cancel := context.WithTimeout(ctx, noticeWriteLimit)
+	err := n.post(first, sessionID, text)
+	cancel()
+	if err == nil {
+		return
+	}
+	n.server.log.Warn("post notice; trying again", "session_id", sessionID, "error", err)
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.closed {
+		n.server.log.Error("notice lost at shutdown", "session_id", sessionID, "error", err)
+		return
+	}
+	n.wg.Go(func() {
+		for wait := n.retry; ; wait = min(2*wait, maxNoticeRetry) {
+			timer := time.NewTimer(wait)
+			select {
+			case <-n.ctx.Done():
+				timer.Stop()
+				n.server.log.Error("notice lost at shutdown", "session_id", sessionID)
+				return
+			case <-timer.C:
+			}
+			attempt, cancel := context.WithTimeout(n.ctx, noticeWriteLimit)
+			err := n.post(attempt, sessionID, text)
+			cancel()
+			if err == nil {
+				return
+			}
+			n.server.log.Warn("post notice; trying again", "session_id", sessionID, "error", err)
+		}
+	})
 }
 
 // load reads a session's undelivered notices from the store, once.
@@ -130,7 +187,8 @@ func (n *notices) take(sessionID string) []agent.Notice {
 	return taken
 }
 
-// delivered records that a stored message delivered the notices it lists.
+// delivered records that a stored message delivered the notices it lists,
+// wherever the book has them.
 func (n *notices) delivered(sessionID string, ids []string) {
 	if len(ids) == 0 {
 		return
@@ -138,14 +196,16 @@ func (n *notices) delivered(sessionID string, ids []string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if book := n.sessions[sessionID]; book != nil {
-		book.held = slices.DeleteFunc(book.held, func(x agent.Notice) bool { return slices.Contains(ids, x.ID) })
+		gone := func(x agent.Notice) bool { return slices.Contains(ids, x.ID) }
+		book.held = slices.DeleteFunc(book.held, gone)
+		book.waiting = slices.DeleteFunc(book.waiting, gone)
 	}
 }
 
 // settle returns the notices of a run that ended to the waiting list, except
-// those still in a message the next run receives, and reports whether any
-// are waiting.
-func (n *notices) settle(sessionID string, queued queuedMessages) bool {
+// those still in a message the next run receives. It runs before the run
+// releases its session, while no other run can hold notices of the session.
+func (n *notices) settle(sessionID string, queued queuedMessages) {
 	var kept []string
 	for _, m := range slices.Concat(queued.steering, queued.followUps) {
 		kept = append(kept, m.Notices...)
@@ -154,7 +214,7 @@ func (n *notices) settle(sessionID string, queued queuedMessages) bool {
 	defer n.mu.Unlock()
 	book := n.sessions[sessionID]
 	if book == nil {
-		return false
+		return
 	}
 	var back []agent.Notice
 	book.held = slices.DeleteFunc(book.held, func(x agent.Notice) bool {
@@ -165,7 +225,6 @@ func (n *notices) settle(sessionID string, queued queuedMessages) bool {
 		return true
 	})
 	book.waiting = append(back, book.waiting...)
-	return len(book.waiting) > 0
 }
 
 // wake starts a background turn on a session that has waiting notices and
@@ -229,7 +288,5 @@ func reportNotice(child store.Session) string {
 // subagentReported posts a child's report to its home session as a notice.
 // It is the lifecycle service's Reported option.
 func (s *Server) subagentReported(ctx context.Context, child store.Session) {
-	if err := s.notices.post(ctx, child.ParentSessionID, reportNotice(child)); err != nil {
-		s.log.Error("post subagent report notice", "session_id", child.ID, "error", err)
-	}
+	s.notices.postSoon(ctx, child.ParentSessionID, reportNotice(child))
 }

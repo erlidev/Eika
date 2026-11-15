@@ -1087,8 +1087,11 @@ The book keeps, per home session, the notices waiting and those a message has
 taken but not stored. It reads a session's undelivered notices from the store
 on the session's first run in the process. `take` moves the waiting notices to
 the message being stamped, the run's store wrapper drops them once the message
-is stored, and when a run ends, any it took that are not in a message carried to
-the next run wait again. A background turn starts when a notice finds home
+is stored, and when a run ends, before it releases the session, any it took
+that are not in a message carried to the next run wait again. A notice whose
+write fails is written again in the background, after one second and then
+twice as long each time up to a minute, until it is written or the server
+shuts down. A background turn starts when a notice finds home
 without a run, and when a home run ends with notices waiting: unless the user
 aborted it, or it was a background turn that failed, so that a failing model is
 not asked again and again; those notices wait for the next message. A run that

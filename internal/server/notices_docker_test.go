@@ -6,8 +6,10 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
@@ -315,5 +317,125 @@ func TestAMessageDuringABackgroundTurnJoinsItAtInteractivePriority(t *testing.T)
 	}
 	if n := len(priorities); n < 2 || priorities[n-2] != inference.Background.String() || priorities[n-1] != inference.Interactive.String() {
 		t.Errorf("priorities = %v, want the notice call background and the user's interactive", priorities)
+	}
+}
+
+// turnstile holds every call until the test lets one through, after telling
+// arrived.
+type turnstile struct {
+	*providertest.Provider
+	arrived chan struct{}
+	pass    chan struct{}
+}
+
+func newTurnstile(steps ...providertest.Step) *turnstile {
+	return &turnstile{Provider: providertest.New(steps...), arrived: make(chan struct{}, 8), pass: make(chan struct{}, 8)}
+}
+
+func (g *turnstile) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+	g.arrived <- struct{}{}
+	select {
+	case <-g.pass:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return g.Provider.Stream(ctx, req)
+}
+
+func TestANoticeTheNextRunTakesAsTheLastRunEndsIsDeliveredOnce(t *testing.T) {
+	d := newDelegating(t)
+	eika := newTurnstile(providertest.Text("one"), providertest.Text("two"), providertest.Text("three"), providertest.Text("four"))
+	d.use(byAgent{"You are Eika": eika})
+	// The moment the first run has released home, a second run starts and
+	// takes the waiting notice into its message before the first run goes on.
+	var once sync.Once
+	joined := make(chan int, 1)
+	d.AfterRunReleasesForTest(func(id string) {
+		if id != d.home.ID {
+			return
+		}
+		once.Do(func() {
+			joined <- request(t, d.Server, "POST", "/api/sessions/"+d.home.ID+"/messages", map[string]any{"text": "hi"}).Code
+			<-eika.arrived
+		})
+	})
+
+	d.postMessage(t, d.home.ID, "first", "", 202)
+	<-eika.arrived
+	if err := d.PostNoticeForTest(t.Context(), d.home.ID, "plumber (worker) reported: Found one"); err != nil {
+		t.Fatal(err)
+	}
+	for range 8 {
+		eika.pass <- struct{}{}
+	}
+	if code := <-joined; code != 202 {
+		t.Fatalf("second message = %d", code)
+	}
+	d.settled(t)
+	// A notice wrongly put back would ride on this message, or on a
+	// background turn before it.
+	d.postMessage(t, d.home.ID, "bye", "", 202)
+	d.waitIdle(t, d.home.ID)
+	d.settled(t)
+
+	texts, deliveries := d.homeNotices(t)
+	for id := range texts {
+		if deliveries[id] != 1 {
+			t.Errorf("notice delivered %d times, want once", deliveries[id])
+		}
+	}
+	if got := lastUser(eika.Requests()[1]); got.Content != "hi" || len(got.Notices) != 1 {
+		t.Errorf("the second run's message = %+v, want it to carry the notice", got)
+	}
+}
+
+func TestAMessageWhileABackgroundTurnIsBuiltJoinsIt(t *testing.T) {
+	d := newDelegating(t)
+	eika := providertest.New(providertest.Text("It found one."))
+	d.use(byAgent{"You are Eika": answeringNotices(eika)})
+	// Building the background turn's provider takes a while, and the user's
+	// message arrives meanwhile.
+	d.delay = 300 * time.Millisecond
+	if err := d.PostNoticeForTest(t.Context(), d.home.ID, "plumber (worker) reported: Found one"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the background turn", func() bool { return d.runState(t, d.home.ID).Active })
+	joined := d.postMessage(t, d.home.ID, "what's new?", "", 202)
+	d.waitIdle(t, d.home.ID)
+
+	runs, err := d.store.Runs(t.Context(), d.home.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].ID != joined.ID {
+		t.Errorf("runs = %+v, want the message to join the one background turn %s", runs, joined.ID)
+	}
+	if reqs := eika.Requests(); len(reqs) != 1 || lastUser(reqs[0]).Content != "what's new?" {
+		t.Errorf("Eika's requests = %d, want the user's message answered in the background turn", len(reqs))
+	}
+}
+
+func TestAReportWhoseNoticeFailsToWriteIsWrittenLater(t *testing.T) {
+	d := newDelegating(t)
+	d.FailNoticeWritesForTest(2, 10*time.Millisecond)
+	eika := providertest.New(
+		call("start", "subagent_start", map[string]any{"agent": "researcher", "name": "flights", "brief": "Find flights"}),
+		providertest.Text("on it"),
+	)
+	researcher := providertest.New(call("done", "report", map[string]any{"summary": "Tuesday"}), providertest.Text("ok"))
+	notices := answeringNotices(eika)
+	d.use(byAgent{"You are Eika": notices, "You are a researcher": researcher})
+
+	d.postMessage(t, d.home.ID, "find flights", "", 202)
+	d.waitIdle(t, d.home.ID)
+	d.waitState(t, "flights", store.SessionIdle)
+	waitFor(t, "the notice to be written", func() bool { texts, _ := d.homeNotices(t); return len(texts) == 1 })
+	waitFor(t, "the background turn", func() bool { return len(notices.Requests()) == 1 })
+	d.settled(t)
+	texts, deliveries := d.homeNotices(t)
+	for id, text := range texts {
+		if text != "flights (researcher) reported: Tuesday" || deliveries[id] != 1 {
+			t.Errorf("notice %q delivered %d times, want once", text, deliveries[id])
+		}
 	}
 }

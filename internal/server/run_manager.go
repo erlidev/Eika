@@ -114,6 +114,9 @@ func (r *finishRetries) stop() {
 type runs struct {
 	server   *Server
 	finishes *finishRetries
+	// released, when a test sets it before any run starts, is called once
+	// a finished run has released its session.
+	released func(sessionID string)
 
 	mu        sync.Mutex
 	stopped   bool
@@ -239,13 +242,12 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	// soon as the run starts and follows the rest on the event stream.
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.startMu.Lock()
-	active, err := r.reserve(sessionID, sess.ComputerID, cancel)
+	active, err := r.reserve(sessionID, sess.ComputerID, work.notify, cancel)
 	s.startMu.Unlock()
 	if err != nil {
 		cancel()
 		return store.Run{}, nil, err
 	}
-	active.notify = work.notify
 	home := sess.Kind == store.SessionHome
 	// Building a run reads the database and runs a command in the computer.
 	// Until that is done and the loop is running, the reservation is what
@@ -387,7 +389,7 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 // the lock that reads the check is what makes one run per session true:
 // building a run takes long enough that two requests would otherwise both get
 // past a check that only looked at the runs already going.
-func (r *runs) reserve(sessionID, computerID string, cancel context.CancelFunc) (*activeRun, error) {
+func (r *runs) reserve(sessionID, computerID string, notify bool, cancel context.CancelFunc) (*activeRun, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.stopped {
@@ -402,6 +404,7 @@ func (r *runs) reserve(sessionID, computerID string, cancel context.CancelFunc) 
 		cancel:     cancel,
 		done:       make(chan struct{}),
 		ready:      make(chan struct{}),
+		notify:     notify,
 	}
 	r.bySession[sessionID] = active
 	return active, nil
@@ -458,14 +461,21 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 		steering:  loop.PendingSteering(),
 		followUps: loop.PendingFollowUps(),
 	}
+	// The notices the run took go back before the session is released:
+	// once it is, the next run takes notices of its own, which settling
+	// would wrongly return.
+	r.server.notices.settle(active.sessionID, queued)
 	r.finish(active, queued)
 	r.server.log.Info("run finished", "run_id", runID, "session_id", active.sessionID, "state", state)
+	if r.released != nil {
+		r.released(active.sessionID)
+	}
 	// Notices that arrived during the run and that no message of it took
 	// start a background turn now that the session is free. A run the user
 	// stopped leaves them for the next message, and so does a background
 	// turn that failed, so that a failing model is not asked again and again.
-	if r.server.notices.settle(active.sessionID, queued) &&
-		(state == store.RunDone || (state == store.RunError && !work.notify)) {
+	if (state == store.RunDone || (state == store.RunError && !work.notify)) &&
+		r.server.notices.waiting(active.sessionID) {
 		r.server.notices.wake(active.sessionID)
 	}
 }

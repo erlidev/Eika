@@ -2128,7 +2128,13 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   with notices still waiting, gets a background turn whose message is the
   context block alone. Which notices are waiting or in an unstored message is
   kept in memory per process and read from the store on the session's first
-  run, so a message never takes a notice twice.
+  run, so a message never takes a notice twice. A run gives its untaken
+  notices back before it releases the session, since the next run's are
+  indistinguishable in the book once it holds the session.
+- **A notice whose write fails is retried in the background** with backoff,
+  owned by the book and stopped at shutdown. The report itself is already the
+  child's `result`. Rejected: a pending marker rescanned from the children's
+  results, which needs a column to tell a posted report from one that is not.
 - **A background turn is bounded by what caused it.** It runs at `background`.
   A home run the user aborted, or a background turn that failed, starts no new
   one: the notices wait for the next message, so a failing endpoint is not
