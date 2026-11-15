@@ -59,7 +59,8 @@ one that holds client state of its own.
   session is open, which model its next run uses — the status bar sets that
   and the run panel reads it, so neither can own it — and the composer's
   draft and its images, which are here because rewinding a message puts both
-  back in the box and the two components are not each other's parents. `rewound` discards the
+  back in the box and the two components are not each other's parents. `open` parks the draft, images and model of the session it leaves and restores
+  them on return, so watching a subagent does not clear Chat's unsent message. `rewound` discards the
   transcript and asks for the path again: a replay only ever adds, so without
   it the branch the head just left would stay on screen.
 - `RunStatusBar.tsx` is the pane's footer, under the composer: the run's

@@ -387,3 +387,33 @@ test("a question or an MCP request in a subagent shows what is asked and takes n
   }
   await expect(view.getByRole("textbox")).toHaveCount(0);
 });
+
+const screenshot = {
+  name: "screenshot.png",
+  mimeType: "image/png",
+  buffer: Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAIAAADbtmxLAAAANklEQVR42u3OQQ0AMAgEsJODTKRM4iRggvBqUgFNulf8VysiJCQkJCQkJCQkJCQkJCQkJHQZGhqeKHm+FEXCAAAAAElFTkSuQmCC",
+    "base64",
+  ),
+};
+
+test("watching a subagent keeps Chat's unsent draft and its attachment", async ({ open }) => {
+  const eika = await open({ scenario: "activity", path: "/" });
+  const chat = eika.page.getByRole("region", { name: "Session" });
+  await chat.getByLabel("Message", { exact: true }).fill("Ask the plumber about Tuesday");
+  await eika.page.getByLabel("Images to attach").setInputFiles(screenshot);
+  const attached = chat.getByRole("list", { name: "Images to send" });
+  await expect(attached.getByRole("listitem")).toHaveCount(1);
+
+  await eika.click("Activity");
+  await rowOf(eika, /^Running: plumber/).click();
+  await expect(
+    said(eika.page.getByRole("region", { name: "Session" }), "Checking local options."),
+  ).toBeVisible();
+  await eika.click("Chat");
+
+  await expect(chat.getByLabel("Message", { exact: true })).toHaveValue(
+    "Ask the plumber about Tuesday",
+  );
+  await expect(attached.getByRole("listitem")).toHaveCount(1);
+});

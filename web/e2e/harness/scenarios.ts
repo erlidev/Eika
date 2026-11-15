@@ -71,6 +71,8 @@ function homeWorld(): WorldBuilder {
 function activity(): WorldBuilder {
   const b = homeWorld();
   const w = b.world;
+  // Chat attaches images when the model takes them, which a spec of leaving Chat mid-draft needs.
+  for (const m of w.models) m.image_input = m.name === "gpt-5";
   const home = b.home();
   const project = (slug: string, name: string): Project => ({
     id: `prj-${slug}`,

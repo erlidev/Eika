@@ -2054,6 +2054,17 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   session and opens the next in an effect, so `Transcript` renders nothing from
   a store that holds another session than its own; switching subagents never
   flashes the last one.
+- **Opening a session mid-turn misses the start of the turn, as Chat does.**
+  A replay sends stored entries only, and the run status carries no partial
+  text, so a view opened while a subagent is answering shows the deltas from then
+  on, and the whole answer once its entry is stored. Chat reloaded mid-turn
+  behaves the same. No mechanism was invented for it: a per-turn event replay
+  would be a server change for both views. Rejected for P3-09.
+- **A session's draft is parked while another session is open.** The store holds
+  one session's transcript; `open` parks the composer state (draft, images,
+  model choice) under the session it leaves and restores it on return, so
+  watching a subagent does not clear Chat's unsent message. Rejected: moving the
+  draft out of the store, which rewind and the composer both read through it.
 - **A reconnect or a drop refreshes every session query.** An event lost while
   the socket was down says nothing about which state changed, so
   `useSessionUpdates` invalidates the session lists and open sessions on
