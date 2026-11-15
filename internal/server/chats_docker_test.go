@@ -154,8 +154,14 @@ func TestSessionToolsAreChosenAndChecked(t *testing.T) {
 		t.Errorf("tools read back = %v, want none", read.Session.Tools)
 	}
 
-	// A computer session may narrow its tools too, to any of them.
 	work := a.session(t)
+	// Agent-only tools are not available to legacy sessions.
+	refused(t, request(t, a.Server, "PUT", "/api/sessions/"+chat.ID+"/tools",
+		map[string]any{"tools": []string{"project_list"}}), 400)
+	refused(t, request(t, a.Server, "PUT", "/api/sessions/"+work.ID+"/tools",
+		map[string]any{"tools": []string{"project_list"}}), 400)
+
+	// A computer session may narrow its tools too, to any of them.
 	if got := put(work.ID, []string{"web_search", "bash"}); got == nil || !slices.Equal(got.Tools, []string{"bash", "web_search"}) {
 		t.Errorf("computer session tools = %+v, want bash and web_search", got)
 	}

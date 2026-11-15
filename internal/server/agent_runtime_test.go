@@ -262,3 +262,30 @@ func TestOnlyAgentsWhoseToolsNeedAComputerUseOne(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectToolsAreOnlyAvailableThroughEikaDefinition(t *testing.T) {
+	s := runtimeServer(t)
+	projectNames := []string{"project_create", "project_list", "project_open", "project_update"}
+	for _, name := range projectNames {
+		if _, ok := s.allTools().Get(name); ok {
+			t.Errorf("legacy tool list contains %s", name)
+		}
+		if _, err := s.checkToolChoice(t.Context(), []string{name}, false); err == nil {
+			t.Errorf("legacy choice accepts %s", name)
+		}
+		for _, sess := range []store.Session{{}, {ComputerID: "computer"}} {
+			for _, choice := range [][]string{nil, {name}} {
+				if _, ok := s.runTools(sess, choice, nil).Get(name); ok {
+					t.Errorf("legacy run offers %s", name)
+				}
+			}
+		}
+		for _, agent := range []string{"eika", "worker", "researcher"} {
+			sess := store.Session{Agent: agent, ComputerID: "computer"}
+			_, ok := s.runTools(sess, nil, nil).Get(name)
+			if ok != (agent == "eika") {
+				t.Errorf("%s offers %s: %v", agent, name, ok)
+			}
+		}
+	}
+}

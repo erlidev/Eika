@@ -177,7 +177,7 @@ The home loop, end to end, in a browser. Nothing here is hardened.
 Check by hand here: chat with Eika in the new shell on the bench model.
 
 - [x] **P2-07**: Build and store the preamble snapshot.
-- [ ] **P2-06**: Add project tools and executor access to STATUS.md.
+- [x] **P2-06**: Add project tools and executor access to STATUS.md.
 - [ ] **P2-12**: Add subagent session and lifecycle state. Publish
       `session.updated` on `global` for each state change.
 - [ ] **P2-13**: Add delegation tools and run bindings. Subagents do not get
@@ -326,7 +326,7 @@ in the code beside what replaces them.
       `description`, `status`, `instructions` and `directory`, which defaults to
       `/home/eika/projects/<slug>` on `home`. There is no `private` field.
       - [x] **P2-02**: Add project storage and API.
-      - [ ] **P2-06**: Add project tools and executor access to STATUS.md.
+      - [x] **P2-06**: Add project tools and executor access to STATUS.md.
 - [x] Add the file tools `file_read`, `file_write` and `file_edit` over the
       executor, with limits like bash's. Record in `DECISIONS.md` why they are
       back.

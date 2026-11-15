@@ -188,7 +188,7 @@ func (s *Server) toolNamed(name string) (tool.Tool, bool) {
 // allTools is every tool a run can offer: the ones every run shares and
 // those the MCP servers offered when they were last listed.
 func (s *Server) allTools() *tool.Registry {
-	return s.narrowed(func(tool.Tool) bool { return true }, s.offeredMCP())
+	return s.narrowed(func(t tool.Tool) bool { _, agentOnly := t.(tool.AgentOnly); return !agentOnly }, s.offeredMCP())
 }
 
 // runTools is the registry a run of sess offers the model: the tools every
@@ -208,6 +208,9 @@ func (s *Server) runTools(sess store.Session, choice []string, mcpTools []tool.T
 	}
 
 	return s.narrowed(func(t tool.Tool) bool {
+		if _, agentOnly := t.(tool.AgentOnly); agentOnly && sess.Agent == "" {
+			return false
+		}
 		if sess.Chat() && tool.NeedsComputer(t) {
 			return false
 		}

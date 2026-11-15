@@ -9,6 +9,7 @@ import (
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/openai"
@@ -63,9 +64,16 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		return err
 	}
 
+	var s *Server
 	questions := builtin.NewQuestions()
 	bus := event.NewBus(log)
-	tools, err := builtin.Registry(builtin.Deps{Questions: questions, Search: engine, Pages: pages})
+	tools, err := builtin.Registry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st, HomeExecutor: func(ctx context.Context) (executor.Executor, error) {
+		home, err := st.HomeComputer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return s.runExecutor(ctx, home.ID)
+	}})
 	if err != nil {
 		return err
 	}
@@ -76,7 +84,6 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	// The proxy asks the server for a computer's policy, and the server
 	// reports what the proxy refused, so the proxy reaches the server
 	// through a variable set just below.
-	var s *Server
 	var proxy *egress.Proxy
 	if host.EgressControl() {
 		proxy = egress.New(egress.Options{Policy: func(ctx context.Context, id string) (egress.Policy, error) {
