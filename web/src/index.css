@@ -6,6 +6,26 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * The shell's room for what the device covers: a notch or home indicator
+ * (the safe-area insets, which need viewport-fit=cover in index.html) and an
+ * on-screen keyboard (--keyboard-inset, which lib/useViewportAnchor writes
+ * where the browser does not resize the page itself).
+ */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+@utility px-safe {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@utility pb-viewport {
+  padding-bottom: max(var(--keyboard-inset, 0px), env(safe-area-inset-bottom));
+}
+
 @theme {
   --spacing: 0.225rem;
   --text-2xs: 0.65rem;

@@ -48,7 +48,6 @@ test("a harness outside compose offers open egress only", async ({ open }) => {
     scenario: world("workbench", (w) => {
       w.system.sandbox.egress_control = false;
     }),
-    path: "/sessions/ses-backoff",
   });
   await eika.click("Settings");
   await eika.click('role=tab[name="Computer"]');

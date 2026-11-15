@@ -103,18 +103,18 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 
 ## Scenarios
 
-`harness/scenarios.ts` names the starting states. `home-world` has the local home
-session and named subagents, with stable IDs for session route tests. The workbench ones share
-fixed ids: session `ses-backoff` in computer `cx-retries`; the sidebar lists chats only, so it opens by URL. `chat` adds two
-chats and opens chat `chat-jitter`, a session with no computer; `chat-empty`
-opens one with no messages. `home` adds the home computer the harness makes for itself, with
-a session on it that ran `bash`, beside the chats; the other scenarios have no home computer, so
-the sidebar offers no home chat. `mcp` adds five MCP servers, one in each state, and `chat-mcp` the
-same servers beside the chats; the mock's authorization server approves at
+`harness/scenarios.ts` names the starting states. Every world has the home
+session `home-main`, as the harness makes it at start, and every scenario opens
+at `/`, where Chat shows it. `home-empty` leaves it empty; `home-world` has it
+with named subagents in different states, with stable IDs for session route
+tests. The workbench ones share a story: computers in several states, session
+`ses-backoff` in computer `cx-retries` (which the mock's own tests address), and
+the same transcript on `home-main`, which is the one the UI can open.
+`chat` queues a web search reply. `mcp` adds five MCP servers, one in each
+state; the mock's authorization server approves at
 once, so Sign in returns straight to `/mcp/callback`. `profiles` adds two
 profiles to the workbench, puts `ses-backoff` on one with an override of its
-own, and records two of its model calls,
-for the Profiles tab, the status bar's profile, and the Context panel; the
+own, and records two of its model calls, for the Profiles tab; the
 mock resolves profiles and assembles requests in `harness/profiles.ts`, and
 every run it plays records its model call. The `agent-*`
 scenarios queue a scripted reply for the next message: tool calls with

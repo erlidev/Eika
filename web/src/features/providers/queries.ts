@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient, UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
-import { queryKeys } from "@/api/keys";
+import { isSessionConfiguration, queryKeys } from "@/api/keys";
 import {
   createModel,
   createProvider,
@@ -41,7 +41,8 @@ const providerModelsKey = (providerId: string) => [...providerModelsPrefix, prov
 
 /**
  * refresh invalidates what a provider or model change makes stale: the two
- * lists, the system counts, and the settings, which name the default model.
+ * lists, the system counts, the settings, which name the default model, and
+ * the sessions' configurations, which name the model each resolves to.
  */
 async function refresh(client: QueryClient): Promise<void> {
   await Promise.all([
@@ -50,6 +51,7 @@ async function refresh(client: QueryClient): Promise<void> {
     client.invalidateQueries({ queryKey: queryKeys.models() }),
     client.invalidateQueries({ queryKey: queryKeys.system() }),
     client.invalidateQueries({ queryKey: queryKeys.settings() }),
+    client.invalidateQueries({ predicate: (query) => isSessionConfiguration(query.queryKey) }),
   ]);
 }
 

@@ -2030,3 +2030,21 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   is created by its `(owner, name)` identity before the API serves. It does not
   wait for the home computer. User and assistant home messages record `web`,
   and user context blocks name that channel. Existing direct chats remain.
+
+## App shell and Chat
+
+- **The shell has a page list, not a workbench** (2026-11-15, P3-04). The rail
+  and bottom bar are built from `app/pages.ts`; Chat at `/` is the only page,
+  and a page no phase has built is absent, not disabled. Settings stays the
+  existing dialog, opened from the shell. Chat renders `SessionView` for the
+  session `GET /api/home` names, unchanged. The earlier workbench stays in the
+  tree with no route, and old `/sessions/...` links land on Chat, so P3-17
+  removes dead code rather than a second way in. Rejected: routing the
+  workbench at another path for the visual suite, which keeps a second
+  workbench alive; its specs for the chat list and panels went with its route.
+- **The keyboard is handled by padding, not by moving the composer.** The shell
+  is `100dvh`, and the meta viewport asks for `interactive-widget=resizes-content`,
+  which resizes the page where the browser honours it. Where it does not
+  (Safari), `useViewportAnchor` writes the covered height to `--keyboard-inset`
+  from `visualViewport` and the shell pads its bottom with it. A cover under
+  100px is a browser toolbar and ignored, as is any pinch zoom.

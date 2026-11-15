@@ -265,13 +265,6 @@ test("models: a decision model is marked, has no test and is never the default",
   await expect(dialog.getByLabel("Accepts images")).toHaveCount(0);
 });
 
-test("a decision model is not offered for a session", async ({ open }) => {
-  const eika = await open({ scenario: "classes" });
-  await eika.click("role=combobox[name='Model']");
-  const names = await eika.page.getByRole("option").allTextContents();
-  expect(names).toEqual(["gpt-5", "gpt-5-mini", "bench-chat"]);
-});
-
 test("search: providers, keys, and quotas", async ({ open, expectShot }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("Settings");

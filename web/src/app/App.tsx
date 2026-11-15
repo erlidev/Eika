@@ -1,8 +1,8 @@
 /**
  * The application root. A browser that is not signed in gets the guided
  * setup when the harness is new and the sign-in screen when it is not. A
- * signed-in browser gets the setup until it is finished, then the workbench.
- * Routing is by session, so a session has a URL that survives a reload.
+ * signed-in browser gets the setup until it is finished, then the shell, whose
+ * one page today is Chat. The workbench stays in the tree and has no route.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -11,8 +11,9 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router"
 
 import { ApiError } from "@/api/client";
 import { resetEventStream } from "@/api/stream";
-import { Workbench } from "@/app/Workbench";
+import { Shell } from "@/app/Shell";
 import { Splash } from "@/components/Splash";
+import { ChatPage } from "@/features/chat";
 import { LoadFailedScreen, SignInScreen, useAuthStatus, useConnection } from "@/features/connect";
 import { callbackPath, MCPCallbackScreen, useMCPSelection } from "@/features/mcp";
 import { setupComplete, useSettings, useSettingsDialog } from "@/features/settings";
@@ -51,7 +52,7 @@ function SignedOut() {
   return status.data.password_set ? <SignInScreen /> : <SetupWizard />;
 }
 
-/** SignedIn finishes the setup first, then serves the workbench. */
+/** SignedIn finishes the setup first, then serves the shell. */
 function SignedIn() {
   const settings = useSettings();
   const status = useAuthStatus();
@@ -61,7 +62,7 @@ function SignedIn() {
   // still signed in, so it gets the error and Retry, never a password form.
   // Only a first load that failed gets there: a refetch that fails later,
   // such as the one after a model is deleted, keeps the settings already
-  // loaded rather than tear down the workbench and whatever is open in it.
+  // loaded rather than tear down the shell and whatever is open in it.
   if (settings.isError && settings.data === undefined) {
     if (settings.error instanceof ApiError && settings.error.status === 401) return <Splash />;
     return (
@@ -79,8 +80,9 @@ function SignedIn() {
 
   return (
     <Routes>
-      <Route path="/" element={<Workbench />} />
-      <Route path="/sessions/:sessionId" element={<Workbench />} />
+      <Route element={<Shell />}>
+        <Route index element={<ChatPage />} />
+      </Route>
       <Route path={callbackPath} element={<MCPCallbackRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -89,7 +91,7 @@ function SignedIn() {
 
 /**
  * MCPCallbackRoute is where an OAuth authorization server returns the
- * browser. Once the harness has the answer, the workbench opens again with
+ * browser. Once the harness has the answer, the shell opens again with
  * the settings on the server that was signed in to.
  */
 function MCPCallbackRoute() {

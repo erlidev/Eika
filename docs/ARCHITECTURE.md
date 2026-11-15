@@ -817,7 +817,7 @@ enables JSON results.
 
 ```
 web/src/
-  app/         routes, shell, panel registry, sidebar, command palette, theme
+  app/         routes, shell, navigation, theme; the unrouted workbench
   features/    one folder per feature, imported through its index.ts
   components/  shared components; components/ui is shadcn
   api/         wire types, HTTP client, event stream
@@ -833,20 +833,30 @@ web/src/
   tabs, a cost strip, and a chip per field naming where its value comes from.
   `ToolPicker` is shared by profiles, sessions, and chats. Small stores hold
   which editor and settings tab are open, so links elsewhere can open them.
-- **Workbench**: sidebar (the chats; pinned rows first, archived ones folded
-  under an Archived heading at the end of the list; every row's actions in a
-  menu that a right-click also opens, renaming in place), session (transcript,
-  status bar, composer), and a tab strip of panels from `app/panels.tsx`.
-  Chats get Tools; every session gets Run and Context (window fill, token bar
-  by part with the template's remainder as a line of its own, key parameters;
-  the Context inspector dialog shows a request whole with links to the layer
-  behind each part). The status bar's meter shows the last call's fill against
-  the effective window, its cached tokens, and the predicted next request with
-  its method. `ResizableSplit` remembers
-  widths; below 1024px side panes become drawers. The UI has no panel for a
-  computer's files, no terminal, and no session tree or fork, and the API has
-  no routes for a computer's files or a session fork; rewind uses the outline
-  and head routes.
+- **Shell** (`app/Shell.tsx`): the frame of every page. A rail down the left
+  from 640px (`app/Navigation.tsx`) and a bottom bar under it list the pages
+  of `app/pages.ts`, then Settings, which opens the existing dialog; the
+  header carries the page's title and the theme toggle. The shell is `100dvh`,
+  pads the device's safe areas (`pt-safe`, `px-safe`, `pb-safe` in `index.css`)
+  and sits on `--keyboard-inset`, which `lib/useViewportAnchor` writes from
+  `window.visualViewport` where the browser does not resize the page itself
+  (Safari); the bar gives way while a keyboard is up. `app/HaltSlot.tsx` is
+  the empty place phase 4 mounts the halt button, in the rail and, on a phone,
+  the header. Pages not built yet are absent, not disabled.
+- **Chat** (`features/chat`): the page at `/`, the only route besides the MCP
+  OAuth return. It reads `GET /api/home` and renders `features/session`'s
+  `SessionView` for the home session, so the transcript, the composer and the
+  status bar are the session view's. There is no list of chats and no way to
+  start one. The status bar's meter shows the last call's fill against the
+  effective window, its cached tokens, and the predicted next request with its
+  method. The UI has no panel for a computer's files, no terminal, and no
+  session tree or fork, and the API has no routes for a computer's files or a
+  session fork; rewind uses the outline and head routes.
+- **Workbench** (`app/Workbench.tsx`, `Sidebar.tsx`, `panels.tsx`,
+  `CommandPalette.tsx`): the earlier three-pane shell, kept in the tree with
+  no route until P3-17 removes it. Its chat list, Run, Context and Tools
+  panels and the Context inspector have no page now; the inspector returns
+  with Settings, Developer (P3-11).
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
   events (`useSessionStream`, `useMCPEvents`,
   `useSessionUpdates`).
@@ -864,7 +874,7 @@ web/src/
   model with `image_input`; the store keeps them beside the draft so a rewind
   restores them. `components/MessageImages.tsx` draws a message's thumbnails
   in the transcript and the context inspector and opens one in the single
-  `ImageViewer` the workbench mounts.
+  `ImageViewer` the shell mounts.
 - **Tool cards**: `features/session/renderers/renderers.tsx` maps tool names
   to a summary and a body (`bash`, `ask_user`, `web_search`, `web_fetch`,
   `mcp_*`); unknown tools render as JSON.

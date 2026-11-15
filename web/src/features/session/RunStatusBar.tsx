@@ -47,6 +47,12 @@ export type RunStatusBarProps = {
   chat: boolean;
   /** overridden says the session sets something of its own over its profile. */
   overridden: boolean;
+  /**
+   * agent says the session runs an agent, whose class picks the model and
+   * whose settings no profile layers over: the model and profile controls
+   * would change nothing, so they are not drawn.
+   */
+  agent: boolean;
   /** model is the model the composer will use. */
   model: string;
   /** onModelChange overrides the model for this session only. */
@@ -57,6 +63,7 @@ export function RunStatusBar({
   sessionId,
   chat,
   overridden,
+  agent,
   model,
   onModelChange,
 }: RunStatusBarProps) {
@@ -97,33 +104,36 @@ export function RunStatusBar({
         <span className="text-destructive truncate">{run.error}</span>
       )}
 
-      <Select value={model} onValueChange={onModelChange}>
-        <SelectTrigger size="sm" className="h-6 w-auto gap-1 text-xs" aria-label="Model">
-          <SelectValue placeholder="default model" />
-        </SelectTrigger>
-        <SelectContent>
-          {(providers.data?.providers ?? []).map((provider) => {
-            const own = chatModels(models.data?.models).filter(
-              (m) => m.provider_id === provider.id,
-            );
-            if (own.length === 0) return null;
-            return (
-              <SelectGroup key={provider.id}>
-                <SelectLabel className="text-xs">{provider.name}</SelectLabel>
-                {own.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.name} className="text-xs">
-                    {entry.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            );
-          })}
-        </SelectContent>
-      </Select>
+      {!agent && (
+        <Select value={model} onValueChange={onModelChange}>
+          <SelectTrigger size="sm" className="h-6 w-auto gap-1 text-xs" aria-label="Model">
+            <SelectValue placeholder="default model" />
+          </SelectTrigger>
+          <SelectContent>
+            {(providers.data?.providers ?? []).map((provider) => {
+              const own = chatModels(models.data?.models).filter(
+                (m) => m.provider_id === provider.id,
+              );
+              if (own.length === 0) return null;
+              return (
+                <SelectGroup key={provider.id}>
+                  <SelectLabel className="text-xs">{provider.name}</SelectLabel>
+                  {own.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.name} className="text-xs">
+                      {entry.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      )}
 
-      <SessionProfile sessionId={sessionId} chat={chat} overridden={overridden} />
+      {!agent && <SessionProfile sessionId={sessionId} chat={chat} overridden={overridden} />}
 
       {chosen &&
+        !agent &&
         (effortSource === "session" || effortSource === "profile" ? (
           <span
             className="flex h-6 items-center gap-1 rounded-md border border-dashed px-1.5"

@@ -4,8 +4,9 @@
  * no existing one has, and keep ids stable: specs and agents address them.
  */
 
+import type { Message } from "../../src/api/types.ts";
 import { noSettings, syncSession } from "./profiles.ts";
-import { emptyWorld, minutesAgo, sessionTools, WorldBuilder } from "./world.ts";
+import { emptyWorld, minutesAgo, WorldBuilder } from "./world.ts";
 import type { World } from "./world.ts";
 
 /** Scenario is a starting state an agent or a spec can open by name. */
@@ -30,9 +31,9 @@ function configured(): WorldBuilder {
 }
 
 /**
- * workbench builds the richest state: computers in several
- * states, and a session whose transcript uses every kind of entry. Its ids
- * are fixed: the main session is `ses-backoff`, its computer `cx-retries`.
+ * workbench builds the richest state: computers in several states, and
+ * a transcript that uses every kind of entry, on the home session Chat shows
+ * and on `ses-backoff`, a session of the computer `cx-retries`. Their ids are fixed.
  */
 function workbench(): WorldBuilder {
   const b = configured();
@@ -48,7 +49,7 @@ function workbench(): WorldBuilder {
     },
   ]);
   const main = b.session(cx, { id: "ses-backoff", title: "Add exponential backoff to retries" });
-  b.conversation(main, [
+  const backoff: Message[] = [
     {
       role: "user",
       content:
@@ -96,7 +97,10 @@ function workbench(): WorldBuilder {
       content:
         "Done. The client now waits `backoff(attempt)` between tries:\n\n| attempt | delay |\n|---|---|\n| 1 | ~1s |\n| 2 | ~2s |\n| 5 | 30s (cap) |\n\n```go\nfunc backoff(n int) time.Duration {\n\td := time.Second << n\n\treturn min(d, 30*time.Second)\n}\n```",
     },
-  ]);
+  ];
+  b.conversation(main, backoff);
+  // The conversation Chat shows is the home session, which tells the same story.
+  b.conversation(b.home(), backoff);
   return b;
 }
 
@@ -143,49 +147,6 @@ function profiles(counting: "chat" | "text" | "none" = "chat"): WorldBuilder {
   b.call(main, 40, 212);
   main.head_entry_id = head;
   b.call(main, 12, 318);
-  return b;
-}
-
-/**
- * chats adds two chats to a workbench: sessions with no computer, which
- * the sidebar lists. The main one is `chat-jitter`.
- */
-function chats(): WorldBuilder {
-  const b = workbench();
-  b.chat({
-    id: "chat-postgres",
-    title: "Postgres advisory locks",
-    created_at: "2026-03-13T09:00:00.000Z",
-  });
-  const main = b.chat({ id: "chat-jitter", title: "What is full jitter?" });
-  b.conversation(main, [
-    {
-      role: "user",
-      content:
-        "What is **full jitter**, and why do retry clients use it?\nOurs sleeps `base * 2 ** attempt` today.",
-    },
-    {
-      role: "assistant",
-      tool_calls: [
-        {
-          id: "w1",
-          name: "web_search",
-          arguments: { query: "full jitter exponential backoff", count: 3 },
-        },
-      ],
-    },
-    {
-      role: "tool",
-      tool_call_id: "w1",
-      content:
-        "1. Exponential Backoff And Jitter\n   https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/\n   Adding jitter spreads retries out.",
-    },
-    {
-      role: "assistant",
-      content:
-        "Full jitter picks each delay at random between zero and the capped exponential backoff:\n\n```text\nsleep = random_between(0, min(cap, base * 2 ** attempt))\n```\n\nClients that failed together then retry at different times instead of failing together again ([AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)).",
-    },
-  ]);
   return b;
 }
 
@@ -506,13 +467,13 @@ export const scenarios = {
   workbench: {
     description:
       "Computers (running/stopped/creating), and session ses-backoff with a full transcript. Sending a message streams a mock reply.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => workbench().world,
   },
   "agent-tools": {
     description:
       "Like workbench, but the next message plays a reply that runs bash (streamed output), edits a file, and answers.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       b.world.replies.push([
@@ -539,7 +500,7 @@ export const scenarios = {
   "agent-reasoning": {
     description:
       "Like workbench, but the next message streams reasoning before the answer. For the collapsed thinking block and the context meter.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       b.world.replies.push([
@@ -557,7 +518,7 @@ export const scenarios = {
   "agent-images": {
     description:
       "Like workbench, but gpt-5 accepts images, so the composer attaches them and the transcript shows them.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       for (const m of b.world.models) m.image_input = m.name === "gpt-5";
@@ -568,7 +529,7 @@ export const scenarios = {
   "agent-question": {
     description:
       "Like workbench, but the next message makes the agent ask a multiple-choice question and wait.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       b.world.replies.push([
@@ -585,7 +546,7 @@ export const scenarios = {
   },
   "agent-error": {
     description: "Like workbench, but the next message fails with a provider error.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       b.world.replies.push([
@@ -598,7 +559,7 @@ export const scenarios = {
   "agent-cut-off": {
     description:
       "Like workbench, but the next message's answer is cut off at the model's output limit: what streamed is kept and the transcript says why it stopped.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       b.world.replies.push([
@@ -612,7 +573,7 @@ export const scenarios = {
   "agent-run-limit": {
     description:
       "Like workbench, but the next message's run reaches its limit of model calls and ends cleanly: what it did is kept and the transcript says why it stopped.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       b.world.replies.push([{ say: "Still working through the files." }, { cutOff: "max_calls" }]);
@@ -622,7 +583,7 @@ export const scenarios = {
   "agent-running": {
     description:
       "Like workbench, but the next message starts a run that never finishes (for the running state and abort).",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       b.world.replies.push([{ say: "Working on it, this will take a while…" }, { hang: true }]);
@@ -701,7 +662,7 @@ export const scenarios = {
   classes: {
     description:
       "The workbench with a llama.cpp bench (one chat model), a decision model on a server of its own, and the OpenAI models. The classes are set: deep is gpt-5, main is the bench's model, decision is d3-flash, and fast is not set, so it falls back to main on the same pool. For the model classes in Settings, General.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       const bench = b.provider({
@@ -770,11 +731,11 @@ export const scenarios = {
   "agent-web": {
     description:
       "Like workbench with an abandoned branch in the session tree; the next message plays a reply that uses web_search, web_fetch, bash to read, search, and write files, and a tool with no renderer of its own. Expand a card by its summary to see its body.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       // An abandoned first answer, so the session tree has a branch.
-      const entries = b.world.entries["ses-backoff"] ?? [];
+      const entries = b.world.entries[b.home().id] ?? [];
       const first = entries[0];
       if (first) {
         entries.push({
@@ -867,10 +828,10 @@ export const scenarios = {
   },
   chat: {
     description:
-      "Like workbench with two chats in the sidebar's Chats list; chat-jitter is open, and the next message plays a reply that searches the web and answers.",
-    path: "/sessions/chat-jitter",
+      "Like workbench, but the next message plays a reply that searches the web and answers.",
+    path: "/",
     build: () => {
-      const b = chats();
+      const b = workbench();
       b.world.replies.push([
         {
           tool: "web_search",
@@ -901,32 +862,17 @@ export const scenarios = {
   mcp: {
     description:
       "Like workbench with five MCP servers: github (connected, signed in, tools, resources, a prompt), linear (needs sign-in), filesystem (stdio), sentry (failed), and docs (off). Open Settings, MCP.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       mcpServers(b);
       return b.world;
     },
   },
-  "chat-mcp": {
-    description:
-      "Like chat, with the mcp scenario's servers: the chat's Tools panel lists the remote servers' tools under each server.",
-    path: "/sessions/chat-jitter",
-    build: () => {
-      const b = chats();
-      mcpServers(b);
-      // A chat that never chose its tools offers every one it can, the
-      // servers' included, as the harness reports it.
-      for (const chat of b.world.sessions.filter((x) => x.id === "chat-jitter")) {
-        chat.tools = sessionTools(b.world, true);
-      }
-      return b.world;
-    },
-  },
   "agent-mcp": {
     description:
       "Like mcp, but the next message calls github's create_issue, which asks for input in a form first, then search_issues, which answers with text and an image.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       mcpServers(b);
@@ -991,7 +937,7 @@ export const scenarios = {
   "agent-mcp-url": {
     description:
       "Like mcp, but the next message calls linear's list_issues, whose server sends the user to a page to connect their account first.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => {
       const b = workbench();
       mcpServers(b);
@@ -1013,64 +959,23 @@ export const scenarios = {
   },
   profiles: {
     description:
-      "Like workbench, with two more profiles: ses-backoff runs with Reviewer and overrides its temperature, and two of its model calls are recorded. For the Profiles tab, the status bar's profile, and the Context panel.",
-    path: "/sessions/ses-backoff",
+      "Like workbench, with two more profiles: ses-backoff, which no page opens, runs with Reviewer and overrides its temperature, and two of its model calls are recorded. For the Profiles tab.",
+    path: "/",
     build: () => profiles().world,
   },
   "context-estimated": {
     description:
       "Like profiles, but the endpoint has no tokenizer: every part of a request is estimated from bytes and marked so, the next request's size is an estimate, and no remainder can be stated for it.",
-    path: "/sessions/ses-backoff",
+    path: "/",
     build: () => profiles("none").world,
-  },
-  "context-drift": {
-    description:
-      "Like profiles, but the counter's exact prediction for the session's last recorded call was 3 tokens short of what the endpoint counted: the inspector shows it as a bug.",
-    path: "/sessions/ses-backoff",
-    build: () => {
-      const w = profiles().world;
-      const last = (w.calls["ses-backoff"] ?? []).at(-1);
-      if (!last) throw new Error("ses-backoff has no recorded call");
-      last.record.predicted_prompt_tokens = (last.record.prompt_tokens ?? 0) - 3;
-      last.record.drift = -3;
-      return w;
-    },
-  },
-  home: {
-    description:
-      "The chats beside a session on the home computer, which the harness makes for itself.",
-    path: "/sessions/ses-home",
-    build: () => {
-      const b = chats();
-      const home = b.computer({ id: "cx-home", name: "home", home: true });
-      const main = b.session(home, {
-        id: "ses-home",
-        title: "What is in my home directory?",
-        created_at: "2026-03-14T13:00:00.000Z",
-      });
-      b.conversation(main, [
-        { role: "user", content: "What is in my home directory?" },
-        {
-          role: "assistant",
-          tool_calls: [{ id: "h1", name: "bash", arguments: { command: "ls -a ~" } }],
-        },
-        { role: "tool", tool_call_id: "h1", content: ".\n..\n.bashrc\n.profile" },
-        {
-          role: "assistant",
-          content:
-            "Only the shell's starter files, `.bashrc` and `.profile`. Nothing of yours yet.",
-        },
-      ]);
-      return b.world;
-    },
   },
   "home-world": {
     description: "The home conversation and named subagents in different states.",
-    path: "/sessions/home-main",
+    path: "/",
     build: () => {
       const b = configured();
       b.world.settings.settings.model_classes = { main: "gpt-5", fast: "gpt-5-mini" };
-      const home = b.home({ id: "home-main" });
+      const home = b.home();
       b.conversation(home, [
         { role: "user", content: "Find a plumber." },
         { role: "assistant", content: "I will look for one." },
@@ -1096,24 +1001,10 @@ export const scenarios = {
       return b.world;
     },
   },
-  "chat-empty": {
-    description: "A chat with no messages yet, beside the chats of the workbench.",
-    path: "/sessions/chat-new",
-    build: () => {
-      const b = workbench();
-      b.chat({ id: "chat-new", title: "New chat" });
-      return b.world;
-    },
-  },
-  "empty-session": {
-    description: "A computer with a session that has no messages yet.",
-    path: "/sessions/ses-empty",
-    build: () => {
-      const b = configured();
-      const cx = b.computer({ name: "scratch" });
-      b.session(cx, { id: "ses-empty", title: "New session" });
-      return b.world;
-    },
+  "home-empty": {
+    description: "Eika's conversation before any message: the home session, empty.",
+    path: "/",
+    build: () => configured().world,
   },
 } satisfies Record<string, Scenario>;
 

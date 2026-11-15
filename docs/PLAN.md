@@ -170,7 +170,7 @@ The home loop, end to end, in a browser. Nothing here is hardened.
       is `web`.
 - [x] **P3-03**: Add the World and matching routes, for the home session and
       subagents only.
-- [ ] **P3-04**: Build navigation, the home shell and basic Chat. `SessionView`
+- [x] **P3-04**: Build navigation, the home shell and basic Chat. `SessionView`
       is reused as it is. Settings stays the existing dialog, and the workbench
       stays in the tree, unrouted.
 
@@ -438,7 +438,7 @@ The mobile-first app. Design: `design/interface.md`.
 - [ ] App shell: a rail on desktop and a bottom bar on a phone, a route per page,
       `100dvh`, safe areas, and the composer anchored to the visual viewport.
       Leave a slot for the halt button (wired in phase 4).
-      - [ ] **P3-04**: Build navigation and the home shell.
+      - [x] **P3-04**: Build navigation and the home shell.
 - [ ] Chat page on the home session:
       - a paginated transcript. Virtualise only if a 5,000-entry session is
         measurably slow on a phone
@@ -447,7 +447,7 @@ The mobile-first app. Design: `design/interface.md`.
         notices
       - on touch, a plain textarea with a rendered preview, where Enter makes a
         newline and a send button sends
-      - [ ] **P3-04**: Bind basic Chat to home.
+      - [x] **P3-04**: Bind basic Chat to home.
       - [ ] **P3-05**: Add the paginated transcript. Channel marks wait for a
             second channel (`docs/DEFERRED.md`, channels).
       - [ ] **P3-06**: Add the touch composer.

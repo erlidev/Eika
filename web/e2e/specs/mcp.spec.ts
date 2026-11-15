@@ -1,10 +1,9 @@
 /**
  * MCP servers: the Settings tab that lists and configures them, a server's
  * page with its tools, resources, prompts, and sign-in, the OAuth round trip
- * through /mcp/callback, a server asking the user for input during a tool
- * call, and a chat's tools grouped by server. A server's page and a tool
- * card with a server's content are compared pixel for pixel; the rest is
- * checked by what the page says and offers.
+ * through /mcp/callback, and a server asking the user for input during a tool
+ * call. A server's page and a tool card with a server's content are compared
+ * pixel for pixel; the rest is checked by what the page says and offers.
  */
 
 import { expect, test } from "../fixtures.ts";
@@ -220,14 +219,4 @@ test("an MCP server sends the user to a page", async ({ open }) => {
   await expect(eika.page.getByRole("group", { name: "text" })).toHaveText(
     "The user chose to decline.",
   );
-});
-
-test("a chat lists each remote server's tools under it", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "chat-mcp" });
-  await eika.click("Tools");
-  const search = eika.page.getByRole("switch", { name: "mcp__github__search_issues" });
-  await expect(search).toBeChecked();
-  await eika.click("role=switch[name=mcp__github__search_issues]");
-  await expect(search).not.toBeChecked();
-  await expectAria(eika, "chat-mcp-tools", 'role=tabpanel[name="Tools"]');
 });

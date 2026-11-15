@@ -1,9 +1,9 @@
 /**
  * Agent profiles: the Settings tab that lists and edits them, where an unset
- * field shows what it falls through to and a set one has a reset, and the
- * status bar's profile, which opens the same editor over what the session
- * sets for itself. The editor is compared pixel for pixel once; the rest is
- * checked by what the page says and offers.
+ * field shows what it falls through to and a set one has a reset. The editor
+ * is compared pixel for pixel once; the rest is checked by what the page says
+ * and offers. The status bar's per-session profile has no home: the home
+ * session runs an agent, whose class picks its model.
  */
 
 import { expect, test } from "../fixtures.ts";
@@ -108,15 +108,6 @@ test("choosing a model shows what that model sets before the profile is saved", 
     "placeholder",
     "64000",
   );
-
-  // The same in a session's editor, for a profile chosen and not saved.
-  await eika.page.keyboard.press("Escape");
-  await eika.click("role=button[name=/^Profile: Reviewer/]");
-  await eika.select("Profile", "Fast");
-  await expect(eika.page.getByLabel("Max output tokens", { exact: true })).toHaveAttribute(
-    "placeholder",
-    "4096",
-  );
 });
 
 test("a new profile is added and a bad parameter is caught before it is sent", async ({ open }) => {
@@ -144,28 +135,4 @@ test("the last profile cannot be deleted", async ({ open }) => {
   await openProfiles(eika);
   await eika.click("role=button[name=/^Default/]");
   await expect(eika.page.getByRole("button", { name: "Delete" })).toBeDisabled();
-});
-
-test("the status bar names the session's profile and edits its overrides", async ({
-  open,
-  expectAria,
-}) => {
-  const eika = await open({ scenario: "profiles" });
-  const profile = eika.page.getByRole("button", { name: /^Profile: Reviewer/ });
-  await expect(profile).toHaveAccessibleName("Profile: Reviewer, overridden by this session");
-  await eika.click("role=button[name=/^Profile: Reviewer/]");
-  await expectAria(eika, "session-configuration", "role=dialog");
-
-  await eika.click("role=tab[name=Sampling]");
-  await expect(eika.page.getByRole("textbox", { name: "Temperature" })).toHaveValue("0.7");
-  await eika.click("Reset temperature");
-  await eika.click("Save");
-  await expect(profile).toHaveAccessibleName("Profile: Reviewer");
-
-  // Another profile, chosen for this session alone.
-  await eika.click("role=button[name=/^Profile: Reviewer/]");
-  await eika.select("Profile", "Fast");
-  await eika.click("Save");
-  await expect(eika.page.getByRole("button", { name: /^Profile: Fast/ })).toBeVisible();
-  await expect(eika.page.getByRole("combobox", { name: "Model" })).toHaveText("gpt-5-mini");
 });

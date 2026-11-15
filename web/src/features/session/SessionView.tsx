@@ -13,6 +13,8 @@ import { RunStatusBar } from "@/features/session/RunStatusBar";
 import { SessionHeading } from "@/features/session/SessionHeading";
 import { Transcript } from "@/features/session/Transcript";
 import { useSessionStore } from "@/features/session/store";
+import { ConfigurationError } from "@/features/session/ConfigurationError";
+import { composerModel } from "@/features/session/composerModel";
 import { useSessionStream } from "@/features/session/useSessionStream";
 import { Notice } from "@/components/Notice";
 import { Badge } from "@/components/ui/badge";
@@ -24,9 +26,11 @@ import { useHomeComputer } from "@/features/sessions";
 
 export type SessionViewProps = {
   sessionId: string;
+  /** header is false where the page around the view already titles it. */
+  header?: boolean;
 };
 
-export function SessionView({ sessionId }: SessionViewProps) {
+export function SessionView({ sessionId, header = true }: SessionViewProps) {
   useSessionStream(sessionId);
   const session = useSession(sessionId);
   const models = useModels();
@@ -39,7 +43,11 @@ export function SessionView({ sessionId }: SessionViewProps) {
 
   const home = useHomeComputer();
   const computerId = session.data?.session.computer_id;
-  const chat = session.data !== undefined && computerId === undefined;
+  // The home session is Eika's one conversation: it has no computer of its
+  // own, but it is not a chat, and its agent's class picks its model.
+  const isHome = session.data?.session.kind === "home";
+  const agent = (session.data?.session.agent ?? "") !== "";
+  const chat = session.data !== undefined && computerId === undefined && !isHome;
   const onHome = computerId !== undefined && computerId === home.data?.id;
 
   // Esc aborts the run from anywhere in the session view, which is why the
@@ -60,34 +68,47 @@ export function SessionView({ sessionId }: SessionViewProps) {
   }, [active, run, abort]);
 
   // A model chosen in the status bar is this browser's; without one, a run
-  // uses what the session's configuration resolves to.
-  const chosenModel =
-    model === "" ? (configuration.data?.resolved.model ?? models.data?.default ?? "") : model;
+  // uses what the session's configuration resolves to. An agent's run names
+  // no model at all: the harness refuses one, since its class chooses it.
   const available = chatModels(models.data?.models);
   const noModel = models.data !== undefined && available.length === 0;
-  const imageInput = available.find((m) => m.name === chosenModel)?.image_input ?? false;
+  const composerChoice = composerModel({
+    sessionKnown: session.data !== undefined,
+    configurationSettled: !configuration.isPending,
+    modelsKnown: models.data !== undefined,
+    agent,
+    chosen: model,
+    resolved: configuration.data?.resolved.model,
+    defaultModel: models.data?.default ?? "",
+    models: available,
+  });
+  const { runModel, label: chosenModel, imageInput } = composerChoice;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Session">
-      <header className="flex items-center gap-2 border-b px-3 py-2">
-        <SessionHeading session={session.data?.session} />
-        {chat && <ChatBadge />}
-        {onHome && <HomeBadge />}
-        {/* On a phone the id gives way: the title is what the header is for. */}
-        <span className="text-muted-foreground hidden shrink-0 font-mono text-xs sm:inline">
-          {sessionId}
-        </span>
-      </header>
+      {header && (
+        <header className="flex items-center gap-2 border-b px-3 py-2">
+          <SessionHeading session={session.data?.session} />
+          {chat && <ChatBadge />}
+          {onHome && <HomeBadge />}
+          {/* On a phone the id gives way: the title is what the header is for. */}
+          <span className="text-muted-foreground hidden shrink-0 font-mono text-xs sm:inline">
+            {sessionId}
+          </span>
+        </header>
+      )}
       {/* The transcript owns its scroller: it has to measure it to decide
           whether the user is still following the stream. */}
       <Transcript
         sessionId={sessionId}
         empty={
-          chat
-            ? "Send a message to start the chat. A chat has no computer, so the model cannot touch files or run commands; the Tools panel says what it can use."
-            : onHome
-              ? "Send a message to start the chat. It runs on the home computer, so the model can run commands and keep files in /home/eika."
-              : "Send a message to start the first turn."
+          isHome
+            ? "Send a message to start the conversation."
+            : chat
+              ? "Send a message to start the chat. A chat has no computer, so the model cannot touch files or run commands; the Tools panel says what it can use."
+              : onHome
+                ? "Send a message to start the chat. It runs on the home computer, so the model can run commands and keep files in /home/eika."
+                : "Send a message to start the first turn."
         }
       />
       {noModel && (
@@ -108,13 +129,24 @@ export function SessionView({ sessionId }: SessionViewProps) {
           </Notice>
         </div>
       )}
+      {configuration.isError && (
+        <ConfigurationError
+          error={configuration.error}
+          retry={() => void configuration.refetch()}
+          retrying={configuration.isFetching}
+        />
+      )}
       <Composer
         sessionId={sessionId}
-        model={chosenModel}
+        model={runModel}
+        modelLabel={chosenModel}
         imageInput={imageInput}
-        {...(chat ? { placeholder: "Send a message…" } : {})}
-        disabled={noModel}
-        disabledReason="Add a model under Settings, Models to send a message."
+        {...(chat || isHome ? { placeholder: "Send a message…" } : {})}
+        agent={agent}
+        disabled={noModel || !composerChoice.ready}
+        disabledReason={
+          noModel ? "Add a model under Settings, Models to send a message." : "Loading the session…"
+        }
       />
       {/* The status bar is the pane's footer: the model, the meter, and the
           connection are what the session is running on, not what it is
@@ -123,7 +155,8 @@ export function SessionView({ sessionId }: SessionViewProps) {
         sessionId={sessionId}
         chat={chat}
         overridden={session.data?.session.overridden ?? false}
-        model={chosenModel}
+        agent={agent}
+        model={runModel}
         onModelChange={chooseModel}
       />
     </section>
