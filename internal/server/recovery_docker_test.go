@@ -3,13 +3,18 @@
 package server_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"net"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
+	"github.com/erlidev/eika/internal/server"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -123,12 +128,13 @@ func TestRestartRepairsChildrenAndHomeWithoutExecutingTools(t *testing.T) {
 	}
 	eika := providertest.New(providertest.Text("Work was interrupted."))
 	d.use(byAgent{"You are Eika": eika})
-	if err := d.WakeNoticesForTest(ctx); err != nil {
-		t.Fatal(err)
+	if got := d.runState(t, d.home.ID); got.Active || len(eika.Requests()) != 0 {
+		t.Fatalf("home started during recovery: %+v", got)
 	}
+	d.postMessage(t, d.home.ID, "what happened?", "", 202)
 	d.settled(t)
-	if len(eika.Requests()) != 1 {
-		t.Errorf("home requests = %d, want one startup turn", len(eika.Requests()))
+	if len(eika.Requests()) != 1 || len(lastUser(eika.Requests()[0]).Notices) != 5 {
+		t.Errorf("the next user turn did not receive the five notices")
 	}
 	for _, id := range ids[:3] {
 		runs, err := d.store.Runs(ctx, id)
@@ -185,17 +191,18 @@ func TestRestartFindsStoredReportsAndUndeliveredNotices(t *testing.T) {
 	}
 	eika := providertest.New(providertest.Text("Here are the reports."))
 	d.use(byAgent{"You are Eika": eika})
-	if err := d.WakeNoticesForTest(ctx); err != nil {
-		t.Fatal(err)
+	if got := d.runState(t, d.home.ID); got.Active || len(eika.Requests()) != 0 {
+		t.Fatalf("home started during recovery: %+v", got)
 	}
+	d.postMessage(t, d.home.ID, "what is new?", "", 202)
 	d.settled(t)
 	reqs := eika.Requests()
 	if len(reqs) != 1 {
-		t.Fatalf("requests = %d, want one startup turn", len(reqs))
+		t.Fatalf("requests = %d, want one user turn", len(reqs))
 	}
 	m := lastUser(reqs[0])
 	if len(m.Notices) != 3 || strings.Contains(m.Context, "already-delivered") {
-		t.Errorf("startup message = %+v", m)
+		t.Errorf("user message = %+v", m)
 	}
 	texts, delivered := d.homeNotices(t)
 	if len(texts) != 4 {
@@ -292,5 +299,121 @@ func TestRestartPinsLegacyReportIDsBeforeRepairChangesTheHead(t *testing.T) {
 				t.Errorf("notices = %v, want one interruption and one report", notices)
 			}
 		})
+	}
+}
+
+func TestStartupKeepsRecoveredNoticesUntilTheUserSendsAMessage(t *testing.T) {
+	d := newDelegating(t)
+	ctx := t.Context()
+	child, err := d.store.CreateSession(ctx, store.Session{Kind: store.SessionSubagent,
+		ParentSessionID: d.home.ID, Agent: "researcher", Name: "interrupted", State: store.SessionRunning})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.store.SetSubagentResult(ctx, child.ID, "saved report"); err != nil {
+		t.Fatal(err)
+	}
+	old, err := session.TextEntry(store.KindNotice, "earlier notice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.store.AppendEntry(ctx, d.home.ID, old); err != nil {
+		t.Fatal(err)
+	}
+	eika := providertest.New(providertest.Text("I found the notices."))
+	d.use(byAgent{"You are Eika": eika})
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig()
+	cfg.Listen = addr
+	d.Server = server.New(cfg, testLogger(), d.deps, server.Options{})
+	if err := d.BindAgentToolsForTest(d.host); err != nil {
+		t.Fatal(err)
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- d.Run(runCtx) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("server run: %v", err)
+		}
+	}()
+	client := &http.Client{Timeout: time.Second}
+	waitFor(t, "server startup", func() bool {
+		req, err := http.NewRequestWithContext(runCtx, "GET", "http://"+addr+"/healthz", nil)
+		if err != nil {
+			return false
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	})
+	// Allow any incorrectly started background turn to reach the provider.
+	select {
+	case <-time.After(300 * time.Millisecond):
+	case err := <-done:
+		done <- err
+		t.Fatalf("server stopped during startup: %v", err)
+	}
+	if got := d.runState(t, d.home.ID); got.Active || len(eika.Requests()) != 0 {
+		t.Fatalf("startup started a home turn: %+v, requests %d", got, len(eika.Requests()))
+	}
+	runs, err := d.store.Runs(ctx, d.home.ID)
+	if err != nil || len(runs) != 0 {
+		t.Fatalf("startup home runs = %+v, %v", runs, err)
+	}
+	notices, err := d.store.UndeliveredNotices(ctx, d.home.ID)
+	if err != nil || len(notices) != 3 {
+		t.Fatalf("startup notices = %+v, %v", notices, err)
+	}
+	d.postMessage(t, d.home.ID, "what happened?", "", 202)
+	d.settled(t)
+	reqs := eika.Requests()
+	if len(reqs) != 1 || len(lastUser(reqs[0]).Notices) != 3 {
+		t.Fatalf("user turn did not deliver the three notices: %+v", reqs)
+	}
+	updated, err := d.store.Session(ctx, child.ID)
+	if err != nil || updated.State != store.SessionIdle {
+		t.Fatalf("child resumed: %+v, %v", updated, err)
+	}
+}
+
+func TestNewReportWakesHomeWithRecoveredNotices(t *testing.T) {
+	d := newDelegating(t)
+	ctx := t.Context()
+	old, err := session.TextEntry(store.KindNotice, "recovered notice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.store.AppendEntry(ctx, d.home.ID, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	eika := providertest.New(providertest.Text("Both notices arrived."))
+	d.use(byAgent{"You are Eika": eika})
+	if err := d.PostNoticeForTest(ctx, d.home.ID, "new-report-notice", "new report"); err != nil {
+		t.Fatal(err)
+	}
+	d.settled(t)
+	reqs := eika.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %d, want one background turn", len(reqs))
+	}
+	m := lastUser(reqs[0])
+	if len(m.Notices) != 2 || !strings.Contains(m.Context, "recovered notice") || !strings.Contains(m.Context, "new report") {
+		t.Errorf("background message = %+v, want both notices", m)
 	}
 }

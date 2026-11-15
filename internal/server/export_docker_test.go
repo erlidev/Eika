@@ -71,9 +71,3 @@ func (s *Server) FailNoticeWritesForTest(failures int32, lost bool, retry time.D
 		return write(ctx, sessionID, e)
 	}
 }
-
-// WakeNoticesForTest runs the startup notice wake after reconciliation.
-func (s *Server) WakeNoticesForTest(ctx context.Context) error {
-	s.syncInference(ctx)
-	return s.wakeNotices(ctx)
-}

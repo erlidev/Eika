@@ -373,7 +373,8 @@ in the code beside what replaces them.
             notice writes are retried in memory only, so a crash or shutdown
             there loses the notice though the report is stored. At start,
             post a notice for each child whose stored report has none; the
-            notice id derives from the report, so the rescan is safe.
+            notice id derives from the report, so the rescan is safe. Startup
+            starts no home turn; notices wait for the next home turn.
       - [ ] **P2-19**: Test process death and explicit resume with Docker.
 - [ ] Paginated entries: `GET /api/sessions/{id}/entries?before=&limit=`.
       - [ ] **P2-10**: Add backward pagination.

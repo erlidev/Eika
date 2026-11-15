@@ -199,9 +199,6 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		// The queue knows its pools before the first run asks for a lease.
 		s.syncInference(ctx)
-		if err := s.wakeNotices(ctx); err != nil {
-			return fmt.Errorf("wake notices: %w", err)
-		}
 		watchCtx, cancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
 		if s.deps.Providers != nil {
@@ -235,8 +232,8 @@ func (s *Server) Close() {
 }
 
 // Reconcile repairs interrupted sessions and recorded computer states.
-// Call it only before serving requests or starting new runs. Background home
-// turns for undelivered notices start when Run starts.
+// Call it only before serving requests or starting new runs. Recovered
+// notices wait for a later home turn.
 func (s *Server) Reconcile(ctx context.Context) error {
 	if s.deps.Store == nil {
 		return nil

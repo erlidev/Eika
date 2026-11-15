@@ -1130,8 +1130,9 @@ Startup also scans every stored child report and appends its home notice with
 `AppendEntryOnce`. Migration 0016 adds the internal report notice id; startup
 pins an old report to its child/head-derived id before recovery changes the
 head, retaining an existing notice from an earlier head when its text matches.
-Identical old reports reuse that notice; new reports have distinct ids. A report notice can thus be recovered after a crash between idle and
-posting, or during a notice write retry. After all recovery writes and queue
-setup, each agent home with undelivered notices gets a background turn.
+Identical old reports reuse that notice; new reports have distinct ids. A
+report notice can thus be recovered after a crash between idle and posting, or
+during a notice write retry. Startup starts no home turn. Recovered notices
+wait for the next home turn, from a user message or a later new report.
 Legacy profile and chat sessions retain abort-only recovery. Computer
 inspection is separate and remains best effort.

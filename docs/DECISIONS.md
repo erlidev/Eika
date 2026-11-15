@@ -2205,6 +2205,7 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   stored reports after later messages, cancellation, or tool-result repair.
   A mutable session head alone cannot identify a report across these changes.
   The id is internal; the API does not change.
-- Startup finishes all recovery writes before it starts background home turns
-  for undelivered notices. A recovery write error stops startup. Computer
-  inspection remains best effort and cannot prevent session recovery.
+- Startup stores recovered notices without starting a home turn. The next user
+  message, or a later background turn caused by a new report, delivers them.
+  This prevents a restart from retrying work whose outcome is unknown. A
+  recovery write error stops startup. Computer inspection remains best effort.

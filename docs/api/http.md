@@ -557,9 +557,9 @@ an error result for each unanswered tool call: "Eika restarted while this ran;
 its outcome is unknown. Check before retrying." Interrupted children become
 `idle`, with no waiting reason, and home gets a notice naming each child.
 An interrupted home reply also gets a notice. Startup recovers missing report
-notices and starts a background home turn for undelivered notices. Children
-resume only through `subagent_message`. Legacy profile and chat sessions keep
-their abort-only behaviour. No response or event shape changes.
+notices. Recovered notices wait for the next home turn, from a user message or
+a later new report. Children resume only through `subagent_message`. Legacy
+profile and chat sessions keep their abort-only behaviour. No response or event shape changes.
 
 ### `POST /api/questions/{id}/answer`
 

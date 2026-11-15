@@ -135,27 +135,6 @@ func unansweredResults(path []store.Entry) ([]store.Entry, error) {
 	return entries, nil
 }
 
-// wakeNotices starts one background home turn for notices that survived the
-// previous process. All recovery writes and queue setup finish before this.
-func (s *Server) wakeNotices(ctx context.Context) error {
-	sessions, err := s.deps.Store.Sessions(ctx, "")
-	if err != nil {
-		return err
-	}
-	for _, sess := range sessions {
-		if sess.Kind != store.SessionHome || sess.Agent == "" {
-			continue
-		}
-		if err := s.notices.load(ctx, sess.ID); err != nil {
-			return err
-		}
-		if s.notices.waiting(sess.ID) {
-			s.notices.wake(sess.ID)
-		}
-	}
-	return nil
-}
-
 // legacyReportNoticeID preserves an old notice even if the child was resumed
 // after posting it. Before report ids were stored, the notice named a head
 // that may now be earlier in the child's history. Equal report text reuses an
