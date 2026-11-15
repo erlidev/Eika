@@ -9,6 +9,14 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-06 follow-up keeps the home computer in use while a
+  project status read runs, and tests the production project tool binding.
+
+- 2026-11-15: P2-06 adds project tools for Eika and reads project status
+  through the home computer executor. Instructions remain user-only writes.
+  Project tools are available only through agent definitions; legacy profiles
+  keep their tool sets. `make check` and `make smoke` pass.
+
 - 2026-11-15: P2-07 follow-up refuses preamble entries as branch points,
   so a replacement snapshot takes effect with its compaction. The API, store,
   outline and mock use the same rule. `make check` passes.

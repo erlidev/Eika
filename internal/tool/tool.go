@@ -36,6 +36,13 @@ type Standalone interface {
 	Standalone()
 }
 
+// AgentOnly marks a tool that is available only through an agent definition.
+// Legacy profiles and sessions cannot select it.
+type AgentOnly interface {
+	Tool
+	AgentOnly()
+}
+
 // NeedsComputer reports whether t can run only in a session with a
 // computer.
 func NeedsComputer(t Tool) bool {

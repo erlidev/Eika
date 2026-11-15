@@ -85,7 +85,7 @@ func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
 		t.Fatalf("Registry: %v", err)
 	}
 	want := []string{
-		"ask_user", "bash", "file_edit", "file_read", "file_write", "web_fetch", "web_search",
+		"ask_user", "bash", "file_edit", "file_read", "file_write", "project_create", "project_list", "project_open", "project_update", "web_fetch", "web_search",
 	}
 	got := make([]string, 0, len(want))
 	for _, tl := range r.List() {
@@ -114,7 +114,7 @@ func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
 }
 
 // A chat offers the standalone tools alone. Every tool that reads or changes
-// files or runs a command must stay out of it.
+// files or runs a command needs explicit access through its dependencies.
 func TestOnlyToolsThatNeedNoComputerAreStandalone(t *testing.T) {
 	r, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
@@ -126,7 +126,7 @@ func TestOnlyToolsThatNeedNoComputerAreStandalone(t *testing.T) {
 			standalone = append(standalone, tl.Name())
 		}
 	}
-	want := []string{"ask_user", "web_fetch", "web_search"}
+	want := []string{"ask_user", "project_create", "project_list", "project_open", "project_update", "web_fetch", "web_search"}
 	if !slices.Equal(standalone, want) {
 		t.Errorf("standalone tools = %v, want %v", standalone, want)
 	}

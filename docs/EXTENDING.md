@@ -118,6 +118,10 @@ the list in `TestOnlyToolsThatNeedNoComputerAreStandalone`, which is what
 keeps a file or command tool from being marked by mistake. The chat's Tools
 panel lists it with a switch as soon as it is registered.
 
+Implement `tool.AgentOnly` for a tool that only an agent definition may offer.
+Legacy profiles and sessions cannot list or select it. Add the tool to each
+agent definition that needs it.
+
 A tool that belongs to a service rather than to Eika needs no code here: run
 it as an MCP server and add the server under Settings, MCP. Its tools reach
 runs as `mcp__<server>__<tool>`, built by `internal/mcp` from what the server

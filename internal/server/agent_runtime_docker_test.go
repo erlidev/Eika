@@ -44,7 +44,8 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 			Tools        []string `json:"tools"`
 		} `json:"resolved"`
 	}](t, request(t, a.Server, "GET", configPath, nil), 200)
-	if cfg.Resolved.ProfileID != "" || cfg.Resolved.Model != "test-model" || cfg.Resolved.ChatPrompt != "agent rules" || cfg.Resolved.Instructions != "" || !slices.Equal(cfg.Resolved.Tools, []string{"web_search"}) {
+	wantTools := []string{"project_create", "project_list", "project_open", "project_update", "web_search"}
+	if cfg.Resolved.ProfileID != "" || cfg.Resolved.Model != "test-model" || cfg.Resolved.ChatPrompt != "agent rules" || cfg.Resolved.Instructions != "" || !slices.Equal(cfg.Resolved.Tools, wantTools) {
 		t.Fatalf("configuration = %+v", cfg)
 	}
 	preview := decodeBody[struct {
@@ -55,7 +56,11 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 			Name string `json:"name"`
 		} `json:"tools"`
 	}](t, request(t, a.Server, "GET", "/api/sessions/"+home.ID+"/context", nil), 200)
-	if len(preview.Tools) != 1 || preview.Tools[0].Name != "web_search" {
+	previewNames := make([]string, 0, len(preview.Tools))
+	for _, t := range preview.Tools {
+		previewNames = append(previewNames, t.Name)
+	}
+	if !slices.Equal(previewNames, wantTools) {
 		t.Fatalf("preview tools = %+v", preview.Tools)
 	}
 	if err := a.store.SetInstructions(ctx, store.GlobalInstructions{AboutMe: "first snapshot"}); err != nil {
@@ -65,8 +70,16 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 	a.postMessage(t, home.ID, "hello", "", 202)
 	a.waitIdle(t, home.ID)
 	reqs := scripted.Requests()
-	if len(reqs) != 1 || !strings.HasPrefix(reqs[0].System, "agent rules\n\n") || len(reqs[0].Tools) != 1 || reqs[0].Tools[0].Name != "web_search" {
+	if len(reqs) != 1 || !strings.HasPrefix(reqs[0].System, "agent rules\n\n") {
 		t.Fatalf("requests = %+v", reqs)
+	}
+
+	var requestNames []string
+	for _, t := range reqs[0].Tools {
+		requestNames = append(requestNames, t.Name)
+	}
+	if !slices.Equal(requestNames, wantTools) {
+		t.Fatalf("request tools = %v, want %v", requestNames, wantTools)
 	}
 
 	if !strings.Contains(reqs[0].System, "first snapshot") {

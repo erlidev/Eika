@@ -262,3 +262,63 @@ func TestOnlyAgentsWhoseToolsNeedAComputerUseOne(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectToolsAreOnlyAvailableThroughEikaDefinition(t *testing.T) {
+	s := runtimeServer(t)
+	projectNames := []string{"project_create", "project_list", "project_open", "project_update"}
+	for _, name := range projectNames {
+		if _, ok := s.allTools().Get(name); ok {
+			t.Errorf("legacy tool list contains %s", name)
+		}
+		if _, err := s.checkToolChoice(t.Context(), []string{name}, false); err == nil {
+			t.Errorf("legacy choice accepts %s", name)
+		}
+		for _, sess := range []store.Session{{}, {ComputerID: "computer"}} {
+			for _, choice := range [][]string{nil, {name}} {
+				if _, ok := s.runTools(sess, choice, nil).Get(name); ok {
+					t.Errorf("legacy run offers %s", name)
+				}
+			}
+		}
+		for _, agent := range []string{"eika", "worker", "researcher"} {
+			sess := store.Session{Agent: agent, ComputerID: "computer"}
+			_, ok := s.runTools(sess, nil, nil).Get(name)
+			if ok != (agent == "eika") {
+				t.Errorf("%s offers %s: %v", agent, name, ok)
+			}
+		}
+	}
+}
+
+func TestBorrowedComputerIsInUseUntilLastRelease(t *testing.T) {
+	s := runtimeServer(t)
+	s.idle = newIdleComputers(s)
+	s.runs = newRuns(s)
+	active, err := s.runs.reserve("home", "", func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.runs.abandon(active)
+	first, err := s.runs.borrowComputer("home", "computer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.runs.borrowComputer("home", "computer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.idle.inUse(store.Computer{ID: "computer"}) {
+		t.Fatal("borrowed computer is idle")
+	}
+	first()
+	if !s.idle.inUse(store.Computer{ID: "computer"}) {
+		t.Fatal("second borrower lost its lease")
+	}
+	second()
+	if s.idle.inUse(store.Computer{ID: "computer"}) {
+		t.Fatal("released computer is still in use")
+	}
+	if _, err := s.runs.borrowComputer("missing", "computer"); err == nil {
+		t.Fatal("borrow without a run succeeded")
+	}
+}

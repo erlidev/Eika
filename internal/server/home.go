@@ -240,3 +240,23 @@ func (s *Server) runExecutor(ctx context.Context, id string) (executor.Executor,
 	}
 	return s.deps.Computers.Executor(host)
 }
+
+// projectExecutor holds the home computer in use until the status read ends.
+func (s *Server) projectExecutor(ctx context.Context, sessionID string) (executor.Executor, func(), error) {
+	home, err := s.deps.Store.HomeComputer(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	s.startMu.Lock()
+	release, err := s.runs.borrowComputer(sessionID, home.ID)
+	s.startMu.Unlock()
+	if err != nil {
+		return nil, nil, err
+	}
+	ex, err := s.runExecutor(ctx, home.ID)
+	if err != nil {
+		release()
+		return nil, nil, err
+	}
+	return ex, release, nil
+}

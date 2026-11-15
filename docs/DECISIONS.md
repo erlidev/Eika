@@ -2046,3 +2046,8 @@ The first run writes it and compaction writes a replacement with the summary
 in one transaction. This keeps edits out of a live prefix and lets a restart
 replay the same bytes. Legacy profile sessions do not get a preamble. The
 locale is unspecified until the user sets it; no browser locale is inferred.
+
+- **Project tools use a narrow store interface and a home executor callback.**
+  Eika has no computer in its session, but opening a project needs the home
+  computer. The callback keeps computer lifecycle code in the server and file
+  access in the executor.

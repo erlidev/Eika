@@ -124,6 +124,7 @@ type runs struct {
 type activeRun struct {
 	sessionID  string
 	computerID string
+	borrowed   map[string]int
 	cancel     context.CancelFunc
 	done       chan struct{}
 	// releaseCounter ends the run's use of its session's token counter routes,
@@ -178,7 +179,9 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	// The run is not bound to the request: the client gets its answer as
 	// soon as the run starts and follows the rest on the event stream.
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	s.startMu.Lock()
 	active, err := r.reserve(sessionID, sess.ComputerID, cancel)
+	s.startMu.Unlock()
 	if err != nil {
 		cancel()
 		return store.Run{}, err
@@ -496,8 +499,35 @@ func (r *runs) computersInUse() map[string]bool {
 		if a.computerID != "" {
 			inUse[a.computerID] = true
 		}
+		for id := range a.borrowed {
+			inUse[id] = true
+		}
 	}
 	return inUse
+}
+
+// borrowComputer adds a computer to an active run until the caller releases it.
+func (r *runs) borrowComputer(sessionID, computerID string) (func(), error) {
+	r.mu.Lock()
+	a := r.bySession[sessionID]
+	if a == nil {
+		r.mu.Unlock()
+		return nil, conflictf("session %s has no active run", sessionID)
+	}
+	if a.borrowed == nil {
+		a.borrowed = make(map[string]int)
+	}
+	a.borrowed[computerID]++
+	r.mu.Unlock()
+	return func() {
+		r.server.idle.used(computerID, time.Now())
+		r.mu.Lock()
+		a.borrowed[computerID]--
+		if a.borrowed[computerID] == 0 {
+			delete(a.borrowed, computerID)
+		}
+		r.mu.Unlock()
+	}, nil
 }
 
 // forget drops a finished run.

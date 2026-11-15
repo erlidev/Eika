@@ -1,7 +1,10 @@
 package builtin
 
 import (
+	"context"
 	"fmt"
+
+	"github.com/erlidev/eika/internal/executor"
 
 	"github.com/erlidev/eika/internal/tool"
 )
@@ -9,7 +12,9 @@ import (
 // Deps are what the tools that reach beyond the computer are given.
 type Deps struct {
 	// Questions is the broker ask_user waits on.
-	Questions *Questions
+	Questions    *Questions
+	Projects     Projects
+	HomeExecutor func(context.Context, string) (executor.Executor, func(), error)
 	// Search runs web_search; Pages reads for web_fetch.
 	Search Searcher
 	Pages  PageReader
@@ -25,6 +30,10 @@ type Deps struct {
 func Registry(d Deps) (*tool.Registry, error) {
 	r, err := tool.NewRegistry(
 		askUserTool{questions: d.Questions},
+		projectTool{name: "project_list", projects: d.Projects, home: d.HomeExecutor},
+		projectTool{name: "project_open", projects: d.Projects, home: d.HomeExecutor},
+		projectTool{name: "project_create", projects: d.Projects, home: d.HomeExecutor},
+		projectTool{name: "project_update", projects: d.Projects, home: d.HomeExecutor},
 		webSearchTool{search: d.Search},
 		webFetchTool{pages: d.Pages},
 		bashTool{},

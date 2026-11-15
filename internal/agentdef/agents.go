@@ -61,7 +61,7 @@ func (o Override) Apply(d Definition) Definition {
 // Builtins returns all definitions in stable name order.
 func Builtins() []Definition {
 	return []Definition{
-		definition("eika", "Converses, plans and delegates work.", "main", 40, []string{"web_search"}),
+		definition("eika", "Converses, plans and delegates work.", "main", 40, []string{"project_create", "project_list", "project_open", "project_update", "web_search"}),
 		definition("researcher", "Reads the web and reports findings.", "fast", 200, []string{"web_fetch", "web_search"}),
 		definition("worker", "Does work on a computer and reports results.", "main", 200, []string{"bash", "file_edit", "file_read", "file_write", "web_fetch", "web_search"}),
 	}

@@ -984,7 +984,12 @@ validates partial updates under a row lock. Slugs do not change.
 The authenticated project API lists all statuses, creates records, reads a
 record by ID and updates metadata. Archive uses the status field. These paths
 are metadata only: no handler accesses the filesystem. Project metadata has no
-instruction field. File tools use the executor; project tools follow in P2-06.
+instruction field. Eika can list active projects, open a project by slug, and
+create or update metadata. Opening reads user instructions and the bounded
+`STATUS.md` through the home computer executor; a missing file is empty.
+The run holds the home computer in use until the status read ends.
+Project tools cannot write instructions. They are available only through agent
+definitions, not legacy profile or session tool choices.
 
 ## User instructions
 
