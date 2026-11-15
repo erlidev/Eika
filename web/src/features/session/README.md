@@ -12,7 +12,7 @@ one that holds client state of its own.
   composes the transcript, the composer, and the run status bar under it.
   Chat (`features/chat`) renders it for the home session. A session that runs an
   agent, as home does, names no model in a request, because the harness refuses
-  one (its class picks it), and its status bar has no model or profile control.
+  one (its class picks it), and its status bar has no model control.
   With `readOnly` it is the transcript alone, streamed live: Activity uses it for a
   subagent, which Eika steers, so there is no composer, status bar, abort key or
   rewind. `Transcript` shows nothing from a store that holds another session.
@@ -86,11 +86,8 @@ one that holds client state of its own.
   `useRewind` is the one a message's rewind calls: it lands the head on the
   entry before the message and then puts the text in the composer, in that
   order, so a refused move leaves nothing in the box.
-- `ToolsPanel.tsx` is a chat's third panel: the profiles feature's `ToolPicker` over the
-  session's own tool choice, with a reset back to its profile's, and the
-  names of the tools a chat never has. `tools.ts` holds the pure parts: what
-  a chat can never offer, and the one-line summary of a description written
-  for the model.
+- `tools.ts` holds the one-line summary of a tool's description, which is
+  written for the model.
 - `ToolCard.tsx` draws one tool call and delegates to the renderer registry.
 - `renderers/` is that registry: `registry.ts` has the type and the argument
   helpers, `renderers.tsx` maps a tool name to a renderer, `parts.tsx` holds

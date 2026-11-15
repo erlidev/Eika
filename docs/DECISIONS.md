@@ -2234,3 +2234,25 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   Options use JSON so a delimiter inside an option cannot change the choices.
   The check runs again after inference admission, and a changed request is
   measured again and stored as sent, so a queue wait cannot hide the change.
+
+## Agents and instructions settings (P3-07)
+
+- **Agents and Instructions are tabs of the Settings dialog, and Profiles
+  has no tab.** The dialog stays as it is until P3-11 reorganises it. The
+  profile editor's prompt field (`PromptEditor`, with its reset and diff against
+  the built-in text) and its chip, reset and segmented-choice parts are reused;
+  the profile list, the session profile dialog and the Tools panel (the session
+  overrides) are gone. The UI makes no profile request. The server's profile
+  routes, sessions' columns and the client's wire types stay until P2-11.
+- **An agent editor sets exactly the two override fields.** Class is a
+  segmented choice (`main`, `fast`, `deep`) that can be unset; the prompt is
+  unset (the built-in text is shown) or set, empty included. Both unset is a
+  reset. Tools, limits and compaction prompts are shown or left out: the API
+  refuses them. The editor checks the 64 KiB byte limit and NUL as the server
+  does, so a text it would refuse is not sent. A save applies from the next run.
+- **Instructions are saved together.** The API replaces both texts at once, so
+  the tab has one Save for About me and Rules. A save changes the stored text
+  only: a running session keeps its preamble snapshot until compaction rebuilds it.
+- **The Context inspector's Edit link follows the layer.** A value the agent
+  sets opens Agents, one the class sets opens General, and one from a legacy
+  layer has no link, since its editor is gone.

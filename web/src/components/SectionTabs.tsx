@@ -1,6 +1,6 @@
 /**
  * A row of tabs that switches between the parts of one page, such as an MCP
- * server's page or a profile's editor. It is a plain tablist rather than the
+ * server's page. It is a plain tablist rather than the
  * Tabs primitive, whose vertical styling the settings dialog's own tab column
  * would impose on any tabs inside it.
  */

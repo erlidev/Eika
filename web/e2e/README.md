@@ -117,7 +117,7 @@ the same transcript on `home-main`, which is the one the UI can open.
 state; the mock's authorization server approves at
 once, so Sign in returns straight to `/mcp/callback`. `profiles` adds two
 profiles to the workbench, puts `ses-backoff` on one with an override of its
-own, and records two of its model calls, for the Profiles tab; the
+own, and records two of its model calls, for the context meter; the
 mock resolves profiles and assembles requests in `harness/profiles.ts`, and
 every run it plays records its model call. The `agent-*`
 scenarios queue a scripted reply for the next message: tool calls with

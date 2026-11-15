@@ -9,7 +9,12 @@ import { useEffect } from "react";
 
 import { Composer } from "@/features/session/Composer";
 import { abortsRun } from "@/features/session/escape";
-import { useAbortRun, useRunStatus, useSession } from "@/features/session/queries";
+import {
+  useAbortRun,
+  useRunStatus,
+  useSession,
+  useSessionConfiguration,
+} from "@/features/session/queries";
 import { RunStatusBar } from "@/features/session/RunStatusBar";
 import { SessionHeading } from "@/features/session/SessionHeading";
 import { Transcript } from "@/features/session/Transcript";
@@ -20,7 +25,6 @@ import { useSessionStream } from "@/features/session/useSessionStream";
 import { Notice } from "@/components/Notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useSessionConfiguration } from "@/features/profiles";
 import { chatModels, useModels } from "@/features/providers";
 import { useSettingsDialog } from "@/features/settings";
 import { useHomeComputer } from "@/features/sessions";
@@ -137,7 +141,7 @@ function Conversation({ sessionId, header }: ConversationProps) {
           isHome
             ? "Send a message to start the conversation."
             : chat
-              ? "Send a message to start the chat. A chat has no computer, so the model cannot touch files or run commands; the Tools panel says what it can use."
+              ? "Send a message to start the chat. A chat has no computer, so the model cannot touch files or run commands."
               : onHome
                 ? "Send a message to start the chat. It runs on the home computer, so the model can run commands and keep files in /home/eika."
                 : "Send a message to start the first turn."
@@ -185,8 +189,6 @@ function Conversation({ sessionId, header }: ConversationProps) {
           composing, so they read under the box rather than over it. */}
       <RunStatusBar
         sessionId={sessionId}
-        chat={chat}
-        overridden={session.data?.session.overridden ?? false}
         agent={agent}
         model={runModel}
         onModelChange={chooseModel}

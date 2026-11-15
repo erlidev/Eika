@@ -349,12 +349,11 @@ describe("requestJSON", () => {
 
 describe("edit targets", () => {
   it("names the setting behind each part and parameter", () => {
-    expect(editTargetOf("base")).toEqual({ key: "chat_prompt", section: "prompt" });
-    expect(editTargetOf("mcp_tools")).toEqual({ key: "tools", section: "tools" });
+    expect(editTargetOf("base")).toEqual({ key: "chat_prompt" });
+    expect(editTargetOf("mcp_tools")).toEqual({ key: "tools" });
     expect(editTargetOf("messages")).toBeUndefined();
-    expect(parameterTarget("sampling.temperature")?.section).toBe("sampling");
-    expect(parameterTarget("sampling.max_output")?.section).toBe("model");
-    expect(parameterTarget("preserve_thinking")?.section).toBe("model");
+    expect(parameterTarget("sampling.temperature")).toEqual({ key: "sampling.temperature" });
+    expect(parameterTarget("preserve_thinking")).toEqual({ key: "preserve_thinking" });
     expect(parameterTarget("thinking_switch")).toBeUndefined();
   });
 });

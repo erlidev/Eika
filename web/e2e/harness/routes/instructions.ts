@@ -1,5 +1,5 @@
 /** User-only instruction routes, separate from project metadata. */
-import { fail, ok } from "./context.ts";
+import { badUtf8, fail, ok } from "./context.ts";
 import type { RouteContext } from "./context.ts";
 
 const validText = (text: unknown): text is string =>
@@ -14,7 +14,10 @@ export function instructionRoutes({ w, on }: RouteContext): void {
   const invalid = () => fail(400, "invalid_request", "invalid instruction text");
   const missing = () => fail(404, "not_found", "project does not exist");
   on("GET", "/api/instructions", () => ok(w.instructions));
-  on("PUT", "/api/instructions", ({ body, raw }) => {
+  on("PUT", "/api/instructions", (req) => {
+    const { body, raw } = req;
+    const bytes = badUtf8(req);
+    if (bytes) return bytes;
     if (raw.trim() === "null") return invalid();
     if (!hasOnlyFields(body, ["about_me", "rules"])) return invalid();
     if (!validText(body.about_me) || !validText(body.rules)) return invalid();
@@ -30,7 +33,10 @@ export function instructionRoutes({ w, on }: RouteContext): void {
     if (id === undefined || !w.projects.some((p) => p.id === id)) return missing();
     return ok({ instructions: w.projectInstructions[id] ?? "" });
   });
-  on("PUT", "/api/projects/{id}/instructions", ({ params, body, raw }) => {
+  on("PUT", "/api/projects/{id}/instructions", (req) => {
+    const { params, body, raw } = req;
+    const bytes = badUtf8(req);
+    if (bytes) return bytes;
     if (raw.trim() === "null") return invalid();
     if (!hasOnlyFields(body, ["instructions"])) return invalid();
     if (!validText(body.instructions)) return invalid();

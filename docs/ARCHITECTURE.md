@@ -843,12 +843,14 @@ web/src/
 - **Entry** (`app/App.tsx`): no token → `GET /api/auth/status` → setup
   (`features/setup`) or sign-in (`features/connect`). With a token the setup
   shows until a password exists and `setup_complete` is true.
-- **Settings** (`features/settings`): providers and models, profiles,
-  defaults and model classes, the computer's limits and network, search, MCP, password. The profile editor
-  (`features/profiles/SettingsEditor`) has Model, Prompt, Tools, and Sampling
-  tabs, a cost strip, and a chip per field naming where its value comes from.
-  `ToolPicker` is shared by profiles, sessions, and chats. Small stores hold
-  which editor and settings tab are open, so links elsewhere can open them.
+- **Settings** (`features/settings`): providers and models, agents,
+  instructions, defaults and model classes, the computer's limits and network,
+  search, MCP, password. Agents (`features/agents`) edits each built-in
+  agent's class and prompt through `/api/agents`, with a chip per field naming
+  where its value comes from and a diff against the built-in prompt;
+  Instructions saves the user's About me and rules through `/api/instructions`.
+  The UI has no profile control and makes no profile request. Small stores
+  hold which settings tab is open, so links elsewhere can open it.
 - **Shell** (`app/Shell.tsx`): the frame of every page. A rail down the left
   from 640px (`app/Navigation.tsx`) and a bottom bar under it list the pages
   of `app/pages.ts`, then Settings, which opens the existing dialog; the
@@ -1021,7 +1023,7 @@ no text is set. Each field accepts up to 64 KiB of UTF-8 text without NUL.
 Authenticated GET, PUT and DELETE routes read, replace and clear instructions.
 Project instruction writes use separate store methods and routes from project
 metadata. Agent tools have no instruction write path. Existing profile rules
-stay unchanged. The editors are P3-07 and P3-10; P2-07 adds preamble snapshots.
+stay unchanged. The editors are P3-07 (global) and P3-10 (project); P2-07 adds preamble snapshots.
 
 The server ensures the local home session at startup. `GET /api/home` returns
 its session and head. Home messages use the web channel.

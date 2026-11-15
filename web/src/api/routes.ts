@@ -7,10 +7,12 @@
 import { request, requestEmpty } from "@/api/client";
 import type { Connection } from "@/api/connection";
 import type {
+  Agent,
+  AgentOverride,
+  Agents,
   AuthStatus,
   CompactRequest,
   Computer,
-  Configuration,
   ContentDetail,
   CreateMCPServer,
   CreateModel,
@@ -18,6 +20,7 @@ import type {
   CreateSession,
   ElicitationAnswer,
   Entry,
+  GlobalInstructions,
   MCPPromptResult,
   MCPServer,
   MCPServerDetails,
@@ -33,10 +36,6 @@ import type {
   ProbeResponse,
   Project,
   Projects,
-  Profile,
-  ProfileInput,
-  Profiles,
-  ProfileSettings,
   Provider,
   Providers,
   Run,
@@ -107,17 +106,6 @@ export async function listComputerSessions(
 /** createSession opens a session in a computer, or a chat in none. */
 export function createSession(input: CreateSession): Promise<Session> {
   return request<Session>("/api/sessions", { method: "POST", body: input });
-}
-
-/**
- * setSessionTools chooses the tools the session's next run offers the model;
- * null clears the choice, so the profile's applies.
- */
-export function setSessionTools(id: string, tools: string[] | null): Promise<Session> {
-  return request<Session>(`/api/sessions/${encodeURIComponent(id)}/tools`, {
-    method: "PUT",
-    body: { tools },
-  });
 }
 
 /** listTools lists every tool a run can offer, with whether it needs a computer. */
@@ -204,45 +192,13 @@ export function answerQuestion(id: string, answer: string): Promise<void> {
   });
 }
 
-/**
- * ConfigurationDraft is what a session's editor has chosen and not saved:
- * inherited then falls through as if it were. An absent field keeps the
- * saved one; "" is the default profile, or no model of the session's own.
- */
-export type ConfigurationDraft = { profileId?: string; modelId?: string };
-
-/** getSessionConfiguration reads what a session sets itself and what its next run resolves to. */
+/** getSessionConfiguration reads what a session's next run resolves to. */
 export function getSessionConfiguration(
   id: string,
-  draft: ConfigurationDraft = {},
   signal?: AbortSignal,
 ): Promise<SessionConfiguration> {
-  const query = new URLSearchParams();
-  if (draft.profileId !== undefined) query.set("profile_id", draft.profileId);
-  if (draft.modelId !== undefined) query.set("model_id", draft.modelId);
-  const search = query.size > 0 ? `?${query.toString()}` : "";
-  return request<SessionConfiguration>(
-    `/api/sessions/${encodeURIComponent(id)}/configuration${search}`,
-    { signal },
-  );
-}
-
-/** setSessionProfile chooses a session's profile; "" is the default one. */
-export function setSessionProfile(id: string, profileId: string): Promise<SessionConfiguration> {
-  return request<SessionConfiguration>(`/api/sessions/${encodeURIComponent(id)}/profile`, {
-    method: "PUT",
-    body: { profile_id: profileId },
-  });
-}
-
-/** setSessionOverrides replaces what a session sets over its profile. */
-export function setSessionOverrides(
-  id: string,
-  overrides: ProfileSettings,
-): Promise<SessionConfiguration> {
-  return request<SessionConfiguration>(`/api/sessions/${encodeURIComponent(id)}/overrides`, {
-    method: "PUT",
-    body: overrides,
+  return request<SessionConfiguration>(`/api/sessions/${encodeURIComponent(id)}/configuration`, {
+    signal,
   });
 }
 
@@ -297,33 +253,33 @@ export function getSessionCall(
   );
 }
 
-/** listProfiles lists the profiles, the default one, and the built-in prompts. */
-export function listProfiles(signal?: AbortSignal): Promise<Profiles> {
-  return request<Profiles>("/api/profiles", { signal });
+/** listAgents lists the built-in agents with their overrides. */
+export async function listAgents(signal?: AbortSignal): Promise<Agent[]> {
+  const body = await request<Agents>("/api/agents", { signal });
+  return body.agents;
 }
 
-/** getInheritedProfile reads what a profile choosing a model ("" for none) falls through to. */
-export function getInheritedProfile(modelId: string, signal?: AbortSignal): Promise<Configuration> {
-  const search = modelId === "" ? "" : `?model_id=${encodeURIComponent(modelId)}`;
-  return request<Configuration>(`/api/profiles/inherited${search}`, { signal });
-}
-
-/** createProfile adds a profile. */
-export function createProfile(input: ProfileInput): Promise<Profile> {
-  return request<Profile>("/api/profiles", { method: "POST", body: input });
-}
-
-/** updateProfile replaces a profile with the one given. */
-export function updateProfile(id: string, input: ProfileInput): Promise<Profile> {
-  return request<Profile>(`/api/profiles/${encodeURIComponent(id)}`, {
+/** putAgent replaces an agent's class and prompt overrides; null uses the built-in. */
+export function putAgent(name: string, override: AgentOverride): Promise<Agent> {
+  return request<Agent>(`/api/agents/${encodeURIComponent(name)}`, {
     method: "PUT",
-    body: input,
+    body: override,
   });
 }
 
-/** deleteProfile removes a profile; its sessions go back to the default one. */
-export function deleteProfile(id: string): Promise<void> {
-  return requestEmpty(`/api/profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
+/** resetAgent removes both overrides, so the agent runs as built. */
+export function resetAgent(name: string): Promise<void> {
+  return requestEmpty(`/api/agents/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+/** getInstructions reads the user's global About me and rules. */
+export function getInstructions(signal?: AbortSignal): Promise<GlobalInstructions> {
+  return request<GlobalInstructions>("/api/instructions", { signal });
+}
+
+/** putInstructions replaces both global instruction texts. */
+export function putInstructions(input: GlobalInstructions): Promise<GlobalInstructions> {
+  return request<GlobalInstructions>("/api/instructions", { method: "PUT", body: input });
 }
 
 /** getSettings reads the settings table and the defaults of the harness's own keys. */

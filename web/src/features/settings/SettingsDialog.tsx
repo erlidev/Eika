@@ -1,12 +1,12 @@
 /**
- * The settings: models and providers, profiles, the harness-wide choices,
+ * The settings: models and providers, agents, the user's instructions, the harness-wide choices,
  * compaction, the computer's limits and network, web search,
  * MCP servers, the account, and how the app looks. Everything but the appearance is stored
  * in the harness. Its open state is `store.ts`, so anything can open it on a
  * tab.
  *
  * The dialog is one fixed size whatever tab is showing, and each tab scrolls
- * inside it: six tabs of very different lengths would otherwise resize the
+ * inside it: eleven tabs of very different lengths would otherwise resize the
  * window under the pointer every time one was picked.
  */
 
@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MCPSettings } from "@/features/mcp";
-import { ProfilesSettings } from "@/features/profiles";
+import { AgentsSettings } from "@/features/agents";
 import { ModelsPanel } from "@/features/providers";
 import { useTranscriptPreferences } from "@/features/session";
 import type { ComposerMode, ReasoningDisplay } from "@/features/session";
@@ -39,6 +39,7 @@ import { AccountSettings } from "@/features/settings/AccountSettings";
 import { CompactionSettings } from "@/features/settings/CompactionSettings";
 import { ComputerSettings } from "@/features/settings/ComputerSettings";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
+import { InstructionsSettings } from "@/features/settings/InstructionsSettings";
 import { settingKeys, useSaveSettings } from "@/features/settings/queries";
 import { SearchSettings } from "@/features/settings/SearchSettings";
 import { useSettingsDialog } from "@/features/settings/store";
@@ -51,7 +52,8 @@ const sideNavWidth = 640;
 
 const tabs: readonly { value: SettingsTab; label: string }[] = [
   { value: "models", label: "Models" },
-  { value: "profiles", label: "Profiles" },
+  { value: "agents", label: "Agents" },
+  { value: "instructions", label: "Instructions" },
   { value: "general", label: "General" },
   { value: "compaction", label: "Compaction" },
   { value: "computer", label: "Computer" },
@@ -124,8 +126,11 @@ export function SettingsDialog() {
                 defaultError={save.isError ? save.error : undefined}
               />
             </TabsContent>
-            <TabsContent value="profiles">
-              <ProfilesSettings />
+            <TabsContent value="agents">
+              <AgentsSettings />
+            </TabsContent>
+            <TabsContent value="instructions">
+              <InstructionsSettings />
             </TabsContent>
             <TabsContent value="general">
               <GeneralSettings />

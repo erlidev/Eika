@@ -1,7 +1,7 @@
 /** Agent definitions and user overrides. */
 import type { Agent, AgentOverride } from "../../../src/api/types.ts";
 import { builtinAgents } from "../agents.ts";
-import { fail, ok } from "./context.ts";
+import { badUtf8, fail, ok } from "./context.ts";
 import type { RouteContext } from "./context.ts";
 
 export function agentRoutes({ w, on }: RouteContext): void {
@@ -23,9 +23,12 @@ export function agentRoutes({ w, on }: RouteContext): void {
     const agent = view(params[0]);
     return agent ? ok(agent) : missing();
   });
-  on("PUT", "/api/agents/{name}", ({ params, body, raw }) => {
+  on("PUT", "/api/agents/{name}", (req) => {
+    const { params, body, raw } = req;
     const agent = view(params[0]);
     if (!agent) return missing();
+    const bytes = badUtf8(req);
+    if (bytes) return bytes;
     if (raw.trim() === "null")
       return fail(400, "invalid_request", "agent override must be an object");
     const cls = body.class ?? null;

@@ -1112,7 +1112,7 @@ export const scenarios = {
   },
   profiles: {
     description:
-      "Like workbench, with two more profiles: ses-backoff, which no page opens, runs with Reviewer and overrides its temperature, and two of its model calls are recorded. For the Profiles tab.",
+      "Like workbench, with two more profiles: ses-backoff, which no page opens, runs with Reviewer and overrides its temperature, and two of its model calls are recorded. The legacy profile data, for the context meter's tests.",
     path: "/",
     build: () => profiles().world,
   },

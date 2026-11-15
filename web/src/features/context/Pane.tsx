@@ -21,13 +21,12 @@ import {
 } from "@/features/context/segments";
 import type { SegmentKind, SizedSection, View } from "@/features/context/segments";
 import { ToolList, ToolSizes } from "@/features/context/ToolList";
-import { LayerChip } from "@/features/profiles/fields";
+import { LayerChip } from "@/features/agents/fields";
 import { formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** Edit is what a pane needs to link a part to its setting; config is absent for a record. */
 type Edit = {
-  sessionId: string;
   config: SessionConfiguration | undefined;
   onOpen: () => void;
 };

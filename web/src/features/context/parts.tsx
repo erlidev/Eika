@@ -10,7 +10,7 @@ import type { ModelContext, SessionConfiguration } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { percent, segmentColors, tilde, windowUse } from "@/features/context/segments";
 import type { EditTarget, Segment, SegmentKind } from "@/features/context/segments";
-import { useConfigEditor } from "@/features/profiles/store";
+import { useSettingsDialog } from "@/features/settings/store";
 import { formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -146,10 +146,9 @@ export function PartsBar({ parts, total, onOpen, className }: PartsBarProps) {
 }
 
 export type EditLinkProps = {
-  sessionId: string;
   config: SessionConfiguration | undefined;
   target: EditTarget;
-  /** onOpen runs before the editor opens: the inspector closes, so the editor is not under it. */
+  /** onOpen runs before the settings open: the inspector closes, so they are not under it. */
   onOpen: () => void;
   /** what names the setting for a screen reader: "the temperature". */
   what: string;
@@ -158,24 +157,16 @@ export type EditLinkProps = {
 };
 
 /**
- * EditLink opens the editor of the layer a value comes from, on the tab that
- * holds it: the profile's when the profile sets it, else the session's, where
- * it can be set over what it falls through to.
+ * EditLink opens the Settings tab of the layer a value comes from: Agents
+ * for a value the agent sets, General for a model its class picks. A value
+ * from a layer with no editor, such as a legacy profile, has no link.
  */
-export function EditLink({
-  sessionId,
-  config,
-  target,
-  onOpen,
-  what,
-  compact = false,
-}: EditLinkProps) {
-  const editSession = useConfigEditor((s) => s.editSession);
-  const editProfile = useConfigEditor((s) => s.editProfile);
+export function EditLink({ config, target, onOpen, what, compact = false }: EditLinkProps) {
+  const show = useSettingsDialog((s) => s.show);
   if (config === undefined) return null;
-  const resolved = config.resolved;
-  const inProfile = resolved.sources?.[target.key] === "profile";
-  const label = inProfile ? `Edit in ${resolved.profile_name}` : "Edit for this session";
+  const source = config.resolved.sources?.[target.key];
+  if (source !== "agent" && source !== "class") return null;
+  const label = source === "agent" ? "Edit in Agents" : "Edit the model classes";
   return (
     <Button
       type="button"
@@ -185,8 +176,7 @@ export function EditLink({
       aria-label={`${label}: ${what}`}
       onClick={() => {
         onOpen();
-        if (inProfile) editProfile(resolved.profile_id, target.section);
-        else editSession(sessionId, target.section);
+        show(source === "agent" ? "agents" : "general");
       }}
     >
       <Pencil aria-hidden />

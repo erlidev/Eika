@@ -2,7 +2,7 @@
 
 import { syncSession } from "../profiles.ts";
 import { classView, modelClassNames } from "../world.ts";
-import { fail, ok } from "./context.ts";
+import { badUtf8, fail, ok } from "./context.ts";
 import type { RouteContext } from "./context.ts";
 
 /** maxSubagentMaxRunning is the most subagents the settings accept as running at once. */
@@ -24,7 +24,10 @@ export function settingsRoutes(ctx: RouteContext): void {
   /** served is the settings table with the classes resolved, as GET and PUT answer. */
   const served = () => ({ ...w.settings, ...classView(w) });
   on("GET", "/api/settings", () => ok(served()));
-  on("PUT", "/api/settings", ({ body, raw }) => {
+  on("PUT", "/api/settings", (req) => {
+    const { body, raw } = req;
+    const bytes = badUtf8(req);
+    if (bytes) return bytes;
     const running = body.subagent_max_running;
     if (running !== undefined && running !== null && !validSubagentMaxRunning(running, raw)) {
       return fail(

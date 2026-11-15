@@ -36,7 +36,6 @@ import { formatAgo, formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type ContextInspectorProps = {
-  sessionId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   view: View;
@@ -46,7 +45,6 @@ export type ContextInspectorProps = {
 };
 
 export function ContextInspector({
-  sessionId,
   open,
   onOpenChange,
   view,
@@ -87,7 +85,6 @@ export function ContextInspector({
         )}
         {shown.data !== undefined && (
           <Inspection
-            sessionId={sessionId}
             context={shown.data}
             live={requests.selected === nextRequest}
             config={config}

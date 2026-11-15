@@ -26,11 +26,9 @@ afterEach(() => {
 });
 
 describe("isSessionConfiguration", () => {
-  it("matches the saved and the drafted configuration of any session, and nothing else", () => {
+  it("matches the configuration of any session, and nothing else", () => {
     expect(isSessionConfiguration(queryKeys.sessionConfiguration("a"))).toBe(true);
-    expect(isSessionConfiguration(queryKeys.sessionConfiguration("b", { modelId: "m" }))).toBe(
-      true,
-    );
+    expect(isSessionConfiguration(queryKeys.sessionConfiguration("b"))).toBe(true);
     expect(isSessionConfiguration(queryKeys.session("a"))).toBe(false);
     expect(isSessionConfiguration(queryKeys.sessionContext("a"))).toBe(false);
     expect(isSessionConfiguration(queryKeys.models())).toBe(false);
@@ -42,7 +40,7 @@ describe("a model change", () => {
     routes.deleteModel.mockResolvedValue(undefined);
     const client = new QueryClient();
     client.setQueryData(queryKeys.sessionConfiguration("home"), { resolved: { model: "gpt-5" } });
-    client.setQueryData(queryKeys.sessionConfiguration("other", { profileId: "p" }), {});
+    client.setQueryData(queryKeys.sessionConfiguration("other"), {});
     client.setQueryData(queryKeys.session("home"), {});
     let remove: (name: string) => Promise<void> = () => Promise.resolve();
     function Probe() {
@@ -63,7 +61,7 @@ describe("a model change", () => {
     });
     const stale = (key: readonly unknown[]) => client.getQueryState(key)?.isInvalidated;
     expect(stale(queryKeys.sessionConfiguration("home"))).toBe(true);
-    expect(stale(queryKeys.sessionConfiguration("other", { profileId: "p" }))).toBe(true);
+    expect(stale(queryKeys.sessionConfiguration("other"))).toBe(true);
     expect(stale(queryKeys.session("home"))).toBe(false);
     act(() => {
       root.unmount();

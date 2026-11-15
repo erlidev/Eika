@@ -3,7 +3,8 @@
   - paragraph: Stored in the harness and shared by every browser, except the appearance.
   - tablist:
     - tab "Models"
-    - tab "Profiles"
+    - tab "Agents"
+    - tab "Instructions"
     - tab "General"
     - tab "Compaction"
     - tab "Computer" [selected]
