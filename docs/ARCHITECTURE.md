@@ -386,6 +386,19 @@ again at `FallbackEffort`. The conversation becomes a summary message
 `compaction` entry, and `compaction.start` and `compaction.end` go out.
 Reserve and keep are capped at a quarter of the window.
 
+The home session's summary has two sections (`CompactionSettings.Board`,
+which `newAgent` sets for home only). `[Subagents]` is the board:
+`subagent.Board` renders it from the children's rows once the model has
+answered, under a heading with the time it holds for. Running and waiting
+children come first, then those active since the previous compaction entry on
+the path, each with agent, project, state, last activity, waiting reason and
+the first line of its last report; one line counts the rest. `[Conversation]`
+is the model's: Eika's summary prompt writes it, and each later compaction asks
+Eika's update prompt to fold the new messages into it, with the previous
+summary in the cached prefix. A board that cannot be read fails the compaction
+as a failed summary does, leaving the session as it was. Subagent and routine
+sessions keep Pi's summary with their definition's prompts.
+
 ### Model-call accounting
 
 `model_calls` records the requests made by a session's loop. It does not record

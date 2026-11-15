@@ -72,6 +72,36 @@ func (s *Server) delegationPriority(ctx context.Context, home string) (inference
 	return inference.Background, nil
 }
 
+// subagentBoard is the [Subagents] section of a compaction of home: its
+// children as stored now, listing those quiet since the compaction before
+// this one only by count.
+func (s *Server) subagentBoard(ctx context.Context, home string, loc *time.Location) (string, error) {
+	children, err := s.deps.Store.Subagents(ctx, home)
+	if err != nil {
+		return "", err
+	}
+	projects, err := s.deps.Store.Projects(ctx)
+	if err != nil {
+		return "", err
+	}
+	slugs := make(map[string]string, len(projects))
+	for _, p := range projects {
+		slugs[p.ID] = p.Slug
+	}
+	path, err := s.deps.Store.SessionPath(ctx, home)
+	if err != nil {
+		return "", err
+	}
+	var since time.Time
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i].Kind == store.KindCompaction {
+			since = path[i].CreatedAt
+			break
+		}
+	}
+	return subagent.Board(children, slugs, since, loc), nil
+}
+
 // delegation binds the delegation tools to the server. It is a getter
 // because the tool registry is built before the server is.
 type delegation struct{ server func() *Server }

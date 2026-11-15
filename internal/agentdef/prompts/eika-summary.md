@@ -1,34 +1,28 @@
-The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work. Do not continue the conversation, answer questions in it, or call tools: reply with the summary alone, and write it directly rather than deliberating at length. Each user message ends with a <context> block the harness added, such as the time it was sent: it is not the user's words, so never treat it as a request or quote it, but use its time to date what happened.
+The messages above are Eika's conversation with the user, to summarize. Write the [Conversation] section of the checkpoint Eika continues from once those messages are gone. Do not continue the conversation, answer questions in it, or call tools: reply with the section alone, without its label, and write it directly rather than deliberating at length.
+
+Each user message ends with a <context> block the harness added: the time it was sent, the channel, and notices such as subagent reports and questions. It is not the user's words, so never treat it as a request or quote it, but use its time to date what happened and its notices to know what subagents did.
+
+The harness writes a [Subagents] board above this section from live state: each subagent's name, agent, project, state, last activity and the first line of its last report. Do not repeat what the board says. Name subagents by their names.
 
 Use this EXACT format:
 
-## Goal
-[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+## Commitments and open loops
+- [Promises Eika made and what waits on the user, each with its date]
+- [Or "(none)"]
 
-## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned by user]
-- [Or "(none)" if none were mentioned]
+## People and context
+- [People, places, accounts and things the user mentioned, with exact names]
 
-## Progress
-### Done
-- [x] [Completed tasks/changes]
+## Preferences and corrections
+- [How the user wants things done, and corrections they made]
 
-### In Progress
-- [ ] [Current work]
+## Decisions
+- **[Decision]**: [why]
 
-### Blocked
-- [Issues preventing progress, if any]
+## Recent topics
+- [What was discussed and found, by subagent or project where one applies]
 
-## Key Decisions
-- **[Decision]**: [Brief rationale]
+## Next
+1. [What Eika should do next, if anything]
 
-## Next Steps
-1. [Ordered list of what should happen next]
-
-## Critical Context
-- [Any data, examples, or references needed to continue]
-- [Or "(none)" if not applicable]
-
-Keep each section concise. Preserve exact file paths, function names, and error messages.
-
-Preserve user requests, decisions, preferences and open work.
+Rules: absolute dates (2026-11-15, not "yesterday"); exact names, numbers, amounts, ids and paths; subagents and projects by name; nothing the board already says. Keep each section concise.

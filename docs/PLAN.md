@@ -205,7 +205,7 @@ What stops a long-lived home session from losing work or growing without bound.
 - [x] **P2-16**: Park and relay subagent questions.
 - [x] **P3-07**: Add agents and instructions Settings, as tabs of the existing
       dialog, and remove profile controls.
-- [ ] **P2-20**: Build the board and rolling summary.
+- [x] **P2-20**: Build the board and rolling summary.
 - [ ] **P2-21**: Implement the cut and snapshot refresh.
 - [ ] **P2-10**: Add backward pagination.
 - [ ] **P3-05**: Add the paginated transcript.
@@ -387,7 +387,7 @@ in the code beside what replaces them.
         and overflow kept as safety nets
       - the tool list and preamble rebuilt at compaction
       Subagent and routine sessions keep Pi's compaction with per-agent prompts.
-      - [ ] **P2-20**: Build the board and rolling summary.
+      - [x] **P2-20**: Build the board and rolling summary.
       - [ ] **P2-21**: Implement the cut and snapshot refresh.
       - [ ] **P2-22**: Schedule idle compaction.
 - [ ] History recall (runtime.md 11): `entries.tsv` over entries, tool calls,

@@ -9,6 +9,12 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-20 compacts home into a `[Subagents]` board, rendered by code
+  from the children's rows after the summary call, and a rolling `[Conversation]`
+  from Eika's new summary and update prompts. Subagent and routine sessions keep
+  Pi's summary. The `<summary>` attributes and history footer wait for P2-23/P2-24;
+  the cut, refresh and idle compaction stay with P2-21/P2-22. `make check` passes.
+
 - 2026-11-15: P3-07 adds Agents (class and prompt override, reset, diff against the
   built-in prompt) and Instructions (About me, rules) as Settings tabs over the P2-01
   and P2-03 APIs, and removes the Profiles tab, the status bar's profile dialog and the

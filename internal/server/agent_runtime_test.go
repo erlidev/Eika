@@ -211,6 +211,34 @@ func TestAgentCompactionUsesItsOwnPrompts(t *testing.T) {
 	}
 }
 
+func TestSubagentAndRoutineCompactionKeepsPisSummary(t *testing.T) {
+	s := runtimeServer(t)
+	for _, kind := range []store.SessionKind{store.SessionSubagent, store.SessionRoutine} {
+		for _, name := range []string{"researcher", "worker"} {
+			t.Run(string(kind)+"/"+name, func(t *testing.T) {
+				sess := store.Session{ID: "s", Kind: kind, Agent: name}
+				cfg, err := (configBase{}).resolveSession(sess, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				p := providertest.New(providertest.Text("summary"))
+				ag := s.newAgent(p, sess, cfg, nil, nil, agent.Options{Compaction: agent.CompactionSettings{KeepRecentTokens: 100}})
+				run := agent.NewSession("s", "")
+				for range 3 {
+					run.Conversation.Append(provider.UserMessage(strings.Repeat("text ", 200)))
+					run.Conversation.Append(provider.AssistantMessage("answer", nil))
+				}
+				if err := ag.Compact(t.Context(), run, ""); err != nil {
+					t.Fatal(err)
+				}
+				if got := run.Conversation.Messages()[0].Content; got != agent.SummaryMessage("summary").Content {
+					t.Fatalf("summary message = %q, want the model's summary alone", got)
+				}
+			})
+		}
+	}
+}
+
 // runtimeMCPStore counts attempts to load MCP configuration for a run.
 type runtimeMCPStore struct {
 	mcp.Store

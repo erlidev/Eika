@@ -1983,8 +1983,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   include only shipped tools. Later packages extend them when those tools exist;
   neither future tool names nor MCP wildcards are accepted from the API.
 - Compaction prompts are built-in per agent and are not override fields. Home
-  compaction changes in P2-20 to P2-22. These definitions do not change existing
-  runs.
+  compaction changes in P2-20 to P2-22; see "Home compaction summary". These
+  definitions do not change existing runs.
 
 ## Project records
 
@@ -2256,3 +2256,29 @@ locale is unspecified until the user sets it; no browser locale is inferred.
 - **The Context inspector's Edit link follows the layer.** A value the agent
   sets opens Agents, one the class sets opens General, and one from a legacy
   layer has no link, since its editor is gone.
+
+## Home compaction summary (P2-20)
+
+- **Code writes the board, the model writes the conversation** (2026-11-15).
+  Home's summary is a `[Subagents]` board, then a `[Conversation]` section.
+  The board is rendered from the children's rows (`subagent.Board`) when the
+  summary is assembled, after the model has answered, so it states what holds
+  at that moment and is never carried from one summary to the next. Running
+  and waiting children come first, then those active since the previous
+  compaction; the rest are a counted line that points to `subagent_status`.
+  Reports and waiting reasons are clipped on the board; the whole text stays
+  on the child. Rejected: asking the model to keep subagent state in its
+  summary, which paraphrases ids and states that the rows already hold.
+- **The conversation rolls.** The first compaction asks Eika's summary prompt
+  for the section, each later one Eika's update prompt with the previous
+  summary in the cached prefix, board included. Only the conversation part
+  carries forward when a split turn adds nothing complete; a summary from
+  before this change is all conversation. The prompts use the assistant
+  sections of `runtime.md` 11 instead of Pi's coding sections.
+- **The hook is `CompactionSettings.Board`, set only for home** in
+  `newAgent`. Subagent and routine sessions keep Pi's summary with their
+  definition's prompts. A board that cannot be read fails the compaction like
+  a failed summary call: nothing is stored and the conversation stays as it
+  was. The `as_of`, entry range and compaction count attributes of the
+  design's `<summary>` tag, and its history footer, wait for the history
+  tools (P2-23, P2-24); the board's heading states its time instead.

@@ -59,6 +59,14 @@ func timeField(t time.Time, loc *time.Location) contextField {
 	return contextField{name: "time", value: t.Format(timeLayout) + " (" + loc.String() + ")"}
 }
 
+// currentLocation is the zone the agent states times in: Options.Location
+// until a compaction's preamble refresh names another.
+func (a *Agent) currentLocation() *time.Location {
+	a.locationMu.RLock()
+	defer a.locationMu.RUnlock()
+	return a.location
+}
+
 // stamp returns a user-side message with its context block written, if it does
 // not have one. A message a failed turn gave back to its queue keeps the time
 // it was sent at; an unstored notice can be refreshed before delivery. A
@@ -70,10 +78,7 @@ func (a *Agent) stamp(m provider.Message) provider.Message {
 	if m.Role != provider.RoleUser || m.Summary || m.Context != "" {
 		return m
 	}
-	a.locationMu.RLock()
-	location := a.location
-	a.locationMu.RUnlock()
-	fields := []contextField{timeField(a.opts.Clock(), location)}
+	fields := []contextField{timeField(a.opts.Clock(), a.currentLocation())}
 	if a.opts.Channel != "" {
 		fields = append(fields, contextField{name: "channel", value: a.opts.Channel})
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
@@ -48,6 +49,12 @@ type CompactionSettings struct {
 	// effort that turns thinking off, or the lowest the model offers.
 	// Empty means no second attempt.
 	FallbackEffort string
+	// Board, when set, makes the summary the home session's (runtime.md
+	// 11): the [Subagents] board it returns, which code builds from rows when
+	// the summary is assembled, then the [Conversation] section the model
+	// writes and each later compaction updates. Times on the board are in
+	// loc. An error fails the compaction, which leaves the session as it was.
+	Board func(ctx context.Context, loc *time.Location) (string, error)
 }
 
 // CompactionPrompts are the instructions that ask for a summary. An empty
@@ -273,6 +280,14 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 	end.Usage = usage
 	if err != nil {
 		return failed(err)
+	}
+	if board := a.opts.Compaction.Board; board != nil {
+		loc := a.currentLocation()
+		text, err := board(ctx, loc)
+		if err != nil {
+			return failed(fmt.Errorf("build subagent board: %w", err))
+		}
+		summary = homeSummary(a.opts.Clock(), loc, text, summary)
 	}
 	record.Summary = summary
 	record.Kept = stored - plan.first

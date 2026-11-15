@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/agentdef"
@@ -434,6 +435,11 @@ func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, 
 	mcpTools []tool.Tool, opts agent.Options) *agent.Agent {
 	if sess.Kind == store.SessionHome {
 		opts.Channel = "web"
+		// Home compacts into the board and a rolling conversation;
+		// subagent and routine sessions keep Pi's summary.
+		opts.Compaction.Board = func(ctx context.Context, loc *time.Location) (string, error) {
+			return s.subagentBoard(ctx, sess.ID, loc)
+		}
 	}
 	opts.Model = c.model.Model
 	opts.ContextWindow = c.window()
