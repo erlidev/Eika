@@ -72,6 +72,56 @@ func (s *Server) delegationPriority(ctx context.Context, home string) (inference
 	return inference.Background, nil
 }
 
+// subagentBoard is the [Subagents] section of a compaction of home and the
+// time its rows were read: home's children as stored now, listing those quiet
+// since the previous board was read only by count.
+func (s *Server) subagentBoard(ctx context.Context, home string, loc *time.Location) (string, time.Time, error) {
+	// The time is taken before the read, so a change committed while the
+	// rows are read is after it and the next board lists it.
+	asOf := time.Now().UTC()
+	children, err := s.deps.Store.Subagents(ctx, home)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	projects, err := s.deps.Store.Projects(ctx)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	slugs := make(map[string]string, len(projects))
+	for _, p := range projects {
+		slugs[p.ID] = p.Slug
+	}
+	since, err := s.lastBoard(ctx, home)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return subagent.Board(children, slugs, since, loc), asOf, nil
+}
+
+// lastBoard is when the board of home's newest compaction on its path was
+// read, zero before the first. A compaction stored before boards recorded
+// their time counts from when it was stored.
+func (s *Server) lastBoard(ctx context.Context, home string) (time.Time, error) {
+	path, err := s.deps.Store.SessionPath(ctx, home)
+	if err != nil {
+		return time.Time{}, err
+	}
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i].Kind != store.KindCompaction {
+			continue
+		}
+		c, err := session.CompactionOf(path[i])
+		if err != nil {
+			return time.Time{}, err
+		}
+		if c.BoardAsOf != nil {
+			return *c.BoardAsOf, nil
+		}
+		return path[i].CreatedAt, nil
+	}
+	return time.Time{}, nil
+}
+
 // delegation binds the delegation tools to the server. It is a getter
 // because the tool registry is built before the server is.
 type delegation struct{ server func() *Server }

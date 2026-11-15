@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/erlidev/eika/internal/provider"
@@ -138,6 +139,33 @@ const (
 // the summary of that turn's start, as Pi does.
 const splitTurnSeparator = "\n\n---\n\n**Turn Context (split turn):**\n\n"
 
+// The labels of the home session's summary sections (runtime.md 11).
+const (
+	boardLabel        = "[Subagents]"
+	conversationLabel = "[Conversation]"
+)
+
+// homeSummary assembles the home session's summary: the board code built at
+// now, with the time it holds for, then the conversation section the model
+// wrote.
+func homeSummary(now time.Time, loc *time.Location, board, conversation string) string {
+	return boardLabel + " as of " + timeField(now, loc).value + "\n" + strings.TrimSpace(board) +
+		"\n\n" + conversationLabel + "\n" + conversation
+}
+
+// conversationOf returns the conversation section of a home summary, the part
+// a rolling update carries forward. A summary without sections, written
+// before the home session had them, is all conversation.
+func conversationOf(summary string) string {
+	if !strings.HasPrefix(summary, boardLabel) {
+		return summary
+	}
+	if _, conversation, ok := strings.Cut(summary, "\n\n"+conversationLabel+"\n"); ok {
+		return conversation
+	}
+	return summary
+}
+
 // prompts returns the prompts, the built-in ones where none is set.
 func (c CompactionSettings) prompts() CompactionPrompts {
 	p := c.Prompts
@@ -177,10 +205,20 @@ func (a *Agent) summarize(ctx context.Context, s *Session, base Context, msgs []
 			return "", cost.Total(), err
 		}
 		history = text
+		if a.opts.Compaction.Board != nil {
+			// The prompt asks for the section without its label; a model
+			// that writes it anyway would have it twice.
+			history = strings.TrimSpace(strings.TrimPrefix(history, conversationLabel))
+		}
 	case plan.previous():
 		// Nothing complete was added since the last summary, which stays
 		// as it is. Pi drops it here and keeps only the turn's summary.
+		// The home session's board is built again, so only its
+		// conversation carries forward.
 		history = summaryText(msgs[0])
+		if a.opts.Compaction.Board != nil {
+			history = conversationOf(history)
+		}
 	}
 	if !plan.split() {
 		return history, cost.Total(), nil

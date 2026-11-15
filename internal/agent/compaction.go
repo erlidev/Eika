@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
@@ -48,6 +49,14 @@ type CompactionSettings struct {
 	// effort that turns thinking off, or the lowest the model offers.
 	// Empty means no second attempt.
 	FallbackEffort string
+	// Board, when set, makes the summary the home session's (runtime.md
+	// 11): the [Subagents] board it returns, which code builds from rows when
+	// the summary is assembled, then the [Conversation] section the model
+	// writes and each later compaction updates. Times on the board are in
+	// loc, and asOf is the moment the rows were read, which the compaction
+	// records. An error fails the compaction, which leaves the session as it
+	// was.
+	Board func(ctx context.Context, loc *time.Location) (board string, asOf time.Time, err error)
 }
 
 // CompactionPrompts are the instructions that ask for a summary. An empty
@@ -78,6 +87,11 @@ type Compaction struct {
 	Reason string `json:"reason"`
 	// Usage is what making the summary cost.
 	Usage provider.Usage `json:"usage"`
+	// BoardAsOf is when the home session's board was read from the rows,
+	// absent for a summary without one. The next board lists the activity
+	// after it, so a change that came between the read and this record being
+	// stored is not taken for old.
+	BoardAsOf *time.Time `json:"board_as_of,omitempty"`
 }
 
 // Compacted returns the context a compaction leaves: its summary, then the
@@ -273,6 +287,16 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 	end.Usage = usage
 	if err != nil {
 		return failed(err)
+	}
+	if board := a.opts.Compaction.Board; board != nil {
+		loc := a.currentLocation()
+		text, asOf, err := board(ctx, loc)
+		if err != nil {
+			return failed(fmt.Errorf("build subagent board: %w", err))
+		}
+		summary = homeSummary(asOf, loc, text, summary)
+		asOf = asOf.UTC()
+		record.BoardAsOf = &asOf
 	}
 	record.Summary = summary
 	record.Kept = stored - plan.first

@@ -168,6 +168,11 @@ export type Compaction = {
   reason: CompactionReason;
   /** usage is what making the summary cost. */
   usage: Usage;
+  /**
+   * board_as_of is when the home session's subagent board was read, absent
+   * on a summary without one.
+   */
+  board_as_of?: string;
 };
 
 /** Entry is one stored node of a session tree, with its message. */

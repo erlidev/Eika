@@ -222,6 +222,7 @@
               "channel": "string",
               "compaction": {
                 "object": {
+                  "board_as_of": "string",
                   "kept": "number",
                   "reason": "string",
                   "summary": "string",
@@ -249,7 +250,10 @@
                       }
                     }
                   }
-                }
+                },
+                "optional": [
+                  "board_as_of"
+                ]
               },
               "created_at": "string",
               "id": "string",
@@ -1379,6 +1383,7 @@
               "channel": "string",
               "compaction": {
                 "object": {
+                  "board_as_of": "string",
                   "kept": "number",
                   "reason": "string",
                   "summary": "string",
@@ -1406,7 +1411,10 @@
                       }
                     }
                   }
-                }
+                },
+                "optional": [
+                  "board_as_of"
+                ]
               },
               "created_at": "string",
               "id": "string",
@@ -2592,6 +2600,7 @@
                   "channel": "string",
                   "compaction": {
                     "object": {
+                      "board_as_of": "string",
                       "kept": "number",
                       "reason": "string",
                       "summary": "string",
@@ -2619,7 +2628,10 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "optional": [
+                      "board_as_of"
+                    ]
                   },
                   "created_at": "string",
                   "id": "string",

@@ -266,7 +266,10 @@ func (h *harness) newAgent() *agent.Agent {
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RetryBackoff:   time.Millisecond,
 		Limits:         agent.Limits{Stall: 150 * time.Millisecond},
-		Compaction:     agent.CompactionSettings{KeepRecentTokens: 400},
+		// The scenario's session compacts as home does, with a board.
+		Compaction: agent.CompactionSettings{KeepRecentTokens: 400, Board: func(context.Context, *time.Location) (string, time.Time, error) {
+			return "- plumber (worker): idle", h.clock.Now(), nil
+		}},
 	})
 	for _, m := range h.steering {
 		ag.Steer(m)
@@ -743,7 +746,7 @@ func checkAfterCompaction(t *testing.T, api string, r relation) {
 		}
 		items = items[1:]
 	}
-	if len(items) == 0 || !strings.Contains(contentText(firstContent(items[0])), "<summary>\n"+summaryText) {
+	if len(items) == 0 || !strings.Contains(contentText(firstContent(items[0])), "\n\n[Conversation]\n"+summaryText+"\n</summary>") {
 		t.Errorf("request %d: the array does not begin with the compaction's summary", r.index+1)
 	}
 	if len(r.body.items) >= len(r.compactedFrom.items) {
