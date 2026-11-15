@@ -478,8 +478,8 @@ branch in place (head moved to e2)
 ```
 
 Moving the head requires a resumable entry (`session.PathResumable`: no tool
-call left unanswered); the outline reports it per node. A session cannot be
-copied into another.
+call left unanswered and the entry is not a preamble). The outline reports it
+per node. A session cannot be copied into another.
 
 ### Chats
 

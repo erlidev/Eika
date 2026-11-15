@@ -476,6 +476,61 @@ describe("the mock answers as the harness does", () => {
     ]);
   });
 
+  it("refuses initial and replacement preambles as branch points", async () => {
+    const mock = open("workbench");
+    const original = mock.world.entries["ses-backoff"]?.[0];
+    if (original === undefined) throw new Error("missing entry");
+    const first: Entry = {
+      ...original,
+      id: "first-preamble",
+      kind: "preamble",
+      text: "first",
+      message: { role: "user", content: "" },
+    };
+    const user: Entry = {
+      ...original,
+      id: "user-after",
+      parent_id: first.id,
+      kind: "user",
+      message: { role: "user", content: "hello" },
+    };
+    const replacement: Entry = {
+      ...first,
+      id: "replacement-preamble",
+      parent_id: user.id,
+      text: "replacement",
+    };
+    const compact: Entry = {
+      ...original,
+      id: "compact-after",
+      parent_id: replacement.id,
+      kind: "compaction",
+      message: { role: "user", content: "" },
+    };
+    mock.world.entries["ses-backoff"] = [first, user, replacement, compact];
+    const outline = await call(mock, "GET", "/api/sessions/ses-backoff/outline");
+    expect(outline.body).toMatchObject({
+      nodes: [
+        { id: first.id, resumable: false },
+        { id: user.id, resumable: true },
+        { id: replacement.id, resumable: false },
+        { id: compact.id, resumable: true },
+      ],
+    });
+    for (const entry of [first, replacement]) {
+      const reply = await call(mock, "POST", "/api/sessions/ses-backoff/head", {
+        entry_id: entry.id,
+      });
+      expect(reply.status).toBe(400);
+      expect(reply.body).toMatchObject({
+        error: {
+          code: "invalid_request",
+          message: `entry ${entry.id} is a preamble and cannot be a branch point`,
+        },
+      });
+    }
+  });
+
   it("refuses a head on an entry in the middle of a turn with the harness's code", async () => {
     const mock = open("workbench");
     const entries = mock.world.entries["ses-backoff"] ?? [];

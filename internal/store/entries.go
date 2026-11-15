@@ -106,13 +106,13 @@ func (s *Store) AppendEntries(ctx context.Context, sessionID string, entries ...
 // SetSessionHead points a session's head at one of its own entries, which is
 // how a branch starts: the next append hangs off that entry instead of the
 // one that was last written. An empty entryID clears the head, so the session
-// starts again from its root.
+// starts again from its root. Preamble entries cannot be branch points.
 func (s *Store) SetSessionHead(ctx context.Context, sessionID, entryID string) error {
 	// The entry check is part of the update, so that no head can be set from
 	// a row that another connection deleted in between.
 	const q = `UPDATE sessions SET head_entry_id = $2, updated_at = now()
 		WHERE id = $1 AND ($2::text IS NULL OR EXISTS (
-			SELECT 1 FROM session_entries WHERE id = $2 AND session_id = $1))`
+			SELECT 1 FROM session_entries WHERE id = $2 AND session_id = $1 AND kind <> 'preamble'))`
 	tag, err := s.pool.Exec(ctx, q, sessionID, nullable(entryID))
 	if err != nil {
 		return wrap("set head of session "+sessionID, err)

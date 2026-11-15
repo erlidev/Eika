@@ -190,8 +190,9 @@ where a `Node` is
 `{id, parent_id?, kind, preview, resumable, created_at}`.
 
 `resumable` is whether a run can continue from that entry: the path down to it
-leaves no tool call unanswered. It is false for an assistant entry whose tool
-calls are still out and for a tool result that is not the last of its set. The
+leaves no tool call unanswered and the entry is not a preamble. It is false
+for every preamble, for an assistant entry whose tool calls are still out,
+and for a tool result that is not the last of its set. The
 head route refuses those entries, so a client offers no branch from a node
 that is not resumable.
 
@@ -212,8 +213,8 @@ the next run continues from there and the tree branches in place. An empty
 `entry_id` clears the head, so the session starts again from its root.
 
 `200` with the `Session`. `409` while a run is going; `404` when the entry is
-not the session's; `400` when the entry is not `resumable`, because a path
-that stops with tool calls unanswered is a conversation no endpoint accepts.
+not the session's; `400` when the entry is not `resumable`: preambles are not branch points,
+and a path with unanswered tool calls is a conversation no endpoint accepts.
 
 ### `PUT /api/sessions/{id}/tools`
 
