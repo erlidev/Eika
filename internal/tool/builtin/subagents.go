@@ -45,7 +45,7 @@ func (t subagentTool) AgentOnly()   {}
 func (t subagentTool) Description() string {
 	switch t.name {
 	case "subagent_start":
-		return "Start a named subagent on a brief. It works in the background, in its own context, and this call returns at once; when it is idle, subagent_status has its report. " +
+		return "Start a named subagent on a brief. It works in the background, in its own context, and this call returns at once; its report comes back to you as a notice, and subagent_status has it too. " +
 			"A worker works on the home computer, in the project's directory when you name a project; a researcher reads the web and has no computer. " +
 			"A name already in use returns that subagent's status instead: give it more work with subagent_message."
 	case "subagent_message":
@@ -131,7 +131,7 @@ func (t subagentTool) Call(ctx context.Context, c tool.CallContext, raw json.Raw
 			}
 		}
 		row, ok, err = t.subagents.StartSubagent(ctx, c.SessionID, child)
-		note = "Started. It works in the background; check on it with subagent_status."
+		note = "Started. It works in the background, and its report comes back as a notice; check on it with subagent_status."
 		if !ok {
 			note = "A subagent with this name already exists and was not changed. Give it more work with subagent_message."
 		}

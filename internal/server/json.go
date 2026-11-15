@@ -131,6 +131,15 @@ func conflictf(format string, args ...any) error {
 	return apiError{status: http.StatusConflict, code: codeConflict, message: fmt.Sprintf(format, args...)}
 }
 
+// isConflict reports whether err is a conflict, such as conflictf reports.
+func isConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	status, _ := statusOf(err)
+	return status == http.StatusConflict
+}
+
 // fail writes err as the API's error body, mapping the sentinel errors of the
 // packages the handlers call onto status codes. An unmapped error is the
 // harness's own failure: it is logged in full and reported as internal, so

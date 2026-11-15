@@ -114,22 +114,28 @@ type Options struct {
 	Final func(context.Context, store.Session) (string, error)
 	// Limit returns how many subagents may run at once; nil means
 	// DefaultMaxRunning. A value below one is one.
-	Limit  func(context.Context) int
-	Events event.Emitter
-	Log    *slog.Logger
+	Limit func(context.Context) int
+	// Reported is told about each assignment that ends with the child idle
+	// after a report, with the child as it was stored then: its Result is
+	// the report. It runs on the execution's goroutine, outside the service
+	// lock, before Close can return. Nil tells nobody.
+	Reported func(context.Context, store.Session)
+	Events   event.Emitter
+	Log      *slog.Logger
 }
 
 // Service serializes lifecycle changes and owns each child run until it ends.
 type Service struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	store  Store
-	run    Run
-	final  func(context.Context, store.Session) (string, error)
-	limit  func(context.Context) int
-	events event.Emitter
-	log    *slog.Logger
-	wg     sync.WaitGroup
+	ctx      context.Context
+	cancel   context.CancelFunc
+	store    Store
+	run      Run
+	final    func(context.Context, store.Session) (string, error)
+	limit    func(context.Context) int
+	reported func(context.Context, store.Session)
+	events   event.Emitter
+	log      *slog.Logger
+	wg       sync.WaitGroup
 
 	mu     sync.Mutex
 	closed bool
@@ -159,7 +165,7 @@ func New(ctx context.Context, st Store, o Options) *Service {
 		o.Limit = func(context.Context) int { return DefaultMaxRunning }
 	}
 	return &Service{ctx: ctx, cancel: cancel, store: st, run: o.Run, final: o.Final, limit: o.Limit,
-		events: o.Events, log: o.Log, active: make(map[string]*execution)}
+		reported: o.Reported, events: o.Events, log: o.Log, active: make(map[string]*execution)}
 }
 
 // Start creates a named child and starts its brief at priority. It reports
@@ -272,6 +278,15 @@ func (s *Service) execute(ctx context.Context, child store.Session, text string,
 	if err == nil {
 		err = s.requireReport(ctx, child, priority, active)
 	}
+	if ended, ok := s.end(ctx, child, err, active); ok && s.reported != nil {
+		s.reported(context.WithoutCancel(ctx), ended)
+	}
+}
+
+// end records the state an execution ended in and releases it. It returns the
+// stored child and whether the assignment ended idle with a report, which is
+// when the report is news for Eika.
+func (s *Service) end(ctx context.Context, child store.Session, err error, active *execution) (store.Session, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	state := store.SessionIdle
@@ -290,6 +305,7 @@ func (s *Service) execute(ctx context.Context, child store.Session, text string,
 	active.cancel()
 	delete(s.active, child.ID)
 	close(active.done)
+	return active.result, active.err == nil && state == store.SessionIdle && active.reported
 }
 
 // requireReport makes a run that ended on its own leave a report. It asks the

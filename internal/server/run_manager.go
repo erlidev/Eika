@@ -31,6 +31,10 @@ type job struct {
 	// priority is the run's inference priority. The zero value is
 	// interactive: a person is waiting on the answer.
 	priority inference.Priority
+	// notify makes the run a background turn that delivers a home
+	// session's waiting notices: its message is empty, and its <context>
+	// block carries them.
+	notify bool
 }
 
 type queuedMessages struct {
@@ -110,6 +114,9 @@ func (r *finishRetries) stop() {
 type runs struct {
 	server   *Server
 	finishes *finishRetries
+	// released, when a test sets it before any run starts, is called once
+	// a finished run has released its session.
+	released func(sessionID string)
 
 	mu        sync.Mutex
 	stopped   bool
@@ -130,6 +137,12 @@ type activeRun struct {
 	borrowed   map[string]int
 	cancel     context.CancelFunc
 	done       chan struct{}
+	// ready closes once the run has its row and loop, or has ended without
+	// them.
+	ready chan struct{}
+	// notify is set for a background turn that delivers notices, which a
+	// message the user posts joins instead of waiting for it to end.
+	notify bool
 	// releaseCounter ends the run's use of its session's token counter routes,
 	// which carry the provider's key. Set before the run starts and called on
 	// every way out of it; nil until the run has a counter.
@@ -161,10 +174,45 @@ func newRuns(s *Server) *runs {
 	}
 }
 
+// joinAttempts bounds how often a posted message tries to start a run or join
+// the background turn in its way, which ends between the two.
+const joinAttempts = 3
+
 // start begins a run on a session and returns its row. A session that is
 // already running one is a conflict: the message belongs in a queue instead.
+// The exception is a background turn that delivers notices, which the user
+// did not start and the client may not know of yet: the message steers it, as
+// a message sent while the client shows a run does.
 func (r *runs) start(ctx context.Context, sessionID string, message provider.Message, model string) (store.Run, error) {
-	return r.begin(ctx, sessionID, model, job{message: message})
+	var row store.Run
+	var err error
+	for range joinAttempts {
+		row, err = r.begin(ctx, sessionID, model, job{message: message})
+		if !isConflict(err) {
+			return row, err
+		}
+		active := r.active(sessionID)
+		if active == nil || !active.notify {
+			return row, err
+		}
+		select {
+		case <-active.ready:
+		case <-ctx.Done():
+			return store.Run{}, ctx.Err()
+		}
+		if active.loop() != nil {
+			if row, err = r.enqueue(ctx, sessionID, message, modeSteer); err == nil {
+				return row, nil
+			}
+		}
+		// The turn ended before it took the message; start one of its own.
+		select {
+		case <-active.done:
+		case <-ctx.Done():
+			return store.Run{}, ctx.Err()
+		}
+	}
+	return row, err
 }
 
 // compact begins a run that compacts a session's conversation and does
@@ -194,21 +242,36 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	// soon as the run starts and follows the rest on the event stream.
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.startMu.Lock()
-	active, err := r.reserve(sessionID, sess.ComputerID, cancel)
+	active, err := r.reserve(sessionID, sess.ComputerID, work.notify, cancel)
 	s.startMu.Unlock()
 	if err != nil {
 		cancel()
 		return store.Run{}, nil, err
 	}
+	home := sess.Kind == store.SessionHome
 	// Building a run reads the database and runs a command in the computer.
 	// Until that is done and the loop is running, the reservation is what
-	// holds the session, and every way out of here releases it.
+	// holds the session, and every way out of here releases it. A notice
+	// that arrived meanwhile found the session busy, so a run that never
+	// started wakes it again; a background turn that could not start does
+	// not, or it would try again for as long as it fails.
 	started := false
 	defer func() {
 		if !started {
 			r.abandon(active)
+			if home && !work.notify && s.notices.waiting(sessionID) {
+				s.notices.wake(sessionID)
+			}
 		}
 	}()
+	if home {
+		if err := s.notices.load(ctx, sessionID); err != nil {
+			return store.Run{}, nil, err
+		}
+		if work.notify && !s.notices.waiting(sessionID) {
+			return store.Run{}, nil, errNothingToDeliver
+		}
+	}
 
 	cfg, err := s.configure(ctx, sess, model)
 	if err != nil {
@@ -238,8 +301,12 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	counted, releaseRoutes := s.counters.forRun(sessionID, ep, cfg.model)
 	active.releaseCounter = releaseRoutes
 	sessionStore := session.NewStore(s.tree)
-	if sess.Kind == store.SessionHome {
+	var runStore agent.Store = sessionStore
+	var takeNotices func() []agent.Notice
+	if home {
 		sessionStore.SetChannel("web")
+		runStore = noticeStore{Store: sessionStore, notices: s.notices}
+		takeNotices = func() []agent.Notice { return s.notices.take(sessionID) }
 	}
 	loaded, err := sessionStore.Load(ctx, sessionID)
 	if err != nil {
@@ -261,8 +328,9 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	ag := s.newAgent(ep.client, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
 		RefreshPreamble: refresh,
 		Location:        agent.PreambleLocation(loaded.Preamble),
+		Notices:         takeNotices,
 		Emitter:         s.deps.Bus,
-		Store:           sessionStore,
+		Store:           runStore,
 		Logger:          s.log,
 		Recorder:        callRecorder{store: s.deps.Store, run: active, config: cfg, endpoint: ep.row.Name},
 		Counter:         counted,
@@ -321,7 +389,7 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 // the lock that reads the check is what makes one run per session true:
 // building a run takes long enough that two requests would otherwise both get
 // past a check that only looked at the runs already going.
-func (r *runs) reserve(sessionID, computerID string, cancel context.CancelFunc) (*activeRun, error) {
+func (r *runs) reserve(sessionID, computerID string, notify bool, cancel context.CancelFunc) (*activeRun, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.stopped {
@@ -335,6 +403,8 @@ func (r *runs) reserve(sessionID, computerID string, cancel context.CancelFunc) 
 		computerID: computerID,
 		cancel:     cancel,
 		done:       make(chan struct{}),
+		ready:      make(chan struct{}),
+		notify:     notify,
 	}
 	r.bySession[sessionID] = active
 	return active, nil
@@ -346,6 +416,7 @@ func (r *runs) abandon(active *activeRun) {
 	active.releaseCounterRoutes()
 	r.forget(active)
 	active.cancel()
+	close(active.ready)
 	close(active.done)
 }
 
@@ -386,11 +457,27 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 	}); err != nil {
 		r.server.log.Warn("record finished run in foreground; continuing in background", "run_id", runID, "error", err)
 	}
-	r.finish(active, queuedMessages{
+	queued := queuedMessages{
 		steering:  loop.PendingSteering(),
 		followUps: loop.PendingFollowUps(),
-	})
+	}
+	// The notices the run took go back before the session is released:
+	// once it is, the next run takes notices of its own, which settling
+	// would wrongly return.
+	r.server.notices.settle(active.sessionID, queued)
+	r.finish(active, queued)
 	r.server.log.Info("run finished", "run_id", runID, "session_id", active.sessionID, "state", state)
+	if r.released != nil {
+		r.released(active.sessionID)
+	}
+	// Notices that arrived during the run and that no message of it took
+	// start a background turn now that the session is free. A run the user
+	// stopped leaves them for the next message, and so does a background
+	// turn that failed, so that a failing model is not asked again and again.
+	if (state == store.RunDone || (state == store.RunError && !work.notify)) &&
+		r.server.notices.waiting(active.sessionID) {
+		r.server.notices.wake(active.sessionID)
+	}
 }
 
 // enqueue delivers a steering or follow-up message to the run in progress. A
@@ -424,6 +511,9 @@ func (r *runs) enqueue(ctx context.Context, sessionID string, message provider.M
 	if !accepted {
 		return store.Run{}, conflictf("session %s has no run in progress to %s", sessionID, mode)
 	}
+	// A person is now waiting on the run, whatever started it: its next model
+	// call goes in as interactive.
+	active.raise()
 	return row, nil
 }
 
@@ -633,6 +723,14 @@ func (a *activeRun) begin(id string, loop *agent.Agent, model store.Model, rank 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.id, a.agent, a.model, a.rank = id, loop, model, rank
+	close(a.ready)
+}
+
+// raise makes the run's next model calls interactive.
+func (a *activeRun) raise() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.rank.Raise(inference.Interactive)
 }
 
 // priority returns the run's current inference priority; a run still being

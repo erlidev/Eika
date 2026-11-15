@@ -128,6 +128,12 @@ export type Message = {
    * `content` alone and the Context panel shows both.
    */
   context?: string;
+  /**
+   * notices are the ids of the notice entries whose text `context` carries
+   * to the model, which storing the message marks delivered. The UI does not
+   * read them.
+   */
+  notices?: string[];
   /** images are the pictures a user message carries beside its text. */
   images?: MessageImage[];
   /** reasoning is the model's thinking for this message, shown apart from its answer. */

@@ -10,12 +10,13 @@ to later sections remain valid.
 
 ## Remaining inference work
 
-- Agents use model classes and set priority per call. A user message joining a
-  background home turn raises its next call to interactive. Foreground marks a
+- Agents use model classes and set priority per call. Foreground marks a
   subagent started or messaged from an interactive turn in the last ten minutes,
   or one the user watches. Routines, wakeups and other subagents use background.
   Subagent runs take foreground or background from the turn that starts them
-  (P2-13); the ten-minute decay and watching are still to come.
+  (P2-13), and a user message joining a background home turn raises its next
+  call to interactive (P2-15); the ten-minute decay and watching are still to
+  come.
 - Activity shows each pool's running and waiting calls, per-day prefill seconds
   and tokens, cache-hit rate over calls with reported counts, and compute by
   priority. Settings aggregates are still to come.
@@ -216,10 +217,10 @@ any of their subagents (`interface.md` 1).
 
 ## 9. Subagents
 
-The session lifecycle service (P2-12) and the delegation tools with their run
-binding (P2-13) are implemented; see
-[Architecture](../ARCHITECTURE.md#subagent-lifecycle). Reports, limits and
-question relay remain in later packages.
+The session lifecycle service (P2-12), the delegation tools with their run
+binding (P2-13), reports and limits (P2-14) and report notices (P2-15) are
+implemented; see [Architecture](../ARCHITECTURE.md#subagent-lifecycle) and
+[Notices](../ARCHITECTURE.md#notices). Question relay remains for P2-16.
 
 Eika keeps track of several lines of work the way subagents traditionally work: it
 hands each one to a subagent with a brief, the subagent works in its own context,

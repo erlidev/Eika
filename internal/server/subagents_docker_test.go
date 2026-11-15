@@ -32,6 +32,58 @@ func (b byAgent) Stream(ctx context.Context, req provider.Request) (<-chan provi
 	return nil, fmt.Errorf("no script for system prompt %.40q", req.System)
 }
 
+// noticeTurns answers each background turn that delivers notices with
+// "noted" and hands every other call to its script, so that a script for Eika
+// holds only the turns the user starts.
+type noticeTurns struct {
+	provider.Provider
+	// arrived and release, when release is not nil, hold each background
+	// call until release closes, after telling arrived.
+	arrived chan struct{}
+	release chan struct{}
+
+	mu       sync.Mutex
+	requests []provider.Request
+}
+
+func answeringNotices(p provider.Provider) *noticeTurns { return &noticeTurns{Provider: p} }
+
+func (n *noticeTurns) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+	if !deliversNotices(req) {
+		return n.Provider.Stream(ctx, req)
+	}
+	n.mu.Lock()
+	n.requests = append(n.requests, req)
+	n.mu.Unlock()
+	if n.release != nil {
+		n.arrived <- struct{}{}
+		select {
+		case <-n.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return providertest.New(providertest.Text("noted")).Stream(ctx, req)
+}
+
+// Requests returns the background turns' requests, oldest first.
+func (n *noticeTurns) Requests() []provider.Request {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]provider.Request(nil), n.requests...)
+}
+
+// deliversNotices reports whether the newest user-side message of a request
+// is one a background turn sent: notices and nothing the user wrote.
+func deliversNotices(req provider.Request) bool {
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		if m := req.Messages[i]; m.Role == provider.RoleUser && !m.Summary {
+			return m.Content == "" && len(m.Images) == 0 && len(m.Notices) > 0
+		}
+	}
+	return false
+}
+
 // heldScript holds every call until release closes, which keeps a subagent
 // running while the test looks at it.
 type heldScript struct {
@@ -184,7 +236,7 @@ func TestEikaDelegatesToNamedSubagents(t *testing.T) {
 		providertest.Text("second quote found"),
 	)
 	researcher := providertest.New(call("done", "report", map[string]any{"summary": "Flights found"}), providertest.Text("flights found"))
-	d.use(byAgent{"You are Eika": eika, "You are a worker": worker, "You are a researcher": researcher})
+	d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a worker": worker, "You are a researcher": researcher})
 
 	d.postMessage(t, d.home.ID, "find a plumber and flights", "", 202)
 	<-worker.started
@@ -313,7 +365,7 @@ func TestCancelAbortAndShutdownStopSubagentRuns(t *testing.T) {
 		providertest.Text("resumed again"),
 	)
 	worker := newHeldScript()
-	d.use(byAgent{"You are Eika": eika, "You are a worker": worker})
+	d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a worker": worker})
 
 	d.postMessage(t, d.home.ID, "find a plumber", "", 202)
 	<-worker.started
@@ -393,7 +445,7 @@ func TestSubagentThatEndsWithoutReportingIsAskedOnceThenItsFinalMessageIsTheRepo
 		providertest.Text("Hotels near the station are best."),
 		providertest.Text("Understood. The station hotels are best."),
 	)
-	d.use(byAgent{"You are Eika": eika, "You are a researcher": byTask{"Find flights": asks, "Find hotels": silent}})
+	d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a researcher": byTask{"Find flights": asks, "Find hotels": silent}})
 
 	d.postMessage(t, d.home.ID, "plan the trip", "", 202)
 	d.waitIdle(t, d.home.ID)
@@ -455,7 +507,7 @@ func TestSubagentMaxRunningSettingLimitsRunsAndIsValidated(t *testing.T) {
 	)
 	worker := newHeldScript(call("done", "report", map[string]any{"summary": "first done"}), providertest.Text("ok"))
 	researcher := providertest.New(call("done", "report", map[string]any{"summary": "second done"}), providertest.Text("ok"))
-	d.use(byAgent{"You are Eika": eika, "You are a worker": worker, "You are a researcher": researcher})
+	d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a worker": worker, "You are a researcher": researcher})
 
 	d.postMessage(t, d.home.ID, "start two", "", 202)
 	d.waitIdle(t, d.home.ID)
@@ -482,7 +534,7 @@ func TestAbortingTheHomeReplyLeavesItsSubagentsRunning(t *testing.T) {
 	// still going when the user aborts it.
 	eika := newHoldAfter(1, call("start", "subagent_start", map[string]any{"agent": "worker", "name": "plumber", "brief": "Find a plumber"}))
 	worker := newHeldScript(call("done", "report", map[string]any{"summary": "Found one"}), providertest.Text("done"))
-	d.use(byAgent{"You are Eika": eika, "You are a worker": worker})
+	d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a worker": worker})
 
 	d.postMessage(t, d.home.ID, "find a plumber", "", 202)
 	<-worker.started
@@ -516,7 +568,11 @@ func TestShutdownCancelsRunningSubagentsWithoutReports(t *testing.T) {
 		providertest.Text("started"),
 	)
 	worker, researcher := newHeldScript(), newHeldScript()
-	d.use(byAgent{"You are Eika": eika, "You are a worker": worker, "You are a researcher": researcher})
+	d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a worker": worker, "You are a researcher": researcher})
+	// Each held subagent call keeps a slot, and Eika's last call needs a third.
+	if _, err := d.store.OverrideProvider(t.Context(), d.testProvider.ID, store.ProviderOverride{Slots: new(3)}); err != nil {
+		t.Fatal(err)
+	}
 	d.postMessage(t, d.home.ID, "start both", "", 202)
 	<-worker.started
 	<-researcher.started
@@ -545,7 +601,7 @@ func TestFallbackReportIgnoresAnEarlierAssignmentsAnswer(t *testing.T) {
 		providertest.Text(""),
 		providertest.Text(""),
 	)
-	d.use(byAgent{"You are Eika": eika, "You are a researcher": researcher})
+	d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a researcher": researcher})
 
 	d.postMessage(t, d.home.ID, "find flights", "", 202)
 	d.waitIdle(t, d.home.ID)

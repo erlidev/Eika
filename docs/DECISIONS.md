@@ -2110,3 +2110,42 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   every path to the computer root, and a directory outside the root refuses
   the run. Rejected: naming the directory only in the preamble, which leaves
   small models working in the root. A researcher gets no computer.
+
+## Notices
+
+- **A notice is an entry first, and delivering it is storing the message that
+  carries it** (2026-11-15, P2-15). A report is written to home as a `notice`
+  entry before anything else, so a crash cannot lose it. The user-side message
+  whose `<context>` carries it lists its id (`Message.Notices`) in the same
+  stored payload, so "delivered" and "the model saw it" are one write, and a
+  notice no stored user entry lists is undelivered after any restart. Rejected:
+  a `notices` table or a delivered flag on the entry, a second write that can
+  disagree with the conversation; and appending the notice text to the
+  conversation as its own message, which is not what the context layout says.
+- **The next user-side message takes every waiting notice, whoever sent it.**
+  A steering or follow-up message the user sends during a run carries the
+  notices that arrived meanwhile; only a home with no run, or a run that ends
+  with notices still waiting, gets a background turn whose message is the
+  context block alone. Which notices are waiting or in an unstored message is
+  kept in memory per process and read from the store on the session's first
+  run, so a message never takes a notice twice. A run gives its untaken
+  notices back before it releases the session, since the next run's are
+  indistinguishable in the book once it holds the session.
+- **A notice whose write fails is retried in the background** with backoff,
+  owned by the book and stopped at shutdown. Its entry id derives from the
+  report (the child and its last entry), and the write adds an entry with that
+  id only once, so a retry after a commit whose answer was lost, or a rescan
+  at start (P2-18), never makes a second notice. The report itself is already the
+  child's `result`. Rejected: a pending marker rescanned from the children's
+  results, which needs a column to tell a posted report from one that is not.
+- **A background turn is bounded by what caused it.** It runs at `background`.
+  A home run the user aborted, or a background turn that failed, starts no new
+  one: the notices wait for the next message, so a failing endpoint is not
+  called in a loop. A message posted with mode `run` during a background turn
+  steers it, because the client may not know of the turn, and joining any run
+  raises its next calls to `interactive` (`Rank.Raise`), which is the rule
+  `runtime.md` set for a user joining a background home turn.
+- **The notice is created when the child goes idle, not when it calls
+  `report`.** Eika's turn then sees the child idle and resumable. A child
+  cancelled after reporting, including by shutdown, posts none; its report is
+  still its `result`, and P2-18 reconciles interrupted runs.

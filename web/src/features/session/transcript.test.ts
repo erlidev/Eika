@@ -239,6 +239,24 @@ describe("applyEvent", () => {
     expect(items(state)).toHaveLength(0);
   });
 
+  it("adds no row for a stored message that carries only notices", () => {
+    const state = fold([
+      ev("session.message", {
+        session_id: sessionID,
+        entry_id: "e1",
+        kind: "user",
+        created_at: "2026-01-01T00:00:00Z",
+        message: {
+          role: "user",
+          context: "<context>\nnotice: plumber (worker) reported: done\n</context>",
+          notices: ["n1"],
+        },
+      }),
+    ]);
+    expect(items(state)).toHaveLength(0);
+    expect(state.lastEntryId).toBe("e1");
+  });
+
   it("ignores an entry it already holds", () => {
     const message = ev("session.message", {
       session_id: sessionID,

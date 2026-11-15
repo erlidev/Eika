@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -284,5 +285,121 @@ func TestTheCounterCountsTheBlockItIsSent(t *testing.T) {
 	bare.Messages = []provider.Message{provider.UserMessage("first")}
 	if got, without := calls[0].Prediction.Tokens, server.PromptTokens(bare); got <= without {
 		t.Errorf("predicted %d tokens for a message with its block, no more than the %d of one without", got, without)
+	}
+}
+
+// noticeBox hands out its notices once, as the server's book does.
+type noticeBox struct {
+	mu      sync.Mutex
+	waiting []agent.Notice
+	asked   int
+}
+
+func (b *noticeBox) take() []agent.Notice {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.asked++
+	out := b.waiting
+	b.waiting = nil
+	return out
+}
+
+func (b *noticeBox) add(n agent.Notice) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.waiting = append(b.waiting, n)
+}
+
+func TestTheNextUserMessageCarriesTheNoticesAndListsThem(t *testing.T) {
+	clock := newStepClock(time.Date(2026, 10, 31, 14, 5, 0, 0, time.UTC))
+	box := &noticeBox{waiting: []agent.Notice{
+		{ID: "n1", Text: "plumber (worker) reported: Found one\n\nFollow-ups:\n- book Bob"},
+		{ID: "n2", Text: "flights (researcher) reported: Tuesday"},
+	}}
+	f := newFixtureWith(t, agent.Options{Clock: clock.Now, Channel: "web", Notices: box.take},
+		[]providertest.Step{providertest.Text("noted"), providertest.Text("hello")})
+	if err := f.agent.Run(t.Context(), f.session, provider.UserMessage("hi")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if err := f.agent.Run(t.Context(), f.session, provider.UserMessage("again")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	users := f.store.Messages(f.session.ID)
+	want := "<context>\ntime: Sat 2026-10-31 14:05 +00:00 (UTC)\nchannel: web\n" +
+		"notice: plumber (worker) reported: Found one\n\n  Follow-ups:\n  - book Bob\n" +
+		"notice: flights (researcher) reported: Tuesday\n</context>"
+	if got := users[0].Context; got != want {
+		t.Errorf("block = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(users[0].Notices, []string{"n1", "n2"}) {
+		t.Errorf("stored notices = %v, want both ids", users[0].Notices)
+	}
+	// Each notice is delivered once: the next message has none.
+	if got := users[2]; got.Content != "again" || strings.Contains(got.Context, "notice:") || got.Notices != nil {
+		t.Errorf("the next message = %+v, want no notices", got)
+	}
+	if box.asked != 2 {
+		t.Errorf("notices asked for %d times, want once per message", box.asked)
+	}
+}
+
+func TestAnEmptyRunSendsWaitingNoticesAndNothingElse(t *testing.T) {
+	clock := newStepClock(time.Date(2026, 10, 31, 14, 5, 0, 0, time.UTC))
+	box := &noticeBox{}
+	f := newFixtureWith(t, agent.Options{Clock: clock.Now, Notices: box.take}, []providertest.Step{
+		providertest.Text("first"), providertest.Text("Plumber found one."), providertest.Text("as it stands"),
+	})
+	if err := f.agent.Run(t.Context(), f.session, provider.UserMessage("hi")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	box.add(agent.Notice{ID: "n1", Text: "plumber (worker) reported: Found one"})
+	if err := f.agent.Run(t.Context(), f.session, provider.Message{Role: provider.RoleUser}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	reqs := f.provider.Requests()
+	last := reqs[1].Messages[len(reqs[1].Messages)-1]
+	want := "<context>\ntime: Sat 2026-10-31 14:05 +00:00 (UTC)\nnotice: plumber (worker) reported: Found one\n</context>"
+	if last.Role != provider.RoleUser || last.Content != "" || last.ModelText() != want {
+		t.Errorf("the notice turn sent %+v, want the block alone", last)
+	}
+	var start event.TurnStart
+	f.events.payloadOf(t, event.TypeTurnStart, &start)
+	if start.Message != "hi" {
+		t.Errorf("first turn.start = %q", start.Message)
+	}
+	// With nothing waiting an empty run answers the conversation as it stands.
+	if err := f.agent.Run(t.Context(), f.session, provider.Message{Role: provider.RoleUser}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	reqs = f.provider.Requests()
+	if got, prev := len(reqs[2].Messages), len(reqs[1].Messages)+1; got != prev {
+		t.Errorf("the empty run sent %d messages, want the %d already there", got, prev)
+	}
+}
+
+func TestASteeredMessageTakesTheNoticesThatArrivedDuringTheRun(t *testing.T) {
+	box := &noticeBox{}
+	var a *agent.Agent
+	queue := callTool{name: "queue", run: func(context.Context) string {
+		box.add(agent.Notice{ID: "n1", Text: "plumber (worker) reported: Found one"})
+		a.Steer(provider.UserMessage("and?"))
+		return "queued"
+	}}
+	f := newFixtureWith(t, agent.Options{Notices: box.take}, []providertest.Step{
+		providertest.Calls("", providertest.Call("c1", "queue", map[string]any{})),
+		providertest.Text("done"),
+	}, queue)
+	a = f.agent
+	if err := f.agent.Run(t.Context(), f.session, provider.UserMessage("go")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var steered provider.Message
+	for _, m := range f.store.Messages(f.session.ID) {
+		if m.Content == "and?" {
+			steered = m
+		}
+	}
+	if !strings.Contains(steered.Context, "\nnotice: plumber (worker) reported: Found one\n") || !reflect.DeepEqual(steered.Notices, []string{"n1"}) {
+		t.Errorf("steered message = %+v, want the notice", steered)
 	}
 }

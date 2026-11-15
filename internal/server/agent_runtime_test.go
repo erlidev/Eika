@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -295,7 +296,7 @@ func TestBorrowedComputerIsInUseUntilLastRelease(t *testing.T) {
 	s := runtimeServer(t)
 	s.idle = newIdleComputers(s)
 	s.runs = newRuns(s)
-	active, err := s.runs.reserve("home", "", func() {})
+	active, err := s.runs.reserve("home", "", false, func() {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,5 +322,32 @@ func TestBorrowedComputerIsInUseUntilLastRelease(t *testing.T) {
 	}
 	if _, err := s.runs.borrowComputer("missing", "computer"); err == nil {
 		t.Fatal("borrow without a run succeeded")
+	}
+}
+
+func TestABackgroundTurnIsKnownAsOneFromTheMomentItHoldsTheSession(t *testing.T) {
+	// A message posted while a background turn is being built reads the
+	// reservation from another goroutine; it must see the turn as one it can
+	// join, never a plain run in its way.
+	s := runtimeServer(t)
+	s.idle = newIdleComputers(s)
+	s.runs = newRuns(s)
+	seen := make(chan bool)
+	go func() {
+		for {
+			if active := s.runs.active("home"); active != nil {
+				seen <- active.notify
+				return
+			}
+			runtime.Gosched()
+		}
+	}()
+	active, err := s.runs.reserve("home", "", true, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.runs.abandon(active)
+	if !<-seen {
+		t.Fatal("the reservation was seen before it was marked a background turn")
 	}
 }

@@ -249,7 +249,7 @@ func TestEveryWayOutOfARunEndsItsUseOfTheCounterRoutes(t *testing.T) {
 
 	attach := func() (*activeRun, interface{ Attached() bool }) {
 		_, release := s.counters.forRun("s1", ep, store.Model{Model: "m"})
-		active := &activeRun{sessionID: "s1", cancel: func() {}, done: make(chan struct{}), releaseCounter: release}
+		active := &activeRun{sessionID: "s1", cancel: func() {}, done: make(chan struct{}), ready: make(chan struct{}), releaseCounter: release}
 		return active, s.counters.byID["s1"].routes
 	}
 
