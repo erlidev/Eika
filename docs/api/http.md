@@ -481,7 +481,8 @@ against the running model.
 `202` with the `Run`. `400` for no text and no images, an unknown mode, a
 model that does not exist, an image the harness cannot read (the message names
 which, counting from 1), more than 10 images, or images for a model without
-`image_input`; `413` for a body over 64 MiB; `409` when no model is
+`image_input`; `413` for a body over 64 MiB; `409` for a subagent's session
+(Eika messages its subagents through its tools), when no model is
 configured, or when the session's computer could not be started: a run starts a
 computer the idle stopper stopped, and in the `home` computer, when its
 container is gone, makes the container again over the same volume. A chat has no computer, so it runs
@@ -518,15 +519,16 @@ the rest is replaced by a summary (the `compaction` setting). It is a run of
 its own, which the event stream reports with `compaction.start` and
 `compaction.end` and no turn events; queued messages wait for the next run.
 
-`202` with the `Run`. `409` when a run is going, when the computer could not
-be started, or when the conversation has nothing older than what a compaction
-keeps. A compaction that fails ends the run in `error`, with the conversation
-as it was.
+`202` with the `Run`. `409` for a subagent's session, when a run is going,
+when the computer could not be started, or when the conversation has nothing
+older than what a compaction keeps. A compaction that fails ends the run in
+`error`, with the conversation as it was.
 
 ### `POST /api/runs/{id}/abort`
 
 Cancels the run and waits for its goroutine to stop. `200` with the final
-`Run`. A run row left `running` by a harness restart is recorded as aborted;
+`Run`. Aborting a subagent's run records the subagent `cancelled`; it stays
+resumable. A run row left `running` by a harness restart is recorded as aborted;
 a run that already finished is `409`; an unknown run is `404`.
 
 ### `POST /api/questions/{id}/answer`

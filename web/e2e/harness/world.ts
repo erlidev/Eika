@@ -346,15 +346,15 @@ function toolCatalog(): Tool[] {
     ),
     tool(
       "file_edit",
-      "Replace exactly one occurrence of old_text with new_text in a UTF-8 file in the computer root. Read the file first. Both the original and result must be at most 1048576 bytes. No match or multiple matches leave the file unchanged. An empty new_text deletes the match.",
+      "Replace exactly one occurrence of old_text with new_text in a UTF-8 file in the working directory. Read the file first. Both the original and result must be at most 1048576 bytes. No match or multiple matches leave the file unchanged. An empty new_text deletes the match.",
     ),
     tool(
       "file_read",
-      "Read a UTF-8 text file of at most 32768 bytes in the computer root. Use bash for larger files or binary data.",
+      "Read a UTF-8 text file of at most 32768 bytes in the working directory. Use bash for larger files or binary data.",
     ),
     tool(
       "file_write",
-      "Create or replace a UTF-8 text file of at most 1048576 bytes in the computer root. Creates parent directories. An empty content string creates an empty file.",
+      "Create or replace a UTF-8 text file of at most 1048576 bytes in the working directory. Creates parent directories. An empty content string creates an empty file.",
     ),
     tool(
       "web_fetch",

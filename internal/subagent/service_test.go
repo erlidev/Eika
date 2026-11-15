@@ -13,6 +13,7 @@ import (
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/store"
@@ -102,6 +103,9 @@ func (e *events) Emit(_ context.Context, row event.Event) {
 	e.rows = append(e.rows, row)
 }
 
+// fg is the priority the lifecycle tests start and resume children at.
+const fg = inference.Foreground
+
 func child() store.Session {
 	return store.Session{Name: "plumber", Agent: "researcher", Brief: "Find a plumber"}
 }
@@ -134,13 +138,13 @@ func TestDuplicateStartConcurrentResumeAndCancel(t *testing.T) {
 	st := newMemory()
 	out := &events{}
 	started := make(chan string, 32)
-	s := service(t, st, func(ctx context.Context, row store.Session, text string) error {
+	s := service(t, st, func(ctx context.Context, row store.Session, text string, _ inference.Priority) error {
 		started <- row.ID + ":" + text
 		<-ctx.Done()
 		return ctx.Err()
 	}, out)
 	ctx, cancelRequest := context.WithCancel(t.Context())
-	first, err := s.Start(ctx, "home", child())
+	first, _, err := s.Start(ctx, "home", child(), fg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,13 +155,13 @@ func TestDuplicateStartConcurrentResumeAndCancel(t *testing.T) {
 		wg.Go(func() {
 			input := child()
 			input.Brief = "replacement"
-			row, err := s.Start(t.Context(), "home", input)
-			if err != nil || row.ID != first.ID || row.Brief != first.Brief {
-				t.Errorf("duplicate: %+v %v", row, err)
+			row, started, err := s.Start(t.Context(), "home", input, fg)
+			if err != nil || started || row.ID != first.ID || row.Brief != first.Brief {
+				t.Errorf("duplicate: %+v %v %v", row, started, err)
 			}
-			row, err = s.Message(t.Context(), "home", "plumber", "do not accept")
-			if err != nil || row.State != store.SessionRunning {
-				t.Errorf("running message: %+v %v", row, err)
+			row, accepted, err := s.Message(t.Context(), "home", "plumber", "do not accept", fg)
+			if err != nil || accepted || row.State != store.SessionRunning {
+				t.Errorf("running message: %+v %v %v", row, accepted, err)
 			}
 		})
 	}
@@ -171,7 +175,7 @@ func TestDuplicateStartConcurrentResumeAndCancel(t *testing.T) {
 	if _, err := s.Waiting(t.Context(), "home", "plumber", "changed reason"); err != nil {
 		t.Fatal(err)
 	}
-	row, err := s.Message(t.Context(), "home", "plumber", "not an answer yet")
+	row, _, err := s.Message(t.Context(), "home", "plumber", "not an answer yet", fg)
 	if err != nil || row.State != store.SessionWaiting || row.WaitingReason != "changed reason" {
 		t.Fatalf("waiting: %+v %v", row, err)
 	}
@@ -184,7 +188,7 @@ func TestDuplicateStartConcurrentResumeAndCancel(t *testing.T) {
 	}
 	for range 20 {
 		wg.Go(func() {
-			if _, err := s.Message(t.Context(), "home", "plumber", "follow up"); err != nil {
+			if _, _, err := s.Message(t.Context(), "home", "plumber", "follow up", fg); err != nil {
 				t.Error(err)
 			}
 		})
@@ -206,7 +210,7 @@ func TestDuplicateStartConcurrentResumeAndCancel(t *testing.T) {
 	if row.ID != first.ID {
 		t.Fatal(row)
 	}
-	if _, err := s.Message(t.Context(), "home", "plumber", "closed"); err == nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "closed", fg); err == nil {
 		t.Fatal("resumed after close")
 	}
 	out.mu.Lock()
@@ -226,7 +230,7 @@ func TestScriptedProviderResumesSameContext(t *testing.T) {
 	st := newMemory()
 	p := providertest.New(providertest.Text("first result"), providertest.Text("second result"))
 	sessions := map[string]*agent.Session{}
-	s := service(t, st, func(ctx context.Context, row store.Session, text string) error {
+	s := service(t, st, func(ctx context.Context, row store.Session, text string, _ inference.Priority) error {
 		current := sessions[row.ID]
 		if current == nil {
 			current = &agent.Session{ID: row.ID, Conversation: agent.NewConversation()}
@@ -235,12 +239,12 @@ func TestScriptedProviderResumesSameContext(t *testing.T) {
 		loop := agent.New(p, nil, agent.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 		return loop.Run(ctx, current, provider.UserMessage(text))
 	}, nil)
-	row, err := s.Start(t.Context(), "home", child())
+	row, _, err := s.Start(t.Context(), "home", child(), fg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	awaitState(t, st, store.SessionIdle)
-	next, err := s.Message(t.Context(), "home", "plumber", "follow up")
+	next, _, err := s.Message(t.Context(), "home", "plumber", "follow up", fg)
 	if err != nil || next.ID != row.ID {
 		t.Fatalf("resume: %+v %v", next, err)
 	}
@@ -266,21 +270,23 @@ func TestScriptedProviderResumesSameContext(t *testing.T) {
 
 func TestFailedChildResumesAndStateWriteFailureIsReturned(t *testing.T) {
 	st := newMemory()
-	s := service(t, st, func(context.Context, store.Session, string) error { return errors.New("provider unavailable") }, nil)
-	if _, err := s.Start(t.Context(), "home", child()); err != nil {
+	s := service(t, st, func(context.Context, store.Session, string, inference.Priority) error {
+		return errors.New("provider unavailable")
+	}, nil)
+	if _, _, err := s.Start(t.Context(), "home", child(), fg); err != nil {
 		t.Fatal(err)
 	}
 	awaitState(t, st, store.SessionFailed)
 	st.mu.Lock()
 	st.fail = true
 	st.mu.Unlock()
-	if _, err := s.Message(t.Context(), "home", "plumber", "retry"); err == nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "retry", fg); err == nil {
 		t.Fatal("ignored state write error")
 	}
 	st.mu.Lock()
 	st.fail = false
 	st.mu.Unlock()
-	if _, err := s.Message(t.Context(), "home", "plumber", "retry"); err != nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "retry", fg); err != nil {
 		t.Fatal(err)
 	}
 	awaitState(t, st, store.SessionFailed)
@@ -288,7 +294,7 @@ func TestFailedChildResumesAndStateWriteFailureIsReturned(t *testing.T) {
 
 func TestStartValidationAndScope(t *testing.T) {
 	st := newMemory()
-	s := service(t, st, func(context.Context, store.Session, string) error { return nil }, nil)
+	s := service(t, st, func(context.Context, store.Session, string, inference.Priority) error { return nil }, nil)
 	for _, tc := range []struct {
 		name   string
 		change func(*store.Session)
@@ -301,19 +307,19 @@ func TestStartValidationAndScope(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := child()
 			tc.change(&c)
-			if _, err := s.Start(t.Context(), "home", c); err == nil {
+			if _, _, err := s.Start(t.Context(), "home", c, fg); err == nil {
 				t.Fatal("accepted invalid child")
 			}
 		})
 	}
-	if _, err := s.Start(t.Context(), "home", child()); err != nil {
+	if _, _, err := s.Start(t.Context(), "home", child(), fg); err != nil {
 		t.Fatal(err)
 	}
 	first := awaitState(t, st, store.SessionIdle)
-	if _, err := s.Start(t.Context(), first.ID, child()); err == nil {
+	if _, _, err := s.Start(t.Context(), first.ID, child(), fg); err == nil {
 		t.Fatal("accepted recursive parent")
 	}
-	other, err := s.Start(t.Context(), "other", child())
+	other, _, err := s.Start(t.Context(), "other", child(), fg)
 	if err != nil || other.ID == first.ID {
 		t.Fatalf("parent scope: %+v %v", other, err)
 	}
@@ -326,7 +332,7 @@ func TestStartValidationAndScope(t *testing.T) {
 func TestCancelReturnsFinalStateWriteError(t *testing.T) {
 	st := newMemory()
 	started := make(chan struct{}, 1)
-	s := service(t, st, func(ctx context.Context, _ store.Session, _ string) error {
+	s := service(t, st, func(ctx context.Context, _ store.Session, _ string, _ inference.Priority) error {
 		select {
 		case started <- struct{}{}:
 		default:
@@ -334,7 +340,7 @@ func TestCancelReturnsFinalStateWriteError(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}, nil)
-	if _, err := s.Start(t.Context(), "home", child()); err != nil {
+	if _, _, err := s.Start(t.Context(), "home", child(), fg); err != nil {
 		t.Fatal(err)
 	}
 	<-started
@@ -348,7 +354,7 @@ func TestCancelReturnsFinalStateWriteError(t *testing.T) {
 	st.mu.Lock()
 	st.fail = false
 	st.mu.Unlock()
-	row, err := s.Message(t.Context(), "home", "plumber", "retry")
+	row, _, err := s.Message(t.Context(), "home", "plumber", "retry", fg)
 	if err != nil || row.State != store.SessionRunning {
 		t.Fatalf("stranded child did not resume: %+v %v", row, err)
 	}
@@ -360,7 +366,7 @@ func TestStrandedChildResumesAndCancelsAfterFinalWriteFails(t *testing.T) {
 			st := newMemory()
 			runs := make(chan string, 4)
 			finish := make(chan struct{})
-			s := service(t, st, func(ctx context.Context, _ store.Session, text string) error {
+			s := service(t, st, func(ctx context.Context, _ store.Session, text string, _ inference.Priority) error {
 				runs <- text
 				if text == child().Brief {
 					<-finish
@@ -369,7 +375,7 @@ func TestStrandedChildResumesAndCancelsAfterFinalWriteFails(t *testing.T) {
 				<-ctx.Done()
 				return ctx.Err()
 			}, nil)
-			if _, err := s.Start(t.Context(), "home", child()); err != nil {
+			if _, _, err := s.Start(t.Context(), "home", child(), fg); err != nil {
 				t.Fatal(err)
 			}
 			<-runs
@@ -405,7 +411,7 @@ func TestStrandedChildResumesAndCancelsAfterFinalWriteFails(t *testing.T) {
 				awaitState(t, st, store.SessionCancelled)
 				return
 			}
-			if _, err := s.Message(t.Context(), "home", "plumber", "again"); err != nil {
+			if _, _, err := s.Message(t.Context(), "home", "plumber", "again", fg); err != nil {
 				t.Fatal(err)
 			}
 			if got := <-runs; got != "again" {
@@ -422,11 +428,11 @@ func TestStartRetriesAfterInitialWriteFails(t *testing.T) {
 	st := newMemory()
 	st.fail = true
 	started := make(chan string, 1)
-	s := service(t, st, func(_ context.Context, _ store.Session, text string) error {
+	s := service(t, st, func(_ context.Context, _ store.Session, text string, _ inference.Priority) error {
 		started <- text
 		return nil
 	}, nil)
-	if _, err := s.Start(t.Context(), "home", child()); err == nil {
+	if _, _, err := s.Start(t.Context(), "home", child(), fg); err == nil {
 		t.Fatal("accepted failed initial write")
 	}
 	if _, err := st.Subagent(t.Context(), "home", "plumber"); !errors.Is(err, store.ErrNotFound) {
@@ -435,7 +441,7 @@ func TestStartRetriesAfterInitialWriteFails(t *testing.T) {
 	st.mu.Lock()
 	st.fail = false
 	st.mu.Unlock()
-	row, err := s.Start(t.Context(), "home", child())
+	row, _, err := s.Start(t.Context(), "home", child(), fg)
 	if err != nil || row.State != store.SessionRunning {
 		t.Fatalf("retry: %+v %v", row, err)
 	}
@@ -492,11 +498,11 @@ func TestScriptedProviderLifecycleAndGlobalEvents(t *testing.T) {
 		mu.Unlock()
 	})
 	conversation := agent.NewConversation()
-	s := service(t, st, func(ctx context.Context, row store.Session, text string) error {
+	s := service(t, st, func(ctx context.Context, row store.Session, text string, _ inference.Priority) error {
 		loop := agent.New(p, nil, agent.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 		return loop.Run(ctx, &agent.Session{ID: row.ID, Conversation: conversation}, provider.UserMessage(text))
 	}, emitter)
-	first, err := s.Start(t.Context(), "home", child())
+	first, _, err := s.Start(t.Context(), "home", child(), fg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +512,7 @@ func TestScriptedProviderLifecycleAndGlobalEvents(t *testing.T) {
 		wg.Go(func() {
 			input := child()
 			input.Brief = "replacement"
-			row, err := s.Start(t.Context(), "home", input)
+			row, _, err := s.Start(t.Context(), "home", input, fg)
 			if err != nil || row.ID != first.ID || row.Brief != first.Brief || row.State != store.SessionRunning {
 				t.Errorf("duplicate start: %+v %v", row, err)
 			}
@@ -518,13 +524,13 @@ func TestScriptedProviderLifecycleAndGlobalEvents(t *testing.T) {
 	}
 	p.release <- struct{}{}
 	awaitState(t, st, store.SessionIdle)
-	duplicate, err := s.Start(t.Context(), "home", child())
+	duplicate, _, err := s.Start(t.Context(), "home", child(), fg)
 	if err != nil || duplicate.ID != first.ID || duplicate.State != store.SessionIdle || p.provider.Calls() != 1 {
 		t.Fatalf("completed duplicate: %+v %v, calls %d", duplicate, err, p.provider.Calls())
 	}
 	for range 20 {
 		wg.Go(func() {
-			row, err := s.Message(t.Context(), "home", "plumber", "follow up")
+			row, _, err := s.Message(t.Context(), "home", "plumber", "follow up", fg)
 			if err != nil || row.ID != first.ID || row.State != store.SessionRunning {
 				t.Errorf("resume: %+v %v", row, err)
 			}
@@ -543,7 +549,7 @@ func TestScriptedProviderLifecycleAndGlobalEvents(t *testing.T) {
 	}
 	p.release <- struct{}{}
 	awaitState(t, st, store.SessionFailed)
-	if _, err := s.Message(t.Context(), "home", "plumber", "try again"); err != nil {
+	if _, _, err := s.Message(t.Context(), "home", "plumber", "try again", fg); err != nil {
 		t.Fatal(err)
 	}
 	<-p.started
@@ -574,4 +580,46 @@ func TestScriptedProviderLifecycleAndGlobalEvents(t *testing.T) {
 			t.Errorf("update %d: %+v, want %+v", i, update, want[i])
 		}
 	}
+}
+
+func TestRunsGetTheirPriorityAndCancelledRunsAreRecordedCancelled(t *testing.T) {
+	st := newMemory()
+	type turn struct {
+		text     string
+		priority inference.Priority
+	}
+	turns := make(chan turn, 2)
+	s := service(t, st, func(_ context.Context, _ store.Session, text string, p inference.Priority) error {
+		turns <- turn{text, p}
+		// A run stopped from outside the service, as the user's abort is.
+		return fmt.Errorf("run aborted: %w", subagent.ErrCancelled)
+	}, nil)
+	row, started, err := s.Start(t.Context(), "home", child(), inference.Background)
+	if err != nil || !started || row.State != store.SessionRunning {
+		t.Fatalf("start: %+v %v %v", row, started, err)
+	}
+	if got := <-turns; got != (turn{child().Brief, inference.Background}) {
+		t.Fatalf("start turn = %+v", got)
+	}
+	awaitState(t, st, store.SessionCancelled)
+	if _, accepted, err := s.Message(t.Context(), "home", "plumber", "again", inference.Foreground); err != nil || !accepted {
+		t.Fatalf("message: %v %v", accepted, err)
+	}
+	if got := <-turns; got != (turn{"again", inference.Foreground}) {
+		t.Fatalf("message turn = %+v", got)
+	}
+	awaitState(t, st, store.SessionCancelled)
+}
+
+func TestACancelledContextInsideTheRunIsAFailure(t *testing.T) {
+	st := newMemory()
+	// A provider that gives up with context.Canceled has not been cancelled
+	// by anyone: the child failed.
+	s := service(t, st, func(context.Context, store.Session, string, inference.Priority) error {
+		return fmt.Errorf("provider: %w", context.Canceled)
+	}, nil)
+	if _, _, err := s.Start(t.Context(), "home", child(), fg); err != nil {
+		t.Fatal(err)
+	}
+	awaitState(t, st, store.SessionFailed)
 }

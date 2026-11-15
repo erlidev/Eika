@@ -15,6 +15,8 @@ type Deps struct {
 	Questions    *Questions
 	Projects     Projects
 	HomeExecutor func(context.Context, string) (executor.Executor, func(), error)
+	// Subagents runs the delegation tools for the calling home session.
+	Subagents Subagents
 	// Search runs web_search; Pages reads for web_fetch.
 	Search Searcher
 	Pages  PageReader
@@ -34,6 +36,10 @@ func Registry(d Deps) (*tool.Registry, error) {
 		projectTool{name: "project_open", projects: d.Projects, home: d.HomeExecutor},
 		projectTool{name: "project_create", projects: d.Projects, home: d.HomeExecutor},
 		projectTool{name: "project_update", projects: d.Projects, home: d.HomeExecutor},
+		subagentTool{name: "subagent_start", subagents: d.Subagents, projects: d.Projects},
+		subagentTool{name: "subagent_message", subagents: d.Subagents, projects: d.Projects},
+		subagentTool{name: "subagent_status", subagents: d.Subagents, projects: d.Projects},
+		subagentTool{name: "subagent_cancel", subagents: d.Subagents, projects: d.Projects},
 		webSearchTool{search: d.Search},
 		webFetchTool{pages: d.Pages},
 		bashTool{},

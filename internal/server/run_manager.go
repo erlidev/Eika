@@ -28,6 +28,9 @@ type job struct {
 	// compact makes the run a compaction, which instructions focus.
 	compact      bool
 	instructions string
+	// priority is the run's inference priority. The zero value is
+	// interactive: a person is waiting on the answer.
+	priority inference.Priority
 }
 
 type queuedMessages struct {
@@ -135,6 +138,10 @@ type activeRun struct {
 	mu    sync.Mutex
 	id    string
 	agent *agent.Agent
+	// rank is the run's inference priority, which delegation reads.
+	rank *inference.Rank
+	// err is how the loop ended, set before done closes.
+	err error
 	// model is the run's model, whose image input decides whether a
 	// steering or follow-up message may carry images.
 	model store.Model
@@ -170,10 +177,17 @@ func (r *runs) compact(ctx context.Context, sessionID, instructions, model strin
 // begin builds a run and starts its goroutine. The run outlives the request
 // that asked for it and is stopped by an abort alone.
 func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (store.Run, error) {
+	row, _, err := r.launch(ctx, sessionID, model, work)
+	return row, err
+}
+
+// launch is begin that also returns the run, whose done channel closes once
+// it has ended and recorded how.
+func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (store.Run, *activeRun, error) {
 	s := r.server
 	sess, err := s.deps.Store.Session(ctx, sessionID)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 
 	// The run is not bound to the request: the client gets its answer as
@@ -184,7 +198,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	s.startMu.Unlock()
 	if err != nil {
 		cancel()
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	// Building a run reads the database and runs a command in the computer.
 	// Until that is done and the loop is running, the reservation is what
@@ -198,20 +212,25 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 
 	cfg, err := s.configure(ctx, sess, model)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	var ex executor.Executor
 	if s.usesComputer(sess) {
 		if ex, err = s.runExecutor(ctx, sess.ComputerID); err != nil {
-			return store.Run{}, err
+			return store.Run{}, nil, err
+		}
+		if sess.Kind == store.SessionSubagent && sess.ProjectID != "" {
+			if ex, err = s.projectWorkdir(ctx, sess.ProjectID, ex); err != nil {
+				return store.Run{}, nil, err
+			}
 		}
 	}
 	if len(work.message.Images) > 0 && !cfg.model.ImageInput {
-		return store.Run{}, noImageInput(cfg.model.Name)
+		return store.Run{}, nil, noImageInput(cfg.model.Name)
 	}
 	ep, err := s.endpointFor(ctx, cfg)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	cfg = cfg.withProbe(ep.row)
 	// The counter keeps what it learned from run to run; its routes, which
@@ -224,10 +243,10 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	}
 	loaded, err := sessionStore.Load(ctx, sessionID)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	if err := s.ensurePreamble(ctx, sess, loaded); err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	var refresh func(context.Context, string, agent.Compaction) (string, error)
 	if sess.Agent != "" {
@@ -238,6 +257,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	// them to its tool choice, together with the tools of the MCP servers it
 	// reaches now, and adds only its own executor, which is also where a
 	// web_fetch filter runs.
+	rank := inference.NewRank(work.priority)
 	ag := s.newAgent(ep.client, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
 		RefreshPreamble: refresh,
 		Location:        agent.PreambleLocation(loaded.Preamble),
@@ -248,25 +268,24 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 		Counter:         counted,
 		Compaction:      s.compaction(ctx, cfg.model),
 		// A run, and the compaction a user asks for, answers a person who is
-		// waiting; a run that is not interactive says so by raising or
-		// lowering this rank, as the home session will.
+		// waiting; a subagent's run is foreground or background.
 		Inference: agent.Inference{
 			Queue:    s.queue(ctx),
 			Pool:     ep.row.PoolName(),
 			Endpoint: ep.row.Name,
-			Rank:     inference.NewRank(inference.Interactive),
+			Rank:     rank,
 			// The speed the endpoint has read prompts at, which says how
 			// long a call may be silent before its first token.
 			PrefillRate: s.prefillRate(ctx, ep.row.Name),
 		},
 	})
 	if work.compact && !ag.Compactable(loaded) {
-		return store.Run{}, conflictf("%v", agent.ErrNothingToCompact)
+		return store.Run{}, nil, conflictf("%v", agent.ErrNothingToCompact)
 	}
 
 	row, err := s.deps.Store.StartRun(ctx, sessionID)
 	if err != nil {
-		return store.Run{}, err
+		return store.Run{}, nil, err
 	}
 	// A compaction delivers no messages, so what is queued waits for the
 	// next run that does.
@@ -279,7 +298,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 			ag.FollowUp(message)
 		}
 	}
-	active.begin(row.ID, ag, cfg.model)
+	active.begin(row.ID, ag, cfg.model, rank)
 	r.mu.Lock()
 	r.byID[row.ID] = active
 	r.mu.Unlock()
@@ -295,7 +314,7 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	go r.drive(runCtx, active, loaded, work)
 	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", cfg.model.Name,
 		"profile_id", cfg.profile.ID)
-	return row, nil
+	return row, active, nil
 }
 
 // reserve claims a session for a run that is about to start. Claiming under
@@ -344,6 +363,7 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 	} else {
 		err = loop.Run(ctx, loaded, work.message)
 	}
+	active.end(err)
 
 	state, message := store.RunDone, ""
 	switch {
@@ -609,10 +629,33 @@ func (a *activeRun) releaseCounterRoutes() {
 
 // begin records the run row, the loop, and its model on a reservation, which
 // is what turns it into a run the other handlers can report on and steer.
-func (a *activeRun) begin(id string, loop *agent.Agent, model store.Model) {
+func (a *activeRun) begin(id string, loop *agent.Agent, model store.Model, rank *inference.Rank) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.id, a.agent, a.model = id, loop, model
+	a.id, a.agent, a.model, a.rank = id, loop, model, rank
+}
+
+// priority returns the run's current inference priority; a run still being
+// built has the interactive priority every run starts with unless told
+// otherwise.
+func (a *activeRun) priority() inference.Priority {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.rank.Priority()
+}
+
+// end records how the loop ended.
+func (a *activeRun) end(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.err = err
+}
+
+// outcome returns how the loop ended, once done has closed.
+func (a *activeRun) outcome() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.err
 }
 
 // runModel returns the model of the run, the zero model while it is still

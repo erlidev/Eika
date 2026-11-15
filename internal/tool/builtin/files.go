@@ -25,11 +25,11 @@ func (t fileTool) Name() string { return t.name }
 func (t fileTool) Description() string {
 	switch t.name {
 	case "file_read":
-		return "Read a UTF-8 text file of at most 32768 bytes in the computer root. Use bash for larger files or binary data."
+		return "Read a UTF-8 text file of at most 32768 bytes in the working directory. Use bash for larger files or binary data."
 	case "file_write":
-		return "Create or replace a UTF-8 text file of at most 1048576 bytes in the computer root. Creates parent directories. An empty content string creates an empty file."
+		return "Create or replace a UTF-8 text file of at most 1048576 bytes in the working directory. Creates parent directories. An empty content string creates an empty file."
 	default:
-		return "Replace exactly one occurrence of old_text with new_text in a UTF-8 file in the computer root. Read the file first. Both the original and result must be at most 1048576 bytes. No match or multiple matches leave the file unchanged. An empty new_text deletes the match."
+		return "Replace exactly one occurrence of old_text with new_text in a UTF-8 file in the working directory. Read the file first. Both the original and result must be at most 1048576 bytes. No match or multiple matches leave the file unchanged. An empty new_text deletes the match."
 	}
 }
 

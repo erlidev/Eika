@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/store"
 )
 
@@ -23,9 +24,14 @@ type Store interface {
 	SetSubagentState(context.Context, string, store.SessionState, string) (store.Session, error)
 }
 
-// Run executes one message in the child's stored context and returns when done.
-// It must stop and join its work when ctx is cancelled.
-type Run func(ctx context.Context, child store.Session, text string) error
+// ErrCancelled is what a Run returns, wrapped or not, when someone stopped its
+// run from outside the service, as the user's abort does. The child is
+// recorded cancelled; any other error records it failed.
+var ErrCancelled = errors.New("subagent run cancelled")
+
+// Run executes one message in the child's stored context at priority and
+// returns when done. It must stop and join its work when ctx is cancelled.
+type Run func(ctx context.Context, child store.Session, text string, priority inference.Priority) error
 
 // Service serializes lifecycle changes and owns each child run until it ends.
 type Service struct {
@@ -62,36 +68,37 @@ func New(ctx context.Context, st Store, run Run, events event.Emitter, log *slog
 	return &Service{ctx: ctx, cancel: cancel, store: st, run: run, events: events, log: log, active: make(map[string]*execution)}
 }
 
-// Start creates a named child and starts its brief. An existing name returns
-// its status without starting work or replacing any fields.
-func (s *Service) Start(ctx context.Context, parent string, child store.Session) (store.Session, error) {
+// Start creates a named child and starts its brief at priority. It reports
+// whether it started work. An existing name returns its status without
+// starting work or replacing any fields.
+func (s *Service) Start(ctx context.Context, parent string, child store.Session, priority inference.Priority) (store.Session, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || s.ctx.Err() != nil {
-		return store.Session{}, fmt.Errorf("subagent service is closed")
+		return store.Session{}, false, fmt.Errorf("subagent service is closed")
 	}
 	if err := validText("name", child.Name, 128); err != nil {
-		return store.Session{}, err
+		return store.Session{}, false, err
 	}
 	home, err := s.store.Session(ctx, parent)
 	if err != nil {
-		return store.Session{}, err
+		return store.Session{}, false, err
 	}
 	if home.Kind != store.SessionHome {
-		return store.Session{}, fmt.Errorf("subagent parent must be home")
+		return store.Session{}, false, fmt.Errorf("subagent parent must be home")
 	}
 	old, err := s.store.Subagent(ctx, parent, child.Name)
 	if err == nil {
-		return old, nil
+		return old, false, nil
 	}
 	if !errors.Is(err, store.ErrNotFound) {
-		return store.Session{}, err
+		return store.Session{}, false, err
 	}
 	if child.Agent != "worker" && child.Agent != "researcher" {
-		return store.Session{}, fmt.Errorf("subagent agent must be worker or researcher")
+		return store.Session{}, false, fmt.Errorf("subagent agent must be worker or researcher")
 	}
 	if err := validText("brief", child.Brief, 64<<10); err != nil {
-		return store.Session{}, err
+		return store.Session{}, false, err
 	}
 	// Copy only creation fields; callers cannot set lifecycle or profile fields.
 	name := child.Name
@@ -100,39 +107,42 @@ func (s *Service) Start(ctx context.Context, parent string, child store.Session)
 		Agent: child.Agent, Brief: child.Brief, ProjectID: child.ProjectID, ComputerID: child.ComputerID,
 		State: store.SessionRunning})
 	if errors.Is(err, store.ErrConflict) {
-		return s.store.Subagent(ctx, parent, name)
+		old, err := s.store.Subagent(ctx, parent, name)
+		return old, false, err
 	}
 	if err != nil {
-		return store.Session{}, err
+		return store.Session{}, false, err
 	}
 	s.updated(ctx, child)
-	return s.begin(ctx, child, child.Brief)
+	child, err = s.begin(ctx, child, child.Brief, priority)
+	return child, err == nil, err
 }
 
-// Message resumes a child with no active run. A child whose run is active
-// returns its status without accepting the text. A stored running or waiting
-// state with no active run is a lost final write and is resumed too. Question
-// relay is separate.
-func (s *Service) Message(ctx context.Context, parent, name, text string) (store.Session, error) {
+// Message resumes a child with no active run at priority and reports whether
+// it accepted the text. A child whose run is active returns its status without
+// accepting the text. A stored running or waiting state with no active run is
+// a lost final write and is resumed too. Question relay is separate.
+func (s *Service) Message(ctx context.Context, parent, name, text string, priority inference.Priority) (store.Session, bool, error) {
 	if err := validText("text", text, 64<<10); err != nil {
-		return store.Session{}, err
+		return store.Session{}, false, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || s.ctx.Err() != nil {
-		return store.Session{}, fmt.Errorf("subagent service is closed")
+		return store.Session{}, false, fmt.Errorf("subagent service is closed")
 	}
 	child, err := s.store.Subagent(ctx, parent, name)
 	if err != nil {
-		return store.Session{}, err
+		return store.Session{}, false, err
 	}
 	if s.active[child.ID] != nil {
-		return child, nil
+		return child, false, nil
 	}
-	return s.begin(ctx, child, text)
+	child, err = s.begin(ctx, child, text, priority)
+	return child, err == nil, err
 }
 
-func (s *Service) begin(ctx context.Context, child store.Session, text string) (store.Session, error) {
+func (s *Service) begin(ctx context.Context, child store.Session, text string, priority inference.Priority) (store.Session, error) {
 	child, err := s.state(ctx, child, store.SessionRunning, "")
 	if err != nil {
 		return store.Session{}, err
@@ -141,20 +151,21 @@ func (s *Service) begin(ctx context.Context, child store.Session, text string) (
 	active := &execution{cancel: cancel, done: make(chan struct{})}
 	s.active[child.ID] = active
 	s.wg.Add(1)
-	go s.execute(runCtx, child, text, active)
+	go s.execute(runCtx, child, text, priority, active)
 	return child, nil
 }
 
-func (s *Service) execute(ctx context.Context, child store.Session, text string, active *execution) {
+func (s *Service) execute(ctx context.Context, child store.Session, text string, priority inference.Priority, active *execution) {
 	defer s.wg.Done()
-	err := s.run(ctx, child, text)
+	err := s.run(ctx, child, text, priority)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	state := store.SessionIdle
-	if active.cancelled || ctx.Err() != nil {
+	if active.cancelled || ctx.Err() != nil || errors.Is(err, ErrCancelled) {
 		state = store.SessionCancelled
 	} else if err != nil {
 		state = store.SessionFailed
+		s.log.Warn("subagent run failed", "session_id", child.ID, "error", err)
 	}
 	finishCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

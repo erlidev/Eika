@@ -95,3 +95,10 @@ func (o *output) String() string {
 	b.Write(o.tail)
 	return b.String()
 }
+
+// The bounds of Eika's delegation tools: a subagent's handle, and a brief or
+// message, which the lifecycle service also enforces.
+const (
+	maxSubagentNameBytes = 64
+	maxSubagentTextBytes = 64 << 10
+)

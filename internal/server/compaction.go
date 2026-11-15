@@ -147,6 +147,10 @@ func (s *Server) handleCompact(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, invalidf("instructions must be at most %d bytes", maxPromptBytes))
 		return
 	}
+	if err := s.refuseSubagent(r.Context(), r.PathValue("id")); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	run, err := s.runs.compact(r.Context(), r.PathValue("id"), req.Instructions, req.Model)
 	if err != nil {
 		s.fail(w, r, err)

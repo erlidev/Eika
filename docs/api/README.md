@@ -7,7 +7,7 @@ these files in the same commit.
 - `http.md` — every HTTP route, authentication, and the error body.
 - `events.md` — the event stream: transport, subscription and replay,
   topics, the envelope, and every event type.
-- [tools.md](tools.md) — file tool arguments, limits and errors.
+- [tools.md](tools.md) — file and delegation tool arguments, limits and errors.
 - `eikad.md` — the sandbox daemon, whose only client is the harness.
 - `contract.json` — the exact shape of every request, response, error, and
   event payload, generated from the Go wire types (`make contract`). Handler

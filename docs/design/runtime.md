@@ -14,6 +14,8 @@ to later sections remain valid.
   background home turn raises its next call to interactive. Foreground marks a
   subagent started or messaged from an interactive turn in the last ten minutes,
   or one the user watches. Routines, wakeups and other subagents use background.
+  Subagent runs take foreground or background from the turn that starts them
+  (P2-13); the ten-minute decay and watching are still to come.
 - Activity shows each pool's running and waiting calls, per-day prefill seconds
   and tokens, cache-hit rate over calls with reported counts, and compute by
   priority. Settings aggregates are still to come.
@@ -214,9 +216,10 @@ any of their subagents (`interface.md` 1).
 
 ## 9. Subagents
 
-The session lifecycle service is implemented in P2-12; see
-[Architecture](../ARCHITECTURE.md#subagent-lifecycle). Tool and server run
-bindings, reports, limits and question relay remain in later packages.
+The session lifecycle service (P2-12) and the delegation tools with their run
+binding (P2-13) are implemented; see
+[Architecture](../ARCHITECTURE.md#subagent-lifecycle). Reports, limits and
+question relay remain in later packages.
 
 Eika keeps track of several lines of work the way subagents traditionally work: it
 hands each one to a subagent with a brief, the subagent works in its own context,
