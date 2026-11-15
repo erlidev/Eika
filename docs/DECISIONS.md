@@ -2171,11 +2171,10 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   indistinguishable in the book once it holds the session.
 - **A notice whose write fails is retried in the background** with backoff,
   owned by the book and stopped at shutdown. Its entry id derives from the
-  report (the child and its last entry), and the write adds an entry with that
+  report (the stored report notice id), and the write adds an entry with that
   id only once, so a retry after a commit whose answer was lost, or a rescan
   at start (P2-18), never makes a second notice. The report itself is already the
-  child's `result`. Rejected: a pending marker rescanned from the children's
-  results, which needs a column to tell a posted report from one that is not.
+  child's `result`. Startup rescans it with that id (see "Startup recovery").
 - **A background turn is bounded by what caused it.** It runs at `background`.
   A home run the user aborted, or a background turn that failed, starts no new
   one: the notices wait for the next message, so a failing endpoint is not
@@ -2187,3 +2186,27 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   `report`.** Eika's turn then sees the child idle and resumable. A child
   cancelled after reporting, including by shutdown, posts none; its report is
   still its `result`, and P2-18 reconciles interrupted runs.
+
+## Startup recovery
+
+- **Recovery commits each session as one unit** (2026-11-15, P2-18).
+  Before serving requests, Core fills unanswered tool calls with an error
+  result, ends interrupted runs, sets interrupted children to idle, and stores
+  their home notice in the same transaction. A crash cannot leave the state
+  changed without the notice. Recovery never executes a tool or resumes a
+  child. Legacy profile and chat sessions get the missing results and aborted
+  runs without an agent notice or state change.
+- **A report has a stored notice id.** Migration 0016 adds an internal
+  `report_notice_id` to sessions. New reports receive a fresh id with their
+  result, in the same write. For an old report with no stored id, startup
+  identifies its report entry and matches only ids from that assignment. An
+  old result without a report anchor reuses an existing child notice, or gets
+  one fixed recovery id for that child. Startup pins the chosen id before it
+  repairs the session. Old rows without an anchor cannot distinguish later
+  identical results; once noticed, they get no second recovery notice. Report
+  text never decides whether a notice exists. The id is internal; the API does
+  not change.
+- Startup stores recovered notices without starting a home turn. The next user
+  message, or a later background turn caused by a new report, delivers them.
+  This prevents a restart from retrying work whose outcome is unknown. A
+  recovery write error stops startup. Computer inspection remains best effort.

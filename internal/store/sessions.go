@@ -54,7 +54,9 @@ type Session struct {
 	State           SessionState
 	Brief           string
 	Result          string
-	LastActiveAt    time.Time
+	// ReportNoticeID identifies the latest stored report across head changes.
+	ReportNoticeID string
+	LastActiveAt   time.Time
 	// ComputerID is the computer the session's runs act in, empty for a
 	// chat.
 	ComputerID string
@@ -93,7 +95,7 @@ func (s Session) Chat() bool { return s.ComputerID == "" }
 // scanSession reads them.
 const sessionColumns = `id, computer_id, title, untitled, kind, head_entry_id, tools,
 	profile_id, overrides, pinned, archived, created_at, updated_at,
-    owner, agent, name, project_id, parent_session_id, state, brief, result, last_active_at, waiting_reason`
+    owner, agent, name, project_id, parent_session_id, state, brief, result, last_active_at, waiting_reason, report_notice_id`
 
 // CreateSession inserts sess and returns it with the fields the database
 // assigned. An empty ID gets a fresh one; an unknown profile is ErrNotFound.
@@ -271,7 +273,7 @@ func scanSession(row pgx.Row) (Session, error) {
 		overrides       []byte
 	)
 	err := row.Scan(&sess.ID, &computer, &sess.Title, &sess.Untitled, &sess.Kind, &head, &sess.Tools,
-		&profile, &overrides, &sess.Pinned, &sess.Archived, &sess.CreatedAt, &sess.UpdatedAt, &sess.Owner, &sess.Agent, &sess.Name, &project, &parent, &sess.State, &sess.Brief, &sess.Result, &sess.LastActiveAt, &sess.WaitingReason)
+		&profile, &overrides, &sess.Pinned, &sess.Archived, &sess.CreatedAt, &sess.UpdatedAt, &sess.Owner, &sess.Agent, &sess.Name, &project, &parent, &sess.State, &sess.Brief, &sess.Result, &sess.LastActiveAt, &sess.WaitingReason, &sess.ReportNoticeID)
 	if err != nil {
 		return Session{}, err
 	}

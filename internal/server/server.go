@@ -194,6 +194,9 @@ func (s *Server) Run(ctx context.Context) error {
 		if _, err := s.deps.Store.EnsureHomeSession(ctx); err != nil {
 			return err
 		}
+		if err := s.reconcileSessions(ctx); err != nil {
+			return fmt.Errorf("reconcile sessions: %w", err)
+		}
 		// The queue knows its pools before the first run asks for a lease.
 		s.syncInference(ctx)
 		watchCtx, cancel := context.WithCancel(ctx)
@@ -228,20 +231,20 @@ func (s *Server) Close() {
 	s.titles.stop()
 }
 
-// Reconcile brings the recorded computer states in line with the containers
-// the host actually has. The harness calls it on startup: a container may
-// have been stopped or removed while the harness was down.
+// Reconcile repairs interrupted sessions and recorded computer states.
+// Call it only before serving requests or starting new runs. Recovered
+// notices wait for a later home turn.
 func (s *Server) Reconcile(ctx context.Context) error {
 	if s.deps.Store == nil {
 		return nil
 	}
-	aborted, err := s.deps.Store.AbortRunningRuns(ctx)
-	if err != nil {
+	if err := s.reconcileSessions(ctx); err != nil {
 		return err
 	}
-	if aborted != 0 {
-		s.log.Info("stale runs aborted", "count", aborted)
-	}
+	return s.reconcileComputers(ctx)
+}
+
+func (s *Server) reconcileComputers(ctx context.Context) error {
 	if s.deps.Computers == nil {
 		return nil
 	}

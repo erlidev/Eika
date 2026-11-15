@@ -107,7 +107,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	// A container may have stopped or been removed while the harness was
 	// down. Reconciling is how the recorded states catch up; a Docker daemon
 	// that is not there yet must not stop the API from serving.
-	if err := s.Reconcile(ctx); err != nil {
+	if err := s.reconcileComputers(ctx); err != nil {
 		log.Error("reconcile computers", "error", err)
 	}
 	if proxy != nil {

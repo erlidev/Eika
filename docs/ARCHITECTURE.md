@@ -433,7 +433,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | Table | Holds |
 |---|---|
 | `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), home |
-| `sessions` | computer_id (NULL for a chat), title, untitled, kind (user/home/subagent/routine), owner, agent, name, project_id, parent_session_id, state, waiting_reason, brief, result, last_active_at, head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
+| `sessions` | computer_id (NULL for a chat), title, untitled, kind (user/home/subagent/routine), owner, agent, name, project_id, parent_session_id, state, waiting_reason, brief, result, report_notice_id, last_active_at, head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, channel, payload (json: the text it was written as, so a message reads back as the bytes it was sent as) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
@@ -1080,7 +1080,7 @@ and direct chat runs are unchanged.
 `internal/server/notices.go` delivers news to the home session. A subagent's
 report becomes a notice entry in home, "plumber (worker) reported: <report>",
 written before anything else happens, so it survives a restart. Its entry id
-derives from the child and the last entry of the assignment that reported, and
+is stored with the report in the child’s internal `report_notice_id`, and
 `store.AppendEntryOnce` writes an id once, so a write retried after a lost
 answer adds no second notice. It reaches Eika
 in the `<context>` block of the next user-side message home sends, and the
@@ -1113,5 +1113,29 @@ mode `run` during one steers it, since the client may not know of the turn yet,
 and any message joining a run raises its next calls to `interactive`. The
 client learns of a turn it did not start from `turn.start` and refetches the
 run status. A background turn's message has no text, and the transcript shows
-no row for it. Shutdown stops background turns first. P2-18 reconciles what a
-restart interrupts; until then undelivered notices wait for the next turn.
+no row for it. Shutdown stops background turns first.
+
+### Startup recovery
+
+Before the API serves requests, `Server.Run` reconciles sessions. Each session
+gets an error result for every unanswered
+tool call on its current branch: "Eika restarted while this ran; its outcome
+is unknown. Check before retrying." Stored results and preamble bytes stay
+unchanged. One transaction appends these results and aborts the old runs. For
+agent home and child sessions it also appends a home notice, and sets an
+interrupted child to `idle` with no waiting reason.
+This includes a child created before its first run was stored. A failed
+transaction stops startup. No tool executes and no child resumes.
+
+Startup also scans every stored child report and appends its home notice with
+`AppendEntryOnce`. Migration 0016 adds the internal report notice id; startup
+pins an old report to an id before recovery changes the head. It finds a report
+entry in the child's path and matches notice ids from that assignment. If an
+old result has no report anchor, it reuses an existing child notice or assigns
+one fixed recovery id. It cannot distinguish later unanchored results, and sends
+at most one recovery notice for them. Report text is not used for matching. A
+notice can be recovered after a crash between idle and posting, or during a
+notice write retry. Startup starts no home turn. Recovered notices
+wait for the next home turn, from a user message or a later new report.
+Legacy profile and chat sessions get the missing results without an agent
+notice or state change. Computer inspection is separate and remains best effort.
