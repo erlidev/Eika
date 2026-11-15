@@ -9,6 +9,23 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: plan reordered so a testable build comes first (no code changed).
+  - Phases 2 and 3 run in four stages, listed in `PLAN.md`, "Schedule for phases
+    2 and 3". Stage A is 11 packages and ends with the home loop working in a
+    browser: home session, projects, subagents, notices, Chat and Activity.
+    Hardening is stage B, the phone is stage C, removal and live suites are D.
+  - In stage A profiles and direct chats stay beside what replaces them,
+    subagents have no `ask_user`, and home uses today's compaction.
+  - Phase 4 keeps the guard, gate, ingest, hard blocks, canary, halt and audit.
+    Tripwires, egress counting, checkpoints and remote-image rules are phase 4b,
+    after the scheduler. The first-seen index moved to phase 11, its first reader.
+  - Phases 12 and 13 run after phase 4b; skills stay last.
+  - Cut to `DEFERRED.md`: the stored notification list (P3-12) and channel marks
+    in Chat. P2-17 is built only if `session.updated` is too coarse.
+  - Findings from reading the code: P2-09 is small (the store is ready), P2-15
+    is larger than it reads (runs start only from a user message), and P2-25
+    must first give `evals/live` a real server.
+
 - 2026-11-14: P2-05 added bounded UTF-8 file read/write/edit tools through
   the executor and added them to the worker definition. Exact edits require
   one match; executor writes sync, replace files atomically, keep permissions and

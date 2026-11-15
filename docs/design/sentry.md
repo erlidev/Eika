@@ -15,6 +15,12 @@ and 9 and the model check of section 11 are the target for later, marked deferre
 where they appear, and return as `DEFERRED.md` says. They were written for a
 separate `eika-sentry` container, and still read that way.
 
+`PLAN.md` builds the first version in three steps. Phase 4 builds the gate,
+ingest with the screen, the hard blocks, the canary, egress, halt and audit.
+Phase 11 builds the first-seen index (section 3) with approvals, grants and the
+journal (section 7). Phase 4b builds the watch threshold (section 6), checkpoints
+(section 7) and tripwires (section 11).
+
 The design takes the separate host-side Sentinel and surrogate tokens from Meta's
 Muse; the out-of-model check, two-tier sensitive-data classifier and credential
 isolation from Claude Duet; and auto-review from OpenAI

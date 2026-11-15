@@ -458,6 +458,9 @@ All of phase 1's code stays. These were cut before more time went into them:
 - The pool and queue strip, the project file listing, the markdown field on touch,
   and phone baselines beyond Chat, Activity and Inbox.
 - Virtualising the transcript, unless a measurement asks for it.
+- The stored notification list with its API (P3-12). A report is a notice in Chat
+  and a push through ntfy. Return if reports get missed in daily use.
+- Channel marks on messages in Chat. Return with channels (phase 14).
 
 ### Phase 4
 
