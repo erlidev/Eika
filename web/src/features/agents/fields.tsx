@@ -11,7 +11,7 @@ import type { ConfigLayer } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { layerName } from "@/features/profiles/form";
+import { layerName } from "@/features/agents/form";
 import { cn } from "@/lib/utils";
 
 /** chipText names a layer on a chip: where a value falls through from. */

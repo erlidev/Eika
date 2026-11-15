@@ -9,7 +9,8 @@ import { create } from "zustand";
 /** SettingsTab names one tab of the settings dialog. */
 export type SettingsTab =
   | "models"
-  | "profiles"
+  | "agents"
+  | "instructions"
   | "general"
   | "compaction"
   | "computer"

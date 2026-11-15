@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P3-07 adds Agents (class and prompt override, reset, diff against the
+  built-in prompt) and Instructions (About me, rules) as Settings tabs over the P2-01
+  and P2-03 APIs, and removes the Profiles tab, the status bar's profile dialog and the
+  Tools panel: the UI makes no profile request. The mock refuses a non-UTF-8 body on
+  the routes the server decodes byte-first. P2-11 still removes the profile API and types.
+  `make check` passes.
+
 - 2026-11-15: P2-16 parks subagent ask_user calls in memory with a waiting
   reason and posts a home notice naming the question; Eika answers once through
   subagent_message, and ended or stale questions are marked and refused.

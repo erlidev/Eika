@@ -18,11 +18,7 @@ export const queryKeys = {
   session: (id: string) => ["session", id] as const,
   sessionOutline: (id: string) => ["session", id, "outline"] as const,
   runStatus: (sessionId: string) => ["session", sessionId, "run"] as const,
-  /** sessionConfiguration without a draft is the saved one and the prefix of every draft's. */
-  sessionConfiguration: (id: string, draft?: { profileId?: string; modelId?: string }) =>
-    draft === undefined
-      ? (["session", id, "configuration"] as const)
-      : (["session", id, "configuration", draft.profileId ?? null, draft.modelId ?? null] as const),
+  sessionConfiguration: (id: string) => ["session", id, "configuration"] as const,
   /** sessionContext without a model is the prefix of every preview of the session. */
   sessionContext: (id: string, model?: string) =>
     model === undefined
@@ -40,9 +36,10 @@ export const queryKeys = {
   sessionCall: (id: string, callId: string) => ["session", id, "calls", callId] as const,
   /** projects is the list of projects, which name what a subagent works on. */
   projects: () => ["projects"] as const,
-  profiles: () => ["profiles"] as const,
-  /** profileInherited sits under the profiles prefix, so a profile change refreshes it. */
-  profileInherited: (modelId: string) => ["profiles", "inherited", modelId] as const,
+  /** agents is the built-in agents with the user's overrides. */
+  agents: () => ["agents"] as const,
+  /** instructions is the user's global About me and rules. */
+  instructions: () => ["instructions"] as const,
   settings: () => ["settings"] as const,
   models: () => ["models"] as const,
   providers: () => ["providers"] as const,
@@ -56,8 +53,7 @@ export const queryKeys = {
 };
 
 /**
- * isSessionConfiguration matches the cached configuration of every session,
- * saved or drafted. A configuration names the model its session resolves to,
+ * isSessionConfiguration matches the cached configuration of every session. A configuration names the model its session resolves to,
  * so what changes the models or the classes makes all of them stale.
  */
 export function isSessionConfiguration(key: readonly unknown[]): boolean {

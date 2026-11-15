@@ -851,7 +851,7 @@ const infoPanel: Panel = {
   Component: ({ sessionId }) => <InfoPanel sessionId={sessionId} />,
 };
 
-export const panels: readonly Panel[] = [runPanel, contextPanel, toolsPanel, infoPanel];
+export const panels: readonly Panel[] = [runPanel, contextPanel, infoPanel];
 ```
 
 The tab strip, the keyboard handling, the remembered active tab, and the narrow

@@ -4,8 +4,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 import { queryKeys } from "@/api/keys";
-import { getSettings, getSystem, putSettings } from "@/api/routes";
+import {
+  getInstructions,
+  getSettings,
+  getSystem,
+  putInstructions,
+  putSettings,
+} from "@/api/routes";
 import type {
+  GlobalInstructions,
   SandboxEgress,
   SandboxLimits,
   Settings,
@@ -41,15 +48,37 @@ export function useSaveSettings(): UseMutationResult<SettingsState, Error, Setti
     mutationFn: putSettings,
     onSuccess: async (state) => {
       client.setQueryData(queryKeys.settings(), state);
-      // The default model and profile, the sandbox image, and the search
+      // The default model, the sandbox image, and the search
       // order and quotas are reported elsewhere too.
       await Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.models() }),
-        client.invalidateQueries({ queryKey: queryKeys.profiles() }),
         client.invalidateQueries({ queryKey: ["session"] }),
         client.invalidateQueries({ queryKey: queryKeys.system() }),
         client.invalidateQueries({ queryKey: queryKeys.searchStatus() }),
       ]);
+    },
+  });
+}
+
+/** useInstructions reads the user's global About me and rules. */
+export function useInstructions(): UseQueryResult<GlobalInstructions> {
+  return useQuery({
+    queryKey: queryKeys.instructions(),
+    queryFn: ({ signal }) => getInstructions(signal),
+  });
+}
+
+/** useSaveInstructions replaces both global instruction texts. */
+export function useSaveInstructions(): UseMutationResult<
+  GlobalInstructions,
+  Error,
+  GlobalInstructions
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: putInstructions,
+    onSuccess: (saved) => {
+      client.setQueryData(queryKeys.instructions(), saved);
     },
   });
 }

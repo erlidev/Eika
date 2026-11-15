@@ -20,13 +20,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SessionProfile, useSessionConfiguration } from "@/features/profiles";
 import { ContextMeter } from "@/features/session/ContextMeter";
 import {
   useAbortRun,
   useCompact,
   useNextPrediction,
   useRunStatus,
+  useSessionConfiguration,
 } from "@/features/session/queries";
 import { useSessionStore } from "@/features/session/store";
 import {
@@ -43,14 +43,10 @@ import { cn } from "@/lib/utils";
 
 export type RunStatusBarProps = {
   sessionId: string;
-  /** chat says the session has no computer. */
-  chat: boolean;
-  /** overridden says the session sets something of its own over its profile. */
-  overridden: boolean;
   /**
    * agent says the session runs an agent, whose class picks the model and
-   * whose settings no profile layers over: the model and profile controls
-   * would change nothing, so they are not drawn.
+   * whose settings no profile layers over: the model control would change
+   * nothing, so it is not drawn.
    */
   agent: boolean;
   /** model is the model the composer will use. */
@@ -59,14 +55,7 @@ export type RunStatusBarProps = {
   onModelChange: (model: string) => void;
 };
 
-export function RunStatusBar({
-  sessionId,
-  chat,
-  overridden,
-  agent,
-  model,
-  onModelChange,
-}: RunStatusBarProps) {
+export function RunStatusBar({ sessionId, agent, model, onModelChange }: RunStatusBarProps) {
   const status = useRunStatus(sessionId);
   const abort = useAbortRun(sessionId);
   const compact = useCompact(sessionId);
@@ -130,14 +119,12 @@ export function RunStatusBar({
         </Select>
       )}
 
-      {!agent && <SessionProfile sessionId={sessionId} chat={chat} overridden={overridden} />}
-
       {chosen &&
         !agent &&
         (effortSource === "session" || effortSource === "profile" ? (
           <span
             className="flex h-6 items-center gap-1 rounded-md border border-dashed px-1.5"
-            title={`Reasoning effort ${configuredEffort === "" ? "default" : configuredEffort}, set by the ${effortSource === "session" ? "session" : "profile"}. Change it in the profile's settings.`}
+            title={`Reasoning effort ${configuredEffort === "" ? "default" : configuredEffort}, set by the ${effortSource === "session" ? "session" : "profile"}.`}
           >
             <Brain aria-hidden className="size-3" />
             <span className="sr-only">Reasoning effort, set by the {effortSource}: </span>

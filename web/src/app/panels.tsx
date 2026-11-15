@@ -4,11 +4,11 @@
  * touches nothing else. The walkthrough is in docs/EXTENDING.md.
  */
 
-import { Gauge, Play, Wrench } from "lucide-react";
+import { Gauge, Play } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { ContextPanel } from "@/features/context";
-import { RunPanel, ToolsPanel } from "@/features/session";
+import { RunPanel } from "@/features/session";
 
 /** PanelContext is what the workbench knows when it decides which tabs to show. */
 export type PanelContext = {
@@ -55,16 +55,8 @@ const contextPanel: Panel = {
   Component: ({ sessionId }) => <ContextPanel sessionId={sessionId} />,
 };
 
-const toolsPanel: Panel = {
-  id: "tools",
-  title: "Tools",
-  icon: Wrench,
-  available: (context) => context.chat,
-  Component: ({ sessionId }) => <ToolsPanel sessionId={sessionId} />,
-};
-
 /** panels is every tab the context pane can show, in tab-strip order. */
-export const panels: readonly Panel[] = [runPanel, contextPanel, toolsPanel];
+export const panels: readonly Panel[] = [runPanel, contextPanel];
 
 /** availablePanels is the tabs that apply to what is open. */
 export function availablePanels(context: PanelContext): Panel[] {

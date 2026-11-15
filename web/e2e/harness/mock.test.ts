@@ -622,6 +622,58 @@ describe("agent definitions", () => {
   });
 });
 
+describe("request bytes", () => {
+  it("refuses a body that is not UTF-8 where the harness reads the bytes first", async () => {
+    const mock = open("workbench");
+    await call(mock, "POST", "/api/projects", { name: "One", slug: "one" });
+    const project = mock.world.projects[0];
+    if (!project) throw new Error("project not created");
+    const saved = await call(mock, "PUT", "/api/agents/eika", { prompt: "saved" });
+    const global = { about_me: "me", rules: "rules" };
+    await call(mock, "PUT", "/api/instructions", global);
+    // What the page would send, with the replacement character where a byte
+    // was not UTF-8: valid JSON, so only the bytes can tell.
+    const replaced = '{"prompt":"bad \ufffd text"}';
+    for (const [path, raw, stored] of [
+      ["/api/agents/eika", replaced, () => mock.world.agentOverrides.eika],
+      ["/api/instructions", '{"about_me":"\ufffd","rules":""}', () => mock.world.instructions],
+      [
+        `/api/projects/${project.id}/instructions`,
+        '{"instructions":"\ufffd"}',
+        () => mock.world.projectInstructions[project.id],
+      ],
+    ] as const) {
+      const before = JSON.stringify(stored());
+      const reply = await mock.answer("PUT", path, `Bearer ${mockToken}`, raw, true);
+      expect(reply).toMatchObject({
+        status: 400,
+        body: { error: { code: "invalid_request", message: "request body must be valid UTF-8" } },
+      });
+      expect(JSON.stringify(stored())).toBe(before);
+      // The same text sent as UTF-8 is a valid request.
+      expect(await mock.answer("PUT", path, `Bearer ${mockToken}`, raw)).toMatchObject({
+        status: 200,
+      });
+    }
+    // An unknown agent is not found before its body is read, as on the harness.
+    expect(
+      await mock.answer("PUT", "/api/agents/browser", `Bearer ${mockToken}`, replaced, true),
+    ).toMatchObject({ status: 404 });
+    // A route whose decoder does not check the bytes takes the replacement.
+    expect(
+      await mock.answer(
+        "POST",
+        "/api/projects",
+        `Bearer ${mockToken}`,
+        '{"name":"\ufffd","slug":"two"}',
+        true,
+      ),
+    ).toMatchObject({ status: 201 });
+    expect(saved.status).toBe(200);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+});
+
 describe("agent runtime", () => {
   it("uses agent prompts, class fallback and fixed tools beside profiles", async () => {
     const mock = open("workbench");

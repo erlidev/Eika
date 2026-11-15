@@ -7,6 +7,8 @@
  * streams a turn like a real run.
  */
 
+import { isUtf8 } from "node:buffer";
+
 import type { BrowserContext, Route, WebSocketRoute } from "@playwright/test";
 
 import type { EikaEvent, EventType } from "../../src/api/events.ts";
@@ -42,6 +44,28 @@ import type { ReplyStep, World } from "./world.ts";
 
 export { mockToken };
 export type { Reply } from "./routes/context.ts";
+
+/**
+ * bytesFirst are the routes the harness decodes with `decodeUTF8JSON`: it
+ * refuses a body whose bytes are not UTF-8 before encoding/json could replace
+ * them. The mock's handlers for them check the bytes the page sent.
+ */
+const bytesFirst = new Set([
+  "PUT /api/settings",
+  "PUT /api/agents/{name}",
+  "PUT /api/instructions",
+  "PUT /api/projects/{id}/instructions",
+]);
+
+/**
+ * bodyOf is a request body as the text the handlers parse, and whether its
+ * bytes were UTF-8. A body that was not decodes with replacement characters,
+ * as a lossy reader would show it.
+ */
+function bodyOf(buffer: Buffer | null): [string, boolean] {
+  if (buffer === null) return ["", false];
+  return [buffer.toString("utf8"), !isUtf8(buffer)];
+}
 
 type RouteDef = {
   method: string;
@@ -369,7 +393,7 @@ export class MockHarness {
         request.method(),
         request.url(),
         request.headers().authorization,
-        request.postData() ?? "",
+        ...bodyOf(request.postDataBuffer()),
       );
       if (reply === "hang") return;
       if (reply === "network") {
@@ -396,6 +420,7 @@ export class MockHarness {
     href: string,
     authorization: string | undefined,
     raw: string,
+    invalidUtf8 = false,
   ): Promise<Reply | "hang" | "network"> {
     const url = new URL(href, "http://mock.invalid");
     const path = url.pathname;
@@ -434,12 +459,18 @@ export class MockHarness {
       reply =
         def.auth && authorization !== `Bearer ${mockToken}`
           ? fail(401, "unauthorized", "missing or invalid token")
-          : (this.checkRequest(def.key, method, path, raw) ??
+          : // Where the harness reads the bytes before it decodes them, a body that
+            // is not UTF-8 is refused by the route's handler, in its own order, and
+            // not by the shape check: the replacement characters would pass it.
+            ((invalidUtf8 && bytesFirst.has(def.key)
+              ? undefined
+              : this.checkRequest(def.key, method, path, raw)) ??
             (await def.handle({
               params: match.slice(1).map(decodeURIComponent),
               query: url.searchParams,
               body,
               raw,
+              ...(invalidUtf8 ? { invalidUtf8 } : {}),
             })));
       this.checkReply(def.key, method, path, reply);
       break;

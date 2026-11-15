@@ -14,7 +14,6 @@ import type {
   SectionKind,
   ToolSchema,
 } from "@/api/types";
-import type { EditorSection } from "@/features/profiles/form";
 
 /** SegmentKind names one part of a request, in the order the bar draws them. */
 export type SegmentKind =
@@ -385,8 +384,8 @@ export function requestJSON(c: ModelContext): Record<string, unknown> {
   };
 }
 
-/** EditTarget is the setting a part of a request comes from, and the editor tab that holds it. */
-export type EditTarget = { key: string; section: EditorSection };
+/** EditTarget is the setting a part of a request comes from, keyed as the request's sources are. */
+export type EditTarget = { key: string };
 
 /**
  * editTargetOf is the setting behind a part of the request, or undefined
@@ -395,12 +394,12 @@ export type EditTarget = { key: string; section: EditorSection };
 export function editTargetOf(kind: SegmentKind): EditTarget | undefined {
   switch (kind) {
     case "base":
-      return { key: "chat_prompt", section: "prompt" };
+      return { key: "chat_prompt" };
     case "instructions":
-      return { key: "instructions", section: "prompt" };
+      return { key: "instructions" };
     case "builtin_tools":
     case "mcp_tools":
-      return { key: "tools", section: "tools" };
+      return { key: "tools" };
     case "messages":
     case "reasoning":
     case "template":
@@ -413,11 +412,8 @@ export function editTargetOf(kind: SegmentKind): EditTarget | undefined {
  * as the request's sources are, or undefined for one only a model row sets.
  */
 export function parameterTarget(key: string): EditTarget | undefined {
-  if (key === "model" || key === "preserve_thinking") return { key, section: "model" };
-  if (key.startsWith("sampling.")) {
-    const name = key.slice("sampling.".length);
-    const section = name === "max_output" || name === "reasoning_effort" ? "model" : "sampling";
-    return { key, section };
+  if (key === "model" || key === "preserve_thinking" || key.startsWith("sampling.")) {
+    return { key };
   }
   return undefined;
 }

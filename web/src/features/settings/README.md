@@ -18,6 +18,9 @@ Everything the user configures after setup, in one dialog of tabs.
   `features/search`. Account is
   `AccountSettings.tsx`: the password and signing out. Appearance is the
   colour scheme from `app/theme.ts`, the one setting kept in the browser.
+  Agents is `features/agents`; Instructions is `InstructionsSettings.tsx`: the
+  user's "About me" and rules, saved together with `PUT /api/instructions`, with the
+  harness's text limit checked beside each field (`lib/textLimit.ts`).
 - `queries.ts` wraps `/api/settings` and `/api/system`. `settingKeys` names
   the keys the harness reads itself and validates; any other key is stored
   as it comes. `setupComplete` is what the app checks before the workbench.

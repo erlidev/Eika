@@ -11,12 +11,12 @@ import {
   compactSession,
   getRunStatus,
   getSession,
+  getSessionConfiguration,
   getSessionOutline,
   getSessionPrediction,
   listTools,
   postMessage,
   setSessionHead,
-  setSessionTools,
 } from "@/api/routes";
 import type {
   CompactRequest,
@@ -28,6 +28,7 @@ import type {
   Run,
   RunStatus,
   Session,
+  SessionConfiguration,
   SessionOutline,
   Tool,
 } from "@/api/types";
@@ -209,26 +210,13 @@ export function useTools(): UseQueryResult<Tool[]> {
   });
 }
 
-/**
- * useSetSessionTools chooses the tools the session's next run offers the
- * model; null goes back to its profile's choice.
- */
-export function useSetSessionTools(
-  sessionId: string,
-): UseMutationResult<Session, Error, string[] | null> {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (tools: string[] | null) => setSessionTools(sessionId, tools),
-    onSuccess: async (session) => {
-      client.setQueryData<{ session: Session; head?: Entry }>(
-        queryKeys.session(sessionId),
-        (old) => (old === undefined ? old : { ...old, session }),
-      );
-      await Promise.all([
-        client.invalidateQueries({ queryKey: queryKeys.sessionConfiguration(sessionId) }),
-        client.invalidateQueries({ queryKey: queryKeys.sessionContext(sessionId) }),
-        client.invalidateQueries({ queryKey: ["sessions"] }),
-      ]);
-    },
+/** useSessionConfiguration reads what a session's next run resolves to, and where each value came from. */
+export function useSessionConfiguration(
+  sessionId: string | undefined,
+): UseQueryResult<SessionConfiguration> {
+  return useQuery({
+    queryKey: queryKeys.sessionConfiguration(sessionId ?? ""),
+    queryFn: ({ signal }) => getSessionConfiguration(sessionId ?? "", signal),
+    enabled: sessionId !== undefined,
   });
 }

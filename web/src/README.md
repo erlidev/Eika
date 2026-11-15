@@ -5,7 +5,7 @@ are in `docs/STYLE_GUIDE.md` section 3.
 
 ```
 app/          routes, the layout shell, the panel registry
-features/     one folder per domain feature (sessions, session, sandbox, providers, profiles, context, search, mcp, settings, setup, connect)
+features/     one folder per domain feature (sessions, session, sandbox, providers, agents, context, search, mcp, settings, setup, connect)
 components/   shared presentational components; components/ui is shadcn-managed
 api/          wire types mirroring docs/api/, the HTTP client, the WebSocket stream
 lib/          pure utilities with tests

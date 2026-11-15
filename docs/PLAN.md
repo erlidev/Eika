@@ -203,7 +203,7 @@ What stops a long-lived home session from losing work or growing without bound.
 
 - [x] **P2-18**: Reconcile interrupted runs and notices.
 - [x] **P2-16**: Park and relay subagent questions.
-- [ ] **P3-07**: Add agents and instructions Settings, as tabs of the existing
+- [x] **P3-07**: Add agents and instructions Settings, as tabs of the existing
       dialog, and remove profile controls.
 - [ ] **P2-20**: Build the board and rolling summary.
 - [ ] **P2-21**: Implement the cut and snapshot refresh.
@@ -294,7 +294,7 @@ in the code beside what replaces them.
       and OAuth keep working for phase 11 to pick up.
       - [x] **P2-01**: Built-ins, overrides, API and compaction prompts; keep profiles.
       - [x] **P2-08**: Resolve classes and fixed tools at runtime; keep existing callers.
-      - [ ] **P3-07**: Add agent Settings and remove profile controls.
+      - [x] **P3-07**: Add agent Settings and remove profile controls.
       - [ ] **P2-11**: Remove profiles and configuration layering after their callers move.
 - [ ] Session columns: `kind` (home, subagent, routine), `agent`, `name`,
       `project_id`, `computer_id`, `parent_session_id`, `state`, `brief`,
@@ -311,7 +311,7 @@ in the code beside what replaces them.
 - [ ] Instructions: global "About me" and rules, plus project instructions.
       Stored as rows and edited in the UI. No agent tool writes them.
       - [x] **P2-03**: Add storage and authenticated APIs.
-      - [ ] **P3-07**: Add global instructions Settings.
+      - [x] **P3-07**: Add global instructions Settings.
       - [ ] **P3-10**: Add project instructions editor.
 - [ ] Ensure the one home session on start, as the home computer is
       (`PLAN_LOG.md` 2026-10-30), found by `(owner, name)`, and add
@@ -471,7 +471,7 @@ The mobile-first app. Design: `design/interface.md`.
       - computer (limits and egress)
       - notifications, appearance, account
       - developer: the inspector and model calls with drift
-      - [ ] **P3-07**: Add agents and instructions settings.
+      - [x] **P3-07**: Add agents and instructions settings.
       - [ ] **P3-11**: Complete Settings and retain existing flows.
 - [ ] Notifications: toasts for subagent reports and background replies, from
       events the app already receives. The stored notification list (P3-12) is

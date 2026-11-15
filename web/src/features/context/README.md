@@ -23,8 +23,9 @@ code a run uses; this feature only draws it.
   nothing to state it against, negative and flagged when the parts add up to
   more than the endpoint counted).
 - `parts.tsx` holds what both draw: the window meter, the parts bar, the
-  colour dots, and the Edit link, which opens the profile's editor when the
-  profile sets the value and the session's otherwise.
+  colour dots, and the Edit link, which opens the Agents settings when the
+  agent sets the value and the model classes when its class does; a value from
+  a legacy layer has no link.
 - `segments.ts` is the pure side: the parts, the scale to a measured call,
   the tools by where they come from, a schema's parameters, the window's
   fill, the request as JSON, and the setting behind each part.

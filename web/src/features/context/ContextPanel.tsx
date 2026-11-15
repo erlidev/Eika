@@ -26,8 +26,7 @@ import {
   PartsNotes,
   RequestHeadline,
 } from "@/features/context/Size";
-import { useSessionConfiguration } from "@/features/profiles";
-import { useSessionStore } from "@/features/session";
+import { useSessionConfiguration, useSessionStore } from "@/features/session";
 
 export type ContextPanelProps = {
   sessionId: string;
@@ -70,7 +69,6 @@ export function ContextPanel({ sessionId }: ContextPanelProps) {
       )}
       {shown.data !== undefined && <Summary context={shown.data} onInspect={inspect} />}
       <ContextInspector
-        sessionId={sessionId}
         open={inspecting}
         onOpenChange={setInspecting}
         view={view}

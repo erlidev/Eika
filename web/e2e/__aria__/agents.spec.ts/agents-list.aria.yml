@@ -1,0 +1,30 @@
+- dialog "Settings":
+  - heading "Settings" [level=2]
+  - paragraph: Stored in the harness and shared by every browser, except the appearance.
+  - tablist:
+    - tab "Models"
+    - tab "Agents" [selected]
+    - tab "Instructions"
+    - tab "General"
+    - tab "Compaction"
+    - tab "Computer"
+    - tab "Search"
+    - tab "MCP"
+    - tab "Account"
+    - tab "Appearance"
+  - tabpanel "Agents":
+    - paragraph: Eika and the subagents it delegates to. Each runs on a model class, which General maps to a model, and a prompt. Change either here; the tools and limits belong to the agent and are fixed.
+    - list "Agents":
+      - listitem:
+        - button "eika main Converses, plans and delegates work.":
+          - paragraph: eika main
+          - paragraph: Converses, plans and delegates work.
+      - listitem:
+        - button "researcher fast Reads the web and reports findings.":
+          - paragraph: researcher fast
+          - paragraph: Reads the web and reports findings.
+      - listitem:
+        - button "worker main Does work on a computer and reports results.":
+          - paragraph: worker main
+          - paragraph: Does work on a computer and reports results.
+  - button "Close"

@@ -32,7 +32,6 @@ import { formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type InspectionProps = {
-  sessionId: string;
   context: ModelContext;
   /** live says the request is the next one, whose parts link to their settings. */
   live: boolean;
@@ -109,20 +108,12 @@ function navItems(context: ModelContext): NavItem[] {
   return items;
 }
 
-export function Inspection({
-  sessionId,
-  context,
-  live,
-  config,
-  view,
-  onView,
-  onEdit,
-}: InspectionProps) {
+export function Inspection({ context, live, config, view, onView, onEdit }: InspectionProps) {
   const parts = segments(context);
   const total = barTotal(parts);
   const items = navItems(context);
   const current = items.some((i) => i.view === view) ? view : "system";
-  const edit = { sessionId, config: live ? config : undefined, onOpen: onEdit };
+  const edit = { config: live ? config : undefined, onOpen: onEdit };
   const remainder = context.breakdown.remainder;
 
   return (

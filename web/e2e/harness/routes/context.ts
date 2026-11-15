@@ -23,6 +23,12 @@ export type Handler = (req: {
   body: Record<string, unknown>;
   /** raw is the body as sent, for a route whose body is not JSON. */
   raw: string;
+  /**
+   * invalidUtf8 is set when the bytes sent were not UTF-8, which `raw` and
+   * `body` then hold with replacement characters. The routes whose harness
+   * handler reads the bytes first refuse the request before they look at it.
+   */
+  invalidUtf8?: boolean;
 }) => Reply | Promise<Reply>;
 
 /**
@@ -53,6 +59,17 @@ export type RouteContext = {
 
 export function ok(body: unknown, status = 200): Reply {
   return { status, body };
+}
+
+/**
+ * badUtf8 is the harness's refusal of a body whose bytes are not UTF-8, which
+ * encoding/json would otherwise replace with U+FFFD and store. It answers for
+ * the routes that check the bytes before decoding, or undefined to go on.
+ */
+export function badUtf8(req: { invalidUtf8?: boolean }): Reply | undefined {
+  return req.invalidUtf8 === true
+    ? fail(400, "invalid_request", "request body must be valid UTF-8")
+    : undefined;
 }
 
 export function fail(status: number, code: string, message: string): Reply {
