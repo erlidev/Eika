@@ -60,6 +60,10 @@ import type {
 } from "@/api/types";
 
 /** listChats lists the sessions with no computer. */
+export function getHome(): Promise<{ session: Session; head?: Entry }> {
+  return request<{ session: Session; head?: Entry }>("/api/home");
+}
+
 export async function listChats(signal?: AbortSignal): Promise<Session[]> {
   const body = await request<{ sessions: Session[] }>("/api/sessions", {
     query: { chats: "true" },

@@ -254,6 +254,17 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.log, http.StatusOK, body)
 }
 
+// handleHomeSession returns the local home conversation and its head.
+func (s *Server) handleHomeSession(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.deps.Store.HomeSession(r.Context(), store.LocalOwner, "home")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	r.SetPathValue("id", sess.ID)
+	s.handleSession(w, r)
+}
+
 // handleUpdateSession renames, pins, or archives a session, and tells every
 // client so that each sidebar redraws it.
 func (s *Server) handleUpdateSession(w http.ResponseWriter, r *http.Request) {

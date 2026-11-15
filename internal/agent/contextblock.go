@@ -53,6 +53,10 @@ func (a *Agent) stamp(m provider.Message) provider.Message {
 	if m.Role != provider.RoleUser || m.Summary || m.Context != "" {
 		return m
 	}
-	m.Context = contextBlock(timeField(a.opts.Clock(), a.opts.Location))
+	fields := []contextField{timeField(a.opts.Clock(), a.opts.Location)}
+	if a.opts.Channel != "" {
+		fields = append(fields, contextField{name: "channel", value: a.opts.Channel})
+	}
+	m.Context = contextBlock(fields...)
 	return m
 }

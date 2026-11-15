@@ -216,6 +216,9 @@ func (r *runs) begin(ctx context.Context, sessionID, model string, work job) (st
 	counted, releaseRoutes := s.counters.forRun(sessionID, ep, cfg.model)
 	active.releaseCounter = releaseRoutes
 	sessionStore := session.NewStore(s.tree)
+	if sess.Kind == store.SessionHome {
+		sessionStore.SetChannel("web")
+	}
 	loaded, err := sessionStore.Load(ctx, sessionID)
 	if err != nil {
 		return store.Run{}, err

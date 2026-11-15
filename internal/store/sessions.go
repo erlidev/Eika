@@ -298,3 +298,16 @@ func (s *Store) HomeSession(ctx context.Context, owner, name string) (Session, e
 	}
 	return sess, nil
 }
+
+// EnsureHomeSession creates or returns the local home conversation.
+func (s *Store) EnsureHomeSession(ctx context.Context) (Session, error) {
+	const q = `INSERT INTO sessions (id, title, kind, owner, agent, name)
+ VALUES ($1, 'Home', 'home', $2, 'eika', 'home')
+ ON CONFLICT (owner, name) WHERE kind = 'home' DO UPDATE SET name = EXCLUDED.name
+ RETURNING ` + sessionColumns
+	sess, err := scanSession(s.pool.QueryRow(ctx, q, NewID(), LocalOwner))
+	if err != nil {
+		return Session{}, wrap("ensure home session", err)
+	}
+	return sess, nil
+}

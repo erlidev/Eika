@@ -134,6 +134,11 @@ A session is a tree of entries in one computer, with a head the next run
 continues from. A chat is a session with no computer: its runs have no files
 or commands, and offer the model only the tools that need no computer.
 
+### `GET /api/home`
+
+Returns the local home session and its head in the same shape as
+`GET /api/sessions/{id}`. Returns `404` if the session does not exist.
+
 ### `GET /api/sessions`
 
 `?computer_id=<id>` narrows the list; without it every session is returned,

@@ -9,6 +9,11 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-15: P2-09 ensures the local home session at startup and adds its
+  authenticated API. Home user and assistant messages record the web channel;
+  user context names it. Tests cover identity, the API and channel storage.
+  `make check` and `make smoke` pass.
+
 - 2026-11-15: P2-08 added agent runtime resolution beside profiles: class
   fallback, effective prompts, fixed built-in tools, 40/200 call limits and
   per-agent compaction prompts. Runs and previews exclude MCP; records name the

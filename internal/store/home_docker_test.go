@@ -87,3 +87,38 @@ func TestEnsureHomeComputerRacingInsertsOnce(t *testing.T) {
 		t.Errorf("racing ensures saw %d ids and inserted %d rows, want 1 and 1", len(ids), inserts)
 	}
 }
+
+func TestEnsureHomeSessionRacingAndRestart(t *testing.T) {
+	st := storetest.Open(t)
+	var wg sync.WaitGroup
+	ids := make(chan string, 16)
+	for range 16 {
+		wg.Go(func() {
+			home, err := st.EnsureHomeSession(t.Context())
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			ids <- home.ID
+		})
+	}
+	wg.Wait()
+	close(ids)
+	var id string
+	for got := range ids {
+		if id == "" {
+			id = got
+		}
+		if got != id {
+			t.Fatalf("home IDs differ: %s and %s", id, got)
+		}
+	}
+	home, err := st.HomeSession(t.Context(), store.LocalOwner, "home")
+	if err != nil || home.ID != id || home.Agent != "eika" {
+		t.Fatalf("home = %+v, %v", home, err)
+	}
+	again, err := st.EnsureHomeSession(t.Context())
+	if err != nil || again.ID != id {
+		t.Fatalf("again = %+v, %v", again, err)
+	}
+}

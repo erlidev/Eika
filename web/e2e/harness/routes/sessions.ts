@@ -69,6 +69,14 @@ function midTurn(entries: Entry[], entryId: string): Reply | undefined {
 
 export function sessionRoutes(ctx: RouteContext): void {
   const { w, on, find, now } = ctx;
+  on("GET", "/api/home", () => {
+    const row = w.sessions.find(
+      (s) => s.kind === "home" && s.owner === "local" && s.name === "home",
+    );
+    if (!row) return fail(404, "not_found", "home session not found");
+    const head = (w.entries[row.id] ?? []).find((e) => e.id === row.head_entry_id);
+    return ok({ session: row, ...(head ? { head } : {}) });
+  });
   on("GET", "/api/sessions", ({ query }) => {
     const cx = query.get("computer_id");
     if (query.get("chats") === "true") {

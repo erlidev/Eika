@@ -982,3 +982,6 @@ Authenticated GET, PUT and DELETE routes read, replace and clear instructions.
 Project instruction writes use separate store methods and routes from project
 metadata. Agent tools have no instruction write path. Existing profile rules
 stay unchanged. The editors are P3-07 and P3-10; P2-07 adds preamble snapshots.
+
+The server ensures the local home session at startup. `GET /api/home` returns
+its session and head. Home messages use the web channel.

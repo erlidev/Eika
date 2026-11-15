@@ -867,6 +867,18 @@ describe("session storage metadata", () => {
     expect(read.body).toMatchObject({ session: row });
   });
 
+  it("returns the home session and its head", async () => {
+    const mock = open("workbench");
+    const row = mock.world.sessions[0];
+    if (!row) throw new Error("missing session");
+    row.kind = "home";
+    row.owner = "local";
+    row.name = "home";
+    const reply = await call(mock, "GET", "/api/home");
+    expect(reply.status).toBe(200);
+    expect(reply.body).toMatchObject({ session: row });
+  });
+
   it("keeps preamble and notice text and message channels in entry responses", async () => {
     const mock = open("workbench");
     const row = mock.world.sessions[0];

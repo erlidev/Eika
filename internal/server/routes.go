@@ -57,6 +57,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 
 	api.HandleFunc("GET /api/computers", s.handleListComputers)
 
+	api.HandleFunc("GET /api/home", s.handleHomeSession)
 	api.HandleFunc("GET /api/sessions", s.handleListSessions)
 	api.HandleFunc("POST /api/sessions", s.handleCreateSession)
 	api.HandleFunc("GET /api/sessions/{id}", s.handleSession)

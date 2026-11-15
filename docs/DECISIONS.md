@@ -2025,3 +2025,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - **Legacy profile instructions stay separate.** Migration 0013 does not copy
   them into global rules: several profiles can have different rules. Current
   runs still use profiles. P2-07 adds instruction snapshots to the preamble.
+
+- **Home starts with the server** (2026-11-15, P2-09). The local home session
+  is created by its `(owner, name)` identity before the API serves. It does not
+  wait for the home computer. User and assistant home messages record `web`,
+  and user context blocks name that channel. Existing direct chats remain.
