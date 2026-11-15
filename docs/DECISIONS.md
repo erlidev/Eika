@@ -2194,15 +2194,14 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   result, ends interrupted runs, sets interrupted children to idle, and stores
   their home notice in the same transaction. A crash cannot leave the state
   changed without the notice. Recovery never executes a tool or resumes a
-  child. Legacy profile and chat sessions keep the existing abort-only path.
+  child. Legacy profile and chat sessions get the missing results and aborted
+  runs without an agent notice or state change.
 - **A report has a stored notice id.** Migration 0016 adds an internal
   `report_notice_id` to sessions. New reports receive a fresh id with their
   result. Startup pins old reports to the existing child/head-derived id before
-  it changes any head. It also checks earlier heads for an existing notice
-  with the same report text. Identical old reports reuse that notice, since old
-  rows cannot distinguish them; new reports always have distinct ids.
-  This retains existing notices and lets recovery rescan
-  stored reports after later messages, cancellation, or tool-result repair.
+  it changes any head. It matches notices by id, not text: identical reports
+  from different heads need separate notices. This lets recovery rescan stored
+  reports after cancellation or tool-result repair.
   A mutable session head alone cannot identify a report across these changes.
   The id is internal; the API does not change.
 - Startup stores recovered notices without starting a home turn. The next user

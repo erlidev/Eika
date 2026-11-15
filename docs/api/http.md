@@ -552,14 +552,14 @@ Cancels the run and waits for its goroutine to stop. `200` with the final
 resumable. A run row left `running` by a harness restart is recorded as aborted;
 a run that already finished is `409`; an unknown run is `404`.
 
-Before serving requests after a restart, agent home and subagent sessions get
-an error result for each unanswered tool call: "Eika restarted while this ran;
+Before serving requests after a restart, sessions get an error result for each unanswered tool call: "Eika restarted while this ran;
 its outcome is unknown. Check before retrying." Interrupted children become
 `idle`, with no waiting reason, and home gets a notice naming each child.
 An interrupted home reply also gets a notice. Startup recovers missing report
 notices. Recovered notices wait for the next home turn, from a user message or
 a later new report. Children resume only through `subagent_message`. Legacy
-profile and chat sessions keep their abort-only behaviour. No response or event shape changes.
+profile and chat sessions get missing results but no agent notice or state
+change. No response or event shape changes.
 
 ### `POST /api/questions/{id}/answer`
 

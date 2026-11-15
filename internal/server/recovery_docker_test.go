@@ -215,44 +215,79 @@ func TestRestartFindsStoredReportsAndUndeliveredNotices(t *testing.T) {
 	}
 }
 
-func TestRestartLeavesLegacyConversationAndStateUnchanged(t *testing.T) {
+func TestRestartRepairsLegacyProfileAndChatSessions(t *testing.T) {
 	a := newAPI(t)
 	ctx := t.Context()
-	sess, err := a.store.CreateSession(ctx, store.Session{Title: "legacy", State: store.SessionRunning})
-	if err != nil {
-		t.Fatal(err)
+	profiles, err := a.store.Profiles(ctx)
+	if err != nil || len(profiles) == 0 {
+		t.Fatalf("profiles = %+v, %v", profiles, err)
 	}
-	e, err := session.MessageEntry(provider.AssistantMessage("", []provider.ToolCall{{ID: "old", Name: "external"}}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	old, err := a.store.AppendEntry(ctx, sess.ID, e)
-	if err != nil {
-		t.Fatal(err)
-	}
-	run, err := a.store.StartRun(ctx, sess.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := a.Reconcile(ctx); err != nil {
-		t.Fatal(err)
-	}
-	path, err := a.store.SessionPath(ctx, sess.ID)
-	if err != nil || len(path) != 1 || path[0].ID != old.ID {
-		t.Fatalf("legacy path changed: %+v, %v", path, err)
-	}
-	now, err := a.store.Session(ctx, sess.ID)
-	if err != nil || now.State != sess.State {
-		t.Errorf("legacy state changed: %+v, %v", now, err)
-	}
-	ended, err := a.store.Run(ctx, run.ID)
-	if err != nil || ended.State != store.RunAborted {
-		t.Errorf("legacy run = %+v, %v", ended, err)
+	computer := a.home(t)
+	for _, c := range []struct {
+		name, computerID string
+		hasRun           bool
+	}{
+		{name: "profile session", computerID: computer.ID, hasRun: true},
+		{name: "direct chat without a run row"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			sess, err := a.store.CreateSession(ctx, store.Session{Title: c.name, ComputerID: c.computerID,
+				ProfileID: profiles[0].ID, State: store.SessionRunning})
+			if err != nil {
+				t.Fatal(err)
+			}
+			messages := []provider.Message{
+				provider.AssistantMessage("", []provider.ToolCall{{ID: "done", Name: "external"}, {ID: "lost", Name: "external"}}),
+				provider.ToolResultMessage("done", "original", false),
+			}
+			var original []store.Entry
+			for _, m := range messages {
+				e, err := session.MessageEntry(m)
+				if err != nil {
+					t.Fatal(err)
+				}
+				saved, err := a.store.AppendEntry(ctx, sess.ID, e)
+				if err != nil {
+					t.Fatal(err)
+				}
+				original = append(original, saved)
+			}
+			var run store.Run
+			if c.hasRun {
+				run, err = a.store.StartRun(ctx, sess.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			for range 2 {
+				if err := a.Reconcile(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path, err := a.store.SessionPath(ctx, sess.ID)
+			if err != nil || len(path) != 3 || path[0].ID != original[0].ID || path[1].ID != original[1].ID || !session.PathResumable(path) {
+				t.Fatalf("legacy path = %+v, %v; want original entries and a resumable result", path, err)
+			}
+			m, ok, err := session.Message(path[2])
+			if err != nil || !ok || m.ToolCallID != "lost" || !m.IsError || m.Content != "Eika restarted while this ran; its outcome is unknown. Check before retrying." {
+				t.Errorf("recovered result = %+v, %v, %v", m, ok, err)
+			}
+			now, err := a.store.Session(ctx, sess.ID)
+			if err != nil || now.State != sess.State || now.ProfileID != sess.ProfileID {
+				t.Errorf("legacy session = %+v, %v", now, err)
+			}
+			if c.hasRun {
+				ended, err := a.store.Run(ctx, run.ID)
+				if err != nil || ended.State != store.RunAborted {
+					t.Errorf("legacy run = %+v, %v", ended, err)
+				}
+			}
+		})
 	}
 }
 
 func TestRestartPinsLegacyReportIDsBeforeRepairChangesTheHead(t *testing.T) {
-	for _, posted := range []string{"missing", "current head", "earlier head"} {
+	for _, posted := range []string{"missing", "current head"} {
 		t.Run(posted, func(t *testing.T) {
 			d := newDelegating(t)
 			ctx := t.Context()
@@ -270,9 +305,6 @@ func TestRestartPinsLegacyReportIDsBeforeRepairChangesTheHead(t *testing.T) {
 				t.Fatal(err)
 			}
 			noticeHead := head.ID
-			if posted == "earlier head" {
-				noticeHead = ""
-			}
 			sum := sha256.Sum256([]byte("report\x00" + child.ID + "\x00" + noticeHead))
 			noticeID := "notice-" + hex.EncodeToString(sum[:12])
 			if posted != "missing" {
@@ -301,6 +333,69 @@ func TestRestartPinsLegacyReportIDsBeforeRepairChangesTheHead(t *testing.T) {
 		})
 	}
 }
+
+func TestRestartKeepsIdenticalLegacyReportsDistinct(t *testing.T) {
+	d := newDelegating(t)
+	ctx := t.Context()
+	child, err := d.store.CreateSession(ctx, store.Session{Kind: store.SessionSubagent,
+		ParentSessionID: d.home.ID, Agent: "researcher", Name: "worker", Result: "same report"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendReport := func() store.Entry {
+		e, err := session.MessageEntry(provider.AssistantMessage("same report", nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		saved, err := d.store.AppendEntry(ctx, child.ID, e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return saved
+	}
+	first := appendReport()
+	firstHash := sha256.Sum256([]byte("report\x00" + child.ID + "\x00" + first.ID))
+	firstID := "notice-" + hex.EncodeToString(firstHash[:12])
+	notice, err := session.TextEntry(store.KindNotice, "worker (researcher) reported: same report")
+	if err != nil {
+		t.Fatal(err)
+	}
+	notice.ID = firstID
+	if _, _, err := d.store.AppendEntryOnce(ctx, d.home.ID, notice); err != nil {
+		t.Fatal(err)
+	}
+	delivered := provider.UserMessage("first report received")
+	delivered.Notices = []string{firstID}
+	user, err := session.MessageEntry(delivered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.store.AppendEntry(ctx, d.home.ID, user); err != nil {
+		t.Fatal(err)
+	}
+	second := appendReport()
+	secondHash := sha256.Sum256([]byte("report\x00" + child.ID + "\x00" + second.ID))
+	secondID := "notice-" + hex.EncodeToString(secondHash[:12])
+	for range 2 {
+		if err := d.Reconcile(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now, err := d.store.Session(ctx, child.ID)
+	if err != nil || now.ReportNoticeID != secondID {
+		t.Fatalf("report identity = %+v, %v", now, err)
+	}
+	texts, deliveries := d.homeNotices(t)
+	if len(texts) != 2 || texts[firstID] != noticeTextForTest || texts[secondID] != noticeTextForTest || deliveries[firstID] != 1 || deliveries[secondID] != 0 {
+		t.Fatalf("notices = %v, deliveries = %v; want old delivered and new waiting", texts, deliveries)
+	}
+	undelivered, err := d.store.UndeliveredNotices(ctx, d.home.ID)
+	if err != nil || len(undelivered) != 1 || undelivered[0].ID != secondID {
+		t.Fatalf("undelivered = %+v, %v", undelivered, err)
+	}
+}
+
+const noticeTextForTest = "worker (researcher) reported: same report"
 
 func TestStartupKeepsRecoveredNoticesUntilTheUserSendsAMessage(t *testing.T) {
 	d := newDelegating(t)

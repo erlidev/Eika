@@ -1117,22 +1117,22 @@ no row for it. Shutdown stops background turns first.
 
 ### Startup recovery
 
-Before the API serves requests, `Server.Run` reconciles agent home and child
-sessions. Each interrupted session gets an error result for every unanswered
+Before the API serves requests, `Server.Run` reconciles sessions. Each session
+gets an error result for every unanswered
 tool call on its current branch: "Eika restarted while this ran; its outcome
 is unknown. Check before retrying." Stored results and preamble bytes stay
-unchanged. One transaction appends these results and a home notice, aborts the
-old runs, and sets an interrupted child to `idle` with no waiting reason.
+unchanged. One transaction appends these results and aborts the old runs. For
+agent home and child sessions it also appends a home notice, and sets an
+interrupted child to `idle` with no waiting reason.
 This includes a child created before its first run was stored. A failed
 transaction stops startup. No tool executes and no child resumes.
 
 Startup also scans every stored child report and appends its home notice with
 `AppendEntryOnce`. Migration 0016 adds the internal report notice id; startup
 pins an old report to its child/head-derived id before recovery changes the
-head, retaining an existing notice from an earlier head when its text matches.
-Identical old reports reuse that notice; new reports have distinct ids. A
-report notice can thus be recovered after a crash between idle and posting, or
+head. It matches notices by id, not report text, so identical reports with
+different heads keep separate notices. A report notice can be recovered after a crash between idle and posting, or
 during a notice write retry. Startup starts no home turn. Recovered notices
 wait for the next home turn, from a user message or a later new report.
-Legacy profile and chat sessions retain abort-only recovery. Computer
-inspection is separate and remains best effort.
+Legacy profile and chat sessions get the missing results without an agent
+notice or state change. Computer inspection is separate and remains best effort.
