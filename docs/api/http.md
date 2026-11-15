@@ -392,7 +392,7 @@ Identity and lifecycle fields are read-only on the existing session routes.
 | `last_active_at` | timestamp | Last lifecycle activity in UTC. |
 | `kind` | string | Session kind: `user` (legacy), `home`, `subagent` or `routine`. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
-| `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a computer in a chat. An agent session uses its fixed built-in list. |
+| `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a computer in a chat. An agent session uses its fixed built-in list; until its next compaction, its snapshot may pin a shorter one, which the context preview shows. |
 | `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. |
 | `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. False for an agent session. |
 | `pinned` | boolean | Listed before its siblings. |
@@ -525,7 +525,11 @@ string, "images": number}`: its text and how many images it carries.
 
 Summarizes the older part of the conversation now, as Pi's `/compact` does,
 whatever its size: about `keep_recent_tokens` of the newest messages stay and
-the rest is replaced by a summary (the `compaction` setting). It is a run of
+the rest is replaced by a summary (the `compaction` setting). The home session
+keeps whole turns from a user message on, up to 15% of its model's window and
+at least the newest turn, and splits a newest turn larger than that. An agent
+session's compaction also rebuilds its snapshot: the preamble, and the base
+prompt and tools of its definition as they are now. It is a run of
 its own, which the event stream reports with `compaction.start` and
 `compaction.end` and no turn events; queued messages wait for the next run.
 
@@ -1007,7 +1011,7 @@ stores them.
 | `model_classes` | object | The model each class is served by, `{"main": "qwen", "fast": "gpt-5-mini"}`. The classes are `deep`, `main`, `fast` (chat models) and `decision` (a decision model); each key must be one, and each value the name of a model of that kind or `""` for none. Harness tasks name a class, never a model. A class with none falls back, `deep` and `fast` to `main`, and a chat class that still has none to the default model (`default_model`, else the first chat model); `decision` has no fallback. Renaming a model renames it here, and deleting one leaves its classes to fall back. Session titles run on `fast` (see `session.title` in `events.md`), and are skipped when `fast` falls back onto the model assigned to `deep` and that model is on a hosted API (backend `openai`). |
 | `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
 | `search_limits` | object | Quotas by bucket, `{"exa": {"month": 500}, "marginalia": {"day": 50}}`. Each bucket must exist; `day` and `month` are whole numbers from 1 to 10 000 000, and 0 or an absent field is unlimited. Anything else is `400` naming the bucket and the range. A bucket not named keeps its default. |
-| `compaction` | object | How a conversation that outgrows its model's context window is summarized: `{"auto", "reserve_tokens", "keep_recent_tokens", "prompts": {"summary", "update", "turn_prefix"}}`. `auto` compacts before a request that would leave less than `reserve_tokens` of the window free, and once after an endpoint refuses a request as too large. `reserve_tokens` and `keep_recent_tokens` are whole numbers from 1024 to 1048576, each capped at run time to a quarter of the model's window. A prompt is at most 64 KiB, and an empty one is the built-in prompt. A field left out keeps its default; an unknown field is `400`. |
+| `compaction` | object | How a conversation that outgrows its model's context window is summarized: `{"auto", "reserve_tokens", "keep_recent_tokens", "prompts": {"summary", "update", "turn_prefix"}}`. `auto` compacts before a request that would leave less than `reserve_tokens` of the window free, and once after an endpoint refuses a request as too large. `reserve_tokens` and `keep_recent_tokens` are whole numbers from 1024 to 1048576, each capped at run time to a quarter of the model's window. The home session keeps a share of its window instead of `keep_recent_tokens` (see `POST /api/sessions/{id}/compact`), unless the window is unknown. A prompt is at most 64 KiB, and an empty one is the built-in prompt. A field left out keeps its default; an unknown field is `400`. |
 
 ### ModelClass
 

@@ -90,18 +90,30 @@ func TestAgentCapabilitiesAndSchemasAreFixed(t *testing.T) {
 			sess := store.Session{Agent: name, ComputerID: "computer"}
 			d, _ := agentdef.Lookup(name)
 			want := d.Tools
-			for _, choice := range [][]string{nil, {}, {"bash", "ask_user", "mcp__secret__*"}} {
-				reg := s.runTools(sess, choice, []tool.Tool{namedTool{name: "mcp__secret__read"}})
-				var names []string
+			names := func(reg *tool.Registry) []string {
+				var out []string
 				for _, entry := range reg.List() {
-					names = append(names, entry.Name())
+					out = append(out, entry.Name())
 				}
-				if !slices.Equal(names, want) {
-					t.Fatalf("tools = %v, want %v", names, want)
-				}
-				if !reflect.DeepEqual(reg.Schemas(), s.runTools(sess, nil, nil).Schemas()) {
-					t.Fatal("schema changed with legacy choice or MCP")
-				}
+				return out
+			}
+			reg := s.runTools(sess, nil, []tool.Tool{namedTool{name: "mcp__secret__read"}})
+			if got := names(reg); !slices.Equal(got, want) {
+				t.Fatalf("tools = %v, want %v", got, want)
+			}
+			if !reflect.DeepEqual(reg.Schemas(), s.runTools(sess, nil, nil).Schemas()) {
+				t.Fatal("schema changed with MCP")
+			}
+			// A pinned list narrows the definition's and never widens it.
+			everything := append(slices.Clone(want), "bash", "ask_user", "project_create", "subagent_start", "mcp__secret__*", "mcp__secret__read")
+			if got := names(s.runTools(sess, everything, []tool.Tool{namedTool{name: "mcp__secret__read"}})); !slices.Equal(got, want) {
+				t.Fatalf("tools with a wider pinned list = %v, want %v", got, want)
+			}
+			if got := names(s.runTools(sess, want[:1], nil)); !slices.Equal(got, want[:1]) {
+				t.Fatalf("tools with a narrower pinned list = %v, want %v", got, want[:1])
+			}
+			if got := names(s.runTools(sess, []string{}, nil)); len(got) != 0 {
+				t.Fatalf("tools with an empty pinned list = %v, want none", got)
 			}
 			if slices.Contains(want, "ask_user") != (name != "eika") {
 				t.Fatal("only subagents can ask Eika questions")

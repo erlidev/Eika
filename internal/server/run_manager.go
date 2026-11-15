@@ -312,12 +312,15 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	if err != nil {
 		return store.Run{}, nil, err
 	}
-	if err := s.ensurePreamble(ctx, sess, loaded); err != nil {
+	if err := s.ensurePreamble(ctx, sess, loaded, cfg); err != nil {
 		return store.Run{}, nil, err
 	}
-	var refresh func(context.Context, string, agent.Compaction) (string, error)
+	// An agent session runs on its snapshot's prompt and tools, which only a
+	// compaction replaces.
+	cfg = cfg.withSnapshot(loaded)
+	var refresh func(context.Context, string, func(agent.Snapshot) agent.Compaction) (agent.Snapshot, error)
 	if sess.Agent != "" {
-		refresh = s.refreshPreamble
+		refresh = s.refreshSnapshot
 	}
 	// The tools every run shares hold what they reach beyond the computer:
 	// the search engine and the page reader. A run narrows
@@ -326,7 +329,7 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	// web_fetch filter runs.
 	rank := inference.NewRank(work.priority)
 	ag := s.newAgent(ep.client, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
-		RefreshPreamble: refresh,
+		RefreshSnapshot: refresh,
 		Location:        agent.PreambleLocation(loaded.Preamble),
 		Notices:         takeNotices,
 		RefreshMessage: func(m provider.Message) provider.Message {

@@ -323,7 +323,9 @@ The board and the rolling `[Conversation]` are built (P2-20); see
 [Architecture](../ARCHITECTURE.md#context-layout-and-prefix-stability). The board's
 heading states its time. The tag's `as_of`, `entries` and `compactions` attributes
 and the footer come with the history tools (P2-23, P2-24), which they point to.
-The cut and the refresh (P2-21) and idle compaction (P2-22) are still to come.
+The cut at user-turn boundaries and the snapshot refresh of preamble, prompt and
+tools are built too (P2-21; [Architecture](../ARCHITECTURE.md#context-layout-and-prefix-stability)).
+Idle compaction (P2-22) is still to come.
 
 ```
 <summary as_of="2026-11-03 21:40" entries="#1-#5321" compactions="14">

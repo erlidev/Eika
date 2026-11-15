@@ -15,6 +15,11 @@ import (
 	"github.com/erlidev/eika/internal/store"
 )
 
+// homeTurn is the length of a message that makes a turn of about 4,000
+// tokens: home keeps 15% of the 32,768-token window, so a compaction keeps
+// the last of two such turns.
+const homeTurn = 16000
+
 // lastContent is the content of the last message a request sent.
 func lastContent(req provider.Request) string {
 	return req.Messages[len(req.Messages)-1].Content
@@ -48,16 +53,11 @@ func TestHomeCompactionWritesTheBoardAndRollsTheConversation(t *testing.T) {
 	if _, err := a.store.SetSubagentState(ctx, plumber.ID, store.SessionWaiting, "Question ID: q1\nWhich quote?"); err != nil {
 		t.Fatal(err)
 	}
-	if rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{
-		"compaction": map[string]any{"keep_recent_tokens": 1024},
-	}); rec.Code != 200 {
-		t.Fatalf("set compaction = %d: %s", rec.Code, rec.Body.String())
-	}
 	eika, _ := agentdef.Lookup("eika")
 	p := a.script(providertest.Text("first answer"), providertest.Text("second answer"), providertest.Text("CONVERSATION-1"),
 		providertest.Text("third answer"), providertest.Text("CONVERSATION-2"))
 	for _, text := range []string{"one", "two"} {
-		a.postMessage(t, home.ID, text+" "+strings.Repeat("x", 8000), "", 202)
+		a.postMessage(t, home.ID, text+" "+strings.Repeat("x", homeTurn), "", 202)
 		a.waitIdle(t, home.ID)
 	}
 	compact := func() string {
@@ -97,7 +97,7 @@ func TestHomeCompactionWritesTheBoardAndRollsTheConversation(t *testing.T) {
 	if _, err := a.store.SetSubagentResult(ctx, plumber.ID, "Booked the second quote."); err != nil {
 		t.Fatal(err)
 	}
-	a.postMessage(t, home.ID, "three "+strings.Repeat("x", 8000), "", 202)
+	a.postMessage(t, home.ID, "three "+strings.Repeat("x", homeTurn), "", 202)
 	a.waitIdle(t, home.ID)
 	second := compact()
 	update := p.Requests()[4]
@@ -155,14 +155,9 @@ func TestHomeBoardListsAReportMadeWhileTheLastCompactionWasStored(t *testing.T) 
 	if !reported.LastActiveAt.Before(stored.CreatedAt) || !reported.LastActiveAt.After(read) {
 		t.Fatalf("report at %v, want between the board read %v and the entry %v", reported.LastActiveAt, read, stored.CreatedAt)
 	}
-	if rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{
-		"compaction": map[string]any{"keep_recent_tokens": 1024},
-	}); rec.Code != 200 {
-		t.Fatalf("set compaction = %d: %s", rec.Code, rec.Body.String())
-	}
 	a.script(providertest.Text("first answer"), providertest.Text("second answer"), providertest.Text("CONVERSATION"))
 	for _, text := range []string{"one", "two"} {
-		a.postMessage(t, home.ID, text+" "+strings.Repeat("x", 8000), "", 202)
+		a.postMessage(t, home.ID, text+" "+strings.Repeat("x", homeTurn), "", 202)
 		a.waitIdle(t, home.ID)
 	}
 	decodeBody[runWire](t, request(t, a.Server, "POST", "/api/sessions/"+home.ID+"/compact", map[string]any{}), 202)

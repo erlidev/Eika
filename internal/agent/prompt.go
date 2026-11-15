@@ -18,9 +18,18 @@ Rules:
 // prompt assembles the system prompt sections of one run: the base prompt
 // and the extra instructions, each present only when it has text.
 func (a *Agent) prompt() []Section {
+	a.snapshotMu.RLock()
+	base := a.opts.BasePrompt
+	a.snapshotMu.RUnlock()
+	return a.promptWith(base)
+}
+
+// promptWith assembles the system prompt sections with base as the base
+// prompt, or the built-in ChatPrompt when it is nil.
+func (a *Agent) promptWith(basePrompt *string) []Section {
 	base := ChatPrompt
-	if a.opts.BasePrompt != nil {
-		base = *a.opts.BasePrompt
+	if basePrompt != nil {
+		base = *basePrompt
 	}
 	var sections []Section
 	if text := strings.TrimSpace(base); text != "" {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/counter"
+	"github.com/erlidev/eika/internal/tool"
 )
 
 // bytesPerToken is how many bytes EstimateTokens counts as one token. It is
@@ -197,6 +198,30 @@ func (a *Agent) sessionBase(s *Session, prompt []Section) Context {
 // base returns the request the run's model calls share, with no messages:
 // the system prompt sections, the tool schemas, and the parameters.
 func (a *Agent) base(prompt []Section) Context {
+	return a.baseWith(prompt, a.registry())
+}
+
+// snapshotBase is the request a model call on s would share once snap
+// replaced the session's snapshot: its preamble, and its prompt and tools
+// where it sets them.
+func (a *Agent) snapshotBase(snap Snapshot) Context {
+	prompt := a.prompt()
+	if snap.Prompt != nil {
+		prompt = a.promptWith(snap.Prompt)
+	}
+	tools := snap.Tools
+	if tools == nil {
+		tools = a.registry()
+	}
+	c := a.baseWith(prompt, tools)
+	if snap.Preamble != "" {
+		c.Sections = append(c.Sections, newSection(SectionPreamble, snap.Preamble))
+	}
+	return c
+}
+
+// baseWith is base with tools as the tools.
+func (a *Agent) baseWith(prompt []Section, tools *tool.Registry) Context {
 	c := Context{
 		Sections: append([]Section{}, prompt...),
 		Tools:    []ToolSchema{},
@@ -208,8 +233,8 @@ func (a *Agent) base(prompt []Section) Context {
 			ImageInput:       a.opts.ImageInput,
 		},
 	}
-	if a.tools != nil {
-		for _, def := range a.tools.Schemas() {
+	if tools != nil {
+		for _, def := range tools.Schemas() {
 			c.Tools = append(c.Tools, ToolSchema{ToolDef: def, Source: sourceOf(def.Name), Tokens: ToolTokens(def)})
 		}
 	}

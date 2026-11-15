@@ -150,17 +150,70 @@ func TextOf(e store.Entry) (string, error) {
 	return payload.Text, nil
 }
 
-// Preamble returns the most recent snapshot on a session path.
-func Preamble(entries []store.Entry) (string, error) {
-	var text string
+// PreambleEntry records a preamble snapshot: its text and, when prompt is
+// not nil, the base prompt and tool names of the agent definition it was
+// taken with, which runs use until a compaction replaces the snapshot
+// (runtime.md 4).
+func PreambleEntry(text string, prompt *string, tools []string) (store.Entry, error) {
+	payload := preamblePayload{Text: text}
+	if prompt != nil {
+		if tools == nil {
+			tools = []string{}
+		}
+		payload.Definition = &definitionPayload{Prompt: *prompt, Tools: tools}
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return store.Entry{}, fmt.Errorf("encode preamble entry: %w", err)
+	}
+	return store.Entry{Kind: store.KindPreamble, Payload: data}, nil
+}
+
+// preamblePayload is a preamble entry's payload. A snapshot stored before
+// definitions were pinned has text alone.
+type preamblePayload struct {
+	Text       string             `json:"text"`
+	Definition *definitionPayload `json:"definition,omitempty"`
+}
+
+// definitionPayload is the part of an agent definition a snapshot pins.
+type definitionPayload struct {
+	Prompt string   `json:"prompt"`
+	Tools  []string `json:"tools"`
+}
+
+// Snapshot is a session's stored snapshot. Prompt is nil when it pins no
+// definition.
+type Snapshot struct {
+	Text   string
+	Prompt *string
+	Tools  []string
+}
+
+// SnapshotOf returns the most recent snapshot on a session path.
+func SnapshotOf(entries []store.Entry) (Snapshot, error) {
+	var snap Snapshot
 	for _, e := range entries {
-		if e.Kind == store.KindPreamble {
-			var err error
-			text, err = TextOf(e)
-			if err != nil {
-				return "", err
+		if e.Kind != store.KindPreamble {
+			continue
+		}
+		var payload preamblePayload
+		if err := json.Unmarshal(e.Payload, &payload); err != nil {
+			return Snapshot{}, fmt.Errorf("decode preamble entry %s: %w", e.ID, err)
+		}
+		snap = Snapshot{Text: payload.Text}
+		if d := payload.Definition; d != nil {
+			snap.Prompt, snap.Tools = &d.Prompt, d.Tools
+			if snap.Tools == nil {
+				snap.Tools = []string{}
 			}
 		}
 	}
-	return text, nil
+	return snap, nil
+}
+
+// Preamble returns the text of the most recent snapshot on a session path.
+func Preamble(entries []store.Entry) (string, error) {
+	snap, err := SnapshotOf(entries)
+	return snap.Text, err
 }

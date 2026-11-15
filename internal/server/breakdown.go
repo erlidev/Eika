@@ -102,6 +102,7 @@ func (s *Server) previewNext(ctx context.Context, sess store.Session, cfg runCon
 			return agent.Context{}, nil, nil, err
 		}
 	}
+	cfg = cfg.withSnapshot(loaded)
 	ctr, release = s.counterFor(ctx, sess.ID, cfg.model, cfg.modelOK)
 	ag := s.newAgent(nil, sess, cfg, nil, s.offeredMCP(), agent.Options{Logger: s.log, Counter: ctr})
 	if next, err = ag.Preview(loaded); err != nil {

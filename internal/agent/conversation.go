@@ -65,9 +65,18 @@ func (c *Conversation) Len() int {
 
 // Session is the conversation an agent run operates on, inside one computer.
 type Session struct {
-	ID           string
-	ComputerID   string
-	Preamble     string
+	ID         string
+	ComputerID string
+	// Preamble is the text of the session's stored snapshot.
+	Preamble string
+	// Prompt and Tools are the base prompt and the tool names the snapshot
+	// holds beside its preamble: the agent definition as it was when the
+	// snapshot was taken, which the server builds each run from. Prompt is
+	// nil when the snapshot holds no definition: it predates them, or the
+	// session has none.
+	Prompt *string
+	Tools  []string
+	// Conversation is the conversation on the session's current branch.
 	Conversation *Conversation
 }
 

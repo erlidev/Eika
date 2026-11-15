@@ -62,8 +62,8 @@ func timeField(t time.Time, loc *time.Location) contextField {
 // currentLocation is the zone the agent states times in: Options.Location
 // until a compaction's preamble refresh names another.
 func (a *Agent) currentLocation() *time.Location {
-	a.locationMu.RLock()
-	defer a.locationMu.RUnlock()
+	a.snapshotMu.RLock()
+	defer a.snapshotMu.RUnlock()
 	return a.location
 }
 

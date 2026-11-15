@@ -65,13 +65,15 @@ func (s *Store) Load(ctx context.Context, sessionID string) (*agent.Session, err
 	if err != nil {
 		return nil, err
 	}
-	preamble, err := Preamble(path)
+	snap, err := SnapshotOf(path)
 	if err != nil {
 		return nil, err
 	}
 	return &agent.Session{
 		ID:           sess.ID,
-		Preamble:     preamble,
+		Preamble:     snap.Text,
+		Prompt:       snap.Prompt,
+		Tools:        snap.Tools,
 		ComputerID:   sess.ComputerID,
 		Conversation: agent.NewConversation(messages...),
 	}, nil

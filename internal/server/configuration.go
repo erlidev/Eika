@@ -435,11 +435,13 @@ func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, 
 	mcpTools []tool.Tool, opts agent.Options) *agent.Agent {
 	if sess.Kind == store.SessionHome {
 		opts.Channel = "web"
-		// Home compacts into the board and a rolling conversation;
-		// subagent and routine sessions keep Pi's summary.
+		// Home compacts into the board and a rolling conversation, and cuts
+		// at a user-turn boundary; subagent and routine sessions keep Pi's
+		// summary and cut.
 		opts.Compaction.Board = func(ctx context.Context, loc *time.Location) (string, time.Time, error) {
 			return s.subagentBoard(ctx, sess.ID, loc)
 		}
+		opts.Compaction.KeepRecentShare = agent.DefaultKeepRecentShare
 	}
 	opts.Model = c.model.Model
 	opts.ContextWindow = c.window()
