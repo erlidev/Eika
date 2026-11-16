@@ -79,8 +79,4 @@ func (s *Store) Load(ctx context.Context, sessionID string) (*agent.Session, err
 	}, nil
 }
 
-// Tree returns the tree the store appends to, so that a caller that has one
-// has the other.
-func (s *Store) Tree() *Tree { return s.tree }
-
 var _ agent.Store = (*Store)(nil)

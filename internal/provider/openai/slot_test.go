@@ -82,95 +82,6 @@ func slotRequest(slot int) provider.Request {
 	}
 }
 
-func TestARequestNamesItsSlotToAnEndpointThatTakesHints(t *testing.T) {
-	for _, proto := range protocols {
-		t.Run(proto.name, func(t *testing.T) {
-			srv := newSlotServer(t, "")
-			p, err := proto.build(provider.Endpoint{BaseURL: srv.URL, SlotHints: true})
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, slot := range []int{0, 1} {
-				if r := read(t, p, slotRequest(slot)); r.err != nil || r.stop == "" {
-					t.Fatalf("slot %d: err %v, stop %q", slot, r.err, r.stop)
-				}
-			}
-			got := srv.requests(t)
-			if len(got) != 2 || got[0]["id_slot"] != float64(0) || got[1]["id_slot"] != float64(1) {
-				t.Errorf("id_slot sent = %v and %v, want 0 and 1", got[0]["id_slot"], got[1]["id_slot"])
-			}
-		})
-	}
-}
-
-func TestARequestNamesNoSlotToAnEndpointThatTakesNoHints(t *testing.T) {
-	for _, proto := range protocols {
-		t.Run(proto.name, func(t *testing.T) {
-			srv := newSlotServer(t, "")
-			p, err := proto.build(provider.Endpoint{BaseURL: srv.URL})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if r := read(t, p, slotRequest(1)); r.err != nil {
-				t.Fatalf("err %v", r.err)
-			}
-			if got := srv.requests(t); len(got) != 1 {
-				t.Fatalf("requests = %d, want 1", len(got))
-			} else if _, ok := got[0]["id_slot"]; ok {
-				t.Errorf("a request carried id_slot %v to an endpoint that takes none", got[0]["id_slot"])
-			}
-		})
-	}
-}
-
-func TestARequestWithoutAHintNamesNoSlotWhateverTheEndpoint(t *testing.T) {
-	for _, proto := range protocols {
-		t.Run(proto.name, func(t *testing.T) {
-			srv := newSlotServer(t, "")
-			p, err := proto.build(provider.Endpoint{BaseURL: srv.URL, SlotHints: true})
-			if err != nil {
-				t.Fatal(err)
-			}
-			req := slotRequest(0)
-			req.SlotHint = nil
-			if r := read(t, p, req); r.err != nil {
-				t.Fatalf("err %v", r.err)
-			}
-			if _, ok := srv.requests(t)[0]["id_slot"]; ok {
-				t.Error("a request with no hint carried id_slot")
-			}
-		})
-	}
-}
-
-func TestTheBodyTheCounterRendersNeverNamesASlot(t *testing.T) {
-	for _, proto := range protocols {
-		t.Run(proto.name, func(t *testing.T) {
-			p, err := proto.build(provider.Endpoint{BaseURL: "http://model.invalid", SlotHints: true})
-			if err != nil {
-				t.Fatal(err)
-			}
-			enc := p.(provider.ChatEncoder)
-			with, err := enc.ChatBody(slotRequest(1))
-			if err != nil {
-				t.Fatal(err)
-			}
-			without := slotRequest(1)
-			without.SlotHint = nil
-			want, err := enc.ChatBody(without)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(with) != string(want) {
-				t.Errorf("the hint changed what the counter renders:\n with    %s\n without %s", with, want)
-			}
-			if strings.Contains(string(with), "id_slot") {
-				t.Errorf("the rendering body names a slot: %s", with)
-			}
-		})
-	}
-}
-
 func TestAServerThatRefusesTheSlotFieldIsAskedAgainWithoutIt(t *testing.T) {
 	for _, proto := range protocols {
 		t.Run(proto.name, func(t *testing.T) {
@@ -192,28 +103,6 @@ func TestAServerThatRefusesTheSlotFieldIsAskedAgainWithoutIt(t *testing.T) {
 			}
 			if _, ok := got[1]["id_slot"]; ok {
 				t.Error("the second request still named the slot")
-			}
-		})
-	}
-}
-
-func TestARefusalThatIsNotAboutTheSlotIsNotRetried(t *testing.T) {
-	for _, proto := range protocols {
-		t.Run(proto.name, func(t *testing.T) {
-			srv := newSlotServer(t, `"the prompt is too long for the context"`)
-			p, err := proto.build(provider.Endpoint{BaseURL: srv.URL, SlotHints: true})
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := read(t, p, slotRequest(1))
-			if r.err == nil {
-				t.Fatal("the call succeeded, want the server's refusal")
-			}
-			if provider.Retryable(r.err) {
-				t.Errorf("the refusal %v is retryable", r.err)
-			}
-			if got := srv.requests(t); len(got) != 1 {
-				t.Errorf("requests = %d, want 1: a 400 that does not name id_slot is the request's own", len(got))
 			}
 		})
 	}

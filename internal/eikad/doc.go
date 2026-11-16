@@ -2,7 +2,7 @@
 // computer container.
 //
 // It is the only process the harness talks to when an agent runs a command,
-// reads or writes a file, watches for changes, or starts a
+// reads or writes a file, or starts a
 // stdio MCP server, whose standard streams /process carries. Every path
 // it accepts is confined to the computer root: traversal and symlinks that
 // leave the root are rejected. Every route but /healthz requires the bearer

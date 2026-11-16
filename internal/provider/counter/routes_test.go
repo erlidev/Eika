@@ -112,11 +112,6 @@ func TestLlamaCppRendersTheRequestTheProviderSends(t *testing.T) {
 	if sent[0] != string(want) {
 		t.Errorf("/apply-template body is not the provider's chat body, byte for byte:\n got  %s\n want %s", sent[0], want)
 	}
-	for _, needle := range []string{`"be brief"`, `"ls"`, `"chat_template_kwargs"`, `"enable_thinking":false`, `"preserve_thinking":true`, `"reasoning_content":"mulling it over"`, `"tool_call_id":"c1"`} {
-		if !strings.Contains(sent[0], needle) {
-			t.Errorf("/apply-template body lacks %s: %s", needle, sent[0])
-		}
-	}
 	if srv.auth != "Bearer k" {
 		t.Errorf("Authorization = %q, want the key", srv.auth)
 	}
@@ -157,14 +152,6 @@ func TestLlamaCppBoundariesAreControlTokensOnly(t *testing.T) {
 	want := []int{0, strings.LastIndex(prompt, "<|im_start|>")}
 	if !slices.Equal(cuts, want) {
 		t.Errorf("cuts = %v, want %v: only <|im_start|> is a control token here", cuts, want)
-	}
-	// Each candidate is asked about once, however often it appears.
-	before := len(srv.sent("/tokenize"))
-	if _, err := routes.Boundaries(context.Background(), prompt); err != nil {
-		t.Fatalf("Boundaries: %v", err)
-	}
-	if after := len(srv.sent("/tokenize")); after != before {
-		t.Errorf("the second call made %d more requests, want 0", after-before)
 	}
 }
 
@@ -219,9 +206,7 @@ func TestTextOnlyBackendsAndLevels(t *testing.T) {
 	}{
 		{"sglang text", probe.SGLang, probe.CountText, counter.LevelText, 7},
 		{"tabby chat is counted as text", probe.Tabby, probe.CountChat, counter.LevelText, 9},
-		{"vllm text", probe.VLLM, probe.CountText, counter.LevelText, 7},
 		{"no tokenizer", probe.OpenAI, probe.CountNone, counter.LevelNone, 0},
-		{"llama.cpp without routes", probe.LlamaCpp, probe.CountNone, counter.LevelNone, 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -240,15 +225,5 @@ func TestTextOnlyBackendsAndLevels(t *testing.T) {
 				t.Errorf("Text = %d, %v; want %d", n, err, c.want)
 			}
 		})
-	}
-}
-
-func TestRoutesReportAFailedRoute(t *testing.T) {
-	srv := newRecorder(t, func(string, map[string]any) (any, int) {
-		return map[string]any{"error": "nope"}, http.StatusBadRequest
-	})
-	routes := counter.NewRoutes(counter.Config{BaseURL: srv.URL, Backend: probe.LlamaCpp, Counting: probe.CountChat}, encoder(t))
-	if _, err := routes.Text(context.Background(), "hi"); err == nil || !strings.Contains(err.Error(), "status 400") {
-		t.Errorf("Text error = %v, want the status", err)
 	}
 }

@@ -20,8 +20,8 @@ const noComposing: Composing = { model: "", draft: "", draftImages: [] };
 export type SessionStore = TranscriptState & {
   /**
    * model is the model this session's next run uses, empty for the default.
-   * It is here rather than in the session view because the status bar sets it
-   * and the run panel reads it, and neither owns the other.
+   * It is here rather than in the session view because `open` parks it with
+   * the draft when another session opens, and restores it on return.
    */
   model: string;
   /**

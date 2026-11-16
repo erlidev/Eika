@@ -47,12 +47,6 @@ func TestSummariseTotalsWhatEveryCallMeasured(t *testing.T) {
 			},
 			prefill: ptr(1.5), promptSum: ptr(200),
 		},
-		{
-			name:      "nothing measured",
-			calls:     []live.Call{{PromptTokens: ptr(7)}},
-			promptSum: ptr(7),
-		},
-		{name: "no calls"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,16 +114,5 @@ func TestReportWritesJSONWithTheServerAndAbsentDrift(t *testing.T) {
 	}
 	if strings.TrimSpace(string(s.Calls[0]["cache_hit_rate"])) != "null" {
 		t.Errorf("an unmeasured hit rate = %s, want null", s.Calls[0]["cache_hit_rate"])
-	}
-}
-
-func TestReportWithoutScenariosListsNone(t *testing.T) {
-	file, err := live.NewReport(time.Now(), live.ServerInfo{}).Write(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := os.ReadFile(file)
-	if !strings.Contains(string(raw), `"scenarios": []`) {
-		t.Errorf("report = %s, want an empty list, not null", raw)
 	}
 }

@@ -392,31 +392,6 @@ func (s *Service) keepReport(ctx context.Context, id, text string, active *execu
 	return nil
 }
 
-// Waiting records a code-owned wait or returns the child to running. It accepts
-// only an active, uncancelled run. An empty reason ends the wait.
-func (s *Service) Waiting(ctx context.Context, parent, name, reason string) (store.Session, error) {
-	if reason != "" {
-		if err := validText("waiting reason", reason, 4096); err != nil {
-			return store.Session{}, err
-		}
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	child, err := s.store.Subagent(ctx, parent, name)
-	if err != nil {
-		return store.Session{}, err
-	}
-	active := s.active[child.ID]
-	if active == nil || active.cancelled {
-		return store.Session{}, fmt.Errorf("subagent has no active run")
-	}
-	state := store.SessionWaiting
-	if reason == "" {
-		state = store.SessionRunning
-	}
-	return s.state(ctx, child, state, reason)
-}
-
 // Cancel stops a child's current execution and waits for its final state write.
 // A child without a current execution keeps its stored state, except that a
 // stored running or waiting state is a lost final write and becomes cancelled.

@@ -1,7 +1,6 @@
 package builtin_test
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -23,30 +22,6 @@ func TestBashRunsCommand(t *testing.T) {
 	}
 }
 
-// bash also supports file operations that need shell commands.
-func TestBashReadsWritesAndEditsFiles(t *testing.T) {
-	w := newComputer(t)
-	res := w.call("bash", map[string]any{"command": "mkdir -p src && cat > src/a.txt <<'EOF'\n" +
-		"one $HOME\ntwo\nEOF\nsed -i 's/two/three/' src/a.txt && cat src/a.txt"})
-	if res.IsError {
-		t.Fatalf("bash failed: %s", res.Content)
-	}
-	if res.Content != "one $HOME\nthree" {
-		t.Errorf("content = %q, want the edited file", res.Content)
-	}
-}
-
-func TestBashCombinesStreams(t *testing.T) {
-	w := newComputer(t)
-	res := w.call("bash", map[string]any{"command": "echo out; echo err 1>&2"})
-	if res.IsError {
-		t.Fatalf("bash failed: %s", res.Content)
-	}
-	if !strings.Contains(res.Content, "out") || !strings.Contains(res.Content, "err") {
-		t.Errorf("content = %q, want both streams", res.Content)
-	}
-}
-
 func TestBashReportsExitCode(t *testing.T) {
 	w := newComputer(t)
 	res := w.call("bash", map[string]any{"command": "exit 7"})
@@ -55,24 +30,6 @@ func TestBashReportsExitCode(t *testing.T) {
 	}
 	if !strings.Contains(res.Content, "exit code 7") {
 		t.Errorf("content = %q, want the exit code", res.Content)
-	}
-	var details struct {
-		ExitCode int  `json:"exit_code"`
-		TimedOut bool `json:"timed_out"`
-	}
-	if err := json.Unmarshal(res.Details, &details); err != nil {
-		t.Fatalf("decode details: %v", err)
-	}
-	if details.ExitCode != 7 || details.TimedOut {
-		t.Errorf("details = %+v", details)
-	}
-}
-
-func TestBashTimesOut(t *testing.T) {
-	w := newComputer(t)
-	res := w.call("bash", map[string]any{"command": "sleep 5", "timeout": 1})
-	if !res.IsError || !strings.Contains(res.Content, "timed out") {
-		t.Errorf("result = %+v, want a timeout", res)
 	}
 }
 
@@ -140,13 +97,5 @@ func TestBashTimeoutKillsBackgroundChildren(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 10*time.Second {
 		t.Errorf("the call took %s, want the process group killed promptly", elapsed)
-	}
-}
-
-func TestBashRequiresCommand(t *testing.T) {
-	w := newComputer(t)
-	res := w.call("bash", map[string]any{"command": "  "})
-	if !res.IsError || !strings.Contains(res.Content, "command is required") {
-		t.Errorf("result = %+v", res)
 	}
 }

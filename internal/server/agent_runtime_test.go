@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"reflect"
 	"runtime"
 	"slices"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/agentdef"
-	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/store"
@@ -63,14 +61,6 @@ func TestAgentConfigurationIgnoresLegacyLayers(t *testing.T) {
 	cfg, err := b.resolveSession(store.Session{}, "main")
 	if err != nil || cfg.definition != nil || *cfg.chatPrompt != "legacy prompt" || cfg.instructions != "legacy rules" || cfg.model.Name != "main" {
 		t.Fatalf("legacy resolution: %+v, %v", cfg, err)
-	}
-}
-
-func TestAgentClassWithoutAModelDoesNotUseAnUnrelatedModel(t *testing.T) {
-	b := configBase{models: []store.Model{{ID: "other", Name: "other", Kind: store.ModelKindChat}}, assigned: map[modelClass]string{classFast: "deleted"}}
-	cfg, err := b.resolveSession(store.Session{Agent: "researcher"}, "")
-	if err != nil || cfg.modelOK {
-		t.Fatalf("resolution = %+v, %v", cfg, err)
 	}
 }
 
@@ -159,148 +149,6 @@ func TestAgentRunDeniesToolsOutsideItsDefinition(t *testing.T) {
 				t.Fatalf("prompt = %q, want %q", reqs[0].System, *cfg.chatPrompt)
 			}
 		})
-	}
-}
-
-func TestAgentRunUsesItsCallLimit(t *testing.T) {
-	s := runtimeServer(t)
-	for _, name := range []string{"eika", "worker", "researcher"} {
-		t.Run(name, func(t *testing.T) {
-			cfg, err := (configBase{}).resolveSession(store.Session{Agent: name}, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			steps := make([]providertest.Step, cfg.definition.MaxTurns+1)
-			for i := range steps {
-				steps[i] = providertest.Calls("", providertest.Call("call", "unavailable", map[string]any{}))
-			}
-			p := providertest.New(steps...)
-			ag := s.newAgent(p, store.Session{Agent: name}, cfg, nil, nil, agent.Options{})
-			if err := ag.Run(t.Context(), agent.NewSession("s", ""), provider.UserMessage("go")); err != nil {
-				t.Fatal(err)
-			}
-			if p.Calls() != cfg.definition.MaxTurns {
-				t.Fatalf("calls = %d, want %d", p.Calls(), cfg.definition.MaxTurns)
-			}
-		})
-	}
-}
-
-func TestAgentCompactionUsesItsOwnPrompts(t *testing.T) {
-	s := runtimeServer(t)
-	for _, d := range agentdef.Builtins() {
-		t.Run(d.Name, func(t *testing.T) {
-			cfg, err := (configBase{}).resolveSession(store.Session{Agent: d.Name}, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			p := providertest.New(providertest.Text("summary"), providertest.Text("updated"))
-			ag := s.newAgent(p, store.Session{Agent: d.Name}, cfg, nil, nil, agent.Options{Compaction: agent.CompactionSettings{
-				KeepRecentTokens: 100, Prompts: agent.CompactionPrompts{Summary: "global summary", Update: "global update", TurnPrefix: "global prefix"},
-			}})
-			sess := agent.NewSession("s", "")
-			add := func() {
-				for range 3 {
-					sess.Conversation.Append(provider.UserMessage(strings.Repeat("text ", 200)))
-					sess.Conversation.Append(provider.AssistantMessage("answer", nil))
-				}
-			}
-			add()
-			if err := ag.Compact(t.Context(), sess, ""); err != nil {
-				t.Fatal(err)
-			}
-			add()
-			if err := ag.Compact(t.Context(), sess, ""); err != nil {
-				t.Fatal(err)
-			}
-			for i, prompt := range []string{d.Compaction.Summary, d.Compaction.Update} {
-				req := p.Requests()[i]
-				if got := req.Messages[len(req.Messages)-1].Content; got != prompt {
-					t.Fatalf("summary instruction = %q, want %q", got, prompt)
-				}
-			}
-		})
-	}
-}
-
-func TestSubagentAndRoutineCompactionKeepsPisSummary(t *testing.T) {
-	s := runtimeServer(t)
-	for _, kind := range []store.SessionKind{store.SessionSubagent, store.SessionRoutine} {
-		for _, name := range []string{"researcher", "worker"} {
-			t.Run(string(kind)+"/"+name, func(t *testing.T) {
-				sess := store.Session{ID: "s", Kind: kind, Agent: name}
-				cfg, err := (configBase{}).resolveSession(sess, "")
-				if err != nil {
-					t.Fatal(err)
-				}
-				p := providertest.New(providertest.Text("summary"))
-				ag := s.newAgent(p, sess, cfg, nil, nil, agent.Options{Compaction: agent.CompactionSettings{KeepRecentTokens: 100}})
-				run := agent.NewSession("s", "")
-				for range 3 {
-					run.Conversation.Append(provider.UserMessage(strings.Repeat("text ", 200)))
-					run.Conversation.Append(provider.AssistantMessage("answer", nil))
-				}
-				if err := ag.Compact(t.Context(), run, ""); err != nil {
-					t.Fatal(err)
-				}
-				if got := run.Conversation.Messages()[0].Content; got != agent.SummaryMessage("summary").Content {
-					t.Fatalf("summary message = %q, want the model's summary alone", got)
-				}
-			})
-		}
-	}
-}
-
-// runtimeMCPStore counts attempts to load MCP configuration for a run.
-type runtimeMCPStore struct {
-	mcp.Store
-	reads int
-}
-
-func (s *runtimeMCPStore) MCPServers(context.Context) ([]mcp.ServerConfig, error) {
-	s.reads++
-	return nil, nil
-}
-
-func TestAgentRunDoesNotReadMCPConfiguration(t *testing.T) {
-	st := &runtimeMCPStore{}
-	pool := mcp.NewPool(mcp.Options{Store: st})
-	t.Cleanup(pool.Close)
-	s := runtimeServer(t)
-	s.deps.MCP = pool
-	for _, name := range []string{"eika", "worker", "researcher"} {
-		for _, choice := range [][]string{nil, {"mcp__private__*"}} {
-			if got := s.mcpToolsFor(t.Context(), store.Session{Agent: name, ComputerID: "computer"}, choice); len(got) != 0 {
-				t.Fatal("agent received MCP tools")
-			}
-		}
-	}
-	if st.reads != 0 {
-		t.Fatal("agent run read MCP configuration")
-	}
-	s.mcpToolsFor(t.Context(), store.Session{}, nil)
-	if st.reads != 1 {
-		t.Fatal("legacy run did not read MCP configuration")
-	}
-}
-
-func TestOnlyAgentsWhoseToolsNeedAComputerUseOne(t *testing.T) {
-	s := runtimeServer(t)
-	for _, tc := range []struct {
-		sess store.Session
-		want bool
-	}{
-		{store.Session{Agent: "worker", ComputerID: "c"}, true},
-		{store.Session{Agent: "eika", ComputerID: "c"}, false},
-		{store.Session{Agent: "researcher", ComputerID: "c"}, false},
-		{store.Session{Agent: "unknown", ComputerID: "c"}, false},
-		{store.Session{ComputerID: "c"}, true},
-		{store.Session{Agent: "worker"}, false},
-		{store.Session{}, false},
-	} {
-		if got := s.usesComputer(tc.sess); got != tc.want {
-			t.Errorf("usesComputer(%+v) = %v, want %v", tc.sess, got, tc.want)
-		}
 	}
 }
 

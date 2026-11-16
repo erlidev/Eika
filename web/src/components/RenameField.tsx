@@ -1,6 +1,6 @@
 /**
- * A field that renames something in place: a sidebar row or the session
- * header swaps its label for it. Enter or leaving the field saves, Escape
+ * A field that renames something in place: the session header swaps its
+ * label for it. Enter or leaving the field saves, Escape
  * keeps the old name; an empty or unchanged name saves nothing.
  */
 

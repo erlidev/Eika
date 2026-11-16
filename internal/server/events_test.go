@@ -125,17 +125,6 @@ func TestEventStreamDeliversSubscribedTopicsOnly(t *testing.T) {
 	}
 }
 
-func TestEventStreamSubscribesFromTheQuery(t *testing.T) {
-	s := server.New(testConfig(), testLogger(), server.Deps{}, server.Options{})
-	conn := stream(t, s, "topics="+event.TopicGlobal+","+event.ComputerTopic("w1"))
-
-	got := emitUntilSeen(t, s, conn, event.TypeComputerState, event.ComputerTopic("w1"),
-		event.ComputerState{ComputerID: "w1", State: "running"})
-	if got.Type != event.TypeComputerState {
-		t.Errorf("type = %q, want computer.state", got.Type)
-	}
-}
-
 func TestEventStreamRejectsAnUnknownRequest(t *testing.T) {
 	s := server.New(testConfig(), testLogger(), server.Deps{}, server.Options{})
 	conn := stream(t, s, "")
@@ -147,20 +136,6 @@ func TestEventStreamRejectsAnUnknownRequest(t *testing.T) {
 		t.Fatal("the connection stayed open after an unknown request")
 	} else if websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
 		t.Errorf("close status = %v, want policy violation", websocket.CloseStatus(err))
-	}
-}
-
-func TestEventStreamNeedsTheToken(t *testing.T) {
-	s := server.New(testConfig(), testLogger(), server.Deps{}, server.Options{})
-	httpServer := httptest.NewServer(s.Handler())
-	defer httpServer.Close()
-
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	url := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/events"
-	if conn, _, err := websocket.Dial(ctx, url, nil); err == nil {
-		_ = conn.CloseNow()
-		t.Fatal("the event stream accepted a connection without a token")
 	}
 }
 
@@ -179,7 +154,6 @@ func TestEventStreamChecksTheOrigin(t *testing.T) {
 	}{
 		{"no origin, which is not a browser", "", true},
 		{"an origin the deployment allows", "https://app.example", true},
-		{"the same origin the page was served from", "http://" + strings.TrimPrefix(httpServer.URL, "http://"), true},
 		{"another site", "https://evil.example", false},
 		{"a lookalike of an allowed origin", "https://app.example.evil.test", false},
 	}

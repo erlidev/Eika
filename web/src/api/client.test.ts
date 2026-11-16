@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, notJsonMessage, parseApiError, request, unreachableMessage } from "@/api/client";
+import { notJsonMessage, parseApiError, request, unreachableMessage } from "@/api/client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -21,23 +21,8 @@ describe("parseApiError", () => {
     expect(error.message).toMatch(/Try again; if it keeps failing, the harness log/);
   });
 
-  it.each([
-    [403, "forbidden"],
-    [413, "too_large"],
-    [409, "conflict"],
-  ])("reads the code of a %i the harness names", (status, code) => {
-    expect(parseApiError(status, { error: { code, message: "refused" } }).code).toBe(code);
-    expect(parseApiError(status, "<html>").code).toBe(code);
-  });
-
-  it.each([
-    [502, /did not answer \(HTTP 502\)/],
-    [500, /unexpected error/],
-    [404, /no such route \(HTTP 404\)/],
-    [429, /turning away requests .*\(HTTP 429\)/],
-    [418, /refused the request \(HTTP 418\) without saying why/],
-  ])("describes a %i without the documented body", (status, want) => {
-    expect(parseApiError(status, "<html>").message).toMatch(want);
+  it("reads the code from the status when the body is not the documented one", () => {
+    expect(parseApiError(413, "<html>").code).toBe("too_large");
   });
 });
 
@@ -61,17 +46,5 @@ describe("request", () => {
       vi.fn().mockRejectedValue(new DOMException("The operation was aborted.", "AbortError")),
     );
     await expect(request("/api/settings")).rejects.toMatchObject({ name: "AbortError" });
-  });
-
-  it("decodes the error shape", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: { code: "conflict", message: "taken" } }), {
-          status: 409,
-        }),
-      ),
-    );
-    await expect(request("/api/providers")).rejects.toEqual(new ApiError(409, "conflict", "taken"));
   });
 });

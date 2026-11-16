@@ -24,7 +24,9 @@ and phase 4b, web fetch, compaction and skills come last.
 
 `AGENTS.md` and `docs/STYLE_GUIDE.md` win on any conflict.
 
-- **The rules of `AGENTS.md` apply to every item:** tests with the change, docs
+- **The rules of `AGENTS.md` apply to every item:** the few tests that matter
+  with the change (`AGENTS.md`, "Testing"; an item is not a reason to test
+  every branch it adds), docs
   current in the same change, `make contract` when a wire type changes, `make
   smoke` when compose, a Dockerfile, `deploy/` or `server.Run` wiring changes, and
   `make visual-update` only after looking at every changed baseline.
@@ -231,7 +233,7 @@ What stops a long-lived home session from losing work or growing without bound.
 Removal and verification. None of it changes what the user can do.
 
 - [ ] **P3-11**: Complete Settings and retain existing flows.
-- [ ] **P3-17**: Remove the unused workbench.
+- [x] **P3-17**: Remove the unused workbench.
 - [ ] **P2-11**: Remove profiles, configuration layering, direct chats and
       obsolete fields and kinds, after their callers moved. Preserve history.
 - [ ] **P2-22**: Schedule idle compaction.
@@ -493,7 +495,7 @@ The mobile-first app. Design: `design/interface.md`.
       - [x] **P3-09**: Add Activity scenarios.
       - [ ] **P3-16**: Complete phone and touch coverage and measure history.
 - [ ] Remove what is left of the workbench.
-      - [ ] **P3-17**: Remove the unused workbench.
+      - [x] **P3-17**: Remove the unused workbench.
 
 **Exit:** on a phone over Tailscale:
 1. Install the PWA.

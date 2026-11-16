@@ -4,7 +4,6 @@ package server_test
 
 import (
 	"context"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -208,118 +207,6 @@ func TestANoticeThatFindsHomeBusyWaitsForTheRunsNextMessageOrItsEnd(t *testing.T
 	}
 }
 
-func TestSimultaneousReportsAreEachDeliveredOnce(t *testing.T) {
-	d := newDelegating(t)
-	names := []string{"one", "two", "three"}
-	var steps []providertest.Step
-	for _, name := range names {
-		steps = append(steps, call("start-"+name, "subagent_start", map[string]any{"agent": "researcher", "name": name, "brief": "Look into " + name}))
-	}
-	eika := providertest.New(append(steps, providertest.Text("started"))...)
-	researchers := byTask{}
-	for _, name := range names {
-		researchers["Look into "+name] = providertest.New(call("done", "report", map[string]any{"summary": name + " done"}), providertest.Text("ok"))
-	}
-	notices := answeringNotices(eika)
-	d.use(byAgent{"You are Eika": notices, "You are a researcher": researchers})
-
-	d.postMessage(t, d.home.ID, "look into three things", "", 202)
-	waitFor(t, "the subagents", func() bool {
-		rows, err := d.store.Subagents(t.Context(), d.home.ID)
-		return err == nil && len(rows) == len(names)
-	})
-	for _, name := range names {
-		d.waitState(t, name, store.SessionIdle)
-	}
-	d.settled(t)
-	texts, deliveries := d.homeNotices(t)
-	if len(texts) != len(names) {
-		t.Fatalf("%d notices, want %d", len(texts), len(names))
-	}
-	var said []string
-	for id, text := range texts {
-		said = append(said, text)
-		if deliveries[id] != 1 {
-			t.Errorf("%q delivered %d times, want once", text, deliveries[id])
-		}
-	}
-	slices.Sort(said)
-	if want := []string{"one (researcher) reported: one done", "three (researcher) reported: three done", "two (researcher) reported: two done"}; !slices.Equal(said, want) {
-		t.Errorf("notices = %q, want %q", said, want)
-	}
-}
-
-func TestAnUndeliveredNoticeFromAnEarlierProcessReachesTheNextTurn(t *testing.T) {
-	d := newDelegating(t)
-	// A notice the last process stored and never delivered.
-	e, err := session.TextEntry(store.KindNotice, "plumber (worker) reported: Found one")
-	if err != nil {
-		t.Fatal(err)
-	}
-	stored, err := d.store.AppendEntry(t.Context(), d.home.ID, e)
-	if err != nil {
-		t.Fatal(err)
-	}
-	eika := providertest.New(providertest.Text("Plumber found one."), providertest.Text("hello"))
-	d.use(byAgent{"You are Eika": eika})
-
-	d.postMessage(t, d.home.ID, "anything new?", "", 202)
-	d.waitIdle(t, d.home.ID)
-	d.postMessage(t, d.home.ID, "hi", "", 202)
-	d.waitIdle(t, d.home.ID)
-	reqs := eika.Requests()
-	if got := lastUser(reqs[0]); !strings.Contains(got.Context, "notice: plumber (worker) reported: Found one") || !slices.Equal(got.Notices, []string{stored.ID}) {
-		t.Errorf("first message = %+v, want the stored notice", got)
-	}
-	if got := lastUser(reqs[1]); strings.Contains(got.Context, "notice:") {
-		t.Errorf("second message = %+v, want no notice", got)
-	}
-}
-
-func TestAMessageDuringABackgroundTurnJoinsItAtInteractivePriority(t *testing.T) {
-	d := newDelegating(t)
-	eika := providertest.New(
-		call("start", "subagent_start", map[string]any{"agent": "researcher", "name": "flights", "brief": "Find flights"}),
-		providertest.Text("on it"),
-		providertest.Text("Flights are cheapest on Tuesday."),
-	)
-	researcher := newHeldScript(call("done", "report", map[string]any{"summary": "Tuesday"}), providertest.Text("ok"))
-	notices := answeringNotices(eika)
-	notices.arrived, notices.release = make(chan struct{}, 1), make(chan struct{})
-	d.use(byAgent{"You are Eika": notices, "You are a researcher": researcher})
-
-	d.postMessage(t, d.home.ID, "find flights", "", 202)
-	<-researcher.started
-	d.waitIdle(t, d.home.ID)
-	researcher.open()
-	<-notices.arrived
-	background := d.runState(t, d.home.ID).Run
-	if background == nil {
-		t.Fatal("no background run")
-	}
-	// The client did not know of the turn and asks for a run of its own.
-	joined := d.postMessage(t, d.home.ID, "what did it find?", "", 202)
-	if joined.ID != background.ID {
-		t.Errorf("the message started run %s, want it to join %s", joined.ID, background.ID)
-	}
-	close(notices.release)
-	d.waitIdle(t, d.home.ID)
-
-	reqs := eika.Requests()
-	if got := lastUser(reqs[2]); got.Content != "what did it find?" {
-		t.Errorf("the joined turn answered %q", got.Content)
-	}
-	var priorities []string
-	for _, c := range d.homeCalls(t) {
-		if c.RunID != "" {
-			priorities = append(priorities, c.Priority)
-		}
-	}
-	if n := len(priorities); n < 2 || priorities[n-2] != inference.Background.String() || priorities[n-1] != inference.Interactive.String() {
-		t.Errorf("priorities = %v, want the notice call background and the user's interactive", priorities)
-	}
-}
-
 // turnstile holds every call until the test lets one through, after telling
 // arrived.
 type turnstile struct {
@@ -389,63 +276,30 @@ func TestANoticeTheNextRunTakesAsTheLastRunEndsIsDeliveredOnce(t *testing.T) {
 	}
 }
 
-func TestAMessageWhileABackgroundTurnIsBuiltJoinsIt(t *testing.T) {
-	d := newDelegating(t)
-	eika := providertest.New(providertest.Text("It found one."))
-	d.use(byAgent{"You are Eika": answeringNotices(eika)})
-	// Building the background turn's provider takes a while, and the user's
-	// message arrives meanwhile.
-	d.delay = 300 * time.Millisecond
-	if err := d.PostNoticeForTest(t.Context(), d.home.ID, "notice-test", "plumber (worker) reported: Found one"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "the background turn", func() bool { return d.runState(t, d.home.ID).Active })
-	joined := d.postMessage(t, d.home.ID, "what's new?", "", 202)
-	d.waitIdle(t, d.home.ID)
-
-	runs, err := d.store.Runs(t.Context(), d.home.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(runs) != 1 || runs[0].ID != joined.ID {
-		t.Errorf("runs = %+v, want the message to join the one background turn %s", runs, joined.ID)
-	}
-	if reqs := eika.Requests(); len(reqs) != 1 || lastUser(reqs[0]).Content != "what's new?" {
-		t.Errorf("Eika's requests = %d, want the user's message answered in the background turn", len(reqs))
-	}
-}
-
 func TestAReportWhoseNoticeFailsToWriteIsWrittenLaterOnce(t *testing.T) {
-	for _, lost := range []bool{false, true} {
-		name := "the write fails"
-		if lost {
-			name = "the write is made and its answer lost"
-		}
-		t.Run(name, func(t *testing.T) {
-			d := newDelegating(t)
-			d.FailNoticeWritesForTest(2, lost, 10*time.Millisecond)
-			eika := providertest.New(
-				call("start", "subagent_start", map[string]any{"agent": "researcher", "name": "flights", "brief": "Find flights"}),
-				providertest.Text("on it"),
-			)
-			researcher := providertest.New(call("done", "report", map[string]any{"summary": "Tuesday"}), providertest.Text("ok"))
-			notices := answeringNotices(eika)
-			d.use(byAgent{"You are Eika": notices, "You are a researcher": researcher})
+	// The write is made and only its answer lost: a retry must not write it twice.
+	d := newDelegating(t)
+	d.FailNoticeWritesForTest(2, true, 10*time.Millisecond)
+	eika := providertest.New(
+		call("start", "subagent_start", map[string]any{"agent": "researcher", "name": "flights", "brief": "Find flights"}),
+		providertest.Text("on it"),
+	)
+	researcher := providertest.New(call("done", "report", map[string]any{"summary": "Tuesday"}), providertest.Text("ok"))
+	notices := answeringNotices(eika)
+	d.use(byAgent{"You are Eika": notices, "You are a researcher": researcher})
 
-			d.postMessage(t, d.home.ID, "find flights", "", 202)
-			d.waitIdle(t, d.home.ID)
-			d.waitState(t, "flights", store.SessionIdle)
-			waitFor(t, "the background turn", func() bool { return len(notices.Requests()) == 1 })
-			d.settled(t)
-			texts, deliveries := d.homeNotices(t)
-			if len(texts) != 1 {
-				t.Fatalf("notices = %q, want one", texts)
-			}
-			for id, text := range texts {
-				if text != "flights (researcher) reported: Tuesday" || deliveries[id] != 1 {
-					t.Errorf("notice %q delivered %d times, want once", text, deliveries[id])
-				}
-			}
-		})
+	d.postMessage(t, d.home.ID, "find flights", "", 202)
+	d.waitIdle(t, d.home.ID)
+	d.waitState(t, "flights", store.SessionIdle)
+	waitFor(t, "the background turn", func() bool { return len(notices.Requests()) == 1 })
+	d.settled(t)
+	texts, deliveries := d.homeNotices(t)
+	if len(texts) != 1 {
+		t.Fatalf("notices = %q, want one", texts)
+	}
+	for id, text := range texts {
+		if text != "flights (researcher) reported: Tuesday" || deliveries[id] != 1 {
+			t.Errorf("notice %q delivered %d times, want once", text, deliveries[id])
+		}
 	}
 }

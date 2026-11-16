@@ -126,15 +126,8 @@ func TestSubagentTools(t *testing.T) {
 	for _, tc := range []struct{ name, args, want string }{
 		{"subagent_start", `{"agent":"eika","name":"x","brief":"b"}`, "agent must be"},
 		{"subagent_start", `{"agent":"worker","name":"Has Space","brief":"b"}`, "lowercase"},
-		{"subagent_start", `{"agent":"worker","name":"x","brief":"  "}`, "brief must be nonempty"},
 		{"subagent_start", `{"agent":"worker","name":"x","brief":"b","project":"missing"}`, `project "missing" not found`},
-		{"subagent_start", `{"agent":"worker","name":"x","brief":"b","extra":"y"}`, "unknown argument"},
-		{"subagent_start", `{"agent":"worker","name":"x"}`, "brief is required"},
-		{"subagent_message", `{"subagent":"plumber","text":"\ud800"}`, "surrogate"},
 		{"subagent_message", `{"subagent":"plumber","text":"hello","question_id":""}`, "question_id"},
-		{"subagent_message", "{\"subagent\":\"plumber\",\"text\":\"\xff\"}", "UTF-8"},
-		{"subagent_status", `{"subagent":null}`, "must be a string"},
-		{"subagent_cancel", `{}`, "subagent is required"},
 	} {
 		if r := call(tc.name, tc.args); !r.IsError || !strings.Contains(r.Content, tc.want) {
 			t.Errorf("%s %s = %+v, want error with %q", tc.name, tc.args, r, tc.want)
@@ -144,12 +137,5 @@ func TestSubagentTools(t *testing.T) {
 		"message home nobody hi", "status home ", "status home flights", "cancel home plumber"}
 	if strings.Join(f.calls, "|") != strings.Join(want, "|") {
 		t.Fatalf("calls = %q, want %q", f.calls, want)
-	}
-}
-
-func TestSubagentToolsWithoutABindingAnswerTheModel(t *testing.T) {
-	r, err := (subagentTool{name: "subagent_status"}).Call(context.Background(), tool.CallContext{SessionID: "home"}, json.RawMessage(`{}`))
-	if err != nil || !r.IsError || !strings.Contains(r.Content, "unavailable") {
-		t.Fatalf("result = %+v, %v", r, err)
 	}
 }

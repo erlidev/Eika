@@ -119,7 +119,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 // home computer; when its container refuses, the answer is an error and the
 // values stay saved.
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeUTF8JSON[map[string]json.RawMessage](r)
+	req, err := decodeJSON[map[string]json.RawMessage](r)
 	if err != nil {
 		s.fail(w, r, err)
 		return

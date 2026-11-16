@@ -22,34 +22,24 @@ const researcher = readFileSync(
   new URL("../../../internal/agentdef/prompts/researcher.md", import.meta.url),
   "utf8",
 );
-const researcherSummary = readFileSync(
-  new URL("../../../internal/agentdef/prompts/researcher-summary.md", import.meta.url),
-  "utf8",
-);
-const researcherUpdate = readFileSync(
-  new URL("../../../internal/agentdef/prompts/researcher-update.md", import.meta.url),
-  "utf8",
-);
-const researcherTurnPrefix = readFileSync(
-  new URL("../../../internal/agentdef/prompts/researcher-turn-prefix.md", import.meta.url),
-  "utf8",
-);
 const worker = readFileSync(
   new URL("../../../internal/agentdef/prompts/worker.md", import.meta.url),
   "utf8",
 );
-const workerSummary = readFileSync(
-  new URL("../../../internal/agentdef/prompts/worker-summary.md", import.meta.url),
-  "utf8",
-);
-const workerUpdate = readFileSync(
-  new URL("../../../internal/agentdef/prompts/worker-update.md", import.meta.url),
-  "utf8",
-);
-const workerTurnPrefix = readFileSync(
-  new URL("../../../internal/agentdef/prompts/worker-turn-prefix.md", import.meta.url),
-  "utf8",
-);
+
+/**
+ * Researcher and worker use the Go built-in compaction prompts plus one
+ * closing line (`preserving` in internal/agentdef). The UI never shows these
+ * texts, so the mock stands in for the built-in part.
+ */
+function preserving(line: string) {
+  const tail = `\n\n${line}\n`;
+  return {
+    summary: `Built-in summary prompt.${tail}`,
+    update: `Built-in update prompt.${tail}`,
+    turn_prefix: `Built-in turn prefix prompt.${tail}`,
+  };
+}
 
 export const builtinAgents: AgentDefinition[] = [
   {
@@ -78,11 +68,9 @@ export const builtinAgents: AgentDefinition[] = [
     max_turns: 200,
     tools: ["ask_user", "report", "web_fetch", "web_search"],
     prompt: researcher,
-    compaction: {
-      summary: researcherSummary,
-      update: researcherUpdate,
-      turn_prefix: researcherTurnPrefix,
-    },
+    compaction: preserving(
+      "Preserve the research question, findings, source URLs, uncertainty and open questions.",
+    ),
   },
   {
     name: "worker",
@@ -100,6 +88,8 @@ export const builtinAgents: AgentDefinition[] = [
       "web_search",
     ],
     prompt: worker,
-    compaction: { summary: workerSummary, update: workerUpdate, turn_prefix: workerTurnPrefix },
+    compaction: preserving(
+      "Preserve the brief, changed files, commands, checks, errors and remaining work.",
+    ),
   },
 ];

@@ -52,18 +52,10 @@ type fakeHost struct {
 
 	mu        sync.Mutex
 	computers map[string]*fakeComputer
-	// createErr, startErr and confineErr fail the matching call when set.
+	// createErr, confineErr and inspectErr fail the matching call when set.
 	createErr  error
-	startErr   error
 	confineErr error
 	inspectErr error
-	// images are the images HasImage reports present; imageErr fails it,
-	// the way a Docker socket the harness cannot use does.
-	images   map[string]bool
-	imageErr error
-	// startHook runs before Start answers, which is how a test acts in the
-	// middle of a creation the harness has already got a container out of.
-	startHook func()
 	// process starts what Process is asked for, which is how a test puts a
 	// stdio MCP server in a computer; processes records where.
 	process   func(spec sandbox.ProcessSpec) (io.ReadWriteCloser, error)
@@ -215,12 +207,6 @@ func (h *fakeHost) EgressControl() bool {
 
 // Start marks the computer running.
 func (h *fakeHost) Start(_ context.Context, cx *computer.Computer) error {
-	if h.startHook != nil {
-		h.startHook()
-	}
-	if h.startErr != nil {
-		return h.startErr
-	}
 	return h.update(cx, computer.StateRunning)
 }
 
@@ -229,24 +215,19 @@ func (h *fakeHost) Stop(_ context.Context, cx *computer.Computer) error {
 	return h.update(cx, computer.StateStopped)
 }
 
-// Destroy forgets the computer and removes its directory. It honours the
-// context, as a Docker client does, so that a cleanup running on the request
-// that failed would be seen to fail with it.
-func (h *fakeHost) Destroy(ctx context.Context, cx *computer.Computer) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+// lose forgets a computer and removes its directory, as a container lost
+// while the harness was down would be.
+func (h *fakeHost) lose(t *testing.T, id string) {
+	t.Helper()
 	h.mu.Lock()
-	found, ok := h.computers[cx.ID]
-	delete(h.computers, cx.ID)
+	found, ok := h.computers[id]
+	delete(h.computers, id)
 	h.mu.Unlock()
 	if ok {
 		if err := os.RemoveAll(found.dir); err != nil {
-			return err
+			t.Fatalf("remove the computer's directory: %v", err)
 		}
 	}
-	cx.State = computer.StateGone
-	return nil
 }
 
 // Inspect returns one computer.
@@ -263,15 +244,11 @@ func (h *fakeHost) Inspect(_ context.Context, id string) (computer.Computer, err
 	return found.cx, nil
 }
 
-// List returns every computer the host has.
-func (h *fakeHost) List(context.Context) ([]computer.Computer, error) {
+// count returns how many computers the host has.
+func (h *fakeHost) count() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	out := make([]computer.Computer, 0, len(h.computers))
-	for _, found := range h.computers {
-		out = append(out, found.cx)
-	}
-	return out, nil
+	return len(h.computers)
 }
 
 // Executor returns an executor on the computer's directory.
@@ -321,15 +298,8 @@ func (h *fakeHost) update(cx *computer.Computer, state computer.State) error {
 	return nil
 }
 
-// HasImage reports the images the test said are there.
-func (h *fakeHost) HasImage(_ context.Context, ref string) (bool, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.imageErr != nil {
-		return false, h.imageErr
-	}
-	return h.images[ref], nil
-}
+// HasImage reports no image present.
+func (h *fakeHost) HasImage(context.Context, string) (bool, error) { return false, nil }
 
 // fakeProviders builds whatever provider the test scripted, for any endpoint
 // of the one kind the harness knows.

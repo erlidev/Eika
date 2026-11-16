@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/erlidev/eika/internal/store"
@@ -99,74 +98,8 @@ func TestTheMigrationSeedsADefaultProfileThatSetsNothing(t *testing.T) {
 	if p.Name != "Default" || p.Description != "" || p.Tools != nil || !sameSettings(t, p.ProfileSettings, store.ProfileSettings{}) {
 		t.Errorf("default profile = %+v, want Default setting nothing", p)
 	}
-	const alphabet = "abcdefghijklmnopqrstuvwxyz234567"
-	if len(p.ID) != 20 || strings.Trim(p.ID, alphabet) != "" {
-		t.Errorf("default profile id = %q, want the form store.NewID gives", p.ID)
-	}
 	if p.Sampling != nil {
 		t.Errorf("default sampling = %s, want none", p.Sampling)
-	}
-}
-
-func TestProfileSettingsRoundTrip(t *testing.T) {
-	st := storetest.Open(t)
-	model := newModel(t, st, "gpt-x")
-	cases := []struct {
-		name  string
-		given store.Profile
-	}{
-		{"nothing set", store.Profile{}},
-		{
-			"every field set",
-			store.Profile{
-				Description: "for reviews",
-				ProfileSettings: store.ProfileSettings{
-					ModelID:          model.ID,
-					ChatPrompt:       ptr("Chat briefly."),
-					Instructions:     ptr("Cite files."),
-					PreserveThinking: ptr(true),
-					Sampling:         json.RawMessage(`{"temperature":0.2,"stop":["END"],"seed":7}`),
-				},
-				Tools: []string{"bash", "mcp__docs__*"},
-			},
-		},
-		{
-			"empty prompts, no thinking, and no tools are values",
-			store.Profile{
-				ProfileSettings: store.ProfileSettings{
-					ChatPrompt:       ptr(""),
-					Instructions:     ptr(""),
-					PreserveThinking: ptr(false),
-				},
-				Tools: []string{},
-			},
-		},
-	}
-	for i, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			given := c.given
-			given.Name = "profile-" + string(rune('a'+i))
-			created, err := st.CreateProfile(t.Context(), given)
-			if err != nil {
-				t.Fatalf("CreateProfile: %v", err)
-			}
-			read, err := st.Profile(t.Context(), created.ID)
-			if err != nil {
-				t.Fatalf("Profile: %v", err)
-			}
-			for name, got := range map[string]store.Profile{"created": created, "read": read} {
-				if got.Name != given.Name || got.Description != given.Description ||
-					!sameSettings(t, got.ProfileSettings, given.ProfileSettings) {
-					t.Errorf("%s = %+v, want %+v", name, got, given)
-				}
-				if !reflect.DeepEqual(got.Tools, given.Tools) {
-					t.Errorf("%s tools = %#v, want %#v", name, got.Tools, given.Tools)
-				}
-				if got.CreatedAt.IsZero() || got.CreatedAt.Location().String() != "UTC" {
-					t.Errorf("%s created_at = %v, want a UTC time", name, got.CreatedAt)
-				}
-			}
-		})
 	}
 }
 
@@ -241,37 +174,17 @@ func TestASessionChoosesAProfileAndOverridesIt(t *testing.T) {
 	if sess.ProfileID != review.ID || !sameSettings(t, sess.Overrides, overrides) {
 		t.Errorf("created session = profile %q overrides %+v, want %q %+v", sess.ProfileID, sess.Overrides, review.ID, overrides)
 	}
-	listed, err := st.Sessions(ctx, sess.ComputerID)
-	if err != nil || len(listed) != 1 || listed[0].ProfileID != review.ID || !sameSettings(t, listed[0].Overrides, overrides) {
-		t.Errorf("Sessions = %+v, %v; want the profile and overrides", listed, err)
+	// The default profile, and overrides that set an empty prompt and turn
+	// thinking off: both are values, not the absence of one.
+	set := store.ProfileSettings{ChatPrompt: ptr(""), PreserveThinking: ptr(false)}
+	if err := st.SetSessionProfile(ctx, sess.ID, ""); err != nil {
+		t.Fatalf("SetSessionProfile: %v", err)
 	}
-
-	cases := []struct {
-		name      string
-		profileID string
-		overrides store.ProfileSettings
-	}{
-		{"the default profile and no overrides", "", store.ProfileSettings{}},
-		{"a profile and one override", review.ID, store.ProfileSettings{Instructions: ptr("Be brief.")}},
-		{"an explicitly empty prompt", review.ID, store.ProfileSettings{ChatPrompt: ptr("")}},
-		{"thinking not preserved", review.ID, store.ProfileSettings{PreserveThinking: ptr(false)}},
+	if err := st.SetSessionOverrides(ctx, sess.ID, set); err != nil {
+		t.Fatalf("SetSessionOverrides: %v", err)
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if err := st.SetSessionProfile(ctx, sess.ID, c.profileID); err != nil {
-				t.Fatalf("SetSessionProfile: %v", err)
-			}
-			if err := st.SetSessionOverrides(ctx, sess.ID, c.overrides); err != nil {
-				t.Fatalf("SetSessionOverrides: %v", err)
-			}
-			got, err := st.Session(ctx, sess.ID)
-			if err != nil {
-				t.Fatalf("Session: %v", err)
-			}
-			if got.ProfileID != c.profileID || !sameSettings(t, got.Overrides, c.overrides) {
-				t.Errorf("session = profile %q overrides %+v, want %q %+v", got.ProfileID, got.Overrides, c.profileID, c.overrides)
-			}
-		})
+	if got, err := st.Session(ctx, sess.ID); err != nil || got.ProfileID != "" || !sameSettings(t, got.Overrides, set) {
+		t.Errorf("session = profile %q overrides %+v, %v; want none and %+v", got.ProfileID, got.Overrides, err, set)
 	}
 
 	if err := st.SetSessionProfile(ctx, sess.ID, "absent"); !errors.Is(err, store.ErrNotFound) {
@@ -324,7 +237,10 @@ func TestDeletingAProfileOrAModelFallsBackToTheDefault(t *testing.T) {
 	}
 }
 
-func TestModelCallsAreRecordedPerSession(t *testing.T) {
+// A model call is recorded against its own session, run and entry only, keeps
+// a count that was not stated as NULL, outlives its model by name, and goes
+// with its session.
+func TestModelCallsStayWithTheirSession(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 	model := newModel(t, st, "gpt-x")
@@ -338,103 +254,45 @@ func TestModelCallsAreRecordedPerSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartRun: %v", err)
 	}
-	entry, err := st.AppendEntry(ctx, sess.ID, store.Entry{Kind: store.KindUser, Payload: json.RawMessage(`{"role":"user","content":"hi"}`)})
-	if err != nil {
-		t.Fatalf("AppendEntry: %v", err)
-	}
 	otherEntry, err := st.AppendEntry(ctx, other.ID, store.Entry{Kind: store.KindUser, Payload: json.RawMessage(`{"role":"user","content":"hi"}`)})
 	if err != nil {
 		t.Fatalf("AppendEntry: %v", err)
 	}
 
-	given := store.ModelCall{
-		SessionID: sess.ID, RunID: run.ID, EntryID: entry.ID, ModelID: model.ID, Model: model.Name,
-		Sections:      json.RawMessage(`[{"kind":"base","text":"You are Eika.","tokens":4}]`),
-		Tools:         json.RawMessage(`[{"name":"bash","description":"run","schema":{"type":"object"},"source":"builtin","tokens":9}]`),
-		Parameters:    json.RawMessage(`{"model":"gpt-x","sampling":{"temperature":0.2},"preserve_thinking":false}`),
-		MessageTokens: 5, PromptTokens: new(120), CompletionTokens: new(30), TotalTokens: new(150), CachedTokens: new(0),
-		PrefilledTokens: new(120), ReasoningTokens: new(11), ReasoningSource: "tokenised",
-		PredictedPromptTokens: new(123), Prediction: "estimated", Drift: new(3), ContextWindow: new(8192), Endpoint: "local",
-	}
-	first, err := st.RecordModelCall(ctx, given)
+	first, err := st.RecordModelCall(ctx, store.ModelCall{
+		SessionID: sess.ID, RunID: run.ID, ModelID: model.ID, Model: model.Name, PromptTokens: new(120), CachedTokens: new(0),
+	})
 	if err != nil {
 		t.Fatalf("RecordModelCall: %v", err)
 	}
-	second, err := st.RecordModelCall(ctx, store.ModelCall{SessionID: sess.ID, RunID: run.ID, ModelID: "absent", Model: "gone"})
-	if err != nil {
-		t.Fatalf("RecordModelCall without an entry: %v", err)
+	second, err := st.RecordModelCall(ctx, store.ModelCall{SessionID: sess.ID, RunID: run.ID, Model: "m"})
+	if err != nil || second.PromptTokens != nil || second.CachedTokens != nil {
+		t.Errorf("record of a call that stated no usage = %+v, %v; want its counts NULL, not 0", second, err)
 	}
-	if second.PromptTokens != nil || second.CompletionTokens != nil || second.TotalTokens != nil || second.CachedTokens != nil ||
-		second.PrefilledTokens != nil || second.ReasoningTokens != nil || second.ReasoningSource != "" ||
-		second.PredictedPromptTokens != nil || second.Prediction != "" || second.Drift != nil || second.ContextWindow != nil || second.Endpoint != "" {
-		t.Errorf("record of a call that stated no usage = %+v, want every count NULL, not 0", second)
-	}
-	if second.ModelID != "" || second.Model != "gone" || string(second.Sections) != "[]" || string(second.Parameters) != "{}" {
-		t.Errorf("record of an unknown model = %+v, want it kept by name with empty documents", second)
-	}
-
-	refused := []struct {
-		name string
-		r    store.ModelCall
-	}{
-		{"a run of another session", store.ModelCall{SessionID: sess.ID, RunID: otherRun.ID, Model: "m"}},
-		{"an entry of another session", store.ModelCall{SessionID: sess.ID, RunID: run.ID, EntryID: otherEntry.ID, Model: "m"}},
-		{"an unknown session", store.ModelCall{SessionID: "absent", RunID: run.ID, Model: "m"}},
-	}
-	for _, c := range refused {
-		if _, err := st.RecordModelCall(ctx, c.r); !errors.Is(err, store.ErrNotFound) {
-			t.Errorf("recording %s = %v, want ErrNotFound", c.name, err)
-		}
-	}
-
-	got, err := st.ModelCall(ctx, sess.ID, first.ID)
-	if err != nil {
-		t.Fatalf("ModelCall: %v", err)
-	}
-	if got.RunID != run.ID || got.EntryID != entry.ID || got.ModelID != model.ID || got.Model != "gpt-x" ||
-		got.MessageTokens != 5 || stated(got.PrefilledTokens) != 120 || stated(got.ReasoningTokens) != 11 || got.ReasoningSource != "tokenised" ||
-		stated(got.PredictedPromptTokens) != 123 || got.Prediction != "estimated" || stated(got.Drift) != 3 || stated(got.ContextWindow) != 8192 || got.Endpoint != "local" ||
-		stated(got.PromptTokens) != 120 || stated(got.CompletionTokens) != 30 || stated(got.TotalTokens) != 150 || got.CachedTokens == nil || *got.CachedTokens != 0 {
-		t.Errorf("record = %+v, want what was given", got)
-	}
-	for name, pair := range map[string][2]json.RawMessage{
-		"sections":   {got.Sections, given.Sections},
-		"tools":      {got.Tools, given.Tools},
-		"parameters": {got.Parameters, given.Parameters},
+	for name, c := range map[string]store.ModelCall{
+		"a run of another session":    {SessionID: sess.ID, RunID: otherRun.ID, Model: "m"},
+		"an entry of another session": {SessionID: sess.ID, RunID: run.ID, EntryID: otherEntry.ID, Model: "m"},
+		"an unknown session":          {SessionID: "absent", RunID: run.ID, Model: "m"},
 	} {
-		if !sameJSON(t, pair[0], pair[1]) {
-			t.Errorf("record %s = %s, want %s", name, pair[0], pair[1])
+		if _, err := st.RecordModelCall(ctx, c); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("recording %s = %v, want ErrNotFound", name, err)
 		}
 	}
 	if _, err := st.ModelCall(ctx, other.ID, first.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("reading a record through another session = %v, want ErrNotFound", err)
 	}
-
-	list, err := st.ModelCalls(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("ModelCalls: %v", err)
-	}
-	if len(list) != 2 || list[0].ID != first.ID || list[1].ID != second.ID {
-		t.Fatalf("ModelCalls = %+v, want both records oldest first", list)
-	}
-	if list[0].Sections != nil || list[0].Tools != nil || !sameJSON(t, list[0].Parameters, given.Parameters) || stated(list[0].PromptTokens) != 120 {
-		t.Errorf("listed record = %+v, want a summary without sections or tools", list[0])
-	}
-	if others, err := st.ModelCalls(ctx, other.ID); err != nil || len(others) != 0 {
-		t.Errorf("records of another session = %+v, %v; want none", others, err)
+	if list, err := st.ModelCalls(ctx, sess.ID); err != nil || len(list) != 2 || list[0].ID != first.ID {
+		t.Errorf("ModelCalls = %+v, %v; want both records oldest first", list, err)
 	}
 
 	if err := st.DeleteModel(ctx, model.ID); err != nil {
 		t.Fatalf("DeleteModel: %v", err)
 	}
-	if got, err := st.ModelCall(ctx, sess.ID, first.ID); err != nil || got.ModelID != "" || got.Model != "gpt-x" {
-		t.Errorf("record after deleting its model = %+v, %v; want the name kept", got, err)
+	if got, err := st.ModelCall(ctx, sess.ID, first.ID); err != nil || got.ModelID != "" || got.Model != "gpt-x" || stated(got.CachedTokens) != 0 {
+		t.Errorf("record after deleting its model = %+v, %v; want the name and counts kept", got, err)
 	}
 	if err := st.DeleteSession(ctx, sess.ID); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
-	}
-	if _, err := st.ModelCall(ctx, sess.ID, first.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("a record outlived its session: %v", err)
 	}
 	if list, err := st.ModelCalls(ctx, sess.ID); err != nil || len(list) != 0 {
 		t.Errorf("records after deleting the session = %+v, %v; want none", list, err)

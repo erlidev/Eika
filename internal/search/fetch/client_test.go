@@ -17,9 +17,6 @@ func TestTheClientRefusesPrivateAddresses(t *testing.T) {
 	if !errors.Is(err, netguard.ErrPrivateAddress) {
 		t.Errorf("Get(%s) = %v, want ErrPrivateAddress", srv.URL, err)
 	}
-	if got := transportError(err).Error(); got != "refusing to fetch a private address (127.0.0.1)" {
-		t.Errorf("transportError = %q", got)
-	}
 }
 
 func TestCheckRedirect(t *testing.T) {

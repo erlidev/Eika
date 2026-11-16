@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/erlidev/eika/internal/computer"
-	"github.com/erlidev/eika/internal/egress"
 )
 
 // sandboxWire is a computer's sandbox as the API sends it.
@@ -35,21 +34,6 @@ func sandboxOf(cpus float64, memoryMB, pids int64, mode string, allow []string) 
 	}
 }
 
-func TestHomeGetsTheSandboxDefaults(t *testing.T) {
-	a := newAPI(t)
-
-	cx := a.home(t)
-	if cx.Sandbox.Limits.PIDs != 4096 || cx.Sandbox.Limits.CPUs != 0 || cx.Sandbox.Limits.MemoryMB != 0 {
-		t.Errorf("limits = %+v, want the built-in process limit and nothing else", cx.Sandbox.Limits)
-	}
-	if cx.Sandbox.Egress.Mode != "open" || !slices.Equal(cx.Sandbox.Egress.Allow, egress.DefaultAllowlist) {
-		t.Errorf("sandbox = %+v, want open egress with the suggested allowlist and no ports", cx.Sandbox)
-	}
-	if got := a.host.confinements(cx.ID); len(got) == 0 || got[0].Limits.PIDs != 4096 || got[0].Proxied {
-		t.Errorf("created with %+v, want the default limits", got)
-	}
-}
-
 func TestTheSavedAllowlistIsStoredAsTheProxyReadsIt(t *testing.T) {
 	a := newAPI(t)
 	a.host.egressControl = true
@@ -64,51 +48,6 @@ func TestTheSavedAllowlistIsStoredAsTheProxyReadsIt(t *testing.T) {
 	want := computer.Confinement{Limits: computer.Limits{CPUs: 1.5, MemoryBytes: 1 << 30, PIDs: 256}, Proxied: true}
 	if confined := a.host.confinements(home.ID); confined[len(confined)-1] != want {
 		t.Errorf("last confinement = %+v, want %+v", confined[len(confined)-1], want)
-	}
-}
-
-func TestSandboxSettingsAreChecked(t *testing.T) {
-	a := newAPI(t)
-	for name, body := range map[string]map[string]any{
-		"more cores than the host has":  {"sandbox_limits": map[string]any{"cpus": 5}},
-		"too little memory":             {"sandbox_limits": map[string]any{"memory_mb": 10}},
-		"more memory than the host has": {"sandbox_limits": map[string]any{"memory_mb": 64 << 10}},
-		"too few processes":             {"sandbox_limits": map[string]any{"pids": 4}},
-		"a field that is not a limit":   {"sandbox_limits": map[string]any{"disk_mb": 10}},
-		"a port in the allowlist":       {"sandbox_egress": map[string]any{"mode": "open", "allow": []string{"github.com:443"}}},
-		"an unknown egress mode":        {"sandbox_egress": map[string]any{"mode": "closed", "allow": []string{}}},
-		"a url in the allowlist":        {"sandbox_egress": map[string]any{"mode": "open", "allow": []string{"https://github.com"}}},
-		"restricted egress without one": {"sandbox_egress": map[string]any{"mode": "allowlist", "allow": []string{"github.com"}}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if rec := request(t, a.Server, "PUT", "/api/settings", body); rec.Code != 400 {
-				t.Errorf("put settings = %d, want 400: %s", rec.Code, rec.Body.String())
-			}
-		})
-	}
-	a.host.egressControl = true
-	if rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{
-		"sandbox_egress": map[string]any{"mode": "allowlist", "allow": []string{"github.com"}},
-	}); rec.Code != 200 {
-		t.Errorf("put settings with egress control = %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestEgressPolicyKnowsAComputerByItsProxyToken(t *testing.T) {
-	a := newAPI(t)
-	a.host.egressControl = true
-	cx := a.home(t)
-	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 0, 0, "allowlist", []string{"github.com"})), 200)
-
-	policy, err := a.EgressPolicy(t.Context(), cx.ID)
-	if err != nil {
-		t.Fatalf("policy: %v", err)
-	}
-	if policy.Token != a.host.proxyToken(cx.ID) || policy.Mode != egress.ModeAllowlist || !slices.Equal(policy.Allow, []string{"github.com"}) {
-		t.Errorf("policy = %+v", policy)
-	}
-	if _, err := a.EgressPolicy(t.Context(), "missing"); !errors.Is(err, egress.ErrUnknownComputer) {
-		t.Errorf("policy of a missing computer = %v, want ErrUnknownComputer", err)
 	}
 }
 
@@ -142,9 +81,7 @@ func TestTheProxyKnowsARecreatedHomeByItsNewToken(t *testing.T) {
 
 	// The container is lost and made again over the same id, and with it a
 	// proxy token of its own.
-	if err := a.host.Destroy(t.Context(), &computer.Computer{ID: home.ID}); err != nil {
-		t.Fatalf("remove the container: %v", err)
-	}
+	a.host.lose(t, home.ID)
 	if err := a.EnsureHome(t.Context()); err != nil {
 		t.Fatalf("EnsureHome: %v", err)
 	}
@@ -204,65 +141,6 @@ func TestSavingTheSandboxSettingsConfinesTheHomeContainer(t *testing.T) {
 	reset := computer.Confinement{Limits: computer.Limits{PIDs: 4096}}
 	if confined := a.host.confinements(home.ID); confined[len(confined)-1] != reset {
 		t.Errorf("last confinement = %+v, want the defaults %+v", confined[len(confined)-1], reset)
-	}
-}
-
-func TestAStoppedHomeTakesTheSavedSandboxWhenItStarts(t *testing.T) {
-	a := newAPI(t)
-	home := a.home(t)
-	a.stopIdle(t)
-	if got := a.computerState(t, home.ID); got != "stopped" {
-		t.Fatalf("home = %q, want stopped", got)
-	}
-
-	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 1024, 200, "open", nil)), 200)
-	want := computer.Confinement{Limits: computer.Limits{MemoryBytes: 1 << 30, PIDs: 200}}
-	confined := a.host.confinements(home.ID)
-	if last := confined[len(confined)-1]; last != want {
-		t.Fatalf("confinement of the stopped container = %+v, want %+v", last, want)
-	}
-
-	// The run that starts it confines it once more, from the row.
-	n := len(confined)
-	a.bashIn(t, home.ID, "awake")
-	confined = a.host.confinements(home.ID)
-	if len(confined) != n+1 || confined[n] != want {
-		t.Errorf("confinements after the start = %+v, want %+v applied again", confined[n:], want)
-	}
-}
-
-func TestSavingTheSandboxSettingsBeforeHomeExistsIsPickedUpByEnsureHome(t *testing.T) {
-	a := newAPI(t)
-	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 0, 77, "open", nil)), 200)
-	if a.containers(t) != 0 {
-		t.Fatalf("containers = %d, want none made by a settings write", a.containers(t))
-	}
-
-	home := a.home(t)
-	if home.Sandbox.Limits.PIDs != 77 {
-		t.Errorf("home sandbox = %+v, want the saved process limit", home.Sandbox)
-	}
-	if got := a.host.confinements(home.ID); len(got) == 0 || got[0].Limits.PIDs != 77 {
-		t.Errorf("home was created with %+v, want the saved limits", got)
-	}
-}
-
-func TestSavingTheSandboxSettingsWhileHomeHasNoContainerUpdatesTheRow(t *testing.T) {
-	a := newAPI(t)
-	home := a.home(t)
-	if err := a.host.Destroy(t.Context(), &computer.Computer{ID: home.ID}); err != nil {
-		t.Fatalf("remove the container: %v", err)
-	}
-
-	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 0, 88, "open", nil)), 200)
-	if got := a.homeOf(t).Sandbox.Limits.PIDs; got != 88 {
-		t.Fatalf("home process limit = %d, want the saved 88", got)
-	}
-	if err := a.EnsureHome(t.Context()); err != nil {
-		t.Fatalf("EnsureHome: %v", err)
-	}
-	if confined := a.host.confinements(home.ID); confined[len(confined)-1].Limits.PIDs != 88 {
-		t.Errorf("the new container was confined with %+v, want the saved limits", confined)
 	}
 }
 

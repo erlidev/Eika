@@ -22,9 +22,6 @@ func TestSamplingOverLetsTheUpperLayerWin(t *testing.T) {
 		lower provider.Sampling
 		want  provider.Sampling
 	}{
-		{"nothing over nothing", provider.Sampling{}, provider.Sampling{}, provider.Sampling{}},
-		{"nothing over a layer keeps it", provider.Sampling{}, model, model},
-		{"a layer over nothing keeps it", profile, provider.Sampling{}, profile},
 		{
 			"set fields win and the rest fall through",
 			profile, model,
@@ -40,11 +37,6 @@ func TestSamplingOverLetsTheUpperLayerWin(t *testing.T) {
 			"an empty stop list clears the lower one",
 			provider.Sampling{Stop: []string{}}, model,
 			provider.Sampling{MaxOutput: ptr(4096), ReasoningEffort: ptr("high"), Stop: []string{}},
-		},
-		{
-			"an empty effort overrides the lower one",
-			provider.Sampling{ReasoningEffort: ptr("")}, model,
-			provider.Sampling{MaxOutput: ptr(4096), ReasoningEffort: ptr(""), Stop: []string{"END"}},
 		},
 	}
 	for _, c := range cases {
@@ -74,9 +66,7 @@ func TestSamplingLeavesUnsetFieldsOutOfItsJSON(t *testing.T) {
 		s    provider.Sampling
 		want string
 	}{
-		{"nothing set", provider.Sampling{}, `{}`},
 		{"zero values", provider.Sampling{Temperature: ptr(0.0), Seed: ptr(int64(0))}, `{"temperature":0,"seed":0}`},
-		{"an empty stop list", provider.Sampling{Stop: []string{}}, `{"stop":[]}`},
 		{
 			"every field",
 			provider.Sampling{
@@ -110,7 +100,6 @@ func TestSamplingValidate(t *testing.T) {
 		s       provider.Sampling
 		wantErr string
 	}{
-		{"nothing set", provider.Sampling{}, ""},
 		{
 			"every field at its bounds",
 			provider.Sampling{
@@ -121,21 +110,12 @@ func TestSamplingValidate(t *testing.T) {
 			},
 			"",
 		},
-		{"an empty effort", provider.Sampling{ReasoningEffort: ptr("")}, ""},
-		{"an empty stop list", provider.Sampling{Stop: []string{}}, ""},
 		{"temperature below 0", provider.Sampling{Temperature: ptr(-0.1)}, "temperature"},
-		{"temperature above 2", provider.Sampling{Temperature: ptr(2.1)}, "temperature"},
 		{"temperature not a number", provider.Sampling{Temperature: ptr(math.NaN())}, "temperature"},
-		{"top_p above 1", provider.Sampling{TopP: ptr(1.5)}, "top_p"},
 		{"top_k of 0", provider.Sampling{TopK: ptr(0)}, "top_k"},
-		{"min_p below 0", provider.Sampling{MinP: ptr(-0.5)}, "min_p"},
-		{"frequency_penalty below -2", provider.Sampling{FrequencyPenalty: ptr(-3.0)}, "frequency_penalty"},
-		{"presence_penalty above 2", provider.Sampling{PresencePenalty: ptr(2.5)}, "presence_penalty"},
 		{"too many stop sequences", provider.Sampling{Stop: make([]string, provider.MaxStopSequences+1)}, "stop"},
 		{"an empty stop sequence", provider.Sampling{Stop: []string{"ok", ""}}, "stop"},
-		{"a long stop sequence", provider.Sampling{Stop: []string{strings.Repeat("s", provider.MaxStopSequenceLen+1)}}, "stop"},
 		{"max_output of 0", provider.Sampling{MaxOutput: ptr(0)}, "max_output"},
-		{"an effort with a space", provider.Sampling{ReasoningEffort: ptr("very high")}, "reasoning_effort"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

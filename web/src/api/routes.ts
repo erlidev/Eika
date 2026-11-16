@@ -17,7 +17,6 @@ import type {
   CreateMCPServer,
   CreateModel,
   CreateProvider,
-  CreateSession,
   ElicitationAnswer,
   Entry,
   GlobalInstructions,
@@ -25,9 +24,6 @@ import type {
   MCPServer,
   MCPServerDetails,
   Model,
-  ModelContext,
-  ModelCall,
-  ModelCalls,
   NextPrediction,
   Models,
   OAuthCallback,
@@ -53,24 +49,15 @@ import type {
   SystemStatus,
   TestModel,
   TestModelResult,
-  Tool,
   UpdateMCPServer,
   UpdateModel,
   UpdateProvider,
   UpdateSession,
 } from "@/api/types";
 
-/** listChats lists the sessions with no computer. */
+/** getHome reads the home session with the entry its head points at. */
 export function getHome(): Promise<{ session: Session; head?: Entry }> {
   return request<{ session: Session; head?: Entry }>("/api/home");
-}
-
-export async function listChats(signal?: AbortSignal): Promise<Session[]> {
-  const body = await request<{ sessions: Session[] }>("/api/sessions", {
-    query: { chats: "true" },
-    signal,
-  });
-  return body.sessions;
 }
 
 /** listSessions lists every session, oldest first: chats, computer sessions, home and subagents. */
@@ -91,29 +78,6 @@ export async function listComputers(signal?: AbortSignal): Promise<Computer[]> {
   return body.computers;
 }
 
-/** listComputerSessions lists the sessions that run in one computer. */
-export async function listComputerSessions(
-  computerId: string,
-  signal?: AbortSignal,
-): Promise<Session[]> {
-  const body = await request<{ sessions: Session[] }>("/api/sessions", {
-    query: { computer_id: computerId },
-    signal,
-  });
-  return body.sessions;
-}
-
-/** createSession opens a session in a computer, or a chat in none. */
-export function createSession(input: CreateSession): Promise<Session> {
-  return request<Session>("/api/sessions", { method: "POST", body: input });
-}
-
-/** listTools lists every tool a run can offer, with whether it needs a computer. */
-export async function listTools(signal?: AbortSignal): Promise<Tool[]> {
-  const body = await request<{ tools: Tool[] }>("/api/tools", { signal });
-  return body.tools;
-}
-
 /** getSession reads a session with the entry its head points at. */
 export function getSession(
   id: string,
@@ -130,11 +94,6 @@ export function updateSession(id: string, input: UpdateSession): Promise<Session
     method: "PATCH",
     body: input,
   });
-}
-
-/** deleteSession aborts the session's run and deletes it with its entries. */
-export function deleteSession(id: string): Promise<void> {
-  return requestEmpty(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** getSessionOutline reads the whole tree without payloads. */
@@ -203,21 +162,6 @@ export function getSessionConfiguration(
 }
 
 /**
- * getSessionContext previews the session's next model request, as a run
- * that names `model` ("" for none) would send it.
- */
-export function getSessionContext(
-  id: string,
-  model: string,
-  signal?: AbortSignal,
-): Promise<ModelContext> {
-  return request<ModelContext>(`/api/sessions/${encodeURIComponent(id)}/context`, {
-    query: { model: model === "" ? undefined : model },
-    signal,
-  });
-}
-
-/**
  * getSessionPrediction asks what the session's next request is expected to
  * cost and how that is known, as a run that names `model` ("" for none)
  * would send it, without the request itself.
@@ -231,26 +175,6 @@ export function getSessionPrediction(
     query: { model: model === "" ? undefined : model },
     signal,
   });
-}
-
-/** listSessionCalls lists the records of a session's model calls, oldest first. */
-export async function listSessionCalls(id: string, signal?: AbortSignal): Promise<ModelCall[]> {
-  const body = await request<ModelCalls>(`/api/sessions/${encodeURIComponent(id)}/calls`, {
-    signal,
-  });
-  return body.calls ?? [];
-}
-
-/** getSessionCall reads one recorded model call in the preview's shape. */
-export function getSessionCall(
-  id: string,
-  callId: string,
-  signal?: AbortSignal,
-): Promise<ModelContext> {
-  return request<ModelContext>(
-    `/api/sessions/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}`,
-    { signal },
-  );
 }
 
 /** listAgents lists the built-in agents with their overrides. */

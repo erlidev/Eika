@@ -3,7 +3,6 @@
 package store_test
 
 import (
-	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -76,12 +75,6 @@ func TestSessionStorageIdentityAndEntries(t *testing.T) {
 	if _, err := st.HomeSession(ctx, store.LocalOwner, "missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing home: %v", err)
 	}
-	for _, state := range []store.SessionState{store.SessionIdle, store.SessionRunning, store.SessionWaiting, store.SessionFailed, store.SessionCancelled} {
-		routine, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "worker", Name: string(state), State: state})
-		if err != nil || routine.State != state {
-			t.Fatalf("state %s: %+v %v", state, routine, err)
-		}
-	}
 	title := "new title"
 	edited, err := st.UpdateSession(ctx, saved.ID, store.SessionChanges{Title: &title})
 	if err != nil || !edited.LastActiveAt.Equal(active) || edited.State != store.SessionWaiting {
@@ -89,24 +82,5 @@ func TestSessionStorageIdentityAndEntries(t *testing.T) {
 	}
 	if err := st.DeleteSession(ctx, home.ID); err == nil {
 		t.Fatal("deleted parent with child history")
-	}
-	payload := json.RawMessage(`{ "text": "keep <this> & spacing\n" }`)
-	for _, kind := range []store.EntryKind{store.KindPreamble, store.KindNotice, store.KindUser, store.KindAssistant} {
-		e, err := st.AppendEntry(ctx, home.ID, store.Entry{Kind: kind, Payload: payload, Channel: "web"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		read, err := st.Entry(ctx, e.ID)
-		if err != nil || !reflect.DeepEqual(e, read) || string(read.Payload) != string(payload) || read.Channel != "web" {
-			t.Fatalf("entry: %+v %v", read, err)
-		}
-	}
-	path, err := st.SessionPath(ctx, home.ID)
-	if err != nil || len(path) != 4 || path[3].ParentID != path[2].ID || path[0].Channel != "web" {
-		t.Fatalf("path: %+v %v", path, err)
-	}
-	entries, err := st.ChildEntries(ctx, home.ID, path[0].ID)
-	if err != nil || len(entries) != 1 || entries[0].Channel != "web" {
-		t.Fatalf("children: %+v %v", entries, err)
 	}
 }

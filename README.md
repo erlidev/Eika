@@ -104,7 +104,7 @@ part of `make check`.
 - `AGENTS.md` — start here before changing the codebase.
 - `docs/ARCHITECTURE.md` — how the pieces fit together.
 - `docs/DECISIONS.md` — why they are built that way, and what is deferred.
-- `docs/EXTENDING.md` — adding a tool, provider, search source, or UI panel.
+- `docs/EXTENDING.md` — adding a tool, provider, search source, or UI page.
 - `docs/STYLE_GUIDE.md` — coding and documentation rules.
 - `docs/api/` — HTTP, WebSocket, and sandbox daemon wire contract.
 - `docs/PLAN.md`, `docs/DEFERRED.md` and `docs/design/` — where Eika is going, and the phases that

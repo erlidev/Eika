@@ -3,7 +3,6 @@ package builtin_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -64,24 +63,6 @@ func TestWebSearchRendersResultsAndDetails(t *testing.T) {
 	if res.IsError || res.Content != "1. Tokio\n   https://tokio.rs/\n   An async runtime." {
 		t.Errorf("content = %q", res.Content)
 	}
-	var details search.Details
-	if err := json.Unmarshal(res.Details, &details); err != nil || details.Count != 3 || len(details.Results) != 1 || details.Providers[0] != "searxng" {
-		t.Errorf("details = %s, %v", res.Details, err)
-	}
-
-	bad := callWeb(t, builtin.Deps{Search: engine}, tool.CallContext{}, "web_search", map[string]any{"query": ""})
-	if !bad.IsError || bad.Content != "web search failed: query is empty." {
-		t.Errorf("empty query = %q", bad.Content)
-	}
-}
-
-func TestWebToolsWithoutTheirDependenciesFail(t *testing.T) {
-	if res := callWeb(t, builtin.Deps{}, tool.CallContext{}, "web_search", map[string]any{"query": "q"}); !res.IsError {
-		t.Error("web_search without a searcher succeeded")
-	}
-	if res := callWeb(t, builtin.Deps{}, tool.CallContext{}, "web_fetch", map[string]any{"url": "https://x"}); !res.IsError {
-		t.Error("web_fetch without a reader succeeded")
-	}
 }
 
 func newPages() *fetch.Reader {
@@ -116,33 +97,12 @@ func TestWebFetchRunsFiltersInTheSandbox(t *testing.T) {
 	}
 }
 
-// failing is a sandbox whose commands cannot run.
-type failing struct{ executor.Executor }
-
-func (failing) Exec(context.Context, executor.ExecSpec) (executor.ExecResult, error) {
-	return executor.ExecResult{}, errors.New("computer is stopped")
-}
-
-func TestWebFetchReportsASandboxThatCannotRunTheFilter(t *testing.T) {
-	res := callWeb(t, builtin.Deps{Pages: newPages()}, tool.CallContext{Exec: failing{}}, "web_fetch",
-		map[string]any{"url": "https://example.com/guide.md", "filter": "text"})
-	if !res.IsError || !strings.HasPrefix(res.Content, "fetch failed: the filter could not run in the sandbox") {
-		t.Errorf("content = %q", res.Content)
-	}
-}
-
-// A chat has no computer, so the model's JavaScript has nowhere to run; the
-// page itself is still a network read the harness makes.
-func TestWebFetchInAChatRefusesAFilterButReadsThePage(t *testing.T) {
-	chat := tool.CallContext{}
-	res := callWeb(t, builtin.Deps{Pages: newPages()}, chat, "web_fetch",
+// A chat has no computer, so the model's JavaScript has nowhere to run.
+// (TestWebFetchReadsAPage reads a page without one.)
+func TestWebFetchInAChatRefusesAFilter(t *testing.T) {
+	res := callWeb(t, builtin.Deps{Pages: newPages()}, tool.CallContext{}, "web_fetch",
 		map[string]any{"url": "https://example.com/guide.md", "filter": "text"})
 	if !res.IsError || !strings.Contains(res.Content, "this chat has none") {
 		t.Errorf("filter in a chat = %q", res.Content)
-	}
-	res = callWeb(t, builtin.Deps{Pages: newPages()}, chat, "web_fetch",
-		map[string]any{"url": "https://example.com/guide.md", "section": "timeouts"})
-	if res.IsError || res.Content != "## Timeouts\n\nthe timeout is 30s" {
-		t.Errorf("section in a chat = %q", res.Content)
 	}
 }

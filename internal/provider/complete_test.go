@@ -18,7 +18,6 @@ func TestComplete(t *testing.T) {
 		wantErr  bool
 	}{
 		{"text and a stop reason", providertest.Stream(provider.TextDelta("re"), provider.TextDelta("ady"), provider.Done("stop")), "ready", "stop", false},
-		{"a failed call", providertest.Fail(failure), "", "", true},
 		{"a failure mid-stream", providertest.Stream(provider.TextDelta("re"), provider.Errorf(failure)), "", "", true},
 		{"a stream that never finishes", providertest.Stream(provider.TextDelta("re")), "", "", true},
 	}

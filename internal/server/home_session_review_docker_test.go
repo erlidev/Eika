@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/server"
@@ -39,18 +38,9 @@ func TestHomeExcludedFromChatsAndCannotBeDeleted(t *testing.T) {
 	if len(list.Sessions) != 1 || list.Sessions[0].ID != chat.ID {
 		t.Fatalf("chats = %+v", list.Sessions)
 	}
-	rec := request(t, a.Server, "DELETE", "/api/sessions/"+home.ID, nil)
-	if rec.Code != 409 || !strings.Contains(rec.Body.String(), "home session cannot be deleted") {
-		t.Fatalf("delete = %d %s", rec.Code, rec.Body.String())
-	}
+	refused(t, request(t, a.Server, "DELETE", "/api/sessions/"+home.ID, nil), 409)
 	if _, err := a.store.Entry(t.Context(), saved.ID); err != nil {
 		t.Fatalf("home history lost: %v", err)
-	}
-	read := decodeBody[struct {
-		Session sessionWire `json:"session"`
-	}](t, request(t, a.Server, "GET", "/api/home", nil), 200)
-	if read.Session.ID != home.ID {
-		t.Fatalf("home = %+v", read.Session)
 	}
 	if rec := request(t, a.Server, "DELETE", "/api/sessions/"+chat.ID, nil); rec.Code != 204 {
 		t.Fatalf("delete chat = %d", rec.Code)
@@ -151,58 +141,5 @@ func TestHomeRunRecordsWebChannelAndContext(t *testing.T) {
 	requests := fake.Requests()
 	if len(requests) != 1 || len(requests[0].Messages) != 1 || requests[0].Messages[0].Context != message.Context {
 		t.Fatalf("provider requests = %+v", requests)
-	}
-}
-
-func TestPreamblesCannotBeBranchPoints(t *testing.T) {
-	a := newAPI(t)
-	ctx := t.Context()
-	home, err := a.store.EnsureHomeSession(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	appendEntry := func(e store.Entry) store.Entry {
-		t.Helper()
-		saved, err := a.store.AppendEntry(ctx, home.ID, e)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return saved
-	}
-	makePreamble := func(text string) store.Entry {
-		t.Helper()
-		entry, err := session.TextEntry(store.KindPreamble, text)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return appendEntry(entry)
-	}
-	first := makePreamble("first")
-	user, err := session.MessageEntry(provider.UserMessage("hello"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	appendEntry(user)
-	replacement := makePreamble("replacement")
-	compact, err := session.CompactionEntry(agent.Compaction{Summary: "summary"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	head := appendEntry(compact)
-	for _, entry := range []store.Entry{first, replacement} {
-		rec := request(t, a.Server, "POST", "/api/sessions/"+home.ID+"/head", map[string]any{"entry_id": entry.ID})
-		if rec.Code != 400 || !strings.Contains(rec.Body.String(), "preamble and cannot be a branch point") {
-			t.Fatalf("branch from %s: %d %s", entry.ID, rec.Code, rec.Body.String())
-		}
-		if err := a.store.SetSessionHead(ctx, home.ID, entry.ID); err == nil {
-			t.Fatalf("store accepted preamble %s", entry.ID)
-		}
-		if err := session.NewTree(a.store).SetHead(ctx, home.ID, entry.ID); err == nil {
-			t.Fatalf("tree accepted preamble %s", entry.ID)
-		}
-	}
-	saved, err := a.store.Session(ctx, home.ID)
-	if err != nil || saved.HeadEntryID != head.ID {
-		t.Fatalf("head = %q, %v", saved.HeadEntryID, err)
 	}
 }

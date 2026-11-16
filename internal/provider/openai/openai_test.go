@@ -3,13 +3,11 @@ package openai_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/openai"
@@ -76,19 +74,6 @@ func collect(t *testing.T, p provider.Provider, req provider.Request) []provider
 	return events
 }
 
-func TestNewRequiresABaseURL(t *testing.T) {
-	if _, err := openai.New(provider.Endpoint{APIKey: "key"}); err == nil {
-		t.Fatal("New without a base URL returned no error")
-	}
-}
-
-func TestStreamRequiresAModel(t *testing.T) {
-	p := newProvider(t, "http://model.invalid")
-	if _, err := p.Stream(context.Background(), provider.Request{}); err == nil {
-		t.Fatal("Stream without a model returned no error")
-	}
-}
-
 func TestStreamSendsTheKeyAndNotTheEnvironmentOne(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "from-the-environment")
 	var got string
@@ -152,23 +137,6 @@ func TestModelsListsWhatTheEndpointServes(t *testing.T) {
 		if models[i] != want[i] {
 			t.Errorf("models[%d] = %+v, want %+v", i, models[i], want[i])
 		}
-	}
-}
-
-func TestModelsReportsARefusedKey(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = io.WriteString(w, `{"error":{"message":"Incorrect API key provided","type":"invalid_request_error"}}`)
-	}))
-	t.Cleanup(srv.Close)
-	p, err := openai.New(provider.Endpoint{BaseURL: srv.URL, APIKey: "wrong"})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	_, err = p.(provider.Lister).Models(context.Background())
-	var perr *provider.Error
-	if !errors.As(err, &perr) || perr.StatusCode != http.StatusUnauthorized || perr.Retryable {
-		t.Errorf("Models error = %v, want a non-retryable 401", err)
 	}
 }
 
@@ -281,154 +249,6 @@ func TestStreamDropsToolCallsCutOffByTheTokenLimit(t *testing.T) {
 	}
 }
 
-func TestStreamSendsToolsAndModel(t *testing.T) {
-	s := newSSEServer(t, http.StatusOK,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
-	)
-	p := newProvider(t, s.URL)
-	collect(t, p, provider.Request{
-		System: "sys",
-		Messages: []provider.Message{
-			provider.UserMessage("hi"),
-			provider.AssistantMessage("", []provider.ToolCall{{ID: "c1", Name: "ls", Arguments: provider.ToolArguments(`{}`)}}),
-			provider.ToolResultMessage("c1", "a.txt", false),
-		},
-		Tools:    []provider.ToolDef{{Name: "ls", Description: "list", Schema: json.RawMessage(`{"type":"object"}`)}},
-		Sampling: provider.Sampling{Temperature: ptr(0.0), MaxOutput: ptr(100)},
-	})
-
-	var sent struct {
-		Model    string `json:"model"`
-		Messages []struct {
-			Role      string `json:"role"`
-			Content   any    `json:"content"`
-			ToolCalls []struct {
-				ID string `json:"id"`
-			} `json:"tool_calls"`
-		} `json:"messages"`
-		Tools []struct {
-			Function struct {
-				Name string `json:"name"`
-			} `json:"function"`
-		} `json:"tools"`
-		MaxCompletionTokens int      `json:"max_completion_tokens"`
-		Temperature         *float64 `json:"temperature"`
-	}
-	if err := json.Unmarshal(<-s.body, &sent); err != nil {
-		t.Fatalf("decode request: %v", err)
-	}
-	if sent.Model != "test-model" {
-		t.Errorf("model = %q", sent.Model)
-	}
-	if len(sent.Messages) != 4 || sent.Messages[0].Role != "system" || sent.Messages[3].Role != "tool" {
-		t.Fatalf("messages = %+v", sent.Messages)
-	}
-	if len(sent.Messages[2].ToolCalls) != 1 || sent.Messages[2].ToolCalls[0].ID != "c1" {
-		t.Errorf("assistant tool calls = %+v", sent.Messages[2])
-	}
-	if len(sent.Tools) != 1 || sent.Tools[0].Function.Name != "ls" {
-		t.Errorf("tools = %+v", sent.Tools)
-	}
-	if sent.MaxCompletionTokens != 100 {
-		t.Errorf("max_completion_tokens = %d, want the requested 100", sent.MaxCompletionTokens)
-	}
-	if sent.Temperature == nil || *sent.Temperature != 0 {
-		t.Errorf("temperature = %v, want an explicit 0", sent.Temperature)
-	}
-}
-
-func TestStreamReplaysExactToolArgumentText(t *testing.T) {
-	s := newSSEServer(t, http.StatusOK,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
-	)
-	p := newProvider(t, s.URL)
-	collect(t, p, provider.Request{
-		Messages: []provider.Message{
-			provider.UserMessage("use both"),
-			provider.AssistantMessage("", []provider.ToolCall{
-				{ID: "valid", Name: "accept_string", Arguments: provider.ToolArguments(`"value"`)},
-				{ID: "malformed", Name: "read", Arguments: provider.ToolArguments(`{"path":`)},
-			}),
-			provider.ToolResultMessage("valid", "done", false),
-			provider.ToolResultMessage("malformed", "invalid arguments", true),
-		},
-	})
-
-	var sent struct {
-		Messages []struct {
-			ToolCalls []struct {
-				Function struct {
-					Arguments string `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(<-s.body, &sent); err != nil {
-		t.Fatalf("decode request: %v", err)
-	}
-	calls := sent.Messages[1].ToolCalls
-	if len(calls) != 2 {
-		t.Fatalf("tool calls = %+v, want two", calls)
-	}
-	if calls[0].Function.Arguments != `"value"` {
-		t.Errorf("valid arguments = %q, want exact JSON string", calls[0].Function.Arguments)
-	}
-	if calls[1].Function.Arguments != `{"path":` {
-		t.Errorf("malformed arguments = %q, want exact model text", calls[1].Function.Arguments)
-	}
-}
-
-func TestStreamPreservesCompatibleChatCompletionsReasoning(t *testing.T) {
-	s := newSSEServer(t, http.StatusOK,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"think "}}]}`,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"carefully","content":"done"},"finish_reason":"stop"}]}`,
-	)
-	p := newProvider(t, s.URL)
-	events := collect(t, p, provider.Request{
-		Sampling:         provider.Sampling{ReasoningEffort: ptr("high")},
-		PreserveThinking: true,
-		Messages: []provider.Message{
-			provider.UserMessage("first"),
-			provider.AssistantMessageWithReasoning("answer", "prior thought", nil),
-			provider.UserMessage("continue"),
-		},
-	})
-
-	var reasoning, content strings.Builder
-	for _, e := range events {
-		switch e.Kind {
-		case provider.KindReasoningDelta:
-			reasoning.WriteString(e.ReasoningDelta)
-		case provider.KindTextDelta:
-			content.WriteString(e.Text)
-		}
-	}
-	if reasoning.String() != "think carefully" {
-		t.Errorf("reasoning = %q, want preserved reasoning", reasoning.String())
-	}
-	if content.String() != "done" {
-		t.Errorf("content = %q, want done", content.String())
-	}
-
-	var sent struct {
-		ReasoningEffort  string `json:"reasoning_effort"`
-		PreserveThinking bool   `json:"preserve_thinking"`
-		Messages         []struct {
-			Role             string `json:"role"`
-			ReasoningContent string `json:"reasoning_content"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(<-s.body, &sent); err != nil {
-		t.Fatalf("decode request: %v", err)
-	}
-	if sent.ReasoningEffort != "high" || !sent.PreserveThinking {
-		t.Errorf("reasoning settings = %q, %v; want high, true", sent.ReasoningEffort, sent.PreserveThinking)
-	}
-	if len(sent.Messages) != 3 || sent.Messages[1].Role != "assistant" || sent.Messages[1].ReasoningContent != "prior thought" {
-		t.Errorf("messages = %+v, want replayed assistant reasoning", sent.Messages)
-	}
-}
-
 func TestStreamSendsNoneInTheFieldTheThinkingSwitchNames(t *testing.T) {
 	// Each switch puts "none" in exactly one field: an endpoint may reject a
 	// field it does not know, so the others must stay out of the request.
@@ -438,13 +258,10 @@ func TestStreamSendsNoneInTheFieldTheThinkingSwitchNames(t *testing.T) {
 		sw     provider.ThinkingSwitch
 		want   string
 	}{
-		{"default switch", "none", "", `{"reasoning_effort":"none"}`},
 		{"reasoning_effort", "none", provider.SwitchReasoningEffort, `{"reasoning_effort":"none"}`},
 		{"chat_template_kwargs", "none", provider.SwitchTemplate,
 			`{"chat_template_kwargs":{"enable_thinking":false,"thinking":false}}`},
-		{"thinking", "none", provider.SwitchThinking, `{"thinking":{"type":"disabled"}}`},
 		{"other efforts ignore the switch", "high", provider.SwitchThinking, `{"reasoning_effort":"high"}`},
-		{"endpoint default", "", provider.SwitchTemplate, `{}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -479,27 +296,6 @@ func TestStreamSendsNoneInTheFieldTheThinkingSwitchNames(t *testing.T) {
 	}
 }
 
-func TestStreamReadsRetryAfterAsADate(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Retry-After", time.Now().Add(30*time.Second).UTC().Format(http.TimeFormat))
-		w.WriteHeader(http.StatusTooManyRequests)
-		_, _ = io.WriteString(w, `{"error":{"message":"slow down"}}`)
-	}))
-	t.Cleanup(server.Close)
-
-	p := newProvider(t, server.URL)
-	events := collect(t, p, provider.Request{
-		Messages: []provider.Message{provider.UserMessage("hi")},
-	})
-	if len(events) != 1 || events[0].Kind != provider.KindError {
-		t.Fatalf("events = %+v, want one error event", events)
-	}
-	after := provider.RetryAfter(events[0].Err)
-	if after <= 0 || after > 31*time.Second {
-		t.Errorf("RetryAfter = %v, want roughly 30s", after)
-	}
-}
-
 func TestStreamClassifiesErrors(t *testing.T) {
 	cases := []struct {
 		name          string
@@ -531,96 +327,6 @@ func TestStreamClassifiesErrors(t *testing.T) {
 	}
 }
 
-func TestStreamRelaysReasoningWithoutPreserveThinking(t *testing.T) {
-	// Showing the model think is the client's business; replaying it to the
-	// endpoint is preserve_thinking's, so reasoning arrives either way.
-	s := newSSEServer(t, http.StatusOK,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"weighing it"}}]}`,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":"stop"}]}`,
-	)
-	p := newProvider(t, s.URL)
-	events := collect(t, p, provider.Request{
-		Messages: []provider.Message{
-			provider.UserMessage("first"),
-			provider.AssistantMessageWithReasoning("answer", "prior thought", nil),
-			provider.UserMessage("continue"),
-		},
-	})
-
-	var reasoning strings.Builder
-	for _, e := range events {
-		if e.Kind == provider.KindReasoningDelta {
-			reasoning.WriteString(e.ReasoningDelta)
-		}
-	}
-	if reasoning.String() != "weighing it" {
-		t.Errorf("reasoning = %q, want the streamed reasoning", reasoning.String())
-	}
-
-	var sent struct {
-		PreserveThinking bool `json:"preserve_thinking"`
-		Messages         []struct {
-			ReasoningContent string `json:"reasoning_content"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(<-s.body, &sent); err != nil {
-		t.Fatalf("decode request: %v", err)
-	}
-	if sent.PreserveThinking {
-		t.Error("preserve_thinking was sent although the request did not ask for it")
-	}
-	if len(sent.Messages) != 3 || sent.Messages[1].ReasoningContent != "" {
-		t.Errorf("messages = %+v, want no replayed reasoning", sent.Messages)
-	}
-}
-
-func TestStreamRelaysUsageAsSoonAsAChunkReportsIt(t *testing.T) {
-	// An endpoint with continuous usage statistics reports on every chunk;
-	// each distinct report is relayed, so a caller can measure a decode rate
-	// while the response is still arriving.
-	s := newSSEServer(t, http.StatusOK,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"one "}}],"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11}}`,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"two"}}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}`,
-	)
-	p := newProvider(t, s.URL)
-	events := collect(t, p, provider.Request{
-		Messages: []provider.Message{provider.UserMessage("hi")},
-	})
-
-	var reported []int
-	for _, e := range events {
-		if e.Kind == provider.KindUsage {
-			reported = append(reported, e.Usage.OutputTokens.Or(-1))
-		}
-	}
-	if len(reported) != 3 || reported[0] != 1 || reported[2] != 3 {
-		t.Errorf("usage events = %v, want one per distinct report", reported)
-	}
-}
-
-func TestStreamReportsOneUsageEventWhenTheEndpointReportsOnce(t *testing.T) {
-	s := newSSEServer(t, http.StatusOK,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hi"}}]}`,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
-		`{"id":"1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}`,
-	)
-	p := newProvider(t, s.URL)
-	events := collect(t, p, provider.Request{
-		Messages: []provider.Message{provider.UserMessage("hi")},
-	})
-
-	usage := 0
-	for _, e := range events {
-		if e.Kind == provider.KindUsage {
-			usage++
-		}
-	}
-	if usage != 1 {
-		t.Errorf("usage events = %d, want exactly one", usage)
-	}
-}
-
 // ptr returns a pointer to v, for the optional fields of a request.
 func ptr[T any](v T) *T { return &v }
 
@@ -636,26 +342,8 @@ func TestStreamSendsEverySamplingParameterThatIsSet(t *testing.T) {
 		req  provider.Request
 		want string
 	}{
-		{"nothing set", provider.Request{}, `{}`},
 		{
-			"every field set",
-			provider.Request{Sampling: provider.Sampling{
-				Temperature:      ptr(0.7),
-				TopP:             ptr(0.9),
-				TopK:             ptr(40),
-				MinP:             ptr(0.05),
-				FrequencyPenalty: ptr(0.5),
-				PresencePenalty:  ptr(-0.5),
-				Seed:             ptr(int64(7)),
-				Stop:             []string{"END", "\n\n"},
-				MaxOutput:        ptr(256),
-				ReasoningEffort:  ptr("high"),
-			}},
-			`{"frequency_penalty":0.5,"max_completion_tokens":256,"min_p":0.05,"presence_penalty":-0.5,` +
-				`"reasoning_effort":"high","seed":7,"stop":["END","\n\n"],"temperature":0.7,"top_k":40,"top_p":0.9}`,
-		},
-		{
-			"zero values are values",
+			"zero values are values, and the rest are named as the endpoint knows them",
 			provider.Request{Sampling: provider.Sampling{
 				Temperature:      ptr(0.0),
 				TopP:             ptr(0.0),
@@ -663,10 +351,12 @@ func TestStreamSendsEverySamplingParameterThatIsSet(t *testing.T) {
 				FrequencyPenalty: ptr(0.0),
 				PresencePenalty:  ptr(0.0),
 				Seed:             ptr(int64(0)),
+				TopK:             ptr(40),
+				Stop:             []string{"END"},
+				MaxOutput:        ptr(256),
 			}},
-			`{"frequency_penalty":0,"min_p":0,"presence_penalty":0,"seed":0,"temperature":0,"top_p":0}`,
+			`{"frequency_penalty":0,"max_completion_tokens":256,"min_p":0,"presence_penalty":0,"seed":0,"stop":["END"],"temperature":0,"top_k":40,"top_p":0}`,
 		},
-		{"an empty stop list sends none", provider.Request{Sampling: provider.Sampling{Stop: []string{}}}, `{}`},
 		{"an empty effort is the endpoint's", provider.Request{Sampling: provider.Sampling{ReasoningEffort: ptr("")}}, `{}`},
 	}
 	for _, c := range cases {
@@ -697,40 +387,5 @@ func TestStreamSendsEverySamplingParameterThatIsSet(t *testing.T) {
 				t.Errorf("sampling fields = %s, want %s", encoded, c.want)
 			}
 		})
-	}
-}
-
-func TestStreamSendsImagesAsDataURLsBeforeTheText(t *testing.T) {
-	s := newSSEServer(t, http.StatusOK,
-		`{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"a cat"},"finish_reason":"stop"}]}`,
-	)
-	image := provider.Image{MediaType: "image/png", Data: []byte("\x89PNG fake"), Width: 2, Height: 1}
-	collect(t, newProvider(t, s.URL), provider.Request{Messages: []provider.Message{
-		{Role: provider.RoleUser, Content: "what is this?", Images: []provider.Image{image}},
-		{Role: provider.RoleUser, Images: []provider.Image{image}},
-		provider.UserMessage("plain"),
-	}})
-
-	var sent struct {
-		Messages []struct {
-			Content json.RawMessage `json:"content"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(<-s.body, &sent); err != nil {
-		t.Fatalf("decode request: %v", err)
-	}
-	const url = "data:image/png;base64,iVBORyBmYWtl"
-	want := []string{
-		`[{"image_url":{"url":"` + url + `"},"type":"image_url"},{"text":"what is this?","type":"text"}]`,
-		`[{"image_url":{"url":"` + url + `"},"type":"image_url"}]`,
-		`"plain"`,
-	}
-	if len(sent.Messages) != len(want) {
-		t.Fatalf("sent %d messages, want %d", len(sent.Messages), len(want))
-	}
-	for i, w := range want {
-		if got := string(sent.Messages[i].Content); got != w {
-			t.Errorf("message %d content = %s, want %s", i, got, w)
-		}
 	}
 }

@@ -85,12 +85,6 @@ export type ReasoningSource = "reported" | "tokenised";
 /** Prediction is how the token counter reached its expectation of a prompt. */
 export type Prediction = "exact" | "anchored" | "estimated";
 
-/** ModelCalls is the body of GET /api/sessions/{id}/calls. */
-export type ModelCalls = {
-  session_id: string;
-  calls: ModelCall[] | null;
-};
-
 /**
  * PartSize is the size of one part of a request. approximate is set when the
  * number is not the endpoint's own tokenisation of the part: estimated from

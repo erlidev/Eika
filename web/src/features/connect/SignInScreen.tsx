@@ -62,7 +62,7 @@ export function SignInScreen({ unreachable, retry, retrying = false }: SignInScr
       const connection = { baseUrl: url, token: token.trim() };
       setChecking(true);
       // Try the token on a real route before storing it. Storing first would
-      // mount the workbench, whose own 401s would forget the token again
+      // mount the shell, whose own 401s would forget the token again
       // before this screen could say what went wrong.
       request("/api/settings", { connection })
         .then(() => {

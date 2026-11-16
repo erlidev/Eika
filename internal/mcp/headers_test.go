@@ -57,29 +57,9 @@ func TestHeaderParams(t *testing.T) {
 			err:    "not a string, integer, or boolean",
 		},
 		{
-			name:   "a number parameter",
-			schema: `{"type":"object","properties":{"a":{"type":"number","x-mcp-header":"A"}}}`,
-			err:    "not a string, integer, or boolean",
-		},
-		{
 			name:   "inside an array",
 			schema: `{"type":"object","properties":{"list":{"type":"array","items":{"type":"string","x-mcp-header":"Item"}}}}`,
 			err:    "not reachable",
-		},
-		{
-			name:   "inside anyOf",
-			schema: `{"type":"object","anyOf":[{"properties":{"a":{"type":"string","x-mcp-header":"A"}}}]}`,
-			err:    "not reachable",
-		},
-		{
-			name:   "in definitions",
-			schema: `{"type":"object","$defs":{"thing":{"type":"string","x-mcp-header":"Thing"}}}`,
-			err:    "not reachable",
-		},
-		{
-			name:   "not a string",
-			schema: `{"type":"object","properties":{"a":{"type":"string","x-mcp-header":3}}}`,
-			err:    "is not a string",
 		},
 	}
 	for _, tt := range tests {

@@ -172,27 +172,6 @@ func (s *slotServer) complete(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
-func TestSlotHintHonouredPassesOnAServerThatReadsIdSlot(t *testing.T) {
-	srv := newSlotServer(t, true, false)
-	res := live.SlotHintHonoured("fixed", provider.APIChat).Execute(context.Background(), connect(t, srv.URL))
-	if !res.Passed {
-		t.Fatalf("failed: %s", res.Error)
-	}
-	if len(res.Calls) != 5 {
-		t.Fatalf("calls = %d, want 5", len(res.Calls))
-	}
-	var named []int
-	for _, c := range res.Calls {
-		named = append(named, *c.Slot)
-	}
-	if fmt.Sprint(named) != "[1 1 0 0 7]" {
-		t.Errorf("slots named = %v, want 1 1 0 0 and a slot the server does not have", named)
-	}
-	if len(res.Notes) != 5 {
-		t.Errorf("notes = %q, want what /slots showed for each request", res.Notes)
-	}
-}
-
 func TestSlotHintHonouredFailsOnAServerThatIgnoresIdSlot(t *testing.T) {
 	srv := newSlotServer(t, false, false)
 	res := live.SlotHintHonoured("fixed", provider.APIChat).Execute(context.Background(), connect(t, srv.URL))

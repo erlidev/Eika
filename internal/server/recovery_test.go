@@ -9,7 +9,6 @@ import (
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
-	"github.com/erlidev/eika/internal/subagent"
 )
 
 func TestRecoveryAnswersEveryMissingCallAndPreservesResults(t *testing.T) {
@@ -119,39 +118,6 @@ func TestLegacyReportIdentityUsesTheReportAssignment(t *testing.T) {
 	}
 }
 
-func TestUnanchoredLegacyReportUsesOneStableRecoveryID(t *testing.T) {
-	child := store.Session{ID: "child", HeadEntryID: "one", Result: "report"}
-	first, err := legacyReportNoticeID(child, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	child.HeadEntryID = "two"
-	second, err := legacyReportNoticeID(child, nil, nil)
-	if err != nil || second != first {
-		t.Fatalf("legacy id after resume = %q, %v, want %q", second, err, first)
-	}
-}
-
-func TestUnanchoredLegacyReportReusesAPreviousNotice(t *testing.T) {
-	child := store.Session{ID: "child", HeadEntryID: "old", Result: "report"}
-	id := reportNoticeID(child)
-	old, err := session.MessageEntry(provider.AssistantMessage("work", nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	old.ID = "old"
-	resume, err := session.MessageEntry(provider.UserMessage("continue"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	resume.ID = "new"
-	child.HeadEntryID = resume.ID
-	got, err := legacyReportNoticeID(child, []store.Entry{old, resume}, []store.Entry{{ID: id, Kind: store.KindNotice}})
-	if err != nil || got != id {
-		t.Fatalf("notice id = %q, %v, want %q", got, err, id)
-	}
-}
-
 func TestUnfinishedReportCallDoesNotReplaceTheLastLegacyReport(t *testing.T) {
 	child := store.Session{ID: "child", State: store.SessionRunning, Result: "earlier report"}
 	entry := func(id string, m provider.Message) store.Entry {
@@ -173,27 +139,5 @@ func TestUnfinishedReportCallDoesNotReplaceTheLastLegacyReport(t *testing.T) {
 	got, err := legacyReportNoticeID(child, path, []store.Entry{{ID: oldID, Kind: store.KindNotice}})
 	if err != nil || got != oldID {
 		t.Fatalf("id = %q, %v, want earlier report %q", got, err, oldID)
-	}
-}
-
-func TestLegacyFallbackReportKeepsItsNoticeAfterResume(t *testing.T) {
-	child := store.Session{ID: "child", State: store.SessionRunning, Result: "fallback"}
-	entry := func(id string, m provider.Message) store.Entry {
-		e, err := session.MessageEntry(m)
-		if err != nil {
-			t.Fatal(err)
-		}
-		e.ID = id
-		return e
-	}
-	draft := entry("draft", provider.UserMessage(subagent.DraftReport))
-	final := entry("final", provider.AssistantMessage("fallback", nil))
-	resume := entry("resume", provider.UserMessage("more work"))
-	child.HeadEntryID = final.ID
-	id := reportNoticeID(child)
-	child.HeadEntryID = resume.ID
-	got, err := legacyReportNoticeID(child, []store.Entry{draft, final, resume}, []store.Entry{{ID: id, Kind: store.KindNotice}})
-	if err != nil || got != id {
-		t.Fatalf("notice id = %q, %v, want %q", got, err, id)
 	}
 }

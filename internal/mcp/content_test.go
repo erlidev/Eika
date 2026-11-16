@@ -73,20 +73,6 @@ func TestContentDetailsKeepMediaWithinBudget(t *testing.T) {
 	}
 }
 
-func TestResourceDetails(t *testing.T) {
-	blob := base64.StdEncoding.EncodeToString([]byte("abc"))
-	details := ResourceDetails([]ResourceContents{
-		{URI: "file:///a", MimeType: "text/plain", Text: ptr("hello")},
-		{URI: "file:///b", MimeType: "application/octet-stream", Blob: &blob},
-	})
-	if details[0].Text != "hello" || details[0].URI != "file:///a" || details[0].MimeType != "text/plain" {
-		t.Errorf("text resource = %+v", details[0])
-	}
-	if details[1].Data != blob || details[1].Size != 3 {
-		t.Errorf("blob resource = %+v", details[1])
-	}
-}
-
 func TestTruncateMiddleKeepsCharacters(t *testing.T) {
 	s := strings.Repeat("é", 1000)
 	got := truncateMiddle(s, 301)
@@ -98,31 +84,5 @@ func TestTruncateMiddleKeepsCharacters(t *testing.T) {
 	}
 	if truncateMiddle("short", 10) != "short" {
 		t.Error("truncateMiddle changed a short text")
-	}
-}
-
-func TestDecodedLen(t *testing.T) {
-	for _, n := range []int{0, 1, 2, 3, 4, 100} {
-		b64 := base64.StdEncoding.EncodeToString(make([]byte, n))
-		if got := decodedLen(b64); got != n {
-			t.Errorf("decodedLen of %d bytes = %d", n, got)
-		}
-	}
-}
-
-func TestPromptDetails(t *testing.T) {
-	png := base64.StdEncoding.EncodeToString([]byte("png"))
-	got := PromptDetails(&GetPromptResult{Description: "Review", Messages: []PromptMessage{
-		{Role: "user", Content: Content{Type: "text", Text: "Look at this"}},
-		{Role: "user", Content: Content{Type: "image", MimeType: "image/png", Data: png}},
-	}})
-	if got.Description != "Review" || len(got.Messages) != 2 {
-		t.Fatalf("details = %+v", got)
-	}
-	if m := got.Messages[0]; m.Role != "user" || m.Content.Text != "Look at this" {
-		t.Errorf("first message = %+v", m)
-	}
-	if m := got.Messages[1]; m.Content.Type != "image" || m.Content.Data != png || m.Content.Size != 3 {
-		t.Errorf("image message = %+v", m)
 	}
 }

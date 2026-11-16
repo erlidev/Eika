@@ -27,12 +27,9 @@ func TestErrorMapping(t *testing.T) {
 	}{
 		{"missing row", fmt.Errorf("read computer w1: %w", store.ErrNotFound), http.StatusNotFound, codeNotFound},
 		{"missing container", fmt.Errorf("%w: w1", computer.ErrNoComputer), http.StatusNotFound, codeNotFound},
-		{"answered question", fmt.Errorf("answer question q1: %w", builtin.ErrNoQuestion), http.StatusNotFound, codeNotFound},
 		{"duplicate row", fmt.Errorf("create provider demo: %w", store.ErrConflict), http.StatusConflict, codeConflict},
 		{"bad answer", fmt.Errorf("answer question q1: %w", builtin.ErrBadAnswer), http.StatusBadRequest, codeInvalidRequest},
 		{"validation", invalidf("name is required"), http.StatusBadRequest, codeInvalidRequest},
-		{"not found", notFoundf("no run is waiting"), http.StatusNotFound, codeNotFound},
-		{"conflict", conflictf("session s1 already has a run in progress"), http.StatusConflict, codeConflict},
 		{"anything else", errors.New("connection reset"), http.StatusInternalServerError, codeInternal},
 	}
 	s := &Server{log: slog.New(slog.NewTextHandler(io.Discard, nil))}

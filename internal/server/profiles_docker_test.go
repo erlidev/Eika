@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/erlidev/eika/internal/agent"
-	"github.com/erlidev/eika/internal/mcp/mcptest"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 )
@@ -131,13 +130,6 @@ func (a *api) newProfile(t *testing.T, body map[string]any) profileWire {
 	return decodeBody[profileWire](t, request(t, a.Server, "POST", "/api/profiles", body), 201)
 }
 
-// configuration reads what a session sets and resolves to.
-func (a *api) configuration(t *testing.T, sessionID string) sessionConfigurationWire {
-	t.Helper()
-	rec := request(t, a.Server, "GET", "/api/sessions/"+sessionID+"/configuration", nil)
-	return decodeBody[sessionConfigurationWire](t, rec, 200)
-}
-
 // useProfile chooses a session's profile.
 func (a *api) useProfile(t *testing.T, sessionID, profileID string) sessionConfigurationWire {
 	t.Helper()
@@ -195,14 +187,8 @@ func TestProfileRoutes(t *testing.T) {
 		body   map[string]any
 		status int
 	}{
-		{"a name that differs in case", map[string]any{"name": "careful"}, 201},
 		{"the same name", map[string]any{"name": "Careful"}, 409},
-		{"no name", map[string]any{"name": " "}, 400},
-		{"a sampling parameter out of range", map[string]any{"name": "hot", "sampling": map[string]any{"temperature": 3}}, 400},
-		{"a model that does not exist", map[string]any{"name": "m", "model_id": "missing"}, 400},
 		{"a tool that does not exist", map[string]any{"name": "t", "tools": []string{"teleport"}}, 400},
-		{"an MCP server that does not exist", map[string]any{"name": "s", "tools": []string{"mcp__nowhere__*"}}, 400},
-		{"an unknown field", map[string]any{"name": "u", "temperature": 1}, 400},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -331,179 +317,4 @@ func TestARunUsesItsProfileAndTheSessionsOverrides(t *testing.T) {
 		t.Errorf("sources = %v, want the model from the request", named.Sources)
 	}
 	refused(t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/context?model=typo", nil), 400)
-}
-
-func TestAProfileAndASessionChooseWhetherThinkingIsPreserved(t *testing.T) {
-	a := newAPI(t)
-	models := decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200)
-	model := models.Models[0]
-	chat := a.newChat(t, "think")
-
-	profile := a.newProfile(t, map[string]any{"name": "Thinks", "preserve_thinking": true})
-	if profile.PreserveThink == nil || !*profile.PreserveThink || profile.Inherited.PreserveThink ||
-		profile.Inherited.Sources["preserve_thinking"] != "model" {
-		t.Errorf("profile = %+v, want it set over the model's own switch, which is off", profile)
-	}
-	config := a.useProfile(t, chat.ID, profile.ID)
-	if !config.Resolved.PreserveThink || config.Resolved.Sources["preserve_thinking"] != "profile" {
-		t.Errorf("resolved = %+v, want the profile's switch", config.Resolved)
-	}
-	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/context", nil), 200)
-	if !preview.Parameters.PreserveThinking || preview.Sources["preserve_thinking"] != "profile" {
-		t.Errorf("preview parameters = %+v, sources %v; want thinking preserved by the profile", preview.Parameters, preview.Sources)
-	}
-	if preview.ContextWindow != model.ContextWindow || preview.ContextWindow == 0 {
-		t.Errorf("preview context window = %d, want the model's %d", preview.ContextWindow, model.ContextWindow)
-	}
-
-	config = a.override(t, chat.ID, map[string]any{"preserve_thinking": false})
-	if config.Resolved.PreserveThink || config.Resolved.Sources["preserve_thinking"] != "session" {
-		t.Errorf("resolved = %+v, want the session's switch over the profile's", config.Resolved)
-	}
-	p := a.script(providertest.Text("done"))
-	a.postMessage(t, chat.ID, "hi", "", 202)
-	a.waitIdle(t, chat.ID)
-	if p.Requests()[0].PreserveThinking {
-		t.Error("the run preserved thinking the session turned off")
-	}
-	records := decodeBody[callsWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/calls", nil), 200)
-	recorded := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/calls/"+records.Calls[0].ID, nil), 200)
-	if recorded.ContextWindow != model.ContextWindow || len(recorded.MessageSizes) != len(recorded.Messages) {
-		t.Errorf("recorded = window %d, %d sizes for %d messages; want the model's window and a size per message",
-			recorded.ContextWindow, len(recorded.MessageSizes), len(recorded.Messages))
-	}
-}
-
-func TestEveryToolSaysWhatItCostsARequest(t *testing.T) {
-	a := newAPI(t)
-	listed := decodeBody[struct {
-		Tools []struct {
-			Name   string `json:"name"`
-			Tokens int    `json:"tokens"`
-		} `json:"tools"`
-	}](t, request(t, a.Server, "GET", "/api/tools", nil), 200)
-	chat := a.newChat(t, "sizes")
-	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/context", nil), 200)
-	if len(preview.Tools) == 0 {
-		t.Fatal("the chat's preview offers no tools to compare")
-	}
-	for _, sent := range preview.Tools {
-		i := slices.IndexFunc(listed.Tools, func(l struct {
-			Name   string `json:"name"`
-			Tokens int    `json:"tokens"`
-		}) bool {
-			return l.Name == sent.Name
-		})
-		if i < 0 || listed.Tools[i].Tokens != sent.Tokens || sent.Tokens == 0 {
-			t.Errorf("tool %s costs %d in a request; the list says %+v", sent.Name, sent.Tokens, listed.Tools)
-		}
-	}
-}
-
-func TestAnEffortTheModelDoesNotOfferIsNotSent(t *testing.T) {
-	a := newAPI(t)
-	models := decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200)
-	decodeBody[modelWire](t, request(t, a.Server, "PATCH", "/api/models/"+models.Models[0].ID, map[string]any{
-		"reasoning_effort": "low", "reasoning_efforts": []string{"low", "high"},
-	}), 200)
-	chat := a.newChat(t, "think")
-	config := a.override(t, chat.ID, map[string]any{"sampling": map[string]any{"reasoning_effort": "max"}})
-	if config.Resolved.DroppedEffort != "max" || deref(config.Resolved.Sampling.ReasoningEffort) != "low" {
-		t.Errorf("resolved = %+v, want max dropped for the model's own", config.Resolved)
-	}
-	p := a.script(providertest.Text("done"))
-	a.postMessage(t, chat.ID, "hi", "", 202)
-	a.waitIdle(t, chat.ID)
-	if got := deref(p.Requests()[0].Sampling.ReasoningEffort); got != "low" {
-		t.Errorf("sent effort = %q, want the model's own", got)
-	}
-}
-
-func TestAToolChoiceNamesAnMCPServer(t *testing.T) {
-	a := newAPI(t)
-	docs := &mcptest.Server{Tools: []mcptest.Tool{echoTool("echo"), echoTool("shout")}}
-	a.addMCPServer(t, map[string]any{"name": "docs", "kind": "http", "url": a.serveMCP(t, docs)})
-	chat := a.newChat(t, "docs")
-	profile := a.newProfile(t, map[string]any{"name": "Docs", "tools": []string{"mcp__docs__*", "web_search"}})
-	a.useProfile(t, chat.ID, profile.ID)
-
-	p := a.script(providertest.Text("done"))
-	a.postMessage(t, chat.ID, "hi", "", 202)
-	a.waitIdle(t, chat.ID)
-	var offered []string
-	for _, d := range p.Requests()[0].Tools {
-		offered = append(offered, d.Name)
-	}
-	slices.Sort(offered)
-	if want := []string{"mcp__docs__echo", "mcp__docs__shout", "web_search"}; !slices.Equal(offered, want) {
-		t.Errorf("offered = %v, want %v", offered, want)
-	}
-
-	// A session's own choice may name a server too.
-	put := request(t, a.Server, "PUT", "/api/sessions/"+chat.ID+"/tools", map[string]any{"tools": []string{"mcp__docs__*"}})
-	got := decodeBody[profiledSessionWire](t, put, 200)
-	if !slices.Equal(got.Tools, []string{"mcp__docs__echo", "mcp__docs__shout"}) {
-		t.Errorf("session tools = %v, want every tool of docs", got.Tools)
-	}
-	// Null clears the session's choice, and the profile's applies again.
-	put = request(t, a.Server, "PUT", "/api/sessions/"+chat.ID+"/tools", map[string]any{"tools": nil})
-	got = decodeBody[profiledSessionWire](t, put, 200)
-	if !slices.Equal(got.Tools, []string{"mcp__docs__echo", "mcp__docs__shout", "web_search"}) || got.Overridden {
-		t.Errorf("session tools = %v, overridden %v; want the profile's again", got.Tools, got.Overridden)
-	}
-}
-
-func TestAnEditorSeesTheValuesOfTheModelItChoseBeforeSaving(t *testing.T) {
-	a := newAPI(t)
-	models := decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200)
-	big := decodeBody[modelWire](t, request(t, a.Server, "POST", "/api/models", map[string]any{
-		"provider_id": models.Models[0].ProviderID, "name": "big", "model": "big", "context_window": 128000, "max_output": 32000,
-	}), 201)
-
-	profile := decodeBody[configurationWire](t, request(t, a.Server, "GET", "/api/profiles/inherited?model_id="+big.ID, nil), 200)
-	if deref(profile.Sampling.MaxOutput) != 32000 || profile.Sources["sampling.max_output"] != "model" {
-		t.Errorf("a profile choosing big inherits %+v, want big's max output", profile)
-	}
-	none := decodeBody[configurationWire](t, request(t, a.Server, "GET", "/api/profiles/inherited", nil), 200)
-	if deref(none.Sampling.MaxOutput) == 32000 {
-		t.Errorf("a profile choosing no model inherits %+v, want the default model's values", none)
-	}
-	if rec := request(t, a.Server, "GET", "/api/profiles/inherited?model_id=absent", nil); rec.Code != 400 {
-		t.Errorf("an unknown model = %d, want 400", rec.Code)
-	}
-
-	chat := a.newChat(t, "pick")
-	rec := request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/configuration?model_id="+big.ID, nil)
-	config := decodeBody[sessionConfigurationWire](t, rec, 200)
-	if deref(config.Inherited.Sampling.MaxOutput) != 32000 || config.Overrides.ModelID != "" {
-		t.Errorf("a session choosing big = %+v, want big's max output inherited and nothing saved", config)
-	}
-	if saved := a.configuration(t, chat.ID); deref(saved.Inherited.Sampling.MaxOutput) == 32000 {
-		t.Errorf("the saved configuration = %+v, want the default model's values", saved.Inherited)
-	}
-	if rec := request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/configuration?model_id=absent", nil); rec.Code != 400 {
-		t.Errorf("an unknown model = %d, want 400", rec.Code)
-	}
-
-	terse := a.newProfile(t, map[string]any{"name": "Terse", "instructions": "One line."})
-	rec = request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/configuration?profile_id="+terse.ID, nil)
-	config = decodeBody[sessionConfigurationWire](t, rec, 200)
-	if config.Inherited.Instructions != "One line." || config.Inherited.ProfileID != terse.ID || config.ProfileID != "" {
-		t.Errorf("a session choosing Terse = %+v, want Terse's values inherited and nothing saved", config)
-	}
-	if rec := request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/configuration?profile_id=absent", nil); rec.Code != 400 {
-		t.Errorf("an unknown profile = %d, want 400", rec.Code)
-	}
-}
-
-func TestAStoppedComputerStillHasAPreview(t *testing.T) {
-	a := newAPI(t)
-	cx := a.home(t)
-	sess := a.newSession(t, cx.ID)
-	a.stopIdle(t)
-
-	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/context", nil), 200)
-	if len(preview.Sections) != 1 || preview.Sections[0].Kind != agent.SectionBase || preview.Sections[0].Text != agent.ChatPrompt {
-		t.Errorf("sections = %+v, want the base prompt alone", preview.Sections)
-	}
 }

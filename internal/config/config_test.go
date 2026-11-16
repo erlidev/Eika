@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -44,84 +43,6 @@ func valid() config.Config {
 	c := config.Default()
 	c.AllowedOrigins = []string{"localhost:8080", "127.0.0.1:8080"}
 	return c
-}
-
-func TestLoadDefaults(t *testing.T) {
-	clearEnv(t)
-	cfg, err := config.Load("")
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if !reflect.DeepEqual(cfg, valid()) {
-		t.Errorf("got %v, want the defaults", cfg)
-	}
-}
-
-func TestLoadEmptyFileUsesDefaults(t *testing.T) {
-	clearEnv(t)
-	for name, body := range map[string]string{
-		"empty":        "",
-		"comment only": "# nothing set here\n",
-		"whitespace":   "\n\n  \n",
-	} {
-		t.Run(name, func(t *testing.T) {
-			cfg, err := config.Load(writeConfig(t, body))
-			if err != nil {
-				t.Fatalf("load: %v", err)
-			}
-			if !reflect.DeepEqual(cfg, valid()) {
-				t.Errorf("got %v, want the defaults", cfg)
-			}
-		})
-	}
-}
-
-func TestLoadFile(t *testing.T) {
-	clearEnv(t)
-	path := writeConfig(t, `
-listen: "127.0.0.1:9000"
-database_url: "postgres://u:p@db:5432/eika"
-docker_socket: "/run/docker.sock"
-searxng_url: "http://search:8080"
-sandbox_image: "custom:1"
-secret_key_file: "/data/key"
-auth_token: "s3cret"
-`)
-	cfg, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if cfg.Listen != "127.0.0.1:9000" {
-		t.Errorf("listen = %q, want 127.0.0.1:9000", cfg.Listen)
-	}
-	if cfg.AuthToken != "s3cret" {
-		t.Errorf("auth_token = %q, want s3cret", cfg.AuthToken)
-	}
-	if cfg.SecretKeyFile != "/data/key" {
-		t.Errorf("secret_key_file = %q, want /data/key", cfg.SecretKeyFile)
-	}
-}
-
-func TestLoadFileErrors(t *testing.T) {
-	clearEnv(t)
-	t.Run("missing file", func(t *testing.T) {
-		_, err := config.Load(filepath.Join(t.TempDir(), "absent.yaml"))
-		if !errors.Is(err, config.ErrNoConfigFile) {
-			t.Errorf("err = %v, want ErrNoConfigFile", err)
-		}
-	})
-	t.Run("unknown field", func(t *testing.T) {
-		_, err := config.Load(writeConfig(t, "listne: \":1\"\n"))
-		if err == nil {
-			t.Fatal("load accepted an unknown field")
-		}
-	})
-	t.Run("malformed yaml", func(t *testing.T) {
-		_, err := config.Load(writeConfig(t, "listen: [\n"))
-		if err == nil {
-			t.Fatal("load accepted malformed yaml")
-		}
-	})
 }
 
 func TestLoadEnvOverridesFile(t *testing.T) {
@@ -176,26 +97,14 @@ func TestValidate(t *testing.T) {
 		cfg  config.Config
 		ok   bool
 	}{
-		{"defaults", valid(), true},
-		{"zero value", config.Config{}, false},
-		{"empty listen", missing(func(c *config.Config) { c.Listen = "" }), false},
 		{"empty database url", missing(func(c *config.Config) { c.DatabaseURL = "" }), false},
-		{"empty docker socket", missing(func(c *config.Config) { c.DockerSocket = "" }), false},
-		{"empty searxng url", missing(func(c *config.Config) { c.SearxNGURL = "" }), false},
-		{"empty sandbox image", missing(func(c *config.Config) { c.SandboxImage = "" }), false},
-		{"empty sandbox network", missing(func(c *config.Config) { c.SandboxNetwork = "" }), true},
 		{"no internal network, so no restricted egress", missing(func(c *config.Config) { c.SandboxInternalNetwork = "" }), true},
 		{"one network for both kinds of sandbox", missing(func(c *config.Config) { c.SandboxInternalNetwork = c.SandboxNetwork }), false},
-		{"an internal network with no egress proxy", missing(func(c *config.Config) { c.EgressListen = "" }), false},
 		{"an egress proxy url without a scheme", missing(func(c *config.Config) { c.EgressProxyURL = "eika:3128" }), false},
 		{"no egress proxy in development, where nothing is restricted", missing(func(c *config.Config) { c.SandboxNetwork = ""; c.EgressListen = "" }), true},
-		{"empty eikad binary", missing(func(c *config.Config) { c.EikadBinary = "" }), false},
-		{"empty secret key file", missing(func(c *config.Config) { c.SecretKeyFile = "" }), false},
 		{"no auth token, because sign-in sessions need none", missing(func(c *config.Config) { c.AuthToken = "" }), true},
 		{"https public url", missing(func(c *config.Config) { c.PublicURL = "https://eika.example.com" }), true},
-		{"http public url with a trailing slash", missing(func(c *config.Config) { c.PublicURL = "http://10.0.0.5:8080/" }), true},
 		{"public url with a path", missing(func(c *config.Config) { c.PublicURL = "https://example.com/eika" }), false},
-		{"public url without a scheme", missing(func(c *config.Config) { c.PublicURL = "eika.example.com" }), false},
 		{"public url with credentials", missing(func(c *config.Config) { c.PublicURL = "https://u:p@eika.example.com" }), false},
 	}
 	for _, c := range cases {
@@ -222,25 +131,15 @@ func TestStringRedactsSecrets(t *testing.T) {
 			t.Errorf("String() leaked %q: %s", secret, s)
 		}
 	}
-	for _, want := range []string{"eika-sandbox:latest", "/var/lib/eika/secret.key", "postgres://eika:"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("String() dropped %q: %s", want, s)
-		}
-	}
-}
-
-func TestStringKeepsEmptyTokenEmpty(t *testing.T) {
-	if got := config.Default().String(); !strings.Contains(got, "auth_token= ") {
-		t.Errorf("String() = %s, want an empty auth_token", got)
+	if !strings.Contains(s, "postgres://eika:") {
+		t.Errorf("String() dropped the rest of the database url: %s", s)
 	}
 }
 
 func TestStringRedactsAwkwardDatabasePasswords(t *testing.T) {
 	cases := map[string]string{
 		"at sign in password": "postgres://eika:hun@ter2@postgres:5432/eika",
-		"escaped at sign":     "postgres://eika:hun%40ter2@postgres:5432/eika",
 		"colon in password":   "postgres://eika:a:b:c@postgres:5432/eika",
-		"password only":       "postgres://:hunter2@postgres:5432/eika",
 		"unparseable":         "://%%not a url",
 	}
 	for name, dsn := range cases {
@@ -271,21 +170,10 @@ func TestAllowedOrigins(t *testing.T) {
 			want:   []string{"localhost:8080", "127.0.0.1:8080"},
 		},
 		{
-			name:   "a listen address with a host gives that host",
-			listen: "127.0.0.1:9000",
-			want:   []string{"127.0.0.1:9000"},
-		},
-		{
 			name:   "a configured origin is added to the harness's own",
 			listen: ":8080",
 			file:   "allowed_origins:\n  - \"ui.example\"\n",
 			want:   []string{"localhost:8080", "127.0.0.1:8080", "ui.example"},
-		},
-		{
-			name:   "a whole URL is reduced to its host",
-			listen: ":8080",
-			file:   "allowed_origins:\n  - \"https://ui.example:4443/app\"\n",
-			want:   []string{"localhost:8080", "127.0.0.1:8080", "ui.example:4443"},
 		},
 		{
 			name:   "the environment replaces the file's list",

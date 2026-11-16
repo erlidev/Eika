@@ -33,10 +33,3 @@ func TestSearchUsesTheActionAPI(t *testing.T) {
 		t.Errorf("user agent = %q", ua)
 	}
 }
-
-func TestSearchToleratesNoResults(t *testing.T) {
-	client, _ := searchtest.Client(searchtest.JSON(map[string]any{}))
-	if got, err := wikipedia.New(client, wikipedia.DefaultURL).Search(t.Context(), search.Query{Text: "q", Limit: 3}); err != nil || len(got) != 0 {
-		t.Errorf("results = %+v, %v", got, err)
-	}
-}

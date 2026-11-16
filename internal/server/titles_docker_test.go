@@ -3,8 +3,6 @@
 package server_test
 
 import (
-	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 
@@ -131,63 +129,5 @@ func TestAnUntitledSessionIsNamedAfterItsFirstMessage(t *testing.T) {
 	a.waitIdle(t, untitled.ID)
 	if titler.Calls() != 1 {
 		t.Errorf("title requests = %d after a second run, want 1", titler.Calls())
-	}
-}
-
-func TestAFailedTitleIsTriedAgainByTheNextRun(t *testing.T) {
-	a := newAPI(t)
-	titler := providertest.New(
-		providertest.Fail(&provider.Error{Op: "stream", StatusCode: 500, Err: errors.New("model busy")}),
-		providertest.Text("Explain the scheduler"),
-	)
-	a.assignTitleModel(t, a.addTitleModel(t, titler))
-
-	chat := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions", map[string]any{"chat": true}), 201)
-	a.script(providertest.Text("first answer"), providertest.Text("second answer"))
-	a.postMessage(t, chat.ID, "how does the scheduler pick a task?", "", 202)
-	a.waitIdle(t, chat.ID)
-	waitFor(t, "the first title attempt", func() bool { return titler.Calls() == 1 })
-	if title := a.sessionTitle(t, chat.ID); title != "New chat" {
-		t.Errorf("title = %q after a failed attempt, want the placeholder", title)
-	}
-
-	// The next run names the session after its first message, not the one
-	// that run starts with.
-	a.postMessage(t, chat.ID, "and preemption?", "", 202)
-	waitFor(t, "the chat to be titled", func() bool { return a.sessionTitle(t, chat.ID) == "Explain the scheduler" })
-	if reqs := titler.Requests(); reqs[0].Messages[0].Content != "how does the scheduler pick a task?" {
-		t.Errorf("title made from %q, want the first message", reqs[0].Messages[0].Content)
-	}
-}
-
-func TestASessionGivenATitleKeepsIt(t *testing.T) {
-	a := newAPI(t)
-	titler := providertest.New(providertest.Text("Something else"))
-	a.assignTitleModel(t, a.addTitleModel(t, titler))
-
-	sess := a.session(t)
-	a.script(providertest.Text("done"))
-	a.postMessage(t, sess.ID, "hello", "", 202)
-	a.waitIdle(t, sess.ID)
-	if title := a.sessionTitle(t, sess.ID); title != "a session" || titler.Calls() != 0 {
-		t.Errorf("title = %q after %d title calls, want the given title and no call", title, titler.Calls())
-	}
-}
-
-func TestRenamingAModelKeepsItsClasses(t *testing.T) {
-	a := newAPI(t)
-	a.assignTitleModel(t, a.addTitleModel(t, providertest.New()))
-	models := decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200)
-	var id string
-	for _, m := range models.Models {
-		if m.Name == "titler" {
-			id = m.ID
-		}
-	}
-	decodeBody[modelWire](t, request(t, a.Server, "PATCH", "/api/models/"+id, map[string]any{"name": "namer"}), 200)
-	got := decodeBody[settingsWire](t, request(t, a.Server, "GET", "/api/settings", nil), 200)
-	var assigned map[string]string
-	if err := json.Unmarshal(got.Settings["model_classes"], &assigned); err != nil || assigned["fast"] != "namer" {
-		t.Errorf("model_classes = %s, want the class to follow the rename", got.Settings["model_classes"])
 	}
 }

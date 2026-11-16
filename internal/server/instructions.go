@@ -16,7 +16,7 @@ func (s *Server) handleInstructions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutInstructions(w http.ResponseWriter, r *http.Request) {
-	body, err := decodeUTF8JSON[*putInstructionsRequest](r)
+	body, err := decodeJSON[*putInstructionsRequest](r)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -51,7 +51,7 @@ func (s *Server) handleProjectInstructions(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handlePutProjectInstructions(w http.ResponseWriter, r *http.Request) {
-	body, err := decodeUTF8JSON[*putProjectInstructionsRequest](r)
+	body, err := decodeJSON[*putProjectInstructionsRequest](r)
 	if err != nil {
 		s.fail(w, r, err)
 		return

@@ -260,12 +260,6 @@ func TestRedactHidesTheValueOfACredentialFlag(t *testing.T) {
 	}
 }
 
-func TestCommandQuotesWhatTheShellWouldSplit(t *testing.T) {
-	if got, want := bench.Command("docker", "ps", "--format", "{{.ID}}|x", "it's"), `docker ps --format '{{.ID}}|x' 'it'\''s'`; got != want {
-		t.Errorf("Command = %s, want %s", got, want)
-	}
-}
-
 func TestParseServerLogReadsFinishedTasks(t *testing.T) {
 	log := `943.18.321.777 I slot launch_slot_: id  0 | task 53596 | processing task, is_child = 0
 943.18.743.241 I slot print_timing: id  0 | task 53596 | prompt eval time =     143.32 ms /    57 tokens (    2.51 ms per token,   397.71 tokens per second)

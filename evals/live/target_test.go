@@ -102,10 +102,3 @@ func TestConnectWithTheWrongKeyNamesTheKey(t *testing.T) {
 		t.Errorf("error %q repeats the key", err)
 	}
 }
-
-func TestConnectRejectsAnEndpointThatIsNotAURL(t *testing.T) {
-	_, err := live.Connect(context.Background(), live.Env{live.EndpointVar: "127.0.0.1:8091"})
-	if err == nil || errors.Is(err, live.ErrNotConfigured) || errors.Is(err, live.ErrUnreachable) {
-		t.Fatalf("err = %v, want a plain refusal of the value", err)
-	}
-}

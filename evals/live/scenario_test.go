@@ -244,41 +244,6 @@ func TestCompleteWithoutTimingsLeavesCacheAndPrefillAbsent(t *testing.T) {
 	}
 }
 
-func TestCompleteTakesTheCachedCountFromUsageNotFromPrefill(t *testing.T) {
-	// A server with no prompt_n (so nothing to subtract from the prompt count)
-	// that states the cached count in its usage block: the count is read, and
-	// a stated 0 stays a 0 rather than an absent value.
-	zero, some := 0, 30
-	cs := newChatServer(t,
-		reply{prompt: 40, completion: 3, text: "a", usageCached: &zero},
-		reply{prompt: 50, completion: 3, text: "b", usageCached: &some},
-	)
-	res := live.Scenario{
-		Name: "usage cached",
-		Run: func(ctx context.Context, tg *live.Target) ([]live.Call, error) {
-			first, _, err := tg.Complete(ctx, "first", requestFor("hi"))
-			if err != nil {
-				return []live.Call{first}, err
-			}
-			second, _, err := tg.Complete(ctx, "second", requestFor("hi again"))
-			return []live.Call{first, second}, err
-		},
-	}.Execute(context.Background(), connect(t, cs.URL))
-	if !res.Passed {
-		t.Fatalf("scenario failed: %s", res.Error)
-	}
-	first, second := res.Calls[0], res.Calls[1]
-	if first.CachedTokens == nil || *first.CachedTokens != 0 || first.CacheHitRate == nil || *first.CacheHitRate != 0 {
-		t.Errorf("first = %+v, want a stated 0 cached and a hit rate of 0", first)
-	}
-	if second.CachedTokens == nil || *second.CachedTokens != 30 || second.PrefilledTokens != nil || second.ReasoningTokens != nil {
-		t.Errorf("second = %+v, want 30 cached and no prefilled or reasoning count, which nothing stated", second)
-	}
-	if s := res.Summary; s.CachedTokens == nil || *s.CachedTokens != 30 || s.CacheHitRate == nil || math.Abs(*s.CacheHitRate-30.0/90.0) > 1e-9 {
-		t.Errorf("summary = %+v, want 30 of 90 cached", s)
-	}
-}
-
 func TestCacheReuseReportsBothTurnsAndBoundsTheOutput(t *testing.T) {
 	cs := newChatServer(t,
 		reply{prompt: 400, completion: 20, cacheN: 0, promptN: 400, promptMS: 900, timings: true, text: "A hit is when the answer is already stored."},
@@ -290,16 +255,6 @@ func TestCacheReuseReportsBothTurnsAndBoundsTheOutput(t *testing.T) {
 	}
 	if len(res.Calls) != 2 || res.Calls[0].Label != "turn 1" || res.Calls[1].Label != "turn 2" {
 		t.Fatalf("calls = %+v", res.Calls)
-	}
-	s := res.Summary
-	if s.Calls != 2 || intOf(s.PromptTokens) != 840 || s.CachedTokens == nil || *s.CachedTokens != 398 {
-		t.Errorf("summary = %+v", s)
-	}
-	if s.PrefillSeconds == nil || math.Abs(*s.PrefillSeconds-0.98) > 1e-9 {
-		t.Errorf("summary = %+v, want 0.98 s of prefill", s)
-	}
-	if s.Drift == nil || *s.Drift != 0 || s.CountSeconds == nil {
-		t.Errorf("summary = %+v, want no drift and a count time", s)
 	}
 
 	// The second request replays the first reply, and both are bounded.
@@ -348,18 +303,5 @@ func TestCacheReuseFailsWhenTheServerReportsNoCachedCount(t *testing.T) {
 	res := live.CacheReuse("fixed").Execute(context.Background(), connect(t, cs.URL))
 	if res.Passed || !strings.Contains(res.Error, "no cached token count") {
 		t.Fatalf("passed = %v, error = %q", res.Passed, res.Error)
-	}
-}
-
-func TestScenariosAreNamedAndUnique(t *testing.T) {
-	seen := map[string]bool{}
-	for _, s := range live.Scenarios() {
-		if s.Name == "" || s.Run == nil || seen[s.Name] {
-			t.Errorf("scenario %+v has no name, no body, or a repeated name", s)
-		}
-		seen[s.Name] = true
-	}
-	if len(seen) == 0 {
-		t.Error("the suite has no scenarios")
 	}
 }

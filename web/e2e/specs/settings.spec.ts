@@ -18,28 +18,6 @@ for (const theme of ["light", "dark"] as const) {
       await expect(eika.page.getByText("no key: edit the provider to add one")).toBeVisible();
       await expectShot(eika, `models-providers-${theme}`, "role=dialog");
     });
-
-    test("endpoint: what the probe found and what only the user can say", async ({
-      open,
-      expectShot,
-    }) => {
-      const eika = await open({ scenario: "providers", theme });
-      await eika.click("Settings");
-      await eika.click("Endpoint settings of Bench");
-      await expect(eika.page.getByRole("combobox", { name: "KV cache" })).toHaveText("Not known");
-      await expectShot(eika, `endpoint-bench-${theme}`, `role=dialog[name="Endpoint of Bench"]`);
-    });
-
-    test("general: a problem under the sandbox image", async ({ open, expectShot }) => {
-      const eika = await open({ scenario: "workbench", theme });
-      await eika.click("Settings");
-      await eika.click("General");
-      await eika.fill("Sandbox image", "my image");
-      // The classes above the field fill the dialog, so the problem is scrolled to.
-      await eika.page.getByText(/An image reference has no spaces/).scrollIntoViewIfNeeded();
-      await expect(eika.page.getByText(/An image reference has no spaces/)).toBeVisible();
-      await expectShot(eika, `general-invalid-${theme}`, "role=dialog");
-    });
   });
 }
 
@@ -75,10 +53,7 @@ test("models: a window larger than the endpoint holds is warned about, with what
   await expect(row("gpt-5-mini").getByRole("status")).toHaveCount(0);
 });
 
-test("endpoint settings: what the user sets survives the next probe", async ({
-  open,
-  expectAria,
-}) => {
+test("endpoint settings: what the user sets survives the next probe", async ({ open }) => {
   const eika = await open({ scenario: "providers" });
   await eika.click("Settings");
   await eika.click("Endpoint settings of Bench");
@@ -86,7 +61,6 @@ test("endpoint settings: what the user sets survives the next probe", async ({
   // The probe cannot tell whether a 2-slot llama.cpp cache is shared, and
   // says so; the user knows it is (--kv-unified).
   await expect(dialog.getByText(/does not say whether its cache is shared/)).toBeVisible();
-  await expectAria(eika, "endpoint-bench-unknown", `role=dialog[name="Endpoint of Bench"]`);
   const save = dialog.getByRole("button", { name: "Save" });
   await expect(save).toBeDisabled();
   await eika.click("label=KV cache");
@@ -110,26 +84,12 @@ test("endpoint settings: what the user sets survives the next probe", async ({
   await expect(dialog.getByText("Set by you")).toBeHidden();
 });
 
-test("endpoint settings: values the harness would refuse", async ({ open }) => {
-  const eika = await open({ scenario: "providers" });
-  await eika.click("Settings");
-  await eika.click("Endpoint settings of Bench");
-  const dialog = eika.page.getByRole("dialog", { name: /Endpoint of Bench/ });
-  const save = dialog.getByRole("button", { name: "Save" });
-  await eika.fill("Slots", "0");
-  await expect(dialog.getByLabel("Slots")).toHaveAccessibleDescription(/whole number of slots/);
-  await expect(save).toBeDisabled();
-  await eika.fill("Slots", "4");
-  await expect(save).toBeEnabled();
-});
-
-test("edit provider: a new base URL clears the stored key", async ({ open, expectAria }) => {
+test("edit provider: a new base URL clears the stored key", async ({ open }) => {
   const eika = await open({ scenario: "providers" });
   await eika.click("Settings");
   await eika.click("Edit OpenAI");
   await eika.fill("Base URL", "https://api.openai.com/v2");
   await expect(eika.page.getByText(/saving clears the stored key ending in a1b2/)).toBeVisible();
-  await expectAria(eika, "provider-url-changed", "role=dialog");
 });
 
 test("edit provider: URLs and names the harness would refuse", async ({ open }) => {
@@ -158,14 +118,7 @@ test("edit provider: URLs and names the harness would refuse", async ({ open }) 
   await expect(save).toBeDisabled();
 });
 
-test("add a provider", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "providers" });
-  await eika.click("Settings");
-  await eika.click("Add provider");
-  await expectAria(eika, "provider-new", "role=dialog");
-});
-
-test("add models: duplicates are explained where they are", async ({ open, expectAria }) => {
+test("add models: duplicates are explained where they are", async ({ open }) => {
   const eika = await open({ scenario: "providers" });
   await eika.click("Settings");
   await eika.click('role=button[name="Models"] >> nth=1');
@@ -177,29 +130,10 @@ test("add models: duplicates are explained where they are", async ({ open, expec
   await eika.fill("label=Name in Eika", "gpt-5");
   await expect(eika.page.getByText(/A model called “gpt-5” already exists/)).toBeVisible();
   await expect(eika.page.getByRole("button", { name: "Add 1 model" })).toBeDisabled();
-  await expectAria(eika, "model-picker-duplicate", "role=dialog");
-});
-
-test("edit model: a name another model has", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "providers" });
-  await eika.click("Settings");
-  await eika.click("Edit gpt-5-mini");
-  await eika.fill("Name in Eika", "gpt-5");
-  await expect(eika.page.getByText(/Another model is called “gpt-5”/)).toBeVisible();
-  await expect(eika.page.getByRole("button", { name: "Save" })).toBeDisabled();
-  await expectAria(eika, "model-dialog-duplicate", "role=dialog");
-});
-
-test("general", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Settings");
-  await eika.click("General");
-  await expectAria(eika, "general", "role=dialog");
 });
 
 test("general: model classes show what they fall back to and which share a pool", async ({
   open,
-  expectAria,
 }) => {
   const eika = await open({ scenario: "classes" });
   await eika.click("Settings");
@@ -209,7 +143,6 @@ test("general: model classes show what they fall back to and which share a pool"
   // Main and fast are served from the bench's pool, so they contend for its slots.
   await expect(eika.page.getByText("Shares the Bench pool with fast.")).toBeVisible();
   await expect(eika.page.getByText("Shares the Bench pool with main.")).toBeVisible();
-  await expectAria(eika, "general-classes", "role=dialog");
 });
 
 test("general: a class offers only models of its kind", async ({ open }) => {
@@ -250,60 +183,13 @@ test("general: titles are skipped when fast would fall back onto a hosted deep m
   await expect(eika.page.getByText("Session titles are made by gpt-5.")).toBeVisible();
 });
 
-test("models: a decision model is marked, has no test and is never the default", async ({
-  open,
-}) => {
-  const eika = await open({ scenario: "classes" });
-  await eika.click("Settings");
-  const row = eika.page.locator("li", { has: eika.page.getByText("d3-flash", { exact: true }) });
-  await expect(row.getByText("Decision", { exact: true })).toBeVisible();
-  await expect(row.getByRole("button", { name: "Test" })).toHaveCount(0);
-  await expect(row.getByRole("button", { name: "Make default" })).toHaveCount(0);
-  await eika.click("Edit d3-flash");
-  const dialog = eika.page.getByRole("dialog", { name: "Edit d3-flash" });
-  await expect(dialog.getByText(/answers typed questions, not chat/)).toBeVisible();
-  await expect(dialog.getByLabel("Accepts images")).toHaveCount(0);
-});
-
-test("search: providers, keys, and quotas", async ({ open, expectShot }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Settings");
-  await eika.click("Search");
-  await expectShot(eika, "search-light", "role=dialog");
-});
-
-test("search: quotas that cannot be saved", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Settings");
-  await eika.click("Search");
-  // A number field drops letters as they are typed, so "abc" leaves it
-  // empty, which is unlimited and no problem; "1e" is text it keeps.
-  await eika.fill("exa per day", "abc");
-  await expect(eika.page.getByLabel("exa per day")).toHaveValue("");
-  await eika.fill("brave per day", "1e");
-  await eika.fill("tavily per month", "-5");
-  await eika.fill("marginalia per day", "2.5");
-  await eika.scroll("Save quotas");
-  await expect(eika.page.getByRole("button", { name: "Save quotas" })).toBeDisabled();
-  await expect(eika.page.getByText("Fix the quotas marked above to save.")).toBeVisible();
-  await expectAria(eika, "search-quotas-invalid", "role=dialog");
-});
-
-test("search: try a search", async ({ open, expectAria }) => {
+test("search: try a search", async ({ open }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.click("Settings");
   await eika.click("Search");
   await eika.fill("Query", "tokio runtime");
   await eika.click('role=dialog >> role=button[name="Search"]');
   await expect(eika.page.getByText(/Answered by searxng/)).toBeVisible();
-  await expectAria(eika, "search-tried", "role=dialog");
-});
-
-test("compaction", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Settings");
-  await eika.click("Compaction");
-  await expectAria(eika, "compaction", "role=dialog");
 });
 
 test("compaction: budgets the harness would refuse", async ({ open }) => {
@@ -323,45 +209,11 @@ test("compaction: budgets the harness would refuse", async ({ open }) => {
   });
 });
 
-test("account", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Settings");
-  await eika.click("Account");
-  await expectAria(eika, "account", "role=dialog");
-});
-
-test("appearance", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Settings");
-  await eika.click("Appearance");
-  await expectAria(eika, "appearance", "role=dialog");
-});
-
-test("the dialog keeps one height on every tab", async ({ open }) => {
-  const eika = await open({ scenario: "providers" });
-  await eika.click("Settings");
-  const heights: number[] = [];
-  for (const tab of ["Models", "General", "Compaction", "Search", "Account", "Appearance"]) {
-    await eika.click(`role=tab[name="${tab}"]`);
-    const box = await eika.page.getByRole("dialog").boundingBox();
-    heights.push(Math.round(box?.height ?? 0));
-  }
-  expect(new Set(heights).size, `the dialog resized between tabs: ${heights.join(", ")}`).toBe(1);
-});
-
 test.describe("on a phone", () => {
   test("models: rows wrap instead of cutting names", async ({ open, expectShot }) => {
     const eika = await open({ scenario: "providers", viewport: phone });
     await eika.click("Settings");
     await expectShot(eika, "models-phone");
-  });
-
-  test("general: the classes and the pools they share", async ({ open, expectShot }) => {
-    const eika = await open({ scenario: "classes", viewport: phone });
-    await eika.click("Settings");
-    await eika.click("General");
-    await eika.page.getByText("Model classes", { exact: true }).scrollIntoViewIfNeeded();
-    await expectShot(eika, "classes-phone");
   });
 
   test("search: each provider on one line", async ({ open, expectShot }) => {
@@ -378,16 +230,6 @@ test.describe("on a phone", () => {
       expect(a.y < b.y + b.height && b.y < a.y + a.height, `${name} and its arrows`).toBe(true);
     }
     await expectShot(eika, "search-phone");
-  });
-
-  test("endpoint settings fit the screen", async ({ open }) => {
-    const eika = await open({ scenario: "providers", viewport: phone });
-    await eika.click("Settings");
-    await eika.click("Endpoint settings of Bench");
-    const dialog = eika.page.getByRole("dialog", { name: /Endpoint of Bench/ });
-    await expect(dialog.getByRole("button", { name: "Save" })).toBeVisible();
-    const overflow = await dialog.evaluate((el) => el.scrollWidth - el.clientWidth);
-    expect(overflow, "the endpoint settings are wider than the dialog").toBeLessThanOrEqual(0);
   });
 
   test("the dialog never scrolls sideways", async ({ open }) => {

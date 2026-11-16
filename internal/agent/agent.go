@@ -64,8 +64,6 @@ type Options struct {
 	BasePrompt *string
 	// Instructions follow the base prompt in the system prompt.
 	Instructions string
-	// Queue decides how many follow-up messages one turn delivers.
-	Queue QueueMode
 	// MaxRetries bounds how often a retryable provider failure is retried.
 	MaxRetries int
 	// RetryBackoff is the delay before the first retry; it doubles after
@@ -149,9 +147,6 @@ type Agent struct {
 // New returns an Agent that calls p and may use the tools in r, which may be
 // nil when the agent has no tools.
 func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
-	if opts.Queue == "" {
-		opts.Queue = QueueOneAtATime
-	}
 	if opts.MaxRetries == 0 {
 		opts.MaxRetries = defaultMaxRetries
 	}
@@ -556,11 +551,8 @@ func (a *Agent) nextQueued() ([]provider.Message, *queue) {
 	if msgs := a.steering.drain(); len(msgs) != 0 {
 		return msgs, &a.steering
 	}
-	count := 1
-	if a.opts.Queue == QueueAll {
-		count = 0
-	}
-	if msgs := a.followUps.take(count); len(msgs) != 0 {
+	// Follow-ups start one turn each, oldest first.
+	if msgs := a.followUps.shift(); len(msgs) != 0 {
 		return msgs, &a.followUps
 	}
 	a.accepting = false

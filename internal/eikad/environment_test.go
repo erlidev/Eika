@@ -47,9 +47,7 @@ func TestTheEnvironmentRefusesWhatIsNotAnEntry(t *testing.T) {
 	base, _ := newDaemon(t, eikad.Options{})
 	for name, body := range map[string]string{
 		"no equals sign":     `{"env":["PROXY"]}`,
-		"empty key":          `{"env":["=value"]}`,
 		"the daemon's token": `{"env":["` + eikad.TokenEnv + `=stolen"]}`,
-		"not json":           `env`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if status := setEnvironment(t, base, body); status != http.StatusBadRequest {

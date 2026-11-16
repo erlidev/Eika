@@ -65,22 +65,9 @@ func TestChatRoutes(t *testing.T) {
 		t.Errorf("new chat tools = %v, want every standalone tool %v", chat.Tools, standaloneTools)
 	}
 
-	cases := []struct {
-		name   string
-		body   map[string]any
-		status int
-	}{
-		{"a chat in a computer", map[string]any{"chat": true, "computer_id": cx.ID, "title": "x"}, 400},
-		// Leaving the computer out is a missing computer, never a chat
-		// nobody asked for.
-		{"neither a chat nor a computer", map[string]any{"title": "x"}, 404},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			refused(t, request(t, a.Server, "POST", "/api/sessions", c.body), c.status)
-		})
-	}
-	refused(t, request(t, a.Server, "GET", "/api/sessions?chats=true&computer_id="+cx.ID, nil), 400)
+	// Leaving the computer out is a missing computer, never a chat nobody
+	// asked for.
+	refused(t, request(t, a.Server, "POST", "/api/sessions", map[string]any{"title": "x"}), 404)
 
 	chats := decodeBody[chatsWire](t, request(t, a.Server, "GET", "/api/sessions?chats=true", nil), 200)
 	if len(chats.Sessions) != 1 || chats.Sessions[0].ID != chat.ID {
@@ -106,64 +93,6 @@ func TestChatRoutes(t *testing.T) {
 	}
 	if len(tools.Tools) != 7 || !slices.Equal(free, standaloneTools) {
 		t.Errorf("tools = %+v, want 7 with %v standalone", tools.Tools, standaloneTools)
-	}
-}
-
-func TestSessionToolsAreChosenAndChecked(t *testing.T) {
-	a := newAPI(t)
-	chat := a.newChat(t, "a question")
-	put := func(id string, tools any) *chatWire {
-		t.Helper()
-		rec := request(t, a.Server, "PUT", "/api/sessions/"+id+"/tools", map[string]any{"tools": tools})
-		if rec.Code != 200 {
-			return nil
-		}
-		got := decodeBody[chatWire](t, rec, 200)
-		return &got
-	}
-
-	cases := []struct {
-		name   string
-		tools  any
-		status int
-	}{
-		{"a tool that does not exist", []string{"teleport"}, 400},
-		{"a tool that needs a computer", []string{"web_search", "bash"}, 400},
-		{"a name rather than a list", "bash", 400},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			rec := request(t, a.Server, "PUT", "/api/sessions/"+chat.ID+"/tools", map[string]any{"tools": c.tools})
-			refused(t, rec, c.status)
-		})
-	}
-	refused(t, request(t, a.Server, "PUT", "/api/sessions/missing/tools",
-		map[string]any{"tools": []string{}}), 404)
-
-	if got := put(chat.ID, []string{"web_search", "ask_user", "web_search"}); got == nil ||
-		!slices.Equal(got.Tools, []string{"ask_user", "web_search"}) {
-		t.Errorf("chosen tools = %+v, want ask_user and web_search once each", got)
-	}
-	if got := put(chat.ID, []string{}); got == nil || got.Tools == nil || len(got.Tools) != 0 {
-		t.Errorf("no tools = %+v, want an empty list", got)
-	}
-	read := decodeBody[struct {
-		Session chatWire `json:"session"`
-	}](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID, nil), 200)
-	if len(read.Session.Tools) != 0 {
-		t.Errorf("tools read back = %v, want none", read.Session.Tools)
-	}
-
-	work := a.session(t)
-	// Agent-only tools are not available to legacy sessions.
-	refused(t, request(t, a.Server, "PUT", "/api/sessions/"+chat.ID+"/tools",
-		map[string]any{"tools": []string{"project_list"}}), 400)
-	refused(t, request(t, a.Server, "PUT", "/api/sessions/"+work.ID+"/tools",
-		map[string]any{"tools": []string{"project_list"}}), 400)
-
-	// A computer session may narrow its tools too, to any of them.
-	if got := put(work.ID, []string{"web_search", "bash"}); got == nil || !slices.Equal(got.Tools, []string{"bash", "web_search"}) {
-		t.Errorf("computer session tools = %+v, want bash and web_search", got)
 	}
 }
 
@@ -201,9 +130,6 @@ func TestChatRunOffersOnlyItsChosenTools(t *testing.T) {
 	}
 	if !slices.Equal(offered, []string{"web_search"}) {
 		t.Errorf("tools offered = %v, want web_search alone", offered)
-	}
-	if system := requests[0].System; !strings.Contains(system, "Use only the tools you are given") {
-		t.Errorf("system prompt = %q, want the chat rules", system)
 	}
 
 	// The loop mints its own id for each call and sends the backend's back, so

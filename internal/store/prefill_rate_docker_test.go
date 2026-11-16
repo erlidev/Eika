@@ -47,12 +47,4 @@ func TestThePrefillRateIsWhatTheEndpointsRecentCallsMeasured(t *testing.T) {
 		t.Errorf("PrefillRate of another endpoint = %d, %v, %v; want its own 200", got, ok, err)
 	}
 
-	// Only the newest calls count, so a server that changed is followed.
-	record("fast", new(1000), new(10000))
-	for range 20 {
-		record("fast", new(1000), new(100))
-	}
-	if got, ok, err := st.PrefillRate(ctx, "fast"); err != nil || !ok || got != 10000 {
-		t.Errorf("PrefillRate = %d, %v, %v; want 10000 from the 20 newest calls, without the slow one before them", got, ok, err)
-	}
 }

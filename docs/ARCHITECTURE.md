@@ -298,17 +298,10 @@ Memory, skills and plugin catalogs are not present yet.
 Both protocols serialize request fields deterministically. Stored tool arguments
 and reasoning items retain their original text when JSON encoding would change
 it; entry payloads use PostgreSQL `json`. Replaying a stored conversation thus
-keeps its wire bytes. The prefix test (`internal/session/prefix_test.go`) runs
-the real loop and both providers against a fake server, with JSON entries and
-with PostgreSQL. It covers steering, follow-ups, retries, stalls, cut-off and
-refused responses, interruption, restart, resume and compaction. Each request
-extends or repeats the accepted conversation prefix. Compaction starts a new
-chain; its summary request reuses the old prefix. The scenario's session stores
-a snapshot and compacts as home does: the cut keeps whole turns from a user
-message on, and the rebuilt system prompt, tools and preamble are the same bytes,
-since nothing they draw on changed. The output limit may decrease
-as the window fills, and the last two requests carry notices, one with a user
-message and one alone.
+keeps its wire bytes: `internal/session/prefix_test.go` stores a conversation
+with images, reasoning and awkward tool arguments in PostgreSQL, loads it back,
+and checks that both providers send the same request bytes as before.
+Compaction starts a new chain; its summary request reuses the old prefix.
 
 Every user-side message ends with a `<context>` block (`agent/contextblock.go`)
 that states the time it was sent to the minute, in `Options.Location` (UTC when no zone is stored), read from `Options.Clock`. It is written
@@ -336,7 +329,7 @@ comments and empty chunks count too. The rate is the endpoint's measured one
 (`store.PrefillRate`, from `model_calls`), else the queue's.
 
 Queues follow Pi: steering joins after the running tool, before the next model
-call; follow-ups wait for the turn to end (`QueueOneAtATime` or `QueueAll`).
+call; follow-ups wait for the turn to end and start one turn each.
 Aborting returns an unanswered message to its queue and answers every pending
 tool call so the session stays valid. Messages accepted after an abort move to
 the session's next run.
@@ -438,8 +431,8 @@ field if any call did not report that field.
 
 The meter's last-call fill is `prompt_tokens + completion_tokens`, against the
 effective window. Before a measurement, fill and cache read `n/a`. The predicted
-next request shows its method, with a tilde for `estimated`. The Context panel
-shows part counts and the template remainder; the inspector shows drift.
+next request shows its method, with a tilde for `estimated`. The UI has no
+view of the parts or the drift until Settings, Developer (P3-11).
 
 Usage parsing has the following verification status. The live recordings and
 unverified fixture sources are in
@@ -497,7 +490,7 @@ Entries can store a channel, a `preamble` snapshot or a `notice` text payload.
 The API exposes these fields. A notice is delivered by the user entry whose
 payload lists its id (see [Notices](#notices)).
 
-`session.Tree` appends, reads `Path` (root to head), moves the head, lists `Children`, and renders an `Outline`. `session.Store` implements
+`session.Tree` appends, reads `Path` (root to head), moves the head, and renders an `Outline`. `session.Store` implements
 `agent.Store`; `Load` rebuilds a conversation from the path.
 
 `user`, `assistant`, and `tool_result` entries are the conversation; `system`
@@ -648,7 +641,7 @@ and, for long keys, the last four characters.
  harness (eika)                              computer container eika-cx-<id>
   tool -> executor/sandbox --HTTP, bearer--> eikad :7000
   mcp.Pool -> Host.Process --------------->    /exec /files /stat /list
-  Host.Process --------------------------->    /watch /process /environment
+  Host.Process --------------------------->    /process /environment
   computer.Host ---------docker socket--->  container + volume at /home/eika
   egress.Proxy :3128 <-----------------------  HTTP(S)_PROXY, when restricted
 ```
@@ -661,8 +654,7 @@ longest existing prefix is resolved through symlinks before comparison, and
 the canonical path is what is opened. `/home` holds other directories, so a
 sibling such as `/home/eikaother` is outside, however it is spelled. `EIKAD_TOKEN` is stripped from command
 environments. A command leads its own process group, killed on timeout;
-output is capped and reported as truncated. The watcher polls modification
-times. API: `api/eikad.md`.
+output is capped and reported as truncated. API: `api/eikad.md`.
 
 `executor/sandbox` is an HTTP client for one daemon; `Exec` streams the
 daemon's newline-delimited frames into the caller's writers. A 404 is
@@ -682,15 +674,14 @@ writes leave existing file contents intact. See [the tool contract](api/tools.md
 
 ### Computer lifecycle
 
-`computer.Host` wraps the Docker client. `Create` builds the image if the
-spec has a build context, creates volume `eika-cx-<id>` mounted at the
-root, creates the container labelled
+`computer.Host` wraps the Docker client. `Create` creates volume
+`eika-cx-<id>` mounted at the root, creates the container labelled
 `eika.computer=<id>` with its sandbox settings, and copies the harness's
 static eikad to `/usr/local/bin/eikad` as the entrypoint. `Start` waits for
-`/healthz`. `Stop` keeps the volume; `Destroy` removes container, volume, and
-a per-computer image. The harness reaches eikad at `http://eika-cx-<id>:7000`.
+`/healthz`. `Stop` keeps the volume. The harness reaches eikad at `http://eika-cx-<id>:7000`.
 A container gets `HOME` set to the root, and before it starts the daemon
-extracts the root directory into it owned by the container's user, so an
+extracts the root directory into it owned by uid and gid 1000, the user every
+container runs as, so an
 image with no such directory, or one root owns, still has a root the user can
 write. A volume that exists when `Create` runs is reattached, and a `Create`
 that fails does not remove it: this is how a lost container comes back with
@@ -862,7 +853,7 @@ enables JSON results.
 
 ```
 web/src/
-  app/         routes, shell, navigation, theme; the unrouted workbench
+  app/         routes, shell, navigation, theme
   features/    one folder per feature, imported through its index.ts
   components/  shared components; components/ui is shadcn
   api/         wire types, HTTP client, event stream
@@ -908,11 +899,6 @@ web/src/
   request in it takes no answer. Cancel is
   `POST /api/sessions/{id}/cancel` (the lifecycle service's cancel); steering goes through
   Eika in Chat.
-- **Workbench** (`app/Workbench.tsx`, `Sidebar.tsx`, `panels.tsx`,
-  `CommandPalette.tsx`): the earlier three-pane shell, kept in the tree with
-  no route until P3-17 removes it. Its chat list, Run, Context and Tools
-  panels and the Context inspector have no page now; the inspector returns
-  with Settings, Developer (P3-11).
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
   events (`useSessionStream`, `useMCPEvents`,
   `useSessionUpdates`).
@@ -929,7 +915,7 @@ web/src/
   paste, or drop (`features/session/attachments.ts` checks them), only for a
   model with `image_input`; the store keeps them beside the draft so a rewind
   restores them. `components/MessageImages.tsx` draws a message's thumbnails
-  in the transcript and the context inspector and opens one in the single
+  in the transcript and opens one in the single
   `ImageViewer` the shell mounts.
 - **Tool cards**: `features/session/renderers/renderers.tsx` maps tool names
   to a summary and a body (`bash`, `ask_user`, `web_search`, `web_fetch`,
@@ -1000,7 +986,9 @@ files. Vet and staticcheck also compile the `live`-tagged tests.
 ## Agent definitions
 
 `internal/agentdef` provides the built-ins `eika`, `researcher` and `worker`.
-System and compaction prompts are embedded Markdown. Definitions set the class,
+System prompts and Eika's compaction prompts are embedded Markdown; the
+subagents' compaction prompts are the loop's built-in ones with one closing
+line each naming what to preserve. Definitions set the class,
 fixed sorted tools and model-call limit (40 for Eika, 200 for subagents).
 Lists contain only tools that exist. Later packages add their own tools.
 

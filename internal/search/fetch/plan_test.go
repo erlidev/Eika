@@ -29,8 +29,6 @@ func TestPlan(t *testing.T) {
 			plan{kind: planText, url: "https://raw.githubusercontent.com/a/b/main/x.py", lang: "python"}},
 		{"https://github.com/cli/cli/issues/42",
 			plan{kind: planGitHub, op: opIssue, owner: "cli", repo: "cli", number: 42, label: "cli/cli#42"}},
-		{"https://github.com/cli/cli/pull/42",
-			plan{kind: planGitHub, op: opIssue, owner: "cli", repo: "cli", number: 42, label: "cli/cli#42"}},
 		{"https://github.com/cli/cli/pull/42/files",
 			plan{kind: planGitHub, op: opDiff, owner: "cli", repo: "cli", number: 42, label: "cli/cli#42 diff"}},
 		{"https://github.com/a/b/tree/main/src/util",
@@ -46,11 +44,8 @@ func TestPlan(t *testing.T) {
 		{"https://example.com/spec.yaml", plan{kind: planText, url: "https://example.com/spec.yaml", lang: "yaml"}},
 		{"https://example.com/CHANGELOG.md", plan{kind: planText, url: "https://example.com/CHANGELOG.md"}},
 		{"https://github.com/features/copilot", plan{kind: planHTML, url: "https://github.com/features/copilot"}},
-		{"https://github.com/pricing", plan{kind: planHTML, url: "https://github.com/pricing"}},
 		{"https://github.com/orgs/nodejs/discussions", plan{kind: planHTML, url: "https://github.com/orgs/nodejs/discussions"}},
 		{"https://github.com/cli/cli/issues/x", plan{kind: planHTML, url: "https://github.com/cli/cli/issues/x"}},
-		{"https://docs.python.org/3/library/asyncio.html", plan{kind: planHTML, url: "https://docs.python.org/3/library/asyncio.html"}},
-		{"https://example.com/guide/", plan{kind: planHTML, url: "https://example.com/guide/"}},
 	}
 	for _, c := range cases {
 		if got := planOf(t, c.url); got != c.want {

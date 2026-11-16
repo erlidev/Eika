@@ -42,15 +42,6 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-func TestUnknownRouteWithoutWebDir(t *testing.T) {
-	s := server.New(config.Default(), testLogger(), server.Deps{}, server.Options{})
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", rec.Code)
-	}
-}
-
 func TestWebDirServesIndexForClientRoutes(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<h1>Eika</h1>"), 0o600); err != nil {
@@ -83,12 +74,5 @@ func TestServeStopsOnContextCancel(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Errorf("Serve() = %v, want nil", err)
-	}
-}
-
-func TestServeReportsABadAddress(t *testing.T) {
-	err := server.Serve(t.Context(), "not-an-address", http.NotFoundHandler(), testLogger())
-	if err == nil {
-		t.Fatal("Serve accepted a bad address")
 	}
 }

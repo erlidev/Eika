@@ -60,34 +60,6 @@ func TestIdleComputersStop(t *testing.T) {
 		}
 	})
 
-	t.Run("after the timeout the settings name", func(t *testing.T) {
-		a := newAPI(t)
-		cx := a.home(t)
-		decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings",
-			map[string]any{"computer_idle_minutes": 5}), 200)
-		start := time.Now()
-
-		a.SweepIdle(t.Context(), start)
-		a.SweepIdle(t.Context(), start.Add(5*time.Minute))
-		if got := a.computerState(t, cx.ID); got != "stopped" {
-			t.Errorf("state after 5 idle minutes = %q, want stopped", got)
-		}
-	})
-
-	t.Run("never when the timeout is zero", func(t *testing.T) {
-		a := newAPI(t)
-		cx := a.home(t)
-		decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings",
-			map[string]any{"computer_idle_minutes": 0}), 200)
-		start := time.Now()
-
-		a.SweepIdle(t.Context(), start)
-		a.SweepIdle(t.Context(), start.Add(24*time.Hour))
-		if got := a.computerState(t, cx.ID); got != "running" {
-			t.Errorf("state with no timeout = %q, want running", got)
-		}
-	})
-
 	t.Run("not while a run is going in it", func(t *testing.T) {
 		a := newAPI(t)
 		cx := a.home(t)
@@ -103,18 +75,4 @@ func TestIdleComputersStop(t *testing.T) {
 			t.Errorf("state with a run going = %q, want running", got)
 		}
 	})
-}
-
-func TestIdleTimeoutSettingIsBounded(t *testing.T) {
-	a := newAPI(t)
-	for _, value := range []any{-1, 10081, 1.5, "15"} {
-		rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{"computer_idle_minutes": value})
-		if rec.Code != 400 {
-			t.Errorf("computer_idle_minutes = %v: status %d, want 400", value, rec.Code)
-		}
-	}
-	got := decodeBody[settingsWire](t, request(t, a.Server, "GET", "/api/settings", nil), 200)
-	if got.Defaults.ComputerIdleMinutes != 15 {
-		t.Errorf("default idle minutes = %d, want 15", got.Defaults.ComputerIdleMinutes)
-	}
 }

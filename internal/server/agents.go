@@ -40,7 +40,7 @@ func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, notFoundf("agent %s does not exist", r.PathValue("name")))
 		return
 	}
-	o, err := decodeUTF8JSON[*agentdef.Override](r)
+	o, err := decodeJSON[*agentdef.Override](r)
 	if err != nil {
 		s.fail(w, r, err)
 		return

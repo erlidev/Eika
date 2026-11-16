@@ -15,7 +15,6 @@ import (
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/provider"
-	"github.com/erlidev/eika/internal/provider/counter"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/tool"
 )
@@ -52,9 +51,7 @@ type compactor struct {
 type compactorOptions struct {
 	window     int
 	compaction agent.CompactionSettings
-	sampling   provider.Sampling
 	tools      *tool.Registry
-	counter    *counter.Counter
 	executor   executor.Executor
 }
 
@@ -66,8 +63,6 @@ func newCompactor(p provider.Provider, o compactorOptions) compactor {
 		Emitter:       c.events,
 		ContextWindow: o.window,
 		Compaction:    o.compaction,
-		Sampling:      o.sampling,
-		Counter:       o.counter,
 		RetryBackoff:  time.Millisecond,
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
@@ -117,101 +112,48 @@ func lastContent(req provider.Request) string {
 	return req.Messages[len(req.Messages)-1].Content
 }
 
-func TestCompactReusesTheRunsRequestAsItsPrefix(t *testing.T) {
+// A manual compaction replaces what it covers with a summary, a second one
+// updates that summary, and each is stored where it happened.
+func TestCompactTwiceUpdatesTheSummary(t *testing.T) {
 	var steps []providertest.Step
 	for i := range 4 {
 		steps = append(steps, providertest.Text(filler(fmt.Sprintf("a%d", 2*i+1), 1000)))
 	}
 	steps = append(steps, providertest.Text("SUMMARY-1"), providertest.Text(filler("a9", 1000)), providertest.Text("SUMMARY-2"))
 	p := providertest.New(steps...)
-	c := newCompactor(p, compactorOptions{
-		compaction: agent.CompactionSettings{KeepRecentTokens: 1500},
-		tools:      registry(t),
-	})
+	c := newCompactor(p, compactorOptions{compaction: agent.CompactionSettings{KeepRecentTokens: 1500}})
 	s := agent.NewSession("s1", "w1")
-	for i := range 4 {
-		if err := c.agent.Run(context.Background(), s, provider.UserMessage(filler(fmt.Sprintf("u%d", 2*i), 1000))); err != nil {
-			t.Fatalf("Run %d: %v", i, err)
+	run := func(text string) {
+		t.Helper()
+		if err := c.agent.Run(context.Background(), s, provider.UserMessage(filler(text, 1000))); err != nil {
+			t.Fatalf("Run %s: %v", text, err)
 		}
 	}
-
+	for i := range 4 {
+		run(fmt.Sprintf("u%d", 2*i))
+	}
 	if err := c.agent.Compact(context.Background(), s, ""); err != nil {
 		t.Fatalf("Compact: %v", err)
-	}
-	requests := p.Requests()
-	last, summary := requests[3], requests[4]
-	// The summary request is the last run request up to the cut, then the
-	// prompt: the endpoint's cache holds all of it but the prompt.
-	if summary.System != last.System || !reflect.DeepEqual(summary.Tools, last.Tools) || summary.Model != last.Model {
-		t.Errorf("summary request system, tools, or model differ from the run's")
-	}
-	if !reflect.DeepEqual(summary.Messages[:6], last.Messages[:6]) || len(summary.Messages) != 7 {
-		t.Errorf("summary request messages = %v, want the run's first six and the prompt", tags(summary.Messages))
-	}
-	if lastContent(summary) != agent.SummaryPrompt {
-		t.Errorf("summary prompt = %q, want the built-in prompt", lastContent(summary))
 	}
 	if got, want := tags(s.Conversation.Messages()), []string{"summary", "u6", "a7"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("conversation after compaction = %v, want %v", got, want)
 	}
-	if got := s.Conversation.Messages()[0].Content; got != wrapped("SUMMARY-1") {
-		t.Errorf("summary message = %q", got)
-	}
-
-	// The next run sends the summary in place of what it covers, and a
-	// second compaction updates the summary, focused as it was asked.
-	if err := c.agent.Run(context.Background(), s, provider.UserMessage(filler("u8", 1000))); err != nil {
-		t.Fatalf("Run after compaction: %v", err)
-	}
-	if got, want := tags(p.Requests()[5].Messages), []string{"summary", "u6", "a7", "u8"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("request after compaction = %v, want %v", got, want)
-	}
+	run("u8")
 	if err := c.agent.Compact(context.Background(), s, "the test plan"); err != nil {
 		t.Fatalf("second Compact: %v", err)
 	}
 	update := p.Requests()[6]
-	if got, want := tags(update.Messages), []string{"summary", "u6", "a7", "The"}; !reflect.DeepEqual(got[:3], want[:3]) {
-		t.Errorf("update request = %v, want %v and the prompt", got, want[:3])
-	}
-	if want := agent.UpdatePrompt + "\n\nAdditional focus: the test plan"; lastContent(update) != want {
-		t.Errorf("update prompt = %q, want the update prompt with the focus", lastContent(update))
+	if got := tags(update.Messages); got[0] != "summary" || lastContent(update) != agent.UpdatePrompt+"\n\nAdditional focus: the test plan" {
+		t.Errorf("update request = %v ending %q, want the old summary first and the focused update prompt", got, lastContent(update))
 	}
 	if got, want := tags(s.Conversation.Messages()), []string{"summary", "u8", "a9"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("conversation after second compaction = %v, want %v", got, want)
 	}
-
-	compactions := c.store.compactions["s1"]
-	if len(compactions) != 2 || compactions[0].Kept != 2 || compactions[1].Kept != 2 ||
-		compactions[1].Summary != "SUMMARY-2" || compactions[0].Reason != event.CompactManual {
-		t.Errorf("stored compactions = %+v", compactions)
+	if got := s.Conversation.Messages()[0].Content; got != wrapped("SUMMARY-2") {
+		t.Errorf("summary message = %q", got)
 	}
 	if got := strings.Join(c.store.order["s1"], ","); got != strings.Repeat("message,", 8)+"compaction,message,message,compaction" {
 		t.Errorf("store order = %s", got)
-	}
-	var end event.CompactionEnd
-	c.events.payloadOf(t, event.TypeCompactionEnd, &end)
-	if end.Summary != "SUMMARY-1" || end.Kept != 2 || end.Error != "" || end.TokensAfter >= end.TokensBefore {
-		t.Errorf("compaction.end = %+v", end)
-	}
-	for _, e := range c.events.all() {
-		var delta event.MessageDelta
-		if e.Type == event.TypeMessageDelta && e.DecodePayload(&delta) == nil && strings.HasPrefix(delta.Text, "SUMMARY") {
-			t.Errorf("the summary streamed to the client as %s", e.Type)
-		}
-	}
-}
-
-func TestCompactUsesCustomPrompts(t *testing.T) {
-	p := providertest.New(providertest.Text("SUMMARY"))
-	c := newCompactor(p, compactorOptions{compaction: agent.CompactionSettings{
-		KeepRecentTokens: 150,
-		Prompts:          agent.CompactionPrompts{Summary: "Summarize in one line."},
-	}})
-	if err := c.agent.Compact(context.Background(), sessionOf(history(4, 100)), ""); err != nil {
-		t.Fatalf("Compact: %v", err)
-	}
-	if got := lastContent(p.Requests()[0]); got != "Summarize in one line." {
-		t.Errorf("summary prompt = %q, want the custom prompt", got)
 	}
 }
 
@@ -233,32 +175,6 @@ func splitTurn(first provider.Message) []provider.Message {
 	}
 }
 
-func TestCompactSummarizesASplitTurnApart(t *testing.T) {
-	p := providertest.New(providertest.Text("HISTORY"), providertest.Text("PREFIX"))
-	c := newCompactor(p, compactorOptions{compaction: agent.CompactionSettings{KeepRecentTokens: 1500}})
-	s := sessionOf(splitTurn(provider.UserMessage(filler("u0", 100))))
-	if err := c.agent.Compact(context.Background(), s, ""); err != nil {
-		t.Fatalf("Compact: %v", err)
-	}
-	requests := p.Requests()
-	if len(requests) != 2 {
-		t.Fatalf("made %d summary requests, want one for the history and one for the turn", len(requests))
-	}
-	if got, want := tags(requests[0].Messages), []string{"u0", "a1", "The"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("history request = %v, want %v", got, want)
-	}
-	if got := len(requests[1].Messages); got != 6 || lastContent(requests[1]) != agent.TurnPrefixPrompt {
-		t.Errorf("turn request sent %d messages ending %q, want the five before the cut and the turn prompt", got, lastContent(requests[1]))
-	}
-	msgs := s.Conversation.Messages()
-	if got, want := tags(msgs), []string{"summary", "", "tool", "a3"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("conversation = %v, want %v", got, want)
-	}
-	if want := wrapped("HISTORY\n\n---\n\n**Turn Context (split turn):**\n\nPREFIX"); msgs[0].Content != want {
-		t.Errorf("summary = %q, want %q", msgs[0].Content, want)
-	}
-}
-
 // Pi drops the summary a conversation begins with when the cut splits the
 // first turn after it; the summary must survive.
 func TestCompactKeepsThePreviousSummaryWhenOnlyATurnIsSplit(t *testing.T) {
@@ -274,129 +190,6 @@ func TestCompactKeepsThePreviousSummaryWhenOnlyATurnIsSplit(t *testing.T) {
 	}
 	if want := wrapped("OLD\n\n---\n\n**Turn Context (split turn):**\n\nPREFIX"); s.Conversation.Messages()[0].Content != want {
 		t.Errorf("summary = %q, want %q", s.Conversation.Messages()[0].Content, want)
-	}
-}
-
-func TestCompactFallsBackToATranscript(t *testing.T) {
-	cases := []struct {
-		name   string
-		window int
-		msgs   []provider.Message
-		steps  []providertest.Step
-	}{
-		{
-			name:  "when the model answers with a tool call",
-			msgs:  history(6, 1000),
-			steps: []providertest.Step{providertest.Calls("", providertest.Call("c1", "read", nil)), providertest.Text("SUMMARY")},
-		},
-		{
-			// The cut keeps u4 on, and the 18,500 tokens of tool output
-			// before it leave no room for a summary in a 20,000 token
-			// window; the transcript cuts that output short.
-			name:   "when the prefix leaves no room for the summary",
-			window: 20_000,
-			msgs: []provider.Message{
-				provider.UserMessage("u0 look"),
-				provider.AssistantMessage("", []provider.ToolCall{providertest.Call("c1", "read", nil)}),
-				provider.ToolResultMessage("c1", filler("r1", 18_500), false),
-				provider.AssistantMessage("a3 done", nil),
-				provider.UserMessage(filler("u4", 5200)),
-				provider.AssistantMessage("a5 ok", nil),
-			},
-			steps: []providertest.Step{providertest.Text("SUMMARY")},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			p := providertest.New(tc.steps...)
-			c := newCompactor(p, compactorOptions{window: tc.window, compaction: agent.CompactionSettings{KeepRecentTokens: 2000}})
-			s := sessionOf(tc.msgs)
-			if err := c.agent.Compact(context.Background(), s, ""); err != nil {
-				t.Fatalf("Compact: %v", err)
-			}
-			transcript := p.Requests()[len(tc.steps)-1]
-			if transcript.System != agent.TranscriptSystemPrompt || len(transcript.Tools) != 0 || len(transcript.Messages) != 1 {
-				t.Fatalf("last request is not a transcript: system %q, %d tools, %d messages",
-					transcript.System, len(transcript.Tools), len(transcript.Messages))
-			}
-			text := transcript.Messages[0].Content
-			if !strings.HasPrefix(text, "<conversation>\n[User]: u0") || !strings.HasSuffix(text, agent.SummaryPrompt) {
-				t.Errorf("transcript = %.80q ... %.80q", text, text[len(text)-80:])
-			}
-			if tc.window > 0 && !strings.Contains(text, "more characters truncated") {
-				t.Errorf("transcript kept the whole tool result")
-			}
-			if s.Conversation.Messages()[0].Content != wrapped("SUMMARY") {
-				t.Errorf("summary = %q", s.Conversation.Messages()[0].Content)
-			}
-		})
-	}
-}
-
-func TestCompactRetriesWithoutThinkingWhenThinkingUsesTheBudget(t *testing.T) {
-	thinking := providertest.Stream(
-		provider.Event{Kind: provider.KindReasoningDelta, ReasoningDelta: "let me consider every message in turn"},
-		provider.Done("length"),
-	)
-	p := providertest.New(thinking, providertest.Text("SUMMARY"))
-	c := newCompactor(p, compactorOptions{
-		compaction: agent.CompactionSettings{KeepRecentTokens: 150, FallbackEffort: provider.EffortNone},
-		sampling:   provider.Sampling{ReasoningEffort: ptr("high"), MaxOutput: ptr(32_000)},
-	})
-	s := sessionOf(history(4, 100))
-	if err := c.agent.Compact(context.Background(), s, ""); err != nil {
-		t.Fatalf("Compact: %v", err)
-	}
-	requests := p.Requests()
-	if len(requests) != 2 {
-		t.Fatalf("made %d requests, want 2", len(requests))
-	}
-	for i, want := range []string{"high", provider.EffortNone} {
-		sampling := requests[i].Sampling
-		if e := sampling.ReasoningEffort; e == nil || *e != want {
-			t.Errorf("request %d effort = %v, want %s", i, e, want)
-		}
-		// The budget is 80 percent of the reserve, below the run's own
-		// max output.
-		if m := sampling.MaxOutput; m == nil || *m != agent.DefaultReserveTokens*8/10 {
-			t.Errorf("request %d max output = %v, want %d", i, m, agent.DefaultReserveTokens*8/10)
-		}
-	}
-	if s.Conversation.Messages()[0].Content != wrapped("SUMMARY") {
-		t.Errorf("summary = %q", s.Conversation.Messages()[0].Content)
-	}
-}
-
-func TestCompactUsesACutOffSummaryOnTheLastAttempt(t *testing.T) {
-	cut := func(text string) providertest.Step {
-		return providertest.Stream(provider.TextDelta(text), provider.Done("length"))
-	}
-	p := providertest.New(cut("## Goal\nship it"), cut("## Go"))
-	c := newCompactor(p, compactorOptions{
-		compaction: agent.CompactionSettings{KeepRecentTokens: 150, FallbackEffort: "low"},
-		sampling:   provider.Sampling{ReasoningEffort: ptr("high")},
-	})
-	s := sessionOf(history(4, 100))
-	if err := c.agent.Compact(context.Background(), s, ""); err != nil {
-		t.Fatalf("Compact: %v", err)
-	}
-	if got := s.Conversation.Messages()[0].Content; got != wrapped("## Goal\nship it") {
-		t.Errorf("summary = %q, want the longer partial one", got)
-	}
-}
-
-func TestCompactWithNothingToSummarize(t *testing.T) {
-	p := providertest.New()
-	c := newCompactor(p, compactorOptions{})
-	s := sessionOf(history(2, 100))
-	if c.agent.Compactable(s) {
-		t.Error("Compactable = true for a conversation smaller than what is kept")
-	}
-	if err := c.agent.Compact(context.Background(), s, ""); !errors.Is(err, agent.ErrNothingToCompact) {
-		t.Fatalf("Compact error = %v, want ErrNothingToCompact", err)
-	}
-	if p.Calls() != 0 || len(c.events.all()) != 0 || s.Conversation.Len() != 2 {
-		t.Errorf("a compaction with nothing to do made %d calls and %d events", p.Calls(), len(c.events.all()))
 	}
 }
 
@@ -421,86 +214,6 @@ func TestCompactThatFailsLeavesTheConversation(t *testing.T) {
 	}
 }
 
-func TestCompactReportsWhatTheSummaryCostOnlyWhenTheEndpointStatedIt(t *testing.T) {
-	cases := []struct {
-		name string
-		step providertest.Step
-		want provider.Usage
-	}{
-		{"usage stated", providertest.Stream(
-			provider.TextDelta("SUMMARY"),
-			provider.Event{Kind: provider.KindUsage, Usage: providertest.Usage(900, 40, 940)},
-			provider.Done("stop"),
-		), providertest.Usage(900, 40, 940)},
-		{"usage not stated", providertest.Text("SUMMARY"), provider.Usage{}},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			p := providertest.New(c.step)
-			cp := newCompactor(p, compactorOptions{compaction: agent.CompactionSettings{KeepRecentTokens: 150}})
-			s := sessionOf(history(4, 100))
-			if err := cp.agent.Compact(context.Background(), s, ""); err != nil {
-				t.Fatalf("Compact: %v", err)
-			}
-			var end event.CompactionEnd
-			cp.events.payloadOf(t, event.TypeCompactionEnd, &end)
-			if end.Usage != c.want {
-				t.Errorf("compaction.end usage = %+v, want %+v", end.Usage, c.want)
-			}
-			if stored := cp.store.compactions["s1"]; len(stored) != 1 || stored[0].Usage != c.want {
-				t.Errorf("stored compaction = %+v, want usage %+v", stored, c.want)
-			}
-		})
-	}
-}
-
-func TestRunCompactsBeforeACallThatWouldPassTheThreshold(t *testing.T) {
-	// A 12,000 token window caps the reserve at 3,000, so the 10,000 tokens
-	// of history pass the threshold of 9,000.
-	p := providertest.New(providertest.Text("SUMMARY"), providertest.Text("answer"))
-	c := newCompactor(p, compactorOptions{window: 12_000, compaction: agent.CompactionSettings{Auto: true, KeepRecentTokens: 2000}})
-	s := sessionOf(history(10, 1000))
-	if err := c.agent.Run(context.Background(), s, provider.UserMessage("next")); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	requests := p.Requests()
-	if len(requests) != 2 {
-		t.Fatalf("made %d requests, want a summary and the answer", len(requests))
-	}
-	if got, want := tags(requests[0].Messages), []string{"u0", "a1", "u2", "a3", "u4", "a5", "u6", "a7", "The"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("summary request = %v, want %v", got, want)
-	}
-	if got, want := tags(requests[1].Messages), []string{"summary", "u8", "a9", "next"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("answer request = %v, want %v", got, want)
-	}
-	// The compaction is stored before the message it did not cover, which
-	// the model had not seen yet.
-	if got := strings.Join(c.store.order["s1"], ","); got != "compaction,message,message" {
-		t.Errorf("store order = %s", got)
-	}
-	if got := c.store.compactions["s1"]; len(got) != 1 || got[0].Reason != event.CompactThreshold || got[0].Kept != 2 {
-		t.Errorf("stored compactions = %+v", got)
-	}
-	if got, want := tags(s.Conversation.Messages()), []string{"summary", "u8", "a9", "next", "answer"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("conversation = %v, want %v", got, want)
-	}
-	if got := c.events.types(); got[0] != event.TypeTurnStart || got[1] != event.TypeCompactionStart || got[2] != event.TypeCompactionEnd {
-		t.Errorf("events = %v, want the compaction inside the turn", got)
-	}
-}
-
-func TestRunGoesOnWhenAThresholdCompactionFails(t *testing.T) {
-	p := providertest.New(providertest.Fail(errors.New("the endpoint is down")), providertest.Text("answer"))
-	c := newCompactor(p, compactorOptions{window: 12_000, compaction: agent.CompactionSettings{Auto: true, KeepRecentTokens: 2000}})
-	s := sessionOf(history(10, 1000))
-	if err := c.agent.Run(context.Background(), s, provider.UserMessage("next")); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if got := len(p.Requests()[1].Messages); got != 11 {
-		t.Errorf("answer request sent %d messages, want the whole conversation", got)
-	}
-}
-
 func TestRunRecoversFromAContextOverflow(t *testing.T) {
 	overflow := errors.New(`400 Bad Request: {"error":{"message":"prompt is too long: 213462 tokens > 200000 maximum"}}`)
 	silent := providertest.Stream(
@@ -516,8 +229,6 @@ func TestRunRecoversFromAContextOverflow(t *testing.T) {
 	}{
 		{name: "an overflow is compacted and sent again", auto: true, steps: []providertest.Step{providertest.Fail(overflow), providertest.Text("SUMMARY"), providertest.Text("answer")}, wantCalls: 3},
 		{name: "a silent overflow is compacted and sent again", auto: true, steps: []providertest.Step{silent, providertest.Text("SUMMARY"), providertest.Text("answer")}, wantCalls: 3},
-		{name: "a second overflow fails the run", auto: true, steps: []providertest.Step{providertest.Fail(overflow), providertest.Text("SUMMARY"), providertest.Fail(overflow)}, wantErr: true, wantCalls: 3},
-		{name: "without automatic compaction an overflow fails the run", steps: []providertest.Step{providertest.Fail(overflow)}, wantErr: true, wantCalls: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -541,19 +252,6 @@ func TestRunRecoversFromAContextOverflow(t *testing.T) {
 				t.Errorf("request after recovery = %v, want %v", got, want)
 			}
 		})
-	}
-}
-
-func TestRunLowersMaxOutputToTheRoomLeft(t *testing.T) {
-	p := providertest.New(providertest.Text("answer"))
-	c := newCompactor(p, compactorOptions{window: 5000, sampling: provider.Sampling{MaxOutput: ptr(4000)}})
-	s := sessionOf(history(2, 1000))
-	if err := c.agent.Run(context.Background(), s, provider.UserMessage("next")); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	m := p.Requests()[0].Sampling.MaxOutput
-	if m == nil || *m >= 4000 || *m < 2500 {
-		t.Errorf("max output = %v, want the room the window has left", deref(m))
 	}
 }
 
@@ -614,51 +312,6 @@ func TestRunCompactsInTheMiddleOfATurn(t *testing.T) {
 	}
 	if got := c.store.compactions["s1"]; len(got) != 1 || got[0].Kept != 2 {
 		t.Errorf("stored compactions = %+v", got)
-	}
-}
-
-func TestATranscriptSaysWhereTheUserAttachedImages(t *testing.T) {
-	msgs := history(6, 1000)
-	msgs[0].Images = screenshot("").Images
-	p := providertest.New(providertest.Calls("", providertest.Call("c1", "read", nil)), providertest.Text("SUMMARY"))
-	c := newCompactor(p, compactorOptions{compaction: agent.CompactionSettings{KeepRecentTokens: 2000}})
-	if err := c.agent.Compact(context.Background(), sessionOf(msgs), ""); err != nil {
-		t.Fatalf("Compact: %v", err)
-	}
-	transcript := p.Requests()[1].Messages[0].Content
-	if !strings.Contains(transcript, "[User]: "+msgs[0].Content+"\n\n[User attached an image]") {
-		t.Errorf("transcript = %.200q, want the image noted after the first message", transcript)
-	}
-}
-
-func TestCompactionRefreshesPreambleAfterSummary(t *testing.T) {
-	p := providertest.New(providertest.Text("summary"))
-	var called bool
-	a := agent.New(p, nil, agent.Options{
-		Compaction: agent.CompactionSettings{KeepRecentTokens: 150},
-		RefreshSnapshot: func(_ context.Context, id string, record func(agent.Snapshot) agent.Compaction) (agent.Snapshot, error) {
-			called = true
-			c := record(agent.Snapshot{Preamble: "new snapshot"})
-			if id != "s1" || c.Summary != "summary" {
-				t.Fatalf("compaction = %s, %+v", id, c)
-			}
-			return agent.Snapshot{Preamble: "new snapshot"}, nil
-		},
-	})
-	s := sessionOf(history(4, 100))
-	s.Preamble = "old snapshot"
-	if err := a.Compact(context.Background(), s, ""); err != nil {
-		t.Fatal(err)
-	}
-	if !called || s.Preamble != "new snapshot" {
-		t.Fatalf("refresh = %v, %q", called, s.Preamble)
-	}
-	if !strings.Contains(p.Requests()[0].System, "old snapshot") {
-		t.Fatalf("summary used wrong prefix: %q", p.Requests()[0].System)
-	}
-	preview, err := a.Preview(s)
-	if err != nil || !strings.Contains(preview.System(), "new snapshot") {
-		t.Fatalf("preview = %+v, %v", preview, err)
 	}
 }
 

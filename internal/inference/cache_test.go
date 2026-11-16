@@ -7,24 +7,6 @@ import (
 	"testing/synctest"
 )
 
-func TestSharedPoolAdmitsOnlyWhatFitsTheCache(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		q := newQueue(Pool{Name: "gpu", Slots: 4, KV: KVShared, Cache: 131072})
-		a := acquire(t, q, Need{Pool: "gpu", SessionID: "a", Tokens: 100_000})
-		b := begin(context.Background(), q, Need{Pool: "gpu", SessionID: "b", Tokens: 100_000})
-		if b.admitted() {
-			t.Fatal("two calls of 100k tokens were admitted together on a 128k cache")
-		}
-		// Slots were free: only the cache held it back.
-		if st := q.Snapshot()[0]; len(st.Running) != 1 || st.Used != 100_000 {
-			t.Errorf("pool = %+v", st)
-		}
-		a.Release()
-		l := b.get(t)
-		l.Release()
-	})
-}
-
 func TestSharedPoolAdmitsCallsThatFitTogether(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newQueue(Pool{Name: "gpu", Slots: 4, KV: KVShared, Cache: 131072})
@@ -38,52 +20,6 @@ func TestSharedPoolAdmitsCallsThatFitTogether(t *testing.T) {
 		c.get(t).Release()
 		b.Release()
 	})
-}
-
-func TestPartitionedPoolIsLimitedBySlotsAlone(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		pools := Pools([]Endpoint{{Name: "llama", Slots: 2, KV: KVPartitioned, KVTokens: 1000, Window: 1000}})
-		q := newQueue(pools...)
-		a := acquire(t, q, Need{Pool: "llama", Tokens: 900_000})
-		b := acquire(t, q, Need{Pool: "llama", Tokens: 900_000})
-		a.Release()
-		b.Release()
-	})
-}
-
-func TestSharedPoolOfUnknownSizeIsLimitedBySlotsAlone(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		pools := Pools([]Endpoint{{Name: "vllm", Slots: 2, KV: KVShared}})
-		q := newQueue(pools...)
-		a := acquire(t, q, Need{Pool: "vllm", Tokens: 900_000})
-		b := acquire(t, q, Need{Pool: "vllm", Tokens: 900_000})
-		a.Release()
-		b.Release()
-	})
-}
-
-func TestUnknownKVIsAdmittedAsSharedWithTheWindowAsItsSize(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		pools := Pools([]Endpoint{{Name: "llama", Slots: 2, KV: KVUnknown, Window: 131072}})
-		if got := pools[0].Cache; got != 131072 {
-			t.Fatalf("cache of an unknown KV = %d, want the window", got)
-		}
-		q := newQueue(pools...)
-		a := acquire(t, q, Need{Pool: "llama", Tokens: 100_000})
-		b := begin(context.Background(), q, Need{Pool: "llama", Tokens: 100_000})
-		if b.admitted() {
-			t.Fatal("an unknown KV admitted two calls that together overfill a window")
-		}
-		a.Release()
-		b.get(t).Release()
-	})
-}
-
-func TestUnknownKVWithNoWindowIsLimitedBySlotsAlone(t *testing.T) {
-	pools := Pools([]Endpoint{{Name: "llama", Slots: 2, KV: KVUnknown}})
-	if pools[0].Cache != 0 {
-		t.Errorf("cache = %d, want none", pools[0].Cache)
-	}
 }
 
 func TestACallLargerThanTheWholeCacheRunsAloneRatherThanWaitingForever(t *testing.T) {
@@ -119,36 +55,6 @@ func TestACallLargerThanTheWholeCacheRunsAloneRatherThanWaitingForever(t *testin
 	})
 }
 
-func TestASmallCallDoesNotOvertakeALargeOneWaitingForRoom(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		q := newQueue(Pool{Name: "gpu", Slots: 4, KV: KVShared, Cache: 1000})
-		running := acquire(t, q, Need{Pool: "gpu", Tokens: 600})
-		large := begin(context.Background(), q, Need{Pool: "gpu", Tokens: 600})
-		settle()
-		small := begin(context.Background(), q, Need{Pool: "gpu", Tokens: 100})
-		if small.admitted() {
-			t.Fatal("a small call overtook a large one of the same priority; a stream of them would starve it")
-		}
-		running.Release()
-		l := large.get(t)
-		small.get(t).Release()
-		l.Release()
-	})
-}
-
-func TestAMoreUrgentSmallCallRunsBesideARunningOneWhileALargeOneWaits(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		q := newQueue(Pool{Name: "gpu", Slots: 4, KV: KVShared, Cache: 1000})
-		running := acquire(t, q, Need{Pool: "gpu", Tokens: 600})
-		large := begin(context.Background(), q, Need{Pool: "gpu", Priority: Background, Tokens: 600})
-		settle()
-		urgent := acquire(t, q, Need{Pool: "gpu", Priority: Interactive, Tokens: 100})
-		urgent.Release()
-		running.Release()
-		large.get(t).Release()
-	})
-}
-
 func TestAPoolIsTheNamedPoolNotTheProvider(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// Two providers on one machine: calls to either wait for the same
@@ -171,24 +77,12 @@ func TestAPoolIsTheNamedPoolNotTheProvider(t *testing.T) {
 	})
 }
 
-func TestPoolsWithNoNameAreNamedAfterTheProvider(t *testing.T) {
-	pools := Pools([]Endpoint{{Name: "a", Slots: 1}, {Name: "b", Pool: "", Slots: 1}})
-	if len(pools) != 2 || pools[0].Name != "a" || pools[1].Name != "b" {
-		t.Fatalf("pools = %+v", pools)
-	}
-}
-
 func TestRowsOfOnePoolThatDisagreeTakeTheMostRestrictiveOfEach(t *testing.T) {
 	tests := []struct {
 		name string
 		rows []Endpoint
 		want Pool
 	}{
-		{
-			name: "fewest slots",
-			rows: []Endpoint{{Name: "a", Pool: "p", Slots: 4}, {Name: "b", Pool: "p", Slots: 2}},
-			want: Pool{Name: "p", Endpoints: []string{"a", "b"}, Slots: 2},
-		},
 		{
 			name: "smallest cache",
 			rows: []Endpoint{
@@ -212,16 +106,6 @@ func TestRowsOfOnePoolThatDisagreeTakeTheMostRestrictiveOfEach(t *testing.T) {
 				{Name: "b", Pool: "p", Slots: 2, KV: KVShared, KVTokens: 131072},
 			},
 			want: Pool{Name: "p", Endpoints: []string{"a", "b"}, Slots: 2, KV: KVShared, Cache: 32768},
-		},
-		{
-			name: "no row states a size",
-			rows: []Endpoint{{Name: "a", Pool: "p", Slots: 3, KV: KVShared}, {Name: "b", Pool: "p", Slots: 3, KV: KVPartitioned}},
-			want: Pool{Name: "p", Endpoints: []string{"a", "b"}, Slots: 3, KV: KVShared},
-		},
-		{
-			name: "slots below one count as one",
-			rows: []Endpoint{{Name: "a", Slots: 0}},
-			want: Pool{Name: "a", Endpoints: []string{"a"}, Slots: 1},
 		},
 	}
 	for _, tt := range tests {

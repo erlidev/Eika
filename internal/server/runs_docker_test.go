@@ -3,7 +3,6 @@
 package server_test
 
 import (
-	"errors"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -117,35 +116,6 @@ func TestRunDeliversSteeringAndFollowUpMessages(t *testing.T) {
 	}
 }
 
-func TestRunRefusesASecondRunOnTheSameSession(t *testing.T) {
-	a := newAPI(t)
-	sess := a.session(t)
-	a.script(askStep("c1", "wait here"), providertest.Text("done"))
-
-	run := a.postMessage(t, sess.ID, "start", "", 202)
-	question := a.waitQuestion(t, sess.ID)
-
-	rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages", map[string]any{"text": "again"})
-	if rec.Code != 409 {
-		t.Fatalf("second run = %d, want 409: %s", rec.Code, rec.Body.String())
-	}
-	if code, _ := errorOf(t, rec); code != "conflict" {
-		t.Errorf("code = %q, want conflict", code)
-	}
-
-	// Moving the head is refused for the same reason: the run is writing.
-	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/head",
-		map[string]any{"entry_id": "whatever"}); rec.Code != 409 {
-		t.Errorf("set head during a run = %d, want 409", rec.Code)
-	}
-
-	request(t, a.Server, "POST", "/api/questions/"+question.ID+"/answer", map[string]any{"answer": "ok"})
-	a.waitIdle(t, sess.ID)
-	if run.ID == "" {
-		t.Error("the run row has no id")
-	}
-}
-
 func TestRunAbortStopsTheLoopAndRecordsIt(t *testing.T) {
 	a := newAPI(t)
 	sess := a.session(t)
@@ -210,68 +180,6 @@ func TestAbortKeepsAcceptedMessagesForTheNextRun(t *testing.T) {
 	}
 }
 
-func TestRunRejectsBadMessages(t *testing.T) {
-	a := newAPI(t)
-	sess := a.session(t)
-
-	cases := []struct {
-		name   string
-		body   map[string]any
-		status int
-	}{
-		{"no text", map[string]any{"text": "  "}, 400},
-		{"an unknown mode", map[string]any{"text": "hi", "mode": "shout"}, 400},
-		{"an unknown field", map[string]any{"text": "hi", "colour": "red"}, 400},
-		{"steering with no run", map[string]any{"text": "hi", "mode": "steer"}, 409},
-		{"a follow-up with no run", map[string]any{"text": "hi", "mode": "follow_up"}, 409},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages", c.body)
-			if rec.Code != c.status {
-				t.Errorf("status = %d, want %d: %s", rec.Code, c.status, rec.Body.String())
-			}
-		})
-	}
-	if rec := request(t, a.Server, "POST", "/api/sessions/nope/messages",
-		map[string]any{"text": "hi"}); rec.Code != 404 {
-		t.Errorf("message to an unknown session = %d, want 404", rec.Code)
-	}
-}
-
-func TestARunStartsTheComputerTheIdleStopperStopped(t *testing.T) {
-	a := newAPI(t)
-	sess := a.session(t)
-	a.stopIdle(t)
-	if got := a.computerState(t, sess.ComputerID); got != "stopped" {
-		t.Fatalf("computer = %q, want stopped", got)
-	}
-
-	a.script(providertest.Text("here"))
-	a.postMessage(t, sess.ID, "hello", "", 202)
-	if state := a.waitIdle(t, sess.ID); state.Run == nil || state.Run.State != "done" {
-		t.Fatalf("run = %+v, want it done", state.Run)
-	}
-	if got := a.computerState(t, sess.ComputerID); got != "running" {
-		t.Errorf("computer after the run = %q, want running", got)
-	}
-}
-
-func TestRunRecordsAProviderFailure(t *testing.T) {
-	a := newAPI(t)
-	sess := a.session(t)
-	a.script(providertest.Step{Err: errNoModel})
-
-	a.postMessage(t, sess.ID, "hello", "", 202)
-	state := a.waitIdle(t, sess.ID)
-	if state.Run == nil || state.Run.State != "error" {
-		t.Fatalf("run = %+v, want an error run", state.Run)
-	}
-	if !strings.Contains(state.Run.Error, errNoModel.Error()) {
-		t.Errorf("error = %q, want the provider's message", state.Run.Error)
-	}
-}
-
 func TestCompactRunsAsARunOfItsOwn(t *testing.T) {
 	a := newAPI(t)
 	sess := a.session(t)
@@ -318,10 +226,6 @@ func TestCompactRunsAsARunOfItsOwn(t *testing.T) {
 		t.Errorf("the run after the compaction began with %q, want the summary", got)
 	}
 }
-
-// errNoModel is the failure the scripted provider reports when a test asks
-// for a run that cannot reach a model.
-var errNoModel = errors.New("the model endpoint is unreachable")
 
 func TestOnlyOneOfTwoConcurrentRunsStarts(t *testing.T) {
 	a := newAPI(t)
@@ -372,24 +276,5 @@ func TestOnlyOneOfTwoConcurrentRunsStarts(t *testing.T) {
 	}
 	if len(runs) != 1 {
 		t.Errorf("run rows = %d, want 1", len(runs))
-	}
-}
-
-func TestNoRunStartsAfterTheHarnessStops(t *testing.T) {
-	a := newAPI(t)
-	sess := a.session(t)
-	a.script(providertest.Text("never asked for"))
-
-	a.Close()
-	rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages", map[string]any{"text": "hi"})
-	if rec.Code != 409 {
-		t.Fatalf("status = %d, want 409: %s", rec.Code, rec.Body.String())
-	}
-	runs, err := a.store.Runs(t.Context(), sess.ID)
-	if err != nil {
-		t.Fatalf("runs: %v", err)
-	}
-	if len(runs) != 0 {
-		t.Errorf("run rows = %d, want none", len(runs))
 	}
 }

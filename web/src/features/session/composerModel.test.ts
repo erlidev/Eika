@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { composerModel, imageAdvice } from "@/features/session/composerModel";
+import { composerModel } from "@/features/session/composerModel";
 import type { ComposerModelInput } from "@/features/session/composerModel";
 
 const base: ComposerModelInput = {
@@ -50,13 +50,5 @@ describe("composerModel", () => {
     expect(composerModel({ ...base, chosen: "vision" }).runModel).toBe("vision");
     expect(composerModel(base).runModel).toBe("gpt-5");
     expect(composerModel({ ...base, resolved: undefined }).runModel).toBe("gpt-5-mini");
-  });
-});
-
-describe("imageAdvice", () => {
-  it("does not tell an agent session's user to choose a model", () => {
-    expect(imageAdvice(false)).toContain("Choose a model");
-    expect(imageAdvice(true)).not.toContain("Choose a model");
-    expect(imageAdvice(true)).toContain("class");
   });
 });

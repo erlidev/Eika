@@ -5,13 +5,10 @@ package server_test
 import (
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
-	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
 
@@ -117,65 +114,5 @@ func TestHomeCompactionWritesTheBoardAndRollsTheConversation(t *testing.T) {
 	}
 	if strings.Contains(second, "quiet") || strings.Contains(second, "waiting on") {
 		t.Errorf("second summary = %q, want quiet only counted and no stale wait", second)
-	}
-}
-
-// A child can report after a compaction has read the board and before it
-// stores its entry. The next board counts from the read, not from the entry,
-// so the report that no board showed is listed.
-func TestHomeBoardListsAReportMadeWhileTheLastCompactionWasStored(t *testing.T) {
-	a := newAPI(t)
-	ctx := t.Context()
-	home, err := a.store.EnsureHomeSession(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a.assignClasses(t, map[string]any{"main": "test-model"})
-	plumber, err := a.store.CreateSession(ctx, store.Session{Kind: store.SessionSubagent, Name: "plumber", Agent: "worker",
-		ParentSessionID: home.ID, State: store.SessionRunning})
-	if err != nil {
-		t.Fatal(err)
-	}
-	read := time.Now().UTC()
-	if _, err := a.store.SetSubagentState(ctx, plumber.ID, store.SessionIdle, ""); err != nil {
-		t.Fatal(err)
-	}
-	reported, err := a.store.SetSubagentResult(ctx, plumber.ID, "Booked the second quote.")
-	if err != nil {
-		t.Fatal(err)
-	}
-	entry, err := session.CompactionEntry(agent.Compaction{Summary: "[Subagents] as of then\n- plumber (worker): running\n\n[Conversation]\nOLD", BoardAsOf: &read})
-	if err != nil {
-		t.Fatal(err)
-	}
-	stored, err := a.store.AppendEntry(ctx, home.ID, entry)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reported.LastActiveAt.Before(stored.CreatedAt) || !reported.LastActiveAt.After(read) {
-		t.Fatalf("report at %v, want between the board read %v and the entry %v", reported.LastActiveAt, read, stored.CreatedAt)
-	}
-	a.script(providertest.Text("first answer"), providertest.Text("second answer"), providertest.Text("CONVERSATION"))
-	for _, text := range []string{"one", "two"} {
-		a.postMessage(t, home.ID, text+" "+strings.Repeat("x", homeTurn), "", 202)
-		a.waitIdle(t, home.ID)
-	}
-	decodeBody[runWire](t, request(t, a.Server, "POST", "/api/sessions/"+home.ID+"/compact", map[string]any{}), 202)
-	if state := a.waitIdle(t, home.ID); state.Run == nil || state.Run.State != "done" {
-		t.Fatalf("compaction run = %+v", state.Run)
-	}
-	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+home.ID+"/path", nil), 200)
-	if want := "\n- plumber (worker): idle, last active "; len(path.Messages) == 0 || !strings.Contains(path.Messages[0].Content, want) ||
-		!strings.Contains(path.Messages[0].Content, "last report: Booked the second quote.") {
-		t.Fatalf("summary = %q, want the plumber's report on the board", path.Messages[0].Content)
-	}
-	entries, err := a.store.SessionPath(ctx, home.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	last := entries[len(entries)-1]
-	c, err := session.CompactionOf(last)
-	if last.Kind != store.KindCompaction || err != nil || c.BoardAsOf == nil || c.BoardAsOf.Before(stored.CreatedAt) {
-		t.Errorf("new compaction = %+v, %v, want the time its board was read", c, err)
 	}
 }

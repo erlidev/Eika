@@ -82,25 +82,6 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// Change kinds reported by the /watch stream.
-const (
-	ChangeCreated  = "created"
-	ChangeModified = "modified"
-	ChangeDeleted  = "deleted"
-)
-
-// WatchEvent is one change reported by GET /watch.
-type WatchEvent struct {
-	// Path is the changed file, relative to the computer root.
-	Path string `json:"path"`
-	// Kind is one of the Change constants.
-	Kind string `json:"kind"`
-	// IsDir reports whether the changed file is a directory.
-	IsDir bool `json:"is_dir"`
-	// Time is when the daemon observed the change, in UTC.
-	Time time.Time `json:"time"`
-}
-
 // Process message types, used on GET /process.
 const (
 	// ProcessStart is the client's first message, naming the command.

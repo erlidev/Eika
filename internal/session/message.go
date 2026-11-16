@@ -57,7 +57,7 @@ func withArguments(m provider.Message) provider.Message {
 // events are shown in the user interface and are not sent to the model.
 func Message(e store.Entry) (provider.Message, bool, error) {
 	switch e.Kind {
-	case store.KindUser, store.KindAssistant, store.KindToolCall, store.KindToolResult:
+	case store.KindUser, store.KindAssistant, store.KindToolResult:
 	default:
 		return provider.Message{}, false, nil
 	}
@@ -210,10 +210,4 @@ func SnapshotOf(entries []store.Entry) (Snapshot, error) {
 		}
 	}
 	return snap, nil
-}
-
-// Preamble returns the text of the most recent snapshot on a session path.
-func Preamble(entries []store.Entry) (string, error) {
-	snap, err := SnapshotOf(entries)
-	return snap.Text, err
 }

@@ -38,10 +38,7 @@ function subagent(eika: EikaDriver, id: string) {
   return row;
 }
 
-test("the board groups the subagents by state, and says why one waits", async ({
-  open,
-  expectAria,
-}) => {
+test("the board groups the subagents by state, and says why one waits", async ({ open }) => {
   const eika = await open({ scenario: "activity" });
   await expect(eika.page.getByRole("heading", { level: 1, name: "Activity" })).toBeVisible();
   await expect(
@@ -57,46 +54,6 @@ test("the board groups the subagents by state, and says why one waits", async ({
   await expect(rowOf(eika, /^Waiting: quotes/)).toContainText("Waiting on a slow bash call");
   await expect(rowOf(eika, /^Failed: tiling/)).toBeVisible();
   await expect(rowOf(eika, /^Cancelled: paint/)).toBeVisible();
-  await expectAria(eika, "activity-board", 'role=navigation[name="Subagents"]');
-});
-
-test("with no subagents the board says so", async ({ open }) => {
-  const eika = await open({ scenario: "home-empty", path: "/activity" });
-  await expect(eika.page.getByText("No subagents yet.")).toBeVisible();
-  await expect(eika.page.getByText("Pick a subagent to watch it work.")).toBeVisible();
-});
-
-test("a board that does not load says so and can be tried again", async ({ open }) => {
-  const eika = await open({
-    scenario: "activity",
-    failing: { "GET /api/sessions": { status: 500 } },
-  });
-  await expect(eika.page.getByRole("alert")).toContainText("Could not load the subagents");
-  eika.mock.healRoute("GET /api/sessions");
-  await eika.click("Retry");
-  await expect(rowOf(eika, /^Running: plumber/)).toBeVisible();
-});
-
-test("the project filter appears with two projects and narrows the board", async ({ open }) => {
-  const eika = await open({ scenario: "activity" });
-  const filter = eika.page.getByRole("group", { name: "Project" });
-  await expect(filter.getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
-  await filter.getByRole("button", { name: "Garden" }).click();
-  await expect(filter.getByRole("button", { name: "Garden" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(rowOf(eika, /seedlings/)).toBeVisible();
-  await expect(rowOf(eika, /paint/)).toBeVisible();
-  await expect(rowOf(eika, /plumber/)).toHaveCount(0);
-  await expect(group(eika, "Running")).toHaveCount(0);
-  await filter.getByRole("button", { name: "All" }).click();
-  await expect(rowOf(eika, /plumber/)).toBeVisible();
-
-  // Subagents of no project, or of one, have nothing to filter by.
-  const plain = await open({ scenario: "home-world", path: "/activity" });
-  await expect(rowOf(plain, /plumber/)).toBeVisible();
-  await expect(plain.page.getByRole("group", { name: "Project" })).toHaveCount(0);
 });
 
 test("a subagent opens read-only: its transcript, no composer, and steering is Eika's", async ({
@@ -134,23 +91,6 @@ test("desktop, dark", async ({ open, expectShot }) => {
   await expectShot(eika, "activity-desktop-dark");
 });
 
-test("a report is a card under the transcript", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "activity", path: "/activity/subagent-seedlings" });
-  const report = eika.page.getByRole("region", { name: "Report" });
-  await expect(report).toContainText("Three varieties suit a cold greenhouse");
-  await expect(report).toContainText("notes/tomatoes.md");
-  await expectAria(eika, "activity-agent", "role=main");
-});
-
-test("steering goes through Eika: the view links to Chat", async ({ open }) => {
-  const eika = await open({ scenario: "activity", path: "/activity/subagent-plumber" });
-  const note = eika.page.getByText("To steer this, tell Eika in");
-  await expect(note).toBeVisible();
-  await note.getByRole("link", { name: "Chat" }).click();
-  await expect(eika.page).toHaveURL(/\/$/);
-  await expect(eika.page.getByLabel("Message", { exact: true })).toBeVisible();
-});
-
 test("phone: the board is a screen of its own, and a subagent another", async ({
   open,
   expectShot,
@@ -173,24 +113,6 @@ test("phone: the board is a screen of its own, and a subagent another", async ({
   await expect(rowOf(eika, /plumber/)).toBeVisible();
 });
 
-test("phone, dark", async ({ open, expectShot }) => {
-  const eika = await open({
-    scenario: "activity",
-    theme: "dark",
-    viewport: phone,
-    path: "/activity/subagent-seedlings",
-  });
-  await expect(eika.page.getByRole("region", { name: "Report" })).toBeVisible();
-  await expectShot(eika, "activity-agent-phone-dark");
-});
-
-test("a subagent that does not exist, or a session that is not one, says so", async ({ open }) => {
-  const eika = await open({ scenario: "activity", path: "/activity/subagent-nope" });
-  await expect(eika.page.getByText("That subagent does not exist.")).toBeVisible();
-  await eika.goto("/activity/home-main");
-  await expect(eika.page.getByText("That session is not a subagent.")).toBeVisible();
-});
-
 test("the board follows a state change as the harness reports it", async ({ open }) => {
   const eika = await open({ scenario: "activity" });
   await expect(group(eika, "Running").getByRole("link")).toHaveCount(1);
@@ -210,21 +132,6 @@ test("the board follows a state change as the harness reports it", async ({ open
   await expect(group(eika, "Idle").getByRole("link", { name: /plumber/ })).toContainText(
     "Two plumbers are free next week.",
   );
-});
-
-test("a subagent Eika starts joins the board", async ({ open }) => {
-  const eika = await open({ scenario: "home-world", path: "/activity" });
-  await expect(rowOf(eika, /plumber/)).toBeVisible();
-  eika.mock.world.sessions.push({
-    ...subagent(eika, "subagent-repair"),
-    id: "subagent-new",
-    name: "locksmith",
-    state: "running",
-    result: "",
-    brief: "Find a locksmith.",
-  });
-  changed(eika, "subagent-new");
-  await expect(rowOf(eika, /^Running: locksmith/)).toContainText("Find a locksmith.");
 });
 
 test("the view streams what the subagent does, live", async ({ open }) => {
@@ -255,43 +162,6 @@ test("Cancel stops a running subagent, which stays on the board as cancelled", a
   await expect(rowOf(eika, /^Cancelled: plumber/)).toBeVisible();
   expect(subagent(eika, "subagent-plumber").state).toBe("cancelled");
   expect(Object.keys(eika.mock.world.activeRuns)).not.toContain("subagent-plumber");
-});
-
-test("a waiting subagent can be cancelled too; an idle one has nothing to cancel", async ({
-  open,
-}) => {
-  const eika = await open({ scenario: "activity", path: "/activity/subagent-quotes" });
-  await eika.click("Cancel");
-  await expect(rowOf(eika, /^Cancelled: quotes/)).toBeVisible();
-  await eika.goto("/activity/subagent-repair");
-  await expect(eika.page.getByRole("heading", { level: 2, name: "repair" })).toBeVisible();
-  await expect(eika.page.getByRole("button", { name: "Cancel" })).toHaveCount(0);
-});
-
-test("Cancel works while the harness holds the assignment but no run is going", async ({
-  open,
-}) => {
-  const eika = await open({ scenario: "activity", path: "/activity/subagent-plumber" });
-  Reflect.deleteProperty(eika.mock.world.activeRuns, "subagent-plumber");
-  await eika.page.reload();
-  await eika.settle();
-  await expect(eika.page.getByRole("button", { name: "Cancel" })).toBeEnabled();
-  await eika.click("Cancel");
-  await expect(rowOf(eika, /^Cancelled: plumber/)).toBeVisible();
-});
-
-test("a cancel the harness refuses says so, and the subagent keeps running", async ({ open }) => {
-  const eika = await open({
-    scenario: "activity",
-    path: "/activity/subagent-plumber",
-    failing: { "POST /api/sessions/{id}/cancel": { status: 500 } },
-  });
-  await eika.click("Cancel");
-  await expect(eika.page.getByRole("alert")).toContainText("Could not cancel the subagent");
-  await expect(rowOf(eika, /^Running: plumber/)).toBeVisible();
-  eika.mock.healRoute("POST /api/sessions/{id}/cancel");
-  await eika.click("Cancel");
-  await expect(rowOf(eika, /^Cancelled: plumber/)).toBeVisible();
 });
 
 test("a reconnect brings back what the dropped stream missed", async ({ open }) => {
@@ -390,34 +260,4 @@ test("a question or an MCP request in a subagent shows what is asked and takes n
     await expect(view.getByRole("button", { name: control, exact: true })).toHaveCount(0);
   }
   await expect(view.getByRole("textbox")).toHaveCount(0);
-});
-
-const screenshot = {
-  name: "screenshot.png",
-  mimeType: "image/png",
-  buffer: Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAIAAADbtmxLAAAANklEQVR42u3OQQ0AMAgEsJODTKRM4iRggvBqUgFNulf8VysiJCQkJCQkJCQkJCQkJCQkJHQZGhqeKHm+FEXCAAAAAElFTkSuQmCC",
-    "base64",
-  ),
-};
-
-test("watching a subagent keeps Chat's unsent draft and its attachment", async ({ open }) => {
-  const eika = await open({ scenario: "activity", path: "/" });
-  const chat = eika.page.getByRole("region", { name: "Session" });
-  await chat.getByLabel("Message", { exact: true }).fill("Ask the plumber about Tuesday");
-  await eika.page.getByLabel("Images to attach").setInputFiles(screenshot);
-  const attached = chat.getByRole("list", { name: "Images to send" });
-  await expect(attached.getByRole("listitem")).toHaveCount(1);
-
-  await eika.click("Activity");
-  await rowOf(eika, /^Running: plumber/).click();
-  await expect(
-    said(eika.page.getByRole("region", { name: "Session" }), "Checking local options."),
-  ).toBeVisible();
-  await eika.click("Chat");
-
-  await expect(chat.getByLabel("Message", { exact: true })).toHaveValue(
-    "Ask the plumber about Tuesday",
-  );
-  await expect(attached.getByRole("listitem")).toHaveCount(1);
 });

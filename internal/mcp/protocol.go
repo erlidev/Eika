@@ -49,15 +49,6 @@ type Implementation struct {
 	Version     string `json:"version"`
 	Description string `json:"description,omitempty"`
 	WebsiteURL  string `json:"websiteUrl,omitempty"`
-	Icons       []Icon `json:"icons,omitempty"`
-}
-
-// Icon is a picture a server offers for itself or one of its primitives.
-type Icon struct {
-	Src      string   `json:"src"`
-	MimeType string   `json:"mimeType,omitempty"`
-	Sizes    []string `json:"sizes,omitempty"`
-	Theme    string   `json:"theme,omitempty"`
 }
 
 // ServerCapabilities is what a server says it serves.
@@ -104,7 +95,6 @@ type Tool struct {
 	InputSchema  json.RawMessage  `json:"inputSchema"`
 	OutputSchema json.RawMessage  `json:"outputSchema,omitempty"`
 	Annotations  *ToolAnnotations `json:"annotations,omitempty"`
-	Icons        []Icon           `json:"icons,omitempty"`
 }
 
 // ToolAnnotations are a server's hints about a tool. They are untrusted: a
@@ -126,7 +116,6 @@ type Resource struct {
 	MimeType    string       `json:"mimeType,omitempty"`
 	Size        *int64       `json:"size,omitempty"`
 	Annotations *Annotations `json:"annotations,omitempty"`
-	Icons       []Icon       `json:"icons,omitempty"`
 }
 
 // ResourceTemplate is a family of resources addressed by a URI template.
@@ -137,7 +126,6 @@ type ResourceTemplate struct {
 	Description string       `json:"description,omitempty"`
 	MimeType    string       `json:"mimeType,omitempty"`
 	Annotations *Annotations `json:"annotations,omitempty"`
-	Icons       []Icon       `json:"icons,omitempty"`
 }
 
 // Annotations tell a client who a piece of content is for and how much it
@@ -162,7 +150,6 @@ type Prompt struct {
 	Title       string           `json:"title,omitempty"`
 	Description string           `json:"description,omitempty"`
 	Arguments   []PromptArgument `json:"arguments,omitempty"`
-	Icons       []Icon           `json:"icons,omitempty"`
 }
 
 // PromptArgument is one argument a prompt takes.

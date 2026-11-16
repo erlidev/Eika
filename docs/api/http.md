@@ -33,7 +33,7 @@ Every failure has one shape:
 
 | Code | Status | Meaning |
 |---|---|---|
-| `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field is malformed. |
+| `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field, or a JSON body that is not valid UTF-8, is malformed. |
 | `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
 | `not_found` | 404 | The addressed computer, session, entry, run, question, provider, model, MCP server, elicitation, or pending authorization does not exist. |
 | `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a computer that is not running or could not be started, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
@@ -432,7 +432,7 @@ A user message can include `context`: the block the model reads after the
 message's text, which states the time it was sent and, in the home session, its
 channel and any notices it delivers (one `notice:` line each, later lines of a
 notice indented by two spaces). It is not what the user wrote, so a client
-shows `content` and not `context`; the Context inspector shows both. Messages
+shows `content` and not `context`. Messages
 stored before the field existed lack it. A home user message that delivers
 notices also has `notices`, the ids of those notice entries; a background turn
 that delivers notices sends a user message with empty `content` and only its

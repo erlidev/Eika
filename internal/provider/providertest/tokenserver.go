@@ -47,7 +47,6 @@ type TokenServer struct {
 	mu          sync.Mutex
 	steps       []Step
 	next        int
-	textCalls   int
 	textBytes   int
 	promptCalls int
 	requestCall int
@@ -179,7 +178,6 @@ func (s *TokenServer) Text(_ context.Context, text string) (int, error) {
 		return 0, counter.ErrUnsupported
 	}
 	s.mu.Lock()
-	s.textCalls++
 	s.textBytes += len(text)
 	s.mu.Unlock()
 	return Tokens(text), nil
@@ -195,13 +193,6 @@ func (s *TokenServer) Boundaries(_ context.Context, prompt string) ([]int, error
 		cuts = append(cuts, loc[0])
 	}
 	return cuts, nil
-}
-
-// TextCalls is how many texts were tokenised, and TextBytes their total size.
-func (s *TokenServer) TextCalls() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.textCalls
 }
 
 // TextBytes is the total size of the texts tokenised so far.

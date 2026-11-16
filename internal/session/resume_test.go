@@ -9,118 +9,50 @@ import (
 	"github.com/erlidev/eika/internal/store"
 )
 
-// entryOf records a message the way a run does, so a test path is built from
-// the same conversion the agent loop writes through.
-func entryOf(t *testing.T, m provider.Message) store.Entry {
-	t.Helper()
-	e, err := session.MessageEntry(m)
-	if err != nil {
-		t.Fatalf("record %s message: %v", m.Role, err)
+// A run can continue from the end of a path only when no tool call on it is
+// unanswered and it does not end at a preamble. A note answers nothing, and a
+// result for a call that is not on the path cancels nothing.
+func TestPathResumable(t *testing.T) {
+	entry := func(m provider.Message) store.Entry {
+		t.Helper()
+		e, err := session.MessageEntry(m)
+		if err != nil {
+			t.Fatalf("record %s message: %v", m.Role, err)
+		}
+		return e
 	}
-	return e
-}
-
-func TestPathResumableFollowsUnansweredToolCalls(t *testing.T) {
-	t.Parallel()
-
-	ask := provider.AssistantMessage("looking", []provider.ToolCall{
-		{ID: "call_1", Name: "read", Arguments: provider.ToolArguments(`{"path":"go.mod"}`)},
-		{ID: "call_2", Name: "grep", Arguments: provider.ToolArguments(`{"pattern":"func"}`)},
-	})
+	text := func(kind store.EntryKind, s string) store.Entry {
+		t.Helper()
+		e, err := session.TextEntry(kind, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	compaction, err := session.CompactionEntry(agent.Compaction{Summary: "summary"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	path := []store.Entry{
-		entryOf(t, provider.UserMessage("fix the build")),
-		entryOf(t, ask),
-		entryOf(t, provider.ToolResultMessage("call_1", "module eika", false)),
-		entryOf(t, provider.ToolResultMessage("call_2", "func main", false)),
-		entryOf(t, provider.AssistantMessage("here is the fix", nil)),
+		text(store.KindPreamble, "first"),
+		entry(provider.UserMessage("fix the build")),
+		entry(provider.AssistantMessage("looking", []provider.ToolCall{
+			{ID: "call_1", Name: "read", Arguments: provider.ToolArguments(`{"path":"go.mod"}`)},
+			{ID: "call_2", Name: "grep", Arguments: provider.ToolArguments(`{"pattern":"func"}`)},
+		})),
+		{Kind: store.KindSystem, Payload: []byte(`{"text":"computer restarted"}`)},
+		entry(provider.ToolResultMessage("call_1", "module eika", false)),
+		entry(provider.ToolResultMessage("call_elsewhere", "nothing", false)),
+		entry(provider.ToolResultMessage("call_2", "func main", false)),
+		entry(provider.AssistantMessage("here is the fix", nil)),
+		text(store.KindPreamble, "replacement"),
+		compaction,
 	}
-
-	cases := []struct {
-		name string
-		upTo int
-		want bool
-	}{
-		{name: "the user's message", upTo: 1, want: true},
-		{name: "an assistant turn with two calls out", upTo: 2, want: false},
-		{name: "one of two results back", upTo: 3, want: false},
-		{name: "the result that answers the last call", upTo: 4, want: true},
-		{name: "the answer the results led to", upTo: 5, want: true},
-		{name: "the empty path of a session with no entries", upTo: 0, want: true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			if got := session.PathResumable(path[:c.upTo]); got != c.want {
-				t.Errorf("PathResumable(path[:%d]) = %v, want %v", c.upTo, got, c.want)
-			}
-		})
-	}
-}
-
-func TestPathResumableIgnoresEntriesOutsideTheConversation(t *testing.T) {
-	t.Parallel()
-
-	// A note and an event are shown in the user interface and never sent to
-	// the model, so neither answers a call nor asks for one.
-	note := store.Entry{Kind: store.KindSystem, Payload: []byte(`{"text":"computer restarted"}`)}
-	call := entryOf(t, provider.AssistantMessage("", []provider.ToolCall{
-		{ID: "call_1", Name: "bash", Arguments: provider.ToolArguments(`{"command":"ls"}`)},
-	}))
-
-	if !session.PathResumable([]store.Entry{note}) {
-		t.Error("a system note alone is not resumable, want resumable")
-	}
-	if session.PathResumable([]store.Entry{call, note}) {
-		t.Error("a note after an unanswered call is resumable, want not resumable")
-	}
-	if !session.PathResumable([]store.Entry{call, note, entryOf(t, provider.ToolResultMessage("call_1", "go.mod", false))}) {
-		t.Error("the result that answers the call is not resumable, want resumable")
-	}
-}
-
-func TestPathResumableAcceptsAnUnknownToolResult(t *testing.T) {
-	t.Parallel()
-
-	// A result whose call is not on this path answers nothing, and it must
-	// not cancel a call that is still out: a head there would produce a
-	// conversation the endpoint rejects.
-	call := entryOf(t, provider.AssistantMessage("", []provider.ToolCall{
-		{ID: "call_1", Name: "bash", Arguments: provider.ToolArguments(`{"command":"ls"}`)},
-	}))
-	stray := entryOf(t, provider.ToolResultMessage("call_elsewhere", "nothing", false))
-
-	if session.PathResumable([]store.Entry{call, stray}) {
-		t.Error("a stray result cleared an unanswered call, want not resumable")
-	}
-}
-
-func TestPreamblesAreNotBranchPoints(t *testing.T) {
-	first, err := session.TextEntry(store.KindPreamble, "first")
-	if err != nil {
-		t.Fatal(err)
-	}
-	replacement, err := session.TextEntry(store.KindPreamble, "replacement")
-	if err != nil {
-		t.Fatal(err)
-	}
-	user := entryOf(t, provider.UserMessage("hello"))
-	compact, err := session.CompactionEntry(agent.Compaction{Summary: "summary"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := []store.Entry{first, user, replacement, compact}
-	for _, tc := range []struct {
-		name string
-		end  int
-		want bool
-	}{
-		{"initial preamble", 1, false}, {"user message", 2, true},
-		{"replacement preamble", 3, false}, {"compaction", 4, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := session.PathResumable(path[:tc.end]); got != tc.want {
-				t.Errorf("resumable = %v, want %v", got, tc.want)
-			}
-		})
+	// want[i] is whether a run can continue from path[:i].
+	want := []bool{true, false, true, false, false, false, false, true, true, false, true}
+	for i, w := range want {
+		if got := session.PathResumable(path[:i]); got != w {
+			t.Errorf("PathResumable(path[:%d]) = %v, want %v", i, got, w)
+		}
 	}
 }

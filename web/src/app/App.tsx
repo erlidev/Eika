@@ -2,7 +2,7 @@
  * The application root. A browser that is not signed in gets the guided
  * setup when the harness is new and the sign-in screen when it is not. A
  * signed-in browser gets the setup until it is finished, then the shell, whose
- * pages are Chat and Activity. The workbench stays in the tree and has no route.
+ * pages are Chat and Activity.
  */
 
 import { useQueryClient } from "@tanstack/react-query";

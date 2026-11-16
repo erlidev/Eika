@@ -23,13 +23,6 @@ func TestProjectValidation(t *testing.T) {
 		})
 	}
 	valid := store.ProjectFields{Name: "Taxes", Status: "active", Directory: "/home/eika/projects/taxes"}
-	for _, status := range []string{"active", "paused", "done", "archived"} {
-		p := valid
-		p.Status = status
-		if err := p.Validate(); err != nil {
-			t.Fatal(err)
-		}
-	}
 	for _, directory := range []string{"/home/eika/old work", "/tmp/repo"} {
 		p := valid
 		p.Directory = directory

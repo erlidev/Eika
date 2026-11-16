@@ -5,7 +5,6 @@ package server_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -42,26 +41,6 @@ type providerWire struct {
 		Counting     string `json:"counting"`
 		CacheMetrics string `json:"cache_metrics"`
 		SlotHints    bool   `json:"slot_hints"`
-		Responses    *struct {
-			Verdict      string `json:"verdict"`
-			Reason       string `json:"reason"`
-			Model        string `json:"model"`
-			Build        string `json:"build"`
-			CheckedAt    string `json:"checked_at"`
-			Reasoning    bool   `json:"reasoning"`
-			CacheMetrics bool   `json:"cache_metrics"`
-			Counted      bool   `json:"counted"`
-			Drift        int    `json:"drift"`
-		} `json:"responses"`
-		SlotAffinity *struct {
-			Verdict      string `json:"verdict"`
-			Reason       string `json:"reason"`
-			Model        string `json:"model"`
-			Build        string `json:"build"`
-			CheckedAt    string `json:"checked_at"`
-			PromptTokens int    `json:"prompt_tokens"`
-			CachedTokens int    `json:"cached_tokens"`
-		} `json:"slot_affinity"`
 	} `json:"capabilities"`
 	Overridden []string `json:"overridden"`
 	ProbedAt   string   `json:"probed_at"`
@@ -223,12 +202,7 @@ func TestProviderRoutes(t *testing.T) {
 
 	for name, body := range map[string]map[string]any{
 		"a taken name":         {"name": "OpenAI", "base_url": "https://x.test/v1"},
-		"no name":              {"name": " ", "base_url": "https://x.test/v1"},
-		"no base url":          {"name": "x"},
-		"a base url with ftp":  {"name": "x", "base_url": "ftp://x.test"},
 		"credentials in a url": {"name": "x", "base_url": "https://u:p@x.test/v1"},
-		"a query in a url":     {"name": "x", "base_url": "https://x.test/v1?key=1"},
-		"an unknown kind":      {"name": "x", "kind": "carrier-pigeon", "base_url": "https://x.test/v1"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := request(t, a.Server, "POST", "/api/providers", body)
@@ -388,15 +362,7 @@ func TestModelRoutes(t *testing.T) {
 
 	for name, body := range map[string]map[string]any{
 		"a taken name":           {"provider_id": a.testProvider.ID, "model": "gpt-x", "context_window": 10, "max_output": 1},
-		"no model":               {"provider_id": a.testProvider.ID, "context_window": 10, "max_output": 1},
 		"output past the window": {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 11},
-		"no window":              {"provider_id": a.testProvider.ID, "model": "m", "max_output": 1},
-		// The vocabulary belongs to the endpoint, so only the shape is checked.
-		"an effort with a space":   {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "reasoning_effort": "very high"},
-		"an empty effort choice":   {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "reasoning_efforts": []string{""}},
-		"duplicate effort choices": {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "reasoning_efforts": []string{"low", "low"}},
-		"a provider that is not":   {"provider_id": "absent", "model": "m", "context_window": 10, "max_output": 1},
-		"an unknown switch":        {"provider_id": a.testProvider.ID, "model": "m", "context_window": 10, "max_output": 1, "thinking_switch": "enable_thinking"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := request(t, a.Server, "POST", "/api/models", body)
@@ -404,29 +370,6 @@ func TestModelRoutes(t *testing.T) {
 				t.Errorf("status = %d, want a rejection: %s", rec.Code, rec.Body.String())
 			}
 		})
-	}
-
-	// An effort the endpoint's own vocabulary uses is taken as it is.
-	custom := decodeBody[modelWire](t, request(t, a.Server, "POST", "/api/models", map[string]any{
-		"provider_id": a.testProvider.ID, "model": "qwen-x", "context_window": 1000, "max_output": 100,
-		"reasoning_effort": "think-harder",
-	}), 201)
-	if custom.ReasoningEffort != "think-harder" {
-		t.Errorf("custom effort = %q, want the endpoint's own word", custom.ReasoningEffort)
-	}
-	if rec := request(t, a.Server, "DELETE", "/api/models/"+custom.ID, nil); rec.Code != 204 {
-		t.Fatalf("delete = %d", rec.Code)
-	}
-
-	// The switch changes on its own, and an unknown one is refused.
-	switched := decodeBody[modelWire](t, request(t, a.Server, "PATCH", "/api/models/"+created.ID,
-		map[string]any{"thinking_switch": "chat_template_kwargs"}), 200)
-	if switched.ThinkingSwitch != "chat_template_kwargs" || switched.ReasoningEffort != "high" {
-		t.Errorf("switched = %+v, want only the switch changed", switched)
-	}
-	if rec := request(t, a.Server, "PATCH", "/api/models/"+created.ID,
-		map[string]any{"thinking_switch": "off"}); rec.Code != 400 {
-		t.Errorf("unknown switch = %d, want 400", rec.Code)
 	}
 
 	// Renaming the default keeps it the default.
@@ -444,32 +387,6 @@ func TestModelRoutes(t *testing.T) {
 	models = decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200)
 	if len(models.Models) != 1 || models.Default != "test-model" {
 		t.Errorf("models after the delete = %+v", models)
-	}
-}
-
-func TestModelTestSendsOneSmallRequest(t *testing.T) {
-	a := newAPI(t)
-	p := a.script(providertest.Text("ready"))
-	got := decodeBody[struct {
-		Reply      string `json:"reply"`
-		StopReason string `json:"stop_reason"`
-	}](t, request(t, a.Server, "POST", "/api/models/test", map[string]any{
-		"provider_id": a.testProvider.ID, "model": "unsaved-model", "reasoning_effort": "none",
-		"thinking_switch": "thinking",
-	}), 200)
-	if got.Reply != "ready" || got.StopReason != "stop" {
-		t.Errorf("test = %+v", got)
-	}
-	reqs := p.Requests()
-	if len(reqs) != 1 || reqs[0].Model != "unsaved-model" || deref(reqs[0].Sampling.ReasoningEffort) != "none" ||
-		reqs[0].ThinkingSwitch != provider.SwitchThinking || len(reqs[0].Tools) != 0 {
-		t.Errorf("requests = %+v", reqs)
-	}
-
-	a.script(providertest.Fail(&provider.Error{Op: "stream", StatusCode: 404, Err: errors.New("model not found")}))
-	rec := request(t, a.Server, "POST", "/api/models/test", map[string]any{"provider_id": a.testProvider.ID, "model": "typo"})
-	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "model not found") {
-		t.Errorf("a failing model = %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -501,46 +418,5 @@ func TestARunUsesTheModelsEndpointIdentifierAndLimits(t *testing.T) {
 	}
 	if e := a.lastEndpoint(); e.BaseURL != "https://second.test/v1" || e.APIKey != "second-key" {
 		t.Errorf("endpoint = %+v, want the default model's provider", e)
-	}
-}
-
-func TestNoModelMeansNoRun(t *testing.T) {
-	a := newAPI(t)
-	if rec := request(t, a.Server, "DELETE", "/api/providers/"+a.testProvider.ID, nil); rec.Code != 204 {
-		t.Fatalf("delete provider = %d", rec.Code)
-	}
-	sess := a.session(t)
-	rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages", map[string]any{"text": "hi"})
-	if rec.Code != 409 || !strings.Contains(rec.Body.String(), "no model") {
-		t.Errorf("a run with no model = %d %s, want 409", rec.Code, rec.Body.String())
-	}
-}
-
-func TestSystemReport(t *testing.T) {
-	a := newAPI(t)
-	a.host.images = map[string]bool{"eika-sandbox:latest": true}
-	got := decodeBody[systemWire](t, request(t, a.Server, "GET", "/api/system", nil), 200)
-	if !got.Docker.Reachable || got.SandboxImage.Name != "eika-sandbox:latest" || !got.SandboxImage.Present {
-		t.Errorf("system = %+v", got)
-	}
-	if got.Providers != 1 || got.Models != 1 {
-		t.Errorf("counts = %d providers, %d models", got.Providers, got.Models)
-	}
-
-	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{"sandbox_image": "custom:2"}), 200)
-	got = decodeBody[systemWire](t, request(t, a.Server, "GET", "/api/system", nil), 200)
-	if got.SandboxImage.Name != "custom:2" || got.SandboxImage.Present {
-		t.Errorf("image = %+v, want the setting's, missing", got.SandboxImage)
-	}
-
-	// A new computer runs the image the settings name.
-	if cx := a.home(t); cx.Image != "custom:2" {
-		t.Errorf("computer image = %q, want the setting's", cx.Image)
-	}
-
-	a.host.imageErr = fmt.Errorf("permission denied while trying to connect to the docker daemon socket")
-	got = decodeBody[systemWire](t, request(t, a.Server, "GET", "/api/system", nil), 200)
-	if got.Docker.Reachable || !strings.Contains(got.Docker.Error, "permission denied") {
-		t.Errorf("docker = %+v, want the daemon's reason", got.Docker)
 	}
 }

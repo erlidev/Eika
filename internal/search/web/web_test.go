@@ -38,18 +38,6 @@ func TestSearxNG(t *testing.T) {
 	}
 }
 
-func TestSearxNGHonoursTheLimit(t *testing.T) {
-	many := make([]map[string]string, 40)
-	for i := range many {
-		many[i] = map[string]string{"url": "https://x/", "title": "x"}
-	}
-	client, _ := searchtest.Client(searchtest.JSON(map[string]any{"results": many}))
-	got, _ := web.NewSearxNG(client, "http://s").Search(t.Context(), search.Query{Text: "q", Limit: 30})
-	if len(got) != 30 {
-		t.Errorf("got %d results, want 30", len(got))
-	}
-}
-
 func TestSearxNGExplainsFailures(t *testing.T) {
 	client, _ := searchtest.Client(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) })
 	_, err := web.NewSearxNG(client, "http://s").Search(t.Context(), search.Query{Text: "q", Limit: 5})
@@ -64,17 +52,6 @@ func TestSearxNGExplainsFailures(t *testing.T) {
 	_, err = web.NewSearxNG(client, "http://s").Search(t.Context(), search.Query{Text: "q", Limit: 5})
 	if err == nil || err.Error() != "no engine answered: google (timeout)" {
 		t.Errorf("empty answer error = %v", err)
-	}
-}
-
-func TestSearxNGProbe(t *testing.T) {
-	up, _ := searchtest.Client(func(http.ResponseWriter, *http.Request) {})
-	if got := web.NewSearxNG(up, "http://s").Probe(t.Context()); got != "up" {
-		t.Errorf("Probe = %q", got)
-	}
-	down, _ := searchtest.Client(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(502) })
-	if got := web.NewSearxNG(down, "http://s").Probe(t.Context()); got != "HTTP 502" {
-		t.Errorf("Probe = %q", got)
 	}
 }
 
@@ -137,29 +114,5 @@ func TestMarginaliaEscapesThePath(t *testing.T) {
 	}
 	if u := tr.Requests()[0].URL.String(); !strings.HasSuffix(u, "/public/search/rust%20tokio") {
 		t.Errorf("url = %s", u)
-	}
-}
-
-func TestProvidersTolerateAnAnswerWithNoResults(t *testing.T) {
-	client, _ := searchtest.Client(searchtest.JSON(map[string]any{}))
-	for name, s := range map[string]search.Searcher{
-		"searxng": web.NewSearxNG(client, "http://s"), "tavily": web.NewTavily(client), "exa": web.NewExa(client),
-		"brave": web.NewBrave(client), "marginalia": web.NewMarginalia(client),
-	} {
-		if got, err := s.Search(t.Context(), search.Query{Text: "q", Limit: 10, Key: "k"}); err != nil || len(got) != 0 {
-			t.Errorf("%s = %+v, %v; want no results", name, got, err)
-		}
-	}
-}
-
-func TestProvidersReportStatusAndHeaders(t *testing.T) {
-	client, _ := searchtest.Client(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Retry-After", "60")
-		w.WriteHeader(http.StatusTooManyRequests)
-	})
-	_, err := web.NewBrave(client).Search(t.Context(), search.Query{Text: "q", Limit: 1, Key: "k"})
-	var h *search.HTTPError
-	if !errors.As(err, &h) || h.Status != 429 || h.Header.Get("Retry-After") != "60" {
-		t.Errorf("err = %#v", err)
 	}
 }

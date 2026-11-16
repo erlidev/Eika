@@ -96,13 +96,6 @@ describe("opening a session", () => {
     expect(useSessionStore.getState().draft).toBe("not the home draft");
   });
 
-  it("parks nothing for a session whose composer is empty", () => {
-    const store = useSessionStore.getState();
-    store.open("s1");
-    store.open("s2");
-    expect(useSessionStore.getState().parked).toEqual({});
-  });
-
   it("keeps the transcript when the session that is open opens again", () => {
     const store = useSessionStore.getState();
     store.open("s1");

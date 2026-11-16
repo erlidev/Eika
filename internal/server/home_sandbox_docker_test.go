@@ -67,9 +67,8 @@ func realHome(t *testing.T) (*server.Server, *computer.Host, *store.Store) {
 		if err != nil {
 			return
 		}
-		if cx, err := host.Inspect(ctx, home.ID); err == nil {
-			_ = host.Destroy(ctx, &cx)
-		}
+		_ = exec.CommandContext(ctx, "docker", "rm", "-f", computer.ContainerName(home.ID)).Run()
+		_ = exec.CommandContext(ctx, "docker", "volume", "rm", "-f", computer.VolumeName(home.ID)).Run()
 	})
 	return s, host, st
 }

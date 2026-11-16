@@ -9,13 +9,16 @@ import (
 	"github.com/erlidev/eika/internal/executor/sandbox"
 )
 
-// Label is the Docker label every computer container carries, so that the
-// harness can find its containers again after a restart.
+// Label is the Docker label every computer container and volume carries,
+// naming the computer it belongs to.
 const Label = "eika.computer"
 
-// DefaultUser is the user every computer container runs as unless the spec
-// says otherwise. A sandbox never runs as root.
-const DefaultUser = "1000:1000"
+// The uid and gid every computer container runs as. A sandbox never runs as
+// root.
+const (
+	userID  = 1000
+	groupID = 1000
+)
 
 // DaemonPort is the port eikad listens on inside a computer container.
 const DaemonPort = "7000"
@@ -65,24 +68,9 @@ type Spec struct {
 	// ID is the computer id. Empty generates one.
 	ID string
 	// Image is the container image. Empty uses the host's default image.
-	// Ignored when BuildContext is set.
 	Image string
-	// BuildContext is a directory holding a Dockerfile and its context. When
-	// set, the image is built from it before the container is created.
-	BuildContext string
-	// Dockerfile is the Dockerfile's name within BuildContext. Empty means
-	// "Dockerfile".
-	Dockerfile string
-	// Env holds additional KEY=VALUE entries for every process in the
-	// container.
-	Env []string
-	// User is the user the container runs as. Empty means DefaultUser. A
-	// custom image must have that uid, or name its own user here.
-	User string
 	// Confinement bounds what the container may consume and reach.
 	Confinement Confinement
-	// Labels are added to the container alongside the computer label.
-	Labels map[string]string
 }
 
 // Computer is one sandbox container and its volume.
@@ -119,10 +107,6 @@ func ContainerName(id string) string { return "eika-cx-" + id }
 
 // VolumeName is the Docker name of a computer's volume.
 func VolumeName(id string) string { return "eika-cx-" + id }
-
-// builtImageRef is the tag given to an image built for one computer from a
-// spec's build context. It is removed together with the computer.
-func builtImageRef(id string) string { return ContainerName(id) + ":latest" }
 
 // newID returns a short random computer id.
 func newID() (string, error) {

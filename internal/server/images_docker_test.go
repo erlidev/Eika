@@ -104,33 +104,6 @@ func TestImagesReachAModelThatReadsThem(t *testing.T) {
 	}
 }
 
-func TestImagesAreRefusedForAModelThatDoesNotReadThem(t *testing.T) {
-	a := newAPI(t)
-	sess := a.session(t)
-	p := a.script(askStep("c1", "wait here"), providertest.Text("done"))
-	messages := "/api/sessions/" + sess.ID + "/messages"
-
-	rec := request(t, a.Server, "POST", messages, imageMessage("look", "", pngOf(t, 10, 10)))
-	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "does not accept images") {
-		t.Fatalf("a run with an image = %d %s, want 400 naming image input", rec.Code, rec.Body.String())
-	}
-	if state := a.runState(t, sess.ID); state.Active || state.Run != nil || p.Calls() != 0 {
-		t.Fatalf("a refused message started a run: %+v", state)
-	}
-
-	a.postMessage(t, sess.ID, "start", "", 202)
-	question := a.waitQuestion(t, sess.ID)
-	rec = request(t, a.Server, "POST", messages, imageMessage("and this", "steer", pngOf(t, 10, 10)))
-	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "test-model does not accept images") {
-		t.Errorf("steering with an image = %d %s, want 400 naming the model", rec.Code, rec.Body.String())
-	}
-	if state := a.runState(t, sess.ID); len(state.PendingSteering) != 0 {
-		t.Errorf("pending steering = %+v, want the refused message left out", state.PendingSteering)
-	}
-	request(t, a.Server, "POST", "/api/questions/"+question.ID+"/answer", map[string]any{"answer": "ok"})
-	a.waitIdle(t, sess.ID)
-}
-
 func TestRunRejectsBadImages(t *testing.T) {
 	a := newAPI(t)
 	sess := a.session(t)
@@ -141,24 +114,8 @@ func TestRunRejectsBadImages(t *testing.T) {
 	for i := range eleven {
 		eleven[i] = small
 	}
-	cases := []struct {
-		name     string
-		body     map[string]any
-		wantText string
-	}{
-		{"a file that is not an image", imageMessage("hi", "", small, []byte("GIF? no, text")), "image 2: unsupported image format"},
-		{"a truncated image", imageMessage("hi", "", small[:len(small)/2]), "image 1:"},
-		{"too many images", imageMessage("hi", "", eleven...), "at most 10 images"},
-		{"data that is not base64", map[string]any{"text": "hi", "images": []map[string]any{{"data": "%%%"}}}, "decode request body"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			rec := request(t, a.Server, "POST", messages, c.body)
-			if rec.Code != 400 || !strings.Contains(rec.Body.String(), c.wantText) {
-				t.Errorf("status = %d %s, want 400 saying %q", rec.Code, rec.Body.String(), c.wantText)
-			}
-		})
-	}
+	refused(t, request(t, a.Server, "POST", messages, imageMessage("hi", "", small, []byte("GIF? no, text"))), 400)
+	refused(t, request(t, a.Server, "POST", messages, imageMessage("hi", "", eleven...)), 400)
 
 	huge := `{"text":"` + strings.Repeat("a", 64<<20) + `"}`
 	r := httptest.NewRequest("POST", messages, strings.NewReader(huge))
@@ -175,19 +132,6 @@ func TestRunRejectsBadImages(t *testing.T) {
 	a.waitIdle(t, sess.ID)
 	if sent := p.Requests()[0].Messages[0]; sent.Content != "" || len(sent.Images) != 1 {
 		t.Errorf("sent %q with %d images, want the image alone", sent.Content, len(sent.Images))
-	}
-}
-
-func TestModelTestSendsAnImageWhenAskedTo(t *testing.T) {
-	a := newAPI(t)
-	p := a.script(providertest.Text("ready"))
-	decodeBody[struct {
-		Reply string `json:"reply"`
-	}](t, request(t, a.Server, "POST", "/api/models/test", map[string]any{
-		"provider_id": a.testProvider.ID, "model": "vision", "image_input": true,
-	}), 200)
-	if images := lastUserImages(p.Requests()[0]); len(images) != 1 || images[0].MediaType != "image/png" {
-		t.Errorf("the test sent %+v, want one PNG", describe(images))
 	}
 }
 

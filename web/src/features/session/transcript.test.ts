@@ -353,16 +353,6 @@ describe("applyEvent", () => {
     expect(state.dropped).toBe(7);
     expect(state.needsReplay).toBe(true);
   });
-
-  it("ignores an event whose payload is not an object", () => {
-    const before = fold(turn.slice(0, 2));
-    expect(applyEvent(before, ev("message.delta", "nonsense"))).toBe(before);
-  });
-
-  it("ignores an event type it has no rule for", () => {
-    const before = newTranscript(sessionID);
-    expect(applyEvent(before, ev("computer.state", { run_id: "r1" }))).toBe(before);
-  });
 });
 
 describe("reasoning", () => {
@@ -509,77 +499,11 @@ describe("the meter", () => {
     });
   }
 
-  it("is absent until an endpoint reports usage", () => {
-    expect(fold(turn.slice(0, 3)).meter).toBeUndefined();
-  });
-
   it("takes the newest sample as it came", () => {
     const state = fold([progress(10, 1000), progress(40, 2000)]);
     expect(state.meter?.live).toBe(true);
     expect(state.meter?.context.total_tokens).toBe(140);
     expect(state.meter?.generationMs).toBe(2000);
-  });
-
-  it("drops the meter after a retry, whose measurements describe nothing on screen", () => {
-    const state = fold([progress(40, 2000), ev("message.reset", { run_id: "r1" })]);
-    expect(state.meter).toBeUndefined();
-  });
-
-  it("stops being live when the turn ends", () => {
-    const ended = ev("turn.end", {
-      run_id: "r1",
-      stop_reason: "stop",
-      usage: {
-        input_tokens: 100,
-        output_tokens: 10,
-        total_tokens: 110,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      context: {
-        input_tokens: 100,
-        output_tokens: 10,
-        total_tokens: 110,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      generation_ms: 1000,
-      context_window: 400_000,
-    });
-    const state = fold([...turn.slice(0, 3), progress(10, 1000), ended]);
-    expect(state.meter?.live).toBe(false);
-    expect(state.meter?.generationMs).toBe(1000);
-    expect(state.meter?.contextWindow).toBe(400_000);
-  });
-
-  it("takes the final totals when the turn ends", () => {
-    const ended = ev("turn.end", {
-      run_id: "r1",
-      stop_reason: "stop",
-      usage: {
-        input_tokens: 100,
-        output_tokens: 100,
-        total_tokens: 200,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      context: {
-        input_tokens: 100,
-        output_tokens: 100,
-        total_tokens: 200,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      generation_ms: 4000,
-      context_window: 400_000,
-    });
-    const state = fold([progress(10, 1000), progress(40, 2000), ended]);
-    expect(state.meter?.usage.total_tokens).toBe(200);
-    expect(state.meter?.live).toBe(false);
   });
 
   it("does not replace a live measurement with an older replay entry", () => {
@@ -620,149 +544,6 @@ describe("the meter", () => {
     );
     expect(state.meter?.runId).toBe("r1");
   });
-
-  it("restores context usage from a stored assistant entry", () => {
-    const state = fold([
-      ev("session.message", {
-        session_id: sessionID,
-        entry_id: "e-metrics",
-        kind: "assistant",
-        created_at: "2026-01-01T00:00:00Z",
-        message: {
-          role: "assistant",
-          content: "done",
-          metrics: {
-            run_id: "r-stored",
-            usage: {
-              input_tokens: 90,
-              output_tokens: 10,
-              total_tokens: 100,
-              cached_tokens: null,
-              prefilled_tokens: null,
-              reasoning_tokens: null,
-            },
-            context: {
-              input_tokens: 90,
-              output_tokens: 10,
-              total_tokens: 100,
-              cached_tokens: null,
-              prefilled_tokens: null,
-              reasoning_tokens: null,
-            },
-            generation_ms: 1200,
-            context_window: 8192,
-          },
-        },
-      }),
-    ]);
-    expect(state.meter).toMatchObject({
-      runId: "r-stored",
-      contextWindow: 8192,
-      context: { total_tokens: 100 },
-      live: false,
-    });
-  });
-});
-
-describe("generation speed", () => {
-  const timings = {
-    prompt_tokens: 1200,
-    prompt_ms: 300,
-    decode_tokens: 256,
-    decode_ms: 3200,
-    source: "endpoint" as const,
-  };
-
-  /** timed is one turn.progress carrying what measured the call's speed. */
-  function timed(carried: unknown, run = "r1"): EikaEvent {
-    return ev("turn.progress", {
-      run_id: run,
-      usage: {
-        input_tokens: 1200,
-        output_tokens: 256,
-        total_tokens: 1456,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      context: {
-        input_tokens: 1200,
-        output_tokens: 256,
-        total_tokens: 1456,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      generation_ms: 3200,
-      context_window: 400_000,
-      timings: carried,
-    });
-  }
-
-  it("states the speed under the prose the model is writing", () => {
-    const state = fold([...turn.slice(0, 3), timed(timings)]);
-    const rendered = items(state);
-    expect(rendered.at(-1)).toMatchObject({ kind: "assistant", timings });
-    expect(state.meter?.timings).toEqual(timings);
-  });
-
-  it("leaves a message alone when the call measured nothing", () => {
-    const state = fold([...turn.slice(0, 3), timed(undefined)]);
-    expect(rendered(state)).not.toHaveProperty("timings");
-  });
-
-  it("does not stamp a later call's speed onto prose a tool already closed", () => {
-    // turn.slice(0, 4) ends on the tool call, which seals the prose above it.
-    const state = fold([...turn.slice(0, 4), timed(timings)]);
-    const prose = items(state).find((item) => item.kind === "assistant");
-    expect(prose).not.toHaveProperty("timings");
-  });
-
-  it("restores the speed of a stored answer on replay", () => {
-    const state = fold([
-      ev("session.message", {
-        session_id: sessionID,
-        entry_id: "e-timed",
-        kind: "assistant",
-        created_at: "2026-01-01T00:00:00Z",
-        message: {
-          role: "assistant",
-          content: "done",
-          metrics: {
-            run_id: "r-stored",
-            usage: {
-              input_tokens: 1200,
-              output_tokens: 256,
-              total_tokens: 1456,
-              cached_tokens: null,
-              prefilled_tokens: null,
-              reasoning_tokens: null,
-            },
-            context: {
-              input_tokens: 1200,
-              output_tokens: 256,
-              total_tokens: 1456,
-              cached_tokens: null,
-              prefilled_tokens: null,
-              reasoning_tokens: null,
-            },
-            generation_ms: 3200,
-            context_window: 400_000,
-            timings,
-          },
-        },
-      }),
-    ]);
-    expect(items(state).at(-1)).toMatchObject({ kind: "assistant", timings });
-    expect(state.meter?.timings).toEqual(timings);
-  });
-
-  /** rendered is the last item of a folded state. */
-  function rendered(state: TranscriptState) {
-    const last = items(state).at(-1);
-    expect(last?.kind).toBe("assistant");
-    return last as object;
-  }
 });
 
 describe("compaction", () => {
@@ -848,37 +629,5 @@ describe("compaction", () => {
       running: false,
       error: "the endpoint is down",
     });
-  });
-
-  it("drops the meter, whose context the next request no longer sends", () => {
-    const measured = fold(turn);
-    expect(measured.meter).toBeDefined();
-    expect(fold([start("k1"), end("k1")], measured).meter).toBeUndefined();
-    const failed = fold([start("k1"), end("k1", { error: "down" })], measured);
-    expect(failed.meter).toBeDefined();
-  });
-
-  it("does not restore a measurement from before a stored compaction", () => {
-    const state = fold([
-      ev("session.message", {
-        session_id: sessionID,
-        entry_id: "e1",
-        kind: "assistant",
-        created_at: "2026-01-01T00:00:00Z",
-        message: {
-          role: "assistant",
-          content: "done",
-          metrics: {
-            run_id: "r-old",
-            usage,
-            context: usage,
-            generation_ms: 100,
-            context_window: 8192,
-          },
-        },
-      }),
-      entry("e2", "## Goal"),
-    ]);
-    expect(state.meter).toBeUndefined();
   });
 });

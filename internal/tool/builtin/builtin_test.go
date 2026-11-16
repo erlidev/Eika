@@ -79,26 +79,12 @@ func (w *computer) record(_ context.Context, e event.Event) {
 	w.outputs = append(w.outputs, payload.Text)
 }
 
-func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
+// Every tool must offer a description and an object schema, or providers
+// refuse the whole request.
+func TestEveryBuiltinToolHasAValidSchema(t *testing.T) {
 	r, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("Registry: %v", err)
-	}
-	want := []string{
-		"ask_user", "bash", "file_edit", "file_read", "file_write", "project_create", "project_list", "project_open", "project_update",
-		"report", "subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_fetch", "web_search",
-	}
-	got := make([]string, 0, len(want))
-	for _, tl := range r.List() {
-		got = append(got, tl.Name())
-	}
-	if len(got) != len(want) {
-		t.Fatalf("tools = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("tools = %v, want %v", got, want)
-		}
 	}
 	for _, def := range r.Schemas() {
 		if def.Description == "" {

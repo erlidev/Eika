@@ -5,9 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"slices"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -113,55 +110,20 @@ func (t fileTool) Call(ctx context.Context, c tool.CallContext, raw json.RawMess
 	return tool.Text(fmt.Sprintf("%s: wrote %d bytes", t.name, len(data))), nil
 }
 
-// arguments validates the raw bytes before JSON decoding can replace bad UTF-8.
+// arguments decodes a file tool's string arguments and checks their sizes,
+// and the path's shape.
 func (t fileTool) arguments(raw json.RawMessage) (map[string]string, error) {
-	if len(raw) > maxFileArgsBytes || !utf8.Valid(raw) {
-		return nil, fmt.Errorf("arguments must be valid UTF-8 and at most %d bytes", maxFileArgsBytes)
+	allowed := make(map[string]json.RawMessage, len(t.fields()))
+	for _, field := range t.fields() {
+		allowed[field] = nil
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	start, err := dec.Token()
-	if err != nil || start != json.Delim('{') {
-		return nil, fmt.Errorf("arguments must be an object")
-	}
-	args := make(map[string]string)
-	for dec.More() {
-		key, err := dec.Token()
-		if err != nil {
-			return nil, fmt.Errorf("decode argument name: %w", err)
-		}
-		name, ok := key.(string)
-		if !ok || !slices.Contains(t.fields(), name) {
-			return nil, fmt.Errorf("unknown argument %q", key)
-		}
-		if _, exists := args[name]; exists {
-			return nil, fmt.Errorf("duplicate argument %q", name)
-		}
-		var encoded json.RawMessage
-		if err := dec.Decode(&encoded); err != nil {
-			return nil, fmt.Errorf("decode %s: %w", name, err)
-		}
-		var value *string
-		if err := json.Unmarshal(encoded, &value); err != nil || value == nil {
-			return nil, fmt.Errorf("%s must be a string", name)
-		}
-		// Check unpaired UTF-16 escapes in the original encoded bytes.
-		if err := validStringEscapes(encoded); err != nil {
-			return nil, err
-		}
-		if len(*value) > maxFileBytes || strings.ContainsRune(*value, 0) {
-			return nil, fmt.Errorf("%s must have no NUL and at most %d bytes", name, maxFileBytes)
-		}
-		args[name] = *value
-	}
-	if _, err := dec.Token(); err != nil {
-		return nil, fmt.Errorf("decode arguments: %w", err)
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return nil, fmt.Errorf("unexpected data after arguments")
+	args, err := stringArguments(raw, allowed, t.fields())
+	if err != nil {
+		return nil, err
 	}
 	for _, field := range t.fields() {
-		if _, ok := args[field]; !ok {
-			return nil, fmt.Errorf("%s is required", field)
+		if len(args[field]) > maxFileBytes || strings.ContainsRune(args[field], 0) {
+			return nil, fmt.Errorf("%s must have no NUL and at most %d bytes", field, maxFileBytes)
 		}
 	}
 	if strings.TrimSpace(args["path"]) == "" || strings.TrimSpace(args["path"]) != args["path"] || len(args["path"]) > maxFilePathBytes {
@@ -201,34 +163,3 @@ func readTextFile(ctx context.Context, e executor.Executor, path string, limit i
 }
 
 var _ tool.Tool = fileTool{}
-
-// validStringEscapes rejects the unpaired surrogate escapes JSON permits but
-// UTF-8 cannot represent. JSON syntax has already been checked by the decoder.
-func validStringEscapes(raw []byte) error {
-	for i := 1; i < len(raw)-1; i++ {
-		if raw[i] != '\\' {
-			continue
-		}
-		i++
-		if raw[i] != 'u' {
-			continue
-		}
-		n, err := strconv.ParseUint(string(raw[i+1:i+5]), 16, 16)
-		if err != nil {
-			return fmt.Errorf("invalid Unicode escape: %w", err)
-		}
-		i += 4
-		if n < 0xd800 || n > 0xdfff {
-			continue
-		}
-		if n > 0xdbff || i+6 >= len(raw) || raw[i+1] != '\\' || raw[i+2] != 'u' {
-			return fmt.Errorf("unpaired Unicode surrogate")
-		}
-		low, err := strconv.ParseUint(string(raw[i+3:i+7]), 16, 16)
-		if err != nil || low < 0xdc00 || low > 0xdfff {
-			return fmt.Errorf("unpaired Unicode surrogate")
-		}
-		i += 6
-	}
-	return nil
-}

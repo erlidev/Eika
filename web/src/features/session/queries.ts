@@ -14,7 +14,6 @@ import {
   getSessionConfiguration,
   getSessionOutline,
   getSessionPrediction,
-  listTools,
   postMessage,
   setSessionHead,
 } from "@/api/routes";
@@ -30,7 +29,6 @@ import type {
   Session,
   SessionConfiguration,
   SessionOutline,
-  Tool,
 } from "@/api/types";
 import { draftsOf } from "@/features/session/attachments";
 import { useSessionStore } from "@/features/session/store";
@@ -194,19 +192,6 @@ export function useRewind(
       edit(text);
       editImages(draftsOf(images));
     },
-  });
-}
-
-/**
- * useTools lists every tool a run can offer. The built-in ones are the
- * harness's build and the MCP servers' change only with an `mcp.server`
- * event, which invalidates this, so it is never refetched otherwise.
- */
-export function useTools(): UseQueryResult<Tool[]> {
-  return useQuery({
-    queryKey: queryKeys.tools(),
-    queryFn: ({ signal }) => listTools(signal),
-    staleTime: Infinity,
   });
 }
 

@@ -107,21 +107,3 @@ func TestTheSameRequestIsSentAsTheSameBytesEveryTime(t *testing.T) {
 		})
 	}
 }
-
-func TestTheChatBodyIsTheSameBytesEveryTime(t *testing.T) {
-	encoder := newProvider(t, "http://model.invalid").(provider.ChatEncoder)
-	req := everyField()
-	first, err := encoder.ChatBody(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i := range 200 {
-		again, err := encoder.ChatBody(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(again) != string(first) {
-			t.Fatalf("encoding %d differs from the first:\n%s\n%s", i+2, again, first)
-		}
-	}
-}

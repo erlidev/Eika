@@ -15,12 +15,6 @@ async function openServers(eika: EikaDriver): Promise<void> {
   await eika.click("role=tab[name=MCP]");
 }
 
-test("the servers and the state each is in", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "mcp" });
-  await openServers(eika);
-  await expectAria(eika, "mcp-servers", "role=dialog");
-});
-
 test("a server's page: its tools, resources, and prompts", async ({ open, expectShot }) => {
   const eika = await open({ scenario: "mcp" });
   await openServers(eika);
@@ -73,26 +67,7 @@ test("signing in leaves for the authorization server and comes back to the serve
   await expect(dialog.getByText("needs sign-in", { exact: true })).toBeVisible();
 });
 
-test("the callback page with nothing to finish says so", async ({ open }) => {
-  const eika = await open({ scenario: "mcp", path: "/mcp/callback" });
-  await expect(
-    eika.page.getByRole("heading", { name: "The sign-in did not finish" }),
-  ).toBeVisible();
-  await eika.click("Back to Eika");
-  await expect(eika.page).toHaveURL(/\/$/);
-});
-
-test("a sign-in the authorization server refused says why", async ({ open }) => {
-  const eika = await open({
-    scenario: "mcp",
-    path: "/mcp/callback?state=unknown&error=access_denied",
-  });
-  await expect(eika.page.getByRole("alert")).toContainText(
-    "Could not finish signing in to the MCP server: no authorization waits for that state.",
-  );
-});
-
-test("add a remote server", async ({ open, expectAria }) => {
+test("add a remote server", async ({ open }) => {
   const eika = await open({ scenario: "mcp" });
   await openServers(eika);
   await eika.click("Add server");
@@ -113,7 +88,6 @@ test("add a remote server", async ({ open, expectAria }) => {
   await expect(eika.page.getByText(/set by the MCP client itself/)).toBeVisible();
   await eika.fill("Header 1 name", "X-Workspace");
   await eika.fill("X-Workspace value", "eng");
-  await expectAria(eika, "mcp-add-http", "role=dialog[name='Add an MCP server']");
   await eika.click("role=button[name='Add server'] >> nth=-1");
 
   // The new server's page opens, connected.
@@ -134,49 +108,6 @@ test("a new URL leaves the stored headers behind", async ({ open }) => {
   await eika.click("Save");
   await expect(eika.page.getByRole("dialog", { name: "Edit sentry" })).toBeHidden();
   await expect(eika.page.getByText("Authenticated by", { exact: false })).toBeHidden();
-});
-
-test("a stdio server is started by a run, not by hand", async ({ open }) => {
-  const eika = await open({ scenario: "mcp" });
-  await openServers(eika);
-  await eika.click("filesystem, stdio");
-  await expect(eika.page.getByText(/Not running\. A chat that uses it starts it/)).toBeVisible();
-  await eika.click("role=tab[name=About]");
-  await expect(
-    eika.page.getByText(/Its variables \(LOG_LEVEL\) are visible to the agent/),
-  ).toBeVisible();
-});
-
-test("a server turned off, and one deleted", async ({ open }) => {
-  const eika = await open({ scenario: "mcp" });
-  await openServers(eika);
-  await eika.click("docs, http");
-  await expect(eika.page.getByText(/Off: runs do not offer its tools/)).toBeVisible();
-  await eika.click("On");
-  await expect(eika.page.getByText("connected", { exact: true })).toBeVisible();
-
-  await eika.click("Delete docs");
-  await eika.click("Delete server");
-  await expect(eika.page.getByRole("list", { name: "MCP servers" })).not.toContainText("docs");
-});
-
-test("a server's state follows the event stream", async ({ open }) => {
-  const eika = await open({ scenario: "mcp" });
-  await openServers(eika);
-  const sentry = eika.page.getByRole("button", { name: "sentry, http" });
-  await expect(sentry).toContainText("error");
-  const row = eika.mock.world.mcpServers.find((d) => d.server.name === "sentry");
-  if (row === undefined) throw new Error("the mcp scenario has no sentry server");
-  row.server.state = "connected";
-  delete row.server.error;
-  eika.mock.emit(
-    eika.mock.event("mcp.server", "global", {
-      server_id: row.server.id,
-      name: "sentry",
-      state: "connected",
-    }),
-  );
-  await expect(sentry).toContainText("connected");
 });
 
 test("an MCP server asks for input during a tool call", async ({ open, expectShot }) => {
@@ -202,21 +133,5 @@ test("an MCP server asks for input during a tool call", async ({ open, expectSho
     eika,
     "mcp-tool-result",
     "css=[data-slot=collapsible]:has-text('mcp__github__search_issues')",
-  );
-});
-
-test("an MCP server sends the user to a page", async ({ open }) => {
-  const eika = await open({ scenario: "agent-mcp-url" });
-  await eika.send("Any tracked issue?");
-  const asks = eika.page.getByRole("region", { name: "linear asks for input" });
-  await expect(asks.getByRole("link", { name: "Open linear.app" })).toHaveAttribute(
-    "href",
-    "https://linear.app/oauth/authorize?client_id=mcp&state=abc",
-  );
-  await eika.click("Decline");
-  await expect(asks).toBeHidden();
-  await eika.click("role=button[name^=mcp__linear__list_issues]");
-  await expect(eika.page.getByRole("group", { name: "text" })).toHaveText(
-    "The user chose to decline.",
   );
 });

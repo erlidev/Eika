@@ -3,8 +3,8 @@
 Everything the user configures after setup, in one dialog of tabs.
 
 - `SettingsDialog.tsx` is the dialog. Its open state and tab live in
-  `store.ts`, so the workbench, the command palette, and a session's "no
-  model" notice can all open it on the right tab.
+  `store.ts`, so the navigation and a session's "no model" notice can both
+  open it on the right tab.
 - Models is `features/providers/ModelsPanel`. General is `GeneralSettings.tsx`:
   `DefaultModelSelect.tsx`, `ModelClasses.tsx` (a model per class, with the
   fallback each class has and the classes that share a pool, from
@@ -23,11 +23,11 @@ Everything the user configures after setup, in one dialog of tabs.
   harness's text limit checked beside each field (`lib/textLimit.ts`).
 - `queries.ts` wraps `/api/settings` and `/api/system`. `settingKeys` names
   the keys the harness reads itself and validates; any other key is stored
-  as it comes. `setupComplete` is what the app checks before the workbench.
+  as it comes. `setupComplete` is what the app checks before the shell.
 
 The settings table holds arbitrary JSON, so `Settings` is
 `Record<string, unknown>` and every reader narrows what it wants with
-`settingString` and `settingNumber`.
+`settingString`.
 
 Every form says what keeps it from saving next to the field at fault, and
 every failed read shows `LoadError` from `components/Notice` with a Retry.

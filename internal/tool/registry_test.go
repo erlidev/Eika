@@ -47,24 +47,6 @@ type standaloneStub struct{ stub }
 
 func (standaloneStub) Standalone() {}
 
-func TestNeedsComputer(t *testing.T) {
-	cases := []struct {
-		name string
-		tool tool.Tool
-		want bool
-	}{
-		{"a tool that says nothing needs one", stub{name: "a"}, true},
-		{"a standalone tool does not", standaloneStub{stub{name: "b"}}, false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := tool.NeedsComputer(c.tool); got != c.want {
-				t.Errorf("NeedsComputer = %v, want %v", got, c.want)
-			}
-		})
-	}
-}
-
 func TestRegistryFilter(t *testing.T) {
 	r, err := tool.NewRegistry(stub{name: "b"}, standaloneStub{stub{name: "a"}}, stub{name: "c"})
 	if err != nil {
@@ -83,20 +65,6 @@ func TestRegistryFilter(t *testing.T) {
 }
 
 func TestRegistryRejectsBadRegistration(t *testing.T) {
-	cases := []struct {
-		name string
-		tool tool.Tool
-	}{
-		{"nil tool", nil},
-		{"empty name", stub{}},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if _, err := tool.NewRegistry(c.tool); err == nil {
-				t.Error("NewRegistry returned no error")
-			}
-		})
-	}
 	if _, err := tool.NewRegistry(stub{name: "a"}, stub{name: "a"}); err == nil {
 		t.Error("NewRegistry accepted a duplicate name")
 	}

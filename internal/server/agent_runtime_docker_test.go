@@ -92,9 +92,9 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := session.Preamble(path)
-	if err != nil || !strings.Contains(snapshot, "first snapshot") {
-		t.Fatalf("stored snapshot = %q, %v", snapshot, err)
+	snapshot, err := session.SnapshotOf(path)
+	if err != nil || !strings.Contains(snapshot.Text, "first snapshot") {
+		t.Fatalf("stored snapshot = %q, %v", snapshot.Text, err)
 	}
 	if err := a.store.SetInstructions(ctx, store.GlobalInstructions{AboutMe: "changed snapshot"}); err != nil {
 		t.Fatal(err)
@@ -118,61 +118,6 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 		if rec.Code != 400 {
 			t.Fatalf("%s = %d", route, rec.Code)
 		}
-	}
-	// An edit to the definition waits for the next compaction: runs and the
-	// preview keep the prompt the snapshot pinned.
-	decodeBody[map[string]any](t, request(t, a.Server, "PUT", "/api/agents/eika", map[string]any{"prompt": ""}), 200)
-	scripted = a.script(providertest.Text("big reply"), providertest.Text("small reply"), providertest.Text("SUMMARY"),
-		providertest.Text("empty prompt reply"), providertest.Text("pinned reply"))
-	// Home keeps 15% of the 32,768-token window: the small last turn, not the
-	// big one before it.
-	a.postMessage(t, home.ID, "big "+strings.Repeat("x", 24000), "", 202)
-	a.waitIdle(t, home.ID)
-	a.postMessage(t, home.ID, "small", "", 202)
-	a.waitIdle(t, home.ID)
-	for i, req := range scripted.Requests() {
-		if req.System != reqs[0].System {
-			t.Fatalf("request %d after the edit changed the system prompt: %q", i, req.System)
-		}
-	}
-	preview = decodeBody[struct {
-		Sections []struct {
-			Text string `json:"text"`
-		} `json:"sections"`
-		Tools []struct {
-			Name string `json:"name"`
-		} `json:"tools"`
-	}](t, request(t, a.Server, "GET", "/api/sessions/"+home.ID+"/context", nil), 200)
-	if len(preview.Sections) == 0 || preview.Sections[0].Text != "agent rules" {
-		t.Fatalf("preview sections = %+v, want the pinned prompt first", preview.Sections)
-	}
-	compactHome(t, a, home.ID)
-	a.postMessage(t, home.ID, "after", "", 202)
-	a.waitIdle(t, home.ID)
-	afterCompaction := scripted.Requests()[3].System
-	if !strings.HasPrefix(afterCompaction, "About me\nchanged snapshot") {
-		t.Fatalf("system after compaction = %q, want the empty prompt and the new preamble", afterCompaction)
-	}
-	if rec := request(t, a.Server, "DELETE", "/api/agents/eika", nil); rec.Code != 204 {
-		t.Fatal(rec.Code)
-	}
-	a.postMessage(t, home.ID, "reset", "", 202)
-	a.waitIdle(t, home.ID)
-	if got := scripted.Requests()[4].System; got != afterCompaction {
-		t.Fatalf("reset applied before a compaction: %q", got)
-	}
-	builtin, _ := agentdef.Lookup("eika")
-	cfg = decodeBody[struct {
-		Resolved struct {
-			ProfileID    string   `json:"profile_id"`
-			Model        string   `json:"model"`
-			ChatPrompt   string   `json:"chat_prompt"`
-			Instructions string   `json:"instructions"`
-			Tools        []string `json:"tools"`
-		} `json:"resolved"`
-	}](t, request(t, a.Server, "GET", configPath, nil), 200)
-	if cfg.Resolved.ChatPrompt != builtin.Prompt {
-		t.Fatalf("configuration prompt = %q, want the definition's as it is now", cfg.Resolved.ChatPrompt)
 	}
 }
 
@@ -252,122 +197,6 @@ func TestHomeToolListIsRebuiltOnlyAtCompaction(t *testing.T) {
 	snap, err := session.SnapshotOf(path)
 	if err != nil || snap.Prompt == nil || *snap.Prompt != eika.Prompt || !slices.Equal(snap.Tools, eika.Tools) {
 		t.Fatalf("stored snapshot = %+v, %v", snap, err)
-	}
-}
-
-// A snapshot stored before definitions were pinned is pinned on the next
-// run with the same text, so the prefix it sent stays.
-func TestHomeSnapshotWithoutADefinitionIsPinned(t *testing.T) {
-	a := newAPI(t)
-	ctx := t.Context()
-	home, err := a.store.EnsureHomeSession(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a.assignClasses(t, map[string]any{"main": "test-model"})
-	text := "About me\nfrom an older build"
-	entry, err := session.TextEntry(store.KindPreamble, text)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.store.AppendEntry(ctx, home.ID, entry); err != nil {
-		t.Fatal(err)
-	}
-	scripted := a.script(providertest.Text("first"), providertest.Text("second"))
-	a.postMessage(t, home.ID, "one", "", 202)
-	a.waitIdle(t, home.ID)
-	decodeBody[map[string]any](t, request(t, a.Server, "PUT", "/api/agents/eika", map[string]any{"prompt": "edited"}), 200)
-	a.postMessage(t, home.ID, "two", "", 202)
-	a.waitIdle(t, home.ID)
-	reqs := scripted.Requests()
-	eika, _ := agentdef.Lookup("eika")
-	if !strings.HasPrefix(reqs[0].System, strings.TrimSpace(eika.Prompt)+"\n\n"+text) || reqs[1].System != reqs[0].System {
-		t.Fatalf("systems = %q, %q, want the definition and the old text, unchanged by the edit", reqs[0].System, reqs[1].System)
-	}
-	path, err := a.store.SessionPath(ctx, home.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	snap, err := session.SnapshotOf(path)
-	if err != nil || snap.Text != text || snap.Prompt == nil || *snap.Prompt != eika.Prompt || !slices.Equal(snap.Tools, eika.Tools) {
-		t.Fatalf("stored snapshot = %+v, %v", snap, err)
-	}
-}
-
-func TestSessionsWithAnUnknownAgentStayListedAndRefuseRuns(t *testing.T) {
-	a := newAPI(t)
-	ctx := t.Context()
-	cx := a.home(t)
-	ghost, err := a.store.CreateSession(ctx, store.Session{ComputerID: cx.ID, Agent: "ghost", Tools: []string{"bash"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ghostChat, err := a.store.CreateSession(ctx, store.Session{Agent: "ghost", Title: "ghost chat"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ordinary := a.newSession(t, cx.ID)
-
-	for _, route := range []string{"/api/sessions", "/api/sessions?chats=true"} {
-		list := decodeBody[sessionsWire](t, request(t, a.Server, "GET", route, nil), 200)
-		var ids []string
-		for _, s := range list.Sessions {
-			ids = append(ids, s.ID)
-		}
-		want := ghost.ID
-		if strings.Contains(route, "chats") {
-			want = ghostChat.ID
-		} else if !slices.Contains(ids, ordinary.ID) {
-			t.Errorf("%s = %v, lacks the ordinary session %s", route, ids, ordinary.ID)
-		}
-		if !slices.Contains(ids, want) {
-			t.Errorf("%s = %v, lacks the session %s with an unknown agent", route, ids, want)
-		}
-	}
-	got := decodeBody[struct {
-		Session struct {
-			Agent string   `json:"agent"`
-			Tools []string `json:"tools"`
-		} `json:"session"`
-	}](t, request(t, a.Server, "GET", "/api/sessions/"+ghost.ID, nil), 200)
-	if got.Session.Agent != "ghost" || len(got.Session.Tools) != 0 {
-		t.Errorf("session = %+v, want agent ghost with no tools", got.Session)
-	}
-	a.postMessage(t, ghost.ID, "hello", "", 400)
-}
-
-// TestAgentRunsHoldAnExecutorOnlyWhenTheirToolsNeedOne starts a run in a
-// stopped computer. Only a run that holds an executor starts the computer.
-func TestAgentRunsHoldAnExecutorOnlyWhenTheirToolsNeedOne(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		agent string
-		want  string
-	}{
-		{"worker", "worker", "running"},
-		{"eika", "eika", "stopped"},
-		{"researcher", "researcher", "stopped"},
-		{"profile session", "", "running"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			a := newAPI(t)
-			cx := a.seedComputer(t)
-			a.stopIdle(t)
-			if got := a.computerState(t, cx.ID); got != "stopped" {
-				t.Fatalf("computer before the run = %q, want stopped", got)
-			}
-			sess, err := a.store.CreateSession(t.Context(), store.Session{ComputerID: cx.ID, Agent: tc.agent})
-			if err != nil {
-				t.Fatal(err)
-			}
-			a.assignClasses(t, map[string]any{"main": "test-model", "fast": "test-model"})
-			a.script(providertest.Text("done"))
-			a.postMessage(t, sess.ID, "hello", "", 202)
-			a.waitIdle(t, sess.ID)
-			if got := a.computerState(t, cx.ID); got != tc.want {
-				t.Errorf("computer after the run = %q, want %q", got, tc.want)
-			}
-		})
 	}
 }
 

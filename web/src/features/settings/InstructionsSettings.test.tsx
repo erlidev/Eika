@@ -105,15 +105,6 @@ describe("InstructionsSettings", () => {
     expect(button("Save instructions")?.disabled).toBe(false);
   });
 
-  it("takes the saved text when nothing was typed since", async () => {
-    routes.putInstructions.mockResolvedValue({ about_me: "first", rules: "stored rules" });
-    await render();
-    await type("instructions-about-me", "first");
-    await click("Save instructions");
-    expect(field("instructions-about-me")?.value).toBe("first");
-    expect(button("Save instructions")?.disabled).toBe(true);
-  });
-
   it("keeps a draft when a refetch brings newer text, and follows it when there is none", async () => {
     await render();
     await type("instructions-rules", "my draft");

@@ -377,7 +377,7 @@ page stays current without polling.
 
 Published on `global` when an untitled session is named after its first
 message by the model of the `fast` class (the `model_classes` setting).
-It goes to every client, since every sidebar lists every session; a client
+It goes to every client, since any client may list any session; a client
 refetches its session lists.
 
 | Field | Type | Meaning |

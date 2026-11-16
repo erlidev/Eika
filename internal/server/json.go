@@ -42,38 +42,27 @@ func decodeJSON[T any](r *http.Request) (T, error) {
 }
 
 // decodeJSONWithin reads a JSON request body of at most limit bytes, for the
-// one route whose body carries files.
+// one route whose body carries files. A body that is not valid UTF-8 is
+// refused before encoding/json can replace the bad bytes silently.
 func decodeJSONWithin[T any](r *http.Request, limit int64) (T, error) {
 	var v T
-	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, limit))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&v); err != nil {
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, limit))
+	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			return v, tooLargef("the request body is over the limit of %d bytes", limit)
 		}
+		return v, invalidf("read request body: %v", err)
+	}
+	if !utf8.Valid(raw) {
+		return v, invalidf("request body must be valid UTF-8")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&v); err != nil {
 		return v, invalidf("decode request body: %v", err)
 	}
 	return v, nil
-}
-
-// decodeUTF8JSON rejects invalid bytes before encoding/json can replace them.
-func decodeUTF8JSON[T any](r *http.Request) (T, error) {
-	var zero T
-	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxRequestBytes))
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			return zero, tooLargef("the request body is over the limit of %d bytes", maxRequestBytes)
-		}
-		return zero, invalidf("read request body: %v", err)
-	}
-	if !utf8.Valid(raw) {
-		return zero, invalidf("request body must be valid UTF-8")
-	}
-	clone := r.Clone(r.Context())
-	clone.Body = io.NopCloser(bytes.NewReader(raw))
-	return decodeJSON[T](clone)
 }
 
 // The error codes the API reports. One code per kind of failure, so a client

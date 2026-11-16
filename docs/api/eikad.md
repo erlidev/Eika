@@ -124,22 +124,6 @@ running two seconds later is sent SIGTERM, then SIGKILL after two more. It
 leads its own process group, whatever it started goes with it, and
 `EIKAD_TOKEN` is removed from its environment as it is for `/exec`.
 
-## GET /watch?path=
-
-Upgrades to a WebSocket that reports changes under `path`. The daemon polls
-once a second and compares modification times and sizes, so a change is
-reported within about a second of happening.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `path` | string | Changed file, relative to the computer root. |
-| `kind` | string | `created`, `modified`, or `deleted`. |
-| `is_dir` | bool | Whether the changed file is a directory. |
-| `time` | RFC 3339 timestamp, UTC | When the daemon observed the change. |
-
-The first snapshot is taken before the connection is accepted, so no change
-made after the client connects is missed. At most 100 000 files are watched.
-
 ## PUT /environment
 
 Replaces the `KEY=VALUE` entries the daemon adds to the environment of every

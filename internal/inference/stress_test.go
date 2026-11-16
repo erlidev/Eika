@@ -76,19 +76,3 @@ func TestConcurrentCallsNeverOverfillAPool(t *testing.T) {
 	}
 	t.Logf("%d admitted, %d gave up waiting, %d preempted", admitted.Load(), failed.Load(), preempted.Load())
 }
-
-// BenchmarkUncontendedLease is what the queue adds to a model call when
-// nothing else wants the pool: one Acquire and one Release.
-func BenchmarkUncontendedLease(b *testing.B) {
-	q := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	q.SetPools([]Pool{{Name: "gpu", Slots: 2, KV: KVShared, Cache: 131072}})
-	ctx := context.Background()
-	need := Need{Pool: "gpu", Priority: Interactive, Tokens: 20000}
-	for b.Loop() {
-		l, err := q.Acquire(ctx, need)
-		if err != nil {
-			b.Fatal(err)
-		}
-		l.Release()
-	}
-}

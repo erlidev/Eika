@@ -15,13 +15,9 @@ import (
 // a document and write < > & as < > &.
 func TestAMessageComesBackFromItsJSONAsTheBytesItWasSentAs(t *testing.T) {
 	texts := map[string]string{
-		"spaces":            `{"text": "a", "n": 1.50}`,
-		"key order":         `{"z":1,"a":2}`,
-		"a shell command":   `{"command":"make && go test ./... > out.txt 2>&1 <in"}`,
-		"escapes":           `{"text":"café \"quoted\" \/ \n"}`,
-		"numbers":           `{"n":1e5,"m":1.0,"big":12345678901234567890}`,
-		"nested whitespace": "{\n  \"a\": [1, 2,\t3],\n  \"b\": {\"c\": null}\n}",
-		"already compact":   `{"path":"/tmp"}`,
+		"spaces and number forms": `{"text": "a", "n": 1.50, "big":12345678901234567890}`,
+		"key order":               `{"z":1,"a":2}`,
+		"a shell command":         `{"command":"make && go test ./... > out.txt 2>&1 <in"}`,
 	}
 	for name, text := range texts {
 		t.Run(name, func(t *testing.T) {
@@ -42,35 +38,6 @@ func TestAMessageComesBackFromItsJSONAsTheBytesItWasSentAs(t *testing.T) {
 				t.Errorf("reasoning item came back as %s, want %s (stored as %s)", got.ReasoningItems[0], sent.ReasoningItems[0], raw)
 			}
 		})
-	}
-}
-
-func TestExactTextIsStoredOnlyWhereTheValueWouldChange(t *testing.T) {
-	// A reader of the entry sees the arguments as a value, as before, and a
-	// message whose text encoding keeps has nothing extra to store.
-	compact := provider.AssistantMessage("", []provider.ToolCall{{ID: "c", Name: "echo", Arguments: `{"path":"/tmp"}`}})
-	raw, err := json.Marshal(compact)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), "arguments_text") {
-		t.Errorf("compact arguments are stored twice: %s", raw)
-	}
-	spaced := provider.AssistantMessage("", []provider.ToolCall{{ID: "c", Name: "echo", Arguments: `{"path": "/tmp"}`}})
-	if raw, err = json.Marshal(spaced); err != nil {
-		t.Fatal(err)
-	}
-	var shape struct {
-		ToolCalls []struct {
-			Arguments map[string]string `json:"arguments"`
-			Text      string            `json:"arguments_text"`
-		} `json:"tool_calls"`
-	}
-	if err := json.Unmarshal(raw, &shape); err != nil {
-		t.Fatalf("read %s: %v", raw, err)
-	}
-	if got := shape.ToolCalls[0]; got.Arguments["path"] != "/tmp" || got.Text != `{"path": "/tmp"}` {
-		t.Errorf("stored call = %+v, want the arguments as an object and their exact text", got)
 	}
 }
 

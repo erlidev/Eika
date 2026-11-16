@@ -97,12 +97,6 @@ export function settingString(state: SettingsState | undefined, key: string): st
   return typeof value === "string" ? value : "";
 }
 
-/** settingNumber reads a numeric setting, undefined when it is absent. */
-export function settingNumber(state: SettingsState | undefined, key: string): number | undefined {
-  const value = state?.settings[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
 /**
  * modelClassAssignments reads which model each class is assigned, by class.
  * A value that is not an object of names reads as no assignments.

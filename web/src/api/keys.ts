@@ -7,11 +7,7 @@
 export const queryKeys = {
   /** allSessions is every session, which Activity reads the subagents of; it sits under the sessions prefix too. */
   allSessions: () => ["sessions", "all"] as const,
-  /** chats sits under the sessions prefix, so invalidating sessions refreshes it. */
-  chats: () => ["sessions", "chats"] as const,
-  /** computerSessions sits under the sessions prefix too, for the same reason. */
-  computerSessions: (computerId: string) => ["sessions", "computer", computerId] as const,
-  /** computers is the list of computers, of which the sidebar reads the home one. */
+  /** computers is the list of computers, of which the session view reads the home one. */
   computers: () => ["computers"] as const,
   /** home is the one home session, the conversation Chat shows. */
   home: () => ["home"] as const,
@@ -19,21 +15,15 @@ export const queryKeys = {
   sessionOutline: (id: string) => ["session", id, "outline"] as const,
   runStatus: (sessionId: string) => ["session", sessionId, "run"] as const,
   sessionConfiguration: (id: string) => ["session", id, "configuration"] as const,
-  /** sessionContext without a model is the prefix of every preview of the session. */
-  sessionContext: (id: string, model?: string) =>
-    model === undefined
-      ? (["session", id, "context"] as const)
-      : (["session", id, "context", model] as const),
+  /** sessionContext is the prefix of what the session's next request is expected to be. */
+  sessionContext: (id: string) => ["session", id, "context"] as const,
   /**
    * sessionPrediction sits under the context prefix, so whatever invalidates the
-   * previews of a session (a turn that ends, a compaction, a change of tools)
-   * invalidates its prediction too.
+   * session's context (a turn that ends, a compaction) invalidates its
+   * prediction too.
    */
   sessionPrediction: (id: string, model: string) =>
     ["session", id, "context", "prediction", model] as const,
-  /** sessionCalls is the prefix of the session's recorded model calls and each one. */
-  sessionCalls: (id: string) => ["session", id, "calls"] as const,
-  sessionCall: (id: string, callId: string) => ["session", id, "calls", callId] as const,
   /** projects is the list of projects, which name what a subagent works on. */
   projects: () => ["projects"] as const,
   /** agents is the built-in agents with the user's overrides. */
@@ -45,7 +35,6 @@ export const queryKeys = {
   providers: () => ["providers"] as const,
   system: () => ["system"] as const,
   searchStatus: () => ["search", "status"] as const,
-  tools: () => ["tools"] as const,
   /** mcpServers without an id is the prefix of every MCP server query. */
   mcpServers: () => ["mcp"] as const,
   mcpServer: (id: string) => ["mcp", id] as const,

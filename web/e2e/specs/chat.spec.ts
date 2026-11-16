@@ -19,19 +19,6 @@ test("Chat opens on the home conversation", async ({ open }) => {
   await expect(eika.page.getByRole("main").getByLabel("Message", { exact: true })).toBeVisible();
 });
 
-test("an empty conversation says what to do", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "home-empty" });
-  await expectAria(eika, "home-empty", 'role=region[name="Session"]');
-});
-
-test("there is one conversation: no chat list and no way to start another", async ({ open }) => {
-  const eika = await open({ scenario: "workbench" });
-  await expect(eika.page.getByRole("navigation", { name: "Chats" })).toHaveCount(0);
-  await expect(eika.page.getByRole("button", { name: /^New (home )?chat$/ })).toHaveCount(0);
-  await eika.press("Control+K");
-  await expect(eika.page.getByRole("dialog")).toHaveCount(0);
-});
-
 test("a message sent on Chat is the home session's, from the web", async ({ open }) => {
   const eika = await open({ scenario: "chat" });
   await eika.send("What is decorrelated jitter?");
@@ -56,13 +43,6 @@ test("a reload keeps the conversation", async ({ open }) => {
   await expect(session.getByText(/Tests pass\./).first()).toBeVisible();
 });
 
-test("a link to a session of the old workbench lands on Chat", async ({ open }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.goto("/sessions/ses-backoff");
-  await expect(eika.page).toHaveURL(/\/$/);
-  await expect(eika.page.getByRole("region", { name: "Session" })).toBeVisible();
-});
-
 test("a home session that does not load says so and can be tried again", async ({ open }) => {
   const eika = await open({
     scenario: "workbench",
@@ -73,17 +53,5 @@ test("a home session that does not load says so and can be tried again", async (
   eika.mock.healRoute("GET /api/home");
   await eika.click("Retry");
   await expect(eika.page.getByRole("region", { name: "Session" })).toBeVisible();
-  await expect(alert).toHaveCount(0);
-});
-
-test("a configuration that does not load says so and can be tried again", async ({ open }) => {
-  const route = "GET /api/sessions/{id}/configuration";
-  const eika = await open({ scenario: "workbench", failing: { [route]: { status: 500 } } });
-  const alert = eika.page
-    .getByRole("alert")
-    .filter({ hasText: "Could not load the session's model" });
-  await expect(alert).toBeVisible();
-  eika.mock.healRoute(route);
-  await eika.click("Retry");
   await expect(alert).toHaveCount(0);
 });

@@ -42,9 +42,7 @@ type Computers interface {
 	Create(ctx context.Context, spec computer.Spec) (computer.Computer, error)
 	Start(ctx context.Context, cx *computer.Computer) error
 	Stop(ctx context.Context, cx *computer.Computer) error
-	Destroy(ctx context.Context, cx *computer.Computer) error
 	Inspect(ctx context.Context, id string) (computer.Computer, error)
-	List(ctx context.Context) ([]computer.Computer, error)
 	Executor(cx computer.Computer) (executor.Executor, error)
 	// Process starts a long-lived process in a running computer, which is
 	// how a stdio MCP server runs there. It is not part of the executor, so

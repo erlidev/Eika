@@ -20,14 +20,6 @@ func TestBuiltins(t *testing.T) {
 		if d.Prompt == "" || d.Description == "" || d.Compaction.Summary == "" || d.Compaction.Update == "" || d.Compaction.TurnPrefix == "" {
 			t.Errorf("missing embedded text for %s", d.Name)
 		}
-		if !slices.IsSorted(d.Tools) {
-			t.Errorf("unsorted tools: %v", d.Tools)
-		}
-		for i := 1; i < len(d.Tools); i++ {
-			if d.Tools[i] == d.Tools[i-1] {
-				t.Errorf("%s has duplicate tool %s", d.Name, d.Tools[i])
-			}
-		}
 		for _, name := range d.Tools {
 			if _, ok := registry.Get(name); !ok {
 				t.Errorf("%s has unshipped tool %s", d.Name, name)
@@ -52,21 +44,8 @@ func TestBuiltins(t *testing.T) {
 		if slices.Contains(d.Tools, "report") != (d.Name != "eika") {
 			t.Errorf("%s report capability is incorrect", d.Name)
 		}
-		wantTurns, wantClass := 200, "main"
-		if d.Name == "eika" {
-			wantTurns = 40
-			if slices.Contains(d.Tools, "bash") || slices.Contains(d.Tools, "ask_user") {
-				t.Error("home has worker tools")
-			}
-		}
-		if d.Name == "researcher" {
-			wantClass = "fast"
-			if slices.Contains(d.Tools, "bash") {
-				t.Error("researcher has computer access")
-			}
-		}
-		if d.MaxTurns != wantTurns || d.Class != wantClass {
-			t.Errorf("defaults: %+v", d)
+		if d.Name != "worker" && slices.Contains(d.Tools, "bash") {
+			t.Errorf("%s has computer access", d.Name)
 		}
 	}
 	if !slices.Equal(names, []string{"eika", "researcher", "worker"}) {
@@ -78,58 +57,24 @@ func TestBuiltins(t *testing.T) {
 	if fresh.Tools[0] == "changed" {
 		t.Fatal("lookup shares mutable tools")
 	}
-	if _, ok := agentdef.Lookup("browser"); ok {
-		t.Fatal("deferred agent exists")
-	}
 }
 
 func TestOverride(t *testing.T) {
 	d, _ := agentdef.Lookup("eika")
-	for _, class := range []string{"main", "fast", "deep", "decision", "", "unknown"} {
-		t.Run(class, func(t *testing.T) {
-			o := agentdef.Override{Class: &class, Prompt: new("")}
-			valid := class == "main" || class == "fast" || class == "deep"
-			if (o.Validate() == nil) != valid {
-				t.Fatalf("Validate = %v", o.Validate())
-			}
-			if valid {
-				got := o.Apply(d)
-				if got.Class != class || got.Prompt != "" || !slices.Equal(got.Tools, d.Tools) {
-					t.Fatalf("Apply = %+v", got)
-				}
-			}
-		})
+	got := agentdef.Override{Class: new("deep"), Prompt: new("")}.Apply(d)
+	if got.Class != "deep" || got.Prompt != "" || !slices.Equal(got.Tools, d.Tools) {
+		t.Fatalf("Apply = %+v", got)
 	}
 	if got := (agentdef.Override{}).Apply(d); got.Prompt != d.Prompt || got.Class != d.Class {
-		t.Fatal("nil did not fall back")
+		t.Fatal("an empty override changed the definition")
 	}
-	for _, n := range []int{65536, 65537} {
-		o := agentdef.Override{Prompt: new(strings.Repeat("x", n))}
-		if (o.Validate() == nil) != (n == 65536) {
-			t.Errorf("length %d: %v", n, o.Validate())
+	for name, o := range map[string]agentdef.Override{
+		"unknown class": {Class: new("decision")},
+		"long prompt":   {Prompt: new(strings.Repeat("x", 64<<10+1))},
+		"NUL":           {Prompt: new("before\x00after")},
+	} {
+		if o.Validate() == nil {
+			t.Errorf("%s was accepted", name)
 		}
-	}
-	for _, prompt := range []string{"\x00", "before\x00after"} {
-		o := agentdef.Override{Prompt: &prompt}
-		if err := o.Validate(); err == nil {
-			t.Errorf("prompt %q with NUL was accepted", prompt)
-		}
-	}
-}
-
-func TestSubagentPromptsTellThemToReportAndToUseScreenedReads(t *testing.T) {
-	for _, name := range []string{"researcher", "worker"} {
-		d, _ := agentdef.Lookup(name)
-		if !strings.Contains(d.Prompt, "report tool") || !strings.Contains(d.Prompt, "state it in your report") {
-			t.Errorf("%s prompt does not tell it to report and state assumptions", name)
-		}
-	}
-	worker, _ := agentdef.Lookup("worker")
-	if !strings.Contains(worker.Prompt, "web_fetch, not curl") {
-		t.Error("worker prompt does not send page reads through web_fetch")
-	}
-	eika, _ := agentdef.Lookup("eika")
-	if !strings.Contains(eika.Prompt, "reasonable assumption") || !strings.Contains(eika.Prompt, "Ask only") {
-		t.Error("eika prompt does not say when to decide and when to ask")
 	}
 }

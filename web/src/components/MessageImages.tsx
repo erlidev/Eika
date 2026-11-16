@@ -1,10 +1,9 @@
 /**
  * The pictures a message carries, as a row of thumbnails. A click opens one
  * at full size in the image viewer, where a screenshot's text is readable.
- * The transcript and the context inspector both show a message's images this
- * way.
+ * The transcript shows a message's images this way.
  *
- * The viewer is one dialog for the page, mounted by the workbench, and not
+ * The viewer is one dialog for the page, mounted by the shell, and not
  * one per row: a turn's live rows are replaced by its stored entries when it
  * ends, and a dialog inside the row would close under the reader.
  */

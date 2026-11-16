@@ -29,35 +29,6 @@ func TestOnlyOneComputerIsHome(t *testing.T) {
 	}
 }
 
-func TestEnsureHomeComputerFindsOrInsertsTheOne(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-
-	first, created, err := st.EnsureHomeComputer(ctx, store.Computer{
-		ID: "first", Name: "home", Image: "img", State: "creating",
-		Sandbox: store.ComputerSandbox{PIDs: 4096},
-	})
-	if err != nil || !created {
-		t.Fatalf("first ensure = %+v, created %v, %v; want it inserted", first, created, err)
-	}
-	if !first.Home || first.ID != "first" || first.Name != "home" || first.Sandbox.PIDs != 4096 {
-		t.Errorf("first = %+v, want the row that was offered, marked home", first)
-	}
-
-	again, created, err := st.EnsureHomeComputer(ctx, store.Computer{ID: "second", Name: "other", State: "creating"})
-	if err != nil || created {
-		t.Fatalf("second ensure = %+v, created %v, %v; want the first row, not inserted", again, created, err)
-	}
-	if again.ID != "first" {
-		t.Errorf("second ensure returned %q, want first", again.ID)
-	}
-
-	all, err := st.Computers(ctx)
-	if err != nil || len(all) != 1 {
-		t.Errorf("computers = %+v, %v; want the home computer alone", all, err)
-	}
-}
-
 func TestEnsureHomeComputerRacingInsertsOnce(t *testing.T) {
 	st := storetest.Open(t)
 

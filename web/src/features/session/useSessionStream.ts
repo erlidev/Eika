@@ -50,14 +50,10 @@ export function useSessionStream(sessionId: string | undefined): void {
       void client.invalidateQueries({
         queryKey: queryKeys.sessionOutline(e.topic.slice("session:".length)),
       });
-      // A turn that ended changed the next request and recorded its calls,
-      // and a compaction changed the next request.
+      // A turn that ended, and a compaction, changed the next request.
       if (e.type === "turn.end" || e.type === "run.error" || e.type === "compaction.end") {
         void client.invalidateQueries({
           queryKey: queryKeys.sessionContext(e.topic.slice("session:".length)),
-        });
-        void client.invalidateQueries({
-          queryKey: queryKeys.sessionCalls(e.topic.slice("session:".length)),
         });
       }
     }

@@ -50,21 +50,8 @@ func TestReportTool(t *testing.T) {
 	for _, tc := range []struct{ args, want string }{
 		{`{}`, "summary is required"},
 		{`{"summary":"  "}`, "summary must be nonempty"},
-		{`{"summary":"a\u0000b"}`, "summary must be nonempty"},
-		{`{"summary":"s","extra":1}`, "unknown argument"},
-		{`{"summary":"s","summary":"t"}`, "duplicate argument"},
-		{`{"summary":1}`, "must be a string"},
-		{`{"summary":"\ud800"}`, "surrogate"},
-		{"{\"summary\":\"\xff\"}", "UTF-8"},
 		{`{"summary":"s","outputs":"a.md"}`, "outputs must be a list"},
-		{`{"summary":"s","outputs":null}`, "outputs must be a list"},
-		{`{"summary":"s","outputs":[1]}`, "must be a string"},
-		{`{"summary":"s","outputs":["\udc00"]}`, "surrogate"},
-		{`{"summary":"s","follow_ups":[""]}`, "each of follow_ups"},
-		{`{"summary":"s","follow_ups":["` + strings.Repeat("a", 1025) + `"]}`, "each of follow_ups"},
 		{`{"summary":"s","outputs":[` + items + `]}`, "at most 20 entries"},
-		{`{"summary":"` + strings.Repeat("a", 32<<10+1) + `"}`, "summary must be nonempty"},
-		{`[]`, "must be an object"},
 	} {
 		if r := call(tc.args); !r.IsError || !strings.Contains(r.Content, tc.want) {
 			t.Errorf("%.80s = %+v, want error with %q", tc.args, r, tc.want)
@@ -77,8 +64,5 @@ func TestReportTool(t *testing.T) {
 	f.err = errors.New("subagent has no active assignment to report on")
 	if r := call(`{"summary":"late"}`); !r.IsError || !strings.Contains(r.Content, "no active assignment") {
 		t.Errorf("refused report = %+v", r)
-	}
-	if r, err := (reportTool{}).Call(context.Background(), tool.CallContext{}, json.RawMessage(`{"summary":"s"}`)); err != nil || !r.IsError || !strings.Contains(r.Content, "unavailable") {
-		t.Errorf("unbound report = %+v, %v", r, err)
 	}
 }

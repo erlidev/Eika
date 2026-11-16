@@ -4,6 +4,8 @@ import (
 	"embed"
 	"fmt"
 	"strings"
+
+	"github.com/erlidev/eika/internal/agent"
 )
 
 //go:embed prompts/*.md
@@ -62,9 +64,11 @@ func (o Override) Apply(d Definition) Definition {
 func Builtins() []Definition {
 	return []Definition{
 		definition("eika", "Converses, plans and delegates work.", "main", 40, []string{"project_create", "project_list", "project_open", "project_update",
-			"subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_search"}),
-		definition("researcher", "Reads the web and reports findings.", "fast", 200, []string{"ask_user", "report", "web_fetch", "web_search"}),
-		definition("worker", "Does work on a computer and reports results.", "main", 200, []string{"ask_user", "bash", "file_edit", "file_read", "file_write", "report", "web_fetch", "web_search"}),
+			"subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_search"}, ownCompaction("eika")),
+		definition("researcher", "Reads the web and reports findings.", "fast", 200, []string{"ask_user", "report", "web_fetch", "web_search"},
+			preserving("Preserve the research question, findings, source URLs, uncertainty and open questions.")),
+		definition("worker", "Does work on a computer and reports results.", "main", 200, []string{"ask_user", "bash", "file_edit", "file_read", "file_write", "report", "web_fetch", "web_search"},
+			preserving("Preserve the brief, changed files, commands, checks, errors and remaining work.")),
 	}
 }
 
@@ -78,12 +82,27 @@ func Lookup(name string) (Definition, bool) {
 	return Definition{}, false
 }
 
-func definition(name, description, class string, turns int, tools []string) Definition {
-	read := func(suffix string) string {
-		// All paths are compile-time assets covered by the definition tests.
-		b, _ := prompts.ReadFile("prompts/" + name + suffix + ".md")
-		return string(b)
-	}
+// prompt returns an embedded prompt file.
+func prompt(name string) string {
+	// All paths are compile-time assets covered by the definition tests.
+	b, _ := prompts.ReadFile("prompts/" + name + ".md")
+	return string(b)
+}
+
+func definition(name, description, class string, turns int, tools []string, compaction Compaction) Definition {
 	return Definition{Name: name, Description: description, Class: class, MaxTurns: turns, Tools: tools,
-		Prompt: read(""), Compaction: Compaction{Summary: read("-summary"), Update: read("-update"), TurnPrefix: read("-turn-prefix")}}
+		Prompt: prompt(name), Compaction: compaction}
+}
+
+// ownCompaction returns the compaction prompts an agent has files of its own
+// for.
+func ownCompaction(name string) Compaction {
+	return Compaction{Summary: prompt(name + "-summary"), Update: prompt(name + "-update"), TurnPrefix: prompt(name + "-turn-prefix")}
+}
+
+// preserving returns the built-in compaction prompts with one closing line
+// that names what the agent's summaries must keep.
+func preserving(line string) Compaction {
+	tail := "\n\n" + line + "\n"
+	return Compaction{Summary: agent.SummaryPrompt + tail, Update: agent.UpdatePrompt + tail, TurnPrefix: agent.TurnPrefixPrompt + tail}
 }

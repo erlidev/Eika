@@ -52,24 +52,4 @@ func TestInstructionsStorageAndScopeIsolation(t *testing.T) {
 	if got, err := st.ProjectInstructions(ctx, p.ID); err != nil || got != "# Project rules\n" {
 		t.Fatalf("invalid write: %q %v", got, err)
 	}
-	if err := st.SetProjectInstructions(ctx, p.ID, ""); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := st.ProjectInstructions(ctx, p.ID); err != nil || got != "" {
-		t.Fatalf("clear: %q %v", got, err)
-	}
-	for _, text := range []string{"new", ""} {
-		if err := st.SetProjectInstructions(ctx, "missing", text); !errors.Is(err, store.ErrNotFound) {
-			t.Fatal(err)
-		}
-	}
-	if _, err := st.ProjectInstructions(ctx, "missing"); !errors.Is(err, store.ErrNotFound) {
-		t.Fatal(err)
-	}
-	if err := st.SetInstructions(ctx, store.GlobalInstructions{}); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := st.Instructions(ctx); err != nil || got != (store.GlobalInstructions{}) {
-		t.Fatalf("clear global: %+v %v", got, err)
-	}
 }

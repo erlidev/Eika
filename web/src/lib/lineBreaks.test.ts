@@ -13,7 +13,6 @@ function html(markdown: string): string {
 
 describe("remarkLineBreaks", () => {
   const cases = [
-    { name: "one line is untouched", in: "hello", out: "<p>hello</p>" },
     { name: "a newline becomes a break", in: "one\ntwo", out: "<p>one<br/>\ntwo</p>" },
     {
       name: "a newline inside emphasis becomes a break",

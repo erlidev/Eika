@@ -1,7 +1,7 @@
 # session
 
-The session that is open: its streaming transcript, its composer, its run, and
-the three context panels it registers. A chat is a session with no computer
+The session that is open: its streaming transcript, its composer, and its
+run. A chat is a session with no computer
 and uses the same view; its header says it is a chat where a computer
 session's names its computer. This is the largest feature and the only
 one that holds client state of its own.
@@ -46,18 +46,15 @@ one that holds client state of its own.
 - `ContextMeter.tsx` is what the status bar states about cost. Every number in
   it was measured by the endpoint and arrived in `turn.progress` or
   `turn.end`; assistant entries store the final context measurement, so
-  replay restores the meter. The tooltips state the numbers and leave the
-  explaining to the run panel, whose breakdown also repeats the two rates
-  when the reader has turned them on.
+  replay restores the meter. The tooltips state the numbers.
 - `Speed.tsx` is how fast an answer was produced, under the answer: the
   generation rate, and the prompt rate for an endpoint that measures its own
   (`docs/api/events.md` lists which do). It is off unless the reader turns it
   on in `preferences.ts`.
 - `escape.ts` decides whether an `Esc` belongs to the run or to the dialog,
-  select, palette, or text field on top of it.
+  select, or text field on top of it.
 - `store.ts` is a thin Zustand shell around that reducer. It owns which
-  session is open, which model its next run uses — the status bar sets that
-  and the run panel reads it, so neither can own it — and the composer's
+  session is open, which model its next run uses, and the composer's
   draft and its images, which are here because rewinding a message puts both
   back in the box and the two components are not each other's parents. `open` parks the draft, images and model of the session it leaves and restores
   them on return, so watching a subagent does not clear Chat's unsent message. `rewound` discards the
@@ -86,15 +83,10 @@ one that holds client state of its own.
   `useRewind` is the one a message's rewind calls: it lands the head on the
   entry before the message and then puts the text in the composer, in that
   order, so a refused move leaves nothing in the box.
-- `tools.ts` holds the one-line summary of a tool's description, which is
-  written for the model.
 - `ToolCard.tsx` draws one tool call and delegates to the renderer registry.
 - `renderers/` is that registry: `registry.ts` has the type and the argument
   helpers, `renderers.tsx` maps a tool name to a renderer, `parts.tsx` holds
   the pieces they share. Adding one is in `docs/EXTENDING.md`.
-- `RunPanel.tsx` is a panel `app/panels.tsx` registers. It is where the
-  status bar's meter explains itself: the window, the prompt and the response
-  that fill it, and the turn's cost.
 - `tree.ts` finds where a rewind lands: `rewindTarget` takes the entry before
   a message, and refuses one whose entry is not `resumable`, in the middle of
   a turn, matching the `400` the harness answers.
@@ -111,5 +103,4 @@ title, its outline, its run); the store holds what it is _saying_.
 `npm test -- transcript` folds the scripted event sequences from
 `docs/api/events.md` through the reducer, the meter's arithmetic included. A
 new event type or a new folding rule needs a case there. `npm test -- tree` covers the tree's rows, its
-keyboard movement, and `rewindTarget`. `npm test -- session/tools` covers what a
-chat cannot offer.
+keyboard movement, and `rewindTarget`.

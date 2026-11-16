@@ -1,7 +1,7 @@
 /**
  * Whether the settings dialog is open, and on which tab. It is a store rather
- * than workbench state because more than the workbench opens it: the command
- * palette, and the notice a session shows when no model is configured.
+ * than shell state because more than the shell opens it: the navigation, and
+ * the notice a session shows when no model is configured.
  */
 
 import { create } from "zustand";

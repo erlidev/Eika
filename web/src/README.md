@@ -4,8 +4,8 @@ The folders below are the only places code goes. Style rules for the frontend
 are in `docs/STYLE_GUIDE.md` section 3.
 
 ```
-app/          routes, the layout shell, the panel registry
-features/     one folder per domain feature (sessions, session, sandbox, providers, agents, context, search, mcp, settings, setup, connect)
+app/          routes, the layout shell, navigation, theme
+features/     one folder per domain feature (activity, agents, chat, connect, mcp, providers, sandbox, search, session, sessions, settings, setup)
 components/   shared presentational components; components/ui is shadcn-managed
 api/          wire types mirroring docs/api/, the HTTP client, the WebSocket stream
 lib/          pure utilities with tests
@@ -33,9 +33,7 @@ areas, and keeps the page above the on-screen keyboard
 `app/App.tsx` routes `/` to Chat (`features/chat`), the home session, and
 `/activity/:sessionId?` to Activity (`features/activity`).
 
-`app/Workbench.tsx` and its sidebar, `panels.tsx` and `CommandPalette.tsx` are
-the earlier three-pane shell. They stay in the tree with no route until P3-17
-removes them. `app/theme.ts` is the colour scheme: it follows
+`app/theme.ts` is the colour scheme: it follows
 `prefers-color-scheme` until the user picks a side.
 
 ## Server state and the stream
@@ -50,7 +48,7 @@ session store answers it with a replay from the last entry it holds.
 
 Nothing polls. An event invalidates the queries it makes stale:
 `features/session/useSessionStream` for a turn that ended (which also
-refreshes the Context panel's next request and recorded calls), and
+refreshes the next request's prediction), and
 `features/mcp`'s `useMCPEvents` for an MCP server's state on the global
 topic, and `features/sessions`'s `useSessionUpdates` for the session lists
 (a subagent's state change reaches Activity there) and, after a reconnect, every
@@ -58,18 +56,17 @@ session query.
 
 ## Keyboard
 
-| Key            | What it does                         |
-| -------------- | ------------------------------------ |
-| `Enter`        | Sends the composer's message         |
-| `Shift+Enter`  | Newline                              |
-| `Esc`          | Aborts the run in progress           |
-| `Cmd/Ctrl+K`   | Opens the command palette            |
-| `Left`/`Right` | Moves between the right pane's tabs  |
-| `Home`/`End`   | First and last tab of the right pane |
+| Key            | What it does                      |
+| -------------- | --------------------------------- |
+| `Enter`        | Sends the composer's message      |
+| `Shift+Enter`  | Newline                           |
+| `Esc`          | Aborts the run in progress        |
+| `Left`/`Right` | Moves between a tab strip's tabs  |
+| `Home`/`End`   | First and last tab of a tab strip |
 
 `Esc` belongs to whatever is on top of the session: a dialog, an open select,
-the command palette, or a focused text field keeps it, and only an `Esc` none
-of those wanted aborts the run (`features/session/escape.ts`). The tab strip
+or a focused text field keeps it, and only an `Esc` none
+of those wanted aborts the run (`features/session/escape.ts`). A tab strip
 is one tab stop, as the WAI-ARIA tabs pattern asks (`lib/tablist.ts`).
 
 ## Commands (run from `web/`)

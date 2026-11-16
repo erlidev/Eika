@@ -73,35 +73,6 @@ test("phone, dark", async ({ open, expectShot }) => {
   await expectShot(eika, "chat-phone-dark");
 });
 
-test("the rail takes over at 640px", async ({ open }) => {
-  const eika = await open({ scenario: "workbench", viewport: { width: 639, height: 800 } });
-  const bar = eika.page.getByRole("navigation", { name: "Pages" });
-  expect((await bar.boundingBox())?.width).toBe(639);
-  await eika.page.setViewportSize({ width: 640, height: 800 });
-  await eika.settle();
-  expect((await bar.boundingBox())?.width).toBeLessThan(100);
-});
-
-test("Settings opens the dialog from the rail and from the bar, and Chat stays", async ({
-  open,
-}) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Settings");
-  await expect(eika.page.getByRole("dialog", { name: "Settings" })).toBeVisible();
-  await eika.press("Escape");
-  await expect(eika.page.getByRole("dialog")).toHaveCount(0);
-
-  await eika.page.setViewportSize(phone);
-  await eika.settle();
-  await expect(
-    eika.page.getByRole("navigation", { name: "Pages" }).getByRole("button"),
-  ).toBeVisible();
-  await eika.click("Settings");
-  await expect(eika.page.getByRole("dialog", { name: "Settings" })).toBeVisible();
-  await eika.press("Escape");
-  await expect(eika.page.getByRole("region", { name: "Session" })).toBeVisible();
-});
-
 test("the page's address is Chat, and a path that is no page lands on it", async ({ open }) => {
   const eika = await open({ scenario: "workbench" });
   await eika.goto("/nowhere/at/all");

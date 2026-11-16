@@ -491,8 +491,7 @@ with its kind and fallback, to `classInfo` in
 
 A computer runs the image the sandbox image setting names (Settings,
 General; `eika-sandbox:latest` by default), but a `computer.Spec` can
-override it per computer, either with an image name or with a build
-context. Any image works: the harness copies its own static `eikad` binary into
+override it per computer with an image name. Any image works: the harness copies its own static `eikad` binary into
 the container at `/usr/local/bin/eikad` before starting it and uses that as the
 entrypoint, so an image needs no Eika-specific content at all.
 
@@ -505,10 +504,9 @@ An image needs:
   the image holds there is copied into a new volume once, so a tool the image
   installs belongs elsewhere, such as `/opt`: a computer that is made again
   over an old volume has the old directory, not the new image's,
-- a uid 1000, because a sandbox never runs as root; an image that uses another
-  user must say so in `Spec.User`, and a user given by name keeps whatever
-  ownership its image gave `/home/eika`. `HOME` is `/home/eika` in either
-  case.
+- nothing for the user: the container runs as uid and gid 1000, because a
+  sandbox never runs as root, whether or not the image has a user by that
+  uid. `HOME` is `/home/eika`.
 
 A sandbox container drops all Linux capabilities and runs with
 `no-new-privileges`, so an image that needs to install packages at run time
@@ -524,16 +522,7 @@ Name an existing image:
 cx, err := host.Create(ctx, computer.Spec{Image: "node:22-bookworm"})
 ```
 
-Or build one from a directory holding a Dockerfile and its context:
-
-```go
-cx, err := host.Create(ctx, computer.Spec{
-    BuildContext: "/var/lib/eika/images/rust",
-    Dockerfile:   "Dockerfile", // the default
-})
-```
-
-The built image is tagged `eika-cx-<id>:latest`. Start the computer with
+Build an image of your own with `docker build` and name it the same way. Start the computer with
 `host.Start`, then take its executor with `host.Executor(cx)`; every tool call
 goes through that.
 
@@ -778,91 +767,6 @@ The rail, the bottom bar and the header's title follow from the array. Add a
 page only when its feature exists: a page that is not built is absent, not
 disabled. The page fills the shell's `main`, which is a flex column, and
 scrolls inside itself.
-
-## Adding a UI panel
-
-The panels belong to the earlier workbench, which has no route until P3-17
-removes it, so a new one has nowhere to show. The right-hand pane of the
-workbench is a tab strip built from one array. A
-panel is a component plus one entry in `web/src/app/panels.tsx`; nothing else
-in the shell changes.
-
-Write the component in the feature that owns its data. A panel receives the
-open session, an empty string when nothing is open, and whether the session is
-a chat, which has no computer:
-
-```tsx
-// web/src/features/session/InfoPanel.tsx
-/** What the open session is: its kind, when it was started, and its head. */
-
-import { useSession } from "@/features/session/queries";
-
-export type InfoPanelProps = {
-  sessionId: string;
-};
-
-export function InfoPanel({ sessionId }: InfoPanelProps) {
-  const session = useSession(sessionId);
-  if (session.isPending) {
-    return <p className="text-muted-foreground p-3 text-xs">Loading the session…</p>;
-  }
-  if (session.isError) {
-    return (
-      <p role="alert" className="text-destructive p-3 text-xs">
-        {session.error.message}
-      </p>
-    );
-  }
-  return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-3 p-3 font-mono text-xs">
-      <dt className="text-muted-foreground">kind</dt>
-      <dd>{session.data.session.kind}</dd>
-      <dt className="text-muted-foreground">started</dt>
-      <dd className="truncate">{session.data.session.created_at}</dd>
-    </dl>
-  );
-}
-```
-
-Nothing in the frontend polls, so a panel showing something the harness
-changes subscribes to the topic that reports the change, as
-`useSessionStream` does for the session.
-
-Export it from the feature's `index.ts`, because `app/` imports a feature only
-through that file:
-
-```ts
-// web/src/features/session/index.ts
-export { InfoPanel } from "@/features/session/InfoPanel";
-```
-
-Register it. `id` is what the layout remembers, so it never changes once it
-ships. `available` hides the tab when its data cannot exist yet:
-
-```tsx
-// web/src/app/panels.tsx
-import { Info } from "lucide-react";
-
-import { InfoPanel } from "@/features/session";
-
-const infoPanel: Panel = {
-  id: "info",
-  title: "Info",
-  icon: Info,
-  available: (context) => context.sessionId !== "",
-  Component: ({ sessionId }) => <InfoPanel sessionId={sessionId} />,
-};
-
-export const panels: readonly Panel[] = [runPanel, contextPanel, infoPanel];
-```
-
-The tab strip, the keyboard handling, the remembered active tab, and the narrow
-layout all follow from the array. Add a README line to the feature folder and
-you are done.
-
-The pane body scrolls, which suits a list. A panel whose component pulls in a
-large library loads that part with `React.lazy`, so the main bundle stays
-small.
 
 ## Adding a tool renderer
 

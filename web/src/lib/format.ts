@@ -1,4 +1,4 @@
-/** Formatting helpers shared by the panels. Pure, so they are tested here. */
+/** Formatting helpers shared by the features. Pure, so they are tested here. */
 
 /** formatDuration renders a tool call's duration compactly. */
 export function formatDuration(ms: number): string {
@@ -80,11 +80,6 @@ export function formatAgo(iso: string, now: number = Date.now()): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${String(hours)}h ago`;
   return `${String(Math.floor(hours / 24))}d ago`;
-}
-
-/** shortId renders an identifier short enough for a dense list. */
-export function shortId(id: string): string {
-  return id.length <= 8 ? id : id.slice(0, 8);
 }
 
 /**

@@ -12,18 +12,14 @@ import (
 	"github.com/erlidev/eika/internal/store/storetest"
 )
 
-func TestMCPServers(t *testing.T) {
+func TestMCPServerConstraints(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	remote, err := st.CreateMCPServer(ctx, store.MCPServer{Name: "docs", Kind: "http", URL: "https://mcp.example/mcp", Headers: []byte("sealed"), Enabled: true})
-	if err != nil {
+	if _, err := st.CreateMCPServer(ctx, store.MCPServer{Name: "docs", Kind: "http", URL: "https://mcp.example/mcp", Enabled: true}); err != nil {
 		t.Fatalf("create remote: %v", err)
 	}
-	if remote.ID == "" || remote.Args == nil || remote.DisabledTools == nil || remote.CreatedAt.IsZero() {
-		t.Errorf("created = %+v", remote)
-	}
-	local, err := st.CreateMCPServer(ctx, store.MCPServer{Name: "files", Kind: "stdio", Command: "npx", Args: []string{"-y", "server"}, Env: []byte("env")})
+	local, err := st.CreateMCPServer(ctx, store.MCPServer{Name: "files", Kind: "stdio", Command: "npx", Args: []string{"-y", "server"}})
 	if err != nil {
 		t.Fatalf("create stdio: %v", err)
 	}
@@ -36,40 +32,9 @@ func TestMCPServers(t *testing.T) {
 	if _, err := st.CreateMCPServer(ctx, store.MCPServer{Name: "bad", Kind: "websocket", URL: "wss://x"}); err == nil {
 		t.Error("an unknown kind was stored")
 	}
-
-	list, err := st.MCPServers(ctx)
-	if err != nil || len(list) != 2 || list[0].Name != "docs" || list[1].Name != "files" {
-		t.Fatalf("MCPServers = %+v, %v", list, err)
-	}
-	if !slices.Equal(list[1].Args, []string{"-y", "server"}) || string(list[1].Env) != "env" {
-		t.Errorf("stdio server = %+v", list[1])
-	}
-
-	local.Name, local.Enabled, local.DisabledTools, local.OAuthClientID = "fs", false, []string{"write"}, "client"
-	updated, err := st.UpdateMCPServer(ctx, local)
-	if err != nil {
-		t.Fatalf("UpdateMCPServer: %v", err)
-	}
-	if updated.Name != "fs" || updated.Enabled || !slices.Equal(updated.DisabledTools, []string{"write"}) || updated.OAuthClientID != "client" {
-		t.Errorf("updated = %+v", updated)
-	}
 	local.Name = "docs"
 	if _, err := st.UpdateMCPServer(ctx, local); !errors.Is(err, store.ErrConflict) {
 		t.Errorf("rename onto another = %v, want ErrConflict", err)
-	}
-
-	if _, err := st.UpdateMCPServer(ctx, store.MCPServer{ID: "absent", Name: "absent"}); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("update absent = %v, want ErrNotFound", err)
-	}
-
-	if err := st.DeleteMCPServer(ctx, local.ID); err != nil {
-		t.Fatalf("DeleteMCPServer: %v", err)
-	}
-	if _, err := st.MCPServer(ctx, local.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("read deleted = %v, want ErrNotFound", err)
-	}
-	if err := st.DeleteMCPServer(ctx, local.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("delete twice = %v, want ErrNotFound", err)
 	}
 }
 

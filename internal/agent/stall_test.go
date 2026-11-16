@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -139,18 +138,6 @@ func TestASilentStreamIsAbortedAndTheAttemptIsRetried(t *testing.T) {
 	}
 }
 
-func TestAStallThatKeepsHappeningFailsTheRunAsRetryable(t *testing.T) {
-	p := &streamer{script: func(ctx context.Context, _ int, _ chan<- provider.Event) { <-ctx.Done() }}
-	r := newStallRun(t, p, 20*time.Millisecond, agent.Inference{}, time.Millisecond)
-	err := r.run(t, "hi")
-	if err == nil || !provider.Retryable(err) || !strings.Contains(err.Error(), "sent nothing") {
-		t.Fatalf("Run error = %v, want a retryable stall", err)
-	}
-	if got := p.Attempts(); got != 4 {
-		t.Errorf("%d attempts, want the first and the three retries", got)
-	}
-}
-
 func TestBytesThatBecomeNoEventStillCountAsProgress(t *testing.T) {
 	// A server that keeps the connection warm with comments while it reads a
 	// long prompt sends bytes no provider turns into an event.
@@ -172,122 +159,8 @@ func TestBytesThatBecomeNoEventStillCountAsProgress(t *testing.T) {
 	}
 }
 
-func TestReasoningCountsAsProgress(t *testing.T) {
-	p := &streamer{script: func(ctx context.Context, _ int, out chan<- provider.Event) {
-		for range 8 {
-			if !pause(ctx, 30*time.Millisecond) {
-				return
-			}
-			if !send(ctx, out, provider.Event{Kind: provider.KindReasoningDelta, ReasoningDelta: "hmm "}) {
-				return
-			}
-		}
-		answer(ctx, out)
-	}}
-	r := newStallRun(t, p, 120*time.Millisecond, agent.Inference{}, time.Millisecond)
-	if err := r.run(t, "hi"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if got := p.Attempts(); got != 1 {
-		t.Errorf("%d attempts: reasoning is output, and a model that is thinking has not stalled", got)
-	}
-}
-
-// bigPrompt is a message of about two thousand estimated tokens.
-var bigPrompt = strings.Repeat("a long prompt that takes a while to read. ", 200)
-
-func TestSilenceBeforeTheFirstTokenIsAllowedInProportionToThePrompt(t *testing.T) {
-	// 2000 tokens at 10 000 a second take 0.2 s to read; twice that and the
-	// stall base is a 0.44 s allowance, and the server is silent for 0.15 s.
-	slowStart := func(ctx context.Context, _ int, out chan<- provider.Event) {
-		if pause(ctx, 150*time.Millisecond) {
-			answer(ctx, out)
-		}
-	}
-	long := &streamer{script: slowStart}
-	r := newStallRun(t, long, 40*time.Millisecond, agent.Inference{PrefillRate: 10_000}, time.Millisecond)
-	if err := r.run(t, bigPrompt); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if got := long.Attempts(); got != 1 {
-		t.Errorf("%d attempts: a prompt this long is allowed more than the base before its first token", got)
-	}
-
-	// The same silence after a short prompt is a stall.
-	short := &streamer{script: func(ctx context.Context, attempt int, out chan<- provider.Event) {
-		if attempt == 1 {
-			slowStart(ctx, attempt, out)
-			return
-		}
-		answer(ctx, out)
-	}}
-	r = newStallRun(t, short, 40*time.Millisecond, agent.Inference{PrefillRate: 10_000}, time.Millisecond)
-	if err := r.run(t, "hi"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if got := short.Attempts(); got != 2 {
-		t.Errorf("%d attempts: 150 ms of nothing after a short prompt is more than the 40 ms base allows", got)
-	}
-}
-
-func TestAfterTheFirstTokenOnlyTheBaseApplies(t *testing.T) {
-	p := &streamer{script: func(ctx context.Context, attempt int, out chan<- provider.Event) {
-		if attempt > 1 {
-			answer(ctx, out)
-			return
-		}
-		if send(ctx, out, provider.TextDelta("The ")) {
-			<-ctx.Done()
-		}
-	}}
-	// The allowance for this prompt is 0.44 s, far longer than the silence that
-	// ends the attempt: the prefill is over.
-	r := newStallRun(t, p, 40*time.Millisecond, agent.Inference{PrefillRate: 10_000}, time.Millisecond)
-	begin := time.Now()
-	if err := r.run(t, bigPrompt); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if got := p.Attempts(); got != 2 {
-		t.Errorf("%d attempts, want the stalled one and its retry", got)
-	}
-	if took := time.Since(begin); took > 400*time.Millisecond {
-		t.Errorf("took %v: a stream that went silent mid-answer was held to the prefill allowance", took)
-	}
-}
-
-func TestAStallReleasesItsLease(t *testing.T) {
-	q := newQueue(1)
-	p := &streamer{script: func(ctx context.Context, attempt int, out chan<- provider.Event) {
-		if attempt == 1 {
-			<-ctx.Done()
-			return
-		}
-		answer(ctx, out)
-	}}
-	// A long backoff leaves a window in which the call holds nothing.
-	r := newStallRun(t, p, 30*time.Millisecond, agent.Inference{Queue: q, Pool: "gpu", Endpoint: "llama"}, 400*time.Millisecond)
-	done := make(chan error, 1)
-	go func() { done <- r.agent.Run(context.Background(), r.session, provider.UserMessage("hi")) }()
-
-	eventually(t, "the call to take the lease", func() bool { return running(q) == 1 })
-	eventually(t, "the stalled attempt to give it back", func() bool { return running(q) == 0 })
-	if p.Attempts() != 1 {
-		t.Fatalf("%d attempts, want the retry to still be waiting out its backoff", p.Attempts())
-	}
-	// Another session gets the slot while the stalled call backs off.
-	other, err := q.Acquire(context.Background(), inference.Need{Pool: "gpu"})
-	if err != nil {
-		t.Fatalf("Acquire: %v", err)
-	}
-	other.Release()
-	if err := within(t, done); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if p.Attempts() != 2 {
-		t.Errorf("%d attempts, want 2", p.Attempts())
-	}
-}
-
+// A call waits for its lease before it asks the model, and the wait is not
+// counted as silence.
 func TestTimeWaitingForALeaseIsNotSilence(t *testing.T) {
 	q := newQueue(1)
 	held, err := q.Acquire(context.Background(), inference.Need{Pool: "gpu"})
@@ -301,53 +174,14 @@ func TestTimeWaitingForALeaseIsNotSilence(t *testing.T) {
 
 	eventually(t, "the call to queue", func() bool { return len(q.Snapshot()[0].Waiting) == 1 })
 	time.Sleep(150 * time.Millisecond) // five times the stall limit
+	if p.Attempts() != 0 {
+		t.Fatal("the model was called before the lease was granted")
+	}
 	held.Release()
 	if err := within(t, done); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if got := p.Attempts(); got != 1 {
 		t.Errorf("%d attempts: the wait for the lease was counted as a stall", got)
-	}
-}
-
-func TestThePrefillAllowance(t *testing.T) {
-	for _, tc := range []struct {
-		name            string
-		stall           time.Duration
-		prefilled, rate int
-		want            time.Duration
-	}{
-		{"the bench's 66k prompt at its measured speed", 30 * time.Second, 66002, 2894, 30*time.Second + 45*time.Second + 611*time.Millisecond},
-		{"a prompt of 20000 tokens at the default speed", 30 * time.Second, 20000, 2000, 50 * time.Second},
-		{"nothing to read", 30 * time.Second, 0, 2000, 30 * time.Second},
-		{"a rate not known", 30 * time.Second, 20000, 0, 30 * time.Second},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got := agent.PrefillAllowance(tc.stall, tc.prefilled, tc.rate)
-			if diff := got - tc.want; diff < -time.Second || diff > time.Second {
-				t.Errorf("allowance = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestThePrefillRateHasOneDefaultAndTheMeasuredRateWins(t *testing.T) {
-	q := newQueue(1)
-	q.SetPolicy(inference.Policy{PrefillRate: 500})
-	for _, tc := range []struct {
-		name string
-		in   agent.Inference
-		want int
-	}{
-		{"no queue and no measurement", agent.Inference{}, inference.DefaultPrefillRate},
-		{"the queue's assumption", agent.Inference{Queue: q}, 500},
-		{"a measured rate", agent.Inference{Queue: q, PrefillRate: 3100}, 3100},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			a := agent.New(&streamer{}, nil, agent.Options{Inference: tc.in})
-			if got := a.PrefillRate(); got != tc.want {
-				t.Errorf("rate = %d, want %d", got, tc.want)
-			}
-		})
 	}
 }

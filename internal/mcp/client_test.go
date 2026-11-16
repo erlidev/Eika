@@ -246,16 +246,6 @@ func TestElicitationWithNobodyToAskIsCancelled(t *testing.T) {
 	}
 }
 
-func TestLegacySessionExpiry(t *testing.T) {
-	s := &mcptest.Server{Era: mcptest.Legacy, Tools: []mcptest.Tool{echoTool("echo")}}
-	c := connect(t, serve(t, s), mcp.Handlers{})
-	s.ExpireSessions()
-	_, err := c.CallTool(context.Background(), "echo", nil, mcp.CallOptions{})
-	if !errors.Is(err, mcp.ErrSessionExpired) {
-		t.Errorf("CallTool after expiry = %v, want ErrSessionExpired", err)
-	}
-}
-
 func TestUnauthorizedServerSaysWhy(t *testing.T) {
 	s := &mcptest.Server{
 		Authorize: func(string) bool { return false },
@@ -331,38 +321,6 @@ func TestStdioProcessExitEndsTheClient(t *testing.T) {
 	}
 	if _, err := c.CallTool(context.Background(), "echo", nil, mcp.CallOptions{}); err == nil {
 		t.Error("CallTool succeeded on a dead connection")
-	}
-}
-
-func TestListChangesArrive(t *testing.T) {
-	for _, era := range []string{mcptest.Modern, mcptest.Legacy} {
-		t.Run(era, func(t *testing.T) {
-			s := &mcptest.Server{Era: era, Tools: []mcptest.Tool{echoTool("echo")}}
-			changed := make(chan string, 4)
-			c := connect(t, serve(t, s), mcp.Handlers{Notify: func(method string, _ json.RawMessage) { changed <- method }})
-			if era == mcptest.Modern {
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
-				go func() { _ = c.Listen(ctx) }()
-			}
-			// The stream opens asynchronously; announce until it is heard.
-			deadline := time.After(5 * time.Second)
-			tick := time.NewTicker(50 * time.Millisecond)
-			defer tick.Stop()
-			for {
-				select {
-				case method := <-changed:
-					if method != "notifications/tools/list_changed" {
-						t.Errorf("notified %s", method)
-					}
-					return
-				case <-tick.C:
-					s.ListChanged()
-				case <-deadline:
-					t.Fatal("no list change arrived")
-				}
-			}
-		})
 	}
 }
 

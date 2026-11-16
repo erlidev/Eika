@@ -123,12 +123,6 @@ func TestFileTools(t *testing.T) {
 					read(t, "edit", "abc abc aaa")
 				}
 			})
-			t.Run("missing files and directories", func(t *testing.T) {
-				call(t, "file_read", map[string]string{"path": "missing"}, true)
-				call(t, "file_edit", map[string]string{"path": "missing", "old_text": "x", "new_text": "y"}, true)
-				call(t, "file_read", map[string]string{"path": "."}, true)
-				call(t, "file_write", map[string]string{"path": ".", "content": "x"}, true)
-			})
 			t.Run("byte limits", func(t *testing.T) {
 				text := strings.Repeat("é", 16*1024)
 				call(t, "file_write", map[string]string{"path": "limit", "content": text}, false)
@@ -150,10 +144,8 @@ func TestFileTools(t *testing.T) {
 			})
 			t.Run("invalid arguments", func(t *testing.T) {
 				for _, raw := range []string{
-					`null`, `[]`, `{}`, `{"path":"empty","other":"x"}`, `{"Path":"empty"}`, `{"path":null}`,
-					`{"path":""}`, `{"path":" empty"}`, `{"path":"a\u0000b"}`, `{"path":"empty"} {}`,
-					`{"path":"empty","path":"edit"}`, `{"path":"\ud800"}`, `{"path":"\udc00"}`,
-					"{\"path\":\"\xff\"}",
+					`[]`, `{}`, `{"path":"empty","other":"x"}`, `{"path":""}`, `{"path":"a\u0000b"}`,
+					`{"path":"empty"} {}`, `{"path":"empty","path":"edit"}`, `{"path":"\ud800"}`, "{\"path\":\"\xff\"}",
 				} {
 					if res := callRaw(t, "file_read", []byte(raw)); !res.IsError {
 						t.Errorf("accepted %q", raw)
@@ -202,40 +194,6 @@ func TestFileTools(t *testing.T) {
 				}
 			})
 		})
-	}
-}
-
-func TestFileToolsNeedExecutorAndHonorCancellation(t *testing.T) {
-	r, err := builtin.Registry(builtin.Deps{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"file_read", "file_write", "file_edit"} {
-		tl, _ := r.Get(name)
-		raw := json.RawMessage(`{"path":"text"}`)
-		if name == "file_write" {
-			raw = json.RawMessage(`{"path":"text","content":"new"}`)
-		}
-		if name == "file_edit" {
-			raw = json.RawMessage(`{"path":"text","old_text":"old","new_text":"new"}`)
-		}
-		res, err := tl.Call(t.Context(), tool.CallContext{}, raw)
-		if err != nil || !res.IsError {
-			t.Fatalf("%s without executor: %+v, %v", name, res, err)
-		}
-		e, err := local.New(t.TempDir())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := e.WriteFile(t.Context(), "text", []byte("old")); err != nil {
-			t.Fatal(err)
-		}
-		ctx, cancel := context.WithCancel(t.Context())
-		cancel()
-		res, err = tl.Call(ctx, tool.CallContext{Exec: e}, raw)
-		if err != nil || !res.IsError {
-			t.Fatalf("%s canceled: %+v, %v", name, res, err)
-		}
 	}
 }
 

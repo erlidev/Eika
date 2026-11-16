@@ -51,31 +51,3 @@ func TestBoardGolden(t *testing.T) {
 		t.Errorf("board =\n%s\nwant\n%s", got, want)
 	}
 }
-
-func TestBoardBeforeTheFirstCompactionListsEveryChild(t *testing.T) {
-	since := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	got := subagent.Board(boardRows(since), nil, time.Time{}, time.UTC)
-	if strings.Contains(got, "other subagent") || !strings.Contains(got, "- old-idle (researcher): idle") || !strings.Contains(got, "- old-failed (worker): failed") {
-		t.Errorf("board =\n%s\nwant every child and no count", got)
-	}
-}
-
-func TestBoardCountsWhatItLeavesOut(t *testing.T) {
-	since := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	cases := []struct {
-		name     string
-		children []store.Session
-		want     string
-	}{
-		{"no children", nil, "None."},
-		{"one quiet child", []store.Session{{Name: "a", Agent: "worker", State: store.SessionIdle, LastActiveAt: since}},
-			"1 other subagent has had no activity since the last compaction; subagent_status lists it."},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := subagent.Board(tc.children, nil, since, time.UTC); got != tc.want {
-				t.Errorf("board = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}

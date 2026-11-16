@@ -169,8 +169,3 @@ export function formatMemory(mb: number): string {
   if (mb < 1024) return `${String(mb)} MiB`;
   return `${String(Math.round((mb / 1024) * 100) / 100)} GiB`;
 }
-
-/** formatPids reads a process limit. */
-export function formatPids(pids: number): string {
-  return pids === 0 ? "No limit" : `${pids.toLocaleString("en-US")} processes`;
-}

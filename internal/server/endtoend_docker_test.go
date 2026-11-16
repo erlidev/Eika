@@ -155,24 +155,3 @@ func TestEventStreamReplaysASessionFromAnEntry(t *testing.T) {
 		}
 	})
 }
-
-func TestEventStreamReportsComputerState(t *testing.T) {
-	a := newAPI(t)
-	cx := a.home(t)
-
-	conn := stream(t, a.Server, "topics="+event.ComputerTopic(cx.ID))
-	a.waitSubscribed(t)
-
-	a.stopIdle(t)
-	e := next(t, conn)
-	if e.Type != event.TypeComputerState {
-		t.Fatalf("type = %q, want computer.state", e.Type)
-	}
-	var payload event.ComputerState
-	if err := e.DecodePayload(&payload); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if payload.ComputerID != cx.ID || payload.State != "stopped" {
-		t.Errorf("payload = %+v, want the computer stopped", payload)
-	}
-}

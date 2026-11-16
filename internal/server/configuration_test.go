@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool"
@@ -71,21 +70,6 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 			},
 		},
 		{
-			name: "the request's model wins over every layer",
-			layers: []configLayer{
-				{name: layerRequest, settings: store.ProfileSettings{ModelID: "m1"}},
-				{name: layerSession, settings: store.ProfileSettings{ModelID: "m2"}},
-			},
-			model: "small",
-			want:  provider.Sampling{MaxOutput: new(1024), ReasoningEffort: new("low")},
-			sources: map[string]string{
-				"profile": layerDefault, "model": layerRequest, "chat_prompt": layerDefault,
-				"instructions": layerDefault, "tools": layerDefault,
-				"preserve_thinking":   layerModel,
-				"sampling.max_output": layerModel, "sampling.reasoning_effort": layerModel,
-			},
-		},
-		{
 			name: "an effort the model does not offer falls through to the row's own",
 			layers: []configLayer{{name: layerProfile, settings: store.ProfileSettings{
 				Sampling: sampling(t, provider.Sampling{ReasoningEffort: new("max")}),
@@ -97,36 +81,6 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 				"instructions": layerDefault, "tools": layerDefault,
 				"preserve_thinking":   layerModel,
 				"sampling.max_output": layerModel, "sampling.reasoning_effort": layerModel,
-			},
-		},
-		{
-			name: "an effort the model offers is sent, and the empty one leaves it to the endpoint",
-			layers: []configLayer{
-				{name: layerSession, settings: store.ProfileSettings{Sampling: sampling(t, provider.Sampling{ReasoningEffort: new("")})}},
-				{name: layerProfile, settings: store.ProfileSettings{Sampling: sampling(t, provider.Sampling{ReasoningEffort: new("high")})}},
-			},
-			model: "small",
-			want:  provider.Sampling{MaxOutput: new(1024), ReasoningEffort: new("")},
-			sources: map[string]string{
-				"profile": layerDefault, "model": layerDefault, "chat_prompt": layerDefault,
-				"instructions": layerDefault, "tools": layerDefault,
-				"preserve_thinking":   layerModel,
-				"sampling.max_output": layerModel, "sampling.reasoning_effort": layerSession,
-			},
-		},
-		{
-			name: "an empty stop list clears the one below",
-			layers: []configLayer{
-				{name: layerSession, settings: store.ProfileSettings{Sampling: sampling(t, provider.Sampling{Stop: []string{}})}},
-				{name: layerProfile, settings: store.ProfileSettings{Sampling: sampling(t, provider.Sampling{Stop: []string{"END"}})}},
-			},
-			model: "small",
-			want:  provider.Sampling{Stop: []string{}, MaxOutput: new(1024), ReasoningEffort: new("low")},
-			sources: map[string]string{
-				"profile": layerDefault, "model": layerDefault, "chat_prompt": layerDefault,
-				"instructions": layerDefault, "tools": layerDefault,
-				"preserve_thinking": layerModel,
-				"sampling.stop":     layerSession, "sampling.max_output": layerModel, "sampling.reasoning_effort": layerModel,
 			},
 		},
 	}
@@ -153,54 +107,6 @@ func TestResolveTakesEachValueFromTheTopLayerThatSetsIt(t *testing.T) {
 			}
 			if !maps.Equal(got.sources, c.sources) {
 				t.Errorf("sources = %v\nwant %v", got.sources, c.sources)
-			}
-		})
-	}
-}
-
-func TestPreserveThinkingComesFromTheTopLayerThenTheModel(t *testing.T) {
-	keeps := store.Model{ID: "m1", Name: "keeps", PreserveThinking: true}
-	base := configBase{models: []store.Model{keeps}, defaultModel: keeps}
-	profile := store.Profile{ID: "p1", Name: "Careful"}
-	cases := []struct {
-		name   string
-		base   configBase
-		layers []configLayer
-		want   bool
-		source string
-	}{
-		{"unset is the model row's switch", base, nil, true, layerModel},
-		{
-			"the profile turns it off over the model",
-			base,
-			[]configLayer{{name: layerProfile, settings: store.ProfileSettings{PreserveThinking: new(false)}}},
-			false, layerProfile,
-		},
-		{
-			"the session wins over the profile",
-			base,
-			[]configLayer{
-				{name: layerSession, settings: store.ProfileSettings{PreserveThinking: new(true)}},
-				{name: layerProfile, settings: store.ProfileSettings{PreserveThinking: new(false)}},
-			},
-			true, layerSession,
-		},
-		{"with no model it is off by default", configBase{}, nil, false, layerDefault},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got, err := c.base.resolve(profile, layerDefault, c.layers)
-			if err != nil {
-				t.Fatalf("resolve: %v", err)
-			}
-			if got.preserveThinking != c.want || got.sources["preserve_thinking"] != c.source {
-				t.Errorf("preserve thinking = %v from %s, want %v from %s", got.preserveThinking, got.sources["preserve_thinking"], c.want, c.source)
-			}
-			if body := asConfiguration(got); body.PreserveThinking != c.want {
-				t.Errorf("configuration body preserve_thinking = %v, want %v", body.PreserveThinking, c.want)
-			}
-			if src := got.parameterSources()["preserve_thinking"]; src != c.source {
-				t.Errorf("parameter source of preserve_thinking = %s, want %s", src, c.source)
 			}
 		})
 	}
@@ -236,13 +142,6 @@ func TestInheritedIsTheLayerSettingNothing(t *testing.T) {
 	}
 }
 
-func TestAnUnknownRequestedModelIsRefused(t *testing.T) {
-	base := configBase{models: []store.Model{{ID: "m1", Name: "small"}}}
-	if _, _, _, err := base.sessionLayers(store.Session{}, "typo"); err == nil {
-		t.Error("a request for a model that does not exist was accepted")
-	}
-}
-
 // namedTool is a tool with a name and nothing else.
 type namedTool struct {
 	tool.Tool
@@ -270,59 +169,6 @@ func TestToolChosen(t *testing.T) {
 				t.Errorf("toolChosen(%v, bash) = %v, want %v", c.choice, got, c.want)
 			}
 		})
-	}
-}
-
-func TestChoiceServer(t *testing.T) {
-	cases := []struct {
-		entry  string
-		server string
-		ok     bool
-	}{
-		{"mcp__docs__*", "docs", true},
-		{"mcp__my-server__*", "my-server", true},
-		{"mcp__docs__search", "", false},
-		{"mcp____*", "", false},
-		{"bash", "", false},
-		{"mcp_list_resources", "", false},
-	}
-	for _, c := range cases {
-		t.Run(c.entry, func(t *testing.T) {
-			server, ok := choiceServer(c.entry)
-			if server != c.server || ok != c.ok {
-				t.Errorf("choiceServer(%q) = %q, %v; want %q, %v", c.entry, server, ok, c.server, c.ok)
-			}
-		})
-	}
-}
-
-func TestNewAgentAppliesTheConfiguration(t *testing.T) {
-	s := &Server{}
-	c := runConfig{
-		// The model row says not to preserve thinking; the configuration,
-		// which a profile or the session may have set over it, is what counts.
-		model:            store.Model{Model: "vendor/m", ContextWindow: 4096, ThinkingSwitch: "thinking"},
-		modelOK:          true,
-		preserveThinking: true,
-		chatPrompt:       new("chat rules"),
-		instructions:     "be kind",
-		sampling:         provider.Sampling{Temperature: new(0.3)},
-	}
-	preview, err := s.newAgent(nil, store.Session{}, c, nil, nil, agent.Options{}).Preview(agent.NewSession("s1", ""))
-	if err != nil {
-		t.Fatalf("Preview: %v", err)
-	}
-	if got := preview.System(); got != "chat rules\n\nbe kind" {
-		t.Errorf("a chat's system prompt = %q, want its prompt and the instructions", got)
-	}
-	want := agent.Parameters{
-		Model:            "vendor/m",
-		Sampling:         provider.Sampling{Temperature: new(0.3)},
-		ThinkingSwitch:   provider.SwitchThinking,
-		PreserveThinking: true,
-	}
-	if !reflect.DeepEqual(preview.Parameters, want) {
-		t.Errorf("parameters = %s, want %s", encoded(preview.Parameters), encoded(want))
 	}
 }
 

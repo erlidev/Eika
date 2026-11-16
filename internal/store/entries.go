@@ -22,8 +22,6 @@ const (
 	KindUser EntryKind = "user"
 	// KindAssistant is a model response: text, tool calls, or both.
 	KindAssistant EntryKind = "assistant"
-	// KindToolCall is one tool call recorded on its own.
-	KindToolCall EntryKind = "tool_call"
 	// KindToolResult is the result of one tool call.
 	KindToolResult EntryKind = "tool_result"
 	// KindSystem is a note that belongs to the conversation's framing rather
@@ -185,15 +183,6 @@ func (s *Store) EntriesBefore(ctx context.Context, sessionID string, seq int64, 
 	const q = `SELECT ` + entryColumns + ` FROM (SELECT ` + entryColumns + ` FROM session_entries
  WHERE session_id = $1 AND ($2::bigint = 0 OR seq < $2) ORDER BY seq DESC LIMIT $3) page ORDER BY seq`
 	return s.queryEntries(ctx, "page entries of session "+sessionID, q, sessionID, seq, limit)
-}
-
-// ChildEntries returns the entries whose parent is entryID, oldest first. An
-// empty entryID returns the session's roots.
-func (s *Store) ChildEntries(ctx context.Context, sessionID, entryID string) ([]Entry, error) {
-	const q = `SELECT ` + entryColumns + ` FROM session_entries
-		WHERE session_id = $1 AND parent_id IS NOT DISTINCT FROM $2
-		ORDER BY seq`
-	return s.queryEntries(ctx, "list children of entry "+entryID, q, sessionID, nullable(entryID))
 }
 
 // EntryPath returns the entries from the session's root down to entryID,

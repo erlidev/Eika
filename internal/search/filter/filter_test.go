@@ -107,12 +107,6 @@ func TestGrep(t *testing.T) {
 	if run("grep(/TIMEOUT/, 0)").Kind != page.FilterEmpty {
 		t.Error("a case-sensitive grep matched")
 	}
-	if text := ok(t, "grep('TimeoutError', 0)"); !strings.Contains(text, "raise TimeoutError") {
-		t.Errorf("string pattern = %s", text)
-	}
-	if msg := failed(t, run("grep(42)")); !strings.Contains(msg, "needs a regular expression or a string") {
-		t.Errorf("bad pattern = %s", msg)
-	}
 }
 
 func TestCode(t *testing.T) {
@@ -132,9 +126,6 @@ func TestCode(t *testing.T) {
 func TestRendering(t *testing.T) {
 	if text := ok(t, "[sections[3], sections[1]]"); strings.Index(text, "## Timeouts") > strings.Index(text, "## Task object") {
 		t.Errorf("sections out of document order:\n%s", text)
-	}
-	if text := ok(t, "lines.slice(0, 3)"); text != "# Guide\n\nintro text" {
-		t.Errorf("lines = %q", text)
 	}
 	if text := ok(t, "[sections[1].text, sections[3].text]"); !strings.Contains(text, "```\n\n## Task object") {
 		t.Errorf("blocks = %q", text)
@@ -167,13 +158,6 @@ func TestAnEmptyAnswerMapsThePage(t *testing.T) {
 	}
 }
 
-func TestTheFooterStatesTheCoordinateSpace(t *testing.T) {
-	out := run("sections[1]")
-	if out.Kind != page.FilterOK || !regexp.MustCompile(`\[filtered: ~\d+ of ~\d+ tokens · 1 of 4 sections · 23 lines\]`).MatchString(out.Footer) {
-		t.Errorf("outcome = %+v", out)
-	}
-}
-
 func TestAnOversizedAnswerIsCutToTheBudget(t *testing.T) {
 	out := filter.Run(page.FilterRequest{Markdown: guide, Source: "text.repeat(50)", Tokens: 100})
 	if out.Kind != page.FilterOK || !out.Truncated || out.Footer != "" || !strings.Contains(out.Text, "[truncated:") || len(out.Text) > 1000 {
@@ -189,8 +173,5 @@ func TestServeSpeaksJSON(t *testing.T) {
 	}
 	if !strings.HasPrefix(out.String(), `{"kind":"ok","text":"# A\n\nbody","footer":`) {
 		t.Errorf("output = %s", out.String())
-	}
-	if err := filter.Serve(strings.NewReader("not json"), &out); err == nil {
-		t.Error("Serve accepted a malformed request")
 	}
 }

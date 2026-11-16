@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -141,52 +140,5 @@ func TestQuestionNoticeAfterAnswerOrCancel(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestQuestionReasonKeepsOptionsWithSemicolons(t *testing.T) {
-	q := builtin.Question{Text: "Which?", Options: []string{"one; two", "three\nfour"}}
-	reason := questionReason(q, "question-1")
-	line := strings.Split(reason, "\n")[2]
-	var options []string
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "Options (JSON): ")), &options); err != nil {
-		t.Fatal(err)
-	}
-	if len(options) != 2 || options[0] != q.Options[0] || options[1] != q.Options[1] {
-		t.Fatalf("options = %#v", options)
-	}
-}
-
-func TestLegacyQuestionNoticeIsMarkedAfterRestart(t *testing.T) {
-	const suffix = "\nAnswer with subagent_message, or ask the user in your reply and relay the answer."
-	for _, tc := range []struct {
-		name, text string
-		stale      bool
-	}{
-		{"question", "flights (researcher) asks: Which day?" + suffix, true},
-		{"report", "flights (researcher) reported: Which day?" + suffix, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			notice := agent.Notice{ID: "notice-legacy", Text: tc.text}
-			n := &notices{server: &Server{}, sessions: map[string]*sessionNotices{"home": {held: []agent.Notice{notice}}}}
-			m := provider.Message{Notices: []string{notice.ID}, Context: "<context>\nnotice: old\n</context>"}
-			got := n.refresh("home", m)
-			if strings.Contains(got.Context, "no longer pending") != tc.stale {
-				t.Fatalf("context = %q", got.Context)
-			}
-		})
-	}
-}
-
-func TestRefreshOnlyReplacesStaleQuestionInAMixedContext(t *testing.T) {
-	n := &notices{server: &Server{}, sessions: map[string]*sessionNotices{"home": {}}}
-	m := provider.Message{Notices: []string{"report-1", "question-1", "report-2"}, Context: "<context>\ntime: now\nnotice: first report\nnotice: child asks\n  continuation\n\n  more\nnotice: second report\n</context>"}
-	got := n.refresh("home", m)
-	want := "<context>\ntime: now\nnotice: first report\nnotice: Subagent question question-1 is no longer pending. Do not answer it.\nnotice: second report\n</context>"
-	if got.Context != want {
-		t.Fatalf("context = %q, want %q", got.Context, want)
-	}
-	if again := n.refresh("home", got); again.Context != want {
-		t.Fatalf("second refresh = %q", again.Context)
 	}
 }

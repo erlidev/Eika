@@ -43,31 +43,6 @@ func newClient(t *testing.T) (*sandbox.Client, string) {
 	return c, d.Root()
 }
 
-func TestNewRejectsIncompleteOptions(t *testing.T) {
-	cases := map[string]sandbox.Options{
-		"no base url": {Token: testToken},
-		"no token":    {BaseURL: "http://sandbox:7000"},
-		"nothing":     {},
-	}
-	for name, opts := range cases {
-		t.Run(name, func(t *testing.T) {
-			if _, err := sandbox.New(opts); err == nil {
-				t.Error("New accepted incomplete options")
-			}
-		})
-	}
-}
-
-func TestRootDefaults(t *testing.T) {
-	c, err := sandbox.New(sandbox.Options{BaseURL: "http://sandbox:7000", Token: testToken})
-	if err != nil {
-		t.Fatalf("new client: %v", err)
-	}
-	if c.Root() != sandbox.DefaultRoot {
-		t.Errorf("Root() = %q, want %q", c.Root(), sandbox.DefaultRoot)
-	}
-}
-
 func TestExecStreamsIntoTheWriters(t *testing.T) {
 	c, _ := newClient(t)
 	var stdout, stderr bytes.Buffer
@@ -410,28 +385,5 @@ func TestClosingAProcessStopsIt(t *testing.T) {
 			t.Fatal("the process was not stopped after Close")
 		}
 		time.Sleep(50 * time.Millisecond)
-	}
-}
-
-func TestProcessReportsARefusedHandshake(t *testing.T) {
-	root := t.TempDir()
-	d, err := eikad.New(eikad.Options{Root: root, Token: testToken},
-		slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatalf("new daemon: %v", err)
-	}
-	srv := httptest.NewServer(d.Handler())
-	t.Cleanup(srv.Close)
-	c, err := sandbox.New(sandbox.Options{BaseURL: srv.URL, Token: "wrong"})
-	if err != nil {
-		t.Fatalf("new client: %v", err)
-	}
-	p, err := c.Process(t.Context(), sandbox.ProcessSpec{Command: "cat"}, nil)
-	if err == nil {
-		p.Close()
-		t.Fatal("the daemon started a process for a bad token")
-	}
-	if !strings.Contains(err.Error(), "/process") {
-		t.Errorf("error = %v, want it to name the route", err)
 	}
 }

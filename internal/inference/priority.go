@@ -31,16 +31,6 @@ func (p Priority) String() string {
 	return priorityNames[p]
 }
 
-// ParsePriority returns the priority a wire name stands for.
-func ParsePriority(name string) (Priority, bool) {
-	for i, n := range priorityNames {
-		if n == name {
-			return Priority(i), true
-		}
-	}
-	return 0, false
-}
-
 // Rank is the priority of a run, shared between the code that drives the run
 // and the code that learns it has become more urgent. The run reads it at
 // every Acquire, so raising it changes the run's next lease and nothing

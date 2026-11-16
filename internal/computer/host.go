@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,8 +13,6 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
@@ -137,13 +134,6 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 	}
 
 	cx.Image = orDefault(spec.Image, h.opts.Image)
-	built := spec.BuildContext != ""
-	if built {
-		cx.Image = builtImageRef(cx.ID)
-		if err := h.buildImage(ctx, spec, cx.Image); err != nil {
-			return Computer{}, err
-		}
-	}
 	cx.Volume = VolumeName(cx.ID)
 	// A volume that is already there holds files an earlier container of
 	// this computer left, which a computer made again under the same id
@@ -157,7 +147,7 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		if kept {
 			doomed.Volume = ""
 		}
-		h.discard(ctx, doomed, built)
+		h.discard(ctx, doomed)
 	}
 
 	if _, err := h.docker.VolumeCreate(ctx, volume.CreateOptions{
@@ -168,24 +158,20 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		return Computer{}, fmt.Errorf("create volume %s: %w", cx.Volume, err)
 	}
 
-	labels := map[string]string{Label: cx.ID}
-	maps.Copy(labels, spec.Labels)
-
-	user := orDefault(spec.User, DefaultUser)
 	port := nat.Port(DaemonPort + "/tcp")
 	cfg := &container.Config{
 		Image:      cx.Image,
 		Entrypoint: []string{eikad.BinaryPath, "-listen", ":" + DaemonPort, "-root", Root},
 		// HOME is the root whoever the user is: an image with no passwd
 		// entry for the uid would otherwise leave it at "/".
-		Env: append([]string{
+		Env: []string{
 			"HOME=" + Root,
 			eikad.TokenEnv + "=" + cx.Token,
 			proxyTokenEnv + "=" + cx.ProxyToken,
-		}, spec.Env...),
-		User:         user,
+		},
+		User:         fmt.Sprintf("%d:%d", userID, groupID),
 		WorkingDir:   Root,
-		Labels:       labels,
+		Labels:       map[string]string{Label: cx.ID},
 		ExposedPorts: nat.PortSet{port: struct{}{}},
 	}
 	hostCfg := &container.HostConfig{
@@ -219,7 +205,7 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		rollback()
 		return Computer{}, err
 	}
-	if err := h.ownRoot(ctx, cx.ContainerID, user); err != nil {
+	if err := h.ownRoot(ctx, cx.ContainerID); err != nil {
 		rollback()
 		return Computer{}, err
 	}
@@ -228,9 +214,8 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 }
 
 // discard removes whatever of a computer already exists. It is the rollback
-// for a failed Create and the body of Destroy, and it ignores what is not
-// there.
-func (h *Host) discard(ctx context.Context, cx Computer, builtImage bool) {
+// for a failed Create, and it ignores what is not there.
+func (h *Host) discard(ctx context.Context, cx Computer) {
 	if cx.ContainerID != "" {
 		if err := h.docker.ContainerRemove(ctx, cx.ContainerID, container.RemoveOptions{
 			Force: true,
@@ -241,14 +226,6 @@ func (h *Host) discard(ctx context.Context, cx Computer, builtImage bool) {
 	if cx.Volume != "" {
 		if err := h.docker.VolumeRemove(ctx, cx.Volume, true); err != nil && !cerrdefs.IsNotFound(err) {
 			h.log.Warn("remove volume", "computer_id", cx.ID, "error", err)
-		}
-	}
-	if builtImage {
-		if _, err := h.docker.ImageRemove(ctx, builtImageRef(cx.ID), image.RemoveOptions{
-			Force:         true,
-			PruneChildren: true,
-		}); err != nil && !cerrdefs.IsNotFound(err) {
-			h.log.Warn("remove image", "computer_id", cx.ID, "error", err)
 		}
 	}
 }
@@ -293,56 +270,6 @@ func (h *Host) Stop(ctx context.Context, cx *Computer) error {
 	cx.State = StateStopped
 	h.log.Info("computer stopped", "computer_id", cx.ID)
 	return nil
-}
-
-// Destroy removes the computer's container and its volume. The files in a
-// bind-mounted host directory are left alone.
-func (h *Host) Destroy(ctx context.Context, cx *Computer) error {
-	if err := h.docker.ContainerRemove(ctx, cx.ContainerID, container.RemoveOptions{
-		Force:         true,
-		RemoveVolumes: false,
-	}); err != nil && !cerrdefs.IsNotFound(err) {
-		return fmt.Errorf("remove container for computer %s: %w", cx.ID, err)
-	}
-	if cx.Volume != "" {
-		if err := h.docker.VolumeRemove(ctx, cx.Volume, true); err != nil && !cerrdefs.IsNotFound(err) {
-			return fmt.Errorf("remove volume %s: %w", cx.Volume, err)
-		}
-	}
-	// An image built for this one computer is named after it, so it goes too.
-	if cx.Image == builtImageRef(cx.ID) {
-		if _, err := h.docker.ImageRemove(ctx, cx.Image, image.RemoveOptions{
-			Force:         true,
-			PruneChildren: true,
-		}); err != nil && !cerrdefs.IsNotFound(err) {
-			return fmt.Errorf("remove image %s: %w", cx.Image, err)
-		}
-	}
-	cx.Address = ""
-	cx.State = StateGone
-	h.log.Info("computer destroyed", "computer_id", cx.ID)
-	return nil
-}
-
-// List reports every computer container the Docker daemon knows about,
-// running or not. The harness calls it on startup to reconcile with reality.
-func (h *Host) List(ctx context.Context) ([]Computer, error) {
-	summaries, err := h.docker.ContainerList(ctx, container.ListOptions{
-		All:     true,
-		Filters: filters.NewArgs(filters.Arg("label", Label)),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list computer containers: %w", err)
-	}
-	out := make([]Computer, 0, len(summaries))
-	for _, s := range summaries {
-		cx, err := h.Inspect(ctx, s.Labels[Label])
-		if err != nil {
-			return nil, fmt.Errorf("inspect listed computer container %s: %w", s.ID, err)
-		}
-		out = append(out, cx)
-	}
-	return out, nil
 }
 
 // Inspect reports the current state of one computer, recovering its tokens

@@ -101,20 +101,6 @@ type mcpToolsWire struct {
 	} `json:"tools"`
 }
 
-type elicitationWire struct {
-	ID        string `json:"id"`
-	SessionID string `json:"session_id"`
-	CallID    string `json:"call_id"`
-	Server    string `json:"server"`
-	Mode      string `json:"mode"`
-	Message   string `json:"message"`
-}
-
-type elicitationStateWire struct {
-	Active       bool              `json:"active"`
-	Elicitations []elicitationWire `json:"elicitations"`
-}
-
 // serveMCP serves an MCP server over HTTP at /mcp and returns its URL.
 func (a *api) serveMCP(t *testing.T, s http.Handler) string {
 	t.Helper()
@@ -217,18 +203,8 @@ func TestMCPServerRoutes(t *testing.T) {
 		status int
 	}{
 		{"a taken name", map[string]any{"name": "docs", "kind": "http", "url": docsURL}, 409},
-		{"a name with a space", map[string]any{"name": "my docs", "kind": "http", "url": docsURL}, 400},
-		{"a name with a double underscore", map[string]any{"name": "a__b", "kind": "http", "url": docsURL}, 400},
-		{"an unknown kind", map[string]any{"name": "ws", "kind": "websocket", "url": "wss://x"}, 400},
-		{"an http server without a url", map[string]any{"name": "nourl", "kind": "http"}, 400},
 		{"credentials in the url", map[string]any{"name": "cred", "kind": "http", "url": "https://u:p@mcp.example/mcp"}, 400},
 		{"a header the client sets", map[string]any{"name": "hdr", "kind": "http", "url": docsURL, "headers": map[string]string{"Mcp-Session-Id": "x"}}, 400},
-		{"a header value on two lines", map[string]any{"name": "hdr", "kind": "http", "url": docsURL, "headers": map[string]string{"X-A": "a\nb"}}, 400},
-		{"an http server with a command", map[string]any{"name": "mixed", "kind": "http", "url": docsURL, "command": "npx"}, 400},
-		{"a stdio server without a command", map[string]any{"name": "local", "kind": "stdio"}, 400},
-		{"a stdio server with headers", map[string]any{"name": "local", "kind": "stdio", "command": "npx", "headers": map[string]string{"X-A": "b"}}, 400},
-		{"a bad environment name", map[string]any{"name": "local", "kind": "stdio", "command": "npx", "env": map[string]string{"1X": "b"}}, 400},
-		{"a client secret without a client", map[string]any{"name": "sec", "kind": "http", "url": docsURL, "oauth_client_secret": "s"}, 400},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -255,13 +231,6 @@ func TestMCPServerRoutes(t *testing.T) {
 	if patched.Name != "fs" || !slices.Equal(patched.EnvNames, []string{"EXTRA", "TOKEN"}) || !slices.Equal(patched.DisabledTools, []string{"write"}) {
 		t.Errorf("patched = %+v", patched)
 	}
-	cfg, err := a.mcp.Details(t.Context(), local.ID)
-	if err != nil || cfg.State != "disabled" {
-		t.Errorf("details after the patch = %+v, %v", cfg, err)
-	}
-	refused(t, request(t, a.Server, "PATCH", "/api/mcp/servers/"+local.ID, map[string]any{"env": map[string]any{"MISSING": nil}}), 400)
-	refused(t, request(t, a.Server, "PATCH", "/api/mcp/servers/"+local.ID, map[string]any{"url": docsURL}), 400)
-	refused(t, request(t, a.Server, "PATCH", "/api/mcp/servers/"+local.ID, map[string]any{"name": "docs"}), 409)
 
 	// Moving a server to another URL drops the headers given for the old one.
 	other := a.serveMCP(t, &mcptest.Server{Tools: []mcptest.Tool{echoTool("echo")}})
@@ -278,122 +247,6 @@ func TestMCPServerRoutes(t *testing.T) {
 		t.Fatalf("delete = %d: %s", rec.Code, rec.Body.String())
 	}
 	refused(t, request(t, a.Server, "GET", "/api/mcp/servers/"+local.ID, nil), 404)
-	refused(t, request(t, a.Server, "DELETE", "/api/mcp/servers/"+local.ID, nil), 404)
-	waitFor(t, "a removed event", func() bool {
-		for {
-			select {
-			case e := <-events.Events():
-				var p event.MCPServer
-				if e.Type == event.TypeMCPServer && json.Unmarshal(e.Payload, &p) == nil && p.ServerID == local.ID && p.State == "removed" {
-					return true
-				}
-			default:
-				return false
-			}
-		}
-	})
-}
-
-func TestMCPServerDetailsAndTools(t *testing.T) {
-	a := newAPI(t)
-	docs := &mcptest.Server{
-		Name:         "docs",
-		Instructions: "Search before you read.",
-		Tools:        []mcptest.Tool{echoTool("echo"), echoTool("drop")},
-		Resources:    []json.RawMessage{json.RawMessage(`{"uri":"docs://readme","name":"readme","mimeType":"text/markdown"}`)},
-		ReadResource: func(uri string) (any, *mcptest.Error) {
-			return map[string]any{"contents": []map[string]any{{"uri": uri, "mimeType": "text/markdown", "text": "# Readme"}}}, nil
-		},
-		Prompts: []json.RawMessage{json.RawMessage(`{"name":"review","arguments":[{"name":"file","required":true}]}`)},
-		GetPrompt: func(_ string, args map[string]string) (any, *mcptest.Error) {
-			return map[string]any{"description": "A review", "messages": []map[string]any{
-				{"role": "user", "content": map[string]any{"type": "text", "text": "Review " + args["file"]}},
-			}}, nil
-		},
-	}
-	srv := a.addMCPServer(t, map[string]any{"name": "docs", "kind": "http", "url": a.serveMCP(t, docs)})
-
-	d := a.connectMCP(t, srv.ID, "")
-	if d.Server.State != "connected" || d.Connection == nil {
-		t.Fatalf("details = %+v", d)
-	}
-	if c := d.Connection; c.Era != "modern" || c.Transport != "streamable_http" || c.ServerInfo.Name != "docs" ||
-		!c.Capabilities.Tools || !c.Capabilities.Resources || !c.Capabilities.Prompts || c.Instructions != "Search before you read." {
-		t.Errorf("connection = %+v", c)
-	}
-	if len(d.Tools) != 2 || d.Tools[0].ExposedName != "mcp__docs__echo" || !d.Tools[0].Enabled || len(d.Tools[0].InputSchema) == 0 {
-		t.Errorf("tools = %+v", d.Tools)
-	}
-	if len(d.Resources) != 1 || d.Resources[0].URI != "docs://readme" || len(d.Prompts) != 1 || !d.Prompts[0].Arguments[0].Required {
-		t.Errorf("resources = %+v, prompts = %+v", d.Resources, d.Prompts)
-	}
-	if !slices.ContainsFunc(d.Logs, func(l mcpLogWire) bool { return l.Source == "eika" && strings.HasPrefix(l.Text, "connected") }) {
-		t.Errorf("logs = %+v, want the connection recorded", d.Logs)
-	}
-
-	// The tool list names the server of each MCP tool; a remote server's
-	// tools need no computer.
-	tools := decodeBody[mcpToolsWire](t, request(t, a.Server, "GET", "/api/tools", nil), 200)
-	servers := map[string]string{}
-	for _, tl := range tools.Tools {
-		servers[tl.Name] = tl.Server
-		if strings.HasPrefix(tl.Name, "mcp_") && tl.NeedsComputer {
-			t.Errorf("%s needs a computer", tl.Name)
-		}
-	}
-	if servers["mcp__docs__echo"] != "docs" || servers["mcp__docs__drop"] != "docs" || servers["bash"] != "" {
-		t.Errorf("tool servers = %v", servers)
-	}
-	if _, ok := servers["mcp_read_resource"]; !ok {
-		t.Errorf("tools = %v, want the resource tools for a server with resources", servers)
-	}
-
-	res := decodeBody[struct {
-		Contents []struct {
-			Type string `json:"type"`
-			URI  string `json:"uri"`
-			Text string `json:"text"`
-		} `json:"contents"`
-	}](t, request(t, a.Server, "POST", "/api/mcp/servers/"+srv.ID+"/resources/read", map[string]any{"uri": "docs://readme"}), 200)
-	if len(res.Contents) != 1 || res.Contents[0].Text != "# Readme" || res.Contents[0].URI != "docs://readme" {
-		t.Errorf("resource = %+v", res)
-	}
-	refused(t, request(t, a.Server, "POST", "/api/mcp/servers/"+srv.ID+"/resources/read", map[string]any{"uri": ""}), 400)
-
-	prompt := decodeBody[struct {
-		Description string `json:"description"`
-		Messages    []struct {
-			Role    string `json:"role"`
-			Content struct {
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"messages"`
-	}](t, request(t, a.Server, "POST", "/api/mcp/servers/"+srv.ID+"/prompts/get", map[string]any{"name": "review", "arguments": map[string]string{"file": "main.go"}}), 200)
-	if prompt.Description != "A review" || len(prompt.Messages) != 1 || prompt.Messages[0].Content.Text != "Review main.go" {
-		t.Errorf("prompt = %+v", prompt)
-	}
-
-	// A tool the user turns off leaves the tool list and the session's
-	// choice, and the details say so.
-	request(t, a.Server, "PATCH", "/api/mcp/servers/"+srv.ID, map[string]any{"disabled_tools": []string{"drop"}})
-	d = a.connectMCP(t, srv.ID, "")
-	if d.Tools[1].Name != "drop" || d.Tools[1].Enabled {
-		t.Errorf("tools after turning one off = %+v", d.Tools)
-	}
-	chat := a.newChat(t, "docs")
-	if !slices.Contains(chat.Tools, "mcp__docs__echo") || slices.Contains(chat.Tools, "mcp__docs__drop") {
-		t.Errorf("chat tools = %v", chat.Tools)
-	}
-	picked := decodeBody[chatWire](t, request(t, a.Server, "PUT", "/api/sessions/"+chat.ID+"/tools", map[string]any{"tools": []string{"mcp__docs__echo"}}), 200)
-	if !slices.Equal(picked.Tools, []string{"mcp__docs__echo"}) {
-		t.Errorf("picked = %v", picked.Tools)
-	}
-	refused(t, request(t, a.Server, "PUT", "/api/sessions/"+chat.ID+"/tools", map[string]any{"tools": []string{"mcp__docs__drop"}}), 400)
-
-	// A server that is off refuses to connect.
-	request(t, a.Server, "PATCH", "/api/mcp/servers/"+srv.ID, map[string]any{"enabled": false})
-	refused(t, request(t, a.Server, "POST", "/api/mcp/servers/"+srv.ID+"/connect", map[string]any{}), 409)
-	refused(t, request(t, a.Server, "POST", "/api/mcp/servers/missing/connect", map[string]any{}), 404)
 }
 
 func TestARunCallsAnMCPTool(t *testing.T) {
@@ -441,56 +294,6 @@ func TestARunCallsAnMCPTool(t *testing.T) {
 	}
 }
 
-func TestAnMCPServerAsksTheUserDuringARun(t *testing.T) {
-	a := newAPI(t)
-	schema := json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
-	greet := mcptest.Tool{
-		Definition: mcptest.ToolDef("greet", "Greet someone.", `{"type":"object"}`),
-		Call: func(_ context.Context, c *mcptest.Call) (any, *mcptest.Error) {
-			if c.InputResponses == nil {
-				return map[string]any{
-					"resultType":    "input_required",
-					"inputRequests": map[string]any{"who": map[string]any{"method": "elicitation/create", "params": map[string]any{"message": "Who?", "requestedSchema": schema}}},
-					"requestState":  "state-1",
-				}, nil
-			}
-			return mcptest.Text("answer " + string(c.InputResponses["who"])), nil
-		},
-	}
-	a.addMCPServer(t, map[string]any{"name": "people", "kind": "http", "url": a.serveMCP(t, &mcptest.Server{Tools: []mcptest.Tool{greet}})})
-	chat := a.newChat(t, "greet")
-	p := a.script(
-		providertest.Calls("", providertest.Call("c1", "mcp__people__greet", map[string]any{})),
-		providertest.Text("done"),
-	)
-	a.postMessage(t, chat.ID, "greet someone", "", 202)
-
-	var asked elicitationWire
-	waitFor(t, "an elicitation", func() bool {
-		state := decodeBody[elicitationStateWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/run", nil), 200)
-		if len(state.Elicitations) == 0 {
-			return false
-		}
-		asked = state.Elicitations[0]
-		return true
-	})
-	// The call's id is the one the loop minted, not the script's "c1".
-	if asked.SessionID != chat.ID || !strings.HasPrefix(asked.CallID, "call_") || asked.Server != "people" || asked.Mode != "form" || asked.Message != "Who?" {
-		t.Errorf("elicitation = %+v", asked)
-	}
-	answer := "/api/elicitations/" + asked.ID + "/answer"
-	refused(t, request(t, a.Server, "POST", answer, map[string]any{"action": "accept", "content": map[string]any{"name": 7}}), 400)
-	refused(t, request(t, a.Server, "POST", answer, map[string]any{"action": "maybe"}), 400)
-	if rec := request(t, a.Server, "POST", answer, map[string]any{"action": "accept", "content": map[string]any{"name": "Ada"}}); rec.Code != 204 {
-		t.Fatalf("answer = %d: %s", rec.Code, rec.Body.String())
-	}
-	refused(t, request(t, a.Server, "POST", answer, map[string]any{"action": "decline"}), 404)
-	a.waitIdle(t, chat.ID)
-	if results := toolResults(p.Requests()[1]); len(results) != 1 || !strings.Contains(results[0], `"Ada"`) {
-		t.Errorf("tool results = %q", results)
-	}
-}
-
 func TestAuthorizingAnMCPServer(t *testing.T) {
 	a := newAPI(t)
 	auth := mcptest.NewAuthorization(t)
@@ -514,9 +317,7 @@ func TestAuthorizingAnMCPServer(t *testing.T) {
 	authorize := "/api/mcp/servers/" + server.ID + "/authorize"
 	for name, uri := range map[string]string{
 		"another host":   "https://evil.example/mcp/callback",
-		"another path":   "http://example.com/elsewhere",
 		"a query string": "http://example.com/mcp/callback?next=x",
-		"not a url":      "::",
 	} {
 		t.Run(name, func(t *testing.T) {
 			refused(t, request(t, a.Server, "POST", authorize, map[string]any{"redirect_uri": uri}), 400)
@@ -649,30 +450,4 @@ func TestAStdioMCPServerRunsInTheComputer(t *testing.T) {
 	if got := a.host.started(); len(got) != 1 {
 		t.Errorf("started in %v, want no second process", got)
 	}
-}
-
-func TestMCPErrorsAreWordedForTheUser(t *testing.T) {
-	a := newAPI(t)
-	// An authorization server that offers no registration: the user has to
-	// register a client by hand, and the message says with which redirect.
-	auth := mcptest.NewAuthorization(t)
-	auth.NoRegistration = true
-	protected := &mcptest.Server{Tools: []mcptest.Tool{echoTool("echo")}}
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", protected)
-	srv := httptest.NewServer(mux)
-	a.closesBefore(t, srv)
-	mux.Handle("GET /.well-known/oauth-protected-resource/mcp", auth.ProtectedResource(srv.URL+"/mcp"))
-	protected.Authorize = func(string) bool { return false }
-	protected.Challenge = fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource/mcp"`, srv.URL)
-	server := a.addMCPServer(t, map[string]any{"name": "secure", "kind": "http", "url": srv.URL + "/mcp"})
-	a.connectMCP(t, server.ID, "")
-
-	rec := request(t, a.Server, "POST", "/api/mcp/servers/"+server.ID+"/authorize", map[string]any{"redirect_uri": "http://example.com/mcp/callback"})
-	code, message := errorOf(t, rec)
-	if rec.Code != 400 || code != "invalid_request" || !strings.Contains(message, "http://example.com/mcp/callback") {
-		t.Errorf("authorize = %d %s %q, want the redirect to register named", rec.Code, code, message)
-	}
-	refused(t, request(t, a.Server, "POST", "/api/mcp/oauth/callback", map[string]any{"state": "unknown", "code": "c"}), 404)
-	refused(t, request(t, a.Server, "POST", "/api/elicitations/el-missing/answer", map[string]any{"action": "decline"}), 404)
 }

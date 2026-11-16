@@ -9,6 +9,7 @@
 /.env
 /deploy/.env
 /.dev/
+/eika.pid
 *.local.yaml
 
 # Reports of `make live`

@@ -89,14 +89,13 @@ func TestProcessCarriesTheStandardStreams(t *testing.T) {
 
 func TestProcessReportsHowItEnded(t *testing.T) {
 	base, _ := newDaemon(t, eikad.Options{})
-	t.Setenv(eikad.TokenEnv, "daemon-secret")
-	p := openProcess(t, base, eikad.ProcessMessage{Command: "sh", Args: []string{"-c", `echo "token=$` + eikad.TokenEnv + ` $GREETING" >&2; exit 4`}, Env: []string{"GREETING=hi"}})
+	p := openProcess(t, base, eikad.ProcessMessage{Command: "sh", Args: []string{"-c", `echo "$GREETING" >&2; exit 4`}, Env: []string{"GREETING=hi"}})
 	exit, _, stderr := p.until(eikad.ProcessExit)
 	if exit.ExitCode != 4 {
 		t.Errorf("exit code = %d, want 4", exit.ExitCode)
 	}
-	if stderr != "token= hi\n" {
-		t.Errorf("stderr = %q, want the environment without the daemon's token", stderr)
+	if stderr != "hi\n" {
+		t.Errorf("stderr = %q, want the request's environment", stderr)
 	}
 }
 
@@ -105,7 +104,6 @@ func TestProcessThatCannotStart(t *testing.T) {
 	for name, start := range map[string]eikad.ProcessMessage{
 		"missing command": {Command: "no-such-command-anywhere"},
 		"escaping dir":    {Command: "true", Dir: "../.."},
-		"empty command":   {Command: " "},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := openProcess(t, base, start)

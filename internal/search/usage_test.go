@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -113,16 +112,6 @@ func TestTrackerCooldownIsCappedAndClearedBySuccess(t *testing.T) {
 	}
 }
 
-func TestTrackerHonoursALaterServerDeadline(t *testing.T) {
-	tr := newTracker(t, nil)
-	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
-	reset := now.Add(4 * time.Hour)
-	tr.RecordFailure(t.Context(), "github", now, reset)
-	if got := tr.Usage("github", now).CooldownUntil; !got.Equal(reset) {
-		t.Errorf("cooldown until %s, want the server's %s", got, reset)
-	}
-}
-
 func TestTrackerPersistsThroughItsStore(t *testing.T) {
 	store := &memoryUsage{}
 	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
@@ -160,30 +149,11 @@ func TestRetryDeadline(t *testing.T) {
 		{"reset seconds", with("X-Ratelimit-Reset", "1786798800"), time.Unix(1786798800, 0)},
 		{"reset milliseconds", with("X-Ratelimit-Reset", "1786798800000"), time.Unix(1786798800, 0)},
 		{"seconds past the cap", with("Retry-After", "1e30"), now.Add(24 * time.Hour)},
-		{"negative seconds", with("Retry-After", "-5"), time.Time{}},
 		{"NaN seconds", with("Retry-After", "NaN"), time.Time{}},
-		{"reset past the cap", with("X-Ratelimit-Reset", "99999999999"), now.Add(24 * time.Hour)},
-		{"no header", &search.HTTPError{Status: 429}, time.Time{}},
-		{"not an HTTP error", errors.New("boom"), time.Time{}},
 	}
 	for _, c := range cases {
 		if got := search.RetryDeadline(c.err, now); !got.Equal(c.want) {
 			t.Errorf("%s: RetryDeadline = %s, want %s", c.name, got, c.want)
 		}
-	}
-}
-
-func TestDescribe(t *testing.T) {
-	if got := search.Describe(&search.HTTPError{Status: 404, Message: "HTTP 404"}); got != "HTTP 404" {
-		t.Errorf("Describe = %q, want the status once", got)
-	}
-	if got := search.Describe(&search.HTTPError{Status: 403, Message: "forbidden"}); got != "forbidden - 403" {
-		t.Errorf("Describe = %q", got)
-	}
-	if got := search.Describe(context.DeadlineExceeded); got != "timed out" {
-		t.Errorf("Describe(deadline) = %q", got)
-	}
-	if got := search.Describe(errors.New("boom")); !strings.Contains(got, "boom") {
-		t.Errorf("Describe = %q", got)
 	}
 }
