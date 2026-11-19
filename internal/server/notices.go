@@ -346,7 +346,8 @@ var errNothingToDeliver = errors.New("no notices to deliver")
 // notices each stored message delivered.
 type noticeStore struct {
 	*session.Store
-	notices *notices
+	notices     *notices
+	notifyReply bool
 }
 
 // Append records one message and, once it is stored, the notices it carried.
@@ -355,6 +356,9 @@ func (s noticeStore) Append(ctx context.Context, sessionID, runID string, m prov
 		return err
 	}
 	s.notices.delivered(sessionID, m.Notices)
+	if s.notifyReply && m.Role == provider.RoleAssistant && m.Content != "" && len(m.ToolCalls) == 0 {
+		s.notices.server.notifications.send("Eika replied")
+	}
 	return nil
 }
 
@@ -377,5 +381,6 @@ func reportNoticeID(child store.Session) string {
 // subagentReported posts a child's report to its home session as a notice.
 // It is the lifecycle service's Reported option.
 func (s *Server) subagentReported(ctx context.Context, child store.Session) {
+	s.notifications.send("A subagent reported")
 	s.notices.postSoon(ctx, child.ParentSessionID, reportNoticeID(child), reportNotice(child))
 }

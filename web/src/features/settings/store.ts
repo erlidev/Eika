@@ -16,6 +16,7 @@ export type SettingsTab =
   | "computer"
   | "search"
   | "mcp"
+  | "notifications"
   | "account"
   | "appearance"
   | "developer";

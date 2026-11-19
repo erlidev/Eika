@@ -242,3 +242,19 @@ test.describe("on a phone", () => {
     }
   });
 });
+
+test("notifications: save, test and remove a topic", async ({ open }) => {
+  const eika = await open({ scenario: "workbench" });
+  await eika.click("Settings");
+  await eika.click("Notifications");
+  await eika.fill("ntfy topic URL", "https://ntfy.example/secret-topic");
+  await eika.click("Save");
+  await expect(
+    eika.page.getByText("A topic is configured. Enter a URL to replace it."),
+  ).toBeVisible();
+  await eika.click("Test");
+  await expect(eika.page.getByText("Test queued. Check ntfy for the notification.")).toBeVisible();
+  await eika.click("Remove");
+  await expect(eika.page.getByText("Enter the full topic URL.")).toBeVisible();
+  await expect(eika.page.getByRole("button", { name: "Test", exact: true })).toHaveCount(0);
+});

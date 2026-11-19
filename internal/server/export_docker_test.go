@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync/atomic"
 	"time"
 
@@ -79,4 +80,10 @@ func (s *Server) StartIdleCompactionForTest(ctx context.Context, id string) erro
 	s.runs.mu.Unlock()
 	_, _, err := s.runs.launch(ctx, id, "", job{compact: true, idle: true, idleFill: 1, idleFor: 30 * time.Minute, priority: inference.Maintenance})
 	return err
+}
+
+// SetNotificationClientForTest directs notifications to a test server.
+func (s *Server) SetNotificationClientForTest(client *http.Client, publicURL string) {
+	s.notifications.client = client
+	s.cfg.PublicURL = publicURL
 }

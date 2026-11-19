@@ -51,6 +51,7 @@ export type { Reply } from "./routes/context.ts";
  */
 const bytesFirst = new Set([
   "PUT /api/settings",
+  "POST /api/notifications/test",
   "PUT /api/agents/{name}",
   "PUT /api/instructions",
   "PUT /api/projects/{id}/instructions",
