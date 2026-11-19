@@ -48,6 +48,8 @@ export const builtinAgents: AgentDefinition[] = [
     class: "main",
     max_turns: 40,
     tools: [
+      "history_read",
+      "history_search",
       "project_create",
       "project_list",
       "project_open",

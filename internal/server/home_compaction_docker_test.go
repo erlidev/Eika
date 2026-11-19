@@ -3,6 +3,7 @@
 package server_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -72,15 +73,18 @@ func TestHomeCompactionWritesTheBoardAndRollsTheConversation(t *testing.T) {
 	}
 
 	first := compact()
+	if !regexp.MustCompile(`<summary as_of="[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}" entries="#([1-9][0-9]*)-#([1-9][0-9]*)" compactions="1">\n`).MatchString(first) {
+		t.Errorf("first summary attributes = %q", first)
+	}
 	if got := lastContent(p.Requests()[2]); got != eika.Compaction.Summary {
 		t.Errorf("summary prompt = %.80q, want Eika's", got)
 	}
 	for _, want := range []string{
-		"<summary>\n[Subagents] as of ",
+		"[Subagents] as of ",
 		"\n- plumber (worker, project kitchen): waiting, last active ",
 		"\n  waiting on: Question ID: q1\n    Which quote?\n",
 		"\n- quiet (researcher): idle, last active ",
-		"\n  last report: Found it.\n\n[Conversation]\nCONVERSATION-1\n</summary>",
+		"\n  last report: Found it.\n\n[Conversation]\nCONVERSATION-1\n\nhistory_search and history_read recover anything compacted\n</summary>",
 	} {
 		if !strings.Contains(first, want) {
 			t.Errorf("first summary = %q, want it to contain %q", first, want)
@@ -98,6 +102,9 @@ func TestHomeCompactionWritesTheBoardAndRollsTheConversation(t *testing.T) {
 	a.postMessage(t, home.ID, "three "+strings.Repeat("x", homeTurn), "", 202)
 	a.waitIdle(t, home.ID)
 	second := compact()
+	if !regexp.MustCompile(`<summary as_of="[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}" entries="#([1-9][0-9]*)-#([1-9][0-9]*)" compactions="2">\n`).MatchString(second) {
+		t.Errorf("second summary attributes = %q", second)
+	}
 	update := p.Requests()[4]
 	if got := lastContent(update); got != eika.Compaction.Update {
 		t.Errorf("update prompt = %.80q, want Eika's", got)
@@ -107,7 +114,7 @@ func TestHomeCompactionWritesTheBoardAndRollsTheConversation(t *testing.T) {
 	}
 	for _, want := range []string{
 		"\n- plumber (worker, project kitchen): idle, last active ",
-		"\n  last report: Booked the second quote.\n1 other subagent has had no activity since the last compaction; subagent_status lists it.\n\n[Conversation]\nCONVERSATION-2\n</summary>",
+		"\n  last report: Booked the second quote.\n1 other subagent has had no activity since the last compaction; subagent_status lists it.\n\n[Conversation]\nCONVERSATION-2\n\nhistory_search and history_read recover anything compacted\n</summary>",
 	} {
 		if !strings.Contains(second, want) {
 			t.Errorf("second summary = %q, want it to contain %q", second, want)

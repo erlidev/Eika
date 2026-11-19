@@ -46,7 +46,7 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 			Tools        []string `json:"tools"`
 		} `json:"resolved"`
 	}](t, request(t, a.Server, "GET", configPath, nil), 200)
-	wantTools := []string{"project_create", "project_list", "project_open", "project_update",
+	wantTools := []string{"history_read", "history_search", "project_create", "project_list", "project_open", "project_update",
 		"subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_search"}
 	if cfg.Resolved.ProfileID != "" || cfg.Resolved.Model != "test-model" || cfg.Resolved.ChatPrompt != "agent rules" || cfg.Resolved.Instructions != "" || !slices.Equal(cfg.Resolved.Tools, wantTools) {
 		t.Fatalf("configuration = %+v", cfg)

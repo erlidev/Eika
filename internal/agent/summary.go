@@ -161,7 +161,7 @@ func conversationOf(summary string) string {
 		return summary
 	}
 	if _, conversation, ok := strings.Cut(summary, "\n\n"+conversationLabel+"\n"); ok {
-		return conversation
+		return strings.TrimSuffix(conversation, "\n\nhistory_search and history_read recover anything compacted")
 	}
 	return summary
 }
@@ -440,5 +440,14 @@ func truncateRunes(text string, n int) string {
 
 // summaryText returns the summary a summary message carries.
 func summaryText(m provider.Message) string {
-	return strings.TrimSuffix(strings.TrimPrefix(m.Content, summaryPrefix), summarySuffix)
+	text := strings.TrimSuffix(m.Content, summarySuffix)
+	if strings.HasPrefix(text, summaryPrefix) {
+		return strings.TrimPrefix(text, summaryPrefix)
+	}
+	intro := strings.TrimSuffix(summaryPrefix, "<summary>\n")
+	if strings.HasPrefix(text, intro+"<summary ") {
+		_, body, _ := strings.Cut(strings.TrimPrefix(text, intro), "\n")
+		return body
+	}
+	return text
 }

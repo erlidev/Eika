@@ -406,7 +406,24 @@ is the model's: Eika's summary prompt writes it, and each later compaction asks
 Eika's update prompt to fold the new messages into it, with the previous
 summary in the cached prefix. A board that cannot be read fails the compaction
 as a failed summary does, leaving the session as it was. Subagent and routine
-sessions keep Pi's summary with their definition's prompts.
+sessions keep Pi's summary with their definition's prompts. Home wraps its
+summary in a tag with `as_of`, the compacted entry sequence span and the
+compaction count. A footer points to `history_search` and `history_read`.
+`store.HistoryState` folds the stored path to find the span and retained
+messages; `CompactionSettings.SummarySpan` reads it for home before the
+compaction is stored.
+
+### History recall
+
+`session_entries.tsv` indexes user and assistant text, tool-call names and
+arguments, notices and compaction summaries with PostgreSQL full-text search.
+Tool results stay in the entry store but are not indexed. The home-only
+`history_search` tool ranks matches, filters by session, project and time, and
+returns five groups per page. Each group contains the hit and nearby turns,
+with limits on entry count and output size. Without a query it browses entries
+before the oldest retained message. `history_read` reads an entry or a window,
+including tool results, and can return full payloads. The server binds both
+through the builtin registry to the store.
 
 ### Model-call accounting
 
@@ -459,7 +476,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 |---|---|
 | `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), home |
 | `sessions` | computer_id (NULL for a chat), title, untitled, kind (user/home/subagent/routine), owner, agent, name, project_id, parent_session_id, state, waiting_reason, brief, result, report_notice_id, last_active_at, head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
-| `session_entries` | session, parent_id, seq, kind, channel, payload (json: the text it was written as, so a message reads back as the bytes it was sent as) |
+| `session_entries` | session, parent_id, seq, kind, channel, payload (json: the text it was written as, so a message reads back as the bytes it was sent as), tsv (generated search index) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
 | `providers` | name (unique), kind, base_url, api_key (sealed), and what a probe found: backend, pool, slots, kv, kv_tokens, api (`chat` or `responses`), capabilities (jsonb, with the Responses check's outcome), overridden (the fields the user set, which a probe keeps), probed_at, probe_error |

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/erlidev/eika/internal/event"
@@ -69,6 +70,8 @@ type CompactionSettings struct {
 	// records. An error fails the compaction, which leaves the session as it
 	// was.
 	Board func(ctx context.Context, loc *time.Location) (board string, asOf time.Time, err error)
+	// SummarySpan returns the compacted entry span and compaction count.
+	SummarySpan func(ctx context.Context, kept int) (first, last int64, count int, err error)
 }
 
 // CompactionPrompts are the instructions that ask for a summary. An empty
@@ -129,7 +132,11 @@ const (
 // SummaryMessage returns the user message that carries a compaction's
 // summary at the start of the context.
 func SummaryMessage(summary string) provider.Message {
-	m := provider.UserMessage(summaryPrefix + summary + summarySuffix)
+	text := summaryPrefix + summary + summarySuffix
+	if strings.HasPrefix(summary, "<summary ") {
+		text = strings.TrimSuffix(summaryPrefix, "<summary>\n") + summary
+	}
+	m := provider.UserMessage(text)
 	m.Summary = true
 	return m
 }
@@ -368,6 +375,7 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 	if err != nil {
 		return failed(err)
 	}
+	record.Kept = stored - plan.first
 	if board := a.opts.Compaction.Board; board != nil {
 		loc := a.currentLocation()
 		text, asOf, err := board(ctx, loc)
@@ -375,6 +383,13 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 			return failed(fmt.Errorf("build subagent board: %w", err))
 		}
 		summary = homeSummary(asOf, loc, text, summary)
+		if span := a.opts.Compaction.SummarySpan; span != nil {
+			first, last, count, err := span(ctx, record.Kept)
+			if err != nil {
+				return failed(fmt.Errorf("read summary span: %w", err))
+			}
+			summary = fmt.Sprintf("<summary as_of=\"%s\" entries=\"#%d-#%d\" compactions=\"%d\">\n%s\n\nhistory_search and history_read recover anything compacted\n</summary>", asOf.In(loc).Format("2006-01-02 15:04"), first, last, count, summary)
+		}
 		asOf = asOf.UTC()
 		record.BoardAsOf = &asOf
 	}
@@ -382,7 +397,6 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 		return failed(err)
 	}
 	record.Summary = summary
-	record.Kept = stored - plan.first
 	next := append(Compacted(msgs[:stored], record), msgs[stored:]...)
 	if a.opts.RefreshSnapshot != nil {
 		// The context after is the replacement snapshot's, whose preamble,

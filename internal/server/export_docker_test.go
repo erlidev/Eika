@@ -34,7 +34,7 @@ func (s *Server) SweepIdle(ctx context.Context, now time.Time) { s.idle.sweep(ct
 // with the test host.
 func (s *Server) BindAgentToolsForTest(host Computers) error {
 	s.deps.Computers = host
-	reg, err := agentToolRegistry(builtin.Deps{Questions: s.deps.Questions, Search: s.deps.Search, Pages: s.deps.Pages, Projects: s.deps.Store}, func() *Server { return s })
+	reg, err := agentToolRegistry(builtin.Deps{Questions: s.deps.Questions, Search: s.deps.Search, Pages: s.deps.Pages, Projects: s.deps.Store, History: s.deps.Store}, func() *Server { return s })
 	if err != nil {
 		return err
 	}

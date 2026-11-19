@@ -2284,9 +2284,8 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   `newAgent`. Subagent and routine sessions keep Pi's summary with their
   definition's prompts. A board that cannot be read fails the compaction like
   a failed summary call: nothing is stored and the conversation stays as it
-  was. The `as_of`, entry range and compaction count attributes of the
-  design's `<summary>` tag, and its history footer, wait for the history
-  tools (P2-23, P2-24); the board's heading states its time instead.
+  was. The summary tag now states the board time, compacted entry span and
+  compaction count. Its footer points to the history tools (P2-23, P2-24).
 
 ## Home compaction cut and snapshot refresh (P2-21)
 
@@ -2328,3 +2327,21 @@ locale is unspecified until the user sets it; no browser locale is inferred.
 Page entries by session sequence across branches, with an entry ID as the cursor.
 Sequence order stays stable when entries are appended and preserves old history.
 The current branch remains available through the path endpoint.
+
+## History recall (P2-23, P2-24)
+
+- **Keep entries and search the stored text.** A generated PostgreSQL
+  full-text index covers messages, tool-call names and arguments, notices and
+  compaction summaries. Tool results are not indexed; `history_read` can read
+  them by ID. The index bounds its input, but the original payload stays intact.
+- **Give recall to home.** `history_search` searches across sessions, with
+  project, subagent and time filters. It returns five ranked groups per page;
+  without a query it browses the compacted history of the selected session.
+  `history_read` returns one entry or a window, with an option for full text.
+  Context groups have entry and byte limits and keep the hit, so large worker
+  turns do not fill the model window. A truncated group points to the read
+  tool for the rest.
+- **Derive summary metadata from the session path.** The same compaction fold
+  identifies the compacted span and oldest retained message. Home writes the
+  board time, span and count in the summary tag and adds the recall footer.
+  This keeps the metadata tied to the branch the session follows.

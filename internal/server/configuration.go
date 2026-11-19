@@ -441,6 +441,14 @@ func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, 
 		opts.Compaction.Board = func(ctx context.Context, loc *time.Location) (string, time.Time, error) {
 			return s.subagentBoard(ctx, sess.ID, loc)
 		}
+		opts.Compaction.SummarySpan = func(ctx context.Context, kept int) (int64, int64, int, error) {
+			path, err := s.deps.Store.SessionPath(ctx, sess.ID)
+			if err != nil {
+				return 0, 0, 0, err
+			}
+			state, err := store.HistoryState(path, kept)
+			return state.FirstCompacted, state.LastCompacted, state.Compactions, err
+		}
 		opts.Compaction.KeepRecentShare = agent.DefaultKeepRecentShare
 	}
 	opts.Model = c.model.Model

@@ -16,6 +16,7 @@ type Deps struct {
 	// QuestionRelay handles subagent questions; false keeps the legacy broker.
 	QuestionRelay func(context.Context, Question) (string, bool, error)
 	Projects      Projects
+	History       History
 	HomeExecutor  func(context.Context, string) (executor.Executor, func(), error)
 	// Subagents runs the delegation tools for the calling home session.
 	Subagents Subagents
@@ -35,6 +36,8 @@ type Deps struct {
 // run nobody can answer wants.
 func Registry(d Deps) (*tool.Registry, error) {
 	r, err := tool.NewRegistry(
+		historyTool{name: "history_search", history: d.History},
+		historyTool{name: "history_read", history: d.History},
 		askUserTool{questions: d.Questions, relay: d.QuestionRelay},
 		projectTool{name: "project_list", projects: d.Projects, home: d.HomeExecutor},
 		projectTool{name: "project_open", projects: d.Projects, home: d.HomeExecutor},
