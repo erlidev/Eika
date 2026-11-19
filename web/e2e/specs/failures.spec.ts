@@ -52,10 +52,11 @@ test("general: the models and the settings did not load", async ({ open }) => {
   // A refetch that fails must not sign the browser out of the workbench.
   await expect(eika.page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   await eika.click("General");
-  await expect(eika.page.getByText(/Could not load the settings/)).toBeVisible();
+  const dialog = eika.page.getByRole("dialog", { name: "Settings" });
+  await expect(dialog.getByText(/Could not load the settings/)).toBeVisible();
   eika.mock.healRoute("GET /api/settings");
-  await eika.click("Retry");
-  await expect(eika.page.getByText(/Could not load the models/)).toBeVisible();
+  await dialog.getByRole("button", { name: "Retry" }).click();
+  await expect(dialog.getByText(/Could not load the models/)).toBeVisible();
 });
 
 test("could not change a model class", async ({ open }) => {
