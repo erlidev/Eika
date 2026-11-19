@@ -68,7 +68,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	var s *Server
 	questions := builtin.NewQuestions()
 	bus := event.NewBus(log)
-	tools, err := agentToolRegistry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st}, func() *Server { return s })
+	tools, err := agentToolRegistry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st, History: st}, func() *Server { return s })
 	if err != nil {
 		return err
 	}

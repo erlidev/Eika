@@ -182,3 +182,39 @@ func TestCompactionSwapsInTheRefreshedPromptAndTools(t *testing.T) {
 		t.Errorf("session snapshot = %v, %v, want the new definition", deref(s.Prompt), s.Tools)
 	}
 }
+
+func TestHomeSummaryIncludesHistorySpan(t *testing.T) {
+	p := providertest.New(providertest.Text("FIRST"), providertest.Text("SECOND"))
+	st := newMemoryStore()
+	count := 0
+	ag := agent.New(p, nil, agent.Options{Store: st, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Location: time.UTC,
+		Compaction: agent.CompactionSettings{KeepRecentTokens: 150,
+			Board: func(context.Context, *time.Location) (string, time.Time, error) { return "board", boardRead, nil },
+			SummarySpan: func(_ context.Context, _ int) (int64, int64, int, error) {
+				count++
+				return 1, int64(count * 10), count, nil
+			},
+		},
+	})
+	s := sessionOf(history(4, 100))
+	if err := ag.Compact(t.Context(), s, ""); err != nil {
+		t.Fatal(err)
+	}
+	first := s.Conversation.Messages()[0].Content
+	if !strings.Contains(first, `<summary as_of="2026-11-15 13:02" entries="#1-#10" compactions="1">`) || !strings.Contains(first, "history_search and history_read recover anything compacted") {
+		t.Fatalf("first summary = %s", first)
+	}
+	for _, m := range history(4, 100) {
+		s.Conversation.Append(m)
+	}
+	if err := ag.Compact(t.Context(), s, ""); err != nil {
+		t.Fatal(err)
+	}
+	second := s.Conversation.Messages()[0].Content
+	if !strings.Contains(second, `entries="#1-#20" compactions="2"`) || !strings.Contains(second, "SECOND") || strings.Count(second, "<summary") != 1 {
+		t.Fatalf("second summary = %s", second)
+	}
+	if p.Requests()[1].Messages[0].Content != first {
+		t.Fatal("update did not receive the prior summary")
+	}
+}

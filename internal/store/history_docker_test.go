@@ -139,3 +139,39 @@ func TestHistorySearchPaginationTies(t *testing.T) {
 		}
 	}
 }
+
+func TestHistoryBrowseAndTurns(t *testing.T) {
+	ctx := t.Context()
+	st, _ := upgradeFrom(t, "0016_report_notice_id",
+		`INSERT INTO sessions (id, title) VALUES ('s', 'home')`,
+		`INSERT INTO session_entries (id, session_id, seq, kind, payload) VALUES
+   ('u1','s',1,'user','{"content":"one"}'), ('a1','s',2,'assistant','{"content":"reply one"}'),
+   ('u2','s',3,'user','{"content":"two"}'), ('a2','s',4,'assistant','{"content":"reply two"}'),
+   ('u3','s',5,'user','{"content":"three"}'), ('a3','s',6,'assistant','{"content":"reply three"}'),
+   ('u4','s',7,'user','{"content":"four"}'),
+   ('call','s',8,'tool_call','{"name":"specialtool","arguments":{"text":"value"}}')`)
+	entries, err := st.BrowseHistory(ctx, store.HistoryFilter{SessionID: "s", Limit: 2, Offset: 1}, 6)
+	if err != nil || len(entries) != 2 || entries[0].ID != "a2" || entries[1].ID != "u2" {
+		t.Fatalf("browse = %+v, %v", entries, err)
+	}
+	entries, err = st.HistoryTurn(ctx, "a2", 20)
+	if err != nil || len(entries) != 6 || entries[0].ID != "u1" || entries[5].ID != "a3" {
+		t.Fatalf("turns = %+v, %v", entries, err)
+	}
+	hits, err := st.SearchHistory(ctx, "specialtool", store.HistoryFilter{SessionID: "s", Limit: 5})
+	if err != nil || len(hits) != 1 || hits[0].Entry.ID != "call" {
+		t.Fatalf("tool call search = %+v, %v", hits, err)
+	}
+	entries, err = st.HistoryTurn(ctx, "call", 2)
+	if err != nil || len(entries) != 2 || entries[1].ID != "call" || string(entries[1].Payload) != `{"name":"specialtool","arguments":{"text":"value"}}` {
+		t.Fatalf("tool call context = %+v, %v", entries, err)
+	}
+	entries, err = st.BrowseHistory(ctx, store.HistoryFilter{SessionID: "s", Limit: 1}, 9)
+	if err != nil || len(entries) != 1 || entries[0].ID != "call" {
+		t.Fatalf("tool call browse = %+v, %v", entries, err)
+	}
+	entry, err := st.EntryBySequence(ctx, "s", 3)
+	if err != nil || entry.ID != "u2" {
+		t.Fatalf("entry = %+v, %v", entry, err)
+	}
+}

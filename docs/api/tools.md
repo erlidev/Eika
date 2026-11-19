@@ -1,4 +1,4 @@
-# File and delegation tools
+# Built-in tools
 
 ## File tools
 
@@ -109,3 +109,33 @@ the existing tool call's text result and clears the waiting reason. Cancel
 ends the wait; a restart ends the run and repairs its unanswered call. No
 question row or new HTTP route is added. Legacy profile sessions retain the
 question broker and HTTP answer route.
+
+## History tools
+
+`history_search` and `history_read` need no computer. They are in the `eika`
+agent definition and accept calls from the home session only. Other sessions
+receive an error result. Arguments are JSON objects; unknown or duplicate
+fields, null, invalid UTF-8 and unpaired Unicode surrogates are errors.
+
+| Tool | Fields | Result |
+|---|---|---|
+| `history_search` | Optional `query`, `since`, `until`, `subagent`, `project`, `page` | Up to five hit groups, ranked by text relevance and then newest first. A group has a `hit` entry ID and nearby entries. Without a query, it browses entries before the oldest message still in the selected session's context. |
+| `history_read` | Exactly one of `entry` or `around`; optional `subagent`, `limit`, `full` | `entry` reads one entry. `around` reads a window around it, with a default of 10 entries and a maximum of 100. `full: true` returns each payload without truncation. |
+
+A query searches all sessions unless `subagent` names a child of home or
+`project` gives a project slug. Both filters can be used together. For browsing
+without a query, the selected session is home, or the named subagent; a project
+filter must match that session. Dates use UTC `YYYY-MM-DD` or RFC3339. `since`
+is inclusive. A date in `until` includes that day; an RFC3339 `until` is
+exclusive. Pages start at 1.
+
+Each entry has an `id`, session-local `sequence`, session name, `time`, `kind`
+and `content`. Content is the stored JSON payload as text. Search limits each
+entry to 2,000 UTF-8 bytes, each group to eight entries and 8 KiB of JSON, and
+keeps the entries closest to the hit. The group has `truncated: true` when it
+omits context; an entry has that field when its content was cut. Use
+`history_read` to recover the rest. It accepts an entry ID, or `#` followed by
+its sequence in home or the selected subagent. When `subagent` is set, an ID
+from a different session is refused. Tool results are excluded from the search
+index but can be read by ID or in a window. Without `full`, read content has
+the same per-entry limit as search.
