@@ -145,6 +145,13 @@ func (s *Server) handleWeb(dir string) http.Handler {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-cache")
+		switch r.URL.Path {
+		case "/manifest.webmanifest":
+			w.Header().Set("Content-Type", "application/manifest+json")
+		case "/service-worker.js":
+			w.Header().Set("Content-Type", "application/javascript")
+		}
 		// Anything that is not a regular file is a client-side route, not a
 		// static asset. Directories included: the UI never wants a listing.
 		fi, err := os.Stat(filepath.Join(dir, filepath.Clean(r.URL.Path)))

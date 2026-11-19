@@ -858,6 +858,14 @@ enables JSON results.
 
 ## Frontend
 
+The production build includes a web manifest and service worker. The worker
+precaches only the build's shell files. Navigation uses the network first and
+falls back to the cached index when offline. API and event requests bypass the
+worker. Each build has its own cache; activation removes older shell caches.
+The worker is registered in production, except in the mock test build. The
+server requires revalidation of frontend files, including the manifest and worker.
+
+
 ```
 web/src/
   app/         routes, shell, navigation, theme

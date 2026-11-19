@@ -81,7 +81,7 @@ frontmatter-free files.
 ## 5. Remote access
 
 The stack still binds 127.0.0.1. For a phone, the recommended setup is Tailscale.
-`tailscale serve https / http://127.0.0.1:8080` gives HTTPS on the tailnet with no
+`tailscale serve --bg http://127.0.0.1:8080` gives HTTPS on the tailnet with no
 open ports. `allowed_origins` and `public_url` already cover a reverse proxy. The
 README explains the options. Eika never opens a port itself.
 
