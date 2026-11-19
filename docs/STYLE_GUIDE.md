@@ -174,6 +174,15 @@ web/src/
 - Accessibility: every interactive element is a `button`, `a`, or input
   with a label. Keyboard navigation works for every panel.
 
+### Touch density
+
+On a coarse pointer, `index.css` raises the type tokens one step and gives
+controls a 44 px minimum target. Keep controls available without hover. Use
+shared tokens and controls so that touch and fine-pointer layouts stay in sync.
+For a small switch or checkbox, expand its hit area without expanding its glyph.
+Do not use hover to reveal a control; ESLint checks common reveal utilities.
+Check new screens with a coarse-pointer Playwright context at phone size.
+
 ### Web UI design
 
 Eika's look is the "Dense dev tool" direction: a compact tool for people

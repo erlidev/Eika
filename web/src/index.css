@@ -310,3 +310,102 @@
 .hljs-strong {
   font-weight: 600;
 }
+
+.model-option-hit {
+  display: none;
+}
+
+/* Touch density follows the pointer, not the viewport width. */
+@media (pointer: coarse) {
+  :root {
+    --text-2xs: 0.6875rem;
+    --text-2xs--line-height: 1rem;
+    --text-xs: 0.8125rem;
+    --text-xs--line-height: 1.25rem;
+    --text-sm: 0.9375rem;
+    --text-sm--line-height: 1.625rem;
+    --text-base: 1.125rem;
+    --text-base--line-height: 1.75rem;
+    --text-lg: 1.25rem;
+    --text-lg--line-height: 1.75rem;
+    --text-xl: 1.5rem;
+    --text-xl--line-height: 2rem;
+    --text-2xl: 1.875rem;
+    --text-2xl--line-height: 2.25rem;
+    --touch-target: 44px;
+  }
+
+  :is(
+    button:not([role="switch"]):not([role="checkbox"]),
+    input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea,
+    [role="tab"],
+    [role="option"],
+    [role="menuitem"],
+    [role="combobox"],
+    [data-slot="button"],
+    summary,
+    a.project-back,
+    a.inline-flex,
+    a.block,
+    a.flex,
+    nav a
+  ) {
+    min-height: var(--touch-target);
+    min-width: var(--touch-target);
+  }
+
+  a.project-back {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Reserve the hit area in both axes for adjacent checkbox options. */
+  :has(> [role="checkbox"]) {
+    min-height: var(--touch-target);
+  }
+  .model-option {
+    position: relative;
+    overflow: clip;
+  }
+  .model-option-hit {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    display: block;
+    cursor: pointer;
+  }
+  [role="checkbox"] {
+    margin-inline: calc((var(--touch-target) - 4 * var(--spacing)) / 2);
+  }
+
+  /* Keep switch, checkbox, and slider glyphs small, but expand their hit areas. */
+  :is([role="switch"], [role="checkbox"], [role="slider"])::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (pointer: fine) {
+  .rewind-action,
+  .rename-hint {
+    opacity: 0;
+  }
+  .group:hover .rewind-action,
+  .group:focus-within .rewind-action,
+  .rewind-action:focus-visible,
+  .group:hover .rename-hint,
+  .group:focus-visible .rename-hint {
+    opacity: 1;
+  }
+  @media (width < 40rem) {
+    .rename-hint {
+      display: none;
+    }
+  }
+}
