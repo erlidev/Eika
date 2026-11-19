@@ -1523,12 +1523,12 @@ Clears both global fields. Returns 204, including when already empty.
 
 ### `GET /api/projects/{id}/instructions`
 
-Returns `{instructions: string}` (200), with empty text before a first write.
+Returns `{instructions: string, version: integer}` (200), with empty text and version 0 before a first write.
 The project ID is required; an unknown project returns 404.
 
 ### `PUT /api/projects/{id}/instructions`
 
-Requires `{instructions: string}`. Returns the saved project instructions (200).
+Requires `{instructions: string, version: integer}`. Returns the saved text and its new version (200). A stale version returns 409; no text is changed. Each write or clear advances the version. To overwrite after a conflict, read the current version and submit it with the desired text.
 An unknown project returns 404. Other projects and global text stay unchanged.
 
 ### `DELETE /api/projects/{id}/instructions`

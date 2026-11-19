@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // GlobalInstructions contains text written only by the user.
@@ -68,7 +70,7 @@ func (s *Store) SetProjectInstructions(ctx context.Context, id, text string) err
 	}
 	tag, err := s.pool.Exec(ctx, `INSERT INTO project_instructions (project_id, instructions)
  SELECT id, $2 FROM projects WHERE id=$1
- ON CONFLICT (project_id) DO UPDATE SET instructions=EXCLUDED.instructions`, id, text)
+ ON CONFLICT (project_id) DO UPDATE SET instructions=EXCLUDED.instructions, version=project_instructions.version+1`, id, text)
 	if err != nil {
 		return wrap("write project instructions", err)
 	}
@@ -76,4 +78,41 @@ func (s *Store) SetProjectInstructions(ctx context.Context, id, text string) err
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ProjectInstructionVersion reads project instructions and their revision. A new project has revision zero.
+func (s *Store) ProjectInstructionVersion(ctx context.Context, id string) (string, int64, error) {
+	var text string
+	var version int64
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(i.instructions, ''), COALESCE(i.version, 0) FROM projects p LEFT JOIN project_instructions i ON i.project_id=p.id WHERE p.id=$1`, id).Scan(&text, &version)
+	if err != nil {
+		return "", 0, wrap("read project instructions", err)
+	}
+	return text, version, nil
+}
+
+// ReplaceProjectInstructions writes only if the revision matches. A nil revision forces the write.
+func (s *Store) ReplaceProjectInstructions(ctx context.Context, id, text string, version *int64) (int64, error) {
+	if err := ValidateInstructionText(text); err != nil {
+		return 0, err
+	}
+	var next int64
+	err := s.pool.QueryRow(ctx, `INSERT INTO project_instructions (project_id, instructions, version)
+ SELECT id, $2, 1 FROM projects WHERE id=$1 AND ($3::bigint IS NULL OR $3=0 OR EXISTS (SELECT 1 FROM project_instructions WHERE project_id=$1))
+ ON CONFLICT (project_id) DO UPDATE SET instructions=EXCLUDED.instructions, version=project_instructions.version+1
+ WHERE $3::bigint IS NULL OR project_instructions.version=$3 RETURNING version`, id, text, version).Scan(&next)
+	if err == nil {
+		return next, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, wrap("write project instructions", err)
+	}
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM projects WHERE id=$1)`, id).Scan(&exists); err != nil {
+		return 0, wrap("read project", err)
+	}
+	if !exists {
+		return 0, ErrNotFound
+	}
+	return 0, ErrConflict
 }

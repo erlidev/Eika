@@ -67,7 +67,7 @@ func TestUpgradeFrom0013AddsSessionStorage(t *testing.T) {
 	if got, err := st.Project(ctx, "project"); err != nil || got.Name != "Saved" || got.Directory != "/home/eika/saved" {
 		t.Fatalf("old project: %+v %v", got, err)
 	}
-	if got, err := st.ProjectInstructions(ctx, "project"); err != nil || got != "saved rules" {
-		t.Fatalf("old project instructions: %q %v", got, err)
+	if got, version, err := st.ProjectInstructionVersion(ctx, "project"); err != nil || got != "saved rules" || version != 1 {
+		t.Fatalf("old project instructions: %q version %d: %v", got, version, err)
 	}
 }

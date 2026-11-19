@@ -7,4 +7,5 @@ export type GlobalInstructions = {
 /** ProjectInstructions is separate from agent-editable project metadata. */
 export type ProjectInstructions = {
   instructions: string;
+  version: number;
 };

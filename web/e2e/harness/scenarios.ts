@@ -1133,6 +1133,15 @@ export const scenarios = {
     path: "/activity",
     build: () => activity().world,
   },
+  projects: {
+    description: "Projects with subagents and saved instructions.",
+    path: "/projects",
+    build: () => {
+      const b = activity();
+      b.world.projectInstructions["prj-kitchen"] = "Use metric measurements.";
+      return b.world;
+    },
+  },
   "home-empty": {
     description: "Eika's conversation before any message: the home session, empty.",
     path: "/",
