@@ -19,15 +19,48 @@ function validSubagentMaxRunning(value: unknown, raw: string): boolean {
   return typeof value === "number" && value >= 1 && value <= maxSubagentMaxRunning;
 }
 
+/** The mock assumes that public_url is configured. */
+function validNtfyTopic(value: unknown): boolean {
+  if (typeof value !== "string" || /%(?![0-9a-fA-F]{2})/.test(value)) return false;
+  try {
+    const url = new URL(value);
+    const parts = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/?#]*)([^?#]*)/.exec(value);
+    const authority = parts?.[1] ?? "";
+    const path = (parts?.[2] ?? "").replace(/%([0-9a-fA-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      authority !== "" &&
+      !authority.includes("@") &&
+      path !== "" &&
+      path !== "/" &&
+      url.search === "" &&
+      url.hash === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function settingsRoutes(ctx: RouteContext): void {
   const { w, on } = ctx;
   /** served is the settings table with the classes resolved, as GET and PUT answer. */
   const served = () => ({ ...w.settings, ...classView(w) });
+  on("POST", "/api/notifications/test", () =>
+    w.settings.settings.ntfy_topic === true
+      ? { status: 204 }
+      : fail(400, "invalid_request", "configure an ntfy topic first"),
+  );
   on("GET", "/api/settings", () => ok(served()));
   on("PUT", "/api/settings", (req) => {
     const { body, raw } = req;
     const bytes = badUtf8(req);
     if (bytes) return bytes;
+    const topic = body.ntfy_topic;
+    if (topic !== undefined && topic !== null && !validNtfyTopic(topic)) {
+      return fail(400, "invalid_request", "ntfy topic requires a valid URL and public_url");
+    }
     const running = body.subagent_max_running;
     if (running !== undefined && running !== null && !validSubagentMaxRunning(running, raw)) {
       return fail(
@@ -110,6 +143,10 @@ export function settingsRoutes(ctx: RouteContext): void {
       }
     }
     for (const [key, value] of Object.entries(body)) {
+      if (key === "ntfy_topic") {
+        w.settings.settings[key] = typeof value === "string" && value.length > 0;
+        continue;
+      }
       if (value === null) Reflect.deleteProperty(w.settings.settings, key);
       else w.settings.settings[key] = value;
     }

@@ -116,7 +116,8 @@ type Server struct {
 	// subagents owns the home session's named subagents and their runs.
 	subagents *subagent.Service
 	// notices delivers subagent reports to the home session.
-	notices *notices
+	notices       *notices
+	notifications *notifications
 	// counters keeps each session's token counter across its runs.
 	counters *sessionCounters
 	// titles names untitled sessions after their first message.
@@ -160,6 +161,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	s.counters = newSessionCounters()
 	s.runs = newRuns(s)
 	s.notices = newNotices(s)
+	s.notifications = newNotifications(s)
 	if deps.Store != nil {
 		// Subagents outlive the home turn that started them, so their runs
 		// are bounded by the server, not by a request.
@@ -227,6 +229,7 @@ func (s *Server) Close() {
 		s.subagents.Close()
 	}
 	s.runs.stopAll()
+	s.notifications.close()
 	s.titles.stop()
 }
 

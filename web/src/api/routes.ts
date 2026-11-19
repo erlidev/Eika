@@ -508,3 +508,8 @@ export function answerElicitation(id: string, answer: ElicitationAnswer): Promis
     body: answer,
   });
 }
+
+/** testNotification queues a test to the configured ntfy topic. */
+export function testNotification(): Promise<void> {
+  return requestEmpty("/api/notifications/test", { method: "POST" });
+}

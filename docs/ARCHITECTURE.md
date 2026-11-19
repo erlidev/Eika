@@ -1212,3 +1212,11 @@ state change. Computer inspection is separate and remains best effort.
 
 Session entry pages use sequence order across branches and entry IDs as backward
 cursors. The session path remains the current branch used for model context.
+
+### ntfy notifications
+
+Settings seals the ntfy topic URL in Core. The API reports only whether it is
+set. A subagent report and an Eika background reply each start an independent
+notification, with fixed text and a link to Chat at `public_url`. Delivery uses
+the public-address HTTP client. It retries HTTP 429 while Core runs. It does not retry ambiguous failures
+or replay a delivery after a restart.

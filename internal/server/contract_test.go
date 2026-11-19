@@ -51,6 +51,7 @@ type searchKeysResponse struct {
 // a type this table names wrongly fails the handler tests, which check every
 // response they get against the contract.
 var routeWire = map[string]wire{
+	"POST /api/notifications/test":           {status: http.StatusNoContent},
 	"GET /api/home":                          {status: http.StatusOK, response: sessionResponse{}},
 	"GET /api/instructions":                  {status: http.StatusOK, response: store.GlobalInstructions{}},
 	"PUT /api/instructions":                  {status: http.StatusOK, request: putInstructionsRequest{}, response: store.GlobalInstructions{}},

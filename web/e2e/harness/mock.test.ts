@@ -118,6 +118,33 @@ describe("the mock serves the contract's routes", () => {
   });
 });
 
+describe("notification settings", () => {
+  it("validates the topic and tests only a configured topic", async () => {
+    const mock = open("workbench");
+    const test = () => call(mock, "POST", "/api/notifications/test");
+    const save = (topic: unknown) => call(mock, "PUT", "/api/settings", { ntfy_topic: topic });
+    expect((await test()).status).toBe(400);
+    for (const invalid of [
+      "",
+      "not a URL",
+      "ftp://example.org/topic",
+      "https://example.org/",
+      "https://user@example.org/topic",
+      "https://example.org/topic?secret=yes",
+      "https://example.org/topic#fragment",
+      12,
+    ]) {
+      expect((await save(invalid)).status).toBe(400);
+    }
+    const response = await save("https://ntfy.example/secret-topic");
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(response.body)).not.toContain("secret-topic");
+    expect((await test()).status).toBe(204);
+    expect((await save(null)).status).toBe(200);
+    expect((await test()).status).toBe(400);
+  });
+});
+
 describe("the mock answers as the harness does", () => {
   it("answers every route with the harness's status and shapes", async () => {
     const mock = open("workbench");

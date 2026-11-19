@@ -804,6 +804,11 @@ the model is there. `400` with what the endpoint answered when it failed.
 
 ## Settings
 
+### `POST /api/notifications/test`
+
+`204` queues a test notification to the configured topic. Check the ntfy
+client for its arrival. `400` means no topic is configured.
+
 ### `GET /api/settings`
 
 `200` with `{"settings": {key: value}, "defaults": Defaults, "classes":
@@ -813,7 +818,14 @@ the table does not name them, every model class with the model that serves it
 now, and the name of the model that makes session titles, empty when none does
 (see `model_classes`).
 
+The `ntfy_topic` setting is a boolean in responses: true when a topic is set.
+The URL and its secret are never returned.
+
 ### `PUT /api/settings`
+
+Set `ntfy_topic` to a full HTTP or HTTPS topic URL, or null to remove it.
+The URL is sealed before storage. Configure `public_url` before setting it.
+
 
 A JSON object of the keys to write. Keys the body does not name are left
 alone; JSON `null` stores null, which means "use the default". `200` with the

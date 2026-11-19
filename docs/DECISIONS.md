@@ -2378,3 +2378,14 @@ Project instruction writes carry a version. The store checks it atomically and
 increments it on every write, including a clear. This prevents one browser from
 silently replacing another browser's edit. The user can reload or explicitly
 replace the newer text after a conflict.
+
+## ntfy delivery
+
+- The full topic URL is sealed in the settings table, because its path can be
+  a secret. Settings returns only whether it is set. A notification has fixed
+  text and a link to Chat at `public_url`.
+- Delivery runs outside the run. Core retries HTTP 429 while it is running, because the request was rejected.
+  It does not retry 5xx responses or network errors: a proxy or connection can
+  fail after ntfy accepts the push. It does not replay
+  notifications after a restart: ntfy has no delivery id for deduplication, so
+  replay could send the same notification twice. A notification can be lost.

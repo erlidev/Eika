@@ -333,7 +333,7 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	var takeNotices func() []agent.Notice
 	if home {
 		sessionStore.SetChannel("web")
-		runStore = noticeStore{Store: sessionStore, notices: s.notices}
+		runStore = noticeStore{Store: sessionStore, notices: s.notices, notifyReply: work.notify}
 		takeNotices = func() []agent.Notice { return s.notices.take(sessionID) }
 	}
 	loaded, err := sessionStore.Load(ctx, sessionID)

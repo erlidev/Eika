@@ -117,6 +117,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 		api.HandleFunc("POST /api/elicitations/{id}/answer", s.handleAnswerElicitation)
 	}
 
+	api.HandleFunc("POST /api/notifications/test", s.handleTestNotification)
 	api.HandleFunc("GET /api/settings", s.handleSettings)
 	api.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	api.HandleFunc("GET /api/system", s.handleSystem)

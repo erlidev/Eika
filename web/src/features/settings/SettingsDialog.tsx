@@ -39,6 +39,7 @@ import { AccountSettings } from "@/features/settings/AccountSettings";
 import { CompactionSettings } from "@/features/settings/CompactionSettings";
 import { ComputerSettings } from "@/features/settings/ComputerSettings";
 import { DeveloperSettings } from "@/features/settings/DeveloperSettings";
+import { NotificationsSettings } from "@/features/settings/NotificationsSettings";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
 import { InstructionsSettings } from "@/features/settings/InstructionsSettings";
 import { SearchSettings } from "@/features/settings/SearchSettings";
@@ -59,6 +60,7 @@ const tabs: readonly { value: SettingsTab; label: string }[] = [
   { value: "computer", label: "Computer" },
   { value: "search", label: "Search" },
   { value: "mcp", label: "MCP" },
+  { value: "notifications", label: "Notifications" },
   { value: "account", label: "Account" },
   { value: "appearance", label: "Appearance" },
   { value: "developer", label: "Developer" },
@@ -141,6 +143,9 @@ export function SettingsDialog() {
             </TabsContent>
             <TabsContent value="mcp">
               <MCPSettings />
+            </TabsContent>
+            <TabsContent value="notifications">
+              <NotificationsSettings />
             </TabsContent>
             <TabsContent value="account">
               <AccountSettings />

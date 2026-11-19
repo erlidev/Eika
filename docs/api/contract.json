@@ -3890,6 +3890,9 @@
         }
       }
     },
+    "POST /api/notifications/test": {
+      "status": 204
+    },
     "POST /api/projects": {
       "status": 201,
       "request": {

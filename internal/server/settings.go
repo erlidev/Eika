@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -128,6 +129,24 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for key, value := range req {
+		if key == ntfySetting {
+			var topic string
+			if string(value) != "null" && (json.Unmarshal(value, &topic) != nil || !validTopic(topic) || s.cfg.PublicURL == "") {
+				s.fail(w, r, invalidf("ntfy topic requires a valid URL and public_url"))
+				return
+			}
+			sealed, err := s.deps.Secrets.Seal(topic)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			req[key], err = json.Marshal(sealed)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			continue
+		}
 		if err := s.validateSetting(r.Context(), key, value); err != nil {
 			s.fail(w, r, err)
 			return
@@ -170,7 +189,13 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 	}
 	out := make(map[string]json.RawMessage, len(rows))
 	for _, row := range rows {
-		out[row.Key] = row.Value
+		if row.Key == ntfySetting {
+			var sealed []byte
+			_ = json.Unmarshal(row.Value, &sealed)
+			out[row.Key] = []byte(strconv.FormatBool(len(sealed) > 0))
+		} else {
+			out[row.Key] = row.Value
+		}
 	}
 	sandbox := builtinSandboxDefaults()
 	defaults := settingsDefaults{
