@@ -9,6 +9,22 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-19: P2-23 (09d5879) adds a backfilled full-text history index; indexed
+  text is capped at 32,000 characters per entry (tsvector's 1 MB limit). P2-24
+  (bd65333) gives home `history_search` and `history_read`, with bounded context.
+  P2-19 (97cd97a) kills Core mid sandbox call in Docker and checks recovery and
+  explicit resume. P2-22 (bff68c3) compacts home after `compact_idle_minutes` (30)
+  of Core inactivity when context exceeds `compact_idle_fill` (60%). Migrations
+  0017 (history index). `make check` and `make smoke` pass.
+
+- 2026-11-19: P3-10 (2649057) adds project pages and an instructions editor with
+  optimistic versions (409 on a stale save, migration 0018). P3-05 (aac1ca3)
+  paginates the transcript and reconciles live turns by a durable entry `run_id`
+  (migration 0019). P3-11 (2efd077) completes Settings with a Developer tab
+  (inspector, recorded calls); migration 0020 copies the default model into an
+  unset main class, and setup proposes the first chat model for Main.
+  `make check` and `make smoke` pass. Next free migration: 0021 (P2-11).
+
 - 2026-11-15: P2-10 adds bounded backward entry pages in write order, with
   entry IDs as cursors. Pages include all branches; P3-05 adds the transcript.
   `make check` passes.

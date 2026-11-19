@@ -210,9 +210,9 @@ What stops a long-lived home session from losing work or growing without bound.
 - [x] **P2-20**: Build the board and rolling summary.
 - [x] **P2-21**: Implement the cut and snapshot refresh.
 - [x] **P2-10**: Add backward pagination.
-- [ ] **P3-05**: Add the paginated transcript.
-- [ ] **P2-23**: Add the history index and backfill.
-- [ ] **P2-24**: Add history search and read tools.
+- [x] **P3-05**: Add the paginated transcript.
+- [x] **P2-23**: Add the history index and backfill.
+- [x] **P2-24**: Add history search and read tools.
 
 **Exit B:** phase 2's exit, by hand, without the live suite.
 
@@ -223,7 +223,7 @@ What stops a long-lived home session from losing work or growing without bound.
 - [ ] **P3-14**: Add sealed ntfy configuration and delivery.
 - [ ] **P3-13**: Add toasts.
 - [ ] **P3-15**: Add install and shell caching.
-- [ ] **P3-10**: Build project pages and instructions editor.
+- [x] **P3-10**: Build project pages and instructions editor.
 - [ ] **P3-08**: Add remaining cards, notices and their scenarios.
 
 **Exit C:** phase 3's exit. Eika is in daily use from here.
@@ -232,12 +232,12 @@ What stops a long-lived home session from losing work or growing without bound.
 
 Removal and verification. None of it changes what the user can do.
 
-- [ ] **P3-11**: Complete Settings and retain existing flows.
+- [x] **P3-11**: Complete Settings and retain existing flows.
 - [x] **P3-17**: Remove the unused workbench.
 - [ ] **P2-11**: Remove profiles, configuration layering, direct chats and
       obsolete fields and kinds, after their callers moved. Preserve history.
-- [ ] **P2-22**: Schedule idle compaction.
-- [ ] **P2-19**: Test process death and explicit resume with Docker.
+- [x] **P2-22**: Schedule idle compaction.
+- [x] **P2-19**: Test process death and explicit resume with Docker.
 - [ ] **P3-16**: Complete phone and touch coverage and measure history.
 - [ ] **P2-25**: Run persistent home functional scenarios. `evals/live` drives
       inference only today, so this package first gives it a real server and
@@ -314,7 +314,7 @@ in the code beside what replaces them.
       Stored as rows and edited in the UI. No agent tool writes them.
       - [x] **P2-03**: Add storage and authenticated APIs.
       - [x] **P3-07**: Add global instructions Settings.
-      - [ ] **P3-10**: Add project instructions editor.
+      - [x] **P3-10**: Add project instructions editor.
 - [ ] Ensure the one home session on start, as the home computer is
       (`PLAN_LOG.md` 2026-10-30), found by `(owner, name)`, and add
       `GET /api/home`. Retire chats: there are no direct sessions, and the user
@@ -377,7 +377,7 @@ in the code beside what replaces them.
             post a notice for each child whose stored report has none; the
             notice id derives from the report, so the rescan is safe. Startup
             starts no home turn; notices wait for the next home turn.
-      - [ ] **P2-19**: Test process death and explicit resume with Docker.
+      - [x] **P2-19**: Test process death and explicit resume with Docker.
 - [x] Paginated entries: `GET /api/sessions/{id}/entries?before=&limit=`.
       - [x] **P2-10**: Add backward pagination.
 - [ ] Home compaction (runtime.md 11):
@@ -391,12 +391,12 @@ in the code beside what replaces them.
       Subagent and routine sessions keep Pi's compaction with per-agent prompts.
       - [x] **P2-20**: Build the board and rolling summary.
       - [x] **P2-21**: Implement the cut and snapshot refresh.
-      - [ ] **P2-22**: Schedule idle compaction.
+      - [x] **P2-22**: Schedule idle compaction.
 - [ ] History recall (runtime.md 11): `entries.tsv` over entries, tool calls,
       notices and compaction summaries; the tools `history_search` and
       `history_read`.
-      - [ ] **P2-23**: Add the history index and backfill.
-      - [ ] **P2-24**: Add history search and read tools.
+      - [x] **P2-23**: Add the history index and backfill.
+      - [x] **P2-24**: Add history search and read tools.
 - [ ] Topic `activity`, and the events `subagent.started`, `subagent.updated` and
       `subagent.reported`. Activity runs on `session.updated` on `global` first
       (P2-12). Build this only if that proves too coarse.
@@ -456,7 +456,7 @@ The mobile-first app. Design: `design/interface.md`.
       - on touch, a plain textarea with a rendered preview, where Enter makes a
         newline and a send button sends
       - [x] **P3-04**: Bind basic Chat to home.
-      - [ ] **P3-05**: Add the paginated transcript. Channel marks wait for a
+      - [x] **P3-05**: Add the paginated transcript. Channel marks wait for a
             second channel (`docs/DEFERRED.md`, channels).
       - [ ] **P3-06**: Add the touch composer.
       - [ ] **P3-08**: Add remaining cards and notices.
@@ -466,7 +466,7 @@ The mobile-first app. Design: `design/interface.md`.
       - [x] **P3-09**: Build Activity and the read-only session view.
 - [ ] Projects pages: list, detail, instructions editor, and the project's
       subagents (watch only).
-      - [ ] **P3-10**: Build project pages and instructions editor.
+      - [x] **P3-10**: Build project pages and instructions editor.
 - [ ] Reorganise Settings:
       - providers and models
       - model classes, agents, instructions
@@ -474,7 +474,7 @@ The mobile-first app. Design: `design/interface.md`.
       - notifications, appearance, account
       - developer: the inspector and model calls with drift
       - [x] **P3-07**: Add agents and instructions settings.
-      - [ ] **P3-11**: Complete Settings and retain existing flows.
+      - [x] **P3-11**: Complete Settings and retain existing flows.
 - [ ] Notifications: toasts for subagent reports and background replies, from
       events the app already receives. The stored notification list (P3-12) is
       in `docs/DEFERRED.md`: a notice is already in Chat, and ntfy carries it to
