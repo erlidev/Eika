@@ -25,6 +25,12 @@ const queryClient = new QueryClient({
 
 startTheme();
 
+// Mock specs intercept requests and need a fresh shell for each test. Smoke
+// uses the production build and registers the worker served by Core.
+if (import.meta.env.PROD && import.meta.env.MODE !== "e2e-mock" && "serviceWorker" in navigator) {
+  void navigator.serviceWorker.register("/service-worker.js");
+}
+
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -62,6 +63,29 @@ func TestWebDirServesIndexForClientRoutes(t *testing.T) {
 		if rec.Body.String() != "<h1>Eika</h1>" {
 			t.Errorf("%s body = %q, want the index", path, rec.Body.String())
 		}
+	}
+}
+
+func TestWebServesInstallFilesWithRevalidation(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"manifest.webmanifest", "service-worker.js"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := server.New(config.Default(), testLogger(), server.Deps{}, server.Options{WebDir: dir})
+	for _, tc := range []struct{ path, contentType string }{
+		{"/manifest.webmanifest", "application/manifest+json"},
+		{"/service-worker.js", "application/javascript"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			contentType, _, err := mime.ParseMediaType(rec.Header().Get("Content-Type"))
+			if err != nil || rec.Code != http.StatusOK || contentType != tc.contentType || rec.Header().Get("Cache-Control") != "no-cache" {
+				t.Fatalf("status = %d, content type = %q, cache control = %q", rec.Code, contentType, rec.Header().Get("Cache-Control"))
+			}
+		})
 	}
 }
 

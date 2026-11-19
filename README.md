@@ -58,7 +58,25 @@ are stored.
 `make local` runs the same `docker compose up`, `make local-logs` follows the
 logs, and `make local-down` stops the stack. Docker volumes keep the database
 and the key that encrypts stored credentials. The stack listens
-on 127.0.0.1 only; put a reverse proxy in front of it for remote access.
+on 127.0.0.1 only.
+
+### Access from a phone
+
+Install Tailscale on the host and phone, and connect both to the same tailnet.
+Enable HTTPS for the tailnet, then run this on the host:
+
+```sh
+tailscale serve --bg http://127.0.0.1:8080
+```
+
+Open the HTTPS address that Tailscale gives you on the phone. You can install
+Eika from the browser's app or home screen menu. Tailscale Serve keeps access
+within the tailnet without opening a public port. The app shell can load offline,
+but chats and other data need a connection to Eika.
+
+You can also use a reverse proxy. Set `public_url` to the HTTPS address for
+OAuth metadata. If the frontend uses a different origin from the server, add
+its host to `allowed_origins` in the harness configuration.
 
 To change the published port or set a fixed API token for scripts, copy
 `.env.example` to `.env` and edit it.

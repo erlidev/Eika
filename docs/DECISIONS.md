@@ -1858,6 +1858,12 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 
 ## Frontend
 
+- **Cache only the built shell.** The build writes an explicit file list and a
+  content-derived cache name into the worker. Navigation tries the network first;
+  data requests never enter the cache. A new worker waits for old clients to
+  close before it replaces their cache, so an update does not interrupt a chat.
+  The worker is not registered in development.
+
 - Three panes; one session at a time, addressed by `/sessions/<id>`.
 - Panel and tool-renderer registries are single arrays/maps. Panel `id`s
   never change once shipped. Unknown tools render as JSON.

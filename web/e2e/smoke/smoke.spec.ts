@@ -18,6 +18,27 @@ test.beforeAll(async ({ request }) => {
     .toBe(200);
 });
 
+test("the installed shell opens offline", async ({ page, context }) => {
+  await page.goto("/");
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await page.reload();
+  await expect
+    .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)))
+    .toBe(true);
+
+  await context.setOffline(true);
+  try {
+    const response = await page.goto("/activity");
+    expect(response?.status()).toBe(200);
+    await expect(page).toHaveTitle("Eika");
+    await expect(page.locator("#root > *").first()).toBeVisible();
+  } finally {
+    await context.setOffline(false);
+  }
+});
+
 test("the harness makes the home computer before anyone sets it up", async ({ request }) => {
   // Setup has not run: this stack has a fixed API token and nothing else,
   // and the computer that holds the user's files is there regardless.
