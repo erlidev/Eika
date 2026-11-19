@@ -2346,7 +2346,8 @@ locale is unspecified until the user sets it; no browser locale is inferred.
 Page entries by session sequence across branches, with an entry ID as the cursor.
 Sequence order stays stable when entries are appended and preserves old history.
 The current branch remains available through the path endpoint. The transcript
-uses the write-order pages, merges catch-up by entry ID, and keeps a result
+uses the outline to exclude entries outside the current branch from write-order
+pages, merges catch-up by entry ID, and keeps a result
 without its call hidden until the call's page is loaded. Entries written by an
 agent turn carry its `run_id`, so a client can merge stored and live rows
 without relying on timestamps. Older entries can lack the field. A run release

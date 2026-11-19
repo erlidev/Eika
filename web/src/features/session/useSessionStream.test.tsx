@@ -11,12 +11,14 @@ import { useSessionStream } from "@/features/session/useSessionStream";
 const mocks = vi.hoisted(() => ({
   getSessionEntries: vi.fn(),
   getRunStatus: vi.fn(),
+  getSessionOutline: vi.fn(),
   handler: undefined as ((event: EikaEvent) => void) | undefined,
   reopen: undefined as (() => void) | undefined,
 }));
 vi.mock("@/api/routes", () => ({
   getSessionEntries: mocks.getSessionEntries,
   getRunStatus: mocks.getRunStatus,
+  getSessionOutline: mocks.getSessionOutline,
 }));
 vi.mock("@/api/useStream", () => ({
   useStreamStatus: () => "open",
@@ -49,6 +51,9 @@ it.each(["reconnect after finish", "finish after reconnect"])(
     let active = true;
     mocks.getSessionEntries.mockImplementation(() => Promise.resolve({ session_id: "s", entries }));
     mocks.getRunStatus.mockImplementation(() => Promise.resolve({ session_id: "s", active }));
+    mocks.getSessionOutline.mockImplementation(() =>
+      Promise.resolve({ session_id: "s", nodes: [] }),
+    );
     const container = document.createElement("div");
     const root = createRoot(container);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

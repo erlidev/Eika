@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { EikaEvent, EventType } from "@/api/events";
+import type { Entry } from "@/api/types";
 import {
   applyEntries,
   applyEvent,
+  applyOutline,
   cutOffText,
   items,
   newTranscript,
@@ -11,6 +13,43 @@ import {
 import type { TranscriptState } from "@/features/session/transcript";
 
 const sessionID = "s1";
+
+it("keeps abandoned entries out when pages are loaded again", () => {
+  const time = "2026-01-01T00:00:00Z";
+  const entries: Entry[] = [
+    {
+      id: "a",
+      seq: 1,
+      kind: "user" as const,
+      created_at: time,
+      message: { role: "user", content: "Keep" },
+    },
+    {
+      id: "b",
+      seq: 2,
+      kind: "assistant" as const,
+      created_at: time,
+      message: { role: "assistant", content: "Leave" },
+    },
+  ];
+  const nodes = [
+    { id: "a", kind: "user" as const, preview: "", resumable: true, created_at: time },
+    {
+      id: "b",
+      parent_id: "a",
+      kind: "assistant" as const,
+      preview: "",
+      resumable: true,
+      created_at: time,
+    },
+  ];
+  let state = applyEntries(newTranscript(sessionID), entries);
+  state = applyOutline(state, { session_id: sessionID, head_entry_id: "a", nodes });
+  state = applyEntries(state, entries);
+  expect(items(state)).toMatchObject([{ kind: "user", text: "Keep" }]);
+  state = applyOutline(state, { session_id: sessionID, head_entry_id: "b", nodes });
+  expect(items(state)).toMatchObject([{ text: "Keep" }, { text: "Leave" }]);
+});
 
 /** ev builds one envelope; the payloads are the shapes docs/api/events.md lists. */
 function ev(type: EventType, payload: unknown, topic = `session:${sessionID}`): EikaEvent {
