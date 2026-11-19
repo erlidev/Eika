@@ -945,8 +945,11 @@ web/src/
   in the transcript and opens one in the single
   `ImageViewer` the shell mounts.
 - **Tool cards**: `features/session/renderers/renderers.tsx` maps tool names
-  to a summary and a body (`bash`, `ask_user`, `web_search`, `web_fetch`,
-  `mcp_*`); unknown tools render as JSON.
+  to a summary and a body (`bash`, `ask_user`, web, subagent, report, project,
+  history, file and `mcp_*` tools); unknown tools render as JSON. Subagent start
+  cards show the current state and link to Activity. Notices retain their full
+  text and link to a named subagent when one exists. Home compaction cards
+  show the board, conversation and summary attributes.
 
 In development Vite serves :5173 and proxies `/api` to :8080; in production
 the harness serves the bundle.

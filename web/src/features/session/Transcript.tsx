@@ -13,8 +13,10 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 
 import type { MessageImage } from "@/api/types";
 import { Markdown } from "@/components/Markdown";
+import { ScrollRegion } from "@/components/ScrollRegion";
 import { MessageImages } from "@/components/MessageImages";
 import { Button } from "@/components/ui/button";
+import { SubagentLink } from "@/features/session/renderers/HomeRenderer";
 import { Compaction } from "@/features/session/Compaction";
 import { useRewind, useSessionOutline, useRunStatus } from "@/features/session/queries";
 import { useTranscriptPreferences } from "@/features/session/preferences";
@@ -386,11 +388,26 @@ const Item = memo(function Item({ item, openTool, readOnly, onRewind }: ItemProp
           </div>
         </div>
       );
-    default:
-      return item.text === "" ? null : (
-        <p className="text-muted-foreground border-l-2 pl-3 font-mono text-xs whitespace-pre-wrap">
-          {item.text}
-        </p>
+    case "notice": {
+      if (item.text === "") return null;
+      const name = /^([a-z0-9-]+) \([^)]+\) (?:reported:|asks:|was interrupted)/.exec(
+        item.text,
+      )?.[1];
+      return (
+        <article className="bg-muted/40 min-w-0 rounded-md border px-3 py-2 text-sm">
+          <h3 className="text-muted-foreground mb-1 text-xs font-semibold">
+            {item.entryKind === "notice"
+              ? "Notice"
+              : item.entryKind === "preamble"
+                ? "Session context"
+                : item.entryKind}
+          </h3>
+          <ScrollRegion label="Notice text" className="max-h-48 whitespace-pre-wrap break-words">
+            {item.text}
+          </ScrollRegion>
+          {name !== undefined && <SubagentLink name={name} />}
+        </article>
       );
+    }
   }
 });

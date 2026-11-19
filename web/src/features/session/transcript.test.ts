@@ -302,6 +302,21 @@ describe("applyEvent", () => {
     expect(state.lastEntryId).toBe("e1");
   });
 
+  it("shows a notice delivered by replay", () => {
+    const state = fold([
+      ev("session.message", {
+        session_id: sessionID,
+        entry_id: "notice-1",
+        kind: "notice",
+        created_at: "2026-01-01T00:00:00Z",
+        message: { text: "plumber reported" },
+      }),
+    ]);
+    expect(items(state)).toEqual([
+      expect.objectContaining({ kind: "notice", text: "plumber reported" }),
+    ]);
+  });
+
   it("ignores an entry it already holds", () => {
     const message = ev("session.message", {
       session_id: sessionID,

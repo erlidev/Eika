@@ -8,6 +8,7 @@
 import { ChevronRight, FoldVertical, Loader2, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 
+import { ScrollRegion } from "@/components/ScrollRegion";
 import { Markdown } from "@/components/Markdown";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { CompactionItem } from "@/features/session/transcript";
@@ -71,7 +72,12 @@ export function Compaction({ item }: CompactionProps) {
               <p className="mb-2 text-xs">
                 The model reads this summary in place of the conversation above.
               </p>
-              <Markdown>{item.summary}</Markdown>
+              {item.boardAsOf !== undefined && (
+                <p className="mb-2 text-xs">Subagent board as of {item.boardAsOf}</p>
+              )}
+              <ScrollRegion label="Compaction summary" className="max-h-80 break-words">
+                <Summary text={item.summary} />
+              </ScrollRegion>
             </>
           ) : (
             <p className="text-destructive text-xs break-words">{item.error}</p>
@@ -79,5 +85,27 @@ export function Compaction({ item }: CompactionProps) {
         </div>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+/** Summary keeps the home board and its attributes visible as text. */
+function Summary({ text }: { text: string }) {
+  const home =
+    /^(<summary[^>]*>)\s*\[Subagents\]\s*([\s\S]*?)\n\s*\[Conversation\]\s*([\s\S]*?)\s*<\/summary>\s*$/.exec(
+      text,
+    );
+  if (!home) return <Markdown>{text}</Markdown>;
+  return (
+    <div className="space-y-2">
+      <p className="font-mono text-xs break-words">{home[1]}</p>
+      <section aria-label="Subagents at compaction">
+        <h3 className="text-foreground text-xs font-semibold">Subagents</h3>
+        <pre className="font-mono text-xs whitespace-pre-wrap break-words">{home[2]}</pre>
+      </section>
+      <section aria-label="Conversation summary">
+        <h3 className="text-foreground text-xs font-semibold">Conversation</h3>
+        <pre className="font-mono text-xs whitespace-pre-wrap break-words">{home[3]}</pre>
+      </section>
+    </div>
   );
 }

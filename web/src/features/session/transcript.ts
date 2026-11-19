@@ -104,6 +104,7 @@ export type NoticeItem = {
   runId: string;
   entryId?: string;
   text: string;
+  entryKind: string;
 };
 
 /**
@@ -122,6 +123,7 @@ export type CompactionItem = {
   tokensBefore: number;
   tokensAfter?: number;
   summary: string;
+  boardAsOf?: string;
   /** running is whether the summary is still being written. */
   running: boolean;
   /** error says why a compaction failed, which leaves the conversation as it was. */
@@ -793,6 +795,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
           tokensBefore: c?.tokens_before ?? 0,
           ...(c === null ? {} : { tokensAfter: c.tokens_after }),
           summary: c?.summary ?? "",
+          ...(c?.board_as_of === undefined ? {} : { boardAsOf: c.board_as_of }),
           running: false,
         },
       ];
@@ -804,7 +807,10 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
           key: p.entry_id,
           runId: p.run_id ?? "",
           entryId: p.entry_id,
-          text: message?.content ?? "",
+          text:
+            message?.content ??
+            (isRecord(p.message) && typeof p.message.text === "string" ? p.message.text : ""),
+          entryKind: p.kind,
         },
       ];
   }
