@@ -219,7 +219,7 @@ What stops a long-lived home session from losing work or growing without bound.
 ### Stage C: on the phone
 
 - [x] **P3-02**: Add touch density and checks.
-- [ ] **P3-06**: Add the touch composer.
+- [x] **P3-06**: Add the touch composer.
 - [x] **P3-14**: Add sealed ntfy configuration and delivery.
 - [x] **P3-13**: Add toasts.
 - [x] **P3-15**: Add install and shell caching.
@@ -458,7 +458,7 @@ The mobile-first app. Design: `design/interface.md`.
       - [x] **P3-04**: Bind basic Chat to home.
       - [x] **P3-05**: Add the paginated transcript. Channel marks wait for a
             second channel (`docs/DEFERRED.md`, channels).
-      - [ ] **P3-06**: Add the touch composer.
+      - [x] **P3-06**: Add the touch composer.
       - [x] **P3-08**: Add remaining cards and notices.
 - [x] Activity page: subagents and their states, and a read-only live view of each
       (the session view reused, no composer) with cancel. Steering goes through
