@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-19: P2-11 (c8fbdd7) retires profiles, configuration layering and direct
+  chats; runs resolve from agent definitions and model classes. Migration 0021
+  archives profile data, turns old direct sessions into routines (history kept)
+  and rejects new entries of retired kinds. Old direct chats are readable only
+  over the API: Activity lists subagents. The smoke reaches bash through a worker.
+  `make check` and `make smoke` pass.
+
 - 2026-11-19: P2-23 (09d5879) adds a backfilled full-text history index; indexed
   text is capped at 32,000 characters per entry (tsvector's 1 MB limit). P2-24
   (bd65333) gives home `history_search` and `history_read`, with bounded context.

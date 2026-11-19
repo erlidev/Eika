@@ -234,7 +234,7 @@ Removal and verification. None of it changes what the user can do.
 
 - [x] **P3-11**: Complete Settings and retain existing flows.
 - [x] **P3-17**: Remove the unused workbench.
-- [ ] **P2-11**: Remove profiles, configuration layering, direct chats and
+- [x] **P2-11**: Remove profiles, configuration layering, direct chats and
       obsolete fields and kinds, after their callers moved. Preserve history.
 - [x] **P2-22**: Schedule idle compaction.
 - [x] **P2-19**: Test process death and explicit resume with Docker.
@@ -297,14 +297,14 @@ in the code beside what replaces them.
       - [x] **P2-01**: Built-ins, overrides, API and compaction prompts; keep profiles.
       - [x] **P2-08**: Resolve classes and fixed tools at runtime; keep existing callers.
       - [x] **P3-07**: Add agent Settings and remove profile controls.
-      - [ ] **P2-11**: Remove profiles and configuration layering after their callers move.
+      - [x] **P2-11**: Remove profiles and configuration layering after their callers move.
 - [ ] Session columns: `kind` (home, subagent, routine), `agent`, `name`,
       `project_id`, `computer_id`, `parent_session_id`, `state`, `brief`,
       `result`, `last_active_at`. Entry kinds gain `preamble` and `notice`; home
       entries record their `channel`. Unused columns and kinds are removed. There
       is no `sensitive` column: sessions carry no label.
       - [x] **P2-04**: Add session fields and entry kinds; keep fields still in use.
-      - [ ] **P2-11**: Remove obsolete fields and kinds after callers move; preserve history.
+      - [x] **P2-11**: Remove obsolete fields and kinds after callers move; preserve history.
 - [ ] Preamble builder: global and project instructions, the active-projects list,
       the project or subagent brief, the delegable agents, and the user's time zone
       and locale. Store it as an entry, and rebuild it only at compaction. Memory,
@@ -322,7 +322,7 @@ in the code beside what replaces them.
       back to it. The web app is the only channel until channels return
       (`docs/DEFERRED.md`), so there is no routing to build.
       - [x] **P2-09**: Ensure home at start, add its API and record the channel.
-      - [ ] **P2-11**: Retire direct chat creation after the UI moves.
+      - [x] **P2-11**: Retire direct chat creation after the UI moves.
 - [ ] Add projects: table, API and the tools `project_list`, `project_open`,
       `project_create` and `project_update`. The fields are `name`, `slug`,
       `description`, `status`, `instructions` and `directory`, which defaults to
