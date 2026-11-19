@@ -1868,7 +1868,10 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   The earlier update only says that the report was stored, and a refetch can
   miss a fast state transition. Home replies use the live turn stream. The
   page forgets the queue on reload and does not create toasts from catch-up.
-
+- **Touch density follows the primary pointer.** On `(pointer: coarse)`, the
+  type tokens rise one step and controls have 44 px targets. Rewind and the
+  rename hint stay visible without hover. Fine-pointer layouts keep their
+  existing density, even at phone width.
 
 - Three panes; one session at a time, addressed by `/sessions/<id>`.
 - Panel and tool-renderer registries are single arrays/maps. Panel `id`s

@@ -5,6 +5,8 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
+import noHoverOnly from "./eslint-rules/no-hover-only.js";
+
 export default tseslint.config(
   {
     ignores: [
@@ -52,7 +54,9 @@ export default tseslint.config(
     // size, and radius, and icons come in three sizes (docs/STYLE_GUIDE.md,
     // Web UI design). src/components/ui is generated and ignored above.
     files: ["src/**/*.tsx"],
+    plugins: { eika: { rules: { "no-hover-only": noHoverOnly } } },
     rules: {
+      "eika/no-hover-only": "error",
       "no-restricted-syntax": [
         "error",
         ...["Literal[value", "TemplateElement[value.raw"].flatMap((node) => [

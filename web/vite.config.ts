@@ -62,6 +62,6 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    include: ["src/**/*.test.{ts,tsx}", "e2e/harness/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}", "e2e/harness/**/*.test.ts", "eslint-rules/**/*.test.js"],
   },
 });

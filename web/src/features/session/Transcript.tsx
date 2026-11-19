@@ -335,7 +335,7 @@ const Item = memo(function Item({ item, openTool, readOnly, onRewind }: ItemProp
             <Button
               size="icon-xs"
               variant="ghost"
-              className="mt-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+              className="rewind-action mt-1 transition-opacity"
               aria-label="Rewind the conversation to this message and edit it"
               title="Rewind to this message and edit it"
               onClick={() => {

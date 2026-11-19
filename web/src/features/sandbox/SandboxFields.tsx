@@ -139,7 +139,7 @@ function LimitField({
               </Slider.Track>
               <Slider.Thumb
                 aria-label={`${label} limit slider`}
-                className="border-primary bg-background ring-ring/50 block size-3 rounded-full border transition-shadow hover:ring-3 focus-visible:ring-3 focus-visible:outline-none"
+                className="border-primary bg-background ring-ring/50 relative block size-3 rounded-full border transition-shadow hover:ring-3 focus-visible:ring-3 focus-visible:outline-none"
               />
             </Slider.Root>
             <div
