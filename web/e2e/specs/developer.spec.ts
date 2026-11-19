@@ -2,13 +2,11 @@
 import { expect, test } from "../fixtures.ts";
 
 test("inspect a recorded request by part", async ({ open }) => {
-  const eika = await open({ scenario: "profiles" });
+  const eika = await open({ scenario: "recorded-calls" });
   await eika.click("Settings");
   await eika.click("Developer");
-  const preview = eika.page.waitForRequest(
-    (request) =>
-      request.url().includes("/api/sessions/ses-backoff/context") &&
-      request.url().includes("model=gpt-5"),
+  const preview = eika.page.waitForRequest((request) =>
+    request.url().includes("/api/sessions/ses-backoff/context"),
   );
   await eika.select("Session", "Add exponential backoff to retries");
   await preview;
@@ -26,7 +24,7 @@ test("inspect a recorded request by part", async ({ open }) => {
 });
 
 test("copy reports an unavailable clipboard", async ({ open }) => {
-  const eika = await open({ scenario: "profiles" });
+  const eika = await open({ scenario: "recorded-calls" });
   await eika.page.evaluate(() => {
     Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
   });

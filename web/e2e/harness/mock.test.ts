@@ -52,6 +52,40 @@ function statusOf(key: string): number | undefined {
   return contract().routes[key]?.status;
 }
 
+describe("agent configuration", () => {
+  it("uses the agent prompt and fixed tools in a preview", async () => {
+    const mock = open("workbench");
+    const home = mock.world.sessions.find((row) => row.kind === "home");
+    if (!home) throw new Error("missing home session");
+    mock.world.agentOverrides.eika = { class: null, prompt: "Custom agent prompt" };
+    const reply = await call(mock, "GET", `/api/sessions/${home.id}/context`);
+    expect(reply.status).toBe(200);
+    const context = reply.body as { sections: { text: string }[]; tools: { name: string }[] };
+    expect(context.sections[0]?.text).toBe("Custom agent prompt");
+    expect(context.tools.map((tool) => tool.name)).toContain("subagent_start");
+    expect(context.tools.some((tool) => tool.name.startsWith("mcp_"))).toBe(false);
+  });
+
+  it("refuses missing and unknown agents on run and preview routes", async () => {
+    for (const agent of ["", "missing"]) {
+      const mock = open("workbench");
+      const session = mock.world.sessions.find((row) => row.kind === "home");
+      if (!session) throw new Error("missing home session");
+      session.agent = agent;
+      const base = `/api/sessions/${session.id}`;
+      for (const [method, path, body] of [
+        ["POST", `${base}/messages`, { text: "hello" }],
+        ["POST", `${base}/compact`, {}],
+        ["GET", `${base}/context`, undefined],
+        ["GET", `${base}/prediction`, undefined],
+      ] as const) {
+        expect((await call(mock, method, path, body)).status, `${agent} ${path}`).toBe(400);
+      }
+      expect(mock.world.activeRuns[session.id]).toBeUndefined();
+    }
+  });
+});
+
 describe("the mock serves the contract's routes", () => {
   it("serves only routes the harness has, each behind the token or not as it is", () => {
     const routes = contract().routes;
@@ -151,7 +185,6 @@ describe("the mock answers as the harness does", () => {
       ],
       ["PATCH /api/models/{id}", `/api/models/${model}`, { reasoning_effort: "high" }],
       ["GET /api/sessions", "/api/sessions?computer_id=cx-retries"],
-      ["POST /api/sessions", "/api/sessions", { computer_id: "cx-retries", title: "Try jitter" }],
       ["GET /api/sessions/{id}", "/api/sessions/ses-backoff"],
       [
         "PATCH /api/sessions/{id}",
@@ -160,7 +193,6 @@ describe("the mock answers as the harness does", () => {
       ],
       ["GET /api/sessions/{id}/outline", "/api/sessions/ses-backoff/outline"],
       ["POST /api/sessions/{id}/head", "/api/sessions/ses-backoff/head", { entry_id: head }],
-      ["PUT /api/sessions/{id}/tools", "/api/sessions/ses-backoff/tools", { tools: ["bash"] }],
       ["GET /api/sessions/{id}/run", "/api/sessions/ses-backoff/run"],
       ["POST /api/sessions/{id}/messages", "/api/sessions/ses-backoff/messages", { text: "Go on" }],
     ];
@@ -248,40 +280,10 @@ describe("the mock answers as the harness does", () => {
     expect(mock.contractBreaks).toEqual([]);
   });
 
-  it("answers every profile and context route with the harness's status and shapes", async () => {
+  it("answers every context route with the harness's status and shapes", async () => {
     const mock = open("workbench");
-    const model = mock.world.models[0]?.id ?? "";
-    const created = await call(mock, "POST", "/api/profiles", {
-      name: "Careful",
-      description: "reviews",
-      instructions: "Check twice.",
-      model_id: model,
-      sampling: { temperature: 0.2, stop: ["END"] },
-      tools: ["bash", "mcp__github__*"],
-    });
-    expect(created.status).toBe(statusOf("POST /api/profiles"));
-    const profile = (created.body as { id: string }).id;
     const requests: [string, string, unknown?][] = [
-      ["GET /api/profiles", "/api/profiles"],
-      ["GET /api/profiles/inherited", `/api/profiles/inherited?model_id=${model}`],
-      [
-        "GET /api/sessions/{id}/configuration",
-        `/api/sessions/ses-backoff/configuration?profile_id=${profile}&model_id=`,
-      ],
-      ["PUT /api/profiles/{id}", `/api/profiles/${profile}`, { name: "Careful", tools: null }],
-      [
-        "PUT /api/sessions/{id}/profile",
-        "/api/sessions/ses-backoff/profile",
-        { profile_id: profile },
-      ],
-      [
-        "PUT /api/sessions/{id}/overrides",
-        "/api/sessions/ses-backoff/overrides",
-        { sampling: { top_k: 20 }, chat_prompt: "" },
-      ],
-      ["GET /api/sessions/{id}/configuration", "/api/sessions/ses-backoff/configuration"],
-      ["PUT /api/sessions/{id}/tools", "/api/sessions/ses-backoff/tools", { tools: null }],
-      ["GET /api/sessions/{id}/context", "/api/sessions/ses-backoff/context?model=gpt-5-mini"],
+      ["GET /api/sessions/{id}/context", "/api/sessions/ses-backoff/context"],
       ["POST /api/sessions/{id}/messages", "/api/sessions/ses-backoff/messages", { text: "Go on" }],
     ];
     for (const [key, path, body] of requests) {
@@ -294,8 +296,6 @@ describe("the mock answers as the harness does", () => {
     const recorded = (listed.body as { calls: { id: string }[] }).calls.at(-1)?.id ?? "";
     const one = await call(mock, "GET", `/api/sessions/ses-backoff/calls/${recorded}`);
     expect(one.status).toBe(statusOf("GET /api/sessions/{id}/calls/{call_id}"));
-    const deleted = await call(mock, "DELETE", `/api/profiles/${profile}`);
-    expect(deleted.status).toBe(statusOf("DELETE /api/profiles/{id}"));
     expect(mock.contractBreaks).toEqual([]);
   });
 
@@ -361,11 +361,8 @@ describe("the mock answers as the harness does", () => {
     const mock = open("workbench");
     const refusals: [string, string, unknown?][] = [
       // The harness's decoder refuses a field it does not know, and no body.
-      ["POST", "/api/profiles", { name: "x", colour: "red" }],
-      ["POST", "/api/profiles"],
       ["POST", "/api/sessions/ses-backoff/messages", { text: "" }],
       ["GET", "/api/sessions/no-such-session"],
-      ["GET", "/api/sessions?chats=true&computer_id=cx-retries"],
     ];
     for (const [method, path, body] of refusals) {
       const reply = await call(mock, method, path, body);
@@ -373,9 +370,6 @@ describe("the mock answers as the harness does", () => {
     }
     // A request with a field the harness does not know is reported, since the
     // page should never send one; the refusals themselves are well formed.
-    expect(mock.contractBreaks).toEqual([
-      "POST /api/profiles request: $.colour: unknown field",
-      "POST /api/profiles request: $: no body",
-    ]);
+    expect(mock.contractBreaks).toEqual([]);
   });
 });

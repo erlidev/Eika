@@ -3,51 +3,12 @@
 package server_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/erlidev/eika/internal/event"
-	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
+	"github.com/erlidev/eika/internal/store"
 )
-
-// utilityURL is the endpoint of the model the title tests assign the class.
-const utilityURL = "https://utility.test/v1"
-
-// addTitleModel adds a model on an endpoint of its own, whose calls p
-// answers, and returns its name.
-func (a *api) addTitleModel(t *testing.T, p provider.Provider) string {
-	t.Helper()
-	return a.addTitleModelOn(t, p, "")
-}
-
-// addTitleModelOn is addTitleModel on an endpoint whose backend is set to
-// backend, such as openai for a hosted API.
-func (a *api) addTitleModelOn(t *testing.T, p provider.Provider, backend string) string {
-	t.Helper()
-	utility := decodeBody[providerWire](t, request(t, a.Server, "POST", "/api/providers", map[string]any{
-		"name": "utility", "base_url": utilityURL,
-	}), 201)
-	if backend != "" {
-		decodeBody[providerWire](t, request(t, a.Server, "PATCH", "/api/providers/"+utility.ID, map[string]any{
-			"backend": backend,
-		}), 200)
-	}
-	decodeBody[modelWire](t, request(t, a.Server, "POST", "/api/models", map[string]any{
-		"provider_id": utility.ID, "name": "titler", "model": "vendor/small",
-		"context_window": 8192, "max_output": 512, "reasoning_effort": "high",
-		"reasoning_efforts": []string{"none", "high"}, "thinking_switch": "thinking",
-	}), 201)
-	a.serveAt(utilityURL, p)
-	return "titler"
-}
-
-// assignTitleModel assigns the fast class, which makes titles, a model, or
-// none.
-func (a *api) assignTitleModel(t *testing.T, name string) {
-	t.Helper()
-	a.assignClasses(t, map[string]any{"fast": name})
-}
 
 // assignClasses writes the model_classes setting.
 func (a *api) assignClasses(t *testing.T, classes map[string]any) {
@@ -57,44 +18,31 @@ func (a *api) assignClasses(t *testing.T, classes map[string]any) {
 	}), 200)
 }
 
-// sessionTitle reads the title of one session.
-func (a *api) sessionTitle(t *testing.T, id string) string {
-	t.Helper()
-	return decodeBody[sessionResponseWire](t, request(t, a.Server, "GET", "/api/sessions/"+id, nil), 200).Session.Title
-}
-
 type sessionResponseWire struct {
 	Session sessionWire `json:"session"`
 }
 
-func TestAnUntitledSessionIsNamedAfterItsFirstMessage(t *testing.T) {
+func TestUntitledRetainedSessionGetsATitle(t *testing.T) {
 	a := newAPI(t)
+	sess, err := a.store.CreateSession(t.Context(), store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "old-chat", Title: "New chat", Untitled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := decodeBody[providerWire](t, request(t, a.Server, "POST", "/api/providers", map[string]any{"name": "title", "base_url": "https://title.test/v1"}), 201)
+	decodeBody[modelWire](t, request(t, a.Server, "POST", "/api/models", map[string]any{"provider_id": endpoint.ID, "name": "titler", "model": "vendor/titler", "context_window": 8192, "max_output": 512}), 201)
 	titler := providertest.New(providertest.Text(`"Fix the login loop."`))
-	a.assignTitleModel(t, a.addTitleModel(t, titler))
+	a.serveAt("https://title.test/v1", titler)
+	a.assignClasses(t, map[string]any{"fast": "titler"})
 	events := a.Bus().Subscribe(event.TopicGlobal)
 	defer events.Close()
-
-	cx := a.home(t)
-	untitled := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions", map[string]any{
-		"computer_id": cx.ID,
-	}), 201)
-	if untitled.Title != "New session" {
-		t.Errorf("title = %q, want the placeholder", untitled.Title)
-	}
-	chat := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions", map[string]any{"chat": true}), 201)
-	if chat.Title != "New chat" {
-		t.Errorf("chat title = %q, want the placeholder", chat.Title)
-	}
-
-	a.script(providertest.Text("on it"), providertest.Text("done"))
-	a.postMessage(t, untitled.ID, "the login page loops forever, fix it", "", 202)
-
-	var got event.SessionTitle
-	waitFor(t, "a session.title event", func() bool {
+	a.script(providertest.Text("done"))
+	a.postMessage(t, sess.ID, "fix the login loop", "", 202)
+	var title event.SessionTitle
+	waitFor(t, "session title", func() bool {
 		select {
 		case e := <-events.Events():
 			if e.Type == event.TypeSessionTitle {
-				if err := e.DecodePayload(&got); err != nil {
+				if err := e.DecodePayload(&title); err != nil {
 					t.Fatal(err)
 				}
 				return true
@@ -103,31 +51,11 @@ func TestAnUntitledSessionIsNamedAfterItsFirstMessage(t *testing.T) {
 		}
 		return false
 	})
-	if got != (event.SessionTitle{SessionID: untitled.ID, ComputerID: cx.ID, Title: "Fix the login loop"}) {
-		t.Errorf("event = %+v", got)
+	if title.SessionID != sess.ID || title.Title != "Fix the login loop" {
+		t.Fatalf("title event = %+v", title)
 	}
-	if title := a.sessionTitle(t, untitled.ID); title != "Fix the login loop" {
-		t.Errorf("stored title = %q", title)
-	}
-
-	reqs := titler.Requests()
-	if len(reqs) != 1 {
-		t.Fatalf("title requests = %d, want 1", len(reqs))
-	}
-	req := reqs[0]
-	if !strings.Contains(req.System, "Respond with only the session title") || req.Model != "vendor/small" ||
-		len(req.Tools) != 0 || len(req.Messages) != 1 || req.Messages[0].Content != "the login page loops forever, fix it" {
-		t.Errorf("title request = %+v", req)
-	}
-	if deref(req.Sampling.ReasoningEffort) != provider.EffortNone || req.ThinkingSwitch != provider.SwitchThinking {
-		t.Errorf("title request effort = %q in %q, want thinking off", deref(req.Sampling.ReasoningEffort), req.ThinkingSwitch)
-	}
-
-	// A titled session is not named again.
-	a.waitIdle(t, untitled.ID)
-	a.postMessage(t, untitled.ID, "and the logout page", "", 202)
-	a.waitIdle(t, untitled.ID)
-	if titler.Calls() != 1 {
-		t.Errorf("title requests = %d after a second run, want 1", titler.Calls())
+	got, err := a.store.Session(t.Context(), sess.ID)
+	if err != nil || got.Title != title.Title || got.Untitled {
+		t.Fatalf("session = %+v, %v", got, err)
 	}
 }

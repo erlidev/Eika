@@ -4,9 +4,8 @@
  * Node, and answers the way a model that uses its tools would:
  *
  * - `GET /v1/models` lists one model, `smoke`.
- * - A chat request whose tools include `bash` and whose last message is the
- *   user's asks for `sandboxProbe`.
- * - A chat request that ends on a tool result says what the command printed.
+ * - Eika delegates the probe to a worker with `subagent_start`.
+ * - The worker calls `bash` and reports the command's output.
  * - Anything else, such as the provider test's request, answers "ok".
  *
  * Every chat answer is streamed as Chat Completions chunks with usage.
@@ -58,27 +57,44 @@ function stream(res: ServerResponse, chunks: object[]): void {
   res.end("data: [DONE]\n\n");
 }
 
+function toolCall(name: string, args: object): object[] {
+  return [
+    chunk({ role: "assistant" }),
+    chunk({
+      tool_calls: [
+        {
+          index: 0,
+          id: `call_${name}`,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) },
+        },
+      ],
+    }),
+    chunk({}, "tool_calls"),
+  ];
+}
+
 function answer(req: ChatRequest): object[] {
   const last = req.messages?.at(-1);
-  const hasBash = req.tools?.some((t) => t.function?.name === "bash") ?? false;
-  if (last?.role === "tool") {
-    const output = typeof last.content === "string" ? last.content.trim() : "";
-    return [
-      chunk({ role: "assistant", content: `The command printed ${output}.` }),
-      chunk({}, "stop"),
-    ];
+  const content = typeof last?.content === "string" ? last.content : "";
+  const hasTool = (name: string) => req.tools?.some((t) => t.function?.name === name) ?? false;
+  if (last?.role === "user" && hasTool("subagent_start") && content.includes("Run the probe")) {
+    return toolCall("subagent_start", {
+      agent: "worker",
+      name: "smoke-worker",
+      brief: "Run the sandbox probe.",
+    });
   }
-  if (hasBash && last?.role === "user") {
-    const call = {
-      index: 0,
-      id: "call_smoke",
-      type: "function",
-      function: { name: "bash", arguments: JSON.stringify({ command: sandboxProbe }) },
-    };
+  if (last?.role === "user" && hasTool("bash")) {
+    if (content.includes("Draft your report now")) {
+      return toolCall("report", { summary: "Sandbox probe complete." });
+    }
+    return toolCall("bash", { command: sandboxProbe });
+  }
+  if (last?.role === "tool" && hasTool("bash") && content.includes("smoke-ok")) {
     return [
-      chunk({ role: "assistant", content: "Running it." }),
-      chunk({ tool_calls: [call] }),
-      chunk({}, "tool_calls"),
+      chunk({ role: "assistant", content: `The command printed ${content.trim()}.` }),
+      chunk({}, "stop"),
     ];
   }
   return [chunk({ role: "assistant", content: "ok" }), chunk({}, "stop")];

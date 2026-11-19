@@ -61,55 +61,6 @@ func TestTablesLiveInSchemaCore(t *testing.T) {
 	}
 }
 
-// A chat is a session with no computer. It is listed apart from every
-// computer's sessions, and keeps the tools the user chose.
-func TestChatsHaveNoComputerAndKeepTheirTools(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-
-	cx, err := st.CreateComputer(ctx, store.Computer{
-		Name: "main", State: "running",
-	})
-	if err != nil {
-		t.Fatalf("create computer: %v", err)
-	}
-	if _, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "work"}); err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	chat, err := st.CreateSession(ctx, store.Session{Title: "question"})
-	if err != nil {
-		t.Fatalf("create chat: %v", err)
-	}
-	if !chat.Chat() || chat.ComputerID != "" {
-		t.Errorf("chat = %+v, want no computer", chat)
-	}
-	if chat.Tools != nil {
-		t.Errorf("new chat tools = %#v, want nil for every tool", chat.Tools)
-	}
-
-	chats, err := st.Chats(ctx)
-	if err != nil {
-		t.Fatalf("Chats: %v", err)
-	}
-	if len(chats) != 1 || chats[0].ID != chat.ID {
-		t.Fatalf("Chats = %+v, want the chat alone", chats)
-	}
-	if all, err := st.Sessions(ctx, ""); err != nil || len(all) != 2 {
-		t.Errorf("every session = %d rows, %v; want 2", len(all), err)
-	}
-
-	// An empty list is no tools, which is not the same as every tool.
-	if err := st.SetSessionTools(ctx, chat.ID, []string{}); err != nil {
-		t.Fatalf("clear tools: %v", err)
-	}
-	if got, err := st.Session(ctx, chat.ID); err != nil || got.Tools == nil || len(got.Tools) != 0 {
-		t.Errorf("tools after clearing = %#v, %v; want empty, not nil", got.Tools, err)
-	}
-	if err := st.SetSessionTools(ctx, "missing", nil); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("SetSessionTools on a missing session = %v, want ErrNotFound", err)
-	}
-}
-
 func TestSetSettingsWritesAllOrNothing(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
@@ -146,7 +97,7 @@ func TestAbortRunningRunsClosesRowsFromAnEarlierProcess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID})
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", ComputerID: cx.ID})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -180,7 +131,7 @@ func TestSetSessionHeadIsGuarded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID})
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", ComputerID: cx.ID})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -206,7 +157,7 @@ func TestSetSessionHeadIsGuarded(t *testing.T) {
 	}
 
 	// The head of a session never points at another session's entry.
-	other, err := st.CreateSession(ctx, store.Session{Title: "another"})
+	other, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "another"})
 	if err != nil {
 		t.Fatalf("create second session: %v", err)
 	}
@@ -226,7 +177,7 @@ func TestSetSessionHeadIsGuarded(t *testing.T) {
 func TestConcurrentAppendsKeepOneChain(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
-	sess, err := st.CreateSession(ctx, store.Session{Title: "busy"})
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "busy"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,14 +210,14 @@ func TestUntitledSessions(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	untitled, err := st.CreateSession(ctx, store.Session{Title: "New chat", Untitled: true})
+	untitled, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "New chat", Untitled: true})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	if !untitled.Untitled {
 		t.Fatalf("session = %+v, want untitled", untitled)
 	}
-	renamed, err := st.CreateSession(ctx, store.Session{Title: "New chat", Untitled: true})
+	renamed, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "New chat", Untitled: true})
 	if err != nil {
 		t.Fatalf("create second session: %v", err)
 	}
@@ -307,7 +258,7 @@ func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "New session", Untitled: true})
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", ComputerID: cx.ID, Title: "New session", Untitled: true})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -417,11 +368,11 @@ func TestUpgradeFromTheBaselineKeepsForksAsSessions(t *testing.T) {
 		`UPDATE sessions SET head_entry_id = 'entry' WHERE id = 'child'`,
 	)
 	child, err := st.Session(ctx, "child")
-	if err != nil || child.Kind != store.SessionUser || child.Title != "child" || child.ParentSessionID != "" || child.HeadEntryID != "entry" {
-		t.Errorf("former fork = %+v, %v; want a user session", child, err)
+	if err != nil || child.Kind != store.SessionRoutine || child.Title != "child" || child.ParentSessionID != "" || child.HeadEntryID != "entry" {
+		t.Errorf("former fork = %+v, %v; want a routine session", child, err)
 	}
 	parent, err := st.Session(ctx, "parent")
-	if err != nil || parent.Kind != store.SessionUser || parent.Title != "parent" || parent.ParentSessionID != "" {
+	if err != nil || parent.Kind != store.SessionRoutine || parent.Title != "parent" || parent.ParentSessionID != "" {
 		t.Errorf("parent = %+v, %v; want the original user session", parent, err)
 	}
 	path, err := st.SessionPath(ctx, "child")

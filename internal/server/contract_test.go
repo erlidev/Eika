@@ -80,7 +80,6 @@ var routeWire = map[string]wire{
 	"GET /api/computers": {status: http.StatusOK, response: computersResponse{}},
 
 	"GET /api/sessions":              {status: http.StatusOK, response: sessionsResponse{}},
-	"POST /api/sessions":             {status: http.StatusCreated, request: createSessionRequest{}, response: sessionBody{}},
 	"GET /api/sessions/{id}":         {status: http.StatusOK, response: sessionResponse{}},
 	"PATCH /api/sessions/{id}":       {status: http.StatusOK, request: updateSessionRequest{}, response: sessionBody{}},
 	"DELETE /api/sessions/{id}":      {status: http.StatusNoContent},
@@ -88,20 +87,11 @@ var routeWire = map[string]wire{
 	"GET /api/sessions/{id}/entries": {status: http.StatusOK, response: entriesResponse{}},
 	"GET /api/sessions/{id}/path":    {status: http.StatusOK, response: pathResponse{}},
 	"POST /api/sessions/{id}/head":   {status: http.StatusOK, request: setHeadRequest{}, response: sessionBody{}},
-	"PUT /api/sessions/{id}/tools":   {status: http.StatusOK, request: setToolsRequest{}, response: sessionBody{}},
 
-	"GET /api/sessions/{id}/configuration":   {status: http.StatusOK, response: sessionConfigurationResponse{}},
-	"PUT /api/sessions/{id}/profile":         {status: http.StatusOK, request: setSessionProfileRequest{}, response: sessionConfigurationResponse{}},
-	"PUT /api/sessions/{id}/overrides":       {status: http.StatusOK, request: profileSettingsBody{}, response: sessionConfigurationResponse{}},
 	"GET /api/sessions/{id}/context":         {status: http.StatusOK, response: contextResponse{}},
 	"GET /api/sessions/{id}/prediction":      {status: http.StatusOK, response: predictionResponse{}},
 	"GET /api/sessions/{id}/calls":           {status: http.StatusOK, response: callsResponse{}},
 	"GET /api/sessions/{id}/calls/{call_id}": {status: http.StatusOK, response: contextResponse{}},
-	"GET /api/profiles":                      {status: http.StatusOK, response: profilesResponse{}},
-	"GET /api/profiles/inherited":            {status: http.StatusOK, response: configurationBody{}},
-	"POST /api/profiles":                     {status: http.StatusCreated, request: profileRequest{}, response: profileBody{}},
-	"PUT /api/profiles/{id}":                 {status: http.StatusOK, request: profileRequest{}, response: profileBody{}},
-	"DELETE /api/profiles/{id}":              {status: http.StatusNoContent},
 
 	"POST /api/sessions/{id}/messages": {status: http.StatusAccepted, request: messageRequest{}, response: runBody{}},
 	"GET /api/sessions/{id}/run":       {status: http.StatusOK, response: runStateResponse{}},

@@ -1,11 +1,8 @@
 package server
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
 	"slices"
-	"strings"
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/agentdef"
@@ -36,15 +33,6 @@ type toolsResponse struct {
 	Tools []toolBody `json:"tools"`
 }
 
-// setToolsRequest is the body of PUT /api/sessions/{id}/tools.
-type setToolsRequest struct {
-	// Tools names the tools the session's runs may offer the model, where
-	// mcp__<server>__* is every tool of that server. It must be present; an
-	// empty list is none, and null clears the session's choice, so that its
-	// profile's applies. It is raw so that null and absent differ.
-	Tools json.RawMessage `json:"tools"`
-}
-
 // handleListTools lists every tool a run can offer the model, ordered by
 // name, with whether it needs a computer and what it costs a request: the
 // built-in tools, and those the MCP servers offered when they were last
@@ -63,179 +51,24 @@ func (s *Server) handleListTools(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.log, http.StatusOK, out)
 }
 
-// handleSetSessionTools chooses the tools a session's next run may offer the
-// model. A run already going keeps the tools it started with.
-func (s *Server) handleSetSessionTools(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeJSON[setToolsRequest](r)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	var choice *[]string
-	if len(req.Tools) == 0 || json.Unmarshal(req.Tools, &choice) != nil {
-		s.fail(w, r, invalidf("tools is required: a list of tool names, empty for none, or null for the profile's"))
-		return
-	}
-	id := r.PathValue("id")
-	sess, err := s.deps.Store.Session(r.Context(), id)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	var names []string
-	if choice != nil {
-		if names, err = s.checkToolChoice(r.Context(), *choice, sess.Chat()); err != nil {
-			s.fail(w, r, err)
-			return
-		}
-	}
-	if err := s.deps.Store.SetSessionTools(r.Context(), id, names); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	sess.Tools = names
-	s.log.Info("session tools set", "session_id", id, "tools", names)
-	s.writeSession(w, r, http.StatusOK, sess)
-}
-
-// checkToolChoice validates a tool choice and returns it sorted, without
-// repeats. Every entry names a tool a run can offer, or is
-// mcp__<server>__* for a configured MCP server. A choice for a chat names
-// nothing that needs a computer.
-func (s *Server) checkToolChoice(ctx context.Context, choice []string, chat bool) ([]string, error) {
-	var servers []store.MCPServer
-	if slices.ContainsFunc(choice, isServerChoice) && s.deps.MCP != nil {
-		var err error
-		if servers, err = s.deps.Store.MCPServers(ctx); err != nil {
-			return nil, err
-		}
-	}
-	names := make([]string, 0, len(choice))
-	for _, name := range choice {
-		if server, ok := choiceServer(name); ok {
-			i := slices.IndexFunc(servers, func(m store.MCPServer) bool { return m.Name == server })
-			switch {
-			case i < 0:
-				return nil, invalidf("there is no MCP server %q for %s", server, name)
-			case chat && servers[i].Kind == mcp.KindStdio:
-				return nil, invalidf("the tools of %s run in a computer, and a chat has none", server)
-			}
-		} else {
-			t, ok := s.toolNamed(name)
-			switch {
-			case !ok:
-				return nil, invalidf("there is no tool %q", name)
-			case chat && tool.NeedsComputer(t):
-				return nil, invalidf("%s needs a computer, and a chat has none", name)
-			}
-		}
-		if !slices.Contains(names, name) {
-			names = append(names, name)
-		}
-	}
-	slices.Sort(names)
-	return names, nil
-}
-
-// serverChoiceSuffix ends a tool choice entry that takes every tool of one
-// MCP server: mcp__<server>__*.
-const serverChoiceSuffix = "__*"
-
-// isServerChoice reports whether a tool choice entry takes every tool of
-// an MCP server.
-func isServerChoice(name string) bool {
-	_, ok := choiceServer(name)
-	return ok
-}
-
-// choiceServer returns the server a tool choice entry of the form
-// mcp__<server>__* names.
-func choiceServer(name string) (string, bool) {
-	server, ok := strings.CutPrefix(name, mcp.ToolPrefix)
-	if !ok {
-		return "", false
-	}
-	server, ok = strings.CutSuffix(server, serverChoiceSuffix)
-	if !ok || server == "" {
-		return "", false
-	}
-	return server, true
-}
-
-// toolChosen is how a tool choice is resolved against the tools a run can
-// offer: nil takes every tool, and an entry takes the tool it names or, as
-// mcp__<server>__*, every tool that server offers, including one it adds
-// after the choice was made.
-func toolChosen(choice []string, t tool.Tool) bool {
-	if choice == nil {
-		return true
-	}
-	name, server := t.Name(), mcp.ServerOf(t)
-	return slices.ContainsFunc(choice, func(entry string) bool {
-		if s, ok := choiceServer(entry); ok {
-			return server != "" && s == server
-		}
-		return entry == name
-	})
-}
-
-// toolNamed finds a tool in the registry every run shares or among those
-// the MCP servers offer.
-func (s *Server) toolNamed(name string) (tool.Tool, bool) {
-	return s.allTools().Get(name)
-}
-
 // allTools is every tool a run can offer: the ones every run shares and
 // those the MCP servers offered when they were last listed.
 func (s *Server) allTools() *tool.Registry {
 	return s.narrowed(func(t tool.Tool) bool { _, agentOnly := t.(tool.AgentOnly); return !agentOnly }, s.offeredMCP())
 }
 
-// runTools is the registry a run of sess offers the model: the tools every
-// run shares and the MCP tools given, narrowed to what the tool choice
-// takes and the session can run. A chat's runs never hold a tool that needs
-// a computer. Narrowing the registry, rather than refusing a call, means
-// the model is never told about a tool it may not use.
-func (s *Server) runTools(sess store.Session, choice []string, mcpTools []tool.Tool) *tool.Registry {
-	// An agent offers its definition's fixed built-in list, never MCP tools.
-	// A choice, the list its snapshot pinned, can only narrow it: a tool the
-	// definition gained waits for the next compaction, and one it lost is
-	// gone at once.
-	var pinned []string
-	if sess.Agent != "" {
-		d, _ := agentdef.Lookup(sess.Agent)
-		pinned, choice = choice, d.Tools
-		if choice == nil {
-			choice = []string{}
-		}
-		mcpTools = nil
-	}
-
+// runTools selects the agent definition's tools, limited by its snapshot.
+func (s *Server) runTools(sess store.Session, pinned []string, _ []tool.Tool) *tool.Registry {
+	d, _ := agentdef.Lookup(sess.Agent)
 	return s.narrowed(func(t tool.Tool) bool {
-		if pinned != nil && !slices.Contains(pinned, t.Name()) {
-			return false
-		}
-		if _, agentOnly := t.(tool.AgentOnly); agentOnly && sess.Agent == "" {
-			return false
-		}
-		if sess.Chat() && tool.NeedsComputer(t) {
-			return false
-		}
-		return toolChosen(choice, t)
-	}, mcpTools)
+		return slices.Contains(d.Tools, t.Name()) && (pinned == nil || slices.Contains(pinned, t.Name())) &&
+			(sess.ComputerID != "" || !tool.NeedsComputer(t))
+	}, nil)
 }
 
-// usesComputer reports whether a run of sess works in its computer and so
-// holds an executor: any session with a computer except an agent whose fixed
-// tools all run without one.
+// usesComputer reports whether the agent's tools need its computer.
 func (s *Server) usesComputer(sess store.Session) bool {
-	if sess.Chat() {
-		return false
-	}
-	if sess.Agent == "" {
-		return true
-	}
-	return slices.ContainsFunc(s.runTools(sess, nil, nil).List(), tool.NeedsComputer)
+	return sess.ComputerID != "" && slices.ContainsFunc(s.runTools(sess, nil, nil).List(), tool.NeedsComputer)
 }
 
 // narrowed is a registry of the tools every run shares and the MCP tools
@@ -260,9 +93,7 @@ func (s *Server) narrowed(keep func(tool.Tool) bool, mcpTools []tool.Tool) *tool
 	return out
 }
 
-// sessionToolNames lists the tools a run of sess with the tool choice given
-// offers the model, ordered by name, taking each MCP server's tools as it
-// last listed them.
+// sessionToolNames lists the agent tools in name order.
 func (s *Server) sessionToolNames(sess store.Session, choice []string) []string {
 	names := []string{}
 	for _, t := range s.runTools(sess, choice, s.offeredMCP()).List() {
@@ -279,21 +110,3 @@ func (s *Server) offeredMCP() []tool.Tool {
 	}
 	return s.deps.MCP.Offered()
 }
-
-// mcpToolsFor connects the MCP servers a run of sess may use, remote ones
-// and the stdio ones in its computer, and returns their tools. A tool
-// choice that names no MCP tool connects none, so a stdio server is not
-// started for a run that cannot call it.
-func (s *Server) mcpToolsFor(ctx context.Context, sess store.Session, choice []string) []tool.Tool {
-	if sess.Agent != "" || s.deps.MCP == nil {
-		return nil
-	}
-	if choice != nil && !slices.ContainsFunc(choice, isMCPTool) {
-		return nil
-	}
-	return s.deps.MCP.Tools(ctx, sess.ComputerID)
-}
-
-// isMCPTool reports whether a tool name is one the MCP pool offers: a
-// server's tool or a resource tool.
-func isMCPTool(name string) bool { return strings.HasPrefix(name, "mcp_") }

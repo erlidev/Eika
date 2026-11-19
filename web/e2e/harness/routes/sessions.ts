@@ -1,16 +1,8 @@
+import { wireSession } from "../world.ts";
 /** Sessions: their entries, heads, tools, and configuration. */
 
-import type { Entry, Session } from "../../../src/api/types.ts";
-import {
-  previewContext,
-  recordedContext,
-  samplingProblem,
-  sessionConfiguration,
-  settingsOf,
-  syncSession,
-} from "../profiles.ts";
-import type { ConfigurationDraft } from "../profiles.ts";
-import { sessionTools } from "../world.ts";
+import type { Entry } from "../../../src/api/types.ts";
+import { knownAgent, previewContext, recordedContext, syncSession } from "../modelContext.ts";
 import { checkName, fail, ok, str } from "./context.ts";
 import type { Reply, RouteContext } from "./context.ts";
 
@@ -81,61 +73,26 @@ export function sessionRoutes(ctx: RouteContext): void {
       (s) => s.kind === "home" && s.owner === "local" && s.name === "home",
     );
     if (!row) return fail(404, "not_found", "home session not found");
+    syncSession(w, row);
     const head = (w.entries[row.id] ?? []).find((e) => e.id === row.head_entry_id);
-    return ok({ session: row, ...(head ? { head } : {}) });
+    return ok({ session: wireSession(row), ...(head ? { head } : {}) });
   });
   on("GET", "/api/sessions", ({ query }) => {
     const cx = query.get("computer_id");
-    if (query.get("chats") === "true") {
-      if (cx) return fail(400, "invalid_request", "a chat has no computer");
-      // Oldest first, as the harness lists them.
-      const chats = w.sessions.filter((s) => s.computer_id === undefined && s.kind !== "home");
-      return ok({
-        sessions: chats.toSorted(
-          (a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
-        ),
-      });
-    }
     const sessions = cx ? w.sessions.filter((s) => s.computer_id === cx) : w.sessions;
+    for (const session of sessions) syncSession(w, session);
     return ok({
-      sessions: sessions.toSorted(
-        (a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
-      ),
+      sessions: sessions
+        .toSorted((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+        .map(wireSession),
     });
-  });
-  on("POST", "/api/sessions", ({ body }) => {
-    const chat = body.chat === true;
-    if (chat && str(body.computer_id) !== "") {
-      return fail(400, "invalid_request", "a chat has no computer");
-    }
-    const cx = chat ? undefined : find(w.computers, str(body.computer_id), "computer");
-    if (cx !== undefined && "status" in cx) return cx;
-    const row: Session = {
-      id: ctx.nextId(chat ? "chat" : "ses"),
-      ...(cx ? { computer_id: cx.id } : {}),
-      title: str(body.title) || (chat ? "New chat" : "New session"),
-      kind: "user",
-      owner: "local",
-      state: "idle",
-      last_active_at: now(),
-      tools: sessionTools(w, chat),
-      overridden: false,
-      pinned: false,
-      archived: false,
-      created_at: now(),
-      updated_at: now(),
-    };
-    syncSession(w, row);
-    w.sessions.unshift(row);
-    w.entries[row.id] = [];
-    if (str(body.title) === "") w.untitled.push(row.id);
-    return ok(row, 201);
   });
   on("GET", "/api/sessions/{id}", ({ params }) => {
     const row = find(w.sessions, params[0], "session");
     if ("status" in row) return row;
+    syncSession(w, row);
     const head = (w.entries[row.id] ?? []).find((e) => e.id === row.head_entry_id);
-    return ok({ session: row, ...(head ? { head } : {}) });
+    return ok({ session: wireSession(row), ...(head ? { head } : {}) });
   });
   on("PATCH", "/api/sessions/{id}", ({ params, body }) => {
     const row = find(w.sessions, params[0], "session");
@@ -156,7 +113,7 @@ export function sessionRoutes(ctx: RouteContext): void {
         ...(row.computer_id === undefined ? {} : { computer_id: row.computer_id }),
       }),
     );
-    return ok(row);
+    return ok(wireSession(row));
   });
   on("DELETE", "/api/sessions/{id}", ({ params }) => {
     const row = find(w.sessions, params[0], "session");
@@ -212,7 +169,6 @@ export function sessionRoutes(ctx: RouteContext): void {
         parent_id: e.parent_id,
         kind: e.kind,
         preview: preview(e),
-        commit: e.commit,
         resumable,
         created_at: e.created_at,
       })),
@@ -225,105 +181,31 @@ export function sessionRoutes(ctx: RouteContext): void {
     // session's first message means: the next run starts a new root.
     if (str(body.entry_id) === "") {
       delete row.head_entry_id;
-      return ok(row);
+      return ok(wireSession(row));
     }
     const entry = find(w.entries[row.id] ?? [], str(body.entry_id), "entry");
     if ("status" in entry) return entry;
     const refused = midTurn(w.entries[row.id] ?? [], entry.id);
     if (refused) return refused;
     row.head_entry_id = entry.id;
-    return ok(row);
-  });
-  on("PUT", "/api/sessions/{id}/tools", ({ params, body }) => {
-    const row = find(w.sessions, params[0], "session");
-    if ("status" in row) return row;
-    if (body.tools === null) {
-      // Null clears the session's choice, and its profile's applies.
-      Reflect.deleteProperty(w.toolChoices, row.id);
-      syncSession(w, row);
-      return ok(row);
-    }
-    if (!Array.isArray(body.tools)) return fail(400, "invalid_request", "tools is required");
-    const names = [...new Set(body.tools.map((name) => str(name)))].sort();
-    for (const name of names) {
-      const server = /^mcp__(.+)__\*$/.exec(name)?.[1];
-      if (server !== undefined) {
-        if (!w.mcpServers.some((d) => d.server.name === server)) {
-          return fail(400, "invalid_request", `there is no MCP server "${server}"`);
-        }
-        continue;
-      }
-      const known = w.tools.find((t) => t.name === name);
-      if (!known) return fail(400, "invalid_request", `there is no tool "${name}"`);
-      if (row.computer_id === undefined && known.needs_computer) {
-        return fail(400, "invalid_request", `${name} needs a computer, and a chat has none`);
-      }
-    }
-    w.toolChoices[row.id] = names;
-    syncSession(w, row);
-    row.updated_at = now();
-    return ok(row);
-  });
-  on("GET", "/api/sessions/{id}/configuration", ({ params, query }) => {
-    const row = find(w.sessions, params[0], "session");
-    if ("status" in row) return row;
-    const draft: ConfigurationDraft = {};
-    const profileId = query.get("profile_id");
-    const modelId = query.get("model_id");
-    if (profileId !== null) {
-      if (profileId !== "" && !w.profiles.some((p) => p.id === profileId)) {
-        return fail(400, "invalid_request", `profile ${profileId} does not exist`);
-      }
-      draft.profileId = profileId;
-    }
-    if (modelId !== null) {
-      if (modelId !== "" && !w.models.some((m) => m.id === modelId)) {
-        return fail(400, "invalid_request", `model ${modelId} does not exist`);
-      }
-      draft.modelId = modelId;
-    }
-    return ok(sessionConfiguration(w, row, draft));
-  });
-  on("PUT", "/api/sessions/{id}/profile", ({ params, body }) => {
-    const row = find(w.sessions, params[0], "session");
-    if ("status" in row) return row;
-    const id = str(body.profile_id);
-    if (id === "") Reflect.deleteProperty(row, "profile_id");
-    else if (w.profiles.some((p) => p.id === id)) row.profile_id = id;
-    else return fail(400, "invalid_request", `profile ${id} does not exist`);
-    syncSession(w, row);
-    return ok(sessionConfiguration(w, row));
-  });
-  on("PUT", "/api/sessions/{id}/overrides", ({ params, body }) => {
-    const row = find(w.sessions, params[0], "session");
-    if ("status" in row) return row;
-    const settings = settingsOf(body);
-    const problem = samplingProblem(settings.sampling);
-    if (problem !== undefined) return fail(400, "invalid_request", problem);
-    w.overrides[row.id] = settings;
-    syncSession(w, row);
-    return ok(sessionConfiguration(w, row));
+    return ok(wireSession(row));
   });
   on("GET", "/api/sessions/{id}/context", ({ params, query }) => {
     const row = find(w.sessions, params[0], "session");
     if ("status" in row) return row;
     const model = query.get("model") ?? "";
-    if (row.agent && model !== "")
+    if (!knownAgent(row)) return fail(400, "invalid_request", `unknown agent "${row.agent ?? ""}"`);
+    if (model !== "")
       return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
-    if (model !== "" && !w.models.some((m) => m.name === model)) {
-      return fail(400, "invalid_request", `unknown model "${model}"`);
-    }
     return ok(previewContext(w, row, model));
   });
   on("GET", "/api/sessions/{id}/prediction", ({ params, query }) => {
     const row = find(w.sessions, params[0], "session");
     if ("status" in row) return row;
     const requested = query.get("model") ?? "";
-    if (row.agent && requested !== "")
+    if (!knownAgent(row)) return fail(400, "invalid_request", `unknown agent "${row.agent ?? ""}"`);
+    if (requested !== "")
       return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
-    if (requested !== "" && !w.models.some((m) => m.name === requested)) {
-      return fail(400, "invalid_request", `unknown model "${requested}"`);
-    }
     const next = previewContext(w, row, requested);
     const model = w.models.find((m) => m.model === next.parameters.model);
     if (model === undefined || next.prediction === undefined) {

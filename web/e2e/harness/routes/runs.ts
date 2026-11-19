@@ -1,9 +1,10 @@
+import { wireSession } from "../world.ts";
 /** Runs, queues, and questions. */
 
 import type { MessageImage, Run, Session } from "../../../src/api/types.ts";
 import { fail, ok, str } from "./context.ts";
 import type { RouteContext } from "./context.ts";
-import { sessionConfiguration } from "../profiles.ts";
+import { agentModel, knownAgent } from "../modelContext.ts";
 import { pathOf } from "../world.ts";
 
 /**
@@ -100,9 +101,11 @@ export function runRoutes(ctx: RouteContext): void {
     if (session.kind === "subagent") return subagentRefusal(session.name);
     // The model a run uses is the one the request names, else the
     // session's; a running one keeps the model it started with.
-    if (session.agent && str(body.model) !== "" && (!body.mode || body.mode === "run"))
+    if (!knownAgent(session) && (!body.mode || body.mode === "run"))
+      return fail(400, "invalid_request", `unknown agent "${session.agent ?? ""}"`);
+    if (str(body.model) !== "" && (!body.mode || body.mode === "run"))
       return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
-    const modelName = str(body.model) || sessionConfiguration(w, session).resolved.model || "";
+    const modelName = agentModel(w, session)?.name ?? "";
     const model = w.models.find((m) => m.name === modelName);
     if (images.length > 0 && model?.image_input !== true) {
       return fail(
@@ -120,7 +123,7 @@ export function runRoutes(ctx: RouteContext): void {
       return ok(w.runs[active], 202);
     }
     if (active) return fail(409, "conflict", "a run is already going");
-    if (w.models.length === 0) return fail(409, "conflict", "no model is configured");
+    if (!agentModel(w, session)) return fail(409, "conflict", "no model is configured");
     const run: Run = {
       id: ctx.nextId("run"),
       session_id: session.id,
@@ -138,9 +141,11 @@ export function runRoutes(ctx: RouteContext): void {
     if ("status" in session) return session;
     if (session.kind === "subagent") return subagentRefusal(session.name);
     if (w.activeRuns[session.id]) return fail(409, "conflict", "a run is already going");
-    if (session.agent && str(body.model) !== "")
+    if (!knownAgent(session))
+      return fail(400, "invalid_request", `unknown agent "${session.agent ?? ""}"`);
+    if (str(body.model) !== "")
       return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
-    if (w.models.length === 0) return fail(409, "conflict", "no model is configured");
+    if (!agentModel(w, session)) return fail(409, "conflict", "no model is configured");
     // The harness keeps about 20,000 tokens; the mock keeps two messages, so
     // a context of two or fewer beside its summary has nothing to summarize.
     const path = pathOf(w, session);
@@ -172,12 +177,12 @@ export function runRoutes(ctx: RouteContext): void {
       return fail(409, "conflict", `session ${child.id} is not a subagent`);
     }
     // A subagent with nothing to stop keeps its state.
-    if (child.state !== "running" && child.state !== "waiting") return ok(child);
+    if (child.state !== "running" && child.state !== "waiting") return ok(wireSession(child));
     const active = w.activeRuns[child.id];
     const run = active === undefined ? undefined : w.runs[active];
     if (run) ctx.finish(run, "aborted");
     cancelled(ctx, child);
-    return ok(child);
+    return ok(wireSession(child));
   });
   on("POST", "/api/runs/{id}/abort", ({ params }) => {
     const run = w.runs[params[0] ?? ""];

@@ -192,13 +192,14 @@ func (a *api) lastEndpoint() provider.Endpoint {
 	return a.endpoint
 }
 
-// newSession opens a session in a computer.
-func (a *api) newSession(t *testing.T, computerID string) sessionWire {
+// newSession returns the home session used for user messages.
+func (a *api) newSession(t *testing.T, _ string) sessionWire {
 	t.Helper()
-	rec := request(t, a.Server, "POST", "/api/sessions", map[string]any{
-		"computer_id": computerID, "title": "a session",
-	})
-	return decodeBody[sessionWire](t, rec, 201)
+	sess, err := a.store.EnsureHomeSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decodeBody[sessionResponseWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID, nil), 200).Session
 }
 
 // runState reads what a session is doing.
@@ -232,21 +233,6 @@ func (a *api) waitIdle(t *testing.T, sessionID string) runStateWire {
 		return !state.Active
 	})
 	return state
-}
-
-// waitQuestion waits until a run asks the user something.
-func (a *api) waitQuestion(t *testing.T, sessionID string) builtin.Question {
-	t.Helper()
-	var q builtin.Question
-	waitFor(t, "a question", func() bool {
-		state := a.runState(t, sessionID)
-		if len(state.Questions) == 0 {
-			return false
-		}
-		q = state.Questions[0]
-		return true
-	})
-	return q
 }
 
 // The wire shapes the tests decode. They are written out rather than shared
@@ -433,12 +419,9 @@ func TestSessionRoutes(t *testing.T) {
 	cx := a.home(t)
 
 	sess := a.newSession(t, cx.ID)
-	if sess.ComputerID != cx.ID {
-		t.Fatalf("session = %+v", sess)
-	}
-	list := decodeBody[sessionsWire](t, request(t, a.Server, "GET", "/api/sessions?computer_id="+cx.ID, nil), 200)
-	if len(list.Sessions) != 1 {
-		t.Fatalf("sessions = %d, want 1", len(list.Sessions))
+	list := decodeBody[sessionsWire](t, request(t, a.Server, "GET", "/api/sessions", nil), 200)
+	if len(list.Sessions) != 1 || list.Sessions[0].ID != sess.ID {
+		t.Fatalf("sessions = %+v", list.Sessions)
 	}
 
 	a.script(providertest.Text("first answer"))
@@ -449,34 +432,28 @@ func TestSessionRoutes(t *testing.T) {
 	a.waitIdle(t, sess.ID)
 
 	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	if len(path.Entries) != 2 {
-		t.Fatalf("entries = %d, want the question and the answer: %+v", len(path.Entries), path.Entries)
+	if len(path.Entries) != 3 {
+		t.Fatalf("entries = %d, want preamble, question and answer: %+v", len(path.Entries), path.Entries)
 	}
-	if path.Entries[0].Kind != "user" || path.Entries[1].Kind != "assistant" {
-		t.Errorf("kinds = %q %q, want user assistant", path.Entries[0].Kind, path.Entries[1].Kind)
+	if path.Entries[1].Kind != "user" || path.Entries[2].Kind != "assistant" {
+		t.Errorf("kinds = %q %q, want user assistant", path.Entries[1].Kind, path.Entries[2].Kind)
 	}
 	if len(path.Messages) != 2 || path.Messages[1].Content != "first answer" {
 		t.Errorf("messages = %+v", path.Messages)
 	}
 
 	outline := decodeBody[outlineWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/outline", nil), 200)
-	if len(outline.Nodes) != 2 || outline.HeadEntryID != path.Entries[1].ID {
+	if len(outline.Nodes) != 3 || outline.HeadEntryID != path.Entries[2].ID {
 		t.Errorf("outline = %+v", outline)
 	}
 
 	// Moving the head back to the question branches the tree in place.
 	moved := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/head",
-		map[string]any{"entry_id": path.Entries[0].ID}), 200)
-	if moved.HeadEntryID != path.Entries[0].ID {
+		map[string]any{"entry_id": path.Entries[1].ID}), 200)
+	if moved.HeadEntryID != path.Entries[1].ID {
 		t.Errorf("head = %q, want the first entry", moved.HeadEntryID)
 	}
 
-	if rec := request(t, a.Server, "DELETE", "/api/sessions/"+sess.ID, nil); rec.Code != 204 {
-		t.Fatalf("delete = %d", rec.Code)
-	}
-	if rec := request(t, a.Server, "GET", "/api/sessions/"+sess.ID, nil); rec.Code != 404 {
-		t.Errorf("get after delete = %d, want 404", rec.Code)
-	}
 }
 
 func TestSettingsAndModels(t *testing.T) {

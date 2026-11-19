@@ -132,27 +132,16 @@ func (s *Store) UpdateModel(ctx context.Context, m Model) (Model, error) {
 	return out, nil
 }
 
-// DeleteModel removes a model. A profile that chose it, and a session whose
-// overrides did, fall back to the default model, as a model_id foreign key
-// set to NULL would.
+// DeleteModel removes a model.
 func (s *Store) DeleteModel(ctx context.Context, id string) error {
-	return s.tx(ctx, func(q querier) error {
-		tag, err := q.Exec(ctx, `DELETE FROM models WHERE id = $1`, id)
-		if err != nil {
-			return wrap("delete model "+id, err)
-		}
-		if tag.RowsAffected() == 0 {
-			return wrap("delete model "+id, pgx.ErrNoRows)
-		}
-		// Overrides are a document with no key to the model, so the
-		// database cannot do this one itself.
-		const unset = `UPDATE sessions SET overrides = nullif(overrides - 'model_id', '{}'::jsonb)
-			WHERE overrides->>'model_id' = $1`
-		if _, err := q.Exec(ctx, unset, id); err != nil {
-			return wrap("delete model "+id, err)
-		}
-		return nil
-	})
+	tag, err := s.pool.Exec(ctx, `DELETE FROM models WHERE id = $1`, id)
+	if err != nil {
+		return wrap("delete model "+id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return wrap("delete model "+id, pgx.ErrNoRows)
+	}
+	return nil
 }
 
 // textArray is the list a text[] column is written from: a nil slice would

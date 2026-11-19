@@ -15,9 +15,6 @@
     "DELETE /api/models/{id}": {
       "status": 204
     },
-    "DELETE /api/profiles/{id}": {
-      "status": 204
-    },
     "DELETE /api/projects/{id}/instructions": {
       "status": 204
     },
@@ -412,11 +409,9 @@
               "kind": "string",
               "last_active_at": "string",
               "name": "string",
-              "overridden": "boolean",
               "owner": "string",
               "parent_session_id": "string",
               "pinned": "boolean",
-              "profile_id": "string",
               "project_id": "string",
               "result": "string",
               "state": "string",
@@ -436,7 +431,6 @@
               "head_entry_id",
               "name",
               "parent_session_id",
-              "profile_id",
               "project_id",
               "result",
               "waiting_reason"
@@ -921,187 +915,6 @@
         ]
       }
     },
-    "GET /api/profiles": {
-      "status": 200,
-      "response": {
-        "object": {
-          "default": "string",
-          "profiles": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "chat_prompt": {
-                    "nullable": "string"
-                  },
-                  "created_at": "string",
-                  "description": "string",
-                  "id": "string",
-                  "inherited": {
-                    "object": {
-                      "chat_prompt": "string",
-                      "dropped_effort": "string",
-                      "instructions": "string",
-                      "model": "string",
-                      "model_id": "string",
-                      "preserve_thinking": "boolean",
-                      "profile_id": "string",
-                      "profile_name": "string",
-                      "sampling": {
-                        "object": {
-                          "frequency_penalty": "number",
-                          "max_output": "number",
-                          "min_p": "number",
-                          "presence_penalty": "number",
-                          "reasoning_effort": "string",
-                          "seed": "number",
-                          "stop": {
-                            "array": "string"
-                          },
-                          "temperature": "number",
-                          "top_k": "number",
-                          "top_p": "number"
-                        },
-                        "optional": [
-                          "frequency_penalty",
-                          "max_output",
-                          "min_p",
-                          "presence_penalty",
-                          "reasoning_effort",
-                          "seed",
-                          "stop",
-                          "temperature",
-                          "top_k",
-                          "top_p"
-                        ]
-                      },
-                      "sources": {
-                        "nullable": {
-                          "map": "string"
-                        }
-                      },
-                      "tools": {
-                        "nullable": {
-                          "array": "string"
-                        }
-                      }
-                    },
-                    "optional": [
-                      "dropped_effort"
-                    ]
-                  },
-                  "instructions": {
-                    "nullable": "string"
-                  },
-                  "model_id": "string",
-                  "name": "string",
-                  "preserve_thinking": {
-                    "nullable": "boolean"
-                  },
-                  "sampling": {
-                    "object": {
-                      "frequency_penalty": "number",
-                      "max_output": "number",
-                      "min_p": "number",
-                      "presence_penalty": "number",
-                      "reasoning_effort": "string",
-                      "seed": "number",
-                      "stop": {
-                        "array": "string"
-                      },
-                      "temperature": "number",
-                      "top_k": "number",
-                      "top_p": "number"
-                    },
-                    "optional": [
-                      "frequency_penalty",
-                      "max_output",
-                      "min_p",
-                      "presence_penalty",
-                      "reasoning_effort",
-                      "seed",
-                      "stop",
-                      "temperature",
-                      "top_k",
-                      "top_p"
-                    ]
-                  },
-                  "tools": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
-                  "updated_at": "string"
-                },
-                "optional": [
-                  "model_id"
-                ]
-              }
-            }
-          },
-          "prompts": {
-            "object": {
-              "chat": "string"
-            }
-          }
-        }
-      }
-    },
-    "GET /api/profiles/inherited": {
-      "status": 200,
-      "response": {
-        "object": {
-          "chat_prompt": "string",
-          "dropped_effort": "string",
-          "instructions": "string",
-          "model": "string",
-          "model_id": "string",
-          "preserve_thinking": "boolean",
-          "profile_id": "string",
-          "profile_name": "string",
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            },
-            "optional": [
-              "frequency_penalty",
-              "max_output",
-              "min_p",
-              "presence_penalty",
-              "reasoning_effort",
-              "seed",
-              "stop",
-              "temperature",
-              "top_k",
-              "top_p"
-            ]
-          },
-          "sources": {
-            "nullable": {
-              "map": "string"
-            }
-          },
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          }
-        },
-        "optional": [
-          "dropped_effort"
-        ]
-      }
-    },
     "GET /api/projects": {
       "status": 200,
       "response": {
@@ -1342,11 +1155,9 @@
                   "kind": "string",
                   "last_active_at": "string",
                   "name": "string",
-                  "overridden": "boolean",
                   "owner": "string",
                   "parent_session_id": "string",
                   "pinned": "boolean",
-                  "profile_id": "string",
                   "project_id": "string",
                   "result": "string",
                   "state": "string",
@@ -1366,7 +1177,6 @@
                   "head_entry_id",
                   "name",
                   "parent_session_id",
-                  "profile_id",
                   "project_id",
                   "result",
                   "waiting_reason"
@@ -1576,11 +1386,9 @@
               "kind": "string",
               "last_active_at": "string",
               "name": "string",
-              "overridden": "boolean",
               "owner": "string",
               "parent_session_id": "string",
               "pinned": "boolean",
-              "profile_id": "string",
               "project_id": "string",
               "result": "string",
               "state": "string",
@@ -1600,7 +1408,6 @@
               "head_entry_id",
               "name",
               "parent_session_id",
-              "profile_id",
               "project_id",
               "result",
               "waiting_reason"
@@ -2041,174 +1848,6 @@
           "call",
           "dropped_effort",
           "prediction"
-        ]
-      }
-    },
-    "GET /api/sessions/{id}/configuration": {
-      "status": 200,
-      "response": {
-        "object": {
-          "inherited": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "overrides": {
-            "object": {
-              "chat_prompt": {
-                "nullable": "string"
-              },
-              "instructions": {
-                "nullable": "string"
-              },
-              "model_id": "string",
-              "preserve_thinking": {
-                "nullable": "boolean"
-              },
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              }
-            },
-            "optional": [
-              "model_id"
-            ]
-          },
-          "profile_id": "string",
-          "resolved": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "session_id": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          }
-        },
-        "optional": [
-          "profile_id"
         ]
       }
     },
@@ -3629,11 +3268,9 @@
           "kind": "string",
           "last_active_at": "string",
           "name": "string",
-          "overridden": "boolean",
           "owner": "string",
           "parent_session_id": "string",
           "pinned": "boolean",
-          "profile_id": "string",
           "project_id": "string",
           "result": "string",
           "state": "string",
@@ -3653,7 +3290,6 @@
           "head_entry_id",
           "name",
           "parent_session_id",
-          "profile_id",
           "project_id",
           "result",
           "waiting_reason"
@@ -4254,146 +3890,6 @@
         }
       }
     },
-    "POST /api/profiles": {
-      "status": 201,
-      "request": {
-        "object": {
-          "chat_prompt": "string",
-          "description": "string",
-          "instructions": "string",
-          "model_id": "string",
-          "name": "string",
-          "preserve_thinking": "boolean",
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            }
-          },
-          "tools": {
-            "array": "string"
-          }
-        }
-      },
-      "response": {
-        "object": {
-          "chat_prompt": {
-            "nullable": "string"
-          },
-          "created_at": "string",
-          "description": "string",
-          "id": "string",
-          "inherited": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "instructions": {
-            "nullable": "string"
-          },
-          "model_id": "string",
-          "name": "string",
-          "preserve_thinking": {
-            "nullable": "boolean"
-          },
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            },
-            "optional": [
-              "frequency_penalty",
-              "max_output",
-              "min_p",
-              "presence_penalty",
-              "reasoning_effort",
-              "seed",
-              "stop",
-              "temperature",
-              "top_k",
-              "top_p"
-            ]
-          },
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          },
-          "updated_at": "string"
-        },
-        "optional": [
-          "model_id"
-        ]
-      }
-    },
     "POST /api/projects": {
       "status": 201,
       "request": {
@@ -4772,58 +4268,6 @@
         }
       }
     },
-    "POST /api/sessions": {
-      "status": 201,
-      "request": {
-        "object": {
-          "chat": "boolean",
-          "computer_id": "string",
-          "title": "string"
-        }
-      },
-      "response": {
-        "object": {
-          "agent": "string",
-          "archived": "boolean",
-          "brief": "string",
-          "computer_id": "string",
-          "created_at": "string",
-          "head_entry_id": "string",
-          "id": "string",
-          "kind": "string",
-          "last_active_at": "string",
-          "name": "string",
-          "overridden": "boolean",
-          "owner": "string",
-          "parent_session_id": "string",
-          "pinned": "boolean",
-          "profile_id": "string",
-          "project_id": "string",
-          "result": "string",
-          "state": "string",
-          "title": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          },
-          "updated_at": "string",
-          "waiting_reason": "string"
-        },
-        "optional": [
-          "agent",
-          "brief",
-          "computer_id",
-          "head_entry_id",
-          "name",
-          "parent_session_id",
-          "profile_id",
-          "project_id",
-          "result",
-          "waiting_reason"
-        ]
-      }
-    },
     "POST /api/sessions/{id}/cancel": {
       "status": 200,
       "response": {
@@ -4838,11 +4282,9 @@
           "kind": "string",
           "last_active_at": "string",
           "name": "string",
-          "overridden": "boolean",
           "owner": "string",
           "parent_session_id": "string",
           "pinned": "boolean",
-          "profile_id": "string",
           "project_id": "string",
           "result": "string",
           "state": "string",
@@ -4862,7 +4304,6 @@
           "head_entry_id",
           "name",
           "parent_session_id",
-          "profile_id",
           "project_id",
           "result",
           "waiting_reason"
@@ -4911,11 +4352,9 @@
           "kind": "string",
           "last_active_at": "string",
           "name": "string",
-          "overridden": "boolean",
           "owner": "string",
           "parent_session_id": "string",
           "pinned": "boolean",
-          "profile_id": "string",
           "project_id": "string",
           "result": "string",
           "state": "string",
@@ -4935,7 +4374,6 @@
           "head_entry_id",
           "name",
           "parent_session_id",
-          "profile_id",
           "project_id",
           "result",
           "waiting_reason"
@@ -5064,146 +4502,6 @@
         }
       }
     },
-    "PUT /api/profiles/{id}": {
-      "status": 200,
-      "request": {
-        "object": {
-          "chat_prompt": "string",
-          "description": "string",
-          "instructions": "string",
-          "model_id": "string",
-          "name": "string",
-          "preserve_thinking": "boolean",
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            }
-          },
-          "tools": {
-            "array": "string"
-          }
-        }
-      },
-      "response": {
-        "object": {
-          "chat_prompt": {
-            "nullable": "string"
-          },
-          "created_at": "string",
-          "description": "string",
-          "id": "string",
-          "inherited": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "instructions": {
-            "nullable": "string"
-          },
-          "model_id": "string",
-          "name": "string",
-          "preserve_thinking": {
-            "nullable": "boolean"
-          },
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            },
-            "optional": [
-              "frequency_penalty",
-              "max_output",
-              "min_p",
-              "presence_penalty",
-              "reasoning_effort",
-              "seed",
-              "stop",
-              "temperature",
-              "top_k",
-              "top_p"
-            ]
-          },
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          },
-          "updated_at": "string"
-        },
-        "optional": [
-          "model_id"
-        ]
-      }
-    },
     "PUT /api/projects/{id}/instructions": {
       "status": 200,
       "request": {
@@ -5245,421 +4543,6 @@
             }
           }
         }
-      }
-    },
-    "PUT /api/sessions/{id}/overrides": {
-      "status": 200,
-      "request": {
-        "object": {
-          "chat_prompt": "string",
-          "instructions": "string",
-          "model_id": "string",
-          "preserve_thinking": "boolean",
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            }
-          }
-        }
-      },
-      "response": {
-        "object": {
-          "inherited": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "overrides": {
-            "object": {
-              "chat_prompt": {
-                "nullable": "string"
-              },
-              "instructions": {
-                "nullable": "string"
-              },
-              "model_id": "string",
-              "preserve_thinking": {
-                "nullable": "boolean"
-              },
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              }
-            },
-            "optional": [
-              "model_id"
-            ]
-          },
-          "profile_id": "string",
-          "resolved": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "session_id": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          }
-        },
-        "optional": [
-          "profile_id"
-        ]
-      }
-    },
-    "PUT /api/sessions/{id}/profile": {
-      "status": 200,
-      "request": {
-        "object": {
-          "profile_id": "string"
-        }
-      },
-      "response": {
-        "object": {
-          "inherited": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "overrides": {
-            "object": {
-              "chat_prompt": {
-                "nullable": "string"
-              },
-              "instructions": {
-                "nullable": "string"
-              },
-              "model_id": "string",
-              "preserve_thinking": {
-                "nullable": "boolean"
-              },
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              }
-            },
-            "optional": [
-              "model_id"
-            ]
-          },
-          "profile_id": "string",
-          "resolved": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "session_id": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          }
-        },
-        "optional": [
-          "profile_id"
-        ]
-      }
-    },
-    "PUT /api/sessions/{id}/tools": {
-      "status": 200,
-      "request": {
-        "object": {
-          "tools": "any"
-        }
-      },
-      "response": {
-        "object": {
-          "agent": "string",
-          "archived": "boolean",
-          "brief": "string",
-          "computer_id": "string",
-          "created_at": "string",
-          "head_entry_id": "string",
-          "id": "string",
-          "kind": "string",
-          "last_active_at": "string",
-          "name": "string",
-          "overridden": "boolean",
-          "owner": "string",
-          "parent_session_id": "string",
-          "pinned": "boolean",
-          "profile_id": "string",
-          "project_id": "string",
-          "result": "string",
-          "state": "string",
-          "title": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          },
-          "updated_at": "string",
-          "waiting_reason": "string"
-        },
-        "optional": [
-          "agent",
-          "brief",
-          "computer_id",
-          "head_entry_id",
-          "name",
-          "parent_session_id",
-          "profile_id",
-          "project_id",
-          "result",
-          "waiting_reason"
-        ]
       }
     },
     "PUT /api/settings": {

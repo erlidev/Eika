@@ -41,7 +41,7 @@ func TestMessagesFoldCompactions(t *testing.T) {
 	path := []store.Entry{
 		entry(provider.UserMessage("one")),
 		entry(provider.AssistantMessage("two", nil)),
-		{Kind: store.KindSystem, Payload: json.RawMessage(`{"text":"a note"}`)},
+		{Kind: store.EntryKind("system"), Payload: json.RawMessage(`{"text":"a note"}`)},
 		entry(provider.UserMessage("three")),
 		compaction("first", 1),
 		entry(provider.AssistantMessage("four", nil)),

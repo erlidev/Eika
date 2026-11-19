@@ -238,3 +238,11 @@ func scanModelCall(row pgx.Row) (ModelCall, error) {
 	c.CreatedAt = c.CreatedAt.UTC()
 	return c, nil
 }
+
+// jsonObject supplies an empty object for an unset JSON value.
+func jsonObject(raw json.RawMessage) []byte {
+	if len(raw) == 0 {
+		return []byte(`{}`)
+	}
+	return raw
+}

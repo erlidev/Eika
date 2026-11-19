@@ -3,7 +3,7 @@
 import type { CompactionReason, EntryKind, Timings, Usage } from "@/api/events";
 
 /** SessionKind is who opened a session. */
-export type SessionKind = "user" | "home" | "subagent" | "routine";
+export type SessionKind = "home" | "subagent" | "routine" | (string & {});
 
 /** SessionState is the lifecycle state set by the harness. */
 export type SessionState = "idle" | "running" | "waiting" | "failed" | "cancelled";
@@ -29,10 +29,6 @@ export type Session = {
   head_entry_id?: string;
   /** tools are the tools the next run offers the model, sorted by name. */
   tools: string[];
-  /** profile_id is the profile the session chose; absent, it runs with the default one. */
-  profile_id?: string;
-  /** overridden says the session sets something of its own over its profile. */
-  overridden: boolean;
   /** pinned sessions are listed before the others. */
   pinned: boolean;
   /** archived sessions are set aside under an Archived heading; they run like any other. */
@@ -179,7 +175,6 @@ export type Entry = {
   parent_id?: string;
   seq: number;
   kind: EntryKind;
-  commit?: string;
   created_at: string;
   message: Message;
   /** compaction is present on an entry of kind compaction. */
@@ -192,7 +187,6 @@ export type Node = {
   parent_id?: string;
   kind: EntryKind;
   preview: string;
-  commit?: string;
   /**
    * resumable is whether a run can continue from this entry. An entry in the
    * middle of a turn leaves tool calls unanswered, so the harness refuses to

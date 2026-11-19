@@ -330,7 +330,7 @@ func TestOnlyTheHomeSessionDelegates(t *testing.T) {
 	d := newDelegating(t)
 	// An eika session that is not home is offered the tools by its
 	// definition, and the binding still refuses it.
-	other, err := d.store.CreateSession(t.Context(), store.Session{Agent: "eika"})
+	other, err := d.store.CreateSession(t.Context(), store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}

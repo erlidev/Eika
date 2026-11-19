@@ -11,6 +11,9 @@ import (
 	"github.com/erlidev/eika/internal/store"
 )
 
+// maxPromptBytes bounds compaction instructions.
+const maxPromptBytes = 64 << 10
+
 // settingCompaction configures how a run compacts a conversation that
 // outgrows its model's context window.
 const settingCompaction = "compaction"

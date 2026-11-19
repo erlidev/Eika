@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/provider/providertest"
+	"github.com/erlidev/eika/internal/store"
 )
 
 // inferenceWire is GET /api/inference, as far as the tests read it.
@@ -73,45 +75,31 @@ func (g *gate) Stream(ctx context.Context, _ provider.Request) (<-chan provider.
 }
 
 func TestTwoRunsOnOnePoolTakeTurnsAndTheSecondRecordsItsWait(t *testing.T) {
-	a := newAPI(t)
-	g := newGate()
-	a.use(g)
-	cx := a.home(t)
-	first, second := a.newSession(t, cx.ID), a.newSession(t, cx.ID)
-
-	a.postMessage(t, first.ID, "one", "", 202)
-	<-g.started
-	a.postMessage(t, second.ID, "two", "", 202)
-	waitFor(t, "the second run to wait in the queue", func() bool {
-		pools := a.inference(t).Pools
-		return len(pools) == 1 && len(pools[0].Waiting) == 1
-	})
-	st := a.inference(t).Pools[0]
-	if st.Name != "test" || st.Slots != 1 || len(st.Running) != 1 || st.Running[0].SessionID != first.ID ||
-		st.Running[0].Priority != "interactive" || st.Waiting[0].SessionID != second.ID {
-		t.Fatalf("pool = %+v, want the first run holding the one slot and the second waiting", st)
+	d := newDelegating(t)
+	if _, err := d.store.OverrideProvider(t.Context(), d.testProvider.ID, store.ProviderOverride{Slots: new(1)}); err != nil {
+		t.Fatal(err)
 	}
-	if g.calls.Load() != 1 {
-		t.Fatalf("model calls = %d while the pool is full, want 1", g.calls.Load())
+	worker := newGate()
+	eika := providertest.New(call("start", "subagent_start", map[string]any{"agent": "researcher", "name": "research", "brief": "work"}), providertest.Text("started"), providertest.Text("second answer"))
+	d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a researcher": worker})
+	d.mu.Lock()
+	d.delay = 500 * time.Millisecond
+	d.mu.Unlock()
+	d.postMessage(t, d.home.ID, "start research", "", 202)
+	d.waitIdle(t, d.home.ID)
+	<-worker.started
+	child := d.child(t, "research")
+	d.postMessage(t, d.home.ID, "another question", "", 202)
+	waitFor(t, "home to wait for the worker", func() bool { pools := d.inference(t).Pools; return len(pools) == 1 && len(pools[0].Waiting) == 1 })
+	pool := d.inference(t).Pools[0]
+	if len(pool.Running) != 1 || pool.Running[0].SessionID != child.ID || pool.Waiting[0].SessionID != d.home.ID {
+		t.Fatalf("pool = %+v", pool)
 	}
 	time.Sleep(30 * time.Millisecond)
-	close(g.release)
-	a.waitIdle(t, first.ID)
-	a.waitIdle(t, second.ID)
-
-	wait := func(sessionID string) (queueMS, slot *int, priority string) {
-		calls := decodeBody[callsWire](t, request(t, a.Server, "GET", "/api/sessions/"+sessionID+"/calls", nil), 200).Calls
-		if len(calls) != 1 {
-			t.Fatalf("calls of %s = %d, want 1", sessionID, len(calls))
-		}
-		return calls[0].QueueMS, calls[0].Slot, calls[0].Priority
-	}
-	q1, s1, p1 := wait(first.ID)
-	q2, s2, p2 := wait(second.ID)
-	if q1 == nil || q2 == nil || *q2 < 30 || *q1 >= *q2 || s1 != nil || s2 != nil || p1 != "interactive" || p2 != "interactive" {
-		t.Errorf("recorded waits = %v and %v ms on slots %v and %v, want the second to have waited for the first", deref(q1), deref(q2), deref(s1), deref(s2))
-	}
-	if st := a.inference(t).Pools[0]; len(st.Running) != 0 || len(st.Waiting) != 0 {
-		t.Errorf("pool after the runs = %+v, want it empty", st)
+	close(worker.release)
+	d.waitIdle(t, d.home.ID)
+	calls := d.homeCalls(t)
+	if len(calls) < 3 || calls[2].QueueMS == nil || *calls[2].QueueMS < 30 {
+		t.Fatalf("home calls = %+v", calls)
 	}
 }

@@ -115,11 +115,10 @@ each running or waiting one so Cancel works (aborting it records the subagent
 the same transcript on `home-main`, which is the one the UI can open.
 `chat` queues a web search reply. `mcp` adds five MCP servers, one in each
 state; the mock's authorization server approves at
-once, so Sign in returns straight to `/mcp/callback`. `profiles` adds two
-profiles to the workbench, puts `ses-backoff` on one with an override of its
-own, and records two of its model calls, for the context meter; the
-mock resolves profiles and assembles requests in `harness/profiles.ts`, and
-every run it plays records its model call. The `agent-*`
+once, so Sign in returns straight to `/mcp/callback`. `recorded-calls` adds
+two recorded calls to `ses-backoff` for the context meter. The mock resolves
+agent definitions and assembles requests in `harness/modelContext.ts`. Each run
+it plays records its model call. The `agent-*`
 scenarios queue a scripted reply for the next message: tool calls with
 streamed output, reasoning streamed before the answer, a question with
 options, an MCP server asking for input, a provider failure, or a run that
@@ -218,18 +217,16 @@ tab shows that URL, so its baselines change with the port).
 
 `make smoke` is the one test against the real stack. It starts compose as
 project `eika-smoke` on port 18080 with `compose.smoke.yaml`, whose `model`
-service runs `smoke/model.ts`, a scripted OpenAI-compatible endpoint: it
-lists one model, `smoke`, answers a user message by calling `bash` when the
-request offers it, and answers the tool result with "The command printed
-<output>." The command prints `smoke-ok`, the hostname and the working
-directory. `smoke/smoke.spec.ts` (config `playwright.smoke.config.ts`) first
-polls until the harness has made the home computer, with no setup done. It
-then walks the guided setup with that endpoint, opens a plain chat (no
-sandbox, so no `bash`; the model answers "ok"), then a chat on the home
-computer with "New home chat", and waits for the answer that carries the
-hostname of the home computer's container (read from `GET /api/computers`)
-and `/home/eika`: only eikad running the command there prints both. The stack
-builds its own sandbox image, `eika-sandbox:smoke`, and never reads or moves
+service runs `smoke/model.ts`, a scripted OpenAI-compatible endpoint. The
+model lists `smoke`, answers a home message, and delegates the sandbox probe
+to a worker. The worker calls `bash` to print `smoke-ok`, the hostname and
+the working directory. `smoke/smoke.spec.ts` (config
+`playwright.smoke.config.ts`) waits for the home computer, completes setup,
+and sends the probe request in Chat. It reads the worker's session path and
+checks the hostname against the home computer's container ID and the directory
+against `/home/eika`. This proves that eikad ran the command in the container.
+The stack builds its own sandbox image, `eika-sandbox:smoke`, and never reads
+or moves
 `eika-sandbox:latest`. `make smoke-down` removes the stack, its volumes, and
 any sandbox left on its networks with the volume of each. A first run builds
 the images and takes a few minutes; later runs take well under one.

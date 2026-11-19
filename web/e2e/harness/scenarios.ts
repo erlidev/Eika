@@ -5,7 +5,7 @@
  */
 
 import type { Message, Project, Run } from "../../src/api/types.ts";
-import { noSettings, syncSession } from "./profiles.ts";
+import { syncSession } from "./modelContext.ts";
 import { emptyWorld, minutesAgo, WorldBuilder } from "./world.ts";
 import type { World } from "./world.ts";
 
@@ -258,36 +258,15 @@ function workbench(): WorldBuilder {
   return b;
 }
 
-/**
- * profiles adds two profiles to a workbench, puts ses-backoff on one with an
- * override of its own, and records two of its model calls: one when only
- * its first message had been sent, and one at its head. Its endpoint counts
- * tokens the way `counting` says: by rendering requests (chat), by tokenising
- * text (text), or not at all (none).
- */
-function profiles(counting: "chat" | "text" | "none" = "chat"): WorldBuilder {
+/** Builds recorded calls for the context meter. */
+function recordedCalls(counting: "chat" | "text" | "none" = "chat"): WorldBuilder {
   const b = workbench();
   const w = b.world;
   const mini = w.models.find((m) => m.name === "gpt-5-mini");
   // A model whose own values differ, so an editor that picks it shows them.
   if (mini) mini.max_output = 64000;
-  const reviewer = b.profile({
-    name: "Reviewer",
-    description: "Reads and reviews; changes nothing",
-    instructions: "Review the change and report problems. Do not edit files.",
-    sampling: { temperature: 0.2 },
-    tools: ["bash", "web_fetch"],
-  });
-  b.profile({
-    name: "Fast",
-    ...(mini ? { model_id: mini.id } : {}),
-    sampling: { reasoning_effort: "low", max_output: 4096 },
-  });
-  const cx = w.computers.find((x) => x.id === "cx-retries");
   const main = w.sessions.find((x) => x.id === "ses-backoff");
-  if (!cx || !main) throw new Error("the workbench has no ses-backoff");
-  main.profile_id = reviewer.id;
-  w.overrides[main.id] = { ...noSettings(), sampling: { temperature: 0.7 } };
+  if (!main) throw new Error("the workbench has no ses-backoff");
   syncSession(w, main);
   // An endpoint that renders and tokenises requests (llama.cpp, vLLM), so the
   // context view counts every part exactly and predicts the next request
@@ -1127,17 +1106,16 @@ export const scenarios = {
       return b.world;
     },
   },
-  profiles: {
-    description:
-      "Like workbench, with two more profiles: ses-backoff, which no page opens, runs with Reviewer and overrides its temperature, and two of its model calls are recorded. The legacy profile data, for the context meter's tests.",
+  "recorded-calls": {
+    description: "Like workbench, with two recorded calls for the context meter.",
     path: "/",
-    build: () => profiles().world,
+    build: () => recordedCalls().world,
   },
   "context-estimated": {
     description:
-      "Like profiles, but the endpoint has no tokenizer: every part of a request is estimated from bytes and marked so, the next request's size is an estimate, and no remainder can be stated for it.",
+      "Like recorded-calls, but the endpoint has no tokenizer: every part of a request is estimated from bytes and marked so, the next request's size is an estimate, and no remainder can be stated for it.",
     path: "/",
-    build: () => profiles("none").world,
+    build: () => recordedCalls("none").world,
   },
   "home-world": {
     description: "The home conversation and named subagents in different states.",

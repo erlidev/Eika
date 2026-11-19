@@ -3,6 +3,7 @@
 package server_test
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -13,10 +14,33 @@ import (
 	"github.com/erlidev/eika/internal/provider/providertest"
 )
 
-// askStep is a model response that calls ask_user, which is how these tests
-// hold a run open long enough to act on it.
-func askStep(callID, question string) providertest.Step {
-	return providertest.Calls("", providertest.Call(callID, "ask_user", map[string]any{"question": question}))
+// heldProvider keeps a model call open until the test releases it.
+type heldProvider struct {
+	*providertest.Provider
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (p *heldProvider) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+	held := false
+	p.once.Do(func() { held = true; close(p.started) })
+	if held {
+		select {
+		case <-p.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return p.Provider.Stream(ctx, req)
+}
+func (a *api) hold(steps ...providertest.Step) *heldProvider {
+	p := &heldProvider{Provider: providertest.New(steps...), started: make(chan struct{}), release: make(chan struct{})}
+	a.use(p)
+	return p
+}
+func askStep(_, _ string) providertest.Step {
+	return providertest.Calls("", providertest.Call("c1", "web_search", map[string]any{"query": "tokio"}))
 }
 
 // session sets up a computer and a session to run in.
@@ -62,7 +86,7 @@ func TestRunDeliversSteeringAndFollowUpMessages(t *testing.T) {
 	// Call one holds the run open on a question. The steering message joins
 	// the conversation when the call finishes; the follow-up starts a turn of
 	// its own after this one ends.
-	p := a.script(
+	p := a.hold(
 		askStep("c1", "carry on?"),
 		providertest.Text("done with the first turn"),
 		providertest.Text("done with the follow-up"),
@@ -72,7 +96,7 @@ func TestRunDeliversSteeringAndFollowUpMessages(t *testing.T) {
 		t.Fatalf("run = %+v, want a running run", run)
 	}
 
-	question := a.waitQuestion(t, sess.ID)
+	<-p.started
 	a.postMessage(t, sess.ID, "also check the tests", "steer", 202)
 	a.postMessage(t, sess.ID, "then write it up", "follow_up", 202)
 
@@ -84,10 +108,7 @@ func TestRunDeliversSteeringAndFollowUpMessages(t *testing.T) {
 		t.Errorf("pending follow-ups = %v", state.PendingFollowUps)
 	}
 
-	if rec := request(t, a.Server, "POST", "/api/questions/"+question.ID+"/answer",
-		map[string]any{"answer": "yes"}); rec.Code != 204 {
-		t.Fatalf("answer = %d: %s", rec.Code, rec.Body.String())
-	}
+	close(p.release)
 
 	final := a.waitIdle(t, sess.ID)
 	if final.Run == nil || final.Run.State != "done" {
@@ -119,10 +140,10 @@ func TestRunDeliversSteeringAndFollowUpMessages(t *testing.T) {
 func TestRunAbortStopsTheLoopAndRecordsIt(t *testing.T) {
 	a := newAPI(t)
 	sess := a.session(t)
-	a.script(askStep("c1", "are you still there?"), providertest.Text("never reached"))
+	p := a.hold(askStep("c1", "are you still there?"), providertest.Text("never reached"))
 
 	run := a.postMessage(t, sess.ID, "start", "", 202)
-	question := a.waitQuestion(t, sess.ID)
+	<-p.started
 
 	aborted := decodeBody[runWire](t, request(t, a.Server, "POST", "/api/runs/"+run.ID+"/abort", nil), 200)
 	if aborted.State != "aborted" {
@@ -136,11 +157,6 @@ func TestRunAbortStopsTheLoopAndRecordsIt(t *testing.T) {
 		t.Error("the abandoned question is still pending")
 	}
 
-	// The abandoned question cannot be answered any more.
-	if rec := request(t, a.Server, "POST", "/api/questions/"+question.ID+"/answer",
-		map[string]any{"answer": "hello?"}); rec.Code != 404 {
-		t.Errorf("answering an abandoned question = %d, want 404", rec.Code)
-	}
 	// Aborting a run that is already over is a conflict, not a second abort.
 	if rec := request(t, a.Server, "POST", "/api/runs/"+run.ID+"/abort", nil); rec.Code != 409 {
 		t.Errorf("second abort = %d, want 409", rec.Code)
@@ -153,10 +169,10 @@ func TestRunAbortStopsTheLoopAndRecordsIt(t *testing.T) {
 func TestAbortKeepsAcceptedMessagesForTheNextRun(t *testing.T) {
 	a := newAPI(t)
 	sess := a.session(t)
-	a.script(askStep("c1", "wait here"))
+	held := a.hold(askStep("c1", "wait here"))
 
 	run := a.postMessage(t, sess.ID, "first run", "", 202)
-	a.waitQuestion(t, sess.ID)
+	<-held.started
 	a.postMessage(t, sess.ID, "still do this", "follow_up", 202)
 	decodeBody[runWire](t, request(t, a.Server, "POST", "/api/runs/"+run.ID+"/abort", nil), 200)
 
@@ -185,23 +201,17 @@ func TestCompactRunsAsARunOfItsOwn(t *testing.T) {
 	sess := a.session(t)
 	p := a.script(providertest.Text("first answer"), providertest.Text("second answer"),
 		providertest.Text("SUMMARY"), providertest.Text("after"))
-	for _, text := range []string{"one", "two"} {
-		a.postMessage(t, sess.ID, text+" "+strings.Repeat("x", 8000), "", 202)
-		a.waitIdle(t, sess.ID)
-	}
-
-	// The default keeps 20,000 tokens, which is all of the conversation.
+	// One turn fits in home's 15% window share, but two do not.
+	a.postMessage(t, sess.ID, "one "+strings.Repeat("x", 12000), "", 202)
+	a.waitIdle(t, sess.ID)
 	compact := func(body map[string]any) *httptest.ResponseRecorder {
 		return request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/compact", body)
 	}
 	if rec := compact(nil); rec.Code != 409 {
-		t.Fatalf("compact with nothing to summarize = %d, want 409: %s", rec.Code, rec.Body.String())
+		t.Fatalf("compact with one turn = %d, want 409: %s", rec.Code, rec.Body.String())
 	}
-	if rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{
-		"compaction": map[string]any{"keep_recent_tokens": 1024},
-	}); rec.Code != 200 {
-		t.Fatalf("set compaction = %d: %s", rec.Code, rec.Body.String())
-	}
+	a.postMessage(t, sess.ID, "two "+strings.Repeat("x", 12000), "", 202)
+	a.waitIdle(t, sess.ID)
 	run := decodeBody[runWire](t, compact(map[string]any{"instructions": "the plan"}), 202)
 	state := a.waitIdle(t, sess.ID)
 	if state.Run == nil || state.Run.ID != run.ID || state.Run.State != "done" {
@@ -222,7 +232,7 @@ func TestCompactRunsAsARunOfItsOwn(t *testing.T) {
 
 	a.postMessage(t, sess.ID, "three", "", 202)
 	a.waitIdle(t, sess.ID)
-	if got := p.Requests()[3].Messages[0].Content; !strings.Contains(got, "<summary>\nSUMMARY\n</summary>") {
+	if got := p.Requests()[3].Messages[0].Content; !strings.Contains(got, "<summary as_of=") || !strings.Contains(got, "SUMMARY") {
 		t.Errorf("the run after the compaction began with %q, want the summary", got)
 	}
 }

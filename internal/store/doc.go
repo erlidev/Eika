@@ -3,11 +3,11 @@
 // Open connects a pool, verifies it, and applies the embedded migrations in
 // internal/store/migrations. Everything else is hand-written SQL in one file
 // per entity: computers, sessions, session entries, runs,
-// settings, providers, models, profiles, agent overrides, projects, model requests
+// settings, providers, models, agent overrides, projects, model requests
 // and sign-in. Credentials arrive and leave sealed; the store never sees one in
 // the clear. Queries return the domain structs defined here; nothing in this
 // package knows about HTTP, the agent loop, or Docker. Documents another
-// package owns the shape of, such as an entry's message or a profile's
+// package owns the shape of, such as an entry's message or a model's
 // sampling parameters, are kept as JSON the store does not read.
 //
 // Operations that touch more than one row run in a transaction, which is why

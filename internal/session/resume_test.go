@@ -40,7 +40,7 @@ func TestPathResumable(t *testing.T) {
 			{ID: "call_1", Name: "read", Arguments: provider.ToolArguments(`{"path":"go.mod"}`)},
 			{ID: "call_2", Name: "grep", Arguments: provider.ToolArguments(`{"pattern":"func"}`)},
 		})),
-		{Kind: store.KindSystem, Payload: []byte(`{"text":"computer restarted"}`)},
+		{Kind: store.EntryKind("system"), Payload: []byte(`{"text":"computer restarted"}`)},
 		entry(provider.ToolResultMessage("call_1", "module eika", false)),
 		entry(provider.ToolResultMessage("call_elsewhere", "nothing", false)),
 		entry(provider.ToolResultMessage("call_2", "func main", false)),

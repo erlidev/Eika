@@ -474,6 +474,23 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   `arguments_malformed: true`, so the entry is always writable and the tool
   reports a normal argument error.
 
+## Retire profiles and direct sessions
+
+- Migration 0021 saves all profile rows, each session's original kind and
+  profile choices, and the default profile setting in `retired_profiles`,
+  `retired_session_profiles`, and `retired_profile_defaults`. These tables are
+  snapshots. The runtime does not read them. The live profile table and session
+  profile, override and tool-choice columns are removed.
+- Existing user sessions become routines with agent `eika`. Their name is the
+  title, or the session ID when the title is blank. IDs, computer associations,
+  heads, entry trees and payloads stay unchanged. They do not become home.
+  Their archived configuration does not grant tools or select a model.
+- Old entry kinds and payloads stay unchanged. A `NOT VALID` check keeps those
+  rows readable and rejects new entries with retired kinds. A later migration
+  must not validate this constraint without first preserving those rows.
+- Agent definitions and model classes replace configuration layers. Agent runs
+  do not connect MCP tools. The MCP pool remains for later work.
+
 ## Phase 2 session storage
 
 - Migration 0014 keeps `user` sessions and their configuration unchanged. New
@@ -1793,11 +1810,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   password exists; the stack binds 127.0.0.1 so only this machine can claim
   it. Tokens are stored as SHA-256, valid 30 days; changing the password ends
   every session. Attempts are serialised, not locked out.
-- **Profiles**: named, all-nullable run configurations; null falls through.
-  One function resolves a run: request model → session overrides →
-  profile → model row → provider default. `default_profile` is a setting; the
-  last profile cannot be deleted. A profile's prompt, when set (even empty),
-  replaces the built-in one.
+- **Run configuration**: agent definitions choose the prompt, tools and model
+  class. The selected model row sets sampling and thinking options.
 - Sampling fields are pointers; nil means the endpoint's default, so
   non-standard fields (top_k, min_p) are sent only when set. An effort the
   model does not offer falls through and is reported as dropped.
@@ -1810,8 +1824,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - Remote servers connect from the harness (a network call; tools reach
   chats). Stdio servers are processes, so they run in the session's
   computer via eikad `/process`, one per computer.
-- Tools are `mcp__<server>__<tool>`, cut to 64 characters. Renaming a server
-  rewrites tool choices in the same transaction; names hold no `__`.
+- Tools are `mcp__<server>__<tool>`, cut to 64 characters. Server names hold
+  no `__`.
 - OAuth 2.1 per the MCP spec. The redirect lands on a frontend route that
   posts to the authenticated API, so no unauthenticated route receives the
   code. Registration order: user client id, Client ID Metadata Document (needs
@@ -1819,9 +1833,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - Elicitation is supported; roots, sampling, and logging are deprecated in
   `2026-07-28` and not declared.
 - **No agent can use a plugin from phase 2 until phase 11 (accepted).** Today
-  a chat gets MCP tools through its tool choice, which a profile or the
-  session sets. Phase 2 replaces profiles with agent definitions that have
-  fixed tool lists, and a plugin call must be decided by Sentry (phase 4). Phase 11
+  agent definitions have fixed tool lists, and a plugin call must be decided by
+  Sentry (phase 4). Phase 11
   now comes right after memory, so the gap is short. The pool, the MCP screens, OAuth
   and the server logs stay in Core and keep working: a server can be added and
   connected, and no agent calls it. Rejected: a stopgap for choosing plugin tools in

@@ -16,8 +16,6 @@ import (
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor/sandbox"
 	"github.com/erlidev/eika/internal/mcp/mcptest"
-	"github.com/erlidev/eika/internal/provider"
-	"github.com/erlidev/eika/internal/provider/providertest"
 )
 
 // The MCP wire shapes the tests decode, written out as the other wire types
@@ -91,14 +89,6 @@ type mcpDetailsWire struct {
 type mcpLogWire struct {
 	Source string `json:"source"`
 	Text   string `json:"text"`
-}
-
-type mcpToolsWire struct {
-	Tools []struct {
-		Name          string `json:"name"`
-		NeedsComputer bool   `json:"needs_computer"`
-		Server        string `json:"server"`
-	} `json:"tools"`
 }
 
 // serveMCP serves an MCP server over HTTP at /mcp and returns its URL.
@@ -249,51 +239,6 @@ func TestMCPServerRoutes(t *testing.T) {
 	refused(t, request(t, a.Server, "GET", "/api/mcp/servers/"+local.ID, nil), 404)
 }
 
-func TestARunCallsAnMCPTool(t *testing.T) {
-	a := newAPI(t)
-	docs := &mcptest.Server{Tools: []mcptest.Tool{echoTool("echo")}}
-	a.addMCPServer(t, map[string]any{"name": "docs", "kind": "http", "url": a.serveMCP(t, docs)})
-	chat := a.newChat(t, "docs")
-	events := a.Bus().Subscribe(event.SessionTopic(chat.ID))
-	defer events.Close()
-
-	p := a.script(
-		providertest.Calls("", providertest.Call("c1", "mcp__docs__echo", map[string]any{"text": "hi"})),
-		providertest.Text("done"),
-	)
-	a.postMessage(t, chat.ID, "echo hi", "", 202)
-	if final := a.waitIdle(t, chat.ID); final.Run == nil || final.Run.State != "done" {
-		t.Fatalf("run = %+v", final.Run)
-	}
-	if !slices.ContainsFunc(p.Requests()[0].Tools, func(d provider.ToolDef) bool { return d.Name == "mcp__docs__echo" }) {
-		t.Errorf("the model was not offered the MCP tool")
-	}
-	if results := toolResults(p.Requests()[1]); len(results) != 1 || results[0] != `echo {"text":"hi"}` {
-		t.Errorf("tool results = %q", results)
-	}
-	var details struct {
-		Server  string `json:"server"`
-		Tool    string `json:"tool"`
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	for len(events.Events()) > 0 {
-		e := <-events.Events()
-		if e.Type != event.TypeToolResult {
-			continue
-		}
-		var r event.ToolResult
-		if err := json.Unmarshal(e.Payload, &r); err != nil || json.Unmarshal(r.Details, &details) != nil {
-			t.Fatalf("tool result = %s", e.Payload)
-		}
-	}
-	if details.Server != "docs" || details.Tool != "echo" || len(details.Content) != 1 || details.Content[0].Type != "text" {
-		t.Errorf("tool result details = %+v", details)
-	}
-}
-
 func TestAuthorizingAnMCPServer(t *testing.T) {
 	a := newAPI(t)
 	auth := mcptest.NewAuthorization(t)
@@ -413,27 +358,13 @@ func TestAStdioMCPServerRunsInTheComputer(t *testing.T) {
 		t.Errorf("started in %v", got)
 	}
 
-	// A computer session's run offers the tool; it needs the computer.
+	// Agent sessions do not offer MCP tools.
 	sess := a.newSession(t, cx.ID)
-	tools := decodeBody[mcpToolsWire](t, request(t, a.Server, "GET", "/api/tools", nil), 200)
-	for _, tl := range tools.Tools {
-		if tl.Name == "mcp__files__read" && (!tl.NeedsComputer || tl.Server != "files") {
-			t.Errorf("tool = %+v", tl)
+	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/context", nil), 200)
+	for _, tl := range preview.Tools {
+		if tl.Name == "mcp__files__read" {
+			t.Error("agent offered MCP tool")
 		}
-	}
-	p := a.script(
-		providertest.Calls("", providertest.Call("c1", "mcp__files__read", map[string]any{"text": "x"})),
-		providertest.Text("done"),
-	)
-	a.postMessage(t, sess.ID, "read", "", 202)
-	a.waitIdle(t, sess.ID)
-	if results := toolResults(p.Requests()[1]); len(results) != 1 || results[0] != `echo {"text":"x"}` {
-		t.Errorf("tool results = %q", results)
-	}
-	// A chat never offers it.
-	chat := a.newChat(t, "no computer")
-	if slices.Contains(chat.Tools, "mcp__files__read") {
-		t.Errorf("chat tools = %v", chat.Tools)
 	}
 
 	// Stopping the computer ends the server there.

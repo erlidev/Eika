@@ -137,14 +137,6 @@ export function mcpRoutes(ctx: RouteContext): void {
       return fail(400, "invalid_request", "an http server has no command");
     }
     if (typeof body.name === "string") {
-      // As the harness does: tool choices follow the server's new name.
-      const from = `mcp__${s.name}__`;
-      const to = `mcp__${body.name}__`;
-      const rename = (choice: string[] | null) =>
-        choice?.map((e) => (e.startsWith(from) ? to + e.slice(from.length) : e)) ?? null;
-      for (const p of w.profiles) p.tools = rename(p.tools);
-      for (const [id, choice] of Object.entries(w.toolChoices))
-        w.toolChoices[id] = rename(choice) ?? choice;
       s.name = body.name;
       for (const t of d.tools ?? []) t.exposed_name = `mcp__${s.name}__${t.name}`;
     }
