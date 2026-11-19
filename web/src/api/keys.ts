@@ -14,7 +14,6 @@ export const queryKeys = {
   session: (id: string) => ["session", id] as const,
   sessionOutline: (id: string) => ["session", id, "outline"] as const,
   runStatus: (sessionId: string) => ["session", sessionId, "run"] as const,
-  sessionConfiguration: (id: string) => ["session", id, "configuration"] as const,
   /** sessionContext is the prefix of what the session's next request is expected to be. */
   sessionContext: (id: string) => ["session", id, "context"] as const,
   /**
@@ -41,11 +40,3 @@ export const queryKeys = {
   mcpServer: (id: string) => ["mcp", id] as const,
   authStatus: () => ["auth", "status"] as const,
 };
-
-/**
- * isSessionConfiguration matches the cached configuration of every session. A configuration names the model its session resolves to,
- * so what changes the models or the classes makes all of them stale.
- */
-export function isSessionConfiguration(key: readonly unknown[]): boolean {
-  return key[0] === "session" && key[2] === "configuration";
-}

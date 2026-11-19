@@ -24,6 +24,8 @@ import type {
   MCPServer,
   MCPServerDetails,
   Model,
+  ModelCall,
+  ModelContext,
   NextPrediction,
   Models,
   OAuthCallback,
@@ -42,7 +44,6 @@ import type {
   SearchRequest,
   SearchStatus,
   Session,
-  SessionConfiguration,
   SessionOutline,
   Settings,
   SettingsState,
@@ -187,16 +188,6 @@ export function answerQuestion(id: string, answer: string): Promise<void> {
   });
 }
 
-/** getSessionConfiguration reads what a session's next run resolves to. */
-export function getSessionConfiguration(
-  id: string,
-  signal?: AbortSignal,
-): Promise<SessionConfiguration> {
-  return request<SessionConfiguration>(`/api/sessions/${encodeURIComponent(id)}/configuration`, {
-    signal,
-  });
-}
-
 /**
  * getSessionPrediction asks what the session's next request is expected to
  * cost and how that is known, as a run that names `model` ("" for none)
@@ -211,6 +202,39 @@ export function getSessionPrediction(
     query: { model: model === "" ? undefined : model },
     signal,
   });
+}
+
+/** getSessionContext previews the next model request. */
+export function getSessionContext(
+  id: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<ModelContext> {
+  return request<ModelContext>(`/api/sessions/${encodeURIComponent(id)}/context`, {
+    query: { model: model || undefined },
+    signal,
+  });
+}
+
+/** listSessionCalls lists recorded calls in order. */
+export async function listSessionCalls(id: string, signal?: AbortSignal): Promise<ModelCall[]> {
+  const body = await request<{ calls: ModelCall[] | null }>(
+    `/api/sessions/${encodeURIComponent(id)}/calls`,
+    { signal },
+  );
+  return body.calls ?? [];
+}
+
+/** getSessionCall reads a recorded request. */
+export function getSessionCall(
+  id: string,
+  callId: string,
+  signal?: AbortSignal,
+): Promise<ModelContext> {
+  return request<ModelContext>(
+    `/api/sessions/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}`,
+    { signal },
+  );
 }
 
 /** listAgents lists the built-in agents with their overrides. */

@@ -5,12 +5,11 @@ import type { ComposerModelInput } from "@/features/session/composerModel";
 
 const base: ComposerModelInput = {
   sessionKnown: true,
-  configurationSettled: true,
+  predictionSettled: true,
   modelsKnown: true,
   agent: false,
   chosen: "",
   resolved: "gpt-5",
-  defaultModel: "gpt-5-mini",
   models: [
     { name: "gpt-5", image_input: false },
     { name: "gpt-5-mini", image_input: false },
@@ -19,9 +18,9 @@ const base: ComposerModelInput = {
 };
 
 describe("composerModel", () => {
-  it("is not ready until the session, its configuration and the models are known", () => {
+  it("is not ready until the session, its prediction and the models are known", () => {
     expect(composerModel({ ...base, sessionKnown: false }).ready).toBe(false);
-    expect(composerModel({ ...base, configurationSettled: false }).ready).toBe(false);
+    expect(composerModel({ ...base, predictionSettled: false }).ready).toBe(false);
     expect(composerModel({ ...base, modelsKnown: false }).ready).toBe(false);
     expect(composerModel(base).ready).toBe(true);
   });
@@ -34,14 +33,15 @@ describe("composerModel", () => {
     expect(home.imageInput).toBe(true);
   });
 
-  it("does not fall back to the default model for an agent whose model is not known", () => {
+  it("waits for an agent model before allowing a message", () => {
     const home = composerModel({ ...base, agent: true, resolved: undefined });
+    expect(home.ready).toBe(false);
     expect(home.label).toBe("");
     expect(home.imageInput).toBe(false);
   });
 
   it("blocks images until everything is known", () => {
-    const loading = composerModel({ ...base, resolved: "vision", configurationSettled: false });
+    const loading = composerModel({ ...base, resolved: "vision", predictionSettled: false });
     expect(loading.imageInput).toBe(false);
     expect(composerModel({ ...base, resolved: "vision" }).imageInput).toBe(true);
   });
@@ -49,6 +49,6 @@ describe("composerModel", () => {
   it("sends the chosen model of an ordinary session, else what it resolves to", () => {
     expect(composerModel({ ...base, chosen: "vision" }).runModel).toBe("vision");
     expect(composerModel(base).runModel).toBe("gpt-5");
-    expect(composerModel({ ...base, resolved: undefined }).runModel).toBe("gpt-5-mini");
+    expect(composerModel({ ...base, resolved: undefined }).runModel).toBe("");
   });
 });

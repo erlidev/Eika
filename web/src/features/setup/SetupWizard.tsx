@@ -6,7 +6,7 @@
  * at the first thing still missing.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, Terminal } from "lucide-react";
 import { useState } from "react";
 
@@ -23,7 +23,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthStatus, useConnection } from "@/features/connect";
 import { ModelPicker, ProviderForm, useModels, useProviders } from "@/features/providers";
-import { DefaultModelSelect, settingKeys, SystemCheck, useSaveSettings } from "@/features/settings";
+import {
+  ModelClasses,
+  modelClassAssignments,
+  settingKeys,
+  SystemCheck,
+  useSaveSettings,
+  useSettings,
+} from "@/features/settings";
 import { firstStep, nextStep, setupSteps, stepIndex, stepInfo } from "@/features/setup/steps";
 import type { SetupStep } from "@/features/setup/steps";
 import { cn } from "@/lib/utils";
@@ -49,12 +56,15 @@ export function SetupWizard() {
 
 /** SignedInSetup walks the steps that need a token. */
 function SignedInSetup() {
+  const settings = useSettings();
+  const settingsSaves = useIsMutating({ mutationKey: queryKeys.settings() });
   const providers = useProviders();
   const models = useModels();
   const save = useSaveSettings();
   const [step, setStep] = useState<SetupStep | null>(null);
   const [providerId, setProviderId] = useState("");
   const [addingProvider, setAddingProvider] = useState(false);
+  const [chosenMain, setChosenMain] = useState("");
 
   const finish = () => {
     // The app leaves the wizard as soon as the settings say it is done.
@@ -158,7 +168,8 @@ function SignedInSetup() {
           <ModelPicker
             key={chosenProvider.id}
             provider={chosenProvider}
-            onDone={() => {
+            onDone={(added) => {
+              setChosenMain(added.find((model) => model.kind === "chat")?.name ?? "");
               setStep("system");
             }}
             {...(modelList.length > 0 ? { onCancel: advance } : {})}
@@ -187,17 +198,54 @@ function SignedInSetup() {
         </Notice>
       );
       break;
-    case "system":
+    case "system": {
+      const assignments = modelClassAssignments(settings.data);
+      const suggested =
+        modelList.find((model) => model.kind === "chat" && model.name === chosenMain) ??
+        modelList.find((model) => model.kind === "chat");
+      const savedMain = assignments.main ?? "";
+      const main = savedMain.length > 0 ? savedMain : (suggested?.name ?? "");
+      const state = settings.data && {
+        ...settings.data,
+        settings: {
+          ...settings.data.settings,
+          [settingKeys.modelClasses]: { ...assignments, main },
+        },
+      };
       content = (
         <div className="space-y-6">
           <SystemCheck />
-          <DefaultModelSelect />
+          {settings.isError && (
+            <LoadError
+              what="the settings"
+              error={settings.error}
+              retrying={settings.isFetching}
+              retry={() => void settings.refetch()}
+            />
+          )}
+          {settings.isPending && <Notice tone="pending">Loading the settings…</Notice>}
+          {state && <ModelClasses state={state} />}
           <div className="flex justify-end">
-            <Button onClick={advance}>Finish</Button>
+            <Button
+              disabled={
+                settingsSaves > 0 ||
+                !state ||
+                !modelList.some((item) => item.kind === "chat" && item.name === main)
+              }
+              onClick={() => {
+                save.mutate({
+                  [settingKeys.modelClasses]: { ...assignments, main },
+                  [settingKeys.setupComplete]: true,
+                });
+              }}
+            >
+              Finish
+            </Button>
           </div>
         </div>
       );
       break;
+    }
   }
 
   return (

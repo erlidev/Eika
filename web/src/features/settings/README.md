@@ -6,9 +6,9 @@ Everything the user configures after setup, in one dialog of tabs.
   `store.ts`, so the navigation and a session's "no model" notice can both
   open it on the right tab.
 - Models is `features/providers/ModelsPanel`. General is `GeneralSettings.tsx`:
-  `DefaultModelSelect.tsx`, `ModelClasses.tsx` (a model per class, with the
+  `ModelClasses.tsx` (a model per class, with the
   fallback each class has and the classes that share a pool, from
-  `classes.ts`; both list models with `ModelSelectItems.tsx`), the image the
+  `classes.ts`; it lists models with `ModelSelectItems.tsx`), the image the
   home computer is created from, with `SystemCheck.tsx`, and a way back into the guided setup. Computer is
   `ComputerSettings.tsx`: the home computer's limits and network, which a
   save applies to its container, with the fields from `features/sandbox`; `sandboxDefaults` in `queries.ts`
@@ -21,6 +21,8 @@ Everything the user configures after setup, in one dialog of tabs.
   Agents is `features/agents`; Instructions is `InstructionsSettings.tsx`: the
   user's "About me" and rules, saved together with `PUT /api/instructions`, with the
   harness's text limit checked beside each field (`lib/textLimit.ts`).
+- Developer is `DeveloperSettings.tsx`: select a session and inspect its next
+  request or a recorded call, including token counts and drift.
 - `queries.ts` wraps `/api/settings` and `/api/system`. `settingKeys` names
   the keys the harness reads itself and validates; any other key is stored
   as it comes. `setupComplete` is what the app checks before the shell.

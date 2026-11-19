@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient, UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
-import { isSessionConfiguration, queryKeys } from "@/api/keys";
+import { queryKeys } from "@/api/keys";
 import {
   createModel,
   createProvider,
@@ -41,8 +41,7 @@ const providerModelsKey = (providerId: string) => [...providerModelsPrefix, prov
 
 /**
  * refresh invalidates what a provider or model change makes stale: the two
- * lists, the system counts, the settings, which name the default model, and
- * the sessions' configurations, which name the model each resolves to.
+ * lists, the system counts, the settings and the sessions' request predictions.
  */
 async function refresh(client: QueryClient): Promise<void> {
   await Promise.all([
@@ -51,7 +50,7 @@ async function refresh(client: QueryClient): Promise<void> {
     client.invalidateQueries({ queryKey: queryKeys.models() }),
     client.invalidateQueries({ queryKey: queryKeys.system() }),
     client.invalidateQueries({ queryKey: queryKeys.settings() }),
-    client.invalidateQueries({ predicate: (query) => isSessionConfiguration(query.queryKey) }),
+    client.invalidateQueries({ queryKey: ["session"] }),
   ]);
 }
 
@@ -63,7 +62,7 @@ export function useProviders(): UseQueryResult<Providers> {
   });
 }
 
-/** useModels lists the models and the one a run uses by default. */
+/** useModels lists the models. */
 export function useModels(): UseQueryResult<Models> {
   return useQuery({
     queryKey: queryKeys.models(),
@@ -151,12 +150,11 @@ export function useCreateModel(): UseMutationResult<Model, Error, CreateModel> {
 }
 
 /**
- * useModel is the model a name selects, or the default model when the name is
- * empty, which is what an unset session-level choice means.
+ * useModel finds a model by name.
  */
 export function useModel(name: string): Model | undefined {
   const models = useModels();
-  const wanted = name === "" ? (models.data?.default ?? "") : name;
+  const wanted = name;
   return (models.data?.models ?? []).find((m) => m.name === wanted);
 }
 

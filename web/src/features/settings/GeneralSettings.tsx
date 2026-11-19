@@ -1,5 +1,5 @@
 /**
- * The harness-wide choices: the default model, the model classes, the image
+ * The harness-wide choices: the model classes, the image
  * the home computer is created from, and a way back into the guided setup.
  */
 
@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { DefaultModelSelect } from "@/features/settings/DefaultModelSelect";
 import { ModelClasses } from "@/features/settings/ModelClasses";
 import {
   settingKeys,
@@ -39,7 +38,6 @@ export function GeneralSettings() {
   if (!settings.data) return <Notice tone="pending">Loading the settings…</Notice>;
   return (
     <div className="space-y-6">
-      <DefaultModelSelect />
       <ModelClasses state={settings.data} />
       <Separator />
       {/* Keyed by the stored values, so a form starts from what is stored

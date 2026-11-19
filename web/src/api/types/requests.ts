@@ -1,6 +1,20 @@
 /** Wire types for model requests: the next one, and the model calls recorded for a session. */
 
-import type { ConfigLayer, Sampling } from "@/api/types/profiles";
+import type { ReasoningEffort } from "@/api/types/providers";
+
+/** Sampling is the set of parameters sent to the model. */
+export type Sampling = {
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  min_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  seed?: number;
+  stop?: string[];
+  max_output?: number;
+  reasoning_effort?: ReasoningEffort;
+};
 import type { ThinkingSwitch } from "@/api/types/providers";
 import type { Message } from "@/api/types/sessions";
 
@@ -150,7 +164,7 @@ export type ModelContext = {
   message_sizes: number[] | null;
   parameters: RequestParameters;
   /** sources names the layer of each parameter: model, thinking_switch, preserve_thinking, sampling.<name>. */
-  sources: Record<string, ConfigLayer> | null;
+  sources: Record<string, string> | null;
   dropped_effort?: string;
   /** call is the record this is; absent for the next request. */
   call?: ModelCall;

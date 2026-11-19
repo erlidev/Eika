@@ -7,22 +7,24 @@
 
 import type {
   Breakdown,
-  ConfigLayer,
-  Configuration,
   ContextSection,
   Message,
   Model,
   ModelContext,
   ModelCall,
   PredictedSize,
+  Sampling,
+  Session,
+  ToolSchema,
+} from "../../src/api/types.ts";
+import type {
+  ConfigLayer,
+  Configuration,
   Profile,
   Profiles,
   ProfileSettings,
-  Sampling,
-  Session,
   SessionConfiguration,
-  ToolSchema,
-} from "../../src/api/types.ts";
+} from "./legacyProfiles.ts";
 import { classView, fixedNow, pathOf, windowOf } from "./world.ts";
 import type { World } from "./world.ts";
 import { builtinAgents } from "./agents.ts";

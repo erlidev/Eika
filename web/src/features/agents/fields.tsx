@@ -7,29 +7,14 @@
 
 import { RotateCcw } from "lucide-react";
 
-import type { ConfigLayer } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { layerName } from "@/features/agents/form";
 import { cn } from "@/lib/utils";
-
-/** chipText names a layer on a chip: where a value falls through from. */
-const chipText: Record<ConfigLayer, string> = {
-  agent: "agent",
-  class: "class",
-  request: "from the message",
-  session: "from the session",
-  profile: "from the profile",
-  model: "from the model",
-  default: "default",
-};
 
 export type LayerChipProps = {
   /** set says the layer being edited sets the value itself. */
   set: boolean;
-  /** from is the layer an unset value falls through from. */
-  from: ConfigLayer;
   className?: string;
 };
 
@@ -37,7 +22,7 @@ export type LayerChipProps = {
  * LayerChip says where a field's value comes from: set here, in the accent,
  * or the layer it falls through from, muted.
  */
-export function LayerChip({ set, from, className }: LayerChipProps) {
+export function LayerChip({ set, className }: LayerChipProps) {
   return (
     <span
       className={cn(
@@ -48,7 +33,7 @@ export function LayerChip({ set, from, className }: LayerChipProps) {
         className,
       )}
     >
-      {set ? "set here" : chipText[from]}
+      {set ? "set here" : "built-in"}
     </span>
   );
 }
@@ -59,13 +44,12 @@ export type FieldHeaderProps = {
   id?: string;
   label: string;
   set: boolean;
-  from: ConfigLayer;
   /** actions sit at the end of the row: a reset, an override, a count. */
   children?: React.ReactNode;
 };
 
 /** FieldHeader is a field's first row: its label, where its value comes from, and its actions. */
-export function FieldHeader({ htmlFor, id, label, set, from, children }: FieldHeaderProps) {
+export function FieldHeader({ htmlFor, id, label, set, children }: FieldHeaderProps) {
   return (
     <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
       {htmlFor === undefined ? (
@@ -77,7 +61,7 @@ export function FieldHeader({ htmlFor, id, label, set, from, children }: FieldHe
           {label}
         </Label>
       )}
-      <LayerChip set={set} from={from} />
+      <LayerChip set={set} />
       <div className="ml-auto flex items-center gap-1">{children}</div>
     </div>
   );
@@ -95,13 +79,13 @@ export function ResetButton({ label, onClick }: ResetButtonProps) {
   );
 }
 
-type InheritedProps = { from: ConfigLayer; children?: React.ReactNode };
+type InheritedProps = { children?: React.ReactNode };
 
 /** Inherited says, muted, what an unset field falls through to. */
-export function Inherited({ from, children }: InheritedProps) {
+export function Inherited({ children }: InheritedProps) {
   return (
     <p className="text-muted-foreground text-xs">
-      Not set here: {children ?? "falls through"} from {layerName(from)}.
+      Not set here: {children ?? "uses the built-in value"}.
     </p>
   );
 }

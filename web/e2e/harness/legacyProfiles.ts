@@ -1,6 +1,6 @@
 /** Wire types for profiles and the configuration layers they resolve. */
 
-import type { ReasoningEffort } from "@/api/types/providers";
+import type { ReasoningEffort } from "../../src/api/types/providers.ts";
 
 /**
  * Sampling holds the parameters that steer how a model samples. A parameter

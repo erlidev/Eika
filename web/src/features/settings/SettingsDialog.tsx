@@ -38,9 +38,9 @@ import type { ComposerMode, ReasoningDisplay } from "@/features/session";
 import { AccountSettings } from "@/features/settings/AccountSettings";
 import { CompactionSettings } from "@/features/settings/CompactionSettings";
 import { ComputerSettings } from "@/features/settings/ComputerSettings";
+import { DeveloperSettings } from "@/features/settings/DeveloperSettings";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
 import { InstructionsSettings } from "@/features/settings/InstructionsSettings";
-import { settingKeys, useSaveSettings } from "@/features/settings/queries";
 import { SearchSettings } from "@/features/settings/SearchSettings";
 import { useSettingsDialog } from "@/features/settings/store";
 import type { SettingsTab } from "@/features/settings/store";
@@ -61,6 +61,7 @@ const tabs: readonly { value: SettingsTab; label: string }[] = [
   { value: "mcp", label: "MCP" },
   { value: "account", label: "Account" },
   { value: "appearance", label: "Appearance" },
+  { value: "developer", label: "Developer" },
 ];
 
 const themeLabels: Record<Theme, string> = {
@@ -74,7 +75,6 @@ export function SettingsDialog() {
   const tab = useSettingsDialog((s) => s.tab);
   const setOpen = useSettingsDialog((s) => s.setOpen);
   const setTab = useSettingsDialog((s) => s.setTab);
-  const save = useSaveSettings();
   // A phone has no room for a column of tab names beside the panel, so there
   // the list goes back above it. It is the same list either way.
   const narrow = useNarrow(sideNavWidth);
@@ -119,12 +119,7 @@ export function SettingsDialog() {
           </TabsList>
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4">
             <TabsContent value="models">
-              <ModelsPanel
-                onDefaultChange={(name) => {
-                  save.mutate({ [settingKeys.defaultModel]: name });
-                }}
-                defaultError={save.isError ? save.error : undefined}
-              />
+              <ModelsPanel />
             </TabsContent>
             <TabsContent value="agents">
               <AgentsSettings />
@@ -149,6 +144,9 @@ export function SettingsDialog() {
             </TabsContent>
             <TabsContent value="account">
               <AccountSettings />
+            </TabsContent>
+            <TabsContent value="developer">
+              <DeveloperSettings />
             </TabsContent>
             <TabsContent value="appearance">
               <AppearanceSettings />

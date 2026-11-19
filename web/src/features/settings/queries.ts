@@ -23,8 +23,6 @@ import type { SandboxSettings } from "@/features/sandbox";
 
 /** The settings keys the harness reads itself. Every other key is the UI's own. */
 export const settingKeys = {
-  defaultModel: "default_model",
-  defaultProfile: "default_profile",
   sandboxImage: "sandbox_image",
   sandboxLimits: "sandbox_limits",
   sandboxEgress: "sandbox_egress",
@@ -45,10 +43,11 @@ export function useSettings(): UseQueryResult<SettingsState> {
 export function useSaveSettings(): UseMutationResult<SettingsState, Error, Settings> {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: queryKeys.settings(),
     mutationFn: putSettings,
     onSuccess: async (state) => {
       client.setQueryData(queryKeys.settings(), state);
-      // The default model, the sandbox image, and the search
+      // The sandbox image and the search
       // order and quotas are reported elsewhere too.
       await Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.models() }),

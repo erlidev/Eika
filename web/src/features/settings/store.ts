@@ -17,7 +17,8 @@ export type SettingsTab =
   | "search"
   | "mcp"
   | "account"
-  | "appearance";
+  | "appearance"
+  | "developer";
 
 type SettingsDialogState = {
   open: boolean;

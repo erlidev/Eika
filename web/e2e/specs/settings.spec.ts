@@ -164,8 +164,6 @@ test("general: a class offers only models of its kind", async ({ open }) => {
     ]);
   }
   expect(await options("Decision")).toEqual(["Not set", "d3-flash"]);
-  // The default model is a conversation's model too.
-  expect(await options("Default model")).toEqual(["gpt-5", "gpt-5-mini", "bench-chat"]);
 });
 
 test("general: titles are skipped when fast would fall back onto a hosted deep model", async ({

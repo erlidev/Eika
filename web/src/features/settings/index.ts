@@ -1,6 +1,7 @@
 /** The settings feature: the dialog, its tabs, the settings queries, and the system check. */
-export { DefaultModelSelect } from "@/features/settings/DefaultModelSelect";
+export { ModelClasses } from "@/features/settings/ModelClasses";
 export {
+  modelClassAssignments,
   sandboxDefaults,
   settingKeys,
   setupComplete,

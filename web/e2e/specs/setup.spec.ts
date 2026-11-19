@@ -13,7 +13,14 @@ test("models step", async ({ open }) => {
   await eika.fill("API key", "sk-test-1234567890abcdef");
   await eika.click("Save and continue");
   await eika.click("gpt-5");
-  await expect(eika.page.getByRole("heading", { name: "Choose models" })).toBeVisible();
+  await eika.click("Add 1 model");
+  await expect(eika.page.getByRole("heading", { name: "Check the computer" })).toBeVisible();
+  await expect(eika.page.getByRole("combobox", { name: "Main" })).toHaveText("gpt-5");
+  await expect(eika.page.getByRole("button", { name: "Finish" })).toBeEnabled();
+  await eika.click("Finish");
+  await eika.click("Settings");
+  await eika.click("General");
+  await expect(eika.page.getByRole("combobox", { name: "Main" })).toHaveText("gpt-5");
 });
 
 test.describe("on a phone", () => {
@@ -21,4 +28,15 @@ test.describe("on a phone", () => {
     const eika = await open({ scenario: "setup-new", viewport: phone });
     await expectShot(eika, "setup-password-phone");
   });
+});
+
+test("change the proposed main model", async ({ open }) => {
+  const eika = await open({ scenario: "setup-docker-down" });
+  await expect(eika.page.getByRole("combobox", { name: "Main" })).toHaveText("gpt-5");
+  await eika.select("Main", "gpt-5-mini");
+  await expect(eika.page.getByRole("button", { name: "Finish" })).toBeEnabled();
+  await eika.click("Finish");
+  await eika.click("Settings");
+  await eika.click("General");
+  await expect(eika.page.getByRole("combobox", { name: "Main" })).toHaveText("gpt-5-mini");
 });

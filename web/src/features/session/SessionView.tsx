@@ -13,7 +13,7 @@ import {
   useAbortRun,
   useRunStatus,
   useSession,
-  useSessionConfiguration,
+  useNextPrediction,
 } from "@/features/session/queries";
 import { RunStatusBar } from "@/features/session/RunStatusBar";
 import { SessionHeading } from "@/features/session/SessionHeading";
@@ -26,7 +26,7 @@ import { Notice } from "@/components/Notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { chatModels, useModels } from "@/features/providers";
-import { useSettingsDialog } from "@/features/settings";
+import { modelClassAssignments, useSettings, useSettingsDialog } from "@/features/settings";
 import { useHomeComputer } from "@/features/sessions";
 
 export type SessionViewProps = {
@@ -71,12 +71,18 @@ function Conversation({ sessionId, header }: ConversationProps) {
   const pages = useSessionStream(sessionId);
   const session = useSession(sessionId);
   const models = useModels();
-  const configuration = useSessionConfiguration(sessionId);
+  const settings = useSettings();
   const showSettings = useSettingsDialog((s) => s.show);
   const status = useRunStatus(sessionId);
   const abort = useAbortRun(sessionId);
   const model = useSessionStore((s) => s.model);
   const chooseModel = useSessionStore((s) => s.chooseModel);
+  const mainModel = modelClassAssignments(settings.data).main ?? "";
+  const requestedModel = model || mainModel;
+  const prediction = useNextPrediction(
+    sessionId,
+    agentModel(session.data?.session.agent, requestedModel),
+  );
 
   const home = useHomeComputer();
   const computerId = session.data?.session.computer_id;
@@ -105,18 +111,22 @@ function Conversation({ sessionId, header }: ConversationProps) {
   }, [active, run, abort]);
 
   // A model chosen in the status bar is this browser's; without one, a run
-  // uses what the session's configuration resolves to. An agent's run names
+  // uses the model named in the prediction. An agent's run names
   // no model at all: the harness refuses one, since its class chooses it.
   const available = chatModels(models.data?.models);
   const noModel = models.data !== undefined && available.length === 0;
+  const noMain =
+    settings.data !== undefined &&
+    models.data !== undefined &&
+    !available.some((item) => item.name === mainModel) &&
+    (!agent || prediction.isError);
   const composerChoice = composerModel({
     sessionKnown: session.data !== undefined,
-    configurationSettled: !configuration.isPending,
-    modelsKnown: models.data !== undefined,
+    predictionSettled: !prediction.isPending,
+    modelsKnown: models.data !== undefined && settings.data !== undefined,
     agent,
-    chosen: model,
-    resolved: configuration.data?.resolved.model,
-    defaultModel: models.data?.default ?? "",
+    chosen: requestedModel,
+    resolved: prediction.data?.model,
     models: available,
   });
   const { runModel, label: chosenModel, imageInput } = composerChoice;
@@ -167,11 +177,34 @@ function Conversation({ sessionId, header }: ConversationProps) {
           </Notice>
         </div>
       )}
-      {configuration.isError && (
+      {noMain && !noModel && (
+        <div className="border-t px-3 py-2">
+          <Notice>
+            Choose a model for the main class in Settings, General.{" "}
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => {
+                showSettings("general");
+              }}
+            >
+              Model classes
+            </Button>
+          </Notice>
+        </div>
+      )}
+      {settings.isError && (
         <ConfigurationError
-          error={configuration.error}
-          retry={() => void configuration.refetch()}
-          retrying={configuration.isFetching}
+          error={settings.error}
+          retry={() => void settings.refetch()}
+          retrying={settings.isFetching}
+        />
+      )}
+      {prediction.isError && !noMain && !noModel && (
+        <ConfigurationError
+          error={prediction.error}
+          retry={() => void prediction.refetch()}
+          retrying={prediction.isFetching}
         />
       )}
       <Composer
@@ -181,9 +214,13 @@ function Conversation({ sessionId, header }: ConversationProps) {
         imageInput={imageInput}
         {...(chat || isHome ? { placeholder: "Send a message…" } : {})}
         agent={agent}
-        disabled={noModel || !composerChoice.ready}
+        disabled={noModel || noMain || !composerChoice.ready}
         disabledReason={
-          noModel ? "Add a model under Settings, Models to send a message." : "Loading the session…"
+          noModel
+            ? "Add a model under Settings, Models to send a message."
+            : noMain
+              ? "Choose a main model under Settings, General."
+              : "Loading the session…"
         }
       />
       {/* The status bar is the pane's footer: the model, the meter, and the
@@ -225,4 +262,8 @@ function HomeBadge() {
       Home computer
     </Badge>
   );
+}
+
+function agentModel(agent: string | undefined, chosen: string): string {
+  return agent ? "" : chosen;
 }
