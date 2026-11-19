@@ -1863,6 +1863,12 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   data requests never enter the cache. A new worker waits for old clients to
   close before it replaces their cache, so an update does not interrupt a chat.
   The worker is not registered in development.
+- **Toasts use live events, not a stored notification list.** A completed
+  report adds its id to a `session.updated` event after the child goes idle.
+  The earlier update only says that the report was stored, and a refetch can
+  miss a fast state transition. Home replies use the live turn stream. The
+  page forgets the queue on reload and does not create toasts from catch-up.
+
 
 - Three panes; one session at a time, addressed by `/sessions/<id>`.
 - Panel and tool-renderer registries are single arrays/maps. Panel `id`s

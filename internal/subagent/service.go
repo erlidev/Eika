@@ -319,6 +319,9 @@ func (s *Service) end(ctx context.Context, child store.Session, err error, activ
 	if active.err != nil {
 		s.log.Error("record subagent state", "session_id", child.ID, "error", active.err)
 	}
+	if active.err == nil && state == store.SessionIdle && active.reported {
+		s.reportUpdate(finishCtx, active.result)
+	}
 	active.cancel()
 	delete(s.active, child.ID)
 	close(active.done)
@@ -468,4 +471,11 @@ func validText(field, text string, limit int) error {
 		return fmt.Errorf("%s must be nonempty UTF-8 without NUL, at most %d bytes", field, limit)
 	}
 	return nil
+}
+
+func (s *Service) reportUpdate(ctx context.Context, child store.Session) {
+	e, err := event.New(event.TypeSessionUpdated, event.TopicGlobal, event.SessionUpdated{SessionID: child.ID, ComputerID: child.ComputerID, ReportID: child.ReportNoticeID})
+	if err == nil {
+		s.events.Emit(ctx, e)
+	}
 }

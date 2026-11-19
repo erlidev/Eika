@@ -2,6 +2,7 @@ package subagent_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
@@ -93,6 +95,7 @@ func (m *memory) SetSubagentResult(_ context.Context, id, result string) (store.
 	}
 	row := m.rows[id]
 	row.Result = result
+	row.ReportNoticeID = "notice-" + id
 	m.rows[id] = row
 	return row, nil
 }
@@ -382,5 +385,41 @@ func TestMaxRunningReservesSlotsUnderConcurrentStarts(t *testing.T) {
 	// A refused start leaves no child behind.
 	if rows, _ := s.Status(t.Context(), "home", ""); len(rows) != 3 {
 		t.Fatalf("children = %d, want 3", len(rows))
+	}
+}
+
+func TestCompletedReportAnnouncesItsID(t *testing.T) {
+	st := newMemory()
+	bus := event.NewBus(nil)
+	sub := bus.Subscribe(event.TopicGlobal)
+	defer sub.Close()
+	var svc *subagent.Service
+	svc = serviceWith(t, st, subagent.Options{Events: bus, Run: func(ctx context.Context, row store.Session, _ string, _ inference.Priority) error {
+		return svc.Report(ctx, row.ID, subagent.Report{Summary: "done"})
+	}})
+	row, _, err := svc.Start(t.Context(), "home", child(), fg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		select {
+		case e := <-sub.Events():
+			var update event.SessionUpdated
+			if err := json.Unmarshal(e.Payload, &update); err != nil {
+				t.Fatal(err)
+			}
+			if update.ReportID != "" {
+				if update.SessionID != row.ID || update.ReportID != "notice-"+row.ID {
+					t.Fatalf("unexpected report update: %+v", update)
+				}
+				stored, err := st.Session(t.Context(), row.ID)
+				if err != nil || stored.State != store.SessionIdle {
+					t.Fatalf("report announced before idle: %+v, %v", stored, err)
+				}
+				return
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("no report update")
+		}
 	}
 }
