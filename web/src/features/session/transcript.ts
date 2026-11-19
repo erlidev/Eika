@@ -19,7 +19,15 @@ import type {
   TurnProgress,
   Usage,
 } from "@/api/events";
-import type { Compaction, Elicitation, Entry, Message, MessageImage, Question } from "@/api/types";
+import type {
+  Compaction,
+  Elicitation,
+  Entry,
+  Message,
+  MessageImage,
+  Question,
+  SessionOutline,
+} from "@/api/types";
 
 /** UserItem is a message the user sent. */
 export type UserItem = {
@@ -159,6 +167,8 @@ export type TranscriptState = {
   committed: TranscriptItem[];
   /** entries are the loaded stored entries in write order. */
   entries: Entry[];
+  /** offPath holds known entries that the current head cannot reach. */
+  offPath: ReadonlySet<string>;
   /** revision changes when a rewind invalidates in-flight page requests. */
   revision: number;
   /** entryIds are the entries already held, which is how a replay dedupes. */
@@ -213,6 +223,7 @@ export function newTranscript(sessionId: string): TranscriptState {
     sessionId,
     committed: [],
     entries: [],
+    offPath: new Set(),
     revision: 0,
     entryIds: new Set(),
     lastEntryId: "",
@@ -806,6 +817,24 @@ export function mergeEntries(current: Entry[], incoming: Entry[]): Entry[] {
   return [...entries.values()].sort((a, b) => a.seq - b.seq);
 }
 
+/** applyOutline selects the current branch while keeping pages in write order. */
+export function applyOutline(state: TranscriptState, outline: SessionOutline): TranscriptState {
+  const nodes = new Map(outline.nodes.map((node) => [node.id, node]));
+  const path = new Set<string>();
+  let id = outline.head_entry_id;
+  while (id !== undefined && !path.has(id)) {
+    path.add(id);
+    id = nodes.get(id)?.parent_id;
+  }
+  const offPath = new Set(
+    outline.nodes.filter((node) => !path.has(node.id)).map((node) => node.id),
+  );
+  return applyEntries(
+    { ...state, offPath, meter: state.meter?.source === "replay" ? undefined : state.meter },
+    [],
+  );
+}
+
 /** applyEntries builds rows and the tool-call index in one pass. */
 export function applyEntries(
   state: TranscriptState,
@@ -824,6 +853,7 @@ export function applyEntries(
   let meter = state.meter;
   for (const entry of entries) {
     entryIds.add(entry.id);
+    if (state.offPath.has(entry.id)) continue;
     const payload: SessionMessage = {
       session_id: state.sessionId,
       entry_id: entry.id,

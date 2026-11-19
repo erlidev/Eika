@@ -924,8 +924,9 @@ web/src/
 - **Stream state**: `features/session/store.ts` wraps the pure reducer
   `transcript.ts`, fed by run events (`run_id`) and pages of stored entries
   (`entry_id`). The newest page loads after the stream opens; catch-up reads
-  back to a known entry after turns and reconnects. Older pages load on demand,
-  and the visible row keeps its position. It also tracks pending questions and
+  back to a known entry after turns and reconnects. The session outline selects
+  the current branch from those pages. Older pages load on demand, and the
+  visible row keeps its position. It also tracks pending questions and
   elicitations and the status bar's meter (usage, window, timings).
   Display preferences are in `features/session/preferences.ts`
   (localStorage).

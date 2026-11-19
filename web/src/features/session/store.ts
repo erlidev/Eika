@@ -7,9 +7,14 @@
 import { create } from "zustand";
 
 import type { EikaEvent } from "@/api/events";
-import type { Entry } from "@/api/types";
+import type { Entry, SessionOutline } from "@/api/types";
 import type { DraftImage } from "@/features/session/attachments";
-import { applyEntries, applyEvent, newTranscript } from "@/features/session/transcript";
+import {
+  applyEntries,
+  applyEvent,
+  applyOutline,
+  newTranscript,
+} from "@/features/session/transcript";
 import type { TranscriptState } from "@/features/session/transcript";
 
 /** Composing is what a session's composer holds: its model choice, its draft and the draft's images. */
@@ -61,6 +66,8 @@ export type SessionStore = TranscriptState & {
   apply: (e: EikaEvent) => void;
   /** addEntries merges stored pages into the transcript. */
   addEntries: (sessionId: string, entries: Entry[], completed?: readonly string[]) => void;
+  /** setOutline removes entries outside the current branch from the view. */
+  setOutline: (sessionId: string, outline: SessionOutline) => void;
   /** replayRequested records that the replay the state asked for is on its way. */
   replayRequested: () => void;
   /** replayNeeded asks for a catch-up, for a reconnect that lost live events. */
@@ -122,6 +129,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
     set((state) =>
       state.sessionId === sessionId ? applyEntries(state, entries, completed) : state,
     );
+  },
+  setOutline: (sessionId, outline) => {
+    set((state) => (state.sessionId === sessionId ? applyOutline(state, outline) : state));
   },
   replayRequested: () => {
     set({ needsReplay: false });

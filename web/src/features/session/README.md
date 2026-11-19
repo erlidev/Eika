@@ -56,7 +56,8 @@ one that holds client state of its own.
   draft and its images, which are here because rewinding a message puts both
   back in the box and the two components are not each other's parents. `open` parks the draft, images and model of the session it leaves and restores
   them on return, so watching a subagent does not clear Chat's unsent message.
-  `rewound` reloads the newest page after a head change.
+  `rewound` reloads the newest page after a head change. The outline filters
+  entries outside the current branch from loaded pages.
 
 - `RunStatusBar.tsx` is the pane's footer, under the composer: the run's
   state, the model, the reasoning effort (one click cycles through the

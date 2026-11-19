@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { sessionTopic } from "@/api/events";
 import { queryKeys } from "@/api/keys";
 import { eventStream } from "@/api/stream";
-import { getRunStatus, getSessionEntries } from "@/api/routes";
+import { getRunStatus, getSessionEntries, getSessionOutline } from "@/api/routes";
 import { readCatchUp } from "@/features/session/pages";
 import { useStreamStatus, useStreamSubscription } from "@/api/useStream";
 import { useSessionStore } from "@/features/session/store";
@@ -104,9 +104,17 @@ export function useSessionStream(sessionId: string | undefined): TranscriptPages
     const start = () => {
       if (started) return;
       started = true;
+      const revision = useSessionStore.getState().revision;
       void getSessionEntries(sessionId, undefined, controller.signal)
-        .then((page) => {
+        .then(async (page) => {
+          const outline = await getSessionOutline(sessionId, controller.signal);
           if (generation.current !== current) return;
+          if (useSessionStore.getState().revision !== revision) {
+            setReady(true);
+            useSessionStore.getState().replayNeeded();
+            return;
+          }
+          useSessionStore.getState().setOutline(sessionId, outline);
           useSessionStore.getState().addEntries(sessionId, page.entries);
           setCursor(page.next_before);
           setReady(true);
@@ -170,7 +178,9 @@ export function useSessionStream(sessionId: string | undefined): TranscriptPages
         newest,
         newest === undefined && revision > 0,
       );
+      const outline = await getSessionOutline(sessionId);
       if (generation.current === current && useSessionStore.getState().revision === revision) {
+        useSessionStore.getState().setOutline(sessionId, outline);
         if (newest === undefined) setCursor(revision > 0 ? page.nextBefore : undefined);
         useSessionStore.getState().addEntries(sessionId, page.entries, completed);
         setError(undefined);
@@ -227,10 +237,17 @@ export function useSessionStream(sessionId: string | undefined): TranscriptPages
     if (!ready && sessionId !== undefined) {
       setError(undefined);
       const current = generation.current;
+      const revision = useSessionStore.getState().revision;
       void getSessionEntries(sessionId)
-        .then((page) => {
-          if (generation.current !== current || useSessionStore.getState().sessionId !== sessionId)
+        .then(async (page) => {
+          const outline = await getSessionOutline(sessionId);
+          if (
+            generation.current !== current ||
+            useSessionStore.getState().sessionId !== sessionId ||
+            useSessionStore.getState().revision !== revision
+          )
             return;
+          useSessionStore.getState().setOutline(sessionId, outline);
           useSessionStore.getState().addEntries(sessionId, page.entries);
           setCursor(page.next_before);
           setReady(true);
