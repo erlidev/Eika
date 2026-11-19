@@ -71,3 +71,12 @@ func (s *Server) FailNoticeWritesForTest(failures int32, lost bool, retry time.D
 		return write(ctx, sessionID, e)
 	}
 }
+
+// StartIdleCompactionForTest starts idle compaction without waiting for a sweep.
+func (s *Server) StartIdleCompactionForTest(ctx context.Context, id string) error {
+	s.runs.mu.Lock()
+	s.runs.lastImportant = time.Now().Add(-time.Hour)
+	s.runs.mu.Unlock()
+	_, _, err := s.runs.launch(ctx, id, "", job{compact: true, idle: true, idleFill: 1, idleFor: 30 * time.Minute, priority: inference.Maintenance})
+	return err
+}

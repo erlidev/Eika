@@ -199,6 +199,7 @@ func (s *Server) Run(ctx context.Context) error {
 		s.syncInference(ctx)
 		watchCtx, cancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
+		wg.Go(func() { s.watchIdleCompaction(watchCtx) })
 		if s.deps.Providers != nil {
 			wg.Go(func() { s.probeProviders(watchCtx) })
 		}

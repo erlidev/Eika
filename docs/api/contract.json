@@ -3238,6 +3238,8 @@
           "defaults": {
             "object": {
               "aging_seconds": "number",
+              "compact_idle_fill": "number",
+              "compact_idle_minutes": "number",
               "compaction": {
                 "object": {
                   "auto": "boolean",
@@ -5678,6 +5680,8 @@
           "defaults": {
             "object": {
               "aging_seconds": "number",
+              "compact_idle_fill": "number",
+              "compact_idle_minutes": "number",
               "compaction": {
                 "object": {
                   "auto": "boolean",

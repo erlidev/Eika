@@ -2,8 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
+
 	"sync"
 	"time"
+
+	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/inference"
 
 	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/store"
@@ -122,4 +127,32 @@ func (i *idleComputers) idle(all []store.Computer, now time.Time, timeout time.D
 // inUse reports whether a run is going in the computer.
 func (i *idleComputers) inUse(cx store.Computer) bool {
 	return i.server.runs.computersInUse()[cx.ID]
+}
+
+// watchIdleCompaction checks the home session after Core has been idle.
+func (s *Server) watchIdleCompaction(ctx context.Context) {
+	ticker := time.NewTicker(idleSweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fill, idleFor := s.idleCompactionSettings(ctx)
+			s.runs.mu.Lock()
+			idle := len(s.runs.bySession) == 0 && time.Since(s.runs.lastImportant) >= idleFor
+			s.runs.mu.Unlock()
+			if !idle {
+				continue
+			}
+			home, err := s.deps.Store.HomeSession(ctx, store.LocalOwner, "home")
+			if err != nil {
+				continue
+			}
+			_, _, err = s.runs.launch(ctx, home.ID, "", job{compact: true, idle: true, priority: inference.Maintenance, idleFill: fill, idleFor: idleFor})
+			if err != nil && !errors.Is(err, agent.ErrNothingToCompact) && !isConflict(err) && ctx.Err() == nil {
+				s.log.Warn("start idle compaction", "error", err)
+			}
+		}
+	}
 }

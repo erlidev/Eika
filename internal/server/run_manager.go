@@ -34,7 +34,10 @@ type job struct {
 	// notify makes the run a background turn that delivers a home
 	// session's waiting notices: its message is empty, and its <context>
 	// block carries them.
-	notify bool
+	notify   bool
+	idle     bool
+	idleFill int
+	idleFor  time.Duration
 }
 
 type queuedMessages struct {
@@ -124,7 +127,8 @@ type runs struct {
 	byID      map[string]*activeRun
 	// pending keeps accepted messages from a run that stopped before it
 	// delivered them. The next run on the session receives them.
-	pending map[string]queuedMessages
+	pending       map[string]queuedMessages
+	lastImportant time.Time
 }
 
 // activeRun is one execution of the agent loop, from the moment its session
@@ -137,12 +141,15 @@ type activeRun struct {
 	borrowed   map[string]int
 	cancel     context.CancelFunc
 	done       chan struct{}
+	released   chan struct{}
 	// ready closes once the run has its row and loop, or has ended without
 	// them.
 	ready chan struct{}
 	// notify is set for a background turn that delivers notices, which a
 	// message the user posts joins instead of waiting for it to end.
-	notify bool
+	notify          bool
+	idle            bool
+	priorityAtStart inference.Priority
 	// releaseCounter ends the run's use of its session's token counter routes,
 	// which carry the provider's key. Set before the run starts and called on
 	// every way out of it; nil until the run has a counter.
@@ -166,11 +173,12 @@ type activeRun struct {
 // newRuns returns an empty run manager for the server.
 func newRuns(s *Server) *runs {
 	return &runs{
-		server:    s,
-		bySession: make(map[string]*activeRun),
-		byID:      make(map[string]*activeRun),
-		pending:   make(map[string]queuedMessages),
-		finishes:  newFinishRetries(),
+		server:        s,
+		bySession:     make(map[string]*activeRun),
+		byID:          make(map[string]*activeRun),
+		pending:       make(map[string]queuedMessages),
+		finishes:      newFinishRetries(),
+		lastImportant: time.Now(),
 	}
 }
 
@@ -192,7 +200,19 @@ func (r *runs) start(ctx context.Context, sessionID string, message provider.Mes
 			return row, err
 		}
 		active := r.active(sessionID)
-		if active == nil || !active.notify {
+		if active != nil && active.idle {
+			active.cancel()
+			select {
+			case <-active.released:
+			case <-ctx.Done():
+				return store.Run{}, ctx.Err()
+			}
+			continue
+		}
+		if active == nil {
+			continue
+		}
+		if !active.notify {
 			return row, err
 		}
 		select {
@@ -240,13 +260,20 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 
 	// The run is not bound to the request: the client gets its answer as
 	// soon as the run starts and follows the rest on the event stream.
-	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	parent := context.WithoutCancel(ctx)
+	if work.idle {
+		parent = ctx
+	}
+	runCtx, cancel := context.WithCancel(parent)
 	s.startMu.Lock()
-	active, err := r.reserve(sessionID, sess.ComputerID, work.notify, cancel)
+	active, err := r.reserve(sessionID, sess.ComputerID, work, cancel)
 	s.startMu.Unlock()
 	if err != nil {
 		cancel()
 		return store.Run{}, nil, err
+	}
+	if work.idle {
+		ctx = runCtx
 	}
 	home := sess.Kind == store.SessionHome
 	// Building a run reads the database and runs a command in the computer.
@@ -356,6 +383,9 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 			PrefillRate: s.prefillRate(ctx, ep.row.Name),
 		},
 	})
+	if work.idle && !ag.IdleCompactable(ctx, loaded, work.idleFill) {
+		return store.Run{}, nil, agent.ErrNothingToCompact
+	}
 	if work.compact && !ag.Compactable(loaded) {
 		return store.Run{}, nil, conflictf("%v", agent.ErrNothingToCompact)
 	}
@@ -398,22 +428,37 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 // the lock that reads the check is what makes one run per session true:
 // building a run takes long enough that two requests would otherwise both get
 // past a check that only looked at the runs already going.
-func (r *runs) reserve(sessionID, computerID string, notify bool, cancel context.CancelFunc) (*activeRun, error) {
+func (r *runs) reserve(sessionID, computerID string, work job, cancel context.CancelFunc) (*activeRun, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.stopped {
 		return nil, conflictf("the harness is shutting down")
 	}
+	if work.idle {
+		if len(r.bySession) != 0 || time.Since(r.lastImportant) < work.idleFor {
+			return nil, conflictf("core is not idle")
+		}
+	} else if work.priority != inference.Maintenance {
+		r.lastImportant = time.Now()
+		for _, active := range r.bySession {
+			if active.idle {
+				active.cancel()
+			}
+		}
+	}
 	if _, running := r.bySession[sessionID]; running {
 		return nil, conflictf("session %s already has a run in progress", sessionID)
 	}
 	active := &activeRun{
-		sessionID:  sessionID,
-		computerID: computerID,
-		cancel:     cancel,
-		done:       make(chan struct{}),
-		ready:      make(chan struct{}),
-		notify:     notify,
+		sessionID:       sessionID,
+		computerID:      computerID,
+		cancel:          cancel,
+		done:            make(chan struct{}),
+		released:        make(chan struct{}),
+		ready:           make(chan struct{}),
+		notify:          work.notify,
+		idle:            work.idle,
+		priorityAtStart: work.priority,
 	}
 	r.bySession[sessionID] = active
 	return active, nil
@@ -424,6 +469,9 @@ func (r *runs) reserve(sessionID, computerID string, notify bool, cancel context
 func (r *runs) abandon(active *activeRun) {
 	active.releaseCounterRoutes()
 	r.forget(active)
+	if active.idle {
+		close(active.released)
+	}
 	active.cancel()
 	close(active.ready)
 	close(active.done)
@@ -438,12 +486,18 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 	runID := active.runID()
 	loop := active.loop()
 	var err error
-	if work.compact {
+	switch {
+	case work.idle:
+		err = loop.CompactIdle(ctx, loaded)
+	case work.compact:
 		err = loop.Compact(ctx, loaded, work.instructions)
-	} else {
+	default:
 		err = loop.Run(ctx, loaded, work.message)
 	}
 	active.end(err)
+	if work.idle {
+		r.releaseIdle(active)
+	}
 
 	state, message := store.RunDone, ""
 	switch {
@@ -473,7 +527,9 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 	// The notices the run took go back before the session is released:
 	// once it is, the next run takes notices of its own, which settling
 	// would wrongly return.
-	r.server.notices.settle(active.sessionID, queued)
+	if !work.idle {
+		r.server.notices.settle(active.sessionID, queued)
+	}
 	r.finish(active, queued)
 	r.server.log.Info("run finished", "run_id", runID, "session_id", active.sessionID, "state", state)
 	if r.released != nil {
@@ -494,6 +550,9 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 // no run: the client retries once the run it started reports itself.
 func (r *runs) enqueue(ctx context.Context, sessionID string, message provider.Message, mode string) (store.Run, error) {
 	active := r.active(sessionID)
+	if active != nil && active.idle {
+		return r.start(ctx, sessionID, message, "")
+	}
 	var loop *agent.Agent
 	if active != nil {
 		loop = active.loop()
@@ -590,8 +649,15 @@ func (r *runs) stopAll() {
 	r.mu.Lock()
 	r.stopped = true
 	active := make([]*activeRun, 0, len(r.bySession))
+	seen := make(map[*activeRun]bool)
 	for _, a := range r.bySession {
 		active = append(active, a)
+		seen[a] = true
+	}
+	for _, a := range r.byID {
+		if !seen[a] {
+			active = append(active, a)
+		}
 	}
 	r.mu.Unlock()
 	for _, a := range active {
@@ -655,12 +721,26 @@ func (r *runs) forget(a *activeRun) {
 	id := a.runID()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if a.priorityAtStart != inference.Maintenance || a.idle {
+		r.lastImportant = time.Now()
+	}
 	if current, ok := r.bySession[a.sessionID]; ok && current == a {
 		delete(r.bySession, a.sessionID)
 	}
 	if id != "" {
 		delete(r.byID, id)
 	}
+}
+
+// releaseIdle frees the session after compaction has stopped changing it.
+// The run stays in byID until its final state is recorded.
+func (r *runs) releaseIdle(a *activeRun) {
+	r.mu.Lock()
+	if r.bySession[a.sessionID] == a {
+		delete(r.bySession, a.sessionID)
+	}
+	r.mu.Unlock()
+	close(a.released)
 }
 
 // finish keeps undelivered accepted messages for the next run and drops the
@@ -674,6 +754,9 @@ func (r *runs) finish(a *activeRun, queued queuedMessages) {
 	defer r.mu.Unlock()
 	if len(queued.steering) != 0 || len(queued.followUps) != 0 {
 		r.pending[a.sessionID] = queued
+	}
+	if a.priorityAtStart != inference.Maintenance || a.idle {
+		r.lastImportant = time.Now()
 	}
 	if current, ok := r.bySession[a.sessionID]; ok && current == a {
 		delete(r.bySession, a.sessionID)

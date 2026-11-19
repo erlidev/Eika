@@ -184,7 +184,7 @@ func TestBorrowedComputerIsInUseUntilLastRelease(t *testing.T) {
 	s := runtimeServer(t)
 	s.idle = newIdleComputers(s)
 	s.runs = newRuns(s)
-	active, err := s.runs.reserve("home", "", false, func() {})
+	active, err := s.runs.reserve("home", "", job{}, func() {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestABackgroundTurnIsKnownAsOneFromTheMomentItHoldsTheSession(t *testing.T)
 			runtime.Gosched()
 		}
 	}()
-	active, err := s.runs.reserve("home", "", true, func() {})
+	active, err := s.runs.reserve("home", "", job{notify: true}, func() {})
 	if err != nil {
 		t.Fatal(err)
 	}

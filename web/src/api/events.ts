@@ -246,10 +246,11 @@ export type SessionMessage = {
 
 /**
  * CompactionReason is why a conversation was compacted: the user asked, the
- * next request would have left less of the window free than the reserve, or
+ * maintenance ran while idle, the next request would have left less of the
+ * window free than the reserve, or
  * the endpoint refused a request as larger than its window.
  */
-export type CompactionReason = "manual" | "threshold" | "overflow";
+export type CompactionReason = "manual" | "idle" | "threshold" | "overflow";
 
 /**
  * CompactionStart is the payload of a compaction.start event: the oldest part

@@ -269,7 +269,7 @@ from a run that `POST /api/sessions/{id}/compact` started and that has no
 | Field | Type | Meaning |
 |---|---|---|
 | `run_id` | string | The turn, or the compaction's own id when it is a run of its own. |
-| `reason` | string | `manual` (asked for), `threshold` (the next request would leave less of the window free than the reserve), or `overflow` (the endpoint refused a request as larger than its window; it is sent again after). |
+| `reason` | string | `manual` (asked for), `idle` (maintenance), `threshold` (the next request would leave less of the window free than the reserve), or `overflow` (the endpoint refused a request as larger than its window; it is sent again after). |
 | `tokens_before` | number | The estimated size of the context being compacted. |
 
 ### `compaction.end`

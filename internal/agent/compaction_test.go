@@ -193,11 +193,21 @@ func TestCompactKeepsThePreviousSummaryWhenOnlyATurnIsSplit(t *testing.T) {
 	}
 }
 
+func TestIdleCompactionRequiresFilledWindow(t *testing.T) {
+	s := sessionOf(history(4, 100))
+	p := providertest.New(providertest.Text("summary"))
+	large := newCompactor(p, compactorOptions{window: 100000})
+	small := newCompactor(p, compactorOptions{window: 100})
+	if large.agent.IdleCompactable(context.Background(), s, 60) || !small.agent.IdleCompactable(context.Background(), s, 60) {
+		t.Fatal("idle compaction did not respect the context window")
+	}
+}
+
 func TestCompactThatFailsLeavesTheConversation(t *testing.T) {
 	p := providertest.New(providertest.Fail(errors.New("the endpoint is down")))
 	c := newCompactor(p, compactorOptions{compaction: agent.CompactionSettings{KeepRecentTokens: 150}})
 	s := sessionOf(history(4, 100))
-	err := c.agent.Compact(context.Background(), s, "")
+	err := c.agent.CompactIdle(context.Background(), s)
 	if err == nil || !strings.Contains(err.Error(), "the endpoint is down") {
 		t.Fatalf("Compact error = %v, want the endpoint's", err)
 	}
@@ -343,5 +353,34 @@ func TestConcurrentMessagesDuringPreambleRefresh(t *testing.T) {
 	<-done
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+type cancelledSummary struct {
+	provider.Provider
+	started chan struct{}
+}
+
+func (p cancelledSummary) Stream(ctx context.Context, _ provider.Request) (<-chan provider.Event, error) {
+	close(p.started)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestCancelledIdleCompactionLeavesStoredContext(t *testing.T) {
+	p := cancelledSummary{Provider: providertest.New(), started: make(chan struct{})}
+	c := newCompactor(p, compactorOptions{compaction: agent.CompactionSettings{KeepRecentTokens: 150}})
+	original := history(4, 100)
+	s := sessionOf(original)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- c.agent.CompactIdle(ctx, s) }()
+	<-p.started
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("compaction: %v", err)
+	}
+	if !reflect.DeepEqual(s.Conversation.Messages(), original) || len(c.store.compactions["s1"]) != 0 {
+		t.Fatal("cancelled summary changed the conversation or stored a compaction")
 	}
 }

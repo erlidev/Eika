@@ -21,6 +21,7 @@ export type CompactionProps = {
 /** reasonText says what started a compaction. */
 const reasonText: Record<CompactionItem["reason"], string> = {
   manual: "on request",
+  idle: "automatically, while idle",
   threshold: "automatically, as the context neared its window",
   overflow: "automatically, after the endpoint refused a request as too large",
 };
