@@ -213,7 +213,7 @@ export type SessionTitle = {
   title: string;
 };
 
-/** SessionUpdated is the payload of a session.updated event: a session was renamed, pinned, or archived. */
+/** SessionUpdated is the payload of a session.updated event: a session changed or a run finished. */
 export type SessionUpdated = {
   session_id: string;
   /** computer_id is absent for a chat. */
@@ -234,6 +234,7 @@ export type EntryKind =
 
 /** SessionMessage is the payload of a session.message event, which a replay sends. */
 export type SessionMessage = {
+  run_id?: string;
   channel?: string;
   session_id: string;
   entry_id: string;

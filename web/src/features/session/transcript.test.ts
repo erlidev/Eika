@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { EikaEvent, EventType } from "@/api/events";
-import { applyEvent, cutOffText, items, newTranscript } from "@/features/session/transcript";
+import {
+  applyEntries,
+  applyEvent,
+  cutOffText,
+  items,
+  newTranscript,
+} from "@/features/session/transcript";
 import type { TranscriptState } from "@/features/session/transcript";
 
 const sessionID = "s1";
@@ -629,5 +635,106 @@ describe("compaction", () => {
       running: false,
       error: "the endpoint is down",
     });
+  });
+});
+
+describe("paginated transcript", () => {
+  it("merges pages in write order and attaches a result when its older call loads", () => {
+    const call = {
+      id: "call",
+      seq: 1,
+      kind: "assistant" as const,
+      created_at: "2026-01-01T00:00:01Z",
+      message: {
+        role: "assistant" as const,
+        tool_calls: [{ id: "c", name: "bash", arguments: {} }],
+      },
+    };
+    const result = {
+      id: "result",
+      seq: 2,
+      kind: "tool_result" as const,
+      created_at: "2026-01-01T00:00:02Z",
+      message: { role: "tool" as const, tool_call_id: "c", content: "done" },
+    };
+    const newer = {
+      id: "new",
+      seq: 3,
+      kind: "assistant" as const,
+      created_at: "2026-01-01T00:00:03Z",
+      message: { role: "assistant" as const, content: "answer" },
+    };
+    let state = applyEntries(newTranscript(sessionID), [result, newer]);
+    expect(state.committed).toHaveLength(1);
+    state = applyEntries(state, [call, result]);
+    expect(state.entries.map((e) => e.id)).toEqual(["call", "result", "new"]);
+    expect(state.committed).toMatchObject([
+      { kind: "tool", content: "done", done: true },
+      { kind: "assistant", text: "answer" },
+    ]);
+  });
+
+  it("keeps a live turn while pages overlap it and replaces it on catch-up", () => {
+    const user = {
+      id: "user",
+      run_id: "r1",
+      seq: 1,
+      kind: "user" as const,
+      created_at: "2026-01-01T00:00:01Z",
+      message: { role: "user" as const, content: "hello" },
+    };
+    const answer = {
+      id: "answer",
+      run_id: "r1",
+      seq: 2,
+      kind: "assistant" as const,
+      created_at: "2026-01-01T00:00:02Z",
+      message: { role: "assistant" as const, content: "hi" },
+    };
+    let state = fold([
+      ev("turn.start", { run_id: "r1", session_id: sessionID, message: "hello" }),
+      ev("message.delta", { run_id: "r1", text: "hi" }),
+    ]);
+    state = applyEntries(state, [user, answer]);
+    expect(items(state).map((item) => item.kind)).toEqual(["user", "assistant"]);
+    state = fold(
+      [
+        ev("turn.end", {
+          run_id: "r1",
+          stop_reason: "stop",
+          usage: {},
+          context: {},
+          generation_ms: 0,
+          context_window: 0,
+        }),
+      ],
+      state,
+    );
+    state = applyEntries(state, [user, answer], ["r1"]);
+    expect(state.entries).toHaveLength(2);
+    expect(items(state)).toMatchObject([
+      { kind: "user", text: "hello" },
+      { kind: "assistant", text: "hi" },
+    ]);
+  });
+  it.each(["page first", "stream first"])("merges equal-time %s by turn ID", (order) => {
+    const saved = {
+      id: "current",
+      run_id: "r2",
+      seq: 1,
+      kind: "user" as const,
+      created_at: "2026-01-01T00:00:00Z",
+      message: { role: "user" as const, content: "new" },
+    };
+    const start = ev("turn.start", { run_id: "r2", session_id: sessionID, message: "new" });
+    let state = newTranscript(sessionID);
+    if (order === "page first") {
+      state = applyEntries(state, [saved]);
+      state = applyEvent(state, start);
+    } else {
+      state = applyEvent(state, start);
+      state = applyEntries(state, [saved]);
+    }
+    expect(items(state)).toMatchObject([{ kind: "user", text: "new" }]);
   });
 });

@@ -371,7 +371,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, g *guard, msgs []provider.
 		// The model has seen the pending messages; they are delivered for
 		// good and can be persisted.
 		for i, m := range pending {
-			if err := a.store(ctx, s, m); err != nil {
+			if err := a.store(ctx, s, runID, m); err != nil {
 				restoreFrom(i)
 				return a.fail(ctx, s, runID, err)
 			}
@@ -401,7 +401,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, g *guard, msgs []provider.
 		// tells the model nothing and some endpoints refuse to be sent one,
 		// so the turn ends on the stop reason alone.
 		if !empty(reply) {
-			if err := appendReply(ctx, s, reply); err != nil {
+			if err := appendReply(ctx, s, runID, reply); err != nil {
 				return err
 			}
 		}
@@ -423,7 +423,7 @@ func (a *Agent) turn(ctx context.Context, s *Session, g *guard, msgs []provider.
 				err = errors.Join(err, a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err))
 				return a.fail(ctx, s, runID, err)
 			}
-			if err := a.appendTerminal(ctx, s, result); err != nil {
+			if err := a.appendTerminal(ctx, s, runID, result); err != nil {
 				err = errors.Join(err, a.abandonToolCalls(ctx, s, runID, reply.ToolCalls[i:], err))
 				return a.fail(ctx, s, runID, err)
 			}
@@ -460,7 +460,7 @@ func (a *Agent) abandonToolCalls(ctx context.Context, s *Session, runID string, 
 			Content: content,
 			IsError: true,
 		})
-		if err := a.append(terminalCtx, s, provider.ToolResultMessage(c.ID, content, true)); err != nil {
+		if err := a.append(terminalCtx, s, runID, provider.ToolResultMessage(c.ID, content, true)); err != nil {
 			a.opts.Logger.Error("store abandoned tool result",
 				"session_id", s.ID, "run_id", runID, "call_id", c.ID, "error", err)
 			joined = errors.Join(joined, err)
@@ -529,10 +529,10 @@ func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provid
 
 // appendTerminal records a terminal tool result on a context that survives a
 // run cancellation. A stored assistant tool call must always have one result.
-func (a *Agent) appendTerminal(ctx context.Context, s *Session, m provider.Message) error {
+func (a *Agent) appendTerminal(ctx context.Context, s *Session, runID string, m provider.Message) error {
 	terminalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteTimeout)
 	defer cancel()
-	return a.append(terminalCtx, s, m)
+	return a.append(terminalCtx, s, runID, m)
 }
 
 // drainSteering atomically takes the steering accepted before this check.
@@ -567,8 +567,8 @@ func (a *Agent) closeQueues() {
 }
 
 // append records a message in the conversation and in the store.
-func (a *Agent) append(ctx context.Context, s *Session, m provider.Message) error {
-	if err := a.store(ctx, s, m); err != nil {
+func (a *Agent) append(ctx context.Context, s *Session, runID string, m provider.Message) error {
+	if err := a.store(ctx, s, runID, m); err != nil {
 		return err
 	}
 	s.Conversation.Append(m)
@@ -576,11 +576,11 @@ func (a *Agent) append(ctx context.Context, s *Session, m provider.Message) erro
 }
 
 // store durably records one conversation message.
-func (a *Agent) store(ctx context.Context, s *Session, m provider.Message) error {
+func (a *Agent) store(ctx context.Context, s *Session, runID string, m provider.Message) error {
 	if a.opts.Store == nil {
 		return nil
 	}
-	if err := a.opts.Store.Append(ctx, s.ID, m); err != nil {
+	if err := a.opts.Store.Append(ctx, s.ID, runID, m); err != nil {
 		return fmt.Errorf("store message: %w", err)
 	}
 	return nil

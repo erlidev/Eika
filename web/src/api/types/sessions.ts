@@ -170,6 +170,8 @@ export type Compaction = {
 
 /** Entry is one stored node of a session tree, with its message. */
 export type Entry = {
+  /** run_id identifies the agent turn that wrote this entry, when known. */
+  run_id?: string;
   channel?: string;
   /** text is present on preamble and notice entries. */
   text?: string;

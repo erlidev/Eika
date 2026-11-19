@@ -350,8 +350,8 @@ type noticeStore struct {
 }
 
 // Append records one message and, once it is stored, the notices it carried.
-func (s noticeStore) Append(ctx context.Context, sessionID string, m provider.Message) error {
-	if err := s.Store.Append(ctx, sessionID, m); err != nil {
+func (s noticeStore) Append(ctx context.Context, sessionID, runID string, m provider.Message) error {
+	if err := s.Store.Append(ctx, sessionID, runID, m); err != nil {
 		return err
 	}
 	s.notices.delivered(sessionID, m.Notices)

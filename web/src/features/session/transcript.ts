@@ -3,11 +3,10 @@
  * the list of items the session view renders, and it is a pure function so
  * that a scripted event sequence is the whole test.
  *
- * Two sources feed one transcript. `session.message` events, which a replay
- * sends, are the committed conversation and are keyed by entry id. Run events
+ * Two sources feed one transcript. Stored pages are keyed by entry id. Run events
  * (`turn.start`, `message.delta`, `tool.*`) are the turn in flight and are
  * keyed by its `run_id`. A turn that ends is sealed: its live items are
- * dropped as soon as the replay that follows delivers the stored entries, so
+ * dropped when catch-up delivers the stored entries, so
  * nothing is rendered twice.
  */
 
@@ -20,7 +19,7 @@ import type {
   TurnProgress,
   Usage,
 } from "@/api/events";
-import type { Compaction, Elicitation, Message, MessageImage, Question } from "@/api/types";
+import type { Compaction, Elicitation, Entry, Message, MessageImage, Question } from "@/api/types";
 
 /** UserItem is a message the user sent. */
 export type UserItem = {
@@ -158,6 +157,10 @@ export type TranscriptState = {
   sessionId: string;
   /** committed holds the stored entries a replay delivered, in path order. */
   committed: TranscriptItem[];
+  /** entries are the loaded stored entries in write order. */
+  entries: Entry[];
+  /** revision changes when a rewind invalidates in-flight page requests. */
+  revision: number;
   /** entryIds are the entries already held, which is how a replay dedupes. */
   entryIds: ReadonlySet<string>;
   /** lastEntryId is the newest entry seen; a replay resumes after it. */
@@ -209,6 +212,8 @@ export function newTranscript(sessionId: string): TranscriptState {
   return {
     sessionId,
     committed: [],
+    entries: [],
+    revision: 0,
     entryIds: new Set(),
     lastEntryId: "",
     live: [],
@@ -247,7 +252,34 @@ export function cutOffText(stopReason: string | undefined): string | undefined {
 
 /** items is the whole transcript in render order. */
 export function items(state: TranscriptState): TranscriptItem[] {
-  return [...state.committed, ...state.live];
+  return visibleItems(state.committed, state.live);
+}
+
+function rowIdentity(item: TranscriptItem): string {
+  return `${item.runId}:${item.kind}:${item.kind === "tool" ? item.callId : item.kind === "user" ? item.text : ""}`;
+}
+
+/** visibleItems keeps live turns in place of the stored rows they cover. */
+export function visibleItems(
+  committed: TranscriptItem[],
+  live: TranscriptItem[],
+): TranscriptItem[] {
+  const failed = new Set(live.filter((item) => item.kind === "error").map((item) => item.runId));
+  const liveRuns = new Set(
+    live
+      .filter((item) => item.kind !== "error" && !failed.has(item.runId))
+      .map((item) => item.runId),
+  );
+  const failedRows = new Set(
+    live.filter((item) => failed.has(item.runId) && item.kind !== "error").map(rowIdentity),
+  );
+  return [
+    ...committed.filter(
+      (item) =>
+        item.runId === "" || (!liveRuns.has(item.runId) && !failedRows.has(rowIdentity(item))),
+    ),
+    ...live,
+  ];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -324,7 +356,20 @@ function applyTurnStart(state: TranscriptState, e: EikaEvent): TranscriptState {
   if (p.message !== "" || images.length > 0) {
     live.push({ kind: "user", key: `${p.run_id}:user`, runId: p.run_id, text: p.message, images });
   }
-  return { ...state, live, activeTurnId: p.run_id, stopReason: undefined };
+  return {
+    ...state,
+    live,
+    activeTurnId: p.run_id,
+    stopReason: undefined,
+    sealedTurns:
+      state.activeTurnId !== "" &&
+      state.activeTurnId !== p.run_id &&
+      !state.sealedTurns.includes(state.activeTurnId)
+        ? [...state.sealedTurns, state.activeTurnId]
+        : state.sealedTurns,
+    needsReplay:
+      state.needsReplay || (state.activeTurnId !== "" && state.activeTurnId !== p.run_id),
+  };
 }
 
 function applyDelta(state: TranscriptState, e: EikaEvent): TranscriptState {
@@ -563,6 +608,10 @@ function applyRunError(state: TranscriptState, e: EikaEvent): TranscriptState {
     ],
     activeTurnId: state.activeTurnId === p.run_id ? "" : state.activeTurnId,
     ...(meter === undefined ? {} : { meter }),
+    sealedTurns: state.sealedTurns.includes(p.run_id)
+      ? state.sealedTurns
+      : [...state.sealedTurns, p.run_id],
+    needsReplay: true,
   };
 }
 
@@ -677,7 +726,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         {
           kind: "user",
           key: p.entry_id,
-          runId: "",
+          runId: p.run_id ?? "",
           entryId: p.entry_id,
           text: message?.content ?? "",
           images: message?.images ?? [],
@@ -689,7 +738,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         out.push({
           kind: "reasoning",
           key: `${p.entry_id}:reasoning`,
-          runId: "",
+          runId: p.run_id ?? "",
           entryId: p.entry_id,
           text: message.reasoning,
           streaming: false,
@@ -699,7 +748,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         out.push({
           kind: "assistant",
           key: p.entry_id,
-          runId: "",
+          runId: p.run_id ?? "",
           entryId: p.entry_id,
           text: message.content,
           streaming: false,
@@ -710,7 +759,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         out.push({
           kind: "tool",
           key: call.id,
-          runId: "",
+          runId: p.run_id ?? "",
           callId: call.id,
           name: call.name,
           arguments: call.arguments,
@@ -727,7 +776,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         {
           kind: "compaction",
           key: p.entry_id,
-          runId: "",
+          runId: p.run_id ?? "",
           entryId: p.entry_id,
           reason: c?.reason ?? "manual",
           tokensBefore: c?.tokens_before ?? 0,
@@ -742,12 +791,109 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         {
           kind: "notice",
           key: p.entry_id,
-          runId: "",
+          runId: p.run_id ?? "",
           entryId: p.entry_id,
           text: message?.content ?? "",
         },
       ];
   }
+}
+
+/** mergeEntries combines pages and catch-up responses by entry ID. */
+export function mergeEntries(current: Entry[], incoming: Entry[]): Entry[] {
+  const entries = new Map(current.map((entry) => [entry.id, entry]));
+  for (const entry of incoming) entries.set(entry.id, entry);
+  return [...entries.values()].sort((a, b) => a.seq - b.seq);
+}
+
+/** applyEntries builds rows and the tool-call index in one pass. */
+export function applyEntries(
+  state: TranscriptState,
+  incoming: Entry[],
+  completed: readonly string[] = [],
+): TranscriptState {
+  const entries = mergeEntries(state.entries, incoming);
+  const committed: TranscriptItem[] = [];
+  const entryIds = new Set<string>();
+  const tools = new Map<string, number>();
+  const completedIds = new Set(completed);
+  const failed = new Set(
+    state.live.filter((item) => item.kind === "error").map((item) => item.runId),
+  );
+  const storedKinds = new Set<string>();
+  let meter = state.meter;
+  for (const entry of entries) {
+    entryIds.add(entry.id);
+    const payload: SessionMessage = {
+      session_id: state.sessionId,
+      entry_id: entry.id,
+      kind: entry.kind,
+      created_at: entry.created_at,
+      ...(entry.run_id === undefined ? {} : { run_id: entry.run_id }),
+      message:
+        entry.kind === "compaction"
+          ? entry.compaction
+          : entry.text !== undefined
+            ? { role: "system", content: entry.text }
+            : entry.message,
+    };
+    const message = asMessage(payload.message);
+    const metrics = message?.metrics;
+    if (
+      metrics !== undefined &&
+      (state.activeTurnId === "" || state.activeTurnId === metrics.run_id) &&
+      !(meter?.source === "live" && meter.runId !== metrics.run_id)
+    ) {
+      meter = {
+        runId: metrics.run_id,
+        usage: metrics.usage,
+        context: metrics.context,
+        generationMs: metrics.generation_ms,
+        contextWindow: metrics.context_window,
+        live: false,
+        source: "replay",
+        ...(metrics.timings === undefined ? {} : { timings: metrics.timings }),
+      };
+    }
+    if (entry.kind === "compaction" && meter?.source === "replay") meter = undefined;
+    if (entry.kind === "tool_result") {
+      const callId = message?.tool_call_id ?? "";
+      const index = tools.get(callId);
+      const item = index === undefined ? undefined : committed[index];
+      if (index !== undefined && item?.kind === "tool") {
+        const known = state.toolResults[callId];
+        committed[index] = {
+          ...item,
+          content: message?.content ?? "",
+          isError: message?.is_error ?? false,
+          done: true,
+          ...(known === undefined ? {} : { details: known.details, durationMs: known.durationMs }),
+        };
+      }
+      continue;
+    }
+    for (const item of entryItems(payload)) {
+      if (item.kind === "tool") tools.set(item.callId, committed.length);
+      if (item.runId !== "") storedKinds.add(rowIdentity(item));
+      committed.push(item);
+    }
+  }
+  const live = state.live.filter((item) => {
+    if (!completedIds.has(item.runId) || item.kind === "error") return true;
+    if (!failed.has(item.runId)) return false;
+    return !storedKinds.has(rowIdentity(item));
+  });
+  return {
+    ...state,
+    entries,
+    committed,
+    live,
+    meter,
+    activeTurnId: completedIds.has(state.activeTurnId) ? "" : state.activeTurnId,
+    sealedTurns: state.sealedTurns.filter((id) => !completedIds.has(id)),
+    entryIds,
+    lastEntryId: entries.at(-1)?.id ?? "",
+  };
 }
 
 function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptState {
@@ -815,6 +961,8 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
         }),
       };
     }
+    // The call may be on an older page. Keep the result hidden until it loads.
+    return base;
   }
   return { ...base, committed: [...base.committed, ...entryItems(p)] };
 }

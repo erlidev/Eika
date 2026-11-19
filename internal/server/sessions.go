@@ -61,6 +61,7 @@ type sessionBody struct {
 type entryBody struct {
 	ID        string           `json:"id"`
 	ParentID  string           `json:"parent_id,omitempty"`
+	RunID     string           `json:"run_id,omitempty"`
 	Channel   string           `json:"channel,omitempty"`
 	Text      *string          `json:"text,omitempty"`
 	Seq       int64            `json:"seq"`
@@ -580,6 +581,7 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 func asEntry(e store.Entry) (entryBody, error) {
 	body := entryBody{
 		ID:        e.ID,
+		RunID:     e.RunID,
 		Channel:   e.Channel,
 		ParentID:  e.ParentID,
 		Seq:       e.Seq,

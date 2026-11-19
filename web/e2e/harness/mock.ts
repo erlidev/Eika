@@ -377,6 +377,7 @@ export class MockHarness {
     return this.event("session.message", `session:${session.id}`, {
       session_id: session.id,
       entry_id: entry.id,
+      ...(entry.run_id === undefined ? {} : { run_id: entry.run_id }),
       parent_id: entry.parent_id,
       kind: entry.kind,
       channel: entry.channel,
@@ -561,12 +562,21 @@ export class MockHarness {
     Reflect.deleteProperty(this.world.activeRuns, run.session_id);
     this.world.questions = this.world.questions.filter((q) => q.run_id !== run.id);
     this.world.elicitations = this.world.elicitations.filter((e) => e.run_id !== run.id);
+    this.emit(
+      this.event("session.updated", `session:${run.session_id}`, { session_id: run.session_id }),
+    );
   }
 
-  private append(session: Session, message: Message, compaction?: Compaction): Entry {
+  private append(
+    session: Session,
+    message: Message,
+    runId: string,
+    compaction?: Compaction,
+  ): Entry {
     const list = (this.world.entries[session.id] ??= []);
     const entry: Entry = {
       id: this.nextId("ent"),
+      run_id: runId,
       seq: list.length + 1,
       kind: compaction === undefined ? entryKind(message) : "compaction",
       created_at: fixedNow,
@@ -618,7 +628,7 @@ export class MockHarness {
           reasoning_tokens: null,
         },
       };
-      this.append(session, { role: "user" }, compaction);
+      this.append(session, { role: "user" }, turn, compaction);
       this.finish(run, "done");
       const { reason, tokens_before, tokens_after, summary, kept, usage } = compaction;
       send("compaction.end", { reason, tokens_before, tokens_after, summary, kept, usage });
@@ -685,11 +695,15 @@ export class MockHarness {
     // the model's own "stop" to the reason it ran out of room.
     let stopReason = "stop";
     try {
-      this.append(session, {
-        role: "user",
-        ...(text === "" ? {} : { content: text }),
-        ...(images.length === 0 ? {} : { images }),
-      });
+      this.append(
+        session,
+        {
+          role: "user",
+          ...(text === "" ? {} : { content: text }),
+          ...(images.length === 0 ? {} : { images }),
+        },
+        turn,
+      );
       // What the model call is sent, which the harness records once the
       // response is in.
       const sent = previewContext(this.world, session, "");
@@ -725,41 +739,49 @@ export class MockHarness {
             progress();
             await pause();
           }
-          this.append(session, {
-            role: "assistant",
-            content: step.say,
-            ...(reasoning === "" ? {} : { reasoning }),
-            metrics: {
-              run_id: turn,
-              usage: {
-                input_tokens: 1842,
-                output_tokens: outputTokens,
-                total_tokens: 1842 + outputTokens,
-                cached_tokens: null,
-                prefilled_tokens: null,
-                reasoning_tokens: null,
+          this.append(
+            session,
+            {
+              role: "assistant",
+              content: step.say,
+              ...(reasoning === "" ? {} : { reasoning }),
+              metrics: {
+                run_id: turn,
+                usage: {
+                  input_tokens: 1842,
+                  output_tokens: outputTokens,
+                  total_tokens: 1842 + outputTokens,
+                  cached_tokens: null,
+                  prefilled_tokens: null,
+                  reasoning_tokens: null,
+                },
+                context: {
+                  input_tokens: 1842,
+                  output_tokens: outputTokens,
+                  total_tokens: 1842 + outputTokens,
+                  cached_tokens: 1790,
+                  prefilled_tokens: null,
+                  reasoning_tokens: null,
+                },
+                generation_ms: generationMs,
+                context_window: 400_000,
+                timings: timings(),
               },
-              context: {
-                input_tokens: 1842,
-                output_tokens: outputTokens,
-                total_tokens: 1842 + outputTokens,
-                cached_tokens: 1790,
-                prefilled_tokens: null,
-                reasoning_tokens: null,
-              },
-              generation_ms: generationMs,
-              context_window: 400_000,
-              timings: timings(),
             },
-          });
+            turn,
+          );
           reasoning = "";
         } else if ("tool" in step) {
           const callId = this.nextId("call");
           send("tool.call", { call_id: callId, name: step.tool, arguments: step.args });
-          this.append(session, {
-            role: "assistant",
-            tool_calls: [{ id: callId, name: step.tool, arguments: step.args }],
-          });
+          this.append(
+            session,
+            {
+              role: "assistant",
+              tool_calls: [{ id: callId, name: step.tool, arguments: step.args }],
+            },
+            turn,
+          );
           if (step.output !== undefined) {
             await pause();
             send("tool.output", { call_id: callId, text: step.output });
@@ -773,12 +795,16 @@ export class MockHarness {
             details: step.details,
             duration_ms: 1234,
           });
-          this.append(session, {
-            role: "tool",
-            tool_call_id: callId,
-            content: step.result,
-            is_error: step.isError === true,
-          });
+          this.append(
+            session,
+            {
+              role: "tool",
+              tool_call_id: callId,
+              content: step.result,
+              is_error: step.isError === true,
+            },
+            turn,
+          );
         } else if ("ask" in step) {
           const questionId = this.nextId("q");
           const callId = this.nextId("call");
@@ -826,10 +852,14 @@ export class MockHarness {
           const callId = this.nextId("call");
           const name = `mcp__${step.mcp.server}__${step.mcp.tool}`;
           send("tool.call", { call_id: callId, name, arguments: step.args });
-          this.append(session, {
-            role: "assistant",
-            tool_calls: [{ id: callId, name, arguments: step.args }],
-          });
+          this.append(
+            session,
+            {
+              role: "assistant",
+              tool_calls: [{ id: callId, name, arguments: step.args }],
+            },
+            turn,
+          );
           let declined = "";
           if (step.elicit) {
             const elicitation: Elicitation = {
@@ -891,12 +921,16 @@ export class MockHarness {
             },
             duration_ms: 842,
           });
-          this.append(session, {
-            role: "tool",
-            tool_call_id: callId,
-            content: text,
-            is_error: step.isError === true,
-          });
+          this.append(
+            session,
+            {
+              role: "tool",
+              tool_call_id: callId,
+              content: text,
+              is_error: step.isError === true,
+            },
+            turn,
+          );
         } else if ("fail" in step) {
           send("run.error", { message: step.fail, retryable: step.retryable ?? false });
           this.finish(run, "error", step.fail);

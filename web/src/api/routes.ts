@@ -115,6 +115,15 @@ export function getSession(
   });
 }
 
+/** getSessionEntries reads a page in session write order. */
+export function getSessionEntries(
+  id: string,
+  before?: string,
+  signal?: AbortSignal,
+): Promise<{ session_id: string; entries: Entry[]; next_before?: string }> {
+  return request(`/api/sessions/${encodeURIComponent(id)}/entries`, { query: { before }, signal });
+}
+
 /** updateSession renames, pins, or archives a session. */
 export function updateSession(id: string, input: UpdateSession): Promise<Session> {
   return request<Session>(`/api/sessions/${encodeURIComponent(id)}`, {

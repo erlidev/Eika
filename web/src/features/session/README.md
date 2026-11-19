@@ -18,14 +18,12 @@ one that holds client state of its own.
   rewind. `Transcript` shows nothing from a store that holds another session.
 - `SessionHeading.tsx` is the header's title: a click on it renames the
   session in place, and an archived session shows a badge with Unarchive.
-- `useSessionStream.ts` folds every event of `session:<id>` into the store and
-  asks for the replay that fills the transcript. A turn that ended, events the
-  bus dropped, and a socket that reconnected all ask for the same catch-up:
-  one replay from the last entry the transcript holds.
-- `transcript.ts` is the reducer: a pure function from `(state, event)` to
-  state, folding `docs/api/events.md` into renderable items. It knows two
-  sources, the live turn keyed by `run_id` and the stored entries keyed by
-  `entry_id`, and drops the live items of a turn once its entries arrive.
+- `useSessionStream.ts` opens the session topic before it reads the newest
+  50 entries. It reads older pages on request. After a turn, a dropped event,
+  or a reconnect, it reads back to a known entry and merges by entry ID.
+- `transcript.ts` folds live events and stored entries into renderable rows.
+  A result without its call stays hidden until the call's page is loaded.
+  Live rows stay visible until catch-up replaces the completed turn.
 - `cutOffText` in `transcript.ts` turns a `length` or `content_filter` stop
   reason into the line the transcript shows under the answer. The harness
   keeps what a cut-off response produced (`docs/DECISIONS.md`), so without that
@@ -57,9 +55,9 @@ one that holds client state of its own.
   session is open, which model its next run uses, and the composer's
   draft and its images, which are here because rewinding a message puts both
   back in the box and the two components are not each other's parents. `open` parks the draft, images and model of the session it leaves and restores
-  them on return, so watching a subagent does not clear Chat's unsent message. `rewound` discards the
-  transcript and asks for the path again: a replay only ever adds, so without
-  it the branch the head just left would stay on screen.
+  them on return, so watching a subagent does not clear Chat's unsent message.
+  `rewound` reloads the newest page after a head change.
+
 - `RunStatusBar.tsx` is the pane's footer, under the composer: the run's
   state, the model, the reasoning effort (one click cycles through the
   model's own list), the context meter, and the abort.

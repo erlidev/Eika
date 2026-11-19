@@ -388,6 +388,7 @@
                 ]
               },
               "parent_id": "string",
+              "run_id": "string",
               "seq": "number",
               "text": "string"
             },
@@ -395,6 +396,7 @@
               "channel",
               "compaction",
               "parent_id",
+              "run_id",
               "text"
             ]
           },
@@ -1550,6 +1552,7 @@
                 ]
               },
               "parent_id": "string",
+              "run_id": "string",
               "seq": "number",
               "text": "string"
             },
@@ -1557,6 +1560,7 @@
               "channel",
               "compaction",
               "parent_id",
+              "run_id",
               "text"
             ]
           },
@@ -2738,6 +2742,7 @@
                     ]
                   },
                   "parent_id": "string",
+                  "run_id": "string",
                   "seq": "number",
                   "text": "string"
                 },
@@ -2745,6 +2750,7 @@
                   "channel",
                   "compaction",
                   "parent_id",
+                  "run_id",
                   "text"
                 ]
               }
@@ -2964,6 +2970,7 @@
                     ]
                   },
                   "parent_id": "string",
+                  "run_id": "string",
                   "seq": "number",
                   "text": "string"
                 },
@@ -2971,6 +2978,7 @@
                   "channel",
                   "compaction",
                   "parent_id",
+                  "run_id",
                   "text"
                 ]
               }
@@ -5904,11 +5912,13 @@
         "kind": "string",
         "message": "any",
         "parent_id": "string",
+        "run_id": "string",
         "session_id": "string"
       },
       "optional": [
         "channel",
-        "parent_id"
+        "parent_id",
+        "run_id"
       ]
     },
     "session.title": {

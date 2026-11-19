@@ -617,6 +617,22 @@ export const scenarios = {
     path: "/",
     build: () => configured().world,
   },
+  "paginated-transcript": {
+    description: "A long home transcript with older messages to load.",
+    path: "/",
+    build: () => {
+      const b = configured();
+      b.world.settings.settings.model_classes = { main: "gpt-5", fast: "gpt-5-mini" };
+      b.conversation(
+        b.home(),
+        Array.from({ length: 120 }, (_, i) => ({
+          role: "user" as const,
+          content: `Message ${String(i + 1).padStart(3, "0")}`,
+        })),
+      );
+      return b.world;
+    },
+  },
   workbench: {
     description:
       "Computers (running/stopped/creating), and session ses-backoff with a full transcript. Sending a message streams a mock reply.",

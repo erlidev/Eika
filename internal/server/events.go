@@ -184,6 +184,7 @@ func (s *Server) replaySession(ctx context.Context, conn *websocket.Conn, sessio
 			Channel:   e.Channel,
 			SessionID: sessionID,
 			EntryID:   e.ID,
+			RunID:     e.RunID,
 			ParentID:  e.ParentID,
 			Kind:      string(e.Kind),
 			CreatedAt: e.CreatedAt,

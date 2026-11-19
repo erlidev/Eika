@@ -86,6 +86,7 @@ type memoryStore struct {
 	mu          sync.Mutex
 	sessions    map[string][]provider.Message
 	compactions map[string][]agent.Compaction
+	runIDs      []string
 	// order is what was appended to each session, in order: "message" or
 	// "compaction".
 	order map[string][]string
@@ -95,15 +96,16 @@ func newMemoryStore() *memoryStore {
 	return &memoryStore{sessions: map[string][]provider.Message{}, compactions: map[string][]agent.Compaction{}, order: map[string][]string{}}
 }
 
-func (s *memoryStore) Append(_ context.Context, sessionID string, m provider.Message) error {
+func (s *memoryStore) Append(_ context.Context, sessionID, runID string, m provider.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sessionID] = append(s.sessions[sessionID], m)
+	s.runIDs = append(s.runIDs, runID)
 	s.order[sessionID] = append(s.order[sessionID], "message")
 	return nil
 }
 
-func (s *memoryStore) AppendCompaction(_ context.Context, sessionID string, c agent.Compaction) error {
+func (s *memoryStore) AppendCompaction(_ context.Context, sessionID, _ string, c agent.Compaction) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.compactions[sessionID] = append(s.compactions[sessionID], c)
@@ -126,7 +128,7 @@ type strictStore struct {
 	messages []provider.Message
 }
 
-func (s *strictStore) Append(ctx context.Context, _ string, m provider.Message) error {
+func (s *strictStore) Append(ctx context.Context, _, _ string, m provider.Message) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -143,7 +145,7 @@ func (s *strictStore) Append(ctx context.Context, _ string, m provider.Message) 
 	return nil
 }
 
-func (s *strictStore) AppendCompaction(ctx context.Context, _ string, _ agent.Compaction) error {
+func (s *strictStore) AppendCompaction(ctx context.Context, _, _ string, _ agent.Compaction) error {
 	return ctx.Err()
 }
 
@@ -320,6 +322,13 @@ func TestRunExecutesToolCalls(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
+	var started event.TurnStart
+	f.events.payloadOf(t, event.TypeTurnStart, &started)
+	for _, id := range f.store.runIDs {
+		if id != started.RunID {
+			t.Fatalf("stored turn id = %q, want %q", id, started.RunID)
+		}
+	}
 	if got := roles(f.session.Conversation.Messages()); strings.Join(got, ",") != "user,assistant,tool,assistant,tool,assistant" {
 		t.Fatalf("roles = %v", got)
 	}

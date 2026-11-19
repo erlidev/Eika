@@ -52,6 +52,8 @@ type Entry struct {
 	Kind EntryKind
 	// Channel names the source or destination of a home message, empty if unset.
 	Channel string
+	// RunID identifies the agent turn that wrote this entry, if known.
+	RunID string
 	// Payload is the entry's content. For an entry that carries a message it
 	// is the provider.Message JSON; internal/session owns the shapes. It is
 	// stored as json, which preserves its exact spelling.
@@ -61,12 +63,12 @@ type Entry struct {
 
 // entryColumns is the column list every entry query selects, in the order
 // scanEntry reads them.
-const entryColumns = `id, session_id, parent_id, seq, kind, payload, created_at, channel`
+const entryColumns = `id, session_id, parent_id, seq, kind, payload, created_at, channel, run_id`
 
 // AppendEntry appends e to the session's head and moves the head to it, in
 // one transaction. SessionID, ParentID, Seq, and CreatedAt are assigned here
 // and ignored on input, and so is ID, which gets a fresh value; Kind, Payload
-// and Channel are the caller's.
+// Channel, and RunID are the caller's.
 func (s *Store) AppendEntry(ctx context.Context, sessionID string, e Entry) (Entry, error) {
 	e.ID = ""
 	var out Entry
@@ -213,7 +215,7 @@ func (s *Store) SessionPath(ctx context.Context, sessionID string) ([]Entry, err
 const pathQuery = `WITH RECURSIVE up AS (
 		SELECT ` + entryColumns + ` FROM session_entries WHERE id = $1
 		UNION ALL
-		SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at, e.channel
+		SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at, e.channel, e.run_id
 		FROM session_entries e JOIN up ON e.id = up.parent_id
 	)
 	SELECT ` + entryColumns + ` FROM up ORDER BY seq`
@@ -226,10 +228,10 @@ const pathQuery = `WITH RECURSIVE up AS (
 // concurrent appends without the lock would pick the same number and one of
 // them would lose the (session_id, seq) uniqueness check.
 func insertEntry(ctx context.Context, q querier, sessionID, parentID string, e Entry) (Entry, error) {
-	const insert = `INSERT INTO session_entries (id, session_id, parent_id, seq, kind, payload, channel)
+	const insert = `INSERT INTO session_entries (id, session_id, parent_id, seq, kind, payload, channel, run_id)
 		VALUES ($1, $2, $3,
 			(SELECT coalesce(max(seq), 0) + 1 FROM session_entries WHERE session_id = $2),
-			$4, $5, $6)
+			$4, $5, $6, $7)
 		RETURNING ` + entryColumns
 	payload := e.Payload
 	if len(payload) == 0 {
@@ -239,7 +241,7 @@ func insertEntry(ctx context.Context, q querier, sessionID, parentID string, e E
 	if id == "" {
 		id = NewID()
 	}
-	row := q.QueryRow(ctx, insert, id, sessionID, nullable(parentID), e.Kind, []byte(payload), e.Channel)
+	row := q.QueryRow(ctx, insert, id, sessionID, nullable(parentID), e.Kind, []byte(payload), e.Channel, nullable(e.RunID))
 	return scanEntry(row)
 }
 
@@ -314,13 +316,15 @@ func scanEntry(row pgx.Row) (Entry, error) {
 	var (
 		e       Entry
 		parent  *string
+		runID   *string
 		payload []byte
 	)
-	err := row.Scan(&e.ID, &e.SessionID, &parent, &e.Seq, &e.Kind, &payload, &e.CreatedAt, &e.Channel)
+	err := row.Scan(&e.ID, &e.SessionID, &parent, &e.Seq, &e.Kind, &payload, &e.CreatedAt, &e.Channel, &runID)
 	if err != nil {
 		return Entry{}, err
 	}
 	e.ParentID = text(parent)
+	e.RunID = text(runID)
 	e.Payload = json.RawMessage(payload)
 	e.CreatedAt = e.CreatedAt.UTC()
 	return e, nil
