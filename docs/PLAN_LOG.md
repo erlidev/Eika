@@ -9,6 +9,12 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-19: P3-15 (28cb872) adds the manifest, icons and a shell-only service
+  worker: API and events bypass it, navigation is network-first with "/" cached
+  (Go redirects "/index.html"), and each build replaces the cache. Not registered
+  in dev or the e2e mock build; the smoke checks registration on real Core. The
+  README covers Tailscale serve. `make check` and `make smoke` pass.
+
 - 2026-11-19: P2-11 (c8fbdd7) retires profiles, configuration layering and direct
   chats; runs resolve from agent definitions and model classes. Migration 0021
   archives profile data, turns old direct sessions into routines (history kept)

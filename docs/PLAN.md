@@ -222,7 +222,7 @@ What stops a long-lived home session from losing work or growing without bound.
 - [ ] **P3-06**: Add the touch composer.
 - [ ] **P3-14**: Add sealed ntfy configuration and delivery.
 - [ ] **P3-13**: Add toasts.
-- [ ] **P3-15**: Add install and shell caching.
+- [x] **P3-15**: Add install and shell caching.
 - [x] **P3-10**: Build project pages and instructions editor.
 - [ ] **P3-08**: Add remaining cards, notices and their scenarios.
 
@@ -486,7 +486,7 @@ The mobile-first app. Design: `design/interface.md`.
       - [ ] **P3-14**: Add sealed configuration and delivery.
 - [ ] PWA: manifest, icons, and a service worker that caches the shell only.
       Document Tailscale serve in the README.
-      - [ ] **P3-15**: Add install and shell caching.
+      - [x] **P3-15**: Add install and shell caching.
 - [ ] Mock harness: a `World` for the home session, subagents and projects;
       scenarios; phone baselines for Chat and Activity; a touch emulation pass of
       the composer spec.
