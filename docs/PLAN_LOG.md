@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-19: P3-08 (fedcf62) gives home's tools, compaction and notices their own
+  Chat cards, with bounded keyboard-scrollable regions for long text. P3-02 adds
+  a coarse-pointer density (44 px targets, a type step, no hover-only controls),
+  an ESLint rule for hover-only reveals and 390 px touch specs. The agent
+  web-search screenshot flaked on fractional offsets (0.225rem spacing); its spec
+  now aligns the card to whole pixels (6ecf443). `make check` passes.
+
 - 2026-11-19: P3-14 (9586bd5) seals an ntfy topic URL in Settings and pushes a
   fixed-text notice for subagent reports and background replies through netguard.
   Only 429 is retried (a 5xx may follow an accepted push); pending pushes are

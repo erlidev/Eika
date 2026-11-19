@@ -218,13 +218,13 @@ What stops a long-lived home session from losing work or growing without bound.
 
 ### Stage C: on the phone
 
-- [ ] **P3-02**: Add touch density and checks.
+- [x] **P3-02**: Add touch density and checks.
 - [ ] **P3-06**: Add the touch composer.
 - [x] **P3-14**: Add sealed ntfy configuration and delivery.
 - [x] **P3-13**: Add toasts.
 - [x] **P3-15**: Add install and shell caching.
 - [x] **P3-10**: Build project pages and instructions editor.
-- [ ] **P3-08**: Add remaining cards, notices and their scenarios.
+- [x] **P3-08**: Add remaining cards, notices and their scenarios.
 
 **Exit C:** phase 3's exit. Eika is in daily use from here.
 
@@ -442,7 +442,7 @@ The mobile-first app. Design: `design/interface.md`.
 - [ ] Add a touch density under `(pointer: coarse)` (type step, 44 px targets, no
       hover-only controls). Add a style guide section and ESLint rules where they
       apply.
-      - [ ] **P3-02**: Add touch density and checks.
+      - [x] **P3-02**: Add touch density and checks.
 - [ ] App shell: a rail on desktop and a bottom bar on a phone, a route per page,
       `100dvh`, safe areas, and the composer anchored to the visual viewport.
       Leave a slot for the halt button (wired in phase 4).
@@ -459,7 +459,7 @@ The mobile-first app. Design: `design/interface.md`.
       - [x] **P3-05**: Add the paginated transcript. Channel marks wait for a
             second channel (`docs/DEFERRED.md`, channels).
       - [ ] **P3-06**: Add the touch composer.
-      - [ ] **P3-08**: Add remaining cards and notices.
+      - [x] **P3-08**: Add remaining cards and notices.
 - [x] Activity page: subagents and their states, and a read-only live view of each
       (the session view reused, no composer) with cancel. Steering goes through
       Eika.
@@ -491,7 +491,7 @@ The mobile-first app. Design: `design/interface.md`.
       scenarios; phone baselines for Chat and Activity; a touch emulation pass of
       the composer spec.
       - [x] **P3-03**: Add World and matching routes.
-      - [ ] **P3-08**: Add Chat card scenarios.
+      - [x] **P3-08**: Add Chat card scenarios.
       - [x] **P3-09**: Add Activity scenarios.
       - [ ] **P3-16**: Complete phone and touch coverage and measure history.
 - [ ] Remove what is left of the workbench.
