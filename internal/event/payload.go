@@ -284,6 +284,8 @@ type SessionUpdated struct {
 	SessionID string `json:"session_id"`
 	// ComputerID is the session's computer, absent for a chat.
 	ComputerID string `json:"computer_id,omitempty"`
+	// ReportID identifies a completed subagent report, when this update announces one.
+	ReportID string `json:"report_id,omitempty"`
 }
 
 // SessionMessage is the payload of a session.message event: one entry of a

@@ -1138,6 +1138,11 @@ export const scenarios = {
     path: "/activity",
     build: () => activity().world,
   },
+  toasts: {
+    description: "Live reports and background replies while Activity is open.",
+    path: "/activity",
+    build: () => activity().world,
+  },
   projects: {
     description: "Projects with subagents and saved instructions.",
     path: "/projects",

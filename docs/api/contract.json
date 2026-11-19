@@ -4820,10 +4820,12 @@
     "session.updated": {
       "object": {
         "computer_id": "string",
+        "report_id": "string",
         "session_id": "string"
       },
       "optional": [
-        "computer_id"
+        "computer_id",
+        "report_id"
       ]
     },
     "tool.call": {

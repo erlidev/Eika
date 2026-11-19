@@ -865,6 +865,11 @@ worker. Each build has its own cache; activation removes older shell caches.
 The worker is registered in production, except in the mock test build. The
 server requires revalidation of frontend files, including the manifest and worker.
 
+The shell shows one live toast at a time for completed subagent reports and
+background home replies. Report updates carry the report id; home turn events
+identify replies. The queue is local to the page and is not restored on reload.
+Toasts link to Activity or Chat and do not appear when that content is open.
+
 
 ```
 web/src/

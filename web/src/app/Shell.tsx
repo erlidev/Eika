@@ -14,6 +14,7 @@ import { BottomBar, Rail, railWidth } from "@/app/Navigation";
 import { pageAt } from "@/app/pages";
 import { ThemeToggle } from "@/app/ThemeToggle";
 import { ImageViewer } from "@/components/MessageImages";
+import { Toasts } from "@/features/notifications";
 import { useMCPEvents } from "@/features/mcp";
 import { useSessionUpdates } from "@/features/sessions";
 import { SettingsDialog } from "@/features/settings";
@@ -53,6 +54,7 @@ export function Shell() {
         </main>
         {bar && <BottomBar />}
       </div>
+      <Toasts />
       <SettingsDialog />
       <ImageViewer />
     </div>

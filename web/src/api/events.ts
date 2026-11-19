@@ -216,6 +216,8 @@ export type SessionTitle = {
 /** SessionUpdated is the payload of a session.updated event: a session changed or a run finished. */
 export type SessionUpdated = {
   session_id: string;
+  /** report_id identifies a completed subagent report, when this update announces one. */
+  report_id?: string;
   /** computer_id is absent for a chat. */
   computer_id?: string;
 };

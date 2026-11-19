@@ -391,13 +391,15 @@ Published on `global` when `PATCH /api/sessions/{id}` renames, pins, or
 archives a session. Subagent creation and each lifecycle state or waiting
 reason change and each stored subagent report also publish it, after the store
 write. Each client refetches its session lists and the session to read the state
-and optional `waiting_reason`. It is also published on the session topic after
+and optional `waiting_reason`. After an assignment ends idle with a report, a
+second update carries its report id. It is also published on the session topic after
 a run releases the session, so clients can recover a missed turn-end event.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `session_id` | string | The session. |
 | `computer_id` | string, optional | Its computer, absent for a chat. |
+| `report_id` | string, optional | Identifies the completed subagent report. |
 
 ## Stream events
 
