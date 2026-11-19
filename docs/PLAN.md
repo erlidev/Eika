@@ -220,8 +220,8 @@ What stops a long-lived home session from losing work or growing without bound.
 
 - [ ] **P3-02**: Add touch density and checks.
 - [ ] **P3-06**: Add the touch composer.
-- [ ] **P3-14**: Add sealed ntfy configuration and delivery.
-- [ ] **P3-13**: Add toasts.
+- [x] **P3-14**: Add sealed ntfy configuration and delivery.
+- [x] **P3-13**: Add toasts.
 - [x] **P3-15**: Add install and shell caching.
 - [x] **P3-10**: Build project pages and instructions editor.
 - [ ] **P3-08**: Add remaining cards, notices and their scenarios.
@@ -479,11 +479,11 @@ The mobile-first app. Design: `design/interface.md`.
       events the app already receives. The stored notification list (P3-12) is
       in `docs/DEFERRED.md`: a notice is already in Chat, and ntfy carries it to
       the phone.
-      - [ ] **P3-13**: Add toasts.
+      - [x] **P3-13**: Add toasts.
 - [ ] ntfy: a topic URL with its secret sealed in Core, a minimal payload, and
       delivery for subagent reports and for Eika's replies to background turns. A
       push opens Chat. This takes the place of Web Push (`docs/DEFERRED.md`).
-      - [ ] **P3-14**: Add sealed configuration and delivery.
+      - [x] **P3-14**: Add sealed configuration and delivery.
 - [ ] PWA: manifest, icons, and a service worker that caches the shell only.
       Document Tailscale serve in the README.
       - [x] **P3-15**: Add install and shell caching.

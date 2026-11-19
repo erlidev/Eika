@@ -9,6 +9,14 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-19: P3-14 (9586bd5) seals an ntfy topic URL in Settings and pushes a
+  fixed-text notice for subagent reports and background replies through netguard.
+  Only 429 is retried (a 5xx may follow an accepted push); pending pushes are
+  dropped at restart. P3-13 (3fd1e82) adds toasts from live events; session.updated
+  carries a report ID. A rewind fix (5c86972) keeps abandoned branches out of the
+  paginated transcript; its spec failed two runs in three before. `make smoke`
+  passes; `agent-web-search.png` flakes under load and is being fixed.
+
 - 2026-11-19: P3-15 (28cb872) adds the manifest, icons and a shell-only service
   worker: API and events bypass it, navigation is network-first with "/" cached
   (Go redirects "/index.html"), and each build replaces the cache. Not registered
