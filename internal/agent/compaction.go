@@ -299,6 +299,26 @@ func (a *Agent) Compactable(s *Session) bool {
 	return ok
 }
 
+// IdleCompactable reports whether the session exceeds the given percentage of its window
+// and has older messages to summarize.
+func (a *Agent) IdleCompactable(ctx context.Context, s *Session, fill int) bool {
+	if a.opts.ContextWindow <= 0 || !a.Compactable(s) {
+		return false
+	}
+	c := a.assemble(s, a.prompt())
+	return exceedsIdleFill(a.predict(ctx, c).Tokens, a.opts.ContextWindow, fill)
+}
+
+func exceedsIdleFill(tokens, window, fill int) bool {
+	return int64(tokens)*100 > int64(window)*int64(fill)
+}
+
+// CompactIdle compacts a session during maintenance.
+func (a *Agent) CompactIdle(ctx context.Context, s *Session) error {
+	_, err := a.compact(ctx, s, newRunID(), a.prompt(), s.Conversation.Len(), event.CompactIdle, "")
+	return err
+}
+
 // Compact summarizes the oldest part of s's conversation now, whatever its
 // size, as Pi's /compact does. instructions, when set, say what the summary
 // should focus on. A conversation with nothing old enough to summarize is
@@ -357,6 +377,9 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 		summary = homeSummary(asOf, loc, text, summary)
 		asOf = asOf.UTC()
 		record.BoardAsOf = &asOf
+	}
+	if err := ctx.Err(); err != nil {
+		return failed(err)
 	}
 	record.Summary = summary
 	record.Kept = stored - plan.first

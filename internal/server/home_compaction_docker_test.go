@@ -5,6 +5,7 @@ package server_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/provider"
@@ -114,5 +115,48 @@ func TestHomeCompactionWritesTheBoardAndRollsTheConversation(t *testing.T) {
 	}
 	if strings.Contains(second, "quiet") || strings.Contains(second, "waiting on") {
 		t.Errorf("second summary = %q, want quiet only counted and no stale wait", second)
+	}
+}
+
+func TestSteeringDuringIdleCompactionStartsAUserTurn(t *testing.T) {
+	a := newAPI(t)
+	home, err := a.store.EnsureHomeSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.assignClasses(t, map[string]any{"main": "test-model"})
+	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{"maintenance_idle_seconds": 0}), 200)
+	a.script(providertest.Text("first"), providertest.Text("second"))
+	for _, text := range []string{"one", "two"} {
+		a.postMessage(t, home.ID, text+" "+strings.Repeat("x", homeTurn), "", 202)
+		a.waitIdle(t, home.ID)
+	}
+	held := newHeldCall(1, providertest.New(providertest.Text("user answer")))
+	a.use(held)
+	if err := a.StartIdleCompactionForTest(t.Context(), home.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-held.reached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("idle summary did not start")
+	}
+	a.postMessage(t, home.ID, "continue", "steer", 202)
+	state := a.waitIdle(t, home.ID)
+	if state.Run == nil || state.Run.State != "done" {
+		t.Fatalf("user turn: %+v", state.Run)
+	}
+	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+home.ID+"/path", nil), 200)
+	if len(path.Messages) < 2 || path.Messages[len(path.Messages)-2].Content != "continue" || path.Messages[len(path.Messages)-1].Content != "user answer" {
+		t.Fatalf("user turn did not get its answer: %+v", path.Messages)
+	}
+	entries, err := a.store.Entries(t.Context(), home.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Kind == store.KindCompaction {
+			t.Fatal("cancelled idle summary changed stored context")
+		}
 	}
 }

@@ -20,6 +20,8 @@ export type SettingsDefaults = {
   compaction: CompactionSettings;
   /** computer_idle_minutes is how long a running computer may go without a run. */
   computer_idle_minutes: number;
+  compact_idle_fill: number;
+  compact_idle_minutes: number;
   /** subagent_max_running is how many subagents may run at once. */
   subagent_max_running: number;
   /** maintenance_idle_seconds, aging_seconds and preempt_running are the inference queue's settings. */

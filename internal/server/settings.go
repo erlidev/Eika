@@ -44,7 +44,9 @@ const (
 	settingSetupComplete = "setup_complete"
 	// settingIdleMinutes is how long a running computer may go without a
 	// run before the harness stops it; 0 never stops one.
-	settingIdleMinutes = "computer_idle_minutes"
+	settingIdleMinutes        = "computer_idle_minutes"
+	settingCompactIdleFill    = "compact_idle_fill"
+	settingCompactIdleMinutes = "compact_idle_minutes"
 	// settingSubagentMaxRunning is how many subagents may run at once.
 	settingSubagentMaxRunning = "subagent_max_running"
 )
@@ -52,8 +54,10 @@ const (
 // The idle timeout until the user sets one, and the longest the settings
 // accept: a week, past which a timeout is the same as none.
 const (
-	defaultIdleMinutes = 15
-	maxIdleMinutes     = 7 * 24 * 60
+	defaultIdleMinutes        = 15
+	defaultCompactIdleFill    = 60
+	defaultCompactIdleMinutes = 30
+	maxIdleMinutes            = 7 * 24 * 60
 )
 
 // The most subagents the settings accept as running at once. The default is
@@ -94,6 +98,8 @@ type settingsDefaults struct {
 	// ComputerIdleMinutes is how long a running computer may go without a
 	// run before the harness stops it.
 	ComputerIdleMinutes int `json:"computer_idle_minutes"`
+	CompactIdleFill     int `json:"compact_idle_fill"`
+	CompactIdleMinutes  int `json:"compact_idle_minutes"`
 	// SubagentMaxRunning is how many subagents may run at once.
 	SubagentMaxRunning int `json:"subagent_max_running"`
 	// MaintenanceIdleSeconds, AgingSeconds and PreemptRunning are the
@@ -179,6 +185,8 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 		Compaction:    compactionDefaults(),
 		// The idle timeout is the harness's own, not the deployment's.
 		ComputerIdleMinutes:    defaultIdleMinutes,
+		CompactIdleFill:        defaultCompactIdleFill,
+		CompactIdleMinutes:     defaultCompactIdleMinutes,
 		SubagentMaxRunning:     subagent.DefaultMaxRunning,
 		MaintenanceIdleSeconds: int(inference.DefaultMaintenanceIdle / time.Second),
 		AgingSeconds:           int(inference.DefaultAging / time.Second),
@@ -273,6 +281,16 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 			return computer.ErrNoEgressControl
 		}
 	case settingIdleMinutes:
+		var n int
+		if err := json.Unmarshal(value, &n); err != nil || n < 0 || n > maxIdleMinutes {
+			return invalidf("%s must be a whole number of minutes from 0 to %d", key, maxIdleMinutes)
+		}
+	case settingCompactIdleFill:
+		var n int
+		if err := json.Unmarshal(value, &n); err != nil || n < 1 || n > 100 {
+			return invalidf("%s must be a whole percentage from 1 to 100", key)
+		}
+	case settingCompactIdleMinutes:
 		var n int
 		if err := json.Unmarshal(value, &n); err != nil || n < 0 || n > maxIdleMinutes {
 			return invalidf("%s must be a whole number of minutes from 0 to %d", key, maxIdleMinutes)
@@ -428,6 +446,18 @@ func (s *Server) idleTimeout(ctx context.Context) time.Duration {
 		minutes = min(n, maxIdleMinutes)
 	}
 	return time.Duration(minutes) * time.Minute
+}
+
+func (s *Server) idleCompactionSettings(ctx context.Context) (int, time.Duration) {
+	fill, minutes := defaultCompactIdleFill, defaultCompactIdleMinutes
+	var n int
+	if readSetting(ctx, s.deps.Store, s.log, settingCompactIdleFill, &n) && n >= 1 && n <= 100 {
+		fill = n
+	}
+	if readSetting(ctx, s.deps.Store, s.log, settingCompactIdleMinutes, &n) && n >= 0 && n <= maxIdleMinutes {
+		minutes = n
+	}
+	return fill, time.Duration(minutes) * time.Minute
 }
 
 // jsonString encodes a string as a JSON value.

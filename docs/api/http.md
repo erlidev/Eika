@@ -426,7 +426,7 @@ stored without changes. Channel is independent of the message payload.
 | `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, `compaction`, `preamble` or `notice`. |
 | `created_at` | time | When it was written. |
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
-| `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `threshold`, or `overflow`), `usage`, and, on a home session's compaction, `board_as_of` (RFC 3339 time its subagent board was read). The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
+| `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `idle`, `threshold`, or `overflow`), `usage`, and, on a home session's compaction, `board_as_of` (RFC 3339 time its subagent board was read). The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
 
 A user message can include `context`: the block the model reads after the
 message's text, which states the time it was sent and, in the home session, its
@@ -1012,6 +1012,8 @@ stores them.
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a chat model. |
 | `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
 | `sandbox_image` | string | The image the home computer's container is created from. A container that exists keeps its image, so a change reaches the home computer only when its container is made again. |
+| `compact_idle_fill` | integer, 1 to 100 | Context fill percentage above which idle compaction may run. |
+| `compact_idle_minutes` | integer, 0 to 10080 | Minutes without important Core work before idle compaction may run. |
 | `computer_idle_minutes` | number, 0 to 10080 | How long a running computer may go without a run in it before the harness aborts its runs and stops it. A later run starts it again. 0 never stops one. Checked once a minute. |
 | `subagent_max_running` | number, 1 to 32 | How many subagents may run at once. A start or resume past it is refused to Eika as a tool error. Read at each start, so a change applies at once. |
 | `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The home computer's limits, checked as a Sandbox's are. A field the object leaves out is 0, no limit. A write applies them to its container, running or stopped, without a restart; a stopped container also takes them at its next start. |
@@ -1040,6 +1042,8 @@ stores them.
 | Field | Type | Meaning |
 |---|---|---|
 | `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
+| `compact_idle_fill` | number | 60. |
+| `compact_idle_minutes` | number | 30. |
 | `computer_idle_minutes` | number | 15. |
 | `subagent_max_running` | number | 4. |
 | `maintenance_idle_seconds`, `aging_seconds` | number | 120 and 300. |

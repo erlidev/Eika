@@ -173,6 +173,8 @@ type Usage = provider.Usage
 const (
 	// CompactManual is a compaction the user asked for.
 	CompactManual = "manual"
+	// CompactIdle is a maintenance compaction.
+	CompactIdle = "idle"
 	// CompactThreshold is a compaction before a model call whose request
 	// would leave less of the window free than the reserve.
 	CompactThreshold = "threshold"
@@ -185,7 +187,7 @@ const (
 // of the conversation is being summarized.
 type CompactionStart struct {
 	RunID string `json:"run_id"`
-	// Reason is manual, threshold, or overflow.
+	// Reason is manual, idle, threshold, or overflow.
 	Reason string `json:"reason"`
 	// TokensBefore is the estimated size of the context being compacted.
 	TokensBefore int `json:"tokens_before"`

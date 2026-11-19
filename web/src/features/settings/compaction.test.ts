@@ -11,6 +11,8 @@ function state(stored: unknown): SettingsState {
     defaults: {
       sandbox_image: "eika-sandbox:latest",
       computer_idle_minutes: 15,
+      compact_idle_fill: 60,
+      compact_idle_minutes: 30,
       subagent_max_running: 4,
       maintenance_idle_seconds: 120,
       aging_seconds: 300,
