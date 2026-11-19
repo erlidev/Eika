@@ -152,12 +152,7 @@ function AgentEditor({ agent, onBack }: AgentEditorProps) {
       </div>
 
       <div className="space-y-1.5">
-        <FieldHeader
-          id={`agent-${agent.name}-class-label`}
-          label="Model class"
-          set={cls !== null}
-          from="default"
-        >
+        <FieldHeader id={`agent-${agent.name}-class-label`} label="Model class" set={cls !== null}>
           {cls !== null && (
             <ResetButton
               label="the model class"
@@ -188,7 +183,6 @@ function AgentEditor({ agent, onBack }: AgentEditorProps) {
         hint="The base system prompt. Instructions and the context preamble follow it."
         value={prompt}
         inherited={agent.builtin.prompt}
-        from="default"
         builtin={agent.builtin.prompt}
         onChange={setPrompt}
       />

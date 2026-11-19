@@ -1,7 +1,5 @@
 /**
- * The notice for a session whose configuration did not load. The configuration
- * names the model the session resolves to, so without it the composer cannot
- * tell whether images are accepted; the notice says what failed, with Retry.
+ * The notice when the session model or settings cannot be loaded.
  */
 
 import { LoadError } from "@/components/Notice";

@@ -10,7 +10,7 @@ export const classInfo: Record<ModelClassName, { label: string; hint: string }> 
   },
   main: {
     label: "Main",
-    hint: "The main agent and most tasks. Falls back to the default model.",
+    hint: "The main agent and most tasks. Choose a model for this class.",
   },
   fast: {
     label: "Fast",
@@ -41,8 +41,7 @@ export function joinNames(names: readonly string[]): string {
 
 /**
  * titlesStatus says who makes session titles, and why nobody does when
- * nobody does: the fast class falls back to main and main to the default
- * model, except onto a hosted deep model.
+ * nobody does: the fast class falls back to main, except onto a hosted deep model.
  */
 export function titlesStatus(classes: readonly ModelClass[], titlesModel: string): string {
   if (titlesModel !== "") return `Session titles are made by ${titlesModel}.`;

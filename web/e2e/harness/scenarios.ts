@@ -27,6 +27,7 @@ function configured(): WorldBuilder {
     reasoning_efforts: ["low", "medium", "high"],
   });
   b.model(openai, { name: "gpt-5-mini" });
+  b.world.settings.settings.model_classes = { main: "gpt-5" };
   return b;
 }
 
@@ -1142,6 +1143,16 @@ export const scenarios = {
     description: "The home conversation and named subagents in different states.",
     path: "/",
     build: () => homeWorld().world,
+  },
+  "home-deep-only": {
+    description: "The home agent uses deep while the main class is not assigned.",
+    path: "/",
+    build: () => {
+      const w = homeWorld().world;
+      w.settings.settings.model_classes = { deep: "gpt-5" };
+      w.agentOverrides.eika = { class: "deep", prompt: null };
+      return w;
+    },
   },
   activity: {
     description:

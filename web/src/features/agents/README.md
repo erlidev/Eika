@@ -14,9 +14,9 @@ built-in values beside the effective ones, so nothing here re-derives the rule.
 - `fields.tsx` is what the fields are made of: the header whose chip says
   where the value comes from, the reset, and the segmented choice that can be
   left unset. The Context inspector uses the chip too. `form.ts` has the pure
-  rules (`promptChange`, `layerName`).
+  rules (`promptChange`).
 - `queries.ts` holds the agent queries; saving refreshes every session's
-  configuration and context preview, which resolve the agent at each run.
+  context preview, which resolve the agent at each run.
 
 Test: `npm test -- src/features/agents`, and `e2e/specs/agents.spec.ts`
 against the mock harness. The global instructions are `features/settings`'s

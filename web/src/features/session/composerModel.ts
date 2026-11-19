@@ -8,18 +8,16 @@
 export type ComposerModelInput = {
   /** sessionKnown is true once the session itself has loaded: until then it may be an agent's. */
   sessionKnown: boolean;
-  /** configurationSettled is true once the session's configuration has loaded or failed. */
-  configurationSettled: boolean;
+  /** predictionSettled is true once the session's prediction has loaded or failed. */
+  predictionSettled: boolean;
   /** modelsKnown is true once the model list has loaded. */
   modelsKnown: boolean;
   /** agent says the session runs an agent, whose class picks the model. */
   agent: boolean;
   /** chosen is the model picked in this browser's status bar; empty when none was. */
   chosen: string;
-  /** resolved is the model the session's configuration resolves to, once known. */
+  /** resolved is the model the session's prediction resolves to, once known. */
   resolved: string | undefined;
-  /** defaultModel is the deployment's default chat model. */
-  defaultModel: string;
   /** models are the chat models, with whether each takes images. */
   models: readonly { name: string; image_input: boolean }[];
 };
@@ -38,14 +36,20 @@ export type ComposerModel = {
 
 /** composerModel decides the model of the next message. */
 export function composerModel(input: ComposerModelInput): ComposerModel {
-  const ready = input.sessionKnown && input.configurationSettled && input.modelsKnown;
-  // An agent's model is its class's, which only the configuration knows: the
-  // browser's choice and the default are not it.
+  const ready =
+    input.sessionKnown &&
+    input.predictionSettled &&
+    input.modelsKnown &&
+    (input.agent
+      ? input.resolved !== undefined
+      : input.chosen !== "" || input.resolved !== undefined);
+  // An agent's model is its class's, which the prediction names: the
+  // browser's choice does not change it.
   const label = input.agent
     ? (input.resolved ?? "")
     : input.chosen !== ""
       ? input.chosen
-      : (input.resolved ?? input.defaultModel);
+      : (input.resolved ?? "");
   const imageInput = ready && (input.models.find((m) => m.name === label)?.image_input ?? false);
   return { ready, runModel: input.agent ? "" : label, label, imageInput };
 }

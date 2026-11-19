@@ -4,24 +4,7 @@
  * how a prompt differs from the built-in one.
  */
 
-import type { ConfigLayer } from "@/api/types";
 import { lineDiff } from "@/lib/lineDiff";
-
-/** layerNames say where a value falls through to, as the editor words it. */
-const layerNames: Record<ConfigLayer, string> = {
-  agent: "the agent",
-  class: "the model class",
-  request: "the message",
-  session: "this session",
-  profile: "the profile",
-  model: "the model",
-  default: "the default",
-};
-
-/** layerName is how the editor names a layer: "the agent", "the model". */
-export function layerName(layer: ConfigLayer): string {
-  return layerNames[layer];
-}
 
 /** PromptChange is how a prompt differs from the built-in one, line by line. */
 export type PromptChange = { same: boolean; added: number; removed: number };

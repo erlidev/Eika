@@ -13,6 +13,7 @@ import {
   record,
   toolTokens,
 } from "./profiles.ts";
+import type { ProfileSettings } from "./legacyProfiles.ts";
 import type { RecordedCall, StoredProfile } from "./profiles.ts";
 import type {
   AgentOverride,
@@ -26,7 +27,6 @@ import type {
   Model,
   ModelClass,
   ModelClassName,
-  ProfileSettings,
   QueuedMessage,
   Provider,
   ProbeFindings,

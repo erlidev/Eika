@@ -1,10 +1,10 @@
 /**
  * Every provider and its models, with the actions that change them: add a
- * provider, add models to one, test, edit, delete, and choose the default.
+ * provider, add models to one, test, edit, and delete.
  * It is the Models tab of the settings dialog.
  */
 
-import { Image as ImageIcon, KeyRound, Pencil, Plus, Server, Star, Trash2 } from "lucide-react";
+import { Image as ImageIcon, KeyRound, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import type { Model, Provider } from "@/api/types";
@@ -35,14 +35,7 @@ import {
 } from "@/features/providers/queries";
 import { formatTokens } from "@/lib/format";
 
-export type ModelsPanelProps = {
-  /** onDefaultChange makes a model the default; the settings feature owns that write. */
-  onDefaultChange: (name: string) => void;
-  /** defaultError is why the last change of the default model failed. */
-  defaultError?: Error | undefined;
-};
-
-export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps) {
+export function ModelsPanel() {
   const providers = useProviders();
   const models = useModels();
   const [addingProvider, setAddingProvider] = useState(false);
@@ -89,9 +82,6 @@ export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps)
           retry={() => void models.refetch()}
         />
       )}
-      {defaultError !== undefined && (
-        <ActionError action="change the default model" error={defaultError} />
-      )}
       {providers.isSuccess && list.length === 0 && (
         <div className="rounded-md border border-dashed p-8 text-center">
           <p className="text-sm font-medium">No providers yet</p>
@@ -108,7 +98,6 @@ export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps)
             provider={provider}
             models={all.filter((m) => m.provider_id === provider.id)}
             modelsLoaded={models.isSuccess}
-            defaultModel={models.data?.default ?? ""}
             onEdit={() => {
               setEditingProvider(provider);
             }}
@@ -119,7 +108,6 @@ export function ModelsPanel({ onDefaultChange, defaultError }: ModelsPanelProps)
               setPickingFor(provider);
             }}
             onEditModel={setEditingModel}
-            onDefaultChange={onDefaultChange}
           />
         ))}
       </ul>
@@ -224,26 +212,20 @@ type ProviderCardProps = {
   models: Model[];
   /** modelsLoaded is false while the model list is loading or failed, so no list reads as empty. */
   modelsLoaded: boolean;
-  defaultModel: string;
   onEdit: () => void;
   onEndpoint: () => void;
   onAddModels: () => void;
   onEditModel: (model: Model) => void;
-  onDefaultChange: (name: string) => void;
-  /** defaultError is why the last change of the default model failed. */
-  defaultError?: string | undefined;
 };
 
 function ProviderCard({
   provider,
   models,
   modelsLoaded,
-  defaultModel,
   onEdit,
   onEndpoint,
   onAddModels,
   onEditModel,
-  onDefaultChange,
 }: ProviderCardProps) {
   const remove = useDeleteProvider();
   const [confirming, setConfirming] = useState(false);
@@ -327,12 +309,8 @@ function ProviderCard({
             <ModelRow
               key={model.id}
               model={model}
-              isDefault={model.name === defaultModel}
               onEdit={() => {
                 onEditModel(model);
-              }}
-              onMakeDefault={() => {
-                onDefaultChange(model.name);
               }}
             />
           ))}
@@ -355,12 +333,10 @@ function ProviderCard({
 
 type ModelRowProps = {
   model: Model;
-  isDefault: boolean;
   onEdit: () => void;
-  onMakeDefault: () => void;
 };
 
-function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
+function ModelRow({ model, onEdit }: ModelRowProps) {
   const remove = useDeleteModel();
   const test = useTestModel();
   const [confirming, setConfirming] = useState(false);
@@ -384,11 +360,6 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
                 Decision
               </Badge>
             )}
-            {isDefault && (
-              <Badge variant="secondary" className="shrink-0">
-                Default
-              </Badge>
-            )}
             {model.reasoning_effort !== undefined && model.reasoning_effort !== "" && (
               <Badge variant="outline" className="shrink-0">
                 {model.reasoning_effort}
@@ -407,12 +378,6 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
           </p>
         </div>
         <span className="flex items-center gap-1">
-          {!isDefault && !decision && (
-            <Button size="xs" variant="ghost" onClick={onMakeDefault}>
-              <Star aria-hidden />
-              Make default
-            </Button>
-          )}
           {!decision && (
             <Button
               size="xs"
@@ -468,11 +433,7 @@ function ModelRow({ model, isDefault, onEdit, onMakeDefault }: ModelRowProps) {
         open={confirming}
         onOpenChange={setConfirming}
         title={`Delete ${model.name}?`}
-        description={
-          isDefault
-            ? "It is the default model; the first remaining model becomes the default until you pick another."
-            : "Runs can no longer choose it. Sessions keep their history."
-        }
+        description="Runs can no longer choose it. Sessions keep their history."
         confirmLabel="Delete model"
         onConfirm={() => {
           remove.mutate(model.id);

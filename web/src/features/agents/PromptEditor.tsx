@@ -8,7 +8,6 @@
 import { GitCompare } from "lucide-react";
 import { useState } from "react";
 
-import type { ConfigLayer } from "@/api/types";
 import { DiffRows } from "@/components/DiffRows";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -26,7 +25,6 @@ export type PromptEditorProps = {
   /** value is the text set here, or null when the layer leaves it to fall through. */
   value: string | null;
   inherited: string;
-  from: ConfigLayer;
   /** builtin is the built-in text a set prompt is compared with. */
   builtin?: string;
   onChange: (value: string | null) => void;
@@ -38,7 +36,6 @@ export function PromptEditor({
   hint,
   value,
   inherited,
-  from,
   builtin,
   onChange,
 }: PromptEditorProps) {
@@ -54,7 +51,7 @@ export function PromptEditor({
         <Label htmlFor={id} id={`${id}-label`}>
           {label}
         </Label>
-        <LayerChip set={value !== null} from={from} />
+        <LayerChip set={value !== null} />
         <span
           className="text-muted-foreground font-mono text-2xs tabular-nums"
           title="Estimated tokens"
@@ -133,7 +130,7 @@ export function PromptEditor({
       )}
       {value === null ? (
         <div className="border-t px-2.5 py-1">
-          <Inherited from={from} />
+          <Inherited />
         </div>
       ) : (
         change !== null && (

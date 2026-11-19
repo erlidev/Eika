@@ -23,7 +23,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthStatus, useConnection } from "@/features/connect";
 import { ModelPicker, ProviderForm, useModels, useProviders } from "@/features/providers";
-import { DefaultModelSelect, settingKeys, SystemCheck, useSaveSettings } from "@/features/settings";
+import {
+  ModelClasses,
+  modelClassAssignments,
+  settingKeys,
+  SystemCheck,
+  useSaveSettings,
+  useSettings,
+} from "@/features/settings";
 import { firstStep, nextStep, setupSteps, stepIndex, stepInfo } from "@/features/setup/steps";
 import type { SetupStep } from "@/features/setup/steps";
 import { cn } from "@/lib/utils";
@@ -49,6 +56,7 @@ export function SetupWizard() {
 
 /** SignedInSetup walks the steps that need a token. */
 function SignedInSetup() {
+  const settings = useSettings();
   const providers = useProviders();
   const models = useModels();
   const save = useSaveSettings();
@@ -191,9 +199,29 @@ function SignedInSetup() {
       content = (
         <div className="space-y-6">
           <SystemCheck />
-          <DefaultModelSelect />
+          {settings.isError && (
+            <LoadError
+              what="the settings"
+              error={settings.error}
+              retrying={settings.isFetching}
+              retry={() => void settings.refetch()}
+            />
+          )}
+          {settings.isPending && <Notice tone="pending">Loading the settings…</Notice>}
+          {settings.data && <ModelClasses state={settings.data} />}
           <div className="flex justify-end">
-            <Button onClick={advance}>Finish</Button>
+            <Button
+              disabled={
+                !settings.data ||
+                !modelList.some(
+                  (item) =>
+                    item.kind === "chat" && item.name === modelClassAssignments(settings.data).main,
+                )
+              }
+              onClick={advance}
+            >
+              Finish
+            </Button>
           </div>
         </div>
       );

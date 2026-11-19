@@ -11,7 +11,6 @@ import {
   compactSession,
   getRunStatus,
   getSession,
-  getSessionConfiguration,
   getSessionOutline,
   getSessionPrediction,
   postMessage,
@@ -27,7 +26,6 @@ import type {
   Run,
   RunStatus,
   Session,
-  SessionConfiguration,
   SessionOutline,
 } from "@/api/types";
 import { draftsOf } from "@/features/session/attachments";
@@ -192,16 +190,5 @@ export function useRewind(
       edit(text);
       editImages(draftsOf(images));
     },
-  });
-}
-
-/** useSessionConfiguration reads what a session's next run resolves to, and where each value came from. */
-export function useSessionConfiguration(
-  sessionId: string | undefined,
-): UseQueryResult<SessionConfiguration> {
-  return useQuery({
-    queryKey: queryKeys.sessionConfiguration(sessionId ?? ""),
-    queryFn: ({ signal }) => getSessionConfiguration(sessionId ?? "", signal),
-    enabled: sessionId !== undefined,
   });
 }

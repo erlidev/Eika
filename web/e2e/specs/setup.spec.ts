@@ -22,3 +22,10 @@ test.describe("on a phone", () => {
     await expectShot(eika, "setup-password-phone");
   });
 });
+
+test("choose a main model before finishing setup", async ({ open }) => {
+  const eika = await open({ scenario: "setup-docker-down" });
+  await expect(eika.page.getByRole("button", { name: "Finish" })).toBeDisabled();
+  await eika.select("Main", "gpt-5");
+  await expect(eika.page.getByRole("button", { name: "Finish" })).toBeEnabled();
+});

@@ -56,22 +56,18 @@ test("general: the models and the settings did not load", async ({ open }) => {
   eika.mock.healRoute("GET /api/settings");
   await eika.click("Retry");
   await expect(eika.page.getByText(/Could not load the models/)).toBeVisible();
-  await expect(eika.page.getByText("The models did not load; see below")).toBeVisible();
 });
 
-test("could not change the default model", async ({ open }) => {
+test("could not change a model class", async ({ open }) => {
   const eika = await open({
     scenario: "workbench",
     failing: { "PUT /api/settings": { status: 500 } },
   });
   await eika.click("Settings");
-  await eika.click("Make default");
-  await expect(eika.page.getByText(/Could not change the default model/)).toBeVisible();
   await eika.click("General");
-  await eika.select("Default model", "gpt-5-mini");
-  await expect(eika.page.getByText(/Could not change the default model/)).toBeVisible();
-  // The choice that was not saved is not shown as made.
-  await expect(eika.page.getByRole("combobox", { name: "Default model" })).toHaveText("gpt-5");
+  await eika.select("Main", "gpt-5-mini");
+  await expect(eika.page.getByText(/Could not save the model classes/)).toBeVisible();
+  await expect(eika.page.getByRole("combobox", { name: "Main" })).toHaveText("gpt-5");
 });
 
 test("search: the harness refuses the order", async ({ open }) => {
