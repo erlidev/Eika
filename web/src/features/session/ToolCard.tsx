@@ -7,6 +7,8 @@ import { ChevronRight, CircleAlert, CircleCheck, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { SubagentStatus } from "@/features/session/renderers/HomeRenderer";
+import { stringArg } from "@/features/session/renderers/registry";
 import { rendererFor } from "@/features/session/renderers/renderers";
 import type { ToolItem } from "@/features/session/transcript";
 import { formatDuration } from "@/lib/format";
@@ -61,6 +63,9 @@ export function ToolCard({ call, open = false, readOnly = false }: ToolCardProps
         )}
         <StatusIcon call={call} />
       </CollapsibleTrigger>
+      {call.name === "subagent_start" && (
+        <SubagentStatus name={stringArg(call, "name")} project={stringArg(call, "project")} />
+      )}
       <CollapsibleContent className="border-t p-2">
         <renderer.Body call={call} readOnly={readOnly} />
       </CollapsibleContent>

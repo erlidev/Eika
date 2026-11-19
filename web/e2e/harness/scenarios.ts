@@ -1117,6 +1117,203 @@ export const scenarios = {
     path: "/",
     build: () => recordedCalls("none").world,
   },
+  "chat-cards": {
+    description: "Home transcript with delegation, projects, recall, compaction and notices.",
+    path: "/",
+    build: () => {
+      const b = activity();
+      const home = b.home();
+      const calls: [string, unknown, string, boolean?][] = [
+        [
+          "subagent_start",
+          { name: "plumber", agent: "researcher", project: "kitchen", brief: "Find a plumber." },
+          '{"name":"plumber","agent":"researcher","state":"running","project":"kitchen"}',
+        ],
+        [
+          "subagent_message",
+          { subagent: "permit", text: "Use the city council.", question_id: "question-1" },
+          '{"name":"permit","state":"running","note":"Accepted your message."}',
+        ],
+        ["subagent_status", { subagent: "plumber" }, '{"name":"plumber","state":"running"}'],
+        ["subagent_cancel", { subagent: "repair" }, '{"name":"repair","state":"cancelled"}'],
+        [
+          "report",
+          { summary: "Found two firms.", outputs: ["quotes.md"], follow_ups: ["Choose a firm"] },
+          "Reported.",
+        ],
+        [
+          "project_list",
+          {},
+          JSON.stringify([
+            { slug: "kitchen", name: "Kitchen", description: "Renovation", status: "active" },
+          ]),
+        ],
+        [
+          "project_open",
+          { project: "kitchen" },
+          JSON.stringify({
+            slug: "kitchen",
+            name: "Kitchen",
+            description: "Renovation",
+            status: "active",
+            directory: "/home/eika/projects/kitchen",
+            instructions: "Use <metric> measurements.",
+            status_file: "",
+          }),
+        ],
+        [
+          "project_create",
+          { slug: "garden", name: "Garden", description: "Plants" },
+          JSON.stringify({
+            slug: "garden",
+            name: "Garden",
+            description: "Plants",
+            status: "active",
+            directory: "/home/eika/projects/garden",
+          }),
+        ],
+        [
+          "project_update",
+          { project: "kitchen", description: "Renovation" },
+          JSON.stringify({
+            slug: "kitchen",
+            name: "Kitchen",
+            description: "Renovation",
+            status: "active",
+            directory: "/home/eika/projects/kitchen",
+          }),
+        ],
+        ["project_update", '{"project": <broken>', "Invalid arguments", true],
+        [
+          "history_search",
+          { query: "plumber", project: "kitchen" },
+          JSON.stringify([
+            {
+              hit: "entry-12",
+              entries: [
+                {
+                  id: "entry-12",
+                  sequence: 12,
+                  session: "home",
+                  time: "2026-03-14T14:00:00Z",
+                  kind: "assistant",
+                  content: "Found a <plumber>.",
+                },
+              ],
+            },
+          ]),
+        ],
+        [
+          "history_read",
+          { entry: "#12", full: true },
+          JSON.stringify([
+            {
+              id: "entry-12",
+              sequence: 12,
+              session: "home",
+              time: "2026-03-14T14:00:00Z",
+              kind: "assistant",
+              content: "The full earlier entry.",
+            },
+          ]),
+        ],
+        [
+          "bash",
+          { command: "inspect" },
+          "Eika restarted while this ran; its outcome is unknown. Check before retrying.",
+          true,
+        ],
+        ["file_read", { path: "quotes.md" }, "Two quotes"],
+        ["file_write", { path: "quotes.md", content: "Two quotes" }, "Wrote quotes.md"],
+        [
+          "file_edit",
+          { path: "quotes.md", old_text: "Two", new_text: "Three" },
+          "Updated quotes.md",
+        ],
+        ["web_search", { query: "local plumbers" }, "Two results"],
+        ["web_fetch", { url: "https://example.com" }, "Page text"],
+        ["ask_user", { question: "Which quote?", options: ["First", "Second"] }, "First"],
+        ["mcp__example__read", { uri: "example://item" }, "Item"],
+      ];
+      b.conversation(home, [{ role: "assistant", reasoning: "I will delegate this work." }]);
+      calls.forEach(([name, args, result, isError], i) => {
+        const id = `card-call-${String(i)}`;
+        b.conversation(home, [
+          {
+            role: "assistant",
+            tool_calls: [
+              {
+                id,
+                name,
+                arguments: args,
+                ...(typeof args === "string" ? { arguments_malformed: true } : {}),
+              },
+            ],
+          },
+          {
+            role: "tool",
+            tool_call_id: id,
+            content: result,
+            ...(isError ? { is_error: true } : {}),
+          },
+        ]);
+      });
+      const entries = b.world.entries[home.id] ?? [];
+      const add = (kind: "notice" | "compaction", text: string) => {
+        const id = `card-${String(entries.length)}`;
+        entries.push({
+          id,
+          seq: entries.length + 1,
+          kind,
+          created_at: minutesAgo(1),
+          message: { role: "" },
+          ...(home.head_entry_id ? { parent_id: home.head_entry_id } : {}),
+          ...(kind === "notice"
+            ? { text }
+            : {
+                compaction: {
+                  summary: text,
+                  reason: "threshold" as const,
+                  kept: 4,
+                  tokens_before: 12000,
+                  tokens_after: 3000,
+                  usage: {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    total_tokens: 0,
+                    cached_tokens: 0,
+                    prefilled_tokens: 0,
+                    reasoning_tokens: 0,
+                  },
+                  board_as_of: "2026-03-14T14:00:00Z",
+                },
+              }),
+        });
+        home.head_entry_id = id;
+      };
+      add(
+        "compaction",
+        `<summary as_of="2026-03-14 14:00" entries="#1-#20" compactions="2">\n[Subagents]\nplumber · researcher · running · kitchen\n\n[Conversation]\nThe user needs a plumber.\n${"Summary line\n".repeat(100)}${"longsummary".repeat(100)}\n</summary>`,
+      );
+      add(
+        "notice",
+        `plumber (researcher) reported: Found two firms.\n\n  Follow-ups:\n  - Choose a firm\n${"Report line\n".repeat(100)}${"longreport".repeat(100)}`,
+      );
+      add(
+        "notice",
+        'permit (researcher) asks: Which council?\nOptions: ["City","County"]\nAnswer with subagent_message and question_id question-1, or ask the user in your reply and relay the answer with that id.',
+      );
+      add(
+        "notice",
+        "repair (worker) was interrupted by an Eika restart and is now idle. Use subagent_message to resume it if needed. Eika restarted while this ran; its outcome is unknown. Check before retrying.",
+      );
+      add(
+        "notice",
+        "Eika restarted while replying. The reply was interrupted; the user's message is still in this conversation.",
+      );
+      return b.world;
+    },
+  },
   "home-world": {
     description: "The home conversation and named subagents in different states.",
     path: "/",
