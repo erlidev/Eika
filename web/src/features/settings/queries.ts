@@ -43,6 +43,7 @@ export function useSettings(): UseQueryResult<SettingsState> {
 export function useSaveSettings(): UseMutationResult<SettingsState, Error, Settings> {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: queryKeys.settings(),
     mutationFn: putSettings,
     onSuccess: async (state) => {
       client.setQueryData(queryKeys.settings(), state);

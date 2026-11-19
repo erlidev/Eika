@@ -19,3 +19,6 @@ rather than passing for an empty one and starting the setup over.
 
 Test it: `npm test -- setup` runs the order, the resume rule, and the
 wizard's handling of a list that fails to load.
+
+Setup proposes the first chosen chat model for the main class. Finish saves
+the assignment with setup completion; the user can choose another model.
