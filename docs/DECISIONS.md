@@ -1900,7 +1900,12 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   never a glyph's width: a code block is coloured, not set in mono, and the
   composer spec fails on any run that moves. Italic stays only while no
   italic face is loaded.
-- **The composer's keys are a browser preference, `chat` by default.** Enter
+- **Touch uses a plain textarea and a rendered preview.** A coarse pointer keeps
+  native input and Enter inserts a newline; the send button sends. The keyboard
+  modes and source overlay remain for a fine pointer. Neither sends during an
+  input method composition. Appearance can override the primary pointer for
+  devices that use both touch and a keyboard.
+- **The composer's keyboard keys are a browser preference, `chat` by default.** Enter
   sends, as every chat app does; the `markdown` mode trades that for an
   editor's Enter (list and quotation continuation) and sends on Ctrl+Enter.
   Its Tab nests list items and indents code, and elsewhere moves focus as

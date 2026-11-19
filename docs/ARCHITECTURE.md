@@ -907,7 +907,12 @@ web/src/
   the header. Pages not built yet are absent, not disabled.
 - **Chat** (`features/chat`): the page at `/`. It reads `GET /api/home` and renders `features/session`'s
   `SessionView` for the home session, so the transcript, the composer and the
-  status bar are the session view's. There is no list of chats and no way to
+  status bar are the session view's. On a coarse pointer the composer uses a
+  plain textarea and a rendered markdown preview; Enter inserts a newline and
+  the send button sends. On a fine pointer it keeps the keyboard modes and
+  marked-up source field. Appearance can override the pointer choice. The
+  touch composer limits its height to the visible viewport and scrolls its
+  editor and preview. There is no list of chats and no way to
   start one. The status bar's meter shows the last call's fill against the
   effective window, its cached tokens, and the predicted next request with its
   method. The UI has no panel for a computer's files, no terminal, and no

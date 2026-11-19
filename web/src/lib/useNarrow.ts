@@ -8,7 +8,11 @@ import { useCallback, useSyncExternalStore } from "react";
  * answer changes.
  */
 export function useNarrow(width: number): boolean {
-  const query = `(max-width: ${String(width - 1)}px)`;
+  return useMediaQuery(`(max-width: ${String(width - 1)}px)`);
+}
+
+/** useMediaQuery follows a media query as its result changes. */
+export function useMediaQuery(query: string): boolean {
   const subscribe = useCallback(
     (listener: () => void) => {
       const media = window.matchMedia(query);

@@ -25,6 +25,10 @@ export type ReasoningDisplay = "compact" | "expanded";
  */
 export type ComposerMode = "chat" | "markdown";
 
+/** ComposerInput selects the field for touch, keyboards, or the primary pointer. */
+export type ComposerInput = "auto" | "touch" | "keyboard";
+
+const inputKey = "eika.composer.input";
 const reasoningKey = "eika.transcript.reasoning";
 const speedKey = "eika.transcript.speed";
 const composerKey = "eika.composer.mode";
@@ -57,6 +61,8 @@ type TranscriptPreferences = {
    */
   speed: boolean;
   setSpeed: (on: boolean) => void;
+  input: ComposerInput;
+  setInput: (input: ComposerInput) => void;
   composer: ComposerMode;
   setComposer: (mode: ComposerMode) => void;
 };
@@ -72,6 +78,14 @@ export const useTranscriptPreferences = create<TranscriptPreferences>((set) => (
   setSpeed: (speed) => {
     writePersisted(speedKey, speed ? "on" : "off");
     set({ speed });
+  },
+  input: (() => {
+    const value = readPersistedString(inputKey, "auto");
+    return value === "touch" || value === "keyboard" ? value : "auto";
+  })(),
+  setInput: (input) => {
+    writePersisted(inputKey, input);
+    set({ input });
   },
   composer: storedComposer(),
   setComposer: (composer) => {

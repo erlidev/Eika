@@ -184,3 +184,21 @@ test("the markdown mode edits as an editor does and sends on Ctrl+Enter", async 
   await expect(messages).toHaveCount(before + 1);
   await expect(box).toHaveValue("");
 });
+
+test("touch input can be selected on a fine-pointer device", async ({ open }) => {
+  const eika = await open({ scenario: "chat" });
+  expect(await eika.page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(false);
+  const box = eika.page.getByLabel("Message", { exact: true });
+  await box.fill("keep this draft");
+  await eika.click("Settings");
+  await eika.click("Appearance");
+  await eika.select("Message input", "Touch");
+  await eika.press("Escape");
+  await expect(box).toHaveValue("keep this draft");
+  await expect(eika.page.getByLabel("Message preview")).toBeVisible();
+  // The caret returns to the start when the dialog closes; Enter must add a
+  // line, not send, wherever it is.
+  await box.press("ControlOrMeta+End");
+  await box.press("Enter");
+  await expect(box).toHaveValue("keep this draft\n");
+});
