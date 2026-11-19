@@ -107,7 +107,11 @@ describe("the mock answers as the harness does", () => {
       ["GET /api/projects/{id}", project],
       ["PATCH /api/projects/{id}", project, { description: "This year" }],
       ["GET /api/projects/{id}/instructions", `${project}/instructions`],
-      ["PUT /api/projects/{id}/instructions", `${project}/instructions`, { instructions: "Keep." }],
+      [
+        "PUT /api/projects/{id}/instructions",
+        `${project}/instructions`,
+        { instructions: "Keep.", version: 0 },
+      ],
       ["GET /api/sessions/{id}/entries", "/api/sessions/ses-backoff/entries?limit=2"],
       ["GET /api/sessions/{id}/prediction", "/api/sessions/ses-backoff/prediction"],
       ["GET /api/healthz", "/api/healthz"],

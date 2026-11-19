@@ -2345,3 +2345,10 @@ The current branch remains available through the path endpoint.
   identifies the compacted span and oldest retained message. Home writes the
   board time, span and count in the summary tag and adds the recall footer.
   This keeps the metadata tied to the branch the session follows.
+
+### Project instruction versions
+
+Project instruction writes carry a version. The store checks it atomically and
+increments it on every write, including a clear. This prevents one browser from
+silently replacing another browser's edit. The user can reload or explicitly
+replace the newer text after a conflict.

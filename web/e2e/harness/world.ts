@@ -127,6 +127,7 @@ export type World = {
   projects: Project[];
   instructions: { about_me: string; rules: string };
   projectInstructions: Record<string, string>;
+  projectInstructionVersions: Record<string, number>;
   /** overrides are what each session sets over its profile, by session id. */
   overrides: Record<string, ProfileSettings>;
   /** toolChoices are the sessions' own tool choices, by session id; one with none inherits. */
@@ -231,6 +232,7 @@ export function emptyWorld(): World {
     projects: [],
     instructions: { about_me: "", rules: "" },
     projectInstructions: {},
+    projectInstructionVersions: {},
     overrides: {},
     toolChoices: {},
     calls: {},

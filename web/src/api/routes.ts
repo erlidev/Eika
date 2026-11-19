@@ -31,6 +31,7 @@ import type {
   ProbeProvider,
   ProbeResponse,
   Project,
+  ProjectInstructions,
   Projects,
   Provider,
   Providers,
@@ -70,6 +71,32 @@ export async function listSessions(signal?: AbortSignal): Promise<Session[]> {
 export async function listProjects(signal?: AbortSignal): Promise<Project[]> {
   const body = await request<Projects>("/api/projects", { signal });
   return body.projects;
+}
+
+/** getProject reads a project's metadata. */
+export function getProject(id: string, signal?: AbortSignal): Promise<Project> {
+  return request<Project>(`/api/projects/${encodeURIComponent(id)}`, { signal });
+}
+
+/** getProjectInstructions reads the user's project instructions. */
+export function getProjectInstructions(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ProjectInstructions> {
+  return request<ProjectInstructions>(`/api/projects/${encodeURIComponent(id)}/instructions`, {
+    signal,
+  });
+}
+
+/** putProjectInstructions replaces the user's project instructions. */
+export function putProjectInstructions(
+  id: string,
+  input: ProjectInstructions,
+): Promise<ProjectInstructions> {
+  return request<ProjectInstructions>(`/api/projects/${encodeURIComponent(id)}/instructions`, {
+    method: "PUT",
+    body: input,
+  });
 }
 
 /** listComputers lists the computers, oldest first. */

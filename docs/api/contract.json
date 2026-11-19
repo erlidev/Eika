@@ -1142,7 +1142,8 @@
       "status": 200,
       "response": {
         "object": {
-          "instructions": "string"
+          "instructions": "string",
+          "version": "number"
         }
       }
     },
@@ -5199,12 +5200,14 @@
       "status": 200,
       "request": {
         "object": {
-          "instructions": "string"
+          "instructions": "string",
+          "version": "number"
         }
       },
       "response": {
         "object": {
-          "instructions": "string"
+          "instructions": "string",
+          "version": "number"
         }
       }
     },

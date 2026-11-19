@@ -26,6 +26,7 @@ export const queryKeys = {
     ["session", id, "context", "prediction", model] as const,
   /** projects is the list of projects, which name what a subagent works on. */
   projects: () => ["projects"] as const,
+  projectInstructions: (id: string) => ["project", id, "instructions"] as const,
   /** agents is the built-in agents with the user's overrides. */
   agents: () => ["agents"] as const,
   /** instructions is the user's global About me and rules. */

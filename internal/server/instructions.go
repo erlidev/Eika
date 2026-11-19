@@ -42,12 +42,12 @@ func (s *Server) handleDeleteInstructions(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleProjectInstructions(w http.ResponseWriter, r *http.Request) {
-	out, err := s.deps.Store.ProjectInstructions(r.Context(), r.PathValue("id"))
+	out, version, err := s.deps.Store.ProjectInstructionVersion(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, s.log, http.StatusOK, projectInstructionsBody{Instructions: out})
+	writeJSON(w, s.log, http.StatusOK, projectInstructionsBody{Instructions: out, Version: version})
 }
 
 func (s *Server) handlePutProjectInstructions(w http.ResponseWriter, r *http.Request) {
@@ -56,15 +56,16 @@ func (s *Server) handlePutProjectInstructions(w http.ResponseWriter, r *http.Req
 		s.fail(w, r, err)
 		return
 	}
-	if body == nil || body.Instructions == nil {
+	if body == nil || body.Instructions == nil || body.Version == nil {
 		s.fail(w, r, invalidf("instructions must be a string"))
 		return
 	}
-	if err := s.deps.Store.SetProjectInstructions(r.Context(), r.PathValue("id"), *body.Instructions); err != nil {
+	version, err := s.deps.Store.ReplaceProjectInstructions(r.Context(), r.PathValue("id"), *body.Instructions, body.Version)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, s.log, http.StatusOK, projectInstructionsBody{Instructions: *body.Instructions})
+	writeJSON(w, s.log, http.StatusOK, projectInstructionsBody{Instructions: *body.Instructions, Version: version})
 }
 
 func (s *Server) handleDeleteProjectInstructions(w http.ResponseWriter, r *http.Request) {

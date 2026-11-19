@@ -25,16 +25,19 @@ func TestInstructionRoutes(t *testing.T) {
 	projectPath := "/api/projects/" + p.ID + "/instructions"
 	type projectText struct {
 		Instructions string `json:"instructions"`
+		Version      int64  `json:"version"`
 	}
 	for _, path := range []string{projectPath, "/api/projects/" + other.ID + "/instructions"} {
 		if got := decodeBody[projectText](t, request(t, a.Server, "GET", path, nil), 200); got.Instructions != "" {
 			t.Fatal(got)
 		}
 	}
-	text := projectText{Instructions: "# Rules\nKeep this.\n"}
-	if got := decodeBody[projectText](t, request(t, a.Server, "PUT", projectPath, text), 200); got != text {
+	text := projectText{Instructions: "# Rules\nKeep this.\n", Version: 0}
+	if got := decodeBody[projectText](t, request(t, a.Server, "PUT", projectPath, text), 200); got.Instructions != text.Instructions || got.Version != 1 {
 		t.Fatal(got)
 	}
+	refused(t, request(t, a.Server, "PUT", projectPath, text), 409)
+	text.Version = 1
 	decodeBody[projectWire](t, request(t, a.Server, "PATCH", "/api/projects/"+p.ID, map[string]any{"description": "Changed"}), 200)
 	refused(t, request(t, a.Server, "PATCH", "/api/projects/"+p.ID, map[string]any{"instructions": "injected"}), 400)
 	if got := decodeBody[projectText](t, request(t, a.Server, "GET", projectPath, nil), 200); got != text {
