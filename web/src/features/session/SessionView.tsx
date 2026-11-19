@@ -52,11 +52,12 @@ type WatchedSessionProps = { sessionId: string };
 
 /** WatchedSession is a session's live transcript and nothing to act on it with. */
 function WatchedSession({ sessionId }: WatchedSessionProps) {
-  useSessionStream(sessionId);
+  const pages = useSessionStream(sessionId);
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Session">
       <Transcript
         sessionId={sessionId}
+        pages={pages}
         readOnly
         empty="Nothing has been said in this session yet."
       />
@@ -67,7 +68,7 @@ function WatchedSession({ sessionId }: WatchedSessionProps) {
 type ConversationProps = { sessionId: string; header: boolean };
 
 function Conversation({ sessionId, header }: ConversationProps) {
-  useSessionStream(sessionId);
+  const pages = useSessionStream(sessionId);
   const session = useSession(sessionId);
   const models = useModels();
   const configuration = useSessionConfiguration(sessionId);
@@ -137,6 +138,7 @@ function Conversation({ sessionId, header }: ConversationProps) {
           whether the user is still following the stream. */}
       <Transcript
         sessionId={sessionId}
+        pages={pages}
         empty={
           isHome
             ? "Send a message to start the conversation."

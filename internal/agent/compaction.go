@@ -412,7 +412,7 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 	} else {
 		record.TokensAfter = a.predict(ctx, base.WithMessages(next)).Tokens
 		if a.opts.Store != nil {
-			if err := a.opts.Store.AppendCompaction(ctx, s.ID, record); err != nil {
+			if err := a.opts.Store.AppendCompaction(ctx, s.ID, runID, record); err != nil {
 				return failed(fmt.Errorf("store compaction: %w", err))
 			}
 		}

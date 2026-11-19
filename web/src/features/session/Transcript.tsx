@@ -9,7 +9,7 @@
  */
 
 import { ArrowDown, Scissors, TriangleAlert, Undo2 } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { MessageImage } from "@/api/types";
 import { Markdown } from "@/components/Markdown";
@@ -23,14 +23,16 @@ import { Speed } from "@/features/session/Speed";
 import { rewindTarget } from "@/features/session/tree";
 import { useSessionStore } from "@/features/session/store";
 import { ToolCard } from "@/features/session/ToolCard";
-import { cutOffText } from "@/features/session/transcript";
+import { cutOffText, visibleItems } from "@/features/session/transcript";
 import type { AssistantItem, TranscriptItem } from "@/features/session/transcript";
 import { cn } from "@/lib/utils";
+import type { TranscriptPages } from "@/features/session/useSessionStream";
 import { failureText } from "@/lib/failure";
 
 export type TranscriptProps = {
   /** sessionId is the session on screen, which a rewind acts on. */
   sessionId: string;
+  pages: TranscriptPages;
   /** empty is what the view shows before the session has any entries. */
   empty?: React.ReactNode;
   /**
@@ -45,7 +47,7 @@ const none: TranscriptItem[] = [];
 /** bottomSlackPx is how far from the bottom still counts as following along. */
 const bottomSlackPx = 100;
 
-export function Transcript({ sessionId, empty, readOnly = false }: TranscriptProps) {
+export function Transcript({ sessionId, pages, empty, readOnly = false }: TranscriptProps) {
   // Three selectors rather than the whole store: a panel that only wants the
   // questions should not re-render on every token.
   const storeSessionId = useSessionStore((s) => s.sessionId);
@@ -60,7 +62,7 @@ export function Transcript({ sessionId, empty, readOnly = false }: TranscriptPro
   const elicitations = useSessionStore((s) => s.elicitations);
   const stopReason = useSessionStore((s) => s.stopReason);
 
-  const rendered = useMemo(() => [...committed, ...live], [committed, live]);
+  const rendered = useMemo(() => visibleItems(committed, live), [committed, live]);
   const announcement = useAnnouncement(rendered);
 
   // Rewinding takes the conversation back to before a message the user sent
@@ -101,6 +103,28 @@ export function Transcript({ sessionId, empty, readOnly = false }: TranscriptPro
 
   const scroller = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const anchor = useRef<{ element: Element; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const saved = anchor.current;
+    if (el && saved?.element.isConnected) {
+      el.scrollTop += saved.element.getBoundingClientRect().top - saved.top;
+    }
+    anchor.current = null;
+  }, [pages.pageVersion]);
+
+  const loadOlder = () => {
+    pages.loadOlder(() => {
+      const el = scroller.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const row = [...el.querySelectorAll("[data-transcript-row]")].find(
+        (item) => item.getBoundingClientRect().bottom > top,
+      );
+      if (row) anchor.current = { element: row, top: row.getBoundingClientRect().top };
+      setFollowing(false);
+    });
+  };
   // Following the stream is the point of the view, so it scrolls itself —
   // but only while the user is at the bottom. Scrolling up to read earlier
   // output during a run is a deliberate act, and yanking it back is not.
@@ -132,6 +156,24 @@ export function Transcript({ sessionId, empty, readOnly = false }: TranscriptPro
           setFollowing(el.scrollHeight - el.scrollTop - el.clientHeight <= bottomSlackPx);
         }}
       >
+        {pages.hasOlder && (
+          <div className="flex justify-center px-4 pt-4">
+            <Button size="sm" variant="secondary" disabled={pages.loading} onClick={loadOlder}>
+              {pages.loading ? "Loading older messages…" : "Load older messages"}
+            </Button>
+          </div>
+        )}
+        {pages.error !== undefined && (
+          <div
+            role="alert"
+            className="text-destructive flex items-center justify-center gap-2 p-3 text-xs"
+          >
+            {failureText("load messages", pages.error)}
+            <Button size="sm" variant="secondary" onClick={pages.retry}>
+              Retry
+            </Button>
+          </div>
+        )}
         {rendered.length === 0 ? (
           <div className="text-muted-foreground flex h-full items-center justify-center p-8 text-sm">
             {empty ?? "No messages yet."}
@@ -139,22 +181,23 @@ export function Transcript({ sessionId, empty, readOnly = false }: TranscriptPro
         ) : (
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-5">
             {rendered.map((item) => (
-              <Item
-                key={item.key}
-                item={item}
-                openTool={
-                  item.kind === "tool" &&
-                  (waitingCalls.has(item.callId) ||
-                    // A watched subagent's stored question has no live event on reload.
-                    (readOnly && item.name === "ask_user" && !item.done))
-                }
-                readOnly={readOnly}
-                onRewind={
-                  idle && item.kind === "user" && rewindable.has(item.entryId ?? "")
-                    ? onRewind
-                    : undefined
-                }
-              />
+              <div key={item.key} data-transcript-row>
+                <Item
+                  item={item}
+                  openTool={
+                    item.kind === "tool" &&
+                    (waitingCalls.has(item.callId) ||
+                      // A watched subagent's stored question has no live event on reload.
+                      (readOnly && item.name === "ask_user" && !item.done))
+                  }
+                  readOnly={readOnly}
+                  onRewind={
+                    idle && item.kind === "user" && rewindable.has(item.entryId ?? "")
+                      ? onRewind
+                      : undefined
+                  }
+                />
+              </div>
             ))}
             <CutOff reason={stopReason} />
             <div ref={bottom} />

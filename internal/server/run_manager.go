@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
@@ -531,6 +532,10 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 		r.server.notices.settle(active.sessionID, queued)
 	}
 	r.finish(active, queued)
+	// Notify the session after release so a client can reconcile a lost turn.end.
+	if e, err := event.New(event.TypeSessionUpdated, event.SessionTopic(active.sessionID), event.SessionUpdated{SessionID: active.sessionID}); err == nil {
+		r.server.deps.Bus.Emit(finishCtx, e)
+	}
 	r.server.log.Info("run finished", "run_id", runID, "session_id", active.sessionID, "state", state)
 	if r.released != nil {
 		r.released(active.sessionID)

@@ -295,6 +295,7 @@ type SessionMessage struct {
 	Channel   string `json:"channel,omitempty"`
 	SessionID string `json:"session_id"`
 	EntryID   string `json:"entry_id"`
+	RunID     string `json:"run_id,omitempty"`
 	ParentID  string `json:"parent_id,omitempty"`
 	// Kind is the entry kind: user, assistant, tool_call, tool_result,
 	// system, event, compaction, preamble or notice.

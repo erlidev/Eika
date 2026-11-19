@@ -27,7 +27,7 @@ type HistoryHit struct {
 // SearchHistory returns matches in relevance order, newest first on ties.
 // Query uses PostgreSQL's plain text search syntax. Limit must be positive.
 func (s *Store) SearchHistory(ctx context.Context, query string, filter HistoryFilter) ([]HistoryHit, error) {
-	const q = `SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at, e.channel,
+	const q = `SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at, e.channel, e.run_id,
  ts_rank_cd(e.tsv, plainto_tsquery('english', $1)) AS rank
  FROM session_entries e JOIN sessions s ON s.id = e.session_id
  WHERE e.tsv @@ plainto_tsquery('english', $1)
@@ -43,13 +43,14 @@ func (s *Store) SearchHistory(ctx context.Context, query string, filter HistoryF
 	var hits []HistoryHit
 	for rows.Next() {
 		var hit HistoryHit
-		var parent *string
+		var parent, runID *string
 		var payload []byte
 		e := &hit.Entry
-		if err := rows.Scan(&e.ID, &e.SessionID, &parent, &e.Seq, &e.Kind, &payload, &e.CreatedAt, &e.Channel, &hit.Rank); err != nil {
+		if err := rows.Scan(&e.ID, &e.SessionID, &parent, &e.Seq, &e.Kind, &payload, &e.CreatedAt, &e.Channel, &runID, &hit.Rank); err != nil {
 			return nil, wrap("search history", err)
 		}
 		e.ParentID = text(parent)
+		e.RunID = text(runID)
 		e.Payload = payload
 		e.CreatedAt = e.CreatedAt.UTC()
 		hits = append(hits, hit)
@@ -152,7 +153,7 @@ func (s *Store) HistoryTurn(ctx context.Context, entryID string, limit int) ([]E
  ORDER BY seq DESC OFFSET 1 LIMIT 1), 0) AS first,
  COALESCE((SELECT seq FROM session_entries WHERE session_id = a.session_id AND kind = 'user' AND seq > a.seq ORDER BY seq OFFSET 1 LIMIT 1), 9223372036854775807) AS last
  FROM anchor a)
- SELECT ` + entryColumns + ` FROM (SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at, e.channel
+ SELECT ` + entryColumns + ` FROM (SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at, e.channel, e.run_id
  FROM session_entries e JOIN bounds b ON e.session_id = b.session_id CROSS JOIN anchor a
  WHERE e.seq >= b.first AND e.seq < b.last AND e.kind IN ('user','assistant','tool_call','notice','compaction')
  ORDER BY abs(e.seq - a.seq), e.seq LIMIT $2) closest ORDER BY seq`

@@ -67,7 +67,7 @@ func TestLoadFollowsTheHeadAndFoldsCompactions(t *testing.T) {
 	appendText(provider.UserMessage("one"))
 	before := appendText(provider.AssistantMessage("two", nil))
 	appendText(provider.UserMessage("three"))
-	if err := st.AppendCompaction(ctx, sess.ID, agent.Compaction{Summary: "one and two", Kept: 1, TokensBefore: 1234}); err != nil {
+	if err := st.AppendCompaction(ctx, sess.ID, "", agent.Compaction{Summary: "one and two", Kept: 1, TokensBefore: 1234}); err != nil {
 		t.Fatalf("AppendCompaction: %v", err)
 	}
 	appendText(provider.AssistantMessage("four", nil))

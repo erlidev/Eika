@@ -28,7 +28,7 @@ type storedEntry struct {
 	compaction *agent.Compaction
 }
 
-func (s *storedEntries) Append(_ context.Context, _ string, m provider.Message) error {
+func (s *storedEntries) Append(_ context.Context, _, _ string, m provider.Message) error {
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return err
@@ -39,7 +39,7 @@ func (s *storedEntries) Append(_ context.Context, _ string, m provider.Message) 
 	return nil
 }
 
-func (s *storedEntries) AppendCompaction(_ context.Context, _ string, c agent.Compaction) error {
+func (s *storedEntries) AppendCompaction(_ context.Context, _, _ string, c agent.Compaction) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.entries = append(s.entries, storedEntry{compaction: &c})

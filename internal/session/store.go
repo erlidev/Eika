@@ -24,11 +24,12 @@ func NewStore(tree *Tree) *Store {
 func (s *Store) SetChannel(channel string) { s.channel = channel }
 
 // Append records one message of a run.
-func (s *Store) Append(ctx context.Context, sessionID string, m provider.Message) error {
+func (s *Store) Append(ctx context.Context, sessionID, runID string, m provider.Message) error {
 	e, err := MessageEntry(m)
 	if err != nil {
 		return err
 	}
+	e.RunID = runID
 	if m.Role == provider.RoleUser || m.Role == provider.RoleAssistant {
 		e.Channel = s.channel
 	}
@@ -39,11 +40,12 @@ func (s *Store) Append(ctx context.Context, sessionID string, m provider.Message
 }
 
 // AppendCompaction records a compaction of a run.
-func (s *Store) AppendCompaction(ctx context.Context, sessionID string, c agent.Compaction) error {
+func (s *Store) AppendCompaction(ctx context.Context, sessionID, runID string, c agent.Compaction) error {
 	e, err := CompactionEntry(c)
 	if err != nil {
 		return err
 	}
+	e.RunID = runID
 	_, err = s.tree.Append(ctx, sessionID, e)
 	return err
 }

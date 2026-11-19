@@ -53,7 +53,7 @@ func TestAStoredConversationIsSentAsTheBytesItWasSentAs(t *testing.T) {
 				st := session.NewStore(tree)
 				st.SetChannel("web")
 				for _, m := range conversation {
-					if err := st.Append(t.Context(), sess.ID, m); err != nil {
+					if err := st.Append(t.Context(), sess.ID, "", m); err != nil {
 						t.Fatalf("append %s: %v", m.Role, err)
 					}
 				}

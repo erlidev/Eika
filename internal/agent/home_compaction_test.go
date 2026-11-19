@@ -143,7 +143,7 @@ func TestCompactionSwapsInTheRefreshedPromptAndTools(t *testing.T) {
 		Compaction:    agent.CompactionSettings{Auto: true, KeepRecentShare: 0.25},
 		RefreshSnapshot: func(_ context.Context, _ string, record func(agent.Snapshot) agent.Compaction) (agent.Snapshot, error) {
 			snap := agent.Snapshot{Preamble: "Time zone\nUTC", Prompt: &newPrompt, Tools: tools("fresh")}
-			if err := st.AppendCompaction(context.Background(), "s1", record(snap)); err != nil {
+			if err := st.AppendCompaction(context.Background(), "s1", "", record(snap)); err != nil {
 				return agent.Snapshot{}, err
 			}
 			return snap, nil

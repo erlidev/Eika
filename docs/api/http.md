@@ -420,6 +420,7 @@ stored without changes. Channel is independent of the message payload.
 |---|---|---|
 | `id` | string | The entry id. |
 | `parent_id` | string, optional | The entry it follows. |
+| `run_id` | string, optional | The agent turn that wrote the entry. Older entries and entries outside a turn can omit it. |
 | `channel` | string, optional | Source or destination channel, absent when unset. |
 | `text` | string, optional | Preamble or notice text, including empty text. |
 | `seq` | number | Write order within the session. |

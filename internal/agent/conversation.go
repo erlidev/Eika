@@ -88,8 +88,8 @@ func NewSession(id, computerID string) *Session {
 // Store persists the messages a run produces. session.Store implements it
 // against the database.
 type Store interface {
-	Append(ctx context.Context, sessionID string, m provider.Message) error
+	Append(ctx context.Context, sessionID, runID string, m provider.Message) error
 	// AppendCompaction records a compaction after the messages already
 	// appended, which it replaces from then on.
-	AppendCompaction(ctx context.Context, sessionID string, c Compaction) error
+	AppendCompaction(ctx context.Context, sessionID, runID string, c Compaction) error
 }

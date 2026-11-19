@@ -1856,8 +1856,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - One WebSocket per page with reference-counted topics.
 - Token in localStorage via `api/connection.ts`, a plain module (`api/` may
   not depend on a feature). Any 401 forgets it.
-- Moving the head rebuilds the transcript, since replay only adds; the
-  composer text lives in the session store so a rewind can refill it.
+- The transcript pages entries in write order across branches. Moving the head
+  reloads its newest page; the composer state stays so a rewind can refill it.
 - Rewind is in the transcript. Nothing is deleted.
 - Destructive actions confirm in `ConfirmDialog`, not `window.confirm`.
 - A sidebar row's quick buttons always show; hiding them until hover made
@@ -2326,7 +2326,13 @@ locale is unspecified until the user sets it; no browser locale is inferred.
 
 Page entries by session sequence across branches, with an entry ID as the cursor.
 Sequence order stays stable when entries are appended and preserves old history.
-The current branch remains available through the path endpoint.
+The current branch remains available through the path endpoint. The transcript
+uses the write-order pages, merges catch-up by entry ID, and keeps a result
+without its call hidden until the call's page is loaded. Entries written by an
+agent turn carry its `run_id`, so a client can merge stored and live rows
+without relying on timestamps. Older entries can lack the field. A run release
+publishes `session.updated` to its session topic; catch-up reads run state before
+entries so it can retire a turn whose end event was lost.
 
 ## History recall (P2-23, P2-24)
 

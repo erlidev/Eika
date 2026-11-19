@@ -392,7 +392,8 @@ Published on `global` when `PATCH /api/sessions/{id}` renames, pins, or
 archives a session. Subagent creation and each lifecycle state or waiting
 reason change and each stored subagent report also publish it, after the store
 write. Each client refetches its session lists and the session to read the state
-and optional `waiting_reason`.
+and optional `waiting_reason`. It is also published on the session topic after
+a run releases the session, so clients can recover a missed turn-end event.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -412,6 +413,7 @@ renders a message it watched arrive live.
 |---|---|---|
 | `session_id` | string | The session replayed. |
 | `entry_id` | string | The entry. Pass the last one you saw as `since` to resume. |
+| `run_id` | string, optional | The agent turn that wrote the entry, when known. |
 | `parent_id` | string, optional | The entry it follows. |
 | `channel` | string, optional | Source or destination channel, absent when unset. |
 | `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, `compaction`, `preamble` or `notice`. |
