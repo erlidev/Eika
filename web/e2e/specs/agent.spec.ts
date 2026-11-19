@@ -44,7 +44,30 @@ test("web search, fetch, and the other tool cards", async ({ open, expectShot })
   await expect(
     eika.page.getByRole("link", { name: "Exponential Backoff And Jitter" }),
   ).toBeVisible();
-  await expectShot(eika, "agent-web-search", "role=button[name^=web_search] >> xpath=..");
+  const searchCard = eika.page.locator("role=button[name^=web_search] >> xpath=..");
+  await searchCard.scrollIntoViewIfNeeded();
+  const position = await searchCard.evaluate((card: HTMLElement) => {
+    const rect = card.getBoundingClientRect();
+    return {
+      offsetTop: card.offsetTop,
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+    };
+  });
+  console.log("web search card position", position);
+  // Fractional spacing upstream can place the same card on different pixel
+  // boundaries. Align its origin for the screenshot without changing its layout.
+  await searchCard.evaluate((card: HTMLElement) => {
+    const rect = card.getBoundingClientRect();
+    card.style.transform = `translate(${String(Math.round(rect.left) - rect.left)}px, ${String(Math.round(rect.top) - rect.top)}px)`;
+  });
+  try {
+    await expectShot(eika, "agent-web-search", "role=button[name^=web_search] >> xpath=..");
+  } finally {
+    await searchCard.evaluate((card: HTMLElement) => card.style.removeProperty("transform"));
+  }
   await expectShot(eika, "agent-web-fetch", "role=button[name^=web_fetch] >> xpath=..");
   // The rest of the cards, and a tool with no renderer of its own opened.
   await eika.click("role=button[name^=read_note]");
