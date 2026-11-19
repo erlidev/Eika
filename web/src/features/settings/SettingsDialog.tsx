@@ -34,7 +34,7 @@ import { MCPSettings } from "@/features/mcp";
 import { AgentsSettings } from "@/features/agents";
 import { ModelsPanel } from "@/features/providers";
 import { useTranscriptPreferences } from "@/features/session";
-import type { ComposerMode, ReasoningDisplay } from "@/features/session";
+import type { ComposerInput, ComposerMode, ReasoningDisplay } from "@/features/session";
 import { AccountSettings } from "@/features/settings/AccountSettings";
 import { CompactionSettings } from "@/features/settings/CompactionSettings";
 import { ComputerSettings } from "@/features/settings/ComputerSettings";
@@ -169,11 +169,34 @@ function AppearanceSettings() {
   const setReasoning = useTranscriptPreferences((s) => s.setReasoning);
   const speed = useTranscriptPreferences((s) => s.speed);
   const setSpeed = useTranscriptPreferences((s) => s.setSpeed);
+  const input = useTranscriptPreferences((s) => s.input);
+  const setInput = useTranscriptPreferences((s) => s.setInput);
   const composer = useTranscriptPreferences((s) => s.composer);
   const setComposer = useTranscriptPreferences((s) => s.setComposer);
   return (
     <div className="space-y-6">
       <ThemeSelect />
+      <div className="space-y-2 rounded-md border p-3">
+        <Label htmlFor="composer-input">Message input</Label>
+        <p className="text-muted-foreground text-xs">
+          Choose touch or keyboard input, or follow the primary pointer.
+        </p>
+        <Select
+          value={input}
+          onValueChange={(value: ComposerInput) => {
+            setInput(value);
+          }}
+        >
+          <SelectTrigger id="composer-input" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Follow the pointer</SelectItem>
+            <SelectItem value="touch">Touch</SelectItem>
+            <SelectItem value="keyboard">Keyboard</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
       <div className="flex items-start justify-between gap-4 rounded-md border p-3">
         <div className="space-y-0.5">
           <Label htmlFor="reasoning-display" className="text-sm">
@@ -212,10 +235,10 @@ function AppearanceSettings() {
             Edit messages as markdown
           </Label>
           <p className="text-muted-foreground text-xs">
-            On, the message box behaves like an editor: Enter starts a new line and carries a list
-            or quotation on, Tab and Shift+Tab nest a list item or indent code, typing ``` closes
-            the code block, and Ctrl+Enter sends. Off, Enter sends and Shift+Enter starts a new
-            line.
+            For keyboard input, the message box behaves like an editor: Enter starts a new line and
+            carries a list or quotation on, Tab and Shift+Tab nest a list item or indent code,
+            typing ``` closes the code block, and Ctrl+Enter sends. Off, Enter sends and Shift+Enter
+            starts a new line.
           </p>
         </div>
         <Switch

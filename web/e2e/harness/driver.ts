@@ -340,7 +340,14 @@ export class EikaDriver {
   async send(text: string): Promise<void> {
     const composer = this.page.locator("textarea").last();
     await composer.fill(text);
-    await composer.press("Enter");
+    if (await this.page.evaluate(() => matchMedia("(pointer: coarse)").matches)) {
+      // On touch, Enter is a newline: tap the composer's own button, not the
+      // status bar's Compact, which shares a name with it after "/compact".
+      const box = composer.locator("xpath=ancestor::div[.//*[@aria-label='Attach images']][1]");
+      await box.getByRole("button", { name: /^(Send|Steer|Compact)$/ }).tap();
+    } else {
+      await composer.press("Enter");
+    }
     await this.settle();
   }
 

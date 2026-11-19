@@ -15,6 +15,7 @@
 import { useRef, useState } from "react";
 import { ArrowUp, ImagePlus, X } from "lucide-react";
 
+import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import {
   acceptedTypes,
@@ -34,6 +35,7 @@ import { failureText } from "@/lib/failure";
 import { imageAdvice } from "@/features/session/composerModel";
 import { imageUrl } from "@/lib/images";
 import { cn } from "@/lib/utils";
+import { useMediaQuery } from "@/lib/useNarrow";
 
 export type ComposerProps = {
   sessionId: string;
@@ -72,6 +74,10 @@ export function Composer({
   const setImages = useSessionStore((s) => s.editImages);
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const composing = useRef(false);
+  const coarse = useMediaQuery("(pointer: coarse)");
+  const input = useTranscriptPreferences((s) => s.input);
+  const touch = input === "touch" || (input === "auto" && coarse);
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
   const mode = useTranscriptPreferences((s) => s.composer);
@@ -114,9 +120,14 @@ export function Composer({
     }
   };
 
+  // Blurring on touch can bring back the bottom bar before the click lands.
+  const keepFocus = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerType === "touch") e.preventDefault();
+  };
+
   const send = (mode: MessageMode) => {
     const trimmed = text.trim();
-    if (blocked) return;
+    if (blocked || composing.current) return;
     if (focus !== null) {
       compact.mutate(
         { ...(focus === "" ? {} : { instructions: focus }), ...(model === "" ? {} : { model }) },
@@ -146,8 +157,14 @@ export function Composer({
   };
 
   return (
-    <div className="bg-background border-t">
-      <div className="mx-auto w-full max-w-3xl px-3 pt-3 pb-1.5">
+    <div className={cn("bg-background border-t", touch && "flex min-h-0 flex-col")}>
+      <div
+        className={cn(
+          "mx-auto w-full max-w-3xl px-3 pt-3 pb-1.5",
+          touch &&
+            "flex min-h-0 flex-col max-h-[calc((100dvh_-_var(--keyboard-inset,0px)_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))*0.6)]",
+        )}
+      >
         {/*
           The wrapper carries the border and the focus ring so that the box and
           the row of controls under it read as one field. The textarea inside
@@ -158,6 +175,7 @@ export function Composer({
           className={cn(
             "border-input focus-within:border-ring focus-within:ring-ring/50 rounded-md border transition-colors focus-within:ring-3",
             dragging && "border-primary bg-primary/5",
+            touch && "flex min-h-0 flex-col",
           )}
           onDragOver={(e) => {
             if (!e.dataTransfer.types.includes("Files")) return;
@@ -197,7 +215,10 @@ export function Composer({
             rows={2}
             // field-sizing grows the box with the text, which without a cap
             // would push the transcript out of the pane on a long message.
-            className="max-h-64 min-h-0 resize-none border-0 bg-transparent focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
+            className={cn(
+              "max-h-64 min-h-0 resize-none border-0 bg-transparent focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent",
+              touch && "shrink overflow-y-auto",
+            )}
             onChange={(e) => {
               setText(e.target.value);
             }}
@@ -210,11 +231,26 @@ export function Composer({
               void attach(pasted);
             }}
             mode={mode}
+            touch={touch}
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
             onSend={() => {
               send(active ? "steer" : "run");
             }}
           />
-          <div className="flex items-center gap-2 px-2 pb-1.5">
+          {touch && text.trim() !== "" && (
+            <div
+              aria-label="Message preview"
+              className="max-h-32 min-h-0 shrink overflow-y-auto border-t px-2.5 py-2"
+            >
+              <Markdown lineBreaks>{text}</Markdown>
+            </div>
+          )}
+          <div className="flex shrink-0 items-center gap-2 px-2 pb-1.5">
             <Button
               size="icon-xs"
               variant="ghost"
@@ -248,11 +284,13 @@ export function Composer({
             <p className="text-muted-foreground min-w-0 truncate text-2xs">
               {disabled
                 ? disabledReason
-                : focus !== null
-                  ? `${mode === "markdown" ? "Ctrl+Enter" : "Enter"} compacts the conversation · text after /compact is what the summary focuses on`
-                  : mode === "markdown"
-                    ? "Ctrl+Enter sends · Enter newline · Esc aborts"
-                    : "Enter sends · Shift+Enter newline · Esc aborts"}
+                : touch
+                  ? "Enter newline · use the button to send"
+                  : focus !== null
+                    ? `${mode === "markdown" ? "Ctrl+Enter" : "Enter"} compacts the conversation · text after /compact is what the summary focuses on`
+                    : mode === "markdown"
+                      ? "Ctrl+Enter sends · Enter newline · Esc aborts"
+                      : "Enter sends · Shift+Enter newline · Esc aborts"}
             </p>
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {active && (
@@ -260,6 +298,7 @@ export function Composer({
                   size="xs"
                   variant="secondary"
                   disabled={blocked}
+                  onPointerDown={keepFocus}
                   onClick={() => {
                     send("follow_up");
                   }}
@@ -270,6 +309,7 @@ export function Composer({
               <Button
                 size="xs"
                 disabled={blocked}
+                onPointerDown={keepFocus}
                 onClick={() => {
                   send(active ? "steer" : "run");
                 }}
@@ -314,7 +354,10 @@ type AttachmentsProps = { images: readonly DraftImage[]; onRemove: (id: string) 
 /** Attachments are the images a message will carry, each with a way to take it off. */
 function Attachments({ images, onRemove }: AttachmentsProps) {
   return (
-    <ul className="flex flex-wrap gap-1.5 px-2.5 pt-2" aria-label="Images to send">
+    <ul
+      className="flex max-h-24 shrink-0 flex-wrap gap-1.5 overflow-y-auto px-2.5 pt-2"
+      aria-label="Images to send"
+    >
       {images.map((image) => (
         <li key={image.id} className="relative">
           <img
