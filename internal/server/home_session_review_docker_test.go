@@ -20,13 +20,13 @@ import (
 	"github.com/erlidev/eika/internal/store/storetest"
 )
 
-func TestHomeExcludedFromChatsAndCannotBeDeleted(t *testing.T) {
+func TestHomeCannotBeDeleted(t *testing.T) {
 	a := newAPI(t)
 	home, err := a.store.EnsureHomeSession(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := a.store.CreateSession(t.Context(), store.Session{Title: "chat"})
+	chat, err := a.store.CreateSession(t.Context(), store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "chat"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,9 +34,9 @@ func TestHomeExcludedFromChatsAndCannotBeDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	list := decodeBody[sessionsWire](t, request(t, a.Server, "GET", "/api/sessions?chats=true", nil), 200)
-	if len(list.Sessions) != 1 || list.Sessions[0].ID != chat.ID {
-		t.Fatalf("chats = %+v", list.Sessions)
+	list := decodeBody[sessionsWire](t, request(t, a.Server, "GET", "/api/sessions", nil), 200)
+	if len(list.Sessions) != 2 {
+		t.Fatalf("sessions = %+v", list.Sessions)
 	}
 	refused(t, request(t, a.Server, "DELETE", "/api/sessions/"+home.ID, nil), 409)
 	if _, err := a.store.Entry(t.Context(), saved.ID); err != nil {

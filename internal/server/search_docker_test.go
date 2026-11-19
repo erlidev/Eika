@@ -8,6 +8,7 @@ import (
 
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
+	"github.com/erlidev/eika/internal/store"
 )
 
 // searchStatusWire is the body of GET /api/search/status, as the UI reads it.
@@ -72,25 +73,22 @@ func TestSearchKeysAreSealedAndNeverReturned(t *testing.T) {
 	}
 }
 
-func TestARunSearchesAndFetches(t *testing.T) {
+func TestHomeRunSearches(t *testing.T) {
 	a := newAPI(t)
 	sess := a.session(t)
 	p := a.script(
 		providertest.Calls("", providertest.Call("c1", "web_search", map[string]any{"query": "tokio"})),
-		providertest.Calls("", providertest.Call("c2", "web_fetch", map[string]any{"url": "https://docs.example/guide.md"})),
 		providertest.Text("done"),
 	)
 	a.postMessage(t, sess.ID, "find the timeout", "", 202)
 	if final := a.waitIdle(t, sess.ID); final.Run == nil || final.Run.State != "done" {
 		t.Fatalf("run = %+v", final.Run)
 	}
-	results := toolResults(p.Requests()[2])
-	if len(results) != 2 || !strings.HasPrefix(results[0], "1. Tokio\n   https://tokio.rs/") || results[1] != "# Guide\n\nthe timeout is 30s\n" {
+	results := toolResults(p.Requests()[1])
+	if len(results) != 1 || !strings.HasPrefix(results[0], "1. Tokio\n   https://tokio.rs/") {
 		t.Errorf("tool results = %q", results)
 	}
-	if reqs := a.fetched.Requests(); len(reqs) != 1 || reqs[0].URL.String() != "https://docs.example/guide.md" {
-		t.Errorf("fetched = %v", reqs)
-	}
+
 }
 
 // toolResults returns the tool results a request carried, in order.
@@ -102,4 +100,27 @@ func toolResults(req provider.Request) []string {
 		}
 	}
 	return out
+}
+
+func TestResearcherFetchesAWebPage(t *testing.T) {
+	d := newDelegating(t)
+	eika := providertest.New(call("start", "subagent_start", map[string]any{"agent": "researcher", "name": "reader", "brief": "Read the guide"}), providertest.Text("started"))
+	researcher := providertest.New(call("fetch", "web_fetch", map[string]any{"url": "https://docs.example/guide.md"}), call("report", "report", map[string]any{"summary": "Read the guide"}), providertest.Text("done"))
+	d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a researcher": researcher})
+	d.postMessage(t, d.home.ID, "read the guide", "", 202)
+	waitFor(t, "researcher to finish", func() bool {
+		child, err := d.store.Subagent(t.Context(), d.home.ID, "reader")
+		return err == nil && child.State == store.SessionIdle
+	})
+	requests := researcher.Requests()
+	if len(requests) < 2 {
+		t.Fatalf("researcher requests = %d", len(requests))
+	}
+	results := toolResultsByCall(requests[1])
+	if results["fetch"] != "# Guide\n\nthe timeout is 30s\n" {
+		t.Fatalf("fetch result = %q", results["fetch"])
+	}
+	if reqs := d.fetched.Requests(); len(reqs) != 1 || reqs[0].URL.String() != "https://docs.example/guide.md" {
+		t.Fatalf("fetch requests = %v", reqs)
+	}
 }

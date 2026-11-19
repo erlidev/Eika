@@ -107,8 +107,7 @@ A closed question accepts only an
 exact option. An invalid answer leaves it waiting. An accepted answer becomes
 the existing tool call's text result and clears the waiting reason. Cancel
 ends the wait; a restart ends the run and repairs its unanswered call. No
-question row or new HTTP route is added. Legacy profile sessions retain the
-question broker and HTTP answer route.
+question row or new HTTP route is added.
 
 ## History tools
 

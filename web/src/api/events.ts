@@ -222,15 +222,7 @@ export type SessionUpdated = {
 
 /** EntryKind is what one session entry holds. */
 export type EntryKind =
-  | "user"
-  | "assistant"
-  | "tool_call"
-  | "tool_result"
-  | "system"
-  | "event"
-  | "compaction"
-  | "preamble"
-  | "notice";
+  "user" | "assistant" | "tool_result" | "compaction" | "preamble" | "notice" | (string & {});
 
 /** SessionMessage is the payload of a session.message event, which a replay sends. */
 export type SessionMessage = {
@@ -240,7 +232,6 @@ export type SessionMessage = {
   entry_id: string;
   parent_id?: string;
   kind: EntryKind;
-  commit?: string;
   created_at: string;
   message: unknown;
 };

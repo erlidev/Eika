@@ -24,7 +24,7 @@ import type {
   Session,
 } from "../../src/api/types.ts";
 import { check, contract, matchRoute } from "./contract.ts";
-import { previewContext, record } from "./profiles.ts";
+import { previewContext, record } from "./modelContext.ts";
 import { authRoutes, mockToken } from "./routes/auth.ts";
 import { computerRoutes } from "./routes/computers.ts";
 import { fail } from "./routes/context.ts";
@@ -33,7 +33,6 @@ import { mcpRoutes } from "./routes/mcp.ts";
 import { projectRoutes } from "./routes/projects.ts";
 import { instructionRoutes } from "./routes/instructions.ts";
 import { agentRoutes } from "./routes/agents.ts";
-import { profileRoutes } from "./routes/profiles.ts";
 import { providerRoutes } from "./routes/providers.ts";
 import { runRoutes } from "./routes/runs.ts";
 import { searchRoutes } from "./routes/search.ts";
@@ -381,7 +380,6 @@ export class MockHarness {
       parent_id: entry.parent_id,
       kind: entry.kind,
       channel: entry.channel,
-      commit: entry.commit,
       created_at: entry.created_at,
       // A compaction entry's payload is the compaction, as the harness stores it.
       message:
@@ -545,7 +543,6 @@ export class MockHarness {
     searchRoutes(ctx);
     providerRoutes(ctx);
     sessionRoutes(ctx);
-    profileRoutes(ctx);
     agentRoutes(ctx);
     projectRoutes(ctx);
     instructionRoutes(ctx);

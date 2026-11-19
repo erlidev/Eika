@@ -11,7 +11,7 @@ import (
 // Migration 0014 preserves populated legacy conversations and configuration.
 func TestUpgradeFrom0013AddsSessionStorage(t *testing.T) {
 	ctx := t.Context()
-	st, _ := upgradeFrom(t, "0013_instructions",
+	st, conn := upgradeFrom(t, "0013_instructions",
 		`INSERT INTO agents (name, prompt) VALUES ('eika', 'saved prompt')`,
 		`INSERT INTO projects (id, slug, name, directory) VALUES ('project', 'saved', 'Saved', '/home/eika/saved')`,
 		`INSERT INTO project_instructions (project_id, instructions) VALUES ('project', 'saved rules')`,
@@ -30,11 +30,11 @@ func TestUpgradeFrom0013AddsSessionStorage(t *testing.T) {
 	)
 
 	old, err := st.Session(ctx, "chat")
-	if err != nil || old.Kind != store.SessionUser || old.Owner != store.LocalOwner || old.State != store.SessionIdle || old.ComputerID != "" || old.ParentSessionID != "" || old.Name != "" || !old.LastActiveAt.Equal(old.UpdatedAt) || !old.Pinned || !old.Archived || len(old.Tools) != 1 || old.Overrides.Instructions == nil || *old.Overrides.Instructions != "keep" {
+	if err != nil || old.Kind != store.SessionRoutine || old.Owner != store.LocalOwner || old.State != store.SessionIdle || old.ComputerID != "" || old.ParentSessionID != "" || old.Name != "old chat" || !old.LastActiveAt.Equal(old.UpdatedAt) || !old.Pinned || !old.Archived {
 		t.Fatalf("legacy chat: %+v %v", old, err)
 	}
 	attached, err := st.Session(ctx, "s")
-	if err != nil || attached.ComputerID != "c" || attached.HeadEntryID != "e2" || attached.ProfileID == "" {
+	if err != nil || attached.ComputerID != "c" || attached.HeadEntryID != "e2" {
 		t.Fatalf("attached: %+v %v", attached, err)
 	}
 
@@ -50,12 +50,16 @@ func TestUpgradeFrom0013AddsSessionStorage(t *testing.T) {
 		t.Errorf("old entry = channel %q, payload %s; want no channel and the text it was written as", e.Channel, e.Payload)
 	}
 
-	profiles, err := st.Profiles(ctx)
-	if err != nil || len(profiles) != 1 {
-		t.Fatalf("profiles: %v, %v", profiles, err)
+	var prompt, rules, profileID, override string
+	var tools []string
+	if err := conn.QueryRow(ctx, `SELECT chat_prompt, instructions FROM core.retired_profiles WHERE name = 'Default'`).Scan(&prompt, &rules); err != nil || prompt != "old prompt" || rules != "old rules" {
+		t.Fatalf("profile data: %q %q %v", prompt, rules, err)
 	}
-	if profiles[0].ChatPrompt == nil || *profiles[0].ChatPrompt != "old prompt" || profiles[0].Instructions == nil || *profiles[0].Instructions != "old rules" {
-		t.Fatal(profiles[0])
+	if err := conn.QueryRow(ctx, `SELECT tools, overrides->>'instructions' FROM core.retired_session_profiles WHERE session_id = 'chat'`).Scan(&tools, &override); err != nil || len(tools) != 1 || tools[0] != "web_search" || override != "keep" {
+		t.Fatalf("session settings: %v %q %v", tools, override, err)
+	}
+	if err := conn.QueryRow(ctx, `SELECT profile_id FROM core.retired_session_profiles WHERE session_id = 's'`).Scan(&profileID); err != nil || profileID == "" {
+		t.Fatalf("session profile: %q %v", profileID, err)
 	}
 	setting, err := st.Setting(ctx, "default_model")
 	if err != nil || string(setting.Value) != `"old-model"` {

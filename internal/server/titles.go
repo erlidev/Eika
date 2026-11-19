@@ -17,12 +17,6 @@ import (
 // again.
 const titleTimeout = 2 * time.Minute
 
-// The titles an untitled session shows until its first run names it.
-const (
-	untitledSession = "New session"
-	untitledChat    = "New chat"
-)
-
 // titles names untitled sessions in the background, with the model of the
 // fast class. A title outlives the run that asked for it, so each is a
 // goroutine owned here: the context made in newTitles bounds them, and stop

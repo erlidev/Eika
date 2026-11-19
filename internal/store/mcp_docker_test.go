@@ -4,7 +4,6 @@ package store_test
 
 import (
 	"errors"
-	"slices"
 	"testing"
 	"time"
 
@@ -83,38 +82,5 @@ func TestMCPCredentials(t *testing.T) {
 	}
 	if _, err := st.MCPCredentials(ctx, srv.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("credentials of a deleted server = %v, want them gone", err)
-	}
-}
-
-func TestRenamingAnMCPServerCarriesItsNameIntoToolChoices(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-
-	server, err := st.CreateMCPServer(ctx, store.MCPServer{Name: "docs", Kind: "http", URL: "https://mcp.example/mcp"})
-	if err != nil {
-		t.Fatalf("create server: %v", err)
-	}
-	choice := []string{"bash", "mcp__docs__*", "mcp__docs__search", "mcp__docs2__*"}
-	profile, err := st.CreateProfile(ctx, store.Profile{Name: "Docs", Tools: choice})
-	if err != nil {
-		t.Fatalf("CreateProfile: %v", err)
-	}
-	sess := newSession(t, st, store.Session{Title: "s", Tools: choice})
-	chat := newSession(t, st, store.Session{Title: "all tools"})
-
-	server.Name = "manual"
-	if _, err := st.UpdateMCPServer(ctx, server); err != nil {
-		t.Fatalf("rename: %v", err)
-	}
-
-	want := []string{"bash", "mcp__manual__*", "mcp__manual__search", "mcp__docs2__*"}
-	if p, err := st.Profile(ctx, profile.ID); err != nil || !slices.Equal(p.Tools, want) {
-		t.Errorf("profile tools = %v, %v; want %v", p.Tools, err, want)
-	}
-	if s, err := st.Session(ctx, sess.ID); err != nil || !slices.Equal(s.Tools, want) {
-		t.Errorf("session tools = %v, %v; want %v", s.Tools, err, want)
-	}
-	if s, err := st.Session(ctx, chat.ID); err != nil || s.Tools != nil {
-		t.Errorf("a session choosing every tool = %v, %v; want nil", s.Tools, err)
 	}
 }

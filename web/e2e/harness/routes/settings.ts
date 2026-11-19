@@ -1,6 +1,6 @@
 /** The settings, the system check, and the tool list. */
 
-import { syncSession } from "../profiles.ts";
+import { syncSession } from "../modelContext.ts";
 import { classView, modelClassNames } from "../world.ts";
 import { badUtf8, fail, ok } from "./context.ts";
 import type { RouteContext } from "./context.ts";
@@ -50,14 +50,6 @@ export function settingsRoutes(ctx: RouteContext): void {
           return fail(400, "invalid_request", "time_zone must be an IANA time zone");
         }
       }
-    }
-    const named = body.default_profile;
-    if (typeof named === "string" && named !== "" && !w.profiles.some((p) => p.id === named)) {
-      return fail(
-        400,
-        "invalid_request",
-        `default_profile names "${named}", which is not a profile`,
-      );
     }
     const classes = body.model_classes;
     if (classes !== undefined && classes !== null) {
@@ -122,7 +114,7 @@ export function settingsRoutes(ctx: RouteContext): void {
       else w.settings.settings[key] = value;
     }
     if (typeof body.default_model === "string") w.defaultModel = body.default_model;
-    // A new default profile can change what every session offers.
+    // Agent definitions determine each session’s tools.
     for (const session of w.sessions) syncSession(w, session);
     return ok(served());
   });

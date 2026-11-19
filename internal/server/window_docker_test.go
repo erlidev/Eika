@@ -54,7 +54,7 @@ func TestARunIsJudgedAgainstWhatTheEndpointHoldsPerRequest(t *testing.T) {
 		t.Errorf("updated model effective window = %d, want 20000", updated.EffectiveWindow)
 	}
 
-	chat := a.newChat(t, "window")
+	chat := a.newSession(t, "")
 	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/context", nil), 200)
 	if preview.ContextWindow != 20000 {
 		t.Errorf("preview window = %d, want the effective 20000", preview.ContextWindow)

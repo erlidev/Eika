@@ -22,7 +22,7 @@ func TestAnEntryPayloadComesBackAsTheTextItWasWrittenAs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "payloads"})
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", ComputerID: cx.ID, Title: "payloads"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestUndeliveredNoticesAreTheOnesNoUserEntryLists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := st.CreateSession(ctx, store.Session{Title: "other"})
+	other, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "other"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestAnEntryWrittenOnceByItsIDIsWrittenOnce(t *testing.T) {
 	if sess, err := st.Session(ctx, home.ID); err != nil || sess.HeadEntryID != later.ID {
 		t.Errorf("head = %q, want %q: the repeated write moved it", sess.HeadEntryID, later.ID)
 	}
-	other, err := st.CreateSession(ctx, store.Session{Title: "other"})
+	other, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "other"})
 	if err != nil {
 		t.Fatal(err)
 	}

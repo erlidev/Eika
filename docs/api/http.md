@@ -101,7 +101,7 @@ image are there. Until then it is listed with the state `creating`, and `GET
 it. A run in it starts it when the idle stopper has stopped it. Its limits and
 egress are the `sandbox_limits` and `sandbox_egress` settings (see
 `PUT /api/settings`), and the only route here is the list. A session opens in a
-computer by naming it in `POST /api/sessions`.
+computer through the home session.
 
 ### `GET /api/computers`
 
@@ -141,22 +141,9 @@ Returns the local home session and its head in the same shape as
 
 ### `GET /api/sessions`
 
-`?computer_id=<id>` narrows the list; without it every session is returned,
-chats included. `?chats=true` returns the chats alone, excluding the home session; with `computer_id` it is
-`400`.
+`?computer_id=<id>` narrows the list; without it every session is returned.
 
 `200` with `{"sessions": [Session]}`, oldest first.
-
-### `POST /api/sessions`
-
-| Field | Type | Meaning |
-|---|---|---|
-| `computer_id` | string | The computer the session's runs act in. Required unless `chat` is set. |
-| `chat` | boolean | Open a chat, which has no computer. |
-| `title` | string | What to call it, at most 200 characters. Empty or absent leaves it untitled: it is called `New session` (`New chat` for a chat) until its first run names it after the first message, when a model serves the `fast` class (`model_classes` in `PUT /api/settings`). |
-
-`201` with the `Session`. `400` for `chat` with a `computer_id`; `404` when the computer does not exist, which is also what
-leaving both out gives: a chat is asked for, never a fallback.
 
 ### `GET /api/sessions/{id}`
 
@@ -227,57 +214,6 @@ the next run continues from there and the tree branches in place. An empty
 `200` with the `Session`. `409` while a run is going; `404` when the entry is
 not the session's; `400` when the entry is not `resumable`: preambles are not branch points,
 and a path with unanswered tool calls is a conversation no endpoint accepts.
-
-### `PUT /api/sessions/{id}/tools`
-
-`{"tools": [string] | null}`, required; an empty list turns every tool off,
-and `null` clears the session's own choice, so that its profile's applies.
-Chooses the tools the session's next run offers the model; a run already
-going keeps the ones it started with. An entry is a tool name or
-`mcp__<server>__*`, every tool that MCP server offers, including one it adds
-later. The entries are stored sorted, once each.
-
-`200` with the `Session`. `400` when `tools` is missing or not a list, names
-a tool or an MCP server that does not exist, or, for a chat, names a tool or
-a stdio server that needs a computer.
-
-### `GET /api/sessions/{id}/configuration`
-
-What the session sets for itself over its profile, and what its next run
-resolves to. For a session with an `agent`, the definition and its class supply
-`resolved` and `inherited`; both are equal. `profile_id` is absent, `overrides`
-sets nothing, and `tools` is null. Legacy profile, override and tool-choice
-writes can still be stored, but have no effect on agent runs. Editor query
-values are validated but do not change agent configuration. `200` with:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `session_id` | string | The session. |
-| `profile_id` | string, optional | The profile the session chose. Absent, it runs with whichever profile is the default. |
-| `overrides` | ProfileSettings | What the session sets over its profile. |
-| `tools` | string array or null | The session's own tool choice, null when it has made none. |
-| `resolved` | Configuration | What the next run uses when the message names no model. |
-| `inherited` | Configuration | What the session's overrides fall through to: the configuration as it would be if the session set nothing itself, except that a model the session chose still supplies the model row below its unset values. |
-
-An editor asks with what it has chosen and not saved: `?profile_id=` and
-`?model_id=` stand in for the session's profile (empty: the default one)
-and its own model (empty: none) in `inherited`, so the editor shows the
-values they bring as they are chosen. Everything else in the answer is
-what is saved. `400` for a profile or a model that does not exist.
-
-### `PUT /api/sessions/{id}/profile`
-
-`{"profile_id": string}`; empty goes back to the default profile. The
-session's overrides stay. `200` with the body of
-`GET /api/sessions/{id}/configuration`; `400` for a profile that does not
-exist.
-
-### `PUT /api/sessions/{id}/overrides`
-
-A ProfileSettings object, which replaces everything the session sets over
-its profile; one that sets nothing clears them. `200` with the body of
-`GET /api/sessions/{id}/configuration`; `400` for a model that does not
-exist, a sampling parameter out of range, or a prompt over 64 KiB.
 
 ### `GET /api/sessions/{id}/context`
 
@@ -378,14 +314,14 @@ model is configured; `400` for a model that does not exist.
 | `context_window` | number or null | The window the call was judged against; `null` when the model had none configured. |
 | `endpoint` | string, optional | The provider's name when the call was made. |
 | `queue_ms`, `slot` | number or null | Milliseconds the call waited for a lease on its pool (summed over its attempts, so a call that was preempted and queued again counts both waits), and the server's own slot number that the request named (`id_slot`). `slot` is `null` for a call that named none: one to an endpoint that takes no slot hints (anything but a llama.cpp server with several slots on which the slot affinity check passed), and one recorded before the queue existed. |
-| `class`, `priority`, `agent` | string, optional | Attribution. `priority` is what the call asked for: `interactive`, `foreground`, `background` or `maintenance`. `class` is the model class the run was resolved from and is absent for a run that named its model. `agent` is the session's agent name and is absent for legacy profile sessions. |
+| `class`, `priority`, `agent` | string, optional | Attribution. `priority` is what the call asked for: `interactive`, `foreground`, `background` or `maintenance`. `class` is the model class the run was resolved from and is absent for a run that named its model. `agent` is the session's agent name and can be absent on old records. |
 | `prefill_ms`, `decode_ms` | number or null | Milliseconds the endpoint took to read the prompt (as it stated it) and to generate (its own measure, else the harness's from the first token). `null` when nothing measured them. |
 | `created_at` | time | When the call returned. |
 
 ### Session
 
 Identity and lifecycle fields are read-only on the existing session routes.
-`POST /api/sessions` still creates a legacy `user` session.
+Old user sessions remain available as routines.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -402,11 +338,9 @@ Identity and lifecycle fields are read-only on the existing session routes.
 | `result` | string, optional | Latest report. |
 | `waiting_reason` | string? | Code-owned reason while a subagent waits; absent when empty. |
 | `last_active_at` | timestamp | Last lifecycle activity in UTC. |
-| `kind` | string | Session kind: `user` (legacy), `home`, `subagent` or `routine`. |
+| `kind` | string | Session kind: `home`, `subagent` or `routine`. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
-| `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a computer in a chat. An agent session uses its fixed built-in list; until its next compaction, its snapshot may pin a shorter one, which the context preview shows. |
-| `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. |
-| `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. False for an agent session. |
+| `tools` | string array | The tools the next run offers the model, sorted: the agent definition's fixed built-in list; until its next compaction, its snapshot may pin a shorter one, which the context preview shows. |
 | `pinned` | boolean | Listed before its siblings. |
 | `archived` | boolean | Set aside under an Archived heading; it runs like any other. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
@@ -481,7 +415,7 @@ on the event stream.
 | `text` | string | The message. Required unless `images` holds at least one image. |
 | `images` | array | Pictures attached to the message, each `{"data": string}`: a PNG, JPEG, GIF, or WebP file, base64 encoded, of at most 20 MiB and 50 megapixels. At most 10. |
 | `mode` | `run`, `steer`, or `follow_up` | What to do with it. Empty means `run`. |
-| `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first chat model. A decision model is `400`. For a session with an `agent`, a nonempty value is `400`; its class selects the model. |
+| `model` | string | Must be empty. The agent class selects the model. A nonempty value is `400`. |
 
 - `run` starts a run from the session's head. `409` when one is already going,
   except a background turn of the home session that delivers notices, which
@@ -574,8 +508,7 @@ its outcome is unknown. Check before retrying." Interrupted children become
 `idle`, with no waiting reason, and home gets a notice naming each child.
 An interrupted home reply also gets a notice. Startup recovers missing report
 notices. Recovered notices wait for the next home turn, from a user message or
-a later new report. Children resume only through `subagent_message`. Legacy
-profile and chat sessions get missing results but no agent notice or state
+a later new report. Children resume only through `subagent_message`. Converted routine sessions get missing results but no agent notice or state
 change. No response or event shape changes.
 
 ### `POST /api/questions/{id}/answer`
@@ -798,9 +731,8 @@ has run:
 A model is one model of a provider. A `chat` model holds a conversation, which
 is what runs use. A `decision` model answers typed questions at `/v1/systemone`
 and cannot hold a conversation, so no route that picks a model for a
-conversation accepts one: the `default_model` setting, a profile's or a
-session's `model_id`, the `model` of a message, and the `deep`, `main` and
-`fast` classes of `model_classes` all answer `400` for it.
+conversation accepts one: the `default_model` setting and the `deep`, `main`
+and `fast` classes of `model_classes` answer `400` for it.
 
 ### `GET /api/models`
 
@@ -870,117 +802,6 @@ the model is there. `400` with what the endpoint answered when it failed.
 | `image_input` | boolean | As on `POST`. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
-## Profiles
-
-A profile is a named configuration of what a run sends: the model, the base
-prompt, extra instructions, the tools, and
-the sampling parameters. Every setting is optional, and one that is not set
-falls through. A run's configuration is resolved one value at a time, from
-the first layer that sets it:
-
-```
-the message's model -> the session's overrides -> the profile -> the model row -> the default
-```
-
-The model row supplies `max_output` and `reasoning_effort`; the default is
-the `default_model` setting, the built-in prompt, every
-tool, and for any other sampling parameter the endpoint's own default. A
-reasoning effort chosen above the model row that the model does not offer is
-not sent: the model row's own is, and the configuration names the dropped
-one. The harness creates one profile, `Default`, that sets nothing.
-
-### `GET /api/profiles`
-
-`200` with `{"profiles": [Profile], "default": string, "prompts":
-{"chat": string}}`: every profile, oldest first, the id of the default one,
-and the built-in base prompt.
-
-### `GET /api/profiles/inherited`
-
-`?model_id=` optional. `200` with the Configuration a profile that chooses
-that model (absent or empty: none) falls through to: the model's own values
-and the defaults. Nothing else a profile sets changes it, so a profile
-editor asks with the model it has chosen before the profile is saved, and a
-new profile asks before it exists. `400` for a model that does not exist.
-
-### `POST /api/profiles`
-
-| Field | Type | Meaning |
-|---|---|---|
-| `name` | string, required | Unique, 1 to 64 characters. |
-| `description` | string | At most 500 characters. |
-| ProfileSettings fields | | What the profile sets. |
-| `tools` | string array or null | The tool choice, in the shape `PUT /api/sessions/{id}/tools` takes; null is every tool, an empty list none. A profile may choose a tool that needs a computer: a chat's runs leave it out. |
-
-`201` with the `Profile`. `400` for a bad field; `409` when the name is taken.
-
-### `PUT /api/profiles/{id}`
-
-The same body as `POST`, which replaces the whole profile. `200` with the
-`Profile`; `404` for an unknown profile. Runs already going keep the
-configuration they started with.
-
-### `DELETE /api/profiles/{id}`
-
-`204`. The sessions that chose it run with the default profile, and when it
-was the default, the first profile is. `409` for the last profile: a run
-always needs one.
-
-### ProfileSettings
-
-What a profile sets, and what a session overrides of it. A field that is
-null, an absent `model_id`, and a sampling parameter left out are not set.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `model_id` | string, optional | The model, by id. |
-| `chat_prompt` | string or null | Replaces the built-in base prompt, the empty string included. At most 64 KiB. |
-| `instructions` | string or null | Follows the base prompt. At most 64 KiB. |
-| `preserve_thinking` | boolean or null | Whether the model's earlier reasoning is replayed to it, over the model's own `preserve_thinking`. |
-| `sampling` | Sampling | The sampling parameters set here. |
-
-### Sampling
-
-Every field is optional; one left out is not set.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `temperature` | number, 0 to 2 | |
-| `top_p` | number, 0 to 1 | |
-| `top_k` | number, at least 1 | Not a Chat Completions field; vLLM, llama.cpp, SGLang, LM Studio, and OpenRouter read it. Sent only when set. |
-| `min_p` | number, 0 to 1 | Like `top_k`. |
-| `frequency_penalty`, `presence_penalty` | number, -2 to 2 | |
-| `seed` | number | |
-| `stop` | string array | At most 16 sequences of 1 to 256 bytes. An empty list sends none, which clears a lower layer's. |
-| `max_output` | number, at least 1 | The most tokens one response may generate. |
-| `reasoning_effort` | string | A word the model offers; the empty string leaves it to the endpoint. |
-
-### Profile
-
-| Field | Type | Meaning |
-|---|---|---|
-| `id`, `name`, `description` | string | The profile. |
-| ProfileSettings fields | | What it sets. |
-| `tools` | string array or null | Its tool choice. |
-| `inherited` | Configuration | What its unset values fall through to: the model row of the model it resolves to, and the defaults. |
-| `created_at`, `updated_at` | time | When it was made and last changed. |
-
-### Configuration
-
-A resolved configuration, with the layer each value came from.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `profile_id`, `profile_name` | string | The profile it starts from. |
-| `model_id`, `model` | string | The model's id and name, empty when no model is configured. |
-| `chat_prompt` | string | The base prompt. |
-| `instructions` | string | The extra instructions, empty for none. |
-| `preserve_thinking` | boolean | Whether earlier reasoning is replayed: a layer's choice, else the model's, else off. |
-| `tools` | string array or null | The tool choice; null is every tool the session can run. |
-| `sampling` | Sampling | The sampling parameters sent. |
-| `dropped_effort` | string, optional | An effort chosen above the model that the model does not offer. |
-| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, `default`, `agent`, or `class`, keyed `profile`, `model`, `chat_prompt`, `instructions`, `preserve_thinking`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
-
 ## Settings
 
 ### `GET /api/settings`
@@ -1011,7 +832,6 @@ stores them.
 | `time_zone` | string | IANA time zone for new agent preamble snapshots; defaults to UTC. |
 | `locale` | string | Locale for new agent preamble snapshots, 1 to 64 ASCII letters, digits or hyphens; unspecified by default. |
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a chat model. |
-| `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
 | `sandbox_image` | string | The image the home computer's container is created from. A container that exists keeps its image, so a change reaches the home computer only when its container is made again. |
 | `compact_idle_fill` | integer, 1 to 100 | Context fill percentage above which idle compaction may run. |
 | `compact_idle_minutes` | integer, 0 to 10080 | Minutes without important Core work before idle compaction may run. |
@@ -1163,10 +983,7 @@ form can change one entry without the others' values. An empty
 `oauth_client_secret` removes it, and so does clearing `oauth_client_id`.
 A `url` that differs from the stored one drops the stored headers, unless
 the request gives `headers`, and the OAuth tokens, which were issued for the
-old URL; the registered client is kept. A new `name` is carried into the
-tool choices of profiles and sessions, so `mcp__<old>__*` and
-`mcp__<old>__<tool>` entries become `mcp__<name>__…`. The server's
-connections end and an enabled `http` server connects again. `200` with the `MCPServer`; `400` for
+old URL; the registered client is kept. The server's connections end and an enabled `http` server connects again. `200` with the `MCPServer`; `400` for
 a bad field, a field of the other kind, or a `null` for a name with no
 stored value; `409` when the name is taken.
 
@@ -1406,12 +1223,12 @@ the mode. The body of every refusal is one line saying why.
 
 Returns `{agents: Agent[]}` in name order. Only `eika`, `researcher` and `worker`
 exist. No model assignment is needed to read or edit definitions. A session's
-nonempty `agent` selects this runtime path. Each new run resolves the effective
-class and prompt; a running loop keeps its configuration. Profile sessions keep
-their current behavior. Agent tools are fixed built-ins; MCP is excluded.
+agent selects the runtime definition. Each new run resolves the effective
+class and prompt; a running loop keeps its configuration. Agent tools are fixed
+built-ins; MCP is excluded.
 Workers and researchers have `ask_user`. Questions wait in memory and reach
 home as notices; Eika answers with `subagent_message`. The question-answer HTTP
-route applies only to legacy profile sessions.
+route does not answer subagent questions.
 Context and prediction routes use the same resolution and tool schemas as runs;
 a nonempty `?model=` is refused with 400. The compact route also refuses an
 explicit model and uses the agent's compaction prompts.

@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/server"
+	"github.com/erlidev/eika/internal/session"
+	"github.com/erlidev/eika/internal/store"
 )
 
 // homeOf returns the home computer as the API lists it, and fails the test
@@ -136,26 +139,42 @@ func TestKeepHomeRetriesUntilTheHostCanMakeIt(t *testing.T) {
 	}
 }
 
-// bashIn runs one echo in a new session on a computer and returns what the
-// tool answered.
+// bashIn delegates a command to a worker and returns its result.
 func (a *api) bashIn(t *testing.T, computerID, word string) string {
 	t.Helper()
-	sess := a.newSession(t, computerID)
-	a.script(
-		providertest.Calls("", providertest.Call("c1", "bash", map[string]any{"command": "echo " + word})),
-		providertest.Text("done"),
-	)
-	a.postMessage(t, sess.ID, "say "+word, "", 202)
-	if state := a.waitIdle(t, sess.ID); state.Run == nil || state.Run.State != "done" {
-		t.Fatalf("run = %+v, want it done", state.Run)
+	if err := a.BindAgentToolsForTest(a.host); err != nil {
+		t.Fatal(err)
 	}
-	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	for _, m := range path.Messages {
-		if m.Role == "tool" {
+	home, err := a.store.EnsureHomeSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	eika := providertest.New(call("start", "subagent_start", map[string]any{"agent": "worker", "name": "shell", "brief": "Run the command"}), providertest.Text("started"))
+	worker := providertest.New(call("cmd", "bash", map[string]any{"command": "echo " + word}), call("done", "report", map[string]any{"summary": "done"}), providertest.Text("done"))
+	a.use(byAgent{"You are Eika": answeringNotices(eika), "You are a worker": worker})
+	a.postMessage(t, home.ID, "run the command", "", 202)
+	var child store.Session
+	waitFor(t, "worker to finish", func() bool {
+		child, err = a.store.Subagent(t.Context(), home.ID, "shell")
+		return err == nil && child.State == store.SessionIdle
+	})
+	if child.ComputerID != computerID {
+		t.Fatalf("worker computer = %s, want %s", child.ComputerID, computerID)
+	}
+	path, err := a.store.SessionPath(t.Context(), child.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err := session.Messages(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range messages {
+		if m.Role == provider.RoleTool && strings.Contains(m.Content, word) {
 			return m.Content
 		}
 	}
-	t.Fatalf("no tool result among %+v", path.Messages)
+	t.Fatalf("no command result among %+v", messages)
 	return ""
 }
 

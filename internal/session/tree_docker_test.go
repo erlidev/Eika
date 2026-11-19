@@ -27,7 +27,7 @@ func newTree(t *testing.T) (*session.Tree, store.Session) {
 	if err != nil {
 		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "fix the build"})
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", ComputerID: cx.ID, Title: "fix the build"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}

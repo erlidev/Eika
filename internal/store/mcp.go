@@ -90,16 +90,11 @@ func (s *Store) MCPServers(ctx context.Context) ([]MCPServer, error) {
 
 // UpdateMCPServer writes every field of m but its kind over the stored row
 // and returns the row as it now stands. A name another server has is
-// ErrConflict. A new name is carried into the tool choices of profiles and
-// sessions, whose entries name the server's tools by it.
+// ErrConflict.
 func (s *Store) UpdateMCPServer(ctx context.Context, m MCPServer) (MCPServer, error) {
 	op := "update mcp server " + m.ID
 	var out MCPServer
 	err := s.tx(ctx, func(q querier) error {
-		var old string
-		if err := q.QueryRow(ctx, `SELECT name FROM mcp_servers WHERE id = $1 FOR UPDATE`, m.ID).Scan(&old); err != nil {
-			return wrap(op, err)
-		}
 		const update = `UPDATE mcp_servers SET name = $2, url = $3, headers = $4, command = $5, args = $6, env = $7,
 				enabled = $8, disabled_tools = $9, oauth_client_id = $10, oauth_client_secret = $11, updated_at = now()
 			WHERE id = $1
@@ -110,33 +105,13 @@ func (s *Store) UpdateMCPServer(ctx context.Context, m MCPServer) (MCPServer, er
 		if err != nil {
 			return wrap(op, err)
 		}
-		if old != out.Name {
-			return renameToolChoices(ctx, q, op, old, out.Name)
-		}
+
 		return nil
 	})
 	if err != nil {
 		return MCPServer{}, err
 	}
 	return out, nil
-}
-
-// renameToolChoices rewrites the tool choice entries that name a server's
-// tools, mcp__<old>__<tool> and mcp__<old>__*, to name them by the server's
-// new name. A server name holds no double underscore, so the prefix ends
-// where the server's name does.
-func renameToolChoices(ctx context.Context, q querier, op, old, name string) error {
-	oldPrefix, newPrefix := "mcp__"+old+"__", "mcp__"+name+"__"
-	for _, table := range []string{"profiles", "sessions"} {
-		stmt := `UPDATE ` + table + ` SET tools = ARRAY(
-				SELECT CASE WHEN starts_with(t, $1) THEN $2 || substr(t, length($1) + 1) ELSE t END
-				FROM unnest(tools) WITH ORDINALITY AS u(t, n) ORDER BY n)
-			WHERE EXISTS (SELECT 1 FROM unnest(tools) AS t WHERE starts_with(t, $1))`
-		if _, err := q.Exec(ctx, stmt, oldPrefix, newPrefix); err != nil {
-			return wrap(op+": rename tool choices in "+table, err)
-		}
-	}
-	return nil
 }
 
 // DeleteMCPServer removes an MCP server and its credentials.

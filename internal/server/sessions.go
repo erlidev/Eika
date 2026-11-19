@@ -39,15 +39,8 @@ type sessionBody struct {
 	Kind        string `json:"kind"`
 	HeadEntryID string `json:"head_entry_id,omitempty"`
 	// Tools names the tools the session's next run offers the model,
-	// ordered by name: what the session or its profile chose, narrowed to
-	// what it can run.
+	// ordered by name, as the agent definition permits.
 	Tools []string `json:"tools"`
-	// ProfileID is the profile the session chose, absent when it runs with
-	// whichever profile is the default.
-	ProfileID string `json:"profile_id,omitempty"`
-	// Overridden reports whether the session sets anything of its own over
-	// its profile: its overrides or its tool choice.
-	Overridden bool `json:"overridden"`
 	// Pinned sessions are listed before the others.
 	Pinned bool `json:"pinned"`
 	// Archived sessions are set aside under a heading of their own; they
@@ -71,16 +64,6 @@ type entryBody struct {
 	// Compaction is what a compaction entry records, and absent on the
 	// others.
 	Compaction *agent.Compaction `json:"compaction,omitempty"`
-}
-
-// createSessionRequest is the body of POST /api/sessions: a session in a
-// computer, or with Chat a session in none.
-type createSessionRequest struct {
-	ComputerID string `json:"computer_id"`
-	Chat       bool   `json:"chat"`
-	// Title is what to call the session. Empty leaves it untitled until its
-	// first run names it.
-	Title string `json:"title"`
 }
 
 // updateSessionRequest is the body of PATCH /api/sessions/{id}. An absent
@@ -142,23 +125,9 @@ type pathResponse struct {
 	Messages  []provider.Message `json:"messages"`
 }
 
-// handleListSessions lists the sessions, of one computer when the query
-// names one. `chats=true` lists the chats instead.
+// handleListSessions lists sessions, optionally filtered by computer.
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	var (
-		sessions []store.Session
-		err      error
-	)
-	if query.Get("chats") == "true" {
-		if query.Get("computer_id") != "" {
-			s.fail(w, r, invalidf("a chat has no computer; ask for chats or for a computer's sessions"))
-			return
-		}
-		sessions, err = s.deps.Store.Chats(r.Context())
-	} else {
-		sessions, err = s.deps.Store.Sessions(r.Context(), query.Get("computer_id"))
-	}
+	sessions, err := s.deps.Store.Sessions(r.Context(), r.URL.Query().Get("computer_id"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -178,51 +147,6 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		out = append(out, body)
 	}
 	writeJSON(w, s.log, http.StatusOK, sessionsResponse{Sessions: out})
-}
-
-// handleCreateSession opens a session in a computer, or a chat in none. A
-// chat is asked for by name rather than by leaving the computer out, so a
-// client that forgets a computer gets an error, not a chat. A session
-// created without a title shows a placeholder and is named after its first
-// message.
-func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeJSON[createSessionRequest](r)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	title := strings.TrimSpace(req.Title)
-	untitled := title == ""
-	if untitled {
-		title = untitledSession
-		if req.Chat {
-			title = untitledChat
-		}
-	} else if title, err = checkName("title", title); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	switch {
-	case req.Chat && req.ComputerID != "":
-		s.fail(w, r, invalidf("a chat has no computer; send chat or computer_id, not both"))
-		return
-	case !req.Chat:
-		if _, err := s.deps.Store.Computer(r.Context(), req.ComputerID); err != nil {
-			s.fail(w, r, err)
-			return
-		}
-	}
-	sess, err := s.deps.Store.CreateSession(r.Context(), store.Session{
-		ComputerID: req.ComputerID,
-		Title:      title,
-		Untitled:   untitled,
-	})
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	s.log.Info("session created", "session_id", sess.ID, "computer_id", sess.ComputerID, "chat", sess.Chat())
-	s.writeSession(w, r, http.StatusCreated, sess)
 }
 
 // handleSession returns a session and the entry it continues from.
@@ -535,15 +459,13 @@ func (s *Server) writeSession(w http.ResponseWriter, r *http.Request, status int
 	writeJSON(w, s.log, status, body)
 }
 
-// asSession renders a stored session on the wire, with the tools its next
-// run offers rather than the stored choice, so a client never re-derives
-// which tools a chat may hold or what the profile chose.
+// asSession renders a stored session and its agent tools.
 func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, error) {
 	// A session whose agent is not built in has no tools and no resolved
 	// configuration; rendering it must not fail the listing of the others.
 	// Starting a run on it still fails in resolveSession.
 	var tools []string
-	if _, known := agentdef.Lookup(sess.Agent); sess.Agent == "" || known {
+	if _, known := agentdef.Lookup(sess.Agent); known {
 		c, err := base.resolveSession(sess, "")
 		if err != nil {
 			return sessionBody{}, err
@@ -567,8 +489,6 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 		Kind:            string(sess.Kind),
 		HeadEntryID:     sess.HeadEntryID,
 		Tools:           s.sessionToolNames(sess, tools),
-		ProfileID:       sess.ProfileID,
-		Overridden:      sess.Agent == "" && (!sess.Overrides.Empty() || sess.Tools != nil),
 		Pinned:          sess.Pinned,
 		Archived:        sess.Archived,
 		CreatedAt:       sess.CreatedAt,

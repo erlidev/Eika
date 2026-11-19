@@ -21,12 +21,11 @@ func TestAgentConfigurationIgnoresLegacyLayers(t *testing.T) {
 	fast := store.Model{ID: "fast", Name: "fast", Kind: store.ModelKindChat, Model: "vendor/fast"}
 	b := configBase{models: []store.Model{main, fast}, defaultModel: main,
 		assigned:       map[modelClass]string{classMain: "main", classFast: "fast"},
-		defaultProfile: store.Profile{ProfileSettings: store.ProfileSettings{ChatPrompt: new("legacy prompt"), Instructions: new("legacy rules"), ModelID: "fast"}, Tools: []string{"mcp__secret__*", "bash"}},
 		agentOverrides: map[string]agentdef.Override{"worker": {Class: new("deep"), Prompt: new("")}},
 	}
 	for _, name := range []string{"eika", "researcher", "worker"} {
 		t.Run(name, func(t *testing.T) {
-			sess := store.Session{Agent: name, Tools: []string{"mcp__secret__*"}, Overrides: store.ProfileSettings{ModelID: "fast", ChatPrompt: new("session prompt"), Instructions: new("session rules"), PreserveThinking: new(false), Sampling: []byte(`{"temperature":0.9}`)}}
+			sess := store.Session{Agent: name}
 			cfg, err := b.resolveSession(sess, "")
 			if err != nil {
 				t.Fatal(err)
@@ -41,10 +40,10 @@ func TestAgentConfigurationIgnoresLegacyLayers(t *testing.T) {
 				t.Errorf("model = %+v, want %+v", cfg.model, want)
 			}
 			if cfg.chatPrompt == nil || *cfg.chatPrompt != d.Prompt || cfg.instructions != "" || cfg.preserveThinking != want.PreserveThinking || cfg.sampling.Temperature != nil {
-				t.Fatalf("legacy settings reached agent: %+v", asConfiguration(cfg))
+				t.Fatalf("legacy settings reached agent: %+v", cfg)
 			}
 			if !slices.Equal(cfg.tools, d.Tools) || cfg.sources["tools"] != layerAgent || cfg.sources["model"] != layerClass {
-				t.Fatalf("capabilities or sources = %+v", asConfiguration(cfg))
+				t.Fatalf("capabilities or sources = %+v", cfg)
 			}
 			if cfg.definition.Class != d.Class {
 				t.Fatalf("class = %s, want %s", cfg.definition.Class, d.Class)
@@ -57,10 +56,8 @@ func TestAgentConfigurationIgnoresLegacyLayers(t *testing.T) {
 	if _, err := b.resolveSession(store.Session{Agent: "missing"}, ""); err == nil {
 		t.Fatal("unknown agent accepted")
 	}
-	// The old path still uses its profile and explicit request model.
-	cfg, err := b.resolveSession(store.Session{}, "main")
-	if err != nil || cfg.definition != nil || *cfg.chatPrompt != "legacy prompt" || cfg.instructions != "legacy rules" || cfg.model.Name != "main" {
-		t.Fatalf("legacy resolution: %+v, %v", cfg, err)
+	if _, err := b.resolveSession(store.Session{}, ""); err == nil {
+		t.Fatal("session without an agent accepted")
 	}
 }
 
@@ -160,9 +157,6 @@ func TestProjectAndDelegationToolsAreOnlyAvailableThroughEikaDefinition(t *testi
 		if _, ok := s.allTools().Get(name); ok {
 			t.Errorf("legacy tool list contains %s", name)
 		}
-		if _, err := s.checkToolChoice(t.Context(), []string{name}, false); err == nil {
-			t.Errorf("legacy choice accepts %s", name)
-		}
 		for _, sess := range []store.Session{{}, {ComputerID: "computer"}} {
 			for _, choice := range [][]string{nil, {name}} {
 				if _, ok := s.runTools(sess, choice, nil).Get(name); ok {
@@ -239,3 +233,10 @@ func TestABackgroundTurnIsKnownAsOneFromTheMomentItHoldsTheSession(t *testing.T)
 		t.Fatal("the reservation was seen before it was marked a background turn")
 	}
 }
+
+type namedTool struct {
+	tool.Tool
+	name string
+}
+
+func (n namedTool) Name() string { return n.name }

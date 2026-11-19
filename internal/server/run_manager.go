@@ -350,13 +350,9 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	if sess.Agent != "" {
 		refresh = s.refreshSnapshot
 	}
-	// The tools every run shares hold what they reach beyond the computer:
-	// the search engine and the page reader. A run narrows
-	// them to its tool choice, together with the tools of the MCP servers it
-	// reaches now, and adds only its own executor, which is also where a
-	// web_fetch filter runs.
+	// The run uses the tools pinned by the agent snapshot.
 	rank := inference.NewRank(work.priority)
-	ag := s.newAgent(ep.client, sess, cfg, ex, s.mcpToolsFor(ctx, sess, cfg.tools), agent.Options{
+	ag := s.newAgent(ep.client, sess, cfg, ex, nil, agent.Options{
 		RefreshSnapshot: refresh,
 		Location:        agent.PreambleLocation(loaded.Preamble),
 		Notices:         takeNotices,
@@ -420,8 +416,7 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 		}
 	}
 	go r.drive(runCtx, active, loaded, work)
-	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", cfg.model.Name,
-		"profile_id", cfg.profile.ID)
+	s.log.Info("run started", "run_id", row.ID, "session_id", sessionID, "model", cfg.model.Name)
 	return row, active, nil
 }
 

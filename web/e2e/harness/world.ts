@@ -8,13 +8,12 @@
 import type { EikaEvent } from "../../src/api/events.ts";
 import {
   builtinToolTokens,
-  defaultProfile,
   previewContext,
   record,
+  syncSession,
   toolTokens,
-} from "./profiles.ts";
-import type { ProfileSettings } from "./legacyProfiles.ts";
-import type { RecordedCall, StoredProfile } from "./profiles.ts";
+} from "./modelContext.ts";
+import type { RecordedCall } from "./modelContext.ts";
 import type {
   AgentOverride,
   Project,
@@ -34,12 +33,17 @@ import type {
   Run,
   Sandbox,
   SearchStatus,
-  Session,
+  Session as WireSession,
   SettingsState,
   SystemStatus,
   Tool,
   Computer,
 } from "../../src/api/types.ts";
+
+export type Session = WireSession;
+export function wireSession(session: Session): WireSession {
+  return session;
+}
 
 /**
  * Reply is what the mock agent does when a message starts a run: the events
@@ -120,18 +124,12 @@ export type World = {
   probeFinds: ProbeFindings;
   /** eventsOnConnect are sent once to every event stream that opens. */
   eventsOnConnect: EikaEvent[];
-  /** profiles are the profiles, oldest first; the default_profile setting names the default. */
-  profiles: StoredProfile[];
   /** agentOverrides holds only user overrides of the built-in definitions. */
   agentOverrides: Record<string, AgentOverride>;
   projects: Project[];
   instructions: { about_me: string; rules: string };
   projectInstructions: Record<string, string>;
   projectInstructionVersions: Record<string, number>;
-  /** overrides are what each session sets over its profile, by session id. */
-  overrides: Record<string, ProfileSettings>;
-  /** toolChoices are the sessions' own tool choices, by session id; one with none inherits. */
-  toolChoices: Record<string, string[]>;
   /** calls are each session's recorded model calls, oldest first. */
   calls: Record<string, RecordedCall[]>;
 };
@@ -227,14 +225,11 @@ export function emptyWorld(): World {
       capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
     },
     eventsOnConnect: [],
-    profiles: [defaultProfile()],
     agentOverrides: {},
     projects: [],
     instructions: { about_me: "", rules: "" },
     projectInstructions: {},
     projectInstructionVersions: {},
-    overrides: {},
-    toolChoices: {},
     calls: {},
   };
   // The harness makes the home session when it starts, so every world has it.
@@ -256,7 +251,6 @@ function homeSession(): Session {
     state: "idle",
     last_active_at: minutesAgo(5),
     tools: ["web_search"],
-    overridden: false,
     pinned: false,
     archived: false,
     created_at: minutesAgo(90),
@@ -374,14 +368,6 @@ function toolCatalog(): Tool[] {
   ];
 }
 
-/**
- * sessionTools is the tool list a new session reports: every tool, or for a
- * chat every tool that needs no computer, as the harness narrows it.
- */
-export function sessionTools(world: World, chat: boolean): string[] {
-  return world.tools.filter((t) => !chat || !t.needs_computer).map((t) => t.name);
-}
-
 /** WorldBuilder adds rows with consistent ids and timestamps. */
 export class WorldBuilder {
   readonly world: World;
@@ -470,18 +456,19 @@ export class WorldBuilder {
     const row: Session = {
       id: this.id("ses"),
       computer_id: computer.id,
-      kind: "user",
+      kind: "routine",
+      agent: "eika",
       owner: "local",
       state: "idle",
       last_active_at: minutesAgo(5),
-      tools: sessionTools(this.world, false),
-      overridden: false,
+      tools: [],
       pinned: false,
       archived: false,
       created_at: minutesAgo(120),
       updated_at: minutesAgo(5),
       ...input,
     };
+    syncSession(this.world, row);
     this.world.sessions.unshift(row);
     this.world.entries[row.id] ??= [];
     return row;
@@ -491,18 +478,19 @@ export class WorldBuilder {
   chat(input: Partial<Session> & { title: string }): Session {
     const row: Session = {
       id: this.id("chat"),
-      kind: "user",
+      kind: "routine",
+      agent: "eika",
       owner: "local",
       state: "idle",
       last_active_at: minutesAgo(5),
-      tools: sessionTools(this.world, true),
-      overridden: false,
+      tools: [],
       pinned: false,
       archived: false,
       created_at: minutesAgo(90),
       updated_at: minutesAgo(5),
       ...input,
     };
+    syncSession(this.world, row);
     this.world.sessions.unshift(row);
     this.world.entries[row.id] ??= [];
     return row;
@@ -512,7 +500,9 @@ export class WorldBuilder {
   home(input: Partial<Session> = {}): Session {
     const row = this.world.sessions.find((s) => s.kind === "home");
     if (row === undefined) throw new Error("the world has no home session");
-    return Object.assign(row, input);
+    Object.assign(row, input);
+    syncSession(this.world, row);
+    return row;
   }
 
   /** subagent adds a named session under home. */
@@ -523,10 +513,6 @@ export class WorldBuilder {
       kind: "subagent",
       owner: parent.owner,
       parent_session_id: parent.id,
-      tools:
-        input.agent === "worker"
-          ? ["bash", "file_edit", "file_read", "file_write", "report", "web_fetch", "web_search"]
-          : ["report", "web_fetch", "web_search"],
     });
   }
 
@@ -569,19 +555,6 @@ export class WorldBuilder {
     this.world.mcpServers.push(row);
     this.world.mcpServers.sort((a, b) => a.server.name.localeCompare(b.server.name));
     syncMCPTools(this.world);
-    return row;
-  }
-
-  /** profile adds a profile that sets what input names and nothing else. */
-  profile(input: Partial<StoredProfile> & { name: string }): StoredProfile {
-    const row: StoredProfile = {
-      ...defaultProfile(),
-      id: this.id("prof"),
-      created_at: minutesAgo(200),
-      updated_at: minutesAgo(200),
-      ...input,
-    };
-    this.world.profiles.push(row);
     return row;
   }
 

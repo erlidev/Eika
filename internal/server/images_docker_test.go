@@ -69,19 +69,19 @@ func TestImagesReachAModelThatReadsThem(t *testing.T) {
 	a := newAPI(t)
 	sess := a.session(t)
 	a.letModelReadImages(t)
-	p := a.script(askStep("c1", "anything else?"), providertest.Text("a grey square"))
+	p := a.hold(askStep("c1", "anything else?"), providertest.Text("a grey square"))
 
 	// A 3000 by 2000 screenshot is fitted within 1080p before anything sees it.
 	messages := "/api/sessions/" + sess.ID + "/messages"
 	decodeBody[runWire](t, request(t, a.Server, "POST", messages, imageMessage("what is this?", "", pngOf(t, 3000, 2000))), 202)
-	question := a.waitQuestion(t, sess.ID)
+	<-p.started
 
 	decodeBody[runWire](t, request(t, a.Server, "POST", messages, imageMessage("", "steer", pngOf(t, 40, 30))), 202)
 	state := a.runState(t, sess.ID)
 	if len(state.PendingSteering) != 1 || state.PendingSteering[0] != (queuedWire{Images: 1}) {
 		t.Errorf("pending steering = %+v, want one message of one image", state.PendingSteering)
 	}
-	request(t, a.Server, "POST", "/api/questions/"+question.ID+"/answer", map[string]any{"answer": "no"})
+	close(p.release)
 	if final := a.waitIdle(t, sess.ID); final.Run == nil || final.Run.State != "done" {
 		t.Fatalf("run = %+v, want done", final.Run)
 	}
@@ -98,7 +98,7 @@ func TestImagesReachAModelThatReadsThem(t *testing.T) {
 	// The session keeps the images as the model was sent them, so a replay
 	// shows them and a later run sends them again.
 	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	stored := path.Entries[0].Message
+	stored := path.Entries[1].Message
 	if stored.Content != "what is this?" || len(stored.Images) != 1 || !bytes.Equal(stored.Images[0].Data, first[0].Data) {
 		t.Errorf("first entry = %q with %+v, want the text and the image sent", stored.Content, describe(stored.Images))
 	}

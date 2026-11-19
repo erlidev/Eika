@@ -59,7 +59,6 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 
 	api.HandleFunc("GET /api/home", s.handleHomeSession)
 	api.HandleFunc("GET /api/sessions", s.handleListSessions)
-	api.HandleFunc("POST /api/sessions", s.handleCreateSession)
 	api.HandleFunc("GET /api/sessions/{id}", s.handleSession)
 	api.HandleFunc("PATCH /api/sessions/{id}", s.handleUpdateSession)
 	api.HandleFunc("DELETE /api/sessions/{id}", s.handleDeleteSession)
@@ -67,10 +66,6 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/sessions/{id}/entries", s.handleSessionEntries)
 	api.HandleFunc("GET /api/sessions/{id}/path", s.handleSessionPath)
 	api.HandleFunc("POST /api/sessions/{id}/head", s.handleSetSessionHead)
-	api.HandleFunc("PUT /api/sessions/{id}/tools", s.handleSetSessionTools)
-	api.HandleFunc("GET /api/sessions/{id}/configuration", s.handleSessionConfiguration)
-	api.HandleFunc("PUT /api/sessions/{id}/profile", s.handleSetSessionProfile)
-	api.HandleFunc("PUT /api/sessions/{id}/overrides", s.handleSetSessionOverrides)
 	api.HandleFunc("GET /api/sessions/{id}/context", s.handleSessionContext)
 	api.HandleFunc("GET /api/sessions/{id}/prediction", s.handleSessionPrediction)
 	api.HandleFunc("GET /api/sessions/{id}/calls", s.handleSessionCalls)
@@ -100,12 +95,6 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/agents/{name}", s.handleAgent)
 	api.HandleFunc("PUT /api/agents/{name}", s.handlePutAgent)
 	api.HandleFunc("DELETE /api/agents/{name}", s.handleResetAgent)
-
-	api.HandleFunc("GET /api/profiles", s.handleListProfiles)
-	api.HandleFunc("GET /api/profiles/inherited", s.handleInheritedProfile)
-	api.HandleFunc("POST /api/profiles", s.handleCreateProfile)
-	api.HandleFunc("PUT /api/profiles/{id}", s.handleUpdateProfile)
-	api.HandleFunc("DELETE /api/profiles/{id}", s.handleDeleteProfile)
 
 	if s.deps.Search != nil {
 		api.HandleFunc("POST /api/search", s.handleSearch)

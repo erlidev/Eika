@@ -2,9 +2,8 @@
  * The compose smoke test: the real stack, from the guided setup to the home
  * conversation in Chat, which the scripted model answers. `make smoke` starts
  * the stack with compose.smoke.yaml, runs this, and takes the stack down. The
- * model is `model.ts`, a scripted endpoint. Chat's agent offers no `bash`, so
- * a session on the home computer, which no page opens, is driven over the API
- * to prove `bash` runs in that computer's container.
+ * model is `model.ts`, a scripted endpoint. Eika delegates a shell command
+ * to a worker on the home computer, which proves eikad runs it there.
  */
 
 import { expect, test } from "@playwright/test";
@@ -82,8 +81,7 @@ test("setup, then Chat on the home session, and bash on the home computer", asyn
   await page.reload();
   await expect(page.getByRole("paragraph").filter({ hasText: /^ok$/ })).toBeVisible();
 
-  // A session on the home computer, over the API, whose model asks for a
-  // shell command: it offers `bash`, which eikad runs in the container.
+  // Ask Eika to start a worker. The worker runs the probe on home.
   const computersReply = await request.get("/api/computers", { headers });
   const computers = (
     (await computersReply.json()) as {
@@ -92,17 +90,20 @@ test("setup, then Chat on the home session, and bash on the home computer", asyn
   ).computers;
   const home = computers.find((cx) => cx.home);
   expect(home?.container_id ?? "").toMatch(/^[0-9a-f]{64}$/);
-  const created = await request.post("/api/sessions", {
-    headers,
-    data: { computer_id: home?.id },
-  });
-  expect(created.status()).toBe(201);
-  const { id } = (await created.json()) as { id: string };
-  const sent = await request.post(`/api/sessions/${id}/messages`, {
-    headers,
-    data: { text: "Run the probe" },
-  });
-  expect(sent.status()).toBe(202);
+  const homeReply = await request.get("/api/home", { headers });
+  expect(homeReply.status()).toBe(200);
+  const homeSession = ((await homeReply.json()) as { session: { id: string } }).session;
+  await expect
+    .poll(
+      async () => {
+        const reply = await request.get(`/api/sessions/${homeSession.id}/run`, { headers });
+        return reply.ok() && !((await reply.json()) as { active: boolean }).active;
+      },
+      { timeout: 60_000, intervals: [1000] },
+    )
+    .toBe(true);
+  await page.getByLabel("Message").fill("Run the probe");
+  await page.getByLabel("Message").press("Enter");
 
   // The command prints the hostname Docker gave the container, the first
   // twelve characters of its id, and its working directory. Only eikad running
@@ -112,7 +113,29 @@ test("setup, then Chat on the home session, and bash on the home computer", asyn
   await expect
     .poll(
       async () => {
-        const path = await request.get(`/api/sessions/${id}/path`, { headers });
+        const sessions = await request.get("/api/sessions", { headers });
+        if (!sessions.ok()) return false;
+        const rows = (
+          (await sessions.json()) as {
+            sessions: {
+              id: string;
+              kind: string;
+              name?: string;
+              parent_session_id?: string;
+              computer_id?: string;
+            }[];
+          }
+        ).sessions;
+        const worker = rows.find(
+          (s) =>
+            s.kind === "subagent" &&
+            s.name === "smoke-worker" &&
+            s.parent_session_id === homeSession.id &&
+            s.computer_id === home?.id,
+        );
+        if (!worker) return false;
+        const path = await request.get(`/api/sessions/${worker.id}/path`, { headers });
+        if (!path.ok()) return false;
         const body = (await path.json()) as { messages: { role: string; content?: string }[] };
         return body.messages.some((m) => m.role === "assistant" && m.content === expected);
       },

@@ -9,10 +9,8 @@ Reasons for the design are in `DECISIONS.md`; wire details in `api/`.
 Computer  A sandbox container with a volume of its own at /home/eika. States:
            creating -> running -> stopped (gone if the container disappeared).
            The `home` computer is the one that holds the user's durable files.
-Session    A tree of entries with a head pointer, in one computer.
-Chat       A session with no computer: only tools that need none.
+Session    A tree of entries with a head pointer and an agent definition.
 Run        One execution of the agent loop from a session's head.
-Profile    A named, nullable configuration of what a run sends.
 Project    A durable area of work with metadata and a directory on home.
 ```
 
@@ -93,7 +91,7 @@ The `model_classes` setting maps class names to model names:
 
 | Class | Kind | Current use |
 |---|---|---|
-| `deep` | chat | Available assignment; agents do not use classes yet |
+| `deep` | chat | Available assignment for agents |
 | `main` | chat | Fallback for `deep` and `fast` |
 | `fast` | chat | Session titles |
 | `decision` | decision | No caller; its client is deferred |
@@ -102,7 +100,7 @@ Unset or deleted assignments fall back along `deep -> main` and `fast -> main`,
 then to the default chat model (`default_model`, or the first chat model if that
 setting names none, a deleted model or a decision model). `decision` has no
 fallback. Settings reports the resolved models and pools, so classes that share
-hardware are visible. Sessions and profiles still select models directly.
+hardware are visible. Agent definitions select classes.
 Titles are skipped if an unset `fast` falls back onto the model assigned to
 `deep` and that model's backend is `openai`. An explicit `fast` assignment is
 always used.
@@ -226,9 +224,7 @@ Run(ctx, session, text)
   `Registry.Filter` narrows the shared registry per run. `bash` runs shell
   commands; `file_read`, `file_write` and `file_edit` handle bounded text files.
   `ask_user` relays subagent questions through home (see
-  [Subagent questions](#subagent-questions)); legacy profile sessions register
-  with the `Questions` broker and wait for the HTTP answer route. Both emit
-  `question.asked`.
+  [Subagent questions](#subagent-questions)) and emits `question.asked`.
 - **executor**: `executor.Resolve` rejects paths leaving the root;
   `executor/local` has the `!prod` tag.
 - **Context assembly** (`agent/context.go`) builds every request as an
@@ -475,7 +471,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | Table | Holds |
 |---|---|
 | `computers` | name, image, state, container_id, sandbox (jsonb: limits, egress), home |
-| `sessions` | computer_id (NULL for a chat), title, untitled, kind (user/home/subagent/routine), owner, agent, name, project_id, parent_session_id, state, waiting_reason, brief, result, report_notice_id, last_active_at, head_entry_id, tools, profile_id, overrides (jsonb), pinned, archived |
+| `sessions` | computer_id, title, untitled, kind (home/subagent/routine), owner, agent, name, project_id, parent_session_id, state, waiting_reason, brief, result, report_notice_id, last_active_at, head_entry_id, pinned, archived |
 | `session_entries` | session, parent_id, seq, kind, channel, payload (json: the text it was written as, so a message reads back as the bytes it was sent as), tsv (generated search index) |
 | `runs` | session, state, started/finished, error |
 | `settings` | key → jsonb value |
@@ -483,14 +479,14 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `models` | provider, name (unique), kind (chat or decision), model (endpoint id), context_window, max_output, reasoning_effort, reasoning_efforts, thinking_switch, preserve_thinking, image_input |
 | `agents` | built-in name, nullable class and prompt overrides |
 | `projects` | stable slug, name, description, status, sandbox directory, timestamps |
-| `profiles` | name, description, model_id, chat_prompt, instructions, preserve_thinking, tools, sampling (jsonb); NULL = not set |
+| `retired_profiles`, `retired_session_profiles`, `retired_profile_defaults` | snapshots of profile rows, session choices, and the default profile setting from migration 0021; not read by the runtime |
 | `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot` (the server's slot the request named, NULL when it named none), `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |
 
-A computer's sessions are deleted with it; chats are deleted on their own; MCP
-credentials cascade from their server. `sessions.head_entry_id` has no foreign
+A computer's sessions are deleted with it; MCP credentials cascade from their
+server. `sessions.head_entry_id` has no foreign
 key (it would be a cycle); `SetSessionHead` checks ownership in its `UPDATE`.
 
 `AppendEntry` locks the session row, inserts with the head as parent and
@@ -498,14 +494,19 @@ key (it would be a cycle); `SetSessionHead` checks ownership in its `UPDATE`.
 
 ### Session trees
 
-Sessions retain the legacy `user` kind and profile fields while callers move.
-Migration 0014 adds `home`, `subagent` and `routine`, agent/name/owner identity,
+Migration 0014 adds `home`, `subagent` and `routine`, agent and name identity,
 project and parent references, lifecycle state, brief, result and last activity.
-Home identity is unique by owner/name; subagent names are unique per parent.
-Existing rows keep their kind and get their last activity from `updated_at`.
-Entries can store a channel, a `preamble` snapshot or a `notice` text payload.
-The API exposes these fields. A notice is delivered by the user entry whose
-payload lists its id (see [Notices](#notices)).
+Home identity is unique by owner and name. Subagent names are unique per parent.
+Migration 0021 converts old user sessions to routines with agent `eika` and a
+name from the title or ID. It keeps each session ID, computer, title, head and
+entry tree. Profile rows, session profile IDs, overrides, tool choices and the
+default profile setting are saved in the three `retired_*` tables. They are not
+applied to agents. The old columns and live profile table are removed.
+
+Old entries keep their kind and exact JSON. The entry-kind constraint is `NOT
+VALID`: it rejects new obsolete kinds without rewriting old entries. Entries can
+store a channel, a `preamble` snapshot or a `notice` text payload. A notice is
+delivered by the user entry whose payload lists its ID (see [Notices](#notices)).
 
 `session.Tree` appends, reads `Path` (root to head), moves the head, and renders an `Outline`. `session.Store` implements
 `agent.Store`; `Load` rebuilds a conversation from the path.
@@ -563,20 +564,11 @@ POST /api/sessions/{id}/messages          GET /api/events
   Public: health, `GET /api/auth/status`, `POST /api/auth/setup` (once),
   `POST /api/auth/login`, `/oauth/client-metadata.json`. `/api/events` also accepts `?token=`. Sign-in
   attempts are serialised.
-- **Configuration** (`configuration.go`): `configure` loads models,
-  profiles, and defaults; `resolve` takes each value from the first layer
-  that sets it and records the layer:
-
-  ```
-  request model -> session overrides + tools -> profile -> model row -> default
-  ```
-
-  The model row supplies `max_output`, `reasoning_effort`, and
-  `preserve_thinking`. `inherited` is the same resolution without one
-  layer's values, for editors. `toolChosen` resolves tool choices against
-  the registry and MCP pool. `newAgent` turns a configuration into
-  `agent.Options`, used by runs and the context preview alike.
-- **Settings** the harness reads (`default_model`, `default_profile`,
+- **Run configuration** (`run_config.go`): the agent definition supplies the
+  prompt, fixed tools and class. The class selects a chat model; the model row
+  supplies sampling and thinking settings. Runs and context previews use the
+  same resolution. An explicit model request is refused.
+- **Settings** the harness reads (`default_model`,
   `model_classes`, `sandbox_image`, `sandbox_limits`, `sandbox_egress`,
   `search_order`, `search_limits`, `setup_complete`,
   `compaction`) are
@@ -591,8 +583,7 @@ POST /api/sessions/{id}/messages          GET /api/events
 - **Model kinds and classes** (`classes.go`): a model row has a `kind`,
   `chat` or `decision`, fixed when it is added. A decision model is never a
   chat model: `defaultModel`, the run configuration (`configBase.models`),
-  profile and session `model_id`, the model of a message, the Responses
-  check and the setup's model count all see chat models only, and the
+  and the setup's model count see chat models only, and the
   model test refuses one, since its request is a chat. The harness's own
   tasks name a class, not a model. The `model_classes` setting maps `deep`,
   `main`, `fast` (chat models) and `decision` (a decision model) to model
@@ -600,8 +591,7 @@ POST /api/sessions/{id}/messages          GET /api/events
   `fast -> main` and, for a chat class left with no model, the default model,
   and `GET /api/settings` reports each class with the model
   and pool that serve it, so the UI never repeats the rule. Nothing asks
-  for `decision` before Sentry. A session still picks its own model
-  (`default_model`, profile, override); agents move to classes in phase 2.
+  for `decision` before Sentry. Each agent selects its class.
 - **Titles** (`titles.go`): a session created without a title is
   `untitled` and called `New session` or `New chat`. When a run begins on
   one, `titles` starts a goroutine (at most one per session, cancelled and
@@ -1019,25 +1009,23 @@ Migration 0011 adds `core.agents` with a built-in name and nullable class and
 prompt overrides. Missing values use built-in defaults; an empty prompt is an
 explicit value. The authenticated agent API returns effective values, defaults
 and overrides. It accepts only chat classes and cannot change capabilities.
-A session with a nonempty `agent` uses that definition at run start and in
-context, prediction and configuration previews. Its class resolves through the
+A session uses its agent definition at run start and in context and prediction
+previews. Its class resolves through the
 existing class fallbacks and the default chat model. Model sampling and thinking
 settings come from the selected model row. An explicit requested model is
-refused. Profile settings, session overrides and tool choices have no effect.
-Sessions without an agent continue to use profiles.
+refused. The archived profile settings and session choices have no effect.
 
 The runtime filters the shared built-in registry to the fixed tool list, in name
 order, for both schemas and dispatch. It connects no MCP servers and includes no
 MCP tools. An agent receives an executor only when one of its fixed tools needs
 a computer (today, the worker). Workers and researchers have `ask_user`,
-which relays questions through home. Legacy profile sessions keep their broker. Runs use the definition's
+which relays questions through home. Runs use the definition's
 call limit and compaction prompts with the current compaction algorithm and
 budget settings. Editing a definition's prompt, an empty override included,
 reaches a session at its next compaction, which rebuilds its snapshot; a new
-session starts with it. The class applies from the next run. The configuration
-response shows the definition as it is now; the context and prediction previews
-show the snapshot. Model-call records
-include the agent name and requested class, including when the class falls back.
+session starts with it. The class applies from the next run. Context and
+prediction previews show the snapshot. Model-call records include the agent
+name and requested class, including when the class falls back.
 
 ## Projects
 
@@ -1055,7 +1043,7 @@ create or update metadata. Opening reads user instructions and the bounded
 `STATUS.md` through the home computer executor; a missing file is empty.
 The run holds the home computer in use until the status read ends.
 Project tools cannot write instructions. They are available only through agent
-definitions, not legacy profile or session tool choices.
+definitions.
 
 ## User instructions
 
@@ -1065,8 +1053,8 @@ no text is set. Each field accepts up to 64 KiB of UTF-8 text without NUL.
 
 Authenticated GET, PUT and DELETE routes read, replace and clear instructions.
 Project instruction writes use separate store methods and routes from project
-metadata. Agent tools have no instruction write path. Existing profile rules
-stay unchanged. The editors are P3-07 (global) and P3-10 (project); P2-07 adds preamble snapshots.
+metadata. Agent tools have no instruction write path. The editors are P3-07
+(global) and P3-10 (project). P2-07 adds preamble snapshots.
 
 The server ensures the local home session at startup. `GET /api/home` returns
 its session and head. Home messages use the web channel.
@@ -1120,8 +1108,7 @@ relative paths start there; the executor still confines paths to the root.
 The HTTP API refuses messages and compactions posted to a subagent's session.
 Subagents use `ask_user` when unclear intent would change the result. Small
 details are decided with assumptions stated in their report. The worker's prompt also tells it to read
-pages with `web_fetch`, not `curl`, so that what it reads is screened. Profile
-and direct chat runs are unchanged.
+pages with `web_fetch`, not `curl`, so that what it reads is screened.
 
 ### Subagent questions
 
@@ -1211,8 +1198,8 @@ at most one recovery notice for them. Report text is not used for matching. A
 notice can be recovered after a crash between idle and posting, or during a
 notice write retry. Startup starts no home turn. Recovered notices
 wait for the next home turn, from a user message or a later new report.
-Legacy profile and chat sessions get the missing results without an agent
-notice or state change. Computer inspection is separate and remains best effort.
+Converted routine sessions get the missing results without an agent notice or
+state change. Computer inspection is separate and remains best effort.
 
 Session entry pages use sequence order across branches and entry IDs as backward
 cursors. The session path remains the current branch used for model context.

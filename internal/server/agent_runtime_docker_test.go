@@ -19,38 +19,14 @@ import (
 func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 	a := newAPI(t)
 	ctx := t.Context()
-	// The default profile must not supply an agent's prompt or tools.
-	profiles, err := a.store.Profiles(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := profiles[0]
-	p.ChatPrompt, p.Instructions = new("legacy prompt"), new("legacy rules")
-	p.Tools = []string{"ask_user"}
-	if _, err := a.store.UpdateProfile(ctx, p); err != nil {
-		t.Fatal(err)
-	}
-	home, err := a.store.CreateSession(ctx, store.Session{Kind: store.SessionHome, Name: "home", Agent: "eika", ProfileID: p.ID, Tools: []string{"ask_user"}})
+	home, err := a.store.EnsureHomeSession(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	decodeBody[map[string]any](t, request(t, a.Server, "PUT", "/api/agents/eika", map[string]any{"class": "deep", "prompt": "agent rules"}), 200)
 	a.assignClasses(t, map[string]any{"main": "test-model"})
-	configPath := "/api/sessions/" + home.ID + "/configuration"
-	cfg := decodeBody[struct {
-		Resolved struct {
-			ProfileID    string   `json:"profile_id"`
-			Model        string   `json:"model"`
-			ChatPrompt   string   `json:"chat_prompt"`
-			Instructions string   `json:"instructions"`
-			Tools        []string `json:"tools"`
-		} `json:"resolved"`
-	}](t, request(t, a.Server, "GET", configPath, nil), 200)
 	wantTools := []string{"history_read", "history_search", "project_create", "project_list", "project_open", "project_update",
 		"subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_search"}
-	if cfg.Resolved.ProfileID != "" || cfg.Resolved.Model != "test-model" || cfg.Resolved.ChatPrompt != "agent rules" || cfg.Resolved.Instructions != "" || !slices.Equal(cfg.Resolved.Tools, wantTools) {
-		t.Fatalf("configuration = %+v", cfg)
-	}
 	preview := decodeBody[struct {
 		Sections []struct {
 			Text string `json:"text"`
