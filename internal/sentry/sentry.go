@@ -85,6 +85,9 @@ type Verdict struct {
 	// Reason is one plain sentence for the model when the call is not allowed.
 	// It never names Sentry, rules or grants.
 	Reason string
+	// Detail is event-specific and goes to the audit row: the kind of
+	// credential found, never its value.
+	Detail string
 }
 
 // SourceKind names where untrusted content came from.
@@ -198,7 +201,7 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 	}
 	err := g.Audit.AppendAudit(ctx, AuditEntry{
 		Event: event, Principal: a.Principal, Key: a.Key, Kind: string(a.Kind),
-		Name: a.Name, Reason: v.Reason,
+		Name: a.Name, Reason: v.Reason, Detail: detail(v),
 	})
 	if err != nil {
 		return Verdict{}, fmt.Errorf("sentry: audit %s: %w", event, err)
@@ -207,4 +210,19 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 }
 
 // policy is the rule for one action. Later packages add rules here.
-func (g *gate) policy(Action) Verdict { return Verdict{Decision: Allow} }
+func (g *gate) policy(a Action) Verdict {
+	if kind := neverShare(a); kind != "" {
+		return Verdict{Decision: Deny, Detail: kind, Reason: "this call contains a credential (" + kind +
+			"). Remove it and send the call again without it."}
+	}
+	return Verdict{Decision: Allow}
+}
+
+// detail is the audit detail of a verdict, or nil.
+func detail(v Verdict) json.RawMessage {
+	if v.Detail == "" {
+		return nil
+	}
+	b, _ := json.Marshal(map[string]string{"pattern": v.Detail})
+	return b
+}

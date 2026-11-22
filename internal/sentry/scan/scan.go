@@ -65,3 +65,14 @@ func Redact(text string) string {
 	}
 	return text
 }
+
+// Find reports the kind of the first secret in text, or "" when there is none.
+// It uses the same patterns as Redact and never returns the value.
+func Find(text string) string {
+	for _, s := range secrets {
+		if s.re.MatchString(text) {
+			return s.kind
+		}
+	}
+	return ""
+}

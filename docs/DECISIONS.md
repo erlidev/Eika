@@ -2459,6 +2459,19 @@ replace the newer text after a conflict.
   so the query or URL can carry data out. They stay blocked while the gate is
   down even though they change nothing on a computer.
 
+## Never share (P4-11)
+
+- `Decide` denies `web_fetch` (its `url`) and `web_search` (its `query`) when a
+  credential pattern from `internal/sentry/scan` (the redaction list, via
+  `scan.Find`) is in them. There is one pattern list. The text is checked as
+  written and after up to three rounds of percent-decoding, with invisible
+  characters removed, so a key in the userinfo, path, query or fragment is found
+  encoded or not. Base64 and split keys are not looked for.
+- The reason names the pattern kind, never the value, and tells the agent to
+  remove it. The audit row's `detail` holds `{"pattern": kind}`.
+- `bash` and file writes are not checked: a command may hold a key the user
+  gave it. Plugin call arguments join `outbound` in phase 11.
+
 ## Ingest of `web_fetch` results (P4-04)
 
 - Ingest runs in `agent.callTool`, once, right after a `web_fetch` result returns

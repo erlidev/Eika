@@ -226,7 +226,7 @@ What stops Eika outright. None of it asks.
       run, a pause hook for the scheduler of phase 7, one push, and the API.
 - [ ] **P4-10**: Add the halt button in `HaltSlot`, resume, and the banner. Add its
       `World` routes and baselines.
-- [ ] **P4-11**: Deny a credential pattern in a `web_fetch` URL or a `web_search`
+- [x] **P4-11**: Deny a credential pattern in a `web_fetch` URL or a `web_search`
       query, with a reason the agent can act on. The patterns are written in
       `internal/sentry/scan`, with no new dependency.
 - [ ] **P4-12**: Plant the canary in the `home` computer's environment on every start,
@@ -487,7 +487,7 @@ and also requires the exit checks.
       or (from phase 11) a plugin call's arguments denies the call, with a reason
       the agent can act on. `bash` and file writes are not checked: a command may
       hold a key the user gave it.
-      - [ ] **P4-11**: Deny credentials in `web_fetch` URLs and `web_search` queries.
+      - [x] **P4-11**: Deny credentials in `web_fetch` URLs and `web_search` queries.
 - [ ] Canary: a fake OpenAI-shaped key planted in the `home` computer's
       environment at start, unique per install. Its literal value in any tool
       call's arguments halts Eika and pushes. It does not see a key a command
