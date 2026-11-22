@@ -54,7 +54,7 @@ contract checks and every kept component (`interface.md` 2).
 | Stream | The one WebSocket (`api/stream.ts`) | Topics gain `inbox`, and `activity` only if `session.updated` on `global` proves too coarse. Voice gets a second socket of its own (section 13) |
 | Client state | Zustand, one store per feature | New stores: `presence`, `layout`, `voice`, `avatar` |
 | Markdown | `react-markdown`, `remark-gfm`, `lowlight` | Kept, with block-level memoisation while streaming (section 14) |
-| Lists | Paged, with `content-visibility: auto` | A virtualiser only under the plan's condition (5,000 entries measurably slow on a phone) |
+| Lists | Paged | P3-16 kept the transcript without a virtualiser after mobile emulation; a physical phone was not measured |
 | Animation | CSS only: transitions, `@starting-style`, view transitions | No animation library |
 | Icons | lucide | As today |
 | Fonts | Geist Variable, Geist Mono Variable (`@fontsource-variable`) | Replace IBM Plex Sans and JetBrains Mono (section 3). OFL, self-hosted |
@@ -756,7 +756,7 @@ Playwright trace with 4x CPU throttling at 390 px:
 | Avatar chunk (engine, framework, without Core and model) | 150 kB gzipped, never in the initial graph |
 | Opening Chat from the cached shell on a phone | Transcript visible in 1 s on a LAN |
 | Streaming a reply | No long task over 50 ms; one render per frame at most |
-| Scrolling a 5,000-entry session | 60 fps on the reference phone, or the virtualiser is added |
+| Scrolling a 5,000-entry session | Target: 60 fps on the reference phone. P3-16 measured mobile emulation and kept the list without a virtualiser |
 | Avatar on with a reply streaming | 60 fps on desktop, 30 on a phone, no dropped audio |
 
 How:

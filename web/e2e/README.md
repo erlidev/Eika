@@ -230,3 +230,13 @@ or moves
 `eika-sandbox:latest`. `make smoke-down` removes the stack, its volumes, and
 any sandbox left on its networks with the volume of each. A first run builds
 the images and takes a few minutes; later runs take well under one.
+
+## Measure transcript history
+
+Run `EIKA_MEASURE_HISTORY=1 npm run visual -- e2e/specs/history-measurement.spec.ts --workers=1`
+from `web/`. The test loads 5,000 entries in 50-entry pages, then scrolls for
+three seconds. It prints each page's elapsed time, React render duration and rendered row
+count, and total time in long tasks (50 ms or more). It also prints initial
+load, frame count, frames above 20 ms, and the longest frame interval. The
+measurement uses React's production profiling build. The mobile browser context emulates
+screen size and touch; its timing is not a measurement on a physical phone.

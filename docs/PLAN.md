@@ -238,7 +238,7 @@ Removal and verification. None of it changes what the user can do.
       obsolete fields and kinds, after their callers moved. Preserve history.
 - [x] **P2-22**: Schedule idle compaction.
 - [x] **P2-19**: Test process death and explicit resume with Docker.
-- [ ] **P3-16**: Complete phone and touch coverage and measure history.
+- [x] **P3-16**: Complete phone and touch coverage and measure history.
 - [ ] **P2-25**: Run persistent home functional scenarios. `evals/live` drives
       inference only today, so this package first gives it a real server and
       session. The live suites of later phases build on that.
@@ -493,7 +493,7 @@ The mobile-first app. Design: `design/interface.md`.
       - [x] **P3-03**: Add World and matching routes.
       - [x] **P3-08**: Add Chat card scenarios.
       - [x] **P3-09**: Add Activity scenarios.
-      - [ ] **P3-16**: Complete phone and touch coverage and measure history.
+      - [x] **P3-16**: Complete phone and touch coverage and measure history.
 - [ ] Remove what is left of the workbench.
       - [x] **P3-17**: Remove the unused workbench.
 
