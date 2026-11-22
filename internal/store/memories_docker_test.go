@@ -3,6 +3,7 @@
 package store_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -198,5 +199,19 @@ func TestMemoryChangesAreLoggedOncePerRealChange(t *testing.T) {
 	}
 	if rest, _ := st.MemoryChangesAfter(ctx, got[1].Seq); len(rest) != 2 {
 		t.Fatalf("after the second change: %v", rest)
+	}
+}
+
+func TestMemoryComputerIDIsPerInstall(t *testing.T) {
+	ctx := t.Context()
+	// Each database gets its own id, the same on every call.
+	fresh := storetest.Open(t)
+	if _, err := fresh.MemoryComputerID(ctx); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("before ensure: %v, want ErrNotFound", err)
+	}
+	a, err := fresh.EnsureMemoryComputerID(ctx)
+	b, _ := fresh.EnsureMemoryComputerID(ctx)
+	if err != nil || a == "" || a == "memory" || a != b {
+		t.Fatalf("fresh ids = %q, %q, %v", a, b, err)
 	}
 }

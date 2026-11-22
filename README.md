@@ -72,8 +72,8 @@ holds exactly:
 
 - `postgres.dump`: the database (`pg_dump -Fc`), sealed credentials included.
 - `memory.tar`: the whole memory repository, git history included, read from
-  the memory computer's volume `eika-cx-memory` (`EIKA_MEMORY_VOLUME` names
-  another).
+  the memory computer's volume `eika-cx-<id>`, where `<id>` is the id this
+  install recorded in its database (`core.memory_computer`). `EIKA_MEMORY_VOLUME` names another volume.
 - `secret.key`: the key that seals stored credentials. Without it the dump's
   sealed settings cannot be read, so the set is refused when it is missing.
 - `manifest.json`: format, UTC time, Eika commit (and whether the tree was
