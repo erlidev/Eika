@@ -439,7 +439,7 @@ no memory section.
       with source links. Use `MasterDetail` and the existing Markdown renderer.
       Add `App.tsx`/`pages.ts` routes, feature README and P5-11 `World` routes.
       Inspect desktop and coarse-pointer phone shots before accepting baselines.
-- [ ] **P5-14**: Add the frontmatter form, Markdown editor, pin/archive/purge
+- [x] **P5-14**: Add the frontmatter form, Markdown editor, pin/archive/purge
       controls and stale-edit handling to Memory. Reuse `MarkdownField` and the
       existing Instructions editor/API beside it; do not build a second editor.
       Keep its Settings access until all callers use any replacement route.
@@ -734,7 +734,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
 - [ ] Memory UI: list, filters, search, editor, pin, archive, purge.
       - [x] **P5-11**: Memory APIs and user mutations.
       - [x] **P5-13**: Memory page, list, search and detail.
-      - [ ] **P5-14**: Editor, controls and Instructions access.
+      - [x] **P5-14**: Editor, controls and Instructions access.
 - [ ] `make backup` and `make restore`: the database, the memory repository and
       the key file, with a documented and tested restore.
       - [x] **P5-16**: Consistent backup.
