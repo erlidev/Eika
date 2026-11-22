@@ -19,6 +19,7 @@ import (
 	"github.com/erlidev/eika/internal/executor/sandbox"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/mcp"
+	"github.com/erlidev/eika/internal/memory"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/search/fetch"
@@ -160,6 +161,9 @@ type Server struct {
 	// gate decides every tool call of every agent loop, the home session's
 	// and the subagents' alike; newAgent hands it to each.
 	gate sentry.Gate
+	// memoryWriter is the only writer of memory files, over the memory
+	// repository and the store's index; nil without a store.
+	memoryWriter *memory.Writer
 	// canary is the fake key planted in the home computer, which the gate
 	// halts Eika for.
 	canary canaryHolder
@@ -175,6 +179,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	s := &Server{cfg: cfg, log: log, mux: http.NewServeMux(), opts: opts, deps: deps}
 	if deps.Store != nil {
 		s.tree = session.NewTree(deps.Store)
+		s.memoryWriter = memory.NewWriter(memoryFiles{s}, deps.Store)
 	}
 	if deps.Store != nil {
 		o := sentry.Options{Audit: deps.Store, Halts: deps.Store, Withheld: deps.Store, TrustedSource: deps.Store.IsTrustedSource, BlockedHost: deps.Store.IsBlockedHost, Threshold: cfg.ScreenThreshold, Log: log}

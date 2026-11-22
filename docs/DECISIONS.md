@@ -2665,3 +2665,15 @@ description and body are screened intact with the ingest threshold and
 `screen_required`. Outcomes: `active`, `pending` (hit, or guard unavailable),
 `deny`, `reject` (unavailable and required). The verdict's spans are for the
 Inbox, which stores them with the pending memory in a later item.
+
+## Memory tools (P5-06)
+
+The four tools are standalone and agent-only, so only `eika` lists them and a
+subagent or legacy profile cannot select them. Only search and read are
+`ReadOnly`; a write or forget fails closed when the gate cannot answer. A write
+is validated, checked by `CheckMemory`, then written, and never asks. The
+pending verdict (spans, max score, unscanned) is stored in `memories.screen`
+(0030), not in the file; an archive keeps it and records `archive_reason`
+(also index-only). Pending memories show in search and read with `pending` and
+a note, and are never part of the index or preamble. The source of a memory
+written by a tool is `session <id>`. Only the user pins; no tool sets it.

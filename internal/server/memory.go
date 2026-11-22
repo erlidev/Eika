@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/computer"
+	"github.com/erlidev/eika/internal/memory"
 	"github.com/erlidev/eika/internal/memory/repo"
+	"github.com/erlidev/eika/internal/sentry"
 )
 
 // The private memory computer. It holds the memory repository and is how Core
@@ -104,4 +106,89 @@ func (s *Server) keepMemory(ctx context.Context, delay time.Duration) {
 		}
 		delay = min(delay*2, longestHomeRetry)
 	}
+}
+
+// memoryFiles is the memory writer's file side: each call goes to the memory
+// repository as it is then, so a computer that was recreated is picked up.
+type memoryFiles struct{ s *Server }
+
+func (m memoryFiles) Read(ctx context.Context, name string) ([]byte, error) {
+	r, err := m.s.MemoryRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.Read(ctx, name)
+}
+
+func (m memoryFiles) Write(ctx context.Context, name string, data []byte) error {
+	r, err := m.s.MemoryRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return r.Write(ctx, name, data)
+}
+
+func (m memoryFiles) Commit(ctx context.Context, name string) error {
+	r, err := m.s.MemoryRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return r.Commit(ctx, name)
+}
+
+var errNoMemory = errors.New("memory is not available")
+
+// memoryService gives the memory tools the server's writer. The tools are
+// built before the server, so it is looked up on each call.
+type memoryService struct{ server func() *Server }
+
+func (m memoryService) writer() (*memory.Writer, error) {
+	if s := m.server(); s != nil && s.memoryWriter != nil {
+		return s.memoryWriter, nil
+	}
+	return nil, errNoMemory
+}
+
+func (m memoryService) Search(ctx context.Context, q memory.Query) ([]memory.Hit, error) {
+	w, err := m.writer()
+	if err != nil {
+		return nil, err
+	}
+	return w.Search(ctx, q)
+}
+
+func (m memoryService) Read(ctx context.Context, name string) (memory.File, error) {
+	w, err := m.writer()
+	if err != nil {
+		return memory.File{}, err
+	}
+	return w.Read(ctx, name)
+}
+
+func (m memoryService) Write(ctx context.Context, req memory.Request) (memory.Result, error) {
+	w, err := m.writer()
+	if err != nil {
+		return memory.Result{}, err
+	}
+	return w.Write(ctx, req)
+}
+
+func (m memoryService) Archive(ctx context.Context, name, reason string) (memory.File, error) {
+	w, err := m.writer()
+	if err != nil {
+		return memory.File{}, err
+	}
+	return w.Archive(ctx, name, reason)
+}
+
+// memoryCheck is Sentry's write check, reached through the server's gate.
+type memoryCheck struct{ server func() *Server }
+
+func (m memoryCheck) CheckMemory(ctx context.Context, c sentry.MemoryCandidate) (sentry.MemoryVerdict, error) {
+	if s := m.server(); s != nil {
+		if checker, ok := s.gate.(sentry.MemoryChecker); ok {
+			return checker.CheckMemory(ctx, c)
+		}
+	}
+	return sentry.MemoryVerdict{}, errNoMemory
 }

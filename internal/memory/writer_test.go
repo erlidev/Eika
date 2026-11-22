@@ -138,17 +138,17 @@ func TestNameCollisionReturnsExistingUnlessReplaced(t *testing.T) {
 func TestArchive(t *testing.T) {
 	ctx := t.Context()
 	w, r, idx := newWriter(t)
-	if _, err := w.Archive(ctx, "missing"); err == nil {
+	if _, err := w.Archive(ctx, "missing", "gone"); err == nil {
 		t.Fatal("archived a memory that does not exist")
 	}
 	if _, err := w.Write(ctx, request("old", "x")); err != nil {
 		t.Fatal(err)
 	}
-	f, err := w.Archive(ctx, "old")
+	f, err := w.Archive(ctx, "old", "superseded")
 	if err != nil || f.State != "archived" || idx.rows["old"].State != "archived" {
 		t.Fatalf("archive: %+v, %v", f, err)
 	}
-	if again, err := w.Archive(ctx, "old"); err != nil || again.State != "archived" {
+	if again, err := w.Archive(ctx, "old", "superseded"); err != nil || again.State != "archived" {
 		t.Fatalf("archive twice: %+v, %v", again, err)
 	}
 	if got, err := w.Read(ctx, "old"); err != nil || got.State != "archived" {
