@@ -82,3 +82,26 @@ test("input choice keeps the draft and renders untrusted Markdown safely", async
   await box.press("Enter");
   await expect(box).toHaveValue("touch message\n");
 });
+
+test("touch sends rendered Markdown and rewind restores its source", async ({ open }) => {
+  const eika = await open({ scenario: "chat", viewport: { width: 390, height: 844 } });
+  const box = eika.page.getByLabel("Message", { exact: true });
+  const source =
+    "## Plan\nSee [the docs](https://example.com/retries)\n\n- read `RETRY_CAP`\n- keep **jitter**";
+  await box.fill(source);
+  await eika.page.getByRole("button", { name: "Send", exact: true }).tap();
+  const message = eika.page.getByRole("article").filter({ hasText: "RETRY_CAP" });
+  await expect(message.getByRole("heading", { name: "Plan" })).toBeVisible();
+  await expect(message.getByRole("link", { name: "the docs" })).toHaveAttribute(
+    "href",
+    "https://example.com/retries",
+  );
+  await expect(message.getByRole("listitem")).toHaveText(["read RETRY_CAP", "keep jitter"]);
+  await expect(message.locator("strong")).toHaveText("jitter");
+  await expect(eika.page.getByText("Decorrelated jitter grows", { exact: false })).toBeVisible();
+  await message
+    .locator("..")
+    .getByRole("button", { name: /Rewind the conversation/ })
+    .tap();
+  await expect(box).toHaveValue(source);
+});

@@ -720,7 +720,9 @@ describe("paginated transcript", () => {
     };
     let state = applyEntries(newTranscript(sessionID), [result, newer]);
     expect(state.committed).toHaveLength(1);
+    const answer = state.committed[0];
     state = applyEntries(state, [call, result]);
+    expect(state.committed[1]).toBe(answer);
     expect(state.entries.map((e) => e.id)).toEqual(["call", "result", "new"]);
     expect(state.committed).toMatchObject([
       { kind: "tool", content: "done", done: true },

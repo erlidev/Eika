@@ -60,9 +60,9 @@ frontmatter-free files.
   inserts a newline and a send button sends. The `chat` and `markdown` key modes and
   the overlaid markdown field stay for keyboards.
 - **Long transcripts.** The home transcript loads the newest 50 entries and pages
-  backwards on scroll (`runtime.md` 7). It virtualises only if a 5,000-entry session
-  is measurably slow on a phone, with about 150 lines of our own or one dependency,
-  justified then.
+  backwards on scroll (`runtime.md` 7). P3-16 measured a 5,000-entry session
+  in Chromium mobile emulation and did not add a virtualiser. A physical phone
+  was not measured; see `PLAN_LOG.md` for the results.
 - **PWA.** A manifest, icons, a service worker that caches the shell (data is
   never cached offline) and installability, so it opens like an app from the home
   screen.

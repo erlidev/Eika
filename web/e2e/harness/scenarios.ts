@@ -613,6 +613,22 @@ export const scenarios = {
       return b.world;
     },
   },
+  "history-measurement": {
+    description: "A 5,000-entry home transcript for phone performance measurement.",
+    path: "/",
+    build: () => {
+      const b = configured();
+      b.world.settings.settings.model_classes = { main: "gpt-5", fast: "gpt-5-mini" };
+      b.conversation(
+        b.home(),
+        Array.from({ length: 5000 }, (_, i) => ({
+          role: "user" as const,
+          content: `Message ${String(i + 1).padStart(4, "0")}: Review the proposed change and its tests.`,
+        })),
+      );
+      return b.world;
+    },
+  },
   workbench: {
     description:
       "Computers (running/stopped/creating), and session ses-backoff with a full transcript. Sending a message streams a mock reply.",

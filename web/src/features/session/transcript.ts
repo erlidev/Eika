@@ -841,6 +841,10 @@ export function applyOutline(state: TranscriptState, outline: SessionOutline): T
   );
 }
 
+// Stored entries are immutable. Keep their rows stable across page loads so
+// memoised transcript items do not render again when only older entries arrive.
+const entryRows = new WeakMap<Entry, TranscriptItem[]>();
+
 /** applyEntries builds rows and the tool-call index in one pass. */
 export function applyEntries(
   state: TranscriptState,
@@ -908,7 +912,12 @@ export function applyEntries(
       }
       continue;
     }
-    for (const item of entryItems(payload)) {
+    let rows = entryRows.get(entry);
+    if (rows === undefined) {
+      rows = entryItems(payload);
+      entryRows.set(entry, rows);
+    }
+    for (const item of rows) {
       if (item.kind === "tool") tools.set(item.callId, committed.length);
       if (item.runId !== "") storedKinds.add(rowIdentity(item));
       committed.push(item);

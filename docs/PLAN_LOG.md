@@ -14,6 +14,15 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   tool calls. Reconnect refreshes missed changes. The board has no last tool
   call, as recorded in DECISIONS. Return if that or refetch cost becomes a need.
 
+- 2026-11-21: P3-16 adds a touch Markdown send and rewind test, a history
+  measurement spec, stable transcript rows and a stable rewind callback. In
+  Chromium mobile emulation at 390x844, initial load was 539 ms (before 1,221);
+  99 pages took 19,052 ms (before 204,332). Pages 1 / 50 / 99 took 91 / 178 /
+  246 ms, with React render durations of 26 / 24 / 33 ms, 50 row renders per
+  page and no long tasks. A 3 s scroll at 5,000 rows gave 187 frames, one over
+  20 ms and a 22 ms maximum. No virtualiser. This was not a physical phone.
+  Every `make check` target passes when run serially.
+
 - 2026-11-19: P3-06 adds the touch composer: a textarea with a Markdown preview,
   Enter for a newline and a Send button, bounded above the on-screen keyboard. An
   Appearance choice overrides pointer detection on hybrid devices. IME never sends

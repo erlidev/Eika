@@ -9,7 +9,16 @@
  */
 
 import { ArrowDown, Scissors, TriangleAlert, Undo2 } from "lucide-react";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Profiler,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { MessageImage } from "@/api/types";
 import { Markdown } from "@/components/Markdown";
@@ -22,7 +31,7 @@ import { useRewind, useSessionOutline, useRunStatus } from "@/features/session/q
 import { useTranscriptPreferences } from "@/features/session/preferences";
 import { Reasoning } from "@/features/session/Reasoning";
 import { Speed } from "@/features/session/Speed";
-import { rewindTarget } from "@/features/session/tree";
+import { rewindableEntries } from "@/features/session/tree";
 import { useSessionStore } from "@/features/session/store";
 import { ToolCard } from "@/features/session/ToolCard";
 import { cutOffText, visibleItems } from "@/features/session/transcript";
@@ -30,6 +39,14 @@ import type { AssistantItem, TranscriptItem } from "@/features/session/transcrip
 import { cn } from "@/lib/utils";
 import type { TranscriptPages } from "@/features/session/useSessionStream";
 import { failureText } from "@/lib/failure";
+
+declare const __EIKA_MEASURE_HISTORY__: boolean;
+
+declare global {
+  interface Window {
+    eikaHistoryMeasurement?: { rows: number; commits: { duration: number; rows: number }[] };
+  }
+}
 
 export type TranscriptProps = {
   /** sessionId is the session on screen, which a rewind acts on. */
@@ -73,6 +90,7 @@ export function Transcript({ sessionId, pages, empty, readOnly = false }: Transc
   const outline = useSessionOutline(readOnly ? undefined : sessionId);
   const status = useRunStatus(sessionId);
   const rewind = useRewind(sessionId);
+  const rewindMutate = rewind.mutate;
   const idle = !(status.data?.active ?? false);
   // A card whose call waits on the user opens by itself: an ask_user
   // question, or an MCP server asking for input. The run state holds a
@@ -87,20 +105,14 @@ export function Transcript({ sessionId, pages, empty, readOnly = false }: Transc
     [questions, elicitations, status.data?.elicitations],
   );
   const nodes = outline.data?.nodes;
-  const rewindable = useMemo(() => {
-    const ids = new Set<string>();
-    for (const node of nodes ?? []) {
-      if (node.kind === "user" && rewindTarget(nodes ?? [], node.id) !== null) ids.add(node.id);
-    }
-    return ids;
-  }, [nodes]);
+  const rewindable = useMemo(() => rewindableEntries(nodes ?? []), [nodes]);
   // A stable callback, so that a row memoised on its item is not re-rendered
   // by every token of the turn in flight.
   const onRewind = useCallback(
     (entryId: string, text: string, images: MessageImage[]) => {
-      rewind.mutate({ entryId, text, images });
+      rewindMutate({ entryId, text, images });
     },
-    [rewind],
+    [rewindMutate],
   );
 
   const scroller = useRef<HTMLDivElement>(null);
@@ -181,29 +193,41 @@ export function Transcript({ sessionId, pages, empty, readOnly = false }: Transc
             {empty ?? "No messages yet."}
           </div>
         ) : (
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-5">
-            {rendered.map((item) => (
-              <div key={item.key} data-transcript-row>
-                <Item
-                  item={item}
-                  openTool={
-                    item.kind === "tool" &&
-                    (waitingCalls.has(item.callId) ||
-                      // A watched subagent's stored question has no live event on reload.
-                      (readOnly && item.name === "ask_user" && !item.done))
-                  }
-                  readOnly={readOnly}
-                  onRewind={
-                    idle && item.kind === "user" && rewindable.has(item.entryId ?? "")
-                      ? onRewind
-                      : undefined
-                  }
-                />
-              </div>
-            ))}
-            <CutOff reason={stopReason} />
-            <div ref={bottom} />
-          </div>
+          <Profiler
+            id="transcript"
+            onRender={(_id, _phase, duration) => {
+              if (!__EIKA_MEASURE_HISTORY__) return;
+              const measurement = window.eikaHistoryMeasurement;
+              if (measurement) {
+                measurement.commits.push({ duration, rows: measurement.rows });
+                measurement.rows = 0;
+              }
+            }}
+          >
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-5">
+              {rendered.map((item) => (
+                <div key={item.key} data-transcript-row>
+                  <Item
+                    item={item}
+                    openTool={
+                      item.kind === "tool" &&
+                      (waitingCalls.has(item.callId) ||
+                        // A watched subagent's stored question has no live event on reload.
+                        (readOnly && item.name === "ask_user" && !item.done))
+                    }
+                    readOnly={readOnly}
+                    onRewind={
+                      idle && item.kind === "user" && rewindable.has(item.entryId ?? "")
+                        ? onRewind
+                        : undefined
+                    }
+                  />
+                </div>
+              ))}
+              <CutOff reason={stopReason} />
+              <div ref={bottom} />
+            </div>
+          </Profiler>
         )}
       </div>
       {/*
@@ -317,6 +341,10 @@ type ItemProps = {
 };
 
 const Item = memo(function Item({ item, openTool, readOnly, onRewind }: ItemProps) {
+  if (__EIKA_MEASURE_HISTORY__ && window.eikaHistoryMeasurement) {
+    // eslint-disable-next-line react-hooks/immutability -- Count render attempts only in the profiling build.
+    window.eikaHistoryMeasurement.rows += 1;
+  }
   switch (item.kind) {
     case "user":
       // A message the user wrote is the one thing on screen that did not come

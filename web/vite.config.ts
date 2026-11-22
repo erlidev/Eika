@@ -12,6 +12,7 @@ const apiTarget = process.env.EIKA_API_URL ?? "http://127.0.0.1:8080";
 let outputDir = "";
 
 export default defineConfig({
+  define: { __EIKA_MEASURE_HISTORY__: JSON.stringify(process.env.EIKA_MEASURE_HISTORY === "1") },
   plugins: [
     react(),
     tailwindcss(),
@@ -48,9 +49,12 @@ export default defineConfig({
     },
   ],
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-    },
+    alias: [
+      ...(process.env.EIKA_MEASURE_HISTORY === "1"
+        ? [{ find: /^react-dom\/client$/, replacement: "react-dom/profiling" }]
+        : []),
+      { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
+    ],
   },
   server: {
     port: 5173,
