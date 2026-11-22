@@ -31,6 +31,8 @@ export const queryKeys = {
   /** instructions is the user's global About me and rules. */
   instructions: () => ["instructions"] as const,
   settings: () => ["settings"] as const,
+  /** halt is whether Eika is halted. */
+  halt: () => ["halt"] as const,
   /** withheld is the list of removals, newest first, paged. */
   withheld: () => ["withheld"] as const,
   models: () => ["models"] as const,

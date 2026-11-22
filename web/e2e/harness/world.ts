@@ -20,6 +20,7 @@ import type {
   ContentDetail,
   Elicitation,
   Entry,
+  Halt,
   MCPServer,
   MCPServerDetails,
   Message,
@@ -133,6 +134,8 @@ export type World = {
   projectInstructionVersions: Record<string, number>;
   /** withheld is GET /api/withheld: every removal, in any order; the route sorts. */
   withheld: Withheld[];
+  /** halt is GET /api/halt; the routes change it and a refused run reads it. */
+  halt: Halt;
   /** calls are each session's recorded model calls, oldest first. */
   calls: Record<string, RecordedCall[]>;
 };
@@ -234,6 +237,7 @@ export function emptyWorld(): World {
     projectInstructions: {},
     projectInstructionVersions: {},
     withheld: [],
+    halt: { halted: false },
     calls: {},
   };
   // The harness makes the home session when it starts, so every world has it.

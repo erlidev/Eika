@@ -20,6 +20,8 @@ import type {
   ElicitationAnswer,
   Entry,
   GlobalInstructions,
+  Halt,
+  HaltRequest,
   MCPPromptResult,
   MCPServer,
   MCPServerDetails,
@@ -518,4 +520,19 @@ export function testNotification(): Promise<void> {
 /** getWithheld reads a page of removals, newest first; `before` is the previous page's cursor. */
 export function getWithheld(before?: string, signal?: AbortSignal): Promise<WithheldPage> {
   return request<WithheldPage>("/api/withheld", { query: { before }, signal });
+}
+
+/** getHalt reads whether Eika is halted. */
+export function getHalt(signal?: AbortSignal): Promise<Halt> {
+  return request<Halt>("/api/halt", { signal });
+}
+
+/** halt stops every run and every tool call until resume; halting twice changes nothing. */
+export function halt(input: HaltRequest = {}): Promise<Halt> {
+  return request<Halt>("/api/halt", { method: "POST", body: input });
+}
+
+/** resumeHalt lifts the halt; the runs it aborted stay aborted. */
+export function resumeHalt(): Promise<Halt> {
+  return request<Halt>("/api/halt/resume", { method: "POST" });
 }

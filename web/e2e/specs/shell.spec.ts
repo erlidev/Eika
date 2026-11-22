@@ -34,7 +34,7 @@ test("desktop: a rail with the pages, the halt slot and Settings", async ({ open
   await expect(pages.getByRole("link", { name: "Chat" })).toHaveAttribute("aria-current", "page");
   await expect(eika.page.getByRole("button", { name: "Settings" })).toBeVisible();
   await expect(eika.page.getByRole("heading", { level: 1, name: "Chat" })).toBeVisible();
-  // The slot is reserved for phase 4's halt button; it holds nothing yet.
+  // The halt button has its slot at the rail's foot.
   await expect(eika.page.locator('[data-slot="halt"]')).toHaveCount(1);
   await expectShot(eika, "chat-desktop-light");
 });

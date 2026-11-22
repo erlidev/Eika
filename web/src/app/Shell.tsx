@@ -3,8 +3,8 @@
  * bottom bar under it, a header with the page's title, and the page below.
  * It fills the dynamic viewport, leaves room for the device's safe areas, and
  * keeps the page above the on-screen keyboard, so the composer is never
- * covered. Settings stays the one dialog it opens. The halt button has its
- * slot here, in the rail and in the phone's header.
+ * covered. Settings stays the one dialog it opens. The halt button is in the
+ * rail and in the phone's header, and the halt banner sits under the header.
  */
 
 import { Outlet, useLocation } from "react-router";
@@ -14,6 +14,7 @@ import { BottomBar, Rail, railWidth } from "@/app/Navigation";
 import { pageAt } from "@/app/pages";
 import { ThemeToggle } from "@/app/ThemeToggle";
 import { ImageViewer } from "@/components/MessageImages";
+import { HaltBanner, useHaltEvents } from "@/features/halt";
 import { Toasts } from "@/features/notifications";
 import { useMCPEvents } from "@/features/mcp";
 import { useSessionUpdates } from "@/features/sessions";
@@ -30,6 +31,7 @@ export function Shell() {
   // new tools, and a session is named in the background; one subscription
   // each for the whole shell keeps the settings and the titles current.
   useMCPEvents();
+  useHaltEvents();
   useSessionUpdates();
 
   // The bar stands under the page and gives way to the keyboard, which the
@@ -45,10 +47,11 @@ export function Shell() {
         <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
           <h1 className="text-sm font-semibold">{page?.title ?? "Eika"}</h1>
           <span className="ml-auto flex items-center gap-1">
-            {phone && <HaltSlot />}
+            {phone && <HaltSlot layout="header" />}
             <ThemeToggle />
           </span>
         </header>
+        <HaltBanner />
         <main className="relative flex min-h-0 flex-1 flex-col">
           <Outlet />
           <Toasts />
