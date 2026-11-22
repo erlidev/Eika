@@ -45,7 +45,7 @@ single hyphens), and the reason shows in the UI.
 ### Storage and scope
 
 ```
-/var/lib/eika/skills/<name>/...         volume eika-skills, read-only to every computer
+/var/lib/eika/skills/<name>/...         the skills volume (eika-cx-<generated id>), read-only to every computer
 core.skills: name, enabled, sha, installed_at, warnings
 ```
 

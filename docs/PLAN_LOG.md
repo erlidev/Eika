@@ -1,5 +1,13 @@
 # Plan log
 
+- 2026-11-22: P6-02 adds the private skills installer computer: migration 0033
+  `skills_computer` (generated per-install id), `store.EnsureSkillsComputerID`,
+  `server.EnsureSkillsInstaller`/`SkillsVolume`/`keepSkillsInstaller` (label
+  `eika.role=skills`, egress none, internal network, hidden from the computers API) and
+  `internal/skill/volume` with Stage, Replace, Remove and Hash plus name and path
+  checks. The volume is `eika-cx-<id>`; the design doc's `eika-skills` is corrected. The
+  `/skills` mount into agent computers is P6-03.
+
 - 2026-11-22: P6-01 adds `internal/skill`: `Parse` (SKILL.md, six spec fields) and
   `ReadZip` (bounded archive), plus the `invoice-totals` and poisoned `notes-formatter`
   fixtures under `testdata/`. Warnings: name/directory mismatch, unquoted colon (retried

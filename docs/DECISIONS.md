@@ -2659,6 +2659,24 @@ does not start it rather than give it a route out. Its volume is the host's own
 per-computer volume, not a compose volume: only its container mounts it, at
 `/var/lib/eika/memory`. Core reaches it through `server.MemoryRepository`.
 
+## Skills installer computer (P6-02)
+
+Same pattern as the memory computer. The installer is a container and volume
+only (label `eika.role=skills`, no computers row), so the computers API, UI, idle
+stopper and tools cannot reach it, and no agent run gets its executor. Its id is
+generated once per install and recorded in `skills_computer` (0033); its
+container and volume are `eika-cx-<id>`, never a fixed name shared by stacks on
+one Docker host. A restore must put back the recorded id with the volume.
+Egress is `none` on the internal sandbox network; a host without that network
+does not start it. `server.SkillsVolume` returns `skill/volume`, whose only
+operations are Stage (to `.stage/<name>`), Replace (move the old directory to
+`.old/`, rename the staged one in, drop the old), Remove and Hash (SHA-256 over
+paths, modes and contents). Names must match the skill name rule and file paths
+must be clean and relative, checked again in the volume; scripts take them as
+positional arguments, never as script text. A crash inside Replace can leave the
+name missing with the old tree in `.old/`; P6-04's Reconcile marks that skill
+broken. Mounting `/skills` into agent computers is P6-03.
+
 ## Memory writer and index (P5-03)
 
 `memory.Writer` is the only writer of memory files. It depends on two small

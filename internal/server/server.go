@@ -153,7 +153,11 @@ type Server struct {
 	memoryID atomic.Pointer[string]
 	// memoryWriter is set once the memory index has been reconciled.
 	memoryWriter atomic.Pointer[memory.Writer]
-	startMu      sync.Mutex
+	// skillsMu makes EnsureSkillsInstaller take turns; skillsID caches the
+	// recorded id of the skills installer once known.
+	skillsMu sync.Mutex
+	skillsID atomic.Pointer[string]
+	startMu  sync.Mutex
 
 	// loginMu makes sign-in attempts take turns, which bounds how fast a
 	// password can be guessed without locking its owner out.
@@ -260,6 +264,7 @@ func (s *Server) Run(ctx context.Context) error {
 			wg.Go(func() { s.idle.watch(watchCtx) })
 			wg.Go(func() { s.keepHome(watchCtx, firstHomeRetry) })
 			wg.Go(func() { s.keepMemory(watchCtx, firstHomeRetry) })
+			wg.Go(func() { s.keepSkillsInstaller(watchCtx, firstHomeRetry) })
 		}
 		// The sweep stops before Close, whose runs it would otherwise race.
 		defer wg.Wait()
