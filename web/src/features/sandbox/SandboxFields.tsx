@@ -208,7 +208,6 @@ export function EgressFields({ id, draft, onChange, host, problems }: SandboxFie
             <ToggleGroupItem
               key={m.value}
               value={m.value}
-              disabled={m.value !== "open" && !control && draft.mode !== m.value}
               className="data-[state=on]:border-primary/40 data-[state=on]:bg-primary/10 data-[state=on]:text-primary h-6 px-2.5 text-xs font-normal data-[state=on]:font-medium"
             >
               {m.label}
@@ -216,9 +215,9 @@ export function EgressFields({ id, draft, onChange, host, problems }: SandboxFie
           ))}
         </ToggleGroup>
         <p className="text-muted-foreground text-xs">
-          {control || draft.mode !== "open"
+          {control
             ? mode?.hint
-            : "This harness runs outside the compose stack, which has the internal network a restricted sandbox needs, so every sandbox's network is open."}
+            : "This harness has no egress control. Computers have direct network routes."}
         </p>
       </div>
       {draft.mode === "allowlist" && (

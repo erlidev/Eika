@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/erlidev/eika/internal/computer"
+	"github.com/erlidev/eika/internal/store"
 )
 
 // sandboxWire is a computer's sandbox as the API sends it.
@@ -125,7 +126,7 @@ func TestSavingTheSandboxSettingsConfinesTheHomeContainer(t *testing.T) {
 
 	// A write the settings refuse changes nothing, and neither does one that
 	// names no sandbox key.
-	if rec := request(t, a.Server, "PUT", "/api/settings", settingsSandbox(9, 0, 0, "open", nil)); rec.Code != 400 {
+	if rec := request(t, a.Server, "PUT", "/api/settings", settingsSandbox(9, 0, 0, "public", nil)); rec.Code != 400 {
 		t.Fatalf("too many cores = %d, want 400", rec.Code)
 	}
 	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{"theme": "light"}), 200)
@@ -138,7 +139,7 @@ func TestSavingTheSandboxSettingsConfinesTheHomeContainer(t *testing.T) {
 
 	// Clearing the settings goes back to the defaults.
 	decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{"sandbox_limits": nil, "sandbox_egress": nil}), 200)
-	reset := computer.Confinement{Limits: computer.Limits{PIDs: 4096}}
+	reset := computer.Confinement{Limits: computer.Limits{PIDs: 4096}, Proxied: true}
 	if confined := a.host.confinements(home.ID); confined[len(confined)-1] != reset {
 		t.Errorf("last confinement = %+v, want the defaults %+v", confined[len(confined)-1], reset)
 	}
@@ -149,7 +150,7 @@ func TestADockerFailureLeavesTheSandboxSettingsSavedForTheNextStart(t *testing.T
 	home := a.home(t)
 
 	a.host.failConfine(errors.New("update container: no space left on device"))
-	rec := request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 512, 300, "open", nil))
+	rec := request(t, a.Server, "PUT", "/api/settings", settingsSandbox(0, 512, 300, "public", nil))
 	if rec.Code != 500 {
 		t.Fatalf("put settings = %d, want 500: %s", rec.Code, rec.Body.String())
 	}
@@ -169,5 +170,49 @@ func TestADockerFailureLeavesTheSandboxSettingsSavedForTheNextStart(t *testing.T
 	want := computer.Confinement{Limits: computer.Limits{MemoryBytes: 512 << 20, PIDs: 300}}
 	if confined := a.host.confinements(home.ID); confined[len(confined)-1] != want {
 		t.Errorf("last confinement = %+v, want %+v from the row at the next start", confined[len(confined)-1], want)
+	}
+}
+
+func TestReconcileConfinesRunningComputers(t *testing.T) {
+	a := newAPI(t)
+	home := a.home(t)
+	a.host.egressControl = true
+	if err := a.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	confined := a.host.confinements(home.ID)
+	if !confined[len(confined)-1].Proxied {
+		t.Fatal("running computer was not moved behind the proxy")
+	}
+}
+
+func TestReconcileStopsFailedComputerAndConfinesOthers(t *testing.T) {
+	a := newAPI(t)
+	first := a.home(t)
+	ctx := t.Context()
+	_, err := a.store.CreateComputer(ctx, store.Computer{ID: "second", Name: "second", State: "running"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := a.host.Create(ctx, computer.Spec{ID: "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.host.Start(ctx, &second); err != nil {
+		t.Fatal(err)
+	}
+	a.host.egressControl = true
+	a.host.confineErr = errors.New("cannot confine")
+	a.host.confineErrID = first.ID
+	if err := a.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := a.host.Inspect(ctx, first.ID)
+	if err != nil || stopped.State != computer.StateStopped || a.computerState(t, first.ID) != "stopped" {
+		t.Fatalf("failed computer: %+v, %v", stopped, err)
+	}
+	confined := a.host.confinements(second.ID)
+	if !confined[len(confined)-1].Proxied {
+		t.Fatal("later computer was not confined")
 	}
 }

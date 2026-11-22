@@ -139,7 +139,7 @@ function isEgress(value: unknown): value is SandboxEgress {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
-    (v.mode === "open" || v.mode === "allowlist" || v.mode === "none") &&
+    (v.mode === "public" || v.mode === "allowlist" || v.mode === "none") &&
     (v.allow === null || (Array.isArray(v.allow) && v.allow.every((h) => typeof h === "string")))
   );
 }

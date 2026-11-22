@@ -91,7 +91,7 @@ type Deps struct {
 	// them the search routes are not served.
 	Search *search.Engine
 	Pages  *fetch.Reader
-	// Egress is the proxy restricted sandboxes reach the internet through.
+	// Egress is the proxy sandboxes reach the internet through.
 	// Nil when the harness cannot restrict a sandbox's egress.
 	Egress *egress.Proxy
 	// MCP holds the connections to the MCP servers the user configured,
@@ -292,6 +292,9 @@ func (s *Server) reconcileComputers(ctx context.Context) error {
 	if s.deps.Computers == nil {
 		return nil
 	}
+	if !s.deps.Computers.EgressControl() {
+		s.log.Warn("computer egress is uncontrolled; computers have direct network routes")
+	}
 	recorded, err := s.deps.Store.Computers(ctx)
 	if err != nil {
 		return err
@@ -301,9 +304,21 @@ func (s *Server) reconcileComputers(ctx context.Context) error {
 		containerID string
 	}
 	observed := make(map[string]observedComputer, len(recorded))
+	var reconcileErr error
 	for _, w := range recorded {
 		host, err := s.deps.Computers.Inspect(ctx, w.ID)
 		if err == nil {
+			if host.State == computer.StateRunning {
+				if err := s.deps.Computers.Confine(ctx, &host, s.confinement(w.Sandbox)); err != nil {
+					s.log.Error("confine computer; stopping it", "computer_id", w.ID, "error", err)
+					s.notifications.send("A computer could not be confined; Eika is stopping it")
+					if stopErr := s.deps.Computers.Stop(ctx, &host); stopErr != nil {
+						s.log.Error("stop unconfined computer", "computer_id", w.ID, "error", stopErr)
+						reconcileErr = errors.Join(reconcileErr, fmt.Errorf("stop unconfined computer %s: %w", w.ID, stopErr))
+						continue
+					}
+				}
+			}
 			observed[w.ID] = observedComputer{state: host.State, containerID: host.ContainerID}
 			continue
 		}
@@ -311,10 +326,13 @@ func (s *Server) reconcileComputers(ctx context.Context) error {
 			observed[w.ID] = observedComputer{state: computer.StateGone}
 			continue
 		}
-		return fmt.Errorf("reconcile computer %s: %w", w.ID, err)
+		reconcileErr = errors.Join(reconcileErr, fmt.Errorf("reconcile computer %s: %w", w.ID, err))
 	}
 	for _, w := range recorded {
-		actual := observed[w.ID]
+		actual, ok := observed[w.ID]
+		if !ok {
+			continue
+		}
 		state := string(actual.state)
 		if state == w.State {
 			continue
@@ -325,7 +343,7 @@ func (s *Server) reconcileComputers(ctx context.Context) error {
 		s.computerState(ctx, w.ID, state)
 		s.log.Info("computer state reconciled", "computer_id", w.ID, "was", w.State, "state", state)
 	}
-	return nil
+	return reconcileErr
 }
 
 // computerState reports a computer lifecycle transition to the clients

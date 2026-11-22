@@ -120,7 +120,7 @@ func TestSavingLimitsReachesTheRealHomeContainer(t *testing.T) {
 
 	save := func(cpus float64, memoryMB, pids int64) {
 		t.Helper()
-		rec := requestWith(t, s, "PUT", "/api/settings", settingsSandbox(cpus, memoryMB, pids, "open", nil), "Bearer "+testToken)
+		rec := requestWith(t, s, "PUT", "/api/settings", settingsSandbox(cpus, memoryMB, pids, "public", nil), "Bearer "+testToken)
 		decodeBody[settingsWire](t, rec, 200)
 	}
 

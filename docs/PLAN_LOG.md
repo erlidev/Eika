@@ -1,5 +1,7 @@
 # Plan log
 
+- **P4-17:** Replaced `open` with `public`, migrated stored sandbox settings, and reconfined running computers at startup. Hosts without egress control retain direct routes and log a warning. The proxy keeps its blocked-host list. If startup confinement fails, the computer is stopped and the other computers are still checked; an unsafe reconciliation error stops startup.
+
 The log of `PLAN.md`, newest first. An entry holds what the next agent needs: the
 date, the items done with their commits, the `make live` result where one ran, what
 was skipped and why, and findings that change later items. What a commit did goes

@@ -13,8 +13,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/erlidev/eika/internal/computer"
-	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/store"
@@ -302,9 +300,6 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		}
 		if _, err := checkEgress(e); err != nil {
 			return err
-		}
-		if e.Mode != string(egress.ModeOpen) && !s.deps.Computers.EgressControl() {
-			return computer.ErrNoEgressControl
 		}
 	case settingIdleMinutes:
 		var n int

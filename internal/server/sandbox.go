@@ -48,7 +48,7 @@ type limitsBody struct {
 
 // egressBody is what a container may reach on the network.
 type egressBody struct {
-	// Mode is open, allowlist, or none.
+	// Mode is public, allowlist, or none.
 	Mode string `json:"mode"`
 	// Allow is the host patterns an allowlist admits, such as github.com or
 	// *.githubusercontent.com. It is kept whatever the mode, so switching
@@ -128,13 +128,9 @@ func (s *Server) forgetEgress(id string) {
 
 // homeSandbox is the sandbox the home computer has: what the settings say,
 // or the harness's own defaults. The settings were checked when they were
-// written, so a restricted egress on a harness that cannot restrict it can
-// only mean the harness changed since, which is an error here.
+// written. A host without egress control gives computers direct routes.
 func (s *Server) homeSandbox(ctx context.Context) (store.ComputerSandbox, error) {
 	sandbox := fromBody(sandboxBody(s.sandboxDefaults(ctx)))
-	if egressMode(sandbox).Restricted() && !s.deps.Computers.EgressControl() {
-		return store.ComputerSandbox{}, computer.ErrNoEgressControl
-	}
 	return sandbox, nil
 }
 
@@ -202,32 +198,32 @@ func (s *Server) sandboxDefaults(ctx context.Context) sandboxDefaults {
 }
 
 // builtinSandboxDefaults are the sandbox defaults until the user sets
-// others: no CPU or memory limit, a process limit, and open egress with the
+// others: no CPU or memory limit, a process limit, and public egress with the
 // suggested allowlist ready for when it is turned on.
 func builtinSandboxDefaults() sandboxDefaults {
 	return sandboxDefaults{
 		Limits: limitsBody{PIDs: defaultPIDs},
-		Egress: egressBody{Mode: string(egress.ModeOpen), Allow: slices.Clone(egress.DefaultAllowlist)},
+		Egress: egressBody{Mode: string(egress.ModePublic), Allow: slices.Clone(egress.DefaultAllowlist)},
 	}
 }
 
 // confinement is what a computer's container is created and confined with.
-func confinement(sb store.ComputerSandbox) computer.Confinement {
+func (s *Server) confinement(sb store.ComputerSandbox) computer.Confinement {
 	return computer.Confinement{
 		Limits: computer.Limits{
 			CPUs:        sb.CPUs,
 			MemoryBytes: sb.MemoryMB << 20,
 			PIDs:        sb.PIDs,
 		},
-		Proxied: egressMode(sb).Restricted(),
+		Proxied: s.deps.Computers.EgressControl(),
 	}
 }
 
 // egressMode is a stored sandbox's egress mode; a computer from before the
-// modes is open.
+// modes is public.
 func egressMode(sb store.ComputerSandbox) egress.Mode {
 	if sb.Egress == "" {
-		return egress.ModeOpen
+		return egress.ModePublic
 	}
 	return egress.Mode(sb.Egress)
 }

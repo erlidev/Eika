@@ -64,7 +64,7 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 		if host, err = s.deps.Computers.Create(ctx, computer.Spec{
 			ID:          row.ID,
 			Image:       row.Image,
-			Confinement: confinement(row.Sandbox),
+			Confinement: s.confinement(row.Sandbox),
 		}); err != nil {
 			return fmt.Errorf("create the home computer: %w", err)
 		}
@@ -141,7 +141,7 @@ func (s *Server) applyHomeSandbox(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := s.deps.Computers.Confine(ctx, &host, confinement(sandbox)); err != nil {
+	if err := s.deps.Computers.Confine(ctx, &host, s.confinement(sandbox)); err != nil {
 		return err
 	}
 	s.computerState(ctx, home.ID, home.State)
@@ -201,7 +201,7 @@ func (s *Server) keepHome(ctx context.Context, delay time.Duration) {
 // its row records: a change that reached the container only in part before it
 // stopped is completed here.
 func (s *Server) startComputer(ctx context.Context, cx store.Computer, host *computer.Computer) error {
-	if err := s.deps.Computers.Confine(ctx, host, confinement(cx.Sandbox)); err != nil {
+	if err := s.deps.Computers.Confine(ctx, host, s.confinement(cx.Sandbox)); err != nil {
 		return err
 	}
 	return s.deps.Computers.Start(ctx, host)

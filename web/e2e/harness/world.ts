@@ -173,7 +173,7 @@ export function emptyWorld(): World {
         aging_seconds: 300,
         preempt_running: false,
         sandbox_limits: { cpus: 0, memory_mb: 0, pids: 4096 },
-        sandbox_egress: { mode: "open", allow: [...defaultAllowlist] },
+        sandbox_egress: { mode: "public", allow: [...defaultAllowlist] },
         // As the harness documents them in docs/api/http.md.
         search_order: ["searxng", "exa", "tavily", "brave", "marginalia"],
         search_limits: {
@@ -292,7 +292,7 @@ const defaultAllowlist = [
 export function defaultSandbox(): Sandbox {
   return {
     limits: { cpus: 0, memory_mb: 0, pids: 4096 },
-    egress: { mode: "open", allow: [...defaultAllowlist] },
+    egress: { mode: "public", allow: [...defaultAllowlist] },
   };
 }
 
