@@ -2093,3 +2093,9 @@ Audited sandbox egress and allowlist changes in the settings transaction. Screen
 settings and trusted sources already have transactional audit rows. Migration 0023
 already protects the audit table from update, delete and truncate, with a Postgres
 upgrade test. P4-19 must audit blocklist changes in their transaction.
+
+## P4-20 — Core web egress (2026-11-22)
+
+Core checks the blocklist and halt for each fetch and hosted search request,
+including redirects and reused connections. The configured SearXNG origin is
+exempt; redirects away from it are checked. Denials are audited by Sentry.

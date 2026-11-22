@@ -339,6 +339,8 @@ Tavily, Brave, Marginalia) or a source the model names in `web_search`'s
 `search.Searcher` in `internal/search/<package>/` and register in
 `internal/search/registry.go`. Search runs in the harness, not in a sandbox,
 because it is a network call rather than a filesystem or process action.
+Wire each hosted backend to the shared guarded client in `server.buildSearch`.
+It checks Sentry on each request and uses netguard for outbound connections.
 
 A searcher only speaks its backend's wire format. It returns at most
 `q.Limit` results, reduced to `search.Result`, with descriptions passed

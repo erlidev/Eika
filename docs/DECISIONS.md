@@ -212,7 +212,9 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   Sentry before each connection. A blocklist entry matches the normalized host,
   and takes precedence over a computer's allowlist. Netguard still checks the
   resolved address at dial time. Halt closes active proxy connections and refuses
-  new ones. Core fetches adopt the blocklist in P4-20.
+  new ones. Core checks each fetch and hosted search request through the same gate,
+  including redirects and reused connections. The configured local SearXNG origin
+  is exempt; redirects to other origins are checked.
 - **Fixtures reach `web_fetch` through a config key of exact private hostnames**
   (2026-11-21). Core's fetch refuses private addresses, so smoke and live fixtures
   need one exception. The key is empty by default, takes exact hostnames only, is
