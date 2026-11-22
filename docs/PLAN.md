@@ -276,7 +276,7 @@ connection.
 
 - [x] **P4-22**: Close the audit gaps: setting-change rows, and an append-only
       guarantee in the database.
-- [ ] **P4-23**: Update the security section of the style guide.
+- [x] **P4-23**: Update the security section of the style guide.
 - [x] **P4-24**: Add the fetch fixture-hosts config key, set by `compose.smoke.yaml`,
       and the Sentry scenario to `make smoke`: a scripted model fetches a fixture page
       with a planted instruction, and the result has the part removed.
@@ -539,10 +539,10 @@ and also requires the exit checks.
       - [x] **P4-13**: Benchmark `Decide` in `make check`.
       - [ ] **P4-25**: Build the injection harness and fixtures on the P2-25 live harness.
       - [ ] **P4-26**: Measure the chain, `curl` and guard-stopped scenarios, and log the numbers.
-- [ ] Update the security section of the style guide: Core holds model keys and
+- [x] Update the security section of the style guide: Core holds model keys and
       third-party credentials, sealed; computers get proxy identities and nothing
       else.
-      - [ ] **P4-23**: Update the security section of the style guide.
+      - [x] **P4-23**: Update the security section of the style guide.
 
 **Exit:** by hand, with the phone beside you:
 - A researcher reads a fixture page with a planted instruction. The part is

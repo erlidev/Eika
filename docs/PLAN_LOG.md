@@ -1,5 +1,9 @@
 # Plan log
 
+- 2026-11-22: P4-23 updates the style guide with Phase 4 security rules for
+  secrets, ingest, tool side effects, guarded outbound requests and append-only
+  audit records.
+
 - 2026-11-22: P4-21 adds blocked hosts to Security; computers, web fetch and
   search all refuse them (P4-20).
 

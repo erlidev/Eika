@@ -312,16 +312,25 @@ make obvious.
 
 - Agent actions execute only through `executor` implementations backed by
   a sandbox. `executor/local` is `//go:build !prod` and test-only.
-- The harness holds all credentials (LLM keys, git remote tokens), sealed
-  with `internal/secret` before they reach the database and never returned
-  by the API. Sandboxes receive a per-computer `eikad` token and nothing
-  else.
+- Core holds model keys and third-party credentials. Seal stored secrets with
+  `internal/secret` and never return them from the API. A computer gets its
+  own `eikad` token and proxy identity, and nothing else (the canary is fake).
+- Send untrusted content through Sentry ingest before a model sees it. Ingest
+  removes hidden characters, redacts secrets, screens the text and wraps it as
+  untrusted data.
+- Mark a tool `ReadOnly` only when it has no side effects. A tool that changes
+  state or sends data must not declare `ReadOnly`.
+- Send outbound requests through the guarded clients. They enforce the host
+  blocklist and halt state; new outbound dials must also use `netguard`.
+- Never log or return secret values. Redact them before storage or model use.
+- Keep audit records append-only. Add audit rows through the existing audit
+  store; do not update or delete them.
 - All HTTP handlers require a bearer token except the health checks and the
   sign-in routes that hand one out.
 - Validate and bound every input from an agent or the UI: path traversal in
   file tools, command length, output size, search query length.
-- Never log secrets. Config values named `*_key`, `*_token`, `*_secret` are
-  redacted by the config package's `String()`.
+- Config values named `*_key`, `*_token`, `*_secret` are redacted by the
+  config package's `String()`.
 
 ## 7. Checklist before finishing a change
 
