@@ -2080,3 +2080,10 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   - No UI screenshot was taken: the dev binary does not embed the web build.
     No UI changed in the close. The bench stopped `llama-server` for the runs
     and restored it after.
+
+## P4-22: Security setting audit
+
+Audited sandbox egress and allowlist changes in the settings transaction. Screen
+settings and trusted sources already have transactional audit rows. Migration 0023
+already protects the audit table from update, delete and truncate, with a Postgres
+upgrade test. P4-19 must audit blocklist changes in their transaction.
