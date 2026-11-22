@@ -2604,3 +2604,17 @@ transaction. Plugin trust is deferred to phase 11.
   must do the same for blocklist changes with the store's `appendAudit` function.
 - Migration 0023 already rejects audit updates, deletes, and truncation. Its
   Postgres upgrade test checks each operation, so no new migration is needed.
+
+## Phase 4 close (P4-27)
+
+- The exit checks run as live scenarios, not by hand (2026-11-22), because they are
+  repeatable and the owner could not be present. They drive the real Core, guard and
+  sandbox through the public API. What they cannot see is the rendered UI: the halt
+  button, banner and card mark stay covered by the visual specs and the `removed`
+  count on the stored result.
+- Home has no `bash` or `web_fetch`, so a check that needs them starts a worker or a
+  researcher. A halt that a worker's call causes writes its deny audit row a moment
+  after the halt is visible, because the run is aborted in the background; a reader
+  of the audit log must not assume the row is there at the instant of the halt.
+- With the screen on, an injected page loses its useful fact too: the whole scored
+  window is removed. This is the accepted cost of screening a window, not a defect.
