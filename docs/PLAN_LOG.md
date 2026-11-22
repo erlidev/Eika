@@ -1,5 +1,17 @@
 # Plan log
 
+- 2026-11-22: P5-03 adds `memory.Writer` and migration 0029 (`memories`).
+  Write (create, or replace with `Replace`), Archive, Read and Search all go
+  through the P5-02 repository (`memory.Files`) and the index (`memory.Index`,
+  implemented by the store). A mutex makes file write, commit and row upsert one
+  critical section. A name collision without `Replace` returns the stored memory
+  with `Existing` set. Existence is decided from the file, not the row. An
+  identical rewrite only re-indexes. Search is `plainto_tsquery('english')` over
+  name, description and the first 4 KiB of body, archived hidden by default,
+  query at most 200 characters, limit 10 (max 50). The row keeps `content_sha`
+  for P5-04's reconcile; a crash after the file write or commit leaves a stale
+  row for P5-04 to repair. Callers choose `State` (P5-05); pin is not set here.
+
 - 2026-11-22: P5-01 adds the bounded memory file format. State is tracked
   in frontmatter; repository access and the index remain for later packages.
 
