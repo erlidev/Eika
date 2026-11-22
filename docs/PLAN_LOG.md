@@ -2233,3 +2233,25 @@ preamble section (texts still join to the same bytes), mirrored in web types
 and segment bar; the contract file is unchanged (`kind` is a string). The
 restart test now saves a memory after the snapshot and checks the prefix bytes.
 P5-10 reads `Session.Memory.Revision` for tail notices; no new migration.
+
+## P5-10 — Memory changes in the next message (2026-11-22)
+
+Migration 0031 adds `memory_changes` (seq, name, action saved/edited/archived/
+purged, state; no bodies). `UpsertMemory` and `DeleteMemory` log a change only
+when the row's content hash or state really changes, in the same transaction;
+an advisory lock gives seq in commit order. `ActiveMemories` now also returns
+the last seq in one repeatable-read snapshot, stored as `MemorySnapshot.ChangeSeq`
+(also when there is no section; the count-failure path keeps the previous one).
+As a home message is stamped, `notices.collectMemoryChanges` writes one notice
+entry `notice-memory-<last seq>` for changes after max(snapshot seq, last
+memory notice seq read from the store), and adds it to the waiting list without
+waking. Delivery then uses the ordinary notice rules (entry id in the user
+message payload, undelivered ones reloaded after a restart), so a write racing
+compaction lands either in the snapshot or in a notice, and a retry rewrites the
+same id. `notices.waiting` ignores memory notices, so they never start a
+background turn; no push is sent. A pending save is named as "(pending review)".
+Limits: a session whose snapshot predates ChangeSeq names all earlier changes
+once; a notice written just before a compaction whose snapshot includes the
+change is still delivered (redundant, not lost). The server test cannot make the
+fake model count exactly, so the exact-count refresh path is covered by the store
+test (snapshot seq is consistent with the rows).

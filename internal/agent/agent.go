@@ -124,6 +124,10 @@ type MemorySnapshot struct {
 	Revision string `json:"revision"`
 	// Text is the section, exactly as it ends the preamble.
 	Text string `json:"text"`
+	// ChangeSeq is the last memory change the section already includes; later
+	// changes are named in the tail of the next message. It is set even when
+	// there is no section.
+	ChangeSeq int64 `json:"change_seq,omitempty"`
 }
 
 // Snapshot is what a session's prefix holds beside its messages and is

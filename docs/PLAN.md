@@ -412,7 +412,7 @@ screen hit is pending. No approval or push occurs.
       `refreshSnapshot` in the existing compaction transaction. Extend the
       prefix-stability/restart check; pending and expired memories never auto-load.
       Update the context inspector and wire contract if its shape changes.
-- [ ] **P5-10**: Add memory changes since the snapshot to the next message's tail
+- [x] **P5-10**: Add memory changes since the snapshot to the next message's tail
       `<context>`, using the existing notice delivery rules. Persist revision and
       delivery state as needed; test a write racing compaction, restart and retry
       so changes are neither lost nor repeated. A saved name is enough; do not
@@ -836,7 +836,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - [x] **P5-08**: Exact budget and stable selection.
       - [x] **P5-09**: Stored snapshot and compaction integration.
 - [ ] Notices at the tail for memory changes since the preamble.
-      - [ ] **P5-10**: Durable changes in the next message context.
+      - [x] **P5-10**: Durable changes in the next message context.
 - [ ] Write policy in the `eika` prompt, including saving a memory at once
       instead of later. Only `eika` writes memories (decided): subagents put what
       they learned in their report, and Eika saves it.

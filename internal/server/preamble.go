@@ -81,20 +81,20 @@ func textCounter(c *counter.Counter) memory.CountFunc {
 // session's memory section from it. Pending, archived and expired memories
 // never load. With no eligible memory there is no section.
 func (s *Server) buildMemory(ctx context.Context, count memory.CountFunc) (agent.MemorySnapshot, error) {
-	memories, err := s.deps.Store.ActiveMemories(ctx)
+	memories, seq, err := s.deps.Store.ActiveMemories(ctx)
 	if err != nil {
 		return agent.MemorySnapshot{}, err
 	}
 	now := time.Now()
 	rev := memory.Revision(memories, now)
 	if rev == "" {
-		return agent.MemorySnapshot{}, nil
+		return agent.MemorySnapshot{ChangeSeq: seq}, nil
 	}
 	sec, err := memory.BuildSection(ctx, count, memories, now)
 	if err != nil {
 		return agent.MemorySnapshot{}, err
 	}
-	return agent.MemorySnapshot{Revision: rev, Text: sec.Text}, nil
+	return agent.MemorySnapshot{Revision: rev, Text: sec.Text, ChangeSeq: seq}, nil
 }
 
 // memorySource supplies the memory section of a preamble. It is called for
@@ -223,6 +223,9 @@ func (s *Server) refreshSnapshot(ctx context.Context, id string, record func(age
 	}
 	if err := s.deps.Store.AppendEntries(ctx, sess.ID, entries...); err != nil {
 		return agent.Snapshot{}, err
+	}
+	if sess.Kind == store.SessionHome {
+		s.notices.setSnapshotSeq(sess.ID, mem.ChangeSeq)
 	}
 	return snap, nil
 }
