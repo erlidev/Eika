@@ -19,9 +19,11 @@ type Gate interface {
 	// Decide answers at once. An error means the gate could not answer: the
 	// caller blocks side-effecting tools and lets the rest run.
 	Decide(ctx context.Context, a Action) (Verdict, error)
-	// Ingest redacts, screens and wraps one untrusted result before it reaches
-	// a model, and returns the text to use in its place.
-	Ingest(ctx context.Context, source Source, content string) (string, error)
+	// Ingest redacts, screens and wraps untrusted content before it reaches a
+	// model, and returns the text to use in its place, one entry per segment.
+	// A tool result that is one piece of content is one segment; a web search
+	// is one segment per result, so a removal never spans two results.
+	Ingest(ctx context.Context, segments []Segment) ([]Ingested, error)
 }
 
 // Kind says how an Action's Name is read.
@@ -96,6 +98,19 @@ type Source struct {
 	Run     string
 	Key     string // the tool call's key, when there is one
 	Name    string // the URL, query or plugin tool
+}
+
+// Segment is one piece of untrusted content with its own source.
+type Segment struct {
+	Source Source
+	Text   string
+}
+
+// Ingested is a segment after ingest. Removed counts the removals in it, which
+// is what marks a tool card as having had one.
+type Ingested struct {
+	Text    string
+	Removed int
 }
 
 // Audit event names. Plain allows are not audited.

@@ -202,7 +202,7 @@ here halts, restricts or settles anything.
       `<untrusted>` reminder in code, so a prompt override cannot drop it. Add the
       guard client, the `withheld` table, the `guard_url` config key and the
       threshold setting. A removal writes a withheld row and an audit row.
-- [ ] **P4-05**: Screen each `web_search` result on its own. The engine returns its
+- [x] **P4-05**: Screen each `web_search` result on its own. The engine returns its
       results as segments, so a removal never spans two results.
 - [ ] **P4-06**: Screen a subagent's report and its questions before they become
       Eika's notice, without the wrapper.
@@ -474,7 +474,7 @@ and also requires the exit checks.
       session, text, score) and an audit row, and marks the tool card in the UI.
       It sends no push and stops nothing.
       - [x] **P4-04**: Ingest `web_fetch` results: invisible characters, redaction, screen, wrapper.
-      - [ ] **P4-05**: Screen each `web_search` result on its own.
+      - [x] **P4-05**: Screen each `web_search` result on its own.
       - [ ] **P4-06**: Screen subagent reports and questions on their way to Eika.
 - [ ] When the guard does not answer: content passes wrapped and marked
       `unscanned`, a banner shows, and one push goes out when the state changes,

@@ -9,6 +9,17 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-05 screens each `web_search` result on its own. `Gate.Ingest` now takes
+  `[]sentry.Segment` (source and text) and returns `[]sentry.Ingested` (text and
+  `Removed`, the count P4-08 marks a card from); `Screener`/`screen.Client` take many
+  texts in one `/screen` call (chunked at the guard's 64). The engine returns
+  `Outcome.Segments` (a notice, then one per result with its URL as source); the tool
+  passes them as `tool.Result.Parts`; `agent.ingest` wraps each result with `web:<host>`
+  and rebuilds `Content` with the same layout plus wrappers. Also covers the other
+  sources (wikipedia, arxiv, GitHub). `Details.Results` still holds the raw results for
+  the interface.
+  - Next: P4-06 calls `Ingest` with one `SourceReport` segment. P4-08 reads `Removed`
+    (or `withheld.call_key`); the agent does not yet carry it onto the tool event.
 - 2026-11-21: P4-04 added ingest for `web_fetch`: `sentry/scan` (invisible characters,
   redaction), `sentry/screen` (guard client), `gate.Ingest` (strip, redact, screen,
   wrap) and migration 0023 `core.withheld` (`store.AppendWithheld`). `agent.callTool`

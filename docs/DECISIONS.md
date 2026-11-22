@@ -2482,3 +2482,15 @@ replace the newer text after a conflict.
   gate is set, so an overridden prompt keeps it, and it does not name the gate.
 - The wrapper's closing tag is broken inside the content so a page cannot end its
   own wrapper.
+
+## Ingest takes segments (P4-05)
+
+- `Gate.Ingest(ctx, []Segment) ([]Ingested, error)` is the one entry point. A
+  segment is content with its own source; it is cleaned, screened, wrapped and
+  recorded on its own, so a removal never spans two pieces of content. All segments
+  go to the guard in one `/screen` call (the guard takes 64; the client chunks
+  beyond that). A `web_fetch` page is one segment, a search is one per result.
+- `Ingested.Removed` counts removals so P4-08 can mark a tool card without a second
+  lookup. The tool carries the cut as `tool.Result.Parts`; the agent ingests the
+  parts that have a `Source` and joins them again, so the model sees the same
+  format as before plus the wrappers. A notice stays unwrapped: it is the harness's.

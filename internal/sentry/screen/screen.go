@@ -41,9 +41,28 @@ func New(baseURL string) *Client {
 	return &Client{url: strings.TrimRight(baseURL, "/"), http: &http.Client{Timeout: Timeout}}
 }
 
-// Screen scores text and returns its windows, in order, tiling the text.
-func (c *Client) Screen(ctx context.Context, text string) ([]Window, error) {
-	body, err := json.Marshal(map[string][]string{"texts": {text}})
+// MaxTexts is the most texts the guard takes in one call.
+const MaxTexts = 64
+
+// Screen scores every text in one call to the guard (more than MaxTexts go in
+// further calls) and returns each text's windows, in order, tiling the text.
+// No text may be empty.
+func (c *Client) Screen(ctx context.Context, texts []string) ([][]Window, error) {
+	var out [][]Window
+	for len(texts) > 0 {
+		n := min(len(texts), MaxTexts)
+		part, err := c.call(ctx, texts[:n])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, part...)
+		texts = texts[n:]
+	}
+	return out, nil
+}
+
+func (c *Client) call(ctx context.Context, texts []string) ([][]Window, error) {
+	body, err := json.Marshal(map[string][]string{"texts": texts})
 	if err != nil {
 		return nil, fmt.Errorf("encode screen request: %w", err)
 	}
@@ -62,16 +81,20 @@ func (c *Client) Screen(ctx context.Context, text string) ([]Window, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("call guard: status %d", resp.StatusCode)
 	}
-	var out struct {
+	var body2 struct {
 		Results []struct {
 			Windows []Window `json:"windows"`
 		} `json:"results"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponse)).Decode(&out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponse)).Decode(&body2); err != nil {
 		return nil, fmt.Errorf("read guard response: %w", err)
 	}
-	if len(out.Results) != 1 {
-		return nil, fmt.Errorf("read guard response: %d results for 1 text", len(out.Results))
+	if len(body2.Results) != len(texts) {
+		return nil, fmt.Errorf("read guard response: %d results for %d texts", len(body2.Results), len(texts))
 	}
-	return out.Results[0].Windows, nil
+	out := make([][]Window, len(texts))
+	for i, r := range body2.Results {
+		out[i] = r.Windows
+	}
+	return out, nil
 }

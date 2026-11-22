@@ -515,26 +515,56 @@ func (a *Agent) callTool(ctx context.Context, s *Session, runID string, g *guard
 
 // ingest passes the result of a tool whose output is untrusted through the
 // gate, in place. It runs before the result is emitted or stored, so the
-// session, a replay and a compaction only ever hold the ingested text. A gate
-// that cannot ingest withholds the content.
+// session, a replay and a compaction only ever hold the ingested text. A
+// web_search result is ingested one part per search result, in one call to the
+// gate. A gate that cannot ingest withholds the content.
 func (a *Agent) ingest(ctx context.Context, s *Session, runID string, c provider.ToolCall, r *tool.Result) error {
-	if a.opts.Gate == nil || c.Name != "web_fetch" || r.IsError {
+	if a.opts.Gate == nil || r.IsError || (c.Name != "web_fetch" && c.Name != "web_search") {
 		return nil
 	}
-	var args struct {
-		URL string `json:"url"`
+	src := sentry.Source{Session: s.ID, Run: runID, Key: s.ID + ":" + c.ID}
+	var segs []sentry.Segment
+	var at []int // the parts that are untrusted, as indexes into r.Parts
+	if c.Name == "web_fetch" {
+		var args struct {
+			URL string `json:"url"`
+		}
+		_ = json.Unmarshal([]byte(c.Arguments), &args)
+		src.Kind, src.Name = sentry.SourceFetch, args.URL
+		segs = []sentry.Segment{{Source: src, Text: r.Content}}
+	} else {
+		src.Kind = sentry.SourceSearch
+		for i, p := range r.Parts {
+			if p.Source != "" {
+				seg := src
+				seg.Name = p.Source
+				segs = append(segs, sentry.Segment{Source: seg, Text: p.Text})
+				at = append(at, i)
+			}
+		}
+		if len(segs) == 0 {
+			return nil
+		}
 	}
-	_ = json.Unmarshal([]byte(c.Arguments), &args)
-	text, err := a.opts.Gate.Ingest(ctx, sentry.Source{
-		Kind: sentry.SourceFetch, Session: s.ID, Run: runID, Key: s.ID + ":" + c.ID, Name: args.URL,
-	}, r.Content)
+	got, err := a.opts.Gate.Ingest(ctx, segs)
 	if err != nil {
 		a.opts.Logger.Error("ingest failed",
 			"session_id", s.ID, "run_id", runID, "call_id", c.ID, "tool", c.Name, "error", err)
 		*r = tool.Errorf("Blocked: this is not available right now")
 		return nil
 	}
-	r.Content = text
+	if c.Name == "web_fetch" {
+		r.Content = got[0].Text
+		return nil
+	}
+	texts := make([]string, len(r.Parts))
+	for i, p := range r.Parts {
+		texts[i] = p.Text
+	}
+	for j, i := range at {
+		texts[i] = got[j].Text
+	}
+	r.Content = strings.Join(texts, "\n\n")
 	return nil
 }
 

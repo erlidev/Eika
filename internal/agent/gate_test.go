@@ -25,7 +25,13 @@ type stubGate struct {
 func (g stubGate) Decide(context.Context, sentry.Action) (sentry.Verdict, error) {
 	return g.verdict, g.err
 }
-func (stubGate) Ingest(_ context.Context, _ sentry.Source, c string) (string, error) { return c, nil }
+func (stubGate) Ingest(_ context.Context, segs []sentry.Segment) ([]sentry.Ingested, error) {
+	out := make([]sentry.Ingested, len(segs))
+	for i, s := range segs {
+		out[i] = sentry.Ingested{Text: s.Text}
+	}
+	return out, nil
+}
 
 // readOnlyTool is a callTool that declares itself read-only.
 type readOnlyTool struct{ callTool }

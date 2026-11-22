@@ -214,12 +214,15 @@ type Request struct {
 	Count int `json:"count,omitempty"`
 }
 
-// Outcome is a finished search. Text is what the model reads; IsError marks
-// a search the model should see as failed. Details are for the interface.
+// Outcome is a finished search. Text is what the model reads; Segments is the
+// same text cut per result, for a search that found some, so each result can be
+// screened on its own. IsError marks a search the model should see as failed.
+// Details are for the interface.
 type Outcome struct {
-	Text    string
-	IsError bool
-	Details Details
+	Text     string
+	Segments []Segment
+	IsError  bool
+	Details  Details
 }
 
 // Details describe how a search went. They never reach the model, which is
@@ -413,15 +416,16 @@ func failureReason(err error) string {
 func (e *Engine) webOutcome(pool []Result, count int, opts Options, d Details) Outcome {
 	results := pool[:min(count, len(pool))]
 	d.Results = results
-	text := FormatResults(results, descriptionTokens)
+	var segs []Segment
 	if notices := e.notices(d.Providers[0], d.Attempts, opts.Order); len(notices) > 0 {
 		lines := make([]string, len(notices))
 		for i, n := range notices {
 			lines[i] = "Notice: " + n
 		}
-		text = strings.Join(lines, "\n") + "\n\n" + text
+		segs = append(segs, Segment{Text: strings.Join(lines, "\n")})
 	}
-	return Outcome{Text: text, Details: d}
+	segs = append(segs, ResultSegments(results, descriptionTokens)...)
+	return Outcome{Text: JoinSegments(segs), Segments: segs, Details: d}
 }
 
 // recovery is the advice every degraded-search message ends with. It names
@@ -467,7 +471,11 @@ func (e *Engine) searchSource(ctx context.Context, b *backend, query string, cou
 	answer := func(results []Result) (Outcome, error) {
 		results = results[:min(count, len(results))]
 		d.Results = results
-		return Outcome{Text: FormatResults(results, descriptionTokens), Details: d}, nil
+		out := Outcome{Text: FormatResults(results, descriptionTokens), Details: d}
+		if len(results) > 0 {
+			out.Segments = ResultSegments(results, descriptionTokens)
+		}
+		return out, nil
 	}
 
 	key, err := e.key(ctx, b)

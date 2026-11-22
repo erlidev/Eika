@@ -113,19 +113,41 @@ func Thousands(n int) string {
 	return s
 }
 
-// FormatResults renders results as the model reads them: a numbered title,
-// the URL, and a description cut to descriptionTokens.
-func FormatResults(results []Result, descriptionTokens int) string {
-	if len(results) == 0 {
-		return "No results."
+// Segment is one piece of what the model reads. A result is its own segment,
+// with its URL as Source, so it can be screened and wrapped on its own; a
+// notice has no Source and is the harness's text.
+type Segment struct {
+	Source string
+	Text   string
+}
+
+// JoinSegments renders segments as the model reads them.
+func JoinSegments(segs []Segment) string {
+	texts := make([]string, len(segs))
+	for i, s := range segs {
+		texts[i] = s.Text
 	}
-	blocks := make([]string, len(results))
+	return strings.Join(texts, "\n\n")
+}
+
+// ResultSegments renders each result as its own segment: a numbered title, the
+// URL, and a description cut to descriptionTokens.
+func ResultSegments(results []Result, descriptionTokens int) []Segment {
+	segs := make([]Segment, len(results))
 	for i, r := range results {
 		lines := []string{fmt.Sprintf("%d. %s", i+1, Clean(r.Title)), "   " + r.URL}
 		if d := Truncate(Clean(r.Description), descriptionTokens); d != "" {
 			lines = append(lines, "   "+d)
 		}
-		blocks[i] = strings.Join(lines, "\n")
+		segs[i] = Segment{Source: r.URL, Text: strings.Join(lines, "\n")}
 	}
-	return strings.Join(blocks, "\n\n")
+	return segs
+}
+
+// FormatResults renders results as the model reads them.
+func FormatResults(results []Result, descriptionTokens int) string {
+	if len(results) == 0 {
+		return "No results."
+	}
+	return JoinSegments(ResultSegments(results, descriptionTokens))
 }

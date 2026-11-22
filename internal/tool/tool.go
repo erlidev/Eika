@@ -98,10 +98,22 @@ func (c CallContext) Output(ctx context.Context, text string) {
 
 // Result is what a tool call produced. Content is what the model sees; Details
 // is optional structured data for the user interface only.
+//
+// Parts, when set, are Content cut into the pieces that came from different
+// places, joined by a blank line. The agent ingests each untrusted part on its
+// own and rebuilds Content from them.
 type Result struct {
 	Content string
 	IsError bool
 	Details json.RawMessage
+	Parts   []Part
+}
+
+// Part is one piece of a result. Source names where an untrusted part came
+// from (a URL); a part with no Source is the harness's own text.
+type Part struct {
+	Source string
+	Text   string
 }
 
 // Text returns a successful result carrying content.

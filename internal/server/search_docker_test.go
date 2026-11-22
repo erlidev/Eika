@@ -85,7 +85,8 @@ func TestHomeRunSearches(t *testing.T) {
 		t.Fatalf("run = %+v", final.Run)
 	}
 	results := toolResults(p.Requests()[1])
-	if len(results) != 1 || !strings.HasPrefix(results[0], "1. Tokio\n   https://tokio.rs/") {
+	if len(results) != 1 || !strings.HasPrefix(results[0], `<untrusted source="web:tokio.rs"`) ||
+		!strings.Contains(results[0], "1. Tokio\n   https://tokio.rs/") {
 		t.Errorf("tool results = %q", results)
 	}
 
