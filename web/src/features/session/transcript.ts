@@ -21,6 +21,7 @@ import type {
 } from "@/api/events";
 import type {
   Compaction,
+  QuestionNotice,
   Elicitation,
   Entry,
   Message,
@@ -105,6 +106,8 @@ export type NoticeItem = {
   entryId?: string;
   text: string;
   entryKind: string;
+  /** question is the structured question of a subagent's notice. */
+  question?: QuestionNotice;
 };
 
 /**
@@ -811,6 +814,9 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
             message?.content ??
             (isRecord(p.message) && typeof p.message.text === "string" ? p.message.text : ""),
           entryKind: p.kind,
+          ...(isRecord(p.message) && isRecord(p.message.question)
+            ? { question: p.message.question as QuestionNotice }
+            : {}),
         },
       ];
   }
@@ -874,7 +880,11 @@ export function applyEntries(
         entry.kind === "compaction"
           ? entry.compaction
           : entry.text !== undefined
-            ? { role: "system", content: entry.text }
+            ? {
+                role: "system",
+                content: entry.text,
+                ...(entry.question === undefined ? {} : { question: entry.question }),
+              }
             : entry.message,
     };
     const message = asMessage(payload.message);

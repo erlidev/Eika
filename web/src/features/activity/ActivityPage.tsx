@@ -20,7 +20,7 @@ export function ActivityPage() {
       <nav
         aria-label="Subagents"
         className={cn(
-          "min-h-0 flex-1 flex-col lg:flex lg:w-80 lg:flex-none lg:border-r",
+          "min-h-0 min-w-0 flex-1 flex-col lg:flex lg:w-80 lg:flex-none lg:border-r",
           open ? "hidden" : "flex",
         )}
       >

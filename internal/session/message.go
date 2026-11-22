@@ -139,6 +139,45 @@ func TextEntry(kind store.EntryKind, text string) (store.Entry, error) {
 	return store.Entry{Kind: kind, Payload: payload}, nil
 }
 
+// QuestionNotice is the structured form of a subagent's question, stored on
+// its notice beside the model-facing text so the interface can show the
+// question without parsing that text.
+type QuestionNotice struct {
+	// Name and Agent say who asks.
+	Name  string `json:"name"`
+	Agent string `json:"agent"`
+	// QuestionID is the id to answer it with.
+	QuestionID string `json:"question_id"`
+	Question   string `json:"question"`
+	// Options are the answers offered, empty for free text.
+	Options       []string `json:"options,omitempty"`
+	AllowFreeText bool     `json:"allow_free_text"`
+}
+
+// QuestionNoticeEntry records a notice whose text is for the model and whose
+// question is for the interface.
+func QuestionNoticeEntry(text string, q QuestionNotice) (store.Entry, error) {
+	payload, err := json.Marshal(struct {
+		Text     string         `json:"text"`
+		Question QuestionNotice `json:"question"`
+	}{text, q})
+	if err != nil {
+		return store.Entry{}, fmt.Errorf("encode question notice: %w", err)
+	}
+	return store.Entry{Kind: store.KindNotice, Payload: payload}, nil
+}
+
+// QuestionOf reads the question of a notice, nil when it has none.
+func QuestionOf(e store.Entry) (*QuestionNotice, error) {
+	var payload struct {
+		Question *QuestionNotice `json:"question"`
+	}
+	if err := json.Unmarshal(e.Payload, &payload); err != nil {
+		return nil, fmt.Errorf("decode notice %s: %w", e.ID, err)
+	}
+	return payload.Question, nil
+}
+
 // TextOf reads the text of a preamble snapshot or notice.
 func TextOf(e store.Entry) (string, error) {
 	var payload struct {

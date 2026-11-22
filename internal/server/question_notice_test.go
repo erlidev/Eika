@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool/builtin"
@@ -140,5 +143,29 @@ func TestQuestionNoticeAfterAnswerOrCancel(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestQuestionNoticeCarriesStructuredFields(t *testing.T) {
+	var written store.Entry
+	n := &notices{server: &Server{log: slog.New(slog.DiscardHandler)}, closed: true, sessions: map[string]*sessionNotices{}}
+	n.write = func(_ context.Context, _ string, e store.Entry) (bool, error) {
+		written = e
+		return true, nil
+	}
+	want := session.QuestionNotice{Name: "permit", Agent: "researcher", QuestionID: "question-1", Question: "Which council?", Options: []string{"City", "County"}}
+	text := "permit (researcher) asks: Question ID: question-1\nWhich council?"
+	if err := n.post(t.Context(), "home", "question-1", text, &want); err != nil {
+		t.Fatal(err)
+	}
+	body, err := asEntry(written)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body.Question == nil || !reflect.DeepEqual(*body.Question, want) {
+		t.Fatalf("question = %+v, want %+v", body.Question, want)
+	}
+	if body.Text == nil || *body.Text != text {
+		t.Fatalf("model-facing text changed: %v", body.Text)
 	}
 }

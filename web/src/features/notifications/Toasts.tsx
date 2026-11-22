@@ -8,9 +8,10 @@ import { globalTopic, payloadOf, sessionTopic } from "@/api/events";
 import { getSession } from "@/api/routes";
 import { eventStream } from "@/api/stream";
 import { useStreamSubscription } from "@/api/useStream";
+import { firstLine } from "@/features/activity/state";
 import { useHome } from "@/features/chat";
 
-type Toast = { id: string; text: string; path: string };
+type Toast = { id: string; text: string; path: string; detail?: string };
 
 export function Toasts() {
   const home = useHome();
@@ -57,13 +58,16 @@ export function Toasts() {
     if (path.current === target || path.current === "/") return;
     pending.current.set(id, target);
     const version = generation.current;
-    const publish = (name: string) => {
+    const publish = (name: string, detail?: string) => {
       if (version !== generation.current || !pending.current.delete(id)) return;
-      setQueue((items) => [...items, { id, text: `${name} reported`, path: target }]);
+      setQueue((items) => [
+        ...items,
+        { id, text: `${name} reported`, path: target, ...(detail ? { detail } : {}) },
+      ]);
     };
     void getSession(update.session_id)
       .then(({ session }) => {
-        publish(session.name ?? session.title);
+        publish(session.name ?? session.title, firstLine(session.result ?? ""));
       })
       .catch(() => {
         publish("Subagent");
@@ -124,7 +128,7 @@ export function Toasts() {
     <div
       aria-live="polite"
       aria-atomic="true"
-      className="fixed inset-x-3 top-0 pt-safe z-50 sm:inset-x-auto sm:top-auto sm:right-4 sm:bottom-4"
+      className="absolute inset-x-3 bottom-3 z-50 sm:fixed sm:inset-x-auto sm:right-4 sm:bottom-4"
     >
       {toast && (
         <ToastCard
@@ -160,7 +164,7 @@ function ToastCard({ toast, dismiss }: ToastCardProps) {
 
   return (
     <div
-      className="bg-popover text-popover-foreground mx-auto mt-3 flex max-w-sm items-center gap-3 rounded-md border p-3 sm:mt-0"
+      className="bg-popover text-popover-foreground mx-auto flex max-w-sm items-center gap-3 rounded-md border p-3"
       onMouseEnter={() => {
         setHovered(true);
       }}
@@ -174,8 +178,15 @@ function ToastCard({ toast, dismiss }: ToastCardProps) {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
       }}
     >
-      <Link className="text-primary flex-1 text-sm underline" to={toast.path} onClick={dismiss}>
-        {toast.text}
+      <Link
+        className="flex min-w-0 flex-1 flex-col justify-center"
+        to={toast.path}
+        onClick={dismiss}
+      >
+        <span className="text-primary text-sm font-medium">{toast.text}</span>
+        {toast.detail !== undefined && (
+          <span className="text-muted-foreground truncate text-xs">{toast.detail}</span>
+        )}
       </Link>
       <button
         type="button"

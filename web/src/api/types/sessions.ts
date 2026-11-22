@@ -164,6 +164,16 @@ export type Compaction = {
   board_as_of?: string;
 };
 
+/** QuestionNotice is the structured question of a notice a subagent asked. */
+export type QuestionNotice = {
+  name: string;
+  agent: string;
+  question_id: string;
+  question: string;
+  options?: string[];
+  allow_free_text: boolean;
+};
+
 /** Entry is one stored node of a session tree, with its message. */
 export type Entry = {
   /** run_id identifies the agent turn that wrote this entry, when known. */
@@ -171,6 +181,8 @@ export type Entry = {
   channel?: string;
   /** text is present on preamble and notice entries. */
   text?: string;
+  /** question is present on a notice that carries a subagent's question. */
+  question?: QuestionNotice;
   id: string;
   parent_id?: string;
   seq: number;

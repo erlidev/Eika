@@ -16,7 +16,13 @@ import { Splash } from "@/components/Splash";
 import { ActivityPage } from "@/features/activity";
 import { ProjectsPage } from "@/features/projects";
 import { ChatPage } from "@/features/chat";
-import { LoadFailedScreen, SignInScreen, useAuthStatus, useConnection } from "@/features/connect";
+import {
+  LoadFailedScreen,
+  OfflineScreen,
+  SignInScreen,
+  useAuthStatus,
+  useConnection,
+} from "@/features/connect";
 import { callbackPath, MCPCallbackScreen, useMCPSelection } from "@/features/mcp";
 import { setupComplete, useSettings, useSettingsDialog } from "@/features/settings";
 import { SetupWizard } from "@/features/setup";
@@ -44,8 +50,8 @@ function SignedOut() {
   if (status.isPending) return <Splash />;
   if (status.isError) {
     return (
-      <SignInScreen
-        unreachable={status.error.message}
+      <OfflineScreen
+        error={status.error}
         retry={() => void status.refetch()}
         retrying={status.isFetching}
       />

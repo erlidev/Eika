@@ -52,7 +52,7 @@ export function AgentBoard({ project, onProjectChange }: AgentBoardProps) {
   const filter = projectsOf(agents.data, projects.data ?? []);
   const groups = boardGroups(agents.data, project);
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
       {filter.length > 1 && (
         <ProjectFilter projects={filter} value={project} onChange={onProjectChange} />
       )}
@@ -124,13 +124,13 @@ function AgentRow({ agent, project }: AgentRowProps) {
   return (
     <NavLink
       to={`/activity/${encodeURIComponent(agent.id)}`}
-      className="hover:bg-accent aria-[current=page]:bg-accent focus-visible:ring-ring flex min-h-11 flex-col justify-center gap-0.5 px-3 py-1.5 transition-colors focus-visible:ring-1 focus-visible:outline-none"
+      className="hover:bg-accent aria-[current=page]:bg-accent focus-visible:ring-ring flex min-h-11 min-w-0 flex-col justify-center gap-0.5 px-3 py-1.5 transition-colors focus-visible:ring-1 focus-visible:outline-none"
     >
       <span className="flex min-w-0 items-center gap-2">
         <StateDot state={agent.state} />
         <span className="sr-only">{stateLabel[agent.state]}: </span>
-        <span className="truncate text-sm font-medium">{agent.name ?? agent.title}</span>
-        <span className="text-muted-foreground truncate text-xs">
+        <span className="min-w-0 truncate text-sm font-medium">{agent.name ?? agent.title}</span>
+        <span className="text-muted-foreground min-w-0 truncate text-xs">
           {[agent.agent, project].filter((part) => part !== undefined && part !== "").join(" · ")}
         </span>
         <span className="text-muted-foreground ml-auto shrink-0 text-2xs">
@@ -140,7 +140,7 @@ function AgentRow({ agent, project }: AgentRowProps) {
       {line.text !== "" && (
         <span
           className={cn(
-            "truncate pl-4 text-xs",
+            "min-w-0 truncate pl-4 text-xs",
             line.waiting ? "text-warning" : "text-muted-foreground",
           )}
         >

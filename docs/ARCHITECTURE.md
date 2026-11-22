@@ -869,6 +869,14 @@ The shell shows one live toast at a time for completed subagent reports and
 background home replies. Report updates carry the report id; home turn events
 identify replies. The queue is local to the page and is not restored on reload.
 Toasts link to Activity or Chat and do not appear when that content is open.
+On a phone the toast sits at the bottom of the page, above the bottom bar; a
+report toast carries the first line of the report.
+
+A subagent's question reaches Eika as a notice whose text is written for the
+model. The notice entry also stores a structured `question` (asker, question,
+options, question id; `session.QuestionNotice`), which the entry wire type and
+the replayed `session.message` payload carry. The transcript shows those fields
+and never the model-facing text; the model still receives the text unchanged.
 
 
 ```

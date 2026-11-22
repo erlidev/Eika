@@ -12,6 +12,9 @@ Signing in, and React access to the connection the browser stores.
 - `LoadFailedScreen.tsx` is what a signed-in browser gets when its first
   load of the settings fails for any reason but a `401`: what failed and a
   Retry button. The browser is still signed in, so it shows no password form.
+- `OfflineScreen.tsx` is what a signed-out browser gets when the harness
+  cannot be asked whether it is set up (no network, or Eika stopped): Retry,
+  and "Use another address", which opens the sign-in screen's harness URL.
 - `useConnection.ts` reads `api/connection` through `useSyncExternalStore`,
   so the app re-renders when a token appears or is forgotten.
 

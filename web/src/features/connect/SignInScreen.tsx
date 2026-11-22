@@ -166,8 +166,14 @@ export function SignInScreen({ unreachable, retry, retrying = false }: SignInScr
                 }}
               />
               <p className="text-muted-foreground text-xs">
-                Leave empty unless the frontend runs somewhere else. The Vite dev server proxies
-                <code className="mx-1">/api</code>, so leave it empty there too.
+                Leave empty unless the frontend runs somewhere else.
+                {import.meta.env.DEV && (
+                  <>
+                    {" "}
+                    The Vite dev server proxies<code className="mx-1">/api</code>, so leave it empty
+                    there too.
+                  </>
+                )}
               </p>
             </div>
           </CollapsibleContent>

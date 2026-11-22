@@ -121,3 +121,9 @@ test("developer disclosures have touch targets", async ({ open }) => {
   await eika.select("Session", "Add exponential backoff to retries");
   await targetSize(eika.page.locator("summary").first());
 });
+
+test("Activity links on touch are tall enough to tap", async ({ open }) => {
+  const eika = await open({ scenario: "activity", viewport: phone });
+  await eika.page.getByRole("link", { name: /^Idle: repair/ }).tap();
+  await targetSize(eika.page.getByRole("link", { name: "Activity", exact: true }).first());
+});

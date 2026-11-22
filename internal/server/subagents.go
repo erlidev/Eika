@@ -349,7 +349,10 @@ func (d delegation) AskSubagent(ctx context.Context, q builtin.Question) (string
 			s.deps.Bus.Emit(ctx, e)
 		}
 		text := fmt.Sprintf("%s (%s) asks: %s\nAnswer with subagent_message and question_id %s, or ask the user in your reply and relay the answer with that id.", child.Name, child.Agent, reason, id)
-		s.notices.postSoon(ctx, child.ParentSessionID, id, text)
+		s.notices.postSoon(ctx, child.ParentSessionID, id, text, &session.QuestionNotice{
+			Name: child.Name, Agent: child.Agent, QuestionID: id,
+			Question: q.Text, Options: q.Options, AllowFreeText: q.AllowFreeText,
+		})
 	})
 	return answer, true, err
 }

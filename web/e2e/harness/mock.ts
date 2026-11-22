@@ -387,7 +387,10 @@ export class MockHarness {
         entry.kind === "compaction"
           ? entry.compaction
           : entry.kind === "preamble" || entry.kind === "notice"
-            ? { text: entry.text ?? "" }
+            ? {
+                text: entry.text ?? "",
+                ...(entry.question === undefined ? {} : { question: entry.question }),
+              }
             : entry.message,
     });
   }

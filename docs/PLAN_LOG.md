@@ -9,6 +9,14 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: Phase 3 exit review fixes (branch `p3-exit-fixes`). Activity rows no
+  longer clip at 390px; question notices show the question, not the model's
+  instructions (a real bug: the server text is model-facing); a new question
+  scrolls into view; the report toast sits above the bottom bar with a summary;
+  the report shows above the transcript; touch-link targets, an ntfy
+  placeholder, an offline screen. Baselines for the changed screens were not
+  updated by the agent; run `make visual-update` after looking at them.
+
 - 2026-11-21: P2-17 is deferred. Global `session.updated` refreshes the board
   on state and report changes; the open session stream carries questions and
   tool calls. Reconnect refreshes missed changes. The board has no last tool
