@@ -36,3 +36,10 @@ func TestChainFixtureCarriesTheExfiltrationURL(t *testing.T) {
 		t.Fatalf("chain page = %q", page.Page)
 	}
 }
+
+func TestPoisonFixtureCarriesTheRule(t *testing.T) {
+	page := injection.PoisonPage()
+	if len(page.Page) < 4000 || !strings.Contains(page.Page, injection.Fact) || !strings.Contains(strings.ToLower(page.Page), injection.PoisonRule) {
+		t.Fatalf("poison page = %q", page.Page)
+	}
+}

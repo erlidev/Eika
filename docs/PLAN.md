@@ -489,7 +489,7 @@ stack is intact. The scripted memory smoke flow passes.
       resulting states; none may be pending. If needed, add and calibrate a
       memory-only threshold, then rerun these cases and the attack cases without
       weakening web ingest. Do not substitute direct guard calls for agent writes.
-- [ ] **P5-21**: Add the poisoning chain: a researcher fetches the public fixture
+- [x] **P5-21**: Add the poisoning chain: a researcher fetches the public fixture
       and ingest removes the planted instruction. In a separate controlled case,
       hand Eika the contaminated report after the report-screen boundary to test
       the second defence. Record whether it writes; a write must be pending and
@@ -747,7 +747,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       go pending. If some do, memory writes get their own threshold.
       - [x] **P5-19**: Live harness and save/recall scenario.
       - [ ] **P5-20**: Thirty ordinary preferences and rules.
-      - [ ] **P5-21**: Poisoning chain and second-screen case.
+      - [x] **P5-21**: Poisoning chain and second-screen case.
       - [ ] **P5-22**: Bench run and recorded results.
 - [ ] Close phase 5 after all exit checks.
       - [ ] **P5-23**: Checks, manual exit and documentation close.
