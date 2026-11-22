@@ -1,11 +1,24 @@
 /** Server state for the Memory page: the filtered list, paged, and one memory in full. */
 
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import type { UseInfiniteQueryResult, UseQueryResult } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  QueryClient,
+  UseInfiniteQueryResult,
+  UseMutationResult,
+  UseQueryResult,
+} from "@tanstack/react-query";
 
 import { queryKeys } from "@/api/keys";
-import { getMemory, listMemories, listSessions } from "@/api/routes";
-import type { Memory, MemoryItem, Session } from "@/api/types";
+import {
+  archiveMemory,
+  editMemory,
+  getMemory,
+  listMemories,
+  listSessions,
+  purgeMemory,
+  setMemoryPinned,
+} from "@/api/routes";
+import type { EditMemoryRequest, Memory, MemoryItem, Session } from "@/api/types";
 import { listQuery, narrow } from "@/features/memory/state";
 import type { Filters } from "@/features/memory/state";
 
@@ -48,5 +61,59 @@ export function useSources(): UseQueryResult<Session[]> {
   return useQuery({
     queryKey: queryKeys.allSessions(),
     queryFn: ({ signal }) => listSessions(signal),
+  });
+}
+
+/** changed puts a changed memory in its detail and refreshes every list and search. */
+function changed(client: QueryClient, memory: Memory) {
+  client.setQueryData(queryKeys.memory(memory.name), memory);
+  void client.invalidateQueries({ queryKey: [...queryKeys.memories(), "list"] });
+}
+
+/** useEditMemory saves the fields given; the answer says whether the edit went pending. */
+export function useEditMemory(name: string): UseMutationResult<Memory, Error, EditMemoryRequest> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EditMemoryRequest) => editMemory(name, input),
+    onSuccess: (memory) => {
+      changed(client, memory);
+    },
+  });
+}
+
+/** useSetPinned pins or unpins a memory read at `contentSha`. */
+export function useSetPinned(
+  name: string,
+): UseMutationResult<Memory, Error, { pinned: boolean; contentSha: string }> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pinned, contentSha }: { pinned: boolean; contentSha: string }) =>
+      setMemoryPinned(name, pinned, contentSha),
+    onSuccess: (memory) => {
+      changed(client, memory);
+    },
+  });
+}
+
+/** useArchiveMemory archives a memory read at `contentSha`. */
+export function useArchiveMemory(name: string): UseMutationResult<Memory, Error, string> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (contentSha: string) => archiveMemory(name, undefined, contentSha),
+    onSuccess: (memory) => {
+      changed(client, memory);
+    },
+  });
+}
+
+/** usePurgeMemory removes a memory read at `contentSha`. */
+export function usePurgeMemory(name: string): UseMutationResult<void, Error, string> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (contentSha: string) => purgeMemory(name, contentSha),
+    onSuccess: () => {
+      client.removeQueries({ queryKey: queryKeys.memory(name) });
+      void client.invalidateQueries({ queryKey: [...queryKeys.memories(), "list"] });
+    },
   });
 }
