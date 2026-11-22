@@ -80,7 +80,7 @@ var leaves = map[string]string{
 	// the server can all hold a lease without it knowing any of them.
 	"internal/inference": "the inference queue is imported by every package that makes model calls",
 	"internal/memory":    "the memory file format is independent of repository and service code",
-	"internal/skill":     "the skill parser and zip reader are pure; install and storage come later",
+	"internal/skill":     "the skill parser, zip reader and installer are pure; the volume and the store reach them through interfaces",
 }
 
 // TestLeavesImportNothingOfTheModule checks the packages in leaves.

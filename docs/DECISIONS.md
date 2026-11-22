@@ -2677,6 +2677,22 @@ positional arguments, never as script text. A crash inside Replace can leave the
 name missing with the old tree in `.old/`; P6-04's Reconcile marks that skill
 broken. Mounting `/skills` into agent computers is P6-03.
 
+## Skills store and installer (P6-04)
+
+`skills` (0034) mirrors what the install parsed, so the catalog and install screen
+never read the volume. `skill.Installer` is the only writer: one mutex covers stage,
+a hash check of the staged tree against the zip, Replace, a hash check of the
+installed tree, then the row. Rows are created disabled; an identical reinstall of a
+sound row is a no-op, a changed one replaces directory and row and returns to
+disabled (question 6). A failure after the swap leaves the directory ahead of the
+row; a reinstall repairs it. `Reconcile` on start lets the directory's hash decide: a
+row whose directory is missing (including a crash inside Replace) or whose hash
+differs gets `broken` set and is never loaded (`Record.Loadable` is `enabled` and not
+broken; `enabled` is kept so a restored directory repairs it); an unknown directory
+is reported and never adopted. `volume.List` names top-level entries other than the
+dot directories. The screen is `Installer.SetScreener` (P6-05); the default stores
+`unscanned`. `server.SkillInstaller()` is nil until the reconcile has run.
+
 ## Memory writer and index (P5-03)
 
 `memory.Writer` is the only writer of memory files. It depends on two small

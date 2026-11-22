@@ -28,6 +28,7 @@ import (
 	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/sentry/screen"
 	"github.com/erlidev/eika/internal/session"
+	"github.com/erlidev/eika/internal/skill"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
 	"github.com/erlidev/eika/internal/tool"
@@ -153,6 +154,8 @@ type Server struct {
 	memoryID atomic.Pointer[string]
 	// memoryWriter is set once the memory index has been reconciled.
 	memoryWriter atomic.Pointer[memory.Writer]
+	// skillInstaller is set once the skills rows have been reconciled.
+	skillInstaller atomic.Pointer[skill.Installer]
 	// skillsMu makes EnsureSkillsInstaller take turns; skillsID caches the
 	// recorded id of the skills installer once known.
 	skillsMu sync.Mutex

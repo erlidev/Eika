@@ -1,5 +1,15 @@
 # Plan log
 
+- 2026-11-22: P6-04 adds migration 0034 `skills` (name, enabled, sha, installed_at, parsed
+  fields, body, file list, warnings, screen, broken), `store` Upsert/Get/List/Delete/
+  SetBroken, `skill.Installer` (one mutex: stage, hash-check, swap, hash-check, then
+  row; rows are created disabled; an identical reinstall is a no-op, a changed one returns
+  to disabled), `skill.Installer.Reconcile` (missing or changed directory marks the row
+  broken, unknown directories are reported, never adopted) and `volume.List`. The server
+  reconciles after ensuring the installer and publishes `SkillInstaller()`. The screen
+  hook is `Installer.SetScreener`; until P6-05 every install stores `unscanned`. No HTTP
+  API yet (P6-05 and P6-09).
+
 - 2026-11-22: P6-02 adds the private skills installer computer: migration 0033
   `skills_computer` (generated per-install id), `store.EnsureSkillsComputerID`,
   `server.EnsureSkillsInstaller`/`SkillsVolume`/`keepSkillsInstaller` (label
