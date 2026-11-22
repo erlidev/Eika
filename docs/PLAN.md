@@ -698,7 +698,7 @@ in a zip is rejected; a planted instruction is returned as a span, not a block.
 
 ### Stage B: Skills in the browser
 
-- [ ] **P6-09**: Add the Skills page: list with enabled state and warning counts, a
+- [x] **P6-09**: Add the Skills page: list with enabled state and warning counts, a
       drop zone and file picker that upload a zip, and the install result. Use
       `MasterDetail`, `App.tsx` and `pages.ts` routes, the feature README and P6-06
       `World` routes in the mock harness; topic `skills` invalidates the list. No

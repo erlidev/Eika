@@ -1,5 +1,14 @@
 # Plan log
 
+- 2026-11-22: P6-09 adds the Skills page (`web/src/features/skills`): `MasterDetail` at
+  `/skills/:name?`, a rail entry (More sheet on phones), a list of name, Enabled/Disabled,
+  Broken, warning and screen-hit counts, and a drop zone plus "Choose a zip" picker (one
+  file; no earlier zip upload component) whose answer says new and disabled with warnings
+  and hits, unchanged, or the server's plain 400/413/503 message. `skills.changed`, `bus.dropped`
+  and reconnect invalidate the `skills` queries (`useSkillsEvents`, called by the shell).
+  The detail is a placeholder until P6-10 and P6-11. Mock scenario `skills`. Desktop shots
+  of every page gain the Skills rail icon, so those baselines change.
+
 - 2026-11-22: P6-06 adds the skills API (`POST/GET /api/skills`, `GET/DELETE /api/skills/{name}`,
   `POST .../enable|disable`; `server/skills_api.go`, `skills_wire.go`). Upload is
   `multipart/form-data` with one part `file`, read as a stream bounded to the zip limit plus 64 KiB
