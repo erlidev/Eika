@@ -831,7 +831,11 @@ outside `make check`.
 
 Changes:
 
-- **The `open` mode is removed**, so every computer's traffic passes the proxy.
+- **The `open` mode is removed**, so every computer's traffic passes the proxy. The
+  mode that reached any host is now `public`: any public host not on the blocklist.
+  A host with no sandbox networks (`make dev`, the live harness) cannot proxy, and
+  there computers keep direct routes as a development state, with a warning and no
+  blocklist or allowlist.
 - **Decisions per connection.** A connection is an `egress` action. The verdict is
   `allow` or `deny`, never `ask`: egress does not wait on the user. It is denied when
   the host is on the blocklist, netguard refuses the address, Eika is halted, the
@@ -848,7 +852,9 @@ Changes:
   not on the blocklist, and so can a program already running or a script the agent
   wrote earlier (section 6, "What this does not stop").
 - **Core's own fetches.** `web_fetch` and search backends other than local SearXNG
-  check the same blocklist and halt state before they dial.
+  check the same blocklist and halt state before they dial. A config key of exact private
+  hostnames, empty by default and set only by smoke and live, lets `web_fetch`
+  reach fixtures past netguard.
 
 ## 11. Tripwires, alerts and halt
 

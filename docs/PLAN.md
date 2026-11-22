@@ -254,9 +254,10 @@ Trusting a source from the withheld list lets its next page through, scored.
 
 ### Stage D: egress
 
-- [ ] **P4-17**: Retire the `open` egress mode. Migrate stored computers and the
-      `sandbox_egress` setting, give the unrestricted mode its new name, reconfine
-      running computers and keep the live view of blocked hosts.
+- [ ] **P4-17**: Retire the `open` egress mode. Rename it `public` on the wire and
+      migrate stored `open` or missing values in computers and the `sandbox_egress`
+      setting, reconfine running computers and keep the list of blocked hosts. A host
+      with no egress control keeps direct routes, with a warning at start.
 - [ ] **P4-18**: Update the computer egress settings for the modes that remain.
 - [ ] **P4-19**: Make a connection an `egress` action: `allow` or `deny` for the
       blocklist, netguard, halt and allowlist mode. Add the blocklist table and API,
@@ -275,10 +276,12 @@ connection.
 - [ ] **P4-22**: Close the audit gaps: setting-change rows, and an append-only
       guarantee in the database.
 - [ ] **P4-23**: Update the security section of the style guide.
-- [ ] **P4-24**: Add the Sentry scenario to `make smoke`: a scripted model fetches a
-      fixture page with a planted instruction, and the result has the part removed.
+- [ ] **P4-24**: Add the fetch fixture-hosts config key, set by `compose.smoke.yaml`,
+      and the Sentry scenario to `make smoke`: a scripted model fetches a fixture page
+      with a planted instruction, and the result has the part removed.
 - [ ] **P4-25**: Build `evals/injection` on the P2-25 live harness: fixture pages in
-      three variants, a researcher that reports to Eika, and the screen on and off.
+      three variants, a researcher that reports to Eika, and the screen on and off. The
+      live harness sets the fixture-hosts key.
 - [ ] **P4-26**: Add the chain, the `curl` worker and the guard-stopped scenarios, run
       the suite on the bench, and log its numbers, including what got through.
 - [ ] **P4-27**: Close phase 4 after its exit checks.
@@ -305,12 +308,16 @@ connection.
   with a temporary Postgres and a home computer (`core_live_test.go`), and has a
   `live` build tag with routes for the suite. P4-25 and P4-26 build on that, so
   they wait for P2-25 to merge. The harness runs Core with no sandbox networks, so
-  `Host.EgressControl` is false there. P4-17 must settle what that means
-  ("Open questions", the first). Its config also needs the guard's URL.
+  `Host.EgressControl` is false there: computers keep direct routes, as a
+  development state only (`DECISIONS.md`, "Safety without asking"). Egress is not
+  testable in that harness. Its config also needs the guard's URL and the fixture
+  hosts.
 - **Fixtures and netguard.** `web_fetch` dials through `netguard`, which refuses
   private addresses, so a fixture page on the compose network or on localhost is
-  unreachable. Exit A uses a public page. P4-24 and P4-25 need a way in; see "Open
-  questions", the third.
+  unreachable. Exit A uses a public page. P4-24 and P4-25 set the config key of exact
+  fixture hostnames that `web_fetch` may reach (`DECISIONS.md`, "Safety without
+  asking"), which P4-24 adds with `compose.smoke.yaml` and P4-25 sets in the live
+  harness.
 - **Ingest before the entry is stored.** The screened text is what the session
   keeps, so a replay, compaction and the history index never hold the removed
   text, and the request prefix stays stable from turn to turn. P4-04 owns this, and
@@ -883,26 +890,6 @@ runs the skill's script on the computer.
 
 Decide these when the phase that needs them starts, and record the outcome in the
 log. Work that was cut is in `docs/DEFERRED.md`, not here.
-
-- **Computers without egress control (blocks P4-17).** Removing `open` puts every
-  computer behind the proxy, which needs the two sandbox networks. `make dev`, the
-  live harness and several Docker tests run Core with both empty, where
-  `Host.EgressControl` is false and only `open` works. Either those get a real
-  internal network (the host-run Core must then be reachable from it), or a host
-  without egress control keeps direct routes as a development-only state: no
-  setting, a warning at start, and no blocklist or allowlist there. The second
-  keeps the live suite running and is recommended, but it leaves the blocklist
-  untestable outside compose.
-- **The name of what replaces `open` (blocks P4-17 and P4-18).** Without `open`,
-  the modes are `allowlist`, `none` and a mode that reaches any public host not on
-  the blocklist. It is a wire value in `docs/api` and in stored settings.
-  Recommended: `public`, and the migration maps `open` and a missing value to it.
-- **How a fixture page reaches `web_fetch` (blocks P4-24 and P4-25).** Core refuses
-  private addresses, so compose and live fixtures need one exception. Recommended:
-  a config key listing exact hostnames, empty by default, logged at start and absent
-  from the settings and the UI, set only by `compose.smoke.yaml` and the live
-  harness. The alternative, a public fixture host, makes both suites depend on the
-  internet.
 
 - **Screening `bash` output and file reads.** Not in phase 4: a worker's `curl`
   output reaches it unscreened, and only its report is screened. Decide from

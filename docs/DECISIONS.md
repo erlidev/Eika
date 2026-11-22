@@ -199,6 +199,21 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
 - **The plan's log is its own file**, `PLAN_LOG.md`, and closed phases are a
   paragraph in the plan. Every agent that starts an item reads the plan, and most
   of it had become history.
+- **The `open` egress mode becomes `public`, and a host without egress control
+  keeps direct routes** (2026-11-21). Phase 4 puts every computer behind the proxy,
+  so the mode that reached any host is renamed `public`: any public host not on the
+  blocklist. The wire value and stored settings change, and `open` or a missing
+  value migrates to `public`. A host with no sandbox networks (`make dev`, the live
+  harness, some Docker tests) cannot proxy; there computers keep direct routes as a
+  development state with no setting, a warning at start, and no blocklist or
+  allowlist. Rejected: giving dev and live a real internal network, which needs a
+  host-run Core reachable from it for a state that is not a deployment.
+- **Fixtures reach `web_fetch` through a config key of exact private hostnames**
+  (2026-11-21). Core's fetch refuses private addresses, so smoke and live fixtures
+  need one exception. The key is empty by default, takes exact hostnames only, is
+  logged at start, and is absent from settings and the UI; only `compose.smoke.yaml`
+  and the live harness set it. Rejected: a public fixture host, which makes both
+  suites depend on the internet.
 
 ## The coding layer is removed
 

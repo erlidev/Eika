@@ -13,9 +13,9 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   phase 4" in five stages. Premises that changed: `open` egress still exists and
   is the default, and `make dev` and the live harness run without egress control;
   `web_fetch` strips no invisible characters, so ingest gets that step; fixtures
-  cannot reach `web_fetch` past netguard. Three open questions block P4-17, P4-18,
-  P4-24 and P4-25. The design doc is corrected for those and for the canary and
-  halt. Docs only; live tests do not apply.
+  cannot reach `web_fetch` past netguard. The owner settled the three open questions (`DECISIONS.md`: `open` becomes
+  `public`, dev keeps direct routes, a fixture-hosts key). The design doc follows,
+  with the canary and halt. Docs only; live tests do not apply.
 
 - 2026-11-21: bench switched to llama-server. The chat bench is the Komodo Deployment
   `llama-server` at https://llama.erli.xyz (llama.cpp b11942-338fce651, Qwen3.8-27B
