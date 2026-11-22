@@ -385,6 +385,21 @@
                 ]
               },
               "parent_id": "string",
+              "question": {
+                "object": {
+                  "agent": "string",
+                  "allow_free_text": "boolean",
+                  "name": "string",
+                  "options": {
+                    "array": "string"
+                  },
+                  "question": "string",
+                  "question_id": "string"
+                },
+                "optional": [
+                  "options"
+                ]
+              },
               "run_id": "string",
               "seq": "number",
               "text": "string"
@@ -393,6 +408,7 @@
               "channel",
               "compaction",
               "parent_id",
+              "question",
               "run_id",
               "text"
             ]
@@ -1362,6 +1378,21 @@
                 ]
               },
               "parent_id": "string",
+              "question": {
+                "object": {
+                  "agent": "string",
+                  "allow_free_text": "boolean",
+                  "name": "string",
+                  "options": {
+                    "array": "string"
+                  },
+                  "question": "string",
+                  "question_id": "string"
+                },
+                "optional": [
+                  "options"
+                ]
+              },
               "run_id": "string",
               "seq": "number",
               "text": "string"
@@ -1370,6 +1401,7 @@
               "channel",
               "compaction",
               "parent_id",
+              "question",
               "run_id",
               "text"
             ]
@@ -2381,6 +2413,21 @@
                     ]
                   },
                   "parent_id": "string",
+                  "question": {
+                    "object": {
+                      "agent": "string",
+                      "allow_free_text": "boolean",
+                      "name": "string",
+                      "options": {
+                        "array": "string"
+                      },
+                      "question": "string",
+                      "question_id": "string"
+                    },
+                    "optional": [
+                      "options"
+                    ]
+                  },
                   "run_id": "string",
                   "seq": "number",
                   "text": "string"
@@ -2389,6 +2436,7 @@
                   "channel",
                   "compaction",
                   "parent_id",
+                  "question",
                   "run_id",
                   "text"
                 ]
@@ -2609,6 +2657,21 @@
                     ]
                   },
                   "parent_id": "string",
+                  "question": {
+                    "object": {
+                      "agent": "string",
+                      "allow_free_text": "boolean",
+                      "name": "string",
+                      "options": {
+                        "array": "string"
+                      },
+                      "question": "string",
+                      "question_id": "string"
+                    },
+                    "optional": [
+                      "options"
+                    ]
+                  },
                   "run_id": "string",
                   "seq": "number",
                   "text": "string"
@@ -2617,6 +2680,7 @@
                   "channel",
                   "compaction",
                   "parent_id",
+                  "question",
                   "run_id",
                   "text"
                 ]

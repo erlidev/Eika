@@ -873,9 +873,10 @@ On a phone the toast sits at the bottom of the page, above the bottom bar; a
 report toast carries the first line of the report.
 
 A subagent's question reaches Eika as a notice whose text is written for the
-model. The transcript does not show that text: `questionNotice.ts` reads the
-asker, the question and the options back out of it and shows those. The model
-still receives the notice unchanged.
+model. The notice entry also stores a structured `question` (asker, question,
+options, question id; `session.QuestionNotice`), which the entry wire type and
+the replayed `session.message` payload carry. The transcript shows those fields
+and never the model-facing text; the model still receives the text unchanged.
 
 
 ```

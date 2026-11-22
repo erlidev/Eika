@@ -357,6 +357,7 @@ stored without changes. Channel is independent of the message payload.
 | `run_id` | string, optional | The agent turn that wrote the entry. Older entries and entries outside a turn can omit it. |
 | `channel` | string, optional | Source or destination channel, absent when unset. |
 | `text` | string, optional | Preamble or notice text, including empty text. |
+| `question` | object, optional | On a notice a subagent's question made: `{name, agent, question_id, question, options?, allow_free_text}`. `text` stays the model-facing text. |
 | `seq` | number | Write order within the session. |
 | `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, `compaction`, `preamble` or `notice`. |
 | `created_at` | time | When it was written. |

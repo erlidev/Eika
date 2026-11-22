@@ -4,7 +4,7 @@
  * no existing one has, and keep ids stable: specs and agents address them.
  */
 
-import type { Message, Project, Run } from "../../src/api/types.ts";
+import type { Message, Project, QuestionNotice, Run } from "../../src/api/types.ts";
 import { syncSession } from "./modelContext.ts";
 import { emptyWorld, minutesAgo, WorldBuilder } from "./world.ts";
 import type { World } from "./world.ts";
@@ -1275,7 +1275,7 @@ export const scenarios = {
         ]);
       });
       const entries = b.world.entries[home.id] ?? [];
-      const add = (kind: "notice" | "compaction", text: string) => {
+      const add = (kind: "notice" | "compaction", text: string, question?: QuestionNotice) => {
         const id = `card-${String(entries.length)}`;
         entries.push({
           id,
@@ -1285,7 +1285,7 @@ export const scenarios = {
           message: { role: "" },
           ...(home.head_entry_id ? { parent_id: home.head_entry_id } : {}),
           ...(kind === "notice"
-            ? { text }
+            ? { text, ...(question === undefined ? {} : { question }) }
             : {
                 compaction: {
                   summary: text,
@@ -1318,6 +1318,14 @@ export const scenarios = {
       add(
         "notice",
         'permit (researcher) asks: Question ID: question-1\nWhich council?\nOptions (JSON): ["City","County"]\nFree text allowed: false\nAnswer with subagent_message and question_id question-1, or ask the user in your reply and relay the answer with that id.',
+        {
+          name: "permit",
+          agent: "researcher",
+          question_id: "question-1",
+          question: "Which council?",
+          options: ["City", "County"],
+          allow_free_text: false,
+        },
       );
       add(
         "notice",

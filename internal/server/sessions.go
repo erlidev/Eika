@@ -52,15 +52,18 @@ type sessionBody struct {
 
 // entryBody is one session entry on the wire, payload included.
 type entryBody struct {
-	ID        string           `json:"id"`
-	ParentID  string           `json:"parent_id,omitempty"`
-	RunID     string           `json:"run_id,omitempty"`
-	Channel   string           `json:"channel,omitempty"`
-	Text      *string          `json:"text,omitempty"`
-	Seq       int64            `json:"seq"`
-	Kind      string           `json:"kind"`
-	CreatedAt time.Time        `json:"created_at"`
-	Message   provider.Message `json:"message"`
+	ID       string  `json:"id"`
+	ParentID string  `json:"parent_id,omitempty"`
+	RunID    string  `json:"run_id,omitempty"`
+	Channel  string  `json:"channel,omitempty"`
+	Text     *string `json:"text,omitempty"`
+	// Question is the structured question of a notice a subagent asked,
+	// absent on every other entry.
+	Question  *session.QuestionNotice `json:"question,omitempty"`
+	Seq       int64                   `json:"seq"`
+	Kind      string                  `json:"kind"`
+	CreatedAt time.Time               `json:"created_at"`
+	Message   provider.Message        `json:"message"`
 	// Compaction is what a compaction entry records, and absent on the
 	// others.
 	Compaction *agent.Compaction `json:"compaction,omitempty"`
@@ -521,6 +524,13 @@ func asEntry(e store.Entry) (entryBody, error) {
 			return entryBody{}, err
 		}
 		body.Text = &text
+	}
+	if e.Kind == store.KindNotice {
+		q, err := session.QuestionOf(e)
+		if err != nil {
+			return entryBody{}, err
+		}
+		body.Question = q
 	}
 	if e.Kind == store.KindCompaction {
 		c, err := session.CompactionOf(e)

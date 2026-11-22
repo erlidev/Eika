@@ -81,8 +81,14 @@ func newNotices(s *Server) *notices {
 // post writes a notice with the entry id id to a home session and makes sure
 // a turn delivers it. The id names what the notice is about, so writing the
 // same notice again, as a retry after a lost response does, adds no entry.
-func (n *notices) post(ctx context.Context, sessionID, id, text string) error {
-	e, err := session.TextEntry(store.KindNotice, text)
+func (n *notices) post(ctx context.Context, sessionID, id, text string, question *session.QuestionNotice) error {
+	var e store.Entry
+	var err error
+	if question != nil {
+		e, err = session.QuestionNoticeEntry(text, *question)
+	} else {
+		e, err = session.TextEntry(store.KindNotice, text)
+	}
 	if err != nil {
 		return err
 	}
@@ -133,9 +139,9 @@ func (n *notices) record(ctx context.Context, sessionID string, e store.Entry, t
 // in the background, waiting longer each time, until it is written or the
 // book closes. The first attempt runs on ctx, so a notice posted while the
 // server shuts down is still written.
-func (n *notices) postSoon(ctx context.Context, sessionID, id, text string) {
+func (n *notices) postSoon(ctx context.Context, sessionID, id, text string, question *session.QuestionNotice) {
 	first, cancel := context.WithTimeout(ctx, noticeWriteLimit)
-	err := n.post(first, sessionID, id, text)
+	err := n.post(first, sessionID, id, text, question)
 	cancel()
 	if err == nil {
 		return
@@ -158,7 +164,7 @@ func (n *notices) postSoon(ctx context.Context, sessionID, id, text string) {
 			case <-timer.C:
 			}
 			attempt, cancel := context.WithTimeout(n.ctx, noticeWriteLimit)
-			err := n.post(attempt, sessionID, id, text)
+			err := n.post(attempt, sessionID, id, text, question)
 			cancel()
 			if err == nil {
 				return
@@ -382,5 +388,5 @@ func reportNoticeID(child store.Session) string {
 // It is the lifecycle service's Reported option.
 func (s *Server) subagentReported(ctx context.Context, child store.Session) {
 	s.notifications.send("A subagent reported")
-	s.notices.postSoon(ctx, child.ParentSessionID, reportNoticeID(child), reportNotice(child))
+	s.notices.postSoon(ctx, child.ParentSessionID, reportNoticeID(child), reportNotice(child), nil)
 }

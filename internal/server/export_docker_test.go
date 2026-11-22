@@ -50,7 +50,7 @@ func (s *Server) AfterRunReleasesForTest(f func(sessionID string)) { s.runs.rele
 // PostNoticeForTest writes a notice with the entry id id to a home session,
 // as a report does.
 func (s *Server) PostNoticeForTest(ctx context.Context, sessionID, id, text string) error {
-	return s.notices.post(ctx, sessionID, id, text)
+	return s.notices.post(ctx, sessionID, id, text, nil)
 }
 
 // FailNoticeWritesForTest makes the next failures notice writes fail, and

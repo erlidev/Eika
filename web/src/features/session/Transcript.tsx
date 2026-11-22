@@ -34,7 +34,6 @@ import { Speed } from "@/features/session/Speed";
 import { rewindableEntries } from "@/features/session/tree";
 import { useSessionStore } from "@/features/session/store";
 import { ToolCard } from "@/features/session/ToolCard";
-import { parseQuestionNotice } from "@/features/session/questionNotice";
 import { cutOffText, visibleItems } from "@/features/session/transcript";
 import type { AssistantItem, TranscriptItem } from "@/features/session/transcript";
 import { cn } from "@/lib/utils";
@@ -423,7 +422,7 @@ const Item = memo(function Item({ item, openTool, readOnly, onRewind }: ItemProp
       const name = /^([a-z0-9-]+) \([^)]+\) (?:reported:|asks:|was interrupted)/.exec(
         item.text,
       )?.[1];
-      const asked = parseQuestionNotice(item.text);
+      const asked = item.question;
       if (asked !== undefined) {
         return (
           <article className="bg-muted/40 min-w-0 rounded-md border px-3 py-2 text-sm">
@@ -431,9 +430,9 @@ const Item = memo(function Item({ item, openTool, readOnly, onRewind }: ItemProp
               {asked.name} ({asked.agent}) asks
             </h3>
             <p className="break-words whitespace-pre-wrap">{asked.question}</p>
-            {asked.options.length > 0 && (
+            {(asked.options?.length ?? 0) > 0 && (
               <ul className="text-muted-foreground mt-1 list-disc pl-5 text-xs">
-                {asked.options.map((option) => (
+                {asked.options?.map((option) => (
                   <li key={option}>{option}</li>
                 ))}
               </ul>
