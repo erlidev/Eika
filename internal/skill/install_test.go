@@ -48,6 +48,15 @@ func (f *fakeIndex) DeleteSkill(_ context.Context, name string) error {
 	delete(f.rows, name)
 	return nil
 }
+func (f *fakeIndex) SetSkillEnabled(_ context.Context, name string, enabled bool) error {
+	r, ok := f.rows[name]
+	if !ok {
+		return skill.ErrNotFound
+	}
+	r.Enabled = enabled
+	f.rows[name] = r
+	return nil
+}
 func (f *fakeIndex) SetSkillBroken(_ context.Context, name, reason string) error {
 	r := f.rows[name]
 	r.Broken = reason

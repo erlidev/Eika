@@ -1,5 +1,18 @@
 # Plan log
 
+- 2026-11-22: P6-06 adds the skills API (`POST/GET /api/skills`, `GET/DELETE /api/skills/{name}`,
+  `POST .../enable|disable`; `server/skills_api.go`, `skills_wire.go`). Upload is
+  `multipart/form-data` with one part `file`, read as a stream bounded to the zip limit plus 64 KiB
+  of framing (413 over it); an archive fault or credential is 400 (`skill.InvalidError`), a
+  volume fault 500, no installer yet 503. Enable runs `skill.CheckCatalogBudget` inside
+  `Installer.SetEnabled`'s lock with the exact counter (`server.exactCounter`, the pin counter
+  generalised); an estimate is 503 and nothing changes, over 2,000 tokens or a broken skill is 409.
+  `skill.Catalog` renders the block P6-08 puts in the preamble. Event `skills.changed`
+  ({name, change}) on topic `skills` after the durable change (the plan text says
+  `skills_changed`; the dotted name is every event's convention); audit kind `skill`, no content.
+  Wire types, `web/src/api` (types, routes, `installSkill` multipart, event, `skillsTopic`) and
+  mock harness routes (`routes/skills.ts`, `world.skills`) land together; `make contract` run.
+
 - 2026-11-22: P6-05 adds `sentry.SkillChecker` (`CheckSkill`, beside `CheckMemory`, never
   `Gate.Ingest`) and `scan.StripInvisibleMap`. A credential pattern in the description or
   any text file rejects the install, naming pattern and file; otherwise the description and

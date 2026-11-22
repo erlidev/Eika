@@ -348,3 +348,12 @@ type MemoryChanged struct {
 type InboxCount struct {
 	Pending int `json:"pending"`
 }
+
+// SkillsChanged is the payload of a skills.changed event, on the skills topic:
+// a skill was durably installed (or reinstalled, which returns it to disabled),
+// enabled, disabled or deleted. Clients refetch; no skill text is carried.
+// Change is "installed", "enabled", "disabled" or "deleted".
+type SkillsChanged struct {
+	Name   string `json:"name"`
+	Change string `json:"change"`
+}

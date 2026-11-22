@@ -70,6 +70,13 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /api/inbox/memories/{name}/accept", s.handleAcceptMemory)
 	api.HandleFunc("POST /api/inbox/memories/{name}/reject", s.handleRejectMemory)
 
+	api.HandleFunc("POST /api/skills", s.handleInstallSkill)
+	api.HandleFunc("GET /api/skills", s.handleListSkills)
+	api.HandleFunc("GET /api/skills/{name}", s.handleSkill)
+	api.HandleFunc("POST /api/skills/{name}/enable", s.handleSetSkillEnabled(true))
+	api.HandleFunc("POST /api/skills/{name}/disable", s.handleSetSkillEnabled(false))
+	api.HandleFunc("DELETE /api/skills/{name}", s.handleDeleteSkill)
+
 	api.HandleFunc("GET /api/home", s.handleHomeSession)
 	api.HandleFunc("GET /api/sessions", s.handleListSessions)
 	api.HandleFunc("GET /api/sessions/{id}", s.handleSession)

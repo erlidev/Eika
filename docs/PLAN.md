@@ -664,7 +664,7 @@ package that changes it. Project scope, other install sources, `skill_file`,
       blocks and never enables. Guard down stores `unscanned`. Audit without
       content. Test with a fake screen, including the offset mapping when the body
       holds invisible characters.
-- [ ] **P6-06**: Add the authenticated API: install by `.zip` upload (multipart,
+- [x] **P6-06**: Add the authenticated API: install by `.zip` upload (multipart,
       bounded, answers with the new disabled skill and its warnings and spans),
       list, read (full body, file list, screen result), enable, disable and delete,
       with the catalog budget check on enable (question 5). Register routes,
@@ -1084,7 +1084,7 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
 - [ ] (P6-02, P6-03 done; P6-12) Mount `/skills` read-only into computers from a volume of its own
       (`eika-skills`), never from Core's `/var/lib/eika` volume, which holds
       `secret.key` and the memory repository. `make backup` covers it.
-- [ ] (P6-08 done; P6-06, P6-07) Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.
+- [x] (P6-06 to P6-08) Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.
       Resource files are read from `/skills/<name>/` on the computer.
 - [ ] (P6-09 to P6-11) Skills UI: install with the full `SKILL.md` and file list shown, the
       screen's hits marked in the text, enable, warnings.

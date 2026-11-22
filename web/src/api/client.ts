@@ -115,6 +115,8 @@ export type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** body is encoded as JSON when present. */
   body?: unknown;
+  /** form is sent as multipart/form-data; the browser sets the content type and boundary. */
+  form?: FormData;
   /** text is sent as is, as plain text, for a route whose body is a file's contents. */
   text?: string;
   /** query holds search parameters; entries with no value are left out. */
@@ -145,13 +147,16 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const headers: Record<string, string> = { Accept: "application/json" };
   if (token !== "") headers.Authorization = `Bearer ${token}`;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
-  else if (options.text !== undefined) headers["Content-Type"] = "text/plain; charset=utf-8";
+  else if (options.form !== undefined) {
+    // The browser writes the multipart content type with its boundary.
+  } else if (options.text !== undefined) headers["Content-Type"] = "text/plain; charset=utf-8";
 
   const init: RequestInit = {
     method: options.method ?? "GET",
     headers,
   };
   if (options.body !== undefined) init.body = JSON.stringify(options.body);
+  else if (options.form !== undefined) init.body = options.form;
   else if (options.text !== undefined) init.body = options.text;
   if (options.signal) init.signal = options.signal;
 

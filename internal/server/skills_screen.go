@@ -35,7 +35,7 @@ func skillScreener(c sentry.SkillChecker) skill.Screener {
 			return nil, fmt.Errorf("screen skill: %w", err)
 		}
 		if v.Pattern != "" {
-			return nil, fmt.Errorf("%s contains a credential (%s); remove it and install again", v.Path, v.Pattern)
+			return nil, skill.Invalid(fmt.Errorf("%s contains a credential (%s); remove it and install again", v.Path, v.Pattern))
 		}
 		res := &skill.ScreenResult{Spans: []skill.ScreenSpan{}, MaxScore: v.MaxScore, Unscanned: v.Unscanned}
 		for _, sp := range v.Spans {

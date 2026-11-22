@@ -13,7 +13,14 @@ import { contract } from "./contract.ts";
 import { MockHarness, mockToken } from "./mock.ts";
 import type { Reply } from "./mock.ts";
 import { scenario } from "./scenarios.ts";
-import type { InboxPage, Memory, MemoryPage } from "../../src/api/types.ts";
+import type {
+  InboxPage,
+  Memory,
+  MemoryPage,
+  Skill,
+  SkillInstall,
+  SkillList,
+} from "../../src/api/types.ts";
 
 /**
  * unmocked are the routes the mock does not serve, with why: the UI never
@@ -570,6 +577,55 @@ describe("memories", () => {
     expect(
       ((await call(mock, "GET", "/api/inbox/count")).body as { pending: number }).pending,
     ).toBe(0);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+});
+
+describe("skills", () => {
+  const upload = (mock: MockHarness, filename: string, extra = "") =>
+    mock.answer(
+      "POST",
+      "/api/skills",
+      `Bearer ${mockToken}`,
+      `--b\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/zip\r\n\r\nPK${extra}\r\n--b--\r\n`,
+    ) as Promise<Reply>;
+
+  it("installs disabled, marks a hit, refuses a credential, and keeps every answer in the contract", async () => {
+    const mock = open("workbench");
+    const first = (await upload(mock, "invoice-totals.zip")).body as SkillInstall;
+    expect(first).toMatchObject({
+      unchanged: false,
+      skill: { name: "invoice-totals", enabled: false },
+    });
+    expect(((await upload(mock, "invoice-totals.zip")).body as SkillInstall).unchanged).toBe(true);
+    const poisoned = (await upload(mock, "poison-pill.zip")).body as SkillInstall;
+    expect(poisoned.skill.screen?.spans).toHaveLength(1);
+    expect((await upload(mock, "secret.zip")).status).toBe(400);
+    expect((await call(mock, "POST", "/api/skills", { file: "x" })).status).toBe(400);
+    const list = (await call(mock, "GET", "/api/skills")).body as SkillList;
+    expect(list.skills.map((s) => s.name)).toEqual(["invoice-totals", "poison-pill"]);
+    expect(list.skills[1]).toMatchObject({ span_count: 1, enabled: false });
+    expect((await call(mock, "GET", "/api/skills/missing")).status).toBe(404);
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
+  it("enables, disables and deletes, publishing skills.changed, and refuses a broken or over-budget skill", async () => {
+    const mock = open("workbench");
+    await upload(mock, "aa.zip");
+    expect(((await call(mock, "POST", "/api/skills/aa/enable")).body as Skill).enabled).toBe(true);
+    expect(((await call(mock, "POST", "/api/skills/aa/disable")).body as Skill).enabled).toBe(
+      false,
+    );
+    const skill = mock.world.skills[0];
+    if (skill) skill.broken = "directory missing";
+    expect((await call(mock, "POST", "/api/skills/aa/enable")).status).toBe(409);
+    if (skill) {
+      skill.broken = "";
+      skill.description = "x".repeat(9000);
+    }
+    expect((await call(mock, "POST", "/api/skills/aa/enable")).status).toBe(409);
+    expect((await call(mock, "DELETE", "/api/skills/aa")).status).toBe(204);
+    expect((await call(mock, "GET", "/api/skills")).body).toEqual({ skills: [] });
     expect(mock.contractBreaks).toEqual([]);
   });
 });

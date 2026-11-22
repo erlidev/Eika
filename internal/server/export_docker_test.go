@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/inference"
+	"github.com/erlidev/eika/internal/skill"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
 )
@@ -90,3 +91,7 @@ func (s *Server) SetNotificationClientForTest(client *http.Client, publicURL str
 
 // CanaryForTest is the canary the server planted in the home computer.
 func (s *Server) CanaryForTest() string { return s.canary.get() }
+
+// SetSkillInstaller publishes an installer whose volume is a test directory,
+// as recoverSkills does for the real one.
+func (s *Server) SetSkillInstaller(in *skill.Installer) { s.skillInstaller.Store(in) }

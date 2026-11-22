@@ -2721,6 +2721,23 @@ a guard that did not answer stores `unscanned`, and `screen_required` does not r
 skill. Audit rows (`deny` for a credential, `skill_screen` otherwise) carry pattern, file,
 counts and score, no text. `server.skillScreener` adapts it to `Installer.SetScreener`.
 
+## Skills API (P6-06)
+
+The API goes through `skill.Installer` only, so there is no second write path. The
+upload is a stream: one multipart part named `file`, the zip bounded to 5 MiB and the
+body to that plus 64 KiB; the route has no JSON request shape in the contract and the
+mock harness stands in for the zip (name from the file name). `skill.InvalidError` marks
+what the archive caused (400); everything else from the installer is the harness's (500).
+`Installer.SetEnabled` takes a check that sees every row as it would be after the change,
+under the installer's lock, so two enables cannot both pass a budget one fits in; the
+check is `skill.CheckCatalogBudget`, which counts `skill.Catalog` (heading plus one
+`- name: description` line per enabled, sound skill, whitespace collapsed) with the model's
+own counter, the one pins use (`server.exactCounter`). Question 5's default applies: over
+2,000 tokens is a 409, an inexact count a 503, and disabling is never refused. A broken
+skill cannot be enabled (409); a reinstall repairs it. Enabling an enabled skill is a
+no-op with no event. Event name is `skills.changed` (dotted, like every other event; the
+plan wrote `skills_changed`), topic `skills`, payload `{name, change}`, carrying no text.
+
 **Skill catalog in the snapshot (P6-08).** `skill.BuildCatalog` renders the loadable
 skills (enabled, not broken) by name, one line each, whole entries only, inside
 2,000 exact tokens counted with the model's counter (`textCounter`, as for memory); an

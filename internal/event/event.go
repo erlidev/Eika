@@ -62,6 +62,9 @@ const (
 	TypeMemoryChanged = "memory.changed"
 	// TypeInboxCount reports how many memories wait for the user's answer.
 	TypeInboxCount = "inbox.count"
+	// TypeSkillsChanged reports that a skill was installed, enabled,
+	// disabled or deleted.
+	TypeSkillsChanged = "skills.changed"
 	// TypeBusDropped reports that the client fell behind and lost events.
 	TypeBusDropped = "bus.dropped"
 )
@@ -69,6 +72,10 @@ const (
 // TopicInbox carries memory.changed and inbox.count. A client subscribes to
 // it for the Inbox badge and to know when to refetch a memory.
 const TopicInbox = "inbox"
+
+// TopicSkills carries skills.changed. A client subscribes to it to know when
+// to refetch the skill list or a skill.
+const TopicSkills = "skills"
 
 // TopicGlobal is the topic for events that belong to no single computer or
 // session. Computer and session topics are "computer:<id>" and

@@ -267,6 +267,13 @@ func (s *Server) auditMemory(ctx context.Context, name, action string, detail ma
 // needs one never needs a model. A counter that can only estimate answers not
 // exact, and the change is refused.
 func (s *Server) pinCounter() (memory.CountFunc, func()) {
+	return s.exactCounter(pinCountSession)
+}
+
+// exactCounter is the lazily built exact token counter behind pinCounter, for
+// any change that must be judged against a budget; sessionID names the counter
+// and is not a session row.
+func (s *Server) exactCounter(sessionID string) (func(context.Context, string) (int, bool, error), func()) {
 	var mu sync.Mutex
 	var count func(context.Context, string) (int, bool)
 	var release func()
@@ -275,11 +282,11 @@ func (s *Server) pinCounter() (memory.CountFunc, func()) {
 		mu.Lock()
 		if !built {
 			built = true
-			cfg, err := s.configure(ctx, store.Session{ID: pinCountSession, Agent: "eika"}, "")
+			cfg, err := s.configure(ctx, store.Session{ID: sessionID, Agent: "eika"}, "")
 			if err != nil {
 				s.log.Warn("count pinned memories: no model", "error", err)
 			} else {
-				ctr, rel := s.counterFor(ctx, pinCountSession, cfg.model, cfg.modelOK)
+				ctr, rel := s.counterFor(ctx, sessionID, cfg.model, cfg.modelOK)
 				count, release = ctr.CountText, rel
 			}
 		}

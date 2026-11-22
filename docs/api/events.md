@@ -66,15 +66,15 @@ it needs with `session.replay`.
 | Field | Type | Meaning |
 |---|---|---|
 | `type` | string | Event type name, for example `tool.call`. |
-| `topic` | string | `global`, `inbox`, `computer:<id>`, or `session:<id>`. |
+| `topic` | string | `global`, `inbox`, `skills`, `computer:<id>`, or `session:<id>`. |
 | `time` | RFC 3339 timestamp, UTC | When the event was created. |
 | `payload` | object, optional | Type-specific body. |
 
-There are four kinds of topic: `global`, `computer:<id>`, `session:<id>`, and
-`inbox`. Agent run events, question and elicitation events, and replay
+There are five kinds of topic: `global`, `computer:<id>`, `session:<id>`,
+`inbox`, and `skills`. Agent run events, question and elicitation events, and replay
 events are published on `session:<id>`; computer lifecycle events on
 `computer:<id>`; MCP server state and session titles and edits on `global`;
-memory and Inbox changes on `inbox`. A
+memory and Inbox changes on `inbox`; skill changes on `skills`. A
 `bus.dropped` event reaches one connection only and carries the topic
 `global`, whatever that connection subscribed to.
 
@@ -394,6 +394,21 @@ client may show it as the badge without another request.
 | Field | Type | Meaning |
 |---|---|---|
 | `pending` | integer | Memories in state `pending`. |
+
+## Skills events
+
+### `skills.changed`
+
+Published on topic `skills`, after the change is durable, whoever made it. Any
+authenticated client may subscribe. It carries no skill text: the client
+refetches `GET /api/skills` (and the skill it shows). Events are not replayed,
+so a client refetches when it connects, reconnects or sees `bus.dropped`. No push
+is sent.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | The skill's name. |
+| `change` | string | `installed` (new, or reinstalled with changes, which returns it to disabled), `enabled`, `disabled` or `deleted`. |
 
 ## MCP events
 

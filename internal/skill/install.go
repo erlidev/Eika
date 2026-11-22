@@ -17,6 +17,21 @@ import (
 // ErrNotFound reports that no skill has the name asked for.
 var ErrNotFound = errors.New("skill not found")
 
+// ErrBroken reports that a skill's directory no longer matches its row, so it
+// cannot be enabled until it is installed again.
+var ErrBroken = errors.New("skill is broken")
+
+// InvalidError is an install the user's zip or its contents caused: not a zip,
+// over a limit, no usable SKILL.md, or a credential in a file. Nothing else
+// about an install is the user's to fix.
+type InvalidError struct{ Err error }
+
+// Invalid marks err as the fault of the uploaded archive.
+func Invalid(err error) error { return &InvalidError{Err: err} }
+
+func (e *InvalidError) Error() string { return e.Err.Error() }
+func (e *InvalidError) Unwrap() error { return e.Err }
+
 // Broken reasons stored on a row whose directory no longer matches it.
 const (
 	BrokenMissing = "directory missing"
@@ -85,6 +100,8 @@ type Index interface {
 	GetSkill(ctx context.Context, name string) (Record, error)
 	ListSkills(ctx context.Context) ([]Record, error)
 	DeleteSkill(ctx context.Context, name string) error
+	// SetSkillEnabled sets a row's enabled flag, or returns ErrNotFound.
+	SetSkillEnabled(ctx context.Context, name string, enabled bool) error
 	// SetSkillBroken sets a row's broken reason, or clears it with "".
 	SetSkillBroken(ctx context.Context, name, reason string) error
 }
@@ -137,11 +154,11 @@ type InstallResult struct {
 func (in *Installer) Install(ctx context.Context, zip []byte) (InstallResult, error) {
 	arch, err := ReadZip(bytes.NewReader(zip), int64(len(zip)))
 	if err != nil {
-		return InstallResult{}, err
+		return InstallResult{}, Invalid(err)
 	}
 	sk, err := arch.Skill()
 	if err != nil {
-		return InstallResult{}, err
+		return InstallResult{}, Invalid(err)
 	}
 	want := TreeHash(arch.Files)
 
@@ -184,6 +201,46 @@ func (in *Installer) Install(ctx context.Context, zip []byte) (InstallResult, er
 		return InstallResult{}, fmt.Errorf("record skill: %w", err)
 	}
 	return InstallResult{Record: rec}, nil
+}
+
+// SetEnabled enables or disables a skill. check runs under the installer's
+// lock with every row as it would be after the change, so two enables cannot
+// both pass a budget that only one fits in; an error from it refuses the
+// change. A broken skill cannot be enabled. Changing nothing is not an error.
+func (in *Installer) SetEnabled(ctx context.Context, name string, enabled bool, check func(after []Record) error) (Record, error) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	rec, err := in.index.GetSkill(ctx, name)
+	if err != nil {
+		return Record{}, err
+	}
+	if rec.Enabled == enabled {
+		return rec, nil
+	}
+	if enabled {
+		if rec.Broken != "" {
+			return Record{}, fmt.Errorf("%w: %s", ErrBroken, rec.Broken)
+		}
+		if check != nil {
+			rows, err := in.index.ListSkills(ctx)
+			if err != nil {
+				return Record{}, fmt.Errorf("list skills: %w", err)
+			}
+			for i := range rows {
+				if rows[i].Name == name {
+					rows[i].Enabled = true
+				}
+			}
+			if err := check(rows); err != nil {
+				return Record{}, err
+			}
+		}
+	}
+	if err := in.index.SetSkillEnabled(ctx, name, enabled); err != nil {
+		return Record{}, err
+	}
+	rec.Enabled = enabled
+	return rec, nil
 }
 
 // Delete removes a skill's directory and then its row. A failure between the

@@ -67,6 +67,9 @@ import type {
   MemoryListQuery,
   MemoryPage,
   RejectMemoryRequest,
+  Skill,
+  SkillInstall,
+  SkillList,
 } from "@/api/types";
 
 /** getHome reads the home session with the entry its head points at. */
@@ -629,6 +632,39 @@ export function rejectMemory(name: string, input: RejectMemoryRequest): Promise<
     method: "POST",
     body: input,
   });
+}
+
+/** listSkills lists every installed skill, by name. */
+export function listSkills(signal?: AbortSignal): Promise<SkillList> {
+  return request<SkillList>("/api/skills", { signal });
+}
+
+/** getSkill reads one skill in full: body, file list and screen result. */
+export function getSkill(name: string, signal?: AbortSignal): Promise<Skill> {
+  return request<Skill>(`/api/skills/${encodeURIComponent(name)}`, { signal });
+}
+
+/**
+ * installSkill uploads a zip. The skill arrives disabled with its warnings and
+ * screen hits; a zip over 5 MiB is a 413 and a credential in it a 400.
+ */
+export function installSkill(file: Blob): Promise<SkillInstall> {
+  const form = new FormData();
+  form.append("file", file, file instanceof File ? file.name : "skill.zip");
+  return request<SkillInstall>("/api/skills", { method: "POST", form });
+}
+
+/** setSkillEnabled enables or disables a skill; enabling past the catalog budget is a 409, with no exact count a 503. */
+export function setSkillEnabled(name: string, enabled: boolean): Promise<Skill> {
+  return request<Skill>(
+    `/api/skills/${encodeURIComponent(name)}/${enabled ? "enable" : "disable"}`,
+    { method: "POST" },
+  );
+}
+
+/** deleteSkill removes a skill's directory and row. */
+export function deleteSkill(name: string): Promise<void> {
+  return requestEmpty(`/api/skills/${encodeURIComponent(name)}`, { method: "DELETE" });
 }
 
 /** getHalt reads whether Eika is halted. */
