@@ -2145,3 +2145,17 @@ that network does not start it. `computer.Spec` gained `Root` and `Role`. No
 compose volume was needed: the computer's volume is made by the host. Tests: the
 operations in a real sandbox, the computers API hiding it, name rejection.
 `make smoke` passed and showed it running on `eika_smoke_sandbox_internal`.
+
+## P5-04 — Memory recovery and reindex (2026-11-22)
+
+`Writer.Reconcile` runs at start-up (`keepMemory`, after `EnsureMemory`) and
+`Writer.Reindex` behind `make memory-reindex` (`eika -memory-reindex`, run in the
+stack with `docker compose exec`). Both take the writer's lock and use its
+file, commit and row steps; there is no second write path. `Files` gained
+`List`, `Uncommitted`, `Restore`; `Index` gained `MemorySHAs`, `DeleteMemory`;
+`repo.Commit` is now a no-op when nothing is staged, so a retry is safe.
+`Server.MemoryWriter()` is nil until recovery succeeds, so nothing serves memory
+first. Tests: failure after the write, after the commit, retry after restart,
+outside edits and deletions, invalid files, full rebuild; `make smoke` passed.
+P5-05 hook: `Writer.SetScreen` (default `HoldPending`). Open: the writer is not
+yet handed to tools (P5-06).

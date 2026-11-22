@@ -68,3 +68,29 @@ func TestUpgradeAddsMemoriesWithoutLosingData(t *testing.T) {
 		t.Fatalf("search: %+v %v", hits, err)
 	}
 }
+
+func TestMemoryShasAndDelete(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, storetest.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	r := memoryRecord("sha-row", "Use when checking the content hash.", "body", "active")
+	r.ContentSHA = "abc"
+	if err := st.UpsertMemory(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.MemorySHAs(ctx); err != nil || got["sha-row"] != "abc" {
+		t.Fatalf("MemorySHAs = %v, %v", got, err)
+	}
+	if err := st.DeleteMemory(ctx, "sha-row"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteMemory(ctx, "sha-row"); err != nil {
+		t.Fatalf("delete twice: %v", err)
+	}
+	if got, _ := st.MemorySHAs(ctx); len(got) != 0 {
+		t.Fatalf("rows after delete: %v", got)
+	}
+}

@@ -30,6 +30,14 @@ type Files interface {
 	Read(ctx context.Context, name string) ([]byte, error)
 	Write(ctx context.Context, name string, data []byte) error
 	Commit(ctx context.Context, name string) error
+	// List names the memory files in the working tree.
+	List(ctx context.Context) ([]string, error)
+	// Uncommitted names the memory files that are new, changed or deleted
+	// relative to the last commit.
+	Uncommitted(ctx context.Context) ([]string, error)
+	// Restore brings a deleted file back from the last commit, and reports
+	// false when no commit has it.
+	Restore(ctx context.Context, name string) (bool, error)
 }
 
 // Record is a memory's row in the index. Body is the file's body.
@@ -59,6 +67,10 @@ type Query struct {
 type Index interface {
 	// UpsertMemory inserts or replaces the row named r.Name.
 	UpsertMemory(ctx context.Context, r Record) error
+	// MemorySHAs returns every row's content_sha by name.
+	MemorySHAs(ctx context.Context) (map[string]string, error)
+	// DeleteMemory removes the row named name, if there is one.
+	DeleteMemory(ctx context.Context, name string) error
 	// SearchMemories ranks memories by full-text match. SnippetRunes bounds
 	// the body prefix returned.
 	SearchMemories(ctx context.Context, q Query, snippetRunes int) ([]Hit, error)
@@ -81,17 +93,19 @@ type Result struct {
 // Writer is the single writer of memories. Each write is one critical
 // section: file write, git commit, then index row, so concurrent callers
 // cannot interleave them. A crash between steps leaves a file the index does
-// not match, which recovery (P5-04) repairs from the files.
+// not match, which Reconcile repairs from the files.
 type Writer struct {
 	mu    sync.Mutex
 	files Files
 	index Index
 	now   func() time.Time
+	// screen decides the state of a file changed outside the writer.
+	screen Screen
 }
 
 // NewWriter returns the writer for a repository and its index.
 func NewWriter(files Files, index Index) *Writer {
-	return &Writer{files: files, index: index, now: time.Now}
+	return &Writer{files: files, index: index, now: time.Now, screen: HoldPending}
 }
 
 // Write creates a memory. If the name is taken and Replace is false the
@@ -162,11 +176,19 @@ func (w *Writer) store(ctx context.Context, next, old File, oldData []byte, exis
 			return Result{}, fmt.Errorf("commit memory: %w", err)
 		}
 	}
-	sum := sha256.Sum256(data)
-	if err := w.index.UpsertMemory(ctx, Record{File: next, ContentSHA: hex.EncodeToString(sum[:])}); err != nil {
-		return Result{}, fmt.Errorf("index memory: %w", err)
+	if err := w.indexFile(ctx, next, data); err != nil {
+		return Result{}, err
 	}
 	return Result{File: next}, nil
+}
+
+// indexFile writes the row for a file whose bytes are data.
+func (w *Writer) indexFile(ctx context.Context, f File, data []byte) error {
+	sum := sha256.Sum256(data)
+	if err := w.index.UpsertMemory(ctx, Record{File: f, ContentSHA: hex.EncodeToString(sum[:])}); err != nil {
+		return fmt.Errorf("index memory: %w", err)
+	}
+	return nil
 }
 
 // sameContent reports whether two files differ at most in Updated.

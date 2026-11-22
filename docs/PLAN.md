@@ -372,7 +372,7 @@ Dreaming, embeddings, project memory, automatic retrieval and the fuller
       commit and row updates; a name collision returns the existing memory.
       Test concurrent writes and the populated-database upgrade. Depend on P5-02
       for all repository I/O; the tools do not write files themselves.
-- [ ] **P5-04**: Add restart `Reconcile` and `make memory-reindex` through the same
+- [x] **P5-04**: Add restart `Reconcile` and `make memory-reindex` through the same
       writer. Repair changed, missing and uncommitted files and stale rows;
       preserve pending/archived states and commits. Test failures between file,
       git and row updates, retry after restart, and a full index rebuild. Wire
@@ -822,7 +822,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - [x] **P5-01**: File format, parser and validator.
       - [x] **P5-02**: Isolated repository access through the executor.
       - [x] **P5-03**: Single writer, index and FTS.
-      - [ ] **P5-04**: Recovery and reindex.
+      - [x] **P5-04**: Recovery and reindex.
 - [ ] Add the tools `memory_search`, `memory_read`, `memory_write` and
       `memory_forget`, for `eika` only. A write never asks. It is denied if it
       holds a credential pattern, and its body goes through the screen: a hit
