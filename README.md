@@ -89,7 +89,59 @@ fails. Expect it to be unavailable for the length of the dump and copy, normally
 seconds. The postgres service must be running. Nothing secret is printed; the
 set itself is secret, so keep it somewhere only you can read. A set is built in a
 hidden `.eika-backup-*.partial` directory and renamed only when complete; a
-failed run leaves none. `make restore` (P5-17) will read this format.
+failed run leaves none. `make restore` reads this format.
+
+### Restore
+
+```sh
+docker compose up -d postgres      # a new stack needs only its database running
+make restore BACKUP=backups/eika-backup-<UTC time>
+```
+
+Restore only into a stopped, empty target: a new stack, or one whose data you
+removed (`docker compose down -v` destroys it). Before it writes anything,
+`make restore` checks the whole set: `manifest.json`, `postgres.dump`,
+`memory.tar` and `secret.key` are all there, every size and SHA-256 matches the
+manifest, the dump and the archive can be read, and the set's migration is not
+newer than this build (upgrade Eika first if it is). It then refuses, writing
+nothing, when Eika is running, the database holds any table, `secret.key`
+already exists in the data volume, or the memory volume is not empty. Then it
+restores the database, the key (unchanged, mode 0600, owned by the harness
+user) and the memory repository with its git history into the volume
+`eika-cx-<id>`, named from the `core.memory_computer` id in the restored
+database, and starts the stack. Core's startup reconcile verifies the memory
+index against the restored files and rebuilds what is missing; look for the
+`memory reconciled` line in `docker compose logs eika`, which the command
+prints. Sign in with the backed-up password; sealed credentials open because
+the key came back with them.
+
+**Restoring beside the source.** The memory volume `eika-cx-<id>` is named per
+Docker host, not per stack. When the set's volume exists and is not empty, it
+belongs to another stack on this host (typically the backed-up stack, still
+running). It is never written: the repository goes into a volume named from a
+fresh id, and `core.memory_computer` in the restored database is changed to
+that id before Core starts. So you can back up a running stack and restore it
+into a separate empty compose project (`COMPOSE="docker compose -p other"`) on
+the same host, with the source intact. Other computers' files and the home
+computer's volume are not in a set; Eika makes the home container again.
+
+`FORCE=1 make restore BACKUP=...` is **destructive**: it drops the target
+database and replaces it, overwrites the key file and empties the target's own memory
+volume (the one its database records, never another stack's) first. Use it only when the target holds nothing you need. Eika must
+still be stopped. If a restore fails part-way the target is partly written;
+fix the cause and rerun with `FORCE=1`. Nothing secret is printed.
+
+`make restore-test` runs the whole cycle on throwaway compose projects of its
+own (never your stack, never `make smoke`'s): it populates a source stack
+(sign-in password, a sealed provider key, sessions with entries, memories
+active, pending and archived), backs it up, checks that incomplete, damaged and
+too-new sets are rejected and that a running or filled target is refused, restores
+into a new stack beside it and checks the sessions, memories, sealed
+key, key mode and git history, then repeats with `FORCE=1` and checks the
+source, which kept running throughout, is unchanged. It needs about
+3 GB of free memory and takes a few minutes; both stacks are removed afterwards,
+and the images `eika:restoretest` and `eika-sandbox:restoretest` stay as a
+build cache.
 
 ### Access from a phone
 

@@ -462,7 +462,7 @@ and check that a rejected memory stays archived and an accepted memory stays act
       manifest and restrictive file permissions. Document operator commands and
       exactly what is included (computer volumes are outside this item's scope).
       No secret content appears in command output or logs.
-- [ ] **P5-17**: Add `make restore` and its operator guide. Restore into a stopped,
+- [x] **P5-17**: Add `make restore` and its operator guide. Restore into a stopped,
       empty target, validate the complete set before writing, preserve the key,
       reconcile the index and start Core. Test a backup/restore with populated
       sessions, sealed settings and all memory states, plus a rejected incomplete
@@ -738,7 +738,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
 - [ ] `make backup` and `make restore`: the database, the memory repository and
       the key file, with a documented and tested restore.
       - [x] **P5-16**: Consistent backup.
-      - [ ] **P5-17**: Restore and populated-data verification.
+      - [x] **P5-17**: Restore and populated-data verification.
 - [ ] Scripted stack coverage.
       - [ ] **P5-18**: Memory smoke flow and isolation check.
 - [ ] Phase 5 live suite, on the bench's chat model and guard: the exit's

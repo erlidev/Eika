@@ -34,7 +34,7 @@ SMOKE_COMPOSE := EIKA_PORT=$(SMOKE_PORT) EIKA_AUTH_TOKEN=$(SMOKE_TOKEN) \
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
 	sandbox sandbox-test web-install clean visual visual-update shot playwright-browser contract \
-	smoke smoke-down live bench-sentry memory-reindex backup
+	smoke smoke-down live bench-sentry memory-reindex backup restore restore-test
 
 all: build
 
@@ -181,6 +181,18 @@ memory-reindex:
 ## stops eika while the set is taken and starts it again. See README.md.
 backup:
 	COMPOSE="$(COMPOSE)" deploy/backup.sh
+
+## restore: restore a backup set into a stopped, empty stack (BACKUP=<set
+## directory>). It checks the whole set first and refuses a target that holds
+## data; FORCE=1 overwrites it and is destructive. See README.md.
+restore:
+	COMPOSE="$(COMPOSE)" BACKUP="$(BACKUP)" FORCE="$(FORCE)" deploy/restore.sh
+
+## restore-test: back up and restore a populated throwaway stack (its own
+## compose projects, removed afterwards) and check everything comes back,
+## that bad sets are rejected and that a filled target is refused.
+restore-test:
+	deploy/restore-test.sh
 
 ## live: run the live tests (evals/live) against the real model on the bench
 ## (docs/PLAN.md, "Live test bench"), with no test cache, and write a report

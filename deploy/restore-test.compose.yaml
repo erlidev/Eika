@@ -1,0 +1,43 @@
+# Override for `make restore-test`: a throwaway stack of its own, so the test
+# never touches a stack `make local` runs. Used with a unique compose project
+# name and RT_NET (network names) from deploy/restore-test.sh, and never
+# publishes a port: the test reaches the API from inside the eika container.
+# The images get tags of their own; the guard does not run (the memory states
+# the test needs do not depend on it), and Core finds no guard and carries on.
+services:
+  eika:
+    image: eika:restoretest
+    ports: !reset []
+    environment:
+      EIKA_AUTH_TOKEN: restore-test-token
+      EIKA_SANDBOX_IMAGE: eika-sandbox:restoretest
+      EIKA_SANDBOX_NETWORK: ${RT_NET}_sandbox
+      EIKA_SANDBOX_INTERNAL_NETWORK: ${RT_NET}_sandbox_internal
+    depends_on:
+      model:
+        condition: service_started
+
+  guard:
+    profiles: ["off"]
+    image: eika-guard:restoretest
+
+  sandbox-image:
+    image: eika-sandbox:restoretest
+
+  # A scripted OpenAI-compatible endpoint (the smoke test's) so a session
+  # holds real entries.
+  model:
+    image: node:22-bookworm-slim
+    command: ["node", "/smoke/model.ts"]
+    volumes:
+      - ./web/e2e/smoke:/smoke:ro
+
+networks:
+  sandbox:
+    name: ${RT_NET}_sandbox
+  sandbox-internal:
+    name: ${RT_NET}_sandbox_internal
+  guard:
+    name: ${RT_NET}_guard
+  default:
+    name: ${RT_NET}_default
