@@ -188,6 +188,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 			o.Screen = screen.New(cfg.GuardURL)
 		}
 		o.ScreenSettings = s.screenSettings
+		o.MemoryThreshold = s.memoryScreenThreshold
 		o.GuardChanged = func(up bool) {
 			if s.notifications != nil {
 				message := "The guard is unavailable. Untrusted content cannot be screened."

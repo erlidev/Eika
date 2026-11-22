@@ -484,7 +484,7 @@ stack is intact. The scripted memory smoke flow passes.
       index/preamble inclusion, task completion, asks and pushes. Add a real-model
       save/recall across compaction and restart scenario. Keep fakes in `make check`;
       run this suite through `make live`, with bounded fixtures and cleanup.
-- [ ] **P5-20**: Add the 30 ordinary preferences/rules from the phase item as
+- [x] **P5-20**: Add the 30 ordinary preferences/rules from the phase item as
       user-turn cases through Eika's actual write path. Record guard scores and
       resulting states; none may be pending. If needed, add and calibrate a
       memory-only threshold, then rerun these cases and the attack cases without
@@ -746,7 +746,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       state them ("always use metric", "never book before 9"), none of which may
       go pending. If some do, memory writes get their own threshold.
       - [x] **P5-19**: Live harness and save/recall scenario.
-      - [ ] **P5-20**: Thirty ordinary preferences and rules.
+      - [x] **P5-20**: Thirty ordinary preferences and rules.
       - [ ] **P5-21**: Poisoning chain and second-screen case.
       - [ ] **P5-22**: Bench run and recorded results.
 - [ ] Close phase 5 after all exit checks.

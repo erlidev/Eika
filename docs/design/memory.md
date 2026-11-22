@@ -187,7 +187,12 @@ outside a span quoted from the user, which sent paraphrased preferences to pendi
 and passed an instruction that avoided the words. The screen is a classifier
 trained on that question. An ordinary rule the user states ("always use metric")
 must not go pending, and the phase's live suite checks that it does not; if it
-does, memory writes get a threshold of their own.
+does, memory writes get a threshold of their own. They did: the live suite saw
+about 6% of ordinary rules score 0.9 or more, so a memory write goes pending at
+`memory_screen_threshold` (default 0.99), a setting apart from the ingest
+threshold. The guard cannot separate the two entirely: a rule like "never send a
+message without showing me the draft" scored 0.996, as high as most planted
+instructions, so a rare ordinary write can still be pending (the Inbox accepts it).
 
 The Inbox shows pending memories with their source session. The user accepts,
 edits or rejects, and nothing is pushed: a pending memory can wait.

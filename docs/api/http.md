@@ -926,6 +926,7 @@ stores them.
 |---|---|---|
 | `screen_required` | boolean | Block untrusted content when the guard is unavailable; default false. |
 | `screen_threshold` | number | Remove windows at or above this score, above 0 and at most 1; default is the deployment config. |
+| `memory_screen_threshold` | number | A memory write (description or body) at or above this score is saved pending, above 0 and at most 1; default is the deployment config (0.99). Ingest never reads it. |
 | `time_zone` | string | IANA time zone for new agent preamble snapshots; defaults to UTC. |
 | `locale` | string | Locale for new agent preamble snapshots, 1 to 64 ASCII letters, digits or hyphens; unspecified by default. |
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a chat model. |

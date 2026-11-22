@@ -100,6 +100,12 @@ func (g *gate) CheckMemory(ctx context.Context, c MemoryCandidate) (MemoryVerdic
 			return MemoryVerdict{}, fmt.Errorf("sentry: read screen settings: %w", err)
 		}
 	}
+	if g.MemoryThreshold != nil {
+		var err error
+		if threshold, err = g.MemoryThreshold(ctx); err != nil {
+			return MemoryVerdict{}, fmt.Errorf("sentry: read memory threshold: %w", err)
+		}
+	}
 	src := Source{Kind: SourceKind("memory"), Session: c.Principal.Session, Run: c.Principal.Run, Key: c.Key, Name: c.Name}
 	windows, unscanned := g.score(ctx, []Segment{{Source: src}}, texts)
 	if err := ctx.Err(); err != nil {

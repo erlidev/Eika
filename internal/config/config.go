@@ -75,6 +75,11 @@ type Config struct {
 	// ScreenThreshold is the score at or over which the screen removes a
 	// window of untrusted content.
 	ScreenThreshold float64 `yaml:"screen_threshold"`
+	// MemoryScreenThreshold is the score at or over which a memory write goes
+	// pending. It is separate from ScreenThreshold so that ordinary rules the
+	// user states ("ignore emails from ...") do not wait in the Inbox, and
+	// never changes what ingest removes.
+	MemoryScreenThreshold float64 `yaml:"memory_screen_threshold"`
 }
 
 // ErrNoConfigFile reports that a named configuration file does not exist.
@@ -103,6 +108,7 @@ func Default() Config {
 		SecretKeyFile:          "/var/lib/eika/secret.key",
 		GuardURL:               "http://guard:9940",
 		ScreenThreshold:        0.9,
+		MemoryScreenThreshold:  0.99,
 	}
 }
 
@@ -238,6 +244,9 @@ func (c Config) Validate() error {
 	if c.ScreenThreshold <= 0 || c.ScreenThreshold > 1 {
 		return errors.New("validate config: screen_threshold must be above 0 and at most 1")
 	}
+	if c.MemoryScreenThreshold <= 0 || c.MemoryScreenThreshold > 1 {
+		return errors.New("validate config: memory_screen_threshold must be above 0 and at most 1")
+	}
 	// sandbox_network may be empty: that is the development mode where the
 	// harness reaches sandboxes on published loopback ports. So may the
 	// internal network, which turns restricted egress off.
@@ -274,12 +283,12 @@ const redacted = "[REDACTED]"
 // String renders the configuration with secrets replaced by a placeholder so
 // that it is safe to log.
 func (c Config) String() string {
-	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s sandbox_internal_network=%s egress_listen=%s egress_proxy_url=%s eikad_binary=%s secret_key_file=%s auth_token=%s allowed_origins=%s public_url=%s guard_url=%s screen_threshold=%g fetch_fixture_hosts=%s}",
+	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s sandbox_internal_network=%s egress_listen=%s egress_proxy_url=%s eikad_binary=%s secret_key_file=%s auth_token=%s allowed_origins=%s public_url=%s guard_url=%s screen_threshold=%g memory_screen_threshold=%g fetch_fixture_hosts=%s}",
 		c.Listen, redactURL(c.DatabaseURL), c.DockerSocket, c.SearxNGURL, c.SandboxImage,
 		c.SandboxNetwork, c.SandboxInternalNetwork, c.EgressListen, c.EgressProxyURL,
 		c.EikadBinary, c.SecretKeyFile,
 		redact(c.AuthToken), strings.Join(c.AllowedOrigins, ","), c.PublicURL,
-		c.GuardURL, c.ScreenThreshold, strings.Join(c.FetchFixtureHosts, ","))
+		c.GuardURL, c.ScreenThreshold, c.MemoryScreenThreshold, strings.Join(c.FetchFixtureHosts, ","))
 }
 
 // redact hides a secret while preserving whether it was set at all.

@@ -2620,8 +2620,10 @@ defaults; any can be revisited before the package that depends on it.
 - **Unscanned writes are pending.** When the guard does not answer, an agent
   write is pending; with `screen_required` it is rejected with nothing written.
   Description and body are both screened, user edits too, and only the user's
-  accept promotes flagged content. Credentials are always denied. The threshold
-  is the shared 0.9 until the live suite shows memory needs its own.
+  accept promotes flagged content. Credentials are always denied. Memory writes
+  have their own threshold, `memory_screen_threshold` (default 0.99), because the
+  live suite showed ordinary rules ("ignore emails from ...") scoring 0.9 to 0.99
+  at the shared 0.9 (P5-20). Ingest keeps `screen_threshold`.
 - **The preamble never claims an estimate is exact.** If exact counting fails
   the new snapshot is not built and the previous one stays. A pin or edit that
   would put the pinned section over 3,000 tokens or 12 entries is rejected.

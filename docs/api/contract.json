@@ -3164,6 +3164,7 @@
               },
               "computer_idle_minutes": "number",
               "maintenance_idle_seconds": "number",
+              "memory_screen_threshold": "number",
               "preempt_running": "boolean",
               "sandbox_egress": {
                 "object": {
@@ -5257,6 +5258,7 @@
               },
               "computer_idle_minutes": "number",
               "maintenance_idle_seconds": "number",
+              "memory_screen_threshold": "number",
               "preempt_running": "boolean",
               "sandbox_egress": {
                 "object": {

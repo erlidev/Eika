@@ -27,6 +27,9 @@ const (
 	settingDefaultModel    = "default_model"
 	settingScreenRequired  = "screen_required"
 	settingScreenThreshold = "screen_threshold"
+	// settingMemoryScreenThreshold is the score at or over which a memory
+	// write goes pending. Ingest never reads it.
+	settingMemoryScreenThreshold = "memory_screen_threshold"
 	// settingSandboxImage is the image the home computer's container is
 	// created from. A container that exists keeps the image it was created
 	// from.
@@ -84,7 +87,9 @@ type settingsResponse struct {
 type settingsDefaults struct {
 	ScreenRequired  bool    `json:"screen_required"`
 	ScreenThreshold float64 `json:"screen_threshold"`
-	SandboxImage    string  `json:"sandbox_image"`
+	// MemoryScreenThreshold is the score at or over which a memory write goes pending.
+	MemoryScreenThreshold float64 `json:"memory_screen_threshold"`
+	SandboxImage          string  `json:"sandbox_image"`
 	// SandboxLimits and SandboxEgress are what the home computer gets until
 	// the user sets others.
 	SandboxLimits limitsBody `json:"sandbox_limits"`
@@ -204,13 +209,14 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 	}
 	sandbox := builtinSandboxDefaults()
 	defaults := settingsDefaults{
-		SandboxImage:    s.cfg.SandboxImage,
-		ScreenThreshold: s.cfg.ScreenThreshold,
-		SandboxLimits:   sandbox.Limits,
-		SandboxEgress:   sandbox.Egress,
-		SearchOrder:     []string{},
-		SearchLimits:    map[string]search.Limit{},
-		Compaction:      compactionDefaults(),
+		SandboxImage:          s.cfg.SandboxImage,
+		ScreenThreshold:       s.cfg.ScreenThreshold,
+		MemoryScreenThreshold: s.cfg.MemoryScreenThreshold,
+		SandboxLimits:         sandbox.Limits,
+		SandboxEgress:         sandbox.Egress,
+		SearchOrder:           []string{},
+		SearchLimits:          map[string]search.Limit{},
+		Compaction:            compactionDefaults(),
 		// The idle timeout is the harness's own, not the deployment's.
 		ComputerIdleMinutes:    defaultIdleMinutes,
 		CompactIdleFill:        defaultCompactIdleFill,
@@ -266,7 +272,7 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		if json.Unmarshal(value, &on) != nil {
 			return invalidf("%s must be true or false", key)
 		}
-	case settingScreenThreshold:
+	case settingScreenThreshold, settingMemoryScreenThreshold:
 		var n float64
 		if json.Unmarshal(value, &n) != nil || n <= 0 || n > 1 {
 			return invalidf("%s must be above 0 and at most 1", key)
@@ -492,6 +498,24 @@ func (s *Server) screenSettings(ctx context.Context) (float64, bool, error) {
 		return 0, false, err
 	}
 	return parseScreenSettings(rows, s.cfg.ScreenThreshold)
+}
+
+// memoryScreenThreshold is the threshold for a memory write: the stored
+// memory_screen_threshold, else the deployment's.
+func (s *Server) memoryScreenThreshold(ctx context.Context) (float64, error) {
+	rows, err := s.deps.Store.Settings(ctx)
+	if err != nil {
+		return 0, err
+	}
+	threshold := s.cfg.MemoryScreenThreshold
+	for _, row := range rows {
+		if row.Key == settingMemoryScreenThreshold && string(row.Value) != "null" {
+			if err := json.Unmarshal(row.Value, &threshold); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return threshold, nil
 }
 
 func parseScreenSettings(rows []store.Setting, defaultThreshold float64) (float64, bool, error) {

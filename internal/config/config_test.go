@@ -82,6 +82,7 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 		AllowedOrigins:         []string{"localhost:9999", "127.0.0.1:9999"},
 		GuardURL:               "http://gpu:9940",
 		ScreenThreshold:        0.9,
+		MemoryScreenThreshold:  0.99,
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %v, want %v", cfg, want)

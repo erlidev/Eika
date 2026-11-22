@@ -39,14 +39,15 @@ func (s *Store) SetSettings(ctx context.Context, values map[string]json.RawMessa
 	return s.tx(ctx, func(q querier) error {
 		_, required := values["screen_required"]
 		_, threshold := values["screen_threshold"]
+		_, memoryThreshold := values["memory_screen_threshold"]
 		_, egress := values["sandbox_egress"]
-		if required || threshold || egress {
+		if required || threshold || memoryThreshold || egress {
 			if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('eika security settings'))`); err != nil {
 				return wrap("lock security settings", err)
 			}
 		}
 		for key, value := range values {
-			if key == "screen_required" || key == "screen_threshold" || key == "sandbox_egress" {
+			if key == "screen_required" || key == "screen_threshold" || key == "memory_screen_threshold" || key == "sandbox_egress" {
 				var changed bool
 				err := q.QueryRow(ctx, `SELECT COALESCE((SELECT value IS DISTINCT FROM $2::jsonb FROM settings WHERE key = $1), true)`, key, []byte(value)).Scan(&changed)
 				if err != nil {
