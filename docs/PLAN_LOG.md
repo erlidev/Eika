@@ -9,13 +9,33 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: bench switched to llama-server. The chat bench is the Komodo Deployment
+  `llama-server` at https://llama.erli.xyz (llama.cpp b11942-338fce651, Qwen3.8-27B
+  UD-Q4_K_XL at 4af51b35, text only, MTP, 4 slots, 256k q8_0 KV); `llama-qwen` and ComfyUI
+  were stopped to make room (ComfyUI held GPU memory and `llama-server` ran out of memory
+  beside it). The runner (`evals/bench`) still names `llama-qwen`; not repointed. A bare `make live`
+  with plain `live.env` ran: 53 scenarios passed, 2 skipped, 1 failed
+  (`persistent_home_compaction`: the recall turn answered without `history_search` and the
+  answer lacked the fact; the model's variance as in the P2-25 entry, not product code).
+
 - 2026-11-21: Phase 3 closed (P3-18). Docs moved into ARCHITECTURE and DECISIONS, the
   phase's items became a paragraph. `fmt-check`, `lint-go`, `lint-web`, `test-go`, `typecheck`,
   `test-web` and `visual` (104 passed, 1 skipped) pass one at a time, and `make smoke` passes.
   Live: `make live` passed all 42 scenarios (P2-25 entry): llama.cpp b11942-338fce651, Qwen3.8-27B
   UD-Q4_K_XL at revision 4af51b3542f775b0a8e4b310bfb3f17e01c306c9 (mmproj-BF16 at the same
   revision).
-  Exit check by hand: PENDING (owner). P3-18 stays unticked until it is done.
+  Exit check by hand, 2026-11-21, real stack (own compose project on port 18080, so the
+  owner's running stack was untouched), provider `llama-server` through the setup wizard,
+  Playwright as the user; screenshots in the session scratchpad `exit/`. PASSED except
+  push. 390x844, touch, isMobile: `/manifest.webmanifest` 200 `application/manifest+json`
+  (standalone, icons) and `/service-worker.js` activated with scope `/` (21 is an emulated
+  display-mode standalone shot, not an install); chat with Eika (20-23); Activity showed
+  `pepper-compare` running, then idle with its report (29, 30); Eika summarised the report
+  and asked which pepper to grow (31); answered "Jimmy Nardello" in Chat and Eika saved
+  the decision to the project (32, 33). Push NOT checked: ntfy is not configured
+  (`ntfy_topic` unset, `POST /api/notifications/test` -> 400), so there was no topic to
+  subscribe to and I did not invent one. Not checkable without the phone: the install
+  prompt on the device, the real keyboard and notch, the Tailscale route, tapping a push.
 
 - 2026-11-21: Phase 2 closed (P2-27). Docs moved into ARCHITECTURE and DECISIONS, the
   phase's items became a paragraph. `fmt-check`, `lint-go`, `lint-web`, `test-go`, `typecheck`,
@@ -23,7 +43,19 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   Live: `make live` passed all 42 scenarios (P2-25 entry): llama.cpp b11942-338fce651, Qwen3.8-27B
   UD-Q4_K_XL at revision 4af51b3542f775b0a8e4b310bfb3f17e01c306c9 (mmproj-BF16 at the same
   revision).
-  Exit check by hand: PENDING (owner). P2-27 stays unticked until it is done.
+  Exit check by hand, 2026-11-21, real stack (own compose project on port 18080, so the
+  owner's running stack was untouched), provider `llama-server` through the setup wizard,
+  Playwright as the user; screenshots in the session scratchpad `exit/`. PASSED. "look
+  into the best cold-greenhouse tomato varieties and keep notes in a project for it":
+  project `cold-greenhouse-tomatoes` created (08, 11); subagent `cold-greenhouse-tomatoes`
+  (researcher) started and ran about 7 minutes while home answered a second message ("17
+  times 3" -> "51.") (09); its report arrived as a notice in home (10); home resumed it by
+  name with `subagent_message` on its own, and a later "Resume cold-greenhouse-tomatoes by
+  name ..." request got a second report (13, 14). Findings: setup suggested a 32768 window
+  for a server that reports 256000; a subagent run failed with "request needs about 35199
+  tokens, which does not fit 32768", so the exit used 131072 (set through the API). A
+  failed subagent (`pepper-notes`) produced no notice in home: Eika kept saying it was
+  researching. Not fixed here.
 
 - 2026-11-21: Phase 3 exit review fixes (branch `p3-exit-fixes`). Activity rows no
   longer clip at 390px; question notices show the question, not the model's

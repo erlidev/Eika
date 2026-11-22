@@ -8,7 +8,7 @@ of `make check`. The bench they run on (which models, where) is in
 evals/live/     Go package: env loading, server description (the harness's provider probe), scenarios, report
 evals/models/   how to start the bench's models (README.md, guard.py)
 evals/results/  one JSON report per run; ignored by git
-evals/forward.sh  opens the SSH forward to the chat model when it is closed
+evals/forward.sh  opens the SSH forward to `llama-qwen` when it is closed (not needed for llama-server)
 ```
 
 ## Running
@@ -17,7 +17,7 @@ Put the bench's variables in `~/.config/eika/live.env` (mode 600), or export
 them; an exported variable wins over the file.
 
 ```
-EIKA_LIVE_ENDPOINT=http://127.0.0.1:8091    # llama.cpp, without /v1
+EIKA_LIVE_ENDPOINT=https://llama.erli.xyz   # llama.cpp, without /v1
 EIKA_LIVE_KEY=...                           # its bearer key
 ```
 

@@ -5,7 +5,7 @@ The live test bench (`docs/PLAN.md`, "Live test bench"): real models for
 
 | Role | Model | Where | Endpoint |
 |---|---|---|---|
-| chat | Qwen3.8-27B UD-Q4_K_XL (5.1 bpw) on llama.cpp, 2 slots sharing a 128k q8_0 KV cache | the RTX 5090 server, Komodo Deployment `llama-qwen` (`/opt/stacks/llama-qwen`) | `EIKA_LIVE_ENDPOINT` (`http://127.0.0.1:8091` through SSH), bearer `EIKA_LIVE_KEY` |
+| chat | Qwen3.8-27B UD-Q4_K_XL (5.1 bpw, revision 4af51b35) on llama.cpp b11942-338fce651, text only, MTP, 4 slots sharing a 256k q8_0 KV cache | the RTX 5090 server, Komodo Deployment `llama-server` | `EIKA_LIVE_ENDPOINT` (`https://llama.erli.xyz`, through Caddy), bearer `EIKA_LIVE_KEY` |
 | injection screen | `Horizon-Labs/prompt-injection-guard-small`, bf16 | local GPU, `guard.py` here | `EIKA_GUARD_URL`, default `http://127.0.0.1:9940` |
 | `decision` | `vllm-sr/d3-flash` Q8_0 on llama.cpp | local GPU, your own llama.cpp build | `EIKA_DECISION_URL`, default `http://127.0.0.1:9941` |
 
@@ -64,18 +64,27 @@ prompt cache off.
 
 ## The chat model
 
-`/opt/stacks/llama-qwen` on the server holds `komodo.toml` (the Deployment, to
-import into Komodo), `command.txt`, `run.sh` (the same container through plain
-Docker) and `.env` with the key. It is LAN only for now, on `10.10.10.2:8091`
-with no Caddy site; ufw drops that port from other subnets, so forward it:
+The `llama-server` Deployment (image `llama-server-gpu:0.0.9`, network `proxy`)
+serves it at `https://llama.erli.xyz`; Caddy proxies to `llama-server:8080`.
+Nothing needs forwarding, so `evals/forward.sh` does nothing for an `https`
+endpoint. It has no files in `/opt/stacks`; read its flags with
+`docker inspect llama-server`: `-hf unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL
+--no-mmproj --spec-type draft-mtp --spec-draft-n-max 3 --alias qwen3.8-27b
+-ngl 99 -fa on --ctx-size 256000 --cache-type-k q8_0 --cache-type-v q8_0
+--batch-size 2048 --ubatch-size 1024 --kv-unified --no-context-shift`
+(sampling: temp 0.8, top-p 0.95, top-k 20, min-p 0).
+
+One model fills the 5090 at a time, and ComfyUI also holds GPU memory: stop
+`comfyui` and `llama-qwen` before starting `llama-server`.
+
+`llama-qwen` (`/opt/stacks/llama-qwen`: `komodo.toml`, `command.txt`, `run.sh`,
+`.env`) is the earlier bench container, 2 slots and 128k, with vision, LAN only
+on `10.10.10.2:8091`. The bench runner (`evals/bench`) still names it as its
+chat container and restores it; it has not been repointed at `llama-server`.
+To use it, put `EIKA_LIVE_ENDPOINT=http://127.0.0.1:8091` in `live.env` and
+`make live` opens the forward:
 
 ```
 ssh -fN -o ControlMaster=auto -o ControlPath=~/.ssh/cm/%r@%h:%p -o ControlPersist=4h \
   -L 127.0.0.1:8091:10.10.10.2:8091 ubuntu-5090
 ```
-
-`make live` runs that command itself when the endpoint is on loopback and its
-port does not answer. Or allow it once on the server:
-`sudo ufw allow from 192.168.0.0/24 to any port 8091 proto tcp`.
-
-One model fills the 5090 at a time: stop `llama-server` and `tabbyapi` first.

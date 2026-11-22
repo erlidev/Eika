@@ -106,7 +106,7 @@ Why this order:
 - Skills (phase 6) come last, and only if there is a skill worth installing by
   then.
 
-Phase 3's phone exit remains to be checked by the owner.
+Phase 3's phone exit: all but the push passed against a real stack (PLAN_LOG); push needs ntfy configured, and the device checks remain to the owner.
 
 ## Live test bench
 
@@ -117,7 +117,7 @@ live in `~/.config/eika/live.env` (mode 600), never in the repository:
 
 | Role | Model | Where |
 |---|---|---|
-| chat (`main`, and `fast` until a smaller model joins) | Qwen3.8-27B, unsloth UD-Q4_K_XL (5.1 bpw) at a pinned snapshot, vision through its mmproj; llama.cpp, 2 slots sharing a 128k KV cache quantised to 8 bits (`q8_0` K and V) | RTX 5090 server (`ubuntu-5090`), Komodo Deployment `llama-qwen` from the `llama-server-gpu` Build, network `proxy`, with a bearer key. For now LAN only: published on `10.10.10.2:8091` with no Caddy site, reached from the desktop through the runner's SSH connection (`-L 8091:10.10.10.2:8091`), since ufw drops 8091 from other subnets. Files in `/opt/stacks/llama-qwen` |
+| chat (`main`, and `fast` until a smaller model joins) | Qwen3.8-27B, unsloth UD-Q4_K_XL (5.1 bpw) at revision 4af51b3542f775b0a8e4b310bfb3f17e01c306c9, text only (`--no-mmproj`); llama.cpp b11942-338fce651 with MTP speculative decoding (`draft-mtp`, 3 tokens), 4 slots sharing a 256k KV cache quantised to 8 bits (`q8_0` K and V), alias `qwen3.8-27b` | RTX 5090 server (`ubuntu-5090`), the Komodo Deployment `llama-server` (image `llama-server-gpu:0.0.9`), network `proxy`, no published port. Reached at `https://llama.erli.xyz` through Caddy (`reverse_proxy llama-server:8080`), with a bearer key; there is no SSH forward. The container has no stack directory on the server: its flags are in Komodo and in `docker inspect llama-server` |
 | second chat backend | the same model as EXL3 on TabbyAPI | the existing `tabbyapi` Deployment on the same GPU, swapped in by the runner |
 | injection screen | `Horizon-Labs/prompt-injection-guard-small`, bf16 | local RTX 3090, port 9940: `evals/models/guard.py` until phase 4 moves it to `guard/`, then the same service the stack runs |
 | `decision` | `vllm-sr/d3-flash` Q8_0 on llama.cpp `/v1/systemone`, 2 slots sharing 32k | local RTX 3090, the desktop's own llama.cpp, port 9941 |
@@ -134,13 +134,17 @@ Rules:
   mounted, the API key from a Komodo Variable, a Caddy site
   `<name>.erli.xyz`, and a `komodo.toml` beside the files. A temporary test
   model may skip the Caddy site and publish on the LAN address only, as
-  `llama-qwen` does now.
+  `llama-qwen` did.
 - Chat models on the bench default to a 4 to 5 bpw quant (the GGUF's file size
   over its parameter count; about 5 for a Q4_K "XL" with 8-bit embeddings) and
   an 8-bit KV cache. A run that needs another quant or cache type says so in
   its report.
 - One model fills the 5090 at a time. The runner stops what it started and
-  restores `llama-qwen` at the end, also on failure.
+  restores its `Chat` container at the end, also on failure. That is still
+  `llama-qwen` (`bench.Options`, with its `.env` key file), which is stopped now
+  and holds the `-p 10.10.10.2:8091` stack files; the runner has not been
+  repointed at `llama-server`, so a runner restore would swap `llama-qwen` back in.
+  `make live` does not use the runner.
 - The desktop that hosts the guard and the decision model has 15 GB of RAM and
   is in use. Each runs as a user unit with a memory cap (`MemoryHigh`,
   `MemoryMax`, a small `MemorySwapMax`), so a leak kills that service rather
