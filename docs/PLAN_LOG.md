@@ -9,6 +9,11 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-11 added never-share. `Decide` denies a `web_fetch` URL or `web_search` query that holds a
+  credential, with a reason that says to remove it; `bash` and file writes are not checked. `scan.Find` reuses
+  the redaction patterns (no second list). The text is checked as written and after up to three layers of
+  percent-decoding, so userinfo, path, query and fragment are covered. The deny audit row holds the pattern
+  kind in `detail`, never the value. Seam for phase 11: `outbound` in `internal/sentry/outbound.go`.
 - 2026-11-21: P4-09 added halt. Migration 0025 `core.halt` (one row; `store.SetHalt` writes it and the
   `halt` or `resume` audit row in one transaction). `Gate` gains `Halted`, `Halt` and `Resume`; `Decide`
   denies everything first while halted, and a halt state that cannot be read at start counts as halted.
