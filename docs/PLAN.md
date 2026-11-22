@@ -738,15 +738,9 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
 - [ ] `make backup` and `make restore`: the database, the memory repository and
       the key file, with a documented and tested restore.
       - [x] **P5-16**: Consistent backup.
-<<<<<<< HEAD
       - [x] **P5-17**: Restore and populated-data verification.
-- [ ] Scripted stack coverage.
-      - [ ] **P5-18**: Memory smoke flow and isolation check.
-=======
-      - [ ] **P5-17**: Restore and populated-data verification.
 - [x] Scripted stack coverage.
       - [x] **P5-18**: Memory smoke flow and isolation check.
->>>>>>> p5-18-memory-smoke
 - [ ] Phase 5 live suite, on the bench's chat model and guard: the exit's
       poisoning scenario, and 30 ordinary preferences and rules as the user would
       state them ("always use metric", "never book before 9"), none of which may
