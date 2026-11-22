@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-22: P4-13 added `make bench-sentry` to `make check`, with 200 calls per
+  case and a 1 ms limit. It measures 64 KiB fetch and bash arguments, with and
+  without a halt, and a canary at the end of a command. On a Ryzen 5 7600 the
+  fetch took about 0.56 ms; the original scan took 6.4 ms. `scan.Find` now
+  skips patterns whose required prefixes are absent; halted calls skip policy.
+  The benchmark uses an in-memory audit, so it excludes database latency.
+
 - 2026-11-21: P4-12 added the canary. `sentry.NewCanary` makes an `sk-proj-` key of 156 letters and digits;
   `server/canary.go` stores it sealed in the `sentry_canary` setting on first use (the settings API leaves it
   out) and `computer.Options.Plant` puts it in the `home` computer's environment as `OPENAI_API_KEY` at every

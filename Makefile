@@ -34,7 +34,7 @@ SMOKE_COMPOSE := EIKA_PORT=$(SMOKE_PORT) EIKA_AUTH_TOKEN=$(SMOKE_TOKEN) \
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
 	sandbox sandbox-test web-install clean visual visual-update shot playwright-browser contract \
-	smoke smoke-down live
+	smoke smoke-down live bench-sentry
 
 all: build
 
@@ -64,6 +64,10 @@ sandbox-test:
 	@if docker info >/dev/null 2>&1; then \
 		docker build -q -f sandbox/Dockerfile -t $(SANDBOX_TEST_IMAGE) . >/dev/null; \
 	fi
+
+## bench-sentry: check the 1 ms limit for 64 KiB tool arguments.
+bench-sentry:
+	$(GO) test ./internal/sentry -run '^$$' -bench '^BenchmarkDecide$$' -benchtime=200x -count=1
 
 ## contract: rewrite docs/api/contract.json from the Go wire types, after a
 ## change to one. The mock harness in web/e2e/harness is held to it.
@@ -110,7 +114,7 @@ fmt-check:
 ## first run also downloads Chromium. About a minute in all; while iterating,
 ## run the targets it lists one at a time.
 check: web-install
-	$(MAKE) -j --output-sync=target fmt-check lint-go lint-web test-go typecheck test-web
+	$(MAKE) -j --output-sync=target fmt-check lint-go lint-web test-go typecheck test-web bench-sentry
 	$(MAKE) visual
 
 typecheck: web-install

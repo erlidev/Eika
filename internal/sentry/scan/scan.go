@@ -69,10 +69,25 @@ func Redact(text string) string {
 // Find reports the kind of the first secret in text, or "" when there is none.
 // It uses the same patterns as Redact and never returns the value.
 func Find(text string) string {
-	for _, s := range secrets {
-		if s.re.MatchString(text) {
+	for i, s := range secrets {
+		possible := false
+		for _, prefix := range secretPrefixes[i] {
+			if strings.Contains(text, prefix) {
+				possible = true
+				break
+			}
+		}
+		if possible && s.re.MatchString(text) {
 			return s.kind
 		}
 	}
 	return ""
+}
+
+// Each prefix is required by its corresponding pattern in secrets. This avoids
+// running every regular expression over long text that cannot contain a match.
+var secretPrefixes = [][]string{
+	{"-----BEGIN "}, {"sk-ant-"}, {"sk-"}, {"ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"},
+	{"AKIA", "ASIA", "ABIA", "ACCA"}, {"AIza"}, {"xoxa-", "xoxb-", "xoxe-", "xoxo-", "xoxp-", "xoxr-", "xoxs-"},
+	{"rk_live_", "sk_live_"}, {"npm_"}, {"eyJ"},
 }

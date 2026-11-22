@@ -195,16 +195,19 @@ type gate struct {
 }
 
 func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
-	v := g.policy(a)
-	if g.halt.get().Halted {
+	var v Verdict
+	switch {
+	case g.halt.get().Halted:
 		v = Verdict{Decision: Deny, Reason: haltReason}
-	} else if g.canaryIn(a) {
+	case g.canaryIn(a):
 		// Halt first: a failing audit write must not leave the key's user running.
 		herr := g.haltForCanary(ctx)
 		v = Verdict{Decision: Deny, Reason: haltReason, Detail: "canary"}
 		if herr != nil {
 			g.Log.Error("halt for canary", "error", herr)
 		}
+	default:
+		v = g.policy(a)
 	}
 	if v.Decision == Allow {
 		return v, nil
