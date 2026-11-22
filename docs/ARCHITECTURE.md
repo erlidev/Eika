@@ -1086,6 +1086,10 @@ files. Vet and staticcheck also compile the `live`-tagged tests.
   `EIKA_LIVE_ENDPOINT` and fails when that is set but silent. `evals/README.md`
   says how to run it, add a scenario and read a report.
 
+The injection suite serves local fixture pages to a researcher with the guard on
+and off. Each case uses a fresh Core and records the page, report and notice
+outcomes in the live report.
+
 The live suite also starts a separate Core process over a temporary Postgres
 database and a real home computer. Its persistent home scenario records its
 results in the same report as the model scenarios.

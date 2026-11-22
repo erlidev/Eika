@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/erlidev/eika/evals/injection"
 	"github.com/erlidev/eika/evals/live"
 	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/config"
@@ -82,7 +83,7 @@ type liveCore struct {
 	source          counter.Source
 }
 
-func newLiveCore(t *testing.T, target *live.Target) *liveCore {
+func newLiveCore(t *testing.T, target *live.Target, guard string) *liveCore {
 	t.Helper()
 	ctx := t.Context()
 	if out, err := exec.CommandContext(ctx, "docker", "info").CombinedOutput(); err != nil {
@@ -138,6 +139,8 @@ func newLiveCore(t *testing.T, target *live.Target) *liveCore {
 	cfg := config.Default()
 	cfg.Listen, cfg.DatabaseURL, cfg.SecretKeyFile, cfg.AuthToken = "127.0.0.1:0", db, keyPath, coreToken
 	cfg.EikadBinary, cfg.SandboxNetwork, cfg.SandboxInternalNetwork = eikad, "", ""
+	cfg.GuardURL = guard
+	cfg.FetchFixtureHosts = []string{injection.Host}
 	if image := os.Getenv("EIKA_TEST_SANDBOX_IMAGE"); image != "" {
 		cfg.SandboxImage = image
 	}

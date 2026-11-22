@@ -280,7 +280,7 @@ connection.
 - [x] **P4-24**: Add the fetch fixture-hosts config key, set by `compose.smoke.yaml`,
       and the Sentry scenario to `make smoke`: a scripted model fetches a fixture page
       with a planted instruction, and the result has the part removed.
-- [ ] **P4-25**: Build `evals/injection` on the P2-25 live harness: fixture pages in
+- [x] **P4-25**: Build `evals/injection` on the P2-25 live harness: fixture pages in
       three variants, a researcher that reports to Eika, and the screen on and off. The
       live harness sets the fixture-hosts key.
 - [ ] **P4-26**: Add the chain, the `curl` worker and the guard-stopped scenarios, run
@@ -537,7 +537,7 @@ and also requires the exit checks.
       - `Decide` under 1 ms for arguments up to 64 KiB, as a benchmark in
         `make check`
       - [x] **P4-13**: Benchmark `Decide` in `make check`.
-      - [ ] **P4-25**: Build the injection harness and fixtures on the P2-25 live harness.
+      - [x] **P4-25**: Build the injection harness and fixtures on the P2-25 live harness.
       - [ ] **P4-26**: Measure the chain, `curl` and guard-stopped scenarios, and log the numbers.
 - [ ] Update the security section of the style guide: Core holds model keys and
       third-party credentials, sealed; computers get proxy identities and nothing
