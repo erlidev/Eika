@@ -129,7 +129,7 @@ type Options struct {
 	// (Cancel, an abort) is known to the one who asked, and a shutdown is
 	// told at the next start, so neither is announced. Same goroutine and
 	// ordering rules as Reported. Nil tells nobody.
-	Ended  func(context.Context, store.Session)
+	Ended func(context.Context, store.Session)
 	// Screen cleans a report's text for the child session before it is stored,
 	// so the stored report is what Eika reads. An error means the text could not
 	// be cleaned and must not be used. Nil keeps the text as it is.

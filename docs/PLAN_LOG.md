@@ -9,7 +9,7 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
-- 2026-11-21: P4-09 added halt. Migration 0024 `core.halt` (one row; `store.SetHalt` writes it and the
+- 2026-11-21: P4-09 added halt. Migration 0025 `core.halt` (one row; `store.SetHalt` writes it and the
   `halt` or `resume` audit row in one transaction). `Gate` gains `Halted`, `Halt` and `Resume`; `Decide`
   denies everything first while halted, and a halt state that cannot be read at start counts as halted.
   `server/halt.go`: `runs.abortAll` (subagents run through the same manager), `runs.reserve` refuses new
@@ -63,7 +63,7 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
     (or `withheld.call_key`); the agent does not yet carry it onto the tool event.
 - 2026-11-21: P4-04 added ingest for `web_fetch`: `sentry/scan` (invisible characters,
   redaction), `sentry/screen` (guard client), `gate.Ingest` (strip, redact, screen,
-  wrap) and migration 0023 `core.withheld` (`store.AppendWithheld`). `agent.callTool`
+  wrap) and migration 0024 `core.withheld` (`store.AppendWithheld`). `agent.callTool`
   ingests right after the tool returns, before the event and the store; `agent` adds
   `sentry.UntrustedNotice` to the base prompt after any override. Config: `guard_url`
   (`EIKA_GUARD_URL`, default `http://guard:9940`), `screen_threshold` (0.9).
@@ -87,12 +87,12 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
     gated (nothing runs). `Principal.Subagent` is not filled yet.
 - 2026-11-21: P4-02 added `internal/sentry` (`Gate` with `Decide` and `Ingest`,
   `Action`, `Principal`, `Verdict`, `Source`, `AuditEntry`, `AuditLog`, and `New`, a
-  gate that allows everything and passes content through) and migration 0022,
+  gate that allows everything and passes content through) and migration 0023,
   `core.audit`, append-only by trigger, written by `store.AppendAudit`. The
   boundary test now bars `internal/sentry` from `server`, `agent` and `computer`.
   - Next: P4-03 holds `sentry.Gate` in `Options.Gate`; `Ask` exists as a decision
     but phase 11 handles it, so Core treats it as a deny until then. P4-04's
-    `withheld` table takes 0023 or the next free number.
+    `withheld` table takes 0024 or the next free number.
 - 2026-11-21: P4-01 built `guard/` (move commit `6bba82a`, then the service, image,
   compose service and smoke wait). Model pinned at
   `Horizon-Labs/prompt-injection-guard-small@1b7c40f4a5fdbf9622d20372ead279e65d4c7fc9`;

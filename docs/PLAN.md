@@ -290,7 +290,7 @@ connection.
 
 ### Ordering hazards
 
-- **Migrations.** The last migration is 0021. Phase 4 adds tables in P4-02 (audit),
+- **Migrations.** The last migration is 0022 (phase 2's); phase 4's are 0023 to 0025. Phase 4 adds tables in P4-02 (audit),
   P4-04 (withheld), P4-09 (halt state), P4-12 (the canary's record), P4-15 (trusted
   sources), P4-17 (the egress mode rewrite) and P4-19 (blocklist), and phase 5 and
   later add more. Take the number after the preceding package merges, as
