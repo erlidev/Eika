@@ -158,6 +158,7 @@ so a replay delivers it too.
 | `is_error` | boolean | The call failed in a way the model can act on. |
 | `details` | object, optional | Structured data for the interface only, for example a command's exit code. |
 | `duration_ms` | number | How long the call took. |
+| `removed` | number, optional | How many windows ingest removed from `content` (a `web_fetch` or `web_search` result); absent when none. The stored `tool_result` entry's message carries the same `removed`. |
 
 ### `turn.progress`
 

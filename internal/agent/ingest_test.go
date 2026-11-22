@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 	"github.com/erlidev/eika/internal/search"
@@ -35,7 +36,7 @@ func (g *markingGate) Ingest(_ context.Context, segs []sentry.Segment) ([]sentry
 	out := make([]sentry.Ingested, len(segs))
 	for i, s := range segs {
 		g.sources = append(g.sources, s.Source)
-		out[i] = sentry.Ingested{Text: "INGESTED " + strings.ToUpper(s.Text)}
+		out[i] = sentry.Ingested{Text: "INGESTED " + strings.ToUpper(s.Text), Removed: 2}
 	}
 	return out, nil
 }
@@ -78,6 +79,18 @@ func TestIngestRunsBeforeTheResultIsEmittedAndStored(t *testing.T) {
 	}
 	if stored != "INGESTED PAGE TEXT" || live != stored {
 		t.Errorf("stored=%q live=%q", stored, live)
+	}
+	// The count rides on the stored message and the event, so a card is marked
+	// without a lookup.
+	for _, m := range store.sessions["session-1"] {
+		if m.Role == provider.RoleTool && m.Removed != 2 {
+			t.Errorf("stored removed = %d, want 2", m.Removed)
+		}
+	}
+	for _, e := range rec.events {
+		if e.Type == event.TypeToolResult && !strings.Contains(string(e.Payload), `"removed":2`) {
+			t.Errorf("tool.result payload = %s", e.Payload)
+		}
 	}
 	if !strings.Contains(p.Requests()[0].System, sentry.UntrustedNotice) {
 		t.Error("system prompt lacks the untrusted line")

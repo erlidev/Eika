@@ -349,6 +349,7 @@
                   "reasoning_items": {
                     "array": "any"
                   },
+                  "removed": "number",
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -379,6 +380,7 @@
                   "notices",
                   "reasoning",
                   "reasoning_items",
+                  "removed",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -1342,6 +1344,7 @@
                   "reasoning_items": {
                     "array": "any"
                   },
+                  "removed": "number",
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -1372,6 +1375,7 @@
                   "notices",
                   "reasoning",
                   "reasoning_items",
+                  "removed",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -1763,6 +1767,7 @@
                   "reasoning_items": {
                     "array": "any"
                   },
+                  "removed": "number",
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -1793,6 +1798,7 @@
                   "notices",
                   "reasoning",
                   "reasoning_items",
+                  "removed",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -2116,6 +2122,7 @@
                   "reasoning_items": {
                     "array": "any"
                   },
+                  "removed": "number",
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -2146,6 +2153,7 @@
                   "notices",
                   "reasoning",
                   "reasoning_items",
+                  "removed",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -2377,6 +2385,7 @@
                       "reasoning_items": {
                         "array": "any"
                       },
+                      "removed": "number",
                       "role": "string",
                       "summary": "boolean",
                       "tool_call_id": "string",
@@ -2407,6 +2416,7 @@
                       "notices",
                       "reasoning",
                       "reasoning_items",
+                      "removed",
                       "summary",
                       "tool_call_id",
                       "tool_calls"
@@ -2621,6 +2631,7 @@
                       "reasoning_items": {
                         "array": "any"
                       },
+                      "removed": "number",
                       "role": "string",
                       "summary": "boolean",
                       "tool_call_id": "string",
@@ -2651,6 +2662,7 @@
                       "notices",
                       "reasoning",
                       "reasoning_items",
+                      "removed",
                       "summary",
                       "tool_call_id",
                       "tool_calls"
@@ -2783,6 +2795,7 @@
                   "reasoning_items": {
                     "array": "any"
                   },
+                  "removed": "number",
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -2813,6 +2826,7 @@
                   "notices",
                   "reasoning",
                   "reasoning_items",
+                  "removed",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -4963,10 +4977,12 @@
         "duration_ms": "number",
         "is_error": "boolean",
         "name": "string",
+        "removed": "number",
         "run_id": "string"
       },
       "optional": [
-        "details"
+        "details",
+        "removed"
       ]
     },
     "turn.end": {

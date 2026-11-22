@@ -150,6 +150,9 @@ type Message struct {
 	ToolCalls      []ToolCall     `json:"tool_calls,omitempty"`
 	ToolCallID     string         `json:"tool_call_id,omitempty"`
 	IsError        bool           `json:"is_error,omitempty"`
+	// Removed counts the windows ingest removed from a tool result, so a
+	// client marks the call without a lookup. It never reaches a provider.
+	Removed int `json:"removed,omitempty"`
 	// Metrics records the measured usage of an assistant response for session
 	// replay. Providers do not receive this metadata.
 	Metrics *MessageMetrics `json:"metrics,omitempty"`

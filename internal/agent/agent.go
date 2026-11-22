@@ -509,8 +509,11 @@ func (a *Agent) callTool(ctx context.Context, s *Session, runID string, g *guard
 		IsError:    result.IsError,
 		Details:    result.Details,
 		DurationMS: time.Since(start).Milliseconds(),
+		Removed:    result.Removed,
 	})
-	return provider.ToolResultMessage(c.ID, result.Content, result.IsError), nil
+	msg := provider.ToolResultMessage(c.ID, result.Content, result.IsError)
+	msg.Removed = result.Removed
+	return msg, nil
 }
 
 // ingest passes the result of a tool whose output is untrusted through the
@@ -555,6 +558,7 @@ func (a *Agent) ingest(ctx context.Context, s *Session, runID string, c provider
 	}
 	if c.Name == "web_fetch" {
 		r.Content = got[0].Text
+		r.Removed = got[0].Removed
 		return nil
 	}
 	texts := make([]string, len(r.Parts))
@@ -563,6 +567,7 @@ func (a *Agent) ingest(ctx context.Context, s *Session, runID string, c provider
 	}
 	for j, i := range at {
 		texts[i] = got[j].Text
+		r.Removed += got[j].Removed
 	}
 	r.Content = strings.Join(texts, "\n\n")
 	return nil

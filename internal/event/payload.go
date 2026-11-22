@@ -116,6 +116,8 @@ type ToolResult struct {
 	IsError    bool            `json:"is_error"`
 	Details    json.RawMessage `json:"details,omitempty"`
 	DurationMS int64           `json:"duration_ms"`
+	// Removed counts the windows ingest removed from Content, absent when none.
+	Removed int `json:"removed,omitempty"`
 }
 
 // TurnProgress is the payload of a turn.progress event: the usage a provider

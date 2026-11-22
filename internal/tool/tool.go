@@ -107,6 +107,9 @@ type Result struct {
 	IsError bool
 	Details json.RawMessage
 	Parts   []Part
+	// Removed counts the windows ingest removed from the result. The agent
+	// sets it; no tool does.
+	Removed int
 }
 
 // Part is one piece of a result. Source names where an untrusted part came
