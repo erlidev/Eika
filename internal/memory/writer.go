@@ -29,7 +29,7 @@ var ErrNotFound = errors.New("memory not found")
 type Files interface {
 	Read(ctx context.Context, name string) ([]byte, error)
 	Write(ctx context.Context, name string, data []byte) error
-	Commit(ctx context.Context, name string) error
+	Commit(ctx context.Context, name, message string) error
 	// List names the memory files in the working tree.
 	List(ctx context.Context) ([]string, error)
 	// Uncommitted names the memory files that are new, changed or deleted
@@ -40,10 +40,33 @@ type Files interface {
 	Restore(ctx context.Context, name string) (bool, error)
 }
 
-// Record is a memory's row in the index. Body is the file's body.
+// ScreenResult is what Sentry's write check found in a pending memory, kept with
+// its index row for the Inbox. It is not part of the file.
+type ScreenResult struct {
+	Spans     []ScreenSpan `json:"spans"`
+	MaxScore  float64      `json:"max_score"`
+	Unscanned bool         `json:"unscanned"`
+}
+
+// ScreenSpan is one screened window at or over the threshold. Field is
+// "description" or "body"; Start and End are byte offsets into that field
+// with invisible characters removed.
+type ScreenSpan struct {
+	Field string  `json:"field"`
+	Start int     `json:"start"`
+	End   int     `json:"end"`
+	Score float64 `json:"score"`
+	Text  string  `json:"text"`
+}
+
+// Record is a memory's row in the index. Body is the file's body. Screen is
+// set for a memory written pending and kept when it is archived; Reason is
+// why it was archived.
 type Record struct {
 	File
 	ContentSHA string
+	Screen     *ScreenResult
+	Reason     string
 }
 
 // Hit is one search result. Snippet is the start of the body.
@@ -77,10 +100,12 @@ type Index interface {
 }
 
 // Request creates or replaces a memory. Source cites where it was learned.
-// State is "active" unless the caller's screen decided otherwise.
+// State is "active" unless the caller's screen decided otherwise; Screen is
+// the verdict behind a pending state.
 type Request struct {
 	Name, Description, Type, Body, Expires, Source, State string
 	Replace                                               bool
+	Screen                                                *ScreenResult
 }
 
 // Result is the memory as stored. Existing is true when a name collision
@@ -139,11 +164,12 @@ func (w *Writer) Write(ctx context.Context, req Request) (Result, error) {
 	if err := next.Validate(req.Name + ".md"); err != nil {
 		return Result{}, err
 	}
-	return w.store(ctx, next, old, oldData, exists)
+	return w.store(ctx, next, old, oldData, exists, req.Screen, "", "Update memory")
 }
 
-// Archive moves a memory to state archived. The file stays in git history.
-func (w *Writer) Archive(ctx context.Context, name string) (File, error) {
+// Archive moves a memory to state archived and records why in the index. The
+// file stays in git history.
+func (w *Writer) Archive(ctx context.Context, name, reason string) (File, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	old, oldData, err := w.load(ctx, name)
@@ -153,14 +179,14 @@ func (w *Writer) Archive(ctx context.Context, name string) (File, error) {
 	next := old
 	next.State = "archived"
 	next.Updated = w.now().UTC().Format(time.RFC3339)
-	res, err := w.store(ctx, next, old, oldData, true)
+	res, err := w.store(ctx, next, old, oldData, true, nil, reason, "Forget memory: "+oneLine(reason))
 	return res.File, err
 }
 
 // store renders next, and when it differs from what is stored writes,
 // commits and indexes it. An unchanged file is only re-indexed, which also
 // repairs a missing or stale row.
-func (w *Writer) store(ctx context.Context, next, old File, oldData []byte, exists bool) (Result, error) {
+func (w *Writer) store(ctx context.Context, next, old File, oldData []byte, exists bool, screen *ScreenResult, reason, message string) (Result, error) {
 	if exists && sameContent(next, old) {
 		next.Updated = old.Updated
 	}
@@ -172,20 +198,20 @@ func (w *Writer) store(ctx context.Context, next, old File, oldData []byte, exis
 		if err := w.files.Write(ctx, next.Name, data); err != nil {
 			return Result{}, fmt.Errorf("write memory file: %w", err)
 		}
-		if err := w.files.Commit(ctx, next.Name); err != nil {
+		if err := w.files.Commit(ctx, next.Name, message); err != nil {
 			return Result{}, fmt.Errorf("commit memory: %w", err)
 		}
 	}
-	if err := w.indexFile(ctx, next, data); err != nil {
+	if err := w.indexFile(ctx, next, data, screen, reason); err != nil {
 		return Result{}, err
 	}
 	return Result{File: next}, nil
 }
 
 // indexFile writes the row for a file whose bytes are data.
-func (w *Writer) indexFile(ctx context.Context, f File, data []byte) error {
+func (w *Writer) indexFile(ctx context.Context, f File, data []byte, screen *ScreenResult, reason string) error {
 	sum := sha256.Sum256(data)
-	if err := w.index.UpsertMemory(ctx, Record{File: f, ContentSHA: hex.EncodeToString(sum[:])}); err != nil {
+	if err := w.index.UpsertMemory(ctx, Record{File: f, ContentSHA: hex.EncodeToString(sum[:]), Screen: screen, Reason: reason}); err != nil {
 		return fmt.Errorf("index memory: %w", err)
 	}
 	return nil
@@ -238,4 +264,9 @@ func (w *Writer) Search(ctx context.Context, q Query) ([]Hit, error) {
 	}
 	q.Limit = min(q.Limit, MaxLimit)
 	return w.index.SearchMemories(ctx, q, snippetRunes)
+}
+
+// oneLine makes text safe for a commit subject.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }

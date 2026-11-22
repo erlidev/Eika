@@ -113,7 +113,7 @@ func TestOnlyToolsThatNeedNoComputerAreStandalone(t *testing.T) {
 			standalone = append(standalone, tl.Name())
 		}
 	}
-	want := []string{"ask_user", "history_read", "history_search", "project_create", "project_list", "project_open", "project_update",
+	want := []string{"ask_user", "history_read", "history_search", "memory_forget", "memory_read", "memory_search", "memory_write", "project_create", "project_list", "project_open", "project_update",
 		"report", "subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_fetch", "web_search"}
 	if !slices.Equal(standalone, want) {
 		t.Errorf("standalone tools = %v, want %v", standalone, want)

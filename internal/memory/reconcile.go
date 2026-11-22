@@ -181,12 +181,12 @@ func (w *Writer) reconcileFile(ctx context.Context, name string, rows map[string
 		}
 	}
 	if dirty {
-		if err := w.files.Commit(ctx, name); err != nil {
+		if err := w.files.Commit(ctx, name, "Update memory"); err != nil {
 			return fmt.Errorf("commit memory: %w", err)
 		}
 		rep.Committed++
 	}
-	if err := w.indexFile(ctx, f, data); err != nil {
+	if err := w.indexFile(ctx, f, data, nil, ""); err != nil {
 		return err
 	}
 	rep.Reindexed++

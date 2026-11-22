@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/erlidev/eika/internal/memory"
@@ -21,14 +22,29 @@ func (s *Store) UpsertMemory(ctx context.Context, r memory.Record) error {
 	if r.Expires != "" {
 		expires = &r.Expires
 	}
+	// The screen verdict belongs to the pending write: archiving and a
+	// reindex of unchanged content (no verdict given) keep it.
+	var screen *string
+	if r.Screen != nil {
+		b, err := json.Marshal(r.Screen)
+		if err != nil {
+			return wrap("index memory "+r.Name, err)
+		}
+		v := string(b)
+		screen = &v
+	}
 	_, err = s.pool.Exec(ctx, `INSERT INTO memories
-        (name, description, type, source, created_at, updated_at, expires, pinned, state, content_sha, body)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11)
+        (name, description, type, source, created_at, updated_at, expires, pinned, state, content_sha, body, screen, archive_reason)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12::jsonb, $13)
         ON CONFLICT (name) DO UPDATE SET description = excluded.description, type = excluded.type,
             source = excluded.source, created_at = excluded.created_at, updated_at = excluded.updated_at,
             expires = excluded.expires, pinned = excluded.pinned, state = excluded.state,
-            content_sha = excluded.content_sha, body = excluded.body`,
-		r.Name, r.Description, r.Type, r.Source, created, updated, expires, r.Pinned, r.State, r.ContentSHA, r.Body)
+            content_sha = excluded.content_sha, body = excluded.body,
+            screen = CASE WHEN excluded.state = 'archived' OR memories.content_sha = excluded.content_sha
+                THEN memories.screen ELSE excluded.screen END,
+            archive_reason = CASE WHEN excluded.state = 'archived'
+                THEN COALESCE(NULLIF(excluded.archive_reason, ''), memories.archive_reason) ELSE '' END`,
+		r.Name, r.Description, r.Type, r.Source, created, updated, expires, r.Pinned, r.State, r.ContentSHA, r.Body, screen, r.Reason)
 	if err != nil {
 		return wrap("index memory "+r.Name, err)
 	}

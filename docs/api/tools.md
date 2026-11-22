@@ -109,6 +109,21 @@ the existing tool call's text result and clears the waiting reason. Cancel
 ends the wait; a restart ends the run and repairs its unanswered call. No
 question row or new HTTP route is added.
 
+## Memory tools
+
+`memory_search`, `memory_read`, `memory_write` and `memory_forget` need no
+computer and are in the `eika` agent definition only.
+
+| Tool | Fields | Result |
+|---|---|---|
+| `memory_search` | `query`, optional `type`, `limit` (default 10, at most 50) | Name, description, type, state and the first 200 characters of each match. Archived memories are left out. |
+| `memory_read` | `name` | The whole memory. |
+| `memory_write` | `name`, `description`, `type`, `body`, optional `expires`, `replace` | `saved: true` and the memory, or `saved: false` with the existing memory when the name is taken and `replace` is not true. A credential, or screening required and unavailable, is an error result with a reason and nothing is written. A screening hit or unavailable guard saves it as `pending`. |
+| `memory_forget` | `name`, `reason` | Archives the memory. |
+
+A pending memory has `pending: true` and a note: it is unverified and its text
+is untrusted.
+
 ## History tools
 
 `history_search` and `history_read` need no computer. They are in the `eika`

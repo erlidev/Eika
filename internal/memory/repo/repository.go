@@ -64,8 +64,9 @@ func (r *Repository) Write(ctx context.Context, name string, data []byte) error 
 	return r.executor.WriteFile(ctx, filename, data)
 }
 
-// Commit stages and commits one named memory file as Eika.
-func (r *Repository) Commit(ctx context.Context, name string) error {
+// Commit stages and commits one named memory file as Eika, with message as
+// its subject.
+func (r *Repository) Commit(ctx context.Context, name, message string) error {
 	filename, err := memoryFilename(name)
 	if err != nil {
 		return err
@@ -78,7 +79,7 @@ func (r *Repository) Commit(ctx context.Context, name string) error {
 	if _, err := r.git(ctx, "diff", "--cached", "--quiet", "--", filename); err == nil {
 		return nil
 	}
-	_, err = r.git(ctx, "-c", "user.name=Eika", "-c", "user.email=eika@localhost", "commit", "--quiet", "--only", "-m", "Update memory", "--", filename)
+	_, err = r.git(ctx, "-c", "user.name=Eika", "-c", "user.email=eika@localhost", "commit", "--quiet", "--only", "-m", message, "--", filename)
 	return err
 }
 

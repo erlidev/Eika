@@ -383,7 +383,7 @@ Dreaming, embeddings, project memory, automatic retrieval and the fuller
       A hit is pending. Resolve guard failure and metadata screening (question 3).
       Audit state decisions without secret values; trusted web hosts cannot bypass
       this check. Test the safety boundary with a fake screen.
-- [ ] **P5-06**: Add the four memory tools and register them for `eika` only.
+- [x] **P5-06**: Add the four memory tools and register them for `eika` only.
       Connect writes to P5-05 before the P5-03 writer; bound search inputs and
       output, mark pending results, and exclude archived entries by default.
       Only the user can pin. Test tools through their public API, including a
@@ -830,7 +830,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       and anything else is `active` at once. There is no provenance field and no
       instruction-shape check.
       - [x] **P5-05**: Memory-write screening and credential denial.
-      - [ ] **P5-06**: Eika-only memory tools.
+      - [x] **P5-06**: Eika-only memory tools.
 - [ ] Preamble: pinned bodies plus the index within an exact budget, in
       deterministic order, with a visible overflow count.
       - [x] **P5-08**: Exact budget and stable selection.

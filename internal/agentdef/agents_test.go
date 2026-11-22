@@ -44,6 +44,12 @@ func TestBuiltins(t *testing.T) {
 		if slices.Contains(d.Tools, "report") != (d.Name != "eika") {
 			t.Errorf("%s report capability is incorrect", d.Name)
 		}
+		// Only Eika reads and writes memory.
+		for _, name := range []string{"memory_forget", "memory_read", "memory_search", "memory_write"} {
+			if slices.Contains(d.Tools, name) != (d.Name == "eika") {
+				t.Errorf("%s memory capability %s is incorrect", d.Name, name)
+			}
+		}
 		if d.Name != "worker" && slices.Contains(d.Tools, "bash") {
 			t.Errorf("%s has computer access", d.Name)
 		}

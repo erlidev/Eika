@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/erlidev/eika/internal/executor"
+	"github.com/erlidev/eika/internal/sentry"
 
 	"github.com/erlidev/eika/internal/tool"
 )
@@ -27,6 +28,10 @@ type Deps struct {
 	// Search runs web_search; Pages reads for web_fetch.
 	Search Searcher
 	Pages  PageReader
+	// Memory is the memory writer; MemoryCheck is Sentry's write check, which
+	// every memory_write passes before the writer.
+	Memory      Memories
+	MemoryCheck sentry.MemoryChecker
 }
 
 // Registry returns a registry holding every built-in tool. It is the one place
@@ -52,6 +57,10 @@ func Registry(d Deps) (*tool.Registry, error) {
 		reportTool{reports: d.Reports},
 		webSearchTool{search: d.Search},
 		webFetchTool{pages: d.Pages},
+		memoryTool{name: "memory_search", memory: d.Memory, check: d.MemoryCheck},
+		memoryTool{name: "memory_read", memory: d.Memory, check: d.MemoryCheck},
+		memoryTool{name: "memory_write", memory: d.Memory, check: d.MemoryCheck},
+		memoryTool{name: "memory_forget", memory: d.Memory, check: d.MemoryCheck},
 		bashTool{},
 		fileTool{name: "file_read"},
 		fileTool{name: "file_write"},

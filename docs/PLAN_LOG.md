@@ -1,5 +1,17 @@
 # Plan log
 
+- 2026-11-22: P5-06 adds `memory_search`, `memory_read`, `memory_write` and `memory_forget`
+  (internal/tool/builtin/memory.go), standalone, agent-only and listed for `eika` alone;
+  only search and read are `ReadOnly`. `memory_write` validates format, then calls
+  `sentry.MemoryChecker.CheckMemory`, then `Writer.Write`: deny and reject write nothing and
+  return the verdict's reason; pending writes state `pending` with the verdict; active writes
+  `active`; it never asks. A name collision without `replace` returns the existing memory.
+  Pending memories are searchable and marked (`pending`, `note`). Migration 0030 adds
+  `memories.screen jsonb` (spans, max score, unscanned; kept on archive, cleared when a
+  write replaces it) and `memories.archive_reason`. `Writer.Archive` now takes a reason.
+  `server.Server` owns the `memory.Writer` (lazy `memoryFiles` over `MemoryRepository`, the
+  store as index); the gate is reached through `memoryCheck`. The index and preamble
+  (P5-07) must read `state = 'active'` only.
 - 2026-11-22: P5-05 adds `sentry.MemoryChecker.CheckMemory` (internal/sentry/memory.go),
   implemented by the gate from `sentry.New` (callers type-assert; `Gate` is unchanged so
   its fakes are untouched). Description and body are checked: a credential pattern denies;

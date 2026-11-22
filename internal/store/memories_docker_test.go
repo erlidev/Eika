@@ -69,6 +69,42 @@ func TestUpgradeAddsMemoriesWithoutLosingData(t *testing.T) {
 	}
 }
 
+func TestMemoryScreenIsKeptOnArchiveAndClearedOnReplace(t *testing.T) {
+	ctx := t.Context()
+	// Upgrading from 0029 also proves 0030 applies over an existing memories table.
+	st, conn := upgradeFrom(t, "0029_memories", `INSERT INTO memories (name, description, type, source, created_at, updated_at, state, content_sha, body)
+		VALUES ('old', 'Use when testing the upgrade path.', 'fact', 's', now(), now(), 'active', 'x', 'b')`)
+	pending := memoryRecord("risky", "Use when testing the screen column.", "body", "pending")
+	pending.Screen = &memory.ScreenResult{MaxScore: 0.9, Spans: []memory.ScreenSpan{{Field: "body", Start: 0, End: 4, Score: 0.9, Text: "body"}}}
+	if err := st.UpsertMemory(ctx, pending); err != nil {
+		t.Fatal(err)
+	}
+	archived := memoryRecord("risky", "Use when testing the screen column.", "body", "archived")
+	archived.Reason = "wrong"
+	if err := st.UpsertMemory(ctx, archived); err != nil {
+		t.Fatal(err)
+	}
+	var score *float64
+	var reason string
+	read := func() {
+		t.Helper()
+		if err := conn.QueryRow(ctx, `SELECT (screen->>'max_score')::float8, archive_reason FROM memories WHERE name = 'risky'`).Scan(&score, &reason); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if read(); score == nil || *score != 0.9 || reason != "wrong" {
+		t.Fatalf("after archive: score %v, reason %q", score, reason)
+	}
+	active := memoryRecord("risky", "Use when testing the screen column.", "body", "active")
+	active.ContentSHA = "changed" // a replace changes the file, so the verdict goes
+	if err := st.UpsertMemory(ctx, active); err != nil {
+		t.Fatal(err)
+	}
+	if read(); score != nil || reason != "" {
+		t.Fatalf("after replace: score %v, reason %q", score, reason)
+	}
+}
+
 func TestMemoryShasAndDelete(t *testing.T) {
 	ctx := t.Context()
 	st, err := store.Open(ctx, storetest.URL(t))

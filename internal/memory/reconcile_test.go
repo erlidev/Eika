@@ -23,11 +23,11 @@ type flakyFiles struct {
 	failCommit bool
 }
 
-func (f *flakyFiles) Commit(ctx context.Context, name string) error {
+func (f *flakyFiles) Commit(ctx context.Context, name, message string) error {
 	if f.failCommit {
 		return errInjected
 	}
-	return f.Repository.Commit(ctx, name)
+	return f.Repository.Commit(ctx, name, message)
 }
 
 // flakyIndex fails upserts until failUpsert is cleared.
@@ -144,7 +144,7 @@ func TestReconcileScreensOutsideEdits(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := e.w.Archive(ctx, "archived"); err != nil {
+	if _, err := e.w.Archive(ctx, "archived", "r"); err != nil {
 		t.Fatal(err)
 	}
 	e.edit(t, "edited", "original", "changed outside")
@@ -210,11 +210,12 @@ func TestReindexRebuildsTheWholeIndex(t *testing.T) {
 	if _, err := e.w.Write(ctx, req); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.w.Archive(ctx, "two"); err != nil {
+	if _, err := e.w.Archive(ctx, "two", "r"); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]memory.Record{}
 	for n, r := range e.idx.rows {
+		r.Reason = "" // index-only; a lost table does not bring it back
 		want[n] = r
 	}
 	commits := e.commits(t)

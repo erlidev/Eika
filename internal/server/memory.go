@@ -11,6 +11,7 @@ import (
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/memory"
 	"github.com/erlidev/eika/internal/memory/repo"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/store"
 )
 
@@ -101,6 +102,7 @@ func (s *Server) recoverMemory(ctx context.Context) error {
 		return err
 	}
 	w := memory.NewWriter(r, s.deps.Store)
+	w.SetScreen(s.screenMemoryFile)
 	rep, err := w.Reconcile(ctx)
 	if err != nil {
 		return fmt.Errorf("reconcile memory: %w", err)
@@ -109,6 +111,22 @@ func (s *Server) recoverMemory(ctx context.Context) error {
 		"restored", rep.Restored, "removed", rep.Removed, "held_pending", rep.Held, "invalid", rep.Invalid)
 	s.memoryWriter.Store(w)
 	return nil
+}
+
+// screenMemoryFile is the writer's screen for a file found changed outside
+// it: Sentry's write check decides active or pending. A credential, a failed
+// or refused check, or no gate leaves it pending (the writer never raises a
+// state), so the edit is held for the user rather than dropped from disk.
+func (s *Server) screenMemoryFile(ctx context.Context, f memory.File) (string, error) {
+	checker, ok := s.gate.(sentry.MemoryChecker)
+	if !ok {
+		return "pending", nil
+	}
+	v, err := checker.CheckMemory(ctx, sentry.MemoryCandidate{Name: f.Name, Description: f.Description, Body: f.Body})
+	if err != nil || v.Decision != sentry.MemoryActive {
+		return "pending", err
+	}
+	return "active", nil
 }
 
 // ReindexMemory rebuilds the whole memory index from the files in the running
@@ -168,4 +186,65 @@ func (s *Server) keepMemory(ctx context.Context, delay time.Duration) {
 		}
 		delay = min(delay*2, longestHomeRetry)
 	}
+}
+
+var errNoMemory = errors.New("memory is not available yet")
+
+// memoryService gives the memory tools the server's writer. The tools are
+// built before the server, so it is looked up on each call.
+type memoryService struct{ server func() *Server }
+
+func (m memoryService) writer() (*memory.Writer, error) {
+	// Nil until recovery has finished, so a tool never serves or writes
+	// before the index and the files agree.
+	if s := m.server(); s != nil {
+		if w := s.MemoryWriter(); w != nil {
+			return w, nil
+		}
+	}
+	return nil, errNoMemory
+}
+
+func (m memoryService) Search(ctx context.Context, q memory.Query) ([]memory.Hit, error) {
+	w, err := m.writer()
+	if err != nil {
+		return nil, err
+	}
+	return w.Search(ctx, q)
+}
+
+func (m memoryService) Read(ctx context.Context, name string) (memory.File, error) {
+	w, err := m.writer()
+	if err != nil {
+		return memory.File{}, err
+	}
+	return w.Read(ctx, name)
+}
+
+func (m memoryService) Write(ctx context.Context, req memory.Request) (memory.Result, error) {
+	w, err := m.writer()
+	if err != nil {
+		return memory.Result{}, err
+	}
+	return w.Write(ctx, req)
+}
+
+func (m memoryService) Archive(ctx context.Context, name, reason string) (memory.File, error) {
+	w, err := m.writer()
+	if err != nil {
+		return memory.File{}, err
+	}
+	return w.Archive(ctx, name, reason)
+}
+
+// memoryCheck is Sentry's write check, reached through the server's gate.
+type memoryCheck struct{ server func() *Server }
+
+func (m memoryCheck) CheckMemory(ctx context.Context, c sentry.MemoryCandidate) (sentry.MemoryVerdict, error) {
+	if s := m.server(); s != nil {
+		if checker, ok := s.gate.(sentry.MemoryChecker); ok {
+			return checker.CheckMemory(ctx, c)
+		}
+	}
+	return sentry.MemoryVerdict{}, errNoMemory
 }
