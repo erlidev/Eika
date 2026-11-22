@@ -1,5 +1,21 @@
 # Plan log
 
+- 2026-11-22: P6-00 splits phase 6 into P6-01 to P6-18 in four stages: install and
+  use (backend), the Skills page, backup/smoke/docs, and live/close. The owner asked
+  for phases 4, 5 and 6 to be done now, so phase 6 is pulled forward ahead of phases
+  11, 7, 4b, 12 and 13, and its "only if a skill is worth installing" condition is
+  dropped; the phase map, "Why this order" and the phase section moved with it. Its
+  only dependency is phase 5's backup and restore (P5-16/17). Checked: nothing in it
+  needs plugins, approvals, the scheduler, checkpoints, web fetch or compaction work;
+  the catalog uses the existing `refreshSnapshot`, and a loaded body lost to
+  compaction is reloaded by the worker (re-attachment stays deferred). Eight owner
+  questions have defaults (separate per-install skills volume filled through an
+  installer computer, read-only `/skills`, `skill_use` for `eika` and workers, install
+  screen marks and never blocks, limits, 2,000-token catalog cap). Existing computers
+  need recreating to gain the mount. A small `invoice-totals` fixture and a poisoned
+  variant are specified. Docs only; no code changes.
+  Validation: `GOFLAGS=-p=2 make fmt-check` passes.
+
 - 2026-11-22: P5-06 adds `memory_search`, `memory_read`, `memory_write` and `memory_forget`
   (internal/tool/builtin/memory.go), standalone, agent-only and listed for `eika` alone;
   only search and read are `ReadOnly`. `memory_write` validates format, then calls

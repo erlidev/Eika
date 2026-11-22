@@ -2785,3 +2785,28 @@ P5-11 and the P5-10 change log: user operations log through `UpsertMemory` and
 (or `archived` for archive), a purge is `purged`. Pin and unpin rewrite the
 file's `pinned` field, so they change `content_sha` and are logged as `edited`:
 the pinned section of the next snapshot differs, so Eika should hear of it.
+
+## Phase 6 defaults (P6-00)
+
+Applied on 2026-11-22 while the owner was away, from the planner's recommended
+defaults ("Schedule for phase 6"); any can be revisited before the package that
+depends on it. The owner asked for phases 4, 5 and 6 to be done now, so phase 6
+runs after phase 5 and before phases 11, 7, 4b, 12 and 13, with no condition that a
+skill be worth installing first. Its only dependency is phase 5's backup.
+
+- **Skill files reach computers only through a read-only mount.** A volume of its own,
+  named from a generated per-install id (as the memory volume is), is filled by a
+  private installer computer through `internal/executor` and mounted read-only at
+  `/skills`. No tool opens a file on the harness; `eika-data` is never mounted.
+  Existing computers are recreated, keeping their data volume, to gain the mount.
+- **`skill_use` reads the stored row,** not the volume, and goes to `eika` and the
+  worker definitions with the catalog. It takes no enum of names.
+- **The install screen marks and never blocks.** A credential in any text file
+  rejects the install; the guard classifies the description and `SKILL.md`; hits are
+  shown in the text and enabling is the user's click. Guard failure shows
+  `unscanned`. `skill_use` output is not re-screened.
+- **Limits:** zip 5 MiB, 20 MiB expanded, 200 files, 5 levels, `SKILL.md` 64 KiB;
+  regular files only, no symlinks or escaping paths.
+- **The catalog is capped at 2,000 exact tokens;** enabling past it is refused.
+- **A changed reinstall returns to disabled;** an identical one is a no-op. Delete
+  removes directory and row. `skill_use` queries are a substring match.
