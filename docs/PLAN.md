@@ -205,7 +205,8 @@ here halts, restricts or settles anything.
 - [x] **P4-05**: Screen each `web_search` result on its own. The engine returns its
       results as segments, so a removal never spans two results.
 - [x] **P4-06**: Screen a subagent's report and its questions before they become
-      Eika's notice, without the wrapper.
+      Eika's notice, without the wrapper. Addendum (2026-11-21): `history_search` and
+      `history_read` screen text from child sessions the same way, wrapped.
 - [x] **P4-07**: Add the withheld list API: newest first, with each entry's text, and
       a paged read.
 - [x] **P4-08**: Build Settings, Security with the withheld list, and mark a tool

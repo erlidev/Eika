@@ -18,6 +18,12 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   `unmocked` in `mock.test.ts` until P4-10 serves them. Halting twice is a no-op, with no second audit or push.
   - Next: P4-10 reads `GET /api/halt` on load and `halt.state` after; P4-12 halts through `gate.Halt` (the
     server's `halt` also aborts); P4-19 asks `gate.Halted()`. A queued steering message kept for a session stays.
+- 2026-11-21: History tools screen child sessions. `history_search` and `history_read` now run the
+  text of every entry from a session other than the caller's own (a child's raw transcript) through
+  `Gate.Ingest`, one batched call per result, source `history` (wrapped in `<untrusted>`), with withheld
+  and audit rows; `tool.Result.Removed` carries the count for the card mark. Own history is not screened.
+  Wired as `builtin.Deps.ScreenHistory` (`server.ingestHistory`); an Ingest error or a cancelled
+  context returns `Blocked: this is not available right now`. Closes the gap reported in Stage A.
 - 2026-11-21: Stage A review fixes. `agent.ingest` now ingests error results of tools that ran
   (web_fetch errors carry page headings and filtered text; chosen over stripping, as simpler);
   `Ingest` errors on a cancelled context; `wrap` neutralises any-case, spaced closing tags; `cut`

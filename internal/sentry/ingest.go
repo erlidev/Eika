@@ -232,6 +232,9 @@ func sourceLabel(src Source) string {
 	if src.Kind == SourcePlugin {
 		return "plugin:" + src.Name
 	}
+	if src.Kind == SourceHistory {
+		return "history:" + src.Name
+	}
 	return "web"
 }
 

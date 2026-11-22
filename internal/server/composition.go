@@ -20,6 +20,7 @@ import (
 	"github.com/erlidev/eika/internal/search/web"
 	"github.com/erlidev/eika/internal/search/wikipedia"
 	"github.com/erlidev/eika/internal/secret"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool"
 	"github.com/erlidev/eika/internal/tool/builtin"
@@ -68,7 +69,9 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	var s *Server
 	questions := builtin.NewQuestions()
 	bus := event.NewBus(log)
-	tools, err := agentToolRegistry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st, History: st}, func() *Server { return s })
+	tools, err := agentToolRegistry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st, History: st, ScreenHistory: func(ctx context.Context, segs []sentry.Segment) ([]sentry.Ingested, error) {
+		return s.ingestHistory(ctx, segs)
+	}}, func() *Server { return s })
 	if err != nil {
 		return err
 	}
