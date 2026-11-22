@@ -10,6 +10,8 @@ export type Settings = Record<string, unknown>;
 export type SettingsDefaults = {
   screen_required: boolean;
   screen_threshold: number;
+  /** memory_screen_threshold is the score at or over which a memory write goes pending. */
+  memory_screen_threshold: number;
   sandbox_image: string;
   /** sandbox_limits and sandbox_egress are what the home computer gets until the user sets others. */
   sandbox_limits: SandboxLimits;

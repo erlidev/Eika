@@ -183,6 +183,9 @@ type Options struct {
 	Halter func(ctx context.Context, reason string) error
 	// ScreenSettings returns the current threshold and whether screening is required.
 	ScreenSettings func(context.Context) (float64, bool, error)
+	// MemoryThreshold returns the score at or over which a memory write goes
+	// pending. Nil means a memory write uses the ingest threshold.
+	MemoryThreshold func(context.Context) (float64, error)
 	// GuardChanged reports a transition in guard health.
 	GuardChanged func(bool)
 	// Log reports a screen that did not answer. Nil uses slog.Default.

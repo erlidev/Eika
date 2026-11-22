@@ -662,7 +662,7 @@ compose stack, which sets only `EIKA_DATABASE_URL`. Notable fields:
   after the one derived from `listen`.
 - `public_url`: when https, serves the OAuth Client ID Metadata Document.
 - `fetch_fixture_hosts` (`EIKA_FETCH_FIXTURE_HOSTS`, comma-separated): exact hostnames that `web_fetch` may reach on private addresses. Empty by default; use only for test fixtures. The list is logged at startup and is not a runtime setting.
-- `guard_url` (`EIKA_GUARD_URL`, default `http://guard:9940`): the guard that screens untrusted content; empty turns the screen off. `screen_threshold` (default 0.9): the score at or over which a window is removed.
+- `guard_url` (`EIKA_GUARD_URL`, default `http://guard:9940`): the guard that screens untrusted content; empty turns the screen off. `screen_threshold` (default 0.9): the score at or over which a window is removed. `memory_screen_threshold` (default 0.99): the separate score at or over which a memory write goes pending; ingest never reads it.
 - `auth_token`: optional fixed API token.
 
 Everything a user chooses is a database row. Stored credentials are sealed

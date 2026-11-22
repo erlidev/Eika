@@ -74,6 +74,7 @@ func TestScreenSettingValidation(t *testing.T) {
 		{settingScreenRequired, "true", true}, {settingScreenRequired, `"true"`, false},
 		{settingScreenThreshold, "0.9", true}, {settingScreenThreshold, "0", false},
 		{settingScreenThreshold, "1.1", false}, {settingScreenThreshold, "null", true},
+		{settingMemoryScreenThreshold, "0.99", true}, {settingMemoryScreenThreshold, "0", false}, {settingMemoryScreenThreshold, "1.1", false},
 	} {
 		err := s.validateSetting(context.Background(), tc.key, []byte(tc.value))
 		if (err == nil) != tc.valid {

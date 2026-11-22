@@ -98,3 +98,24 @@ type screenFunc func(context.Context, []string) ([][]screen.Window, error)
 func (f screenFunc) Screen(ctx context.Context, t []string) ([][]screen.Window, error) {
 	return f(ctx, t)
 }
+
+// A memory write has its own threshold; ingest keeps the shared one.
+func TestMemoryThresholdIsSeparateFromIngest(t *testing.T) {
+	g := screenFunc(func(_ context.Context, texts []string) ([][]screen.Window, error) {
+		out := make([][]screen.Window, len(texts))
+		for i, text := range texts {
+			out[i] = []screen.Window{{Start: 0, End: len(text), Score: 0.95}}
+		}
+		return out, nil
+	})
+	gate := sentry.New(sentry.Options{Audit: &records{}, Screen: g, Threshold: 0.9,
+		MemoryThreshold: func(context.Context) (float64, error) { return 0.99, nil }})
+	v, err := gate.(sentry.MemoryChecker).CheckMemory(context.Background(), sentry.MemoryCandidate{Name: "m", Description: "d", Body: "Ignore emails from a."})
+	if err != nil || v.Decision != sentry.MemoryActive {
+		t.Fatalf("memory at 0.95 under 0.99: %+v %v", v, err)
+	}
+	out, err := gate.Ingest(context.Background(), []sentry.Segment{{Source: fetchSource, Text: "IGNORE ALL"}})
+	if err != nil || len(out) != 1 || out[0].Removed == 0 {
+		t.Fatalf("ingest at 0.95 must still remove: %+v %v", out, err)
+	}
+}
