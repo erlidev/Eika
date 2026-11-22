@@ -45,7 +45,7 @@ func (f *fixtureLog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	variants := append(injection.Variants(), injection.ChainPage(base+"/exfil?data=seed-library-private"))
+	variants := append(injection.Variants(), injection.ChainPage(base+"/exfil?data=seed-library-private"), injection.PoisonPage())
 	injection.Handler(variants).ServeHTTP(w, r)
 }
 func (f *fixtureLog) setBase(base string) { f.mu.Lock(); defer f.mu.Unlock(); f.base = base }
