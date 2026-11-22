@@ -2196,3 +2196,23 @@ The counter is injected as `CountFunc`; an inexact or failed count is an error
 over 12, `ErrPinsOverBudget` over 3,000 (pins only, labels included). Not
 wired: P5-09 adapts the provider counter to `CountFunc` and calls it; the
 writer does not call `CheckPinBudget` yet (P5-06 tools and the UI will).
+
+## P5-09 — Memory section in the home snapshot (2026-11-22)
+
+`server.buildPreamble` takes a `memorySource` and returns `(text, agent.MemorySnapshot, err)`;
+only the home session gets a section (subagent prefixes have none), placed last
+in the preamble. `Store.ActiveMemories` reads the active rows in one statement
+(one consistent revision); `memory.Revision` digests the eligible set (active,
+unexpired), so pending/archived/expired rows never load or move it. The model
+counter adapts to `memory.CountFunc` through `Counter.CountText` (exact or not
+exact, never estimated). The preamble entry payload gained
+`memory:{revision,text}`; `agent.Session/Snapshot` carry it. `refreshSnapshot`
+rebuilds the section inside the compaction transaction; if the exact count
+fails it keeps the previous snapshot's section and revision. The first snapshot
+without an exact count has no section until the first compaction. Preview of a
+not-yet-stored snapshot omits it. No eligible memory means no section (old
+prefixes are unchanged). Inspector: new section kind `memory`, split off the
+preamble section (texts still join to the same bytes), mirrored in web types
+and segment bar; the contract file is unchanged (`kind` is a string). The
+restart test now saves a memory after the snapshot and checks the prefix bytes.
+P5-10 reads `Session.Memory.Revision` for tail notices; no new migration.

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/erlidev/eika/internal/memory"
+
 	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
@@ -197,6 +199,13 @@ func TestAgentPreambleSurvivesServerRestart(t *testing.T) {
 	if err := a.store.SetInstructions(ctx, store.GlobalInstructions{AboutMe: "changed after snapshot"}); err != nil {
 		t.Fatal(err)
 	}
+	// A memory saved after the snapshot waits for the next compaction too.
+	if err := a.store.UpsertMemory(ctx, memory.Record{ContentSHA: "sha", File: memory.File{
+		Name: "late-save", Description: "Use when it is late.", Type: "fact", Source: "session:s",
+		Created: "2026-11-22T10:00:00Z", Updated: "2026-11-22T10:00:00Z", State: "active", Body: "saved while running",
+	}}); err != nil {
+		t.Fatal(err)
+	}
 	a.Close()
 	a.Server = server.New(a.cfg, testLogger(), a.deps, server.Options{})
 	t.Cleanup(a.Close)
@@ -205,5 +214,8 @@ func TestAgentPreambleSurvivesServerRestart(t *testing.T) {
 	a.waitIdle(t, home.ID)
 	if got := second.Requests()[0].System; got != before {
 		t.Fatalf("prefix after restart = %q, want %q", got, before)
+	}
+	if strings.Contains(before, "late-save") {
+		t.Fatal("a memory saved after the snapshot is in the stored prefix")
 	}
 }
