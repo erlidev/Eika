@@ -32,15 +32,16 @@ const families: readonly (readonly [RegExp, Limits])[] = [
 ];
 
 /** suggestLimits returns the limits a new model starts with. */
-export function suggestLimits(id: string, reported?: ModelInfo): Limits {
+export function suggestLimits(id: string, reported?: ModelInfo, probedWindow?: number): Limits {
   const base = id.toLowerCase().split("/").pop() ?? "";
   const known = families.find(([pattern]) => pattern.test(base))?.[1] ?? fallback;
-  const window = positive(reported?.context_window) ?? known.context_window;
+  // The model list wins, then what the probe read from the server (llama.cpp
+  // states n_ctx only on /props), then the family guess.
+  const stated = positive(reported?.context_window) ?? positive(probedWindow);
+  const window = stated ?? known.context_window;
   const output =
     positive(reported?.max_output) ??
-    (positive(reported?.context_window) !== undefined
-      ? Math.min(known.max_output, Math.floor(window / 4))
-      : known.max_output);
+    (stated !== undefined ? Math.min(known.max_output, Math.floor(window / 4)) : known.max_output);
   return { context_window: window, max_output: Math.min(output, window) };
 }
 

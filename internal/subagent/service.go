@@ -120,8 +120,14 @@ type Options struct {
 	// the report. It runs on the execution's goroutine, outside the service
 	// lock, before Close can return. Nil tells nobody.
 	Reported func(context.Context, store.Session)
-	Events   event.Emitter
-	Log      *slog.Logger
+	// Ended is told about each assignment that ends failed, with the child as
+	// stored then: its WaitingReason holds why. A stop someone asked for
+	// (Cancel, an abort) is known to the one who asked, and a shutdown is
+	// told at the next start, so neither is announced. Same goroutine and
+	// ordering rules as Reported. Nil tells nobody.
+	Ended  func(context.Context, store.Session)
+	Events event.Emitter
+	Log    *slog.Logger
 }
 
 // Service serializes lifecycle changes and owns each child run until it ends.
@@ -133,6 +139,7 @@ type Service struct {
 	final    func(context.Context, store.Session) (string, error)
 	limit    func(context.Context) int
 	reported func(context.Context, store.Session)
+	ended    func(context.Context, store.Session)
 	events   event.Emitter
 	log      *slog.Logger
 	wg       sync.WaitGroup
@@ -166,7 +173,7 @@ func New(ctx context.Context, st Store, o Options) *Service {
 		o.Limit = func(context.Context) int { return DefaultMaxRunning }
 	}
 	return &Service{ctx: ctx, cancel: cancel, store: st, run: o.Run, final: o.Final, limit: o.Limit,
-		reported: o.Reported, events: o.Events, log: o.Log, active: make(map[string]*execution)}
+		reported: o.Reported, ended: o.Ended, events: o.Events, log: o.Log, active: make(map[string]*execution)}
 }
 
 // Start creates a named child and starts its brief at priority. It reports
@@ -295,8 +302,12 @@ func (s *Service) execute(ctx context.Context, child store.Session, text string,
 	if err == nil {
 		err = s.requireReport(ctx, child, priority, active)
 	}
-	if ended, ok := s.end(ctx, child, err, active); ok && s.reported != nil {
+	ended, reported := s.end(ctx, child, err, active)
+	switch {
+	case reported && s.reported != nil:
 		s.reported(context.WithoutCancel(ctx), ended)
+	case !reported && s.ended != nil && ended.State == store.SessionFailed:
+		s.ended(context.WithoutCancel(ctx), ended)
 	}
 }
 
@@ -306,16 +317,19 @@ func (s *Service) execute(ctx context.Context, child store.Session, text string,
 func (s *Service) end(ctx context.Context, child store.Session, err error, active *execution) (store.Session, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	state := store.SessionIdle
+	state, reason := store.SessionIdle, ""
 	if active.cancelled || ctx.Err() != nil || errors.Is(err, ErrCancelled) {
 		state = store.SessionCancelled
+		if !active.cancelled && s.ctx.Err() != nil {
+			reason = ShutdownReason
+		}
 	} else if err != nil {
-		state = store.SessionFailed
+		state, reason = store.SessionFailed, truncateReason(err.Error())
 		s.log.Warn("subagent run failed", "session_id", child.ID, "error", err)
 	}
 	finishCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	active.result, active.err = s.state(finishCtx, child, state, "")
+	active.result, active.err = s.state(finishCtx, child, state, reason)
 	if active.err != nil {
 		s.log.Error("record subagent state", "session_id", child.ID, "error", active.err)
 	}
@@ -326,6 +340,19 @@ func (s *Service) end(ctx context.Context, child store.Session, err error, activ
 	delete(s.active, child.ID)
 	close(active.done)
 	return active.result, active.err == nil && state == store.SessionIdle && active.reported
+}
+
+// ShutdownReason is the reason stored on a child whose run the server's
+// shutdown cut off.
+const ShutdownReason = "Eika shut down"
+
+// truncateReason keeps a failure's reason short enough to store and show.
+func truncateReason(text string) string {
+	text = strings.TrimSpace(strings.ToValidUTF8(strings.ReplaceAll(text, "\x00", ""), ""))
+	if r := []rune(text); len(r) > 500 {
+		text = string(r[:500]) + "..."
+	}
+	return text
 }
 
 // requireReport makes a run that ended on its own leave a report. It asks the

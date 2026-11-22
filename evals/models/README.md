@@ -79,8 +79,8 @@ One model fills the 5090 at a time, and ComfyUI also holds GPU memory: stop
 
 `llama-qwen` (`/opt/stacks/llama-qwen`: `komodo.toml`, `command.txt`, `run.sh`,
 `.env`) is the earlier bench container, 2 slots and 128k, with vision, LAN only
-on `10.10.10.2:8091`. The bench runner (`evals/bench`) still names it as its
-chat container and restores it; it has not been repointed at `llama-server`.
+on `10.10.10.2:8091`. The bench runner (`evals/bench`) names `llama-server`
+as its chat container and restores that; `llama-qwen` stays stopped.
 To use it, put `EIKA_LIVE_ENDPOINT=http://127.0.0.1:8091` in `live.env` and
 `make live` opens the forward:
 

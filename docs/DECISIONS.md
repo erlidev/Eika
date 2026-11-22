@@ -1973,7 +1973,7 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   operations for the live suites live in `evals/bench`, behind a `Transport`
   (one SSH ControlMaster per run) so tests drive a fake host. A run records
   the GPU's holders and the running containers first and refuses with a
-  `BusyError` unless only `llama-qwen` holds the GPU; a container is stopped
+  `BusyError` unless only `llama-server` holds the GPU; a container is stopped
   only when named in `Options.Take`, and nothing else ever is. A changed
   model is a container of its own (`eika-bench-<run>`, `--restart no`, the
   chat container's image, mounts and network, the key through `--env-file` so
@@ -2249,6 +2249,10 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   identical results; once noticed, they get no second recovery notice. Report
   text never decides whether a notice exists. The id is internal; the API does
   not change.
+- **A failed assignment is a notice too.** The child's
+  `waiting_reason` holds why it ended (the error, trimmed), and the notice id
+  is derived from the child, its head and the state, so the live write and
+  startup reconcile add one entry between them.
 - Startup stores recovered notices without starting a home turn. The next user
   message, or a later background turn caused by a new report, delivers them.
   This prevents a restart from retrying work whose outcome is unknown. A

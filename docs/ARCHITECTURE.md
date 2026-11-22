@@ -1162,7 +1162,7 @@ next Message resumes it and the next Cancel records it cancelled, so a temporary
 storage failure does not strand the child. Cancel stops and joins an active
 execution. Close joins all executions before
 the store closes. Each state or reason change emits `session.updated` on `global`.
-Migration 0015 stores the waiting reason.
+Migration 0015 stores the waiting reason; 0022 lets a failed or cancelled child keep why it ended there.
 
 A subagent ends an assignment with a report. The `report` tool (`summary`,
 optional `outputs` and `follow_ups`) is in the `worker` and `researcher`

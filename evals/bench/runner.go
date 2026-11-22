@@ -22,7 +22,7 @@ import (
 type Options struct {
 	// Host names the server for the report; the Transport already reaches it.
 	Host string
-	// Chat is the container of the chat model (llama-qwen), and Tabby the
+	// Chat is the container of the chat model (llama-server), and Tabby the
 	// second backend's (tabbyapi).
 	Chat, Tabby string
 	// Take names the containers besides Chat that the run may stop while it
@@ -76,7 +76,7 @@ func (o *Options) defaults() {
 		o.Host = "ubuntu-5090"
 	}
 	if o.Chat == "" {
-		o.Chat = "llama-qwen"
+		o.Chat = "llama-server"
 	}
 	if o.Tabby == "" {
 		o.Tabby = "tabbyapi"

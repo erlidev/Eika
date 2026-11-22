@@ -88,20 +88,20 @@ func (h *fakeHost) add(name, image string, running bool, gpuMiB int, cmd []strin
 	return c
 }
 
-// normal is the bench as it should be: llama-qwen serving, the tabbyapi
+// normal is the bench as it should be: llama-server serving, the tabbyapi
 // container stopped, a bystander running without the GPU.
 func (h *fakeHost) normal() {
-	h.add("llama-qwen", llamaImage, true, 28000, chatFlags)
+	h.add("llama-server", llamaImage, true, 28000, chatFlags)
 	h.add("tabbyapi", "tabbyapi:0.0.8", false, 30000, []string{"main.py", "--host", "0.0.0.0"})
 	h.add("caddy", "caddy:latest", true, 0, nil)
 }
 
-// swapped is the bench as it was found: llama-qwen stopped and another
+// swapped is the bench as it was found: llama-server stopped and another
 // container on the GPU.
 func (h *fakeHost) swapped() {
-	h.add("llama-qwen", llamaImage, false, 28000, chatFlags)
+	h.add("llama-server", llamaImage, false, 28000, chatFlags)
 	h.add("tabbyapi", "tabbyapi:0.0.8", false, 30000, []string{"main.py", "--host", "0.0.0.0"})
-	h.add("llama-server", llamaImage, true, 28800, []string{"-hf", "unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL", "--api-key", "sekret", "--port", "8080"})
+	h.add("llama-qwen", llamaImage, true, 28800, []string{"-hf", "unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL", "--api-key", "sekret", "--port", "8080"})
 	h.add("caddy", "caddy:latest", true, 0, nil)
 }
 

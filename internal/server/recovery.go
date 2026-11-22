@@ -96,16 +96,26 @@ func (s *Server) reconcileSessions(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if child.Result == "" {
-			continue
+		type posted struct{ id, text string }
+		var due []posted
+		if child.Result != "" {
+			due = append(due, posted{reportNoticeID(child), reportNotice(child)})
 		}
-		notice, err := session.TextEntry(store.KindNotice, reportNotice(child))
-		if err != nil {
-			return err
+		if child.State == store.SessionFailed || (child.State == store.SessionCancelled && child.WaitingReason == subagent.ShutdownReason) {
+			// An assignment that failed or was cut off by a shutdown: the
+			// notice a failure's live write may have lost, or the only one
+			// a shutdown gets.
+			due = append(due, posted{endedNoticeID(child), endedNotice(child)})
 		}
-		notice.ID = reportNoticeID(child)
-		if _, _, err := s.deps.Store.AppendEntryOnce(ctx, child.ParentSessionID, notice); err != nil {
-			return err
+		for _, p := range due {
+			notice, err := session.TextEntry(store.KindNotice, p.text)
+			if err != nil {
+				return err
+			}
+			notice.ID = p.id
+			if _, _, err := s.deps.Store.AppendEntryOnce(ctx, child.ParentSessionID, notice); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

@@ -149,7 +149,7 @@ Some suites need the server changed (other flags, the second backend). The
 tested on a fake host, and **has not yet run against the server**. A run:
 
 1. `Open` reads and records the running containers and the GPU's holders. It
-   refuses (`BusyError`) when anything but `llama-qwen` holds the GPU, naming
+   refuses (`BusyError`) when anything but `llama-server` holds the GPU, naming
    what it found, unless the container is in `Options.Take`; it stops nothing
    else, ever. It refuses (`LeftModifiedError`) when an earlier run left a
    journal that differs from the server, the lock `/tmp/eika-bench.lock` is
@@ -158,7 +158,7 @@ tested on a fake host, and **has not yet run against the server**. A run:
    `~/.cache/eika/bench-journal.json`) and starts the watchdog: a detached
    script on the server that restores the bench when the run's heartbeat file
    goes 3 minutes stale (killed process, lost connection).
-3. `Serve(spec)`: `Baseline()` starts `llama-qwen` as it is, `Tabby()` starts
+3. `Serve(spec)`: `Baseline()` starts `llama-server` as it is, `Tabby()` starts
    the existing `tabbyapi` container as it is, `Variant(name, edits...)` runs
    the chat container's image, mounts and network as `eika-bench-<run>` with
    its recorded flags edited (`--restart no`, label `eika.bench`, the key from

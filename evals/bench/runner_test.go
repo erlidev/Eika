@@ -18,8 +18,8 @@ func TestOpenRefusesWhenAnotherContainerHoldsTheGPUAndChangesNothing(t *testing.
 	if !errors.As(err, &busy) {
 		t.Fatalf("Open = %v, want a BusyError", err)
 	}
-	if !strings.Contains(err.Error(), "llama-server") || !strings.Contains(err.Error(), "EIKA_BENCH_TAKE") {
-		t.Errorf("error = %q, want it to name llama-server and the option", err)
+	if !strings.Contains(err.Error(), "llama-qwen") || !strings.Contains(err.Error(), "EIKA_BENCH_TAKE") {
+		t.Errorf("error = %q, want it to name llama-qwen and the option", err)
 	}
 	if m := h.mutations(); len(m) != 0 {
 		t.Errorf("a refused run changed the server: %v", m)
@@ -31,12 +31,12 @@ func TestATakenContainerIsStoppedAndStartedAgainAtTheEnd(t *testing.T) {
 	h.swapped()
 	before := h.runningNames()
 	path := journalPath(t)
-	r, err := openRunner(t, h, func(o *bench.Options) { o.Take = []string{"llama-server"}; o.JournalPath = path })
+	r, err := openRunner(t, h, func(o *bench.Options) { o.Take = []string{"llama-qwen"}; o.JournalPath = path })
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	h.onStop = func(name string) {
-		// Taking llama-server is journalled as stopped; llama-qwen, which the
+		// Taking llama-qwen is journalled as stopped; llama-server, which the
 		// run started and stops again, as started.
 		if j := readJournalFile(t, path); !slices.Contains(j.Stopped, name) && !slices.Contains(j.Started, name) {
 			t.Errorf("%s was stopped before the journal named it: stopped %v, started %v", name, j.Stopped, j.Started)
@@ -46,10 +46,10 @@ func TestATakenContainerIsStoppedAndStartedAgainAtTheEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Serve: %v", err)
 	}
-	if got := h.runningNames(); !slices.Equal(got, []string{"caddy", "llama-qwen"}) {
+	if got := h.runningNames(); !slices.Equal(got, []string{"caddy", "llama-server"}) {
 		t.Errorf("running while serving = %v", got)
 	}
-	if s.URL == "" || s.Info.Container != "llama-qwen" {
+	if s.URL == "" || s.Info.Container != "llama-server" {
 		t.Errorf("serving = %+v", s)
 	}
 	if err := r.Close(); err != nil {
@@ -69,7 +69,7 @@ func TestATakenContainerIsStoppedAndStartedAgainAtTheEnd(t *testing.T) {
 func TestAVariantIsAContainerOfItsOwnAndTheChatContainerIsNeverEdited(t *testing.T) {
 	h := newFakeHost(t)
 	h.normal()
-	chat := h.get("llama-qwen")
+	chat := h.get("llama-server")
 	id, cmd := chat.id, slices.Clone(chat.cmd)
 	r, err := openRunner(t, h, nil)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestAVariantIsAContainerOfItsOwnAndTheChatContainerIsNeverEdited(t *testing
 		t.Errorf("variant flags = %v, want %v", v.cmd, want)
 	}
 	if chat.running {
-		t.Error("llama-qwen kept running beside the variant")
+		t.Error("llama-server kept running beside the variant")
 	}
 	if err := r.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -94,11 +94,11 @@ func TestAVariantIsAContainerOfItsOwnAndTheChatContainerIsNeverEdited(t *testing
 	if h.get("eika-bench-abc123") != nil {
 		t.Error("the variant survived Close")
 	}
-	if now := h.get("llama-qwen"); now == nil || now.id != id || !now.running || !slices.Equal(now.cmd, cmd) {
-		t.Errorf("llama-qwen = %+v, want the same container running with the same flags", now)
+	if now := h.get("llama-server"); now == nil || now.id != id || !now.running || !slices.Equal(now.cmd, cmd) {
+		t.Errorf("llama-server = %+v, want the same container running with the same flags", now)
 	}
 	for _, c := range h.ran() {
-		for _, banned := range []string{"command.txt", "komodo.toml", "docker rm llama-qwen", "docker rm -f llama-qwen", "docker update"} {
+		for _, banned := range []string{"command.txt", "komodo.toml", "docker rm llama-server", "docker rm -f llama-server", "docker update"} {
 			if strings.Contains(c, banned) {
 				t.Errorf("command %q touches the Deployment", c)
 			}
@@ -120,7 +120,7 @@ func TestAVariantThatExitsFailsLoudlyAndTheBenchIsRestored(t *testing.T) {
 	if err := r.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if got := h.runningNames(); !slices.Equal(got, []string{"caddy", "llama-qwen"}) || h.get("eika-bench-abc123") != nil {
+	if got := h.runningNames(); !slices.Equal(got, []string{"caddy", "llama-server"}) || h.get("eika-bench-abc123") != nil {
 		t.Errorf("after Close running = %v", got)
 	}
 }
@@ -130,7 +130,7 @@ func TestARestoreThatFailsSaysSoAndLeavesTheJournalForTheNextRun(t *testing.T) {
 	h.swapped()
 	path := journalPath(t)
 	open := func() (*bench.Runner, error) {
-		return openRunner(t, h, func(o *bench.Options) { o.Take = []string{"llama-server"}; o.JournalPath = path })
+		return openRunner(t, h, func(o *bench.Options) { o.Take = []string{"llama-qwen"}; o.JournalPath = path })
 	}
 	r, err := open()
 	if err != nil {
@@ -140,15 +140,15 @@ func TestARestoreThatFailsSaysSoAndLeavesTheJournalForTheNextRun(t *testing.T) {
 		t.Fatalf("Serve: %v", err)
 	}
 	h.fail = func(c string) error {
-		if strings.HasPrefix(c, "docker start llama-server") {
+		if strings.HasPrefix(c, "docker start llama-qwen") {
 			return &bench.ExecError{ExitCode: 1, Stderr: "cannot start"}
 		}
 		return nil
 	}
 	err = r.Close()
 	var re *bench.RestoreError
-	if !errors.As(err, &re) || !strings.Contains(err.Error(), "BENCH NOT RESTORED") || !strings.Contains(err.Error(), "llama-server") || re.WatchdogAt.IsZero() {
-		t.Fatalf("Close = %v, want a loud RestoreError naming llama-server and the watchdog", err)
+	if !errors.As(err, &re) || !strings.Contains(err.Error(), "BENCH NOT RESTORED") || !strings.Contains(err.Error(), "llama-qwen") || re.WatchdogAt.IsZero() {
+		t.Fatalf("Close = %v, want a loud RestoreError naming llama-qwen and the watchdog", err)
 	}
 	h.fail = nil
 	if _, err := open(); err == nil || !errors.As(err, new(*bench.LeftModifiedError)) {
@@ -157,7 +157,7 @@ func TestARestoreThatFailsSaysSoAndLeavesTheJournalForTheNextRun(t *testing.T) {
 	if _, err := bench.Recover(t.Context(), h, bench.Options{Host: "fake", JournalPath: path, Now: h.clock, Sleep: h.sleep}); err != nil {
 		t.Fatalf("Recover: %v", err)
 	}
-	if got := h.runningNames(); !slices.Equal(got, []string{"caddy", "llama-server"}) {
+	if got := h.runningNames(); !slices.Equal(got, []string{"caddy", "llama-qwen"}) {
 		t.Errorf("running after Recover = %v", got)
 	}
 	if r2, err := open(); err != nil {
@@ -183,7 +183,7 @@ func TestALostConnectionIsReopenedToRestore(t *testing.T) {
 	if err := r.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if h.reconnects == 0 || !slices.Equal(h.runningNames(), []string{"caddy", "llama-qwen"}) {
+	if h.reconnects == 0 || !slices.Equal(h.runningNames(), []string{"caddy", "llama-server"}) {
 		t.Errorf("reconnects = %d, running = %v", h.reconnects, h.runningNames())
 	}
 }
@@ -223,7 +223,7 @@ func TestASecondRunIsRefusedWhileTheFirstHoldsTheLock(t *testing.T) {
 func TestTheWatchdogScriptIsValidShellAndNamesWhatItRestores(t *testing.T) {
 	h := newFakeHost(t)
 	h.swapped()
-	r, err := openRunner(t, h, func(o *bench.Options) { o.Take = []string{"llama-server"} })
+	r, err := openRunner(t, h, func(o *bench.Options) { o.Take = []string{"llama-qwen"} })
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestTheWatchdogScriptIsValidShellAndNamesWhatItRestores(t *testing.T) {
 		t.Fatalf("watchdogs = %d", len(h.watchdogs))
 	}
 	w := h.watchdogs[0]
-	for _, want := range []string{"docker rm -f eika-bench-abc123", "docker stop -t 30 llama-qwen", "docker start llama-server"} {
+	for _, want := range []string{"docker rm -f eika-bench-abc123", "docker stop -t 30 llama-server", "docker start llama-qwen"} {
 		if !strings.Contains(w, want) {
 			t.Errorf("watchdog lacks %q", want)
 		}

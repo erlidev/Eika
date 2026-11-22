@@ -205,7 +205,11 @@ func subagentView(s store.Session, slugs map[string]string, detail bool) map[str
 		out["project"] = slugs[s.ProjectID]
 	}
 	if s.WaitingReason != "" {
-		out["waiting_on"] = s.WaitingReason
+		if s.State == store.SessionFailed || s.State == store.SessionCancelled {
+			out["ended_because"] = s.WaitingReason
+		} else {
+			out["waiting_on"] = s.WaitingReason
+		}
 	}
 	if !s.LastActiveAt.IsZero() {
 		out["last_active_at"] = s.LastActiveAt.UTC().Format(time.RFC3339)

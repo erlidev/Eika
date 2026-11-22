@@ -140,10 +140,9 @@ Rules:
   an 8-bit KV cache. A run that needs another quant or cache type says so in
   its report.
 - One model fills the 5090 at a time. The runner stops what it started and
-  restores its `Chat` container at the end, also on failure. That is still
-  `llama-qwen` (`bench.Options`, with its `.env` key file), which is stopped now
-  and holds the `-p 10.10.10.2:8091` stack files; the runner has not been
-  repointed at `llama-server`, so a runner restore would swap `llama-qwen` back in.
+  restores its `Chat` container at the end, also on failure. That is
+  `llama-server` (`bench.Options.Chat`); a variant still reads its API key from
+  the old `/opt/stacks/llama-qwen/.env` (`Options.EnvFile`).
   `make live` does not use the runner.
 - The desktop that hosts the guard and the decision model has 15 GB of RAM and
   is in use. Each runs as a user unit with a memory cap (`MemoryHigh`,

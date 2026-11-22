@@ -13,7 +13,7 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   `llama-server` at https://llama.erli.xyz (llama.cpp b11942-338fce651, Qwen3.8-27B
   UD-Q4_K_XL at 4af51b35, text only, MTP, 4 slots, 256k q8_0 KV); `llama-qwen` and ComfyUI
   were stopped to make room (ComfyUI held GPU memory and `llama-server` ran out of memory
-  beside it). The runner (`evals/bench`) still names `llama-qwen`; not repointed. A bare `make live`
+  beside it). The runner (`evals/bench`) was repointed at `llama-server` by the Phase 2 exit check. A bare `make live`
   with plain `live.env` ran: 53 scenarios passed, 2 skipped, 1 failed
   (`persistent_home_compaction`: the recall turn answered without `history_search` and the
   answer lacked the fact; the model's variance as in the P2-25 entry, not product code).
@@ -55,7 +55,16 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   for a server that reports 256000; a subagent run failed with "request needs about 35199
   tokens, which does not fit 32768", so the exit used 131072 (set through the API). A
   failed subagent (`pepper-notes`) produced no notice in home: Eika kept saying it was
-  researching. Not fixed here.
+  researching. Fixed after the check: the lifecycle service's new `Ended` option posts a
+  notice to home for every assignment that fails (the reason is kept in
+  the child's `waiting_reason`, shown as "ended because" on the board and in
+  `subagent_status`), with an id from the child, its head and the state; a stop someone
+  asked for is not announced to them. Startup reconcile writes the same notice once if the
+  live write was lost, and one for a run a shutdown cut off (test:
+  `TestFailedRunIsEndedWithItsReason`). Also fixed: setup took the 32768 family guess
+  because llama.cpp's `/v1/models` lists no context; the model picker now uses the probed
+  window (`/props` `n_ctx`, 256000 here) before the family table (`limits.test.ts`). The bench
+  runner now stops and restores `llama-server`, not `llama-qwen`.
 
 - 2026-11-21: Phase 3 exit review fixes (branch `p3-exit-fixes`). Activity rows no
   longer clip at 390px; question notices show the question, not the model's

@@ -71,7 +71,7 @@ export function ModelPicker({
       {
         id,
         name: suggestModelName(id, provider.name, takenNames),
-        ...suggestLimits(id, info),
+        ...suggestLimits(id, info, provider.capabilities.window),
         kind: "chat",
         image_input: info?.image_input ?? false,
       },

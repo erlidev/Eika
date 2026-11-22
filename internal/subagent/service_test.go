@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -421,5 +422,29 @@ func TestCompletedReportAnnouncesItsID(t *testing.T) {
 		case <-time.After(3 * time.Second):
 			t.Fatal("no report update")
 		}
+	}
+}
+
+// A run that fails is told to its owner with the reason, and no report is
+// invented for it.
+func TestFailedRunIsEndedWithItsReason(t *testing.T) {
+	st := newMemory()
+	ended := make(chan store.Session, 2)
+	s := serviceWith(t, st, subagent.Options{
+		Run: func(context.Context, store.Session, string, inference.Priority) error {
+			return errors.New("call model: the request needs about 35199 tokens, which does not fit the configured window of 32768")
+		},
+		Reported: func(context.Context, store.Session) { t.Error("a failed run reported") },
+		Ended:    func(_ context.Context, row store.Session) { ended <- row },
+	})
+	if _, _, err := s.Start(t.Context(), "home", child(), fg); err != nil {
+		t.Fatal(err)
+	}
+	got := <-ended
+	if got.State != store.SessionFailed || !strings.Contains(got.WaitingReason, "35199 tokens") {
+		t.Errorf("ended = %s %q, want failed with the reason", got.State, got.WaitingReason)
+	}
+	if got.Result != "" {
+		t.Errorf("result = %q, want none", got.Result)
 	}
 }
