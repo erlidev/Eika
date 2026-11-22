@@ -84,6 +84,10 @@ type liveCore struct {
 }
 
 func newLiveCore(t *testing.T, target *live.Target, guard string) *liveCore {
+	return newLiveCoreWith(t, target, guard, nil)
+}
+
+func newLiveCoreWith(t *testing.T, target *live.Target, guard string, configure func(*config.Config, *store.Store, *secret.Box)) *liveCore {
 	t.Helper()
 	ctx := t.Context()
 	if out, err := exec.CommandContext(ctx, "docker", "info").CombinedOutput(); err != nil {
@@ -144,6 +148,9 @@ func newLiveCore(t *testing.T, target *live.Target, guard string) *liveCore {
 	if image := os.Getenv("EIKA_TEST_SANDBOX_IMAGE"); image != "" {
 		cfg.SandboxImage = image
 	}
+	if configure != nil {
+		configure(&cfg, st, box)
+	}
 	raw, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +193,7 @@ func (c *liveCore) start() {
 		}
 	})
 	cmd := exec.Command(os.Args[0], "-test.run=^TestLiveCoreFixture$")
-	cmd.Env = append(os.Environ(), "EIKA_LIVE_CORE_CONFIG="+c.configPath)
+	cmd.Env = append(os.Environ(), "EIKA_LIVE_CORE_CONFIG="+c.configPath, "EIKA_LIVE_PUSH_SINK=1")
 	cmd.Stdout, cmd.Stderr = log, log
 	if err := cmd.Start(); err != nil {
 		c.t.Fatal(err)

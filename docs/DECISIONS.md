@@ -8,6 +8,11 @@ this file says why, so neither repeats the other.
 
 ## Scope
 
+- **Live worker tests use controlled Docker networks** (2026-11-22). The Core
+  process reaches its sandbox by container IP and the live-only proxy control
+  permits the fixture's loopback port. This lets the suite test the real egress
+  proxy without weakening the public-address rule in normal builds.
+
 - **Eika is a personal assistant that runs on hardware the user owns.** One
   person talks to it, and it works in sandboxed computers on their behalf.
   Memory, plugins, a scheduler, skills and a permission authority (Sentry) are

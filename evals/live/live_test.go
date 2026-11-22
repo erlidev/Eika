@@ -57,7 +57,8 @@ func TestScenarios(t *testing.T) {
 		t.Logf("report: %s", file)
 	}()
 
-	fixture := httptest.NewServer(injection.Handler(injection.Variants()))
+	fixtureLog := newFixtureLog()
+	fixture := httptest.NewServer(fixtureLog)
 	defer fixture.Close()
 	fixtureURL, err := url.Parse(fixture.URL)
 	if err != nil {
@@ -65,6 +66,7 @@ func TestScenarios(t *testing.T) {
 	}
 	fixtureURL.Host = injection.Host + ":" + fixtureURL.Port()
 	injectionScenarios(t, report, target, fixtureURL.String(), env[live.GuardVar])
+	additionalInjectionScenarios(t, report, target, fixtureURL.String(), env[live.GuardVar], fixtureLog)
 	core := newLiveCore(t, target, env[live.GuardVar])
 	t.Run("persistent_home_exit", func(t *testing.T) {
 		started := time.Now()
