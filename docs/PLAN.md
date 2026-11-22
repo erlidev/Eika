@@ -467,7 +467,7 @@ and check that a rejected memory stays archived and an accepted memory stays act
       reconcile the index and start Core. Test a backup/restore with populated
       sessions, sealed settings and all memory states, plus a rejected incomplete
       backup. Existing data is never overwritten by default.
-- [ ] **P5-18**: Extend `make smoke` with scripted memory save, compaction, UI edit
+- [x] **P5-18**: Extend `make smoke` with scripted memory save, compaction, UI edit
       and pending resolution on the real stack. Check the repository survives a
       restart and no agent computer can read its mount. Reuse the real guard and
       existing fixture-hosts setting; run `make check` and `make smoke`.
@@ -739,8 +739,8 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       the key file, with a documented and tested restore.
       - [x] **P5-16**: Consistent backup.
       - [ ] **P5-17**: Restore and populated-data verification.
-- [ ] Scripted stack coverage.
-      - [ ] **P5-18**: Memory smoke flow and isolation check.
+- [x] Scripted stack coverage.
+      - [x] **P5-18**: Memory smoke flow and isolation check.
 - [ ] Phase 5 live suite, on the bench's chat model and guard: the exit's
       poisoning scenario, and 30 ordinary preferences and rules as the user would
       state them ("always use metric", "never book before 9"), none of which may

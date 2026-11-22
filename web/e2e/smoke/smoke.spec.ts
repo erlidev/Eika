@@ -6,6 +6,8 @@
  * to a worker on the home computer, which proves eikad runs it there.
  */
 
+import { execSync } from "node:child_process";
+
 import { expect, test } from "@playwright/test";
 
 test.beforeAll(async ({ request }) => {
@@ -214,4 +216,188 @@ test("setup, then Chat on the home session, and bash on the home computer", asyn
       { timeout: 60_000, intervals: [1000] },
     )
     .toBe(true);
+});
+
+test("memory: save, compaction, edit, Inbox answer, restart, and no agent computer sees the repository", async ({
+  page,
+  request,
+}) => {
+  const headers = { Authorization: `Bearer ${process.env.EIKA_SMOKE_TOKEN ?? ""}` };
+  type Memory = { name: string; state: string; body: string; content_sha: string };
+  const memory = async (name: string): Promise<Memory> => {
+    const reply = await request.get(`/api/memories/${name}`, { headers });
+    expect(reply.status()).toBe(200);
+    return (await reply.json()) as Memory;
+  };
+  const homeSession = (
+    (await (await request.get("/api/home", { headers })).json()) as { session: { id: string } }
+  ).session;
+  const idle = () =>
+    expect
+      .poll(
+        async () => {
+          const reply = await request.get(`/api/sessions/${homeSession.id}/run`, { headers });
+          return reply.ok() && !((await reply.json()) as { active: boolean }).active;
+        },
+        { timeout: 60_000, intervals: [1000] },
+      )
+      .toBe(true);
+  const memorySection = async (): Promise<string> => {
+    const reply = await request.get(`/api/sessions/${homeSession.id}/context`, { headers });
+    expect(reply.status()).toBe(200);
+    const body = (await reply.json()) as { sections: { kind: string; text: string }[] };
+    return body.sections
+      .filter((s) => s.kind === "memory")
+      .map((s) => s.text)
+      .join("\n");
+  };
+
+  // The setup test's browser is gone: sign in with the password it chose.
+  const open = async (path: string) => {
+    await page.goto(path);
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    if (await signIn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await page.getByLabel("Password", { exact: true }).fill("smoke-password");
+      await signIn.click();
+    }
+  };
+
+  // Two writes by the scripted model: one saved, one that the real guard
+  // (not the unscanned fallback) sends to pending.
+  await open("/");
+  await idle();
+  await page.getByRole("textbox", { name: "Message" }).fill("Save the memories");
+  await page.getByRole("textbox", { name: "Message" }).press("Enter");
+  await expect
+    .poll(
+      async () => (await request.get("/api/memories/smoke-planted-rule", { headers })).status(),
+      {
+        timeout: 60_000,
+        intervals: [1000],
+      },
+    )
+    .toBe(200);
+  expect((await memory("smoke-metric-units")).state).toBe("active");
+  const planted = (await (
+    await request.get("/api/memories/smoke-planted-rule", { headers })
+  ).json()) as { state: string; screen?: { max_score: number; unscanned: boolean } };
+  expect(planted.state).toBe("pending");
+  expect(planted.screen?.unscanned).toBe(false);
+  await idle();
+
+  // A small window, so that the long turn above is more than a compaction keeps.
+  const models = (
+    (await (await request.get("/api/models", { headers })).json()) as {
+      models: { id: string; name: string }[];
+    }
+  ).models;
+  const smoke = models.find((m) => m.name === "smoke");
+  const patched = await request.patch(`/api/models/${smoke?.id ?? ""}`, {
+    headers,
+    data: { context_window: 32000, max_output: 4000 },
+  });
+  expect(patched.status()).toBe(200);
+
+  // A compaction rebuilds the home preamble: it lists the active memory and
+  // never the pending one.
+  const compact = await request.post(`/api/sessions/${homeSession.id}/compact`, {
+    headers,
+    data: {},
+  });
+  expect(compact.status(), await compact.text()).toBe(202);
+  await idle();
+  const section = await memorySection();
+  expect(section).toContain("smoke-metric-units");
+  expect(section).not.toContain("smoke-planted-rule");
+
+  // The user edits the active memory in the Memory page.
+  await open("/memory/smoke-metric-units");
+  await page
+    .getByLabel("Body", { exact: true })
+    .fill("The user wants metric units, always (2026-11-22).");
+  await page.getByRole("button", { name: "Save memory" }).click();
+  await expect(page.getByText("Saved.")).toBeVisible();
+  expect((await memory("smoke-metric-units")).body).toContain("always");
+
+  // The user answers the pending one in the Inbox.
+  await open("/inbox");
+  await page
+    .getByRole("article", { name: "smoke-planted-rule" })
+    .getByRole("button", { name: "Reject" })
+    .click();
+  await expect(page.getByRole("article", { name: "smoke-planted-rule" })).toHaveCount(0);
+  expect((await memory("smoke-planted-rule")).state).toBe("archived");
+
+  // The repository and the states survive a restart of the harness.
+  const before = [await memory("smoke-metric-units"), await memory("smoke-planted-rule")];
+  execSync(`${process.env.EIKA_SMOKE_COMPOSE ?? "false"} restart eika`, {
+    cwd: "..",
+    stdio: "inherit",
+    timeout: 120_000,
+  });
+  await expect
+    .poll(
+      async () =>
+        (
+          await request.get("/api/memories/smoke-planted-rule", { headers }).catch(() => null)
+        )?.status(),
+      {
+        timeout: 180_000,
+        intervals: [2000],
+      },
+    )
+    .toBe(200);
+  for (const was of before) {
+    const now = await memory(was.name);
+    expect(now.state).toBe(was.state);
+    expect(now.content_sha).toBe(was.content_sha);
+    expect(now.body).toBe(was.body);
+  }
+
+  // No agent computer can read the memory mount. A worker on home looks for it
+  // and finds nothing, and no computer container mounts the repository.
+  const computers = (
+    (await (await request.get("/api/computers", { headers })).json()) as {
+      computers: { id: string; home: boolean }[];
+    }
+  ).computers;
+  const home = computers.find((cx) => cx.home);
+  await idle();
+  await open("/");
+  await page.getByRole("textbox", { name: "Message" }).fill("Check the memory mount");
+  await page.getByRole("textbox", { name: "Message" }).press("Enter");
+  await expect
+    .poll(
+      async () => {
+        const rows = (
+          (await (await request.get("/api/sessions", { headers })).json()) as {
+            sessions: { id: string; name?: string; computer_id?: string }[];
+          }
+        ).sessions;
+        const worker = rows.find((s) => s.name === "smoke-mount-worker");
+        if (!worker || worker.computer_id !== home?.id) return false;
+        const path = await request.get(`/api/sessions/${worker.id}/path`, { headers });
+        if (!path.ok()) return false;
+        const body = (await path.json()) as { messages: { role: string; content?: string }[] };
+        return body.messages.some(
+          (m) => m.role === "assistant" && m.content === "The command printed mount-isolated 1 0.",
+        );
+      },
+      { timeout: 90_000, intervals: [1000] },
+    )
+    .toBe(true);
+  const docker = (args: string): string[] =>
+    execSync(`docker ${args}`, { encoding: "utf8" }).split("\n").filter(Boolean);
+  const agentComputers = [
+    ...docker("ps -aq --filter label=eika.computer --filter network=eika_smoke_sandbox"),
+    ...docker("ps -aq --filter label=eika.computer --filter network=eika_smoke_sandbox_internal"),
+  ];
+  const mounts = docker(
+    `inspect -f '{{.Config.Labels}} {{range .Mounts}}{{.Destination}} {{end}}' ${agentComputers.join(" ")}`,
+  );
+  expect(mounts.length).toBeGreaterThan(0);
+  expect(mounts.some((line) => line.includes("eika.role:memory"))).toBe(true);
+  for (const line of mounts.filter((l) => !l.includes("eika.role:memory"))) {
+    expect(line).not.toContain("/var/lib/eika/memory");
+  }
 });
