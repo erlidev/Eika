@@ -73,6 +73,7 @@ var leaves = map[string]string{
 	// to it in its own terms, so the agent, the probe, the utility tasks and
 	// the server can all hold a lease without it knowing any of them.
 	"internal/inference": "the inference queue is imported by every package that makes model calls",
+	"internal/memory":    "the memory file format is independent of repository and service code",
 }
 
 // TestLeavesImportNothingOfTheModule checks the packages in leaves.
@@ -85,7 +86,7 @@ func TestLeavesImportNothingOfTheModule(t *testing.T) {
 			continue
 		}
 		for _, dep := range deps {
-			t.Errorf("%s imports %s, but it must import only the standard library: %s", pkg, dep, reason)
+			t.Errorf("%s imports %s, but it must not import another module package: %s", pkg, dep, reason)
 		}
 	}
 }
