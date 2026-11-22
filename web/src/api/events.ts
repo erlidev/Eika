@@ -27,6 +27,8 @@ export type EventType =
   | "compaction.start"
   | "compaction.end"
   | "halt.state"
+  | "memory.changed"
+  | "inbox.count"
   | "bus.dropped";
 
 /** EikaEvent is the envelope every streamed event uses. */
@@ -268,6 +270,21 @@ export type HaltState = {
 };
 
 /**
+ * MemoryChanged is the payload of a memory.changed event, on topic inbox: a
+ * memory was written, changed or removed. Refetch it. state is empty when it
+ * was purged.
+ */
+export type MemoryChanged = {
+  name: string;
+  state?: string;
+};
+
+/** InboxCount is the payload of an inbox.count event, on topic inbox: how many memories are pending now. */
+export type InboxCountChanged = {
+  pending: number;
+};
+
+/**
  * CompactionEnd is the payload of a compaction.end event. One that failed
  * carries error and changed nothing; one that succeeded is stored as an entry
  * of kind compaction.
@@ -318,6 +335,8 @@ export type EventPayloads = {
   "compaction.start": CompactionStart;
   "compaction.end": CompactionEnd;
   "halt.state": HaltState;
+  "memory.changed": MemoryChanged;
+  "inbox.count": InboxCountChanged;
   "bus.dropped": BusDropped;
 };
 
@@ -375,6 +394,8 @@ export const eventTypes: readonly EventType[] = [
   "compaction.start",
   "compaction.end",
   "halt.state",
+  "memory.changed",
+  "inbox.count",
   "bus.dropped",
 ];
 

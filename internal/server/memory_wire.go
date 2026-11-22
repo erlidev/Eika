@@ -62,3 +62,16 @@ type archiveMemoryRequest struct {
 	ContentSHA *string `json:"content_sha"`
 	Reason     *string `json:"reason"`
 }
+
+// inboxResponse is a page of pending memories in full, with the screen verdict
+// the Inbox shows. Pending is the total number waiting, not the page's size.
+type inboxResponse struct {
+	Pending    int          `json:"pending"`
+	Memories   []memoryBody `json:"memories"`
+	NextCursor string       `json:"next_cursor,omitempty"`
+}
+
+// inboxCountResponse is the number of pending memories.
+type inboxCountResponse struct {
+	Pending int `json:"pending"`
+}

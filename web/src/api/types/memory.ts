@@ -77,3 +77,27 @@ export type EditMemoryRequest = {
   body?: string;
   expires?: string;
 };
+
+/** InboxPage is a page of pending memories in full; pending is the total waiting. */
+export type InboxPage = {
+  pending: number;
+  memories: Memory[];
+  next_cursor?: string;
+};
+
+/** InboxCount is the number of pending memories. */
+export type InboxCount = {
+  pending: number;
+};
+
+/** InboxListQuery pages GET /api/inbox/memories. */
+export type InboxListQuery = {
+  limit?: number;
+  after?: string;
+};
+
+/** RejectMemoryRequest archives a pending memory; content_sha is required. */
+export type RejectMemoryRequest = {
+  content_sha: string;
+  reason?: string;
+};

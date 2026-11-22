@@ -1497,6 +1497,51 @@ history:** the earlier commits of the memory repository, old sessions that
 quoted the text, and backups can still hold it. Archive is the reversible way
 to forget; purge is for the row and file only.
 
+## Inbox
+
+The Inbox's memory half: the pending list and count, and the user's answers
+to them. All routes require authentication, answer 503 until memory recovery
+has finished, and are the user's alone: accepting is an explicit state change
+(`pending` to `active`) with no agent tool behind it. Both answers go through
+the memory writer and require the `content_sha` the client read, checked again
+inside its lock. A stale answer returns 409 and writes nothing; so does an
+answer to a memory that is no longer pending (already accepted, rejected or
+archived), which is how a repeated answer from a second client is refused.
+Answers are audited as `setting` events of kind `memory` (`accept`, `reject`),
+with no text. Each durable change publishes events on topic `inbox` (see
+`docs/api/events.md`); nothing is pushed to a phone and no run waits on an
+answer.
+
+### `GET /api/inbox/count`
+
+Returns `{pending: integer}` (200): the memories in state `pending`.
+
+### `GET /api/inbox/memories`
+
+Lists pending memories in full, newest `updated` first with name breaking ties.
+Query: `limit` (1 to 50, default 20) and `after` (the opaque `next_cursor` of the
+previous page). Returns `{pending, memories, next_cursor?}` (200): `pending` is
+the total waiting, and each memory is as `GET /api/memories/{name}` returns it,
+with `screen` (the flagged spans) and `content_sha`.
+
+### `POST /api/inbox/memories/{name}/accept`
+
+Body as `PATCH /api/memories/{name}`: `content_sha` is required, and
+`description`, `type`, `body` and `expires` are optional edits applied in the
+same step (edit and accept). Makes the memory `active` and drops its screen
+verdict; it returns the memory (200). The final text always goes through the
+credential check, even unchanged: a credential is 400 with the reason, and the
+memory stays pending. A text the screen still flags is accepted, because this
+is the user's explicit promotion; a required screen that is unavailable is 503.
+Format errors are 400, a stale `content_sha` and a memory that is not pending
+are 409. To change a pending memory without accepting it, use `PATCH`.
+
+### `POST /api/inbox/memories/{name}/reject`
+
+Body `{content_sha: string, reason?: string}`; a reason is 1 to 200 characters
+and defaults to `rejected by the user`. Archives the pending memory, keeping its
+screen verdict, and returns it (200). The file stays in git. Errors as accept.
+
 ## User instructions
 
 All instruction routes require authentication. Agents have no tool that writes

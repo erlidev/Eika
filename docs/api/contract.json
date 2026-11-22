@@ -503,6 +503,69 @@
         ]
       }
     },
+    "GET /api/inbox/count": {
+      "status": 200,
+      "response": {
+        "object": {
+          "pending": "number"
+        }
+      }
+    },
+    "GET /api/inbox/memories": {
+      "status": 200,
+      "response": {
+        "object": {
+          "memories": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "archive_reason": "string",
+                  "body": "string",
+                  "content_sha": "string",
+                  "created": "string",
+                  "description": "string",
+                  "expires": "string",
+                  "name": "string",
+                  "pinned": "boolean",
+                  "screen": {
+                    "object": {
+                      "max_score": "number",
+                      "spans": {
+                        "nullable": {
+                          "array": {
+                            "object": {
+                              "end": "number",
+                              "field": "string",
+                              "score": "number",
+                              "start": "number",
+                              "text": "string"
+                            }
+                          }
+                        }
+                      },
+                      "unscanned": "boolean"
+                    }
+                  },
+                  "source": "string",
+                  "state": "string",
+                  "type": "string",
+                  "updated": "string"
+                },
+                "optional": [
+                  "archive_reason",
+                  "screen"
+                ]
+              }
+            }
+          },
+          "next_cursor": "string",
+          "pending": "number"
+        },
+        "optional": [
+          "next_cursor"
+        ]
+      }
+    },
     "GET /api/inference": {
       "status": 200,
       "response": {
@@ -3685,6 +3748,105 @@
         ]
       }
     },
+    "POST /api/inbox/memories/{name}/accept": {
+      "status": 200,
+      "request": {
+        "object": {
+          "body": "string",
+          "content_sha": "string",
+          "description": "string",
+          "expires": "string",
+          "type": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "archive_reason": "string",
+          "body": "string",
+          "content_sha": "string",
+          "created": "string",
+          "description": "string",
+          "expires": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "screen": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "field": "string",
+                      "score": "number",
+                      "start": "number",
+                      "text": "string"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          },
+          "source": "string",
+          "state": "string",
+          "type": "string",
+          "updated": "string"
+        },
+        "optional": [
+          "archive_reason",
+          "screen"
+        ]
+      }
+    },
+    "POST /api/inbox/memories/{name}/reject": {
+      "status": 200,
+      "request": {
+        "object": {
+          "content_sha": "string",
+          "reason": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "archive_reason": "string",
+          "body": "string",
+          "content_sha": "string",
+          "created": "string",
+          "description": "string",
+          "expires": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "screen": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "field": "string",
+                      "score": "number",
+                      "start": "number",
+                      "text": "string"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          },
+          "source": "string",
+          "state": "string",
+          "type": "string",
+          "updated": "string"
+        },
+        "optional": [
+          "archive_reason",
+          "screen"
+        ]
+      }
+    },
     "POST /api/mcp/oauth/callback": {
       "status": 200,
       "request": {
@@ -5235,6 +5397,11 @@
         "reason"
       ]
     },
+    "inbox.count": {
+      "object": {
+        "pending": "number"
+      }
+    },
     "mcp.elicitation": {
       "object": {
         "call_id": "string",
@@ -5261,6 +5428,15 @@
       },
       "optional": [
         "error"
+      ]
+    },
+    "memory.changed": {
+      "object": {
+        "name": "string",
+        "state": "string"
+      },
+      "optional": [
+        "state"
       ]
     },
     "message.delta": {

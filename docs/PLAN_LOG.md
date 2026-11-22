@@ -2341,3 +2341,12 @@ place and starts eika again; a trap restarts eika and removes the partial on any
 failure. Checked by hand against a throwaway compose project (not the smoke or a
 real stack): success, perms, checksums, restart, refusal on missing key and
 missing memory volume. Not run on `make smoke`.
+
+## P5-12 — Inbox API and events (2026-11-22)
+
+Pending list/count and accept/reject routes (accept takes optional edits),
+`Writer.Accept`/`Reject`/`SetOnChange`, `Store.CountMemories`, events
+`memory.changed` and `inbox.count` on topic `inbox`, wire types, events docs,
+web types/client/event types and harness routes (which also emit the events).
+Decisions in DECISIONS "Inbox API and events (P5-12)". Tested: memory writer unit
+test, docker API test (events, 400/409, credential on accept), mock test.

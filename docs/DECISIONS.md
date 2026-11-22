@@ -2733,9 +2733,30 @@ file and row in a commit and keeps history (default 5): the API docs say that
 history, old sessions and backups can still hold the text. User changes are
 audited as `setting` events of kind `memory` (no text), after the change.
 Pages are keyset on (`updated`, `name`) with an opaque cursor; search is ranked
-and bounded, with no cursor. No memory events or invalidation yet: P5-12 adds
-them with topic `inbox`. A new error status: memory routes answer 503 (code
+and bounded, with no cursor. Memory events and invalidation came with P5-12:
+see "Inbox API and events (P5-12)", topic `inbox`. A new error status: memory routes answer 503 (code
 `internal`) when memory cannot be judged now.
+
+## Inbox API and events (P5-12)
+
+`GET /api/inbox/count`, `GET /api/inbox/memories` (pending in full, keyset
+paged, limit 50) and `POST /api/inbox/memories/{name}/accept|reject`. Accept
+takes the same optional edit fields as PATCH, so edit-and-accept is one atomic
+writer step (`Writer.Accept`); `PATCH` on a pending memory still edits it
+without promoting. Reject is `Writer.Reject`, an archive that requires a
+pending memory and keeps the screen verdict. `content_sha` is required for both
+and checked in the writer's lock; a non-pending memory is `ErrNotPending`, 409,
+so repeated and cross-client answers are refused. Accept always runs
+`CheckMemory`: a credential denies (400) whatever the memory's history, a flag
+does not block (explicit promotion), and an unavailable required screen is 503,
+so a memory held pending because the guard was down waits until it is back.
+Events come from the writer, not the handlers: `Writer.SetOnChange` is called
+after each durable row write or delete (agent writes, user changes, repair), and
+the server publishes `memory.changed` then `inbox.count` on topic `inbox`
+(`Server.publishMemoryChange`). A count that cannot be read is logged and the
+count event skipped; clients refetch on connect and on `bus.dropped`, since
+events are not replayed. Topics have no per-topic authorization: every
+authenticated connection is the one user. Notifications and parking stay out.
 
 ## Phase 4 close (P4-27)
 

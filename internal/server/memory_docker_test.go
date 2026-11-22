@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/memory"
 )
 
@@ -115,5 +116,82 @@ func TestUserMemoryAPI(t *testing.T) {
 	}
 	if rec := request(t, a.Server, "GET", "/api/memories/units", nil); rec.Code != 404 {
 		t.Fatalf("read after purge = %d", rec.Code)
+	}
+}
+
+func TestInboxAPI(t *testing.T) {
+	a := newAPI(t)
+	a.host.egressControl = true
+	if err := a.RecoverMemory(t.Context()); err != nil {
+		t.Fatalf("RecoverMemory: %v", err)
+	}
+	sub := a.deps.Bus.Subscribe(event.TopicInbox)
+	defer sub.Close()
+	for _, name := range []string{"one", "two", "three"} {
+		if _, err := a.MemoryWriter().Write(t.Context(), memory.Request{Name: name, Type: "fact", Body: "body " + name,
+			Description: "Use when the user asks about measurements.", Source: "session s1", State: "pending",
+			Screen: &memory.ScreenResult{MaxScore: 0.9}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var last event.InboxCount
+	for range 3 {
+		for e := range sub.Events() {
+			if e.Type == event.TypeInboxCount {
+				if err := e.DecodePayload(&last); err != nil {
+					t.Fatal(err)
+				}
+				break
+			}
+		}
+	}
+	if last.Pending != 3 {
+		t.Fatalf("last inbox.count = %d, want 3", last.Pending)
+	}
+	type inbox struct {
+		Pending    int          `json:"pending"`
+		Memories   []memoryWire `json:"memories"`
+		NextCursor string       `json:"next_cursor"`
+	}
+	page := decodeBody[inbox](t, request(t, a.Server, "GET", "/api/inbox/memories?limit=2", nil), 200)
+	if page.Pending != 3 || len(page.Memories) != 2 || page.NextCursor == "" {
+		t.Fatalf("page = %+v", page)
+	}
+	if c := decodeBody[struct {
+		Pending int `json:"pending"`
+	}](t, request(t, a.Server, "GET", "/api/inbox/count", nil), 200); c.Pending != 3 {
+		t.Fatalf("count = %d", c.Pending)
+	}
+	one := decodeBody[memoryWire](t, request(t, a.Server, "GET", "/api/memories/one", nil), 200)
+	// A credential is refused on accept, flagged or not.
+	rec := request(t, a.Server, "POST", "/api/inbox/memories/one/accept", map[string]any{"content_sha": one.ContentSHA, "body": "key AKIAABCDEFGHIJKLMNOP"})
+	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "credential") {
+		t.Fatalf("credential accept = %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := request(t, a.Server, "POST", "/api/inbox/memories/one/accept", map[string]any{"body": "x"}); rec.Code != 400 {
+		t.Fatalf("accept without content_sha = %d", rec.Code)
+	}
+	if rec := request(t, a.Server, "POST", "/api/inbox/memories/one/accept", map[string]any{"content_sha": "stale"}); rec.Code != 409 {
+		t.Fatalf("stale accept = %d", rec.Code)
+	}
+	got := decodeBody[memoryWire](t, request(t, a.Server, "POST", "/api/inbox/memories/one/accept", map[string]any{"content_sha": one.ContentSHA, "body": "edited"}), 200)
+	if got.State != "active" || got.Body != "edited" {
+		t.Fatalf("accept = %+v", got)
+	}
+	if rec := request(t, a.Server, "POST", "/api/inbox/memories/one/accept", map[string]any{"content_sha": got.ContentSHA}); rec.Code != 409 {
+		t.Fatalf("repeat accept = %d", rec.Code)
+	}
+	two := decodeBody[memoryWire](t, request(t, a.Server, "GET", "/api/memories/two", nil), 200)
+	rej := decodeBody[memoryWire](t, request(t, a.Server, "POST", "/api/inbox/memories/two/reject", map[string]any{"content_sha": two.ContentSHA}), 200)
+	if rej.State != "archived" || rej.Reason == "" {
+		t.Fatalf("reject = %+v", rej)
+	}
+	if rec := request(t, a.Server, "POST", "/api/inbox/memories/two/reject", map[string]any{"content_sha": rej.ContentSHA}); rec.Code != 409 {
+		t.Fatalf("repeat reject = %d", rec.Code)
+	}
+	if c := decodeBody[struct {
+		Pending int `json:"pending"`
+	}](t, request(t, a.Server, "GET", "/api/inbox/count", nil), 200); c.Pending != 1 {
+		t.Fatalf("count after answers = %d, want 1", c.Pending)
 	}
 }

@@ -66,14 +66,15 @@ it needs with `session.replay`.
 | Field | Type | Meaning |
 |---|---|---|
 | `type` | string | Event type name, for example `tool.call`. |
-| `topic` | string | `global`, `computer:<id>`, or `session:<id>`. |
+| `topic` | string | `global`, `inbox`, `computer:<id>`, or `session:<id>`. |
 | `time` | RFC 3339 timestamp, UTC | When the event was created. |
 | `payload` | object, optional | Type-specific body. |
 
-There are three kinds of topic: `global`, `computer:<id>`, and
-`session:<id>`. Agent run events, question and elicitation events, and replay
+There are four kinds of topic: `global`, `computer:<id>`, `session:<id>`, and
+`inbox`. Agent run events, question and elicitation events, and replay
 events are published on `session:<id>`; computer lifecycle events on
-`computer:<id>`; MCP server state and session titles and edits on `global`. A
+`computer:<id>`; MCP server state and session titles and edits on `global`;
+memory and Inbox changes on `inbox`. A
 `bus.dropped` event reaches one connection only and carries the topic
 `global`, whatever that connection subscribed to.
 
@@ -366,6 +367,33 @@ changes. A client shows its banner from it and reads `GET /api/halt` on connect.
 | `halted` | boolean | The state now. |
 | `at` | string, optional | When it was halted, RFC 3339. Only while halted. |
 | `reason` | string, optional | The note given with the halt. Only while halted. |
+
+## Memory events
+
+Published on topic `inbox`, after the change is durable, whoever made it (the
+agent's memory tools, the user's routes, or startup repair). Any authenticated
+client may subscribe; there is one user. They carry no memory text: the client
+refetches. Events are not replayed, so a client refetches `GET /api/inbox/count`
+and whatever list it shows when it connects, reconnects or sees `bus.dropped`.
+No push is sent and no run waits on them.
+
+### `memory.changed`
+
+A memory was written, changed or removed.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | The memory's name. |
+| `state` | string, optional | `active`, `pending` or `archived` now. Absent when it was purged. |
+
+### `inbox.count`
+
+Follows every `memory.changed`, with the number of pending memories now. A
+client may show it as the badge without another request.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `pending` | integer | Memories in state `pending`. |
 
 ## MCP events
 

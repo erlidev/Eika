@@ -65,6 +65,10 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /api/memories/{name}/unpin", s.handlePinMemory(false))
 	api.HandleFunc("POST /api/memories/{name}/archive", s.handleArchiveMemory)
 	api.HandleFunc("DELETE /api/memories/{name}", s.handlePurgeMemory)
+	api.HandleFunc("GET /api/inbox/count", s.handleInboxCount)
+	api.HandleFunc("GET /api/inbox/memories", s.handleInboxMemories)
+	api.HandleFunc("POST /api/inbox/memories/{name}/accept", s.handleAcceptMemory)
+	api.HandleFunc("POST /api/inbox/memories/{name}/reject", s.handleRejectMemory)
 
 	api.HandleFunc("GET /api/home", s.handleHomeSession)
 	api.HandleFunc("GET /api/sessions", s.handleListSessions)
