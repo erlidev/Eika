@@ -2418,3 +2418,31 @@ text. The shot driver opens More before clicking Settings on a phone. `inbox.spe
 covers answers, failures, two pages of one context with a dropped stream, and the
 phone bar. Baselines: every desktop and phone shell shot changed (Inbox in the rail,
 More in the bar).
+
+store upgrade and fresh-id case; `TestMemoryComputerIsPrivate` uses the id.
+
+## P5-17: Restore (2026-11-22)
+
+`make restore BACKUP=<set>` (`deploy/restore.sh`) restores a P5-16 set into a
+stopped, empty stack. It validates the whole set first (all four files, every
+manifest size and checksum, `pg_restore -l`, the archive's `.git/HEAD`, the key
+format, migration not newer than the newest in `internal/store/migrations`),
+reads the memory computer id out of the dump (`core.memory_computer`) without
+restoring it, then checks the target (Eika stopped, no tables, no key, empty
+`eika-cx-<id>`) and refuses with nothing written unless `FORCE=1`, which drops
+the database and overwrites the key and volume. The key is written 0600, owned
+by the harness image's `eika` user, and its checksum checked; the memory tar is
+extracted as root with owners kept. Then `up -d --wait` starts Core and its
+startup reconcile (P5-04) verifies the index. `make restore-test`
+(`deploy/restore-test.sh`, `deploy/restore-test.compose.yaml`) is the end-to-end
+test on unique compose projects, with no guard (user edits of memories therefore
+land pending). Limits: a restore needs the source's memory volume gone on that
+Docker host (the volume name is global); a failed restore is not rolled back.
+
+Follow-up (Exit D): the restore also works beside a running source on the same
+Docker host. If `eika-cx-<id>` from the set exists and is not empty (and is not
+the id the target's own database records), it is never written; the repository
+goes to `eika-cx-<fresh id>` (the target's own recorded id when it has one, as
+for `FORCE=1`) and `core.memory_computer` is updated in the restored database
+before Core starts. `make restore-test` now keeps the source running, restores
+beside it, and checks its memories, git history and key are unchanged.
