@@ -407,7 +407,7 @@ screen hit is pending. No approval or push occurs.
       then recent updates with name as the tie-breaker; render by type then name.
       Do not cut a body or line. Resolve count failure and excess pins (question 4).
       Use the existing model counter, not a new tokenizer.
-- [ ] **P5-09**: Include P5-08 in `server.buildPreamble` for home only. Read one
+- [x] **P5-09**: Include P5-08 in `server.buildPreamble` for home only. Read one
       consistent memory revision, store it with the preamble, and refresh through
       `refreshSnapshot` in the existing compaction transaction. Extend the
       prefix-stability/restart check; pending and expired memories never auto-load.
@@ -834,7 +834,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
 - [ ] Preamble: pinned bodies plus the index within an exact budget, in
       deterministic order, with a visible overflow count.
       - [x] **P5-08**: Exact budget and stable selection.
-      - [ ] **P5-09**: Stored snapshot and compaction integration.
+      - [x] **P5-09**: Stored snapshot and compaction integration.
 - [ ] Notices at the tail for memory changes since the preamble.
       - [ ] **P5-10**: Durable changes in the next message context.
 - [ ] Write policy in the `eika` prompt, including saving a memory at once

@@ -69,6 +69,8 @@ type Session struct {
 	ComputerID string
 	// Preamble is the text of the session's stored snapshot.
 	Preamble string
+	// Memory is the memory section the preamble ends with, if it has one.
+	Memory MemorySnapshot
 	// Prompt and Tools are the base prompt and the tool names the snapshot
 	// holds beside its preamble: the agent definition as it was when the
 	// snapshot was taken, which the server builds each run from. Prompt is

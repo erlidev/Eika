@@ -74,6 +74,7 @@ func (s *Store) Load(ctx context.Context, sessionID string) (*agent.Session, err
 	return &agent.Session{
 		ID:           sess.ID,
 		Preamble:     snap.Text,
+		Memory:       snap.Memory,
 		Prompt:       snap.Prompt,
 		Tools:        snap.Tools,
 		ComputerID:   sess.ComputerID,

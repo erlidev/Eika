@@ -340,7 +340,7 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	if err != nil {
 		return store.Run{}, nil, err
 	}
-	if err := s.ensurePreamble(ctx, sess, loaded, cfg); err != nil {
+	if err := s.ensurePreamble(ctx, sess, loaded, cfg, counted); err != nil {
 		return store.Run{}, nil, err
 	}
 	// An agent session runs on its snapshot's prompt and tools, which only a

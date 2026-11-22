@@ -38,6 +38,9 @@ const (
 	SectionInstructions SectionKind = "instructions"
 	// SectionPreamble is the session snapshot.
 	SectionPreamble SectionKind = "preamble"
+	// SectionMemory is the memory section that ends the snapshot. Its text
+	// is part of the stored preamble; it is listed apart for inspection.
+	SectionMemory SectionKind = "memory"
 )
 
 // Section is one named part of the system prompt. A system prompt is its
@@ -189,10 +192,25 @@ func (a *Agent) assemble(s *Session, prompt []Section) Context {
 
 func (a *Agent) sessionBase(s *Session, prompt []Section) Context {
 	c := a.base(prompt)
-	if s.Preamble != "" {
-		c.Sections = append(c.Sections, newSection(SectionPreamble, s.Preamble))
-	}
+	c.Sections = append(c.Sections, preambleSections(s.Preamble, s.Memory)...)
 	return c
+}
+
+// preambleSections lists a stored preamble as sections: its text, and apart
+// the memory section it ends with. Their texts joined by a blank line are the
+// stored text, so the system prompt is the same bytes either way.
+func preambleSections(preamble string, mem MemorySnapshot) []Section {
+	if preamble == "" {
+		return nil
+	}
+	if mem.Text == "" || !strings.HasSuffix(preamble, mem.Text) {
+		return []Section{newSection(SectionPreamble, preamble)}
+	}
+	rest := strings.TrimSuffix(strings.TrimSuffix(preamble, mem.Text), "\n\n")
+	if rest == "" {
+		return []Section{newSection(SectionMemory, mem.Text)}
+	}
+	return []Section{newSection(SectionPreamble, rest), newSection(SectionMemory, mem.Text)}
 }
 
 // base returns the request the run's model calls share, with no messages:
@@ -214,9 +232,7 @@ func (a *Agent) snapshotBase(snap Snapshot) Context {
 		tools = a.registry()
 	}
 	c := a.baseWith(prompt, tools)
-	if snap.Preamble != "" {
-		c.Sections = append(c.Sections, newSection(SectionPreamble, snap.Preamble))
-	}
+	c.Sections = append(c.Sections, preambleSections(snap.Preamble, snap.Memory)...)
 	return c
 }
 

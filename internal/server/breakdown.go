@@ -97,7 +97,9 @@ func (s *Server) previewNext(ctx context.Context, sess store.Session, cfg runCon
 		return agent.Context{}, nil, nil, err
 	}
 	if sess.Agent != "" && loaded.Preamble == "" {
-		loaded.Preamble, err = s.buildPreamble(ctx, sess)
+		// A preview of a snapshot not stored yet leaves the memory section
+		// out: it cannot be counted exactly before the counter exists.
+		loaded.Preamble, _, err = s.buildPreamble(ctx, sess, nil)
 		if err != nil {
 			return agent.Context{}, nil, nil, err
 		}

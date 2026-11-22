@@ -12,6 +12,8 @@ import (
 
 	"github.com/erlidev/eika/internal/agent"
 	"github.com/erlidev/eika/internal/agentdef"
+	"github.com/erlidev/eika/internal/memory"
+	"github.com/erlidev/eika/internal/provider/counter"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -23,6 +25,7 @@ type preambleData struct {
 	project             *store.Project
 	brief               string
 	home                bool
+	memory              string // the memory section, home only; already labelled
 	zone, locale        string
 }
 
@@ -59,28 +62,75 @@ func renderPreamble(d preambleData) string {
 	add("Brief", d.brief)
 	add("Time zone", d.zone)
 	add("Locale", d.locale)
+	if d.memory != "" {
+		parts = append(parts, d.memory)
+	}
 	return strings.Join(parts, "\n\n")
 }
 
-func (s *Server) buildPreamble(ctx context.Context, sess store.Session) (string, error) {
+// textCounter adapts the model's token counter to memory.CountFunc. The count
+// is the endpoint's own or it is not exact; nothing here estimates.
+func textCounter(c *counter.Counter) memory.CountFunc {
+	return func(ctx context.Context, text string) (int, bool, error) {
+		n, exact := c.CountText(ctx, text)
+		return n, exact, nil
+	}
+}
+
+// buildMemory reads one revision of the active memories and builds the home
+// session's memory section from it. Pending, archived and expired memories
+// never load. With no eligible memory there is no section.
+func (s *Server) buildMemory(ctx context.Context, count memory.CountFunc) (agent.MemorySnapshot, error) {
+	memories, err := s.deps.Store.ActiveMemories(ctx)
+	if err != nil {
+		return agent.MemorySnapshot{}, err
+	}
+	now := time.Now()
+	rev := memory.Revision(memories, now)
+	if rev == "" {
+		return agent.MemorySnapshot{}, nil
+	}
+	sec, err := memory.BuildSection(ctx, count, memories, now)
+	if err != nil {
+		return agent.MemorySnapshot{}, err
+	}
+	return agent.MemorySnapshot{Revision: rev, Text: sec.Text}, nil
+}
+
+// memorySource supplies the memory section of a preamble. It is called for
+// the home session only; nil means no section.
+type memorySource func(ctx context.Context) (agent.MemorySnapshot, error)
+
+// buildPreamble builds the snapshot text of sess, and the memory section it
+// ends with. Only the home session carries one (subagent prefixes have none).
+func (s *Server) buildPreamble(ctx context.Context, sess store.Session, mem memorySource) (string, agent.MemorySnapshot, error) {
 	d := preambleData{brief: sess.Brief, home: sess.Kind == store.SessionHome, zone: "UTC", locale: "unspecified"}
-	var err error
+	var (
+		err  error
+		snap agent.MemorySnapshot
+	)
 	if d.global, err = s.deps.Store.Instructions(ctx); err != nil {
-		return "", err
+		return "", agent.MemorySnapshot{}, err
 	}
 	if d.home {
 		if d.projects, err = s.deps.Store.Projects(ctx); err != nil {
-			return "", err
+			return "", agent.MemorySnapshot{}, err
+		}
+		if mem != nil {
+			if snap, err = mem(ctx); err != nil {
+				return "", agent.MemorySnapshot{}, err
+			}
+			d.memory = snap.Text
 		}
 	}
 	if sess.ProjectID != "" {
 		p, err := s.deps.Store.Project(ctx, sess.ProjectID)
 		if err != nil {
-			return "", err
+			return "", agent.MemorySnapshot{}, err
 		}
 		d.project = &p
 		if d.projectInstructions, err = s.deps.Store.ProjectInstructions(ctx, sess.ProjectID); err != nil {
-			return "", err
+			return "", agent.MemorySnapshot{}, err
 		}
 	}
 	for _, item := range []struct {
@@ -92,7 +142,7 @@ func (s *Server) buildPreamble(ctx context.Context, sess store.Session) (string,
 			continue
 		}
 		if err != nil {
-			return "", err
+			return "", agent.MemorySnapshot{}, err
 		}
 		var value string
 		if json.Unmarshal(setting.Value, &value) == nil && value != "" {
@@ -102,7 +152,7 @@ func (s *Server) buildPreamble(ctx context.Context, sess store.Session) (string,
 	if _, err := time.LoadLocation(d.zone); err != nil {
 		d.zone = "UTC"
 	}
-	return renderPreamble(d), nil
+	return renderPreamble(d), snap, nil
 }
 
 // pinned is the part of the agent definition c resolved that a snapshot
@@ -140,17 +190,34 @@ func (s *Server) refreshSnapshot(ctx context.Context, id string, record func(age
 	if err != nil {
 		return agent.Snapshot{}, err
 	}
-	text, err := s.buildPreamble(ctx, sess)
-	if err != nil {
-		return agent.Snapshot{}, err
-	}
 	cfg, err := s.configure(ctx, sess, "")
 	if err != nil {
 		return agent.Snapshot{}, err
 	}
+	// The memory section is counted with the model's own counter. When it
+	// cannot be counted exactly the previous snapshot's section stays, and so
+	// does its revision, so the next notice still compares against what the
+	// prefix holds.
+	ctr, release := s.counterFor(ctx, sess.ID, cfg.model, cfg.modelOK)
+	defer release()
+	previous, err := session.NewStore(s.tree).Load(ctx, sess.ID)
+	if err != nil {
+		return agent.Snapshot{}, err
+	}
+	text, mem, err := s.buildPreamble(ctx, sess, func(ctx context.Context) (agent.MemorySnapshot, error) {
+		m, err := s.buildMemory(ctx, textCounter(ctr))
+		if err != nil {
+			s.log.Warn("keep the previous memory section: count failed", "session_id", sess.ID, "error", err)
+			return previous.Memory, nil
+		}
+		return m, nil
+	})
+	if err != nil {
+		return agent.Snapshot{}, err
+	}
 	prompt, tools := cfg.pinned()
-	snap := agent.Snapshot{Preamble: text, Prompt: &prompt, Tools: s.runTools(sess, tools, nil)}
-	entries, err := preambleCompactionEntries(text, prompt, tools, record(snap))
+	snap := agent.Snapshot{Preamble: text, Memory: mem, Prompt: &prompt, Tools: s.runTools(sess, tools, nil)}
+	entries, err := preambleCompactionEntries(text, mem, prompt, tools, record(snap))
 	if err != nil {
 		return agent.Snapshot{}, err
 	}
@@ -160,8 +227,8 @@ func (s *Server) refreshSnapshot(ctx context.Context, id string, record func(age
 	return snap, nil
 }
 
-func preambleCompactionEntries(text, prompt string, tools []string, c agent.Compaction) ([]store.Entry, error) {
-	preamble, err := session.PreambleEntry(text, &prompt, tools)
+func preambleCompactionEntries(text string, mem agent.MemorySnapshot, prompt string, tools []string, c agent.Compaction) ([]store.Entry, error) {
+	preamble, err := session.PreambleEntryWithMemory(text, mem, &prompt, tools)
 	if err != nil {
 		return nil, err
 	}
@@ -176,25 +243,34 @@ func preambleCompactionEntries(text, prompt string, tools []string, c agent.Comp
 // definition cfg resolved. A snapshot stored before definitions were pinned
 // is stored again with the same text and cfg's definition, so the prefix it
 // sent is unchanged and later edits wait for a compaction.
-func (s *Server) ensurePreamble(ctx context.Context, sess store.Session, loaded *agent.Session, cfg runConfig) error {
+func (s *Server) ensurePreamble(ctx context.Context, sess store.Session, loaded *agent.Session, cfg runConfig, ctr *counter.Counter) error {
 	if sess.Agent == "" || (loaded.Preamble != "" && loaded.Prompt != nil) {
 		return nil
 	}
-	text := loaded.Preamble
+	text, mem := loaded.Preamble, loaded.Memory
 	if text == "" {
 		var err error
-		if text, err = s.buildPreamble(ctx, sess); err != nil {
+		// A first snapshot that cannot count its memory exactly has no
+		// memory section; the first compaction adds one.
+		if text, mem, err = s.buildPreamble(ctx, sess, func(ctx context.Context) (agent.MemorySnapshot, error) {
+			m, err := s.buildMemory(ctx, textCounter(ctr))
+			if err != nil {
+				s.log.Warn("first snapshot has no memory section: count failed", "session_id", sess.ID, "error", err)
+				return agent.MemorySnapshot{}, nil
+			}
+			return m, nil
+		}); err != nil {
 			return err
 		}
 	}
 	prompt, tools := cfg.pinned()
-	e, err := session.PreambleEntry(text, &prompt, tools)
+	e, err := session.PreambleEntryWithMemory(text, mem, &prompt, tools)
 	if err != nil {
 		return err
 	}
 	if _, err := s.tree.Append(ctx, sess.ID, e); err != nil {
 		return err
 	}
-	loaded.Preamble, loaded.Prompt, loaded.Tools = text, &prompt, tools
+	loaded.Preamble, loaded.Memory, loaded.Prompt, loaded.Tools = text, mem, &prompt, tools
 	return nil
 }

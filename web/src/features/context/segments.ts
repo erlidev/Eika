@@ -31,6 +31,7 @@ export const segmentLabels: Record<SegmentKind, string> = {
   base: "Base prompt",
   instructions: "Instructions",
   preamble: "Preamble",
+  memory: "Memory",
   builtin_tools: "Built-in tools",
   mcp_tools: "MCP tools",
   messages: "Messages",
@@ -43,6 +44,7 @@ const segmentOrder: readonly SegmentKind[] = [
   "base",
   "instructions",
   "preamble",
+  "memory",
   "builtin_tools",
   "mcp_tools",
   "messages",
@@ -63,6 +65,7 @@ export function segments(c: ModelContext): Segment[] {
     base: 0,
     instructions: 0,
     preamble: 0,
+    memory: 0,
     builtin_tools: 0,
     mcp_tools: 0,
     messages: 0,
@@ -73,6 +76,7 @@ export function segments(c: ModelContext): Segment[] {
     base: false,
     instructions: false,
     preamble: false,
+    memory: false,
     builtin_tools: false,
     mcp_tools: false,
     messages: false,
@@ -390,6 +394,7 @@ export const segmentColors: Record<SegmentKind, string> = {
   base: "bg-chart-1",
   instructions: "bg-chart-3",
   preamble: "bg-chart-3",
+  memory: "bg-chart-2",
   builtin_tools: "bg-chart-5",
   mcp_tools: "bg-chart-4",
   messages: "bg-primary/40",
@@ -412,7 +417,7 @@ export function percent(part: number, whole: number): string {
  */
 export type View =
   | "system"
-  | `section:${"base" | "instructions" | "preamble"}`
+  | `section:${"base" | "instructions" | "preamble" | "memory"}`
   | "tools"
   | `group:${string}`
   | "messages"

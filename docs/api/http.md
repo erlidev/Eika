@@ -321,7 +321,7 @@ ModelContext that has `call`; `404` for a record of another session.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base`, `instructions` or `preamble`. The system prompt is the sections' texts joined by a blank line. |
+| `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base`, `instructions`, `preamble` or `memory`; `memory` is the home session's memory section, which ends the stored preamble and is listed apart (the texts still join to the same bytes). The system prompt is the sections' texts joined by a blank line. |
 | `tools` | array | The tool schemas sent: `{name, description, schema, source, tokens}`, where `source` is `builtin` or `mcp`. |
 | `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` and `reasoning_items` only when the model preserves thinking. |
 | `message_tokens` | number | The estimated size of the messages. |
@@ -557,7 +557,9 @@ the rest is replaced by a summary (the `compaction` setting). The home session
 keeps whole turns from a user message on, up to 15% of its model's window and
 at least the newest turn, and splits a newest turn larger than that. An agent
 session's compaction also rebuilds its snapshot: the preamble, and the base
-prompt and tools of its definition as they are now. It is a run of
+prompt and tools of its definition as they are now, and for the home session
+the memory section read at that moment (kept from the previous snapshot when the
+model's counter cannot count it exactly). It is a run of
 its own, which the event stream reports with `compaction.start` and
 `compaction.end` and no turn events; queued messages wait for the next run.
 

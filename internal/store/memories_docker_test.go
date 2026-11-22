@@ -130,3 +130,29 @@ func TestMemoryShasAndDelete(t *testing.T) {
 		t.Fatalf("rows after delete: %v", got)
 	}
 }
+
+func TestActiveMemoriesReadsOnlyActiveRows(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, storetest.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	live := memoryRecord("live", "Use when live.", "live body", "active")
+	live.Pinned, live.Expires = true, "2099-01-02"
+	for _, r := range []memory.Record{live,
+		memoryRecord("waiting", "Use when pending.", "pending body", "pending"),
+		memoryRecord("gone", "Use when archived.", "old body", "archived")} {
+		if err := st.UpsertMemory(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := st.ActiveMemories(ctx)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("active = %+v, %v; want only the active row", got, err)
+	}
+	if f := got[0]; f.Name != "live" || !f.Pinned || f.Expires != "2099-01-02" || f.Body != "live body" ||
+		f.Updated != "2026-11-01T10:00:00Z" || f.State != "active" {
+		t.Fatalf("row = %+v", f)
+	}
+}

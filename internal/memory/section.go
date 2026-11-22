@@ -2,6 +2,8 @@ package memory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -208,4 +210,28 @@ func CheckPinBudget(ctx context.Context, c CountFunc, active []File, next File, 
 		return fmt.Errorf("%w: %d of %d tokens", ErrPinsOverBudget, n, SectionBudgetTokens)
 	}
 	return nil
+}
+
+// Revision identifies the set of memories that can auto-load at now: a digest
+// of each eligible memory's rendered content. Pending, archived and expired
+// memories do not move it. Empty when none is eligible.
+func Revision(memories []File, now time.Time) string {
+	var rows []string
+	for _, f := range memories {
+		if !eligible(f, now) {
+			continue
+		}
+		data, err := f.Render(f.Name + ".md")
+		if err != nil {
+			data = []byte(f.Description + "\x00" + f.Body)
+		}
+		sum := sha256.Sum256(data)
+		rows = append(rows, f.Name+"\x00"+hex.EncodeToString(sum[:]))
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	sort.Strings(rows)
+	sum := sha256.Sum256([]byte(strings.Join(rows, "\n")))
+	return hex.EncodeToString(sum[:])
 }

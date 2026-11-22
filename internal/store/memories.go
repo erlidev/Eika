@@ -110,3 +110,31 @@ func (s *Store) DeleteMemory(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+// ActiveMemories returns every active memory in one statement, so a caller
+// building a snapshot reads one consistent revision of the index. Pending and
+// archived rows are never returned; expiry is decided by the caller, which
+// holds the clock.
+func (s *Store) ActiveMemories(ctx context.Context) ([]memory.File, error) {
+	rows, err := s.pool.Query(ctx, `SELECT name, description, type, source, created_at, updated_at,
+            COALESCE(to_char(expires, 'YYYY-MM-DD'), ''), pinned, state, body
+        FROM memories WHERE state = 'active' ORDER BY name`)
+	if err != nil {
+		return nil, wrap("read active memories", err)
+	}
+	defer rows.Close()
+	var out []memory.File
+	for rows.Next() {
+		var f memory.File
+		var created, updated time.Time
+		if err := rows.Scan(&f.Name, &f.Description, &f.Type, &f.Source, &created, &updated, &f.Expires, &f.Pinned, &f.State, &f.Body); err != nil {
+			return nil, wrap("read active memories", err)
+		}
+		f.Created, f.Updated = created.UTC().Format(time.RFC3339), updated.UTC().Format(time.RFC3339)
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrap("read active memories", err)
+	}
+	return out, nil
+}
