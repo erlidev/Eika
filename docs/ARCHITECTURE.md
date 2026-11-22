@@ -400,7 +400,13 @@ entry's time), each with agent, project, state, last activity, waiting reason an
 the first line of its last report; one line counts the rest. `[Conversation]`
 is the model's: Eika's summary prompt writes it, and each later compaction asks
 Eika's update prompt to fold the new messages into it, with the previous
-summary in the cached prefix. A board that cannot be read fails the compaction
+summary in the cached prefix. The prompt asks for six headings: Commitments and
+open loops, People and context, Preferences and corrections, Decisions, Recent
+topics, and Next. It asks for absolute dates; exact names, numbers, amounts,
+IDs and paths; and subagents and projects by name. It keeps sections concise
+and does not repeat the board. The update prompt keeps facts that are still
+true or open, adds new commitments and context, removes resolved or irrelevant
+items, and updates Next. A board that cannot be read fails the compaction
 as a failed summary does, leaving the session as it was. Subagent and routine
 sessions keep Pi's summary with their definition's prompts. Home wraps its
 summary in a tag with `as_of`, the compacted entry sequence span and the
@@ -408,6 +414,13 @@ compaction count. A footer points to `history_search` and `history_read`.
 `store.HistoryState` folds the stored path to find the span and retained
 messages; `CompactionSettings.SummarySpan` reads it for home before the
 compaction is stored.
+
+The server checks for idle home compaction once a minute. It starts at
+`maintenance` priority when no run is active, important work has been idle for
+`compact_idle_minutes` (default 30), and the home context exceeds
+`compact_idle_fill` (default 60%). Important work can cancel the idle
+compaction; a failed or cancelled compaction leaves the stored context intact.
+Threshold and overflow compaction remain in place.
 
 ### History recall
 
@@ -446,8 +459,8 @@ field if any call did not report that field.
 
 The meter's last-call fill is `prompt_tokens + completion_tokens`, against the
 effective window. Before a measurement, fill and cache read `n/a`. The predicted
-next request shows its method, with a tilde for `estimated`. The UI has no
-view of the parts or the drift until Settings, Developer (P3-11).
+next request shows its method, with a tilde for `estimated`. Settings,
+Developer shows request parts and drift.
 
 Usage parsing has the following verification status. The live recordings and
 unverified fixture sources are in
@@ -860,12 +873,19 @@ enables JSON results.
 
 ## Frontend
 
+The frontend uses React, Vite, TypeScript, Tailwind, shadcn with Radix,
+TanStack Query, Zustand and React Router. UI pages are registered in
+`app/pages.ts` and routed in `app/App.tsx`: Chat at `/`, Activity at
+`/activity/:sessionId?`, and Projects at `/projects/:slug?`. The MCP OAuth
+callback has its own route. `docs/EXTENDING.md` describes adding a page.
+
 The production build includes a web manifest and service worker. The worker
 precaches only the build's shell files. Navigation uses the network first and
 falls back to the cached index when offline. API and event requests bypass the
 worker. Each build has its own cache; activation removes older shell caches.
 The worker is registered in production, except in the mock test build. The
 server requires revalidation of frontend files, including the manifest and worker.
+Reports and background replies sent through ntfy link to Chat.
 
 The shell shows one live toast at a time for completed subagent reports and
 background home replies. Report updates carry the report id; home turn events
@@ -879,6 +899,11 @@ model. The notice entry also stores a structured `question` (asker, question,
 options, question id; `session.QuestionNotice`), which the entry wire type and
 the replayed `session.message` payload carry. The transcript shows those fields
 and never the model-facing text; the model still receives the text unchanged.
+
+A signed-out browser that cannot reach Eika to ask whether it is set up sees the
+offline screen (`features/connect/OfflineScreen`), with Retry and a way to the
+sign-in screen's address field, not a password form. Links that must be
+touch-sized carry the `touch-link` class.
 
 
 ```
@@ -908,7 +933,9 @@ web/src/
 - **Shell** (`app/Shell.tsx`): the frame of every page. A rail down the left
   from 640px (`app/Navigation.tsx`) and a bottom bar under it list the pages
   of `app/pages.ts`, then Settings, which opens the existing dialog; the
-  header carries the page's title and the theme toggle. The shell is `100dvh`,
+  header carries the page's title and the theme toggle. Both navigation
+  layouts use a `nav` landmark labelled Pages. Controls use labelled
+  inputs or buttons, keyboard navigation and dialog focus handling. The shell is `100dvh`,
   pads the device's safe areas (`pt-safe`, `px-safe`, `pb-safe` in `index.css`)
   and sits on `--keyboard-inset`, which `lib/useViewportAnchor` writes from
   `window.visualViewport` where the browser does not resize the page itself
@@ -922,7 +949,9 @@ web/src/
   the send button sends. On a fine pointer it keeps the keyboard modes and
   marked-up source field. Appearance can override the pointer choice. The
   touch composer limits its height to the visible viewport and scrolls its
-  editor and preview. There is no list of chats and no way to
+  editor and preview. Escape aborts an active run from the session view, except
+  when the key belongs to a dialog or text field. While a run is active, the
+  composer can steer it or queue a follow-up and shows the queues. There is no list of chats and no way to
   start one. The status bar's meter shows the last call's fill against the
   effective window, its cached tokens, and the predicted next request with its
   method. The UI has no panel for a computer's files, no terminal, and no
@@ -938,6 +967,15 @@ web/src/
   request in it takes no answer. Cancel is
   `POST /api/sessions/{id}/cancel` (the lifecycle service's cancel); steering goes through
   Eika in Chat.
+- **Projects** (`features/projects`): the list and project detail show metadata
+  and the project's subagents. Detail tabs are Overview, Instructions and
+  Subagents; the instruction editor saves user text, and subagents link to
+  read-only Activity views.
+- **Touch density** follows the primary pointer: type tokens increase one step
+  and controls have 44 px minimum targets. The transcript loads older entries
+  on demand without a virtualiser: on mobile emulation at 5,000 entries a scroll
+  held its frame rate and a page render took about 30 ms (`DECISIONS.md`,
+  "Frontend"). It was not measured on a physical phone.
 - **Server state** is TanStack Query over `api/routes.ts`, invalidated by
   events (`useSessionStream`, `useMCPEvents`,
   `useSessionUpdates`).
@@ -946,7 +984,11 @@ web/src/
   (`entry_id`). The newest page loads after the stream opens; catch-up reads
   back to a known entry after turns and reconnects. The session outline selects
   the current branch from those pages. Older pages load on demand, and the
-  visible row keeps its position. It also tracks pending questions and
+  visible row keeps its position. The transcript follows the stream while the
+  user is at the bottom; scrolling up stops following and offers Jump to latest.
+  A polite live region announces the start of a reply and the finished reply,
+  not every token. Chat and Activity share the session transcript. It also
+  tracks pending questions and
   elicitations and the status bar's meter (usage, window, timings).
   Display preferences are in `features/session/preferences.ts`
   (localStorage).
@@ -1038,6 +1080,9 @@ For the queue check, two temporary routine sessions and home use one pool slot.
 A proxy holds real model responses while the test observes the queue. Controls
 compiled only with `live`, and enabled only by the live fixture, start background
 runs and expose their lease times through authenticated test routes.
+The harness retries `compact` while a subagent's report keeps home busy (409).
+Its model offers the effort `none`, so a summary that a thinking model cut off at
+its output limit is asked again with thinking off.
 
 ## Agent definitions
 
@@ -1047,6 +1092,9 @@ subagents' compaction prompts are the loop's built-in ones with one closing
 line each naming what to preserve. Definitions set the class,
 fixed sorted tools and model-call limit (40 for Eika, 200 for subagents).
 Lists contain only tools that exist. Later packages add their own tools.
+Eika's prompt directs it to make and state reasonable assumptions for small
+missing details, ask when unclear intent changes the result, and take a safer
+route or clarify intent for irreversible actions. This is model guidance.
 
 Migration 0011 adds `core.agents` with a built-in name and nullable class and
 prompt overrides. Missing values use built-in defaults; an empty prompt is an
@@ -1096,8 +1144,8 @@ no text is set. Each field accepts up to 64 KiB of UTF-8 text without NUL.
 
 Authenticated GET, PUT and DELETE routes read, replace and clear instructions.
 Project instruction writes use separate store methods and routes from project
-metadata. Agent tools have no instruction write path. The editors are P3-07
-(global) and P3-10 (project). P2-07 adds preamble snapshots.
+metadata. Agent tools have no instruction write path. Settings edits global instructions; project pages edit project instructions.
+The preamble snapshots them for each session.
 
 The server ensures the local home session at startup. `GET /api/home` returns
 its session and head. Home messages use the web channel.
@@ -1114,7 +1162,7 @@ next Message resumes it and the next Cancel records it cancelled, so a temporary
 storage failure does not strand the child. Cancel stops and joins an active
 execution. Close joins all executions before
 the store closes. Each state or reason change emits `session.updated` on `global`.
-Migration 0015 stores the waiting reason.
+Migration 0015 stores the waiting reason; 0022 lets a failed or cancelled child keep why it ended there.
 
 A subagent ends an assignment with a report. The `report` tool (`summary`,
 optional `outputs` and `follow_ups`) is in the `worker` and `researcher`

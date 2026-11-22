@@ -26,8 +26,8 @@ reads and writes it: briefs carry what a subagent needs.
 | Pinned memories (core profile) | Eika and the user; pinning is the user's | Bodies in full, in the preamble, capped | Recall |
 | Memory index | Generated from memories | One line per memory, in the preamble, capped | Recall pointer |
 | Memories | Eika and the user | On demand: `memory_read`, `memory_search` | Recall |
-| Compaction summary | Code and the main agent, at each compaction (`runtime.md` 11) | In the home session's context | Working state |
-| Episodic history | The sessions themselves | On demand: `history_search`, `history_read` (`runtime.md` 11) | Evidence |
+| Compaction summary | Code and the main agent, at each compaction ([Architecture](../ARCHITECTURE.md#history-recall)) | In the home session's context | Working state |
+| Episodic history | The sessions themselves | On demand: `history_search`, `history_read` ([Architecture](../ARCHITECTURE.md#history-recall)) | Evidence |
 
 Instructions and memory are kept apart on purpose. OpenAI advises treating
 memories as a recall layer, not as the only source for rules that must always
@@ -84,7 +84,7 @@ Exceptions: none so far.
 
 ## 3. The preamble: index and pinned bodies
 
-Eika's preamble entry (`runtime.md` 4) includes these, built once when the session
+Eika's preamble entry ([Architecture](../ARCHITECTURE.md#context-layout-and-prefix-stability)) includes these, built once when the session
 starts and rebuilt at compaction:
 
 ```
@@ -125,7 +125,7 @@ Every write goes to Sentry as a `memory_write` action first.
 | `memory_read` | `name` | Full file |
 | `memory_write` | `name`, `description`, `type`, `body`, `expires?`, `replace?` | Creates, or replaces when `replace` is true. A name collision without `replace` returns the existing memory so the agent merges instead. The write is checked by the rules of section 6 |
 | `memory_forget` | `name`, `reason` | Archives the memory (moves it to `state = archived`, file kept in history). The user's "forget X" maps here; the UI can purge |
-| `history_search`, `history_read` | See `runtime.md` 11 | Search and read every past entry, verbatim |
+| `history_search`, `history_read` | See [Architecture](../ARCHITECTURE.md#history-recall) | Search and read every past entry, verbatim |
 
 Size limits are enforced by the tool, which returns a normal error the model can
 act on ("description must say when to use this memory, 20 to 200 characters").
@@ -247,7 +247,7 @@ Guardrails:
 
 ## 8. UI
 
-The Memory page, described in `interface.md`:
+The Memory page, described in [UI](ui.md#8-projects-memory-schedules-plugins-skills):
 
 - filter by type and state
 - search

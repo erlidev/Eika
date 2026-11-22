@@ -249,7 +249,7 @@ stands in for those prompts:
 
 - the screen on what agents read (section 6)
 - capability per agent: only `eika` has memory and plugins, and `eika` has neither
-  `bash` nor `web_fetch` (`runtime.md` 6)
+  `bash` nor `web_fetch` ([Architecture](../ARCHITECTURE.md#agent-definitions))
 - the hard blocks: credentials outbound, canaries, the blocklist, netguard
 - checkpoints and the journal, which make a mistake recoverable or at least
   visible (section 7)
@@ -507,7 +507,7 @@ An approval is a durable row in `core.approvals`:
   and deny.
 - An answer is accepted only through the user's authenticated API. No agent has a
   route to it.
-- Each card sends one push (`interface.md` 4). Expiry (default 24 h) denies.
+- Each card sends one push ([Architecture](../ARCHITECTURE.md#ntfy-notifications)). Expiry (default 24 h) denies.
 - A queued call that is approved later runs then. Its result reaches the session
   as a notice, the way a subagent's report does (`runtime.md`). A restart changes
   nothing: the approval is a row, and no run is waiting on it.

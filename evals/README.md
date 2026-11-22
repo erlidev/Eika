@@ -8,7 +8,7 @@ of `make check`. The bench they run on (which models, where) is in
 evals/live/     Go package: env loading, server description (the harness's provider probe), scenarios, report
 evals/models/   how to start the bench's models (README.md, guard.py)
 evals/results/  one JSON report per run; ignored by git
-evals/forward.sh  opens the SSH forward to the chat model when it is closed
+evals/forward.sh  opens the SSH forward to `llama-qwen` when it is closed (not needed for llama-server)
 ```
 
 ## Running
@@ -17,7 +17,7 @@ Put the bench's variables in `~/.config/eika/live.env` (mode 600), or export
 them; an exported variable wins over the file.
 
 ```
-EIKA_LIVE_ENDPOINT=http://127.0.0.1:8091    # llama.cpp, without /v1
+EIKA_LIVE_ENDPOINT=https://llama.erli.xyz   # llama.cpp, without /v1
 EIKA_LIVE_KEY=...                           # its bearer key
 ```
 
@@ -149,7 +149,7 @@ Some suites need the server changed (other flags, the second backend). The
 tested on a fake host, and **has not yet run against the server**. A run:
 
 1. `Open` reads and records the running containers and the GPU's holders. It
-   refuses (`BusyError`) when anything but `llama-qwen` holds the GPU, naming
+   refuses (`BusyError`) when anything but `llama-server` holds the GPU, naming
    what it found, unless the container is in `Options.Take`; it stops nothing
    else, ever. It refuses (`LeftModifiedError`) when an earlier run left a
    journal that differs from the server, the lock `/tmp/eika-bench.lock` is
@@ -158,7 +158,7 @@ tested on a fake host, and **has not yet run against the server**. A run:
    `~/.cache/eika/bench-journal.json`) and starts the watchdog: a detached
    script on the server that restores the bench when the run's heartbeat file
    goes 3 minutes stale (killed process, lost connection).
-3. `Serve(spec)`: `Baseline()` starts `llama-qwen` as it is, `Tabby()` starts
+3. `Serve(spec)`: `Baseline()` starts `llama-server` as it is, `Tabby()` starts
    the existing `tabbyapi` container as it is, `Variant(name, edits...)` runs
    the chat container's image, mounts and network as `eika-bench-<run>` with
    its recorded flags edited (`--restart no`, label `eika.bench`, the key from

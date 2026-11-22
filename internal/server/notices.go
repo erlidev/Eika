@@ -390,3 +390,28 @@ func (s *Server) subagentReported(ctx context.Context, child store.Session) {
 	s.notifications.send("A subagent reported")
 	s.notices.postSoon(ctx, child.ParentSessionID, reportNoticeID(child), reportNotice(child), nil)
 }
+
+// endedNoticeID is the entry id of the notice a failed or cancelled
+// assignment becomes. The child's head moves on with every assignment, so the
+// id names this one ending, and recovery after a restart finds the notice a
+// live write already made.
+func endedNoticeID(child store.Session) string {
+	sum := sha256.Sum256([]byte("ended\x00" + child.ID + "\x00" + child.HeadEntryID + "\x00" + string(child.State)))
+	return "notice-" + hex.EncodeToString(sum[:12])
+}
+
+// endedNotice is the notice for a child that did not end with a report.
+func endedNotice(child store.Session) string {
+	text := fmt.Sprintf("%s (%s) %s without a report", child.Name, child.Agent, child.State)
+	if child.WaitingReason != "" {
+		text += ": " + child.WaitingReason
+	}
+	return text + ". Use subagent_message to resume it if needed."
+}
+
+// subagentEnded posts to a child's home session that its assignment failed or
+// was cancelled, with why. It is the lifecycle service's Ended option.
+func (s *Server) subagentEnded(ctx context.Context, child store.Session) {
+	s.notifications.send("A subagent " + string(child.State))
+	s.notices.postSoon(ctx, child.ParentSessionID, endedNoticeID(child), endedNotice(child), nil)
+}

@@ -169,6 +169,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		// are bounded by the server, not by a request.
 		s.subagents = subagent.New(context.Background(), deps.Store, subagent.Options{
 			Run: s.runSubagent, Final: s.finalMessage, Limit: s.subagentLimit, Reported: s.subagentReported,
+			Ended:  s.subagentEnded,
 			Events: deps.Bus, Log: log,
 		})
 	}

@@ -1,16 +1,10 @@
-# UI: the web app's design
+# UI: future design
 
-This is the design of the web app that phase 3 builds and later phases fill in:
-the stack, the look, the shell, every page and its components, and how an avatar
-and live speech fit in. `interface.md` says what the app must do and why. This
-document says what it looks like and how it is put together. Where the two
-disagree on information architecture or behaviour, `interface.md` and `PLAN.md`
-win; on look, layout and component design, this document wins.
-
-Sections 1 to 10 are phase 3's target, with the pages of later phases drawn so the
-shell does not have to change when they land. Sections 11 to 13 (presence, avatar,
-speech) are not in `PLAN.md`. Only their seams are built in phase 3
-(section 16 lists them). The rest waits in `DEFERRED.md` until moved into the plan.
+The shipped shell is described in [Architecture](../ARCHITECTURE.md#frontend)
+and [Style Guide](../STYLE_GUIDE.md#web-ui-design). The design below is a
+future target, including unbuilt pages and the deferred visual, presence, avatar
+and speech work. It does not describe the current app. The plan and deferred
+list determine when each part can be built.
 
 ## 1. Principles
 
@@ -36,35 +30,26 @@ speech) are not in `PLAN.md`. Only their seams are built in phase 3
 
 ## 2. Stack
 
-The stack stays. React 19, Vite 8, strict TypeScript, Tailwind 4, shadcn over
-Radix, TanStack Query, Zustand and React Router 7 are all current, and none is the
-bottleneck: the 16 MiB `web/dist` of today is Monaco and the shell, which phase 0
-removed. Changing framework would buy about 40 kB and cost the mock harness, the
-contract checks and every kept component (`interface.md` 2).
+The current stack is in [Architecture](../ARCHITECTURE.md#frontend). The
+following choices concern the proposed redesign and its future features.
 
 | Concern | Choice | Notes |
 |---|---|---|
-| Framework | React 19.3 | `<ViewTransition>` is stable in 19.3 and animates layout changes (section 5). The React Compiler stays off until a measurement on the transcript says it pays |
-| Build | Vite 8 (Rolldown), `@vitejs/plugin-react` | Routes and heavy features are separate chunks (section 14) |
-| Styling | Tailwind 4, tokens in `index.css` | As today. The token set changes (section 3) |
-| Primitives | shadcn on `radix-ui` | shadcn's new default is Base UI. Migrating 60 components buys nothing here, so Radix stays until it is deprecated |
+| Layout transitions | `<ViewTransition>` | Animate layout changes (section 5). Keep the React Compiler off until a transcript measurement says it pays |
+| Build | Separate chunks | Routes and heavy features are separate chunks (section 14) |
+| Styling | Tokens | Change the token set (section 3) |
+| Primitives | Radix | shadcn's new default is Base UI. Migrating 60 components buys nothing here, so Radix stays until it is deprecated |
 | Sheets | Radix `Dialog` styled as a bottom sheet | Vaul is unmaintained. Sheets close by button, scrim tap or `Esc`; drag-to-dismiss is not built |
-| Routing | React Router 7, data router, `lazy` routes | One route per page (section 4) |
-| Server state | TanStack Query, invalidated by events | No polling, as today |
-| Stream | The one WebSocket (`api/stream.ts`) | Topics gain `inbox`, and `activity` only if `session.updated` on `global` proves too coarse. Voice gets a second socket of its own (section 13) |
-| Client state | Zustand, one store per feature | New stores: `presence`, `layout`, `voice`, `avatar` |
-| Markdown | `react-markdown`, `remark-gfm`, `lowlight` | Kept, with block-level memoisation while streaming (section 14) |
-| Lists | Paged | P3-16 kept the transcript without a virtualiser after mobile emulation; a physical phone was not measured |
+| Routing | Data router, `lazy` routes | One route per page (section 4) |
+| Stream | WebSocket topics | Add `inbox`, and `activity` only if `session.updated` on `global` proves too coarse. Voice gets a second socket of its own (section 13) |
+| Client state | New stores | `presence`, `layout`, `voice`, `avatar` |
+| Markdown | Block-level memoisation | Memoise while streaming (section 14) |
 | Animation | CSS only: transitions, `@starting-style`, view transitions | No animation library |
-| Icons | lucide | As today |
 | Fonts | Geist Variable, Geist Mono Variable (`@fontsource-variable`) | Replace IBM Plex Sans and JetBrains Mono (section 3). OFL, self-hosted |
-| PWA | Hand-written service worker, about 50 lines | Network-first for the document, cache-first for hashed `/assets/`. Nothing under `/api` is ever cached |
-| Lint, format | ESLint 10, Prettier | Kept: the token rules are custom ESLint rules |
-| Tests | Vitest, Playwright on the mock harness | Kept. Phone baselines at 390x844 |
 | Avatar | Official Cubism 5 SDK for Web, the engine from `live2d-lab` | No PixiJS. Loaded only when an avatar is on (section 12) |
 | Audio | Web Audio: `AudioWorklet` capture, scheduled `AudioBufferSourceNode` playback | No library (section 13) |
 
-New dependencies in phase 3: the two font packages, replacing two. Nothing else.
+The proposed font change needs two font packages to replace the current two.
 
 Rejected:
 
@@ -86,7 +71,7 @@ The direction changes from "Dense dev tool" to **Calm companion**: a quiet,
 roomy messenger. Neutral surfaces with a faint cool tint, one accent (the teal
 of today, kept so Eika still looks like Eika), soft corners, generous line
 height, and depth from surface lightness instead of borders and shadows.
-`STYLE_GUIDE.md` "Web UI design" is rewritten to match when phase 3 starts. Its
+If this redesign is adopted, rewrite `STYLE_GUIDE.md` "Web UI design" to match. Its
 rules of method stay: tokens only, no palette colours, no arbitrary values, ESLint
 enforcing it.
 
@@ -137,8 +122,7 @@ produced or reads (the style guide's existing split). One family pair, two files
 
 The scale is one step larger than today at every name. The touch density
 (`(pointer: coarse)`) changes hit areas and spacing, not type, because 16 px prose
-and 14 px UI text are already phone sizes; this replaces "raises the type scale
-one step" in `interface.md` 3. Weights: 400 body, 500 labels and buttons, 600
+and 14 px UI text are already phone sizes; this replaces the current touch density in `STYLE_GUIDE.md`. Weights: 400 body, 500 labels and buttons, 600
 headings. Prose measure is capped at 72 characters (`max-w-[46rem]` as a token,
 `--measure`).
 
@@ -210,25 +194,23 @@ Desktop (>= 1024)                               Phone (< 640)
   dismissed.
 - **Command palette** (`Cmd/Ctrl+K`, desktop): go to a page, open a project or a
   subagent, switch layout, toggle theme, halt. `cmdk` is kept.
-- **Viewport.** `100dvh`, `viewport-fit=cover`, safe-area insets on the header,
-  bar and composer, and `interactive-widget=resizes-content`. Where that meta is
-  not honoured (Safari), a `visualViewport` listener sets `--keyboard-inset` and
-  the composer sits on it.
+- **Viewport.** Keep the existing viewport handling described in
+  [Architecture](../ARCHITECTURE.md#frontend).
 
 ### Routes
 
+Existing routes are in [Architecture](../ARCHITECTURE.md#frontend). Make
+Activity, Projects and the OAuth callback lazy in the proposed router; Chat
+stays in the initial chunk. Add these routes:
+
 | Route | Page | Chunk |
 |---|---|---|
-| `/` | Chat | initial |
 | `/live` | Chat in the Stage layout (section 5) | initial, plus avatar and voice on demand |
-| `/activity`, `/activity/:sessionId` | Activity and a subagent's view | lazy |
 | `/inbox`, `/inbox/:itemId` | Inbox | lazy |
-| `/projects`, `/projects/:slug` | Projects | lazy |
 | `/memory`, `/memory/:id`, `/memory/instructions` | Memory | lazy |
 | `/schedules`, `/schedules/:id` | Schedules | lazy |
 | `/plugins`, `/plugins/:id`, `/skills`, `/skills/:name` | Plugins, Skills | lazy |
 | `/settings/:section?` | Settings, a page and no longer a dialog | lazy |
-| `/mcp/callback` | OAuth return | lazy |
 
 Every list-and-detail page uses one pattern, `MasterDetail`: two panes on
 desktop with the list at 320 px, and on a phone the list, then the detail as a
@@ -251,9 +233,8 @@ components/   MasterDetail, Sheet, Notice, Screen, Markdown, ...; ui/ is shadcn
 api/  lib/    as today
 ```
 
-`app/panels.tsx` and the workbench go. `EXTENDING.md` "Adding a UI panel"
-becomes "Adding a page": a route in `app/routes.tsx` and an entry in the rail's
-list.
+The proposed router moves page routes to `app/routes.tsx`. The current page
+registration is in [Architecture](../ARCHITECTURE.md#frontend).
 
 ## 5. Chat
 
@@ -285,7 +266,7 @@ Companion (phone)                       Stage (phone)
 ```
 
 - **Focus.** Text only. Presence is the chip in the header. This is the layout
-  when no avatar is installed, and it is what phase 3 ships.
+  when no avatar is installed.
 - **Companion.** The avatar beside the conversation. On desktop it is a right
   column, 360 px by default, resized with `ResizableSplit` between 280 and 520 px.
   On a phone it is a strip above the transcript that collapses to a puck in the
@@ -301,8 +282,8 @@ The layouts change with a view transition: the avatar keeps its
 
 ### Transcript
 
-One column, capped at `--measure`, centred. It is `features/session`'s
-`Transcript`, the same component Activity uses without a composer.
+One column, capped at `--measure`, centred. The shared transcript is described
+in [Architecture](../ARCHITECTURE.md#frontend).
 
 | Part | Design |
 |---|---|
@@ -323,17 +304,13 @@ Behaviour:
   top fetches the previous page, and the scroll position is held by anchoring to
   the first visible entry. Entries further than two screens from view get
   `content-visibility: auto` with a remembered intrinsic size.
-- **Following.** The view sticks to the bottom while the user is at the bottom.
-  Scrolling up releases it and shows a "Jump to latest" pill above the composer,
-  with a dot when something arrived. A hook of about 80 lines in
-  `features/session`, with tests; no dependency.
+- **Following.** Add a dot to the existing Jump to latest control when something
+  arrived. Keep the control above the composer, as a pill, without a dependency.
 - **Row actions.** Copy, Speak (section 13), and Rewind where the entry allows
   it. On desktop they appear in a small bar on hover and on focus; on touch,
   behind a `⋯` button at the end of each message, never on long-press alone.
 - **Empty state.** A new install shows the presence mark (or the avatar), one
   line of greeting, and three suggestion chips that fill the composer.
-- **Screen readers.** The live-region rule of today stays: a finished reply is
-  announced once, never per token.
 
 ### Needs-you tray
 
@@ -358,20 +335,20 @@ same way. The tray holds at most one card open and a count for the rest
 - A single `surface` box with `--radius-surface`, no outline until focused. The
   field grows with its content up to 40% of the viewport (`field-sizing:
   content`, with a scroll-height fallback), then scrolls.
-- **Attach** (`＋`): images by picker, paste or drop; on a phone the picker
-  offers the camera. Thumbnails sit above the text with a remove button each.
+- **Attach** (`＋`): on a phone the picker offers the camera. Thumbnails sit
+  above the text with a remove button each. The current attachment paths are in
+  [Architecture](../ARCHITECTURE.md#frontend).
 - **Context meter** (`◔`): a ring with the fill of Eika's window. It opens the
   context breakdown. On a phone it lives in the header instead.
 - **Mic**: tap to dictate into the field; hold to talk and send on release
   (section 13). Hidden until a speech backend is configured.
 - **Send** is the one filled `primary` control on the page. While a run is in
   progress and the field is empty it becomes Stop.
-- **While Eika is working**, a message can still be sent. The send button gains a
-  two-way choice above it, "Now" (steer) and "After" (follow-up), defaulting to
-  Now. Queued messages show as chips above the field, each removable.
-- **Keys.** With a keyboard: the `chat` and `markdown` key modes and the overlaid
-  `MarkdownField` stay, `Esc` aborts as today. On touch: a plain textarea, Enter
-  is a newline, the button sends, and a Preview toggle renders the draft.
+- **While Eika is working**, add a two-way choice above the send button, "Now"
+  (steer) and "After" (follow-up), defaulting to Now. Show queued messages as
+  removable chips above the field. Current queues and input modes are described
+  in [Architecture](../ARCHITECTURE.md#frontend) and
+  [Decisions](../DECISIONS.md#frontend).
 - The draft, its attachments and the chosen mode persist per device.
 
 ## 6. Activity
@@ -380,15 +357,13 @@ same way. The tray holds at most one card open and a count for the rest
 wakeups join in phase 7) and **Recent** (the in-app notification list, deferred
 with it in `DEFERRED.md`; until it returns the list has no tabs).
 
-- **Agents list.** Groups in this order, empty groups hidden: Waiting, Running,
-  Idle, Failed and cancelled. A row: state dot, name, agent and project in
-  `muted-foreground`, elapsed time, and under it one live line of what it is
-  doing now (the last tool call, or the waiting reason in `warning`). Filter
-  chips for project appear when there is more than one.
-- **Detail.** A header with the name, state, project and Cancel. Below it the
-  brief, collapsed; then `Transcript`, live, with no composer; then the report as
-  a card once there is one. A line under the header says "To steer this, tell
-  Eika in Chat" with a link.
+- **Agents list.** Add the state dot, elapsed time and one live line of what the
+  agent is doing now (the last tool call or waiting reason). Use project filter
+  chips when there is more than one. The existing grouping is in
+  [Architecture](../ARCHITECTURE.md#frontend).
+- **Detail.** Add a collapsed brief and report card, and the line "To steer this,
+  tell Eika in Chat" with a link. The existing live, read-only view and Cancel
+  control are described in [Architecture](../ARCHITECTURE.md#frontend).
 - **Recent.** Newest first: reports, background replies, halts, each a link.
   Opening the tab marks them read.
 
@@ -439,7 +414,7 @@ a sticky save bar that appears only when there are unsaved changes.
 
 | Page | List row | Detail |
 |---|---|---|
-| Projects | Name, status chip, one line of description, a dot when a subagent is running | Tabs: Overview (description, directory in mono, status), Instructions (editor), Subagents (Activity rows, watch only), Routines (phase 7) |
+| Projects | Name, status chip, one line of description, a dot when a subagent is running | Add Routines (phase 7) to the existing detail tabs ([Architecture](../ARCHITECTURE.md#frontend)) |
 | Memory | Title, type chip, pinned mark, pending marker | The editor: frontmatter fields as a form, the body as `MarkdownField`; Pin, Archive, Purge. A second top-level tab, Instructions, holds "About me" and the rules. Filters: type, state, pinned. Search is FTS as the user types |
 | Schedules | Name, the schedule in words ("Weekdays at 08:00"), next run, an enable switch, last outcome dot | The prompt, the schedule with its next five times, run history linking to each run's session. A second tab lists wakeups |
 | Plugins | Name, state badge (`connected`, `unauthorized`, …) | Tabs: Connection (today's MCP form and OAuth), Tools (one row per tool with a four-way segmented control: allow, known, ask, block), Grants (known destinations, revocable), Log |
@@ -448,20 +423,17 @@ a sticky save bar that appears only when there are unsaved changes.
 ## 9. Settings
 
 A page with its own section list: a left column on desktop, a list that pushes to
-each section on a phone.
+each section on a phone. Existing Settings functions are in
+[Architecture](../ARCHITECTURE.md#frontend).
 
 | Section | Contents |
 |---|---|
-| Models | Providers and models (kept screens), model classes |
-| Agents | Each agent's class and prompt, with `DiffRows` against the built-in prompt |
-| Computer | Limits and egress |
-| Notifications | ntfy topic and test button, what notifies, in-app toasts |
+| Notifications | Add controls for what notifies to the existing ntfy and toast features |
 | Appearance | Theme, layout default, reduced motion override, text size (three steps, scaling `html` font size) |
 | Avatar and voice | Section 12 and 13's settings. Shown once either feature exists |
 | Security | Guard health, thresholds, blocklist, trusted sources, withheld list, tripwires, journal (phases 4 and 11) |
-| Account | Password, sign out, devices |
+| Account | Add devices to the existing password and sign-out controls |
 | System | Docker, endpoints and their probed capabilities, the inference queue |
-| Developer | Context inspector, model calls with drift |
 
 Settings rows keep today's rule: the name and one line of detail truncate, and
 actions wrap below on a narrow screen. A setting saves when changed; only prose
@@ -475,12 +447,10 @@ editors have a save bar.
   schemes, and maskable icons. After the first successful chat on a phone
   browser, a dismissible `Notice` in More explains "Add to Home Screen". There is
   no install prompt on load.
-- **Service worker.** Caches the document and hashed assets so the app opens
-  instantly and shows "Reconnecting…" when the server is unreachable. It never
-  caches `/api`. A new version activates on the next launch; a toast offers
-  "Reload" if the app is open when one is waiting.
-- **Opening from a push.** An ntfy notification opens `/` for a reply or report,
-  and `/inbox/:itemId` for an approval.
+- **Service worker.** Show "Reconnecting…" when the server is unreachable and
+  offer a "Reload" toast when an update is waiting. Existing shell caching is
+  described in [Architecture](../ARCHITECTURE.md#frontend).
+- **Opening from a push.** An approval notification opens `/inbox/:itemId`.
 
 ## 11. Presence
 
@@ -744,8 +714,8 @@ the same section.
 
 ## 14. Performance
 
-Budgets, checked in `make check` by a size test on the built chunks and a
-Playwright trace with 4x CPU throttling at 390 px:
+Proposed budgets: add checks to `make check` with a size test on built chunks
+and a Playwright trace with 4x CPU throttling at 390 px:
 
 | Measure | Budget |
 |---|---|
@@ -779,9 +749,9 @@ How:
 
 ## 15. Accessibility
 
-- Every control is a `button`, `a` or labelled input, and every page works from
-  the keyboard, as the style guide requires. The rail and bottom bar are `nav`
-  landmarks; the transcript is a `log`.
+- Make the transcript a `log`. The rail and bottom-bar navigation landmarks
+  are described in [Architecture](../ARCHITECTURE.md#frontend). Current keyboard
+  and control rules are in [Style Guide](../STYLE_GUIDE.md#3-typescript-and-react).
 - The avatar's canvas is `aria-hidden`. The `PresenceChip` beside it is the
   accessible statement of the same state, in a polite live region that announces
   state changes at most once every five seconds.
@@ -790,8 +760,8 @@ How:
 - `prefers-reduced-motion`: no layout motion, no `PresenceMark` animation beyond
   a state colour, and the avatar holds a still pose with blinks. Appearance has
   an override in both directions.
-- Focus moves to a sheet or dialog when it opens and back to its trigger when it
-  closes. A route change focuses the page's heading.
+- A route change focuses the page's heading. Keep dialog focus handling when
+  adding sheets.
 - Text size in Appearance scales the root font size, and every layout holds at
   the largest step on a 390 px screen. A phone baseline checks it.
 
@@ -799,7 +769,7 @@ How:
 
 | Phase | From this document |
 |---|---|
-| 3 | Sections 2 to 4; Chat in the Focus layout; Activity; Projects; Settings as a page; entry screens and PWA; the presence store, chip and mark; `AvatarSlot` as an empty component the Companion and Stage layouts can later fill; the performance budgets |
+| Future, not assigned | Visual redesign and proposed stack changes; Settings as a page; presence store, chip and mark; `AvatarSlot`; performance budgets and the Companion and Stage seams. Phase 3 shipped the current shell, Chat, Activity, Projects, Settings dialog and PWA ([Architecture](../ARCHITECTURE.md#frontend)). |
 | 4 | Halt wired, banners, Security settings, tool card marks |
 | 5 | Inbox, Memory |
 | 11, 7, 6 | Approval cards and the needs-you tray, Plugins; Schedules; Skills |

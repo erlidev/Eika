@@ -75,6 +75,10 @@ func boardRow(c store.Session, projects map[string]string, loc *time.Location) [
 		row += ", last active " + c.LastActiveAt.In(loc).Format(boardTimeLayout)
 	}
 	lines := []string{row}
+	label := "waiting on: "
+	if c.State == store.SessionFailed || c.State == store.SessionCancelled {
+		label = "ended because: "
+	}
 	if reason := strings.TrimSpace(c.WaitingReason); reason != "" {
 		first := true
 		for line := range strings.SplitSeq(clipRunes(reason, boardReasonRunes), "\n") {
@@ -82,7 +86,7 @@ func boardRow(c store.Session, projects map[string]string, loc *time.Location) [
 				continue
 			}
 			if first {
-				lines = append(lines, "  waiting on: "+line)
+				lines = append(lines, "  "+label+line)
 				first = false
 			} else {
 				lines = append(lines, "    "+line)

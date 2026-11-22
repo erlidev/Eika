@@ -1,7 +1,8 @@
 #!/bin/sh
-# Opens the SSH forward to the bench's chat model (evals/models/README.md,
-# "The chat model") when EIKA_LIVE_ENDPOINT is on loopback and its port does
-# not answer. An endpoint that is unset or elsewhere is left alone: the live
+# Opens the SSH forward to the older chat container `llama-qwen` (LAN only,
+# evals/models/README.md, "The chat model") when EIKA_LIVE_ENDPOINT is on loopback and its port does
+# not answer. The default bench chat model, `llama-server` at
+# https://llama.erli.xyz, needs no forward. An endpoint that is unset or elsewhere is left alone: the live
 # tests skip or connect on their own. The key is never read here.
 set -eu
 

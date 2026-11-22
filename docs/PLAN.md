@@ -82,8 +82,8 @@ and phase 4b, web fetch, compaction and skills come last.
             4b Tripwires and checkpoints ─ 12 Web fetch ─ 13 Compaction ─ 6 Skills
 ```
 
-Phases 0 and 1 are done. Phases 2 and 3 are next, and run interleaved in four
-stages (see "Schedule for phases 2 and 3").
+Phases 0 and 1 are done. Phases 2 and 3 are built; their live suite and exit checks remain open
+(see "Schedule for phases 2 and 3").
 
 Why this order:
 
@@ -106,8 +106,7 @@ Why this order:
 - Skills (phase 6) come last, and only if there is a skill worth installing by
   then.
 
-Eika is testable from the end of stage A and usable daily from the end of stage
-C, which is phase 3's exit.
+Phase 3's phone exit: all but the push passed against a real stack (PLAN_LOG); push needs ntfy configured, and the device checks remain to the owner.
 
 ## Live test bench
 
@@ -118,7 +117,7 @@ live in `~/.config/eika/live.env` (mode 600), never in the repository:
 
 | Role | Model | Where |
 |---|---|---|
-| chat (`main`, and `fast` until a smaller model joins) | Qwen3.8-27B, unsloth UD-Q4_K_XL (5.1 bpw) at a pinned snapshot, vision through its mmproj; llama.cpp, 2 slots sharing a 128k KV cache quantised to 8 bits (`q8_0` K and V) | RTX 5090 server (`ubuntu-5090`), Komodo Deployment `llama-qwen` from the `llama-server-gpu` Build, network `proxy`, with a bearer key. For now LAN only: published on `10.10.10.2:8091` with no Caddy site, reached from the desktop through the runner's SSH connection (`-L 8091:10.10.10.2:8091`), since ufw drops 8091 from other subnets. Files in `/opt/stacks/llama-qwen` |
+| chat (`main`, and `fast` until a smaller model joins) | Qwen3.8-27B, unsloth UD-Q4_K_XL (5.1 bpw) at revision 4af51b3542f775b0a8e4b310bfb3f17e01c306c9, text only (`--no-mmproj`); llama.cpp b11942-338fce651 with MTP speculative decoding (`draft-mtp`, 3 tokens), 4 slots sharing a 256k KV cache quantised to 8 bits (`q8_0` K and V), alias `qwen3.8-27b` | RTX 5090 server (`ubuntu-5090`), the Komodo Deployment `llama-server` (image `llama-server-gpu:0.0.9`), network `proxy`, no published port. Reached at `https://llama.erli.xyz` through Caddy (`reverse_proxy llama-server:8080`), with a bearer key; there is no SSH forward. The container has no stack directory on the server: its flags are in Komodo and in `docker inspect llama-server` |
 | second chat backend | the same model as EXL3 on TabbyAPI | the existing `tabbyapi` Deployment on the same GPU, swapped in by the runner |
 | injection screen | `Horizon-Labs/prompt-injection-guard-small`, bf16 | local RTX 3090, port 9940: `evals/models/guard.py` until phase 4 moves it to `guard/`, then the same service the stack runs |
 | `decision` | `vllm-sr/d3-flash` Q8_0 on llama.cpp `/v1/systemone`, 2 slots sharing 32k | local RTX 3090, the desktop's own llama.cpp, port 9941 |
@@ -135,13 +134,16 @@ Rules:
   mounted, the API key from a Komodo Variable, a Caddy site
   `<name>.erli.xyz`, and a `komodo.toml` beside the files. A temporary test
   model may skip the Caddy site and publish on the LAN address only, as
-  `llama-qwen` does now.
+  `llama-qwen` did.
 - Chat models on the bench default to a 4 to 5 bpw quant (the GGUF's file size
   over its parameter count; about 5 for a Q4_K "XL" with 8-bit embeddings) and
   an 8-bit KV cache. A run that needs another quant or cache type says so in
   its report.
 - One model fills the 5090 at a time. The runner stops what it started and
-  restores `llama-qwen` at the end, also on failure.
+  restores its `Chat` container at the end, also on failure. That is
+  `llama-server` (`bench.Options.Chat`); a variant still reads its API key from
+  the old `/opt/stacks/llama-qwen/.env` (`Options.EnvFile`).
+  `make live` does not use the runner.
 - The desktop that hosts the guard and the decision model has 15 GB of RAM and
   is in use. Each runs as a user unit with a memory cap (`MemoryHigh`,
   `MemoryMax`, a small `MemorySwapMax`), so a leak kills that service rather
@@ -156,95 +158,11 @@ model or TabbyAPI. They stay on the bench for the work in `docs/DEFERRED.md`.
 
 ## Schedule for phases 2 and 3
 
-The order of the open packages. The items under "Phase 2" and "Phase 3" say what
-each package builds; this section says when, and how little of it its stage
-needs. A package is ticked here and under its item.
+The implementation stages and the live suite (P2-25 and P2-26) are done. Only the
+two closes remain, each after its exit check by hand:
 
-### Stage A: first testable build
-
-The home loop, end to end, in a browser. Nothing here is hardened.
-
-- [x] **P2-08**: Resolve an agent's class, prompt and fixed tools at runtime.
-      Add the path beside profiles, chosen by the session's `agent`. Profiles
-      keep working for the sessions that still use them.
-- [x] **P2-09**: Ensure home at start and add `GET /api/home`. The store already
-      has the session kind and index; copy `Server.EnsureHome`. The only channel
-      is `web`.
-- [x] **P3-03**: Add the World and matching routes, for the home session and
-      subagents only.
-- [x] **P3-04**: Build navigation, the home shell and basic Chat. `SessionView`
-      is reused as it is. Settings stays the existing dialog, and the workbench
-      stays in the tree, unrouted.
-
-Check by hand here: chat with Eika in the new shell on the bench model.
-
-- [x] **P2-07**: Build and store the preamble snapshot.
-- [x] **P2-06**: Add project tools and executor access to STATUS.md.
-- [x] **P2-12**: Add subagent session and lifecycle state. Publish
-      `session.updated` on `global` for each state change.
-- [x] **P2-13**: Add delegation tools and run bindings. Subagents do not get
-      `ask_user` until P2-16: they decide, and state the assumption in the
-      report.
-- [x] **P2-14**: Add reports, limits and shutdown.
-- [x] **P2-15**: Add durable notices and background turns. This is the largest
-      package of the stage: a run starts only from a user message today, and
-      queued messages live in memory.
-- [x] **P3-09**: Build Activity and the read-only session view, live from
-      `session.updated`, with its scenarios.
-
-**Exit A:** in a desktop browser, on the bench model, "look into X and keep notes
-in a project for it" creates the project, starts a named subagent that shows in
-Activity while Chat stays responsive, and brings its report back as a notice.
-"Follow up on X" resumes the same subagent. The home session compacts with the
-compaction every session has today. Log what broke or felt wrong: it orders
-stage B.
-
-### Stage B: safe to leave running
-
-What stops a long-lived home session from losing work or growing without bound.
-
-- [x] **P2-18**: Reconcile interrupted runs and notices.
-- [x] **P2-16**: Park and relay subagent questions.
-- [x] **P3-07**: Add agents and instructions Settings, as tabs of the existing
-      dialog, and remove profile controls.
-- [x] **P2-20**: Build the board and rolling summary.
-- [x] **P2-21**: Implement the cut and snapshot refresh.
-- [x] **P2-10**: Add backward pagination.
-- [x] **P3-05**: Add the paginated transcript.
-- [x] **P2-23**: Add the history index and backfill.
-- [x] **P2-24**: Add history search and read tools.
-
-**Exit B:** phase 2's exit, by hand, without the live suite.
-
-### Stage C: on the phone
-
-- [x] **P3-02**: Add touch density and checks.
-- [x] **P3-06**: Add the touch composer.
-- [x] **P3-14**: Add sealed ntfy configuration and delivery.
-- [x] **P3-13**: Add toasts.
-- [x] **P3-15**: Add install and shell caching.
-- [x] **P3-10**: Build project pages and instructions editor.
-- [x] **P3-08**: Add remaining cards, notices and their scenarios.
-
-**Exit C:** phase 3's exit. Eika is in daily use from here.
-
-### Stage D: clean up, measure, close
-
-Removal and verification. None of it changes what the user can do.
-
-- [x] **P3-11**: Complete Settings and retain existing flows.
-- [x] **P3-17**: Remove the unused workbench.
-- [x] **P2-11**: Remove profiles, configuration layering, direct chats and
-      obsolete fields and kinds, after their callers moved. Preserve history.
-- [x] **P2-22**: Schedule idle compaction.
-- [x] **P2-19**: Test process death and explicit resume with Docker.
-- [x] **P3-16**: Complete phone and touch coverage and measure history.
-- [x] **P2-25**: Run persistent home functional scenarios. `evals/live` drives
-      inference only today, so this package first gives it a real server and
-      session. The live suites of later phases build on that.
-- [x] **P2-26**: Check real-request prefixes and queue ordering.
-- [ ] **P2-27**: Close phase 2.
-- [ ] **P3-18**: Close phase 3.
+- [x] **P2-27**: Close phase 2 after its exit checks.
+- [x] **P3-18**: Close phase 3 after its exit checks.
 
 ## Phase 0: Groundwork
 
@@ -267,153 +185,14 @@ test with two sessions belongs to Phase 2.
 
 ## Phase 2: Agents, home session, projects, subagents
 
-The main agent, the one home session with its compaction and history recall,
-projects with their new meaning, and persistent subagents. Design:
-`design/runtime.md` sections 4 to 11.
-
-- [x] **P2-00**: Split the checklist, record upgrade rules, and align the design.
-
-Package IDs below are names, not an order: the order is "Schedule for phases 2
-and 3". Each parent item stays open until every part is complete. Phase closure
-is P2-27 and P3-18; each also requires its exit checks.
-
-There is no transitional UI: phase 3's shell and Chat page start alongside this
-phase, and the exit is checked there. Until P2-11, profiles and direct chats stay
-in the code beside what replaces them.
-
-- [ ] Add `internal/agentdef`:
-      - built-ins `eika`, `worker` and `researcher`, in Go, with prompts embedded
-        as Markdown
-      - an `agents` override table with each agent's class and prompt, nothing else
-      - per-agent compaction prompts
-      Profiles are removed: the feature, its API and UI, and the configuration
-      layering they fed. The Settings page for agents reuses the profile editor's
-      fields. MCP tools reached sessions through profiles, so agents have no
-      plugins until phase 11. The MCP screens and Core's pool stay, so connections
-      and OAuth keep working for phase 11 to pick up.
-      - [x] **P2-01**: Built-ins, overrides, API and compaction prompts; keep profiles.
-      - [x] **P2-08**: Resolve classes and fixed tools at runtime; keep existing callers.
-      - [x] **P3-07**: Add agent Settings and remove profile controls.
-      - [x] **P2-11**: Remove profiles and configuration layering after their callers move.
-- [ ] Session columns: `kind` (home, subagent, routine), `agent`, `name`,
-      `project_id`, `computer_id`, `parent_session_id`, `state`, `brief`,
-      `result`, `last_active_at`. Entry kinds gain `preamble` and `notice`; home
-      entries record their `channel`. Unused columns and kinds are removed. There
-      is no `sensitive` column: sessions carry no label.
-      - [x] **P2-04**: Add session fields and entry kinds; keep fields still in use.
-      - [x] **P2-11**: Remove obsolete fields and kinds after callers move; preserve history.
-- [ ] Preamble builder: global and project instructions, the active-projects list,
-      the project or subagent brief, the delegable agents, and the user's time zone
-      and locale. Store it as an entry, and rebuild it only at compaction. Memory,
-      skills and plugins add their sections in their own phases.
-      - [x] **P2-07**: Build and store the preamble snapshot.
-- [ ] Instructions: global "About me" and rules, plus project instructions.
-      Stored as rows and edited in the UI. No agent tool writes them.
-      - [x] **P2-03**: Add storage and authenticated APIs.
-      - [x] **P3-07**: Add global instructions Settings.
-      - [x] **P3-10**: Add project instructions editor.
-- [ ] Ensure the one home session on start, as the home computer is
-      (`PLAN_LOG.md` 2026-10-30), found by `(owner, name)`, and add
-      `GET /api/home`. Retire chats: there are no direct sessions, and the user
-      talks only to Eika. Each user-side `<context>` names its channel; replies go
-      back to it. The web app is the only channel until channels return
-      (`docs/DEFERRED.md`), so there is no routing to build.
-      - [x] **P2-09**: Ensure home at start, add its API and record the channel.
-      - [x] **P2-11**: Retire direct chat creation after the UI moves.
-- [ ] Add projects: table, API and the tools `project_list`, `project_open`,
-      `project_create` and `project_update`. The fields are `name`, `slug`,
-      `description`, `status`, `instructions` and `directory`, which defaults to
-      `/home/eika/projects/<slug>` on `home`. There is no `private` field.
-      - [x] **P2-02**: Add project storage and API.
-      - [x] **P2-06**: Add project tools and executor access to STATUS.md.
-- [x] Add the file tools `file_read`, `file_write` and `file_edit` over the
-      executor, with limits like bash's. Record in `DECISIONS.md` why they are
-      back.
-      - [x] **P2-05**: Add bounded file tools over the executor.
-- [ ] Add `internal/subagent` (rewritten; runtime.md 9), part 1:
-      - named, persistent subagent sessions, resumable by name
-      - the tools `subagent_start`, `subagent_message` (answers a question, or
-        resumes an idle one in its own context; a running one answers that it is
-        running), `subagent_status` (the board, or one subagent) and
-        `subagent_cancel`
-      - state set by code: running, waiting (with the reason), idle, failed,
-        cancelled
-      - [x] **P2-12**: Add session and lifecycle state.
-      - [x] **P2-13**: Add delegation tools and run bindings.
-- [ ] `internal/subagent`, part 2:
-      - the `report` tool. A run that ends without one is sent a message to
-        draft it; if it still does not call `report`, its final message becomes
-        the report. Reports reach Eika unwrapped; phase 4 screens them
-      - the limit `subagent_max_running`
-      - abort and shutdown; aborting a home reply leaves its subagents running
-      Reuse the spawner pieces `PLAN_LOG.md` names (commit `478ce9c`). The prompts
-      for `eika` and the brief template say to decide for itself on small details
-      and state the assumption, and to ask when it is unclear what the user wants
-      in a way that changes the result. The `worker` prompt says to read pages
-      with `web_fetch`, not `curl`, so that what it reads is screened.
-      - [x] **P2-14**: Add reports, limits and shutdown.
-- [x] Notices: a report becomes a notice in Eika's next `<context>`, naming the
-      subagent, and starts a background turn on the home session.
-      - [x] **P2-15**: Add durable notices and background turns.
-- [x] Questions: `ask_user` from a subagent parks it and goes to Eika as a notice
-      plus a background home turn. Eika answers with `subagent_message`, or asks
-      the user in its reply and relays the answer. There is no `inbox_ask` and no
-      `questions` table.
-      - [x] **P2-16**: Park and relay subagent questions.
-- [ ] Restarts: nothing resumes on its own. After a restart, every interrupted run
-      gets the result "Eika restarted while this ran; its outcome is unknown. Check
-      before retrying." for each tool call left unanswered, so its session stays
-      resumable and no call runs twice, and its subagent goes `idle`. Eika gets a
-      notice naming it and carries on with `subagent_message`. An interrupted home
-      reply ends with a notice. A Docker test kills Core mid-call and checks the
-      call ran once.
-      - [x] **P2-18**: Reconcile interrupted runs and notices. P2-15 leaves two
-            gaps: a child goes idle before its notice is written, and failed
-            notice writes are retried in memory only, so a crash or shutdown
-            there loses the notice though the report is stored. At start,
-            post a notice for each child whose stored report has none; the
-            notice id derives from the report, so the rescan is safe. Startup
-            starts no home turn; notices wait for the next home turn.
-      - [x] **P2-19**: Test process death and explicit resume with Docker.
-- [x] Paginated entries: `GET /api/sessions/{id}/entries?before=&limit=`.
-      - [x] **P2-10**: Add backward pagination.
-- [ ] Home compaction (runtime.md 11):
-      - the deterministic `[Subagents]` section
-      - `[Conversation]` by rolling update, with an assistant-tuned prompt
-      - the cut at user-turn boundaries, keeping `keep_recent_share` of the window
-      - idle compaction at maintenance priority (over `compact_idle_fill`, and
-        no important run for `compact_idle_minutes`, default 30), with threshold
-        and overflow kept as safety nets
-      - the tool list and preamble rebuilt at compaction
-      Subagent and routine sessions keep Pi's compaction with per-agent prompts.
-      - [x] **P2-20**: Build the board and rolling summary.
-      - [x] **P2-21**: Implement the cut and snapshot refresh.
-      - [x] **P2-22**: Schedule idle compaction.
-- [ ] History recall (runtime.md 11): `entries.tsv` over entries, tool calls,
-      notices and compaction summaries; the tools `history_search` and
-      `history_read`.
-      - [x] **P2-23**: Add the history index and backfill.
-      - [x] **P2-24**: Add history search and read tools.
-- Activity uses `session.updated` on `global` (P2-12). The `activity` topic,
-      events and API (P2-17) are in `docs/DEFERRED.md`.
-- [ ] Phase 2 live suite, on the bench's chat model with a real home session
-      that persists across the suite (it is not reset between scenarios, the
-      way a user's never is):
-      - the exit scenario scripted end to end: project created, a named
-        subagent started and reporting back as a notice, resumed by name
-      - Core restarted mid-run: the subagent goes idle with a notice, a call that
-        had started gets "outcome unknown" instead of running twice, and a message
-        resumes it
-      - a forced compaction, then a question only the compacted span answers,
-        through `history_search`
-      - the prefix-stability check on real requests: `cache_n` covers the
-        previous request through the start of its assistant-generation header
-        on every turn but the first after a compaction. The bench template can
-        render that header differently when it replays the answer
-      - two sessions of the real server on a pool of one slot: an interactive
-        message is answered before a waiting background call
-      - [x] **P2-25**: Run persistent home functional scenarios.
-      - [x] **P2-26**: Check real-request prefixes and queue ordering.
+Built the persistent home session, agent definitions and instruction snapshots,
+projects and bounded file tools, named subagents with reports and question relay,
+durable notices and restart recovery, home compaction and history recall.
+Current behavior: [Architecture](ARCHITECTURE.md#agent-definitions);
+choices: [Decisions](DECISIONS.md#agent-definitions). The live suite (P2-25 and
+P2-26) is done: five persistent-home scenarios against the real model, covering
+delegation and resume, restart recovery, recall after compaction, prefix
+stability and queue order. The exit check remains open.
 
 **Exit:** in the home session, "look into X and keep notes in a project for it"
 should:
@@ -430,69 +209,14 @@ sessions.
 
 ## Phase 3: Web shell
 
-The mobile-first app. Design: `design/interface.md`.
-
-- [x] Take the pages this phase replaces out of the visual suite, so `make check`
-      does not compare screens that are about to go. Each new page gets its
-      baselines in the item that builds it.
-      - [x] **P3-01**: Retire only replaced visual baselines.
-- [ ] Add a touch density under `(pointer: coarse)` (type step, 44 px targets, no
-      hover-only controls). Add a style guide section and ESLint rules where they
-      apply.
-      - [x] **P3-02**: Add touch density and checks.
-- [ ] App shell: a rail on desktop and a bottom bar on a phone, a route per page,
-      `100dvh`, safe areas, and the composer anchored to the visual viewport.
-      Leave a slot for the halt button (wired in phase 4).
-      - [x] **P3-04**: Build navigation and the home shell.
-- [ ] Chat page on the home session:
-      - a paginated transcript. Virtualise only if a 5,000-entry session is
-        measurably slow on a phone
-      - every channel's messages, marked with their channel
-      - Eika's reasoning and tool calls, compaction cards, subagent cards and
-        notices
-      - on touch, a plain textarea with a rendered preview, where Enter makes a
-        newline and a send button sends
-      - [x] **P3-04**: Bind basic Chat to home.
-      - [x] **P3-05**: Add the paginated transcript. Channel marks wait for a
-            second channel (`docs/DEFERRED.md`, channels).
-      - [x] **P3-06**: Add the touch composer.
-      - [x] **P3-08**: Add remaining cards and notices.
-- [x] Activity page: subagents and their states, and a read-only live view of each
-      (the session view reused, no composer) with cancel. Steering goes through
-      Eika.
-      - [x] **P3-09**: Build Activity and the read-only session view.
-- [ ] Projects pages: list, detail, instructions editor, and the project's
-      subagents (watch only).
-      - [x] **P3-10**: Build project pages and instructions editor.
-- [ ] Reorganise Settings:
-      - providers and models
-      - model classes, agents, instructions
-      - computer (limits and egress)
-      - notifications, appearance, account
-      - developer: the inspector and model calls with drift
-      - [x] **P3-07**: Add agents and instructions settings.
-      - [x] **P3-11**: Complete Settings and retain existing flows.
-- [ ] Notifications: toasts for subagent reports and background replies, from
-      events the app already receives. The stored notification list (P3-12) is
-      in `docs/DEFERRED.md`: a notice is already in Chat, and ntfy carries it to
-      the phone.
-      - [x] **P3-13**: Add toasts.
-- [ ] ntfy: a topic URL with its secret sealed in Core, a minimal payload, and
-      delivery for subagent reports and for Eika's replies to background turns. A
-      push opens Chat. This takes the place of Web Push (`docs/DEFERRED.md`).
-      - [x] **P3-14**: Add sealed configuration and delivery.
-- [ ] PWA: manifest, icons, and a service worker that caches the shell only.
-      Document Tailscale serve in the README.
-      - [x] **P3-15**: Add install and shell caching.
-- [ ] Mock harness: a `World` for the home session, subagents and projects;
-      scenarios; phone baselines for Chat and Activity; a touch emulation pass of
-      the composer spec.
-      - [x] **P3-03**: Add World and matching routes.
-      - [x] **P3-08**: Add Chat card scenarios.
-      - [x] **P3-09**: Add Activity scenarios.
-      - [x] **P3-16**: Complete phone and touch coverage and measure history.
-- [ ] Remove what is left of the workbench.
-      - [x] **P3-17**: Remove the unused workbench.
+Built the mobile shell, home Chat with paged history, Activity and project pages,
+agent and instruction settings, touch composer, live toasts, ntfy delivery and
+the installable app shell. The workbench was removed. History was measured at 5,000
+entries on a mobile emulation and needs no list virtualiser. The exit review
+fixed a clipping Activity board, question notices that showed the model's text
+(they now carry structured fields), the toast position, touch links and an offline
+screen. Current behavior: [Architecture](ARCHITECTURE.md#frontend); choices:
+[Decisions](DECISIONS.md#frontend). The phone exit remains open.
 
 **Exit:** on a phone over Tailscale:
 1. Install the PWA.
@@ -971,7 +695,7 @@ log. Work that was cut is in `docs/DEFERRED.md`, not here.
   the user or from a search result (`docs/DEFERRED.md`).
 - **KV slot save and restore, LMCache.** Deferred until phase 1's accounting
   shows how much prefill is lost to switching. Measure first.
-- **Main agent with `bash`.** Not by default (runtime.md 6). Revisit if delegating
+- **Main agent with `bash`.** Not by default ([Architecture](ARCHITECTURE.md#agent-definitions)). Revisit if delegating
   small commands proves too slow in practice.
 - **Payments**, one-time cards for example: out of scope. Payment is always a
   hand-off.
