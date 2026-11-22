@@ -1,5 +1,16 @@
 # Plan log
 
+- 2026-11-22: P6-01 adds `internal/skill`: `Parse` (SKILL.md, six spec fields) and
+  `ReadZip` (bounded archive), plus the `invoice-totals` and poisoned `notes-formatter`
+  fixtures under `testdata/`. Warnings: name/directory mismatch, unquoted colon (retried
+  quoted), over-long description or compatibility, bad metadata map, unknown field, long
+  body, missing name (directory used). Skip reasons: no frontmatter, unparseable YAML,
+  no description, a name unusable as a directory (it becomes a path in P6-02), SKILL.md
+  over 64 KiB. Zip: depth counts directories below the skill directory; `__MACOSX/`
+  entries and directory entries are dropped. The package is a leaf and may not import
+  server, agent, computer or store.
+  Validation: fmt-check, lint-go and test-go pass.
+
 - 2026-11-22: P6-00 splits phase 6 into P6-01 to P6-18 in four stages: install and
   use (backend), the Skills page, backup/smoke/docs, and live/close. The owner asked
   for phases 4, 5 and 6 to be done now, so phase 6 is pulled forward ahead of phases

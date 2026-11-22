@@ -95,6 +95,7 @@ internal/egress    sandbox egress    internal/netguard  public-only dials
 internal/mcp       MCP client        internal/utility   utility model tasks
 internal/event     event bus         internal/eikad     sandbox daemon wire
 internal/imaging   image input       sandbox/           sandbox image
+internal/skill     skill parser, zip reader
 internal/inference model-call queue  (standard library only)
 compose.yaml       the whole stack   deploy/            entrypoint, searxng
 docs/              documentation     evals/             live tests, model bench

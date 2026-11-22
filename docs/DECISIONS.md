@@ -2810,3 +2810,6 @@ skill be worth installing first. Its only dependency is phase 5's backup.
 - **The catalog is capped at 2,000 exact tokens;** enabling past it is refused.
 - **A changed reinstall returns to disabled;** an identical one is a no-op. Delete
   removes directory and row. `skill_use` queries are a substring match.
+- **Skill name handling (P6-01).** A missing `name` falls back to the directory name
+  with a warning; an invalid name skips the skill, because it becomes a directory path.
+  Other fault classes in the design table stay warnings.
