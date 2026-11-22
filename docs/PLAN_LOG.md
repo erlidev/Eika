@@ -1,5 +1,13 @@
 # Plan log
 
+- 2026-11-22: P6-07 adds `skill_use` (internal/tool/builtin/skills.go), standalone and
+  agent-only, listed for `eika` and `worker` (not `researcher`). `Deps.Skills` is bound in
+  `server` to the store, so it reads rows, never the volume or a computer. `name` returns
+  the body in `<skill name dir="/skills/name">` plus the resource file list; `query` is a
+  case-insensitive substring match over enabled, sound skills, at most 10. A disabled,
+  broken or unknown name gives one identical error. The schema has no enum of names.
+  Tests: builtin skills_test, agentdef and standalone lists, server pin intersection.
+
 - 2026-11-22: P6-04 adds migration 0034 `skills` (name, enabled, sha, installed_at, parsed
   fields, body, file list, warnings, screen, broken), `store` Upsert/Get/List/Delete/
   SetBroken, `skill.Installer` (one mutex: stage, hash-check, swap, hash-check, then

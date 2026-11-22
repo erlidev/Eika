@@ -210,5 +210,6 @@ func agentToolRegistry(deps builtin.Deps, server func() *Server) (*tool.Registry
 	deps.Reports = delegation{server: server}
 	deps.Memory = memoryService{server: server}
 	deps.MemoryCheck = memoryCheck{server: server}
+	deps.Skills = skillService{server: server}
 	return builtin.Registry(deps)
 }

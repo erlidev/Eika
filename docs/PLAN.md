@@ -671,7 +671,7 @@ package that changes it. Project scope, other install sources, `skill_file`,
       `routeWire`, wire types and `docs/api/http.md` together; run `make contract`.
       Add event `skills_changed` and a topic `skills`, published after the durable
       change, with reconnect refetch, as memory does. No agent endpoint exists.
-- [ ] **P6-07**: Add the tool `skill_use` (`name`, or `query`; question 2), standalone,
+- [x] **P6-07**: Add the tool `skill_use` (`name`, or `query`; question 2), standalone,
       registered in `internal/tool/builtin/registry.go`, with a `Skills` dependency
       like `Memories`. It reads the stored row, never a file or a computer. `name`
       returns the body without frontmatter inside `<skill name="..."
