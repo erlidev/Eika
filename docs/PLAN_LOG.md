@@ -1,5 +1,14 @@
 # Plan log
 
+- 2026-11-22: P5-00 splits phase 5 into P5-01 to P5-23 in five stages:
+  save/recall, bounded context, Memory/Inbox, backup/restore, and live/close.
+  The schedule follows the existing snapshot transaction, executor boundary,
+  Sentry screen client, route contract and UI registries. Migration 0028 is
+  current. Six owner questions have recommended defaults; none is recorded as
+  settled here. Reindex needs durable lifecycle state; ingest removal cannot
+  replace write classification. Docs only; no code or live tests change.
+  Validation: `GOFLAGS=-p=2 make fmt-check` passes.
+
 - 2026-11-22: P4-23 updates the style guide with Phase 4 security rules for
   secrets, ingest, tool side effects, guarded outbound requests and append-only
   audit records.

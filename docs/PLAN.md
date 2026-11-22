@@ -6,7 +6,8 @@ vocabulary every item below uses.
 
 Agents work through this plan over many sessions. In phases 2 and 3, take the
 first unchecked package in "Schedule for phases 2 and 3". In phase 4, take the
-first unchecked package in "Schedule for phase 4". After them, take the first
+first unchecked package in "Schedule for phase 4". In phase 5, take the
+first unchecked package in "Schedule for phase 5". After them, take the first
 unchecked item in the first open phase, in the order the phases appear in this
 file. Read the design section it cites, do it, tick it, and add an entry to
 `docs/PLAN_LOG.md`. A phase is closed when every item is ticked and its exit check
@@ -69,6 +70,9 @@ and phase 4b, web fetch, compaction and skills come last.
 - **Phase 4 packages run serially**, in the order of "Schedule for phase 4". The same
   rules apply: a UI package never ships ahead of its API, and a package builds what
   its stage needs.
+- **Phase 5 packages run serially**, in "Schedule for phase 5" order. Each
+  package is one branch, sized for one worker turn. Resolve the owner questions
+  listed there before the packages that depend on them.
 - **A package builds what its stage needs.** Do not pull work forward from a later
   stage or phase to make a package complete. When a package turns out to need
   more than a few days, split it and put the part the stage's exit does not need
@@ -338,6 +342,253 @@ connection.
   next to the proxy variables, and reaches an existing install on its next start
   or confine, not only at setup.
 
+## Schedule for phase 5
+
+The items under "Phase 5" define the scope. This schedule defines the branch
+boundaries and exit checks, as "Schedule for phase 4" does. Tick a package here
+and under its parent item. Each package is one branch, sized for one worker turn,
+with its few tests and docs. Split it before work if that size is not possible.
+
+Start after P4-27 closes phase 4. Run P5-01 to P5-23 in order. Each package depends
+on the preceding package; the extra dependencies below identify shared boundaries.
+Owner defaults below are proposals, not decisions. Record the choices in
+`DECISIONS.md` and correct `design/memory.md` in the first affected package.
+Dreaming, embeddings, project memory, automatic retrieval and the fuller
+`evals/memory` benchmark remain deferred.
+
+### Stage A: first testable build, save and recall
+
+- [ ] **P5-01**: Add `internal/memory`'s bounded file parser, validator and stable
+      renderer. Cover real frontmatter inputs, slug/path rejection and the 2 KiB
+      body limit. Settle durable state (question 2); keep `source` as a citation,
+      with no trust/provenance field. No table before its first writer.
+- [ ] **P5-02**: Build repository access through `internal/executor`, with a private
+      sandbox mount limited to the memory repository (question 1). Add fixed git
+      operations, repository initialisation and author attribution. No agent gets
+      this executor, a host path or arbitrary git arguments. Wire its lifecycle
+      and persistent storage in the stack; run `make smoke`.
+- [ ] **P5-03**: Add the single writer and `core.memories` migration with the first
+      create/replace/archive operations and FTS search/read. Serialize file,
+      commit and row updates; a name collision returns the existing memory.
+      Test concurrent writes and the populated-database upgrade. Depend on P5-02
+      for all repository I/O; the tools do not write files themselves.
+- [ ] **P5-04**: Add restart `Reconcile` and `make memory-reindex` through the same
+      writer. Repair changed, missing and uncommitted files and stale rows;
+      preserve pending/archived states and commits. Test failures between file,
+      git and row updates, retry after restart, and a full index rebuild. Wire
+      recovery before memory is served; run `make smoke` for startup wiring.
+- [ ] **P5-05**: Add Sentry's memory-write check, using the existing credential
+      scanner and `sentry/screen` client. Deny credentials in body or description;
+      classify the complete body without cutting it or adding an untrusted wrapper.
+      A hit is pending. Resolve guard failure and metadata screening (question 3).
+      Audit state decisions without secret values; trusted web hosts cannot bypass
+      this check. Test the safety boundary with a fake screen.
+- [ ] **P5-06**: Add the four memory tools and register them for `eika` only.
+      Connect writes to P5-05 before the P5-03 writer; bound search inputs and
+      output, mark pending results, and exclude archived entries by default.
+      Only the user can pin. Test tools through their public API, including a
+      subagent's inability to acquire them.
+- [ ] **P5-07**: Add the save/skip policy to Eika's built-in prompt and wire the
+      memory service into home runs. No subagent reads memory or receives its
+      tools. Check reset/override behavior and tool intersection with stored
+      definitions. Existing home snapshots acquire new tools at compaction,
+      not at the next message. Run `make smoke` for process wiring.
+
+**Exit A:** against the real stack, compact an existing home session to refresh
+its tools. Tell Eika a preference; it saves in that turn, finds and reads it,
+then archives it on request. Restart Core and rebuild the index: the active and
+archived states remain correct. A credential write is denied and a scripted
+screen hit is pending. No approval or push occurs.
+
+### Stage B: bounded context and changes during a session
+
+- [ ] **P5-08**: Build the memory section within 3,000 exact tokens, including its
+      labels and overflow count. Select active, unexpired pins first (at most 12),
+      then recent updates with name as the tie-breaker; render by type then name.
+      Do not cut a body or line. Resolve count failure and excess pins (question 4).
+      Use the existing model counter, not a new tokenizer.
+- [ ] **P5-09**: Include P5-08 in `server.buildPreamble` for home only. Read one
+      consistent memory revision, store it with the preamble, and refresh through
+      `refreshSnapshot` in the existing compaction transaction. Extend the
+      prefix-stability/restart check; pending and expired memories never auto-load.
+      Update the context inspector and wire contract if its shape changes.
+- [ ] **P5-10**: Add memory changes since the snapshot to the next message's tail
+      `<context>`, using the existing notice delivery rules. Persist revision and
+      delivery state as needed; test a write racing compaction, restart and retry
+      so changes are neither lost nor repeated. A saved name is enough; do not
+      copy pending bodies to the tail. Do not wake idle home or send a push solely
+      for a memory change (question 6).
+
+**Exit B:** save, edit and archive while home is running. The stored prefix bytes
+stay fixed and the next message names the changes. After compaction the new
+snapshot contains the current active memories, within the exact budget and in
+stable order. An overfull index has a visible count. Subagent prefixes contain
+no memory section.
+
+### Stage C: Memory and Inbox in the browser
+
+- [ ] **P5-11**: Add authenticated memory list/search/read and user mutation APIs:
+      edit, pin/unpin, archive and purge, through the same writer. Add bounded
+      paging and stale-edit protection. Resolve purge (question 5) and user edit
+      screening (question 3). Register routes, wire types and API docs together.
+- [ ] **P5-12**: Add pending-memory list/count and accept/edit/reject APIs, plus
+      memory invalidation events and topic `inbox`. Acceptance is an explicit user
+      state change, not an agent capability; reject archives. Enforce credential
+      rejection even on accept/edit. Guard repeated or stale answers. Publish
+      after durable changes, refetch on reconnect, and add no push or run parking.
+- [ ] **P5-13**: Add the Memory page, list, type/state filters, search and detail
+      with source links. Use `MasterDetail` and the existing Markdown renderer.
+      Add `App.tsx`/`pages.ts` routes, feature README and P5-11 `World` routes.
+      Inspect desktop and coarse-pointer phone shots before accepting baselines.
+- [ ] **P5-14**: Add the frontmatter form, Markdown editor, pin/archive/purge
+      controls and stale-edit handling to Memory. Reuse `MarkdownField` and the
+      existing Instructions editor/API beside it; do not build a second editor.
+      Keep its Settings access until all callers use any replacement route.
+      Test the edit flow and inspect the changed phone/desktop baselines.
+- [ ] **P5-15**: Add Inbox, its live badge and pending cards with source, flagged
+      spans, accept/edit/reject and empty/error states. Use P5-12 and extend the
+      mock `World`, client and stream handling together. Verify two open clients
+      and reconnect; inspect phone shots and navigation baselines for both themes.
+      Do not build plugin approvals before phase 11.
+
+**Exit C:** from a phone, find, edit and pin a memory. It reaches home's prefix
+at the next compaction. A pending memory updates the Inbox badge in both clients;
+accept, edit and reject work after a restart. It sends no push. Rebuild the index
+and check that a rejected memory stays archived and an accepted memory stays active.
+
+### Stage D: backup, restore and stack checks
+
+- [ ] **P5-16**: Add `make backup` for the database, complete memory git repository
+      and seal key. Stop writers while taking a consistent set; include a version
+      manifest and restrictive file permissions. Document operator commands and
+      exactly what is included (computer volumes are outside this item's scope).
+      No secret content appears in command output or logs.
+- [ ] **P5-17**: Add `make restore` and its operator guide. Restore into a stopped,
+      empty target, validate the complete set before writing, preserve the key,
+      reconcile the index and start Core. Test a backup/restore with populated
+      sessions, sealed settings and all memory states, plus a rejected incomplete
+      backup. Existing data is never overwritten by default.
+- [ ] **P5-18**: Extend `make smoke` with scripted memory save, compaction, UI edit
+      and pending resolution on the real stack. Check the repository survives a
+      restart and no agent computer can read its mount. Reuse the real guard and
+      existing fixture-hosts setting; run `make check` and `make smoke`.
+
+**Exit D:** back up a populated stack, restore into a separate empty stack, and
+read the old sessions and memories. Sealed settings still open with the restored
+key, git history remains, pending/archived state survives reindex, and the source
+stack is intact. The scripted memory smoke flow passes.
+
+### Stage E: live suite, measure, close
+
+- [ ] **P5-19**: Extend `evals/live`'s P2-25 server harness with an isolated memory
+      repository/executor, real guard settings and report fields for memory state,
+      index/preamble inclusion, task completion, asks and pushes. Add a real-model
+      save/recall across compaction and restart scenario. Keep fakes in `make check`;
+      run this suite through `make live`, with bounded fixtures and cleanup.
+- [ ] **P5-20**: Add the 30 ordinary preferences/rules from the phase item as
+      user-turn cases through Eika's actual write path. Record guard scores and
+      resulting states; none may be pending. If needed, add and calibrate a
+      memory-only threshold, then rerun these cases and the attack cases without
+      weakening web ingest. Do not substitute direct guard calls for agent writes.
+- [ ] **P5-21**: Add the poisoning chain: a researcher fetches the public fixture
+      and ingest removes the planted instruction. In a separate controlled case,
+      hand Eika the contaminated report after the report-screen boundary to test
+      the second defence. Record whether it writes; a write must be pending and
+      absent from automatic context, including after restart/reindex/compaction.
+      Report refusal as refusal, not as proof that pending works. Require a
+      real-screen write case as well. Reuse P4's fixture-hosts support and report
+      the number of asks/pushes (zero), misses and task failures.
+- [ ] **P5-22**: Run the phase suite on the bench's chat model and guard. Resolve
+      failures, rerun affected scenarios, and log results, thresholds, model/guard
+      revisions, llama.cpp build and flags. Include the prefix-stability result
+      with memory and the 30-case false-positive count. A skipped suite does not
+      pass this package.
+- [ ] **P5-23**: Close phase 5 only after every stage and the phase exit pass.
+      Run `make check`, `make smoke` and `make live`; inspect UI shots and do the
+      exit by hand on desktop and phone. Move built design to `ARCHITECTURE.md`
+      and `DECISIONS.md`, keep deferred design, reduce the phase and schedule to
+      their completion records, and add the results to `PLAN_LOG.md`.
+
+**Exit E:** phase 5's exit, the 30 ordinary writes without a pending result,
+and a logged live poisoning result. No implementation or measurement package
+remains after the close item.
+
+### Ordering hazards
+
+- **Migrations and state.** The current last migration is 0028, not the 0025
+  estimate in phase 4's schedule. Allocate after each preceding merge. P5-03
+  adds the index with its writer; P5-09/P5-10 add revision metadata only with
+  their callers. Test populated upgrades. Files must retain enough state to
+  rebuild pending, active and archived rows; an SHA alone cannot do that.
+- **Executor and storage.** The current production executor targets a computer;
+  `executor/local` is test-only. The Core volume and git binary do not authorize
+  a tool to use host `os`/`exec`. Settle question 1 before P5-02. Keep credentials
+  and other Core files outside the repository mount. Lifecycle/compose/Dockerfile
+  changes require `make smoke`, including in P5-02, P5-04 and P5-07.
+- **Screen semantics.** `Gate.Ingest` redacts, removes and wraps. It cannot save
+  the intact pending candidate required here. P5-05 reuses its client and scan
+  rules with a separate memory decision. Never publish an active row first and
+  classify it later. All tool/API writes use the same writer and checks.
+- **Wire contract.** For P5-09/P5-10 if needed, and P5-11/P5-12: update
+  `routes.go`, `routeWire`, event payload registration, `docs/api/http.md` and
+  `events.md`, run `make contract`, and mirror changed types in `web/src/api`.
+  The consuming UI adds matching mock `World` behavior. Add topic authorization
+  and reconnect behavior with `inbox`, not later in the UI branch.
+- **Snapshots and notices.** P5-09 uses the existing preamble/compaction atomic
+  append. Do not rebuild the prefix per turn. Snapshot revisions and tail
+  delivery must agree before P5-10 ships. Definition overrides and old pinned
+  tool lists can hide new tools until compaction; include that in manual checks.
+- **Visual baselines.** P5-13 to P5-15 change shell navigation as well as pages.
+  Run `npm run shot`, inspect each changed baseline before `make visual-update`,
+  and merge baseline changes serially. Check coarse-pointer phone size, both
+  themes and existing Settings access. Transcript timing/render changes also
+  require `make smoke`.
+- **Backup consistency.** A database dump and a later file copy are not one
+  snapshot while the writer runs. P5-16/P5-17 quiesce writers and preserve git
+  plus the matching seal key; reindex cannot recover a missing key or commit.
+- **Live boundary.** Report ingest already removes suspect spans, and history
+  reads screen child content too. P5-21 must identify its controlled bypass,
+  without adding a production bypass. A missing memory after a cleaned report
+  alone does not test the memory-write screen. No new benchmark framework.
+
+### Owner questions and applied defaults
+
+Applied on 2026-11-22 while the owner was away; each is recorded in `DECISIONS.md`
+and can be revisited. Global memory, only Eika having tools, Markdown/git, no
+provenance, no approval and no pending push were already decided.
+
+1. **How does the Core repository meet the executor rule?** Applied: the
+   repository is Core state on the Core volume `/var/lib/eika/memory`, as
+   `design/memory.md` places it, like the database. `internal/memory` is its one
+   writer. Tools reach it only through that package by validated memory name,
+   never by a path, so no tool touches the harness filesystem; the executor rule
+   covers agent file and process actions, and these are not. An import-boundary
+   test keeps `tool` from reaching the repository any other way.
+2. **Where do lifecycle states survive a full reindex?** Recommended: add tracked
+   `state` frontmatter (`active`, `pending`, `archived`), retaining archived files.
+   Keep the screening result/flagged spans with the candidate in tracked metadata
+   if needed by Inbox. This is state, not provenance. Reconcile preserves it and
+   treats new externally edited content as needing screening before activation.
+3. **What happens on guard failure, and on user edits?** Recommended: keep agent
+   writes pending when unscanned; `screen_required` instead rejects without a
+   partial write. Scan description as well as body since both reach context.
+   Screen UI edits too; only explicit user acceptance promotes flagged content.
+   Credentials are always denied. A shared threshold starts at 0.9; add a separate
+   threshold only if the live cases require it. No automatic promotion on retry.
+4. **What if exact counting fails or pins exceed the budget?** Recommended: fail
+   the new snapshot build with a useful error and keep the previous snapshot;
+   never label an estimate exact. Reject pin/edit operations that would put the
+   pinned section over 3,000 exact tokens or 12 entries. Count complete rendered
+   sections, including the overflow count; an existing invalid set needs user repair.
+5. **Does purge erase git history?** Recommended: purge removes the current file
+   and index row with a commit, retaining git history. Label this limit in the UI
+   and backup docs. No history rewrite or promise of secure erasure in this phase;
+   old session text and backups can also retain the memory.
+6. **Do memory changes wake idle home?** Recommended: no. Deliver durable names
+   and revisions in the next message's tail, using notice recovery but no wakeup.
+   A write already has its tool result. This avoids a background-turn save loop
+   and sends no notification for a pending candidate.
+
 ## Phase 0: Groundwork
 
 Closed. The coding layer is gone (git, worktrees, previews and the terminal),
@@ -561,33 +812,61 @@ The log records `evals/injection`'s numbers, including what got through.
 
 Design: `design/memory.md` sections 1 to 6, 8 and 9.
 
+Package order is [Schedule for phase 5](#schedule-for-phase-5). Each parent
+item stays open until all its packages pass. Closure is P5-23 and the exit below.
+
 - [ ] Add `internal/memory`:
       - file format, parser and validator
       - the git repository at `/var/lib/eika/memory`
       - one writer
       - the `core.memories` index (FTS)
       - `Reconcile` at start-up and `make memory-reindex`
+      - [ ] **P5-01**: File format, parser and validator.
+      - [ ] **P5-02**: Isolated repository access through the executor.
+      - [ ] **P5-03**: Single writer, index and FTS.
+      - [ ] **P5-04**: Recovery and reindex.
 - [ ] Add the tools `memory_search`, `memory_read`, `memory_write` and
       `memory_forget`, for `eika` only. A write never asks. It is denied if it
       holds a credential pattern, and its body goes through the screen: a hit
       makes the memory `pending` (searchable with a marker, never in the index),
       and anything else is `active` at once. There is no provenance field and no
       instruction-shape check.
+      - [ ] **P5-05**: Memory-write screening and credential denial.
+      - [ ] **P5-06**: Eika-only memory tools.
 - [ ] Preamble: pinned bodies plus the index within an exact budget, in
       deterministic order, with a visible overflow count.
+      - [ ] **P5-08**: Exact budget and stable selection.
+      - [ ] **P5-09**: Stored snapshot and compaction integration.
 - [ ] Notices at the tail for memory changes since the preamble.
+      - [ ] **P5-10**: Durable changes in the next message context.
 - [ ] Write policy in the `eika` prompt, including saving a memory at once
       instead of later. Only `eika` writes memories (decided): subagents put what
       they learned in their report, and Eika saves it.
+      - [ ] **P5-07**: Write policy and home runtime wiring.
 - [ ] Inbox page: a list with a badge and live updates on topic `inbox`, holding
       pending memories for now (accept, edit, reject). No push.
+      - [ ] **P5-12**: Pending APIs, count and live events.
+      - [ ] **P5-15**: Inbox page, badge and actions.
 - [ ] Memory UI: list, filters, search, editor, pin, archive, purge.
+      - [ ] **P5-11**: Memory APIs and user mutations.
+      - [ ] **P5-13**: Memory page, list, search and detail.
+      - [ ] **P5-14**: Editor, controls and Instructions access.
 - [ ] `make backup` and `make restore`: the database, the memory repository and
       the key file, with a documented and tested restore.
+      - [ ] **P5-16**: Consistent backup.
+      - [ ] **P5-17**: Restore and populated-data verification.
+- [ ] Scripted stack coverage.
+      - [ ] **P5-18**: Memory smoke flow and isolation check.
 - [ ] Phase 5 live suite, on the bench's chat model and guard: the exit's
       poisoning scenario, and 30 ordinary preferences and rules as the user would
       state them ("always use metric", "never book before 9"), none of which may
       go pending. If some do, memory writes get their own threshold.
+      - [ ] **P5-19**: Live harness and save/recall scenario.
+      - [ ] **P5-20**: Thirty ordinary preferences and rules.
+      - [ ] **P5-21**: Poisoning chain and second-screen case.
+      - [ ] **P5-22**: Bench run and recorded results.
+- [ ] Close phase 5 after all exit checks.
+      - [ ] **P5-23**: Checks, manual exit and documentation close.
 
 **Exit:**
 - Facts told in the home session appear in its preamble after the next compaction.

@@ -2599,3 +2599,28 @@ transaction. Plugin trust is deferred to phase 11.
   must do the same for blocklist changes with the store's `appendAudit` function.
 - Migration 0023 already rejects audit updates, deletes, and truncation. Its
   Postgres upgrade test checks each operation, so no new migration is needed.
+
+## Phase 5 defaults (P5-00)
+
+Applied on 2026-11-22 while the owner was away, from the planner's recommended
+defaults; any can be revisited before the package that depends on it.
+
+- **The memory repository is Core state.** It lives on the Core volume at
+  `/var/lib/eika/memory` with `internal/memory` as its one writer. Tools pass a
+  validated memory name, never a path, so the executor rule (agent file and
+  process actions go through `internal/executor`) is not bypassed.
+- **State is tracked frontmatter.** `state` is `active`, `pending` or
+  `archived`, so a full reindex restores it. It is state, not provenance.
+- **Unscanned writes are pending.** When the guard does not answer, an agent
+  write is pending; with `screen_required` it is rejected with nothing written.
+  Description and body are both screened, user edits too, and only the user's
+  accept promotes flagged content. Credentials are always denied. The threshold
+  is the shared 0.9 until the live suite shows memory needs its own.
+- **The preamble never claims an estimate is exact.** If exact counting fails
+  the new snapshot is not built and the previous one stays. A pin or edit that
+  would put the pinned section over 3,000 tokens or 12 entries is rejected.
+- **Purge keeps git history.** Purge removes the file and its index row in a
+  commit; the UI and backup docs say that history, old sessions and backups can
+  still hold the text. No history rewrite in this phase.
+- **Memory changes do not wake an idle home.** They reach the next message's
+  tail as notices, with no push.
