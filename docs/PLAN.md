@@ -655,7 +655,7 @@ package that changes it. Project scope, other install sources, `skill_file`,
       directory is missing or whose hash differs is marked broken and not loaded;
       an unknown directory is reported, never adopted. Test a populated upgrade and
       a failure between directory and row.
-- [ ] **P6-05**: Screen at install (question 3), through `sentry` and the
+- [x] **P6-05**: Screen at install (question 3), through `sentry` and the
       `sentry/screen` client, as P5-05 does for memory and never through `Gate.Ingest`
       (which removes and wraps). A credential pattern in any text file rejects the
       install and names the pattern; the guard classifies the description and
@@ -1076,10 +1076,11 @@ Pulled forward at the owner's request (`PLAN_LOG.md`, P6-00); the "only if a ski
 worth installing" condition no longer applies. Design: `design/skills-and-plugins.md`
 "Skills". Packages: "Schedule for phase 6".
 
-- [ ] Add `internal/skill` (P6-01, P6-04, P6-05):
+- [x] Add `internal/skill` (P6-01, P6-04, P6-05):
       - [x] lenient parsing and validation of the specification (P6-01)
       - [x] the store and the `core.skills` rows (P6-04)
-      - [x] install from a `.zip` (P6-04; the screen is P6-05)
+      - [x] install from a `.zip` (P6-04)
+      - [x] the install screen (P6-05)
 - [ ] (P6-02, P6-03 done; P6-12) Mount `/skills` read-only into computers from a volume of its own
       (`eika-skills`), never from Core's `/var/lib/eika` volume, which holds
       `secret.key` and the memory repository. `make backup` covers it.

@@ -184,6 +184,7 @@ func (s *Server) SkillInstaller() *skill.Installer { return s.skillInstaller.Loa
 // unknown directories are logged and left alone.
 func (s *Server) recoverSkills(ctx context.Context) error {
 	in := skill.NewInstaller(skillsFiles{s}, s.deps.Store)
+	s.screenSkills(in)
 	rep, err := in.Reconcile(ctx)
 	if err != nil {
 		return fmt.Errorf("reconcile skills: %w", err)
