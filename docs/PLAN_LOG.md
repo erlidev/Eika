@@ -2367,4 +2367,4 @@ install's memory repository. Migration 0032 adds `memory_computer` (one row);
 and volume are `eika-cx-<id>`. The egress policy
 matches the recorded id; the computer stays out of the computers API. `deploy/backup.sh`
 reads the id from Postgres (`EIKA_MEMORY_VOLUME` still overrides). Tests: the
-store upgrade and fresh-id case; `TestMemoryComputerIsPrivate` uses the id.
+per-database id case; `TestMemoryComputerIsPrivate` uses the id.
