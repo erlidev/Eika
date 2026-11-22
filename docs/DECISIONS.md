@@ -2721,6 +2721,19 @@ a guard that did not answer stores `unscanned`, and `screen_required` does not r
 skill. Audit rows (`deny` for a credential, `skill_screen` otherwise) carry pattern, file,
 counts and score, no text. `server.skillScreener` adapts it to `Installer.SetScreener`.
 
+**Skill catalog in the snapshot (P6-08).** `skill.BuildCatalog` renders the loadable
+skills (enabled, not broken) by name, one line each, whole entries only, inside
+2,000 exact tokens counted with the model's counter (`textCounter`, as for memory); an
+overflow line, inside the budget, covers what cannot fit. `buildPreamble` puts it
+before the memory section for the home session and `worker` sessions (researchers
+have no `skill_use`); no loadable skill means no section. It is plain preamble text,
+so it is frozen with the snapshot, and the inspector shows it inside the `preamble`
+section (no new kind, no wire change). `refreshSnapshot` rebuilds it at compaction;
+if the count is not exact it keeps the previous snapshot's catalog (read back from
+the stored text), and a first snapshot without an exact count has none until the first
+compaction. A new worker builds it at start. A preview of a not-yet-stored snapshot
+omits it.
+
 ## Memory writer and index (P5-03)
 
 `memory.Writer` is the only writer of memory files. It depends on two small

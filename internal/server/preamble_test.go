@@ -65,3 +65,32 @@ func TestPreambleEndsWithTheMemorySection(t *testing.T) {
 		t.Fatalf("preamble = %q", got)
 	}
 }
+
+func TestPreambleHasTheSkillCatalogBeforeMemory(t *testing.T) {
+	cat := "## Skills (skill_use <name> to load one)\n- a: b\n"
+	d := preambleData{home: true, zone: "UTC", locale: "en-US", skills: cat, memory: "## Memory\n- a: b\n"}
+	got := renderPreamble(d)
+	if !strings.HasSuffix(got, "Locale\nen-US\n\n## Skills (skill_use <name> to load one)\n- a: b\n\n## Memory\n- a: b\n") {
+		t.Fatalf("preamble = %q", got)
+	}
+	if catalogOf(got, agent.MemorySnapshot{Text: d.memory}) != cat {
+		t.Fatalf("catalogOf = %q, want %q", catalogOf(got, agent.MemorySnapshot{Text: d.memory}), cat)
+	}
+	d.memory = ""
+	if catalogOf(renderPreamble(d), agent.MemorySnapshot{}) != cat || catalogOf("Locale\nen-US", agent.MemorySnapshot{}) != "" {
+		t.Fatal("catalogOf did not find the section alone, or invented one")
+	}
+	d.skills = ""
+	if strings.Contains(renderPreamble(d), "Skills") {
+		t.Fatal("a section without skills")
+	}
+	for sess, want := range map[store.Session]bool{
+		{Kind: store.SessionHome}:                          true,
+		{Kind: store.SessionSubagent, Agent: "worker"}:     true,
+		{Kind: store.SessionSubagent, Agent: "researcher"}: false,
+	} {
+		if hasSkills(sess) != want {
+			t.Errorf("hasSkills(%+v) = %v", sess, !want)
+		}
+	}
+}
