@@ -167,8 +167,8 @@ function BlockedHosts() {
     <section className="space-y-2">
       <h3 className="text-sm font-medium">Blocked hosts</h3>
       <p className="text-muted-foreground text-xs">
-        The computer cannot connect to blocked hosts. Blocking applies to the exact host, not its
-        subdomains. Web fetch and search will use this list in a future update.
+        Computers, web fetch and search cannot connect to blocked hosts. Blocking applies to the
+        exact host, not its subdomains.
       </p>
       {sources.isError && (
         <LoadError
@@ -213,7 +213,7 @@ function BlockedHosts() {
           });
         }}
       >
-        <Label htmlFor="blocked-host">Host</Label>
+        <Label htmlFor="blocked-host">Host to block</Label>
         <div className="flex gap-2">
           <Input
             id="blocked-host"
@@ -295,7 +295,7 @@ function TrustedSources() {
           });
         }}
       >
-        <Label htmlFor="trusted-host">Host</Label>
+        <Label htmlFor="trusted-host">Host to trust</Label>
         <div className="flex gap-2">
           <Input
             id="trusted-host"
