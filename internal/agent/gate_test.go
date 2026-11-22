@@ -18,8 +18,9 @@ import (
 
 // stubGate answers every Decide the same way.
 type stubGate struct {
-	verdict sentry.Verdict
-	err     error
+	sentry.Gate // halt methods; unused here
+	verdict     sentry.Verdict
+	err         error
 }
 
 func (g stubGate) Decide(context.Context, sentry.Action) (sentry.Verdict, error) {

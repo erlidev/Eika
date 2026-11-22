@@ -9,6 +9,15 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-09 added halt. Migration 0024 `core.halt` (one row; `store.SetHalt` writes it and the
+  `halt` or `resume` audit row in one transaction). `Gate` gains `Halted`, `Halt` and `Resume`; `Decide`
+  denies everything first while halted, and a halt state that cannot be read at start counts as halted.
+  `server/halt.go`: `runs.abortAll` (subagents run through the same manager), `runs.reserve` refuses new
+  runs (409), `Deps.Pause` is the scheduler hook (nil until phase 7), `halt.state` on `global`, one push.
+  Routes `GET /api/halt`, `POST /api/halt` (`{reason}`), `POST /api/halt/resume`; the three are listed
+  `unmocked` in `mock.test.ts` until P4-10 serves them. Halting twice is a no-op, with no second audit or push.
+  - Next: P4-10 reads `GET /api/halt` on load and `halt.state` after; P4-12 halts through `gate.Halt` (the
+    server's `halt` also aborts); P4-19 asks `gate.Halted()`. A queued steering message kept for a session stays.
 - 2026-11-21: Stage A review fixes. `agent.ingest` now ingests error results of tools that ran
   (web_fetch errors carry page headings and filtered text; chosen over stripping, as simpler);
   `Ingest` errors on a cancelled context; `wrap` neutralises any-case, spaced closing tags; `cut`

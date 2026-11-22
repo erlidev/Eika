@@ -96,6 +96,10 @@ type Deps struct {
 	// whose tools runs offer beside the built-in ones. Without it the MCP
 	// routes are not served. The caller closes it after the server.
 	MCP *mcp.Pool
+	// Pause is the scheduler's pause hook: called with true when Eika is
+	// halted and false when it is resumed. Nil until the scheduler of phase 7
+	// exists.
+	Pause func(paused bool)
 }
 
 // Options configures a Server beyond what config.Config carries.
@@ -166,7 +170,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		s.tree = session.NewTree(deps.Store)
 	}
 	if deps.Store != nil {
-		o := sentry.Options{Audit: deps.Store, Withheld: deps.Store, Threshold: cfg.ScreenThreshold, Log: log}
+		o := sentry.Options{Audit: deps.Store, Halts: deps.Store, Withheld: deps.Store, Threshold: cfg.ScreenThreshold, Log: log}
 		if cfg.GuardURL != "" {
 			o.Screen = screen.New(cfg.GuardURL)
 		}

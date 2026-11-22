@@ -26,6 +26,7 @@ export type EventType =
   | "session.message"
   | "compaction.start"
   | "compaction.end"
+  | "halt.state"
   | "bus.dropped";
 
 /** EikaEvent is the envelope every streamed event uses. */
@@ -259,6 +260,13 @@ export type CompactionStart = {
   tokens_before: number;
 };
 
+/** HaltState is the payload of a halt.state event, published on global. */
+export type HaltState = {
+  halted: boolean;
+  at?: string;
+  reason?: string;
+};
+
 /**
  * CompactionEnd is the payload of a compaction.end event. One that failed
  * carries error and changed nothing; one that succeeded is stored as an entry
@@ -309,6 +317,7 @@ export type EventPayloads = {
   "session.message": SessionMessage;
   "compaction.start": CompactionStart;
   "compaction.end": CompactionEnd;
+  "halt.state": HaltState;
   "bus.dropped": BusDropped;
 };
 
@@ -365,6 +374,7 @@ export const eventTypes: readonly EventType[] = [
   "session.message",
   "compaction.start",
   "compaction.end",
+  "halt.state",
   "bus.dropped",
 ];
 

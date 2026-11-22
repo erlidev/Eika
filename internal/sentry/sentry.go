@@ -24,6 +24,14 @@ type Gate interface {
 	// A tool result that is one piece of content is one segment; a web search
 	// is one segment per result, so a removal never spans two results.
 	Ingest(ctx context.Context, segments []Segment) ([]Ingested, error)
+	// Halted reports whether Eika is halted, in memory. While it is, Decide
+	// denies every action.
+	Halted() HaltState
+	// Halt and Resume change the persisted state and write the audit row. The
+	// bool is false when the state was already what was asked for. Aborting
+	// runs and telling the user are Core's part, not the gate's.
+	Halt(ctx context.Context, reason string) (HaltState, bool, error)
+	Resume(ctx context.Context) (HaltState, bool, error)
 }
 
 // Kind says how an Action's Name is read.
@@ -146,6 +154,9 @@ type Options struct {
 	Audit AuditLog
 	// Withheld receives the text of every removal. Nil keeps no record.
 	Withheld WithheldLog
+	// Halts keeps the halted state. Nil means the state is never persisted and
+	// Halt returns an error.
+	Halts HaltStore
 	// Screen is the injection screen. Nil means no screen is configured, and
 	// content passes unscreened.
 	Screen Screener
@@ -162,13 +173,21 @@ func New(o Options) Gate {
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
-	return &gate{Options: o}
+	g := &gate{Options: o}
+	g.load()
+	return g
 }
 
-type gate struct{ Options }
+type gate struct {
+	Options
+	halt haltFlag
+}
 
 func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 	v := g.policy(a)
+	if g.halt.get().Halted {
+		v = Verdict{Decision: Deny, Reason: haltReason}
+	}
 	if v.Decision == Allow {
 		return v, nil
 	}

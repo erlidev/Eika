@@ -76,6 +76,9 @@ var routeWire = map[string]wire{
 	"POST /api/auth/logout":  {status: http.StatusNoContent},
 	"PUT /api/auth/password": {status: http.StatusOK, request: changePasswordRequest{}, response: signInResponse{}},
 
+	"GET /api/halt":          {status: http.StatusOK, response: haltResponse{}},
+	"POST /api/halt":         {status: http.StatusOK, request: haltRequest{}, response: haltResponse{}},
+	"POST /api/halt/resume":  {status: http.StatusOK, response: haltResponse{}},
 	"GET /api/withheld":      {status: http.StatusOK, response: withheldResponse{}},
 	"GET /api/withheld/{id}": {status: http.StatusOK, response: withheldBody{}},
 
@@ -156,6 +159,7 @@ var eventPayloads = map[string]any{
 	event.TypeSessionTitle:    event.SessionTitle{},
 	event.TypeSessionUpdated:  event.SessionUpdated{},
 	event.TypeSessionMessage:  event.SessionMessage{},
+	event.TypeHaltState:       event.HaltState{},
 	event.TypeBusDropped:      event.BusDropped{},
 	event.TypeCompactionStart: event.CompactionStart{},
 	event.TypeCompactionEnd:   event.CompactionEnd{},

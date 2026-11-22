@@ -324,3 +324,12 @@ type RunError struct {
 	Message   string `json:"message"`
 	Retryable bool   `json:"retryable"`
 }
+
+// HaltState is the payload of a halt.state event, published on the global
+// topic when Eika is halted or resumed. Halted is the state now; At and Reason
+// are set only while it is halted.
+type HaltState struct {
+	Halted bool       `json:"halted"`
+	At     *time.Time `json:"at,omitempty"`
+	Reason string     `json:"reason,omitempty"`
+}

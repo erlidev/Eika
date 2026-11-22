@@ -56,6 +56,8 @@ const (
 	// TypeSessionMessage carries one stored session entry, which is how a
 	// client replays the messages it missed.
 	TypeSessionMessage = "session.message"
+	// TypeHaltState reports that Eika was halted or resumed.
+	TypeHaltState = "halt.state"
 	// TypeBusDropped reports that the client fell behind and lost events.
 	TypeBusDropped = "bus.dropped"
 )

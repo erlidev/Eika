@@ -201,6 +201,20 @@
     "GET /api/events": {
       "websocket": true
     },
+    "GET /api/halt": {
+      "status": 200,
+      "response": {
+        "object": {
+          "at": "string",
+          "halted": "boolean",
+          "reason": "string"
+        },
+        "optional": [
+          "at",
+          "reason"
+        ]
+      }
+    },
     "GET /api/healthz": {
       "status": 200,
       "response": {
@@ -3460,6 +3474,39 @@
         }
       }
     },
+    "POST /api/halt": {
+      "status": 200,
+      "request": {
+        "object": {
+          "reason": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "at": "string",
+          "halted": "boolean",
+          "reason": "string"
+        },
+        "optional": [
+          "at",
+          "reason"
+        ]
+      }
+    },
+    "POST /api/halt/resume": {
+      "status": 200,
+      "response": {
+        "object": {
+          "at": "string",
+          "halted": "boolean",
+          "reason": "string"
+        },
+        "optional": [
+          "at",
+          "reason"
+        ]
+      }
+    },
     "POST /api/mcp/oauth/callback": {
       "status": 200,
       "request": {
@@ -4843,6 +4890,17 @@
         "computer_id": "string",
         "state": "string"
       }
+    },
+    "halt.state": {
+      "object": {
+        "at": "string",
+        "halted": "boolean",
+        "reason": "string"
+      },
+      "optional": [
+        "at",
+        "reason"
+      ]
     },
     "mcp.elicitation": {
       "object": {

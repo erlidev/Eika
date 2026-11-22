@@ -221,7 +221,7 @@ addresses (see the hazards below). Log what broke: it orders stage B.
 
 What stops Eika outright. None of it asks.
 
-- [ ] **P4-09**: Add halt: persisted state, the first step of `Decide`, abort of every
+- [x] **P4-09**: Add halt: persisted state, the first step of `Decide`, abort of every
       run, a pause hook for the scheduler of phase 7, one push, and the API.
 - [ ] **P4-10**: Add the halt button in `HaltSlot`, resume, and the banner. Add its
       `World` routes and baselines.
@@ -504,7 +504,7 @@ and also requires the exit checks.
       - [ ] **P4-20**: Check the blocklist and halt before Core's own fetches.
 - [ ] Halt: an always-visible button, resume, and Core's reaction (abort runs, a
       scheduler pause hook, a banner, a push).
-      - [ ] **P4-09**: Add halt state, run abort, the pause hook, the push and the API.
+      - [x] **P4-09**: Add halt state, run abort, the pause hook, the push and the API.
       - [ ] **P4-10**: Add the halt button, resume and banner.
 - [ ] Audit: an append-only table with a row for every decision that was not a
       plain allow, every removal, every setting change and every halt, never

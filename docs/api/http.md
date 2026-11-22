@@ -193,6 +193,28 @@ sees.
 `compaction` entry replaces the messages before it with a user message that
 carries its summary and has `"summary": true`, followed by the ones it kept.
 
+### `GET /api/halt`
+
+Whether Eika is halted. Returns `200` with `halted` (boolean) and, while halted,
+`at` (RFC 3339) and `reason` (string, may be absent). The state is stored, so it
+survives a restart.
+
+### `POST /api/halt`
+
+Halts Eika. Body `{"reason": string}`, the reason optional and at most 200 bytes
+(`400` otherwise). Every tool call is denied from then on, with a reason the
+agent can act on, and no run starts (a message to a session returns `409`). Every
+running run, home and subagent, is aborted before the response returns. One push
+goes out through the ntfy topic, if there is one, and a `halt.state` event is
+published. Halting a halted Eika changes nothing. Returns `200`, as `GET
+/api/halt`. The audit log gets a `halt` row.
+
+### `POST /api/halt/resume`
+
+Clears the halt. Runs start again; the ones that were aborted stay aborted.
+Returns `200`, as `GET /api/halt`, and writes a `resume` audit row. Resuming
+a running Eika changes nothing.
+
 ### `GET /api/withheld`
 
 Text that ingest removed from a tool result or a subagent's report, newest first

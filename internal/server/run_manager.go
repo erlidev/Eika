@@ -430,6 +430,9 @@ func (r *runs) reserve(sessionID, computerID string, work job, cancel context.Ca
 	if r.stopped {
 		return nil, conflictf("the harness is shutting down")
 	}
+	if r.server != nil && r.server.gate != nil && r.server.gate.Halted().Halted {
+		return nil, conflictf("Eika is halted: resume it to start a run")
+	}
 	if work.idle {
 		if len(r.bySession) != 0 || time.Since(r.lastImportant) < work.idleFor {
 			return nil, conflictf("core is not idle")
@@ -639,6 +642,28 @@ func (r *runs) stopSessionsOf(ctx context.Context, st *store.Store, computerID s
 	}
 	for _, sess := range sessions {
 		r.stop(ctx, sess.ID)
+	}
+}
+
+// abortAll aborts every run going now, home and subagent alike, and waits for
+// each to end. Unlike stopAll it leaves the manager open: halt refuses new
+// runs by its own state, and resume lets them start again.
+func (r *runs) abortAll() {
+	r.mu.Lock()
+	active := make([]*activeRun, 0, len(r.byID)+len(r.bySession))
+	seen := make(map[*activeRun]bool)
+	for _, a := range r.bySession {
+		active, seen[a] = append(active, a), true
+	}
+	for _, a := range r.byID {
+		if !seen[a] {
+			active = append(active, a)
+		}
+	}
+	r.mu.Unlock()
+	for _, a := range active {
+		a.abort()
+		<-a.done
 	}
 }
 

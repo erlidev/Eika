@@ -354,6 +354,19 @@ and refetches `GET /api/computers`.
 | `computer_id` | string | The computer. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 
+## Halt events
+
+### `halt.state`
+
+Published on `global` when Eika is halted or resumed, and only when the state
+changes. A client shows its banner from it and reads `GET /api/halt` on connect.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `halted` | boolean | The state now. |
+| `at` | string, optional | When it was halted, RFC 3339. Only while halted. |
+| `reason` | string, optional | The note given with the halt. Only while halted. |
+
 ## MCP events
 
 ### `mcp.server`
