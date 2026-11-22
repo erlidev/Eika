@@ -2350,3 +2350,30 @@ Pending list/count and accept/reject routes (accept takes optional edits),
 web types/client/event types and harness routes (which also emit the events).
 Decisions in DECISIONS "Inbox API and events (P5-12)". Tested: memory writer unit
 test, docker API test (events, 400/409, credential on accept), mock test.
+
+## P5-13 — Memory page (2026-11-22)
+
+`features/memory` adds `/memory/:name?` and a Memory entry in the rail and bottom
+bar. `components/MasterDetail.tsx` is the first shared list-and-detail layout
+(Activity keeps its own copy of the same markup for now). The list pages by
+cursor; a search cannot take `state` or `pinned`, so `state.ts` `narrow` applies
+them to the hits and sends `include_archived` unless the state filter excludes
+archived. The detail uses the shared `Markdown`, and links a source's
+`session:<id>` to Activity or Chat when the session is a subagent or the home
+session (an entry has no page). Read-only; the list does not refresh on its own
+until P5-12's events exist. Harness: `memory` scenario (active, pinned, pending
+with a flagged span, archived). New `memory.spec.ts` baselines for desktop and a
+coarse-pointer phone; the rail and bottom bar gain a fourth item, so the shell,
+Activity, Projects and touch baselines are expected to change.
+
+## Fix: per-install memory computer id (2026-11-22)
+
+The memory computer had the fixed id `memory`, so every stack on a Docker host
+(smoke, live and docker tests, a real install) shared the volume
+`eika-cx-memory`, and `make smoke-down` or a test cleanup could delete a real
+install's memory repository. Migration 0032 adds `memory_computer` (one row);
+`EnsureMemory` records a generated id once, like home's row, and the container
+and volume are `eika-cx-<id>`. The egress policy
+matches the recorded id; the computer stays out of the computers API. `deploy/backup.sh`
+reads the id from Postgres (`EIKA_MEMORY_VOLUME` still overrides). Tests: the
+per-database id case; `TestMemoryComputerIsPrivate` uses the id.

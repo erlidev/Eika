@@ -893,7 +893,8 @@ enables JSON results.
 The frontend uses React, Vite, TypeScript, Tailwind, shadcn with Radix,
 TanStack Query, Zustand and React Router. UI pages are registered in
 `app/pages.ts` and routed in `app/App.tsx`: Chat at `/`, Activity at
-`/activity/:sessionId?`, and Projects at `/projects/:slug?`. The MCP OAuth
+`/activity/:sessionId?`, Projects at `/projects/:slug?`, and Memory at
+`/memory/:name?`. The MCP OAuth
 callback has its own route. `docs/EXTENDING.md` describes adding a page.
 
 The production build includes a web manifest and service worker. The worker
@@ -986,6 +987,13 @@ web/src/
   request in it takes no answer. Cancel is
   `POST /api/sessions/{id}/cancel` (the lifecycle service's cancel); steering goes through
   Eika in Chat.
+- **Memory** (`features/memory`): the page at `/memory` and `/memory/:name`, a
+  `MasterDetail` (`components/MasterDetail.tsx`) over `GET /api/memories`.
+  Type, state and Pinned filters and search (a search is sent `q`, type and
+  `include_archived`; the client applies state and pinned to its hits); the
+  detail renders the body with `Markdown`, shows a pending memory's flagged spans
+  and an archive reason, and links `session:<id>` in the source to Activity (a
+  subagent) or Chat (home). Read-only until P5-14; no event refreshes it until P5-12.
 - **Projects** (`features/projects`): the list and project detail show metadata
   and the project's subagents. Detail tabs are Overview, Instructions and
   Subagents; the instruction editor saves user text, and subagents link to

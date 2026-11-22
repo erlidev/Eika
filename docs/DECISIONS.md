@@ -2644,8 +2644,14 @@ as `active`, `pending` or `archived`, as decided in P5-00.
 ## Memory computer (P5-02)
 
 The private memory computer is not a computer row. It exists as a container and
-volume only (id `memory`, label `eika.role=memory`), so nothing that lists or
-addresses computers can reach it. Its egress is fixed to `none` in the egress
+volume only (label `eika.role=memory`), so nothing that lists or
+addresses computers can reach it. Its id is generated once per install and
+recorded in the `memory_computer` table (0032), so its container and volume
+(`eika-cx-<id>`) are unique to the install: a fixed id would share one volume
+across the smoke stack, tests and a real install on one Docker host, and
+`make smoke-down` or a test cleanup could delete a real memory repository. Every
+install gets a generated id when the computer is first ensured. A restore must put back the recorded id with the
+volume. Its egress is fixed to `none` in the egress
 policy and it joins the internal sandbox network; a host with no such network
 does not start it rather than give it a route out. Its volume is the host's own
 per-computer volume, not a compose volume: only its container mounts it, at

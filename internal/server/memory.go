@@ -18,14 +18,15 @@ import (
 )
 
 // The private memory computer. It holds the memory repository and is how Core
-// reads, writes and runs git on it without touching files itself. It is not a
-// row in the store, so the computers API, the UI, the idle stopper and every
+// reads, writes and runs git on it without touching files itself. Its id is
+// generated once per install and recorded in the store's memory_computer
+// table, so its container and volume (eika-cx-<id>) belong to this install
+// alone. It is not a row in computers, so the computers API, the UI, the idle stopper and every
 // tool's computer argument never see it, and no agent run is given its
 // executor. It sits on the internal sandbox network with egress none, and
 // mounts only its own volume.
 const (
-	memoryComputerID = "memory"
-	memoryRole       = "memory"
+	memoryRole = "memory"
 	// memoryRoot is where the memory repository is mounted in its computer.
 	memoryRoot = "/var/lib/eika/memory"
 )
@@ -38,12 +39,17 @@ func (s *Server) EnsureMemory(ctx context.Context) error {
 	s.memoryMu.Lock()
 	defer s.memoryMu.Unlock()
 
-	host, err := s.deps.Computers.Inspect(ctx, memoryComputerID)
+	id, err := s.deps.Store.EnsureMemoryComputerID(ctx)
+	if err != nil {
+		return err
+	}
+	s.memoryID.Store(&id)
+	host, err := s.deps.Computers.Inspect(ctx, id)
 	switch {
 	case err == nil:
 	case errors.Is(err, computer.ErrNoComputer):
 		if host, err = s.deps.Computers.Create(ctx, computer.Spec{
-			ID:    memoryComputerID,
+			ID:    id,
 			Image: s.sandboxImage(ctx),
 			Root:  memoryRoot,
 			Role:  memoryRole,
@@ -54,7 +60,7 @@ func (s *Server) EnsureMemory(ctx context.Context) error {
 		}); err != nil {
 			return fmt.Errorf("create the memory computer: %w", err)
 		}
-		s.forgetEgress(memoryComputerID)
+		s.forgetEgress(id)
 		s.log.Info("memory computer created")
 	default:
 		return err
@@ -74,13 +80,31 @@ func (s *Server) EnsureMemory(ctx context.Context) error {
 	return nil
 }
 
+// isMemoryComputer is whether id is the private memory computer's. It reads
+// the store once, and only a recorded id can match, so a lookup never records one.
+func (s *Server) isMemoryComputer(ctx context.Context, id string) bool {
+	if known := s.memoryID.Load(); known != nil {
+		return *known == id
+	}
+	rec, err := s.deps.Store.MemoryComputerID(ctx)
+	if err != nil {
+		return false
+	}
+	s.memoryID.Store(&rec)
+	return rec == id
+}
+
 // MemoryRepository returns the memory repository, starting the memory
 // computer if it is stopped. It is for Core's memory writer alone.
 func (s *Server) MemoryRepository(ctx context.Context) (*repo.Repository, error) {
 	if err := s.EnsureMemory(ctx); err != nil {
 		return nil, err
 	}
-	host, err := s.deps.Computers.Inspect(ctx, memoryComputerID)
+	id, err := s.deps.Store.MemoryComputerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	host, err := s.deps.Computers.Inspect(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +173,11 @@ func ReindexMemory(ctx context.Context, cfg config.Config, log *slog.Logger) (me
 		return memory.Report{}, err
 	}
 	defer host.Close()
-	cx, err := host.Inspect(ctx, memoryComputerID)
+	id, err := st.MemoryComputerID(ctx)
+	if err != nil {
+		return memory.Report{}, fmt.Errorf("find the memory computer: %w", err)
+	}
+	cx, err := host.Inspect(ctx, id)
 	if err != nil {
 		return memory.Report{}, fmt.Errorf("find the memory computer: %w", err)
 	}

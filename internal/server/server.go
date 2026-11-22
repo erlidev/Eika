@@ -149,6 +149,8 @@ type Server struct {
 	homeMu sync.Mutex
 	// memoryMu makes EnsureMemory take turns.
 	memoryMu sync.Mutex
+	// memoryID caches the recorded id of the memory computer once known.
+	memoryID atomic.Pointer[string]
 	// memoryWriter is set once the memory index has been reconciled.
 	memoryWriter atomic.Pointer[memory.Writer]
 	startMu      sync.Mutex

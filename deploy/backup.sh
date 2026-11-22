@@ -17,7 +17,8 @@
 # Environment:
 #   COMPOSE            compose command (default "docker compose")
 #   EIKA_BACKUP_DIR    where sets are written (default ./backups)
-#   EIKA_MEMORY_VOLUME the memory computer's volume (default eika-cx-memory)
+#   EIKA_MEMORY_VOLUME the memory computer's volume (default: eika-cx-<id>, the
+#                      id this install recorded in its database)
 #   EIKA_BACKUP_IMAGE  image whose tar and sh read the volumes (default
 #                      postgres:16-alpine, which the stack already uses)
 set -eu
@@ -25,7 +26,7 @@ umask 077
 
 compose="${COMPOSE:-docker compose}"
 root="${EIKA_BACKUP_DIR:-backups}"
-memvol="${EIKA_MEMORY_VOLUME:-eika-cx-memory}"
+memvol="${EIKA_MEMORY_VOLUME:-}"
 image="${EIKA_BACKUP_IMAGE:-postgres:16-alpine}"
 here="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -42,6 +43,13 @@ core="$($compose ps -aq eika 2>/dev/null || true)"
 [ -n "$core" ] || fail "the stack has no eika service"
 keyvol="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/eika"}}{{.Name}}{{end}}{{end}}' "$core")"
 [ -n "$keyvol" ] || fail "the eika service has no data volume"
+# The memory computer's id is per install and recorded in the database, so the
+# volume is this stack's own, never another stack's on the same Docker host.
+if [ -z "$memvol" ]; then
+	memid="$($compose exec -T postgres sh -c 'psql -At -U "${POSTGRES_USER:-eika}" -d "${POSTGRES_DB:-eika}" -c "SELECT id FROM core.memory_computer"' 2>/dev/null | tr -d '\r' || true)"
+	[ -n "$memid" ] || fail "no memory computer is recorded in the database yet; start eika once, or set EIKA_MEMORY_VOLUME"
+	memvol="eika-cx-$memid"
+fi
 docker volume inspect "$memvol" >/dev/null 2>&1 || fail "memory volume $memvol does not exist (set EIKA_MEMORY_VOLUME if it is named otherwise)"
 
 # have VOLUME PATH: the path exists inside the volume.
