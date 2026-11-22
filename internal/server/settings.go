@@ -189,6 +189,9 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 	}
 	out := make(map[string]json.RawMessage, len(rows))
 	for _, row := range rows {
+		if row.Key == canarySetting {
+			continue
+		}
 		if row.Key == ntfySetting {
 			var sealed []byte
 			_ = json.Unmarshal(row.Value, &sealed)

@@ -58,6 +58,8 @@ type Computers interface {
 	Capacity(ctx context.Context) (computer.Capacity, error)
 	// EgressControl reports whether a computer's egress can be restricted.
 	EgressControl() bool
+	// Refresh gives a running computer's daemon its environment again.
+	Refresh(ctx context.Context, cx computer.Computer) error
 }
 
 // Providers builds a provider on an endpoint the user configured. The models
@@ -156,6 +158,9 @@ type Server struct {
 	// gate decides every tool call of every agent loop, the home session's
 	// and the subagents' alike; newAgent hands it to each.
 	gate sentry.Gate
+	// canary is the fake key planted in the home computer, which the gate
+	// halts Eika for.
+	canary canaryHolder
 }
 
 // New builds a Server for the given configuration and dependencies. A zero
@@ -174,6 +179,12 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		if cfg.GuardURL != "" {
 			o.Screen = screen.New(cfg.GuardURL)
 		}
+		o.Canary = s.canary.get
+		o.Halter = func(ctx context.Context, reason string) error {
+			_, err := s.haltWith(ctx, reason, func() { go s.runs.abortAll() })
+			return err
+		}
+		s.ensureCanary(context.Background())
 		s.gate = sentry.New(o)
 	}
 	s.inference = inference.New(log)

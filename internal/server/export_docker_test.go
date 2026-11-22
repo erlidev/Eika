@@ -87,3 +87,6 @@ func (s *Server) SetNotificationClientForTest(client *http.Client, publicURL str
 	s.notifications.client = client
 	s.cfg.PublicURL = publicURL
 }
+
+// CanaryForTest is the canary the server planted in the home computer.
+func (s *Server) CanaryForTest() string { return s.canary.get() }

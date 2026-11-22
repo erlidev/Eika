@@ -92,6 +92,12 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 		s.idle.used(row.ID, time.Now())
 		return nil
 	}
+	// A computer that is already up, as one is after the harness restarts or
+	// on an install that predates the canary, gets it now rather than at its
+	// next start.
+	if err := s.deps.Computers.Refresh(ctx, host); err != nil {
+		return fmt.Errorf("set the home computer's environment: %w", err)
+	}
 	return s.record(ctx, row.ID, host)
 }
 

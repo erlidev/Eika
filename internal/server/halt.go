@@ -42,6 +42,13 @@ func asHalt(st sentry.HaltState) haltResponse {
 // a halted Eika aborts again, in case a run raced the first halt, and says
 // nothing more.
 func (s *Server) halt(ctx context.Context, reason string) (sentry.HaltState, error) {
+	return s.haltWith(ctx, reason, s.runs.abortAll)
+}
+
+// haltWith is halt with the abort given. A halt that a run's own tool call
+// causes aborts in the background: abortAll waits for every run to end, and
+// that run is waiting for the halt.
+func (s *Server) haltWith(ctx context.Context, reason string, abort func()) (sentry.HaltState, error) {
 	st, changed, err := s.gate.Halt(ctx, reason)
 	if err != nil {
 		return st, err
@@ -49,7 +56,7 @@ func (s *Server) halt(ctx context.Context, reason string) (sentry.HaltState, err
 	if changed && s.deps.Pause != nil {
 		s.deps.Pause(true)
 	}
-	s.runs.abortAll()
+	abort()
 	if changed {
 		s.publishHalt(ctx, st)
 		msg := "Eika is halted"
