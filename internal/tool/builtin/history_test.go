@@ -186,3 +186,41 @@ func TestHistorySearchBoundsContextAndKeepsHit(t *testing.T) {
 		t.Fatal("bounded context omitted the hit")
 	}
 }
+
+func TestHistorySearchShowsReadableHitAroundQuery(t *testing.T) {
+	text := strings.Repeat("irrelevant ", 250) + "lantern survey access phrase: violet-hedgehog-7319" + strings.Repeat(" filler", 400)
+	payload, err := json.Marshal(map[string]any{"role": "user", "content": text, "reasoning": "private reasoning", "metrics": map[string]any{"input_tokens": 999}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &historyFixture{entry: store.Entry{ID: "hit", SessionID: "home", Seq: 2, Kind: store.KindUser, Payload: payload}}
+	f.nearby = []store.Entry{{ID: "assistant", SessionID: "home", Seq: 1, Kind: store.KindAssistant, Payload: json.RawMessage(`{"role":"assistant","content":"A useful answer","reasoning":"hidden reasoning","metrics":{"input_tokens":999}}`)}, f.entry}
+	registry, err := builtin.Registry(builtin.Deps{History: f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	search, _ := registry.Get("history_search")
+	result, err := search.Call(t.Context(), tool.CallContext{SessionID: "home"}, json.RawMessage(`{"query":"lantern survey"}`))
+	if err != nil || result.IsError {
+		t.Fatalf("search: %+v %v", result, err)
+	}
+	var groups []struct {
+		Entries []struct {
+			Content   string `json:"content"`
+			Truncated bool   `json:"truncated"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &groups); err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || len(groups[0].Entries) != 2 {
+		t.Fatalf("groups: %+v", groups)
+	}
+	if groups[0].Entries[0].Content != "A useful answer" {
+		t.Fatalf("assistant content = %q", groups[0].Entries[0].Content)
+	}
+	got := groups[0].Entries[1]
+	if !got.Truncated || !strings.Contains(got.Content, "lantern survey access phrase: violet-hedgehog-7319") || strings.Contains(got.Content, "private reasoning") || strings.Contains(got.Content, "input_tokens") {
+		t.Fatalf("excerpt: %+v", got)
+	}
+}

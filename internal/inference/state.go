@@ -33,6 +33,8 @@ type RunningState struct {
 	SessionID string
 	Priority  Priority
 	Tokens    int
+	// Started is when the lease was admitted.
+	Started time.Time
 	// Held is how long the lease has been held.
 	Held time.Duration
 	// Preempted reports that the call has been cancelled and has not yet
@@ -78,7 +80,7 @@ func (q *Queue) Snapshot() []PoolState {
 		for l := range p.running {
 			st.Running = append(st.Running, RunningState{
 				Slot: l.slot, Hinted: l.hinted, Endpoint: l.need.Endpoint, Class: l.need.Class, SessionID: l.need.SessionID,
-				Priority: l.need.Priority, Tokens: l.need.Tokens, Held: now.Sub(l.started), Preempted: l.preempted,
+				Priority: l.need.Priority, Tokens: l.need.Tokens, Started: l.started.UTC(), Held: now.Sub(l.started), Preempted: l.preempted,
 			})
 		}
 		slices.SortFunc(st.Running, func(a, b RunningState) int { return cmp.Compare(a.Slot, b.Slot) })
