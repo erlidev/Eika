@@ -1317,7 +1317,7 @@ export const scenarios = {
       );
       add(
         "notice",
-        'permit (researcher) asks: Which council?\nOptions: ["City","County"]\nAnswer with subagent_message and question_id question-1, or ask the user in your reply and relay the answer with that id.',
+        'permit (researcher) asks: Question ID: question-1\nWhich council?\nOptions (JSON): ["City","County"]\nFree text allowed: false\nAnswer with subagent_message and question_id question-1, or ask the user in your reply and relay the answer with that id.',
       );
       add(
         "notice",

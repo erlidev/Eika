@@ -49,12 +49,12 @@ export function Shell() {
             <ThemeToggle />
           </span>
         </header>
-        <main className="flex min-h-0 flex-1 flex-col">
+        <main className="relative flex min-h-0 flex-1 flex-col">
           <Outlet />
+          <Toasts />
         </main>
         {bar && <BottomBar />}
       </div>
-      <Toasts />
       <SettingsDialog />
       <ImageViewer />
     </div>

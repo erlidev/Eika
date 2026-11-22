@@ -59,16 +59,16 @@ export function AgentDetail({ sessionId }: AgentDetailProps) {
     <>
       <Header agent={agent} />
       <Brief brief={agent.brief ?? ""} />
-      <SessionView key={agent.id} sessionId={agent.id} readOnly />
       {(agent.result ?? "") !== "" && (
         <section
           aria-label="Report"
-          className="bg-card m-2 max-h-48 shrink-0 overflow-y-auto rounded-md border px-3 py-2"
+          className="bg-card mx-3 mt-3 max-h-48 shrink-0 overflow-y-auto rounded-md border px-3 py-2"
         >
           <h3 className="text-xs font-medium">Report</h3>
           <p className="mt-1 text-sm break-words whitespace-pre-wrap">{agent.result}</p>
         </section>
       )}
+      <SessionView key={agent.id} sessionId={agent.id} readOnly />
     </>
   );
 }
@@ -78,7 +78,7 @@ function BackLink() {
   return (
     <Link
       to="/activity"
-      className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-xs transition-colors lg:hidden"
+      className="touch-link text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-xs transition-colors lg:hidden"
     >
       <ArrowLeft aria-hidden className="size-3.5" />
       Activity

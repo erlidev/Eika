@@ -35,6 +35,7 @@ export function NotificationsSettings() {
         id="ntfy-topic"
         type="password"
         autoComplete="off"
+        placeholder="https://ntfy.sh/your-private-topic"
         value={topic}
         onChange={(event) => {
           setTopic(event.target.value);

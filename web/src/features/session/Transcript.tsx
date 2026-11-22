@@ -34,6 +34,7 @@ import { Speed } from "@/features/session/Speed";
 import { rewindableEntries } from "@/features/session/tree";
 import { useSessionStore } from "@/features/session/store";
 import { ToolCard } from "@/features/session/ToolCard";
+import { parseQuestionNotice } from "@/features/session/questionNotice";
 import { cutOffText, visibleItems } from "@/features/session/transcript";
 import type { AssistantItem, TranscriptItem } from "@/features/session/transcript";
 import { cn } from "@/lib/utils";
@@ -148,7 +149,8 @@ export function Transcript({ sessionId, pages, empty, readOnly = false }: Transc
   useEffect(() => {
     if (!following) return;
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [rendered, following]);
+    // A question opens its card without adding a row, so it counts too.
+  }, [rendered, following, waitingCalls]);
 
   const jumpToLatest = () => {
     setFollowing(true);
@@ -421,6 +423,25 @@ const Item = memo(function Item({ item, openTool, readOnly, onRewind }: ItemProp
       const name = /^([a-z0-9-]+) \([^)]+\) (?:reported:|asks:|was interrupted)/.exec(
         item.text,
       )?.[1];
+      const asked = parseQuestionNotice(item.text);
+      if (asked !== undefined) {
+        return (
+          <article className="bg-muted/40 min-w-0 rounded-md border px-3 py-2 text-sm">
+            <h3 className="text-muted-foreground mb-1 text-xs font-semibold">
+              {asked.name} ({asked.agent}) asks
+            </h3>
+            <p className="break-words whitespace-pre-wrap">{asked.question}</p>
+            {asked.options.length > 0 && (
+              <ul className="text-muted-foreground mt-1 list-disc pl-5 text-xs">
+                {asked.options.map((option) => (
+                  <li key={option}>{option}</li>
+                ))}
+              </ul>
+            )}
+            <SubagentLink name={asked.name} />
+          </article>
+        );
+      }
       return (
         <article className="bg-muted/40 min-w-0 rounded-md border px-3 py-2 text-sm">
           <h3 className="text-muted-foreground mb-1 text-xs font-semibold">

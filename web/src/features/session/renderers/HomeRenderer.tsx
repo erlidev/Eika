@@ -20,7 +20,7 @@ export function SubagentLink({ name }: { name: string }) {
   if (!child) return null;
   return (
     <Link
-      className="text-primary text-xs hover:underline"
+      className="touch-link text-primary text-xs hover:underline"
       to={`/activity/${encodeURIComponent(child.id)}`}
     >
       View {name} in Activity

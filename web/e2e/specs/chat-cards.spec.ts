@@ -43,6 +43,8 @@ for (const [label, viewport] of [
     await expect(view.getByRole("heading", { name: "Subagents", exact: true })).toBeVisible();
     await expect(view.getByText(/entries="#1-#20"/)).toBeVisible();
     await expect(view.getByText(/Which council/)).toBeVisible();
+    // The user reads the question, not the model's instructions for answering it.
+    await expect(view.getByText(/question_id|Options \(JSON\)/)).toHaveCount(0);
     await expect(view.getByText(/outcome is unknown/).last()).toBeVisible();
     await position(compaction);
     await expectShot(eika, `chat-notices-${label}`);

@@ -869,6 +869,13 @@ The shell shows one live toast at a time for completed subagent reports and
 background home replies. Report updates carry the report id; home turn events
 identify replies. The queue is local to the page and is not restored on reload.
 Toasts link to Activity or Chat and do not appear when that content is open.
+On a phone the toast sits at the bottom of the page, above the bottom bar; a
+report toast carries the first line of the report.
+
+A subagent's question reaches Eika as a notice whose text is written for the
+model. The transcript does not show that text: `questionNotice.ts` reads the
+asker, the question and the options back out of it and shows those. The model
+still receives the notice unchanged.
 
 
 ```

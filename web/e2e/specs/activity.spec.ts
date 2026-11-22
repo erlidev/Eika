@@ -100,6 +100,13 @@ test("phone: the board is a screen of its own, and a subagent another", async ({
   const overflow = () =>
     eika.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(await overflow()).toBe(0);
+  // The shell clips, so the page never overflows: check that no row, and so no
+  // time column, reaches past the viewport.
+  const rows = await eika.page
+    .getByRole("navigation", { name: "Subagents" })
+    .getByRole("link")
+    .evaluateAll((links) => links.map((link) => link.getBoundingClientRect().right));
+  expect(Math.max(...rows)).toBeLessThanOrEqual(phone.width);
   await expectShot(eika, "activity-board-phone");
 
   await rowOf(eika, /^Waiting: permit/).click();

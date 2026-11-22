@@ -78,7 +78,7 @@ export function ProjectsPage() {
           </>
         ) : project === undefined ? (
           <>
-            <Link to="/projects" className="project-back text-primary text-sm">
+            <Link to="/projects" className="touch-link text-primary text-sm">
               Projects
             </Link>
             <p>Project not found.</p>
@@ -95,7 +95,7 @@ function ProjectDetail({ project }: { project: Project }) {
   const [tab, setTab] = useState("Overview");
   return (
     <>
-      <Link to="/projects" className="project-back text-primary text-sm">
+      <Link to="/projects" className="touch-link text-primary text-sm">
         ← Projects
       </Link>
       <h2 className="text-lg font-semibold">{project.name}</h2>
