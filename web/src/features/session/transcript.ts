@@ -86,6 +86,8 @@ export type ToolItem = {
   isError: boolean;
   details?: unknown;
   durationMs?: number;
+  /** removed counts the windows ingest removed from the result, 0 when none. */
+  removed: number;
   done: boolean;
 };
 
@@ -214,6 +216,7 @@ export type ToolResultRecord = {
   isError: boolean;
   details?: unknown;
   durationMs: number;
+  removed: number;
 };
 
 /**
@@ -528,6 +531,7 @@ function applyToolCall(state: TranscriptState, e: EikaEvent): TranscriptState {
         arguments: p.arguments,
         output: "",
         isError: result?.isError ?? false,
+        removed: result?.removed ?? 0,
         done: result !== undefined,
         ...(result === undefined
           ? {}
@@ -564,6 +568,7 @@ function applyToolResult(state: TranscriptState, e: EikaEvent): TranscriptState 
       isError: p.is_error,
       details: p.details,
       durationMs: p.duration_ms,
+      removed: p.removed ?? 0,
     },
   };
   const index = findTool(state.live, p.call_id);
@@ -583,6 +588,7 @@ function applyToolResult(state: TranscriptState, e: EikaEvent): TranscriptState 
       isError: p.is_error,
       details: p.details,
       durationMs: p.duration_ms,
+      removed: p.removed ?? 0,
       done: true,
     }),
   };
@@ -781,6 +787,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
           arguments: call.arguments,
           output: "",
           isError: false,
+          removed: 0,
           done: false,
         });
       }
@@ -916,6 +923,7 @@ export function applyEntries(
           ...item,
           content: message?.content ?? "",
           isError: message?.is_error ?? false,
+          removed: message?.removed ?? 0,
           done: true,
           ...(known === undefined ? {} : { details: known.details, durationMs: known.durationMs }),
         };
@@ -1011,6 +1019,7 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
           ...item,
           content: message?.content ?? "",
           isError: message?.is_error ?? false,
+          removed: message?.removed ?? 0,
           done: true,
           ...(known === undefined ? {} : { details: known.details, durationMs: known.durationMs }),
         }),

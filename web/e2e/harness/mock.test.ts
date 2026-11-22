@@ -22,8 +22,6 @@ const unmocked: Record<string, string> = {
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/events": "a WebSocket, which install routes itself",
   "GET /api/inference": "the Activity page that reads the queue arrives in phase 3",
-  "GET /api/withheld": "the Security page that lists them arrives in P4-08",
-  "GET /api/withheld/{id}": "the Security page that lists them arrives in P4-08",
 };
 
 /** open builds a mock on a named scenario whose replies play without pauses. */

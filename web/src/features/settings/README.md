@@ -21,6 +21,10 @@ Everything the user configures after setup, in one dialog of tabs.
   Agents is `features/agents`; Instructions is `InstructionsSettings.tsx`: the
   user's "About me" and rules, saved together with `PUT /api/instructions`, with the
   harness's text limit checked beside each field (`lib/textLimit.ts`).
+- Security is `SecuritySettings.tsx`: the withheld list from `GET /api/withheld`, newest
+  first and paged, each row with its source, where it came from and the removed text. A
+  tool card whose result had a removal carries a `withheld` mark, read from `removed` on its
+  `tool.result` event or stored entry (`features/session/ToolCard.tsx`).
 - Developer is `DeveloperSettings.tsx`: select a session and inspect its next
   request or a recorded call, including token counts and drift.
 - `queries.ts` wraps `/api/settings` and `/api/system`. `settingKeys` names

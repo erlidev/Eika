@@ -27,6 +27,7 @@ import type {
   ModelClass,
   ModelClassName,
   QueuedMessage,
+  Withheld,
   Provider,
   ProbeFindings,
   Question,
@@ -130,6 +131,8 @@ export type World = {
   instructions: { about_me: string; rules: string };
   projectInstructions: Record<string, string>;
   projectInstructionVersions: Record<string, number>;
+  /** withheld is GET /api/withheld: every removal, in any order; the route sorts. */
+  withheld: Withheld[];
   /** calls are each session's recorded model calls, oldest first. */
   calls: Record<string, RecordedCall[]>;
 };
@@ -230,6 +233,7 @@ export function emptyWorld(): World {
     instructions: { about_me: "", rules: "" },
     projectInstructions: {},
     projectInstructionVersions: {},
+    withheld: [],
     calls: {},
   };
   // The harness makes the home session when it starts, so every world has it.

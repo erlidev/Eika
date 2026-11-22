@@ -9,6 +9,15 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-08 added Settings, Security (`SecuritySettings.tsx`: the withheld list, newest
+  first, paged with Load older, each row's source, name, age and text) and the `withheld` mark on
+  a tool card. `Removed` is carried as `tool.Result.Removed`, set by `agent.ingest` (summed over
+  search parts), onto `event.ToolResult.removed` and `provider.Message.Removed` (`removed`, so the
+  stored `tool_result` entry holds it); the transcript reads it live and on reload. Mock routes
+  for both withheld routes, scenario `security`, specs `security.spec.ts` (list and card, phone and
+  desktop). Contract rewritten. The page reads no per-session filter: the mark needs no lookup.
+  - Next: P4-15 adds "trust this source" to the rows, P4-16 the guard health, threshold and
+    `screen_required`, P4-21 the blocklist. An `unscanned` or `blocked` mark is not drawn yet.
 - 2026-11-21: P4-07 added `GET /api/withheld` (newest first by `at` then `id`, `limit` and
   `before` as for entries; the cursor is a row id and must exist) and `GET /api/withheld/{id}`
   (`server/withheld.go`, `store.Withheld`, `store.WithheldBefore`). Rows carry source,

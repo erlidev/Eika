@@ -6,7 +6,7 @@
  * tab.
  *
  * The dialog is one fixed size whatever tab is showing, and each tab scrolls
- * inside it: eleven tabs of very different lengths would otherwise resize the
+ * inside it: thirteen tabs of very different lengths would otherwise resize the
  * window under the pointer every time one was picked.
  */
 
@@ -42,6 +42,7 @@ import { DeveloperSettings } from "@/features/settings/DeveloperSettings";
 import { NotificationsSettings } from "@/features/settings/NotificationsSettings";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
 import { InstructionsSettings } from "@/features/settings/InstructionsSettings";
+import { SecuritySettings } from "@/features/settings/SecuritySettings";
 import { SearchSettings } from "@/features/settings/SearchSettings";
 import { useSettingsDialog } from "@/features/settings/store";
 import type { SettingsTab } from "@/features/settings/store";
@@ -60,6 +61,7 @@ const tabs: readonly { value: SettingsTab; label: string }[] = [
   { value: "computer", label: "Computer" },
   { value: "search", label: "Search" },
   { value: "mcp", label: "MCP" },
+  { value: "security", label: "Security" },
   { value: "notifications", label: "Notifications" },
   { value: "account", label: "Account" },
   { value: "appearance", label: "Appearance" },
@@ -143,6 +145,9 @@ export function SettingsDialog() {
             </TabsContent>
             <TabsContent value="mcp">
               <MCPSettings />
+            </TabsContent>
+            <TabsContent value="security">
+              <SecuritySettings />
             </TabsContent>
             <TabsContent value="notifications">
               <NotificationsSettings />

@@ -57,6 +57,14 @@ test("Settings on touch", async ({ open, expectShot }) => {
   await expectShot(eika, "settings-touch");
 });
 
+test("Security on touch", async ({ open }) => {
+  const eika = await open({ scenario: "security", viewport: phone });
+  await eika.click("Settings");
+  await eika.click("Security");
+  await targetSize(eika.page.getByRole("tab", { name: "Security" }));
+  await expect(eika.page.getByRole("dialog").getByRole("listitem")).toHaveCount(4);
+});
+
 test("model checkbox targets do not cross row boundaries", async ({ open }) => {
   const eika = await open({ scenario: "providers", viewport: phone });
   await eika.click("Settings");

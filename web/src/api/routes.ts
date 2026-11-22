@@ -55,6 +55,7 @@ import type {
   UpdateModel,
   UpdateProvider,
   UpdateSession,
+  WithheldPage,
 } from "@/api/types";
 
 /** getHome reads the home session with the entry its head points at. */
@@ -512,4 +513,9 @@ export function answerElicitation(id: string, answer: ElicitationAnswer): Promis
 /** testNotification queues a test to the configured ntfy topic. */
 export function testNotification(): Promise<void> {
   return requestEmpty("/api/notifications/test", { method: "POST" });
+}
+
+/** getWithheld reads a page of removals, newest first; `before` is the previous page's cursor. */
+export function getWithheld(before?: string, signal?: AbortSignal): Promise<WithheldPage> {
+  return request<WithheldPage>("/api/withheld", { query: { before }, signal });
 }

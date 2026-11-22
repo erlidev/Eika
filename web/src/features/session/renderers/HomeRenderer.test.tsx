@@ -16,6 +16,7 @@ it("keeps malformed and long tool arguments available as text", () => {
     output: "",
     done: true,
     isError: true,
+    removed: 0,
   };
   const container = document.createElement("div");
   container.innerHTML = renderToStaticMarkup(<HomeBody call={call} />);

@@ -88,6 +88,8 @@ export type ToolResult = {
   is_error: boolean;
   details?: unknown;
   duration_ms: number;
+  /** removed counts the windows ingest removed from content, absent when none. */
+  removed?: number;
 };
 
 /**

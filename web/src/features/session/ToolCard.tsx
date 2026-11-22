@@ -3,7 +3,7 @@
  * tool; the summary line and the body come from the tool's renderer.
  */
 
-import { ChevronRight, CircleAlert, CircleCheck, Loader2 } from "lucide-react";
+import { ChevronRight, CircleAlert, CircleCheck, Loader2, ShieldAlert } from "lucide-react";
 import { useState } from "react";
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -59,6 +59,15 @@ export function ToolCard({ call, open = false, readOnly = false }: ToolCardProps
         {call.durationMs !== undefined && (
           <span className="text-muted-foreground shrink-0 font-mono text-2xs tabular-nums">
             {formatDuration(call.durationMs)}
+          </span>
+        )}
+        {call.removed > 0 && (
+          <span
+            title="The screen removed part of this result before the model saw it. See Settings, Security."
+            className="text-warning flex shrink-0 items-center gap-1 text-2xs font-medium"
+          >
+            <ShieldAlert aria-hidden className="size-3.5" />
+            withheld
           </span>
         )}
         <StatusIcon call={call} />

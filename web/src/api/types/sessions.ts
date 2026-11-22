@@ -136,6 +136,8 @@ export type Message = {
   tool_calls?: MessageToolCall[];
   tool_call_id?: string;
   is_error?: boolean;
+  /** removed counts the windows ingest removed from a tool result. */
+  removed?: number;
   /** metrics are stored UI metadata and are not sent to the provider. */
   metrics?: MessageMetrics;
   /**

@@ -208,7 +208,7 @@ here halts, restricts or settles anything.
       Eika's notice, without the wrapper.
 - [x] **P4-07**: Add the withheld list API: newest first, with each entry's text, and
       a paged read.
-- [ ] **P4-08**: Build Settings, Security with the withheld list, and mark a tool
+- [x] **P4-08**: Build Settings, Security with the withheld list, and mark a tool
       card whose result had a removal. Add its `World` routes and phone baselines.
 
 **Exit A:** in a desktop browser, with `guard.py` or the new service on the
@@ -515,7 +515,7 @@ and also requires the exit checks.
       a plugin whose results are scored but never removed); and the withheld list,
       newest first, each with its text and a "trust this source" action.
       - [x] **P4-07**: Add the withheld list API.
-      - [ ] **P4-08**: Build Settings, Security with the withheld list, and mark tool cards.
+      - [x] **P4-08**: Build Settings, Security with the withheld list, and mark tool cards.
       - [ ] **P4-15**: Add trusted sources to ingest and the API.
       - [ ] **P4-16**: Add guard health, the threshold, `screen_required` and trusted sources to the page.
       - [ ] **P4-21**: Add the blocklist to the page.

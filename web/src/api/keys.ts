@@ -31,6 +31,8 @@ export const queryKeys = {
   /** instructions is the user's global About me and rules. */
   instructions: () => ["instructions"] as const,
   settings: () => ["settings"] as const,
+  /** withheld is the list of removals, newest first, paged. */
+  withheld: () => ["withheld"] as const,
   models: () => ["models"] as const,
   providers: () => ["providers"] as const,
   system: () => ["system"] as const,
