@@ -58,6 +58,8 @@ type Options struct {
 	// 127.0.0.1 instead, which is what a harness running outside compose
 	// needs.
 	Network string
+	// DirectNetworkAddress reaches a networked computer by its container IP.
+	DirectNetworkAddress bool
 	// EikadBinary is the path to the static eikad binary in the harness
 	// filesystem. It is copied into every container before it starts.
 	EikadBinary string
@@ -352,7 +354,18 @@ func (h *Host) client(cx Computer) (*sandbox.Client, error) {
 // harness runs outside that network.
 func (h *Host) address(ctx context.Context, cx Computer) (string, error) {
 	if h.opts.Network != "" {
-		return "http://" + ContainerName(cx.ID) + ":" + DaemonPort, nil
+		if !h.opts.DirectNetworkAddress {
+			return "http://" + ContainerName(cx.ID) + ":" + DaemonPort, nil
+		}
+		info, err := h.docker.ContainerInspect(ctx, cx.ContainerID)
+		if err != nil {
+			return "", fmt.Errorf("inspect computer %s: %w", cx.ID, err)
+		}
+		endpoint := info.NetworkSettings.Networks[h.networkFor(cx.Proxied)]
+		if endpoint == nil || endpoint.IPAddress == "" {
+			return "", fmt.Errorf("computer %s has no network address", cx.ID)
+		}
+		return "http://" + endpoint.IPAddress + ":" + DaemonPort, nil
 	}
 	info, err := h.docker.ContainerInspect(ctx, cx.ContainerID)
 	if err != nil {

@@ -8,6 +8,11 @@ this file says why, so neither repeats the other.
 
 ## Scope
 
+- **Live worker tests use controlled Docker networks** (2026-11-22). The Core
+  process reaches its sandbox by container IP and the live-only proxy control
+  permits the fixture's loopback port. This lets the suite test the real egress
+  proxy without weakening the public-address rule in normal builds.
+
 - **Eika is a personal assistant that runs on hardware the user owns.** One
   person talks to it, and it works in sandboxed computers on their behalf.
   Memory, plugins, a scheduler, skills and a permission authority (Sentry) are
@@ -2705,3 +2710,17 @@ screened, because every file is committed. A commit made outside Eika by another
 author is trusted; the memory computer has no other writer. The screen is now Sentry's check (P5-06). `make memory-reindex`
 runs in a separate process from the server, so run it while Eika is idle; a race
 only leaves a row the next restart repairs.
+
+## Phase 4 close (P4-27)
+
+- The exit checks run as live scenarios, not by hand (2026-11-22), because they are
+  repeatable and the owner could not be present. They drive the real Core, guard and
+  sandbox through the public API. What they cannot see is the rendered UI: the halt
+  button, banner and card mark stay covered by the visual specs and the `removed`
+  count on the stored result.
+- Home has no `bash` or `web_fetch`, so a check that needs them starts a worker or a
+  researcher. A halt that a worker's call causes writes its deny audit row a moment
+  after the halt is visible, because the run is aborted in the background; a reader
+  of the audit log must not assume the row is there at the instant of the halt.
+- With the screen on, an injected page loses its useful fact too: the whole scored
+  window is removed. This is the accepted cost of screening a window, not a defect.
