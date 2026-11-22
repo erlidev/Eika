@@ -9,6 +9,14 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-00 split phase 4 into P4-01 to P4-27 and wrote "Schedule for
+  phase 4" in five stages. Premises that changed: `open` egress still exists and
+  is the default, and `make dev` and the live harness run without egress control;
+  `web_fetch` strips no invisible characters, so ingest gets that step; fixtures
+  cannot reach `web_fetch` past netguard. Three open questions block P4-17, P4-18,
+  P4-24 and P4-25. The design doc is corrected for those and for the canary and
+  halt. Docs only; live tests do not apply.
+
 - 2026-11-21: bench switched to llama-server. The chat bench is the Komodo Deployment
   `llama-server` at https://llama.erli.xyz (llama.cpp b11942-338fce651, Qwen3.8-27B
   UD-Q4_K_XL at 4af51b35, text only, MTP, 4 slots, 256k q8_0 KV); `llama-qwen` and ComfyUI

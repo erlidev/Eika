@@ -79,7 +79,8 @@ Four things drive the design:
       // a model, and records the destinations it holds.
       Ingest(ctx context.Context, source Source, content string) (string, error)
       // Observe records something that needs no decision: a user message, a
-      // file read, a finished connection.
+      // file read, a finished connection. Phase 4b adds it: phase 4's Gate
+      // has Decide and Ingest.
       Observe(ctx context.Context, e Observation)
   }
   ```
@@ -308,8 +309,9 @@ only a completed chain acts on them.
 enters a model's context:
 
 1. **Invisible characters** (deterministic). Unicode tag characters, zero-width
-   characters and bidirectional controls are removed, as `web_fetch` already does
-   for pages (`web-fetch.md`). Tag characters that decode to text are a mark
+   characters and bidirectional controls are removed. `web_fetch` does not do this
+   today; phase 12's conversion will (`web-fetch.md`), and ingest stays the place
+   it is guaranteed for every source. Tag characters that decode to text are a mark
    (section 11).
 2. **Secret redaction** (deterministic). It scans with gitleaks-style patterns for
    well-known key formats. Matches are replaced by `[redacted:<kind>]`.
@@ -615,7 +617,9 @@ creates entries, either in Settings, Vault or through a secret request.
 
 Not deferred: the first canary is in the first version.
 
-At setup Sentry plants a fake API key in the `home` computer's environment, shaped
+Each time Core starts the `home` computer, and so on an install that predates
+Sentry at its next start, Sentry plants a fake API key in its environment, through
+the daemon's `PUT /environment`, since a container's own environment is immutable. It is shaped
 like an OpenAI API key (`sk-proj-` followed by random characters of a real key's
 length), so scanners and an agent hunting for keys take it as real. It is unique
 and recorded. `Decide` looks for its literal value in the arguments of every tool
@@ -954,7 +958,8 @@ is not held.
 
 - The halt state is persisted. Every decide is denied, and the proxy refuses new
   connections and closes open ones.
-- Core aborts all runs, pauses the scheduler, and shows a banner and a push.
+- Core aborts all runs, pauses the scheduler (a hook until phase 7 builds one), and
+  shows a banner and a push.
 - Only the user resumes, from the UI.
 - The halt button is always visible in the UI.
 

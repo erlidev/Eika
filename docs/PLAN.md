@@ -5,9 +5,10 @@ described in `docs/design/`. Read `docs/design/README.md` first. It defines the
 vocabulary every item below uses.
 
 Agents work through this plan over many sessions. In phases 2 and 3, take the
-first unchecked package in "Schedule for phases 2 and 3". After them, take the
-first unchecked item in the first open phase, in the order the phases appear in
-this file. Read the design section it cites, do it, tick it, and add an entry to
+first unchecked package in "Schedule for phases 2 and 3". In phase 4, take the
+first unchecked package in "Schedule for phase 4". After them, take the first
+unchecked item in the first open phase, in the order the phases appear in this
+file. Read the design section it cites, do it, tick it, and add an entry to
 `docs/PLAN_LOG.md`. A phase is closed when every item is ticked and its exit check
 passes.
 
@@ -65,6 +66,9 @@ and phase 4b, web fetch, compaction and skills come last.
   and 3", not in the order of their numbers. A UI item never ships ahead of the
   API it uses, and an API is never removed ahead of the UI that calls it. The
   mock harness follows the contract.
+- **Phase 4 packages run serially**, in the order of "Schedule for phase 4". The same
+  rules apply: a UI package never ships ahead of its API, and a package builds what
+  its stage needs.
 - **A package builds what its stage needs.** Do not pull work forward from a later
   stage or phase to make a package complete. When a package turns out to need
   more than a few days, split it and put the part the stage's exit does not need
@@ -164,6 +168,168 @@ two closes remain, each after its exit check by hand:
 - [x] **P2-27**: Close phase 2 after its exit checks.
 - [x] **P3-18**: Close phase 3 after its exit checks.
 
+## Schedule for phase 4
+
+The order of the phase's packages. The items under "Phase 4" say what each
+package builds; this section says when, and how little of it its stage needs. A
+package is ticked here and under its item. A package is one branch, and a few
+days of work.
+
+Phase 4 starts after phases 2 and 3 close. Its packages run serially, in this
+order and not the order of their numbers where they differ. A UI package never
+ships ahead of the API it uses, and an API is never removed ahead of the UI that
+calls it. The mock harness follows the contract: an API package adds its routes
+to `docs/api/http.md` and the contract test, and the UI package that uses them
+adds them to the harness's `World`.
+
+### Stage A: first testable build
+
+The screen, end to end, in a desktop browser against the bench's guard. Nothing
+here halts, restricts or settles anything.
+
+- [ ] **P4-01**: Build the guard service and add it to the stack. Move
+      `evals/models/guard.py` to `guard/` and add `POST /screen`, the image and the
+      compose service. `make smoke` waits for the guard and runs on the real image.
+- [ ] **P4-02**: Add `internal/sentry`: `Gate` with `Decide` and `Ingest` (`Observe`
+      comes in phase 4b), `Action`, `Verdict`, the audit table and the boundary
+      test. A later package adds a table with the first code that writes it.
+- [ ] **P4-03**: Add `Options.Gate` and call `Decide` before every tool call. The
+      verdict is `allow` until a later package adds a rule. A block is the generic
+      `Blocked: <reason>` result, and a gate that cannot answer blocks the
+      side-effecting tools only.
+- [ ] **P4-04**: Ingest `web_fetch` results, once, before the result is stored: remove
+      invisible characters, redact secrets, screen, wrap, and add the one-line
+      `<untrusted>` reminder in code, so a prompt override cannot drop it. Add the
+      guard client, the `withheld` table, the `guard_url` config key and the
+      threshold setting. A removal writes a withheld row and an audit row.
+- [ ] **P4-05**: Screen each `web_search` result on its own. The engine returns its
+      results as segments, so a removal never spans two results.
+- [ ] **P4-06**: Screen a subagent's report and its questions before they become
+      Eika's notice, without the wrapper.
+- [ ] **P4-07**: Add the withheld list API: newest first, with each entry's text, and
+      a paged read.
+- [ ] **P4-08**: Build Settings, Security with the withheld list, and mark a tool
+      card whose result had a removal. Add its `World` routes and phone baselines.
+
+**Exit A:** in a desktop browser, with `guard.py` or the new service on the
+bench, a researcher reads a page with a planted instruction. The part is
+`[removed:suspect]`, its report is clean, the page is in the withheld list and the
+card is marked. The page is at a public URL: Core's fetch refuses private
+addresses (see the hazards below). Log what broke: it orders stage B.
+
+### Stage B: hard blocks and halt
+
+What stops Eika outright. None of it asks.
+
+- [ ] **P4-09**: Add halt: persisted state, the first step of `Decide`, abort of every
+      run, a pause hook for the scheduler of phase 7, one push, and the API.
+- [ ] **P4-10**: Add the halt button in `HaltSlot`, resume, and the banner. Add its
+      `World` routes and baselines.
+- [ ] **P4-11**: Deny a credential pattern in a `web_fetch` URL or a `web_search`
+      query, with a reason the agent can act on. The patterns are written in
+      `internal/sentry/scan`, with no new dependency.
+- [ ] **P4-12**: Plant the canary in the `home` computer's environment on every start,
+      unique per install and recorded, and halt when `Decide` sees its value.
+- [ ] **P4-13**: Benchmark `Decide` for arguments up to 64 KiB, under 1 ms, as a
+      benchmark that `make check` runs.
+
+**Exit B:** by hand: a `web_fetch` whose URL carries a key-shaped string comes
+back `Blocked`. The canary's value pasted into a command halts Eika and sends one
+push. The halt button stops every run in one press, and resume lifts it.
+
+### Stage C: when the screen is down, and trust
+
+- [ ] **P4-14**: Mark content `unscanned` when the guard does not answer in 5 s, send
+      one push when the state changes, and add `screen_required`. Add the settings
+      and the guard's health to the API.
+- [ ] **P4-15**: Add trusted sources: a host's results are scored and logged, and never
+      have anything removed. Add the table, the check in ingest and the API,
+      including "trust this source" from a withheld entry.
+- [ ] **P4-16**: Add the guard's health, the threshold, `screen_required`, the
+      unscanned banner and trusted sources to Settings, Security.
+
+**Exit C:** by hand: with the guard stopped there is a banner and one push, and a
+page arrives `unscanned`. With `screen_required` on, `web_fetch` is blocked.
+Trusting a source from the withheld list lets its next page through, scored.
+
+### Stage D: egress
+
+- [ ] **P4-17**: Retire the `open` egress mode. Migrate stored computers and the
+      `sandbox_egress` setting, give the unrestricted mode its new name, reconfine
+      running computers and keep the live view of blocked hosts.
+- [ ] **P4-18**: Update the computer egress settings for the modes that remain.
+- [ ] **P4-19**: Make a connection an `egress` action: `allow` or `deny` for the
+      blocklist, netguard, halt and allowlist mode. Add the blocklist table and API,
+      and make halt refuse new connections and close open ones.
+- [ ] **P4-20**: Check the blocklist and halt before `web_fetch` and every search
+      backend except the local SearXNG dials.
+- [ ] **P4-21**: Add the blocklist to Settings, Security.
+
+**Exit D:** by hand: a worker runs `curl`, `web_fetch` and a package install with
+no prompt. A host on the blocklist is refused by all three and by hosted search.
+A computer in allowlist mode reaches only its list. Halt closes an open
+connection.
+
+### Stage E: audit, measure, close
+
+- [ ] **P4-22**: Close the audit gaps: setting-change rows, and an append-only
+      guarantee in the database.
+- [ ] **P4-23**: Update the security section of the style guide.
+- [ ] **P4-24**: Add the Sentry scenario to `make smoke`: a scripted model fetches a
+      fixture page with a planted instruction, and the result has the part removed.
+- [ ] **P4-25**: Build `evals/injection` on the P2-25 live harness: fixture pages in
+      three variants, a researcher that reports to Eika, and the screen on and off.
+- [ ] **P4-26**: Add the chain, the `curl` worker and the guard-stopped scenarios, run
+      the suite on the bench, and log its numbers, including what got through.
+- [ ] **P4-27**: Close phase 4 after its exit checks.
+
+**Exit E:** phase 4's exit.
+
+### Ordering hazards
+
+- **Migrations.** The last migration is 0021. Phase 4 adds tables in P4-02 (audit),
+  P4-04 (withheld), P4-09 (halt state), P4-12 (the canary's record), P4-15 (trusted
+  sources), P4-17 (the egress mode rewrite) and P4-19 (blocklist), and phase 5 and
+  later add more. Take the number after the preceding package merges, as
+  `DECISIONS.md`, "Phase 2 upgrade policy" says. Each table lands with the first code
+  that writes it, so no package builds a table with no caller. P4-17 rewrites
+  stored JSON: it needs an upgrade test on a populated database.
+- **The guard image and `make smoke`.** `make check` builds only
+  `sandbox/Dockerfile`, so nothing in it covers `guard/`'s Dockerfile or its compose
+  service: P4-01 runs `make smoke`, and so does every package that touches compose.
+  The image bakes in a CPU `torch` and 270 MB of model at build, so measure the
+  build time and size in P4-01. Fall back to a scripted stub in
+  `compose.smoke.yaml` only if the real image makes `make smoke` too slow to use,
+  and say so in the log. Core must not depend on the guard to start: it fails open.
+- **The live harness of P2-25.** `evals/live` already starts Core in its own process
+  with a temporary Postgres and a home computer (`core_live_test.go`), and has a
+  `live` build tag with routes for the suite. P4-25 and P4-26 build on that, so
+  they wait for P2-25 to merge. The harness runs Core with no sandbox networks, so
+  `Host.EgressControl` is false there. P4-17 must settle what that means
+  ("Open questions", the first). Its config also needs the guard's URL.
+- **Fixtures and netguard.** `web_fetch` dials through `netguard`, which refuses
+  private addresses, so a fixture page on the compose network or on localhost is
+  unreachable. Exit A uses a public page. P4-24 and P4-25 need a way in; see "Open
+  questions", the third.
+- **Ingest before the entry is stored.** The screened text is what the session
+  keeps, so a replay, compaction and the history index never hold the removed
+  text, and the request prefix stays stable from turn to turn. P4-04 owns this, and
+  `make live`'s prefix scenarios must still pass.
+- **The `<untrusted>` reminder.** The built-in prompts are overridable (P2-01), so the
+  line is added by code after the override. It changes the system prompt once, for
+  the existing home session.
+- **Halt before the canary and the egress proxy.** P4-12 needs halt (P4-09). P4-19 is
+  what teaches the proxy about halt, so P4-09's "close open connections" is
+  verified there.
+- **Pushes.** Notifications send through one ntfy topic (`notifications.send`),
+  and nothing is sent when no topic is configured. A push for halt or for a guard
+  that is down must also show as a banner, so a user without ntfy sees it.
+- **The home environment.** A container's environment is immutable, and the daemon's
+  environment is set through `PUT /environment` from `Host.environment`, which
+  returns nothing for a computer that is not proxied. P4-12 adds the canary there,
+  next to the proxy variables, and reaches an existing install on its next start
+  or confine, not only at setup.
+
 ## Phase 0: Groundwork
 
 Closed. The coding layer is gone (git, worktrees, previews and the terminal),
@@ -258,6 +424,10 @@ subagents, wakeups, and read-only plugin tools.
 
 ### Items
 
+Package IDs below are names, not an order: the order is "Schedule for phase 4".
+Each parent item stays open until every part is complete. Phase closure is P4-27
+and also requires the exit checks.
+
 - [ ] `guard/`: the injection screen as a service in the stack.
       - `evals/models/guard.py` moves here and gains a Dockerfile: CPU `torch` by
         default (about 55 ms per 512-token window on six cores, 270 MB of model),
@@ -270,55 +440,81 @@ subagents, wakeups, and read-only plugin tools.
       - a compose service on a network only Core can reach; `EIKA_GUARD_URL`
         points Core at another instance, such as one on a GPU (2 ms per window)
       - `make smoke` waits for it; `evals/models/README.md` follows the move
+      - [ ] **P4-01**: Build the guard service and add it to the stack.
 - [ ] Add `internal/sentry`: the `Gate` interface Core calls (`Decide`, `Ingest`),
       the `Action` shape, and its tables in schema `core` by forward migration.
       Extend the boundary test: it never imports `server`, `agent` or `computer`.
+      - [ ] **P4-02**: Add the package, the Gate, its audit table and the boundary test.
 - [ ] Core gate: `Options.Gate` in the loop, with `Decide` before every tool call.
       The model is never told about the gate: a block is a `Blocked: <reason>`
       error result, and no prompt or tool description mentions Sentry. Fail closed:
       if the gate cannot answer, side-effecting tools return the generic blocked
       result. The `ask` verdict and its parking arrive in phase 11.
+      - [ ] **P4-03**: Call `Decide` before every tool call, and fail closed.
 - [ ] Ingest, on every untrusted result before it reaches a model:
-      1. secret redaction by pattern
-      2. the screen, on exactly the text that will enter the context (after the
+      1. invisible characters removed: Unicode tag characters, zero-width
+         characters and bidirectional controls. `web_fetch` does not do this yet
+         (phase 12's conversion will); ingest is where it is done here, and a
+         tag character that decodes to text is a mark in phase 4b
+      2. secret redaction by pattern
+      3. the screen, on exactly the text that will enter the context (after the
          tool's own truncation, so nothing is sampled). A window at or over the
          threshold (0.9, a setting) is replaced by `[removed:suspect]`
-      3. the `<untrusted>` wrapper, and the system-prompt line about it
+      4. the `<untrusted>` wrapper, and the system-prompt line about it
       Sources: `web_fetch`, each `web_search` result, and from phase 11 plugin
       results. A subagent's report and its questions are screened on their way to
       Eika, without the wrapper. A removal writes a `withheld` row (source,
       session, text, score) and an audit row, and marks the tool card in the UI.
       It sends no push and stops nothing.
+      - [ ] **P4-04**: Ingest `web_fetch` results: invisible characters, redaction, screen, wrapper.
+      - [ ] **P4-05**: Screen each `web_search` result on its own.
+      - [ ] **P4-06**: Screen subagent reports and questions on their way to Eika.
 - [ ] When the guard does not answer: content passes wrapped and marked
       `unscanned`, a banner shows, and one push goes out when the state changes,
       not one per result. The setting `screen_required` fails closed instead:
       tools whose results need screening return `Blocked: this is not available
       right now`.
+      - [ ] **P4-14**: Mark results `unscanned` when the guard is down, add `screen_required` and the settings API.
 - [ ] Never share: a credential pattern in a `web_fetch` URL, a `web_search` query
       or (from phase 11) a plugin call's arguments denies the call, with a reason
       the agent can act on. `bash` and file writes are not checked: a command may
       hold a key the user gave it.
+      - [ ] **P4-11**: Deny credentials in `web_fetch` URLs and `web_search` queries.
 - [ ] Canary: a fake OpenAI-shaped key planted in the `home` computer's
       environment at start, unique per install. Its literal value in any tool
       call's arguments halts Eika and pushes. It does not see a key a command
       reads from the environment (`docs/DEFERRED.md`, vault).
+      - [ ] **P4-12**: Plant the canary in the home environment and halt on it.
 - [ ] Egress: the proxy stays in Core.
       - the `open` mode removed
       - `allow` or `deny` per connection (blocklist, netguard, halt, per-computer
         allowlist mode); never `ask`
       - `web_fetch` and the hosted search backends check the same blocklist and
         halt before they dial
+      - [ ] **P4-17**: Retire the `open` egress mode and move every computer behind the proxy.
+      - [ ] **P4-18**: Update the computer egress settings for the modes that remain.
+      - [ ] **P4-19**: Decide each connection through the gate, with the blocklist and halt.
+      - [ ] **P4-20**: Check the blocklist and halt before Core's own fetches.
 - [ ] Halt: an always-visible button, resume, and Core's reaction (abort runs, a
       scheduler pause hook, a banner, a push).
+      - [ ] **P4-09**: Add halt state, run abort, the pause hook, the push and the API.
+      - [ ] **P4-10**: Add the halt button, resume and banner.
 - [ ] Audit: an append-only table with a row for every decision that was not a
       plain allow, every removal, every setting change and every halt, never
       secret values. Session entries already record every tool call.
+      - [ ] **P4-22**: Close the audit gaps and make the table append-only.
 - [ ] Settings, Security: the guard's health, the threshold and
       `screen_required`; the blocklist; trusted sources (a host or, from phase 11,
       a plugin whose results are scored but never removed); and the withheld list,
       newest first, each with its text and a "trust this source" action.
+      - [ ] **P4-07**: Add the withheld list API.
+      - [ ] **P4-08**: Build Settings, Security with the withheld list, and mark tool cards.
+      - [ ] **P4-15**: Add trusted sources to ingest and the API.
+      - [ ] **P4-16**: Add guard health, the threshold, `screen_required` and trusted sources to the page.
+      - [ ] **P4-21**: Add the blocklist to the page.
 - [ ] `make smoke` covers Sentry: a scripted model fetches a fixture page that
       carries a planted instruction, and the result it gets has the part removed.
+      - [ ] **P4-24**: Add the Sentry scenario to `make smoke`.
 - [ ] `evals/injection` and the phase 4 live suite, on the bench's chat model and
       guard. It builds on the server-level live harness of P2-25:
       - fixture pages in three variants (innocent, injected, and a legitimate page
@@ -333,9 +529,13 @@ subagents, wakeups, and read-only plugin tools.
       - the guard stopped mid-run gives `unscanned`, never a dropped result
       - `Decide` under 1 ms for arguments up to 64 KiB, as a benchmark in
         `make check`
+      - [ ] **P4-13**: Benchmark `Decide` in `make check`.
+      - [ ] **P4-25**: Build the injection harness and fixtures on the P2-25 live harness.
+      - [ ] **P4-26**: Measure the chain, `curl` and guard-stopped scenarios, and log the numbers.
 - [ ] Update the security section of the style guide: Core holds model keys and
       third-party credentials, sealed; computers get proxy identities and nothing
       else.
+      - [ ] **P4-23**: Update the security section of the style guide.
 
 **Exit:** by hand, with the phone beside you:
 - A researcher reads a fixture page with a planted instruction. The part is
@@ -683,6 +883,26 @@ runs the skill's script on the computer.
 
 Decide these when the phase that needs them starts, and record the outcome in the
 log. Work that was cut is in `docs/DEFERRED.md`, not here.
+
+- **Computers without egress control (blocks P4-17).** Removing `open` puts every
+  computer behind the proxy, which needs the two sandbox networks. `make dev`, the
+  live harness and several Docker tests run Core with both empty, where
+  `Host.EgressControl` is false and only `open` works. Either those get a real
+  internal network (the host-run Core must then be reachable from it), or a host
+  without egress control keeps direct routes as a development-only state: no
+  setting, a warning at start, and no blocklist or allowlist there. The second
+  keeps the live suite running and is recommended, but it leaves the blocklist
+  untestable outside compose.
+- **The name of what replaces `open` (blocks P4-17 and P4-18).** Without `open`,
+  the modes are `allowlist`, `none` and a mode that reaches any public host not on
+  the blocklist. It is a wire value in `docs/api` and in stored settings.
+  Recommended: `public`, and the migration maps `open` and a missing value to it.
+- **How a fixture page reaches `web_fetch` (blocks P4-24 and P4-25).** Core refuses
+  private addresses, so compose and live fixtures need one exception. Recommended:
+  a config key listing exact hostnames, empty by default, logged at start and absent
+  from the settings and the UI, set only by `compose.smoke.yaml` and the live
+  harness. The alternative, a public fixture host, makes both suites depend on the
+  internet.
 
 - **Screening `bash` output and file reads.** Not in phase 4: a worker's `curl`
   output reaches it unscreened, and only its report is screened. Decide from
