@@ -41,6 +41,7 @@ egress proxy are network calls and run in the harness.
 | `egress` | Egress modes, allowlist patterns, the proxy |
 | `netguard` | Public-address-only dialing |
 | `store` | PostgreSQL pool, embedded migrations, queries |
+| `sentry` | The permission authority behind one interface, `Gate`: `Decide` before a tool call and `Ingest` on untrusted results. Depends on no other part of Core (never `server`, `agent` or `computer`); allows everything until later packages add rules, and writes the audit log through an `AuditLog` that `store` implements |
 | `subagent` | Named child sessions, serialized start/resume, code-owned states, cancel, reports and the running limit; run callback supplied by the caller |
 | `session` | Session tree: append, head, branch, outline; `session.Store` records runs |
 | `search` | Failover chain, quotas, cache; backends in `web`, `wikipedia`, `arxiv`, `github`; `fetch` reads a URL; `filter` is the JS filter |
@@ -496,6 +497,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `projects` | stable slug, name, description, status, sandbox directory, timestamps |
 | `retired_profiles`, `retired_session_profiles`, `retired_profile_defaults` | snapshots of profile rows, session choices, and the default profile setting from migration 0021; not read by the runtime |
 | `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot` (the server's slot the request named, NULL when it named none), `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
+| `audit` | Sentry's append-only log (migration 0022): event, session, run, subagent, routine, computer, action key, kind, name, argument digest, reason, detail (jsonb). A trigger refuses update, delete and truncate; no foreign keys, so rows outlive their session |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |

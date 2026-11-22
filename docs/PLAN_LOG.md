@@ -9,6 +9,14 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-02 added `internal/sentry` (`Gate` with `Decide` and `Ingest`,
+  `Action`, `Principal`, `Verdict`, `Source`, `AuditEntry`, `AuditLog`, and `New`, a
+  gate that allows everything and passes content through) and migration 0022,
+  `core.audit`, append-only by trigger, written by `store.AppendAudit`. The
+  boundary test now bars `internal/sentry` from `server`, `agent` and `computer`.
+  - Next: P4-03 holds `sentry.Gate` in `Options.Gate`; `Ask` exists as a decision
+    but phase 11 handles it, so Core treats it as a deny until then. P4-04's
+    `withheld` table takes 0023 or the next free number.
 - 2026-11-21: P4-01 built `guard/` (move commit `6bba82a`, then the service, image,
   compose service and smoke wait). Model pinned at
   `Horizon-Labs/prompt-injection-guard-small@1b7c40f4a5fdbf9622d20372ead279e65d4c7fc9`;

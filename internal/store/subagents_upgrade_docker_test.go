@@ -5,6 +5,7 @@ package store_test
 import (
 	"testing"
 
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/store"
 )
 
@@ -24,5 +25,35 @@ func TestUpgradeFrom0014PreservesSubagents(t *testing.T) {
 	// The waiting reason 0015 added can be set on a child that was waiting before it.
 	if child, err := st.SetSubagentState(ctx, child.ID, store.SessionWaiting, "test wait"); err != nil || child.WaitingReason != "test wait" {
 		t.Fatalf("set waiting reason: %+v %v", child, err)
+	}
+}
+
+func TestUpgradeFrom0021AddsAppendOnlyAudit(t *testing.T) {
+	ctx := t.Context()
+	st, conn := upgradeFrom(t, "0021_retire_profiles",
+		`INSERT INTO sessions (id, title, kind, agent, name) VALUES ('home', 'Home', 'home', 'eika', 'home')`)
+	err := st.AppendAudit(ctx, sentry.AuditEntry{
+		Event: sentry.EventDeny, Principal: sentry.Principal{Session: "home", Run: "run1"},
+		Key: "home:call1", Kind: "tool", Name: "bash", Reason: "test",
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `UPDATE audit SET reason = 'x'`); err == nil {
+		t.Error("audit row was updated")
+	}
+	if _, err := conn.Exec(ctx, `DELETE FROM audit`); err == nil {
+		t.Error("audit row was deleted")
+	}
+	if _, err := conn.Exec(ctx, `TRUNCATE audit`); err == nil {
+		t.Error("audit was truncated")
+	}
+	// The history the upgrade began with is untouched, and the row survives its session.
+	if _, err := conn.Exec(ctx, `DELETE FROM sessions WHERE id = 'home'`); err != nil {
+		t.Fatalf("delete session: %v", err)
+	}
+	var n int
+	if err := conn.QueryRow(ctx, `SELECT count(*) FROM audit WHERE session_id = 'home'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("audit rows = %d, %v; want 1", n, err)
 	}
 }

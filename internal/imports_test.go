@@ -24,7 +24,6 @@ type boundary struct {
 
 // boundaries are the dependency rules AGENTS.md states. Paths are relative to
 // the module root, and a rule covers a package and every package below it.
-// Phase 4 adds the Sentry rules here.
 var boundaries = []boundary{
 	// Nothing imports server; only the binaries wire it.
 	{from: "", to: "internal/server", allowed: []string{
@@ -37,6 +36,11 @@ var boundaries = []boundary{
 	{from: "internal/tool", to: "internal/eikad", allowed: []string{
 		"internal/tool/builtin", // eikad.BinaryPath, the binary web_fetch's filter runs in the sandbox
 	}},
+	// Sentry is the permission authority, and no part of Core it judges can
+	// reach back into it: it never imports the server, the agent or computers.
+	{from: "internal/sentry", to: "internal/server"},
+	{from: "internal/sentry", to: "internal/agent"},
+	{from: "internal/sentry", to: "internal/computer"},
 }
 
 // TestImportBoundaries checks every non-test Go file in the repository

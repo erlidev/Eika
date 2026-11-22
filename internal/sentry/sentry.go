@@ -1,0 +1,158 @@
+// Package sentry is Eika's permission authority. Core calls one interface, the
+// Gate: Decide before a tool runs and Ingest on every untrusted result before
+// it reaches a model. The package depends on no other part of Core, and
+// internal/imports_test.go keeps it from importing server, agent or computer.
+// Core passes in what it needs, such as the audit log, as an interface here.
+// Design: docs/design/sentry.md.
+package sentry
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+// Gate is what Core calls. Phase 4b adds Observe.
+type Gate interface {
+	// Decide answers at once. An error means the gate could not answer: the
+	// caller blocks side-effecting tools and lets the rest run.
+	Decide(ctx context.Context, a Action) (Verdict, error)
+	// Ingest redacts, screens and wraps one untrusted result before it reaches
+	// a model, and returns the text to use in its place.
+	Ingest(ctx context.Context, source Source, content string) (string, error)
+}
+
+// Kind says how an Action's Name is read.
+type Kind string
+
+// The kinds of action.
+const (
+	KindTool   Kind = "tool"   // Name is a tool name
+	KindPlugin Kind = "plugin" // Name is plugin/tool
+	KindEgress Kind = "egress" // Name is a host
+)
+
+// Principal is who acts. Fields that do not apply are empty.
+type Principal struct {
+	Session  string `json:"session"`
+	Run      string `json:"run,omitempty"`
+	Subagent string `json:"subagent,omitempty"`
+	Routine  string `json:"routine,omitempty"`
+	Computer string `json:"computer,omitempty"`
+}
+
+// Action describes one consequential thing in one shape. There is no intent
+// field: the policy looks at what the action is and where it reaches.
+type Action struct {
+	// Key is stable: the session id and the loop's tool-call id (never the
+	// backend's), or the container and connection id for egress.
+	Key       string
+	Principal Principal
+	Kind      Kind
+	Name      string
+	// Args are the call's arguments, or a digest for egress.
+	Args json.RawMessage
+	// Destination is where the action reaches outside Eika, if anywhere: the
+	// URL of a fetch, the host of a connection, a plugin's recipient.
+	Destination string
+}
+
+// Decision is the outcome class of a verdict.
+type Decision string
+
+// The decisions a verdict can carry.
+const (
+	Allow Decision = "allow" // the call proceeds
+	Ask   Decision = "ask"   // phase 11: the user answers; until then Core treats it as Deny
+	Deny  Decision = "deny"  // the tool returns "Blocked: <Reason>"
+)
+
+// Verdict is Decide's answer.
+type Verdict struct {
+	Decision Decision
+	// Reason is one plain sentence for the model when the call is not allowed.
+	// It never names Sentry, rules or grants.
+	Reason string
+}
+
+// SourceKind names where untrusted content came from.
+type SourceKind string
+
+// The sources of untrusted content.
+const (
+	SourceFetch  SourceKind = "web_fetch"
+	SourceSearch SourceKind = "web_search" // one result, not a page of them
+	SourceReport SourceKind = "report"     // a subagent's report or question: screened, not wrapped
+	SourcePlugin SourceKind = "plugin"     // phase 11
+)
+
+// Source says where ingested content came from, so a removal can be recorded
+// against its session and tool call.
+type Source struct {
+	Kind    SourceKind
+	Session string
+	Run     string
+	Key     string // the tool call's key, when there is one
+	Name    string // the URL, query or plugin tool
+}
+
+// Audit event names. Plain allows are not audited.
+const (
+	EventDeny    = "deny"
+	EventAsk     = "ask"
+	EventRemoval = "removal"
+)
+
+// AuditEntry is one append-only row of the audit log. It holds the action and
+// its digest, never secret values.
+type AuditEntry struct {
+	ID        string
+	At        time.Time
+	Event     string
+	Principal Principal
+	Key       string
+	Kind      string
+	Name      string
+	Digest    string // of the arguments, so a row can be matched to a call without them
+	Reason    string
+	Detail    json.RawMessage // event-specific JSON, or empty
+}
+
+// AuditLog stores audit rows. Core supplies it (store.Store implements it).
+type AuditLog interface {
+	AppendAudit(ctx context.Context, e AuditEntry) error
+}
+
+// New returns the gate for a deployment. Until later packages add rules it
+// allows every action and passes content through; every decision that is not
+// an allow is written to log.
+func New(log AuditLog) Gate { return &gate{log: log} }
+
+type gate struct{ log AuditLog }
+
+func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
+	v := g.policy(a)
+	if v.Decision == Allow {
+		return v, nil
+	}
+	event := EventDeny
+	if v.Decision == Ask {
+		event = EventAsk
+	}
+	err := g.log.AppendAudit(ctx, AuditEntry{
+		Event: event, Principal: a.Principal, Key: a.Key, Kind: string(a.Kind),
+		Name: a.Name, Reason: v.Reason,
+	})
+	if err != nil {
+		return Verdict{}, fmt.Errorf("sentry: audit %s: %w", event, err)
+	}
+	return v, nil
+}
+
+// policy is the rule for one action. Later packages add rules here.
+func (g *gate) policy(Action) Verdict { return Verdict{Decision: Allow} }
+
+func (g *gate) Ingest(_ context.Context, _ Source, content string) (string, error) {
+	return content, nil
+}

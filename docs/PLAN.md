@@ -190,7 +190,7 @@ here halts, restricts or settles anything.
 - [x] **P4-01**: Build the guard service and add it to the stack. Move
       `evals/models/guard.py` to `guard/` and add `POST /screen`, the image and the
       compose service. `make smoke` waits for the guard and runs on the real image.
-- [ ] **P4-02**: Add `internal/sentry`: `Gate` with `Decide` and `Ingest` (`Observe`
+- [x] **P4-02**: Add `internal/sentry`: `Gate` with `Decide` and `Ingest` (`Observe`
       comes in phase 4b), `Action`, `Verdict`, the audit table and the boundary
       test. A later package adds a table with the first code that writes it.
 - [ ] **P4-03**: Add `Options.Gate` and call `Decide` before every tool call. The
@@ -451,7 +451,7 @@ and also requires the exit checks.
 - [ ] Add `internal/sentry`: the `Gate` interface Core calls (`Decide`, `Ingest`),
       the `Action` shape, and its tables in schema `core` by forward migration.
       Extend the boundary test: it never imports `server`, `agent` or `computer`.
-      - [ ] **P4-02**: Add the package, the Gate, its audit table and the boundary test.
+      - [x] **P4-02**: Add the package, the Gate, its audit table and the boundary test.
 - [ ] Core gate: `Options.Gate` in the loop, with `Decide` before every tool call.
       The model is never told about the gate: a block is a `Blocked: <reason>`
       error result, and no prompt or tool description mentions Sentry. Fail closed:
