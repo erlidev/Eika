@@ -893,7 +893,7 @@ enables JSON results.
 The frontend uses React, Vite, TypeScript, Tailwind, shadcn with Radix,
 TanStack Query, Zustand and React Router. UI pages are registered in
 `app/pages.ts` and routed in `app/App.tsx`: Chat at `/`, Activity at
-`/activity/:sessionId?`, Projects at `/projects/:slug?`, and Memory at
+`/activity/:sessionId?`, Projects at `/projects/:slug?`, Inbox at `/inbox`, and Memory at
 `/memory/:name?`. The MCP OAuth
 callback has its own route. `docs/EXTENDING.md` describes adding a page.
 
@@ -949,8 +949,11 @@ web/src/
   to the existing default chat model when main is unset. The UI makes no profile or session configuration
   request. Small stores hold which settings tab is open.
 - **Shell** (`app/Shell.tsx`): the frame of every page. A rail down the left
-  from 640px (`app/Navigation.tsx`) and a bottom bar under it list the pages
-  of `app/pages.ts`, then Settings, which opens the existing dialog; the
+  from 640px (`app/Navigation.tsx`) lists the pages of `app/pages.ts`, then
+  Settings, which opens the existing dialog. Under 640px a bottom bar lists
+  the pages marked `bar` (Chat, Activity, Inbox) and More, a sheet with the
+  others and Settings. The Inbox entry shows the pending count, kept by
+  `inbox.count` events (`useInboxEvents`) and read again on reconnect; the
   header carries the page's title and the theme toggle. Both navigation
   layouts use a `nav` landmark labelled Pages. Controls use labelled
   inputs or buttons, keyboard navigation and dialog focus handling. The shell is `100dvh`,

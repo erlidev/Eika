@@ -14,6 +14,7 @@ import { resetEventStream } from "@/api/stream";
 import { Shell } from "@/app/Shell";
 import { Splash } from "@/components/Splash";
 import { ActivityPage } from "@/features/activity";
+import { InboxPage } from "@/features/inbox";
 import { MemoryPage } from "@/features/memory";
 import { ProjectsPage } from "@/features/projects";
 import { ChatPage } from "@/features/chat";
@@ -92,6 +93,7 @@ function SignedIn() {
       <Route element={<Shell />}>
         <Route index element={<ChatPage />} />
         <Route path="/activity/:sessionId?" element={<ActivityPage />} />
+        <Route path="/inbox" element={<InboxPage />} />
         <Route path="/memory/:name?" element={<MemoryPage />} />
         <Route path="/projects/:slug?" element={<ProjectsPage />} />
       </Route>

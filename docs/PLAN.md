@@ -444,7 +444,7 @@ no memory section.
       existing Instructions editor/API beside it; do not build a second editor.
       Keep its Settings access until all callers use any replacement route.
       Test the edit flow and inspect the changed phone/desktop baselines.
-- [ ] **P5-15**: Add Inbox, its live badge and pending cards with source, flagged
+- [x] **P5-15**: Add Inbox, its live badge and pending cards with source, flagged
       spans, accept/edit/reject and empty/error states. Use P5-12 and extend the
       mock `World`, client and stream handling together. Verify two open clients
       and reconnect; inspect phone shots and navigation baselines for both themes.
@@ -730,7 +730,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
 - [ ] Inbox page: a list with a badge and live updates on topic `inbox`, holding
       pending memories for now (accept, edit, reject). No push.
       - [x] **P5-12**: Pending APIs, count and live events.
-      - [ ] **P5-15**: Inbox page, badge and actions.
+      - [x] **P5-15**: Inbox page, badge and actions.
 - [ ] Memory UI: list, filters, search, editor, pin, archive, purge.
       - [x] **P5-11**: Memory APIs and user mutations.
       - [x] **P5-13**: Memory page, list, search and detail.

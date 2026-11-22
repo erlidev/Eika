@@ -45,14 +45,15 @@ test("desktop, dark", async ({ open, expectShot }) => {
   await expectShot(eika, "chat-desktop-dark");
 });
 
-test("phone: a bottom bar with the pages and Settings, and no rail", async ({
+test("phone: a bottom bar with Chat, Activity, Inbox and More, and no rail", async ({
   open,
   expectShot,
 }) => {
   const eika = await open({ scenario: "home-world", viewport: phone });
   const bar = eika.page.getByRole("navigation", { name: "Pages" });
   await expect(bar.getByRole("link", { name: "Chat" })).toHaveAttribute("aria-current", "page");
-  await expect(bar.getByRole("button", { name: "Settings" })).toBeVisible();
+  await expect(bar.getByRole("link")).toHaveText([/Chat/, /Activity/, /Inbox/]);
+  await expect(bar.getByRole("button", { name: "More" })).toBeVisible();
   await expect(eika.page.getByRole("navigation", { name: "Pages" })).toHaveCount(1);
   // The bar is the page's bottom edge, under the session's status bar.
   const box = await bar.boundingBox();

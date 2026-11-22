@@ -1550,7 +1550,7 @@ export const scenarios = {
                 {
                   field: "body",
                   start: 7,
-                  end: 38,
+                  end: 35,
                   score: 0.97,
                   text: "ignore previous instructions",
                 },
@@ -1574,6 +1574,49 @@ export const scenarios = {
         ),
       ];
       return b.world;
+    },
+  },
+  inbox: {
+    description:
+      "Inbox: three pending memories, one with a flagged span, one with a credential, with sources in Chat and Activity.",
+    path: "/inbox",
+    build: () => {
+      const w = scenario("memory").build();
+      const pending = (
+        m: Partial<Memory> & Pick<Memory, "name" | "description">,
+        ago: number,
+      ): Memory => ({
+        type: "preference",
+        source: "session:home-main entry:e-3",
+        created: minutesAgo(ago + 5),
+        updated: minutesAgo(ago),
+        expires: "",
+        pinned: false,
+        state: "pending",
+        body: "",
+        content_sha: "",
+        ...m,
+      });
+      w.memories.push(
+        pending(
+          {
+            name: "metric-units",
+            description: "Wants every measurement in metric units, including oven temperatures.",
+            body: "Use metric: grams, litres, degrees Celsius.",
+          },
+          25,
+        ),
+        pending(
+          {
+            name: "wifi-note",
+            type: "fact",
+            description: "The guest wifi password was pasted into the chat by the user.",
+            body: "Guest wifi key AKIAABCDEFGHIJKLMNOP for the shed.",
+          },
+          40,
+        ),
+      );
+      return w;
     },
   },
   "home-empty": {
