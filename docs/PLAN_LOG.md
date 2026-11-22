@@ -9,6 +9,11 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P2-17 is deferred. Global `session.updated` refreshes the board
+  on state and report changes; the open session stream carries questions and
+  tool calls. Reconnect refreshes missed changes. The board has no last tool
+  call, as recorded in DECISIONS. Return if that or refetch cost becomes a need.
+
 - 2026-11-19: P3-06 adds the touch composer: a textarea with a Markdown preview,
   Enter for a newline and a Send button, bounded above the on-screen keyboard. An
   Appearance choice overrides pointer detection on hybrid devices. IME never sends

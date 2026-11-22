@@ -430,6 +430,10 @@ All of phase 1's code stays. These were cut before more time went into them:
 
 ### Phase 2
 
+- The `activity` topic, `subagent.*` events and API (P2-17). Activity uses
+  `session.updated` on `global` and the open session stream. Return if these
+  prove too coarse, for example if session list refetches become costly or the
+  board needs the last tool call.
 - User-defined agents, tool-list overrides, and per-agent `limits`, `access`, `skills`
   and `plugins` fields. Return when a built-in does not fit.
 - Per-agent allowed classes and `subagent_start {class}`. Return when one worker
