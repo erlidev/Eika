@@ -31,6 +31,22 @@ function normalizeHost(value: unknown): string {
 }
 
 export function withheldRoutes({ w, on }: RouteContext): void {
+  const setBlocked = (value: unknown, blocked: boolean) => {
+    let host = normalizeHost(value);
+    if (!host) return fail(400, "invalid_request", "invalid host");
+    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);
+    if (mapped) {
+      const high = Number.parseInt(mapped[1] ?? "", 16);
+      const low = Number.parseInt(mapped[2] ?? "", 16);
+      host = [high >> 8, high & 255, low >> 8, low & 255].join(".");
+    }
+    w.blockedHosts = w.blockedHosts.filter((item) => item !== host);
+    if (blocked) w.blockedHosts.push(host);
+    return { status: 204 };
+  };
+  on("GET", "/api/blocked-hosts", () => ok({ hosts: w.blockedHosts.toSorted() }));
+  on("POST", "/api/blocked-hosts", ({ body }) => setBlocked(body.host, true));
+  on("DELETE", "/api/blocked-hosts/{host}", ({ params }) => setBlocked(params[0], false));
   const setTrust = (value: unknown, trusted: boolean) => {
     const host = normalizeHost(value);
     if (!host) return fail(400, "invalid_request", "invalid host");

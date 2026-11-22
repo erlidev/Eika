@@ -2081,6 +2081,12 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
     No UI changed in the close. The bench stopped `llama-server` for the runs
     and restored it after.
 
+## P4-19 — Sandbox egress gate (2026-11-22)
+
+The proxy sends egress actions to Sentry, applies the host blocklist and
+computer allowlist, and closes active connections on halt. Denials are audited.
+The blocklist has a store and API; Core fetches follow in P4-20.
+
 ## P4-22: Security setting audit
 
 Audited sandbox egress and allowlist changes in the settings transaction. Screen

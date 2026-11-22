@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -68,6 +69,8 @@ type Action struct {
 	// Destination is where the action reaches outside Eika, if anywhere: the
 	// URL of a fetch, the host of a connection, a plugin's recipient.
 	Destination string
+	// EgressDenial is a restriction found by the proxy, if any.
+	EgressDenial string
 }
 
 // Decision is the outcome class of a verdict.
@@ -161,6 +164,8 @@ type Options struct {
 	Withheld WithheldLog
 	// TrustedSource checks an exact normalized web host.
 	TrustedSource func(context.Context, string) (bool, error)
+	// BlockedHost checks the user blocklist.
+	BlockedHost func(context.Context, string) (bool, error)
 	// Halts keeps the halted state. Nil means the state is never persisted and
 	// Halt returns an error.
 	Halts HaltStore
@@ -214,6 +219,23 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 		v = Verdict{Decision: Deny, Reason: haltReason, Detail: "canary"}
 		if herr != nil {
 			g.Log.Error("halt for canary", "error", herr)
+		}
+	case a.Kind == KindEgress:
+		switch {
+		case a.EgressDenial != "":
+			v = Verdict{Decision: Deny, Reason: a.EgressDenial}
+		case g.BlockedHost != nil:
+			blocked, err := g.BlockedHost(ctx, EgressHost(a.Destination))
+			if err != nil {
+				return Verdict{}, fmt.Errorf("sentry: check blocked host: %w", err)
+			}
+			if blocked {
+				v = Verdict{Decision: Deny, Reason: "host is blocked"}
+			} else {
+				v = Verdict{Decision: Allow}
+			}
+		default:
+			v = Verdict{Decision: Allow}
 		}
 	default:
 		v = g.policy(a)
@@ -278,4 +300,13 @@ func (g *gate) guardResult(up bool) {
 	if g.GuardChanged != nil && previous != "" {
 		g.GuardChanged(up)
 	}
+}
+
+// EgressHost returns the canonical host used for the egress blocklist.
+func EgressHost(host string) string {
+	host = CanonicalHost(host)
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return addr.Unmap().String()
+	}
+	return host
 }

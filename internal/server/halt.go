@@ -53,6 +53,9 @@ func (s *Server) haltWith(ctx context.Context, reason string, abort func()) (sen
 	if err != nil {
 		return st, err
 	}
+	if s.deps.Egress != nil {
+		s.deps.Egress.Halt()
+	}
 	if changed && s.deps.Pause != nil {
 		s.deps.Pause(true)
 	}
