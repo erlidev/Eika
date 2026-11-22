@@ -1091,7 +1091,9 @@ and off. Each case uses a fresh Core and records the page, report and notice
 outcomes in the live report. The suite also records the report-to-action chain,
 worker egress, and a guard failure with a local push sink. The worker cases use
 controlled Docker networks; live-only controls permit the fixture port and
-reach sandbox daemons by container IP from the host.
+reach sandbox daemons by container IP from the host. Two more scenarios repeat
+phase 4's by-hand exit checks (hard blocks, canary, halt and resume, and trusting
+a source); see `evals/README.md`.
 
 The live suite also starts a separate Core process over a temporary Postgres
 database and a real home computer. Its persistent home scenario records its

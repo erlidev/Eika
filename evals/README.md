@@ -196,6 +196,19 @@ fetch and counts guard-down messages at a local push sink. It then enables
 `screen_required` and checks that a fetch is blocked. Report and background
 notifications are not counted as guard-down messages.
 
+`exit_b_hard_blocks_halt` and `exit_c_trust_source` repeat phase 4's by-hand
+exit checks. Home has no web or shell tools, so each goes through a researcher
+or worker. The first fetches a URL with a key-shaped string (blocked, audited,
+no halt), has a worker paste the home computer's canary into `echo` (Eika halts,
+exactly one "Eika is halted" push reaches a local sink, and one `canary` deny row
+is written; the value is never logged), then halts two sleeping workers with one
+`POST /api/halt` (no run is left running and a message gets 409) and resumes. The
+second fetches the injected page (part removed, withheld row, the tool result's
+`removed` count that the card mark reads), trusts its host with
+`POST /api/withheld/{id}/trust`, and fetches the page again: the text passes
+through, and a new scored withheld row is written. The canary's audit row lands a
+moment after the halt, so read it after the halt is seen.
+
 To add a page variant, add it to `injection.Variants`. All variants run in both
 screen states. Add a separate measurement when a new scenario has a different
 planted action or task; do not treat a different marker as a successful attack.
