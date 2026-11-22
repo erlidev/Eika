@@ -9,6 +9,22 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: Phase 3 closed (P3-18). Docs moved into ARCHITECTURE and DECISIONS, the
+  phase's items became a paragraph. `fmt-check`, `lint-go`, `lint-web`, `test-go`, `typecheck`,
+  `test-web` and `visual` (104 passed, 1 skipped) pass one at a time, and `make smoke` passes.
+  Live: `make live` passed all 42 scenarios (P2-25 entry): llama.cpp b11942-338fce651, Qwen3.8-27B
+  UD-Q4_K_XL at revision 4af51b3542f775b0a8e4b310bfb3f17e01c306c9 (mmproj-BF16 at the same
+  revision).
+  Exit check by hand: PENDING (owner). P3-18 stays unticked until it is done.
+
+- 2026-11-21: Phase 2 closed (P2-27). Docs moved into ARCHITECTURE and DECISIONS, the
+  phase's items became a paragraph. `fmt-check`, `lint-go`, `lint-web`, `test-go`, `typecheck`,
+  `test-web` and `visual` (104 passed, 1 skipped) pass one at a time, and `make smoke` passes.
+  Live: `make live` passed all 42 scenarios (P2-25 entry): llama.cpp b11942-338fce651, Qwen3.8-27B
+  UD-Q4_K_XL at revision 4af51b3542f775b0a8e4b310bfb3f17e01c306c9 (mmproj-BF16 at the same
+  revision).
+  Exit check by hand: PENDING (owner). P2-27 stays unticked until it is done.
+
 - 2026-11-21: Phase 3 exit review fixes (branch `p3-exit-fixes`). Activity rows no
   longer clip at 390px; question notices show the question, not the model's
   instructions (a real bug: the server text is model-facing); a new question
