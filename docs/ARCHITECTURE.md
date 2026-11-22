@@ -502,7 +502,8 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot` (the server's slot the request named, NULL when it named none), `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
 | `audit` | Sentry's append-only log (migration 0023): event, session, run, subagent, routine, computer, action key, kind, name, argument digest, reason, detail (jsonb). A trigger refuses update, delete and truncate; no foreign keys, so rows outlive their session |
 | `halt` | one row: whether Eika is halted, since when and why (migration 0025). `SetHalt` writes it and the `halt` or `resume` audit row in one transaction |
-| `withheld` | text ingest removed from a result (migration 0024): source kind and name (the URL), session, run, call key (matches the tool card), wrapper id, text, score. No foreign keys |
+| `trusted_sources` | exact canonical web hosts trusted by the user (migration 0026); subdomains are separate hosts, and fetch trust uses the final content host |
+| `withheld` | suspect text recorded by ingest, including trusted text passed to the agent; text ingest removed from a result (migration 0024): source kind and name (the URL), session, run, call key (matches the tool card), wrapper id, text, score. No foreign keys |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |

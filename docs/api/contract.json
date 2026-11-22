@@ -24,6 +24,9 @@
     "DELETE /api/sessions/{id}": {
       "status": 204
     },
+    "DELETE /api/trusted-sources/{host}": {
+      "status": 204
+    },
     "GET /api/agents": {
       "status": 200,
       "response": {
@@ -3110,6 +3113,18 @@
         }
       }
     },
+    "GET /api/trusted-sources": {
+      "status": 200,
+      "response": {
+        "object": {
+          "hosts": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        }
+      }
+    },
     "GET /api/withheld": {
       "status": 200,
       "response": {
@@ -4592,6 +4607,17 @@
           "finished_at"
         ]
       }
+    },
+    "POST /api/trusted-sources": {
+      "status": 204,
+      "request": {
+        "object": {
+          "host": "string"
+        }
+      }
+    },
+    "POST /api/withheld/{id}/trust": {
+      "status": 204
     },
     "PUT /api/agents/{name}": {
       "status": 200,

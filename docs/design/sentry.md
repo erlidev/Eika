@@ -353,7 +353,11 @@ and stops no run. The user finds it under Settings, Security, where each entry c
 be read and its source trusted.
 
 **Trusted sources.** A host or a plugin the user trusts is still scored and logged,
-and never has anything removed. It is the way out of a false removal on a site the
+and never has anything removed by the screen. A trusted web host matches the exact
+normalized host, not its subdomains or port. IDNs use ASCII and IP addresses use
+their canonical form. Fetches use the final content host; mixed or unknown
+sources cannot inherit trust. Suspect windows still write withheld
+and audit rows; the audit detail marks them as trusted. It is the way out of a false removal on a site the
 user reads often, or a plugin that holds only the user's own notes.
 
 **When the guard does not answer**, content passes wrapped and marked `unscanned`,

@@ -76,12 +76,16 @@ var routeWire = map[string]wire{
 	"POST /api/auth/logout":  {status: http.StatusNoContent},
 	"PUT /api/auth/password": {status: http.StatusOK, request: changePasswordRequest{}, response: signInResponse{}},
 
-	"GET /api/guard":         {status: http.StatusOK, response: guardResponse{}},
-	"GET /api/halt":          {status: http.StatusOK, response: haltResponse{}},
-	"POST /api/halt":         {status: http.StatusOK, request: haltRequest{}, response: haltResponse{}},
-	"POST /api/halt/resume":  {status: http.StatusOK, response: haltResponse{}},
-	"GET /api/withheld":      {status: http.StatusOK, response: withheldResponse{}},
-	"GET /api/withheld/{id}": {status: http.StatusOK, response: withheldBody{}},
+	"GET /api/guard":                     {status: http.StatusOK, response: guardResponse{}},
+	"GET /api/halt":                      {status: http.StatusOK, response: haltResponse{}},
+	"POST /api/halt":                     {status: http.StatusOK, request: haltRequest{}, response: haltResponse{}},
+	"POST /api/halt/resume":              {status: http.StatusOK, response: haltResponse{}},
+	"GET /api/trusted-sources":           {status: http.StatusOK, response: trustedSourcesResponse{}},
+	"POST /api/trusted-sources":          {status: http.StatusNoContent, request: trustedSourceRequest{}},
+	"DELETE /api/trusted-sources/{host}": {status: http.StatusNoContent},
+	"POST /api/withheld/{id}/trust":      {status: http.StatusNoContent},
+	"GET /api/withheld":                  {status: http.StatusOK, response: withheldResponse{}},
+	"GET /api/withheld/{id}":             {status: http.StatusOK, response: withheldBody{}},
 
 	"GET /api/events": {websocket: true},
 

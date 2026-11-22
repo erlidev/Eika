@@ -186,7 +186,7 @@ func (t webFetchTool) Call(ctx context.Context, c tool.CallContext, raw json.Raw
 	if err != nil {
 		return tool.Result{}, fmt.Errorf("encode web_fetch details: %w", err)
 	}
-	return tool.Result{Content: out.Text, IsError: out.IsError, Details: details}, nil
+	return tool.Result{Content: out.Text, SourceURL: out.SourceURL, IsError: out.IsError, Details: details}, nil
 }
 
 // sandboxFilter runs a filter as `eikad filter` in the computer, which is

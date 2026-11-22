@@ -175,7 +175,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		s.tree = session.NewTree(deps.Store)
 	}
 	if deps.Store != nil {
-		o := sentry.Options{Audit: deps.Store, Halts: deps.Store, Withheld: deps.Store, Threshold: cfg.ScreenThreshold, Log: log}
+		o := sentry.Options{Audit: deps.Store, Halts: deps.Store, Withheld: deps.Store, TrustedSource: deps.Store.IsTrustedSource, Threshold: cfg.ScreenThreshold, Log: log}
 		if cfg.GuardURL != "" {
 			o.Screen = screen.New(cfg.GuardURL)
 		}

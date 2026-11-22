@@ -243,7 +243,7 @@ push. The halt button stops every run in one press, and resume lifts it.
 - [x] **P4-14**: Mark content `unscanned` when the guard does not answer in 5 s, send
       one push when the state changes, and add `screen_required`. Add the settings
       and the guard's health to the API.
-- [ ] **P4-15**: Add trusted sources: a host's results are scored and logged, and never
+- [x] **P4-15**: Add trusted sources: a host's results are scored and logged, and never
       have anything removed. Add the table, the check in ingest and the API,
       including "trust this source" from a withheld entry.
 - [ ] **P4-16**: Add the guard's health, the threshold, `screen_required`, the
@@ -516,7 +516,7 @@ and also requires the exit checks.
       newest first, each with its text and a "trust this source" action.
       - [x] **P4-07**: Add the withheld list API.
       - [x] **P4-08**: Build Settings, Security with the withheld list, and mark tool cards.
-      - [ ] **P4-15**: Add trusted sources to ingest and the API.
+      - [x] **P4-15**: Add trusted sources to ingest and the API.
       - [ ] **P4-16**: Add guard health, the threshold, `screen_required` and trusted sources to the page.
       - [ ] **P4-21**: Add the blocklist to the page.
 - [ ] `make smoke` covers Sentry: a scripted model fetches a fixture page that

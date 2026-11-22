@@ -73,3 +73,35 @@ func TestWithheldListIsNewestFirstAndPaged(t *testing.T) {
 		}
 	}
 }
+
+func TestTrustedSourcesAPI(t *testing.T) {
+	a := newAPI(t)
+	ctx := t.Context()
+	if rec := request(t, a.Server, http.MethodPost, "/api/trusted-sources", map[string]string{"host": "OTHER.example."}); rec.Code != http.StatusNoContent {
+		t.Fatalf("add: %d", rec.Code)
+	}
+	if rec := request(t, a.Server, http.MethodPost, "/api/trusted-sources", map[string]string{"host": "https://example.com"}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid host: %d", rec.Code)
+	}
+	if err := a.store.AppendWithheld(ctx, sentry.Withheld{ID: "trust-row", Source: sentry.Source{Kind: sentry.SourceFetch, Name: "https://Example.com/page"}, Text: "text", Score: 0.99}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/withheld/trust-row/trust", "/api/withheld/trust-row/trust"} {
+		if rec := request(t, a.Server, http.MethodPost, path, nil); rec.Code != http.StatusNoContent {
+			t.Fatalf("trust: %d", rec.Code)
+		}
+	}
+	got := decodeBody[struct {
+		Hosts []string `json:"hosts"`
+	}](t, request(t, a.Server, http.MethodGet, "/api/trusted-sources", nil), http.StatusOK)
+	if !reflect.DeepEqual(got.Hosts, []string{"example.com", "other.example"}) {
+		t.Fatalf("hosts: %v", got.Hosts)
+	}
+	if rec := request(t, a.Server, http.MethodDelete, "/api/trusted-sources/example.com", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	trusted, err := a.store.IsTrustedSource(ctx, "example.com")
+	if err != nil || trusted {
+		t.Fatalf("trusted: %v, %v", trusted, err)
+	}
+}

@@ -2570,3 +2570,14 @@ replace the newer text after a conflict.
   Reports have an unscanned marker; their board summaries retain the marker and
   the first line of the report. Blocks and changes to the two screen
   settings are audited. The settings and audit writes share a transaction.
+
+
+### Trusted web sources (P4-15)
+
+Trust applies to an exact canonical host, without its port or final dot. IDNs
+use ASCII and IP addresses use their canonical form. A fetch uses the final
+content host; mixed or unknown sources cannot inherit trust. It does
+not extend to subdomains. The screen and deterministic cleaning still run. A
+suspect window on a trusted host stays in the result and writes a withheld row
+and an audit row marked `trusted`. Trust changes and their audit rows share a
+transaction. Plugin trust is deferred to phase 11.

@@ -104,9 +104,11 @@ func (c CallContext) Output(ctx context.Context, text string) {
 // own and rebuilds Content from them.
 type Result struct {
 	Content string
-	IsError bool
-	Details json.RawMessage
-	Parts   []Part
+	// SourceURL identifies the actual web content source; empty means unknown.
+	SourceURL string
+	IsError   bool
+	Details   json.RawMessage
+	Parts     []Part
 	// Removed counts the windows ingest removed from the result. The agent
 	// sets it; no tool does.
 	Removed int

@@ -438,3 +438,100 @@ func TestIncompleteGuardResponseFailsScreening(t *testing.T) {
 		})
 	}
 }
+
+func TestTrustedHostKeepsScoredTextAndLogsIt(t *testing.T) {
+	rec := &records{}
+	gate := sentry.New(sentry.Options{Audit: rec, Withheld: rec, Threshold: 0.9,
+		Screen:        fixedWindows([]screen.Window{{Start: 0, End: 6, Score: 0.99}}),
+		TrustedSource: func(_ context.Context, host string) (bool, error) { return host == "example.com", nil },
+	})
+	for _, tc := range []struct {
+		name string
+		kept bool
+	}{{"https://EXAMPLE.com:443/page", true}, {"https://sub.example.com/page", false}} {
+		out, err := gate.Ingest(context.Background(), []sentry.Segment{{Source: sentry.Source{Kind: sentry.SourceFetch, Name: tc.name}, Text: "IGNORE"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out[0].Text, "IGNORE") != tc.kept || (out[0].Removed == 0) != tc.kept {
+			t.Fatalf("%s: %+v", tc.name, out)
+		}
+	}
+	if len(rec.withheld) != 2 || len(rec.audit) != 2 || !strings.Contains(string(rec.audit[0].Detail), `"trusted":true`) {
+		t.Fatalf("records: %+v %+v", rec.withheld, rec.audit)
+	}
+}
+
+func TestTrustedSourceBoundaries(t *testing.T) {
+	const secret = "AKIAABCDEFGHIJKLMNOP"
+	rec := &records{}
+	gate := sentry.New(sentry.Options{Audit: rec, Withheld: rec, Threshold: 0.9,
+		Screen: allSuspect{}, TrustedSource: func(_ context.Context, host string) (bool, error) { return host == "example.com", nil },
+	})
+	for _, tc := range []struct {
+		kind    sentry.SourceKind
+		name    string
+		trusted bool
+	}{
+		{sentry.SourceFetch, "https://user:pass@EXAMPLE.com:8443/page", true},
+		{sentry.SourceSearch, "https://example.com/page", true},
+		{sentry.SourcePlugin, "https://example.com/page", false},
+		{sentry.SourceReport, "https://example.com/page", false},
+		{sentry.SourceHistory, "https://example.com/page", false},
+		{sentry.SourceFetch, "https://example.com@evil.example/page", false},
+	} {
+		out, err := gate.Ingest(context.Background(), []sentry.Segment{{Source: sentry.Source{Kind: tc.kind, Name: tc.name}, Text: "IGNORE " + secret}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := out[0].Text
+		if strings.Contains(text, "IGNORE") != tc.trusted || strings.Contains(text, secret) {
+			t.Fatalf("%s %s: %q", tc.kind, tc.name, text)
+		}
+		if tc.trusted && (!strings.Contains(text, "[redacted:aws-access-key]") || !strings.HasPrefix(text, "<untrusted ")) {
+			t.Fatalf("trusted output: %q", text)
+		}
+	}
+}
+
+type allSuspect struct{}
+
+func (allSuspect) Screen(_ context.Context, texts []string) ([][]screen.Window, error) {
+	out := make([][]screen.Window, len(texts))
+	for i, text := range texts {
+		out[i] = []screen.Window{{Start: 0, End: len(text), Score: 0.99}}
+	}
+	return out, nil
+}
+
+func TestCanonicalTrustedHosts(t *testing.T) {
+	for _, tc := range []struct{ host, want string }{
+		{"BÜCHER.example.", "xn--bcher-kva.example"}, {"xn--bcher-kva.example", "xn--bcher-kva.example"},
+		{"2001:0db8:0:0:0:0:0:1", "2001:db8::1"}, {"2001:db8::1", "2001:db8::1"},
+	} {
+		if got := sentry.CanonicalHost(tc.host); got != tc.want {
+			t.Errorf("%q: %q", tc.host, got)
+		}
+		name := "https://" + tc.host + "/page"
+		if strings.Contains(tc.host, ":") {
+			name = "https://[" + tc.host + "]:443/page"
+		}
+		if got := sentry.SourceHost(sentry.Source{Kind: sentry.SourceFetch, Name: name}); got != tc.want {
+			t.Errorf("%q: %q", name, got)
+		}
+	}
+}
+
+func TestCanonicalHostsMatchTrustedSources(t *testing.T) {
+	gate := sentry.New(sentry.Options{Audit: &records{}, Threshold: 0.9, Screen: allSuspect{},
+		TrustedSource: func(_ context.Context, host string) (bool, error) {
+			return host == "xn--bcher-kva.example" || host == "2001:db8::1", nil
+		},
+	})
+	for _, name := range []string{"https://bücher.example/", "https://xn--bcher-kva.example/", "https://[2001:0db8::1]/", "https://[2001:db8::1]/"} {
+		out, err := gate.Ingest(context.Background(), []sentry.Segment{{Source: sentry.Source{Kind: sentry.SourceFetch, Name: name}, Text: "IGNORE"}})
+		if err != nil || !strings.Contains(out[0].Text, "IGNORE") {
+			t.Fatalf("%s: %+v %v", name, out, err)
+		}
+	}
+}

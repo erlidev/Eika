@@ -69,12 +69,29 @@ func (r *Reader) github(ctx context.Context, p plan) (fetched, error) {
 // githubRead assembles one GitHub read as Markdown.
 func (r *Reader) githubRead(ctx context.Context, p plan, token string) (fetched, error) {
 	pg := fetched{Title: p.label, ContentType: "text/markdown"}
+	mixed := false
+	remember := func(raw string) {
+		if mixed {
+			return
+		}
+		if pg.SourceURL == "" {
+			pg.SourceURL = raw
+			return
+		}
+		a, e1 := url.Parse(pg.SourceURL)
+		b, e2 := url.Parse(raw)
+		if e1 != nil || e2 != nil || !strings.EqualFold(a.Hostname(), b.Hostname()) {
+			pg.SourceURL = ""
+			mixed = true
+		}
+	}
 	repo := "/repos/" + url.PathEscape(p.owner) + "/" + url.PathEscape(p.repo)
 	text := func(path, accept string) (string, error) {
 		resp, err := r.get(ctx, r.cfg.GitHubAPI+path, githubHeader(accept, token))
 		if err != nil {
 			return "", err
 		}
+		remember(resp.finalURL)
 		pg.Bytes, pg.Truncated = len(resp.body), resp.truncated
 		return decode(resp.body, resp.contentType)
 	}
@@ -83,6 +100,7 @@ func (r *Reader) githubRead(ctx context.Context, p plan, token string) (fetched,
 		if err != nil {
 			return err
 		}
+		remember(resp.finalURL)
 		if resp.truncated || json.Unmarshal(resp.body, out) != nil {
 			return search.Errorf("GitHub answered %s with a response that could not be read", path)
 		}

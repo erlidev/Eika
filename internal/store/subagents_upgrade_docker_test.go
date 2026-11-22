@@ -75,3 +75,19 @@ func TestUpgradeFrom0023AddsWithheld(t *testing.T) {
 		t.Errorf("row = %q %v, %v", text, score, err)
 	}
 }
+
+func TestUpgradeFrom0025PreservesWithheld(t *testing.T) {
+	ctx := t.Context()
+	st, conn := upgradeFrom(t, "0025_halt", `INSERT INTO withheld (id, at, source_kind, source_name, session_id, run_id, call_key, content_id, text, score) VALUES ('saved', now(), 'web_fetch', 'https://example.com', '', '', '', '', 'saved text', 0.99)`)
+	if err := st.SetTrustedSource(ctx, "example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	row, err := st.Withheld(ctx, "saved")
+	if err != nil || row.Text != "saved text" {
+		t.Fatalf("withheld: %+v %v", row, err)
+	}
+	var n int
+	if err := conn.QueryRow(ctx, `SELECT count(*) FROM audit WHERE kind = 'trusted_source' AND name = 'example.com'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("audit: %d %v", n, err)
+	}
+}

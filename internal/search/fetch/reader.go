@@ -126,9 +126,10 @@ type FilterFunc func(ctx context.Context, req page.FilterRequest) (page.FilterOu
 // Outcome is a finished fetch. Text is what the model reads; IsError marks a
 // fetch the model should see as failed.
 type Outcome struct {
-	Text    string
-	IsError bool
-	Details Details
+	Text      string
+	IsError   bool
+	Details   Details
+	SourceURL string // actual content source; empty when unknown or mixed
 }
 
 // Details describe how a fetch went, for the interface. They never reach the
@@ -171,9 +172,10 @@ func (r *Reader) Read(ctx context.Context, req Request, filter FilterFunc) (Outc
 	asked := strings.TrimSpace(req.Section)
 	expression := strings.TrimSpace(req.Filter)
 	d := Details{URL: rawURL, Format: format, Section: asked, Filter: expression}
+	sourceURL := ""
 	done := func(text string, isError bool) (Outcome, error) {
 		d.Ms = r.cfg.Now().Sub(started).Milliseconds()
-		return Outcome{Text: text, IsError: isError, Details: d}, nil
+		return Outcome{Text: text, IsError: isError, Details: d, SourceURL: sourceURL}, nil
 	}
 
 	switch {
@@ -216,6 +218,7 @@ func (r *Reader) Read(ctx context.Context, req Request, filter FilterFunc) (Outc
 		return done("fetch failed: "+search.Describe(err), true)
 	}
 	d.FinalURL, d.Container, d.ContentType = pg.FinalURL, pg.Container, pg.ContentType
+	sourceURL = pg.SourceURL
 	d.Bytes, d.BodyTruncated, d.Cached = pg.Bytes, pg.Truncated, pg.cached
 
 	scoped, narrowed := pg.Markdown, false
@@ -298,6 +301,7 @@ func noSection(wanted string, available []string) string {
 
 // fetched is a page as the cache holds it.
 type fetched struct {
+	SourceURL string // empty if the content came from more than one host
 	// RequestedURL is what was requested after planning; it differs from
 	// the fetched URL when the plan rewrote it.
 	RequestedURL string
@@ -402,7 +406,7 @@ func (r *Reader) fetch(ctx context.Context, target *url.URL, format string) (fet
 		return fetched{}, err
 	}
 	pg := fetched{
-		RequestedURL: p.url, FinalURL: resp.finalURL, ContentType: resp.contentType,
+		RequestedURL: p.url, FinalURL: resp.finalURL, SourceURL: resp.finalURL, ContentType: resp.contentType,
 		Bytes: len(resp.body), Truncated: resp.truncated,
 	}
 	if format == Raw {
