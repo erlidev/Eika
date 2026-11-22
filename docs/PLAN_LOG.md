@@ -1,5 +1,16 @@
 # Plan log
 
+- 2026-11-22: P6-03 mounts the skills volume read-only at `/skills`. `computer.Spec`
+  gains `ReadOnly` (volume, target), `Computer.Mounted`/`HasMount` come from Inspect,
+  and `Host.Recreate` replaces a stopped computer's container, never its data volume.
+  The server gives the mount at creation and, in `startComputer`, recreates a stopped
+  computer that lacks it (new container, new tokens, egress forgotten); a running
+  computer is left until its next start. Only the home computer is created by the
+  server today; the memory and skills computers never get the mount. A host without
+  the internal network has no installer, so computers get no mount and are not
+  recreated. Docker tests: read, no write/delete/remount, only home and `/skills`
+  mounted, and a file written before recreation is still there.
+
 - 2026-11-22: P6-02 adds the private skills installer computer: migration 0033
   `skills_computer` (generated per-install id), `store.EnsureSkillsComputerID`,
   `server.EnsureSkillsInstaller`/`SkillsVolume`/`keepSkillsInstaller` (label

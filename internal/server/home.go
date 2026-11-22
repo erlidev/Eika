@@ -65,6 +65,7 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 			ID:          row.ID,
 			Image:       row.Image,
 			Confinement: s.confinement(row.Sandbox),
+			ReadOnly:    s.skillsMounts(ctx),
 		}); err != nil {
 			return fmt.Errorf("create the home computer: %w", err)
 		}
@@ -201,6 +202,9 @@ func (s *Server) keepHome(ctx context.Context, delay time.Duration) {
 // its row records: a change that reached the container only in part before it
 // stopped is completed here.
 func (s *Server) startComputer(ctx context.Context, cx store.Computer, host *computer.Computer) error {
+	if err := s.mountSkills(ctx, cx, host); err != nil {
+		return err
+	}
 	if err := s.deps.Computers.Confine(ctx, host, s.confinement(cx.Sandbox)); err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/erlidev/eika/internal/executor/sandbox"
@@ -81,6 +82,18 @@ type Spec struct {
 	// Role marks a computer that serves Core, set as the RoleLabel label.
 	// Empty is an ordinary computer.
 	Role string
+	// ReadOnly lists named volumes mounted read-only into the container, in
+	// addition to the computer's own. A container's mounts are fixed when it
+	// is created, so a computer made without one gets it only by Recreate.
+	ReadOnly []ReadOnlyMount
+}
+
+// ReadOnlyMount is a Docker volume mounted read-only at Target.
+type ReadOnlyMount struct {
+	// Volume is the name of an existing volume.
+	Volume string
+	// Target is the absolute path inside the container.
+	Target string
 }
 
 // Computer is one sandbox container and its volume.
@@ -103,6 +116,9 @@ type Computer struct {
 	Root string
 	// Volume is the name of the volume mounted at the computer root.
 	Volume string
+	// Mounted lists the directories other than the root that the container
+	// has a volume mounted at.
+	Mounted []string
 	// Address is the base URL of the computer's eikad daemon as the harness
 	// reaches it.
 	Address string
@@ -112,6 +128,9 @@ type Computer struct {
 	// CreatedAt is when the container was created, in UTC.
 	CreatedAt time.Time
 }
+
+// HasMount reports whether the container has a volume mounted at target.
+func (c Computer) HasMount(target string) bool { return slices.Contains(c.Mounted, target) }
 
 // RootOf is the directory a computer's files are in.
 func RootOf(cx Computer) string { return orDefault(cx.Root, Root) }

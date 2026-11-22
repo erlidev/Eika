@@ -184,8 +184,13 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		Labels:       labels,
 		ExposedPorts: nat.PortSet{port: struct{}{}},
 	}
+	mounts := []mount.Mount{{Type: mount.TypeVolume, Source: cx.Volume, Target: cx.Root}}
+	for _, m := range spec.ReadOnly {
+		mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: m.Volume, Target: m.Target, ReadOnly: true})
+		cx.Mounted = append(cx.Mounted, m.Target)
+	}
 	hostCfg := &container.HostConfig{
-		Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: cx.Volume, Target: cx.Root}},
+		Mounts: mounts,
 		// Docker's own init is PID 1 and reaps the orphans a shell leaves
 		// behind; eikad runs under it as an ordinary process.
 		Init: &useInit,
@@ -221,6 +226,24 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 	}
 	h.log.Info("computer created", "computer_id", cx.ID, "image", cx.Image)
 	return cx, nil
+}
+
+// Recreate replaces a stopped computer's container with one made from spec,
+// which is how a computer gains a mount it was made without. Its data volume
+// is never removed: the new container mounts it again, and the files in it
+// are as they were. The computer gets new tokens, and the caller forgets the
+// old ones. A running computer is refused, so a restart is never forced.
+func (h *Host) Recreate(ctx context.Context, cx Computer, spec Spec) (Computer, error) {
+	if cx.State == StateRunning {
+		return Computer{}, fmt.Errorf("recreate computer %s: it is running", cx.ID)
+	}
+	spec.ID = cx.ID
+	// RemoveVolumes stays false: it removes only a container's anonymous
+	// volumes, never the named data volume, and nothing here needs it.
+	if err := h.docker.ContainerRemove(ctx, cx.ContainerID, container.RemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		return Computer{}, fmt.Errorf("remove the container of computer %s: %w", cx.ID, err)
+	}
+	return h.Create(ctx, spec)
 }
 
 // discard removes whatever of a computer already exists. It is the rollback
@@ -309,6 +332,7 @@ func (h *Host) Inspect(ctx context.Context, id string) (Computer, error) {
 	}
 	for _, m := range info.Mounts {
 		if m.Destination != cx.Root {
+			cx.Mounted = append(cx.Mounted, m.Destination)
 			continue
 		}
 		cx.Volume = m.Name
