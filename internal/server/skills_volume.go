@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/computer"
+	"github.com/erlidev/eika/internal/skill"
 	"github.com/erlidev/eika/internal/skill/volume"
 )
 
@@ -102,6 +103,9 @@ func (s *Server) isSkillsInstaller(ctx context.Context, id string) bool {
 func (s *Server) keepSkillsInstaller(ctx context.Context, delay time.Duration) {
 	for {
 		err := s.EnsureSkillsInstaller(ctx)
+		if err == nil {
+			err = s.recoverSkills(ctx)
+		}
 		if err == nil || ctx.Err() != nil {
 			return
 		}
@@ -117,4 +121,77 @@ func (s *Server) keepSkillsInstaller(ctx context.Context, delay time.Duration) {
 		}
 		delay = min(delay*2, longestHomeRetry)
 	}
+}
+
+// SkillInstaller returns Core's skill installer, or nil until the skills rows
+// have been reconciled with the volume. Nothing may install or load a skill
+// before then.
+func (s *Server) SkillInstaller() *skill.Installer { return s.skillInstaller.Load() }
+
+// recoverSkills reconciles the skill rows with the volume, then publishes the
+// installer. Rows whose directory is missing or changed are marked broken;
+// unknown directories are logged and left alone.
+func (s *Server) recoverSkills(ctx context.Context) error {
+	in := skill.NewInstaller(skillsFiles{s}, s.deps.Store)
+	rep, err := in.Reconcile(ctx)
+	if err != nil {
+		return fmt.Errorf("reconcile skills: %w", err)
+	}
+	s.log.Info("skills reconciled", "broken", rep.Broken, "repaired", rep.Repaired, "unknown_directories", rep.Unknown)
+	s.skillInstaller.Store(in)
+	return nil
+}
+
+// skillsFiles runs each volume operation through a fresh view of the
+// installer computer, starting it if it stopped.
+type skillsFiles struct{ s *Server }
+
+func (f skillsFiles) vol(ctx context.Context) (*volume.Volume, error) { return f.s.SkillsVolume(ctx) }
+
+func (f skillsFiles) Stage(ctx context.Context, name string, files []skill.File) error {
+	v, err := f.vol(ctx)
+	if err != nil {
+		return err
+	}
+	return v.Stage(ctx, name, files)
+}
+
+func (f skillsFiles) HashStaged(ctx context.Context, name string) (string, error) {
+	v, err := f.vol(ctx)
+	if err != nil {
+		return "", err
+	}
+	return v.HashStaged(ctx, name)
+}
+
+func (f skillsFiles) Replace(ctx context.Context, name string) error {
+	v, err := f.vol(ctx)
+	if err != nil {
+		return err
+	}
+	return v.Replace(ctx, name)
+}
+
+func (f skillsFiles) Remove(ctx context.Context, name string) error {
+	v, err := f.vol(ctx)
+	if err != nil {
+		return err
+	}
+	return v.Remove(ctx, name)
+}
+
+func (f skillsFiles) Hash(ctx context.Context, name string) (string, error) {
+	v, err := f.vol(ctx)
+	if err != nil {
+		return "", err
+	}
+	return v.Hash(ctx, name)
+}
+
+func (f skillsFiles) List(ctx context.Context) ([]string, error) {
+	v, err := f.vol(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return v.List(ctx)
 }

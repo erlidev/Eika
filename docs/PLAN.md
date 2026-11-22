@@ -646,7 +646,7 @@ package that changes it. Project scope, other install sources, `skill_file`,
       hazard). Test, with the Docker tag, that a computer reads `/skills`, cannot
       write or remount it, and cannot see `eika-data`, the memory volume or the
       installer. Run `make smoke`.
-- [ ] **P6-04**: Add `core.skills` (`name`, `enabled`, `sha`, `installed_at`,
+- [x] **P6-04**: Add `core.skills` (`name`, `enabled`, `sha`, `installed_at`,
       `warnings`, plus the parsed `description`, the `SKILL.md` body, the file list
       with sizes, and the install screen's result), the store and the single
       installer. Install stages a zip through P6-02's computer, validates, swaps the
@@ -1078,8 +1078,8 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
 
 - [ ] Add `internal/skill` (P6-01, P6-04, P6-05):
       - [x] lenient parsing and validation of the specification (P6-01)
-      - the store and the `core.skills` rows
-      - install from a `.zip`
+      - [x] the store and the `core.skills` rows (P6-04)
+      - [x] install from a `.zip` (P6-04; the screen is P6-05)
 - [ ] (P6-02 done; P6-03, P6-12) Mount `/skills` read-only into computers from a volume of its own
       (`eika-skills`), never from Core's `/var/lib/eika` volume, which holds
       `secret.key` and the memory repository. `make backup` covers it.

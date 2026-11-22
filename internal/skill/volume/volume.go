@@ -115,6 +115,23 @@ func (v *Volume) Remove(ctx context.Context, name string) error {
 	return v.sh(ctx, `rm -rf -- "$1" "$2/$1" "$3/$1"`, nil, name, stageDir, oldDir)
 }
 
+// List names the top-level entries of the volume that are not the working
+// directories, sorted. Names are returned as found, valid or not, so an
+// unexpected entry can be reported.
+func (v *Volume) List(ctx context.Context) ([]string, error) {
+	var out bytes.Buffer
+	if err := v.sh(ctx, `find . -mindepth 1 -maxdepth 1 ! -name '.*' -printf '%f\n' | LC_ALL=C sort`, &out); err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, n := range strings.Split(out.String(), "\n") {
+		if n != "" {
+			names = append(names, n)
+		}
+	}
+	return names, nil
+}
+
 // Hash returns a hex SHA-256 over the paths, modes and contents of the
 // installed skill's files, or fs.ErrNotExist if it is not installed.
 func (v *Volume) Hash(ctx context.Context, name string) (string, error) {
