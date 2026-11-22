@@ -2467,3 +2467,23 @@ after restart, index emptied and rebuilt (reindexed 1, nothing invalid) state
 active and still in the next preamble; forgotten on request, archived, out of the
 preamble. Final report: active 0, pending 0, archived 1, asks 0, pushes 0, task
 done. No product defect found; the harness defects above were fixed.
+
+## P5-18: Memory smoke flow and isolation check (2026-11-22)
+
+`make smoke` gains a fourth test (`web/e2e/smoke/smoke.spec.ts`). The scripted model
+(`model.ts`) calls `memory_write` twice: an ordinary memory (active) and one whose body
+is the Sentry fixture's planted instruction, which the real guard sends to pending (the
+spec checks the verdict is not `unscanned`). The spec shrinks the model's window with
+`PATCH /api/models/{id}` and the model pads its answer, so `POST .../compact` has older
+turns to summarize (a home compaction keeps 15% of the window); then `GET
+/api/sessions/{id}/context` must show the active memory, and not the pending one, in the
+`memory` section. It edits the active memory in the Memory page, rejects the pending one
+in the Inbox, restarts the `eika` service with the compose command `make smoke` passes in
+`EIKA_SMOKE_COMPOSE`, and requires both memories to keep state, body and `content_sha`.
+Isolation: a worker on home runs `ls` of the mount path and a `find` for memory files and
+must print `mount-isolated 1 0`; and `docker inspect` of every labelled computer
+container shows the mount only on the `eika.role=memory` one. Finding: with no exact
+token counter the first compaction leaves the home snapshot without a memory section
+(P5-04 design), so the scripted endpoint now answers `/version`, `/metrics` and
+`/tokenize` as vLLM does (four bytes to a token); the probe then reports exact counting.
+The test signs in again, since each Playwright test has a new browser context.
