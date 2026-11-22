@@ -73,6 +73,8 @@ type Quota interface {
 
 // Config is what a Reader is built from.
 type Config struct {
+	// FixtureHosts lists exact private fixture hostnames.
+	FixtureHosts []string
 	// Client makes every request. Production passes NewClient.
 	Client *http.Client
 	// Tracker counts GitHub reads in the bucket the GitHub sources use.
@@ -320,7 +322,7 @@ type fetched struct {
 // entry, since it is rendered from the same Markdown at the end; only raw
 // fetches a different body.
 func (r *Reader) page(ctx context.Context, rawURL, format string) (fetched, error) {
-	target, err := validate(rawURL)
+	target, err := validate(rawURL, r.cfg.FixtureHosts)
 	if err != nil {
 		return fetched{}, err
 	}
@@ -347,7 +349,7 @@ var privateName = regexp.MustCompile(`(?i)^(localhost|.+\.(localhost|local|inter
 // validate refuses a URL that should not be dereferenced, before any
 // request goes out. The client refuses a public name that resolves to a
 // private address when it dials.
-func validate(rawURL string) (*url.URL, error) {
+func validate(rawURL string, fixtureHosts []string) (*url.URL, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {
 		return nil, search.Errorf("not a valid URL: %s", rawURL)
@@ -357,7 +359,7 @@ func validate(rawURL string) (*url.URL, error) {
 	}
 	host := strings.TrimSuffix(u.Hostname(), ".")
 	addr, err := netip.ParseAddr(host)
-	if privateName.MatchString(host) || err == nil && !netguard.IsPublic(addr) {
+	if !fixtureHost(u.Hostname(), fixtureHosts) && (privateName.MatchString(host) || err == nil && !netguard.IsPublic(addr)) {
 		return nil, search.Errorf("refusing to fetch a private address (%s)", host)
 	}
 	u.Fragment, u.RawFragment = "", ""

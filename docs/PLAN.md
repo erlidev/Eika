@@ -277,7 +277,7 @@ connection.
 - [ ] **P4-22**: Close the audit gaps: setting-change rows, and an append-only
       guarantee in the database.
 - [ ] **P4-23**: Update the security section of the style guide.
-- [ ] **P4-24**: Add the fetch fixture-hosts config key, set by `compose.smoke.yaml`,
+- [x] **P4-24**: Add the fetch fixture-hosts config key, set by `compose.smoke.yaml`,
       and the Sentry scenario to `make smoke`: a scripted model fetches a fixture page
       with a planted instruction, and the result has the part removed.
 - [ ] **P4-25**: Build `evals/injection` on the P2-25 live harness: fixture pages in
@@ -521,7 +521,7 @@ and also requires the exit checks.
       - [ ] **P4-21**: Add the blocklist to the page.
 - [ ] `make smoke` covers Sentry: a scripted model fetches a fixture page that
       carries a planted instruction, and the result it gets has the part removed.
-      - [ ] **P4-24**: Add the Sentry scenario to `make smoke`.
+      - [x] **P4-24**: Add the Sentry scenario to `make smoke`.
 - [ ] `evals/injection` and the phase 4 live suite, on the bench's chat model and
       guard. It builds on the server-level live harness of P2-25:
       - fixture pages in three variants (innocent, injected, and a legitimate page

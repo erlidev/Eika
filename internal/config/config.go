@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -69,6 +70,8 @@ type Config struct {
 	// GuardURL is the base URL of the guard service that screens untrusted
 	// content for injected instructions. Empty turns the screen off.
 	GuardURL string `yaml:"guard_url"`
+	// FetchFixtureHosts lists exact hostnames that fetch may reach on private addresses.
+	FetchFixtureHosts []string `yaml:"fetch_fixture_hosts"`
 	// ScreenThreshold is the score at or over which the screen removes a
 	// window of untrusted content.
 	ScreenThreshold float64 `yaml:"screen_threshold"`
@@ -162,6 +165,14 @@ func (c *Config) applyEnv() {
 			*field = v
 		}
 	}
+	if v, ok := os.LookupEnv("EIKA_FETCH_FIXTURE_HOSTS"); ok {
+		c.FetchFixtureHosts = nil
+		for _, host := range strings.Split(v, ",") {
+			if host = strings.TrimSpace(host); host != "" {
+				c.FetchFixtureHosts = append(c.FetchFixtureHosts, host)
+			}
+		}
+	}
 	// A list does not fit an environment variable cleanly, but this one is
 	// short and a deployment needs it before it has a configuration file.
 	if v, ok := os.LookupEnv("EIKA_ALLOWED_ORIGINS"); ok {
@@ -219,6 +230,11 @@ func (c Config) Validate() error {
 	if c.SandboxImage == "" {
 		return errors.New("validate config: sandbox_image is empty")
 	}
+	for _, host := range c.FetchFixtureHosts {
+		if !regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$`).MatchString(host) || net.ParseIP(host) != nil {
+			return fmt.Errorf("validate config: invalid fetch fixture hostname %q", host)
+		}
+	}
 	if c.ScreenThreshold <= 0 || c.ScreenThreshold > 1 {
 		return errors.New("validate config: screen_threshold must be above 0 and at most 1")
 	}
@@ -258,12 +274,12 @@ const redacted = "[REDACTED]"
 // String renders the configuration with secrets replaced by a placeholder so
 // that it is safe to log.
 func (c Config) String() string {
-	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s sandbox_internal_network=%s egress_listen=%s egress_proxy_url=%s eikad_binary=%s secret_key_file=%s auth_token=%s allowed_origins=%s public_url=%s guard_url=%s screen_threshold=%g}",
+	return fmt.Sprintf("config{listen=%s database_url=%s docker_socket=%s searxng_url=%s sandbox_image=%s sandbox_network=%s sandbox_internal_network=%s egress_listen=%s egress_proxy_url=%s eikad_binary=%s secret_key_file=%s auth_token=%s allowed_origins=%s public_url=%s guard_url=%s screen_threshold=%g fetch_fixture_hosts=%s}",
 		c.Listen, redactURL(c.DatabaseURL), c.DockerSocket, c.SearxNGURL, c.SandboxImage,
 		c.SandboxNetwork, c.SandboxInternalNetwork, c.EgressListen, c.EgressProxyURL,
 		c.EikadBinary, c.SecretKeyFile,
 		redact(c.AuthToken), strings.Join(c.AllowedOrigins, ","), c.PublicURL,
-		c.GuardURL, c.ScreenThreshold)
+		c.GuardURL, c.ScreenThreshold, strings.Join(c.FetchFixtureHosts, ","))
 }
 
 // redact hides a secret while preserving whether it was set at all.

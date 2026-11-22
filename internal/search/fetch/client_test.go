@@ -34,3 +34,23 @@ func TestCheckRedirect(t *testing.T) {
 		t.Error("a sixth redirect was followed")
 	}
 }
+
+func TestFixtureHostExceptionIsExact(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	port := u.Port()
+	client := NewClient("localhost")
+	resp, err := client.Get("http://localhost:" + port)
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	resp.Body.Close()
+	_, err = client.Get(srv.URL)
+	if !errors.Is(err, netguard.ErrPrivateAddress) {
+		t.Fatalf("unlisted address: %v", err)
+	}
+	if fixtureHost("sub.localhost", []string{"localhost"}) || fixtureHost("localhost.evil", []string{"localhost"}) {
+		t.Fatal("matched a different hostname")
+	}
+}
