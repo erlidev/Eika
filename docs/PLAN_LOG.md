@@ -2312,3 +2312,17 @@ once; a notice written just before a compaction whose snapshot includes the
 change is still delivered (redundant, not lost). The server test cannot make the
 fake model count exactly, so the exact-count refresh path is covered by the store
 test (snapshot seq is consistent with the rows).
+
+## P5-16 — Backup (2026-11-22)
+
+`make backup` runs `deploy/backup.sh`, a shell script like the other deploy
+glue. It checks everything before stopping anything (postgres running, key and
+memory `.git/HEAD` present), stops the eika service, writes `postgres.dump`,
+`memory.tar` (volume read through a throwaway container with no network) and
+`secret.key` into a hidden partial directory under `backups/` (0700/0600),
+writes `manifest.json` (format 1, time, commit, dirty flag, image id, last
+`core.schema_migrations` version, sha256 and size per file), renames it into
+place and starts eika again; a trap restarts eika and removes the partial on any
+failure. Checked by hand against a throwaway compose project (not the smoke or a
+real stack): success, perms, checksums, restart, refusal on missing key and
+missing memory volume. Not run on `make smoke`.

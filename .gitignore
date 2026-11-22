@@ -9,6 +9,7 @@
 /.env
 /deploy/.env
 /.dev/
+/backups/
 /eika.pid
 *.local.yaml
 
