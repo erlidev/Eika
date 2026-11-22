@@ -4,7 +4,7 @@
  * no existing one has, and keep ids stable: specs and agents address them.
  */
 
-import type { Memory, Message, Project, QuestionNotice, Run } from "../../src/api/types.ts";
+import type { Memory, Message, Project, QuestionNotice, Run, Skill } from "../../src/api/types.ts";
 import { syncSession } from "./modelContext.ts";
 import { emptyWorld, minutesAgo, WorldBuilder } from "./world.ts";
 import type { World } from "./world.ts";
@@ -1617,6 +1617,67 @@ export const scenarios = {
         ),
       );
       return w;
+    },
+  },
+  skills: {
+    description:
+      "Skills: an enabled skill, a disabled one with warnings and a screen hit, and a broken one.",
+    path: "/skills",
+    build: () => {
+      const b = configured();
+      const skill = (
+        s: Partial<Skill> & Pick<Skill, "name" | "description">,
+        ago: number,
+      ): Skill => ({
+        license: "",
+        compatibility: "",
+        metadata: {},
+        allowed_tools: "",
+        body: `# ${s.name}\n\nRun scripts/run.py with the input file.\n`,
+        enabled: false,
+        broken: "",
+        sha: `sha-${s.name}`,
+        installed_at: minutesAgo(ago),
+        files: [
+          { path: "SKILL.md", size: 80 },
+          { path: "scripts/run.py", size: 120 },
+        ],
+        warnings: [],
+        screen: { spans: [], max_score: 0, unscanned: false },
+        ...s,
+      });
+      b.world.skills.push(
+        skill(
+          {
+            name: "invoice-totals",
+            description: "Totals invoices. Use when the user asks for invoice totals.",
+            enabled: true,
+          },
+          600,
+        ),
+        skill(
+          {
+            name: "web-digest",
+            description: "Summarises a web page into a digest, following its links.",
+            warnings: ["scripts/run.py is not executable", "allowed-tools lists a tool Eika lacks"],
+            screen: {
+              spans: [{ field: "body", start: 0, end: 6, score: 0.93, text: "Ignore" }],
+              max_score: 0.93,
+              unscanned: false,
+            },
+          },
+          90,
+        ),
+        skill(
+          {
+            name: "old-report",
+            description: "Builds the quarterly report.",
+            broken: "SKILL.md is missing on disk",
+          },
+          2000,
+        ),
+      );
+      return b.world;
     },
   },
   "home-empty": {

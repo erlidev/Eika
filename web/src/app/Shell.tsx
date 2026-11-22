@@ -17,6 +17,7 @@ import { ImageViewer } from "@/components/MessageImages";
 import { HaltBanner, useHaltEvents } from "@/features/halt";
 import { useInboxEvents } from "@/features/inbox";
 import { useMemoryEvents } from "@/features/memory/events";
+import { useSkillsEvents } from "@/features/skills/events";
 import { Toasts } from "@/features/notifications";
 import { useMCPEvents } from "@/features/mcp";
 import { useSessionUpdates } from "@/features/sessions";
@@ -38,6 +39,7 @@ export function Shell() {
   useSessionUpdates();
   useInboxEvents();
   useMemoryEvents();
+  useSkillsEvents();
 
   // The bar stands under the page and gives way to the keyboard, which the
   // page then sits on; without a bar the page leaves room for the device.

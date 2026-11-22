@@ -17,6 +17,7 @@ import { ActivityPage } from "@/features/activity";
 import { InboxPage } from "@/features/inbox";
 import { MemoryPage } from "@/features/memory";
 import { ProjectsPage } from "@/features/projects";
+import { SkillsPage } from "@/features/skills";
 import { ChatPage } from "@/features/chat";
 import {
   LoadFailedScreen,
@@ -96,6 +97,7 @@ function SignedIn() {
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/memory/:name?" element={<MemoryPage />} />
         <Route path="/projects/:slug?" element={<ProjectsPage />} />
+        <Route path="/skills/:name?" element={<SkillsPage />} />
       </Route>
       <Route path={callbackPath} element={<MCPCallbackRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />
