@@ -23,8 +23,39 @@ it("warns about direct routes for every mode without egress control", () => {
         />,
       );
     });
-    expect(node.textContent).toContain("Computers have direct network routes");
+    expect(node.textContent).toContain("Computers connect directly");
+    expect(node.textContent).toContain("do not restrict their network access");
   }
+  act(() => {
+    root.unmount();
+  });
+});
+
+it("shows the selected mode and edits its allowed hosts", () => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const node = document.createElement("div");
+  const root = createRoot(node);
+  const onChange = vi.fn();
+  const draft: SandboxDraft = {
+    cpus: "",
+    memoryMb: "",
+    pids: "",
+    mode: "allowlist",
+    allow: ["github.com"],
+  };
+  act(() => {
+    root.render(
+      <EgressFields id="test" draft={draft} onChange={onChange} host={undefined} problems={{}} />,
+    );
+  });
+  expect(node.querySelector('[role="alert"]')).toBeNull();
+  const remove = node.querySelector<HTMLButtonElement>(
+    'button[aria-label="Remove github.com from the allowlist"]',
+  );
+  act(() => {
+    remove?.click();
+  });
+  expect(onChange).toHaveBeenCalledWith({ allow: [] });
   act(() => {
     root.unmount();
   });
