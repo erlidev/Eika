@@ -30,7 +30,7 @@ func TestMemoryRepositoryThroughSandbox(t *testing.T) {
 	if err := r.Write(ctx, "metric", []byte("metric units")); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Commit(ctx, "metric"); err != nil {
+	if err := r.Commit(ctx, "metric", "m"); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := r.Read(ctx, "metric"); err != nil || string(got) != "metric units" {

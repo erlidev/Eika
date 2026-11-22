@@ -2677,3 +2677,31 @@ pending verdict (spans, max score, unscanned) is stored in `memories.screen`
 (also index-only). Pending memories show in search and read with `pending` and
 a note, and are never part of the index or preamble. The source of a memory
 written by a tool is `session <id>`. Only the user pins; no tool sets it.
+
+Merged with P5-04: one writer, made and published by `recoverMemory`, so the
+tools get `errNoMemory` until recovery is done. Its screen hook
+(`Writer.SetScreen`) is `Server.screenMemoryFile`, Sentry's `CheckMemory`:
+an outside edit found by reconcile becomes active only on an `active` verdict
+and is otherwise held pending (no spans are stored for it). The stored verdict
+type is `memory.ScreenResult`. Reconcile and Reindex keep `screen` and
+`archive_reason` of a row whose content is unchanged; a row rebuilt from a file
+with no row (lost table) has no verdict and a pending one is not re-screened
+until the user acts. `Files.Commit` takes a message; forget commits
+`Forget memory: <reason>`.
+
+## Memory recovery (P5-04)
+
+`Reconcile` treats the files as the truth. A file that is committed and whose
+bytes differ from its row (or has no row) is indexed as is: git holds it. An
+uncommitted file whose bytes differ from its row was changed outside the writer,
+or its own write was cut off before the commit; the two cannot be told apart, so
+`memory.Screen` decides its state, and an active file becomes pending (rewritten,
+committed, indexed) while pending and archived keep their state. The default
+screen is `HoldPending`; P5-05 replaces it through `Writer.SetScreen`. A file
+deleted from the tree is restored from HEAD; a row with no file, or whose file
+does not parse, is removed (invalid files stay on disk unserved). `Reindex`
+rewrites every row, so a lost table is rebuilt with states intact and nothing
+screened, because every file is committed. A commit made outside Eika by another
+author is trusted; the memory computer has no other writer. The screen is now Sentry's check (P5-06). `make memory-reindex`
+runs in a separate process from the server, so run it while Eika is idle; a race
+only leaves a row the next restart repairs.

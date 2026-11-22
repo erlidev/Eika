@@ -372,7 +372,7 @@ Dreaming, embeddings, project memory, automatic retrieval and the fuller
       commit and row updates; a name collision returns the existing memory.
       Test concurrent writes and the populated-database upgrade. Depend on P5-02
       for all repository I/O; the tools do not write files themselves.
-- [ ] **P5-04**: Add restart `Reconcile` and `make memory-reindex` through the same
+- [x] **P5-04**: Add restart `Reconcile` and `make memory-reindex` through the same
       writer. Repair changed, missing and uncommitted files and stale rows;
       preserve pending/archived states and commits. Test failures between file,
       git and row updates, retry after restart, and a full index rebuild. Wire
@@ -402,7 +402,7 @@ screen hit is pending. No approval or push occurs.
 
 ### Stage B: bounded context and changes during a session
 
-- [ ] **P5-08**: Build the memory section within 3,000 exact tokens, including its
+- [x] **P5-08**: Build the memory section within 3,000 exact tokens, including its
       labels and overflow count. Select active, unexpired pins first (at most 12),
       then recent updates with name as the tie-breaker; render by type then name.
       Do not cut a body or line. Resolve count failure and excess pins (question 4).
@@ -822,7 +822,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - [x] **P5-01**: File format, parser and validator.
       - [x] **P5-02**: Isolated repository access through the executor.
       - [x] **P5-03**: Single writer, index and FTS.
-      - [ ] **P5-04**: Recovery and reindex.
+      - [x] **P5-04**: Recovery and reindex.
 - [ ] Add the tools `memory_search`, `memory_read`, `memory_write` and
       `memory_forget`, for `eika` only. A write never asks. It is denied if it
       holds a credential pattern, and its body goes through the screen: a hit
@@ -833,7 +833,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - [x] **P5-06**: Eika-only memory tools.
 - [ ] Preamble: pinned bodies plus the index within an exact budget, in
       deterministic order, with a visible overflow count.
-      - [ ] **P5-08**: Exact budget and stable selection.
+      - [x] **P5-08**: Exact budget and stable selection.
       - [ ] **P5-09**: Stored snapshot and compaction integration.
 - [ ] Notices at the tail for memory changes since the preamble.
       - [ ] **P5-10**: Durable changes in the next message context.

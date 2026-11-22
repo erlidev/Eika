@@ -248,7 +248,7 @@ func (t memoryTool) write(ctx context.Context, call tool.CallContext, req memory
 		req.State = "active"
 	case sentry.MemoryPending:
 		req.State = "pending"
-		req.Screen = &memory.Screen{MaxScore: verdict.MaxScore, Unscanned: verdict.Unscanned, Spans: []memory.ScreenSpan{}}
+		req.Screen = &memory.ScreenResult{MaxScore: verdict.MaxScore, Unscanned: verdict.Unscanned, Spans: []memory.ScreenSpan{}}
 		for _, s := range verdict.Spans {
 			req.Screen.Spans = append(req.Screen.Spans, memory.ScreenSpan(s))
 		}

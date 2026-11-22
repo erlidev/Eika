@@ -24,6 +24,23 @@ func (f *fakeIndex) UpsertMemory(_ context.Context, r memory.Record) error {
 	return nil
 }
 
+func (f *fakeIndex) MemorySHAs(context.Context) (map[string]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := map[string]string{}
+	for n, r := range f.rows {
+		out[n] = r.ContentSHA
+	}
+	return out, nil
+}
+
+func (f *fakeIndex) DeleteMemory(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.rows, name)
+	return nil
+}
+
 func (f *fakeIndex) SearchMemories(context.Context, memory.Query, int) ([]memory.Hit, error) {
 	return nil, nil
 }

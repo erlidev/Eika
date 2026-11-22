@@ -26,7 +26,7 @@ func TestRepository(t *testing.T) {
 		if _, err := r.Read(ctx, name); err == nil {
 			t.Errorf("read %q succeeded", name)
 		}
-		if err := r.Commit(ctx, name); err == nil {
+		if err := r.Commit(ctx, name, "m"); err == nil {
 			t.Errorf("commit %q succeeded", name)
 		}
 	}
@@ -39,7 +39,7 @@ func TestRepository(t *testing.T) {
 	if status, err := r.Status(ctx); err != nil || !strings.Contains(status, "metric.md") {
 		t.Fatalf("status = %q, %v", status, err)
 	}
-	if err := r.Commit(ctx, "metric"); err != nil {
+	if err := r.Commit(ctx, "metric", "m"); err != nil {
 		t.Fatal(err)
 	}
 	if status, err := r.Status(ctx); err != nil || status != "" {

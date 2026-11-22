@@ -29,12 +29,20 @@ var ErrNotFound = errors.New("memory not found")
 type Files interface {
 	Read(ctx context.Context, name string) ([]byte, error)
 	Write(ctx context.Context, name string, data []byte) error
-	Commit(ctx context.Context, name string) error
+	Commit(ctx context.Context, name, message string) error
+	// List names the memory files in the working tree.
+	List(ctx context.Context) ([]string, error)
+	// Uncommitted names the memory files that are new, changed or deleted
+	// relative to the last commit.
+	Uncommitted(ctx context.Context) ([]string, error)
+	// Restore brings a deleted file back from the last commit, and reports
+	// false when no commit has it.
+	Restore(ctx context.Context, name string) (bool, error)
 }
 
-// Screen is what Sentry's write check found in a pending memory, kept with
+// ScreenResult is what Sentry's write check found in a pending memory, kept with
 // its index row for the Inbox. It is not part of the file.
-type Screen struct {
+type ScreenResult struct {
 	Spans     []ScreenSpan `json:"spans"`
 	MaxScore  float64      `json:"max_score"`
 	Unscanned bool         `json:"unscanned"`
@@ -57,7 +65,7 @@ type ScreenSpan struct {
 type Record struct {
 	File
 	ContentSHA string
-	Screen     *Screen
+	Screen     *ScreenResult
 	Reason     string
 }
 
@@ -82,6 +90,10 @@ type Query struct {
 type Index interface {
 	// UpsertMemory inserts or replaces the row named r.Name.
 	UpsertMemory(ctx context.Context, r Record) error
+	// MemorySHAs returns every row's content_sha by name.
+	MemorySHAs(ctx context.Context) (map[string]string, error)
+	// DeleteMemory removes the row named name, if there is one.
+	DeleteMemory(ctx context.Context, name string) error
 	// SearchMemories ranks memories by full-text match. SnippetRunes bounds
 	// the body prefix returned.
 	SearchMemories(ctx context.Context, q Query, snippetRunes int) ([]Hit, error)
@@ -93,7 +105,7 @@ type Index interface {
 type Request struct {
 	Name, Description, Type, Body, Expires, Source, State string
 	Replace                                               bool
-	Screen                                                *Screen
+	Screen                                                *ScreenResult
 }
 
 // Result is the memory as stored. Existing is true when a name collision
@@ -106,17 +118,19 @@ type Result struct {
 // Writer is the single writer of memories. Each write is one critical
 // section: file write, git commit, then index row, so concurrent callers
 // cannot interleave them. A crash between steps leaves a file the index does
-// not match, which recovery (P5-04) repairs from the files.
+// not match, which Reconcile repairs from the files.
 type Writer struct {
 	mu    sync.Mutex
 	files Files
 	index Index
 	now   func() time.Time
+	// screen decides the state of a file changed outside the writer.
+	screen Screen
 }
 
 // NewWriter returns the writer for a repository and its index.
 func NewWriter(files Files, index Index) *Writer {
-	return &Writer{files: files, index: index, now: time.Now}
+	return &Writer{files: files, index: index, now: time.Now, screen: HoldPending}
 }
 
 // Write creates a memory. If the name is taken and Replace is false the
@@ -150,7 +164,7 @@ func (w *Writer) Write(ctx context.Context, req Request) (Result, error) {
 	if err := next.Validate(req.Name + ".md"); err != nil {
 		return Result{}, err
 	}
-	return w.store(ctx, next, old, oldData, exists, req.Screen, "")
+	return w.store(ctx, next, old, oldData, exists, req.Screen, "", "Update memory")
 }
 
 // Archive moves a memory to state archived and records why in the index. The
@@ -165,14 +179,14 @@ func (w *Writer) Archive(ctx context.Context, name, reason string) (File, error)
 	next := old
 	next.State = "archived"
 	next.Updated = w.now().UTC().Format(time.RFC3339)
-	res, err := w.store(ctx, next, old, oldData, true, nil, reason)
+	res, err := w.store(ctx, next, old, oldData, true, nil, reason, "Forget memory: "+oneLine(reason))
 	return res.File, err
 }
 
 // store renders next, and when it differs from what is stored writes,
 // commits and indexes it. An unchanged file is only re-indexed, which also
 // repairs a missing or stale row.
-func (w *Writer) store(ctx context.Context, next, old File, oldData []byte, exists bool, screen *Screen, reason string) (Result, error) {
+func (w *Writer) store(ctx context.Context, next, old File, oldData []byte, exists bool, screen *ScreenResult, reason, message string) (Result, error) {
 	if exists && sameContent(next, old) {
 		next.Updated = old.Updated
 	}
@@ -184,15 +198,23 @@ func (w *Writer) store(ctx context.Context, next, old File, oldData []byte, exis
 		if err := w.files.Write(ctx, next.Name, data); err != nil {
 			return Result{}, fmt.Errorf("write memory file: %w", err)
 		}
-		if err := w.files.Commit(ctx, next.Name); err != nil {
+		if err := w.files.Commit(ctx, next.Name, message); err != nil {
 			return Result{}, fmt.Errorf("commit memory: %w", err)
 		}
 	}
-	sum := sha256.Sum256(data)
-	if err := w.index.UpsertMemory(ctx, Record{File: next, ContentSHA: hex.EncodeToString(sum[:]), Screen: screen, Reason: reason}); err != nil {
-		return Result{}, fmt.Errorf("index memory: %w", err)
+	if err := w.indexFile(ctx, next, data, screen, reason); err != nil {
+		return Result{}, err
 	}
 	return Result{File: next}, nil
+}
+
+// indexFile writes the row for a file whose bytes are data.
+func (w *Writer) indexFile(ctx context.Context, f File, data []byte, screen *ScreenResult, reason string) error {
+	sum := sha256.Sum256(data)
+	if err := w.index.UpsertMemory(ctx, Record{File: f, ContentSHA: hex.EncodeToString(sum[:]), Screen: screen, Reason: reason}); err != nil {
+		return fmt.Errorf("index memory: %w", err)
+	}
+	return nil
 }
 
 // sameContent reports whether two files differ at most in Updated.
@@ -242,4 +264,9 @@ func (w *Writer) Search(ctx context.Context, q Query) ([]Hit, error) {
 	}
 	q.Limit = min(q.Limit, MaxLimit)
 	return w.index.SearchMemories(ctx, q, snippetRunes)
+}
+
+// oneLine makes text safe for a commit subject.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }

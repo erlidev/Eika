@@ -75,7 +75,7 @@ func TestMemoryScreenIsKeptOnArchiveAndClearedOnReplace(t *testing.T) {
 	st, conn := upgradeFrom(t, "0029_memories", `INSERT INTO memories (name, description, type, source, created_at, updated_at, state, content_sha, body)
 		VALUES ('old', 'Use when testing the upgrade path.', 'fact', 's', now(), now(), 'active', 'x', 'b')`)
 	pending := memoryRecord("risky", "Use when testing the screen column.", "body", "pending")
-	pending.Screen = &memory.Screen{MaxScore: 0.9, Spans: []memory.ScreenSpan{{Field: "body", Start: 0, End: 4, Score: 0.9, Text: "body"}}}
+	pending.Screen = &memory.ScreenResult{MaxScore: 0.9, Spans: []memory.ScreenSpan{{Field: "body", Start: 0, End: 4, Score: 0.9, Text: "body"}}}
 	if err := st.UpsertMemory(ctx, pending); err != nil {
 		t.Fatal(err)
 	}
@@ -95,10 +95,38 @@ func TestMemoryScreenIsKeptOnArchiveAndClearedOnReplace(t *testing.T) {
 	if read(); score == nil || *score != 0.9 || reason != "wrong" {
 		t.Fatalf("after archive: score %v, reason %q", score, reason)
 	}
-	if err := st.UpsertMemory(ctx, memoryRecord("risky", "Use when testing the screen column.", "body", "active")); err != nil {
+	active := memoryRecord("risky", "Use when testing the screen column.", "body", "active")
+	active.ContentSHA = "changed" // a replace changes the file, so the verdict goes
+	if err := st.UpsertMemory(ctx, active); err != nil {
 		t.Fatal(err)
 	}
 	if read(); score != nil || reason != "" {
 		t.Fatalf("after replace: score %v, reason %q", score, reason)
+	}
+}
+
+func TestMemoryShasAndDelete(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, storetest.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	r := memoryRecord("sha-row", "Use when checking the content hash.", "body", "active")
+	r.ContentSHA = "abc"
+	if err := st.UpsertMemory(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.MemorySHAs(ctx); err != nil || got["sha-row"] != "abc" {
+		t.Fatalf("MemorySHAs = %v, %v", got, err)
+	}
+	if err := st.DeleteMemory(ctx, "sha-row"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteMemory(ctx, "sha-row"); err != nil {
+		t.Fatalf("delete twice: %v", err)
+	}
+	if got, _ := st.MemorySHAs(ctx); len(got) != 0 {
+		t.Fatalf("rows after delete: %v", got)
 	}
 }

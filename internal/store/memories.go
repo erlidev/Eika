@@ -22,7 +22,8 @@ func (s *Store) UpsertMemory(ctx context.Context, r memory.Record) error {
 	if r.Expires != "" {
 		expires = &r.Expires
 	}
-	// The screen verdict belongs to the pending write; archiving keeps it.
+	// The screen verdict belongs to the pending write: archiving and a
+	// reindex of unchanged content (no verdict given) keep it.
 	var screen *string
 	if r.Screen != nil {
 		b, err := json.Marshal(r.Screen)
@@ -39,8 +40,10 @@ func (s *Store) UpsertMemory(ctx context.Context, r memory.Record) error {
             source = excluded.source, created_at = excluded.created_at, updated_at = excluded.updated_at,
             expires = excluded.expires, pinned = excluded.pinned, state = excluded.state,
             content_sha = excluded.content_sha, body = excluded.body,
-            screen = CASE WHEN excluded.state = 'archived' THEN memories.screen ELSE excluded.screen END,
-            archive_reason = excluded.archive_reason`,
+            screen = CASE WHEN excluded.state = 'archived' OR memories.content_sha = excluded.content_sha
+                THEN memories.screen ELSE excluded.screen END,
+            archive_reason = CASE WHEN excluded.state = 'archived'
+                THEN COALESCE(NULLIF(excluded.archive_reason, ''), memories.archive_reason) ELSE '' END`,
 		r.Name, r.Description, r.Type, r.Source, created, updated, expires, r.Pinned, r.State, r.ContentSHA, r.Body, screen, r.Reason)
 	if err != nil {
 		return wrap("index memory "+r.Name, err)
@@ -77,4 +80,33 @@ func (s *Store) SearchMemories(ctx context.Context, q memory.Query, snippetRunes
 		return nil, wrap("search memories", err)
 	}
 	return out, nil
+}
+
+// MemorySHAs returns every indexed memory's content_sha by name.
+func (s *Store) MemorySHAs(ctx context.Context) (map[string]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT name, content_sha FROM memories`)
+	if err != nil {
+		return nil, wrap("read memory index", err)
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var name, sha string
+		if err := rows.Scan(&name, &sha); err != nil {
+			return nil, wrap("read memory index", err)
+		}
+		out[name] = sha
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrap("read memory index", err)
+	}
+	return out, nil
+}
+
+// DeleteMemory removes the index row named name.
+func (s *Store) DeleteMemory(ctx context.Context, name string) error {
+	if _, err := s.pool.Exec(ctx, `DELETE FROM memories WHERE name = $1`, name); err != nil {
+		return wrap("delete memory row "+name, err)
+	}
+	return nil
 }
