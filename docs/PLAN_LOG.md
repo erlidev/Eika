@@ -2356,3 +2356,15 @@ until P5-12's events exist. Harness: `memory` scenario (active, pinned, pending
 with a flagged span, archived). New `memory.spec.ts` baselines for desktop and a
 coarse-pointer phone; the rail and bottom bar gain a fourth item, so the shell,
 Activity, Projects and touch baselines are expected to change.
+
+## Fix: per-install memory computer id (2026-11-22)
+
+The memory computer had the fixed id `memory`, so every stack on a Docker host
+(smoke, live and docker tests, a real install) shared the volume
+`eika-cx-memory`, and `make smoke-down` or a test cleanup could delete a real
+install's memory repository. Migration 0032 adds `memory_computer` (one row);
+`EnsureMemory` records a generated id once, like home's row, and the container
+and volume are `eika-cx-<id>`. The egress policy
+matches the recorded id; the computer stays out of the computers API. `deploy/backup.sh`
+reads the id from Postgres (`EIKA_MEMORY_VOLUME` still overrides). Tests: the
+store upgrade and fresh-id case; `TestMemoryComputerIsPrivate` uses the id.
