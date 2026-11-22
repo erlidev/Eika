@@ -67,6 +67,7 @@ created: 2026-10-29T14:03:00Z
 updated: 2026-10-29T14:03:00Z
 expires:
 pinned: false
+state: active
 ---
 The user asked for metric units after a recipe in cups (2026-10-29).
 Exceptions: none so far.
@@ -79,6 +80,7 @@ Exceptions: none so far.
 | `type` | `user` (who the user is), `preference`, `person`, `fact`, `procedure` |
 | `source` | Where it was learned; links back in the UI |
 | `expires` | Optional date for facts that go stale ("the user is travelling until ...") |
+| `state` | `active`, `pending` or `archived`; tracked in the file for reindexing |
 | `pinned` | Loaded in full. At most 12; the total is capped (section 3) |
 | body | At most 2 KiB. Absolute dates only. One subject per memory |
 

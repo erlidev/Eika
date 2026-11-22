@@ -358,7 +358,7 @@ Dreaming, embeddings, project memory, automatic retrieval and the fuller
 
 ### Stage A: first testable build, save and recall
 
-- [ ] **P5-01**: Add `internal/memory`'s bounded file parser, validator and stable
+- [x] **P5-01**: Add `internal/memory`'s bounded file parser, validator and stable
       renderer. Cover real frontmatter inputs, slug/path rejection and the 2 KiB
       body limit. Settle durable state (question 2); keep `source` as a citation,
       with no trust/provenance field. No table before its first writer.
@@ -819,7 +819,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - one writer
       - the `core.memories` index (FTS)
       - `Reconcile` at start-up and `make memory-reindex`
-      - [ ] **P5-01**: File format, parser and validator.
+      - [x] **P5-01**: File format, parser and validator.
       - [ ] **P5-02**: Isolated repository access through the executor.
       - [ ] **P5-03**: Single writer, index and FTS.
       - [ ] **P5-04**: Recovery and reindex.

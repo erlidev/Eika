@@ -1,5 +1,8 @@
 # Plan log
 
+- 2026-11-22: P5-01 adds the bounded memory file format. State is tracked
+  in frontmatter; repository access and the index remain for later packages.
+
 - 2026-11-22: P5-00 splits phase 5 into P5-01 to P5-23 in five stages:
   save/recall, bounded context, Memory/Inbox, backup/restore, and live/close.
   The schedule follows the existing snapshot transaction, executor boundary,

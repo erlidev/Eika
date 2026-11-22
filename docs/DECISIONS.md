@@ -2625,3 +2625,13 @@ defaults; any can be revisited before the package that depends on it.
   still hold the text. No history rewrite in this phase.
 - **Memory changes do not wake an idle home.** They reach the next message's
   tail as notices, with no push.
+
+## Memory file format (P5-01)
+
+Memory files use YAML frontmatter and a Markdown body. The parser accepts at
+most 16 KiB per file and 2 KiB per body. It rejects unknown or duplicate fields,
+invalid names and file paths, and invalid types, states and dates. Descriptions
+are 20 to 200 Unicode characters. Created and updated use RFC 3339 timestamps;
+expiry is an optional calendar date. The renderer uses a fixed field order and
+preserves the body. `source` is a citation, not a trust field. State is tracked
+as `active`, `pending` or `archived`, as decided in P5-00.
