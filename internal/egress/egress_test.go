@@ -216,7 +216,7 @@ func TestBlockedKeepsTheMostRecentHostsFirst(t *testing.T) {
 	}
 }
 
-func TestCloseEndsOpenTunnels(t *testing.T) {
+func TestHaltEndsOpenTunnels(t *testing.T) {
 	// The destination accepts and then says nothing, so the tunnel stays
 	// open until something ends it.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -253,9 +253,9 @@ func TestCloseEndsOpenTunnels(t *testing.T) {
 		t.Fatalf("connect = %v, %v; want 200", resp, err)
 	}
 
-	p.Close()
+	p.Halt()
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(make([]byte, 1)); err == nil || strings.Contains(err.Error(), "timeout") {
-		t.Errorf("read after Close = %v, want the tunnel closed", err)
+		t.Errorf("read after halt = %v, want the tunnel closed", err)
 	}
 }

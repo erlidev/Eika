@@ -1318,3 +1318,7 @@ set. A subagent report and an Eika background reply each start an independent
 notification, with fixed text and a link to Chat at `public_url`. Delivery uses
 the public-address HTTP client. It retries HTTP 429 while Core runs. It does not retry ambiguous failures
 or replay a delivery after a restart.
+
+Sandbox proxy requests pass through Sentry as egress actions. The gate checks
+the exact-host blocklist and halt state. The proxy supplies allowlist and
+netguard refusals to the gate for audit. Halt closes active proxy connections.

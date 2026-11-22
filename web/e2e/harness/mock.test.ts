@@ -432,3 +432,20 @@ describe("trusted sources", () => {
     expect((await call(mock, "POST", "/api/withheld/missing/trust")).status).toBe(404);
   });
 });
+
+describe("blocked hosts", () => {
+  it("adds, lists and removes normalized hosts", async () => {
+    const mock = open("workbench");
+    expect((await call(mock, "POST", "/api/blocked-hosts", { host: "Example.com." })).status).toBe(
+      204,
+    );
+    expect((await call(mock, "GET", "/api/blocked-hosts")).body).toEqual({
+      hosts: ["example.com"],
+    });
+    expect((await call(mock, "DELETE", "/api/blocked-hosts/example.com")).status).toBe(204);
+    expect((await call(mock, "GET", "/api/blocked-hosts")).body).toEqual({ hosts: [] });
+    expect(
+      (await call(mock, "POST", "/api/blocked-hosts", { host: "https://example.com" })).status,
+    ).toBe(400);
+  });
+});

@@ -87,7 +87,11 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	if host.EgressControl() {
 		proxy = egress.New(egress.Options{Policy: func(ctx context.Context, id string) (egress.Policy, error) {
 			return s.EgressPolicy(ctx, id)
-		}}, log)
+		}, Halted: func() bool { return s.gate.Halted().Halted },
+			Decide: func(ctx context.Context, id, host, key, reason string) (bool, error) {
+				v, err := s.gate.Decide(ctx, sentry.Action{Key: key, Principal: sentry.Principal{Computer: id}, Kind: sentry.KindEgress, Name: host, Destination: host, EgressDenial: reason})
+				return v.Decision == sentry.Allow, err
+			}}, log)
 	}
 	s = New(cfg, log, Deps{
 		Store:     st,

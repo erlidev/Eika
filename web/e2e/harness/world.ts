@@ -137,6 +137,8 @@ export type World = {
   guard: "unknown" | "up" | "down";
   /** trustedSources holds the exact hosts the user trusts. */
   trustedSources: string[];
+  /** blockedHosts holds exact hosts refused by the proxy. */
+  blockedHosts: string[];
   /** halt is GET /api/halt; the routes change it and a refused run reads it. */
   halt: Halt;
   /** calls are each session's recorded model calls, oldest first. */
@@ -244,6 +246,7 @@ export function emptyWorld(): World {
     withheld: [],
     guard: "up",
     trustedSources: [],
+    blockedHosts: [],
     halt: { halted: false },
     calls: {},
   };

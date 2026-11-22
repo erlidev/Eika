@@ -221,6 +221,20 @@ a running Eika changes nothing.
 screening outcome since the server started. The first outcome sends no push.
 A cancelled call does not change the state.
 
+### `GET /api/blocked-hosts`
+
+Returns `{ "hosts": ["example.com"] }`, sorted by host. These exact hosts are
+blocked from sandbox egress.
+
+### `POST /api/blocked-hosts`
+
+Adds an exact host from `{ "host": "example.com" }`. Host names are normalized.
+Returns 204, or 400 for an invalid host.
+
+### `DELETE /api/blocked-hosts/{host}`
+
+Removes an exact host. Returns 204, including when the host was not listed.
+
 ### `GET /api/trusted-sources`
 
 Returns `200` with `hosts`, an array of exact normalized hosts.
