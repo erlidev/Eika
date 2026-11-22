@@ -2463,8 +2463,10 @@ replace the newer text after a conflict.
 
 - Ingest runs in `agent.callTool`, once, right after a `web_fetch` result returns
   and before it is emitted or stored, so the session, a replay, a compaction and
-  the history index only hold the ingested text. A result with `IsError` is the
-  harness's own message and is not ingested. Order: invisible characters,
+  the history index only hold the ingested text. An `IsError` result of a tool
+  that ran is ingested too (one segment, for `web_search` as well): `web_fetch`
+  errors list the page's headings or return filtered page text. Only a result
+  that never ran the tool (a block, an unknown tool) is left alone. Order: invisible characters,
   redaction, the screen on exactly the resulting text (after the tool's own
   truncation), then the wrapper. Redaction comes before the screen so a secret is
   neither sent to the guard nor kept in the withheld text.
@@ -2481,7 +2483,13 @@ replace the newer text after a conflict.
 - The `<untrusted>` line is added to the base prompt by `agent` in code when a
   gate is set, so an overridden prompt keeps it, and it does not name the gate.
 - The wrapper's closing tag is broken inside the content so a page cannot end its
-  own wrapper.
+  own wrapper, in any case and with whitespace (`</UNTRUSTED>`, `< /untrusted>`).
+- Stage A review fixes: a cancelled context makes `Ingest` return an error (the
+  result becomes Blocked), since the result is stored on a context that outlives
+  the run and a failed guard call would otherwise store it unscreened. Text is made
+  valid UTF-8 before screening so the guard's byte offsets match Go's. `cut` sorts,
+  clamps and merges windows and skips empty spans. The source name drops the query
+  string, fragment and credentials (not only redaction) before it is stored or audited.
 
 ## Ingest takes segments (P4-05)
 

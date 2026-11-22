@@ -9,6 +9,12 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: Stage A review fixes. `agent.ingest` now ingests error results of tools that ran
+  (web_fetch errors carry page headings and filtered text; chosen over stripping, as simpler);
+  `Ingest` errors on a cancelled context; `wrap` neutralises any-case, spaced closing tags; `cut`
+  sorts, clamps, merges; text is made valid UTF-8 before screening; source names lose query,
+  fragment and credentials. Tests added. Not fixed, reported to the owner: history tools can read a
+  child session's raw transcript, bypassing the report screen.
 - 2026-11-21: P4-08 added Settings, Security (`SecuritySettings.tsx`: the withheld list, newest
   first, paged with Load older, each row's source, name, age and text) and the `withheld` mark on
   a tool card. `Removed` is carried as `tool.Result.Removed`, set by `agent.ingest` (summed over

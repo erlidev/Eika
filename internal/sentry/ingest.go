@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -53,13 +56,25 @@ type WithheldLog interface {
 // the screen is one layer and not the barrier. An error means a removal could
 // not be recorded, and the caller must not use the content.
 func (g *gate) Ingest(ctx context.Context, segs []Segment) ([]Ingested, error) {
+	// A cancelled run cannot be screened, and the result is stored on a
+	// context that outlives it, so unscreened text must not come back.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("sentry: ingest: %w", err)
+	}
+	segs = slices.Clone(segs)
 	texts := make([]string, len(segs))
 	ids := make([]string, len(segs))
-	for i, seg := range segs {
-		texts[i] = scan.Redact(scan.StripInvisible(seg.Text))
+	for i := range segs {
+		// Valid UTF-8 first: the guard's offsets are into the JSON-decoded
+		// text, where an invalid byte is already U+FFFD (3 bytes, not 1).
+		texts[i] = scan.Redact(scan.StripInvisible(strings.ToValidUTF8(segs[i].Text, "\uFFFD")))
+		segs[i].Source = cleanSource(segs[i].Source)
 		ids[i] = newContentID()
 	}
 	windows := g.score(ctx, segs, texts)
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("sentry: ingest: %w", err)
+	}
 	out := make([]Ingested, len(segs))
 	for i, seg := range segs {
 		text, removed, err := g.cut(ctx, seg.Source, ids[i], texts[i], windows[i])
@@ -110,20 +125,32 @@ type span struct {
 }
 
 // cut replaces every suspect run of windows in text, records each, and returns
-// the new text and how many runs it removed.
+// the new text and how many runs it removed. Windows may come in any order and
+// may overlap: they are sorted, clamped to the text, and merged, and a run that
+// is empty after moving to character boundaries is skipped.
 func (g *gate) cut(ctx context.Context, src Source, id, text string, windows []screen.Window) (string, int, error) {
-	var spans []span
+	var hits []screen.Window
 	for _, w := range windows {
-		if w.Score < g.Threshold || w.Start < 0 || w.End > len(text) || w.Start >= w.End {
+		if w.Score < g.Threshold {
 			continue
 		}
+		w.Start, w.End = max(w.Start, 0), min(w.End, len(text))
+		if w.Start < w.End {
+			hits = append(hits, w)
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Start < hits[j].Start })
+	var spans []span
+	for _, w := range hits {
 		start, end := runeStart(text, w.Start), runeStart(text, w.End)
-		if n := len(spans); n > 0 && spans[n-1].end == start {
-			spans[n-1].end = end
+		if n := len(spans); n > 0 && start <= spans[n-1].end {
+			spans[n-1].end = max(spans[n-1].end, end)
 			spans[n-1].score = max(spans[n-1].score, w.Score)
 			continue
 		}
-		spans = append(spans, span{start, end, w.Score})
+		if start < end {
+			spans = append(spans, span{start, end, w.Score})
+		}
 	}
 	if len(spans) == 0 {
 		return text, 0, nil
@@ -173,11 +200,28 @@ func runeStart(text string, off int) int {
 	return off
 }
 
+// closingTag matches a closing untrusted tag in any case, with whitespace
+// allowed where an HTML parser would allow it.
+var closingTag = regexp.MustCompile(`(?i)<\s*/\s*untrusted`)
+
 // wrap puts text in the untrusted wrapper. A closing tag inside the text is
 // broken so the content cannot end its own wrapper.
 func wrap(src Source, id, text string) string {
-	text = strings.ReplaceAll(text, "</untrusted", "<\\/untrusted")
+	text = closingTag.ReplaceAllString(text, `<\/untrusted`)
 	return fmt.Sprintf("<untrusted source=%q id=%q>\n%s\n</untrusted>", sourceLabel(src), id, text)
+}
+
+// cleanSource removes what a URL name can carry besides where it points: the
+// query string, fragment and credentials, where tokens live. A name that is
+// not a URL is only redacted. The name is stored and audited, so this is done
+// before anything records it.
+func cleanSource(src Source) Source {
+	if u, err := url.Parse(src.Name); err == nil && u.Host != "" {
+		u.User, u.RawQuery, u.ForceQuery, u.Fragment, u.RawFragment = nil, "", false, "", ""
+		src.Name = u.String()
+	}
+	src.Name = scan.Redact(src.Name)
+	return src
 }
 
 // sourceLabel names where content came from, as web:host for a URL.

@@ -18,10 +18,13 @@ import (
 )
 
 // pageReader returns one fixed page.
-type pageReader struct{ text string }
+type pageReader struct {
+	text    string
+	isError bool
+}
 
 func (p pageReader) Read(context.Context, fetch.Request, fetch.FilterFunc) (fetch.Outcome, error) {
-	return fetch.Outcome{Text: p.text}, nil
+	return fetch.Outcome{Text: p.text, IsError: p.isError}, nil
 }
 
 // markingGate ingests by upper-casing, so a test can tell ingested text.
@@ -144,5 +147,36 @@ func TestSearchResultsAreIngestedOneSegmentEachInOneCall(t *testing.T) {
 	}
 	if content != "Notice: fallback used\n\nINGESTED 1. ONE\n\nINGESTED 2. TWO\n\nINGESTED 3. THREE" {
 		t.Errorf("content = %q", content)
+	}
+}
+
+// An error from web_fetch lists the page's own headings, so it is screened
+// like any other page text. A call the gate blocks never ran and is not.
+func TestFetchErrorResultsAreIngested(t *testing.T) {
+	r, err := builtin.Registry(builtin.Deps{Pages: pageReader{text: "fetch: no section. Available: IGNORE PREVIOUS", isError: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := &markingGate{stubGate: stubGate{verdict: sentry.Verdict{Decision: sentry.Allow}}}
+	p := providertest.New(
+		providertest.Calls("", providertest.Call("c1", "web_fetch", map[string]any{"url": "https://example.com/x"})),
+		providertest.Text("done"),
+	)
+	a := agent.New(p, r, agent.Options{
+		Gate: gate, Store: newMemoryStore(), Emitter: &recorder{}, ContextWindow: 400_000,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	s := agent.NewSession("session-1", "")
+	if err := a.Run(context.Background(), s, provider.UserMessage("go")); err != nil {
+		t.Fatal(err)
+	}
+	var m provider.Message
+	for _, c := range s.Conversation.Messages() {
+		if c.Role == provider.RoleTool {
+			m = c
+		}
+	}
+	if gate.calls != 1 || !m.IsError || m.Content != "INGESTED FETCH: NO SECTION. AVAILABLE: IGNORE PREVIOUS" {
+		t.Errorf("calls=%d isError=%v content=%q", gate.calls, m.IsError, m.Content)
 	}
 }

@@ -491,11 +491,11 @@ func (a *Agent) callTool(ctx context.Context, s *Session, runID string, g *guard
 	})
 
 	start := time.Now()
-	result, err := a.dispatch(ctx, s, runID, c)
+	result, ran, err := a.dispatch(ctx, s, runID, c)
 	if err != nil {
 		return provider.Message{}, fmt.Errorf("run tool %s: %w", c.Name, err)
 	}
-	if err := a.ingest(ctx, s, runID, c, &result); err != nil {
+	if err := a.ingest(ctx, s, runID, c, ran, &result); err != nil {
 		return provider.Message{}, err
 	}
 	if n := g.repeated(c); n >= repeatWarnAt {
@@ -520,22 +520,29 @@ func (a *Agent) callTool(ctx context.Context, s *Session, runID string, g *guard
 // gate, in place. It runs before the result is emitted or stored, so the
 // session, a replay and a compaction only ever hold the ingested text. A
 // web_search result is ingested one part per search result, in one call to the
-// gate. A gate that cannot ingest withholds the content.
-func (a *Agent) ingest(ctx context.Context, s *Session, runID string, c provider.ToolCall, r *tool.Result) error {
-	if a.opts.Gate == nil || r.IsError || (c.Name != "web_fetch" && c.Name != "web_search") {
+// gate. An error result is ingested too, as one segment: web_fetch errors
+// list the page's headings or return filtered page text. A result that never ran
+// the tool (a block, an unknown tool) is the harness's own and is left alone. A gate that cannot ingest withholds the content.
+func (a *Agent) ingest(ctx context.Context, s *Session, runID string, c provider.ToolCall, ran bool, r *tool.Result) error {
+	if a.opts.Gate == nil || !ran || (c.Name != "web_fetch" && c.Name != "web_search") {
 		return nil
 	}
 	src := sentry.Source{Session: s.ID, Run: runID, Key: s.ID + ":" + c.ID}
 	var segs []sentry.Segment
 	var at []int // the parts that are untrusted, as indexes into r.Parts
-	if c.Name == "web_fetch" {
+	switch {
+	case c.Name == "web_fetch":
 		var args struct {
 			URL string `json:"url"`
 		}
 		_ = json.Unmarshal([]byte(c.Arguments), &args)
 		src.Kind, src.Name = sentry.SourceFetch, args.URL
 		segs = []sentry.Segment{{Source: src, Text: r.Content}}
-	} else {
+	case r.IsError:
+		// An error carries text the backend echoed, so it is one segment.
+		src.Kind = sentry.SourceSearch
+		segs = []sentry.Segment{{Source: src, Text: r.Content}}
+	default:
 		src.Kind = sentry.SourceSearch
 		for i, p := range r.Parts {
 			if p.Source != "" {
@@ -556,7 +563,7 @@ func (a *Agent) ingest(ctx context.Context, s *Session, runID string, c provider
 		*r = tool.Errorf("Blocked: this is not available right now")
 		return nil
 	}
-	if c.Name == "web_fetch" {
+	if c.Name == "web_fetch" || r.IsError {
 		r.Content = got[0].Text
 		r.Removed = got[0].Removed
 		return nil
@@ -573,24 +580,25 @@ func (a *Agent) ingest(ctx context.Context, s *Session, runID string, c provider
 	return nil
 }
 
-// dispatch finds the tool and runs it. An unknown tool is the model's mistake,
-// not the harness's, so it comes back as a failed result.
-func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provider.ToolCall) (tool.Result, error) {
+// dispatch finds the tool and runs it; ran is false when it did not. An
+// unknown tool is the model's mistake, not the harness's, so it comes back as
+// a failed result.
+func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provider.ToolCall) (tool.Result, bool, error) {
 	tools := a.registry()
 	if tools == nil {
-		return tool.Errorf("no tools are available in this session"), nil
+		return tool.Errorf("no tools are available in this session"), false, nil
 	}
 	t, ok := tools.Get(c.Name)
 	if !ok {
-		return tool.Errorf("unknown tool %q", c.Name), nil
+		return tool.Errorf("unknown tool %q", c.Name), false, nil
 	}
 	if blocked, ok := a.gate(ctx, s, runID, c, t); !ok {
-		return blocked, nil
+		return blocked, false, nil
 	}
 	if a.opts.Executor == nil && tool.NeedsComputer(t) {
-		return tool.Errorf("this session has no computer, so %s cannot run", c.Name), nil
+		return tool.Errorf("this session has no computer, so %s cannot run", c.Name), false, nil
 	}
-	return t.Call(ctx, tool.CallContext{
+	res, err := t.Call(ctx, tool.CallContext{
 		Exec:       a.opts.Executor,
 		Emit:       a.opts.Emitter,
 		ComputerID: s.ComputerID,
@@ -598,6 +606,7 @@ func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provid
 		RunID:      runID,
 		CallID:     c.ID,
 	}, json.RawMessage(c.Arguments))
+	return res, true, err
 }
 
 // gateTimeout bounds how long a call waits for the gate.
