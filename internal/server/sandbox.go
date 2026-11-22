@@ -68,8 +68,8 @@ type sandboxDefaults struct {
 // by its proxy token, which lives in its container's configuration, so the
 // first request of each computer reads it from there.
 func (s *Server) EgressPolicy(ctx context.Context, id string) (egress.Policy, error) {
-	if s.isMemoryComputer(ctx, id) {
-		// The memory computer has no row; it never reaches out.
+	if s.isMemoryComputer(ctx, id) || s.isSkillsInstaller(ctx, id) {
+		// The private computers have no row; they never reach out.
 		token, err := s.proxyToken(ctx, id)
 		if err != nil {
 			return egress.Policy{}, err

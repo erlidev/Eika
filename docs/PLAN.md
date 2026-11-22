@@ -632,7 +632,7 @@ package that changes it. Project scope, other install sources, `skill_file`,
       top-level directory or a flat zip, keep the executable bit under `scripts/`.
       Add the fixtures of "Example skill fixture" below. One case per distinct real
       input; no storage, no tools.
-- [ ] **P6-02**: Add the skills volume and its private installer computer, the
+- [x] **P6-02**: Add the skills volume and its private installer computer, the
       pattern of P5-02: a container and volume only, no computer row, no egress,
       generated per-install id recorded in a small table (migration after the last
       merged one), fixed operations (stage a tree, replace a skill directory,
@@ -1080,7 +1080,7 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
       - [x] lenient parsing and validation of the specification (P6-01)
       - the store and the `core.skills` rows
       - install from a `.zip`
-- [ ] (P6-02, P6-03, P6-12) Mount `/skills` read-only into computers from a volume of its own
+- [ ] (P6-02 done; P6-03, P6-12) Mount `/skills` read-only into computers from a volume of its own
       (`eika-skills`), never from Core's `/var/lib/eika` volume, which holds
       `secret.key` and the memory repository. `make backup` covers it.
 - [ ] (P6-06 to P6-08) Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.

@@ -199,3 +199,41 @@ func TestInboxAPI(t *testing.T) {
 		t.Fatalf("count after answers = %d, want 1", c.Pending)
 	}
 }
+
+func TestSkillsInstallerIsPrivate(t *testing.T) {
+	a := newAPI(t)
+	a.host.egressControl = true
+	if err := a.EnsureSkillsInstaller(t.Context()); err != nil {
+		t.Fatalf("EnsureSkillsInstaller: %v", err)
+	}
+	if err := a.EnsureSkillsInstaller(t.Context()); err != nil {
+		t.Fatalf("EnsureSkillsInstaller again: %v", err)
+	}
+	if a.containers() != 1 {
+		t.Errorf("containers = %d, want 1", a.containers())
+	}
+	id, err := a.store.SkillsComputerID(t.Context())
+	if err != nil || id == "" || id == "skills" || strings.Contains(id, "eika-skills") {
+		t.Fatalf("installer id = %q, %v, want a generated id", id, err)
+	}
+	if got := a.host.confinements(id); len(got) != 1 || !got[0].Proxied {
+		t.Errorf("installer confinement = %+v, want one proxied", got)
+	}
+	if got := decodeBody[computersWire](t, request(t, a.Server, "GET", "/api/computers", nil), 200).Computers; len(got) != 0 {
+		t.Errorf("computers API lists %+v, want none", got)
+	}
+	if rec := request(t, a.Server, "GET", "/api/computers/"+id, nil); rec.Code != 404 {
+		t.Errorf("computer by installer id = %d, want 404", rec.Code)
+	}
+	policy, err := a.EgressPolicy(t.Context(), id)
+	if err != nil || policy.Mode != "none" {
+		t.Errorf("egress policy = %+v, %v, want mode none", policy, err)
+	}
+	if _, err := a.SkillsVolume(t.Context()); err != nil {
+		t.Errorf("SkillsVolume: %v", err)
+	}
+	// It is not the memory computer, and has its own id.
+	if mem, err := a.store.EnsureMemoryComputerID(t.Context()); err != nil || mem == id {
+		t.Errorf("memory id %q equals installer id %q, %v", mem, id, err)
+	}
+}
