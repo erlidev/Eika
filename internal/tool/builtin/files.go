@@ -15,6 +15,9 @@ import (
 // fileTool provides bounded text operations through the call's executor.
 type fileTool struct{ name string }
 
+// ReadOnly is true for file_read alone.
+func (t fileTool) ReadOnly() bool { return t.name == "file_read" }
+
 // Name identifies the file operation.
 func (t fileTool) Name() string { return t.name }
 

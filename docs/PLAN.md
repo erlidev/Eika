@@ -193,7 +193,7 @@ here halts, restricts or settles anything.
 - [x] **P4-02**: Add `internal/sentry`: `Gate` with `Decide` and `Ingest` (`Observe`
       comes in phase 4b), `Action`, `Verdict`, the audit table and the boundary
       test. A later package adds a table with the first code that writes it.
-- [ ] **P4-03**: Add `Options.Gate` and call `Decide` before every tool call. The
+- [x] **P4-03**: Add `Options.Gate` and call `Decide` before every tool call. The
       verdict is `allow` until a later package adds a rule. A block is the generic
       `Blocked: <reason>` result, and a gate that cannot answer blocks the
       side-effecting tools only.
@@ -457,7 +457,7 @@ and also requires the exit checks.
       error result, and no prompt or tool description mentions Sentry. Fail closed:
       if the gate cannot answer, side-effecting tools return the generic blocked
       result. The `ask` verdict and its parking arrive in phase 11.
-      - [ ] **P4-03**: Call `Decide` before every tool call, and fail closed.
+      - [x] **P4-03**: Call `Decide` before every tool call, and fail closed.
 - [ ] Ingest, on every untrusted result before it reaches a model:
       1. invisible characters removed: Unicode tag characters, zero-width
          characters and bidirectional controls. `web_fetch` does not do this yet

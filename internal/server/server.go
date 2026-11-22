@@ -23,6 +23,7 @@ import (
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/search/fetch"
 	"github.com/erlidev/eika/internal/secret"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
@@ -146,6 +147,10 @@ type Server struct {
 	// proxyTokens caches each computer's egress proxy token, read from its
 	// container the first time the proxy is asked about it.
 	proxyTokens proxyTokens
+
+	// gate decides every tool call of every agent loop, the home session's
+	// and the subagents' alike; newAgent hands it to each.
+	gate sentry.Gate
 }
 
 // New builds a Server for the given configuration and dependencies. A zero
@@ -158,6 +163,9 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 	s := &Server{cfg: cfg, log: log, mux: http.NewServeMux(), opts: opts, deps: deps}
 	if deps.Store != nil {
 		s.tree = session.NewTree(deps.Store)
+	}
+	if deps.Store != nil {
+		s.gate = sentry.New(deps.Store)
 	}
 	s.inference = inference.New(log)
 	s.counters = newSessionCounters()

@@ -39,8 +39,11 @@ type subagentTool struct {
 }
 
 func (t subagentTool) Name() string { return t.name }
-func (t subagentTool) Standalone()  {}
-func (t subagentTool) AgentOnly()   {}
+
+// ReadOnly is true for subagent_status alone.
+func (t subagentTool) ReadOnly() bool { return t.name == "subagent_status" }
+func (t subagentTool) Standalone()    {}
+func (t subagentTool) AgentOnly()     {}
 
 func (t subagentTool) Description() string {
 	switch t.name {

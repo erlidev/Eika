@@ -149,6 +149,7 @@ func (s *Server) newAgent(p provider.Provider, sess store.Session, c runConfig, 
 	opts.BasePrompt = c.chatPrompt
 	opts.Instructions = c.instructions
 	opts.Executor = ex
+	opts.Gate = s.gate
 	if d := c.definition; d != nil {
 		opts.Limits.MaxCalls = d.MaxTurns
 		opts.Inference.Class = d.Class

@@ -26,8 +26,11 @@ type projectTool struct {
 }
 
 func (t projectTool) Name() string { return t.name }
-func (t projectTool) Standalone()  {}
-func (t projectTool) AgentOnly()   {}
+
+// ReadOnly is true for project_list alone.
+func (t projectTool) ReadOnly() bool { return t.name == "project_list" }
+func (t projectTool) Standalone()    {}
+func (t projectTool) AgentOnly()     {}
 func (t projectTool) Description() string {
 	switch t.name {
 	case "project_list":

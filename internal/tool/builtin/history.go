@@ -35,9 +35,10 @@ type historyTool struct {
 	history History
 }
 
-func (t historyTool) Name() string { return t.name }
-func (t historyTool) Standalone()  {}
-func (t historyTool) AgentOnly()   {}
+func (t historyTool) Name() string   { return t.name }
+func (t historyTool) Standalone()    {}
+func (t historyTool) ReadOnly() bool { return true }
+func (t historyTool) AgentOnly()     {}
 func (t historyTool) Description() string {
 	if t.name == "history_search" {
 		return "Search all session history, or browse entries before the current context when query is empty. Results show nearby turns; use history_read for full content."

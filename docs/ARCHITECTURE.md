@@ -29,7 +29,7 @@ egress proxy are network calls and run in the harness.
 | `event` | Envelope, type constants, payload structs, `Emitter`, fan-out `Bus` |
 | `server` | Composition, JSON API, event stream, auth, run manager; `server/servertest` builds and checks `docs/api/contract.json` |
 | `agentdef` | Built-in agent definitions, embedded system and compaction prompts, class and prompt overrides |
-| `agent` | The loop: turns, tool dispatch, queues, retries, context assembly |
+| `agent` | The loop: turns, tool dispatch, queues, retries, context assembly. `Options.Gate` is asked (`Decide`, 5 s limit) before every tool call: a deny or ask returns `Blocked: <reason>` and the tool does not run; a gate that errors or times out blocks tools not marked `tool.ReadOnlyTool` and lets read-only ones run. The model is never told about the gate. `server.newAgent` sets it for the home session and every subagent |
 | `provider` | Model interface, kind registry, `Complete`; `openai` implementation in two protocols (Chat Completions and the stateless Responses API); `providertest` scripted fake; `probe` identifies the backend behind an endpoint, reads its slots, window, KV cache and capabilities, and runs the Responses conformance check, with `probetest` serving its fixtures; `counter` predicts a request's token count (exact, anchored or estimated) and learns from the measured one |
 | `inference` | The queue every model call waits in: pools of slots (and a shared cache), four priorities with aging, an idle gate for maintenance, optional preemption of running low-priority calls, one lease per model call; standard library only |
 | `utility` | The harness's own one-shot model tasks (session titles), sent to the model of the class the task runs on |

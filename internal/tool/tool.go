@@ -43,6 +43,23 @@ type AgentOnly interface {
 	AgentOnly()
 }
 
+// ReadOnlyTool is implemented by a tool that changes nothing and reaches
+// nowhere outside Eika, for the calls it answers true for. The gate's
+// failure mode keys on it: when the gate cannot answer, only such calls run.
+// A tool that does not implement it is treated as side-effecting.
+type ReadOnlyTool interface {
+	Tool
+	// ReadOnly reports whether this tool, as named, is read-only.
+	ReadOnly() bool
+}
+
+// SideEffecting reports whether t may change state or reach beyond Eika.
+// Anything not declared read-only is.
+func SideEffecting(t Tool) bool {
+	r, ok := t.(ReadOnlyTool)
+	return !ok || !r.ReadOnly()
+}
+
 // NeedsComputer reports whether t can run only in a session with a
 // computer.
 func NeedsComputer(t Tool) bool {

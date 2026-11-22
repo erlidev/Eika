@@ -9,6 +9,17 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-03 added `Options.Gate`; `agent.dispatch` calls `Decide` (5 s limit)
+  after the tool lookup and before any tool runs. Deny and ask (until phase 11) give
+  `Blocked: <reason>`; an error or timeout gives `Blocked: this is not available
+  right now` for side-effecting tools only. No flag existed, so `tool.ReadOnlyTool`
+  was added (`tool.SideEffecting`: anything not declared read-only is side-effecting).
+  Read-only: `history_*`, `ask_user`, `file_read`, `project_list`, `subagent_status`;
+  everything else, MCP tools and `web_*` (egress) included, is side-effecting.
+  `server.newAgent` sets the gate, so home, subagent and routine runs all get it. A
+  nil `Options.Gate` means no gate (evals, tests); the server always sets it.
+  - Next: P4-04 and later rules go in `sentry.policy`. Unknown tool names are not
+    gated (nothing runs). `Principal.Subagent` is not filled yet.
 - 2026-11-21: P4-02 added `internal/sentry` (`Gate` with `Decide` and `Ingest`,
   `Action`, `Principal`, `Verdict`, `Source`, `AuditEntry`, `AuditLog`, and `New`, a
   gate that allows everything and passes content through) and migration 0022,

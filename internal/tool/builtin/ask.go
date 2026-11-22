@@ -36,6 +36,9 @@ func (askUserTool) Name() string { return "ask_user" }
 // not on a computer.
 func (askUserTool) Standalone() {}
 
+// ReadOnly marks ask_user as changing nothing: it waits on the user.
+func (askUserTool) ReadOnly() bool { return true }
+
 // Description tells the model what the tool does.
 func (askUserTool) Description() string {
 	return "Ask a question and wait for the answer. In a subagent, Eika receives it and answers or asks the user. " +

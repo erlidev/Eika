@@ -16,6 +16,7 @@ import (
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/counter"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/tool"
 )
 
@@ -69,6 +70,12 @@ type Options struct {
 	// RetryBackoff is the delay before the first retry; it doubles after
 	// each attempt.
 	RetryBackoff time.Duration
+	// Gate decides every tool call before it runs. A deny, an ask (which
+	// phase 11 will park; until then it is a deny) or a gate that cannot
+	// answer in time makes the call return a Blocked result and not run. The
+	// model is never told a gate exists. Nil means no gate, for tests and
+	// evals: the server always sets it.
+	Gate sentry.Gate
 	// Executor is what tools act through. A nil executor means the agent has
 	// no computer, as in a chat: tools that need one fail, standalone tools
 	// run with a nil executor, no context files are read, and the system
@@ -514,6 +521,9 @@ func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provid
 	if !ok {
 		return tool.Errorf("unknown tool %q", c.Name), nil
 	}
+	if blocked, ok := a.gate(ctx, s, runID, c, t); !ok {
+		return blocked, nil
+	}
 	if a.opts.Executor == nil && tool.NeedsComputer(t) {
 		return tool.Errorf("this session has no computer, so %s cannot run", c.Name), nil
 	}
@@ -525,6 +535,45 @@ func (a *Agent) dispatch(ctx context.Context, s *Session, runID string, c provid
 		RunID:      runID,
 		CallID:     c.ID,
 	}, json.RawMessage(c.Arguments))
+}
+
+// gateTimeout bounds how long a call waits for the gate.
+const gateTimeout = 5 * time.Second
+
+// gate asks the gate whether the call may run. It returns false with the
+// result to use when it may not. A gate that errors or times out blocks a
+// side-effecting tool with the generic result and lets a read-only one run.
+func (a *Agent) gate(ctx context.Context, s *Session, runID string, c provider.ToolCall, t tool.Tool) (tool.Result, bool) {
+	if a.opts.Gate == nil {
+		return tool.Result{}, true
+	}
+	gctx, cancel := context.WithTimeout(ctx, gateTimeout)
+	defer cancel()
+	v, err := a.opts.Gate.Decide(gctx, sentry.Action{
+		Key:       s.ID + ":" + c.ID,
+		Principal: sentry.Principal{Session: s.ID, Run: runID},
+		Kind:      sentry.KindTool,
+		Name:      c.Name,
+		Args:      json.RawMessage(c.Arguments),
+	})
+	if err != nil {
+		a.opts.Logger.Error("gate could not answer",
+			"session_id", s.ID, "run_id", runID, "call_id", c.ID, "tool", c.Name, "error", err)
+		if tool.SideEffecting(t) {
+			return tool.Errorf("Blocked: this is not available right now"), false
+		}
+		return tool.Result{}, true
+	}
+	switch v.Decision {
+	case sentry.Allow:
+		return tool.Result{}, true
+	default: // deny, and ask until phase 11 parks it
+		reason := v.Reason
+		if reason == "" {
+			reason = "this is not available right now"
+		}
+		return tool.Errorf("Blocked: %s", reason), false
+	}
 }
 
 // appendTerminal records a terminal tool result on a context that survives a
