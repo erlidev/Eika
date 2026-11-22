@@ -9,6 +9,15 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-12 added the canary. `sentry.NewCanary` makes an `sk-proj-` key of 156 letters and digits;
+  `server/canary.go` stores it sealed in the `sentry_canary` setting on first use (the settings API leaves it
+  out) and `computer.Options.Plant` puts it in the `home` computer's environment as `OPENAI_API_KEY` at every
+  start, and `EnsureHome` refreshes a computer that is already running (`Host.Refresh`), so an existing install
+  gets it without a restart of the container. `Decide` runs one `bytes.Contains` over every tool's arguments
+  (bash and file writes included) after the halted check; a hit halts through `Options.Halter`, writes a deny row
+  with detail `canary` and returns the halt reason. The halt's run abort runs in a goroutine (`haltWith`):
+  `abortAll` waits for each run, and the run that made the call is inside `Decide`. Not seen: a key a command
+  reads from the environment (vault, deferred).
 - 2026-11-21: P4-11 added never-share. `Decide` denies a `web_fetch` URL or `web_search` query that holds a
   credential, with a reason that says to remove it; `bash` and file writes are not checked. `scan.Find` reuses
   the redaction patterns (no second list). The text is checked as written and after up to three layers of

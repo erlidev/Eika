@@ -49,3 +49,35 @@ func TestHaltAbortsRunsRefusesNewOnesAndSurvivesRestart(t *testing.T) {
 	a.postMessage(t, sess.ID, "after resume", "", 202)
 	a.waitIdle(t, sess.ID)
 }
+
+func TestCanaryInABashCommandHaltsAndAbortsTheRun(t *testing.T) {
+	a := newAPI(t)
+	a.home(t)
+	if err := a.BindAgentToolsForTest(a.host); err != nil {
+		t.Fatal(err)
+	}
+	canary := a.CanaryForTest()
+	if canary == "" {
+		t.Fatal("the server made no canary")
+	}
+	home, err := a.store.EnsureHomeSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	eika := providertest.New(call("start", "subagent_start", map[string]any{"agent": "worker", "name": "shell", "brief": "Run the command"}), providertest.Text("started"))
+	worker := providertest.New(call("cmd", "bash", map[string]any{"command": "echo " + canary}), providertest.Text("never reached"))
+	a.use(byAgent{"You are Eika": answeringNotices(eika), "You are a worker": worker})
+	a.postMessage(t, home.ID, "run the command", "", 202)
+
+	waitFor(t, "the canary to halt Eika", func() bool {
+		return decodeBody[haltWire](t, request(t, a.Server, "GET", "/api/halt", nil), 200).Halted
+	})
+	child, err := a.store.Subagent(t.Context(), home.ID, "shell")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the worker's run to abort", func() bool {
+		st := a.runState(t, child.ID)
+		return !st.Active && st.Run != nil && st.Run.State == "aborted"
+	})
+}

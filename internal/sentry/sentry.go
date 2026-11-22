@@ -166,6 +166,13 @@ type Options struct {
 	Screen Screener
 	// Threshold is the score at or over which a window is removed.
 	Threshold float64
+	// Canary returns the planted fake key, or "" while there is none. A call
+	// whose arguments hold it halts Eika.
+	Canary func() string
+	// Halter halts Eika for a canary hit, with everything a halt does beyond
+	// the gate's own state: Core aborts runs and tells the user. Nil halts the
+	// gate alone.
+	Halter func(ctx context.Context, reason string) error
 	// Log reports a screen that did not answer. Nil uses slog.Default.
 	Log *slog.Logger
 }
@@ -191,6 +198,13 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 	v := g.policy(a)
 	if g.halt.get().Halted {
 		v = Verdict{Decision: Deny, Reason: haltReason}
+	} else if g.canaryIn(a) {
+		// Halt first: a failing audit write must not leave the key's user running.
+		herr := g.haltForCanary(ctx)
+		v = Verdict{Decision: Deny, Reason: haltReason, Detail: "canary"}
+		if herr != nil {
+			g.Log.Error("halt for canary", "error", herr)
+		}
 	}
 	if v.Decision == Allow {
 		return v, nil

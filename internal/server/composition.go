@@ -42,7 +42,9 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	if err != nil {
 		return err
 	}
+	var s *Server
 	host, err := computer.NewHost(computer.Options{
+		Plant:        func(ctx context.Context, id string) []string { return s.plantedEnv(ctx, id) },
 		DockerSocket: cfg.DockerSocket,
 		Image:        cfg.SandboxImage,
 		Network:      cfg.SandboxNetwork,
@@ -66,7 +68,6 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		return err
 	}
 
-	var s *Server
 	questions := builtin.NewQuestions()
 	bus := event.NewBus(log)
 	tools, err := agentToolRegistry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st, History: st, ScreenHistory: func(ctx context.Context, segs []sentry.Segment) ([]sentry.Ingested, error) {

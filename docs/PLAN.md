@@ -229,7 +229,7 @@ What stops Eika outright. None of it asks.
 - [x] **P4-11**: Deny a credential pattern in a `web_fetch` URL or a `web_search`
       query, with a reason the agent can act on. The patterns are written in
       `internal/sentry/scan`, with no new dependency.
-- [ ] **P4-12**: Plant the canary in the `home` computer's environment on every start,
+- [x] **P4-12**: Plant the canary in the `home` computer's environment on every start,
       unique per install and recorded, and halt when `Decide` sees its value.
 - [ ] **P4-13**: Benchmark `Decide` for arguments up to 64 KiB, under 1 ms, as a
       benchmark that `make check` runs.
@@ -492,7 +492,7 @@ and also requires the exit checks.
       environment at start, unique per install. Its literal value in any tool
       call's arguments halts Eika and pushes. It does not see a key a command
       reads from the environment (`docs/DEFERRED.md`, vault).
-      - [ ] **P4-12**: Plant the canary in the home environment and halt on it.
+      - [x] **P4-12**: Plant the canary in the home environment and halt on it.
 - [ ] Egress: the proxy stays in Core.
       - the `open` mode removed
       - `allow` or `deny` per connection (blocklist, netguard, halt, per-computer

@@ -70,6 +70,9 @@ type Options struct {
 	// reaches it, for example http://eika:3128. Empty leaves a proxied
 	// sandbox with no way out at all.
 	EgressProxyURL string
+	// Plant returns extra KEY=VALUE entries for a computer's environment,
+	// given at every start and by Refresh. Nil plants nothing.
+	Plant func(ctx context.Context, id string) []string
 }
 
 // Host creates and runs computers on one Docker daemon.

@@ -210,6 +210,9 @@ func (h *fakeHost) Start(_ context.Context, cx *computer.Computer) error {
 	return h.update(cx, computer.StateRunning)
 }
 
+// Refresh does nothing: the fake has no daemon to give an environment to.
+func (h *fakeHost) Refresh(context.Context, computer.Computer) error { return nil }
+
 // Stop marks the computer stopped.
 func (h *fakeHost) Stop(_ context.Context, cx *computer.Computer) error {
 	return h.update(cx, computer.StateStopped)
