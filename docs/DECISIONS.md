@@ -2645,3 +2645,14 @@ policy and it joins the internal sandbox network; a host with no such network
 does not start it rather than give it a route out. Its volume is the host's own
 per-computer volume, not a compose volume: only its container mounts it, at
 `/var/lib/eika/memory`. Core reaches it through `server.MemoryRepository`.
+
+## Memory writer and index (P5-03)
+
+`memory.Writer` is the only writer of memory files. It depends on two small
+interfaces, `memory.Files` (the P5-02 repository) and `memory.Index` (the
+store), so it never touches a path. One mutex serialises file write, commit and
+row upsert. The file decides whether a name exists; the `memories` row (0029)
+mirrors frontmatter plus `body`, `content_sha` and a generated `body_tsv`
+(name weight A, description B, first 4 KiB of body C). Replace keeps `created`
+and `pinned`. Pinning is not a writer operation yet. Index failure after the
+commit returns an error and leaves the file ahead of the row until P5-04.

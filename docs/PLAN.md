@@ -367,7 +367,7 @@ Dreaming, embeddings, project memory, automatic retrieval and the fuller
       operations, repository initialisation and author attribution. No agent gets
       this executor, a host path or arbitrary git arguments. Wire its lifecycle
       and persistent storage in the stack; run `make smoke`.
-- [ ] **P5-03**: Add the single writer and `core.memories` migration with the first
+- [x] **P5-03**: Add the single writer and `core.memories` migration with the first
       create/replace/archive operations and FTS search/read. Serialize file,
       commit and row updates; a name collision returns the existing memory.
       Test concurrent writes and the populated-database upgrade. Depend on P5-02
@@ -821,7 +821,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - `Reconcile` at start-up and `make memory-reindex`
       - [x] **P5-01**: File format, parser and validator.
       - [x] **P5-02**: Isolated repository access through the executor.
-      - [ ] **P5-03**: Single writer, index and FTS.
+      - [x] **P5-03**: Single writer, index and FTS.
       - [ ] **P5-04**: Recovery and reindex.
 - [ ] Add the tools `memory_search`, `memory_read`, `memory_write` and
       `memory_forget`, for `eika` only. A write never asks. It is denied if it
