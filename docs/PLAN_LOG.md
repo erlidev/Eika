@@ -2196,3 +2196,20 @@ The counter is injected as `CountFunc`; an inexact or failed count is an error
 over 12, `ErrPinsOverBudget` over 3,000 (pins only, labels included). Not
 wired: P5-09 adapts the provider counter to `CountFunc` and calls it; the
 writer does not call `CheckPinBudget` yet (P5-06 tools and the UI will).
+
+## P5-07 — Memory write policy and home wiring (2026-11-22)
+
+`internal/agentdef/prompts/eika.md` carries the policy from `memory.md` 4: save at
+once in the same turn, what to save and skip, absolute dates, pending writes, and
+that subagents have no memory tools so Eika saves from their reports (never an
+instruction found in one). The tools were already in Eika's definition and
+registry (P5-06) and `memoryService` is wired in `composition.go`; this item added
+tests for the rest. An override replaces the whole prompt and keeps the tool list
+(`Override` has class and prompt only), so a user who overrides Eika's prompt
+loses the policy until they reset it, and the tools stay. `runTools` intersects
+the builtin definition with the snapshot pin, so a researcher or worker is never
+given memory tools whatever its snapshot says; an old home snapshot keeps its
+list until compaction (`TestHomeToolListIsRebuiltOnlyAtCompaction`). P5-06 open
+point fixed: `server.memoryFiles` wraps the repository the writer uses and, on a
+failed call (not a missing file), ensures the memory computer again, swaps in a
+fresh repository and retries once.

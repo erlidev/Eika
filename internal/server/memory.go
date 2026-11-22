@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/erlidev/eika/internal/computer"
@@ -101,7 +103,7 @@ func (s *Server) recoverMemory(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	w := memory.NewWriter(r, s.deps.Store)
+	w := memory.NewWriter(&memoryFiles{fresh: func(ctx context.Context) (memory.Files, error) { return s.MemoryRepository(ctx) }, log: s.log, cur: r}, s.deps.Store)
 	w.SetScreen(s.screenMemoryFile)
 	rep, err := w.Reconcile(ctx)
 	if err != nil {
@@ -247,4 +249,86 @@ func (m memoryCheck) CheckMemory(ctx context.Context, c sentry.MemoryCandidate) 
 		}
 	}
 	return sentry.MemoryVerdict{}, errNoMemory
+}
+
+// memoryFiles is the writer's file store: a cached memory repository that is
+// made again when it fails. The repository holds the memory computer's daemon
+// address and token, which change if the computer is recreated after startup
+// (its container removed, the host restarted), so a failure drops the cache,
+// ensures the computer again and tries once more. Every operation is safe to
+// repeat: a write replaces the file and a commit with nothing staged is a no-op.
+type memoryFiles struct {
+	// fresh ensures the computer and returns a repository for it as it is now.
+	fresh func(context.Context) (memory.Files, error)
+	log   *slog.Logger
+	mu    sync.Mutex
+	cur   memory.Files
+}
+
+func (f *memoryFiles) current() memory.Files {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cur
+}
+
+// refresh replaces failed with a repository for the computer as it is now,
+// unless another call already has.
+func (f *memoryFiles) refresh(ctx context.Context, failed memory.Files) (memory.Files, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.cur != failed {
+		return f.cur, nil
+	}
+	r, err := f.fresh(ctx)
+	if err != nil {
+		return nil, err
+	}
+	f.cur = r
+	return r, nil
+}
+
+// retryable is whether err may come from a stale executor rather than from
+// the request: a missing file and a cancelled call do not.
+func retryable(ctx context.Context, err error) bool {
+	return err != nil && ctx.Err() == nil && !errors.Is(err, fs.ErrNotExist)
+}
+
+func memoryFilesDo[T any](ctx context.Context, f *memoryFiles, op func(memory.Files) (T, error)) (T, error) {
+	r := f.current()
+	v, err := op(r)
+	if !retryable(ctx, err) {
+		return v, err
+	}
+	fresh, rerr := f.refresh(ctx, r)
+	if rerr != nil {
+		return v, err
+	}
+	f.log.Warn("memory repository refreshed after a failure", "error", err)
+	return op(fresh)
+}
+
+func (f *memoryFiles) Read(ctx context.Context, name string) ([]byte, error) {
+	return memoryFilesDo(ctx, f, func(r memory.Files) ([]byte, error) { return r.Read(ctx, name) })
+}
+
+func (f *memoryFiles) Write(ctx context.Context, name string, data []byte) error {
+	_, err := memoryFilesDo(ctx, f, func(r memory.Files) (struct{}, error) { return struct{}{}, r.Write(ctx, name, data) })
+	return err
+}
+
+func (f *memoryFiles) Commit(ctx context.Context, name, message string) error {
+	_, err := memoryFilesDo(ctx, f, func(r memory.Files) (struct{}, error) { return struct{}{}, r.Commit(ctx, name, message) })
+	return err
+}
+
+func (f *memoryFiles) List(ctx context.Context) ([]string, error) {
+	return memoryFilesDo(ctx, f, func(r memory.Files) ([]string, error) { return r.List(ctx) })
+}
+
+func (f *memoryFiles) Uncommitted(ctx context.Context) ([]string, error) {
+	return memoryFilesDo(ctx, f, func(r memory.Files) ([]string, error) { return r.Uncommitted(ctx) })
+}
+
+func (f *memoryFiles) Restore(ctx context.Context, name string) (bool, error) {
+	return memoryFilesDo(ctx, f, func(r memory.Files) (bool, error) { return r.Restore(ctx, name) })
 }

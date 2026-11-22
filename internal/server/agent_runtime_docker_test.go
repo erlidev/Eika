@@ -127,6 +127,7 @@ func TestHomeToolListIsRebuiltOnlyAtCompaction(t *testing.T) {
 	}
 	a.assignClasses(t, map[string]any{"main": "test-model"})
 	eika, _ := agentdef.Lookup("eika")
+	// Pinned before the memory tools joined the definition.
 	older := []string{"project_list", "web_search"}
 	entry, err := session.PreambleEntry("Time zone\nUTC\n\nLocale\nunspecified", &eika.Prompt, older)
 	if err != nil {

@@ -84,3 +84,27 @@ func TestOverride(t *testing.T) {
 		}
 	}
 }
+
+// The write policy lives in Eika's built-in prompt alone: an override
+// replaces it whole, and clearing the override brings it back.
+func TestMemoryPolicyIsInEikaPrompt(t *testing.T) {
+	eika, _ := agentdef.Lookup("eika")
+	for _, want := range []string{"memory_write", "memory_forget", "Save at once", "Skip:", "report"} {
+		if !strings.Contains(eika.Prompt, want) {
+			t.Errorf("eika prompt lacks %q", want)
+		}
+	}
+	for _, name := range []string{"researcher", "worker"} {
+		d, _ := agentdef.Lookup(name)
+		if strings.Contains(d.Prompt, "memory_") {
+			t.Errorf("%s prompt mentions memory tools", name)
+		}
+	}
+	custom := agentdef.Override{Prompt: new("my rules")}.Apply(eika)
+	if custom.Prompt != "my rules" || !slices.Equal(custom.Tools, eika.Tools) {
+		t.Errorf("override = %+v: it replaces the prompt and keeps the tools", custom)
+	}
+	if reset := (agentdef.Override{}).Apply(eika); reset.Prompt != eika.Prompt {
+		t.Error("an empty override did not restore the built-in policy")
+	}
+}
