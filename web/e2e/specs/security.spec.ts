@@ -36,6 +36,6 @@ for (const [label, viewport] of [
     await expect(cards).toHaveCount(2);
     await expect(cards.first()).toContainText("withheld");
     await expect(cards.nth(1)).not.toContainText("withheld");
-    await expectShot(eika, `security-card-${label}`, "role=region[name=Session]");
+    await expectShot(eika, `security-card-${label}`, "xpath=(//*[@data-transcript-row])[1]/..");
   });
 }
