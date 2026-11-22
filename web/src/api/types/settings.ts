@@ -8,6 +8,8 @@ export type Settings = Record<string, unknown>;
 
 /** SettingsDefaults are the values the harness uses until the settings name one. */
 export type SettingsDefaults = {
+  screen_required: boolean;
+  screen_threshold: number;
   sandbox_image: string;
   /** sandbox_limits and sandbox_egress are what the home computer gets until the user sets others. */
   sandbox_limits: SandboxLimits;
@@ -84,3 +86,6 @@ export type SettingsState = {
   /** titles_model is the name of the model that makes session titles; empty when none does. */
   titles_model: string;
 };
+
+/** GuardHealth is the last observed screening outcome. */
+export type GuardHealth = { status: "unknown" | "up" | "down" };

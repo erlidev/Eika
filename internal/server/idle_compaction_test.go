@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/inference"
+	"github.com/erlidev/eika/internal/store"
 )
 
 func TestIdleCompactionReservation(t *testing.T) {
@@ -61,5 +62,35 @@ func TestIdleCompactionSettingValidation(t *testing.T) {
 		if (err == nil) != tc.valid {
 			t.Errorf("%s=%s: %v", tc.key, tc.value, err)
 		}
+	}
+}
+
+func TestScreenSettingValidation(t *testing.T) {
+	s := &Server{}
+	for _, tc := range []struct {
+		key, value string
+		valid      bool
+	}{
+		{settingScreenRequired, "true", true}, {settingScreenRequired, `"true"`, false},
+		{settingScreenThreshold, "0.9", true}, {settingScreenThreshold, "0", false},
+		{settingScreenThreshold, "1.1", false}, {settingScreenThreshold, "null", true},
+	} {
+		err := s.validateSetting(context.Background(), tc.key, []byte(tc.value))
+		if (err == nil) != tc.valid {
+			t.Errorf("%s=%s: %v", tc.key, tc.value, err)
+		}
+	}
+}
+
+func TestScreenSettingsUseStoredValuesAndDefaults(t *testing.T) {
+	rows := []store.Setting{{Key: settingScreenRequired, Value: []byte(`true`)}, {Key: settingScreenThreshold, Value: []byte(`0.7`)}}
+	threshold, required, err := parseScreenSettings(rows, 0.9)
+	if err != nil || threshold != 0.7 || !required {
+		t.Fatalf("settings %v %v: %v", threshold, required, err)
+	}
+	rows[0].Value, rows[1].Value = []byte(`null`), []byte(`null`)
+	threshold, required, err = parseScreenSettings(rows, 0.9)
+	if err != nil || threshold != 0.9 || required {
+		t.Fatalf("defaults %v %v: %v", threshold, required, err)
 	}
 }

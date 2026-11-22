@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -173,6 +174,10 @@ type Options struct {
 	// the gate's own state: Core aborts runs and tells the user. Nil halts the
 	// gate alone.
 	Halter func(ctx context.Context, reason string) error
+	// ScreenSettings returns the current threshold and whether screening is required.
+	ScreenSettings func(context.Context) (float64, bool, error)
+	// GuardChanged reports a transition in guard health.
+	GuardChanged func(bool)
 	// Log reports a screen that did not answer. Nil uses slog.Default.
 	Log *slog.Logger
 }
@@ -191,7 +196,9 @@ func New(o Options) Gate {
 
 type gate struct {
 	Options
-	halt haltFlag
+	halt   haltFlag
+	mu     sync.Mutex
+	health string
 }
 
 func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
@@ -242,4 +249,31 @@ func detail(v Verdict) json.RawMessage {
 	}
 	b, _ := json.Marshal(map[string]string{"pattern": v.Detail})
 	return b
+}
+
+// GuardHealth returns the state observed by the most recent screen call.
+func (g *gate) GuardHealth() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.health == "" {
+		return "unknown"
+	}
+	return g.health
+}
+
+func (g *gate) guardResult(up bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	next := "down"
+	if up {
+		next = "up"
+	}
+	if g.health == next {
+		return
+	}
+	previous := g.health
+	g.health = next
+	if g.GuardChanged != nil && previous != "" {
+		g.GuardChanged(up)
+	}
 }

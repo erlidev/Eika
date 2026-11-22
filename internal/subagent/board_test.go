@@ -51,3 +51,11 @@ func TestBoardGolden(t *testing.T) {
 		t.Errorf("board =\n%s\nwant\n%s", got, want)
 	}
 }
+
+func TestBoardShowsUnscannedReportSummary(t *testing.T) {
+	children := []store.Session{{Name: "worker", Agent: "worker", State: store.SessionRunning, Result: "[unscanned]\nFound a plumber\nMore detail"}}
+	got := subagent.Board(children, nil, time.Time{}, time.UTC)
+	if !strings.Contains(got, "last report: [unscanned] Found a plumber") {
+		t.Fatalf("board: %s", got)
+	}
+}

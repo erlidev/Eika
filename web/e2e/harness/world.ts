@@ -159,6 +159,8 @@ export function emptyWorld(): World {
       classes: [],
       titles_model: "",
       defaults: {
+        screen_required: false,
+        screen_threshold: 0.9,
         sandbox_image: "eika-sandbox:latest",
         computer_idle_minutes: 15,
         compact_idle_fill: 60,

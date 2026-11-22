@@ -240,7 +240,7 @@ push. The halt button stops every run in one press, and resume lifts it.
 
 ### Stage C: when the screen is down, and trust
 
-- [ ] **P4-14**: Mark content `unscanned` when the guard does not answer in 5 s, send
+- [x] **P4-14**: Mark content `unscanned` when the guard does not answer in 5 s, send
       one push when the state changes, and add `screen_required`. Add the settings
       and the guard's health to the API.
 - [ ] **P4-15**: Add trusted sources: a host's results are scored and logged, and never
@@ -480,9 +480,8 @@ and also requires the exit checks.
 - [ ] When the guard does not answer: content passes wrapped and marked
       `unscanned`, a banner shows, and one push goes out when the state changes,
       not one per result. The setting `screen_required` fails closed instead:
-      tools whose results need screening return `Blocked: this is not available
-      right now`.
-      - [ ] **P4-14**: Mark results `unscanned` when the guard is down, add `screen_required` and the settings API.
+      tools whose results need screening return a block that says the guard is unavailable.
+      - [x] **P4-14**: Mark results `unscanned` when the guard is down, add `screen_required` and the settings API.
 - [ ] Never share: a credential pattern in a `web_fetch` URL, a `web_search` query
       or (from phase 11) a plugin call's arguments denies the call, with a reason
       the agent can act on. `bash` and file writes are not checked: a command may

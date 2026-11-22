@@ -179,6 +179,16 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		if cfg.GuardURL != "" {
 			o.Screen = screen.New(cfg.GuardURL)
 		}
+		o.ScreenSettings = s.screenSettings
+		o.GuardChanged = func(up bool) {
+			if s.notifications != nil {
+				message := "The guard is unavailable. Untrusted content cannot be screened."
+				if up {
+					message = "The guard is available again."
+				}
+				s.notifications.send(message)
+			}
+		}
 		o.Canary = s.canary.get
 		o.Halter = func(ctx context.Context, reason string) error {
 			_, err := s.haltWith(ctx, reason, func() { go s.runs.abortAll() })

@@ -61,6 +61,15 @@ export function settingsRoutes(ctx: RouteContext): void {
     if (topic !== undefined && topic !== null && !validNtfyTopic(topic)) {
       return fail(400, "invalid_request", "ntfy topic requires a valid URL and public_url");
     }
+    if (body.screen_required != null && typeof body.screen_required !== "boolean")
+      return fail(400, "invalid_request", "screen_required must be true or false");
+    if (
+      body.screen_threshold != null &&
+      (typeof body.screen_threshold !== "number" ||
+        body.screen_threshold <= 0 ||
+        body.screen_threshold > 1)
+    )
+      return fail(400, "invalid_request", "screen_threshold must be above 0 and at most 1");
     const running = body.subagent_max_running;
     if (running !== undefined && running !== null && !validSubagentMaxRunning(running, raw)) {
       return fail(

@@ -420,3 +420,85 @@ func TestUpgradeFromTheBaselineKeepsForksAsSessions(t *testing.T) {
 		})
 	}
 }
+
+func TestScreenSettingsAuditInSameTransaction(t *testing.T) {
+	ctx := t.Context()
+	url := storetest.URL(t)
+	st, err := store.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.SetSettings(ctx, map[string]json.RawMessage{"screen_required": json.RawMessage(`true`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSettings(ctx, map[string]json.RawMessage{"screen_required": json.RawMessage(`true`)}); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	var count int
+	if err := conn.QueryRow(ctx, `SELECT count(*) FROM core.audit WHERE event = 'setting' AND name = 'screen_required'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("audit rows %d: %v", count, err)
+	}
+	err = st.SetSettings(ctx, map[string]json.RawMessage{"screen_required": json.RawMessage(`false`), "bad": json.RawMessage(`"\u0000"`)})
+	if err == nil {
+		t.Fatal("invalid setting accepted")
+	}
+	row, err := st.Setting(ctx, "screen_required")
+	if err != nil || string(row.Value) != "true" {
+		t.Fatalf("setting %s: %v", row.Value, err)
+	}
+	if err := conn.QueryRow(ctx, `SELECT count(*) FROM core.audit WHERE event = 'setting' AND name = 'screen_required'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("audit rows %d: %v", count, err)
+	}
+}
+
+func TestSettingsReadOneSnapshot(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	set := func(required bool) error {
+		values := map[string]json.RawMessage{"screen_required": json.RawMessage(`false`), "screen_threshold": json.RawMessage(`0.2`)}
+		if required {
+			values["screen_required"], values["screen_threshold"] = json.RawMessage(`true`), json.RawMessage(`0.8`)
+		}
+		return st.SetSettings(ctx, values)
+	}
+	if err := set(false); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		for i := range 100 {
+			if err := set(i%2 == 0); err != nil {
+				done <- err
+				return
+			}
+		}
+		done <- nil
+	}()
+	for range 100 {
+		rows, err := st.Settings(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var required, threshold string
+		for _, row := range rows {
+			if row.Key == "screen_required" {
+				required = string(row.Value)
+			}
+			if row.Key == "screen_threshold" {
+				threshold = string(row.Value)
+			}
+		}
+		if (required == "true" && threshold != "0.8") || (required == "false" && threshold != "0.2") || (required != "true" && required != "false") {
+			t.Fatalf("inconsistent settings: %s %s", required, threshold)
+		}
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

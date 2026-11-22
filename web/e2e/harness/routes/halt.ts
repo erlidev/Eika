@@ -7,6 +7,7 @@ export function haltRoutes(ctx: RouteContext): void {
   const publish = () => {
     ctx.emit(ctx.event("halt.state", "global", { ...w.halt }));
   };
+  on("GET", "/api/guard", () => ok({ status: "unknown" }));
   on("GET", "/api/halt", () => ok(w.halt));
   on("POST", "/api/halt", ({ body }) => {
     const reason = str(body.reason);

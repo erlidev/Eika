@@ -35,7 +35,7 @@ func TestHaltAbortsRunsRefusesNewOnesAndSurvivesRestart(t *testing.T) {
 
 	// A restart keeps the halt.
 	a.Close()
-	a.Server = server.New(testConfig(), testLogger(), a.deps, server.Options{})
+	a.Server = server.New(a.cfg, testLogger(), a.deps, server.Options{})
 	t.Cleanup(a.Close)
 	if got := decodeBody[haltWire](t, request(t, a.Server, "GET", "/api/halt", nil), 200); !got.Halted {
 		t.Fatal("halt lost across restart")

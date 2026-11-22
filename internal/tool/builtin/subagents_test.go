@@ -63,7 +63,7 @@ func (f *subagentFake) CancelSubagent(_ context.Context, home, name string) (sto
 func TestSubagentTools(t *testing.T) {
 	f := &subagentFake{
 		rows: map[string]store.Session{"flights": {Name: "flights", Agent: "researcher", State: store.SessionWaiting, WaitingReason: "a question",
-			Brief: "Find flights", Result: "Two options\nfull detail", LastActiveAt: time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)}},
+			Brief: "Find flights", Result: "[unscanned]\nTwo options\nfull detail", LastActiveAt: time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)}},
 		running: map[string]bool{"flights": true},
 	}
 	projects := &projectFake{rows: []store.Project{{ID: "p1", Slug: "kitchen", ProjectFields: store.ProjectFields{Name: "Kitchen", Status: "active"}}}}
@@ -112,11 +112,11 @@ func TestSubagentTools(t *testing.T) {
 	if r := call("subagent_status", `{}`); json.Unmarshal([]byte(r.Content), &board) != nil || len(board) != 2 {
 		t.Fatalf("board = %+v", r)
 	}
-	if board[1]["report"] != "Two options" || board[1]["waiting_on"] != "a question" || board[1]["last_active_at"] != "2026-11-15T12:00:00Z" || board[1]["brief"] != nil {
+	if board[1]["report"] != "[unscanned] Two options" || board[1]["waiting_on"] != "a question" || board[1]["last_active_at"] != "2026-11-15T12:00:00Z" || board[1]["brief"] != nil {
 		t.Fatalf("board row = %v", board[1])
 	}
 	detail := view(call("subagent_status", `{"subagent":"flights"}`))
-	if detail["brief"] != "Find flights" || detail["report"] != "Two options\nfull detail" {
+	if detail["brief"] != "Find flights" || detail["report"] != "[unscanned]\nTwo options\nfull detail" {
 		t.Fatalf("detail = %v", detail)
 	}
 	if cancelled := view(call("subagent_cancel", `{"subagent":"plumber"}`)); cancelled["state"] != "cancelled" {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	"github.com/erlidev/eika/internal/sentry"
@@ -81,4 +82,17 @@ func (s *Server) ingestHistory(ctx context.Context, segs []sentry.Segment) ([]se
 		return out, nil
 	}
 	return s.gate.Ingest(ctx, segs)
+}
+
+// guardResponse reports the last observed screening outcome.
+type guardResponse struct {
+	Status string `json:"status"`
+}
+
+func (s *Server) handleGuard(w http.ResponseWriter, _ *http.Request) {
+	status := "unknown"
+	if g, ok := s.gate.(interface{ GuardHealth() string }); ok {
+		status = g.GuardHealth()
+	}
+	writeJSON(w, s.log, http.StatusOK, guardResponse{Status: status})
 }

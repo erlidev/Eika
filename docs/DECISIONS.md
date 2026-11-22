@@ -2487,12 +2487,11 @@ replace the newer text after a conflict.
   `[removed:suspect]`, one withheld row, one audit row.
 - The guard has a 5 s limit per call (the design's figure). A page at its cap is
   about 20 windows, 2.6 s at the 130 ms a window P4-01 measured on a busy CPU. A
-  guard that errors, times out or is not configured passes the text wrapped, and
-  nothing marks it until P4-14 adds `unscanned` and `screen_required`.
+  guard that errors, times out or is not configured marks the text `unscanned`,
+  or blocks it when `screen_required` is set.
 - If a removal cannot be recorded, ingest fails and the loop returns
   `Blocked: this is not available right now` instead of the page.
-- The threshold is the `screen_threshold` config key for now (0.9). The runtime
-  setting and its API arrive with P4-14.
+- The `screen_threshold` runtime setting overrides the config default (0.9).
 - The `<untrusted>` line is added to the base prompt by `agent` in code when a
   gate is set, so an overridden prompt keeps it, and it does not name the gate.
 - The wrapper's closing tag is broken inside the content so a page cannot end its
@@ -2535,7 +2534,7 @@ replace the newer text after a conflict.
   child's injected text. An option that is wholly removed is dropped; a closed
   question left with no options is treated the same way. The text is in the withheld
   list.
-- Guard failure follows P4-04: the text passes unscreened until P4-14. A removal that
+- Guard failure follows P4-14: text is marked unscanned or blocked. A removal that
   cannot be recorded fails the report tool; a report ended without one is stored as
   a fixed "could not be delivered" line instead of its text.
 
@@ -2558,3 +2557,16 @@ replace the newer text after a conflict.
 - Failure follows Stage A: a guard that does not answer passes the text wrapped, and
   an Ingest error or a cancelled context returns `Blocked: this is not available
   right now` with no history text.
+
+## Guard failure and settings (P4-14)
+
+- The guard state starts as `unknown` and follows completed screening calls.
+  The first outcome sets the state without a push. Later changes between down
+  and up send one push. Repeated outcomes send no push. Cancellation does not change the state.
+- Screening has one five-second budget for all batches. Every response must
+  have valid scores and windows that cover each input, or it counts as down.
+  The two screen settings are read in one database snapshot. A failed screen marks
+  wrapped content `unscanned`, or blocks it when `screen_required` is true.
+  Reports have an unscanned marker; their board summaries retain the marker and
+  the first line of the report. Blocks and changes to the two screen
+  settings are audited. The settings and audit writes share a transaction.

@@ -83,7 +83,11 @@ func (c *Client) call(ctx context.Context, texts []string) ([][]Window, error) {
 	}
 	var body2 struct {
 		Results []struct {
-			Windows []Window `json:"windows"`
+			Windows []struct {
+				Start *int     `json:"start"`
+				End   *int     `json:"end"`
+				Score *float64 `json:"score"`
+			} `json:"windows"`
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponse)).Decode(&body2); err != nil {
@@ -94,7 +98,12 @@ func (c *Client) call(ctx context.Context, texts []string) ([][]Window, error) {
 	}
 	out := make([][]Window, len(texts))
 	for i, r := range body2.Results {
-		out[i] = r.Windows
+		for _, w := range r.Windows {
+			if w.Start == nil || w.End == nil || w.Score == nil {
+				return nil, fmt.Errorf("read guard response: incomplete window")
+			}
+			out[i] = append(out[i], Window{Start: *w.Start, End: *w.End, Score: *w.Score})
+		}
 	}
 	return out, nil
 }
