@@ -83,6 +83,32 @@ func (r *Repository) Commit(ctx context.Context, name, message string) error {
 	return err
 }
 
+// Remove deletes one named memory file and commits the deletion with message
+// as its subject. The file stays in git history. Removing a file that is not
+// there is not an error, which makes a retry after a restart harmless.
+func (r *Repository) Remove(ctx context.Context, name, message string) error {
+	filename, err := memoryFilename(name)
+	if err != nil {
+		return err
+	}
+	if _, err := r.git(ctx, "rm", "--quiet", "--force", "--ignore-unmatch", "--", filename); err != nil {
+		return err
+	}
+	// An untracked file is not git's to remove; ignore-unmatch left it.
+	if _, err := r.executor.Stat(ctx, filename); err == nil {
+		if _, err := r.executor.Exec(ctx, executor.ExecSpec{Command: "rm", Args: []string{"-f", "--", filename}, Timeout: 30 * time.Second}); err != nil {
+			return fmt.Errorf("remove memory file: %w", err)
+		}
+	}
+	// The file is gone, so Commit's own add would not match it: the deletion
+	// is already staged.
+	if _, err := r.git(ctx, "diff", "--cached", "--quiet", "--", filename); err == nil {
+		return nil
+	}
+	_, err = r.git(ctx, "-c", "user.name=Eika", "-c", "user.email=eika@localhost", "commit", "--quiet", "--only", "-m", message, "--", filename)
+	return err
+}
+
 // List returns the names of the memory files in the working tree, sorted.
 // Files that are not valid memory file names are left out.
 func (r *Repository) List(ctx context.Context) ([]string, error) {

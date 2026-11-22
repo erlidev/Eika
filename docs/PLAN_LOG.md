@@ -2240,6 +2240,21 @@ point fixed: `server.memoryFiles` wraps the repository the writer uses and, on a
 failed call (not a missing file), ensures the memory computer again, swaps in a
 fresh repository and retries once.
 
+## P5-11 — Memory APIs and user mutations (2026-11-22)
+
+Authenticated `GET /api/memories` (keyset-paged list, or ranked bounded search),
+`GET /api/memories/{name}`, `PATCH` (edit), `POST .../pin`, `.../unpin`,
+`.../archive` and `DELETE` (purge), all through `memory.Writer`
+(`Edit`, `SetPinned`, `ArchiveIf`, `Purge`, new `Files.Remove`). `content_sha`
+is the stale-edit precondition, re-checked under the writer's lock. User edits
+are screened by `CheckMemory`: credential 400, flagged becomes pending and
+unpinned, required-but-down 503. Pins use `CheckPinBudget` with the exact
+counter of the home model; no exact count is 503. Purge keeps git history and
+the docs say so. Audit rows (`setting`, kind `memory`). Contract, `http.md`,
+web types and harness mocks updated. Open: no memory events until P5-12;
+pin count needs a configured, countable home model.
+
+
 ## P5-09 — Memory section in the home snapshot (2026-11-22)
 
 `server.buildPreamble` takes a `memorySource` and returns `(text, agent.MemorySnapshot, err)`;

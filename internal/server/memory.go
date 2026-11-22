@@ -329,6 +329,20 @@ func (f *memoryFiles) Uncommitted(ctx context.Context) ([]string, error) {
 	return memoryFilesDo(ctx, f, func(r memory.Files) ([]string, error) { return r.Uncommitted(ctx) })
 }
 
+func (f *memoryFiles) Remove(ctx context.Context, name, message string) error {
+	_, err := memoryFilesDo(ctx, f, func(r memory.Files) (struct{}, error) { return struct{}{}, r.Remove(ctx, name, message) })
+	return err
+}
+
 func (f *memoryFiles) Restore(ctx context.Context, name string) (bool, error) {
 	return memoryFilesDo(ctx, f, func(r memory.Files) (bool, error) { return r.Restore(ctx, name) })
+}
+
+// RecoverMemory ensures the memory computer and reconciles its index, then
+// publishes the writer, as keepMemory does at startup without the retries.
+func (s *Server) RecoverMemory(ctx context.Context) error {
+	if err := s.EnsureMemory(ctx); err != nil {
+		return err
+	}
+	return s.recoverMemory(ctx)
 }

@@ -2711,6 +2711,32 @@ author is trusted; the memory computer has no other writer. The screen is now Se
 runs in a separate process from the server, so run it while Eika is idle; a race
 only leaves a row the next restart repairs.
 
+## Memory API and user mutations (P5-11)
+
+`GET /api/memories` (list or search), `GET/PATCH/DELETE /api/memories/{name}`
+and `POST .../pin|unpin|archive` go through the one writer; the new writer
+operations are `Edit`, `SetPinned`, `ArchiveIf`, `Purge`, `List` and `Get`, and
+`Files.Remove` (`git rm` then a commit). Stale protection is `content_sha`, the
+digest of the file bytes, checked again inside the writer's lock: 409, nothing
+written. Edit requires it; the other changes check it when given. A user edit
+is screened with `CheckMemory` as an agent write is (default 3): credential is
+400, a flag makes an active memory pending and unpins it, an unavailable
+required screen is 503; a pending memory stays pending whatever an edit's
+verdict (only P5-12's accept promotes) and an archived one stays archived. Only
+an active memory can be pinned, so accepting a pending one never needs a pin
+decision. A pin or an edit of a pinned memory is checked with
+`CheckPinBudget` under the lock, counting with the exact counter of the model
+the `eika` class resolves to (a held counter under the pseudo session
+`memory-pins`); an estimate or no model is 503, never a guess. The pin check is
+built lazily so editing an unpinned memory needs no model. Purge removes the
+file and row in a commit and keeps history (default 5): the API docs say that
+history, old sessions and backups can still hold the text. User changes are
+audited as `setting` events of kind `memory` (no text), after the change.
+Pages are keyset on (`updated`, `name`) with an opaque cursor; search is ranked
+and bounded, with no cursor. No memory events or invalidation yet: P5-12 adds
+them with topic `inbox`. A new error status: memory routes answer 503 (code
+`internal`) when memory cannot be judged now.
+
 ## Phase 4 close (P4-27)
 
 - The exit checks run as live scenarios, not by hand (2026-11-22), because they are
@@ -2724,3 +2750,9 @@ only leaves a row the next restart repairs.
   of the audit log must not assume the row is there at the instant of the halt.
 - With the screen on, an injected page loses its useful fact too: the whole scored
   window is removed. This is the accepted cost of screening a window, not a defect.
+
+P5-11 and the P5-10 change log: user operations log through `UpsertMemory` and
+`DeleteMemory` like any write, so no separate path exists. An edit is `edited`
+(or `archived` for archive), a purge is `purged`. Pin and unpin rewrite the
+file's `pinned` field, so they change `content_sha` and are logged as `edited`:
+the pinned section of the next snapshot differs, so Eika should hear of it.

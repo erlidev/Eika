@@ -29,6 +29,7 @@ import type {
   ModelClassName,
   QueuedMessage,
   Withheld,
+  Memory,
   Provider,
   ProbeFindings,
   Question,
@@ -132,6 +133,8 @@ export type World = {
   instructions: { about_me: string; rules: string };
   projectInstructions: Record<string, string>;
   projectInstructionVersions: Record<string, number>;
+  /** memories is GET /api/memories: every memory; content_sha is computed by the route. */
+  memories: Memory[];
   /** withheld is GET /api/withheld: every removal, in any order; the route sorts. */
   withheld: Withheld[];
   guard: "unknown" | "up" | "down";
@@ -243,6 +246,7 @@ export function emptyWorld(): World {
     instructions: { about_me: "", rules: "" },
     projectInstructions: {},
     projectInstructionVersions: {},
+    memories: [],
     withheld: [],
     guard: "up",
     trustedSources: [],
