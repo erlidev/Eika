@@ -388,7 +388,7 @@ Dreaming, embeddings, project memory, automatic retrieval and the fuller
       output, mark pending results, and exclude archived entries by default.
       Only the user can pin. Test tools through their public API, including a
       subagent's inability to acquire them.
-- [ ] **P5-07**: Add the save/skip policy to Eika's built-in prompt and wire the
+- [x] **P5-07**: Add the save/skip policy to Eika's built-in prompt and wire the
       memory service into home runs. No subagent reads memory or receives its
       tools. Check reset/override behavior and tool intersection with stored
       definitions. Existing home snapshots acquire new tools at compaction,
@@ -840,7 +840,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
 - [ ] Write policy in the `eika` prompt, including saving a memory at once
       instead of later. Only `eika` writes memories (decided): subagents put what
       they learned in their report, and Eika saves it.
-      - [ ] **P5-07**: Write policy and home runtime wiring.
+      - [x] **P5-07**: Write policy and home runtime wiring.
 - [ ] Inbox page: a list with a badge and live updates on topic `inbox`, holding
       pending memories for now (accept, edit, reject). No push.
       - [ ] **P5-12**: Pending APIs, count and live events.
