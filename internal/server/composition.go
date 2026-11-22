@@ -44,11 +44,12 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	}
 	var s *Server
 	host, err := computer.NewHost(computer.Options{
-		Plant:        func(ctx context.Context, id string) []string { return s.plantedEnv(ctx, id) },
-		DockerSocket: cfg.DockerSocket,
-		Image:        cfg.SandboxImage,
-		Network:      cfg.SandboxNetwork,
-		EikadBinary:  cfg.EikadBinary,
+		Plant:                func(ctx context.Context, id string) []string { return s.plantedEnv(ctx, id) },
+		DockerSocket:         cfg.DockerSocket,
+		Image:                cfg.SandboxImage,
+		Network:              cfg.SandboxNetwork,
+		DirectNetworkAddress: opts.LiveTest,
+		EikadBinary:          cfg.EikadBinary,
 		// The internal network is used only beside the sandbox network,
 		// which is how a harness outside compose ends up without it.
 		InternalNetwork: cfg.SandboxInternalNetwork,
@@ -85,7 +86,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	// through a variable set just below.
 	var proxy *egress.Proxy
 	if host.EgressControl() {
-		proxy = egress.New(egress.Options{Policy: func(ctx context.Context, id string) (egress.Policy, error) {
+		proxy = egress.New(egress.Options{Control: liveProxyControl(opts.LiveTest), Policy: func(ctx context.Context, id string) (egress.Policy, error) {
 			return s.EgressPolicy(ctx, id)
 		}, Halted: func() bool { return s.gate.Halted().Halted },
 			Decide: func(ctx context.Context, id, host, key, reason string) (bool, error) {

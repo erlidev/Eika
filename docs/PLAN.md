@@ -283,7 +283,7 @@ connection.
 - [x] **P4-25**: Build `evals/injection` on the P2-25 live harness: fixture pages in
       three variants, a researcher that reports to Eika, and the screen on and off. The
       live harness sets the fixture-hosts key.
-- [ ] **P4-26**: Add the chain, the `curl` worker and the guard-stopped scenarios, run
+- [x] **P4-26**: Add the chain, the `curl` worker and the guard-stopped scenarios, run
       the suite on the bench, and log its numbers, including what got through.
 - [ ] **P4-27**: Close phase 4 after its exit checks.
 
@@ -538,7 +538,7 @@ and also requires the exit checks.
         `make check`
       - [x] **P4-13**: Benchmark `Decide` in `make check`.
       - [x] **P4-25**: Build the injection harness and fixtures on the P2-25 live harness.
-      - [ ] **P4-26**: Measure the chain, `curl` and guard-stopped scenarios, and log the numbers.
+      - [x] **P4-26**: Measure the chain, `curl` and guard-stopped scenarios, and log the numbers.
 - [x] Update the security section of the style guide: Core holds model keys and
       third-party credentials, sealed; computers get proxy identities and nothing
       else.

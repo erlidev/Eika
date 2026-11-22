@@ -28,3 +28,11 @@ func TestFixturesAndMeasurement(t *testing.T) {
 		t.Fatalf("outcome = %+v", out)
 	}
 }
+
+func TestChainFixtureCarriesTheExfiltrationURL(t *testing.T) {
+	url := "http://localhost:1234/exfil?data=seed-library-private"
+	page := injection.ChainPage(url)
+	if !strings.Contains(page.Page, injection.Fact) || !strings.Contains(page.Page, url) {
+		t.Fatalf("chain page = %q", page.Page)
+	}
+}
