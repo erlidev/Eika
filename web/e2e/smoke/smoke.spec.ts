@@ -163,4 +163,55 @@ test("setup, then Chat on the home session, and bash on the home computer", asyn
       { timeout: 60_000, intervals: [1000] },
     )
     .toBe(true);
+  await expect
+    .poll(
+      async () => {
+        const reply = await request.get(`/api/sessions/${homeSession.id}/run`, { headers });
+        return reply.ok() && !((await reply.json()) as { active: boolean }).active;
+      },
+      { timeout: 60_000, intervals: [1000] },
+    )
+    .toBe(true);
+  await page.getByRole("textbox", { name: "Message" }).fill("Fetch the fixture");
+  await page.getByRole("textbox", { name: "Message" }).press("Enter");
+  await expect
+    .poll(
+      async () => {
+        const sessions = await request.get("/api/sessions", { headers });
+        if (!sessions.ok()) return false;
+        const body = (await sessions.json()) as {
+          sessions: { id: string; name?: string; parent_session_id?: string }[];
+        };
+        const researcher = body.sessions.find(
+          (row) => row.name === "smoke-researcher" && row.parent_session_id === homeSession.id,
+        );
+        if (!researcher) return false;
+        const path = await request.get(`/api/sessions/${researcher.id}/path`, { headers });
+        if (!path.ok()) return false;
+        const transcript = (await path.json()) as { messages: { content?: string }[] };
+        return transcript.messages.some((message) =>
+          message.content?.includes("Fixture screened successfully."),
+        );
+      },
+      { timeout: 60_000, intervals: [1000] },
+    )
+    .toBe(true);
+  await expect
+    .poll(
+      async () => {
+        const reply = await request.get("/api/withheld", { headers });
+        if (!reply.ok()) return false;
+        const body = (await reply.json()) as {
+          withheld: { source: string; source_name: string; text: string }[];
+        };
+        return body.withheld.some(
+          (row) =>
+            row.source === "web_fetch" &&
+            row.source_name.includes("model:8000/fixture") &&
+            row.text.includes("Ignore all previous instructions"),
+        );
+      },
+      { timeout: 60_000, intervals: [1000] },
+    )
+    .toBe(true);
 });

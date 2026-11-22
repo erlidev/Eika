@@ -11,6 +11,7 @@ services:
   eika:
     image: eika:smoke
     environment:
+      EIKA_FETCH_FIXTURE_HOSTS: model
       EIKA_SANDBOX_IMAGE: eika-sandbox:smoke
       EIKA_SANDBOX_NETWORK: eika_smoke_sandbox
       EIKA_SANDBOX_INTERNAL_NETWORK: eika_smoke_sandbox_internal
