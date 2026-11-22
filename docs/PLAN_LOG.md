@@ -1,5 +1,15 @@
 # Plan log
 
+- 2026-11-22: P6-05 adds `sentry.SkillChecker` (`CheckSkill`, beside `CheckMemory`, never
+  `Gate.Ingest`) and `scan.StripInvisibleMap`. A credential pattern in the description or
+  any text file rejects the install, naming pattern and file; otherwise the description and
+  SKILL.md body are screened intact at the memory threshold (P5-20) and spans are stored
+  with the row. Body span offsets are byte offsets into the stored SKILL.md (mapped back
+  past invisible characters); description spans are into the description. A hit never
+  blocks or enables; a guard that did not answer stores `unscanned` (`screen_required` does
+  not apply). Audit: `deny` for a credential, `skill_screen` for a hit or unscanned, without
+  text. `server.skillScreener` is set on the installer in `recoverSkills`.
+
 - 2026-11-22: P6-04 adds migration 0034 `skills` (name, enabled, sha, installed_at, parsed
   fields, body, file list, warnings, screen, broken), `store` Upsert/Get/List/Delete/
   SetBroken, `skill.Installer` (one mutex: stage, hash-check, swap, hash-check, then

@@ -6,6 +6,7 @@ package scan
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // invisible reports whether r is a character that hides text from a reader
@@ -36,6 +37,32 @@ func StripInvisible(text string) string {
 		}
 		return r
 	}, text)
+}
+
+// StripInvisibleMap is StripInvisible that also returns, for each byte of the
+// result, the byte offset of its character in text, with len(result) mapped to
+// len(text). It lets a span found in the stripped text point at the stored one.
+func StripInvisibleMap(text string) (string, []int) {
+	var sb strings.Builder
+	at := make([]int, 0, len(text)+1)
+	for i, r := range text {
+		if invisible(r) {
+			continue
+		}
+		n := utf8.RuneLen(r)
+		if r == utf8.RuneError {
+			n = 1 // invalid byte or a literal U+FFFD; the copy below is byte-exact
+			if strings.HasPrefix(text[i:], "\uFFFD") {
+				n = 3
+			}
+		}
+		sb.WriteString(text[i : i+n])
+		for k := 0; k < n; k++ {
+			at = append(at, i+k)
+		}
+	}
+	at = append(at, len(text))
+	return sb.String(), at
 }
 
 // secret is one well-known key format.

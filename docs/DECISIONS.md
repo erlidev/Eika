@@ -2693,6 +2693,20 @@ is reported and never adopted. `volume.List` names top-level entries other than 
 dot directories. The screen is `Installer.SetScreener` (P6-05); the default stores
 `unscanned`. `server.SkillInstaller()` is nil until the reconcile has run.
 
+## Skill install screen (P6-05)
+
+`sentry.SkillChecker` is the install screen, separate from `Gate` like
+`MemoryChecker` and never `Gate.Ingest`, so a skill stays intact. A credential pattern
+in the description or any text file (valid UTF-8, no NUL) rejects the install with the
+pattern and file named, never the value. The description and SKILL.md body are screened
+with the memory threshold (`memory_screen_threshold`, P5-20) when set, since skill text
+reaches the model's context as a memory does. Body spans are byte offsets into the stored
+SKILL.md, mapped back past removed invisible characters (`scan.StripInvisibleMap`);
+description spans are offsets into the description. A hit never blocks and never enables;
+a guard that did not answer stores `unscanned`, and `screen_required` does not reject a
+skill. Audit rows (`deny` for a credential, `skill_screen` otherwise) carry pattern, file,
+counts and score, no text. `server.skillScreener` adapts it to `Installer.SetScreener`.
+
 ## Memory writer and index (P5-03)
 
 `memory.Writer` is the only writer of memory files. It depends on two small
