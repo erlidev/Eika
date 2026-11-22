@@ -2,13 +2,9 @@
 
 The target for compaction in every session: what a summary holds, who writes each
 part, what happens to the messages that are kept, and when the work is done.
-`docs/PLAN.md` phase 13 turns it into items. `ARCHITECTURE.md` "Compaction"
-describes what is built today, and `runtime.md` 11 the home session's summary
-format, idle rule and history tools, which this design builds on.
-
-Compaction today is Pi's: a model rewrites one structured summary at each
-compaction, and about 20,000 recent tokens stay verbatim. Eika asks for the
-summary on the run's own cached prefix, which stays.
+`docs/PLAN.md` phase 13 turns it into items. [Architecture](../ARCHITECTURE.md#context-layout-and-prefix-stability)
+describes today's home summary, idle compaction and history recall. Home uses a
+board and a rolling model summary; other sessions use Pi's summary.
 
 Four things drive the design:
 
@@ -27,13 +23,13 @@ Four things drive the design:
 
 | Weakness | Effect |
 |---|---|
-| The whole summary is rewritten by the model at every compaction, under "preserve all existing information" | The user's requests are paraphrased, and each rewrite can drop a constraint. Nothing bounds the summary's size |
+| The conversation summary is rewritten by the model at every compaction | The user's requests are paraphrased, and each rewrite can drop a constraint. Nothing bounds the summary's size |
 | The summary's output budget is 80% of the reserve, thinking included | Up to about 13,000 output tokens while the user waits. No compaction records how long it took |
 | A cut-off summary is used as far as it goes; a failed summary after an overflow fails the run | A session can continue on half a summary, or stop |
 | Kept messages are never edited | One large tool result can take the whole kept budget, and a turn larger than the budget needs a second summary call |
-| Compaction runs only at the threshold, inside a run | The user waits for it. A session whose cache is already lost is re-read at full size |
-| No tool reads compacted entries, and no eval compares methods | A lost fact is gone for the agent, and no change here can be measured |
-| The prompts are a coding agent's | Sections such as Progress and Blocked fit a task, not an assistant's conversation |
+| Threshold and overflow compaction run inside a user turn | The user waits for it. A session whose cache is already lost is re-read at full size |
+| History tools are available only to home, and no eval compares methods | Subagents cannot use recall, and no change here can be measured |
+| Subagent prompts use Pi's coding sections | Sections such as Progress and Blocked fit a task, not an assistant's conversation |
 
 ## 2. The summary
 
@@ -76,7 +72,7 @@ summary, so nothing in them drifts.
   short arguments share a line. The newest that fit are listed and the rest are
   one counted line.
 - A session type may add sections from its own rows. The home session adds
-  `[Subagents]` (`runtime.md` 11).
+  `[Subagents]` ([Architecture](../ARCHITECTURE.md#context-layout-and-prefix-stability)).
 
 Each section has a budget of 2% of the context window, at least 800 and at most
 3,000 tokens. Both numbers are starting values for `evals/compaction`.
@@ -88,7 +84,7 @@ Each section has a budget of 2% of the context window, at least 800 and at most
 - For task sessions: Goal, Constraints, Decisions with their reasons, Findings
   (what was learned from tool results, with exact values, paths and messages),
   Work (done, in progress, blocked), Next.
-- The home session uses the sections of `runtime.md` 11.
+- The home session uses the sections of [Architecture](../ARCHITECTURE.md#context-layout-and-prefix-stability).
 - Agent definitions may replace the prompts, as today.
 
 The prompt shows the record that will stand above the state and says not to
@@ -179,11 +175,11 @@ A prepared compaction is dropped and written again when the messages after its
 cut pass the kept budget. Where the harness cannot tell what the endpoint holds
 (one that reports no slots, or a remote API), a prepared compaction is applied
 after `compact_idle_minutes` without an important run, which is the idle rule
-of `runtime.md` 11.
+of [Architecture](../ARCHITECTURE.md#context-layout-and-prefix-stability).
 
 ## 6. Recall
 
-`history_search` and `history_read` (`runtime.md` 11) are offered to every
+`history_search` and `history_read` ([Architecture](../ARCHITECTURE.md#history-recall)) are offered to every
 agent, scoped to its own session, with the home session also reaching its
 subagents. They are in the tool list from the start, so a first compaction does
 not change the prefix.

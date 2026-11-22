@@ -138,7 +138,7 @@ the accessibility tree hides, and driving widgets that refuse ordinary clicks.
 
 ## 3. The browser agent
 
-- The definition `browser` (`runtime.md` 6) is the only agent with browser tools.
+- The definition `browser` ([Architecture](../ARCHITECTURE.md#agent-definitions)) is the only agent with browser tools.
   Eika delegates a goal to it with `subagent_start {agent: browser, name, brief}`.
   One browser subagent runs at a time, holding the browser lock for the length of
   its run. Others queue. This matches "always controlled by a specific subagent".

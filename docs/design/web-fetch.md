@@ -240,7 +240,7 @@ markup, and line numbers. It does not stop one: a hijacked reader can still writ
 a false answer, which the copied lines beside it are there to expose.
 
 **Not built.** A reader with tools of its own (`find`, `section`) that explores the
-page in a loop is the `researcher` (`runtime.md` 6), not a fetch mode. Reports are
+page in a loop is the `researcher` ([Architecture](../ARCHITECTURE.md#agent-definitions)), not a fetch mode. Reports are
 not cached: the page is, so asking again costs one reader call.
 
 ## 7. Extraction and conversion

@@ -730,7 +730,7 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
 
 - **A run is bounded in model calls and in wall time.** `Options.Limits` holds
   `MaxCalls` (default 40) and `MaxWall` (default 24 hours). 40 is the home
-  session's limit in `runtime.md` section 5; the design gives a subagent 200, and
+  session's limit in its agent definition; a subagent has 200, and
   agent definitions set each agent's own limit. Legacy profile sessions keep
   the default of 40. A run is one `Agent.Run`, however many turns its follow-ups
   start. A model call is a step of the loop: a retried attempt is the same call,
@@ -1872,10 +1872,15 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   type tokens rise one step and controls have 44 px targets. Rewind and the
   rename hint stay visible without hover. Fine-pointer layouts keep their
   existing density, even at phone width.
+- **No list virtualiser (P3-16).** Chromium mobile emulation at 390x844, with
+  5,000 entries: the first load took 539 ms, loading 99 pages one after another
+  took 19 s, a page took 91 to 246 ms with 24 to 33 ms of React render and no long
+  task, and a 3 s scroll gave 187 frames, one over 20 ms. Rows are stable and
+  the rewind callback is memoised, which removed most of the cost. Return to a
+  virtualiser if a physical phone shows long tasks. It was not measured on one.
 
-- Three panes; one session at a time, addressed by `/sessions/<id>`.
-- Panel and tool-renderer registries are single arrays/maps. Panel `id`s
-  never change once shipped. Unknown tools render as JSON.
+- The shell uses a page list and routes, with Chat bound to home. Unknown
+  tools render as JSON.
 - **The transcript is a pure reducer** (`transcript.ts`) keyed by `run_id`
   for live turns and `entry_id` for stored entries, so content arriving twice
   draws once and a scripted event list is the whole test.
@@ -2126,6 +2131,10 @@ locale is unspecified until the user sets it; no browser locale is inferred.
 
 ## Subagent lifecycle
 
+- **Delegation returns immediately.** Waiting for a child would leave the home
+  context idle during its work and, on a pool with few slots, could evict it
+  and require another prefill.
+
 - **One service owns child runs** (2026-11-15, P2-12). Names are unique under
   the home session. Starting an existing name returns its stored status and
   does not change its brief, agent or project. Resume accepts only idle, failed
@@ -2294,6 +2303,13 @@ locale is unspecified until the user sets it; no browser locale is inferred.
 
 ## Home compaction summary (P2-20)
 
+- **Rolling summary before chapters.** Frozen chapters would limit how often a
+  fact is rewritten, but need a separate current state and add a concept. The
+  rolling summary is simpler. Ledger and recent turns remain deferred unless
+  evaluation shows commitments are lost. Entry references are planned for
+  phase 13.
+
+
 - **Code writes the board, the model writes the conversation** (2026-11-15).
   Home's summary is a `[Subagents]` board, then a `[Conversation]` section.
   The board is rendered from the children's rows (`subagent.Board`) when the
@@ -2312,7 +2328,7 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   summary in the cached prefix, board included. Only the conversation part
   carries forward when a split turn adds nothing complete; a summary from
   before this change is all conversation. The prompts use the assistant
-  sections of `runtime.md` 11 instead of Pi's coding sections.
+  home summary sections instead of Pi's coding sections.
 - **The hook is `CompactionSettings.Board`, set only for home** in
   `newAgent`. Subagent and routine sessions keep Pi's summary with their
   definition's prompts. A board that cannot be read fails the compaction like
@@ -2327,8 +2343,8 @@ locale is unspecified until the user sets it; no browser locale is inferred.
   for home only) keeps from the oldest user message whose tail fits the share,
   and always the newest whole turn. Every user message is a boundary, steering
   included: the calls before it are answered. A newest turn larger than the
-  share falls back to Pi's cut with the share as its budget, which splits it,
-  as `runtime.md` 11 says. The share is a constant, not a setting: P2-22 adds
+  share falls back to Pi's cut with the share as its budget, which splits it.
+  The share is a constant, not a setting. P2-22 adds
   the idle settings, and the share can join them if use asks for it. The
   `keep_recent_tokens` setting still applies to subagent, routine and legacy
   sessions, and to a home model whose window is unknown. Rejected: deriving
