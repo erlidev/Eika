@@ -168,7 +168,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if policy.Mode == ModeAllowlist && !Allowed(policy.Allow, host) {
 		reason = "host is not on the allowlist"
 	}
-	info := connection{id: id, host: host, key: fmt.Sprintf("%s-%d-%d", id, time.Now().UnixNano(), p.sequence.Add(1))}
+	info := connection{id: id, host: host, key: fmt.Sprintf("%s-%d-%d", id, time.Now().UnixNano(), p.sequence.Add(1)), generation: p.currentGeneration()}
 	r = r.WithContext(context.WithValue(r.Context(), connectionKey{}, info))
 	if p.opts.Decide != nil {
 		allowed, err := p.opts.Decide(r.Context(), info.id, info.host, info.key, reason)
@@ -188,15 +188,24 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !p.validGeneration(info.generation) {
+		p.denied(r.Context(), "Eika is halted")
+		refuse(w, http.StatusForbidden, "connection refused")
+		return
+	}
+
 	if r.Method == http.MethodConnect {
-		p.tunnel(w, r)
+		p.tunnel(w, r, info.generation)
 		return
 	}
 	p.forward.ServeHTTP(w, r)
 }
 
 type connectionKey struct{}
-type connection struct{ id, host, key string }
+type connection struct {
+	id, host, key string
+	generation    uint64
+}
 
 func (p *Proxy) isHalted() bool { return p.opts.Halted != nil && p.opts.Halted() }
 
@@ -236,12 +245,15 @@ func (c *trackedConn) Close() error {
 	return err
 }
 func (p *Proxy) dialHTTP(ctx context.Context, network, address string) (net.Conn, error) {
-	generation := p.currentGeneration()
+	info, ok := ctx.Value(connectionKey{}).(connection)
+	if !ok {
+		return nil, errHalted
+	}
 	conn, err := p.dialer.DialContext(ctx, network, address)
 	if err != nil {
 		return nil, err
 	}
-	if !p.trackGeneration(generation, conn) {
+	if !p.trackGeneration(info.generation, conn) {
 		p.denied(ctx, "Eika is halted")
 		_ = conn.Close()
 		return nil, errHalted
@@ -278,8 +290,7 @@ func (p *Proxy) Close() {
 
 // tunnel connects to the CONNECT request's destination and relays bytes both
 // ways until either side closes.
-func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request) {
-	generation := p.currentGeneration()
+func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request, generation uint64) {
 	upstream, err := p.dialer.DialContext(r.Context(), "tcp", r.Host)
 	if err != nil {
 		if errors.Is(err, netguard.ErrPrivateAddress) {
@@ -325,12 +336,16 @@ func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 }
 
-// track records a tunnel's two connections so Close can end them. It
-// refuses once Close has run.
 func (p *Proxy) currentGeneration() uint64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.generation
+}
+
+func (p *Proxy) validGeneration(generation uint64) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.tunnels != nil && !p.isHalted() && generation == p.generation
 }
 
 func (p *Proxy) track(conns ...net.Conn) bool {

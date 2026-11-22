@@ -60,3 +60,36 @@ func TestProxySendsRefusalsToDecide(t *testing.T) {
 		t.Fatalf("response %d, host %q, reason %q", rec.Code, host, reason)
 	}
 }
+
+func TestHaltAndResumeDuringDecisionRefusesConnection(t *testing.T) {
+	for _, method := range []string{http.MethodConnect, http.MethodGet} {
+		t.Run(method, func(t *testing.T) {
+			var p *Proxy
+			var denied bool
+			var halted atomic.Bool
+			p = New(Options{
+				Halted: halted.Load,
+				Policy: func(context.Context, string) (Policy, error) { return Policy{Token: "token", Mode: ModePublic}, nil },
+				Decide: func(_ context.Context, _, _, _, reason string) (bool, error) {
+					if reason != "" {
+						denied = true
+						return false, nil
+					}
+					halted.Store(true)
+					p.Halt()
+					halted.Store(false)
+					return true, nil
+				},
+			}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			defer p.Close()
+			req := httptest.NewRequest(method, "http://example.com:80/", nil)
+			req.SetBasicAuth("cx", "token")
+			req.Header.Set("Proxy-Authorization", req.Header.Get("Authorization"))
+			rec := httptest.NewRecorder()
+			p.ServeHTTP(rec, req)
+			if rec.Code != http.StatusForbidden || !denied || len(p.Blocked("cx")) != 1 {
+				t.Fatalf("status %d, audited %v, blocked %v", rec.Code, denied, p.Blocked("cx"))
+			}
+		})
+	}
+}
