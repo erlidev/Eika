@@ -50,7 +50,7 @@ Memories are files, and files are the source of truth:
   `body_tsv tsvector`, `state` and `content_sha`.
   File and row change in one operation: write the file,
   commit, then upsert the row. A crash between steps is repaired at start-up by
-  `memory.Reconcile`, which re-indexes from the files whose SHA differs.
+  `Writer.Reconcile`, which re-indexes from the files whose SHA differs and holds uncommitted outside edits pending until the P5-05 screen exists.
   `make memory-reindex` rebuilds the whole index from files.
 - **No vector database and no embedding model.** Search is Postgres full-text
   search.

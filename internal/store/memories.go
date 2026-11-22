@@ -65,3 +65,32 @@ func (s *Store) SearchMemories(ctx context.Context, q memory.Query, snippetRunes
 	}
 	return out, nil
 }
+
+// MemorySHAs returns every indexed memory's content_sha by name.
+func (s *Store) MemorySHAs(ctx context.Context) (map[string]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT name, content_sha FROM memories`)
+	if err != nil {
+		return nil, wrap("read memory index", err)
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var name, sha string
+		if err := rows.Scan(&name, &sha); err != nil {
+			return nil, wrap("read memory index", err)
+		}
+		out[name] = sha
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrap("read memory index", err)
+	}
+	return out, nil
+}
+
+// DeleteMemory removes the index row named name.
+func (s *Store) DeleteMemory(ctx context.Context, name string) error {
+	if _, err := s.pool.Exec(ctx, `DELETE FROM memories WHERE name = $1`, name); err != nil {
+		return wrap("delete memory row "+name, err)
+	}
+	return nil
+}

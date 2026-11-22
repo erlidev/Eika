@@ -26,6 +26,7 @@ func main() {
 func run() error {
 	configPath := flag.String("config", "", "path to the YAML configuration file")
 	webDir := flag.String("web", "", "directory holding the built frontend; empty serves the API only")
+	reindex := flag.Bool("memory-reindex", false, "rebuild the memory index from the memory files, then exit")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -40,5 +41,14 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if *reindex {
+		rep, err := server.ReindexMemory(ctx, cfg, log)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("memory reindexed: %d rows written, %d committed, %d restored, %d removed, %d held pending, %d invalid\n",
+			rep.Reindexed, rep.Committed, rep.Restored, rep.Removed, rep.Held, len(rep.Invalid))
+		return nil
+	}
 	return server.Run(ctx, cfg, log, server.Options{WebDir: *webDir})
 }

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/erlidev/eika/internal/computer"
@@ -19,6 +20,7 @@ import (
 	"github.com/erlidev/eika/internal/executor/sandbox"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/mcp"
+	"github.com/erlidev/eika/internal/memory"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/search/fetch"
@@ -147,7 +149,9 @@ type Server struct {
 	homeMu sync.Mutex
 	// memoryMu makes EnsureMemory take turns.
 	memoryMu sync.Mutex
-	startMu  sync.Mutex
+	// memoryWriter is set once the memory index has been reconciled.
+	memoryWriter atomic.Pointer[memory.Writer]
+	startMu      sync.Mutex
 
 	// loginMu makes sign-in attempts take turns, which bounds how fast a
 	// password can be guessed without locking its owner out.
