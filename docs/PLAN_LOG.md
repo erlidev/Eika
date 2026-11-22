@@ -4,6 +4,10 @@
   secrets, ingest, tool side effects, guarded outbound requests and append-only
   audit records.
 
+- 2026-11-22: P4-25 adds isolated researcher injection fixtures and screen-on
+  and screen-off measurements to the live report. The bench and Docker are not
+  available here; P4-26 runs the suite and records its numbers.
+
 - 2026-11-22: P4-21 adds blocked hosts to Security; computers, web fetch and
   search all refuse them (P4-20).
 
