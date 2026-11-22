@@ -154,7 +154,7 @@ func buildSearch(ctx context.Context, cfg config.Config, st *store.Store, secret
 		GitHubCode:   github.New(client, github.DefaultURL, github.Code),
 		GitHubRepos:  github.New(client, github.DefaultURL, github.Repos),
 		GitHubIssues: github.New(client, github.DefaultURL, github.Issues),
-	}, fetch.NewClient())
+	}, fetch.NewClient(cfg.FetchFixtureHosts...))
 }
 
 // NewSearch builds the search engine over searchers, and the page reader
@@ -179,7 +179,7 @@ func NewSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets 
 	if err != nil {
 		return nil, nil, err
 	}
-	pages := fetch.New(fetch.Config{Client: pageClient, Tracker: tracker, Keys: backend, Quota: engine})
+	pages := fetch.New(fetch.Config{FixtureHosts: cfg.FetchFixtureHosts, Client: pageClient, Tracker: tracker, Keys: backend, Quota: engine})
 	return engine, pages, nil
 }
 

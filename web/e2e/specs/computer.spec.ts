@@ -10,8 +10,10 @@ test("the settings hold the home computer’s limits and network", async ({ open
   const eika = await open({ scenario: "workbench" });
   await eika.click("Settings");
   await eika.click('role=tab[name="Computer"]');
+  await expect(eika.page.getByText(/can reach public internet hosts/)).toBeVisible();
   await eika.fill("Memory", "2048");
   await eika.click("Allowlist");
+  await expect(eika.page.getByText(/only the public hosts listed below/)).toBeVisible();
   await eika.click("Remove gitlab.com from the allowlist");
   await eika.click("Save");
   await expect(eika.page.getByText("Saved. The home computer uses these.")).toBeVisible();

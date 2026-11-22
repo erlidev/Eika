@@ -203,3 +203,18 @@ func TestAllowedOrigins(t *testing.T) {
 		})
 	}
 }
+
+func TestFetchFixtureHosts(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("EIKA_FETCH_FIXTURE_HOSTS", "fixture, other.local")
+	cfg, err := config.Load("")
+	if err != nil || len(cfg.FetchFixtureHosts) != 2 || cfg.FetchFixtureHosts[0] != "fixture" {
+		t.Fatalf("fixture hosts: %v, %v", cfg.FetchFixtureHosts, err)
+	}
+	for _, invalid := range []string{"*.example.com", "http://fixture", "127.0.0.1", "fixture:80"} {
+		cfg.FetchFixtureHosts = []string{invalid}
+		if cfg.Validate() == nil {
+			t.Errorf("accepted %q", invalid)
+		}
+	}
+}
