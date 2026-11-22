@@ -1321,4 +1321,7 @@ or replay a delivery after a restart.
 
 Sandbox proxy requests pass through Sentry as egress actions. The gate checks
 the exact-host blocklist and halt state. The proxy supplies allowlist and
-netguard refusals to the gate for audit. Halt closes active proxy connections.
+netguard refusals to the gate for audit. Halt closes active proxy connections. Core web fetches and search requests also
+pass through the gate on each request, including redirects and reused connections.
+Only requests to the configured local SearXNG origin are exempt. Hosted search
+and fetch connections use netguard.

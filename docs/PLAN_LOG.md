@@ -2086,3 +2086,9 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
 The proxy sends egress actions to Sentry, applies the host blocklist and
 computer allowlist, and closes active connections on halt. Denials are audited.
 The blocklist has a store and API; Core fetches follow in P4-20.
+
+## P4-20 — Core web egress (2026-11-22)
+
+Core checks the blocklist and halt for each fetch and hosted search request,
+including redirects and reused connections. The configured SearXNG origin is
+exempt; redirects away from it are checked. Denials are audited by Sentry.
