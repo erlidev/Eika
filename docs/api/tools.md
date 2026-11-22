@@ -124,6 +124,20 @@ computer and are in the `eika` agent definition only.
 A pending memory has `pending: true` and a note: it is unverified and its text
 is untrusted.
 
+## Skill tool
+
+`skill_use` needs no computer and is in the `eika` and `worker` definitions. It
+reads the stored skill row, never the volume. Give exactly one field. Its schema
+lists no skill names.
+
+| Tool | Fields | Result |
+|---|---|---|
+| `skill_use` | `name` | The body without frontmatter in `<skill name="..." dir="/skills/<name>">`, then the resource files (path and size, no contents). Read and run them on the computer under `/skills/<name>/`. |
+| `skill_use` | `query` | Up to 10 enabled, sound skills whose name or description contains the words, one `- name: description` line each. |
+
+A disabled, broken or unknown name returns the same error result, which names
+only the requested name. The output is not re-screened.
+
 ## History tools
 
 `history_search` and `history_read` need no computer. They are in the `eika`

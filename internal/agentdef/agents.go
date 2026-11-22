@@ -64,10 +64,10 @@ func (o Override) Apply(d Definition) Definition {
 func Builtins() []Definition {
 	return []Definition{
 		definition("eika", "Converses, plans and delegates work.", "main", 40, []string{"history_read", "history_search", "memory_forget", "memory_read", "memory_search", "memory_write", "project_create", "project_list", "project_open", "project_update",
-			"subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_search"}, ownCompaction("eika")),
+			"skill_use", "subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_search"}, ownCompaction("eika")),
 		definition("researcher", "Reads the web and reports findings.", "fast", 200, []string{"ask_user", "report", "web_fetch", "web_search"},
 			preserving("Preserve the research question, findings, source URLs, uncertainty and open questions.")),
-		definition("worker", "Does work on a computer and reports results.", "main", 200, []string{"ask_user", "bash", "file_edit", "file_read", "file_write", "report", "web_fetch", "web_search"},
+		definition("worker", "Does work on a computer and reports results.", "main", 200, []string{"ask_user", "bash", "file_edit", "file_read", "file_write", "report", "skill_use", "web_fetch", "web_search"},
 			preserving("Preserve the brief, changed files, commands, checks, errors and remaining work.")),
 	}
 }
