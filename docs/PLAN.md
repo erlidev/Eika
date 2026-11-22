@@ -624,7 +624,7 @@ package that changes it. Project scope, other install sources, `skill_file`,
 
 ### Stage A: first testable build, install and use
 
-- [ ] **P6-01**: Add `internal/skill`: the lenient parser and validator for the six
+- [x] **P6-01**: Add `internal/skill`: the lenient parser and validator for the six
       spec fields (the rules in the design's table; a name/directory mismatch and
       an unquoted colon are warnings; a missing description or unparseable YAML is
       a skip with a reason) and the bounded zip reader (question 4): reject `..`,
@@ -1077,7 +1077,7 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
 "Skills". Packages: "Schedule for phase 6".
 
 - [ ] Add `internal/skill` (P6-01, P6-04, P6-05):
-      - lenient parsing and validation of the specification
+      - [x] lenient parsing and validation of the specification (P6-01)
       - the store and the `core.skills` rows
       - install from a `.zip`
 - [ ] (P6-02, P6-03, P6-12) Mount `/skills` read-only into computers from a volume of its own

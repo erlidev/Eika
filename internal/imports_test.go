@@ -41,6 +41,12 @@ var boundaries = []boundary{
 	{from: "internal/sentry", to: "internal/server"},
 	{from: "internal/sentry", to: "internal/agent"},
 	{from: "internal/sentry", to: "internal/computer"},
+	// The skill format is read before anything is stored or run, so it
+	// depends on no part of Core that does either.
+	{from: "internal/skill", to: "internal/server"},
+	{from: "internal/skill", to: "internal/agent"},
+	{from: "internal/skill", to: "internal/computer"},
+	{from: "internal/skill", to: "internal/store"},
 }
 
 // TestImportBoundaries checks every non-test Go file in the repository
@@ -74,6 +80,7 @@ var leaves = map[string]string{
 	// the server can all hold a lease without it knowing any of them.
 	"internal/inference": "the inference queue is imported by every package that makes model calls",
 	"internal/memory":    "the memory file format is independent of repository and service code",
+	"internal/skill":     "the skill parser and zip reader are pure; install and storage come later",
 }
 
 // TestLeavesImportNothingOfTheModule checks the packages in leaves.

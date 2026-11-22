@@ -37,8 +37,10 @@ enabled, and when it was installed.
 
 Parsing is lenient, the way the spec's client guide advises. A name and directory
 mismatch is a warning, and an unquoted colon in a description is retried quoted.
-A skill is skipped only when its description is missing or its YAML is
-unparseable, and the reason shows in the UI.
+A missing name falls back to the directory name with a warning. A skill is skipped
+when its description is missing, its YAML is unparseable, or its name is invalid
+(it becomes a directory path, so it must be 1 to 64 lowercase letters, digits and
+single hyphens), and the reason shows in the UI.
 
 ### Storage and scope
 
