@@ -1,5 +1,15 @@
 # Plan log
 
+- 2026-11-22: P5-05 adds `sentry.MemoryChecker.CheckMemory` (internal/sentry/memory.go),
+  implemented by the gate from `sentry.New` (callers type-assert; `Gate` is unchanged so
+  its fakes are untouched). Description and body are checked: a credential pattern denies;
+  otherwise both go to the guard intact (no cut, no wrapper). A score at or over the
+  threshold, or an unavailable/missing guard, is `pending`; with `screen_required` an
+  unavailable guard is `reject` and nothing is written. The verdict carries the flagged
+  spans (field, byte offsets, score, text) and `Unscanned` for the Inbox. Pending and
+  deny/reject are audited without secrets (`memory_pending`, `deny`); active is not.
+  Trusted hosts are not consulted. P5-06 and P5-04 call it before `Writer.Write`;
+  the Writer and Reconcile are untouched.
 - 2026-11-22: P5-03 adds `memory.Writer` and migration 0029 (`memories`).
   Write (create, or replace with `Replace`), Archive, Read and Search all go
   through the P5-02 repository (`memory.Files`) and the index (`memory.Index`,

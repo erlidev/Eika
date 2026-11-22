@@ -377,7 +377,7 @@ Dreaming, embeddings, project memory, automatic retrieval and the fuller
       preserve pending/archived states and commits. Test failures between file,
       git and row updates, retry after restart, and a full index rebuild. Wire
       recovery before memory is served; run `make smoke` for startup wiring.
-- [ ] **P5-05**: Add Sentry's memory-write check, using the existing credential
+- [x] **P5-05**: Add Sentry's memory-write check, using the existing credential
       scanner and `sentry/screen` client. Deny credentials in body or description;
       classify the complete body without cutting it or adding an untrusted wrapper.
       A hit is pending. Resolve guard failure and metadata screening (question 3).
@@ -829,7 +829,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       makes the memory `pending` (searchable with a marker, never in the index),
       and anything else is `active` at once. There is no provenance field and no
       instruction-shape check.
-      - [ ] **P5-05**: Memory-write screening and credential denial.
+      - [x] **P5-05**: Memory-write screening and credential denial.
       - [ ] **P5-06**: Eika-only memory tools.
 - [ ] Preamble: pinned bodies plus the index within an exact budget, in
       deterministic order, with a visible overflow count.

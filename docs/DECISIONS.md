@@ -2656,3 +2656,12 @@ mirrors frontmatter plus `body`, `content_sha` and a generated `body_tsv`
 (name weight A, description B, first 4 KiB of body C). Replace keeps `created`
 and `pinned`. Pinning is not a writer operation yet. Index failure after the
 commit returns an error and leaves the file ahead of the row until P5-04.
+
+## Memory-write check (P5-05)
+
+`sentry.MemoryChecker` is separate from `Gate` so the many `Gate` fakes keep
+compiling; the real gate implements both. Credentials deny first, then the
+description and body are screened intact with the ingest threshold and
+`screen_required`. Outcomes: `active`, `pending` (hit, or guard unavailable),
+`deny`, `reject` (unavailable and required). The verdict's spans are for the
+Inbox, which stores them with the pending memory in a later item.

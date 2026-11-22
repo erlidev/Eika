@@ -340,7 +340,7 @@ What goes through it:
 | `web_search`, each result on its own | yes | yes | yes |
 | Plugin results | yes | yes | yes |
 | A subagent's report and questions, on their way to `eika` | yes | yes | no: a wrapped report would teach Eika to distrust its own subagents |
-| A memory body at write (`memory.md` 6) | a hit denies | a hit makes it pending | no |
+| A memory description and body at write (`memory.md` 6; `sentry.MemoryChecker`) | a credential denies | a hit, or a guard that did not answer, makes it pending; with `screen_required` it is rejected | no |
 | A routine's prompt at creation, a skill at install, a plugin tool's description | no | a hit is shown on the card or the page | no |
 | `bash` output and file reads | no | no | no (below) |
 
