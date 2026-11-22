@@ -30,7 +30,7 @@ func TestScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load live env: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
 	target, err := live.Connect(ctx, env)
@@ -53,6 +53,54 @@ func TestScenarios(t *testing.T) {
 		t.Logf("report: %s", file)
 	}()
 
+	core := newLiveCore(t, target)
+	t.Run("persistent_home_exit", func(t *testing.T) {
+		started := time.Now()
+		err := core.exitScenario()
+		result := live.Result{Name: "persistent_home_exit", Passed: err == nil, Seconds: time.Since(started).Seconds(), Calls: []live.Call{}, Notes: []string{"The follow-up is immediate; the suite does not wait a day."}}
+		if err != nil {
+			result.Error = err.Error()
+			t.Error(err)
+		}
+		report.Add(result)
+	})
+
+	for _, scenario := range []struct {
+		name string
+		run  func() error
+	}{
+		{"persistent_home_restart", core.restartScenario},
+		{"persistent_home_compaction", func() error { return core.compactScenario(target.Server.Flags.Context) }},
+		{"persistent_home_prefix", core.prefixScenario},
+		{"persistent_home_queue", core.queueScenario},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			started := time.Now()
+			err := scenario.run()
+			result := live.Result{Name: scenario.name, Passed: err == nil, Seconds: time.Since(started).Seconds(), Calls: []live.Call{}, Notes: []string{}}
+			if scenario.name == "persistent_home_compaction" {
+				result.Notes = append(result.Notes, core.compactionNotes...)
+			}
+			if scenario.name == "persistent_home_prefix" {
+				result.Notes = append(result.Notes, core.prefixNotes...)
+			}
+			if scenario.name == "persistent_home_restart" && err != nil {
+				result.Notes = append(result.Notes, core.restartNotes...)
+			}
+			if scenario.name == "persistent_home_queue" {
+				result.Notes = append(result.Notes, core.queueNotes...)
+			}
+			if err != nil {
+				result.Error = err.Error()
+				t.Error(err)
+			}
+			report.Add(result)
+			for _, note := range result.Notes {
+				t.Log(note)
+			}
+		})
+	}
+
 	for _, s := range live.Scenarios() {
 		t.Run(s.Name, func(t *testing.T) {
 			res := s.Execute(ctx, target)
@@ -62,6 +110,9 @@ func TestScenarios(t *testing.T) {
 			}
 			for _, n := range res.Notes {
 				t.Log(n)
+			}
+			if res.SkipReason != "" {
+				t.Skip(res.SkipReason)
 			}
 			if res.Error != "" {
 				t.Error(res.Error)

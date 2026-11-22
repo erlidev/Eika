@@ -2380,7 +2380,10 @@ entries so it can retire a turn whose end event was lost.
   `history_read` returns one entry or a window, with an option for full text.
   Context groups have entry and byte limits and keep the hit, so large worker
   turns do not fill the model window. A truncated group points to the read
-  tool for the rest.
+  tool for the rest. Views return readable message text and tool calls without
+  reasoning or usage metadata. A long matching entry shows a bounded excerpt
+  around the literal query when it can be found; `history_read` returns the full
+  text. This keeps the matched text visible within the group limit.
 - **Derive summary metadata from the session path.** The same compaction fold
   identifies the compacted span and oldest retained message. Home writes the
   board time, span and count in the summary tag and adds the recall footer.

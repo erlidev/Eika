@@ -9,8 +9,11 @@ The live test bench (`docs/PLAN.md`, "Live test bench"): real models for
 | injection screen | `Horizon-Labs/prompt-injection-guard-small`, bf16 | local GPU, `guard.py` here | `EIKA_GUARD_URL`, default `http://127.0.0.1:9940` |
 | `decision` | `vllm-sr/d3-flash` Q8_0 on llama.cpp | local GPU, your own llama.cpp build | `EIKA_DECISION_URL`, default `http://127.0.0.1:9941` |
 
-Keep all four variables in `~/.config/eika/live.env` (mode 600), never in the
-repository.
+Keep the variables you need in `~/.config/eika/live.env` (mode 600), never in
+the repository. The Phase 2 live suite needs the chat endpoint and key, Docker,
+and PostgreSQL. It starts a temporary PostgreSQL container unless
+`EIKA_TEST_DATABASE_URL` names a test server. The guard and decision models are
+not needed for that suite. Run it with `make live`; see `evals/README.md`.
 
 ## Injection screen
 

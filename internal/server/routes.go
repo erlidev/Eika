@@ -23,6 +23,7 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("POST /api/auth/setup", s.handleSetup)
 		s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 		s.resourceRoutes(api)
+		s.liveRoutes(api)
 	}
 	s.mux.Handle("/api/", s.authenticated(api))
 

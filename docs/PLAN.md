@@ -239,10 +239,10 @@ Removal and verification. None of it changes what the user can do.
 - [x] **P2-22**: Schedule idle compaction.
 - [x] **P2-19**: Test process death and explicit resume with Docker.
 - [x] **P3-16**: Complete phone and touch coverage and measure history.
-- [ ] **P2-25**: Run persistent home functional scenarios. `evals/live` drives
+- [x] **P2-25**: Run persistent home functional scenarios. `evals/live` drives
       inference only today, so this package first gives it a real server and
       session. The live suites of later phases build on that.
-- [ ] **P2-26**: Check real-request prefixes and queue ordering.
+- [x] **P2-26**: Check real-request prefixes and queue ordering.
 - [ ] **P2-27**: Close phase 2.
 - [ ] **P3-18**: Close phase 3.
 
@@ -406,12 +406,14 @@ in the code beside what replaces them.
         resumes it
       - a forced compaction, then a question only the compacted span answers,
         through `history_search`
-      - the prefix-stability check on real requests: `cache_n` covers the whole
-        previous request on every turn but the first after a compaction
+      - the prefix-stability check on real requests: `cache_n` covers the
+        previous request through the start of its assistant-generation header
+        on every turn but the first after a compaction. The bench template can
+        render that header differently when it replays the answer
       - two sessions of the real server on a pool of one slot: an interactive
         message is answered before a waiting background call
-      - [ ] **P2-25**: Run persistent home functional scenarios.
-      - [ ] **P2-26**: Check real-request prefixes and queue ordering.
+      - [x] **P2-25**: Run persistent home functional scenarios.
+      - [x] **P2-26**: Check real-request prefixes and queue ordering.
 
 **Exit:** in the home session, "look into X and keep notes in a project for it"
 should:

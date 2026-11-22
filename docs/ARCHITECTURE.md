@@ -417,8 +417,10 @@ Tool results stay in the entry store but are not indexed. The home-only
 `history_search` tool ranks matches, filters by session, project and time, and
 returns five groups per page. Each group contains the hit and nearby turns,
 with limits on entry count and output size. Without a query it browses entries
-before the oldest retained message. `history_read` reads an entry or a window,
-including tool results, and can return full payloads. The server binds both
+before the oldest retained message. Entries show readable message text and tool
+calls without reasoning or usage metadata. Long hits show an excerpt near the
+literal query when possible. `history_read` reads an entry or a window,
+including tool results, and can return full text. The server binds both
 through the builtin registry to the store.
 
 ### Model-call accounting
@@ -1025,6 +1027,17 @@ files. Vet and staticcheck also compile the `live`-tagged tests.
   tests run in `make check`; the live test skips without
   `EIKA_LIVE_ENDPOINT` and fails when that is set but silent. `evals/README.md`
   says how to run it, add a scenario and read a report.
+
+The live suite also starts a separate Core process over a temporary Postgres
+database and a real home computer. Its persistent home scenario records its
+results in the same report as the model scenarios.
+It covers restart recovery, history recall, prompt prefixes and queue priority.
+The restart test gates a sandbox command until Core restarts. The recall test
+seeds complete conversation turns and runs compaction and recall on the model.
+For the queue check, two temporary routine sessions and home use one pool slot.
+A proxy holds real model responses while the test observes the queue. Controls
+compiled only with `live`, and enabled only by the live fixture, start background
+runs and expose their lease times through authenticated test routes.
 
 ## Agent definitions
 

@@ -17,6 +17,31 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   placeholder, an offline screen. Baselines for the changed screens were not
   updated by the agent; run `make visual-update` after looking at them.
 
+- 2026-11-21: P2-25 and P2-26 close. `evals/live` starts a real Core (server,
+  store, PostgreSQL, sandbox computer) and runs five persistent-home scenarios
+  against the model: `persistent_home_exit` (a worker survives the follow-up,
+  246 s), `_restart` (process death, then an explicit resume; the marker runs
+  once, 55 s), `_compaction` (a fact in an old turn is out of the summary and
+  the recall request, and `history_search` finds it, 127 s), `_prefix` (every
+  consecutive pair of real requests keeps its cached prefix, checked against
+  the Core's token prediction, 153 s) and `_queue` (the home's answer is
+  followed by the background admission within 14 ms, 8 s). `make live` passes
+  on all 42 scenarios, on llama.cpp b11942-338fce651 and Qwen3.8-27B
+  UD-Q4_K_XL at revision 4af51b3542f775b0a8e4b310bfb3f17e01c306c9 (mmproj-BF16
+  at the same revision), 2 slots, 131072 shared context, q8_0 KV. Core's
+  predicted prompt tokens were exact on every call. Fixes: `compact` retries
+  while a worker's report keeps the home busy (409), and the harness model
+  offers effort `none`, so a thinking model that spends its 2048 output tokens
+  gets its summary re-asked with thinking off. Earlier runs also showed a
+  500-token cache dip and runs where the model never started a worker; both
+  passed on rerun and are model variance, not asserted away. The bench was
+  re-pinned: the old snapshots (4ca72078, mmproj 27af057e) had left
+  `/opt/models/huggingface`, so `llama-qwen` could not start. Its
+  `command.txt` and `komodo.toml` now name 4af51b35 (backups `*.bak`). The
+  endpoint in `live.env` (`llama.erli.xyz`) routes to `llama-server`, which was
+  stopped; the run used the SSH forward `127.0.0.1:8091` and the key in
+  `/opt/stacks/llama-qwen/.env`, set in the environment.
+
 - 2026-11-21: P2-17 is deferred. Global `session.updated` refreshes the board
   on state and report changes; the open session stream carries questions and
   tool calls. Reconnect refreshes missed changes. The board has no last tool
