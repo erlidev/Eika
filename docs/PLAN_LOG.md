@@ -2169,3 +2169,18 @@ first. Tests: failure after the write, after the commit, retry after restart,
 outside edits and deletions, invalid files, full rebuild; `make smoke` passed.
 P5-05 hook: `Writer.SetScreen` (default `HoldPending`). Open: the writer is not
 yet handed to tools (P5-06).
+
+## P5-08 — Memory section builder (2026-11-22)
+
+`memory.BuildSection` renders the `## Memory` section (pinned bodies, index,
+visible overflow count) in `internal/memory/section.go`. Active, unexpired
+memories only; pins first (at most 12, extras fall to the index), then newest
+`updated` with name as tie-breaker; each part rendered by type then name; whole
+entries only. It bisects the largest priority prefix whose full text counts at
+or under 3,000 tokens, so labels and the overflow line are inside the budget.
+The counter is injected as `CountFunc`; an inexact or failed count is an error
+(`ErrNotExact`, wrapped cause) and the caller keeps the previous snapshot.
+`CheckPinBudget` is the writer/API check for a pin or edit: `ErrTooManyPins`
+over 12, `ErrPinsOverBudget` over 3,000 (pins only, labels included). Not
+wired: P5-09 adapts the provider counter to `CountFunc` and calls it; the
+writer does not call `CheckPinBudget` yet (P5-06 tools and the UI will).
