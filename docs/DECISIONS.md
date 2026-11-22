@@ -2441,3 +2441,20 @@ replace the newer text after a conflict.
   fail after ntfy accepts the push. It does not replay
   notifications after a restart: ntfy has no delivery id for deduplication, so
   replay could send the same notification twice. A notification can be lost.
+
+## Tool gate and read-only tools (P4-03)
+
+- The agent loop asks `Options.Gate` (`sentry.Gate.Decide`) before every tool
+  call. A deny, and an ask until phase 11, return `Blocked: <reason>` and the
+  tool does not run. The model is never told a gate exists.
+- `tool.ReadOnlyTool` is an optional interface (`ReadOnly() bool`) because one
+  type serves several tools that differ by name. A tool that does not implement
+  it, or answers false, counts as side-effecting (`tool.SideEffecting`). This
+  is the safe default: a new tool, and every MCP tool, fails closed until its
+  author declares it read-only.
+- When the gate cannot answer (an error or the 5 s timeout), side-effecting
+  tools return the generic `Blocked: this is not available right now` and
+  read-only ones run.
+- `web_search` and `web_fetch` count as side-effecting: they reach the network,
+  so the query or URL can carry data out. They stay blocked while the gate is
+  down even though they change nothing on a computer.
