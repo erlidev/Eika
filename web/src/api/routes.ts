@@ -21,6 +21,7 @@ import type {
   Entry,
   GlobalInstructions,
   Halt,
+  GuardHealth,
   HaltRequest,
   MCPPromptResult,
   MCPServer,
@@ -535,4 +536,21 @@ export function halt(input: HaltRequest = {}): Promise<Halt> {
 /** resumeHalt lifts the halt; the runs it aborted stay aborted. */
 export function resumeHalt(): Promise<Halt> {
   return request<Halt>("/api/halt/resume", { method: "POST" });
+}
+
+/** Guard and trusted web sources. */
+export function getGuard(signal?: AbortSignal) {
+  return request<GuardHealth>("/api/guard", { signal });
+}
+export function getTrustedSources(signal?: AbortSignal) {
+  return request<{ hosts: string[] }>("/api/trusted-sources", { signal });
+}
+export function addTrustedSource(host: string) {
+  return requestEmpty("/api/trusted-sources", { method: "POST", body: { host } });
+}
+export function removeTrustedSource(host: string) {
+  return requestEmpty(`/api/trusted-sources/${encodeURIComponent(host)}`, { method: "DELETE" });
+}
+export function trustWithheld(id: string) {
+  return requestEmpty(`/api/withheld/${encodeURIComponent(id)}/trust`, { method: "POST" });
 }

@@ -1219,6 +1219,18 @@ export const scenarios = {
       return b.world;
     },
   },
+  "security-guard-down": {
+    description: "Guard down, screening required and trusted web hosts.",
+    path: "/",
+    build: () => {
+      const b = configured();
+      b.home();
+      b.world.guard = "down";
+      b.world.settings.settings.screen_required = true;
+      b.world.trustedSources = ["example.com", "news.example.org"];
+      return b.world;
+    },
+  },
   "chat-cards": {
     description: "Home transcript with delegation, projects, recall, compaction and notices.",
     path: "/",

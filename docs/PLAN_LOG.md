@@ -9,6 +9,10 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-22: P4-16 adds guard health, screen settings and trusted sources to
+  Security, and an app-wide guard-down banner. Visual baselines need review
+  outside the sandbox.
+
 - 2026-11-22: P4-15 adds exact-host trusted sources to ingest and the API.
   Trusted suspect windows stay in the result and retain withheld and audit rows.
   Socket and Docker tests need an external run.

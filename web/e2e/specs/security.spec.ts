@@ -39,3 +39,22 @@ for (const [label, viewport] of [
     await expectShot(eika, `security-card-${label}`, "xpath=(//*[@data-transcript-row])[1]/..");
   });
 }
+
+for (const [label, viewport] of [
+  ["desktop", { width: 1280, height: 900 }],
+  ["phone", { width: 390, height: 844 }],
+] as const) {
+  test(`${label}: guard down and trusted sources`, async ({ open, expectShot }) => {
+    const eika = await open({ scenario: "security-guard-down", viewport });
+    await expect(
+      eika.page.getByRole("status").filter({ hasText: "guard is not responding" }),
+    ).toContainText("blocked");
+    await expectShot(eika, `guard-down-${label}`);
+    await eika.click("Settings");
+    await eika.click("Security");
+    const dialog = eika.page.getByRole("dialog");
+    await expect(dialog.getByRole("switch", { name: "Require screening" })).toBeChecked();
+    await expect(dialog.getByText("example.com", { exact: true })).toBeVisible();
+    await expectShot(eika, `security-trusted-${label}`, "role=dialog");
+  });
+}
