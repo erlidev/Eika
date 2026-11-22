@@ -184,7 +184,6 @@ function LimitField({
 /** EgressFields edits what a sandbox may reach: the mode, and the allowlist it uses. */
 export function EgressFields({ id, draft, onChange, host, problems }: SandboxFieldsProps) {
   const labelId = `${id}-egress-label`;
-  const control = host?.egress_control ?? false;
   const mode = egressModes.find((m) => m.value === draft.mode);
   return (
     <div className="space-y-2">
@@ -214,12 +213,14 @@ export function EgressFields({ id, draft, onChange, host, problems }: SandboxFie
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <p className="text-muted-foreground text-xs">
-          {control
-            ? mode?.hint
-            : "This harness has no egress control. Computers have direct network routes."}
-        </p>
+        <p className="text-muted-foreground text-xs">{mode?.hint}</p>
       </div>
+      {host?.egress_control === false && (
+        <p role="alert" className="text-destructive text-xs">
+          This host has no network access control. Computers connect directly, so these settings and
+          the allowlist do not restrict their network access.
+        </p>
+      )}
       {draft.mode === "allowlist" && (
         <AllowlistField
           id={`${id}-allow`}
@@ -311,7 +312,7 @@ function AllowlistField({ id, allow, problem, onChange }: AllowlistFieldProps) {
         )}
       >
         {shown ??
-          "A host such as github.com, or *.github.com for every name below it. Git, npm, pip, Go, curl, and Node reach them through the harness's proxy."}
+          "Enter a host such as github.com, or *.github.com for its subdomains. Programs must use the proxy to reach these hosts."}
       </p>
     </div>
   );

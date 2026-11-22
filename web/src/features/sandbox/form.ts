@@ -36,17 +36,17 @@ export const egressModes: readonly { value: EgressMode; label: string; hint: str
   {
     value: "public",
     label: "Public",
-    hint: "The sandbox reaches public hosts through the proxy.",
+    hint: "The computer can reach public internet hosts. It cannot reach private network addresses.",
   },
   {
     value: "allowlist",
     label: "Allowlist",
-    hint: "The sandbox reaches only the hosts listed below, through the harness's proxy. Tools that ignore HTTP_PROXY reach nothing.",
+    hint: "The computer can reach only the public hosts listed below.",
   },
   {
     value: "none",
     label: "None",
-    hint: "The sandbox reaches the harness and its git hub, and nothing on the internet.",
+    hint: "The computer cannot reach the internet.",
   },
 ];
 
@@ -137,7 +137,7 @@ export function normalizePattern(input: string): { pattern?: string; problem?: s
     }
   }
   if (p === "" || p === "*") {
-    return { problem: "Enter a host such as github.com; to allow every host, choose Open." };
+    return { problem: "Enter a host such as github.com; to reach public hosts, choose Public." };
   }
   if (p.length > 253) return { problem: "A host name is at most 253 characters." };
   if (ipv4.test(p) || (p.includes(":") && /^[0-9a-f:.]+$/.test(p))) return { pattern: p };
