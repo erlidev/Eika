@@ -1,12 +1,12 @@
-/** The open memory in full: its fields, why it waits or was archived, its source, and its body. */
+/** The open memory: its state, why it waits or was archived, its source, and the editor. */
 
 import { ArrowLeft } from "lucide-react";
 import { Link } from "react-router";
 
 import { ApiError } from "@/api/client";
 import type { Memory } from "@/api/types";
-import { Markdown } from "@/components/Markdown";
 import { LoadError, Notice } from "@/components/Notice";
+import { MemoryEditor } from "@/features/memory/MemoryEditor";
 import { PinMark, StateChip, TypeChip } from "@/features/memory/Chips";
 import { useMemory, useSources } from "@/features/memory/queries";
 import { sourceParts } from "@/features/memory/state";
@@ -70,7 +70,6 @@ function Body({ memory }: { memory: Memory }) {
             <StateChip state={memory.state} />
             {memory.pinned && <PinMark />}
           </div>
-          <p className="text-sm break-words">{memory.description}</p>
         </header>
         {memory.state === "pending" && (
           <Notice tone="warning">
@@ -122,12 +121,8 @@ function Body({ memory }: { memory: Memory }) {
             </>
           )}
         </dl>
-        <section aria-label="Body" className="border-t pt-3">
-          {memory.body.trim() === "" ? (
-            <p className="text-muted-foreground text-sm">No body.</p>
-          ) : (
-            <Markdown>{memory.body}</Markdown>
-          )}
+        <section aria-label="Edit" className="border-t pt-3">
+          <MemoryEditor memory={memory} />
         </section>
       </article>
     </div>

@@ -2357,6 +2357,25 @@ with a flagged span, archived). New `memory.spec.ts` baselines for desktop and a
 coarse-pointer phone; the rail and bottom bar gain a fourth item, so the shell,
 Activity, Projects and touch baselines are expected to change.
 
+## P5-14 — Memory editor and Instructions tab (2026-11-22)
+
+The open memory is now a form: description, type, expiry and the body in the
+shared `MarkdownField` (no second editor), with Save, Discard, Pin/Unpin,
+Archive and Purge. A save sends only changed fields and the `content_sha` the
+draft was made from. A 409 about a changed memory fetches the current version and
+shows it above the draft: "Keep my edits and save again" rebases the draft on
+the new sha, "Use the current version" drops it. A credential (400), a flagged
+edit (saved, now pending and unpinned) and a 503 (nothing changed) are said
+plainly; a pin limit's 409 is shown as its own message. Purge confirms and says
+git history, old conversations and backups may keep the text. Memory has a second
+tab, Instructions, at `/memory?tab=instructions`, which renders the settings dialog's
+existing `InstructionsSettings` and API (Settings keeps its tab); the query keeps the tab clear of memory names. The touch rule's min-height
+outranks classes, so the body's height is inline. The harness already modelled
+409, 400, pending and 503 (`failRoute`). Tests: `MemoryEditor.test.tsx` (edit,
+stale, credential/503, purge confirm) and `memory.spec.ts`; baselines `memory-
+editor-desktop`, `-phone`, `-phone-actions` are new, and the memory detail shots
+change.
+
 ## Fix: per-install memory computer id (2026-11-22)
 
 The memory computer had the fixed id `memory`, so every stack on a Docker host

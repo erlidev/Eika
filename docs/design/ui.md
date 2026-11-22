@@ -207,7 +207,7 @@ stays in the initial chunk. Add these routes:
 |---|---|---|
 | `/live` | Chat in the Stage layout (section 5) | initial, plus avatar and voice on demand |
 | `/inbox`, `/inbox/:itemId` | Inbox | lazy |
-| `/memory`, `/memory/:id`, `/memory/instructions` | Memory | lazy |
+| `/memory`, `/memory/:id`, `/memory?tab=instructions` | Memory | lazy |
 | `/schedules`, `/schedules/:id` | Schedules | lazy |
 | `/plugins`, `/plugins/:id`, `/skills`, `/skills/:name` | Plugins, Skills | lazy |
 | `/settings/:section?` | Settings, a page and no longer a dialog | lazy |
