@@ -89,25 +89,25 @@ func (h *Host) injectDaemon(ctx context.Context, containerID string) error {
 // owned by root, which the user could read and never write. The container
 // has not started, so the daemon extracts the directory entry itself,
 // carrying the owner in the archive.
-func (h *Host) ownRoot(ctx context.Context, containerID string) error {
+func (h *Host) ownRoot(ctx context.Context, containerID, root string) error {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	if err := tw.WriteHeader(&tar.Header{
 		Typeflag: tar.TypeDir,
-		Name:     path.Base(Root) + "/",
+		Name:     path.Base(root) + "/",
 		Mode:     0o755,
 		Uid:      userID,
 		Gid:      groupID,
 	}); err != nil {
-		return fmt.Errorf("write tar header for %s: %w", Root, err)
+		return fmt.Errorf("write tar header for %s: %w", root, err)
 	}
 	if err := tw.Close(); err != nil {
 		return fmt.Errorf("close tar archive: %w", err)
 	}
-	if err := h.docker.CopyToContainer(ctx, containerID, path.Dir(Root), &buf, container.CopyToContainerOptions{
+	if err := h.docker.CopyToContainer(ctx, containerID, path.Dir(root), &buf, container.CopyToContainerOptions{
 		CopyUIDGID: true,
 	}); err != nil {
-		return fmt.Errorf("own %s in container: %w", Root, err)
+		return fmt.Errorf("own %s in container: %w", root, err)
 	}
 	return nil
 }

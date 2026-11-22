@@ -2635,3 +2635,13 @@ are 20 to 200 Unicode characters. Created and updated use RFC 3339 timestamps;
 expiry is an optional calendar date. The renderer uses a fixed field order and
 preserves the body. `source` is a citation, not a trust field. State is tracked
 as `active`, `pending` or `archived`, as decided in P5-00.
+
+## Memory computer (P5-02)
+
+The private memory computer is not a computer row. It exists as a container and
+volume only (id `memory`, label `eika.role=memory`), so nothing that lists or
+addresses computers can reach it. Its egress is fixed to `none` in the egress
+policy and it joins the internal sandbox network; a host with no such network
+does not start it rather than give it a route out. Its volume is the host's own
+per-computer volume, not a compose volume: only its container mounts it, at
+`/var/lib/eika/memory`. Core reaches it through `server.MemoryRepository`.

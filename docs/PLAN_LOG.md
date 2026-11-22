@@ -2118,3 +2118,18 @@ upgrade test. P4-19 must audit blocklist changes in their transaction.
 Core checks the blocklist and halt for each fetch and hosted search request,
 including redirects and reused connections. The configured SearXNG origin is
 exempt; redirects away from it are checked. Denials are audited by Sentry.
+
+## P5-02 — Memory repository access (2026-11-22)
+
+`internal/memory/repo` offers fixed operations (init, read, write, commit as
+`Eika <eika@localhost>`, status) over named files only; names are slugs, there
+are no paths and no git arguments. `server.EnsureMemory` runs at start, beside
+`keepHome`, and creates the private memory computer (id `memory`, label
+`eika.role=memory`) with its own volume mounted at `/var/lib/eika/memory`, then
+runs `git init`. It has no store row, so the computers API, UI, idle stopper and
+tools never see it, and no run is given its executor. It joins the internal
+sandbox network and the egress policy for it is always `none`; a host without
+that network does not start it. `computer.Spec` gained `Root` and `Role`. No
+compose volume was needed: the computer's volume is made by the host. Tests: the
+operations in a real sandbox, the computers API hiding it, name rejection.
+`make smoke` passed and showed it running on `eika_smoke_sandbox_internal`.

@@ -13,6 +13,10 @@ import (
 // naming the computer it belongs to.
 const Label = "eika.computer"
 
+// RoleLabel is the Docker label of a computer that serves Core rather than an
+// agent, such as the private memory computer.
+const RoleLabel = "eika.role"
+
 // The uid and gid every computer container runs as. A sandbox never runs as
 // root.
 const (
@@ -71,6 +75,12 @@ type Spec struct {
 	Image string
 	// Confinement bounds what the container may consume and reach.
 	Confinement Confinement
+	// Root is the directory the computer's volume is mounted at and its
+	// daemon is confined to. Empty uses Root.
+	Root string
+	// Role marks a computer that serves Core, set as the RoleLabel label.
+	// Empty is an ordinary computer.
+	Role string
 }
 
 // Computer is one sandbox container and its volume.
@@ -89,6 +99,8 @@ type Computer struct {
 	// ProxyToken is the password the computer presents to the egress proxy,
 	// which knows it by its id and this token.
 	ProxyToken string
+	// Root is the directory the volume is mounted at.
+	Root string
 	// Volume is the name of the volume mounted at the computer root.
 	Volume string
 	// Address is the base URL of the computer's eikad daemon as the harness
@@ -100,6 +112,9 @@ type Computer struct {
 	// CreatedAt is when the container was created, in UTC.
 	CreatedAt time.Time
 }
+
+// RootOf is the directory a computer's files are in.
+func RootOf(cx Computer) string { return orDefault(cx.Root, Root) }
 
 // ContainerName is the Docker name of a computer's container. It doubles as
 // the hostname other containers reach it on.

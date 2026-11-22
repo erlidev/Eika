@@ -362,7 +362,7 @@ Dreaming, embeddings, project memory, automatic retrieval and the fuller
       renderer. Cover real frontmatter inputs, slug/path rejection and the 2 KiB
       body limit. Settle durable state (question 2); keep `source` as a citation,
       with no trust/provenance field. No table before its first writer.
-- [ ] **P5-02**: Build repository access through `internal/executor`, with a private
+- [x] **P5-02**: Build repository access through `internal/executor`, with a private
       sandbox mount limited to the memory repository (question 1). Add fixed git
       operations, repository initialisation and author attribution. No agent gets
       this executor, a host path or arbitrary git arguments. Wire its lifecycle
@@ -820,7 +820,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - the `core.memories` index (FTS)
       - `Reconcile` at start-up and `make memory-reindex`
       - [x] **P5-01**: File format, parser and validator.
-      - [ ] **P5-02**: Isolated repository access through the executor.
+      - [x] **P5-02**: Isolated repository access through the executor.
       - [ ] **P5-03**: Single writer, index and FTS.
       - [ ] **P5-04**: Recovery and reindex.
 - [ ] Add the tools `memory_search`, `memory_read`, `memory_write` and
