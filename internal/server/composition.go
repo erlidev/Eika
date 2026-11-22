@@ -63,7 +63,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		}
 	}()
 
-	engine, pages, err := buildSearch(ctx, cfg, st, secrets, log)
+	engine, pages, err := buildSearch(ctx, cfg, st, secrets, log, func() sentry.Gate { return s.gate })
 	if err != nil {
 		return err
 	}
@@ -138,13 +138,15 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 }
 
 // buildSearch builds the search engine over the built-in backends and the
-// page reader. The sources share one client; fetch has its own, which
-// refuses to connect to a non-public address, because its URLs come from the
-// model.
-func buildSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets *secret.Box, log *slog.Logger) (*search.Engine, *fetch.Reader, error) {
-	client := &http.Client{Timeout: search.Timeout}
+// page reader. Hosted sources share a guarded client; fetch has its own.
+// SearXNG uses a client that exempts its configured local origin.
+func buildSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets *secret.Box, log *slog.Logger, gate func() sentry.Gate) (*search.Engine, *fetch.Reader, error) {
+	client := coreWebClient(gate, "")
+	client.Timeout = search.Timeout
+	searxClient := coreWebClient(gate, cfg.SearxNGURL)
+	searxClient.Timeout = search.Timeout
 	return NewSearch(ctx, cfg, st, secrets, log, search.Searchers{
-		SearxNG:      web.NewSearxNG(client, cfg.SearxNGURL),
+		SearxNG:      web.NewSearxNG(searxClient, cfg.SearxNGURL),
 		Exa:          web.NewExa(client),
 		Tavily:       web.NewTavily(client),
 		Brave:        web.NewBrave(client),
@@ -154,7 +156,7 @@ func buildSearch(ctx context.Context, cfg config.Config, st *store.Store, secret
 		GitHubCode:   github.New(client, github.DefaultURL, github.Code),
 		GitHubRepos:  github.New(client, github.DefaultURL, github.Repos),
 		GitHubIssues: github.New(client, github.DefaultURL, github.Issues),
-	}, fetch.NewClient(cfg.FetchFixtureHosts...))
+	}, coreWebClient(gate, "", cfg.FetchFixtureHosts...))
 }
 
 // NewSearch builds the search engine over searchers, and the page reader

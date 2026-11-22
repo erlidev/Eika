@@ -263,7 +263,7 @@ Trusting a source from the withheld list lets its next page through, scored.
 - [x] **P4-19**: Make a connection an `egress` action: `allow` or `deny` for the
       blocklist, netguard, halt and allowlist mode. Add the blocklist table and API,
       and make halt refuse new connections and close open ones.
-- [ ] **P4-20**: Check the blocklist and halt before `web_fetch` and every search
+- [x] **P4-20**: Check the blocklist and halt before `web_fetch` and every search
       backend except the local SearXNG dials.
 - [x] **P4-21**: Add the blocklist to Settings, Security.
 
@@ -501,7 +501,7 @@ and also requires the exit checks.
       - [x] **P4-17**: Retire the `open` egress mode and move every computer behind the proxy.
       - [x] **P4-18**: Update the computer egress settings for the modes that remain.
       - [x] **P4-19**: Decide each connection through the gate, with the blocklist and halt.
-      - [ ] **P4-20**: Check the blocklist and halt before Core's own fetches.
+      - [x] **P4-20**: Check the blocklist and halt before Core's own fetches.
 - [ ] Halt: an always-visible button, resume, and Core's reaction (abort runs, a
       scheduler pause hook, a banner, a push).
       - [x] **P4-09**: Add halt state, run abort, the pause hook, the push and the API.
