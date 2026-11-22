@@ -44,7 +44,7 @@ export function Shell() {
     <div className="bg-background text-foreground pt-safe px-safe flex h-dvh overflow-hidden">
       {!phone && <Rail />}
       <div className={cn("flex min-w-0 flex-1 flex-col", !bar && "pb-viewport")}>
-        <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
+        <header className="flex h-10 shrink-0 [@media(pointer:coarse)]:min-h-[48px] items-center gap-2 border-b px-3">
           <h1 className="text-sm font-semibold">{page?.title ?? "Eika"}</h1>
           <span className="ml-auto flex items-center gap-1">
             {phone && <HaltSlot layout="header" />}
