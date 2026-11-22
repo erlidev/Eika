@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -124,12 +125,32 @@ type AuditLog interface {
 	AppendAudit(ctx context.Context, e AuditEntry) error
 }
 
-// New returns the gate for a deployment. Until later packages add rules it
-// allows every action and passes content through; every decision that is not
-// an allow is written to log.
-func New(log AuditLog) Gate { return &gate{log: log} }
+// Options are the parts a gate is built from.
+type Options struct {
+	// Audit receives every decision that is not a plain allow, and every removal.
+	Audit AuditLog
+	// Withheld receives the text of every removal. Nil keeps no record.
+	Withheld WithheldLog
+	// Screen is the injection screen. Nil means no screen is configured, and
+	// content passes unscreened.
+	Screen Screener
+	// Threshold is the score at or over which a window is removed.
+	Threshold float64
+	// Log reports a screen that did not answer. Nil uses slog.Default.
+	Log *slog.Logger
+}
 
-type gate struct{ log AuditLog }
+// New returns the gate for a deployment. Until later packages add rules it
+// allows every action. Ingest strips invisible characters, redacts secrets,
+// screens and wraps.
+func New(o Options) Gate {
+	if o.Log == nil {
+		o.Log = slog.Default()
+	}
+	return &gate{Options: o}
+}
+
+type gate struct{ Options }
 
 func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 	v := g.policy(a)
@@ -140,7 +161,7 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 	if v.Decision == Ask {
 		event = EventAsk
 	}
-	err := g.log.AppendAudit(ctx, AuditEntry{
+	err := g.Audit.AppendAudit(ctx, AuditEntry{
 		Event: event, Principal: a.Principal, Key: a.Key, Kind: string(a.Kind),
 		Name: a.Name, Reason: v.Reason,
 	})
@@ -152,7 +173,3 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 
 // policy is the rule for one action. Later packages add rules here.
 func (g *gate) policy(Action) Verdict { return Verdict{Decision: Allow} }
-
-func (g *gate) Ingest(_ context.Context, _ Source, content string) (string, error) {
-	return content, nil
-}

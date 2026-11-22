@@ -9,6 +9,19 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-04 added ingest for `web_fetch`: `sentry/scan` (invisible characters,
+  redaction), `sentry/screen` (guard client), `gate.Ingest` (strip, redact, screen,
+  wrap) and migration 0023 `core.withheld` (`store.AppendWithheld`). `agent.callTool`
+  ingests right after the tool returns, before the event and the store; `agent` adds
+  `sentry.UntrustedNotice` to the base prompt after any override. Config: `guard_url`
+  (`EIKA_GUARD_URL`, default `http://guard:9940`), `screen_threshold` (0.9).
+  - Guard timeout 5 s (the design's): a 20-window page is about 2.6 s on a busy CPU.
+    Guard down or silent: text passes wrapped, no mark (P4-14 adds `unscanned`). A
+    failed record blocks the result.
+  - Next: P4-07 reads `withheld`; `call_key` (`<session>:<call id>`) matches a tool
+    card for P4-08's mark. `Ingest` returns only text, so the mark needs a richer
+    return or a lookup by `call_key`. The threshold is config until P4-14's settings.
+    Ingest runs in `callTool` for the name `web_fetch` only; P4-05 adds search.
 - 2026-11-21: P4-03 added `Options.Gate`; `agent.dispatch` calls `Decide` (5 s limit)
   after the tool lookup and before any tool runs. Deny and ask (until phase 11) give
   `Blocked: <reason>`; an error or timeout gives `Blocked: this is not available

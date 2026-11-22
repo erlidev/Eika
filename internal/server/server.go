@@ -24,6 +24,7 @@ import (
 	"github.com/erlidev/eika/internal/search/fetch"
 	"github.com/erlidev/eika/internal/secret"
 	"github.com/erlidev/eika/internal/sentry"
+	"github.com/erlidev/eika/internal/sentry/screen"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
@@ -165,7 +166,11 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		s.tree = session.NewTree(deps.Store)
 	}
 	if deps.Store != nil {
-		s.gate = sentry.New(deps.Store)
+		o := sentry.Options{Audit: deps.Store, Withheld: deps.Store, Threshold: cfg.ScreenThreshold, Log: log}
+		if cfg.GuardURL != "" {
+			o.Screen = screen.New(cfg.GuardURL)
+		}
+		s.gate = sentry.New(o)
 	}
 	s.inference = inference.New(log)
 	s.counters = newSessionCounters()

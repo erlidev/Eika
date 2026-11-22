@@ -41,7 +41,7 @@ egress proxy are network calls and run in the harness.
 | `egress` | Egress modes, allowlist patterns, the proxy |
 | `netguard` | Public-address-only dialing |
 | `store` | PostgreSQL pool, embedded migrations, queries |
-| `sentry` | The permission authority behind one interface, `Gate`: `Decide` before a tool call and `Ingest` on untrusted results. Depends on no other part of Core (never `server`, `agent` or `computer`); allows everything until later packages add rules, and writes the audit log through an `AuditLog` that `store` implements |
+| `sentry` | The permission authority behind one interface, `Gate`: `Decide` before a tool call and `Ingest` on untrusted results. Depends on no other part of Core (never `server`, `agent` or `computer`); allows everything until later packages add rules, and writes the audit log and the withheld rows through `AuditLog` and `WithheldLog` that `store` implements. `Ingest` is the pipeline for `web_fetch` results: `scan` strips invisible characters and redacts secrets, `screen` (the guard client) scores the text and a window at or over the threshold becomes `[removed:suspect]`, then the `<untrusted>` wrapper. `agent.callTool` runs it right after the tool returns and before the result is emitted or stored; a guard that does not answer passes the text wrapped, an ingest error returns `Blocked: this is not available right now`. `agent` appends `sentry.UntrustedNotice` to the base prompt in code, after any override |
 | `subagent` | Named child sessions, serialized start/resume, code-owned states, cancel, reports and the running limit; run callback supplied by the caller |
 | `session` | Session tree: append, head, branch, outline; `session.Store` records runs |
 | `search` | Failover chain, quotas, cache; backends in `web`, `wikipedia`, `arxiv`, `github`; `fetch` reads a URL; `filter` is the JS filter |
@@ -498,6 +498,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `retired_profiles`, `retired_session_profiles`, `retired_profile_defaults` | snapshots of profile rows, session choices, and the default profile setting from migration 0021; not read by the runtime |
 | `model_calls` | session, run, entry, model, sections, tools, parameters (jsonb); the measured counts (prompt, completion, total, cached, prefilled, reasoning with its source), the prediction (tokens, method, drift), the window and the endpoint; NULL wherever a number is not known; the queue fills `queue_ms`, `slot` (the server's slot the request named, NULL when it named none), `priority` (and `class` where a run is resolved from one), `prefill_ms` and `decode_ms` come from the endpoint's timings, and `agent` stays NULL until the agents fill it |
 | `audit` | Sentry's append-only log (migration 0022): event, session, run, subagent, routine, computer, action key, kind, name, argument digest, reason, detail (jsonb). A trigger refuses update, delete and truncate; no foreign keys, so rows outlive their session |
+| `withheld` | text ingest removed from a result (migration 0023): source kind and name (the URL), session, run, call key (matches the tool card), wrapper id, text, score. No foreign keys |
 | `auth_password`, `auth_sessions` | PBKDF2 hash; session tokens by SHA-256 |
 | `search_keys`, `search_usage` | sealed search keys; quota counters and cooldowns |
 | `mcp_servers`, `mcp_credentials` | configured servers (sealed headers/env); OAuth client and tokens (sealed) |
@@ -652,6 +653,7 @@ compose stack, which sets only `EIKA_DATABASE_URL`. Notable fields:
 - `allowed_origins`: extra origins for the event stream and MCP redirects,
   after the one derived from `listen`.
 - `public_url`: when https, serves the OAuth Client ID Metadata Document.
+- `guard_url` (`EIKA_GUARD_URL`, default `http://guard:9940`): the guard that screens untrusted content; empty turns the screen off. `screen_threshold` (default 0.9): the score at or over which a window is removed.
 - `auth_token`: optional fixed API token.
 
 Everything a user chooses is a database row. Stored credentials are sealed

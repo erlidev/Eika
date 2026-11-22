@@ -117,7 +117,9 @@ func TestResearcherFetchesAWebPage(t *testing.T) {
 		t.Fatalf("researcher requests = %d", len(requests))
 	}
 	results := toolResultsByCall(requests[1])
-	if results["fetch"] != "# Guide\n\nthe timeout is 30s\n" {
+	// The page arrives through ingest, in the untrusted wrapper.
+	if got := results["fetch"]; !strings.HasPrefix(got, `<untrusted source="web:docs.example"`) ||
+		!strings.Contains(got, "# Guide\n\nthe timeout is 30s\n") {
 		t.Fatalf("fetch result = %q", results["fetch"])
 	}
 	if reqs := d.fetched.Requests(); len(reqs) != 1 || reqs[0].URL.String() != "https://docs.example/guide.md" {

@@ -1,6 +1,10 @@
 package agent
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/erlidev/eika/internal/sentry"
+)
 
 // ChatPrompt is the built-in base prompt of every agent. It makes no claim
 // about files or commands: a model told it works in a sandbox would offer to
@@ -31,9 +35,14 @@ func (a *Agent) promptWith(basePrompt *string) []Section {
 	if basePrompt != nil {
 		base = *basePrompt
 	}
+	base = strings.TrimSpace(base)
+	if a.opts.Gate != nil {
+		// Added here, after any override, so a replaced prompt keeps it.
+		base = strings.TrimSpace(base + "\n\n" + sentry.UntrustedNotice)
+	}
 	var sections []Section
-	if text := strings.TrimSpace(base); text != "" {
-		sections = append(sections, newSection(SectionBase, text))
+	if base != "" {
+		sections = append(sections, newSection(SectionBase, base))
 	}
 	if text := strings.TrimSpace(a.opts.Instructions); text != "" {
 		sections = append(sections, newSection(SectionInstructions, text))

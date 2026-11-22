@@ -28,7 +28,7 @@ func clearEnv(t *testing.T) {
 		"EIKA_LISTEN", "EIKA_DATABASE_URL", "EIKA_DOCKER_SOCKET",
 		"EIKA_SEARXNG_URL", "EIKA_SANDBOX_IMAGE", "EIKA_SANDBOX_NETWORK",
 		"EIKA_EIKAD_BINARY", "EIKA_AUTH_TOKEN",
-		"EIKA_SECRET_KEY_FILE", "EIKA_ALLOWED_ORIGINS", "EIKA_PUBLIC_URL",
+		"EIKA_SECRET_KEY_FILE", "EIKA_ALLOWED_ORIGINS", "EIKA_PUBLIC_URL", "EIKA_GUARD_URL",
 	} {
 		t.Setenv(name, "")
 		if err := os.Unsetenv(name); err != nil {
@@ -60,6 +60,7 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 	t.Setenv("EIKA_EGRESS_PROXY_URL", "http://env:4000")
 	t.Setenv("EIKA_EIKAD_BINARY", "/tmp/eikad")
 	t.Setenv("EIKA_SECRET_KEY_FILE", "/tmp/key")
+	t.Setenv("EIKA_GUARD_URL", "http://gpu:9940")
 
 	cfg, err := config.Load(path)
 	if err != nil {
@@ -79,6 +80,8 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 		SecretKeyFile:          "/tmp/key",
 		AuthToken:              "from-env",
 		AllowedOrigins:         []string{"localhost:9999", "127.0.0.1:9999"},
+		GuardURL:               "http://gpu:9940",
+		ScreenThreshold:        0.9,
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %v, want %v", cfg, want)

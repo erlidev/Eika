@@ -197,7 +197,7 @@ here halts, restricts or settles anything.
       verdict is `allow` until a later package adds a rule. A block is the generic
       `Blocked: <reason>` result, and a gate that cannot answer blocks the
       side-effecting tools only.
-- [ ] **P4-04**: Ingest `web_fetch` results, once, before the result is stored: remove
+- [x] **P4-04**: Ingest `web_fetch` results, once, before the result is stored: remove
       invisible characters, redact secrets, screen, wrap, and add the one-line
       `<untrusted>` reminder in code, so a prompt override cannot drop it. Add the
       guard client, the `withheld` table, the `guard_url` config key and the
@@ -473,7 +473,7 @@ and also requires the exit checks.
       Eika, without the wrapper. A removal writes a `withheld` row (source,
       session, text, score) and an audit row, and marks the tool card in the UI.
       It sends no push and stops nothing.
-      - [ ] **P4-04**: Ingest `web_fetch` results: invisible characters, redaction, screen, wrapper.
+      - [x] **P4-04**: Ingest `web_fetch` results: invisible characters, redaction, screen, wrapper.
       - [ ] **P4-05**: Screen each `web_search` result on its own.
       - [ ] **P4-06**: Screen subagent reports and questions on their way to Eika.
 - [ ] When the guard does not answer: content passes wrapped and marked

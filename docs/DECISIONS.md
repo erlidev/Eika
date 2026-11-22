@@ -2458,3 +2458,27 @@ replace the newer text after a conflict.
 - `web_search` and `web_fetch` count as side-effecting: they reach the network,
   so the query or URL can carry data out. They stay blocked while the gate is
   down even though they change nothing on a computer.
+
+## Ingest of `web_fetch` results (P4-04)
+
+- Ingest runs in `agent.callTool`, once, right after a `web_fetch` result returns
+  and before it is emitted or stored, so the session, a replay, a compaction and
+  the history index only hold the ingested text. A result with `IsError` is the
+  harness's own message and is not ingested. Order: invisible characters,
+  redaction, the screen on exactly the resulting text (after the tool's own
+  truncation), then the wrapper. Redaction comes before the screen so a secret is
+  neither sent to the guard nor kept in the withheld text.
+- Adjacent windows at or over the threshold are one removal: one
+  `[removed:suspect]`, one withheld row, one audit row.
+- The guard has a 5 s limit per call (the design's figure). A page at its cap is
+  about 20 windows, 2.6 s at the 130 ms a window P4-01 measured on a busy CPU. A
+  guard that errors, times out or is not configured passes the text wrapped, and
+  nothing marks it until P4-14 adds `unscanned` and `screen_required`.
+- If a removal cannot be recorded, ingest fails and the loop returns
+  `Blocked: this is not available right now` instead of the page.
+- The threshold is the `screen_threshold` config key for now (0.9). The runtime
+  setting and its API arrive with P4-14.
+- The `<untrusted>` line is added to the base prompt by `agent` in code when a
+  gate is set, so an overridden prompt keeps it, and it does not name the gate.
+- The wrapper's closing tag is broken inside the content so a page cannot end its
+  own wrapper.
