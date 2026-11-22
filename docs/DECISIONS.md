@@ -2675,7 +2675,21 @@ paths, modes and contents). Names must match the skill name rule and file paths
 must be clean and relative, checked again in the volume; scripts take them as
 positional arguments, never as script text. A crash inside Replace can leave the
 name missing with the old tree in `.old/`; P6-04's Reconcile marks that skill
-broken. Mounting `/skills` into agent computers is P6-03.
+broken.
+
+## Skills mount (P6-03)
+
+Agent computers mount the installer's volume (`eika-cx-<skills id>`) read-only at
+`/skills` (`computer.Spec.ReadOnly`); with no capabilities, a remount fails. The
+installer is ensured first so Docker never invents an empty volume under that name. A
+host that cannot run the installer, or one that is down, makes the computer without
+the mount and logs it; the computer is not recreated until there is a mount to give.
+Docker cannot add a mount to a container, so `startComputer` replaces a stopped
+computer's container with `Host.Recreate`: the container is removed without volumes,
+and Create mounts the existing data volume again, so home's files are untouched.
+Tokens are new and the egress proxy forgets the old ones. A running computer is never
+recreated; the mount appears when the idle stopper next stops it and it starts again.
+The memory and skills computers are created without the mount and never recreated.
 
 ## Skills store and installer (P6-04)
 

@@ -9,6 +9,7 @@ import (
 	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/skill"
 	"github.com/erlidev/eika/internal/skill/volume"
+	"github.com/erlidev/eika/internal/store"
 )
 
 // The private skills installer computer. It mounts the skills volume and is
@@ -20,6 +21,56 @@ import (
 // container and volume (eika-cx-<id>) belong to this install alone. It sits
 // on the internal sandbox network with egress none.
 const skillsRole = "skills"
+
+// skillsMountPath is where an agent computer sees the skills volume, read-only.
+const skillsMountPath = "/skills"
+
+// skillsMounts is the read-only mount that gives a computer /skills: the
+// installer's volume, made sure of first so that Docker never makes an empty
+// one under that name. A host that cannot run the installer, or an installer
+// that will not come up, gives none; the computer is still made, and a
+// computer without the mount is recreated at its next start once there is one.
+func (s *Server) skillsMounts(ctx context.Context) []computer.ReadOnlyMount {
+	if err := s.EnsureSkillsInstaller(ctx); err != nil {
+		if !errors.Is(err, computer.ErrNoEgressControl) {
+			s.log.Warn("computer made without /skills: the skills installer is not up", "error", err)
+		}
+		return nil
+	}
+	id, err := s.deps.Store.SkillsComputerID(ctx)
+	if err != nil {
+		return nil
+	}
+	return []computer.ReadOnlyMount{{Volume: computer.VolumeName(id), Target: skillsMountPath}}
+}
+
+// mountSkills replaces a stopped computer's container with one that has
+// /skills, because Docker cannot add a mount to a container that exists. The
+// data volume is kept, so every file in it is still there; only the container
+// and its tokens change. Called before a start, it leaves a running computer
+// alone.
+func (s *Server) mountSkills(ctx context.Context, cx store.Computer, host *computer.Computer) error {
+	if host.HasMount(skillsMountPath) || host.State == computer.StateRunning {
+		return nil
+	}
+	mounts := s.skillsMounts(ctx)
+	if len(mounts) == 0 {
+		return nil
+	}
+	fresh, err := s.deps.Computers.Recreate(ctx, *host, computer.Spec{
+		ID:          cx.ID,
+		Image:       host.Image,
+		Confinement: s.confinement(cx.Sandbox),
+		ReadOnly:    mounts,
+	})
+	if err != nil {
+		return fmt.Errorf("add /skills to computer %s: %w", cx.ID, err)
+	}
+	s.forgetEgress(cx.ID)
+	s.log.Info("computer recreated to mount /skills", "computer_id", cx.ID)
+	*host = fresh
+	return nil
+}
 
 // EnsureSkillsInstaller makes the installer computer exist and run. Calling
 // it again changes nothing. A host that cannot give a computer an internal

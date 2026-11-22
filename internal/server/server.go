@@ -45,6 +45,8 @@ const shutdownTimeout = 10 * time.Second
 // production implementation.
 type Computers interface {
 	Create(ctx context.Context, spec computer.Spec) (computer.Computer, error)
+	// Recreate replaces a stopped computer's container, keeping its volume.
+	Recreate(ctx context.Context, cx computer.Computer, spec computer.Spec) (computer.Computer, error)
 	Start(ctx context.Context, cx *computer.Computer) error
 	Stop(ctx context.Context, cx *computer.Computer) error
 	Inspect(ctx context.Context, id string) (computer.Computer, error)

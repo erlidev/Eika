@@ -147,12 +147,20 @@ func (h *fakeHost) Create(_ context.Context, spec computer.Spec) (computer.Compu
 		ProxyToken:  fmt.Sprintf("proxy-token-%s-%d", spec.ID, h.created[spec.ID]),
 		Proxied:     spec.Confinement.Proxied,
 	}
+	for _, m := range spec.ReadOnly {
+		cx.Mounted = append(cx.Mounted, m.Target)
+	}
 	if cx.Image == "" {
 		cx.Image = "eika-sandbox:latest"
 	}
 	h.computers[cx.ID] = &fakeComputer{cx: cx, dir: dir}
 	h.confined[cx.ID] = append(h.confined[cx.ID], spec.Confinement)
 	return cx, nil
+}
+
+// Recreate makes the container again over the same directory.
+func (h *fakeHost) Recreate(ctx context.Context, _ computer.Computer, spec computer.Spec) (computer.Computer, error) {
+	return h.Create(ctx, spec)
 }
 
 // Confine records the confinement a computer was given.

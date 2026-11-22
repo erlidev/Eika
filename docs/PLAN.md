@@ -638,7 +638,7 @@ package that changes it. Project scope, other install sources, `skill_file`,
       merged one), fixed operations (stage a tree, replace a skill directory,
       remove one, hash one) and no agent access (question 1). Core never writes the
       volume itself. Wire the lifecycle in the stack; run `make smoke`.
-- [ ] **P6-03**: Mount the volume read-only at `/skills` in every agent computer:
+- [x] **P6-03**: Mount the volume read-only at `/skills` in every agent computer:
       `computer.Spec` gains an optional read-only mount, and `host.go` adds it to
       `HostConfig.Mounts`. Docker cannot add a mount to an existing container, so a
       computer whose container lacks it (home and projects made before this
@@ -1080,7 +1080,7 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
       - [x] lenient parsing and validation of the specification (P6-01)
       - [x] the store and the `core.skills` rows (P6-04)
       - [x] install from a `.zip` (P6-04; the screen is P6-05)
-- [ ] (P6-02 done; P6-03, P6-12) Mount `/skills` read-only into computers from a volume of its own
+- [ ] (P6-02, P6-03 done; P6-12) Mount `/skills` read-only into computers from a volume of its own
       (`eika-skills`), never from Core's `/var/lib/eika` volume, which holds
       `secret.key` and the memory repository. `make backup` covers it.
 - [ ] (P6-06 to P6-08) Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.
