@@ -16,6 +16,9 @@ var (
 	// ErrNotActive rejects pinning a memory that is not active: only active
 	// memories reach the section, so only they may hold a pin.
 	ErrNotActive = errors.New("only an active memory can be pinned")
+	// ErrNotPending rejects accepting or rejecting a memory that is not
+	// pending: it was already answered, or never needed an answer.
+	ErrNotPending = errors.New("memory is not pending")
 )
 
 // MaxListLimit bounds a page of the memory list.
@@ -151,6 +154,7 @@ func (w *Writer) Purge(ctx context.Context, name, ifSHA string) error {
 	if err := w.index.DeleteMemory(ctx, name); err != nil {
 		return fmt.Errorf("remove memory row: %w", err)
 	}
+	w.changed(ctx, name, "")
 	return nil
 }
 
@@ -189,5 +193,47 @@ func (w *Writer) mutate(ctx context.Context, name, ifSHA string, fn func(old Fil
 	}
 	next.Updated = w.now().UTC().Format(time.RFC3339)
 	res, err := w.store(ctx, next, old, oldData, true, screen, "", message)
+	return res.File, err
+}
+
+// Accept is the user's answer that a pending memory is good: it becomes
+// active, with the text and type the user settled on. The values are final:
+// the caller has merged any edit over the stored memory and run the credential
+// check. A flagged text is promoted on purpose, so no screen verdict is kept.
+// It fails with ErrNotPending for a memory that is active or archived, which
+// is how a repeated answer is refused, and with ErrStale unless ifSHA is the
+// stored file's content_sha.
+func (w *Writer) Accept(ctx context.Context, e Edit) (File, error) {
+	return w.mutate(ctx, e.Name, e.IfSHA, func(old File) (File, *ScreenResult, string, error) {
+		if old.State != "pending" {
+			return File{}, nil, "", ErrNotPending
+		}
+		next := old
+		next.Description, next.Type, next.Body, next.Expires = e.Description, e.Type, e.Body, e.Expires
+		next.State = "active"
+		return next, nil, "Accept memory", nil
+	})
+}
+
+// Reject is the user's answer that a pending memory is not wanted: it is
+// archived with reason, and its screen verdict is kept. The file stays in git
+// history. It fails like Accept for a memory that is not pending.
+func (w *Writer) Reject(ctx context.Context, name, reason, ifSHA string) (File, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	old, oldData, err := w.load(ctx, name)
+	if err != nil {
+		return File{}, err
+	}
+	if err := checkSHA(oldData, ifSHA); err != nil {
+		return File{}, err
+	}
+	if old.State != "pending" {
+		return File{}, ErrNotPending
+	}
+	next := old
+	next.State = "archived"
+	next.Updated = w.now().UTC().Format(time.RFC3339)
+	res, err := w.store(ctx, next, old, oldData, true, nil, reason, "Reject memory: "+oneLine(reason))
 	return res.File, err
 }

@@ -58,9 +58,17 @@ const (
 	TypeSessionMessage = "session.message"
 	// TypeHaltState reports that Eika was halted or resumed.
 	TypeHaltState = "halt.state"
+	// TypeMemoryChanged reports that a memory was written, changed or removed.
+	TypeMemoryChanged = "memory.changed"
+	// TypeInboxCount reports how many memories wait for the user's answer.
+	TypeInboxCount = "inbox.count"
 	// TypeBusDropped reports that the client fell behind and lost events.
 	TypeBusDropped = "bus.dropped"
 )
+
+// TopicInbox carries memory.changed and inbox.count. A client subscribes to
+// it for the Inbox badge and to know when to refetch a memory.
+const TopicInbox = "inbox"
 
 // TopicGlobal is the topic for events that belong to no single computer or
 // session. Computer and session topics are "computer:<id>" and

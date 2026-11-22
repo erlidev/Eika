@@ -116,6 +116,7 @@ func (w *Writer) reconcile(ctx context.Context, full bool) (Report, error) {
 			if err := w.index.DeleteMemory(ctx, n); err != nil {
 				return rep, fmt.Errorf("remove memory row %s: %w", n, err)
 			}
+			w.changed(ctx, n, "")
 			rep.Removed++
 		}
 		delete(dirty, n)
@@ -149,6 +150,7 @@ func (w *Writer) reconcileFile(ctx context.Context, name string, rows map[string
 			if err := w.index.DeleteMemory(ctx, name); err != nil {
 				return fmt.Errorf("remove memory row %s: %w", name, err)
 			}
+			w.changed(ctx, name, "")
 			rep.Removed++
 		}
 		return nil

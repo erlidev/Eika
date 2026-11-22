@@ -13,7 +13,7 @@ import { contract } from "./contract.ts";
 import { MockHarness, mockToken } from "./mock.ts";
 import type { Reply } from "./mock.ts";
 import { scenario } from "./scenarios.ts";
-import type { Memory, MemoryPage } from "../../src/api/types.ts";
+import type { InboxPage, Memory, MemoryPage } from "../../src/api/types.ts";
 
 /**
  * unmocked are the routes the mock does not serve, with why: the UI never
@@ -539,6 +539,37 @@ describe("memories", () => {
     const archived = (await call(mock, "POST", "/api/memories/m-1/archive", { reason: "outdated" }))
       .body as Memory;
     expect(archived).toMatchObject({ state: "archived", archive_reason: "outdated" });
+    expect(mock.contractBreaks).toEqual([]);
+  });
+
+  it("answers a pending memory once, refusing a stale, repeated or credential answer", async () => {
+    const mock = open("workbench");
+    mock.world.memories.push(
+      memory("aa", { state: "pending" }),
+      memory("bb", { state: "pending" }),
+      memory("cc"),
+    );
+    const page = (await call(mock, "GET", "/api/inbox/memories?limit=1")).body as InboxPage;
+    expect(page.pending).toBe(2);
+    expect(page.memories).toHaveLength(1);
+    expect(page.next_cursor).toBeDefined();
+    const aa = (await call(mock, "GET", "/api/memories/aa")).body as Memory;
+    const accept = (sha: string, body = {}) =>
+      call(mock, "POST", "/api/inbox/memories/aa/accept", { content_sha: sha, ...body });
+    expect((await call(mock, "POST", "/api/inbox/memories/aa/accept", {})).status).toBe(400);
+    expect((await accept("old")).status).toBe(409);
+    expect((await accept(aa.content_sha, { body: "key AKIAABCDEFGHIJKLMNOP" })).status).toBe(400);
+    const done = (await accept(aa.content_sha, { body: "edited" })).body as Memory;
+    expect(done).toMatchObject({ state: "active", body: "edited" });
+    expect((await accept(done.content_sha)).status).toBe(409);
+    const bb = (await call(mock, "GET", "/api/memories/bb")).body as Memory;
+    const rejected = await call(mock, "POST", "/api/inbox/memories/bb/reject", {
+      content_sha: bb.content_sha,
+    });
+    expect(rejected.body).toMatchObject({ state: "archived" });
+    expect(
+      ((await call(mock, "GET", "/api/inbox/count")).body as { pending: number }).pending,
+    ).toBe(0);
     expect(mock.contractBreaks).toEqual([]);
   });
 });

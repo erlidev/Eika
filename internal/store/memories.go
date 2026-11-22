@@ -340,3 +340,12 @@ func (s *Store) LastMemoryNoticeSeq(ctx context.Context, sessionID string) (int6
 	}
 	return seq, nil
 }
+
+// CountMemories returns how many memories are in state.
+func (s *Store) CountMemories(ctx context.Context, state string) (int, error) {
+	var n int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM memories WHERE state = $1`, state).Scan(&n); err != nil {
+		return 0, wrap("count memories", err)
+	}
+	return n, nil
+}

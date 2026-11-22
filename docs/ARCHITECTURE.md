@@ -641,7 +641,7 @@ POST /api/sessions/{id}/messages          GET /api/events
   Startup aborts stale `running` rows. Stopping or deleting a computer or
   session, and shutdown, abort the runs involved first.
 - **Bus**: `Emit` never blocks; a slow subscriber loses events and is told
-  with `bus.dropped`. Topics: `global`, `computer:<id>`, `session:<id>`.
+  with `bus.dropped`. Topics: `global`, `computer:<id>`, `session:<id>`, `inbox` (memory changes and the pending count).
 - **Event stream**: a reader goroutine handles `subscribe` and
   `session.replay`; replays write straight to the socket.
 

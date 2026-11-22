@@ -46,6 +46,8 @@ func memoryError(err error) error {
 		return conflictf("this memory changed since it was read; reload it and try again")
 	case errors.Is(err, memory.ErrNotActive):
 		return conflictf("only an active memory can be pinned; accept a pending one first")
+	case errors.Is(err, memory.ErrNotPending):
+		return conflictf("this memory is not pending; it was already answered")
 	case errors.Is(err, memory.ErrTooManyPins), errors.Is(err, memory.ErrPinsOverBudget):
 		return conflictf("%s; unpin another memory first", err.Error())
 	case errors.Is(err, memory.ErrNotExact):

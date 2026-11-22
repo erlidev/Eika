@@ -129,6 +129,7 @@ func (s *Server) recoverMemory(ctx context.Context) error {
 	}
 	w := memory.NewWriter(&memoryFiles{fresh: func(ctx context.Context) (memory.Files, error) { return s.MemoryRepository(ctx) }, log: s.log, cur: r}, s.deps.Store)
 	w.SetScreen(s.screenMemoryFile)
+	w.SetOnChange(s.publishMemoryChange)
 	rep, err := w.Reconcile(ctx)
 	if err != nil {
 		return fmt.Errorf("reconcile memory: %w", err)

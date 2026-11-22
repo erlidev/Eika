@@ -37,15 +37,25 @@ export function memorySha(m: Memory): string {
 const validName = (name: string | undefined): name is string =>
   name !== undefined && /^[a-z0-9][a-z0-9-]{0,63}$/.test(name);
 
-export function memoryRoutes({ w, on, now }: RouteContext): void {
+export function memoryRoutes({ w, on, now, emit, event }: RouteContext): void {
   const missing = () => fail(404, "not_found", "no memory with that name");
   const find = (name: string | undefined) =>
     validName(name) ? w.memories.find((m) => m.name === name) : undefined;
   const view = (m: Memory): Memory => ({ ...m, content_sha: memorySha(m) });
   const stale = () =>
     fail(409, "conflict", "this memory changed since it was read; reload it and try again");
+  /** changed publishes what the server does after a durable change: memory.changed, then the pending count. */
+  const changed = (name: string, state: string) => {
+    emit(event("memory.changed", "inbox", state === "" ? { name } : { name, state }));
+    emit(
+      event("inbox.count", "inbox", {
+        pending: w.memories.filter((m) => m.state === "pending").length,
+      }),
+    );
+  };
   const touch = (m: Memory) => {
     m.updated = now();
+    changed(m.name, m.state);
   };
   const pinnedTokens = (extra: Memory) =>
     [...w.memories.filter((m) => m.pinned && m.state === "active" && m.name !== extra.name), extra]
@@ -312,6 +322,96 @@ export function memoryRoutes({ w, on, now }: RouteContext): void {
     const refused = ifSha(m, q.get("content_sha") ?? undefined);
     if (refused) return refused;
     w.memories = w.memories.filter((o) => o !== m);
+    changed(m.name, "");
     return { status: 204 };
+  });
+
+  const pending = () =>
+    w.memories
+      .filter((m) => m.state === "pending")
+      .toSorted((a, b) => b.updated.localeCompare(a.updated) || a.name.localeCompare(b.name));
+
+  on("GET", "/api/inbox/count", () => ok({ pending: pending().length }));
+
+  on("GET", "/api/inbox/memories", ({ query: q, rawQuery }) => {
+    const bad = query(rawQuery, ["limit", "after"]);
+    if (bad) return bad;
+    const rawLimit = q.get("limit");
+    if (rawLimit !== null && (!/^[1-9][0-9]*$/.test(rawLimit) || Number(rawLimit) > 50))
+      return fail(400, "invalid_request", "limit must be an integer from 1 to 50");
+    const limit = rawLimit === null ? 20 : Number(rawLimit);
+    const rows = pending();
+    const after = q.get("after");
+    let from = 0;
+    if (after !== null) {
+      const at = rows.findIndex((m) => m.name === after);
+      if (at < 0) return fail(400, "invalid_request", "invalid after cursor");
+      from = at + 1;
+    }
+    const page = rows.slice(from, from + limit);
+    return ok({
+      pending: rows.length,
+      memories: page.map(view),
+      ...(from + limit < rows.length ? { next_cursor: page[page.length - 1]?.name } : {}),
+    });
+  });
+
+  /** answerable finds the memory an answer is for, requiring content_sha and a pending memory. */
+  const answerable = (name: string | undefined, body: Record<string, unknown>) => {
+    const m = find(name);
+    if (m === undefined) return missing();
+    if (typeof body.content_sha !== "string" || body.content_sha === "")
+      return fail(400, "invalid_request", "content_sha is required");
+    if (body.content_sha !== memorySha(m)) return stale();
+    if (m.state !== "pending")
+      return fail(409, "conflict", "this memory is not pending; it was already answered");
+    return m;
+  };
+
+  on("POST", "/api/inbox/memories/{name}/accept", (req) => {
+    const bytes = badUtf8(req);
+    if (bytes) return bytes;
+    const { params, body } = req;
+    const fields = ["content_sha", "description", "type", "body", "expires"];
+    if (!Object.keys(body).every((k) => fields.includes(k)))
+      return fail(400, "invalid_request", "unknown field");
+    const m = answerable(params[0], body);
+    if (!("state" in m)) return m;
+    const next: Memory = { ...m };
+    if (typeof body.description === "string") next.description = body.description;
+    if (typeof body.type === "string" && types.includes(body.type))
+      next.type = body.type as MemoryType;
+    if (typeof body.body === "string") next.body = body.body;
+    if (typeof body.expires === "string") next.expires = body.expires;
+    // A credential is refused on accept whatever the memory's history; a flag
+    // is not, because accepting is the user's explicit promotion.
+    if (credential.test(`${next.description}\n${next.body}`))
+      return fail(
+        400,
+        "invalid_request",
+        "this memory contains a credential in its body. Remove it and save the memory again without it.",
+      );
+    Object.assign(m, next, { state: "active" });
+    delete m.screen;
+    touch(m);
+    return ok(view(m));
+  });
+
+  on("POST", "/api/inbox/memories/{name}/reject", ({ params, body }) => {
+    if (!Object.keys(body).every((k) => k === "content_sha" || k === "reason"))
+      return fail(400, "invalid_request", "unknown field");
+    const m = answerable(params[0], body);
+    if (!("state" in m)) return m;
+    let reason = "rejected by the user";
+    if (body.reason !== undefined) {
+      const given = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (given === "" || Array.from(given).length > 200)
+        return fail(400, "invalid_request", "reason must be 1 to 200 characters");
+      reason = given;
+    }
+    m.state = "archived";
+    m.archive_reason = reason;
+    touch(m);
+    return ok(view(m));
   });
 }

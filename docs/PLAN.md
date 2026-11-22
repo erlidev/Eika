@@ -430,7 +430,7 @@ no memory section.
       edit, pin/unpin, archive and purge, through the same writer. Add bounded
       paging and stale-edit protection. Resolve purge (question 5) and user edit
       screening (question 3). Register routes, wire types and API docs together.
-- [ ] **P5-12**: Add pending-memory list/count and accept/edit/reject APIs, plus
+- [x] **P5-12**: Add pending-memory list/count and accept/edit/reject APIs, plus
       memory invalidation events and topic `inbox`. Acceptance is an explicit user
       state change, not an agent capability; reject archives. Enforce credential
       rejection even on accept/edit. Guard repeated or stale answers. Publish
@@ -729,7 +729,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - [x] **P5-07**: Write policy and home runtime wiring.
 - [ ] Inbox page: a list with a badge and live updates on topic `inbox`, holding
       pending memories for now (accept, edit, reject). No push.
-      - [ ] **P5-12**: Pending APIs, count and live events.
+      - [x] **P5-12**: Pending APIs, count and live events.
       - [ ] **P5-15**: Inbox page, badge and actions.
 - [ ] Memory UI: list, filters, search, editor, pin, archive, purge.
       - [x] **P5-11**: Memory APIs and user mutations.

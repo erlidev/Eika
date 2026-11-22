@@ -135,6 +135,26 @@ type Writer struct {
 	now   func() time.Time
 	// screen decides the state of a file changed outside the writer.
 	screen Screen
+	// onChange is told of each memory whose row was written or removed,
+	// after the change is durable. It must not block.
+	onChange ChangeFunc
+}
+
+// ChangeFunc reports a durable change of one memory: its name and its new
+// state, empty when the memory was purged.
+type ChangeFunc func(ctx context.Context, name, state string)
+
+// SetOnChange sets the function told of each durable change.
+func (w *Writer) SetOnChange(f ChangeFunc) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.onChange = f
+}
+
+func (w *Writer) changed(ctx context.Context, name, state string) {
+	if w.onChange != nil {
+		w.onChange(ctx, name, state)
+	}
 }
 
 // NewWriter returns the writer for a repository and its index.
@@ -232,6 +252,7 @@ func (w *Writer) indexFile(ctx context.Context, f File, data []byte, screen *Scr
 	if err := w.index.UpsertMemory(ctx, Record{File: f, ContentSHA: hex.EncodeToString(sum[:]), Screen: screen, Reason: reason}); err != nil {
 		return fmt.Errorf("index memory: %w", err)
 	}
+	w.changed(ctx, f.Name, f.State)
 	return nil
 }
 

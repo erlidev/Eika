@@ -333,3 +333,18 @@ type HaltState struct {
 	At     *time.Time `json:"at,omitempty"`
 	Reason string     `json:"reason,omitempty"`
 }
+
+// MemoryChanged is the payload of a memory.changed event, on the inbox topic:
+// a memory was durably written, changed (by the agent, the user or a repair)
+// or removed. Clients refetch it. State is its state now, empty when it was
+// purged.
+type MemoryChanged struct {
+	Name  string `json:"name"`
+	State string `json:"state,omitempty"`
+}
+
+// InboxCount is the payload of an inbox.count event, on the inbox topic: how
+// many memories are pending now. It follows every memory.changed.
+type InboxCount struct {
+	Pending int `json:"pending"`
+}

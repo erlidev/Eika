@@ -60,9 +60,13 @@ import type {
   UpdateSession,
   WithheldPage,
   EditMemoryRequest,
+  InboxCount,
+  InboxListQuery,
+  InboxPage,
   Memory,
   MemoryListQuery,
   MemoryPage,
+  RejectMemoryRequest,
 } from "@/api/types";
 
 /** getHome reads the home session with the entry its head points at. */
@@ -586,6 +590,44 @@ export function purgeMemory(name: string, contentSha?: string): Promise<void> {
   return requestEmpty(`/api/memories/${encodeURIComponent(name)}`, {
     method: "DELETE",
     query: { content_sha: contentSha },
+  });
+}
+
+/** getInboxCount reads how many memories wait for an answer, for the badge. */
+export function getInboxCount(signal?: AbortSignal): Promise<InboxCount> {
+  return request<InboxCount>("/api/inbox/count", { signal });
+}
+
+/** listInboxMemories lists pending memories in full, with their screen verdict; paged by `after`. */
+export function listInboxMemories(
+  query: InboxListQuery = {},
+  signal?: AbortSignal,
+): Promise<InboxPage> {
+  return request<InboxPage>("/api/inbox/memories", {
+    query: {
+      limit: query.limit === undefined ? undefined : String(query.limit),
+      after: query.after,
+    },
+    signal,
+  });
+}
+
+/**
+ * acceptMemory makes a pending memory active, with any edit given. content_sha
+ * is required; a repeated or stale answer is a 409 and a credential is a 400.
+ */
+export function acceptMemory(name: string, input: EditMemoryRequest): Promise<Memory> {
+  return request<Memory>(`/api/inbox/memories/${encodeURIComponent(name)}/accept`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+/** rejectMemory archives a pending memory; content_sha is required. */
+export function rejectMemory(name: string, input: RejectMemoryRequest): Promise<Memory> {
+  return request<Memory>(`/api/inbox/memories/${encodeURIComponent(name)}/reject`, {
+    method: "POST",
+    body: input,
   });
 }
 
