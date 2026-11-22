@@ -2446,3 +2446,24 @@ goes to `eika-cx-<fresh id>` (the target's own recorded id when it has one, as
 for `FORCE=1`) and `core.memory_computer` is updated in the restored database
 before Core starts. `make restore-test` now keeps the source running, restores
 beside it, and checks its memories, git history and key are unchanged.
+
+## P5-19 — Live memory harness and save/recall scenario (2026-11-22)
+
+`evals/live` gains `memory_save_recall` (`memory_live_test.go`), a `MemoryReport`
+on `Result` (`memory.go`, offline-tested) and cleanup of the Core's memory
+container and volume. The scenario's Core gets its own Docker networks (a
+sandbox network and an `--internal` one), because the memory computer is refused
+without the internal network; the harness reaches it by container IP
+(`server.ReindexMemoryFrom` takes that option; `ReindexMemory` is unchanged). It
+also records the bench probe on the provider row: without capabilities Core's
+counter is not exact, and the memory section then silently keeps the previous
+snapshot's (empty) section, which is how the first run failed. Real guard and
+settings: `screen_required` true, threshold 0.9.
+
+Bench run (qwen3.8-27b, guard at 9940): passed in 55 s. Saved
+`meeting-summary-format` (preference) active in the same user turn; recall via
+`memory_read`; present with an index line in the preamble after compaction;
+after restart, index emptied and rebuilt (reindexed 1, nothing invalid) state
+active and still in the next preamble; forgotten on request, archived, out of the
+preamble. Final report: active 0, pending 0, archived 1, asks 0, pushes 0, task
+done. No product defect found; the harness defects above were fixed.

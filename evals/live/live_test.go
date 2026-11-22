@@ -68,6 +68,7 @@ func TestScenarios(t *testing.T) {
 	injectionScenarios(t, report, target, fixtureURL.String(), env[live.GuardVar])
 	additionalInjectionScenarios(t, report, target, fixtureURL.String(), env[live.GuardVar], fixtureLog)
 	exitScenarios(t, report, target, fixtureURL.String(), env[live.GuardVar])
+	memoryScenarios(t, report, target, env[live.GuardVar])
 	core := newLiveCore(t, target, env[live.GuardVar])
 	t.Run("persistent_home_exit", func(t *testing.T) {
 		started := time.Now()
