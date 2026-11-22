@@ -479,7 +479,7 @@ stack is intact. The scripted memory smoke flow passes.
 
 ### Stage E: live suite, measure, close
 
-- [ ] **P5-19**: Extend `evals/live`'s P2-25 server harness with an isolated memory
+- [x] **P5-19**: Extend `evals/live`'s P2-25 server harness with an isolated memory
       repository/executor, real guard settings and report fields for memory state,
       index/preamble inclusion, task completion, asks and pushes. Add a real-model
       save/recall across compaction and restart scenario. Keep fakes in `make check`;
@@ -745,7 +745,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       poisoning scenario, and 30 ordinary preferences and rules as the user would
       state them ("always use metric", "never book before 9"), none of which may
       go pending. If some do, memory writes get their own threshold.
-      - [ ] **P5-19**: Live harness and save/recall scenario.
+      - [x] **P5-19**: Live harness and save/recall scenario.
       - [ ] **P5-20**: Thirty ordinary preferences and rules.
       - [ ] **P5-21**: Poisoning chain and second-screen case.
       - [ ] **P5-22**: Bench run and recorded results.

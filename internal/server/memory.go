@@ -160,13 +160,20 @@ func (s *Server) screenMemoryFile(ctx context.Context, f memory.File) (string, e
 // memory computer, through the same writer as a normal write. It is what
 // `eika -memory-reindex` and `make memory-reindex` run.
 func ReindexMemory(ctx context.Context, cfg config.Config, log *slog.Logger) (memory.Report, error) {
+	return ReindexMemoryFrom(ctx, cfg, log, false)
+}
+
+// ReindexMemoryFrom is ReindexMemory for a caller outside the sandbox
+// networks, such as the live harness: with direct true it reaches the memory
+// computer by its container IP rather than its name.
+func ReindexMemoryFrom(ctx context.Context, cfg config.Config, log *slog.Logger, direct bool) (memory.Report, error) {
 	st, err := store.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return memory.Report{}, err
 	}
 	defer st.Close()
 	host, err := computer.NewHost(computer.Options{
-		DockerSocket: cfg.DockerSocket, Image: cfg.SandboxImage, Network: cfg.SandboxNetwork,
+		DockerSocket: cfg.DockerSocket, Image: cfg.SandboxImage, Network: cfg.SandboxNetwork, DirectNetworkAddress: direct,
 		EikadBinary: cfg.EikadBinary, InternalNetwork: cfg.SandboxInternalNetwork, EgressProxyURL: cfg.EgressProxyURL,
 	}, log)
 	if err != nil {

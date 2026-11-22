@@ -164,6 +164,15 @@ func newLiveCoreWith(t *testing.T, target *live.Target, guard string, configure 
 		c.stop()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		// The memory computer belongs to this Core's own database and is
+		// removed with it; the user's real stack has a different id.
+		if id, err := st.MemoryComputerID(ctx); err == nil {
+			for _, args := range [][]string{{"rm", "-f", computer.ContainerName(id)}, {"volume", "rm", "-f", computer.VolumeName(id)}} {
+				if out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput(); err != nil {
+					t.Errorf("remove memory resource: %v: %s", err, out)
+				}
+			}
+		}
 		row, err := st.HomeComputer(ctx)
 		if err != nil {
 			return

@@ -88,6 +88,8 @@ type Result struct {
 	// Notes are the findings a scenario states in words, such as what a
 	// control run cost, in the order it stated them.
 	Notes []string `json:"notes,omitempty"`
+	// Memory is the memory state of a scenario that exercises memory.
+	Memory *MemoryReport `json:"memory,omitempty"`
 }
 
 // Note records a finding of the scenario being played, to be reported with

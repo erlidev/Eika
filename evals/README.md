@@ -73,6 +73,23 @@ afterward. The extra sessions provide the slot holder and the waiting call;
 home stays the same session. The live-only authenticated test controls start
 background runs and read lease times; normal builds do not contain them.
 
+`memory_save_recall` runs a Core of its own with an isolated memory computer, on
+a per-test internal and sandbox network pair (the harness reaches the computer by
+container IP), the real guard, `screen_required` on at the product threshold, the
+probe's capabilities (so the memory section is counted exactly) and a fake push
+topic. It tells home a preference in a user turn and requires `memory_write` in
+that turn and one active memory; asks for it back (`memory_search` or
+`memory_read`); compacts and requires the memory in the newest home preamble;
+stops Core, empties the index and rebuilds it with `ReindexMemoryFrom`; starts
+Core, requires the state to match, and the memory in the preamble after another
+compaction; then asks to forget it and requires `memory_forget`, state
+`archived`, and the name gone from the preamble after a last compaction. The
+result's `memory` field reports active, pending and archived counts, whether the
+preamble names the memory and has its index line, whether every home run ended
+done, the `ask_user` calls and the pushes. The test removes the memory computer's
+container and volume (its id is from its own database) and both networks. Run it
+alone with `-run 'TestScenarios/memory'`.
+
 The scenarios: `provider_probe` (the probe against `/slots`), `cache_reuse`
 (a two-turn conversation: cache hit rate and prefill), `tools_and_reasoning`
 (tool definitions, a tool call and result, replayed reasoning and the thinking
