@@ -2586,3 +2586,14 @@ not extend to subdomains. The screen and deterministic cleaning still run. A
 suspect window on a trusted host stays in the result and writes a withheld row
 and an audit row marked `trusted`. Trust changes and their audit rows share a
 transaction. Plugin trust is deferred to phase 11.
+
+## Security setting audit (P4-22)
+
+- Changes to `screen_threshold`, `screen_required`, and `sandbox_egress`
+  write a setting audit row in the same transaction. The egress value includes
+  the mode and allowlist. Repeated writes of the same value do not add rows.
+  The home computer row follows the setting and does not add a second row.
+- Trusted source changes already write audit rows in their transaction. P4-19
+  must do the same for blocklist changes with the store's `appendAudit` function.
+- Migration 0023 already rejects audit updates, deletes, and truncation. Its
+  Postgres upgrade test checks each operation, so no new migration is needed.

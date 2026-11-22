@@ -457,6 +457,37 @@ func TestScreenSettingsAuditInSameTransaction(t *testing.T) {
 	}
 }
 
+func TestSecuritySettingsAudit(t *testing.T) {
+	ctx := t.Context()
+	url := storetest.URL(t)
+	st, err := store.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	values := map[string]json.RawMessage{"screen_threshold": json.RawMessage(`0.8`), "sandbox_egress": json.RawMessage(`{"mode":"allowlist","allow":["example.com"]}`)}
+	if err := st.SetSettings(ctx, values); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSettings(ctx, values); err != nil {
+		t.Fatal(err)
+	}
+	values["sandbox_egress"] = json.RawMessage(`{"mode":"none","allow":[]}`)
+	if err := st.SetSettings(ctx, values); err != nil {
+		t.Fatal(err)
+	}
+	var threshold, egress int
+	err = conn.QueryRow(ctx, `SELECT count(*) FILTER (WHERE name = 'screen_threshold'), count(*) FILTER (WHERE name = 'sandbox_egress') FROM core.audit WHERE event = 'setting'`).Scan(&threshold, &egress)
+	if err != nil || threshold != 1 || egress != 2 {
+		t.Fatalf("audit rows: threshold %d, egress %d: %v", threshold, egress, err)
+	}
+}
+
 func TestSettingsReadOneSnapshot(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()

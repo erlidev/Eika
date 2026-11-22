@@ -274,7 +274,7 @@ connection.
 
 ### Stage E: audit, measure, close
 
-- [ ] **P4-22**: Close the audit gaps: setting-change rows, and an append-only
+- [x] **P4-22**: Close the audit gaps: setting-change rows, and an append-only
       guarantee in the database.
 - [ ] **P4-23**: Update the security section of the style guide.
 - [x] **P4-24**: Add the fetch fixture-hosts config key, set by `compose.smoke.yaml`,
@@ -509,7 +509,7 @@ and also requires the exit checks.
 - [ ] Audit: an append-only table with a row for every decision that was not a
       plain allow, every removal, every setting change and every halt, never
       secret values. Session entries already record every tool call.
-      - [ ] **P4-22**: Close the audit gaps and make the table append-only.
+      - [x] **P4-22**: Close the audit gaps and make the table append-only.
 - [ ] Settings, Security: the guard's health, the threshold and
       `screen_required`; the blocklist; trusted sources (a host or, from phase 11,
       a plugin whose results are scored but never removed); and the withheld list,
