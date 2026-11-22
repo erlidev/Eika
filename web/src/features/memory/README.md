@@ -18,8 +18,8 @@ a back link.
   `state` or `pinned`, so `narrow` applies them to the hits), labels and
   `sourceParts`, which links `session:<id>` to Activity for a subagent or Chat
   for the home session. An entry has no page, so it stays text.
-- `queries.ts` is the server state. Nothing refreshes on its own yet: memory
-  events arrive with P5-12.
+- `queries.ts` is the server state. `events.ts` invalidates every
+  memory query on `memory.changed`, on `bus.dropped` and on reconnect.
 
 Test it: `npm test -- memory/state` and `web/e2e/specs/memory.spec.ts`, which
 drives the `memory` scenario (active, pending with a flagged span, archived,

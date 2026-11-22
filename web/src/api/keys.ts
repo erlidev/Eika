@@ -41,6 +41,10 @@ export const queryKeys = {
   /** memories without arguments is the prefix of every memory query. */
   memories: () => ["memories"] as const,
   memory: (name: string) => ["memories", name] as const,
+  /** inbox is the prefix of the Inbox queries: its count and its pending list. */
+  inbox: () => ["inbox"] as const,
+  inboxCount: () => ["inbox", "count"] as const,
+  inboxList: () => ["inbox", "list"] as const,
   models: () => ["models"] as const,
   providers: () => ["providers"] as const,
   system: () => ["system"] as const,

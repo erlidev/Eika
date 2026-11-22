@@ -2377,3 +2377,26 @@ and volume are `eika-cx-<id>`. The egress policy
 matches the recorded id; the computer stays out of the computers API. `deploy/backup.sh`
 reads the id from Postgres (`EIKA_MEMORY_VOLUME` still overrides). Tests: the
 per-database id case; `TestMemoryComputerIsPrivate` uses the id.
+
+## P5-15: Inbox page, badge and answers (2026-11-22)
+
+`features/inbox` adds `/inbox` and an Inbox entry after Activity in the rail. The
+phone's bottom bar is now Chat, Activity, Inbox and More; More is a Radix dialog
+styled as a bottom sheet with the remaining pages (`bar: false` in `pages.ts`) and
+Settings. The badge is `inbox.count` written into the query cache by
+`useInboxEvents` (shell level, topic `inbox`); `memory.changed` makes the pending
+list stale; `bus.dropped` and a reconnect invalidate both, since events are not
+replayed. `features/memory/events.ts` does the same for every Memory query. The list
+reads one page of 50 (the API maximum) instead of paging, because a cursor naming a
+memory that was just answered is a 400 on refetch; a longer Inbox says it shows the
+newest. Cards show type, source links, the flagged spans (the harness counts spans in
+UTF-8 bytes, so `state.ts` `segments` splits on bytes), and Accept, Edit (description,
+type, body and expiry; only changed fields are sent) and Reject. A 409 says the memory
+changed or was answered and refreshes the card, a 400 shows the harness's reason (a
+credential), a 503 says memory or the required screen is not ready; the memory stays
+pending in each. No plugin approvals. Harness: `inbox` scenario; the routes and
+events already existed (P5-12); the `memory` scenario's span end was corrected to the
+text. The shot driver opens More before clicking Settings on a phone. `inbox.spec.ts`
+covers answers, failures, two pages of one context with a dropped stream, and the
+phone bar. Baselines: every desktop and phone shell shot changed (Inbox in the rail,
+More in the bar).

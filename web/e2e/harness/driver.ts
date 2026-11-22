@@ -268,6 +268,16 @@ export class EikaDriver {
    * screenshot after it would depend on timing.
    */
   async click(target: string): Promise<void> {
+    // On a phone Settings is in the More sheet; open it the way a person would.
+    if (target === "Settings") {
+      const more = this.page.getByRole("navigation", { name: "Pages" }).getByRole("button", {
+        name: "More",
+      });
+      if (await more.isVisible()) {
+        await more.click();
+        await this.settle();
+      }
+    }
     const found = await this.find(target);
     await found.scrollIntoViewIfNeeded();
     await this.settle();

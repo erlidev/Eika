@@ -760,12 +760,12 @@ the feature's `index.ts`, then add a route under the shell in
 ```ts
 // web/src/app/pages.ts
 export const pages: readonly Page[] = [
-  { id: "chat", title: "Chat", path: "/", icon: MessageCircle },
-  { id: "activity", title: "Activity", path: "/activity", icon: Activity },
+  { id: "chat", title: "Chat", path: "/", icon: MessageCircle, bar: true },
+  { id: "activity", title: "Activity", path: "/activity", icon: Activity, bar: true },
 ];
 ```
 
-The rail, the bottom bar and the header's title follow from the array. Add a
+The rail, the bottom bar and the header's title follow from the array. `bar: true` puts a page in the phone's bottom bar (design: Chat, Activity, Inbox); the others go in its More sheet. Add a
 page only when its feature exists: a page that is not built is absent, not
 disabled. The page fills the shell's `main`, which is a flex column, and
 scrolls inside itself.

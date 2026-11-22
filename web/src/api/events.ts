@@ -362,6 +362,9 @@ export type StreamRequest =
 /** globalTopic is the topic of events that belong to no computer or session. */
 export const globalTopic = "global";
 
+/** inboxTopic is the topic of memory.changed and inbox.count. */
+export const inboxTopic = "inbox";
+
 /** computerTopic names the topic carrying one computer's events. */
 export function computerTopic(id: string): string {
   return `computer:${id}`;
