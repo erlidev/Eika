@@ -402,7 +402,7 @@ screen hit is pending. No approval or push occurs.
 
 ### Stage B: bounded context and changes during a session
 
-- [ ] **P5-08**: Build the memory section within 3,000 exact tokens, including its
+- [x] **P5-08**: Build the memory section within 3,000 exact tokens, including its
       labels and overflow count. Select active, unexpired pins first (at most 12),
       then recent updates with name as the tie-breaker; render by type then name.
       Do not cut a body or line. Resolve count failure and excess pins (question 4).
@@ -833,7 +833,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - [ ] **P5-06**: Eika-only memory tools.
 - [ ] Preamble: pinned bodies plus the index within an exact budget, in
       deterministic order, with a visible overflow count.
-      - [ ] **P5-08**: Exact budget and stable selection.
+      - [x] **P5-08**: Exact budget and stable selection.
       - [ ] **P5-09**: Stored snapshot and compaction integration.
 - [ ] Notices at the tail for memory changes since the preamble.
       - [ ] **P5-10**: Durable changes in the next message context.
