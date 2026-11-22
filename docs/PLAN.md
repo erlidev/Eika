@@ -557,13 +557,11 @@ Applied on 2026-11-22 while the owner was away; each is recorded in `DECISIONS.m
 and can be revisited. Global memory, only Eika having tools, Markdown/git, no
 provenance, no approval and no pending push were already decided.
 
-1. **How does the Core repository meet the executor rule?** Applied: the
-   repository is Core state on the Core volume `/var/lib/eika/memory`, as
-   `design/memory.md` places it, like the database. `internal/memory` is its one
-   writer. Tools reach it only through that package by validated memory name,
-   never by a path, so no tool touches the harness filesystem; the executor rule
-   covers agent file and process actions, and these are not. An import-boundary
-   test keeps `tool` from reaching the repository any other way.
+1. **How does the Core repository meet the executor rule?** Applied: a private
+   sandbox-backed executor with only the memory directory mounted, fixed service
+   operations and no agent access to that computer. Core retains the source volume
+   at `/var/lib/eika/memory`. Do not enable `executor/local` in production or add
+   direct host I/O to a tool.
 2. **Where do lifecycle states survive a full reindex?** Recommended: add tracked
    `state` frontmatter (`active`, `pending`, `archived`), retaining archived files.
    Keep the screening result/flagged spans with the candidate in tracked metadata

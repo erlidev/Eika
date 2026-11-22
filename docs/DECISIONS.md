@@ -2605,10 +2605,11 @@ transaction. Plugin trust is deferred to phase 11.
 Applied on 2026-11-22 while the owner was away, from the planner's recommended
 defaults; any can be revisited before the package that depends on it.
 
-- **The memory repository is Core state.** It lives on the Core volume at
-  `/var/lib/eika/memory` with `internal/memory` as its one writer. Tools pass a
-  validated memory name, never a path, so the executor rule (agent file and
-  process actions go through `internal/executor`) is not bypassed.
+- **Memory files go through the executor.** The repository's source is the
+  Core volume `/var/lib/eika/memory`, but every read, write and git command runs
+  through `internal/executor` against a private sandbox computer with only that
+  directory mounted, fixed operations and no agent access. Core never runs `git`
+  or touches the files itself, which keeps the executor rule whole.
 - **State is tracked frontmatter.** `state` is `active`, `pending` or
   `archived`, so a full reindex restores it. It is state, not provenance.
 - **Unscanned writes are pending.** When the guard does not answer, an agent
