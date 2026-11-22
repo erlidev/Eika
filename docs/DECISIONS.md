@@ -2657,7 +2657,6 @@ mirrors frontmatter plus `body`, `content_sha` and a generated `body_tsv`
 and `pinned`. Pinning is not a writer operation yet. Index failure after the
 commit returns an error and leaves the file ahead of the row until P5-04.
 
-<<<<<<< HEAD
 ## Memory-write check (P5-05)
 
 `sentry.MemoryChecker` is separate from `Gate` so the many `Gate` fakes keep
@@ -2666,7 +2665,7 @@ description and body are screened intact with the ingest threshold and
 `screen_required`. Outcomes: `active`, `pending` (hit, or guard unavailable),
 `deny`, `reject` (unavailable and required). The verdict's spans are for the
 Inbox, which stores them with the pending memory in a later item.
-=======
+
 ## Memory recovery (P5-04)
 
 `Reconcile` treats the files as the truth. A file that is committed and whose
@@ -2683,4 +2682,3 @@ screened, because every file is committed. A commit made outside Eika by another
 author is trusted; the memory computer has no other writer. `make memory-reindex`
 runs in a separate process from the server, so run it while Eika is idle; a race
 only leaves a row the next restart repairs.
->>>>>>> p5-04-reconcile
