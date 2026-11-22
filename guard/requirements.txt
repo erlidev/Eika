@@ -1,0 +1,4 @@
+# torch: runs the classifier; CPU wheels by default (see the Dockerfile).
+torch==2.14.1
+# transformers: loads the ModernBERT classifier and the publisher's tokenizer.
+transformers==5.22.2

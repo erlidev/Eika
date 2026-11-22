@@ -137,10 +137,17 @@ shot: web-install
 
 ## smoke: build the whole stack as `make local` does, with a scripted model
 ## (compose.smoke.yaml), and drive it from the guided setup to a shell
-## command run in a sandbox (web/e2e/smoke). It needs Docker and takes a few
+## command run in a sandbox (web/e2e/smoke). It waits for the guard, which runs
+## from its real image. It needs Docker and takes a few
 ## minutes on a first build. The stack is removed afterwards, pass or fail.
 smoke: web-install playwright-browser
 	$(SMOKE_COMPOSE) up -d --build
+	@echo "waiting for the guard"; \
+	for i in $$(seq 1 90); do \
+		[ "$$(docker inspect -f '{{.State.Health.Status}}' $$($(SMOKE_COMPOSE) ps -q guard))" = healthy ] && break; \
+		[ $$i = 90 ] && { echo "the guard did not become healthy"; $(MAKE) smoke-down; exit 1; }; \
+		sleep 2; \
+	done
 	cd $(WEB) && EIKA_SMOKE_URL=http://127.0.0.1:$(SMOKE_PORT) EIKA_SMOKE_TOKEN=$(SMOKE_TOKEN) \
 		npx playwright test -c playwright.smoke.config.ts; \
 		status=$$?; cd .. && $(MAKE) smoke-down; exit $$status

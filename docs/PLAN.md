@@ -123,7 +123,7 @@ live in `~/.config/eika/live.env` (mode 600), never in the repository:
 |---|---|---|
 | chat (`main`, and `fast` until a smaller model joins) | Qwen3.8-27B, unsloth UD-Q4_K_XL (5.1 bpw) at revision 4af51b3542f775b0a8e4b310bfb3f17e01c306c9, text only (`--no-mmproj`); llama.cpp b11942-338fce651 with MTP speculative decoding (`draft-mtp`, 3 tokens), 4 slots sharing a 256k KV cache quantised to 8 bits (`q8_0` K and V), alias `qwen3.8-27b` | RTX 5090 server (`ubuntu-5090`), the Komodo Deployment `llama-server` (image `llama-server-gpu:0.0.9`), network `proxy`, no published port. Reached at `https://llama.erli.xyz` through Caddy (`reverse_proxy llama-server:8080`), with a bearer key; there is no SSH forward. The container has no stack directory on the server: its flags are in Komodo and in `docker inspect llama-server` |
 | second chat backend | the same model as EXL3 on TabbyAPI | the existing `tabbyapi` Deployment on the same GPU, swapped in by the runner |
-| injection screen | `Horizon-Labs/prompt-injection-guard-small`, bf16 | local RTX 3090, port 9940: `evals/models/guard.py` until phase 4 moves it to `guard/`, then the same service the stack runs |
+| injection screen | `Horizon-Labs/prompt-injection-guard-small`, bf16 | local RTX 3090, port 9940: `guard/guard.py`, the same service the stack runs |
 | `decision` | `vllm-sr/d3-flash` Q8_0 on llama.cpp `/v1/systemone`, 2 slots sharing 32k | local RTX 3090, the desktop's own llama.cpp, port 9941 |
 
 Rules:
@@ -187,7 +187,7 @@ adds them to the harness's `World`.
 The screen, end to end, in a desktop browser against the bench's guard. Nothing
 here halts, restricts or settles anything.
 
-- [ ] **P4-01**: Build the guard service and add it to the stack. Move
+- [x] **P4-01**: Build the guard service and add it to the stack. Move
       `evals/models/guard.py` to `guard/` and add `POST /screen`, the image and the
       compose service. `make smoke` waits for the guard and runs on the real image.
 - [ ] **P4-02**: Add `internal/sentry`: `Gate` with `Decide` and `Ingest` (`Observe`
@@ -435,7 +435,7 @@ Package IDs below are names, not an order: the order is "Schedule for phase 4".
 Each parent item stays open until every part is complete. Phase closure is P4-27
 and also requires the exit checks.
 
-- [ ] `guard/`: the injection screen as a service in the stack.
+- [x] `guard/`: the injection screen as a service in the stack.
       - `evals/models/guard.py` moves here and gains a Dockerfile: CPU `torch` by
         default (about 55 ms per 512-token window on six cores, 270 MB of model),
         with the model baked in at a pinned revision so the container needs no
@@ -447,7 +447,7 @@ and also requires the exit checks.
       - a compose service on a network only Core can reach; `EIKA_GUARD_URL`
         points Core at another instance, such as one on a GPU (2 ms per window)
       - `make smoke` waits for it; `evals/models/README.md` follows the move
-      - [ ] **P4-01**: Build the guard service and add it to the stack.
+      - [x] **P4-01**: Build the guard service and add it to the stack.
 - [ ] Add `internal/sentry`: the `Gate` interface Core calls (`Decide`, `Ingest`),
       the `Action` shape, and its tables in schema `core` by forward migration.
       Extend the boundary test: it never imports `server`, `agent` or `computer`.

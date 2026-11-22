@@ -860,12 +860,17 @@ Bounds are in `internal/mcp/limits.go`.
  (local models)     | docker.sock: sibling sandboxes
                     | volume eika-data -> /var/lib/eika (secret.key)
                     +-- eika_sandbox / eika_sandbox_internal: sandboxes only
+                    +-- eika_guard (internal) ----- guard (injection screen)
 ```
 
 Only the harness publishes a port, on loopback. `compose.dev.yaml` publishes
 postgres and searxng on loopback for `make dev`; `compose.smoke.yaml` runs the
 stack for `make smoke`. The `sandbox-image` service builds
-`eika-sandbox:latest` and exits; the harness waits for it. The root
+`eika-sandbox:latest` and exits; the harness waits for it. The `guard`
+service (`guard/`) is the injection screen: CPU torch and the model baked into
+its image, on the internal `eika_guard` network that only the harness joins.
+The harness does not wait for it, and `EIKA_GUARD_URL` points at another
+instance. Nothing calls it yet. The root
 `Dockerfile` builds the frontend, both static Go binaries, and a runtime image
 with eikad at `/usr/local/share/eika/eikad`. `deploy/eika-entrypoint.sh`
 joins the socket's group and drops to uid 1000. `deploy/searxng/settings.yml`

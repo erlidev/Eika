@@ -9,6 +9,24 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-01 built `guard/` (move commit `6bba82a`, then the service, image,
+  compose service and smoke wait). Model pinned at
+  `Horizon-Labs/prompt-injection-guard-small@1b7c40f4a5fdbf9622d20372ead279e65d4c7fc9`;
+  `torch` 2.14.1 CPU and `transformers` 5.22.2.
+  - Image 1.84 GB (CPU torch dominates the 270 MB model); first build about 2 min,
+    a cached one 10 s; 830 MB resident when idle. `make smoke` passes with the real
+    image (3 specs).
+  - CPU latency measured on the busy 12-thread desktop (a `make live` and other work
+    running): about 125 to 135 ms per 512-token window, so 87 windows take 11 s. The
+    plan's 55 ms was an idle six-core measurement. A 20-window page is about 2.6 s
+    here, over the 5 s limit only when the machine is far busier; re-measure on a
+    quiet host before P4-04 sets the timeout.
+  - `/screen` checked in the container: benign 0.003, injected 0.9996, a 26 KB text of
+    12 windows with the injection in the last window 0.99995 and the rest under
+    0.014; offsets tile the text and are bytes on multi-byte text.
+  - The container runs on `eika_guard`, an `internal` network with the harness alone.
+    Core does not read `EIKA_GUARD_URL` yet: the client is P4-04.
+
 - 2026-11-21: P4-00 split phase 4 into P4-01 to P4-27 and wrote "Schedule for
   phase 4" in five stages. Premises that changed: `open` egress still exists and
   is the default, and `make dev` and the live harness run without egress control;

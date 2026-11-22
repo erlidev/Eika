@@ -6,7 +6,7 @@ of `make check`. The bench they run on (which models, where) is in
 
 ```
 evals/live/     Go package: env loading, server description (the harness's provider probe), scenarios, report
-evals/models/   how to start the bench's models (README.md, guard.py)
+evals/models/   how to start the bench's models (README.md); the guard is in `guard/`
 evals/results/  one JSON report per run; ignored by git
 evals/forward.sh  opens the SSH forward to `llama-qwen` when it is closed (not needed for llama-server)
 ```

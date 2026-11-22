@@ -6,7 +6,7 @@ The live test bench (`docs/PLAN.md`, "Live test bench"): real models for
 | Role | Model | Where | Endpoint |
 |---|---|---|---|
 | chat | Qwen3.8-27B UD-Q4_K_XL (5.1 bpw, revision 4af51b35) on llama.cpp b11942-338fce651, text only, MTP, 4 slots sharing a 256k q8_0 KV cache | the RTX 5090 server, Komodo Deployment `llama-server` | `EIKA_LIVE_ENDPOINT` (`https://llama.erli.xyz`, through Caddy), bearer `EIKA_LIVE_KEY` |
-| injection screen | `Horizon-Labs/prompt-injection-guard-small`, bf16 | local GPU, `guard.py` here | `EIKA_GUARD_URL`, default `http://127.0.0.1:9940` |
+| injection screen | `Horizon-Labs/prompt-injection-guard-small`, bf16 | local GPU, `guard/guard.py` | `EIKA_GUARD_URL`, default `http://127.0.0.1:9940` |
 | `decision` | `vllm-sr/d3-flash` Q8_0 on llama.cpp | local GPU, your own llama.cpp build | `EIKA_DECISION_URL`, default `http://127.0.0.1:9941` |
 
 Keep the variables you need in `~/.config/eika/live.env` (mode 600), never in
@@ -17,17 +17,21 @@ not needed for that suite. Run it with `make live`; see `evals/README.md`.
 
 ## Injection screen
 
-`guard.py` serves the model the way `docs/design/sentry.md` measured it
-(transformers, bf16, the publisher's tokenizer) on text-embeddings-inference's
-`/predict` shape. TEI 1.9 itself does not load the model: it reads ModernBERT's
-older rope fields and expects one output label where this model has two.
+`guard/guard.py` is the `guard` service of the stack (`guard/README.md`). It serves
+the model the way `docs/design/sentry.md` measured it (transformers, bf16, the
+publisher's tokenizer): `POST /screen` for Sentry and, for the bench,
+text-embeddings-inference's `/predict` shape. TEI 1.9 itself does not load the
+model: it reads ModernBERT's older rope fields and expects one output label where
+this model has two.
 
 ```
 hf download Horizon-Labs/prompt-injection-guard-small --local-dir <dir>
-python -I evals/models/guard.py --model <dir> --port 9940
+python -I guard/guard.py --model <dir> --port 9940
 ```
 
-It needs `torch` and `transformers` 5 in the Python that runs it.
+It needs `torch` and `transformers` 5 in the Python that runs it
+(`guard/requirements.txt`). The same service runs from its image, which has the
+model baked in: `docker build -t eika-guard guard`.
 
 ## Decision model
 
@@ -51,7 +55,7 @@ is killed itself instead of pushing the desktop into swap:
 ```
 systemd-run --user --unit=eika-test-guard \
   -p MemoryHigh=2600M -p MemoryMax=3G -p MemorySwapMax=256M \
-  <python> -I <repo>/evals/models/guard.py --model <dir>
+  <python> -I <repo>/guard/guard.py --model <dir>
 systemd-run --user --unit=eika-test-decision \
   -p MemoryHigh=3G -p MemoryMax=4G -p MemorySwapMax=256M \
   llama serve ...
