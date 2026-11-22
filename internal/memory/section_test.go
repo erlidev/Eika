@@ -124,3 +124,25 @@ func TestCheckPinBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRevisionTracksOnlyWhatCanAutoLoad(t *testing.T) {
+	live := mem("live", "fact", "2026-11-01T00:00:00Z", false, "x")
+	base := Revision([]File{live}, secNow)
+	if base == "" {
+		t.Fatal("no revision for an eligible memory")
+	}
+	pend := mem("pend", "fact", "2026-11-01T00:00:00Z", false, "y")
+	pend.State = "pending"
+	exp := mem("exp", "fact", "2026-11-01T00:00:00Z", false, "z")
+	exp.Expires = "2026-11-21"
+	if got := Revision([]File{exp, pend, live}, secNow); got != base {
+		t.Fatal("a pending or expired memory moved the revision")
+	}
+	live.Body = "changed"
+	if Revision([]File{live}, secNow) == base {
+		t.Fatal("an edit did not move the revision")
+	}
+	if Revision([]File{pend}, secNow) != "" {
+		t.Fatal("revision of nothing eligible should be empty")
+	}
+}

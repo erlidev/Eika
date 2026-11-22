@@ -118,12 +118,27 @@ type Options struct {
 	Limits Limits
 }
 
+// MemorySnapshot is the memory section at the end of a stored preamble.
+type MemorySnapshot struct {
+	// Revision identifies the memories the section was built from.
+	Revision string `json:"revision"`
+	// Text is the section, exactly as it ends the preamble.
+	Text string `json:"text"`
+	// ChangeSeq is the last memory change the section already includes; later
+	// changes are named in the tail of the next message. It is set even when
+	// there is no section.
+	ChangeSeq int64 `json:"change_seq,omitempty"`
+}
+
 // Snapshot is what a session's prefix holds beside its messages and is
 // replaced only by a compaction (runtime.md 4): the preamble, and the base
 // prompt and tools of the agent definition as they were when it was taken.
 type Snapshot struct {
-	// Preamble is the stored preamble text.
+	// Preamble is the stored preamble text, memory section included.
 	Preamble string
+	// Memory is the memory section the preamble ends with and the revision
+	// it was read at; zero when the snapshot has none.
+	Memory MemorySnapshot
 	// Prompt replaces the base prompt; nil keeps the agent's.
 	Prompt *string
 	// Tools replaces the tools; nil keeps the agent's.
@@ -186,7 +201,7 @@ func New(p provider.Provider, r *tool.Registry, opts Options) *Agent {
 // the run's: the next model call is built from its preamble, prompt and
 // tools, and states times in the preamble's zone.
 func (a *Agent) useSnapshot(s *Session, snap Snapshot) {
-	s.Preamble = snap.Preamble
+	s.Preamble, s.Memory = snap.Preamble, snap.Memory
 	a.snapshotMu.Lock()
 	defer a.snapshotMu.Unlock()
 	a.location = PreambleLocation(snap.Preamble)

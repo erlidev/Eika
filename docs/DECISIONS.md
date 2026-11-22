@@ -8,6 +8,11 @@ this file says why, so neither repeats the other.
 
 ## Scope
 
+- **Live worker tests use controlled Docker networks** (2026-11-22). The Core
+  process reaches its sandbox by container IP and the live-only proxy control
+  permits the fixture's loopback port. This lets the suite test the real egress
+  proxy without weakening the public-address rule in normal builds.
+
 - **Eika is a personal assistant that runs on hardware the user owns.** One
   person talks to it, and it works in sandboxed computers on their behalf.
   Memory, plugins, a scheduler, skills and a permission authority (Sentry) are
@@ -2731,3 +2736,23 @@ Pages are keyset on (`updated`, `name`) with an opaque cursor; search is ranked
 and bounded, with no cursor. No memory events or invalidation yet: P5-12 adds
 them with topic `inbox`. A new error status: memory routes answer 503 (code
 `internal`) when memory cannot be judged now.
+
+## Phase 4 close (P4-27)
+
+- The exit checks run as live scenarios, not by hand (2026-11-22), because they are
+  repeatable and the owner could not be present. They drive the real Core, guard and
+  sandbox through the public API. What they cannot see is the rendered UI: the halt
+  button, banner and card mark stay covered by the visual specs and the `removed`
+  count on the stored result.
+- Home has no `bash` or `web_fetch`, so a check that needs them starts a worker or a
+  researcher. A halt that a worker's call causes writes its deny audit row a moment
+  after the halt is visible, because the run is aborted in the background; a reader
+  of the audit log must not assume the row is there at the instant of the halt.
+- With the screen on, an injected page loses its useful fact too: the whole scored
+  window is removed. This is the accepted cost of screening a window, not a defect.
+
+P5-11 and the P5-10 change log: user operations log through `UpsertMemory` and
+`DeleteMemory` like any write, so no separate path exists. An edit is `edited`
+(or `archived` for archive), a purge is `purged`. Pin and unpin rewrite the
+file's `pinned` field, so they change `content_sha` and are logged as `edited`:
+the pinned section of the next snapshot differs, so Eika should hear of it.

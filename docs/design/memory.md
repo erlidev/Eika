@@ -114,8 +114,9 @@ Index (memory_read <name> for details, memory_search for anything not listed):
   memories are searchable, with a marker, but never auto-loaded. OpenClaw's rule
   is that untrusted content cannot launder itself into the always-loaded core.
 - Memories written during a session do not change its preamble. The tail notice
-  says "memory saved: <name>". A memory the user changed shows as "memory updated
-  since this session started: <name>" in the next `<context>`.
+  names each change since the snapshot (saved, edited, archived, purged) in the
+  next `<context>`, by name only, one notice per message; it never wakes an idle
+  home or sends a push (P5-10).
 
 ## 4. Tools
 

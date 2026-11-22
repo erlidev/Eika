@@ -10,6 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"net/http/httptest"
+	"net/url"
+
+	"github.com/erlidev/eika/evals/injection"
 	"github.com/erlidev/eika/evals/live"
 )
 
@@ -30,7 +34,7 @@ func TestScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load live env: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Minute)
 	defer cancel()
 
 	target, err := live.Connect(ctx, env)
@@ -53,7 +57,18 @@ func TestScenarios(t *testing.T) {
 		t.Logf("report: %s", file)
 	}()
 
-	core := newLiveCore(t, target)
+	fixtureLog := newFixtureLog()
+	fixture := httptest.NewServer(fixtureLog)
+	defer fixture.Close()
+	fixtureURL, err := url.Parse(fixture.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureURL.Host = injection.Host + ":" + fixtureURL.Port()
+	injectionScenarios(t, report, target, fixtureURL.String(), env[live.GuardVar])
+	additionalInjectionScenarios(t, report, target, fixtureURL.String(), env[live.GuardVar], fixtureLog)
+	exitScenarios(t, report, target, fixtureURL.String(), env[live.GuardVar])
+	core := newLiveCore(t, target, env[live.GuardVar])
 	t.Run("persistent_home_exit", func(t *testing.T) {
 		started := time.Now()
 		err := core.exitScenario()

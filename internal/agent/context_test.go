@@ -122,3 +122,23 @@ func TestImagesAreEstimatedByTheirSizeNotTheirData(t *testing.T) {
 		t.Errorf("an image message is estimated at %d tokens, want about %d for the image", got, image)
 	}
 }
+
+// The memory section is listed apart, and the system prompt is the same bytes
+// either way.
+func TestPreambleSectionsSplitTheMemorySectionOff(t *testing.T) {
+	mem := agent.MemorySnapshot{Revision: "r", Text: "## Memory\n- a: b\n"}
+	preamble := "Time zone\nUTC\n\n" + mem.Text
+	got := agent.PreambleSections(preamble, mem)
+	if len(got) != 2 || got[0].Kind != agent.SectionPreamble || got[1].Kind != agent.SectionMemory || got[1].Text != mem.Text {
+		t.Fatalf("sections = %+v", got)
+	}
+	if joined := got[0].Text + "\n\n" + got[1].Text; joined != preamble {
+		t.Fatalf("joined = %q, want %q", joined, preamble)
+	}
+	if only := agent.PreambleSections(mem.Text, mem); len(only) != 1 || only[0].Kind != agent.SectionMemory {
+		t.Fatalf("memory alone = %+v", only)
+	}
+	if none := agent.PreambleSections("plain", agent.MemorySnapshot{}); len(none) != 1 || none[0].Kind != agent.SectionPreamble {
+		t.Fatalf("no memory = %+v", none)
+	}
+}

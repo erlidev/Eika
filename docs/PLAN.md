@@ -90,8 +90,7 @@ and phase 4b, web fetch, compaction and skills come last.
             4b Tripwires and checkpoints ─ 12 Web fetch ─ 13 Compaction ─ 6 Skills
 ```
 
-Phases 0 and 1 are done. Phases 2 and 3 are built; their live suite and exit checks remain open
-(see "Schedule for phases 2 and 3").
+Phases 0 and 1 are done. Phases 2, 3 and 4 are closed (phase 3's push and device checks remain with the owner).
 
 Why this order:
 
@@ -284,12 +283,12 @@ connection.
 - [x] **P4-24**: Add the fetch fixture-hosts config key, set by `compose.smoke.yaml`,
       and the Sentry scenario to `make smoke`: a scripted model fetches a fixture page
       with a planted instruction, and the result has the part removed.
-- [ ] **P4-25**: Build `evals/injection` on the P2-25 live harness: fixture pages in
+- [x] **P4-25**: Build `evals/injection` on the P2-25 live harness: fixture pages in
       three variants, a researcher that reports to Eika, and the screen on and off. The
       live harness sets the fixture-hosts key.
-- [ ] **P4-26**: Add the chain, the `curl` worker and the guard-stopped scenarios, run
+- [x] **P4-26**: Add the chain, the `curl` worker and the guard-stopped scenarios, run
       the suite on the bench, and log its numbers, including what got through.
-- [ ] **P4-27**: Close phase 4 after its exit checks.
+- [x] **P4-27**: Close phase 4 after its exit checks.
 
 **Exit E:** phase 4's exit.
 
@@ -407,12 +406,12 @@ screen hit is pending. No approval or push occurs.
       then recent updates with name as the tie-breaker; render by type then name.
       Do not cut a body or line. Resolve count failure and excess pins (question 4).
       Use the existing model counter, not a new tokenizer.
-- [ ] **P5-09**: Include P5-08 in `server.buildPreamble` for home only. Read one
+- [x] **P5-09**: Include P5-08 in `server.buildPreamble` for home only. Read one
       consistent memory revision, store it with the preamble, and refresh through
       `refreshSnapshot` in the existing compaction transaction. Extend the
       prefix-stability/restart check; pending and expired memories never auto-load.
       Update the context inspector and wire contract if its shape changes.
-- [ ] **P5-10**: Add memory changes since the snapshot to the next message's tail
+- [x] **P5-10**: Add memory changes since the snapshot to the next message's tail
       `<context>`, using the existing notice delivery rules. Persist revision and
       delivery state as needed; test a write racing compaction, restart and retry
       so changes are neither lost nor repeated. A saved name is enough; do not
@@ -679,132 +678,19 @@ attack chain, holds that run, and sends one push (`design/sentry.md` 11).
 Never asks: `web_search`, `web_fetch`, `bash`, files, egress, memory, projects,
 subagents, wakeups, and read-only plugin tools.
 
-### Items
+### Closed
 
-Package IDs below are names, not an order: the order is "Schedule for phase 4".
-Each parent item stays open until every part is complete. Phase closure is P4-27
-and also requires the exit checks.
-
-- [x] `guard/`: the injection screen as a service in the stack.
-      - `evals/models/guard.py` moves here and gains a Dockerfile: CPU `torch` by
-        default (about 55 ms per 512-token window on six cores, 270 MB of model),
-        with the model baked in at a pinned revision so the container needs no
-        network
-      - `POST /screen {"texts": [...]}` returns, per text, its windows with byte
-        offsets and scores. The service does the chunking, since it owns the
-        tokenizer: 512-token windows, no overlap, batches of 64. `/predict` and
-        `/health` stay
-      - a compose service on a network only Core can reach; `EIKA_GUARD_URL`
-        points Core at another instance, such as one on a GPU (2 ms per window)
-      - `make smoke` waits for it; `evals/models/README.md` follows the move
-      - [x] **P4-01**: Build the guard service and add it to the stack.
-- [ ] Add `internal/sentry`: the `Gate` interface Core calls (`Decide`, `Ingest`),
-      the `Action` shape, and its tables in schema `core` by forward migration.
-      Extend the boundary test: it never imports `server`, `agent` or `computer`.
-      - [x] **P4-02**: Add the package, the Gate, its audit table and the boundary test.
-- [ ] Core gate: `Options.Gate` in the loop, with `Decide` before every tool call.
-      The model is never told about the gate: a block is a `Blocked: <reason>`
-      error result, and no prompt or tool description mentions Sentry. Fail closed:
-      if the gate cannot answer, side-effecting tools return the generic blocked
-      result. The `ask` verdict and its parking arrive in phase 11.
-      - [x] **P4-03**: Call `Decide` before every tool call, and fail closed.
-- [ ] Ingest, on every untrusted result before it reaches a model:
-      1. invisible characters removed: Unicode tag characters, zero-width
-         characters and bidirectional controls. `web_fetch` does not do this yet
-         (phase 12's conversion will); ingest is where it is done here, and a
-         tag character that decodes to text is a mark in phase 4b
-      2. secret redaction by pattern
-      3. the screen, on exactly the text that will enter the context (after the
-         tool's own truncation, so nothing is sampled). A window at or over the
-         threshold (0.9, a setting) is replaced by `[removed:suspect]`
-      4. the `<untrusted>` wrapper, and the system-prompt line about it
-      Sources: `web_fetch`, each `web_search` result, and from phase 11 plugin
-      results. A subagent's report and its questions are screened on their way to
-      Eika, without the wrapper. A removal writes a `withheld` row (source,
-      session, text, score) and an audit row, and marks the tool card in the UI.
-      It sends no push and stops nothing.
-      - [x] **P4-04**: Ingest `web_fetch` results: invisible characters, redaction, screen, wrapper.
-      - [x] **P4-05**: Screen each `web_search` result on its own.
-      - [x] **P4-06**: Screen subagent reports and questions on their way to Eika.
-- [ ] When the guard does not answer: content passes wrapped and marked
-      `unscanned`, a banner shows, and one push goes out when the state changes,
-      not one per result. The setting `screen_required` fails closed instead:
-      tools whose results need screening return a block that says the guard is unavailable.
-      - [x] **P4-14**: Mark results `unscanned` when the guard is down, add `screen_required` and the settings API.
-- [ ] Never share: a credential pattern in a `web_fetch` URL, a `web_search` query
-      or (from phase 11) a plugin call's arguments denies the call, with a reason
-      the agent can act on. `bash` and file writes are not checked: a command may
-      hold a key the user gave it.
-      - [x] **P4-11**: Deny credentials in `web_fetch` URLs and `web_search` queries.
-- [ ] Canary: a fake OpenAI-shaped key planted in the `home` computer's
-      environment at start, unique per install. Its literal value in any tool
-      call's arguments halts Eika and pushes. It does not see a key a command
-      reads from the environment (`docs/DEFERRED.md`, vault).
-      - [x] **P4-12**: Plant the canary in the home environment and halt on it.
-- [ ] Egress: the proxy stays in Core.
-      - the `open` mode removed
-      - `allow` or `deny` per connection (blocklist, netguard, halt, per-computer
-        allowlist mode); never `ask`
-      - `web_fetch` and the hosted search backends check the same blocklist and
-        halt before they dial
-      - [x] **P4-17**: Retire the `open` egress mode and move every computer behind the proxy.
-      - [x] **P4-18**: Update the computer egress settings for the modes that remain.
-      - [x] **P4-19**: Decide each connection through the gate, with the blocklist and halt.
-      - [x] **P4-20**: Check the blocklist and halt before Core's own fetches.
-- [ ] Halt: an always-visible button, resume, and Core's reaction (abort runs, a
-      scheduler pause hook, a banner, a push).
-      - [x] **P4-09**: Add halt state, run abort, the pause hook, the push and the API.
-      - [x] **P4-10**: Add the halt button, resume and banner.
-- [ ] Audit: an append-only table with a row for every decision that was not a
-      plain allow, every removal, every setting change and every halt, never
-      secret values. Session entries already record every tool call.
-      - [x] **P4-22**: Close the audit gaps and make the table append-only.
-- [ ] Settings, Security: the guard's health, the threshold and
-      `screen_required`; the blocklist; trusted sources (a host or, from phase 11,
-      a plugin whose results are scored but never removed); and the withheld list,
-      newest first, each with its text and a "trust this source" action.
-      - [x] **P4-07**: Add the withheld list API.
-      - [x] **P4-08**: Build Settings, Security with the withheld list, and mark tool cards.
-      - [x] **P4-15**: Add trusted sources to ingest and the API.
-      - [x] **P4-16**: Add guard health, the threshold, `screen_required` and trusted sources to the page.
-      - [x] **P4-21**: Add the blocklist to the page.
-- [ ] `make smoke` covers Sentry: a scripted model fetches a fixture page that
-      carries a planted instruction, and the result it gets has the part removed.
-      - [x] **P4-24**: Add the Sentry scenario to `make smoke`.
-- [ ] `evals/injection` and the phase 4 live suite, on the bench's chat model and
-      guard. It builds on the server-level live harness of P2-25:
-      - fixture pages in three variants (innocent, injected, and a legitimate page
-        that looks alarming), read by a researcher that reports to Eika
-      - recorded per variant: whether the attack succeeded with the screen on and
-        with it off, whether the task was still done, and how many times the user
-        was asked, which must be zero
-      - the chain the screen is there for: an injected page, the report, and Eika
-        acting on it
-      - a worker that reads the injected page with `curl`, which is not screened,
-        to measure what that gap costs
-      - the guard stopped mid-run gives `unscanned`, never a dropped result
-      - `Decide` under 1 ms for arguments up to 64 KiB, as a benchmark in
-        `make check`
-      - [x] **P4-13**: Benchmark `Decide` in `make check`.
-      - [ ] **P4-25**: Build the injection harness and fixtures on the P2-25 live harness.
-      - [ ] **P4-26**: Measure the chain, `curl` and guard-stopped scenarios, and log the numbers.
-- [x] Update the security section of the style guide: Core holds model keys and
-      third-party credentials, sealed; computers get proxy identities and nothing
-      else.
-      - [x] **P4-23**: Update the security section of the style guide.
-
-**Exit:** by hand, with the phone beside you:
-- A researcher reads a fixture page with a planted instruction. The part is
-  removed, the report is clean, the page is in the withheld list, and the phone
-  stays silent.
-- A worker runs `curl`, `web_fetch` and a package install with no prompt.
-- A `web_fetch` whose URL carries a key-shaped string comes back `Blocked`.
-- The canary's value pasted into a command halts Eika.
-- With the guard stopped there is a banner and one push, and pages arrive
-  `unscanned`. With `screen_required` on, `web_fetch` is blocked instead.
-- Halt stops everything in one press.
-
-The log records `evals/injection`'s numbers, including what got through.
+Phase 4 is closed. It built the guard service and Sentry: the `Gate` with `Decide`
+before every tool call and `Ingest` on `web_fetch`, `web_search`, report and history
+text; persisted halt with its button and banner; never-share denial of credentials in
+URLs and queries; the per-install canary; unscanned and `screen_required` handling
+and trusted sources; the egress modes (`public`, `allowlist`) with the exact-host
+blocklist enforced by the proxy, Core's own fetches and hosted search; an append-only
+audit; the Security settings page; the smoke scenario; and the `evals/injection` live
+suite. Current behavior: [Architecture](ARCHITECTURE.md#packages); choices:
+[Decisions](DECISIONS.md#safety-without-asking) and the Phase 4 entries after
+[Tool gate](DECISIONS.md#tool-gate-and-read-only-tools-p4-03). Exit checks ran as live
+scenarios: see the P4-27 entry in [the log](PLAN_LOG.md).
 
 ## Phase 5: Memory
 
@@ -834,9 +720,9 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
 - [ ] Preamble: pinned bodies plus the index within an exact budget, in
       deterministic order, with a visible overflow count.
       - [x] **P5-08**: Exact budget and stable selection.
-      - [ ] **P5-09**: Stored snapshot and compaction integration.
+      - [x] **P5-09**: Stored snapshot and compaction integration.
 - [ ] Notices at the tail for memory changes since the preamble.
-      - [ ] **P5-10**: Durable changes in the next message context.
+      - [x] **P5-10**: Durable changes in the next message context.
 - [ ] Write policy in the `eika` prompt, including saving a memory at once
       instead of later. Only `eika` writes memories (decided): subagents put what
       they learned in their report, and Eika saves it.

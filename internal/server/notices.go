@@ -50,6 +50,9 @@ type notices struct {
 	mu       sync.Mutex
 	closed   bool
 	sessions map[string]*sessionNotices
+	// snapshotSeq is, per home session, the last memory change its current
+	// snapshot includes.
+	snapshotSeq map[string]int64
 }
 
 // sessionNotices are one home session's undelivered notices, in the order
@@ -70,7 +73,7 @@ const (
 
 func newNotices(s *Server) *notices {
 	ctx, cancel := context.WithCancel(context.Background())
-	n := &notices{server: s, ctx: ctx, cancel: cancel, retry: firstNoticeRetry, sessions: make(map[string]*sessionNotices)}
+	n := &notices{server: s, ctx: ctx, cancel: cancel, retry: firstNoticeRetry, sessions: make(map[string]*sessionNotices), snapshotSeq: make(map[string]int64)}
 	n.write = func(ctx context.Context, sessionID string, e store.Entry) (bool, error) {
 		_, added, err := n.server.deps.Store.AppendEntryOnce(ctx, sessionID, e)
 		return added, err
@@ -202,12 +205,88 @@ func (n *notices) load(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-// waiting reports whether a session has notices no message has taken.
+// waiting reports whether a session has notices no message has taken that
+// are worth a turn of their own. A memory notice is not: it rides with the
+// next message and never wakes the session (decision 6).
 func (n *notices) waiting(sessionID string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	book := n.sessions[sessionID]
-	return book != nil && len(book.waiting) > 0
+	return book != nil && slices.ContainsFunc(book.waiting, func(x agent.Notice) bool { return !isMemoryNotice(x.ID) })
+}
+
+// memoryNoticePrefix starts the entry id of a memory notice; the rest is the
+// number of the last memory change the notice names.
+const memoryNoticePrefix = "notice-memory-"
+
+func isMemoryNotice(id string) bool { return strings.HasPrefix(id, memoryNoticePrefix) }
+
+// maxMemoryNoticeNames bounds the changes one notice lists.
+const maxMemoryNoticeNames = 20
+
+// setSnapshotSeq records the last memory change the session's snapshot
+// includes: when a run starts, and when a compaction replaces the snapshot.
+func (n *notices) setSnapshotSeq(sessionID string, seq int64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.snapshotSeq[sessionID] = seq
+}
+
+// collectMemoryChanges runs as a message is stamped. A failure is logged and
+// leaves the changes for the next message, which finds them again.
+func (n *notices) collectMemoryChanges(sessionID string) {
+	n.mu.Lock()
+	seq := n.snapshotSeq[sessionID]
+	n.mu.Unlock()
+	ctx, cancel := context.WithTimeout(n.ctx, noticeWriteLimit)
+	defer cancel()
+	if err := n.memoryChanges(ctx, sessionID, seq); err != nil {
+		n.server.log.Warn("name memory changes; trying at the next message", "session_id", sessionID, "error", err)
+	}
+}
+
+// memoryChanges writes a notice for the memory changes made since the
+// session's snapshot (snapshotSeq) that no earlier notice names, and adds it
+// to the session's waiting list without waking the session. Nothing is kept
+// in memory between calls: the last change a notice names is in its id, so a
+// restart, a retry after a failed write, or a compaction that moved the
+// snapshot past some changes neither loses nor repeats one. The notice names
+// the memories and what happened to them, never their text.
+func (n *notices) memoryChanges(ctx context.Context, sessionID string, snapshotSeq int64) error {
+	n.ioMu.Lock()
+	defer n.ioMu.Unlock()
+	last, err := n.server.deps.Store.LastMemoryNoticeSeq(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	changes, err := n.server.deps.Store.MemoryChangesAfter(ctx, max(last, snapshotSeq))
+	if err != nil || len(changes) == 0 {
+		return err
+	}
+	text := memoryNoticeText(changes)
+	e, err := session.TextEntry(store.KindNotice, text)
+	if err != nil {
+		return err
+	}
+	e.ID = fmt.Sprintf("%s%d", memoryNoticePrefix, changes[len(changes)-1].Seq)
+	return n.record(ctx, sessionID, e, text)
+}
+
+// memoryNoticeText lists changes, oldest first, by name.
+func memoryNoticeText(changes []store.MemoryChange) string {
+	var parts []string
+	for i, c := range changes {
+		if i == maxMemoryNoticeNames {
+			parts = append(parts, fmt.Sprintf("and %d more", len(changes)-i))
+			break
+		}
+		what := c.Action
+		if c.Action != "purged" && c.State == "pending" {
+			what += " (pending review)"
+		}
+		parts = append(parts, what+" "+c.Name)
+	}
+	return "Memory changed since your snapshot: " + strings.Join(parts, "; ") + ". Your memory section above is unchanged until the next compaction; use memory_read or memory_search for current content."
 }
 
 // take hands the waiting notices to the message being stamped. It is the

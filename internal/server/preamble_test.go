@@ -39,7 +39,7 @@ func TestCompactionBranchReplaysReplacementPreamble(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	added, err := preambleCompactionEntries("new", "You are Eika.", []string{"project_list"}, agent.Compaction{Summary: "summary"})
+	added, err := preambleCompactionEntries("new", agent.MemorySnapshot{}, "You are Eika.", []string{"project_list"}, agent.Compaction{Summary: "summary"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,5 +55,13 @@ func TestCompactionBranchReplaysReplacementPreamble(t *testing.T) {
 	messages, err := session.Messages(path)
 	if err != nil || len(messages) != 1 || !messages[0].Summary {
 		t.Fatalf("messages = %+v, %v", messages, err)
+	}
+}
+
+func TestPreambleEndsWithTheMemorySection(t *testing.T) {
+	d := preambleData{home: true, zone: "UTC", locale: "en-US", memory: "## Memory\n- a: b\n"}
+	got := renderPreamble(d)
+	if !strings.HasSuffix(got, "Locale\nen-US\n\n## Memory\n- a: b\n") {
+		t.Fatalf("preamble = %q", got)
 	}
 }

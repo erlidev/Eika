@@ -194,7 +194,18 @@ func TextOf(e store.Entry) (string, error) {
 // taken with, which runs use until a compaction replaces the snapshot
 // (runtime.md 4).
 func PreambleEntry(text string, prompt *string, tools []string) (store.Entry, error) {
+	return PreambleEntryWithMemory(text, agent.MemorySnapshot{}, prompt, tools)
+}
+
+// PreambleEntryWithMemory is PreambleEntry for a snapshot whose text ends with
+// a memory section: mem records that section and the revision it was built
+// from, so the stored prefix can be inspected and compared without parsing
+// the text. A zero mem records none.
+func PreambleEntryWithMemory(text string, mem agent.MemorySnapshot, prompt *string, tools []string) (store.Entry, error) {
 	payload := preamblePayload{Text: text}
+	if mem != (agent.MemorySnapshot{}) {
+		payload.Memory = &mem
+	}
 	if prompt != nil {
 		if tools == nil {
 			tools = []string{}
@@ -211,8 +222,9 @@ func PreambleEntry(text string, prompt *string, tools []string) (store.Entry, er
 // preamblePayload is a preamble entry's payload. A snapshot stored before
 // definitions were pinned has text alone.
 type preamblePayload struct {
-	Text       string             `json:"text"`
-	Definition *definitionPayload `json:"definition,omitempty"`
+	Text       string                `json:"text"`
+	Memory     *agent.MemorySnapshot `json:"memory,omitempty"`
+	Definition *definitionPayload    `json:"definition,omitempty"`
 }
 
 // definitionPayload is the part of an agent definition a snapshot pins.
@@ -225,6 +237,7 @@ type definitionPayload struct {
 // definition.
 type Snapshot struct {
 	Text   string
+	Memory agent.MemorySnapshot
 	Prompt *string
 	Tools  []string
 }
@@ -241,6 +254,9 @@ func SnapshotOf(entries []store.Entry) (Snapshot, error) {
 			return Snapshot{}, fmt.Errorf("decode preamble entry %s: %w", e.ID, err)
 		}
 		snap = Snapshot{Text: payload.Text}
+		if payload.Memory != nil {
+			snap.Memory = *payload.Memory
+		}
 		if d := payload.Definition; d != nil {
 			snap.Prompt, snap.Tools = &d.Prompt, d.Tools
 			if snap.Tools == nil {

@@ -7,6 +7,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/erlidev/eika/internal/memory"
 
 	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/provider"
@@ -198,6 +201,13 @@ func TestAgentPreambleSurvivesServerRestart(t *testing.T) {
 	if err := a.store.SetInstructions(ctx, store.GlobalInstructions{AboutMe: "changed after snapshot"}); err != nil {
 		t.Fatal(err)
 	}
+	// A memory saved after the snapshot waits for the next compaction too.
+	if err := a.store.UpsertMemory(ctx, memory.Record{ContentSHA: "sha", File: memory.File{
+		Name: "late-save", Description: "Use when it is late.", Type: "fact", Source: "session:s",
+		Created: "2026-11-22T10:00:00Z", Updated: "2026-11-22T10:00:00Z", State: "active", Body: "saved while running",
+	}}); err != nil {
+		t.Fatal(err)
+	}
 	a.Close()
 	a.Server = server.New(a.cfg, testLogger(), a.deps, server.Options{})
 	t.Cleanup(a.Close)
@@ -206,5 +216,93 @@ func TestAgentPreambleSurvivesServerRestart(t *testing.T) {
 	a.waitIdle(t, home.ID)
 	if got := second.Requests()[0].System; got != before {
 		t.Fatalf("prefix after restart = %q, want %q", got, before)
+	}
+	if strings.Contains(before, "late-save") {
+		t.Fatal("a memory saved after the snapshot is in the stored prefix")
+	}
+}
+
+func lateMemory(name, state string) memory.Record {
+	return memory.Record{ContentSHA: "sha-" + name, File: memory.File{
+		Name: name, Description: "Use when it is late.", Type: "fact", Source: "session:s",
+		Created: "2026-11-22T10:00:00Z", Updated: "2026-11-22T10:00:00Z", State: state, Body: "SECRET-BODY-" + name,
+	}}
+}
+
+// Memory changes since the snapshot reach the next message's tail once, by
+// name: a write before a compaction is in the new snapshot and not named, one
+// after it is named, and a restart before the message neither loses nor
+// repeats them. No change starts a run.
+func TestMemoryChangesReachTheNextMessageOnce(t *testing.T) {
+	a := newAPI(t)
+	ctx := t.Context()
+	home, err := a.store.EnsureHomeSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.assignClasses(t, map[string]any{"main": "test-model"})
+	a.script(providertest.Text("one"))
+	a.postMessage(t, home.ID, "hello", "", 202)
+	a.waitIdle(t, home.ID)
+	for _, r := range []memory.Record{lateMemory("kept", "active"), lateMemory("held", "pending")} {
+		if err := a.store.UpsertMemory(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A restart finds the changes in the store only.
+	a.Close()
+	a.Server = server.New(a.cfg, testLogger(), a.deps, server.Options{})
+	t.Cleanup(a.Close)
+	scripted := a.script(providertest.Text("two"), providertest.Text("three"), providertest.Text("big reply"), providertest.Text("SUMMARY"), providertest.Text("four"))
+	time.Sleep(200 * time.Millisecond)
+	if len(scripted.Requests()) != 0 {
+		t.Fatal("a memory change started a run")
+	}
+	tail := func(i int) string {
+		reqs := scripted.Requests()
+		if len(reqs) <= i {
+			t.Fatalf("only %d requests", len(reqs))
+		}
+		m := reqs[i].Messages[len(reqs[i].Messages)-1]
+		return m.Context
+	}
+	a.postMessage(t, home.ID, "second", "", 202)
+	a.waitIdle(t, home.ID)
+	got := tail(0)
+	if !strings.Contains(got, "saved kept; saved (pending review) held") || strings.Contains(got, "SECRET-BODY") {
+		t.Fatalf("tail = %q, want both names and no body", got)
+	}
+	// Named once: the next message has no memory notice.
+	a.postMessage(t, home.ID, "third", "", 202)
+	a.waitIdle(t, home.ID)
+	if got := tail(1); strings.Contains(got, "Memory changed") {
+		t.Fatalf("repeated: %q", got)
+	}
+	a.postMessage(t, home.ID, "big "+strings.Repeat("x", 24000), "", 202)
+	a.waitIdle(t, home.ID)
+	// Writes around a compaction.
+	if err := a.store.UpsertMemory(ctx, lateMemory("before-compact", "active")); err != nil {
+		t.Fatal(err)
+	}
+	compactHome(t, a, home.ID)
+	if err := a.store.UpsertMemory(ctx, lateMemory("after-compact", "active")); err != nil {
+		t.Fatal(err)
+	}
+	a.postMessage(t, home.ID, "fourth", "", 202)
+	a.waitIdle(t, home.ID)
+	reqs := scripted.Requests()
+	last := reqs[len(reqs)-1].Messages
+	got = last[len(last)-1].Context
+	// The test model cannot count exactly, so the compaction keeps the previous
+	// section and its revision; the changes stay named, once, until a
+	// compaction that counts replaces them.
+	if !strings.Contains(got, "saved before-compact; saved after-compact") {
+		t.Fatalf("tail after compaction = %q", got)
+	}
+	fifth := a.script(providertest.Text("five"))
+	a.postMessage(t, home.ID, "fifth", "", 202)
+	a.waitIdle(t, home.ID)
+	if m := fifth.Requests()[0].Messages; strings.Contains(m[len(m)-1].Context, "Memory changed") {
+		t.Fatalf("repeated after compaction: %q", m[len(m)-1].Context)
 	}
 }
