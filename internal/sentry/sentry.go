@@ -159,6 +159,8 @@ type Options struct {
 	Audit AuditLog
 	// Withheld receives the text of every removal. Nil keeps no record.
 	Withheld WithheldLog
+	// TrustedSource checks an exact normalized web host.
+	TrustedSource func(context.Context, string) (bool, error)
 	// Halts keeps the halted state. Nil means the state is never persisted and
 	// Halt returns an error.
 	Halts HaltStore

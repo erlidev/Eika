@@ -400,3 +400,35 @@ describe("the mock answers as the harness does", () => {
     expect(mock.contractBreaks).toEqual([]);
   });
 });
+
+describe("trusted sources", () => {
+  it("adds, lists, trusts a withheld host, and removes exact hosts", async () => {
+    const mock = open("workbench");
+    mock.world.withheld.push({
+      id: "w1",
+      at: "2026-01-01T00:00:00Z",
+      source: "web_fetch",
+      source_name: "https://Sub.Example.com:443/page",
+      session_id: "",
+      run_id: "",
+      call_key: "",
+      text: "text",
+      score: 0.99,
+    });
+    expect(
+      (await call(mock, "POST", "/api/trusted-sources", { host: "Example.com." })).status,
+    ).toBe(204);
+    expect((await call(mock, "POST", "/api/withheld/w1/trust")).status).toBe(204);
+    expect((await call(mock, "GET", "/api/trusted-sources")).body).toEqual({
+      hosts: ["example.com", "sub.example.com"],
+    });
+    expect((await call(mock, "DELETE", "/api/trusted-sources/example.com")).status).toBe(204);
+    expect((await call(mock, "GET", "/api/trusted-sources")).body).toEqual({
+      hosts: ["sub.example.com"],
+    });
+    expect(
+      (await call(mock, "POST", "/api/trusted-sources", { host: "https://example.com" })).status,
+    ).toBe(400);
+    expect((await call(mock, "POST", "/api/withheld/missing/trust")).status).toBe(404);
+  });
+});

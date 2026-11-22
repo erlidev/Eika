@@ -134,6 +134,8 @@ export type World = {
   projectInstructionVersions: Record<string, number>;
   /** withheld is GET /api/withheld: every removal, in any order; the route sorts. */
   withheld: Withheld[];
+  /** trustedSources holds the exact hosts the user trusts. */
+  trustedSources: string[];
   /** halt is GET /api/halt; the routes change it and a refused run reads it. */
   halt: Halt;
   /** calls are each session's recorded model calls, oldest first. */
@@ -239,6 +241,7 @@ export function emptyWorld(): World {
     projectInstructions: {},
     projectInstructionVersions: {},
     withheld: [],
+    trustedSources: [],
     halt: { halted: false },
     calls: {},
   };

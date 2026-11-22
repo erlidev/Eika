@@ -221,6 +221,26 @@ a running Eika changes nothing.
 screening outcome since the server started. The first outcome sends no push.
 A cancelled call does not change the state.
 
+### `GET /api/trusted-sources`
+
+Returns `200` with `hosts`, an array of exact normalized hosts.
+
+### `POST /api/trusted-sources`
+
+Takes `{"host": "example.com"}` and returns `204`. Hosts exclude schemes,
+ports and paths. IDNs use ASCII and IP addresses use their canonical form.
+Subdomains are separate. Adding a host again has no effect.
+
+### `DELETE /api/trusted-sources/{host}`
+
+Removes a host and returns `204`. Removing a host again has no effect.
+
+### `POST /api/withheld/{id}/trust`
+
+Trusts the web host of that entry and returns `204`. A non-web entry returns
+`400`, and a missing entry returns `404`. Trusted suspect text remains in the
+result and is recorded in the withheld list.
+
 ### `GET /api/withheld`
 
 Text that ingest removed from a tool result or a subagent's report, newest first

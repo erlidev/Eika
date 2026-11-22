@@ -532,11 +532,7 @@ func (a *Agent) ingest(ctx context.Context, s *Session, runID string, c provider
 	var at []int // the parts that are untrusted, as indexes into r.Parts
 	switch {
 	case c.Name == "web_fetch":
-		var args struct {
-			URL string `json:"url"`
-		}
-		_ = json.Unmarshal([]byte(c.Arguments), &args)
-		src.Kind, src.Name = sentry.SourceFetch, args.URL
+		src.Kind, src.Name = sentry.SourceFetch, r.SourceURL
 		segs = []sentry.Segment{{Source: src, Text: r.Content}}
 	case r.IsError:
 		// An error carries text the backend echoed, so it is one segment.

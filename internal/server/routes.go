@@ -84,6 +84,10 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/halt", s.handleHalt)
 	api.HandleFunc("POST /api/halt", s.handleSetHalt)
 	api.HandleFunc("POST /api/halt/resume", s.handleResume)
+	api.HandleFunc("GET /api/trusted-sources", s.handleTrustedSources)
+	api.HandleFunc("POST /api/trusted-sources", s.handleAddTrustedSource)
+	api.HandleFunc("DELETE /api/trusted-sources/{host}", s.handleRemoveTrustedSource)
+	api.HandleFunc("POST /api/withheld/{id}/trust", s.handleTrustWithheld)
 	api.HandleFunc("GET /api/withheld", s.handleListWithheld)
 	api.HandleFunc("GET /api/withheld/{id}", s.handleWithheld)
 

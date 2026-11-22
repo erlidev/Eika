@@ -8,13 +8,17 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/netip"
 	"net/url"
+
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/net/idna"
 
 	"github.com/erlidev/eika/internal/sentry/scan"
 	"github.com/erlidev/eika/internal/sentry/screen"
@@ -111,7 +115,15 @@ func (g *gate) Ingest(ctx context.Context, segs []Segment) ([]Ingested, error) {
 	}
 	out := make([]Ingested, len(segs))
 	for i, seg := range segs {
-		text, removed, err := g.cut(ctx, seg.Source, ids[i], texts[i], windows[i], threshold)
+		trusted := false
+		if host := SourceHost(seg.Source); host != "" && g.TrustedSource != nil {
+			var err error
+			trusted, err = g.TrustedSource(ctx, host)
+			if err != nil {
+				return nil, fmt.Errorf("sentry: read trusted source: %w", err)
+			}
+		}
+		text, removed, err := g.cut(ctx, seg.Source, ids[i], texts[i], windows[i], threshold, trusted)
 		if err != nil {
 			return nil, err
 		}
@@ -196,7 +208,7 @@ type span struct {
 // the new text and how many runs it removed. Windows may come in any order and
 // may overlap: they are sorted, clamped to the text, and merged, and a run that
 // is empty after moving to character boundaries is skipped.
-func (g *gate) cut(ctx context.Context, src Source, id, text string, windows []screen.Window, threshold float64) (string, int, error) {
+func (g *gate) cut(ctx context.Context, src Source, id, text string, windows []screen.Window, threshold float64, trusted bool) (string, int, error) {
 	var hits []screen.Window
 	for _, w := range windows {
 		if w.Score < threshold {
@@ -226,26 +238,33 @@ func (g *gate) cut(ctx context.Context, src Source, id, text string, windows []s
 	var out strings.Builder
 	at := 0
 	for _, sp := range spans {
-		if err := g.record(ctx, src, id, text[sp.start:sp.end], sp.score); err != nil {
+		if err := g.record(ctx, src, id, text[sp.start:sp.end], sp.score, trusted); err != nil {
 			return "", 0, err
 		}
 		out.WriteString(text[at:sp.start])
-		out.WriteString(RemovedMarker)
+		if trusted {
+			out.WriteString(text[sp.start:sp.end])
+		} else {
+			out.WriteString(RemovedMarker)
+		}
 		at = sp.end
 	}
 	out.WriteString(text[at:])
+	if trusted {
+		return out.String(), 0, nil
+	}
 	return out.String(), len(spans), nil
 }
 
 // record writes the withheld row and the audit row of one removal.
-func (g *gate) record(ctx context.Context, src Source, contentID, removed string, score float64) error {
+func (g *gate) record(ctx context.Context, src Source, contentID, removed string, score float64, trusted bool) error {
 	w := Withheld{ID: newContentID(), At: time.Now().UTC(), Source: src, ContentID: contentID, Text: removed, Score: score}
 	if g.Withheld != nil {
 		if err := g.Withheld.AppendWithheld(ctx, w); err != nil {
 			return fmt.Errorf("sentry: record withheld: %w", err)
 		}
 	}
-	detail, err := json.Marshal(map[string]any{"withheld_id": w.ID, "content_id": contentID, "score": score, "bytes": len(removed)})
+	detail, err := json.Marshal(map[string]any{"withheld_id": w.ID, "content_id": contentID, "score": score, "bytes": len(removed), "trusted": trusted})
 	if err != nil {
 		return fmt.Errorf("sentry: encode removal: %w", err)
 	}
@@ -314,4 +333,46 @@ func newContentID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// SourceHost returns the exact normalized host of a web result.
+func SourceHost(src Source) string {
+	if src.Kind != SourceFetch && src.Kind != SourceSearch {
+		return ""
+	}
+	u, err := url.Parse(src.Name)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return ""
+	}
+	return CanonicalHost(u.Hostname())
+}
+
+// CanonicalHost validates a host and returns its ASCII or canonical IP form.
+func CanonicalHost(host string) string {
+	host = strings.TrimSuffix(host, ".")
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if addr.Zone() != "" {
+			return ""
+		}
+		return addr.String()
+	}
+	host, err := idna.Lookup.ToASCII(host)
+	if err != nil {
+		return ""
+	}
+	host = strings.ToLower(host)
+	if len(host) == 0 || len(host) > 253 {
+		return ""
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return ""
+		}
+		for _, c := range label {
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+				return ""
+			}
+		}
+	}
+	return host
 }
