@@ -208,6 +208,11 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   development state with no setting, a warning at start, and no blocklist or
   allowlist. Rejected: giving dev and live a real internal network, which needs a
   host-run Core reachable from it for a state that is not a deployment.
+- **Sandbox egress uses exact blocked hosts** (2026-11-22). The proxy asks
+  Sentry before each connection. A blocklist entry matches the normalized host,
+  and takes precedence over a computer's allowlist. Netguard still checks the
+  resolved address at dial time. Halt closes active proxy connections and refuses
+  new ones. Core fetches adopt the blocklist in P4-20.
 - **Fixtures reach `web_fetch` through a config key of exact private hostnames**
   (2026-11-21). Core's fetch refuses private addresses, so smoke and live fixtures
   need one exception. The key is empty by default, takes exact hostnames only, is

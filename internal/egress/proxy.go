@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -21,6 +23,8 @@ import (
 // ErrUnknownComputer is what Options.Policy returns for a computer that
 // does not exist, which the proxy answers as a failed sign-in.
 var ErrUnknownComputer = errors.New("unknown computer")
+
+var errHalted = errors.New("egress halted")
 
 // Bounds on the proxy's own connections.
 const (
@@ -49,6 +53,10 @@ type Options struct {
 	// netguard.Control, which refuses every address that is not public; only
 	// tests, whose servers listen on loopback, set another.
 	Control func(network, address string, c syscall.RawConn) error
+	// Decide checks one connection, including any proxy refusal.
+	Decide func(context.Context, string, string, string, string) (bool, error)
+	// Halted reports the current halt state.
+	Halted func() bool
 }
 
 // Blocked is a host a computer was refused.
@@ -65,17 +73,19 @@ type Blocked struct {
 // Proxy is the HTTP proxy sandboxes reach the internet through.
 // It is an http.Handler; Close ends the tunnels it has open.
 type Proxy struct {
-	opts    Options
-	log     *slog.Logger
-	dialer  *net.Dialer
-	forward *httputil.ReverseProxy
+	opts     Options
+	log      *slog.Logger
+	dialer   *net.Dialer
+	forward  *httputil.ReverseProxy
+	sequence atomic.Uint64
 
 	// mu guards everything below it.
 	mu sync.Mutex
 	// tunnels are the CONNECT tunnels open now, closed by Close.
 	tunnels map[net.Conn]struct{}
 	// blocked holds each computer's refused hosts, most recent last.
-	blocked map[string][]Blocked
+	blocked    map[string][]Blocked
+	generation uint64
 }
 
 // New builds a Proxy.
@@ -100,12 +110,16 @@ func New(opts Options, log *slog.Logger) *Proxy {
 			// Never another proxy: the address check applies to the
 			// connection this one makes.
 			Proxy:                 nil,
-			DialContext:           p.dialer.DialContext,
+			DialContext:           p.dialHTTP,
+			DisableKeepAlives:     true,
 			MaxIdleConns:          32,
 			IdleConnTimeout:       90 * time.Second,
 			ResponseHeaderTimeout: time.Minute,
 		},
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			if errors.Is(err, netguard.ErrPrivateAddress) {
+				p.denied(r.Context(), "non-public address")
+			}
 			refuse(w, dialStatus(err), err.Error())
 		},
 	}
@@ -145,16 +159,32 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	host, _, err := net.SplitHostPort(target)
 	if err != nil {
-		host = target
+		host = strings.Trim(target, "[]")
 	}
-	switch {
-	case policy.Mode == ModeNone:
+	reason := ""
+	if policy.Mode == ModeNone {
+		reason = "network access is off"
+	}
+	if policy.Mode == ModeAllowlist && !Allowed(policy.Allow, host) {
+		reason = "host is not on the allowlist"
+	}
+	info := connection{id: id, host: host, key: fmt.Sprintf("%s-%d-%d", id, time.Now().UnixNano(), p.sequence.Add(1))}
+	r = r.WithContext(context.WithValue(r.Context(), connectionKey{}, info))
+	if p.opts.Decide != nil {
+		allowed, err := p.opts.Decide(r.Context(), info.id, info.host, info.key, reason)
+		if err != nil {
+			p.log.Error("decide egress", "error", err)
+			refuse(w, http.StatusBadGateway, "could not check egress")
+			return
+		}
+		if !allowed {
+			p.block(id, host)
+			refuse(w, http.StatusForbidden, "connection refused")
+			return
+		}
+	} else if reason != "" || p.isHalted() {
 		p.block(id, host)
-		refuse(w, http.StatusForbidden, "this computer has no network access: its egress is off")
-		return
-	case policy.Mode == ModeAllowlist && !Allowed(policy.Allow, host):
-		p.block(id, host)
-		refuse(w, http.StatusForbidden, fmt.Sprintf("%s is not on this computer's egress allowlist", host))
+		refuse(w, http.StatusForbidden, "connection refused")
 		return
 	}
 
@@ -163,6 +193,60 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.forward.ServeHTTP(w, r)
+}
+
+type connectionKey struct{}
+type connection struct{ id, host, key string }
+
+func (p *Proxy) isHalted() bool { return p.opts.Halted != nil && p.opts.Halted() }
+
+func (p *Proxy) denied(ctx context.Context, reason string) {
+	info, ok := ctx.Value(connectionKey{}).(connection)
+	if !ok {
+		return
+	}
+	p.block(info.id, info.host)
+	if p.opts.Decide != nil {
+		if _, err := p.opts.Decide(ctx, info.id, info.host, info.key, reason); err != nil {
+			p.log.Error("audit egress refusal", "error", err)
+		}
+	}
+}
+
+// Halt closes open connections. New connections are refused while Halted is true.
+func (p *Proxy) Halt() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.generation++
+	for conn := range p.tunnels {
+		_ = conn.Close()
+	}
+}
+
+type trackedConn struct {
+	net.Conn
+	p *Proxy
+}
+
+func (c *trackedConn) Close() error {
+	err := c.Conn.Close()
+	c.p.mu.Lock()
+	delete(c.p.tunnels, c.Conn)
+	c.p.mu.Unlock()
+	return err
+}
+func (p *Proxy) dialHTTP(ctx context.Context, network, address string) (net.Conn, error) {
+	generation := p.currentGeneration()
+	conn, err := p.dialer.DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	if !p.trackGeneration(generation, conn) {
+		p.denied(ctx, "Eika is halted")
+		_ = conn.Close()
+		return nil, errHalted
+	}
+	return &trackedConn{Conn: conn, p: p}, nil
 }
 
 // Blocked lists the hosts a computer was refused lately, most recent first.
@@ -195,8 +279,12 @@ func (p *Proxy) Close() {
 // tunnel connects to the CONNECT request's destination and relays bytes both
 // ways until either side closes.
 func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request) {
+	generation := p.currentGeneration()
 	upstream, err := p.dialer.DialContext(r.Context(), "tcp", r.Host)
 	if err != nil {
+		if errors.Is(err, netguard.ErrPrivateAddress) {
+			p.denied(r.Context(), "non-public address")
+		}
 		refuse(w, dialStatus(err), err.Error())
 		return
 	}
@@ -206,7 +294,8 @@ func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusInternalServerError, "the egress proxy could not take over the connection")
 		return
 	}
-	if !p.track(client, upstream) {
+	if !p.trackGeneration(generation, client, upstream) {
+		p.denied(r.Context(), "Eika is halted")
 		client.Close()
 		upstream.Close()
 		return
@@ -238,10 +327,20 @@ func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request) {
 
 // track records a tunnel's two connections so Close can end them. It
 // refuses once Close has run.
-func (p *Proxy) track(conns ...net.Conn) bool {
+func (p *Proxy) currentGeneration() uint64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.tunnels == nil {
+	return p.generation
+}
+
+func (p *Proxy) track(conns ...net.Conn) bool {
+	return p.trackGeneration(p.currentGeneration(), conns...)
+}
+
+func (p *Proxy) trackGeneration(generation uint64, conns ...net.Conn) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.tunnels == nil || p.isHalted() || generation != p.generation {
 		return false
 	}
 	for _, c := range conns {
@@ -312,7 +411,7 @@ func refuse(w http.ResponseWriter, status int, msg string) {
 // destination the address check refused, 502 for one that could not be
 // reached.
 func dialStatus(err error) int {
-	if errors.Is(err, netguard.ErrPrivateAddress) {
+	if errors.Is(err, netguard.ErrPrivateAddress) || errors.Is(err, errHalted) {
 		return http.StatusForbidden
 	}
 	return http.StatusBadGateway

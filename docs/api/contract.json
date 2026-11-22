@@ -3,6 +3,9 @@
     "DELETE /api/agents/{name}": {
       "status": 204
     },
+    "DELETE /api/blocked-hosts/{host}": {
+      "status": 204
+    },
     "DELETE /api/instructions": {
       "status": 204
     },
@@ -153,6 +156,18 @@
         }
       },
       "public": true
+    },
+    "GET /api/blocked-hosts": {
+      "status": 200,
+      "response": {
+        "object": {
+          "hosts": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        }
+      }
     },
     "GET /api/computers": {
       "status": 200,
@@ -3489,6 +3504,14 @@
         }
       },
       "public": true
+    },
+    "POST /api/blocked-hosts": {
+      "status": 204,
+      "request": {
+        "object": {
+          "host": "string"
+        }
+      }
     },
     "POST /api/elicitations/{id}/answer": {
       "status": 204,

@@ -260,7 +260,7 @@ Trusting a source from the withheld list lets its next page through, scored.
       setting, reconfine running computers and keep the list of blocked hosts. A host
       with no egress control keeps direct routes, with a warning at start.
 - [ ] **P4-18**: Update the computer egress settings for the modes that remain.
-- [ ] **P4-19**: Make a connection an `egress` action: `allow` or `deny` for the
+- [x] **P4-19**: Make a connection an `egress` action: `allow` or `deny` for the
       blocklist, netguard, halt and allowlist mode. Add the blocklist table and API,
       and make halt refuse new connections and close open ones.
 - [ ] **P4-20**: Check the blocklist and halt before `web_fetch` and every search
@@ -500,7 +500,7 @@ and also requires the exit checks.
         halt before they dial
       - [x] **P4-17**: Retire the `open` egress mode and move every computer behind the proxy.
       - [ ] **P4-18**: Update the computer egress settings for the modes that remain.
-      - [ ] **P4-19**: Decide each connection through the gate, with the blocklist and halt.
+      - [x] **P4-19**: Decide each connection through the gate, with the blocklist and halt.
       - [ ] **P4-20**: Check the blocklist and halt before Core's own fetches.
 - [ ] Halt: an always-visible button, resume, and Core's reaction (abort runs, a
       scheduler pause hook, a banner, a push).

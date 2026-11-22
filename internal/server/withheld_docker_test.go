@@ -105,3 +105,25 @@ func TestTrustedSourcesAPI(t *testing.T) {
 		t.Fatalf("trusted: %v, %v", trusted, err)
 	}
 }
+
+func TestBlockedHostsAPI(t *testing.T) {
+	a := newAPI(t)
+	if rec := request(t, a.Server, http.MethodPost, "/api/blocked-hosts", map[string]string{"host": "OTHER.example."}); rec.Code != http.StatusNoContent {
+		t.Fatalf("add: %d", rec.Code)
+	}
+	if rec := request(t, a.Server, http.MethodPost, "/api/blocked-hosts", map[string]string{"host": "https://example.com"}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid: %d", rec.Code)
+	}
+	rows := decodeBody[struct {
+		Hosts []string `json:"hosts"`
+	}](t, request(t, a.Server, http.MethodGet, "/api/blocked-hosts", nil), http.StatusOK)
+	if len(rows.Hosts) != 1 || rows.Hosts[0] != "other.example" {
+		t.Fatalf("hosts: %v", rows.Hosts)
+	}
+	if rec := request(t, a.Server, http.MethodDelete, "/api/blocked-hosts/other.example", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	if blocked, err := a.store.IsBlockedHost(t.Context(), "other.example"); err != nil || blocked {
+		t.Fatalf("after delete: %v %v", blocked, err)
+	}
+}

@@ -47,3 +47,18 @@ func TestUpgradePublicEgressHandlesNonObjectsAndRepeat(t *testing.T) {
 		})
 	}
 }
+
+func TestUpgradeAddsBlockedHostsWithoutLosingSettings(t *testing.T) {
+	st, conn := upgradeFrom(t, "0027_public_egress", `INSERT INTO trusted_sources (host) VALUES ('keep.example')`)
+	if err := st.SetBlockedHost(t.Context(), "blocked.example", true); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := st.IsBlockedHost(t.Context(), "blocked.example")
+	if err != nil || !blocked {
+		t.Fatalf("blocked host: %v %v", blocked, err)
+	}
+	var host string
+	if err := conn.QueryRow(t.Context(), `SELECT host FROM trusted_sources`).Scan(&host); err != nil || host != "keep.example" {
+		t.Fatalf("trusted host: %q %v", host, err)
+	}
+}
