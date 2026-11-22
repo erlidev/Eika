@@ -193,6 +193,24 @@ sees.
 `compaction` entry replaces the messages before it with a user message that
 carries its summary and has `"summary": true`, followed by the ones it kept.
 
+### `GET /api/withheld`
+
+Text that ingest removed from a tool result or a subagent's report, newest first
+(`at`, then `id`). Returns `200` with `withheld` (array) and optional
+`next_before` (string). `limit` (1 to 100, default 50) and `before` (a cursor, as
+for the entries of a session) work as they do there; a cursor must name a row.
+An empty page has an empty array and no cursor. Each row is `{id, at, source,
+source_name, session_id, run_id, call_key, text, score}`. `source` is `web_fetch`,
+`web_search`, `report` (a subagent's report or question; `session_id` is the
+child) or `plugin`. `source_name` is the URL, query or tool. `score` is the highest
+score among the removed windows. `call_key` is `<session id>:<tool call id>` and
+is empty when there is no tool call, so a tool card in that session finds its
+rows by it. Rows outlive their session.
+
+### `GET /api/withheld/{id}`
+
+Returns `200` with one row, as above, or `404`.
+
 ### `GET /api/sessions/{id}/entries`
 
 Returns `200` with `session_id` (string), `entries` (Entry array), and optional

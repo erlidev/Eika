@@ -206,7 +206,7 @@ here halts, restricts or settles anything.
       results as segments, so a removal never spans two results.
 - [x] **P4-06**: Screen a subagent's report and its questions before they become
       Eika's notice, without the wrapper.
-- [ ] **P4-07**: Add the withheld list API: newest first, with each entry's text, and
+- [x] **P4-07**: Add the withheld list API: newest first, with each entry's text, and
       a paged read.
 - [ ] **P4-08**: Build Settings, Security with the withheld list, and mark a tool
       card whose result had a removal. Add its `World` routes and phone baselines.
@@ -514,7 +514,7 @@ and also requires the exit checks.
       `screen_required`; the blocklist; trusted sources (a host or, from phase 11,
       a plugin whose results are scored but never removed); and the withheld list,
       newest first, each with its text and a "trust this source" action.
-      - [ ] **P4-07**: Add the withheld list API.
+      - [x] **P4-07**: Add the withheld list API.
       - [ ] **P4-08**: Build Settings, Security with the withheld list, and mark tool cards.
       - [ ] **P4-15**: Add trusted sources to ingest and the API.
       - [ ] **P4-16**: Add guard health, the threshold, `screen_required` and trusted sources to the page.

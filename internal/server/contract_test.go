@@ -76,6 +76,9 @@ var routeWire = map[string]wire{
 	"POST /api/auth/logout":  {status: http.StatusNoContent},
 	"PUT /api/auth/password": {status: http.StatusOK, request: changePasswordRequest{}, response: signInResponse{}},
 
+	"GET /api/withheld":      {status: http.StatusOK, response: withheldResponse{}},
+	"GET /api/withheld/{id}": {status: http.StatusOK, response: withheldBody{}},
+
 	"GET /api/events": {websocket: true},
 
 	"GET /api/computers": {status: http.StatusOK, response: computersResponse{}},

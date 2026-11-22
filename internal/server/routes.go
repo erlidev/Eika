@@ -80,6 +80,9 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /api/questions/{id}/answer", s.handleAnswerQuestion)
 	api.HandleFunc("GET /api/tools", s.handleListTools)
 
+	api.HandleFunc("GET /api/withheld", s.handleListWithheld)
+	api.HandleFunc("GET /api/withheld/{id}", s.handleWithheld)
+
 	api.HandleFunc("GET /api/providers", s.handleListProviders)
 	api.HandleFunc("POST /api/providers", s.handleCreateProvider)
 	api.HandleFunc("POST /api/providers/probe", s.handleProbeProvider)

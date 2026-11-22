@@ -3072,6 +3072,50 @@
         }
       }
     },
+    "GET /api/withheld": {
+      "status": 200,
+      "response": {
+        "object": {
+          "next_before": "string",
+          "withheld": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "at": "string",
+                  "call_key": "string",
+                  "id": "string",
+                  "run_id": "string",
+                  "score": "number",
+                  "session_id": "string",
+                  "source": "string",
+                  "source_name": "string",
+                  "text": "string"
+                }
+              }
+            }
+          }
+        },
+        "optional": [
+          "next_before"
+        ]
+      }
+    },
+    "GET /api/withheld/{id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "at": "string",
+          "call_key": "string",
+          "id": "string",
+          "run_id": "string",
+          "score": "number",
+          "session_id": "string",
+          "source": "string",
+          "source_name": "string",
+          "text": "string"
+        }
+      }
+    },
     "PATCH /api/mcp/servers/{id}": {
       "status": 200,
       "request": {

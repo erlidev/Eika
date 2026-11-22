@@ -9,6 +9,14 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-07 added `GET /api/withheld` (newest first by `at` then `id`, `limit` and
+  `before` as for entries; the cursor is a row id and must exist) and `GET /api/withheld/{id}`
+  (`server/withheld.go`, `store.Withheld`, `store.WithheldBefore`). Rows carry source,
+  source_name, session_id, run_id, call_key, text and score, including `report` rows.
+  Not mocked: the UI first calls them in P4-08, which adds the web types and the mock routes.
+  - Decision: carrying `Removed` onto the tool event and entry belongs to P4-08, which is the
+    first to read it. P4-08 can also match a card by `call_key` (`<session>:<call id>`);
+    the API has no per-session filter yet. "Trust this source" stays with P4-15.
 - 2026-11-21: P4-06 screens a subagent's report and questions without the wrapper
   (`server/screening.go`). The report is screened in the subagent service
   (`Options.Screen`) before it is stored, so `Result`, the notice, the board and recovery
