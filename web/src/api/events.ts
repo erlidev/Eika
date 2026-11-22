@@ -29,6 +29,7 @@ export type EventType =
   | "halt.state"
   | "memory.changed"
   | "inbox.count"
+  | "skills.changed"
   | "bus.dropped";
 
 /** EikaEvent is the envelope every streamed event uses. */
@@ -285,6 +286,16 @@ export type InboxCountChanged = {
 };
 
 /**
+ * SkillsChanged is the payload of a skills.changed event, on topic skills: a
+ * skill was installed (or reinstalled, which returns it to disabled), enabled,
+ * disabled or deleted. Refetch the list and the skill shown.
+ */
+export type SkillsChanged = {
+  name: string;
+  change: "installed" | "enabled" | "disabled" | "deleted";
+};
+
+/**
  * CompactionEnd is the payload of a compaction.end event. One that failed
  * carries error and changed nothing; one that succeeded is stored as an entry
  * of kind compaction.
@@ -337,6 +348,7 @@ export type EventPayloads = {
   "halt.state": HaltState;
   "memory.changed": MemoryChanged;
   "inbox.count": InboxCountChanged;
+  "skills.changed": SkillsChanged;
   "bus.dropped": BusDropped;
 };
 
@@ -364,6 +376,9 @@ export const globalTopic = "global";
 
 /** inboxTopic is the topic of memory.changed and inbox.count. */
 export const inboxTopic = "inbox";
+
+/** skillsTopic is the topic of skills.changed. */
+export const skillsTopic = "skills";
 
 /** computerTopic names the topic carrying one computer's events. */
 export function computerTopic(id: string): string {
@@ -399,6 +414,7 @@ export const eventTypes: readonly EventType[] = [
   "halt.state",
   "memory.changed",
   "inbox.count",
+  "skills.changed",
   "bus.dropped",
 ];
 

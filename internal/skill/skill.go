@@ -205,3 +205,9 @@ func stringMap(v any) (map[string]string, bool) {
 	}
 	return out, true
 }
+
+// ValidName is whether name is a legal skill name: 1 to 64 lowercase letters
+// and digits with single hyphens inside.
+func ValidName(name string) bool {
+	return len(name) >= 1 && len(name) <= 64 && namePattern.MatchString(name)
+}

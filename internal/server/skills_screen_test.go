@@ -27,8 +27,9 @@ func (f *skillRows) GetSkill(_ context.Context, n string) (skill.Record, error) 
 	}
 	return skill.Record{}, skill.ErrNotFound
 }
-func (f *skillRows) ListSkills(context.Context) ([]skill.Record, error) { return nil, nil }
-func (f *skillRows) DeleteSkill(context.Context, string) error          { return nil }
+func (f *skillRows) ListSkills(context.Context) ([]skill.Record, error)  { return nil, nil }
+func (f *skillRows) DeleteSkill(context.Context, string) error           { return nil }
+func (f *skillRows) SetSkillEnabled(context.Context, string, bool) error { return nil }
 func (f *skillRows) SetSkillBroken(context.Context, string, string) error {
 	return nil
 }

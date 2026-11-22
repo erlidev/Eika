@@ -38,7 +38,7 @@ Every failure has one shape:
 | `not_found` | 404 | The addressed computer, session, entry, run, question, provider, model, MCP server, elicitation, or pending authorization does not exist. |
 | `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a computer that is not running or could not be started, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
 | `too_large` | 413 | A JSON request body is over its 1 MiB bound. |
-| `internal` | 500, 503 | The harness failed (500). The message is always `internal error`; the detail is in the harness log. A memory route answers 503 with a plain message when memory cannot be judged right now (see Memory). |
+| `internal` | 500, 503 | The harness failed (500). The message is always `internal error`; the detail is in the harness log. A memory route answers 503 with a plain message when memory cannot be judged right now (see Memory), and a skills route when skills cannot be (see Skills). |
 
 ## Health
 
@@ -1408,6 +1408,84 @@ status or directory is invalid. Returns the Project, or 404 for an unknown ID.
 Invalid fields return 400. Updates apply together under a row lock. A null body,
 unknown field, `slug` or `instructions` returns 400. Creation also rejects a null
 body and unknown fields, including `instructions`.
+
+## Skills
+
+The user's skills: install by `.zip` upload, list, read, enable, disable and
+delete. All routes require authentication and no agent can reach them. Every
+change goes through the skill installer (stage, hash check, directory swap, then
+the row, in one critical section). Until Core has reconciled the skill rows with
+the skills volume, and on a host that cannot run the installer, every skills
+route returns 503 with `skills are not available right now: the skills installer
+is not up`.
+
+A skill is identified by its `name` (1 to 64 lowercase letters, digits and single
+hyphens); any other name is a 404. An install never enables: the row is created
+`enabled: false`, and enabling is the user's explicit call after reading the
+skill. Every change publishes `skills.changed` on topic `skills` after it is
+durable (see `events.md`). User changes (`install`, `enable`, `disable`,
+`delete`) are written to the audit log as `setting` events of kind `skill`,
+with no content.
+
+### `POST /api/skills`
+
+Installs a skill from a zip. The body is `multipart/form-data` with exactly one
+part, named `file`; any other part, a missing or empty file, or another content
+type is 400. The body is bounded: a zip over 5 MiB (or a `Content-Length` over
+that plus 64 KiB of framing) is 413 `too_large`. Archive limits (20 MiB
+expanded, 200 files, 5 levels deep, `SKILL.md` 64 KiB, regular files only, no
+symlinks or escaping paths) and a `SKILL.md` that cannot be used are 400 with the
+reason. A credential in any text file is 400 and names the file and the pattern,
+never the value. The screen otherwise never blocks: its hits and `unscanned` are
+in `screen`.
+
+Returns 201 `{skill: Skill, unchanged: boolean}`. A new skill is disabled. An
+install of an installed name with identical contents changes nothing
+(`unchanged: true`, no event); with different contents it replaces the skill and
+returns it to disabled, with its new `warnings` and `screen`. A broken skill with
+identical contents is repaired by installing it again.
+
+### `GET /api/skills`
+
+Returns `{skills: [...]}` ordered by name. Each item has `name`, `description`,
+`enabled`, `broken`, `installed_at`, `sha`, `file_count`, `warning_count`,
+`span_count` (screen hits) and `unscanned`.
+
+### `GET /api/skills/{name}`
+
+Returns the Skill in full, or 404.
+
+### `POST /api/skills/{name}/enable`
+
+Enables the skill and returns the Skill (200); enabling an enabled skill changes
+nothing. Enabling is refused with 409 when the skill is `broken`, and when the
+catalog of every enabled skill, one `- name: description` line each under its
+heading, would exceed 2,000 tokens counted exactly with the model's own counter
+(the same counter as a memory pin). With no exact count the answer is 503 and
+nothing changes. Nothing is pushed.
+
+### `POST /api/skills/{name}/disable`
+
+Disables the skill and returns the Skill. Never refused for the budget.
+
+### `DELETE /api/skills/{name}`
+
+Removes the skill's directory and then its row. 204, or 404.
+
+### Skill
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name`, `description`, `license`, `compatibility`, `allowed_tools` | string | The frontmatter as parsed. `allowed_tools` is shown only; it grants nothing. |
+| `metadata` | object of strings | The frontmatter `metadata` map. |
+| `body` | string | The stored `SKILL.md` text after the frontmatter. Screen span offsets into it are bytes. |
+| `enabled` | boolean | The user's choice. |
+| `broken` | string | Empty, or why the skill cannot be loaded or enabled: `directory missing` or `directory changed since install`. |
+| `sha` | string | Hash of the installed tree. |
+| `installed_at` | RFC 3339 timestamp | |
+| `files` | array of `{path, size}` | Every file, `SKILL.md` included. |
+| `warnings` | array of strings | Faults the parser tolerated. |
+| `screen` | object or null | `{spans, max_score, unscanned}`; a span is `{field, start, end, score, text}` with `field` `description` or `body`. `unscanned` is true when the guard did not answer. |
 
 ## Memory
 

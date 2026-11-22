@@ -40,6 +40,7 @@ import { sessionRoutes } from "./routes/sessions.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { haltRoutes } from "./routes/halt.ts";
 import { memoryRoutes } from "./routes/memories.ts";
+import { skillRoutes } from "./routes/skills.ts";
 import { withheldRoutes } from "./routes/withheld.ts";
 import { classView, entryKind, fixedNow, pathOf, syncSystem } from "./world.ts";
 import type { ReplyStep, World } from "./world.ts";
@@ -556,6 +557,7 @@ export class MockHarness {
     runRoutes(ctx);
     mcpRoutes(ctx);
     memoryRoutes(ctx);
+    skillRoutes(ctx);
     withheldRoutes(ctx);
     haltRoutes(ctx);
 

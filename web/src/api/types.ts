@@ -17,6 +17,7 @@ export * from "@/api/types/providers";
 export * from "@/api/types/requests";
 export * from "@/api/types/runs";
 export * from "@/api/types/search";
+export * from "@/api/types/skills";
 export * from "@/api/types/sessions";
 export * from "@/api/types/settings";
 export * from "@/api/types/halt";
