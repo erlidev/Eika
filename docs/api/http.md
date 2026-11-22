@@ -215,6 +215,12 @@ Clears the halt. Runs start again; the ones that were aborted stay aborted.
 Returns `200`, as `GET /api/halt`, and writes a `resume` audit row. Resuming
 a running Eika changes nothing.
 
+### `GET /api/guard`
+
+`200` with `{"status": "unknown" | "up" | "down"}`. The state is the last
+screening outcome since the server started. The first outcome sends no push.
+A cancelled call does not change the state.
+
 ### `GET /api/withheld`
 
 Text that ingest removed from a tool result or a subagent's report, newest first
@@ -882,6 +888,8 @@ stores them.
 
 | Key | Value | Meaning |
 |---|---|---|
+| `screen_required` | boolean | Block untrusted content when the guard is unavailable; default false. |
+| `screen_threshold` | number | Remove windows at or above this score, above 0 and at most 1; default is the deployment config. |
 | `time_zone` | string | IANA time zone for new agent preamble snapshots; defaults to UTC. |
 | `locale` | string | Locale for new agent preamble snapshots, 1 to 64 ASCII letters, digits or hyphens; unspecified by default. |
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a chat model. |

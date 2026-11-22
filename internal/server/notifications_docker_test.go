@@ -64,7 +64,7 @@ func TestNotificationsForReportAndBackgroundReply(t *testing.T) {
 	if got["A subagent reported"] != 1 || got["Eika replied"] != 1 {
 		t.Fatalf("notifications = %v", got)
 	}
-	restarted := server.New(testConfig(), testLogger(), d.deps, server.Options{})
+	restarted := server.New(d.cfg, testLogger(), d.deps, server.Options{})
 	restarted.SetNotificationClientForTest(ntfy.Client(), "https://eika.example")
 	defer restarted.Close()
 	if err := restarted.Reconcile(t.Context()); err != nil {

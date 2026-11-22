@@ -57,7 +57,7 @@ func (a *api) containers() int { return a.host.count() }
 // host, which is what a restart is.
 func (a *api) anotherServer(t *testing.T) *server.Server {
 	t.Helper()
-	s := server.New(testConfig(), testLogger(), server.Deps{Store: a.store, Computers: a.host}, server.Options{})
+	s := server.New(a.cfg, testLogger(), server.Deps{Store: a.store, Computers: a.host}, server.Options{})
 	t.Cleanup(s.Close)
 	return s
 }

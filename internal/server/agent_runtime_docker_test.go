@@ -198,7 +198,7 @@ func TestAgentPreambleSurvivesServerRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.Close()
-	a.Server = server.New(testConfig(), testLogger(), a.deps, server.Options{})
+	a.Server = server.New(a.cfg, testLogger(), a.deps, server.Options{})
 	t.Cleanup(a.Close)
 	second := a.script(providertest.Text("second response"))
 	a.postMessage(t, home.ID, "after restart", "", 202)

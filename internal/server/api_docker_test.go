@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/mcp"
@@ -37,6 +39,7 @@ func TestMain(m *testing.M) {
 // scripts per run.
 type api struct {
 	*server.Server
+	cfg       config.Config
 	store     *store.Store
 	deps      server.Deps
 	host      *fakeHost
@@ -72,7 +75,24 @@ func newAPI(t *testing.T) *api {
 	if err != nil {
 		t.Fatalf("secret.Load: %v", err)
 	}
-	a := &api{store: st, host: newFakeHost(t), questions: builtin.NewQuestions(), secrets: secrets}
+	guard := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Texts []string `json:"texts"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		results := make([]map[string]any, len(req.Texts))
+		for i, text := range req.Texts {
+			results[i] = map[string]any{"windows": []any{map[string]any{"start": 0, "end": len(text), "score": 0}}}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
+	}))
+	t.Cleanup(guard.Close)
+	cfg := testConfig()
+	cfg.GuardURL = guard.URL
+	a := &api{cfg: cfg, store: st, host: newFakeHost(t), questions: builtin.NewQuestions(), secrets: secrets}
 	// The proxy asks the server for policies, as it does in the harness.
 	a.egress = egress.New(egress.Options{Policy: func(ctx context.Context, id string) (egress.Policy, error) {
 		return a.EgressPolicy(ctx, id)
@@ -116,7 +136,7 @@ func newAPI(t *testing.T) *api {
 		Egress:    a.egress,
 		MCP:       a.mcp,
 	}
-	a.Server = server.New(testConfig(), testLogger(), a.deps, server.Options{})
+	a.Server = server.New(a.cfg, testLogger(), a.deps, server.Options{})
 	t.Cleanup(a.Close)
 
 	// Every run uses test-model unless it names another. Its window is wide

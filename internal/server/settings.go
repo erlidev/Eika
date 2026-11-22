@@ -26,7 +26,9 @@ import (
 const (
 	// settingDefaultModel names the model a run uses when the request names
 	// none.
-	settingDefaultModel = "default_model"
+	settingDefaultModel    = "default_model"
+	settingScreenRequired  = "screen_required"
+	settingScreenThreshold = "screen_threshold"
 	// settingSandboxImage is the image the home computer's container is
 	// created from. A container that exists keeps the image it was created
 	// from.
@@ -82,7 +84,9 @@ type settingsResponse struct {
 // settingsDefaults are the values the harness's own keys have until the user
 // sets them.
 type settingsDefaults struct {
-	SandboxImage string `json:"sandbox_image"`
+	ScreenRequired  bool    `json:"screen_required"`
+	ScreenThreshold float64 `json:"screen_threshold"`
+	SandboxImage    string  `json:"sandbox_image"`
 	// SandboxLimits and SandboxEgress are what the home computer gets until
 	// the user sets others.
 	SandboxLimits limitsBody `json:"sandbox_limits"`
@@ -202,12 +206,13 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 	}
 	sandbox := builtinSandboxDefaults()
 	defaults := settingsDefaults{
-		SandboxImage:  s.cfg.SandboxImage,
-		SandboxLimits: sandbox.Limits,
-		SandboxEgress: sandbox.Egress,
-		SearchOrder:   []string{},
-		SearchLimits:  map[string]search.Limit{},
-		Compaction:    compactionDefaults(),
+		SandboxImage:    s.cfg.SandboxImage,
+		ScreenThreshold: s.cfg.ScreenThreshold,
+		SandboxLimits:   sandbox.Limits,
+		SandboxEgress:   sandbox.Egress,
+		SearchOrder:     []string{},
+		SearchLimits:    map[string]search.Limit{},
+		Compaction:      compactionDefaults(),
 		// The idle timeout is the harness's own, not the deployment's.
 		ComputerIdleMinutes:    defaultIdleMinutes,
 		CompactIdleFill:        defaultCompactIdleFill,
@@ -257,6 +262,16 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 			return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-'
 		}) >= 0 {
 			return invalidf("locale must be 1 to 64 letters, digits or hyphens")
+		}
+	case settingScreenRequired:
+		var on bool
+		if json.Unmarshal(value, &on) != nil {
+			return invalidf("%s must be true or false", key)
+		}
+	case settingScreenThreshold:
+		var n float64
+		if json.Unmarshal(value, &n) != nil || n <= 0 || n > 1 {
+			return invalidf("%s must be above 0 and at most 1", key)
 		}
 	case settingDefaultModel:
 		var name string
@@ -474,4 +489,33 @@ func (s *Server) idleCompactionSettings(ctx context.Context) (int, time.Duration
 // jsonString encodes a string as a JSON value.
 func jsonString(v string) []byte {
 	return fmt.Appendf(nil, "%q", v)
+}
+
+func (s *Server) screenSettings(ctx context.Context) (float64, bool, error) {
+	rows, err := s.deps.Store.Settings(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	return parseScreenSettings(rows, s.cfg.ScreenThreshold)
+}
+
+func parseScreenSettings(rows []store.Setting, defaultThreshold float64) (float64, bool, error) {
+	threshold, required := defaultThreshold, false
+	for _, row := range rows {
+		var target any
+		switch row.Key {
+		case settingScreenThreshold:
+			target = &threshold
+		case settingScreenRequired:
+			target = &required
+		default:
+			continue
+		}
+		if string(row.Value) != "null" {
+			if err := json.Unmarshal(row.Value, target); err != nil {
+				return 0, false, err
+			}
+		}
+	}
+	return threshold, required, nil
 }

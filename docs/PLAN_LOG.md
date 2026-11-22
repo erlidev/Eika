@@ -9,6 +9,13 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-22: P4-14 marks unscanned content and blocks it when screening is
+  required. The settings API holds the threshold and required flag; the guard
+  API reports the last screening outcome. Transitions send one push. Blocks and
+  setting changes are audited. The first health observation is silent; later
+  transitions push. Unscanned report summaries keep their first content line.
+  Socket and Docker tests need an external run.
+
 - 2026-11-22: P4-13 added `make bench-sentry` to `make check`, with 200 calls per
   case and a 1 ms limit. It measures 64 KiB fetch and bash arguments, with and
   without a halt, and a canary at the end of a command. On a Ryzen 5 7600 the

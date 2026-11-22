@@ -3,12 +3,15 @@ package sentry_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/sentry/screen"
@@ -154,7 +157,7 @@ func TestIngestPassesWrappedWhenTheGuardDoesNotAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a silent guard must not fail ingest: %v", err)
 	}
-	if !strings.Contains(out, "IGNORE ALL") || !strings.HasPrefix(out, "<untrusted ") || len(rec.withheld) != 0 {
+	if !strings.Contains(out, "IGNORE ALL") || !strings.Contains(out, `status="unscanned"`) || !strings.HasPrefix(out, "<untrusted ") || len(rec.withheld) != 0 {
 		t.Errorf("out=%q withheld=%+v", out, rec.withheld)
 	}
 }
@@ -186,7 +189,7 @@ type fixedWindows []screen.Window
 func (f fixedWindows) Screen(_ context.Context, texts []string) ([][]screen.Window, error) {
 	out := make([][]screen.Window, len(texts))
 	for i := range out {
-		out[i] = f
+		out[i] = append([]screen.Window{{Start: 0, End: len(texts[i]), Score: 0}}, f...)
 	}
 	return out, nil
 }
@@ -202,8 +205,6 @@ func TestIngestCutsWhateverOrderTheWindowsComeIn(t *testing.T) {
 		{"unsorted", []screen.Window{{Start: 10, End: 14, Score: 1}, {Start: 0, End: 4, Score: 1}}, "[removed:suspect] bbbb [removed:suspect] dddd", 2},
 		{"overlapping", []screen.Window{{Start: 0, End: 7, Score: 1}, {Start: 5, End: 9, Score: 0.95}}, "[removed:suspect] cccc dddd", 1},
 		{"contained", []screen.Window{{Start: 0, End: 9, Score: 1}, {Start: 2, End: 4, Score: 1}}, "[removed:suspect] cccc dddd", 1},
-		{"past the end", []screen.Window{{Start: 15, End: 99, Score: 1}, {Start: -3, End: 0, Score: 1}}, "aaaa bbbb cccc [removed:suspect]", 1},
-		{"empty", []screen.Window{{Start: 4, End: 4, Score: 1}, {Start: 9, End: 3, Score: 1}}, text, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -288,5 +289,152 @@ func TestIngestScreensEverySegmentOnItsOwnInOneGuardCall(t *testing.T) {
 	if len(rec.withheld) != 1 || rec.withheld[0].Source.Name != "https://evil.example:8080/y" ||
 		len(rec.audit) != 1 || rec.audit[0].Kind != string(sentry.SourceSearch) {
 		t.Errorf("withheld=%+v audit=%+v", rec.withheld, rec.audit)
+	}
+}
+
+type unavailableGuard struct{}
+
+func (unavailableGuard) Screen(context.Context, []string) ([][]screen.Window, error) {
+	return nil, errors.New("unavailable")
+}
+
+func TestUnavailableGuardMarksContent(t *testing.T) {
+	gate := sentry.New(sentry.Options{Audit: &records{}, Screen: unavailableGuard{}})
+	token := "ghp_" + strings.Repeat("a1B2", 9)
+	out, err := ingestOne(gate, fetchSource, "hello "+token)
+	if err != nil || !strings.Contains(out, `status="unscanned"`) || !strings.Contains(out, "[redacted:github-token]") || strings.Contains(out, token) {
+		t.Fatalf("ingest = %q, %v", out, err)
+	}
+}
+
+type changingGuard struct{ up bool }
+
+func (g *changingGuard) Screen(_ context.Context, texts []string) ([][]screen.Window, error) {
+	if !g.up {
+		return nil, errors.New("unavailable")
+	}
+	out := make([][]screen.Window, len(texts))
+	for i, text := range texts {
+		out[i] = []screen.Window{{Start: 0, End: len(text), Score: 0}}
+	}
+	return out, nil
+}
+
+func TestGuardTransitionsAndRequiredScreen(t *testing.T) {
+	guard := &changingGuard{}
+	rec := &records{}
+	var changes []bool
+	required := false
+	gate := sentry.New(sentry.Options{Audit: rec, Screen: guard, Threshold: 0.9,
+		ScreenSettings: func(context.Context) (float64, bool, error) { return 0.9, required, nil },
+		GuardChanged:   func(up bool) { changes = append(changes, up) },
+	})
+	health := gate.(interface{ GuardHealth() string })
+	if health.GuardHealth() != "unknown" {
+		t.Fatal("initial health")
+	}
+	for range 2 {
+		out, err := ingestOne(gate, fetchSource, "content")
+		if err != nil || !strings.Contains(out, `status="unscanned"`) {
+			t.Fatalf("ingest: %q %v", out, err)
+		}
+	}
+	if health.GuardHealth() != "down" || len(changes) != 0 {
+		t.Fatalf("initial observation: %s %v", health.GuardHealth(), changes)
+	}
+	required = true
+	_, err := ingestOne(gate, fetchSource, "content")
+	if !errors.Is(err, sentry.ErrScreenRequired) || len(rec.audit) != 1 || rec.audit[0].Event != sentry.EventDeny {
+		t.Fatalf("block: %v, audit: %+v", err, rec.audit)
+	}
+	guard.up = true
+	for range 2 {
+		out, err := ingestOne(gate, fetchSource, "content")
+		if err != nil || strings.Contains(out, "unscanned") {
+			t.Fatalf("ingest: %q %v", out, err)
+		}
+	}
+	guard.up = false
+	_, err = ingestOne(gate, fetchSource, "content")
+	if !errors.Is(err, sentry.ErrScreenRequired) {
+		t.Fatalf("second block: %v", err)
+	}
+	if health.GuardHealth() != "down" || len(changes) != 2 || !changes[0] || changes[1] {
+		t.Fatalf("health %s transitions %v", health.GuardHealth(), changes)
+	}
+}
+
+type waitingGuard struct{}
+
+func (waitingGuard) Screen(ctx context.Context, _ []string) ([][]screen.Window, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestGuardTimeoutMarksContent(t *testing.T) {
+	gate := sentry.New(sentry.Options{Audit: &records{}, Screen: waitingGuard{}})
+	start := time.Now()
+	out, err := ingestOne(gate, fetchSource, "content")
+	if err != nil || !strings.Contains(out, `status="unscanned"`) || time.Since(start) > 7*time.Second {
+		t.Fatalf("ingest: %q %v after %v", out, err, time.Since(start))
+	}
+}
+
+func TestMissingGuardIsUnscannedOrBlocked(t *testing.T) {
+	required := false
+	gate := sentry.New(sentry.Options{Audit: &records{}, ScreenSettings: func(context.Context) (float64, bool, error) { return 0.9, required, nil }})
+	out, err := ingestOne(gate, fetchSource, "content")
+	if err != nil || !strings.Contains(out, `status="unscanned"`) {
+		t.Fatalf("ingest: %q %v", out, err)
+	}
+	required = true
+	if _, err := ingestOne(gate, fetchSource, "content"); !errors.Is(err, sentry.ErrScreenRequired) {
+		t.Fatalf("block: %v", err)
+	}
+}
+
+func TestUnscannedReportSummaryKeepsText(t *testing.T) {
+	gate := sentry.New(sentry.Options{Audit: &records{}})
+	out, err := ingestOne(gate, sentry.Source{Kind: sentry.SourceReport}, "Found a plumber\nDetails")
+	if err != nil || sentry.ReportSummary(out) != "[unscanned] Found a plumber" {
+		t.Fatalf("report %q: %v", out, err)
+	}
+}
+
+type responseGuard struct{ windows [][]screen.Window }
+
+func (g responseGuard) Screen(context.Context, []string) ([][]screen.Window, error) {
+	return g.windows, nil
+}
+
+func TestIncompleteGuardResponseFailsScreening(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		windows [][]screen.Window
+	}{
+		{"missing result", nil},
+		{"empty windows", [][]screen.Window{nil}},
+		{"short", [][]screen.Window{{{Start: 0, End: 3, Score: 0}}}},
+		{"gap", [][]screen.Window{{{Start: 0, End: 2}, {Start: 3, End: 7}}}},
+		{"invalid offset", [][]screen.Window{{{Start: 0, End: 8}}}},
+		{"invalid score", [][]screen.Window{{{Start: 0, End: 7, Score: 1.1}}}},
+		{"nan score", [][]screen.Window{{{Start: 0, End: 7, Score: math.NaN()}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			required := false
+			rec := &records{}
+			gate := sentry.New(sentry.Options{Audit: rec, Screen: responseGuard{tc.windows}, ScreenSettings: func(context.Context) (float64, bool, error) { return 0.9, required, nil }})
+			out, err := ingestOne(gate, fetchSource, "content")
+			if err != nil || !strings.Contains(out, `status="unscanned"`) {
+				t.Fatalf("ingest: %q %v", out, err)
+			}
+			if gate.(interface{ GuardHealth() string }).GuardHealth() != "down" {
+				t.Fatal("guard is not down")
+			}
+			required = true
+			if _, err := ingestOne(gate, fetchSource, "content"); !errors.Is(err, sentry.ErrScreenRequired) || len(rec.audit) != 1 {
+				t.Fatalf("block: %v, audit %v", err, rec.audit)
+			}
+		})
 	}
 }

@@ -201,6 +201,14 @@
     "GET /api/events": {
       "websocket": true
     },
+    "GET /api/guard": {
+      "status": 200,
+      "response": {
+        "object": {
+          "status": "string"
+        }
+      }
+    },
     "GET /api/halt": {
       "status": 200,
       "response": {
@@ -3015,6 +3023,8 @@
                   "pids": "number"
                 }
               },
+              "screen_required": "boolean",
+              "screen_threshold": "number",
               "search_limits": {
                 "nullable": {
                   "map": {
@@ -4783,6 +4793,8 @@
                   "pids": "number"
                 }
               },
+              "screen_required": "boolean",
+              "screen_threshold": "number",
               "search_limits": {
                 "nullable": {
                   "map": {

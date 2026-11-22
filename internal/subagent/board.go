@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/store"
 )
 
@@ -93,7 +94,7 @@ func boardRow(c store.Session, projects map[string]string, loc *time.Location) [
 			}
 		}
 	}
-	if report, _, _ := strings.Cut(strings.TrimSpace(c.Result), "\n"); report != "" {
+	if report := sentry.ReportSummary(c.Result); report != "" {
 		lines = append(lines, "  last report: "+clipRunes(strings.TrimSpace(report), boardReportRunes))
 	}
 	return lines

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool"
 )
@@ -220,7 +221,7 @@ func subagentView(s store.Session, slugs map[string]string, detail bool) map[str
 	if detail {
 		out["brief"] = s.Brief
 		out["report"] = s.Result
-	} else if line, _, _ := strings.Cut(s.Result, "\n"); line != "" {
+	} else if line := sentry.ReportSummary(s.Result); line != "" {
 		out["report"] = line
 	}
 	return out

@@ -180,3 +180,31 @@ func TestFetchErrorResultsAreIngested(t *testing.T) {
 		t.Errorf("calls=%d isError=%v content=%q", gate.calls, m.IsError, m.Content)
 	}
 }
+
+type requiredScreenGate struct{ stubGate }
+
+func (requiredScreenGate) Ingest(context.Context, []sentry.Segment) ([]sentry.Ingested, error) {
+	return nil, sentry.ErrScreenRequired
+}
+
+func TestRequiredScreenReturnsActionableBlock(t *testing.T) {
+	r, err := builtin.Registry(builtin.Deps{Pages: pageReader{text: "private page"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := providertest.New(providertest.Calls("", providertest.Call("c1", "web_fetch", map[string]any{"url": "https://example.com"})), providertest.Text("done"))
+	store := newMemoryStore()
+	a := agent.New(p, r, agent.Options{Gate: requiredScreenGate{stubGate{verdict: sentry.Verdict{Decision: sentry.Allow}}}, Store: store, Emitter: &recorder{}, ContextWindow: 400_000, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err := a.Run(context.Background(), agent.NewSession("session-1", ""), provider.UserMessage("go")); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range store.sessions["session-1"] {
+		if m.Role == provider.RoleTool {
+			if !strings.Contains(m.Content, "guard is unavailable") || strings.Contains(m.Content, "private page") {
+				t.Fatalf("tool result: %s", m.Content)
+			}
+			return
+		}
+	}
+	t.Fatal("no tool result")
+}

@@ -560,7 +560,11 @@ func (a *Agent) ingest(ctx context.Context, s *Session, runID string, c provider
 	if err != nil {
 		a.opts.Logger.Error("ingest failed",
 			"session_id", s.ID, "run_id", runID, "call_id", c.ID, "tool", c.Name, "error", err)
-		*r = tool.Errorf("Blocked: this is not available right now")
+		if errors.Is(err, sentry.ErrScreenRequired) {
+			*r = tool.Errorf("Blocked: screening is required but the guard is unavailable. Try again when the guard is back.")
+		} else {
+			*r = tool.Errorf("Blocked: this is not available right now")
+		}
 		return nil
 	}
 	if c.Name == "web_fetch" || r.IsError {

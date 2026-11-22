@@ -13,7 +13,7 @@ import (
 
 func TestLiveBackgroundRunsRequireRoutineSessions(t *testing.T) {
 	a := newAPI(t)
-	s := server.New(testConfig(), testLogger(), a.deps, server.Options{LiveTest: true})
+	s := server.New(a.cfg, testLogger(), a.deps, server.Options{LiveTest: true})
 	t.Cleanup(s.Close)
 	home, err := a.store.EnsureHomeSession(t.Context())
 	if err != nil {

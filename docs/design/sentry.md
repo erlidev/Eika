@@ -357,7 +357,8 @@ and never has anything removed. It is the way out of a false removal on a site t
 user reads often, or a plugin that holds only the user's own notes.
 
 **When the guard does not answer**, content passes wrapped and marked `unscanned`,
-a banner shows in the UI, and one push goes out when the state changes. The setting
+one push goes out when an observed up or down state changes, and the API reports
+the last outcome. The first observation sets the state without a push. The UI banner arrives in P4-16. The setting
 `screen_required` turns this around: tools whose results need screening return a
 blocked result until the guard is back. The default favours a working assistant,
 because the screen is one layer among several and not the barrier.
