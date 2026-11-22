@@ -161,8 +161,8 @@ model or TabbyAPI. They stay on the bench for the work in `docs/DEFERRED.md`.
 The implementation stages and the live suite (P2-25 and P2-26) are done. Only the
 two closes remain, each after its exit check by hand:
 
-- [ ] **P2-27**: Close phase 2 after its exit checks.
-- [ ] **P3-18**: Close phase 3 after its exit checks.
+- [x] **P2-27**: Close phase 2 after its exit checks.
+- [x] **P3-18**: Close phase 3 after its exit checks.
 
 ## Phase 0: Groundwork
 

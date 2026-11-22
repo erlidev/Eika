@@ -36,6 +36,8 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   (`ntfy_topic` unset, `POST /api/notifications/test` -> 400), so there was no topic to
   subscribe to and I did not invent one. Not checkable without the phone: the install
   prompt on the device, the real keyboard and notch, the Tailscale route, tapping a push.
+  The owner accepted P3-14's offline delivery tests as push coverage and closed the
+  phase without a by-hand push.
 
 - 2026-11-21: Phase 2 closed (P2-27). Docs moved into ARCHITECTURE and DECISIONS, the
   phase's items became a paragraph. `fmt-check`, `lint-go`, `lint-web`, `test-go`, `typecheck`,
