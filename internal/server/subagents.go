@@ -336,6 +336,13 @@ func (d delegation) AskSubagent(ctx context.Context, q builtin.Question) (string
 	if s.subagents == nil {
 		return "", true, fmt.Errorf("subagents are unavailable")
 	}
+	q, ok, err := s.screenQuestion(ctx, q)
+	if err != nil {
+		return "", true, err
+	}
+	if !ok {
+		return "", true, errQuestionWithheld
+	}
 	sum := sha256.Sum256([]byte("question\x00" + q.SessionID + "\x00" + q.RunID + "\x00" + q.CallID))
 	id := "question-" + hex.EncodeToString(sum[:12])
 	q.ID = id
@@ -356,6 +363,10 @@ func (d delegation) AskSubagent(ctx context.Context, q builtin.Question) (string
 	})
 	return answer, true, err
 }
+
+// errQuestionWithheld is what a child's ask_user fails with when the screen
+// removed the whole question. It says nothing of why.
+var errQuestionWithheld = errors.New("the question could not be delivered; continue without it or ask a different one")
 
 // questionReason renders choices as JSON so their text stays unambiguous.
 func questionReason(q builtin.Question, id string) string {

@@ -2494,3 +2494,27 @@ replace the newer text after a conflict.
   lookup. The tool carries the cut as `tool.Result.Parts`; the agent ingests the
   parts that have a `Source` and joins them again, so the model sees the same
   format as before plus the wrappers. A notice stays unwrapped: it is the harness's.
+
+## Screening subagent reports and questions (P4-06)
+
+- A report is screened once, in the subagent service before `SetSubagentResult`, on
+  exactly the text that is stored (after the 64 KB cut). The stored `Result` is the
+  cleaned text, so the notice, the board, `subagent_status` and restart recovery
+  need no second pass. It is not wrapped: Eika's own subagent is not distrusted
+  content, and a wrapper would teach Eika to distrust it. A removal writes a withheld
+  and an audit row (source `report`, the child's session), sends no push and stops
+  nothing. The screen runs outside the service lock, since the guard may be slow.
+- A question is screened as separate segments (the text, then each option) before the
+  notice, the `question.asked` event and the answer check are built, and every later
+  step uses the cleaned `Question`. The user therefore never sees a removed span, and
+  an answer is validated against the options shown.
+- A question whose whole text is removed is not delivered: no notice, no parked
+  child, no event. The child's `ask_user` fails with a plain message to continue or
+  ask differently, so no run stops and Eika has nothing to answer that was not its
+  child's injected text. An option that is wholly removed is dropped; a closed
+  question left with no options is treated the same way. The text is in the withheld
+  list.
+- Guard failure follows P4-04: the text passes unscreened until P4-14. A removal that
+  cannot be recorded fails the report tool; a report ended without one is stored as
+  a fixed "could not be delivered" line instead of its text.
+

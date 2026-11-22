@@ -183,6 +183,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		s.subagents = subagent.New(context.Background(), deps.Store, subagent.Options{
 			Run: s.runSubagent, Final: s.finalMessage, Limit: s.subagentLimit, Reported: s.subagentReported,
 			Ended:  s.subagentEnded,
+			Screen: s.screenReport,
 			Events: deps.Bus, Log: log,
 		})
 	}

@@ -204,7 +204,7 @@ here halts, restricts or settles anything.
       threshold setting. A removal writes a withheld row and an audit row.
 - [x] **P4-05**: Screen each `web_search` result on its own. The engine returns its
       results as segments, so a removal never spans two results.
-- [ ] **P4-06**: Screen a subagent's report and its questions before they become
+- [x] **P4-06**: Screen a subagent's report and its questions before they become
       Eika's notice, without the wrapper.
 - [ ] **P4-07**: Add the withheld list API: newest first, with each entry's text, and
       a paged read.
@@ -475,7 +475,7 @@ and also requires the exit checks.
       It sends no push and stops nothing.
       - [x] **P4-04**: Ingest `web_fetch` results: invisible characters, redaction, screen, wrapper.
       - [x] **P4-05**: Screen each `web_search` result on its own.
-      - [ ] **P4-06**: Screen subagent reports and questions on their way to Eika.
+      - [x] **P4-06**: Screen subagent reports and questions on their way to Eika.
 - [ ] When the guard does not answer: content passes wrapped and marked
       `unscanned`, a banner shows, and one push goes out when the state changes,
       not one per result. The setting `screen_required` fails closed instead:

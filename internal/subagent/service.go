@@ -37,6 +37,10 @@ const DraftReport = "Draft your report now with the report tool."
 // final message.
 const noReport = "The subagent ended without a report or a final message."
 
+// unscreenedReport stands in for a report that could not be screened, which
+// happens only when a removal could not be recorded.
+const unscreenedReport = "The subagent's report could not be delivered."
+
 // ErrTooManyRunning is what Start and Message return, wrapped, when the
 // limit on running subagents leaves no room for another.
 var ErrTooManyRunning = errors.New("too many subagents are running")
@@ -126,6 +130,10 @@ type Options struct {
 	// told at the next start, so neither is announced. Same goroutine and
 	// ordering rules as Reported. Nil tells nobody.
 	Ended  func(context.Context, store.Session)
+	// Screen cleans a report's text for the child session before it is stored,
+	// so the stored report is what Eika reads. An error means the text could not
+	// be cleaned and must not be used. Nil keeps the text as it is.
+	Screen func(ctx context.Context, sessionID, text string) (string, error)
 	Events event.Emitter
 	Log    *slog.Logger
 }
@@ -140,6 +148,7 @@ type Service struct {
 	limit    func(context.Context) int
 	reported func(context.Context, store.Session)
 	ended    func(context.Context, store.Session)
+	screen   func(context.Context, string, string) (string, error)
 	events   event.Emitter
 	log      *slog.Logger
 	wg       sync.WaitGroup
@@ -173,7 +182,7 @@ func New(ctx context.Context, st Store, o Options) *Service {
 		o.Limit = func(context.Context) int { return DefaultMaxRunning }
 	}
 	return &Service{ctx: ctx, cancel: cancel, store: st, run: o.Run, final: o.Final, limit: o.Limit,
-		reported: o.Reported, ended: o.Ended, events: o.Events, log: o.Log, active: make(map[string]*execution)}
+		reported: o.Reported, ended: o.Ended, screen: o.Screen, events: o.Events, log: o.Log, active: make(map[string]*execution)}
 }
 
 // Start creates a named child and starts its brief at priority. It reports
@@ -377,6 +386,11 @@ func (s *Service) requireReport(ctx context.Context, child store.Session, priori
 	if text == "" {
 		text = noReport
 	}
+	text, err = s.cleanReport(ctx, child.ID, text)
+	if err != nil {
+		s.log.Warn("screen subagent report", "session_id", child.ID, "error", err)
+		text = unscreenedReport
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if active.cancelled || ctx.Err() != nil {
@@ -398,21 +412,34 @@ func (s *Service) Report(ctx context.Context, sessionID string, r Report) error 
 	if err := r.validate(); err != nil {
 		return err
 	}
+	text, err := s.cleanReport(ctx, sessionID, r.Text())
+	if err != nil {
+		return fmt.Errorf("report could not be screened: %w", err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	active := s.active[sessionID]
 	if active == nil || active.cancelled {
 		return fmt.Errorf("subagent has no active assignment to report on")
 	}
-	return s.keepReport(ctx, sessionID, r.Text(), active)
+	return s.keepReport(ctx, sessionID, text, active)
 }
 
-// keepReport stores text as the child's latest report. Callers hold mu.
-// A text past maxResultBytes is cut there, at a character boundary.
-func (s *Service) keepReport(ctx context.Context, id, text string, active *execution) error {
+// cleanReport cuts text at maxResultBytes, at a character boundary, and
+// screens exactly what will be stored, outside the lock: the guard may be slow.
+func (s *Service) cleanReport(ctx context.Context, id, text string) (string, error) {
 	if len(text) > maxResultBytes {
 		text = strings.ToValidUTF8(text[:maxResultBytes], "")
 	}
+	if s.screen == nil {
+		return text, nil
+	}
+	return s.screen(ctx, id, text)
+}
+
+// keepReport stores text, already cleaned, as the child's latest report.
+// Callers hold mu.
+func (s *Service) keepReport(ctx context.Context, id, text string, active *execution) error {
 	child, err := s.store.SetSubagentResult(ctx, id, text)
 	if err != nil {
 		return err

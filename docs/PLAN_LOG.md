@@ -9,6 +9,15 @@ Entries before 2026-11-09 were written inside `PLAN.md` and are kept as they wer
 Phase 0's and phase 1's ticked items, which those entries refer to, are in
 `git show ab667e0:docs/PLAN.md`.
 
+- 2026-11-21: P4-06 screens a subagent's report and questions without the wrapper
+  (`server/screening.go`). The report is screened in the subagent service
+  (`Options.Screen`) before it is stored, so `Result`, the notice, the board and recovery
+  hold the cleaned text. A question's text and options are screened as segments before
+  the notice, event and `ValidateAnswer` are made, so they agree. A question wholly
+  removed is not delivered: the child's `ask_user` gets an error and carries on (see
+  DECISIONS). Guard failure passes through, as P4-04 set it.
+  - Next: P4-07 lists rows with source `report` too (name `report` or `question`, session
+    is the child). No wiring beyond `server.New`, so `make smoke` was not run.
 - 2026-11-21: P4-05 screens each `web_search` result on its own. `Gate.Ingest` now takes
   `[]sentry.Segment` (source and text) and returns `[]sentry.Ingested` (text and
   `Removed`, the count P4-08 marks a card from); `Screener`/`screen.Client` take many
