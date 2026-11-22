@@ -255,7 +255,7 @@ Trusting a source from the withheld list lets its next page through, scored.
 
 ### Stage D: egress
 
-- [ ] **P4-17**: Retire the `open` egress mode. Rename it `public` on the wire and
+- [x] **P4-17**: Retire the `open` egress mode. Rename it `public` on the wire and
       migrate stored `open` or missing values in computers and the `sandbox_egress`
       setting, reconfine running computers and keep the list of blocked hosts. A host
       with no egress control keeps direct routes, with a warning at start.
@@ -498,7 +498,7 @@ and also requires the exit checks.
         allowlist mode); never `ask`
       - `web_fetch` and the hosted search backends check the same blocklist and
         halt before they dial
-      - [ ] **P4-17**: Retire the `open` egress mode and move every computer behind the proxy.
+      - [x] **P4-17**: Retire the `open` egress mode and move every computer behind the proxy.
       - [ ] **P4-18**: Update the computer egress settings for the modes that remain.
       - [ ] **P4-19**: Decide each connection through the gate, with the blocklist and halt.
       - [ ] **P4-20**: Check the blocklist and halt before Core's own fetches.

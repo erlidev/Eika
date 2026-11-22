@@ -33,7 +33,7 @@ type Computer struct {
 }
 
 // ComputerSandbox is what a computer's container may consume and reach. The
-// zero value is a computer with no limits and open egress.
+// zero value is a computer with no limits and public egress.
 type ComputerSandbox struct {
 	// CPUs is the number of cores the container may use; zero is no limit.
 	CPUs float64 `json:"cpus,omitempty"`
@@ -41,7 +41,7 @@ type ComputerSandbox struct {
 	MemoryMB int64 `json:"memory_mb,omitempty"`
 	// PIDs is the process and thread limit; zero is no limit.
 	PIDs int64 `json:"pids,omitempty"`
-	// Egress is the egress mode, empty for open.
+	// Egress is the egress mode, empty for public.
 	Egress string `json:"egress,omitempty"`
 	// Allow is the egress allowlist, used when Egress is allowlist.
 	Allow []string `json:"allow,omitempty"`

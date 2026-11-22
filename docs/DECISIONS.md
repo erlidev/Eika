@@ -334,8 +334,8 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   per-computer, secret, and recoverable after restart, so no grant table. It
   was the hub token until the hub was due to go, and it stays.
 - Proxy variables go through eikad's `PUT /environment`, because a
-  container's env is immutable and egress can change while it runs. Open
-  sandboxes get no proxy, so they keep private addresses.
+  container's env is immutable and egress can change while it runs. All
+  sandboxes on a host with egress control use the proxy.
 - **Previews, the terminal and eikad `/pty` are gone.** They let a person
   work in a sandbox by hand, which a coding harness needs and an assistant
   does not: the agent is the only thing that uses a computer, and the user

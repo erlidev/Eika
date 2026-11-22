@@ -62,7 +62,7 @@ type Blocked struct {
 	Last time.Time
 }
 
-// Proxy is the HTTP proxy restricted sandboxes reach the internet through.
+// Proxy is the HTTP proxy sandboxes reach the internet through.
 // It is an http.Handler; Close ends the tunnels it has open.
 type Proxy struct {
 	opts    Options

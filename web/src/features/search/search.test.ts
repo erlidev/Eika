@@ -20,7 +20,7 @@ function state(settings: Record<string, unknown>): SettingsState {
       aging_seconds: 300,
       preempt_running: false,
       sandbox_limits: { cpus: 0, memory_mb: 0, pids: 4096 },
-      sandbox_egress: { mode: "open", allow: [] },
+      sandbox_egress: { mode: "public", allow: [] },
       search_order: ["searxng", "exa", "marginalia"],
       search_limits: { searxng: {}, exa: { month: 900 }, marginalia: { day: 100 }, github: {} },
       compaction: {

@@ -653,7 +653,7 @@ compose stack, which sets only `EIKA_DATABASE_URL`. Notable fields:
 - `sandbox_network` (`eika_sandbox`): empty means eikad is published on
   loopback (`make dev`). `sandbox_internal_network`
   (`eika_sandbox_internal`) must differ from it and, with `egress_listen`
-  (`:3128`) and `egress_proxy_url` (`http://eika:3128`), enables restricted
+  (`:3128`) and `egress_proxy_url` (`http://eika:3128`), enables controlled
   egress. Either network empty disables it.
 - `allowed_origins`: extra origins for the event stream and MCP redirects,
   after the one derived from `listen`.
@@ -674,7 +674,7 @@ and, for long keys, the last four characters.
   mcp.Pool -> Host.Process --------------->    /exec /files /stat /list
   Host.Process --------------------------->    /process /environment
   computer.Host ---------docker socket--->  container + volume at /home/eika
-  egress.Proxy :3128 <-----------------------  HTTP(S)_PROXY, when restricted
+  egress.Proxy :3128 <-----------------------  HTTP(S)_PROXY, when controlled
 ```
 
 ### eikad
@@ -753,17 +753,16 @@ any other error stops reconciliation without changing states.
 
 `Host.Create` applies the computer's `sandbox` row. Saving `sandbox_limits` or
 `sandbox_egress` in the settings writes the home row and then `Host.Confine`s
-its container (`Server.applyHomeSandbox`); every start re-applies the row.
+its container (`Server.applyHomeSandbox`); every start re-applies the row. Startup reconciliation confines running computers too. If confinement fails, it stops the computer, logs the failure, and sends a notification. It continues with the other computers. A controlled host does not serve if it cannot inspect or stop a computer.
 
 Limits are `NanoCPUs`, `Memory` (= `MemorySwap`), and `PidsLimit`, changed
 live with `ContainerUpdate`; "no limit" on an existing container is the host's
 capacity (`Host.Capacity`).
 
 ```
- open: eika-cx-a on eika_sandbox --------------------> internet directly
- allowlist/none: eika-cx-b on eika_sandbox_internal (no route out)
+ public/allowlist/none: eika-cx-b on eika_sandbox_internal (no route out)
      HTTP(S)_PROXY=http://<computer id>:<proxy token>@eika:3128
-     -> egress.Proxy -> allowlisted public hosts only
+     -> egress.Proxy -> public hosts permitted by the mode
 ```
 
 `egress.Proxy` takes `CONNECT` and absolute `http://` requests, identifies the
@@ -771,8 +770,8 @@ sandbox from `Proxy-Authorization` (the computer's id and a proxy token of its
 own, made at create and read back by `Inspect`), asks `Server.EgressPolicy` per request,
 dials through `netguard`, and answers refusals with 403, remembered per
 computer in memory (`Proxy.Blocked`, which no route reads now). It serves only when both networks exist
-(`Host.EgressControl`). Switching modes connects the container to the new
-network before leaving the old. Proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`,
+(`Host.EgressControl`). A host without egress control logs a warning and gives
+computers direct routes. Proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`,
 `NO_PROXY` in both cases, `NODE_USE_ENV_PROXY`) are given to eikad with
 `PUT /environment` on every change and start.
 

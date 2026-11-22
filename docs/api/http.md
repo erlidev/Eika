@@ -117,7 +117,7 @@ among them.
 | `image` | string | The image the container runs. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 | `container_id` | string, optional | The Docker container id. |
-| `sandbox` | Sandbox | What the container may consume and reach. A computer from before sandboxes has no limits and open egress. |
+| `sandbox` | Sandbox | What the container may consume and reach. A computer from before sandboxes has no limits and public egress. |
 | `home` | boolean | The computer that holds the user's durable files. Exactly one computer has it, once the harness has recorded it. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
@@ -126,7 +126,7 @@ among them.
 | Field | Type | Meaning |
 |---|---|---|
 | `limits` | `{"cpus": number, "memory_mb": number, "pids": number}` | Zero is no limit. `cpus` is a fraction of cores from 0.01 to the host's; `memory_mb` is MiB from 64 to the host's memory, with no swap beyond it; `pids` counts processes and threads, from 32 to 4194304. |
-| `egress` | `{"mode": string, "allow": [string]}` | `open` reaches the internet directly. `allowlist` puts the container on the internal sandbox network, with no route out, and its processes reach the hosts `allow` names through the harness's egress proxy. `none` is the internal network with nothing allowed. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
+| `egress` | `{"mode": string, "allow": [string]}` | `public` reaches public hosts through the egress proxy. `allowlist` reaches only the hosts `allow` names through the proxy. Computers use the internal sandbox network when egress control is available. `none` is the internal network with nothing allowed. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
 
 ## Sessions
 
@@ -919,7 +919,7 @@ stores them.
 | `computer_idle_minutes` | number, 0 to 10080 | How long a running computer may go without a run in it before the harness aborts its runs and stops it. A later run starts it again. 0 never stops one. Checked once a minute. |
 | `subagent_max_running` | number, 1 to 32 | How many subagents may run at once. A start or resume past it is refused to Eika as a tool error. Read at each start, so a change applies at once. |
 | `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The home computer's limits, checked as a Sandbox's are. A field the object leaves out is 0, no limit. A write applies them to its container, running or stopped, without a restart; a stopped container also takes them at its next start. |
-| `sandbox_egress` | `{"mode", "allow"}` | The home computer's egress, applied as the limits are: a change between open and restricted moves the container between the sandbox networks, dropping the connections it has open, and the processes it starts from then on get the proxy settings that go with its network. A restricted mode is `400` on a harness without the internal sandbox network. |
+| `sandbox_egress` | `{"mode", "allow"}` | The home computer's egress, applied as the limits are: the proxy applies the mode to each new connection. A host without egress control gives computers direct routes. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
 | `maintenance_idle_seconds` | number, 0 to 86400 | How long a pool must have run nothing but maintenance calls before it admits a maintenance call (session titles, and later dreaming). 0 admits them at once, in order. Applied to the queue as soon as it is saved. |
 | `aging_seconds` | number, 1 to 604800 | How long a waiting model call waits for each priority level it gains, so none starves. A maintenance call that has aged one level no longer waits for an idle pool. Applied at once. |
@@ -951,7 +951,7 @@ stores them.
 | `maintenance_idle_seconds`, `aging_seconds` | number | 120 and 300. |
 | `preempt_running` | boolean | `false`. |
 | `sandbox_limits` | object | No CPU or memory limit, and 4096 processes. |
-| `sandbox_egress` | object | `open`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |
+| `sandbox_egress` | object | `public`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |
 | `search_order` | array of strings | Every web provider in its default order: `searxng`, `exa`, `tavily`, `brave`, `marginalia`. |
 | `search_limits` | object | Every quota bucket's default, as `search_limits` takes it: Exa 900 a month, Tavily 1000, Brave 2000, Marginalia 100 a day, SearXNG and GitHub unlimited. |
 | `compaction` | object | `auto` on, `reserve_tokens` 16384, `keep_recent_tokens` 20000, and the built-in prompts spelled out. |
@@ -1288,8 +1288,7 @@ is accepted from the harness's own origin and from `allowed_origins`.
 
 ## Egress proxy
 
-The harness listens on `egress_listen` (`:3128`) for the sandboxes whose
-egress is restricted: an HTTP proxy that takes `CONNECT` tunnels and plain
+The harness listens on `egress_listen` (`:3128`) for sandboxes on hosts with egress control: an HTTP proxy that takes `CONNECT` tunnels and plain
 `http://` requests in absolute form. A sandbox signs in with
 `Proxy-Authorization: Basic`, its computer id and proxy token, which the
 harness puts in the proxy URL it gives the sandbox's processes. A request

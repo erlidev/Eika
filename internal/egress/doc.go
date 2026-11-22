@@ -1,8 +1,7 @@
 // Package egress decides what a sandbox may reach on the network, and is the
-// only way out for one that is restricted.
+// only way out on a host with egress control.
 //
-// A computer's egress Mode is open, allowlist, or none. An open sandbox has
-// a route to the internet of its own. A restricted one sits on an internal
+// A computer's egress Mode is public, allowlist, or none. A sandbox sits on an internal
 // Docker network with no route out, and its processes are pointed at Proxy,
 // an HTTP proxy in the harness that accepts CONNECT tunnels and plain http
 // requests. The proxy knows a sandbox by its computer id and proxy token,

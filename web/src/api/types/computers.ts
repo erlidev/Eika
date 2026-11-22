@@ -33,7 +33,7 @@ export type SandboxLimits = {
  * hosts its allowlist names through the harness's proxy, or nothing but the
  * harness.
  */
-export type EgressMode = "open" | "allowlist" | "none";
+export type EgressMode = "public" | "allowlist" | "none";
 
 /** SandboxEgress is a sandbox's egress mode and allowlist. */
 export type SandboxEgress = {

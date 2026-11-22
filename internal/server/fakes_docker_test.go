@@ -53,9 +53,10 @@ type fakeHost struct {
 	mu        sync.Mutex
 	computers map[string]*fakeComputer
 	// createErr, confineErr and inspectErr fail the matching call when set.
-	createErr  error
-	confineErr error
-	inspectErr error
+	createErr    error
+	confineErr   error
+	confineErrID string
+	inspectErr   error
 	// process starts what Process is asked for, which is how a test puts a
 	// stdio MCP server in a computer; processes records where.
 	process   func(spec sandbox.ProcessSpec) (io.ReadWriteCloser, error)
@@ -157,9 +158,9 @@ func (h *fakeHost) Create(_ context.Context, spec computer.Spec) (computer.Compu
 // Confine records the confinement a computer was given.
 func (h *fakeHost) Confine(_ context.Context, cx *computer.Computer, c computer.Confinement) error {
 	h.mu.Lock()
-	confineErr := h.confineErr
+	confineErr, confineErrID := h.confineErr, h.confineErrID
 	h.mu.Unlock()
-	if confineErr != nil {
+	if confineErr != nil && (confineErrID == "" || confineErrID == cx.ID) {
 		return confineErr
 	}
 	if c.Proxied && !h.EgressControl() {

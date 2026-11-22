@@ -34,9 +34,9 @@ export type SandboxProblems = Partial<Record<"cpus" | "memoryMb" | "pids" | "all
 /** egressModes are the modes in the order the editor offers them. */
 export const egressModes: readonly { value: EgressMode; label: string; hint: string }[] = [
   {
-    value: "open",
-    label: "Open",
-    hint: "The sandbox reaches the internet directly, as any container does.",
+    value: "public",
+    label: "Public",
+    hint: "The sandbox reaches public hosts through the proxy.",
   },
   {
     value: "allowlist",
