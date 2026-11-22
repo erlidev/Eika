@@ -69,3 +69,16 @@ func (s *Server) screenQuestion(ctx context.Context, q builtin.Question) (_ buil
 func onlyRemoved(text string) bool {
 	return strings.TrimSpace(strings.ReplaceAll(text, sentry.RemovedMarker, "")) == ""
 }
+
+// ingestHistory is the history tools' Screen: child-session text goes through
+// the gate like a report, wrapped. Without a gate it passes unchanged.
+func (s *Server) ingestHistory(ctx context.Context, segs []sentry.Segment) ([]sentry.Ingested, error) {
+	if s.gate == nil {
+		out := make([]sentry.Ingested, len(segs))
+		for i, seg := range segs {
+			out[i] = sentry.Ingested{Text: seg.Text}
+		}
+		return out, nil
+	}
+	return s.gate.Ingest(ctx, segs)
+}

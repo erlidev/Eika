@@ -92,10 +92,11 @@ type SourceKind string
 
 // The sources of untrusted content.
 const (
-	SourceFetch  SourceKind = "web_fetch"
-	SourceSearch SourceKind = "web_search" // one result, not a page of them
-	SourceReport SourceKind = "report"     // a subagent's report or question: screened, not wrapped
-	SourcePlugin SourceKind = "plugin"     // phase 11
+	SourceFetch   SourceKind = "web_fetch"
+	SourceSearch  SourceKind = "web_search" // one result, not a page of them
+	SourceReport  SourceKind = "report"     // a subagent's report or question: screened, not wrapped
+	SourceHistory SourceKind = "history"    // a child session's raw transcript, read through the history tools: screened and wrapped
+	SourcePlugin  SourceKind = "plugin"     // phase 11
 )
 
 // Source says where ingested content came from, so a removal can be recorded

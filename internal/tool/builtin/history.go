@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool"
 )
@@ -30,9 +31,14 @@ type History interface {
 	Projects(context.Context) ([]store.Project, error)
 }
 
+// Screen ingests untrusted segments through the gate, one result per segment.
+// Core supplies the gate's Ingest; nil leaves history unscreened.
+type Screen func(context.Context, []sentry.Segment) ([]sentry.Ingested, error)
+
 type historyTool struct {
 	name    string
 	history History
+	screen  Screen
 }
 
 func (t historyTool) Name() string   { return t.name }
@@ -156,6 +162,8 @@ type historyEntry struct {
 	Kind      store.EntryKind `json:"kind"`
 	Content   string          `json:"content"`
 	Truncated bool            `json:"truncated,omitempty"`
+	// child marks text from a session other than the caller's own.
+	child bool
 }
 
 // historyText keeps the indexed text and tool results readable without exposing
@@ -261,11 +269,67 @@ func (t historyTool) Call(ctx context.Context, call tool.CallContext, raw json.R
 	if err != nil {
 		return tool.Errorf("%s: %v", t.name, err), nil
 	}
+	removed, err := t.screenChildren(ctx, call, result)
+	if err != nil {
+		// Unscreened child text must not reach the model.
+		return tool.Errorf("Blocked: this is not available right now"), nil
+	}
 	data, err := json.Marshal(result)
 	if err != nil {
 		return tool.Result{}, err
 	}
-	return tool.Text(string(data)), nil
+	res := tool.Text(string(data))
+	res.Removed = removed
+	return res, nil
+}
+
+// screenChildren runs the text of every entry from a child session through the
+// gate, in place and in one batched call, and returns the removal count. The
+// caller's own history is not screened. A child can repeat a page it read, so
+// its raw transcript is untrusted the way a report is, and wrapped, since
+// unlike a report it is the unedited text of its tool results.
+func (t historyTool) screenChildren(ctx context.Context, call tool.CallContext, result any) (int, error) {
+	if t.screen == nil {
+		return 0, nil
+	}
+	var views []*historyEntry
+	switch r := result.(type) {
+	case []historyEntry:
+		for i := range r {
+			views = append(views, &r[i])
+		}
+	case []historyGroup:
+		for g := range r {
+			for i := range r[g].Entries {
+				views = append(views, &r[g].Entries[i])
+			}
+		}
+	}
+	var segs []sentry.Segment
+	var at []*historyEntry
+	for _, v := range views {
+		if v.child && v.Content != "" {
+			src := sentry.Source{Kind: sentry.SourceHistory, Session: call.SessionID, Run: call.RunID, Key: call.SessionID + ":" + call.CallID, Name: v.Session}
+			segs = append(segs, sentry.Segment{Source: src, Text: v.Content})
+			at = append(at, v)
+		}
+	}
+	if len(segs) == 0 {
+		return 0, nil
+	}
+	got, err := t.screen(ctx, segs)
+	if err != nil {
+		return 0, fmt.Errorf("screen history: %w", err)
+	}
+	if len(got) != len(segs) {
+		return 0, fmt.Errorf("screen history: got %d results for %d segments", len(got), len(segs))
+	}
+	removed := 0
+	for i, v := range at {
+		v.Content = got[i].Text
+		removed += got[i].Removed
+	}
+	return removed, nil
 }
 
 const (
@@ -382,6 +446,7 @@ func (t historyTool) search(ctx context.Context, home, selected store.Session, a
 				query = a.query
 			}
 			view := historyView(n, name, false, query)
+			view.child = n.SessionID != home.ID
 			group.Entries = append(group.Entries, view)
 			candidate := group
 			candidate.Truncated = true
@@ -438,7 +503,9 @@ func (t historyTool) read(ctx context.Context, home, selected store.Session, a h
 	}
 	views := make([]historyEntry, 0, len(entries))
 	for _, v := range entries {
-		views = append(views, historyView(v, historyName(sess), a.full, ""))
+		view := historyView(v, historyName(sess), a.full, "")
+		view.child = v.SessionID != home.ID
+		views = append(views, view)
 	}
 	return views, nil
 }

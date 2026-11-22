@@ -2526,3 +2526,22 @@ replace the newer text after a conflict.
   cannot be recorded fails the report tool; a report ended without one is stored as
   a fixed "could not be delivered" line instead of its text.
 
+## History tools screen child sessions
+
+- `history_search` and `history_read` return raw text from child sessions, where a
+  child that read an injected page can repeat it, and that would bypass the P4-06
+  report screen. Entries from any session other than the caller's own are run
+  through `Gate.Ingest` before the result is built, in one batched call per tool
+  result, with the same strip, redact, screen, withheld and audit steps. The count
+  goes to `tool.Result.Removed`, so the card shows the mark. The caller's own
+  history is not screened: it is Eika's own text, already ingested when it was made.
+- Child text is wrapped in `<untrusted>` (source `history:<session name>`), unlike
+  a report. A report is the child's deliberate summary, written for Eika. A
+  transcript entry is the unedited text of the child's messages and tool results,
+  which is the page itself when a child quotes it, and the screen is one layer that
+  can miss. The wrapper is the second, and the system prompt's notice already
+  teaches the model what it means. P4-06's reason (do not teach distrust of Eika's
+  own subagent) concerns what the child reports, not its raw log.
+- Failure follows Stage A: a guard that does not answer passes the text wrapped, and
+  an Ingest error or a cancelled context returns `Blocked: this is not available
+  right now` with no history text.
