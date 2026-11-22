@@ -136,6 +136,11 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		return Computer{}, err
 	}
 
+	cx.Root = orDefault(spec.Root, Root)
+	labels := map[string]string{Label: cx.ID}
+	if spec.Role != "" {
+		labels[RoleLabel] = spec.Role
+	}
 	cx.Image = orDefault(spec.Image, h.opts.Image)
 	cx.Volume = VolumeName(cx.ID)
 	// A volume that is already there holds files an earlier container of
@@ -164,21 +169,21 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 	port := nat.Port(DaemonPort + "/tcp")
 	cfg := &container.Config{
 		Image:      cx.Image,
-		Entrypoint: []string{eikad.BinaryPath, "-listen", ":" + DaemonPort, "-root", Root},
+		Entrypoint: []string{eikad.BinaryPath, "-listen", ":" + DaemonPort, "-root", cx.Root},
 		// HOME is the root whoever the user is: an image with no passwd
 		// entry for the uid would otherwise leave it at "/".
 		Env: []string{
-			"HOME=" + Root,
+			"HOME=" + cx.Root,
 			eikad.TokenEnv + "=" + cx.Token,
 			proxyTokenEnv + "=" + cx.ProxyToken,
 		},
 		User:         fmt.Sprintf("%d:%d", userID, groupID),
-		WorkingDir:   Root,
-		Labels:       map[string]string{Label: cx.ID},
+		WorkingDir:   cx.Root,
+		Labels:       labels,
 		ExposedPorts: nat.PortSet{port: struct{}{}},
 	}
 	hostCfg := &container.HostConfig{
-		Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: cx.Volume, Target: Root}},
+		Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: cx.Volume, Target: cx.Root}},
 		// Docker's own init is PID 1 and reaps the orphans a shell leaves
 		// behind; eikad runs under it as an ordinary process.
 		Init: &useInit,
@@ -208,7 +213,7 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		rollback()
 		return Computer{}, err
 	}
-	if err := h.ownRoot(ctx, cx.ContainerID); err != nil {
+	if err := h.ownRoot(ctx, cx.ContainerID, cx.Root); err != nil {
 		rollback()
 		return Computer{}, err
 	}
@@ -289,6 +294,7 @@ func (h *Host) Inspect(ctx context.Context, id string) (Computer, error) {
 		ID:          id,
 		ContainerID: info.ID,
 		Image:       info.Config.Image,
+		Root:        orDefault(info.Config.WorkingDir, Root),
 		State:       StateStopped,
 		Token:       envValue(info.Config.Env, eikad.TokenEnv),
 		ProxyToken:  envValue(info.Config.Env, proxyTokenEnv),
@@ -300,7 +306,7 @@ func (h *Host) Inspect(ctx context.Context, id string) (Computer, error) {
 		_, cx.Proxied = info.NetworkSettings.Networks[h.opts.InternalNetwork]
 	}
 	for _, m := range info.Mounts {
-		if m.Destination != Root {
+		if m.Destination != cx.Root {
 			continue
 		}
 		cx.Volume = m.Name
@@ -338,7 +344,7 @@ func (h *Host) client(cx Computer) (*sandbox.Client, error) {
 	if cx.Address == "" {
 		return nil, fmt.Errorf("computer %s has no address: it is not running", cx.ID)
 	}
-	return sandbox.New(sandbox.Options{BaseURL: cx.Address, Token: cx.Token, Root: Root})
+	return sandbox.New(sandbox.Options{BaseURL: cx.Address, Token: cx.Token, Root: RootOf(cx)})
 }
 
 // address is the base URL the harness reaches the computer's daemon on: the

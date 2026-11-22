@@ -144,8 +144,10 @@ type Server struct {
 
 	// homeMu makes EnsureHome take turns. startMu serializes computer use
 	// reservations, idle stops and starts for runs.
-	homeMu  sync.Mutex
-	startMu sync.Mutex
+	homeMu sync.Mutex
+	// memoryMu makes EnsureMemory take turns.
+	memoryMu sync.Mutex
+	startMu  sync.Mutex
 
 	// loginMu makes sign-in attempts take turns, which bounds how fast a
 	// password can be guessed without locking its owner out.
@@ -250,6 +252,7 @@ func (s *Server) Run(ctx context.Context) error {
 		if s.deps.Computers != nil {
 			wg.Go(func() { s.idle.watch(watchCtx) })
 			wg.Go(func() { s.keepHome(watchCtx, firstHomeRetry) })
+			wg.Go(func() { s.keepMemory(watchCtx, firstHomeRetry) })
 		}
 		// The sweep stops before Close, whose runs it would otherwise race.
 		defer wg.Wait()

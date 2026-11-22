@@ -127,7 +127,7 @@ func (h *Host) moveTo(ctx context.Context, cx Computer, target string) error {
 // processes need: the egress proxy for a proxied computer, nothing for one
 // with a route of its own.
 func (h *Host) setEnvironment(ctx context.Context, cx Computer) error {
-	c, err := sandbox.New(sandbox.Options{BaseURL: cx.Address, Token: cx.Token, Root: Root})
+	c, err := sandbox.New(sandbox.Options{BaseURL: cx.Address, Token: cx.Token, Root: RootOf(cx)})
 	if err != nil {
 		return err
 	}

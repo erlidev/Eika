@@ -68,6 +68,14 @@ type sandboxDefaults struct {
 // by its proxy token, which lives in its container's configuration, so the
 // first request of each computer reads it from there.
 func (s *Server) EgressPolicy(ctx context.Context, id string) (egress.Policy, error) {
+	if id == memoryComputerID {
+		// The memory computer has no row; it never reaches out.
+		token, err := s.proxyToken(ctx, id)
+		if err != nil {
+			return egress.Policy{}, err
+		}
+		return egress.Policy{Token: token, Mode: egress.ModeNone}, nil
+	}
 	cx, err := s.deps.Store.Computer(ctx, id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
