@@ -231,7 +231,7 @@ What stops Eika outright. None of it asks.
       `internal/sentry/scan`, with no new dependency.
 - [x] **P4-12**: Plant the canary in the `home` computer's environment on every start,
       unique per install and recorded, and halt when `Decide` sees its value.
-- [ ] **P4-13**: Benchmark `Decide` for arguments up to 64 KiB, under 1 ms, as a
+- [x] **P4-13**: Benchmark `Decide` for arguments up to 64 KiB, under 1 ms, as a
       benchmark that `make check` runs.
 
 **Exit B:** by hand: a `web_fetch` whose URL carries a key-shaped string comes
@@ -537,7 +537,7 @@ and also requires the exit checks.
       - the guard stopped mid-run gives `unscanned`, never a dropped result
       - `Decide` under 1 ms for arguments up to 64 KiB, as a benchmark in
         `make check`
-      - [ ] **P4-13**: Benchmark `Decide` in `make check`.
+      - [x] **P4-13**: Benchmark `Decide` in `make check`.
       - [ ] **P4-25**: Build the injection harness and fixtures on the P2-25 live harness.
       - [ ] **P4-26**: Measure the chain, `curl` and guard-stopped scenarios, and log the numbers.
 - [ ] Update the security section of the style guide: Core holds model keys and
