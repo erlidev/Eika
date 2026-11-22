@@ -55,6 +55,7 @@ for (const [label, viewport] of [
     const dialog = eika.page.getByRole("dialog");
     await expect(dialog.getByRole("switch", { name: "Require screening" })).toBeChecked();
     await expect(dialog.getByText("example.com", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("blocked.example", { exact: true })).toBeVisible();
     await expectShot(eika, `security-trusted-${label}`, "role=dialog");
   });
 }

@@ -1,6 +1,9 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  addBlockedHost,
+  getBlockedHosts,
+  removeBlockedHost,
   addTrustedSource,
   getTrustedSources,
   getWithheld,
@@ -39,6 +42,7 @@ export function SecuritySettings() {
   return (
     <div className="space-y-4">
       <ScreenSettings />
+      <BlockedHosts />
       <TrustedSources />
       <div className="space-y-1">
         <h3 className="text-sm font-medium">Withheld</h3>
@@ -143,6 +147,96 @@ function TrustButton({ id }: { id: string }) {
   );
 }
 
+function useBlockMutation(fn: (value: string) => Promise<void>) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.blockedHosts() }),
+  });
+}
+
+function BlockedHosts() {
+  const sources = useQuery({
+    queryKey: queryKeys.blockedHosts(),
+    queryFn: ({ signal }) => getBlockedHosts(signal),
+  });
+  const add = useBlockMutation(addBlockedHost);
+  const remove = useBlockMutation(removeBlockedHost);
+  const [host, setHost] = useState("");
+  return (
+    <section className="space-y-2">
+      <h3 className="text-sm font-medium">Blocked hosts</h3>
+      <p className="text-muted-foreground text-xs">
+        Computers, web fetch and search cannot connect to blocked hosts. Blocking applies to the
+        exact host, not its subdomains.
+      </p>
+      {sources.isError && (
+        <LoadError
+          what="blocked hosts"
+          error={sources.error}
+          retry={() => void sources.refetch()}
+          retrying={sources.isFetching}
+        />
+      )}
+      {sources.isPending && <p className="text-muted-foreground text-xs">Loading…</p>}
+      {sources.isSuccess && sources.data.hosts.length === 0 && (
+        <p className="text-muted-foreground text-xs">No blocked hosts.</p>
+      )}
+      {sources.data && sources.data.hosts.length > 0 && (
+        <ul className="space-y-2">
+          {sources.data.hosts.map((item) => (
+            <li key={item} className="flex items-center gap-2 rounded-md border p-2">
+              <span className="min-w-0 flex-1 break-all text-xs">{item}</span>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label={`Remove ${item}`}
+                disabled={remove.isPending}
+                onClick={() => {
+                  remove.mutate(item);
+                }}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="space-y-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          add.mutate(host.trim(), {
+            onSuccess: () => {
+              setHost("");
+            },
+          });
+        }}
+      >
+        <Label htmlFor="blocked-host">Host to block</Label>
+        <div className="flex gap-2">
+          <Input
+            id="blocked-host"
+            value={host}
+            onChange={(event) => {
+              setHost(event.target.value);
+            }}
+            placeholder="example.com"
+          />
+          <Button type="submit" disabled={!host.trim() || add.isPending}>
+            Add
+          </Button>
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Enter a host without a scheme, port or path.
+        </p>
+      </form>
+      {add.isError && <ActionError action="block the host" error={add.error} />}
+      {remove.isError && <ActionError action="remove the blocked host" error={remove.error} />}
+    </section>
+  );
+}
+
 function TrustedSources() {
   const sources = useQuery({
     queryKey: queryKeys.trustedSources(),
@@ -201,7 +295,7 @@ function TrustedSources() {
           });
         }}
       >
-        <Label htmlFor="trusted-host">Host</Label>
+        <Label htmlFor="trusted-host">Host to trust</Label>
         <div className="flex gap-2">
           <Input
             id="trusted-host"

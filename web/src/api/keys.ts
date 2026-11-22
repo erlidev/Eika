@@ -34,6 +34,7 @@ export const queryKeys = {
   /** halt is whether Eika is halted. */
   halt: () => ["halt"] as const,
   guard: () => ["guard"] as const,
+  blockedHosts: () => ["blocked-hosts"] as const,
   trustedSources: () => ["trusted-sources"] as const,
   /** withheld is the list of removals, newest first, paged. */
   withheld: () => ["withheld"] as const,
