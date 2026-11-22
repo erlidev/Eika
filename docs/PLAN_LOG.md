@@ -2341,3 +2341,18 @@ place and starts eika again; a trap restarts eika and removes the partial on any
 failure. Checked by hand against a throwaway compose project (not the smoke or a
 real stack): success, perms, checksums, restart, refusal on missing key and
 missing memory volume. Not run on `make smoke`.
+
+## P5-13 — Memory page (2026-11-22)
+
+`features/memory` adds `/memory/:name?` and a Memory entry in the rail and bottom
+bar. `components/MasterDetail.tsx` is the first shared list-and-detail layout
+(Activity keeps its own copy of the same markup for now). The list pages by
+cursor; a search cannot take `state` or `pinned`, so `state.ts` `narrow` applies
+them to the hits and sends `include_archived` unless the state filter excludes
+archived. The detail uses the shared `Markdown`, and links a source's
+`session:<id>` to Activity or Chat when the session is a subagent or the home
+session (an entry has no page). Read-only; the list does not refresh on its own
+until P5-12's events exist. Harness: `memory` scenario (active, pinned, pending
+with a flagged span, archived). New `memory.spec.ts` baselines for desktop and a
+coarse-pointer phone; the rail and bottom bar gain a fourth item, so the shell,
+Activity, Projects and touch baselines are expected to change.

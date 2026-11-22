@@ -435,7 +435,7 @@ no memory section.
       state change, not an agent capability; reject archives. Enforce credential
       rejection even on accept/edit. Guard repeated or stale answers. Publish
       after durable changes, refetch on reconnect, and add no push or run parking.
-- [ ] **P5-13**: Add the Memory page, list, type/state filters, search and detail
+- [x] **P5-13**: Add the Memory page, list, type/state filters, search and detail
       with source links. Use `MasterDetail` and the existing Markdown renderer.
       Add `App.tsx`/`pages.ts` routes, feature README and P5-11 `World` routes.
       Inspect desktop and coarse-pointer phone shots before accepting baselines.
@@ -733,7 +733,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - [ ] **P5-15**: Inbox page, badge and actions.
 - [ ] Memory UI: list, filters, search, editor, pin, archive, purge.
       - [x] **P5-11**: Memory APIs and user mutations.
-      - [ ] **P5-13**: Memory page, list, search and detail.
+      - [x] **P5-13**: Memory page, list, search and detail.
       - [ ] **P5-14**: Editor, controls and Instructions access.
 - [ ] `make backup` and `make restore`: the database, the memory repository and
       the key file, with a documented and tested restore.
