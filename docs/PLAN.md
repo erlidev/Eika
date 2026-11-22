@@ -497,7 +497,7 @@ stack is intact. The scripted memory smoke flow passes.
       Report refusal as refusal, not as proof that pending works. Require a
       real-screen write case as well. Reuse P4's fixture-hosts support and report
       the number of asks/pushes (zero), misses and task failures.
-- [ ] **P5-22**: Run the phase suite on the bench's chat model and guard. Resolve
+- [x] **P5-22**: Run the phase suite on the bench's chat model and guard. Resolve
       failures, rerun affected scenarios, and log results, thresholds, model/guard
       revisions, llama.cpp build and flags. Include the prefix-stability result
       with memory and the 30-case false-positive count. A skipped suite does not
@@ -748,7 +748,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - [x] **P5-19**: Live harness and save/recall scenario.
       - [x] **P5-20**: Thirty ordinary preferences and rules.
       - [x] **P5-21**: Poisoning chain and second-screen case.
-      - [ ] **P5-22**: Bench run and recorded results.
+      - [x] **P5-22**: Bench run and recorded results.
 - [ ] Close phase 5 after all exit checks.
       - [ ] **P5-23**: Checks, manual exit and documentation close.
 
