@@ -115,7 +115,7 @@ each running or waiting one so Cancel works (aborting it records the subagent
 the same transcript on `home-main`, which is the one the UI can open.
 `chat` queues a web search reply. `mcp` adds five MCP servers, one in each
 state; the mock's authorization server approves at
-once, so Sign in returns straight to `/mcp/callback`. `recorded-calls` adds
+once, so Sign in returns straight to `/mcp/callback`. `halted` is Eika halted over an empty home (the banner, and a message refused with 409). `recorded-calls` adds
 two recorded calls to `ses-backoff` for the context meter. The mock resolves
 agent definitions and assembles requests in `harness/modelContext.ts`. Each run
 it plays records its model call. The `agent-*`

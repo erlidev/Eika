@@ -224,7 +224,7 @@ What stops Eika outright. None of it asks.
 
 - [x] **P4-09**: Add halt: persisted state, the first step of `Decide`, abort of every
       run, a pause hook for the scheduler of phase 7, one push, and the API.
-- [ ] **P4-10**: Add the halt button in `HaltSlot`, resume, and the banner. Add its
+- [x] **P4-10**: Add the halt button in `HaltSlot`, resume, and the banner. Add its
       `World` routes and baselines.
 - [x] **P4-11**: Deny a credential pattern in a `web_fetch` URL or a `web_search`
       query, with a reason the agent can act on. The patterns are written in
@@ -506,7 +506,7 @@ and also requires the exit checks.
 - [ ] Halt: an always-visible button, resume, and Core's reaction (abort runs, a
       scheduler pause hook, a banner, a push).
       - [x] **P4-09**: Add halt state, run abort, the pause hook, the push and the API.
-      - [ ] **P4-10**: Add the halt button, resume and banner.
+      - [x] **P4-10**: Add the halt button, resume and banner.
 - [ ] Audit: an append-only table with a row for every decision that was not a
       plain allow, every removal, every setting change and every halt, never
       secret values. Session entries already record every tool call.

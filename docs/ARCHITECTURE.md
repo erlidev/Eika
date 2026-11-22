@@ -952,9 +952,11 @@ web/src/
   pads the device's safe areas (`pt-safe`, `px-safe`, `pb-safe` in `index.css`)
   and sits on `--keyboard-inset`, which `lib/useViewportAnchor` writes from
   `window.visualViewport` where the browser does not resize the page itself
-  (Safari); the bar gives way while a keyboard is up. `app/HaltSlot.tsx` is
-  the empty place phase 4 mounts the halt button, in the rail and, on a phone,
-  the header. Pages not built yet are absent, not disabled.
+  (Safari); the bar gives way while a keyboard is up. `app/HaltSlot.tsx` places
+  the halt button (`features/halt`) in the rail and, on a phone, the header; one press halts, with no
+  confirmation. `useHaltEvents` keeps `GET /api/halt` current from `halt.state`, and the banner under
+  the header says "Eika is halted" with a Resume button on every page. A message refused with 409
+  while halted keeps its draft and says so. Pages not built yet are absent, not disabled.
 - **Chat** (`features/chat`): the page at `/`. It reads `GET /api/home` and renders `features/session`'s
   `SessionView` for the home session, so the transcript, the composer and the
   status bar are the session view's. On a coarse pointer the composer uses a

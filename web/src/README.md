@@ -29,7 +29,7 @@ Rules:
 bar under it (`app/Navigation.tsx`, from the list in `app/pages.ts`), a header,
 and the page in an `Outlet`. It fills `100dvh`, leaves room for the safe
 areas, and keeps the page above the on-screen keyboard
-(`lib/useViewportAnchor`). `app/HaltSlot.tsx` reserves the halt button's place.
+(`lib/useViewportAnchor`). `app/HaltSlot.tsx` places the halt button (`features/halt`).
 `app/App.tsx` routes `/` to Chat (`features/chat`), the home session, and
 `/activity/:sessionId?` to Activity (`features/activity`).
 

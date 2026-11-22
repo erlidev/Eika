@@ -23,6 +23,16 @@ Phase 0's and phase 1's ticked items, which those entries refer to, are in
   the redaction patterns (no second list). The text is checked as written and after up to three layers of
   percent-decoding, so userinfo, path, query and fragment are covered. The deny audit row holds the pattern
   kind in `detail`, never the value. Seam for phase 11: `outbound` in `internal/sentry/outbound.go`.
+
+- 2026-11-21: P4-10 added the halt UI (`web/src/features/halt`): `HaltButton` in `HaltSlot` (rail foot; the
+  phone's header), one press with no confirmation and no undo (the design has Resume on the banner only), and
+  `HaltBanner` under the header on every page with the reason and Resume. A failed press shows an alert banner
+  with a Halt retry. `useHaltEvents` (in `Shell`) reads `GET /api/halt` and applies `halt.state`, refetching on
+  reconnect or `bus.dropped`. A 409 "Eika is halted" on a send says so and keeps the draft (`sendFailureText`).
+  Mock routes `harness/routes/halt.ts` (halting aborts running runs; a run start is 409 while halted), scenario
+  `halted`, spec `halt.spec.ts` (phone and desktop, both themes, 44px on touch). The three `unmocked` entries are gone.
+  - Next: P4-12 halts through `gate.Halt`, whose event the banner already follows. A banner for connection lost
+    or the guard is not built; the halted one is the first of the design's stack.
 - 2026-11-21: P4-09 added halt. Migration 0025 `core.halt` (one row; `store.SetHalt` writes it and the
   `halt` or `resume` audit row in one transaction). `Gate` gains `Halted`, `Halt` and `Resume`; `Decide`
   denies everything first while halted, and a halt state that cannot be read at start counts as halted.

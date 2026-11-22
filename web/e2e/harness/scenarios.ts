@@ -1424,6 +1424,20 @@ export const scenarios = {
       return b.world;
     },
   },
+  halted: {
+    description:
+      "Eika halted with a reason, over an empty home conversation: the banner shows on every page and a message is refused with 409 until Resume.",
+    path: "/",
+    build: () => {
+      const b = configured();
+      b.world.halt = {
+        halted: true,
+        at: minutesAgo(5),
+        reason: "A canary value was seen in a command.",
+      };
+      return b.world;
+    },
+  },
   "home-world": {
     description: "The home conversation and named subagents in different states.",
     path: "/",

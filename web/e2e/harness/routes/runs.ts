@@ -99,6 +99,8 @@ export function runRoutes(ctx: RouteContext): void {
       images.push(image);
     }
     if (session.kind === "subagent") return subagentRefusal(session.name);
+    if (w.halt.halted && (!body.mode || body.mode === "run"))
+      return fail(409, "conflict", "Eika is halted: resume it to start a run");
     // The model a run uses is the one the request names, else the
     // session's; a running one keeps the model it started with.
     if (!knownAgent(session) && (!body.mode || body.mode === "run"))

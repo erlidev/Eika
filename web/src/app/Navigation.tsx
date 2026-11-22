@@ -73,7 +73,7 @@ export function Rail() {
         <PageLinks itemClassName="w-14" />
       </nav>
       <div className="mt-auto flex flex-col items-center gap-1">
-        <HaltSlot />
+        <HaltSlot layout="rail" />
         <SettingsButton className="w-14" />
       </div>
     </div>

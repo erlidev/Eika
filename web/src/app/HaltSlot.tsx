@@ -1,15 +1,18 @@
 /**
- * Where the halt button goes. The shell reserves it, in the rail and in the
- * phone's header, so phase 4 mounts the button without moving anything. Until
- * then the slot is empty and takes no room.
+ * Where the halt button goes: the bottom of the rail and the phone's header,
+ * so it is one press away on every page.
  */
 
-import { cn } from "@/lib/utils";
+import { HaltButton } from "@/features/halt";
 
 export type HaltSlotProps = {
-  className?: string;
+  layout: "rail" | "header";
 };
 
-export function HaltSlot({ className }: HaltSlotProps) {
-  return <div data-slot="halt" className={cn("shrink-0 empty:hidden", className)} />;
+export function HaltSlot({ layout }: HaltSlotProps) {
+  return (
+    <div data-slot="halt" className="shrink-0">
+      <HaltButton layout={layout} />
+    </div>
+  );
 }

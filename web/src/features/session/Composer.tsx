@@ -32,6 +32,7 @@ import { useCompact, usePostMessage, useRunStatus } from "@/features/session/que
 import { useSessionStore } from "@/features/session/store";
 import type { MessageMode, QueuedMessage } from "@/api/types";
 import { failureText } from "@/lib/failure";
+import { sendFailureText } from "@/features/halt";
 import { imageAdvice } from "@/features/session/composerModel";
 import { imageUrl } from "@/lib/images";
 import { cn } from "@/lib/utils";
@@ -332,12 +333,12 @@ export function Composer({
         )}
         {post.isError && (
           <p role="alert" className="text-destructive mt-2 text-xs">
-            {failureText("send the message", post.error)}
+            {sendFailureText("send the message", post.error)}
           </p>
         )}
         {compact.isError && (
           <p role="alert" className="text-destructive mt-2 text-xs">
-            {failureText("compact the conversation", compact.error)}
+            {sendFailureText("compact the conversation", compact.error)}
           </p>
         )}
         <Queues
