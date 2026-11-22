@@ -265,7 +265,7 @@ Trusting a source from the withheld list lets its next page through, scored.
       and make halt refuse new connections and close open ones.
 - [ ] **P4-20**: Check the blocklist and halt before `web_fetch` and every search
       backend except the local SearXNG dials.
-- [ ] **P4-21**: Add the blocklist to Settings, Security.
+- [x] **P4-21**: Add the blocklist to Settings, Security.
 
 **Exit D:** by hand: a worker runs `curl`, `web_fetch` and a package install with
 no prompt. A host on the blocklist is refused by all three and by hosted search.
@@ -518,7 +518,7 @@ and also requires the exit checks.
       - [x] **P4-08**: Build Settings, Security with the withheld list, and mark tool cards.
       - [x] **P4-15**: Add trusted sources to ingest and the API.
       - [x] **P4-16**: Add guard health, the threshold, `screen_required` and trusted sources to the page.
-      - [ ] **P4-21**: Add the blocklist to the page.
+      - [x] **P4-21**: Add the blocklist to the page.
 - [ ] `make smoke` covers Sentry: a scripted model fetches a fixture page that
       carries a planted instruction, and the result it gets has the part removed.
       - [x] **P4-24**: Add the Sentry scenario to `make smoke`.

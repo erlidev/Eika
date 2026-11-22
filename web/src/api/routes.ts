@@ -542,6 +542,15 @@ export function resumeHalt(): Promise<Halt> {
 export function getGuard(signal?: AbortSignal) {
   return request<GuardHealth>("/api/guard", { signal });
 }
+export function getBlockedHosts(signal?: AbortSignal) {
+  return request<{ hosts: string[] }>("/api/blocked-hosts", { signal });
+}
+export function addBlockedHost(host: string) {
+  return requestEmpty("/api/blocked-hosts", { method: "POST", body: { host } });
+}
+export function removeBlockedHost(host: string) {
+  return requestEmpty(`/api/blocked-hosts/${encodeURIComponent(host)}`, { method: "DELETE" });
+}
 export function getTrustedSources(signal?: AbortSignal) {
   return request<{ hosts: string[] }>("/api/trusted-sources", { signal });
 }

@@ -1,5 +1,8 @@
 # Plan log
 
+- 2026-11-22: P4-21 adds blocked hosts to Security. Web fetch and search
+  enforcement remains P4-20. Visual baselines need review outside the sandbox.
+
 - 2026-11-22: P4-24 adds exact fetch fixture hosts and the Sentry smoke scenario.
   The smoke stack uses the real guard. `make smoke` needs Docker and remains to
   be run outside the sandbox.

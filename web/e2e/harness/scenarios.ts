@@ -1228,6 +1228,7 @@ export const scenarios = {
       b.world.guard = "down";
       b.world.settings.settings.screen_required = true;
       b.world.trustedSources = ["example.com", "news.example.org"];
+      b.world.blockedHosts = ["blocked.example", "long-blocked-host.example.org"];
       return b.world;
     },
   },

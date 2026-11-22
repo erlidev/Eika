@@ -21,6 +21,9 @@ const routes = vi.hoisted(() => ({
       },
     ],
   }),
+  getBlockedHosts: vi.fn().mockResolvedValue({ hosts: ["blocked.example"] }),
+  addBlockedHost: vi.fn().mockResolvedValue(undefined),
+  removeBlockedHost: vi.fn().mockResolvedValue(undefined),
   getTrustedSources: vi.fn().mockResolvedValue({ hosts: ["example.org"] }),
   putSettings: vi.fn().mockResolvedValue({
     settings: { screen_required: true },
@@ -72,8 +75,21 @@ it("saves screening and trusts or removes a source", async () => {
     host.dispatchEvent(new Event("input", { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve, 10));
   });
-  await click([...node.querySelectorAll("button")].find((b) => b.textContent === "Add") ?? null);
+  await click(host.closest("form")?.querySelector("button") ?? null);
   expect(routes.addTrustedSource.mock.calls[0]?.[0]).toBe("new.example");
+  const blocked = node.querySelector<HTMLInputElement>("#blocked-host");
+  if (!blocked) throw new Error("missing blocked host");
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      blocked,
+      "new.blocked",
+    );
+    blocked.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click(blocked.closest("form")?.querySelector("button") ?? null);
+  expect(routes.addBlockedHost.mock.calls[0]?.[0]).toBe("new.blocked");
+  await click(node.querySelector('[aria-label="Remove blocked.example"]'));
+  expect(routes.removeBlockedHost.mock.calls[0]?.[0]).toBe("blocked.example");
   await click(node.querySelector("#screen-required"));
   expect(routes.putSettings.mock.calls[0]?.[0]).toEqual({ screen_required: true });
   await click(
