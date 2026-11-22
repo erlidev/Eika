@@ -38,7 +38,7 @@ Every failure has one shape:
 | `not_found` | 404 | The addressed computer, session, entry, run, question, provider, model, MCP server, elicitation, or pending authorization does not exist. |
 | `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a computer that is not running or could not be started, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
 | `too_large` | 413 | A JSON request body is over its 1 MiB bound. |
-| `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
+| `internal` | 500, 503 | The harness failed (500). The message is always `internal error`; the detail is in the harness log. A memory route answers 503 with a plain message when memory cannot be judged right now (see Memory). |
 
 ## Health
 
@@ -1405,6 +1405,95 @@ status or directory is invalid. Returns the Project, or 404 for an unknown ID.
 Invalid fields return 400. Updates apply together under a row lock. A null body,
 unknown field, `slug` or `instructions` returns 400. Creation also rejects a null
 body and unknown fields, including `instructions`.
+
+## Memory
+
+The user's view of Eika's memory: list, search, read, and the changes only the
+user makes. All routes require authentication. Every change goes through the
+same writer the agent's memory tools use (file write, git commit, index row, in
+one critical section), so there is no second write path. Agents cannot reach
+these routes. Until startup recovery of the memory index has finished, every
+memory route returns 503 with `memory is not available yet`.
+
+A memory is identified by its `name`, a lowercase slug of at most 64
+characters; any other name is a 404. `content_sha` is the digest of the memory
+file's bytes and changes with every change. It is the stale-edit
+precondition: send the one you read, and a change made against older content
+returns 409 and writes nothing. `PATCH` requires it; pin, unpin, archive and
+purge accept it and check it when given.
+
+Screening applies to the user's edits as it does to the agent's writes
+(P5-00 default 3). The edited description and body go through Sentry's memory
+check: a credential is refused with 400 and the reason (never the secret), even
+though the user typed it; a flagged text, or a guard that did not answer, makes
+an active memory `pending` (and unpinned) and keeps its text intact for the
+Inbox, where only the user's explicit accept makes it active; screening that is
+required but unavailable, or a check that cannot run, returns 503 and writes
+nothing. Editing a pending memory keeps it pending, whatever the check says;
+editing an archived one keeps it archived. Archive and purge need no screen.
+User changes (`edit`, `pin`, `unpin`, `archive`, `purge`) are written to the
+audit log as `setting` events of kind `memory`, with no text.
+
+### `GET /api/memories`
+
+Lists memories, newest `updated` first with name breaking ties, or searches
+them. Query parameters (unknown ones return 400):
+
+| Parameter | Meaning |
+|---|---|
+| `limit` | Page size, 1 to 50; default 20. |
+| `after` | The `next_cursor` of the previous page (list only). |
+| `state` | `active`, `pending` or `archived` (list only). |
+| `type` | `user`, `preference`, `person`, `fact` or `procedure`. |
+| `pinned` | `true` or `false` (list only). |
+| `q` | Full-text search, 1 to 200 characters. With `q` the route returns the best matches, at most `limit`, with no cursor; archived ones only with `include_archived=true`. A search takes only `q`, `type`, `include_archived` and `limit`. |
+
+Returns `{memories: [...], next_cursor?: string}` (200). Each item has `name`,
+`description`, `type`, `state`, `pinned`, and for a list `expires`, `updated`
+and `content_sha` (bodies are left out); for a search, `snippet`, the start of
+the body. `next_cursor` is absent on the last page. An invalid `after` returns 400.
+
+### `GET /api/memories/{name}`
+
+Returns the memory (200): `name`, `description`, `type`, `source`, `created`,
+`updated`, `expires` (empty for none), `pinned`, `state`, `body`, `content_sha`,
+and when present `screen` (`{spans, max_score, unscanned}`, the verdict behind
+a pending memory; span text is the flagged text) and `archive_reason`. An unknown
+name returns 404.
+
+### `PATCH /api/memories/{name}`
+
+Requires `{content_sha: string}` and at least one of `description` (20 to 200
+characters, one line), `type`, `body` (at most 2048 bytes) and `expires`
+(`YYYY-MM-DD`, or `""` to clear). A field left out is kept. Returns the stored
+memory (200); check `state`, since a flagged edit returns `pending`. Errors:
+400 for an invalid field or a credential, 404, 409 for a stale `content_sha`
+or an edit that would put the pinned section over 12 memories or 3,000 tokens,
+and 503 when screening or the exact token count is unavailable.
+
+### `POST /api/memories/{name}/pin`
+### `POST /api/memories/{name}/unpin`
+
+Body `{content_sha?: string}` (an empty body is also accepted). Pin sets `pinned`; only an active memory
+can be pinned (409 otherwise), and the pinned set must stay within 12 memories
+and 3,000 tokens, counted exactly with the home model's counter with labels
+included (409 over the limit; 503 when the count is not exact, since an
+estimate is never accepted). Unpin needs no count. Both return the memory (200),
+and pinning an already pinned memory changes nothing.
+
+### `POST /api/memories/{name}/archive`
+
+Body `{reason?: string, content_sha?: string}`; a reason is 1 to 200
+characters and defaults to `archived by the user`. Moves the memory to
+`archived`, records the reason, and returns it (200). The file stays in git.
+
+### `DELETE /api/memories/{name}`
+
+Purges a memory: the file is removed and its index row deleted in one git
+commit. Optional query `content_sha`. Returns 204. **Purge does not rewrite
+history:** the earlier commits of the memory repository, old sessions that
+quoted the text, and backups can still hold it. Archive is the reversible way
+to forget; purge is for the row and file only.
 
 ## User instructions
 

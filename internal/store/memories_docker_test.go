@@ -3,7 +3,9 @@
 package store_test
 
 import (
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/erlidev/eika/internal/memory"
 	"github.com/erlidev/eika/internal/store"
@@ -128,5 +130,45 @@ func TestMemoryShasAndDelete(t *testing.T) {
 	}
 	if got, _ := st.MemorySHAs(ctx); len(got) != 0 {
 		t.Fatalf("rows after delete: %v", got)
+	}
+}
+
+func TestListAndGetMemories(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, storetest.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for i, name := range []string{"aa", "bb", "cc"} {
+		r := memoryRecord(name, "Use when testing the paged list.", "body "+name, "active")
+		r.Updated = []string{"2026-11-01T10:00:00Z", "2026-11-02T10:00:00Z", "2026-11-02T10:00:00Z"}[i]
+		if name == "cc" {
+			r.State, r.Screen = "pending", &memory.ScreenResult{MaxScore: 0.9, Spans: []memory.ScreenSpan{}}
+		}
+		if err := st.UpsertMemory(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := st.ListMemories(ctx, memory.ListQuery{Limit: 2})
+	if err != nil || len(page) != 2 || page[0].Name != "bb" || page[1].Name != "cc" {
+		t.Fatalf("first page = %+v, %v; want newest first, name breaking the tie", page, err)
+	}
+	rest, err := st.ListMemories(ctx, memory.ListQuery{Limit: 2, AfterUpdated: time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC), AfterName: "cc"})
+	if err != nil || len(rest) != 1 || rest[0].Name != "aa" {
+		t.Fatalf("after cursor = %+v, %v", rest, err)
+	}
+	if got, _ := st.ListMemories(ctx, memory.ListQuery{Limit: 5, State: "pending"}); len(got) != 1 || got[0].Name != "cc" {
+		t.Fatalf("state filter = %+v", got)
+	}
+	rec, err := st.GetMemory(ctx, "cc")
+	if err != nil || rec.Body != "body cc" || rec.Screen == nil || rec.Screen.MaxScore != 0.9 || rec.ContentSHA != "sha-cc" {
+		t.Fatalf("get = %+v, %v", rec, err)
+	}
+	if _, err := st.GetMemory(ctx, "missing"); !errors.Is(err, memory.ErrNotFound) {
+		t.Fatalf("get missing: %v", err)
+	}
+	if pins, err := st.PinnedMemories(ctx); err != nil || len(pins) != 0 {
+		t.Fatalf("pinned = %+v, %v", pins, err)
 	}
 }

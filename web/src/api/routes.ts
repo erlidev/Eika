@@ -59,6 +59,10 @@ import type {
   UpdateProvider,
   UpdateSession,
   WithheldPage,
+  EditMemoryRequest,
+  Memory,
+  MemoryListQuery,
+  MemoryPage,
 } from "@/api/types";
 
 /** getHome reads the home session with the entry its head points at. */
@@ -521,6 +525,68 @@ export function testNotification(): Promise<void> {
 /** getWithheld reads a page of removals, newest first; `before` is the previous page's cursor. */
 export function getWithheld(before?: string, signal?: AbortSignal): Promise<WithheldPage> {
   return request<WithheldPage>("/api/withheld", { query: { before }, signal });
+}
+
+/** listMemories lists or, with q, searches memories; a list is paged by `after`. */
+export function listMemories(
+  query: MemoryListQuery = {},
+  signal?: AbortSignal,
+): Promise<MemoryPage> {
+  const text = (v: string | number | boolean | undefined) =>
+    v === undefined ? undefined : String(v);
+  return request<MemoryPage>("/api/memories", {
+    query: {
+      q: query.q,
+      type: query.type,
+      state: query.state,
+      pinned: text(query.pinned),
+      include_archived: text(query.include_archived),
+      limit: text(query.limit),
+      after: query.after,
+    },
+    signal,
+  });
+}
+
+/** getMemory reads one memory in full, with the content_sha later changes need. */
+export function getMemory(name: string, signal?: AbortSignal): Promise<Memory> {
+  return request<Memory>(`/api/memories/${encodeURIComponent(name)}`, { signal });
+}
+
+/** editMemory changes a memory; a stale content_sha is a 409 and a flagged edit comes back pending. */
+export function editMemory(name: string, input: EditMemoryRequest): Promise<Memory> {
+  return request<Memory>(`/api/memories/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+/** setMemoryPinned pins or unpins a memory; a pin is refused over 12 pins or 3,000 tokens. */
+export function setMemoryPinned(
+  name: string,
+  pinned: boolean,
+  contentSha?: string,
+): Promise<Memory> {
+  return request<Memory>(`/api/memories/${encodeURIComponent(name)}/${pinned ? "pin" : "unpin"}`, {
+    method: "POST",
+    body: { content_sha: contentSha },
+  });
+}
+
+/** archiveMemory moves a memory to archived; the reason defaults on the server. */
+export function archiveMemory(name: string, reason?: string, contentSha?: string): Promise<Memory> {
+  return request<Memory>(`/api/memories/${encodeURIComponent(name)}/archive`, {
+    method: "POST",
+    body: { reason, content_sha: contentSha },
+  });
+}
+
+/** purgeMemory removes a memory's file and row; git history, sessions and backups may still hold it. */
+export function purgeMemory(name: string, contentSha?: string): Promise<void> {
+  return requestEmpty(`/api/memories/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+    query: { content_sha: contentSha },
+  });
 }
 
 /** getHalt reads whether Eika is halted. */

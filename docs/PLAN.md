@@ -427,7 +427,7 @@ no memory section.
 
 ### Stage C: Memory and Inbox in the browser
 
-- [ ] **P5-11**: Add authenticated memory list/search/read and user mutation APIs:
+- [x] **P5-11**: Add authenticated memory list/search/read and user mutation APIs:
       edit, pin/unpin, archive and purge, through the same writer. Add bounded
       paging and stale-edit protection. Resolve purge (question 5) and user edit
       screening (question 3). Register routes, wire types and API docs together.
@@ -846,7 +846,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - [ ] **P5-12**: Pending APIs, count and live events.
       - [ ] **P5-15**: Inbox page, badge and actions.
 - [ ] Memory UI: list, filters, search, editor, pin, archive, purge.
-      - [ ] **P5-11**: Memory APIs and user mutations.
+      - [x] **P5-11**: Memory APIs and user mutations.
       - [ ] **P5-13**: Memory page, list, search and detail.
       - [ ] **P5-14**: Editor, controls and Instructions access.
 - [ ] `make backup` and `make restore`: the database, the memory repository and

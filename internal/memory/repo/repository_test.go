@@ -1,10 +1,12 @@
 package repo_test
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
 
+	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/executor/local"
 	"github.com/erlidev/eika/internal/memory/repo"
 )
@@ -44,5 +46,22 @@ func TestRepository(t *testing.T) {
 	}
 	if status, err := r.Status(ctx); err != nil || status != "" {
 		t.Fatalf("status after commit = %q, %v", status, err)
+	}
+	// Remove deletes the file in a commit and keeps it in history.
+	if err := r.Remove(ctx, "metric", "Purge memory: metric"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Read(ctx, "metric"); err == nil {
+		t.Error("file readable after remove")
+	}
+	if status, err := r.Status(ctx); err != nil || status != "" {
+		t.Fatalf("status after remove = %q, %v", status, err)
+	}
+	if err := r.Remove(ctx, "metric", "again"); err != nil {
+		t.Fatalf("removing a missing file: %v", err)
+	}
+	var out bytes.Buffer
+	if _, err := ex.Exec(ctx, executor.ExecSpec{Command: "git", Args: []string{"show", "HEAD~1:metric.md"}, Stdout: &out}); err != nil || out.String() != "hello" {
+		t.Fatalf("history lost the removed file: %q, %v", out.String(), err)
 	}
 }

@@ -38,6 +38,9 @@ export const queryKeys = {
   trustedSources: () => ["trusted-sources"] as const,
   /** withheld is the list of removals, newest first, paged. */
   withheld: () => ["withheld"] as const,
+  /** memories without arguments is the prefix of every memory query. */
+  memories: () => ["memories"] as const,
+  memory: (name: string) => ["memories", name] as const,
   models: () => ["models"] as const,
   providers: () => ["providers"] as const,
   system: () => ["system"] as const,

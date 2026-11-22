@@ -45,6 +45,32 @@ func (f *fakeIndex) SearchMemories(context.Context, memory.Query, int) ([]memory
 	return nil, nil
 }
 
+func (f *fakeIndex) ListMemories(context.Context, memory.ListQuery) ([]memory.Summary, error) {
+	return nil, nil
+}
+
+func (f *fakeIndex) GetMemory(_ context.Context, name string) (memory.Record, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.rows[name]
+	if !ok {
+		return memory.Record{}, memory.ErrNotFound
+	}
+	return r, nil
+}
+
+func (f *fakeIndex) PinnedMemories(context.Context) ([]memory.File, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []memory.File
+	for _, r := range f.rows {
+		if r.Pinned && r.State == "active" {
+			out = append(out, r.File)
+		}
+	}
+	return out, nil
+}
+
 func newWriter(t *testing.T) (*memory.Writer, *repo.Repository, *fakeIndex) {
 	t.Helper()
 	ex, err := local.New(t.TempDir())

@@ -38,6 +38,9 @@ type Files interface {
 	// Restore brings a deleted file back from the last commit, and reports
 	// false when no commit has it.
 	Restore(ctx context.Context, name string) (bool, error)
+	// Remove deletes the file and commits the deletion with message. The
+	// file stays in git history. Removing a missing file is not an error.
+	Remove(ctx context.Context, name, message string) error
 }
 
 // ScreenResult is what Sentry's write check found in a pending memory, kept with
@@ -97,6 +100,12 @@ type Index interface {
 	// SearchMemories ranks memories by full-text match. SnippetRunes bounds
 	// the body prefix returned.
 	SearchMemories(ctx context.Context, q Query, snippetRunes int) ([]Hit, error)
+	// ListMemories pages the rows, newest update first.
+	ListMemories(ctx context.Context, q ListQuery) ([]Summary, error)
+	// GetMemory returns one row, or ErrNotFound.
+	GetMemory(ctx context.Context, name string) (Record, error)
+	// PinnedMemories returns every pinned, active row.
+	PinnedMemories(ctx context.Context) ([]File, error)
 }
 
 // Request creates or replaces a memory. Source cites where it was learned.
@@ -170,10 +179,19 @@ func (w *Writer) Write(ctx context.Context, req Request) (Result, error) {
 // Archive moves a memory to state archived and records why in the index. The
 // file stays in git history.
 func (w *Writer) Archive(ctx context.Context, name, reason string) (File, error) {
+	return w.ArchiveIf(ctx, name, reason, "")
+}
+
+// ArchiveIf is Archive that fails with ErrStale unless the stored file's
+// content_sha is ifSHA. An empty ifSHA skips the check.
+func (w *Writer) ArchiveIf(ctx context.Context, name, reason, ifSHA string) (File, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	old, oldData, err := w.load(ctx, name)
 	if err != nil {
+		return File{}, err
+	}
+	if err := checkSHA(oldData, ifSHA); err != nil {
 		return File{}, err
 	}
 	next := old

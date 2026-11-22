@@ -39,6 +39,7 @@ import { searchRoutes } from "./routes/search.ts";
 import { sessionRoutes } from "./routes/sessions.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { haltRoutes } from "./routes/halt.ts";
+import { memoryRoutes } from "./routes/memories.ts";
 import { withheldRoutes } from "./routes/withheld.ts";
 import { classView, entryKind, fixedNow, pathOf, syncSystem } from "./world.ts";
 import type { ReplyStep, World } from "./world.ts";
@@ -554,6 +555,7 @@ export class MockHarness {
     instructionRoutes(ctx);
     runRoutes(ctx);
     mcpRoutes(ctx);
+    memoryRoutes(ctx);
     withheldRoutes(ctx);
     haltRoutes(ctx);
 
