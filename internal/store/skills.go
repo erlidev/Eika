@@ -143,3 +143,16 @@ func (s *Store) SetSkillBroken(ctx context.Context, name, reason string) error {
 	}
 	return nil
 }
+
+// SetSkillEnabled sets whether the user has enabled a skill. It is skill.ErrNotFound
+// for a name with no row.
+func (s *Store) SetSkillEnabled(ctx context.Context, name string, enabled bool) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE skills SET enabled = $2 WHERE name = $1`, name, enabled)
+	if err != nil {
+		return wrap("set skill "+name+" enabled", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return skill.ErrNotFound
+	}
+	return nil
+}

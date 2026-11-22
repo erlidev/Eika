@@ -2264,6 +2264,21 @@ outside edits and deletions, invalid files, full rebuild; `make smoke` passed.
 P5-05 hook: `Writer.SetScreen` (default `HoldPending`). Open: the writer is not
 yet handed to tools (P5-06).
 
+## P6-08 — Skill catalog in the preamble (2026-11-22)
+
+`skill.BuildCatalog` (`internal/skill/catalog_build.go`, on top of `skill.Catalog`)
+and `server.buildPreamble`'s new `skillSource`: home and worker snapshots get the
+`## Skills (skill_use <name> to load one)` section before the memory section,
+within 2,000 exact tokens, none when nothing is loadable. `refreshSnapshot`
+rebuilds it; an inexact count keeps the previous catalog (`catalogOf` reads it back
+from the stored text); `ensurePreamble` builds it for a new session or worker.
+The inspector is unchanged (the catalog is part of the `preamble` section).
+`TestSkillCatalogIsFrozenUntilCompaction` (an exact test tokenizer) checks sorting,
+disabled/late skills, restart-stable bytes and the compaction refresh. Added
+`Store.SetSkillEnabled` and `skill.Catalog` identical to P6-06's for a clean merge.
+Open: the manual check that a pinned tool list hides `skill_use` until compaction
+waits for P6-07.
+
 ## P5-08 — Memory section builder (2026-11-22)
 
 `memory.BuildSection` renders the `## Memory` section (pinned bodies, index,
