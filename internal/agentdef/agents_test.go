@@ -50,6 +50,10 @@ func TestBuiltins(t *testing.T) {
 				t.Errorf("%s memory capability %s is incorrect", d.Name, name)
 			}
 		}
+		// Eika and the worker load skills; the researcher has no use for them.
+		if slices.Contains(d.Tools, "skill_use") != (d.Name != "researcher") {
+			t.Errorf("%s skill capability is incorrect", d.Name)
+		}
 		if d.Name != "worker" && slices.Contains(d.Tools, "bash") {
 			t.Errorf("%s has computer access", d.Name)
 		}

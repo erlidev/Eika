@@ -23,6 +23,14 @@
   not apply). Audit: `deny` for a credential, `skill_screen` for a hit or unscanned, without
   text. `server.skillScreener` is set on the installer in `recoverSkills`.
 
+- 2026-11-22: P6-07 adds `skill_use` (internal/tool/builtin/skills.go), standalone and
+  agent-only, listed for `eika` and `worker` (not `researcher`). `Deps.Skills` is bound in
+  `server` to the store, so it reads rows, never the volume or a computer. `name` returns
+  the body in `<skill name dir="/skills/name">` plus the resource file list; `query` is a
+  case-insensitive substring match over enabled, sound skills, at most 10. A disabled,
+  broken or unknown name gives one identical error. The schema has no enum of names.
+  Tests: builtin skills_test, agentdef and standalone lists, server pin intersection.
+
 - 2026-11-22: P6-04 adds migration 0034 `skills` (name, enabled, sha, installed_at, parsed
   fields, body, file list, warnings, screen, broken), `store` Upsert/Get/List/Delete/
   SetBroken, `skill.Installer` (one mutex: stage, hash-check, swap, hash-check, then
@@ -2286,6 +2294,21 @@ first. Tests: failure after the write, after the commit, retry after restart,
 outside edits and deletions, invalid files, full rebuild; `make smoke` passed.
 P5-05 hook: `Writer.SetScreen` (default `HoldPending`). Open: the writer is not
 yet handed to tools (P5-06).
+
+## P6-08 — Skill catalog in the preamble (2026-11-22)
+
+`skill.BuildCatalog` (`internal/skill/catalog_build.go`, on top of `skill.Catalog`)
+and `server.buildPreamble`'s new `skillSource`: home and worker snapshots get the
+`## Skills (skill_use <name> to load one)` section before the memory section,
+within 2,000 exact tokens, none when nothing is loadable. `refreshSnapshot`
+rebuilds it; an inexact count keeps the previous catalog (`catalogOf` reads it back
+from the stored text); `ensurePreamble` builds it for a new session or worker.
+The inspector is unchanged (the catalog is part of the `preamble` section).
+`TestSkillCatalogIsFrozenUntilCompaction` (an exact test tokenizer) checks sorting,
+disabled/late skills, restart-stable bytes and the compaction refresh. Added
+`Store.SetSkillEnabled` and `skill.Catalog` identical to P6-06's for a clean merge.
+Open: the manual check that a pinned tool list hides `skill_use` until compaction
+waits for P6-07.
 
 ## P5-08 — Memory section builder (2026-11-22)
 

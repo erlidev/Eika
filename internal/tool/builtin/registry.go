@@ -32,6 +32,8 @@ type Deps struct {
 	// every memory_write passes before the writer.
 	Memory      Memories
 	MemoryCheck sentry.MemoryChecker
+	// Skills is the skills store skill_use reads.
+	Skills Skills
 }
 
 // Registry returns a registry holding every built-in tool. It is the one place
@@ -61,6 +63,7 @@ func Registry(d Deps) (*tool.Registry, error) {
 		memoryTool{name: "memory_read", memory: d.Memory, check: d.MemoryCheck},
 		memoryTool{name: "memory_write", memory: d.Memory, check: d.MemoryCheck},
 		memoryTool{name: "memory_forget", memory: d.Memory, check: d.MemoryCheck},
+		skillUseTool{skills: d.Skills},
 		bashTool{},
 		fileTool{name: "file_read"},
 		fileTool{name: "file_write"},

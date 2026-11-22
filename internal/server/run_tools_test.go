@@ -35,3 +35,22 @@ func TestRunToolsNeverGiveSubagentsMemory(t *testing.T) {
 		t.Errorf("eika from the definition = %v", got)
 	}
 }
+
+// skill_use reaches Eika and the worker through their definitions, and a
+// pinned list from before it existed hides it rather than gaining it.
+func TestRunToolsSkillUseIntersectsPins(t *testing.T) {
+	reg, err := builtin.Registry(builtin.Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{deps: Deps{Tools: reg}}
+	for agent, want := range map[string]bool{"eika": true, "worker": true, "researcher": false} {
+		sess := store.Session{Agent: agent, ComputerID: "c"}
+		if got := slices.Contains(s.sessionToolNames(sess, nil), "skill_use"); got != want {
+			t.Errorf("%s offered skill_use = %v", agent, got)
+		}
+		if slices.Contains(s.sessionToolNames(sess, []string{"report", "web_search"}), "skill_use") {
+			t.Errorf("%s: an old pin gained skill_use", agent)
+		}
+	}
+}

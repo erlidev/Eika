@@ -15,6 +15,7 @@ import (
 	"github.com/erlidev/eika/internal/memory"
 	"github.com/erlidev/eika/internal/provider/counter"
 	"github.com/erlidev/eika/internal/session"
+	"github.com/erlidev/eika/internal/skill"
 	"github.com/erlidev/eika/internal/store"
 )
 
@@ -25,6 +26,7 @@ type preambleData struct {
 	project             *store.Project
 	brief               string
 	home                bool
+	skills              string // the skill catalog, home and worker; already labelled
 	memory              string // the memory section, home only; already labelled
 	zone, locale        string
 }
@@ -62,6 +64,9 @@ func renderPreamble(d preambleData) string {
 	add("Brief", d.brief)
 	add("Time zone", d.zone)
 	add("Locale", d.locale)
+	if d.skills != "" {
+		parts = append(parts, strings.TrimRight(d.skills, "\n"))
+	}
 	if d.memory != "" {
 		parts = append(parts, d.memory)
 	}
@@ -101,9 +106,46 @@ func (s *Server) buildMemory(ctx context.Context, count memory.CountFunc) (agent
 // the home session only; nil means no section.
 type memorySource func(ctx context.Context) (agent.MemorySnapshot, error)
 
+// skillSource supplies the skill catalog of a preamble: the section text, or
+// empty for none. It is called for sessions that may use skills (home and
+// worker); nil means no catalog.
+type skillSource func(ctx context.Context) (string, error)
+
+// hasSkills is whether a session's snapshot carries the skill catalog.
+func hasSkills(sess store.Session) bool {
+	return sess.Kind == store.SessionHome || sess.Agent == "worker"
+}
+
+// buildSkills builds the catalog of the enabled, loadable skills, counted
+// exactly with count. No loadable skill means no section.
+func (s *Server) buildSkills(ctx context.Context, count memory.CountFunc) (string, error) {
+	records, err := s.deps.Store.ListSkills(ctx)
+	if err != nil {
+		return "", err
+	}
+	c, err := skill.BuildCatalog(ctx, skill.CountFunc(count), records)
+	return c.Text, err
+}
+
+// catalogOf returns the catalog section a stored preamble holds, or "". The
+// memory section that ends the preamble is set aside first, and a catalog has
+// no blank line inside, so it ends at the next one.
+func catalogOf(preamble string, mem agent.MemorySnapshot) string {
+	if mem.Text != "" {
+		preamble = strings.TrimSuffix(preamble, mem.Text)
+	}
+	i := strings.LastIndex("\n\n"+preamble, "\n\n"+skill.CatalogHeading+"\n")
+	if i < 0 {
+		return ""
+	}
+	text, _, _ := strings.Cut(("\n\n" + preamble)[i+2:], "\n\n")
+	return text + "\n"
+}
+
 // buildPreamble builds the snapshot text of sess, and the memory section it
 // ends with. Only the home session carries one (subagent prefixes have none).
-func (s *Server) buildPreamble(ctx context.Context, sess store.Session, mem memorySource) (string, agent.MemorySnapshot, error) {
+// The skill catalog precedes it, for home and worker sessions.
+func (s *Server) buildPreamble(ctx context.Context, sess store.Session, mem memorySource, skills skillSource) (string, agent.MemorySnapshot, error) {
 	d := preambleData{brief: sess.Brief, home: sess.Kind == store.SessionHome, zone: "UTC", locale: "unspecified"}
 	var (
 		err  error
@@ -121,6 +163,11 @@ func (s *Server) buildPreamble(ctx context.Context, sess store.Session, mem memo
 				return "", agent.MemorySnapshot{}, err
 			}
 			d.memory = snap.Text
+		}
+	}
+	if skills != nil && hasSkills(sess) {
+		if d.skills, err = skills(ctx); err != nil {
+			return "", agent.MemorySnapshot{}, err
 		}
 	}
 	if sess.ProjectID != "" {
@@ -211,6 +258,13 @@ func (s *Server) refreshSnapshot(ctx context.Context, id string, record func(age
 			return previous.Memory, nil
 		}
 		return m, nil
+	}, func(ctx context.Context) (string, error) {
+		text, err := s.buildSkills(ctx, textCounter(ctr))
+		if err != nil {
+			s.log.Warn("keep the previous skill catalog: count failed", "session_id", sess.ID, "error", err)
+			return catalogOf(previous.Preamble, previous.Memory), nil
+		}
+		return text, nil
 	})
 	if err != nil {
 		return agent.Snapshot{}, err
@@ -262,6 +316,13 @@ func (s *Server) ensurePreamble(ctx context.Context, sess store.Session, loaded 
 				return agent.MemorySnapshot{}, nil
 			}
 			return m, nil
+		}, func(ctx context.Context) (string, error) {
+			text, err := s.buildSkills(ctx, textCounter(ctr))
+			if err != nil {
+				s.log.Warn("first snapshot has no skill catalog: count failed", "session_id", sess.ID, "error", err)
+				return "", nil
+			}
+			return text, nil
 		}); err != nil {
 			return err
 		}

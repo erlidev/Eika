@@ -671,7 +671,7 @@ package that changes it. Project scope, other install sources, `skill_file`,
       `routeWire`, wire types and `docs/api/http.md` together; run `make contract`.
       Add event `skills_changed` and a topic `skills`, published after the durable
       change, with reconnect refetch, as memory does. No agent endpoint exists.
-- [ ] **P6-07**: Add the tool `skill_use` (`name`, or `query`; question 2), standalone,
+- [x] **P6-07**: Add the tool `skill_use` (`name`, or `query`; question 2), standalone,
       registered in `internal/tool/builtin/registry.go`, with a `Skills` dependency
       like `Memories`. It reads the stored row, never a file or a computer. `name`
       returns the body without frontmatter inside `<skill name="..."
@@ -680,7 +680,7 @@ package that changes it. Project scope, other install sources, `skill_file`,
       unknown name returns an error naming nothing else. The tool takes no enum of
       names. Add it to `eika` and the worker definitions (question 2); check tool
       intersection with stored definitions. Test through the public API.
-- [ ] **P6-08**: Add the catalog to `server.buildPreamble` for home and worker
+- [x] **P6-08**: Add the catalog to `server.buildPreamble` for home and worker
       sessions: enabled skills, sorted by name, one line each, under the heading of
       the design, within the exact budget of question 5, no section when none is
       enabled. It is part of the frozen prefix; a skill enabled, disabled or
@@ -1084,7 +1084,7 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
 - [ ] (P6-02, P6-03 done; P6-12) Mount `/skills` read-only into computers from a volume of its own
       (`eika-skills`), never from Core's `/var/lib/eika` volume, which holds
       `secret.key` and the memory repository. `make backup` covers it.
-- [ ] (P6-06 done; P6-07, P6-08) Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.
+- [x] (P6-06 to P6-08) Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.
       Resource files are read from `/skills/<name>/` on the computer.
 - [ ] (P6-09 to P6-11) Skills UI: install with the full `SKILL.md` and file list shown, the
       screen's hits marked in the text, enable, warnings.
