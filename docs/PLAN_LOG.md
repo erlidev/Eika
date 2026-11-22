@@ -2290,3 +2290,25 @@ appends `echo EXIT_CODE=$?`, so a refused bash call is not a tool error; the
 checks now read the exit status line (`bashFailed`) and the proxy denial audit
 rows. No product defect was found: curl, web_fetch, pip and hosted search to a
 blocklisted host were all refused with no prompt.
+
+## P5-10 — Memory changes in the next message (2026-11-22)
+
+Migration 0031 adds `memory_changes` (seq, name, action saved/edited/archived/
+purged, state; no bodies). `UpsertMemory` and `DeleteMemory` log a change only
+when the row's content hash or state really changes, in the same transaction;
+an advisory lock gives seq in commit order. `ActiveMemories` now also returns
+the last seq in one repeatable-read snapshot, stored as `MemorySnapshot.ChangeSeq`
+(also when there is no section; the count-failure path keeps the previous one).
+As a home message is stamped, `notices.collectMemoryChanges` writes one notice
+entry `notice-memory-<last seq>` for changes after max(snapshot seq, last
+memory notice seq read from the store), and adds it to the waiting list without
+waking. Delivery then uses the ordinary notice rules (entry id in the user
+message payload, undelivered ones reloaded after a restart), so a write racing
+compaction lands either in the snapshot or in a notice, and a retry rewrites the
+same id. `notices.waiting` ignores memory notices, so they never start a
+background turn; no push is sent. A pending save is named as "(pending review)".
+Limits: a session whose snapshot predates ChangeSeq names all earlier changes
+once; a notice written just before a compaction whose snapshot includes the
+change is still delivered (redundant, not lost). The server test cannot make the
+fake model count exactly, so the exact-count refresh path is covered by the store
+test (snapshot seq is consistent with the rows).

@@ -3,6 +3,7 @@
 package store_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/erlidev/eika/internal/memory"
@@ -147,12 +148,55 @@ func TestActiveMemoriesReadsOnlyActiveRows(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := st.ActiveMemories(ctx)
-	if err != nil || len(got) != 1 {
+	got, seq, err := st.ActiveMemories(ctx)
+	if err != nil || len(got) != 1 || seq != 3 {
 		t.Fatalf("active = %+v, %v; want only the active row", got, err)
+	}
+	if err := st.UpsertMemory(ctx, memoryRecord("later", "Use when later.", "x", "active")); err != nil {
+		t.Fatal(err)
+	}
+	if _, after, err := st.ActiveMemories(ctx); err != nil || after != seq+1 {
+		t.Fatalf("seq after a later write = %d, %v; want %d", after, err, seq+1)
 	}
 	if f := got[0]; f.Name != "live" || !f.Pinned || f.Expires != "2099-01-02" || f.Body != "live body" ||
 		f.Updated != "2026-11-01T10:00:00Z" || f.State != "active" {
 		t.Fatalf("row = %+v", f)
+	}
+}
+
+func TestMemoryChangesAreLoggedOncePerRealChange(t *testing.T) {
+	ctx := t.Context()
+	// Upgrading from 0030 proves 0031 applies over existing memories, which have no log.
+	st, _ := upgradeFrom(t, "0030_memory_screen", `INSERT INTO memories (name, description, type, source, created_at, updated_at, state, content_sha, body)
+		VALUES ('old', 'Use when testing the upgrade path.', 'fact', 's', now(), now(), 'active', 'x', 'b')`)
+	r := memoryRecord("a", "Use when a.", "one", "active")
+	edited := r
+	edited.ContentSHA = "changed"
+	archived := edited
+	archived.State = "archived"
+	for _, rec := range []memory.Record{r, r, edited, archived, archived} { // the repeats change nothing
+		if err := st.UpsertMemory(ctx, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.DeleteMemory(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteMemory(ctx, "a"); err != nil { // already gone: no change
+		t.Fatal(err)
+	}
+	got, err := st.MemoryChangesAfter(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actions []string
+	for _, c := range got {
+		actions = append(actions, c.Name+":"+c.Action)
+	}
+	if want := "a:saved a:edited a:archived a:purged"; strings.Join(actions, " ") != want {
+		t.Fatalf("changes = %v, want %s", actions, want)
+	}
+	if rest, _ := st.MemoryChangesAfter(ctx, got[1].Seq); len(rest) != 2 {
+		t.Fatalf("after the second change: %v", rest)
 	}
 }

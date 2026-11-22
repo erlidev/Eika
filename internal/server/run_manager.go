@@ -334,7 +334,11 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	if home {
 		sessionStore.SetChannel("web")
 		runStore = noticeStore{Store: sessionStore, notices: s.notices, notifyReply: work.notify}
-		takeNotices = func() []agent.Notice { return s.notices.take(sessionID) }
+		takeNotices = func() []agent.Notice {
+			// Memory changes since the snapshot ride with this message.
+			s.notices.collectMemoryChanges(sessionID)
+			return s.notices.take(sessionID)
+		}
 	}
 	loaded, err := sessionStore.Load(ctx, sessionID)
 	if err != nil {
@@ -342,6 +346,9 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	}
 	if err := s.ensurePreamble(ctx, sess, loaded, cfg, counted); err != nil {
 		return store.Run{}, nil, err
+	}
+	if home {
+		s.notices.setSnapshotSeq(sessionID, loaded.Memory.ChangeSeq)
 	}
 	// An agent session runs on its snapshot's prompt and tools, which only a
 	// compaction replaces.

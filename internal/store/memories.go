@@ -3,7 +3,10 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/erlidev/eika/internal/memory"
 )
@@ -33,7 +36,12 @@ func (s *Store) UpsertMemory(ctx context.Context, r memory.Record) error {
 		v := string(b)
 		screen = &v
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO memories
+	err = s.tx(ctx, func(q querier) error {
+		oldSHA, oldState, found, err := lockMemoryChanges(ctx, q, r.Name)
+		if err != nil {
+			return err
+		}
+		if _, err := q.Exec(ctx, `INSERT INTO memories
         (name, description, type, source, created_at, updated_at, expires, pinned, state, content_sha, body, screen, archive_reason)
         VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12::jsonb, $13)
         ON CONFLICT (name) DO UPDATE SET description = excluded.description, type = excluded.type,
@@ -44,11 +52,47 @@ func (s *Store) UpsertMemory(ctx context.Context, r memory.Record) error {
                 THEN memories.screen ELSE excluded.screen END,
             archive_reason = CASE WHEN excluded.state = 'archived'
                 THEN COALESCE(NULLIF(excluded.archive_reason, ''), memories.archive_reason) ELSE '' END`,
-		r.Name, r.Description, r.Type, r.Source, created, updated, expires, r.Pinned, r.State, r.ContentSHA, r.Body, screen, r.Reason)
+			r.Name, r.Description, r.Type, r.Source, created, updated, expires, r.Pinned, r.State, r.ContentSHA, r.Body, screen, r.Reason); err != nil {
+			return err
+		}
+		action := ""
+		switch {
+		case !found:
+			action = "saved"
+		case r.State == "archived" && oldState != "archived":
+			action = "archived"
+		case oldSHA != r.ContentSHA || oldState != r.State:
+			action = "edited"
+		}
+		return logMemoryChange(ctx, q, r.Name, action, r.State)
+	})
 	if err != nil {
 		return wrap("index memory "+r.Name, err)
 	}
 	return nil
+}
+
+// lockMemoryChanges serializes writers of the index, so that change numbers
+// are given out in commit order, and returns the row about to be replaced.
+func lockMemoryChanges(ctx context.Context, q querier, name string) (sha, state string, found bool, err error) {
+	if _, err = q.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('memory_changes'))`); err != nil {
+		return "", "", false, err
+	}
+	err = q.QueryRow(ctx, `SELECT content_sha, state FROM memories WHERE name = $1`, name).Scan(&sha, &state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", false, nil
+	}
+	return sha, state, err == nil, err
+}
+
+// logMemoryChange records a change in the writer's transaction; no action
+// records nothing, as for a reindex of an unchanged file.
+func logMemoryChange(ctx context.Context, q querier, name, action, state string) error {
+	if action == "" {
+		return nil
+	}
+	_, err := q.Exec(ctx, `INSERT INTO memory_changes (name, action, state) VALUES ($1, $2, $3)`, name, action, state)
+	return err
 }
 
 // SearchMemories ranks memories against a plain-text query, best first and
@@ -105,36 +149,97 @@ func (s *Store) MemorySHAs(ctx context.Context) (map[string]string, error) {
 
 // DeleteMemory removes the index row named name.
 func (s *Store) DeleteMemory(ctx context.Context, name string) error {
-	if _, err := s.pool.Exec(ctx, `DELETE FROM memories WHERE name = $1`, name); err != nil {
+	err := s.tx(ctx, func(q querier) error {
+		_, _, found, err := lockMemoryChanges(ctx, q, name)
+		if err != nil || !found {
+			return err
+		}
+		if _, err := q.Exec(ctx, `DELETE FROM memories WHERE name = $1`, name); err != nil {
+			return err
+		}
+		return logMemoryChange(ctx, q, name, "purged", "")
+	})
+	if err != nil {
 		return wrap("delete memory row "+name, err)
 	}
 	return nil
 }
 
-// ActiveMemories returns every active memory in one statement, so a caller
-// building a snapshot reads one consistent revision of the index. Pending and
-// archived rows are never returned; expiry is decided by the caller, which
-// holds the clock.
-func (s *Store) ActiveMemories(ctx context.Context) ([]memory.File, error) {
-	rows, err := s.pool.Query(ctx, `SELECT name, description, type, source, created_at, updated_at,
+// ActiveMemories returns every active memory and the number of the last
+// memory change, read in one snapshot of the index: the changes up to that
+// number are in the rows, and later ones are not. Pending and archived rows
+// are never returned; expiry is decided by the caller, which holds the clock.
+func (s *Store) ActiveMemories(ctx context.Context) ([]memory.File, int64, error) {
+	var out []memory.File
+	var seq int64
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, 0, wrap("read active memories", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(seq), 0) FROM memory_changes`).Scan(&seq); err != nil {
+		return nil, 0, wrap("read active memories", err)
+	}
+	rows, err := tx.Query(ctx, `SELECT name, description, type, source, created_at, updated_at,
             COALESCE(to_char(expires, 'YYYY-MM-DD'), ''), pinned, state, body
         FROM memories WHERE state = 'active' ORDER BY name`)
 	if err != nil {
-		return nil, wrap("read active memories", err)
+		return nil, 0, wrap("read active memories", err)
 	}
 	defer rows.Close()
-	var out []memory.File
 	for rows.Next() {
 		var f memory.File
 		var created, updated time.Time
 		if err := rows.Scan(&f.Name, &f.Description, &f.Type, &f.Source, &created, &updated, &f.Expires, &f.Pinned, &f.State, &f.Body); err != nil {
-			return nil, wrap("read active memories", err)
+			return nil, 0, wrap("read active memories", err)
 		}
 		f.Created, f.Updated = created.UTC().Format(time.RFC3339), updated.UTC().Format(time.RFC3339)
 		out = append(out, f)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, wrap("read active memories", err)
+		return nil, 0, wrap("read active memories", err)
+	}
+	return out, seq, nil
+}
+
+// MemoryChange is one logged change to the memory index.
+type MemoryChange struct {
+	Seq          int64
+	Name, Action string
+	State        string
+}
+
+// MemoryChangesAfter returns the changes numbered after seq, up to the last
+// one, oldest first.
+func (s *Store) MemoryChangesAfter(ctx context.Context, seq int64) ([]MemoryChange, error) {
+	rows, err := s.pool.Query(ctx, `SELECT seq, name, action, state FROM memory_changes WHERE seq > $1 ORDER BY seq`, seq)
+	if err != nil {
+		return nil, wrap("read memory changes", err)
+	}
+	defer rows.Close()
+	var out []MemoryChange
+	for rows.Next() {
+		var c MemoryChange
+		if err := rows.Scan(&c.Seq, &c.Name, &c.Action, &c.State); err != nil {
+			return nil, wrap("read memory changes", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrap("read memory changes", err)
 	}
 	return out, nil
+}
+
+// LastMemoryNoticeSeq returns the highest change number a memory notice of the
+// session names, or 0. Memory notice ids are "notice-memory-" and the last
+// change they cover.
+func (s *Store) LastMemoryNoticeSeq(ctx context.Context, sessionID string) (int64, error) {
+	var seq int64
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(max(substr(id, 15)::bigint), 0) FROM session_entries
+        WHERE session_id = $1 AND kind = 'notice' AND id ~ '^notice-memory-[0-9]+$'`, sessionID).Scan(&seq)
+	if err != nil {
+		return 0, wrap("read memory notices of session "+sessionID, err)
+	}
+	return seq, nil
 }
