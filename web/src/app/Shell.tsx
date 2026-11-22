@@ -18,6 +18,7 @@ import { HaltBanner, useHaltEvents } from "@/features/halt";
 import { Toasts } from "@/features/notifications";
 import { useMCPEvents } from "@/features/mcp";
 import { useSessionUpdates } from "@/features/sessions";
+import { GuardBanner } from "@/features/settings/GuardBanner";
 import { SettingsDialog } from "@/features/settings";
 import { useNarrow } from "@/lib/useNarrow";
 import { useViewportAnchor } from "@/lib/useViewportAnchor";
@@ -52,6 +53,7 @@ export function Shell() {
           </span>
         </header>
         <HaltBanner />
+        <GuardBanner />
         <main className="relative flex min-h-0 flex-1 flex-col">
           <Outlet />
           <Toasts />
