@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool"
 )
@@ -155,17 +157,71 @@ type historyEntry struct {
 	Truncated bool            `json:"truncated,omitempty"`
 }
 
-func historyView(e store.Entry, name string, full bool) historyEntry {
-	text := string(e.Payload)
+// historyText keeps the indexed text and tool results readable without exposing
+// reasoning and model-call metrics as escaped JSON.
+func historyText(e store.Entry) string {
+	switch e.Kind {
+	case store.KindUser, store.KindAssistant, store.KindToolResult:
+		var m provider.Message
+		if json.Unmarshal(e.Payload, &m) == nil {
+			parts := []string{}
+			if m.Content != "" {
+				parts = append(parts, m.Content)
+			}
+			for _, call := range m.ToolCalls {
+				parts = append(parts, strings.TrimSpace(call.Name+" "+string(call.Arguments)))
+			}
+			return strings.Join(parts, "\n")
+		}
+	case store.EntryKind("tool_call"):
+		var call struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if json.Unmarshal(e.Payload, &call) == nil {
+			return strings.TrimSpace(call.Name + " " + string(call.Arguments))
+		}
+	case store.KindNotice, store.KindCompaction:
+		var value struct {
+			Text    string `json:"text"`
+			Summary string `json:"summary"`
+		}
+		if json.Unmarshal(e.Payload, &value) == nil {
+			if e.Kind == store.KindNotice {
+				return value.Text
+			}
+			return value.Summary
+		}
+	}
+	return string(e.Payload)
+}
+
+func historyView(e store.Entry, name string, full bool, query string) historyEntry {
+	text := historyText(e)
 	truncated := !full && len(text) > 2000
 	if truncated {
-		text = text[:2000]
-		for !utf8.ValidString(text) {
-			text = text[:len(text)-1]
+		start := 0
+		// Center the hit on the literal query when possible. PostgreSQL can match
+		// stems instead, so a missing literal falls back to the start of the entry.
+		if query != "" {
+			if pattern, err := regexp.Compile("(?i)" + regexp.QuoteMeta(strings.TrimSpace(query))); err == nil {
+				if match := pattern.FindStringIndex(text); match != nil {
+					start = max(0, match[0]-500)
+				}
+			}
 		}
+		for start > 0 && !utf8.RuneStart(text[start]) {
+			start--
+		}
+		end := min(len(text), start+2000)
+		for end > start && !utf8.ValidString(text[start:end]) {
+			end--
+		}
+		text = text[start:end]
 	}
 	return historyEntry{ID: e.ID, Sequence: e.Seq, Session: name, Time: e.CreatedAt, Kind: e.Kind, Content: text, Truncated: truncated}
 }
+
 func historyName(s store.Session) string {
 	if s.Name != "" {
 		return s.Name
@@ -320,7 +376,11 @@ func (t historyTool) search(ctx context.Context, home, selected store.Session, a
 				group.Truncated = true
 				break
 			}
-			view := historyView(n, name, false)
+			query := ""
+			if n.ID == e.ID {
+				query = a.query
+			}
+			view := historyView(n, name, false, query)
 			group.Entries = append(group.Entries, view)
 			candidate := group
 			candidate.Truncated = true
@@ -377,7 +437,7 @@ func (t historyTool) read(ctx context.Context, home, selected store.Session, a h
 	}
 	views := make([]historyEntry, 0, len(entries))
 	for _, v := range entries {
-		views = append(views, historyView(v, historyName(sess), a.full))
+		views = append(views, historyView(v, historyName(sess), a.full, ""))
 	}
 	return views, nil
 }

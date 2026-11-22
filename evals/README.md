@@ -21,15 +21,55 @@ EIKA_LIVE_ENDPOINT=http://127.0.0.1:8091    # llama.cpp, without /v1
 EIKA_LIVE_KEY=...                           # its bearer key
 ```
 
-Then `make live`. It runs `evals/forward.sh`, which opens the SSH forward from
+Then `make live`. It builds `eika-sandbox:test` with `make sandbox-test` and
+passes that image to the test. It runs `evals/forward.sh`, which opens the SSH forward from
 `evals/models/README.md` when the endpoint is on loopback and its port does not
-answer, then `go test -tags live -count=1 -v` on `evals/live`. The test:
+answer, then `go test -tags live -timeout=60m -count=1 -v` on `evals/live`.
+This also runs the offline tests compiled with the live tag. The suite:
 
 - skips, saying why, when `EIKA_LIVE_ENDPOINT` is unset;
 - fails, pointing at `evals/models/README.md`, when it is set but does not
   answer, or refuses the key: a skipped live run would look like a pass;
 - otherwise plays every scenario, logs one line per model call, and writes the
   report. The path is the last log line.
+
+The live test also starts Core in a separate process with a temporary Postgres
+database and a home computer. It uses the same bench model and keeps the home
+session for the Core scenarios. Docker is required. To use another test image
+with `make live`, set `SANDBOX_TEST_IMAGE` on the make command line. The suite
+removes its home container and volume after the run.
+
+`persistent_home_exit` creates a project and a named worker, checks that home
+answers while the worker runs, checks the report notice, and resumes the same
+worker. The follow-up is immediate; the suite does not wait a day.
+`persistent_home_restart` gates a worker's sandbox command on a file, kills Core
+while it waits, releases the gate after restart, and checks
+the recovery result, notice and marker, then resumes the same worker. It logs
+the relevant session states, runs, notices and tool calls on failure.
+`persistent_home_compaction` inserts a seed inventory and padding as complete
+conversation turns, then forces a real compaction. Its instructions ask the
+summary to omit individual lot and shelf values. It asks for one lot's shelf.
+It renders the first recall request and fails if the detail is visible there.
+It requires `history_search` and the answer.
+On failure, the report records the summary and recall tool calls, with long text
+truncated.
+`persistent_home_prefix` checks cached tokens against the preceding prompt on
+home before and after another compaction, and on the resumed worker. It sizes
+additional padding from the history home already retains. It renders
+each pair of stored requests through the bench template and checks every byte
+before the previous request's assistant-generation header. It tokenises the
+header and requires the server's
+cached-token count to cover the previous server-reported prompt, less that
+header. The next request may render the header differently when it replays the
+answer. The report states the counts and the request's message shapes.
+`persistent_home_queue` restarts Core with one pool slot. It starts two
+background routine sessions and queues a home message. A local proxy holds the
+real endpoint's two background responses and sends stream keepalives. The
+scenario checks Core's queue state and compares the final home answer event's
+time with the waiting call's lease admission time. It restores the provider
+afterward. The extra sessions provide the slot holder and the waiting call;
+home stays the same session. The live-only authenticated test controls start
+background runs and read lease times; normal builds do not contain them.
 
 The scenarios: `provider_probe` (the probe against `/slots`), `cache_reuse`
 (a two-turn conversation: cache hit rate and prefill), `tools_and_reasoning`
@@ -73,7 +113,8 @@ calls before and after the compaction must be exact with zero drift. The first
 picture measures its cost; the next call with that picture must have zero drift
 with the measured cost. Image calls are never labelled exact: llama.cpp's
 `/apply-template` and `/tokenize` do not count the image tokens. This scenario
-uses the session's compaction fold with a fixed summary and cut.
+uses the session's compaction fold with a fixed summary and cut. Both variants
+skip when the provider probe reports no vision support.
 `prefix_across_compaction` and `responses_prefix_across_compaction` test the
 real loop's summary calls and stored history across two restarts and a manual
 compaction. All five recorded calls must be exact with zero drift. Each call
@@ -144,7 +185,7 @@ meter-against-the-server's-logs check.
 | `server.build`, `model`, `model_file`, `model_revision` | What answered: the llama.cpp build, the model name requests carry, its weights file and the Hugging Face revision that file came from |
 | `server.backend` | What the harness's provider probe took the server for (`llamacpp` on the bench) |
 | `server.flags` | What the probe read: `slots`, `context` (the window one request may use; `/props` reports it per slot), `train_context`, `kv` (`unknown` for a llama.cpp server with several slots), `vision`. The KV cache type and `--kv-unified` are not reported by llama.cpp; they are in `command.txt` on the server |
-| `scenarios[].passed`, `error` | Whether the scenario ran to its end and met its assertions |
+| `scenarios[].passed`, `error`, `skip_reason` | Whether the scenario met its assertions, failed, or was skipped and why |
 | `calls[].prompt_tokens`, `completion_tokens` | The prompt size the server counted, cached tokens included, and the tokens generated, reasoning included |
 | `calls[].prompt_includes_cached` | Whether `usage_fields` verified that the reported prompt count includes a positive cached count; `null` when not verified. `prompt_tokens` is the report name for Responses `input_tokens` too |
 | `calls[].reasoning_tokens` | The part of the completion the server says was reasoning; `null` on llama.cpp, which does not say |

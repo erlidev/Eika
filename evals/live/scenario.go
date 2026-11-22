@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -64,12 +65,17 @@ func Scenarios() []Scenario {
 	}
 }
 
+// ErrNoVision skips scenarios that require image input.
+var ErrNoVision = errors.New("server reports no vision support")
+
 // Result is the outcome of one scenario.
 type Result struct {
 	// Name is the scenario's name.
 	Name string `json:"name"`
 	// Passed is whether the scenario ran without an error.
 	Passed bool `json:"passed"`
+	// SkipReason explains why the scenario did not run.
+	SkipReason string `json:"skip_reason,omitempty"`
 	// Error says why it did not, and is empty when it passed.
 	Error string `json:"error,omitempty"`
 	// Seconds is how long the scenario took, wall clock.
@@ -119,7 +125,9 @@ func (s Scenario) Execute(ctx context.Context, t *Target) Result {
 	if res.Calls == nil {
 		res.Calls = []Call{}
 	}
-	if err != nil {
+	if errors.Is(err, ErrNoVision) {
+		res.SkipReason = err.Error()
+	} else if err != nil {
 		res.Error = err.Error()
 	}
 	return res

@@ -164,9 +164,9 @@ smoke-down:
 ## on loopback and its port does not answer. With EIKA_LIVE_ENDPOINT unset the
 ## tests skip, saying why; set but silent, they fail. It is never part of
 ## `make check`.
-live:
+live: sandbox-test
 	evals/forward.sh
-	$(GO) test -tags live -count=1 -v -run '^TestScenarios$$' ./evals/live/...
+	EIKA_TEST_SANDBOX_IMAGE=$(SANDBOX_TEST_IMAGE) $(GO) test -tags live -timeout=60m -count=1 -v ./evals/live/...
 
 ## dev: run the harness and the Vite dev server against the compose services.
 dev:

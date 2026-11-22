@@ -102,6 +102,8 @@ type Options struct {
 	// server serves the API only, which is what `make dev` wants because Vite
 	// serves the frontend itself.
 	WebDir string
+	// LiveTest enables controls compiled only for the live suite.
+	LiveTest bool
 }
 
 // Server serves the Eika HTTP API.

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/erlidev/eika/evals/live"
+	"github.com/erlidev/eika/internal/provider/providertest"
 )
 
 func conversationReplies() []reply {
@@ -116,5 +117,15 @@ func TestUsageFieldsRejectsCountsThatExcludeCacheOrDisagree(t *testing.T) {
 				t.Errorf("calls = %+v", res.Calls)
 			}
 		})
+	}
+}
+
+func TestCountingConversationSkipsWithoutVision(t *testing.T) {
+	target := &live.Target{Responses: providertest.New()}
+	for _, s := range []live.Scenario{live.CountingConversation("fixed"), live.OnResponses(live.CountingConversation("fixed"))} {
+		result := s.Execute(context.Background(), target)
+		if result.Passed || result.Error != "" || result.SkipReason == "" || len(result.Calls) != 0 {
+			t.Errorf("%s: %+v", s.Name, result)
+		}
 	}
 }
