@@ -243,9 +243,6 @@ Removal and verification. None of it changes what the user can do.
       inference only today, so this package first gives it a real server and
       session. The live suites of later phases build on that.
 - [ ] **P2-26**: Check real-request prefixes and queue ordering.
-- [ ] **P2-17**: Add the `activity` topic and `subagent.*` events, only if
-      `session.updated` on `global` proved too coarse for Activity. Otherwise
-      move it to `docs/DEFERRED.md`.
 - [ ] **P2-27**: Close phase 2.
 - [ ] **P3-18**: Close phase 3.
 
@@ -397,10 +394,8 @@ in the code beside what replaces them.
       `history_read`.
       - [x] **P2-23**: Add the history index and backfill.
       - [x] **P2-24**: Add history search and read tools.
-- [ ] Topic `activity`, and the events `subagent.started`, `subagent.updated` and
-      `subagent.reported`. Activity runs on `session.updated` on `global` first
-      (P2-12). Build this only if that proves too coarse.
-      - [ ] **P2-17**: Add activity events and API.
+- Activity uses `session.updated` on `global` (P2-12). The `activity` topic,
+      events and API (P2-17) are in `docs/DEFERRED.md`.
 - [ ] Phase 2 live suite, on the bench's chat model with a real home session
       that persists across the suite (it is not reset between scenarios, the
       way a user's never is):
