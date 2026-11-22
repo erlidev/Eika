@@ -60,6 +60,37 @@ logs, and `make local-down` stops the stack. Docker volumes keep the database
 and the key that encrypts stored credentials. The stack listens
 on 127.0.0.1 only.
 
+### Backup
+
+```sh
+make backup
+```
+
+writes one backup set to `backups/eika-backup-<UTC time>/` (override the place
+with `EIKA_BACKUP_DIR`). The directory is mode 0700 and each file 0600. A set
+holds exactly:
+
+- `postgres.dump`: the database (`pg_dump -Fc`), sealed credentials included.
+- `memory.tar`: the whole memory repository, git history included, read from
+  the memory computer's volume `eika-cx-memory` (`EIKA_MEMORY_VOLUME` names
+  another).
+- `secret.key`: the key that seals stored credentials. Without it the dump's
+  sealed settings cannot be read, so the set is refused when it is missing.
+- `manifest.json`: format, UTC time, Eika commit (and whether the tree was
+  modified), harness image id, the last migration applied, and the SHA-256 and
+  size of each file.
+
+Not included: the files of other computers (their volumes), the sandbox images,
+the guard and search services, `.env`. Back those up separately if you need them.
+
+Eika is stopped while the set is taken, so the database, the memory repository
+and the key match each other, and started again afterwards, also when the backup
+fails. Expect it to be unavailable for the length of the dump and copy, normally
+seconds. The postgres service must be running. Nothing secret is printed; the
+set itself is secret, so keep it somewhere only you can read. A set is built in a
+hidden `.eika-backup-*.partial` directory and renamed only when complete; a
+failed run leaves none. `make restore` (P5-17) will read this format.
+
 ### Access from a phone
 
 Install Tailscale on the host and phone, and connect both to the same tailnet.

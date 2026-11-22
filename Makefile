@@ -34,7 +34,7 @@ SMOKE_COMPOSE := EIKA_PORT=$(SMOKE_PORT) EIKA_AUTH_TOKEN=$(SMOKE_TOKEN) \
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
 	sandbox sandbox-test web-install clean visual visual-update shot playwright-browser contract \
-	smoke smoke-down live bench-sentry memory-reindex
+	smoke smoke-down live bench-sentry memory-reindex backup
 
 all: build
 
@@ -175,6 +175,12 @@ smoke-down:
 ## ./cmd/eika -memory-reindex`. Edits found outside Eika are held pending.
 memory-reindex:
 	$(COMPOSE) exec eika eika -memory-reindex
+
+## backup: write one backup set of the running stack (`make local`) to
+## ./backups: database dump, memory repository, seal key and a manifest. It
+## stops eika while the set is taken and starts it again. See README.md.
+backup:
+	COMPOSE="$(COMPOSE)" deploy/backup.sh
 
 ## live: run the live tests (evals/live) against the real model on the bench
 ## (docs/PLAN.md, "Live test bench"), with no test cache, and write a report

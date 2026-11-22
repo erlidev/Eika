@@ -457,7 +457,7 @@ and check that a rejected memory stays archived and an accepted memory stays act
 
 ### Stage D: backup, restore and stack checks
 
-- [ ] **P5-16**: Add `make backup` for the database, complete memory git repository
+- [x] **P5-16**: Add `make backup` for the database, complete memory git repository
       and seal key. Stop writers while taking a consistent set; include a version
       manifest and restrictive file permissions. Document operator commands and
       exactly what is included (computer volumes are outside this item's scope).
@@ -737,7 +737,7 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
       - [ ] **P5-14**: Editor, controls and Instructions access.
 - [ ] `make backup` and `make restore`: the database, the memory repository and
       the key file, with a documented and tested restore.
-      - [ ] **P5-16**: Consistent backup.
+      - [x] **P5-16**: Consistent backup.
       - [ ] **P5-17**: Restore and populated-data verification.
 - [ ] Scripted stack coverage.
       - [ ] **P5-18**: Memory smoke flow and isolation check.
