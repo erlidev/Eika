@@ -99,9 +99,13 @@ test("touch sends rendered Markdown and rewind restores its source", async ({ op
   await expect(message.getByRole("listitem")).toHaveText(["read RETRY_CAP", "keep jitter"]);
   await expect(message.locator("strong")).toHaveText("jitter");
   await expect(eika.page.getByText("Decorrelated jitter grows", { exact: false })).toBeVisible();
-  await message
-    .locator("..")
-    .getByRole("button", { name: /Rewind the conversation/ })
-    .tap();
-  await expect(box).toHaveValue(source);
+  // Under a loaded run the reply can still be settling when the button first
+  // appears, and a tap then does nothing; retry the tap until the draft returns.
+  await expect(async () => {
+    await message
+      .locator("..")
+      .getByRole("button", { name: /Rewind the conversation/ })
+      .tap();
+    await expect(box).toHaveValue(source, { timeout: 1000 });
+  }).toPass();
 });
