@@ -2,8 +2,7 @@
 
 - 2026-11-22: P6-10 fills the skill detail (`SkillDetail.tsx`): state, the `broken` reason, an
   `unscanned` notice, warnings, the screen's hits as `Flagged in the description/body: ...`, the
-  six spec fields, the file list with sizes, and the stored `SKILL.md` text (frontmatter is not in
-  `body`; the fields show it) as source with `<mark>` over the span byte offsets. `segments` moved
+  six spec fields, the file list with sizes, and the full stored `SKILL.md` source as source with `<mark>` over the span byte offsets. `segments` moved
   from `features/inbox/state.ts` to `lib/segments.ts` (one helper for memory and skills) with
   edge and multi-byte tests. Scenario `skills` gains a description hit, two body hits (one after a
   multi-byte letter) and an unscanned broken skill. New baseline `skills-detail-desktop`;

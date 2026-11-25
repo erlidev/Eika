@@ -79,7 +79,7 @@ func skillName(r *http.Request) (string, error) {
 func skillView(rec skill.Record) skillBody {
 	b := skillBody{
 		Name: rec.Name, Description: rec.Description, License: rec.License, Compatibility: rec.Compatibility,
-		Metadata: rec.Metadata, AllowedTools: rec.AllowedTools, Body: rec.Body, Enabled: rec.Enabled,
+		Metadata: rec.Metadata, AllowedTools: rec.AllowedTools, Body: rec.Body, Source: rec.Source, Enabled: rec.Enabled,
 		Broken: rec.Broken, SHA: rec.SHA, InstalledAt: rec.InstalledAt, Files: rec.Files,
 		Warnings: rec.Warnings, Screen: rec.Screen,
 	}

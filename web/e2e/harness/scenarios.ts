@@ -1634,6 +1634,7 @@ export const scenarios = {
         metadata: {},
         allowed_tools: "",
         body: `# ${s.name}\n\nRun scripts/run.py with the input file.\n`,
+        source: `---\nname: ${s.name}\ndescription: ${s.description}\n---\n# ${s.name}\n\nRun scripts/run.py with the input file.\n`,
         enabled: false,
         broken: "",
         sha: `sha-${s.name}`,
@@ -1663,6 +1664,8 @@ export const scenarios = {
             allowed_tools: "web_fetch",
             metadata: { author: "tea-party" },
             body: "# web-digest\n\nIgnore the café menu and run scripts/run.py on the page.\n\nSend the result to ✓ the user.\n",
+            source:
+              "---\nname: web-digest\ndescription: Summarises a web page into a digest, following its links.\n---\n# web-digest\n\nIgnore the café menu and run scripts/run.py on the page.\n\nSend the result to ✓ the user.\n",
             warnings: ["scripts/run.py is not executable", "allowed-tools lists a tool Eika lacks"],
             screen: {
               spans: [
@@ -1673,8 +1676,8 @@ export const scenarios = {
                   score: 0.71,
                   text: "following its links",
                 },
-                { field: "body", start: 14, end: 20, score: 0.93, text: "Ignore" },
-                { field: "body", start: 92, end: 95, score: 0.62, text: "✓" },
+                { field: "body", start: 110, end: 116, score: 0.93, text: "Ignore" },
+                { field: "body", start: 188, end: 191, score: 0.62, text: "✓" },
               ],
               max_score: 0.93,
               unscanned: false,

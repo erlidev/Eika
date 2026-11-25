@@ -58,7 +58,11 @@ export function SkillDetail({ name }: { name: string }) {
 function Marked({ skill, field }: { skill: Skill; field: "description" | "body" }) {
   return (
     <>
-      {segments(skill[field], field, skill.screen?.spans ?? []).map((part, i) =>
+      {segments(
+        field === "body" ? skill.source : skill.description,
+        field,
+        skill.screen?.spans ?? [],
+      ).map((part, i) =>
         part.flagged ? (
           <mark key={i} className="bg-warning/20 text-foreground rounded-md px-0.5">
             {part.text}
@@ -144,7 +148,11 @@ function Body({ skill }: { skill: Skill }) {
         <section aria-label="SKILL.md" className="space-y-1">
           <h3 className="text-sm font-medium">SKILL.md</h3>
           <pre className="bg-muted/50 max-w-full overflow-x-auto rounded-md border p-3 font-mono text-xs break-words whitespace-pre-wrap">
-            <Marked skill={skill} field="body" />
+            {skill.source === "" ? (
+              "Source unavailable. Reinstall this skill to see it."
+            ) : (
+              <Marked skill={skill} field="body" />
+            )}
           </pre>
         </section>
       </article>

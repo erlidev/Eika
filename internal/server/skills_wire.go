@@ -28,7 +28,7 @@ type skillsResponse struct {
 }
 
 // skillBody is one skill in full: the stored SKILL.md body (frontmatter
-// stripped), the file list and the install screen's result. Broken, when not
+// stripped), original source, file list and install screen result. Broken, when not
 // empty, is why the skill cannot be enabled or loaded.
 type skillBody struct {
 	Name          string              `json:"name"`
@@ -38,6 +38,7 @@ type skillBody struct {
 	Metadata      map[string]string   `json:"metadata"`
 	AllowedTools  string              `json:"allowed_tools"`
 	Body          string              `json:"body"`
+	Source        string              `json:"source"`
 	Enabled       bool                `json:"enabled"`
 	Broken        string              `json:"broken"`
 	SHA           string              `json:"sha"`
