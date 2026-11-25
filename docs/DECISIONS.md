@@ -2730,15 +2730,16 @@ mock harness stands in for the zip (name from the file name). `skill.InvalidErro
 what the archive caused (400); everything else from the installer is the harness's (500).
 `Installer.SetEnabled` takes a check that sees every row as it would be after the change,
 under the installer's lock, so two enables cannot both pass a budget one fits in; the
-check is `skill.CheckCatalogBudget`, which counts `skill.Catalog` (heading plus one
-`- name: description` line per enabled, sound skill, whitespace collapsed) with the model's
+check builds the catalog with `skill.BuildCatalog` (the one renderer, below) and refuses
+when any enabled skill would overflow, so it counts exactly the text the preamble will hold
+(heading, `- name: description` lines with whitespace collapsed, enabled and sound skills only), with the model's
 own counter, the one pins use (`server.exactCounter`). Question 5's default applies: over
 2,000 tokens is a 409, an inexact count a 503, and disabling is never refused. A broken
 skill cannot be enabled (409); a reinstall repairs it. Enabling an enabled skill is a
 no-op with no event. Event name is `skills.changed` (dotted, like every other event; the
 plan wrote `skills_changed`), topic `skills`, payload `{name, change}`, carrying no text.
 
-**Skill catalog in the snapshot (P6-08).** `skill.BuildCatalog` renders the loadable
+**Skill catalog in the snapshot (P6-08).** `skill.BuildCatalog` is the only catalog renderer (enable and preamble both use it) and renders the loadable
 skills (enabled, not broken) by name, one line each, whole entries only, inside
 2,000 exact tokens counted with the model's counter (`textCounter`, as for memory); an
 overflow line, inside the budget, covers what cannot fit. `buildPreamble` puts it

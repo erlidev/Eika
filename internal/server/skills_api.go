@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -259,7 +260,11 @@ func (s *Server) handleSetSkillEnabled(enable bool) http.HandlerFunc {
 			check = func(after []skill.Record) error {
 				ctx, cancel := context.WithTimeout(r.Context(), 2*agent.DefaultCountTimeout)
 				defer cancel()
-				return skill.CheckCatalogBudget(ctx, count, after)
+				sec, err := skill.BuildCatalog(ctx, count, after)
+				if err == nil && sec.Overflow > 0 {
+					err = fmt.Errorf("%w: %d skills do not fit in %d tokens", skill.ErrCatalogOverBudget, sec.Overflow, skill.CatalogBudgetTokens)
+				}
+				return err
 			}
 		}
 		before, _ := s.deps.Store.GetSkill(r.Context(), name)

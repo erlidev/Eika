@@ -16,18 +16,14 @@ func words(exact bool) skill.CountFunc {
 	}
 }
 
-func TestCatalogListsLoadableSkillsSortedAndNothingWhenNone(t *testing.T) {
-	rec := func(name string, enabled bool, broken string) skill.Record {
-		return skill.Record{Skill: skill.Skill{Name: name, Description: "Does\n  " + name}, Enabled: enabled, Broken: broken}
+// checkBudget is the enable check the server uses: whatever BuildCatalog cannot
+// list in full is over budget.
+func checkBudget(ctx context.Context, count skill.CountFunc, recs []skill.Record) error {
+	sec, err := skill.BuildCatalog(ctx, count, recs)
+	if err == nil && sec.Overflow > 0 {
+		return skill.ErrCatalogOverBudget
 	}
-	if got := skill.Catalog([]skill.Record{rec("a", false, "")}); got != "" {
-		t.Fatalf("catalog with none enabled = %q, want empty", got)
-	}
-	got := skill.Catalog([]skill.Record{rec("zed", true, ""), rec("off", false, ""), rec("bad", true, skill.BrokenMissing), rec("alpha", true, "")})
-	want := "## Skills (skill_use <name> to load one)\n- alpha: Does alpha\n- zed: Does zed\n"
-	if got != want {
-		t.Fatalf("catalog = %q, want %q", got, want)
-	}
+	return err
 }
 
 func TestSetEnabledChecksTheBudgetUnderTheLockAndRefusesBrokenSkills(t *testing.T) {
@@ -39,7 +35,7 @@ func TestSetEnabledChecksTheBudgetUnderTheLockAndRefusesBrokenSkills(t *testing.
 		}
 	}
 	check := func(count skill.CountFunc) func([]skill.Record) error {
-		return func(after []skill.Record) error { return skill.CheckCatalogBudget(ctx, count, after) }
+		return func(after []skill.Record) error { return checkBudget(ctx, count, after) }
 	}
 	if _, err := e.in.SetEnabled(ctx, "aa", true, check(words(false))); !errors.Is(err, skill.ErrNotExact) || e.idx.rows["aa"].Enabled {
 		t.Fatalf("estimate: err = %v, enabled = %v, want ErrNotExact and unchanged", err, e.idx.rows["aa"].Enabled)
