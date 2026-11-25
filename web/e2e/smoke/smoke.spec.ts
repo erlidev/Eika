@@ -6,7 +6,7 @@
  * to a worker on the home computer, which proves eikad runs it there.
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 
 import { expect, test } from "@playwright/test";
 
@@ -399,5 +399,148 @@ test("memory: save, compaction, edit, Inbox answer, restart, and no agent comput
   expect(mounts.some((line) => line.includes("eika.role:memory"))).toBe(true);
   for (const line of mounts.filter((l) => !l.includes("eika.role:memory"))) {
     expect(line).not.toContain("/var/lib/eika/memory");
+  }
+});
+
+test("skills: install, use, isolate, and survive restart", async ({ page, request }) => {
+  const headers = { Authorization: `Bearer ${process.env.EIKA_SMOKE_TOKEN ?? ""}` };
+  const zip = execFileSync("python3", [
+    "-c",
+    `
+import io, pathlib, sys, zipfile
+root = pathlib.Path('../internal/skill/testdata/invoice-totals')
+buf = io.BytesIO()
+with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as archive:
+    for path in sorted(root.rglob('*')):
+        if path.is_file():
+            archive.write(path, pathlib.Path('invoice-totals') / path.relative_to(root))
+sys.stdout.buffer.write(buf.getvalue())
+`,
+  ]);
+  await page.goto("/skills");
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await page.getByLabel("Password", { exact: true }).fill("smoke-password");
+    await signIn.click();
+  }
+  await page
+    .getByLabel("Skill zip")
+    .setInputFiles({ name: "invoice-totals.zip", mimeType: "application/zip", buffer: zip });
+  await page.getByRole("link", { name: "Review invoice-totals" }).click();
+  await expect(page.getByRole("region", { name: "SKILL.md" })).toContainText("Run `python3");
+  await expect(page.getByRole("region", { name: "Files" })).toContainText("scripts/totals.py");
+  await page.getByRole("button", { name: "Enable", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Disable", exact: true })).toBeVisible();
+
+  const home = (
+    (await (await request.get("/api/home", { headers })).json()) as { session: { id: string } }
+  ).session;
+  await expect
+    .poll(
+      async () => {
+        const reply = await request.get(`/api/sessions/${home.id}/run`, { headers });
+        return reply.ok() && !((await reply.json()) as { active: boolean }).active;
+      },
+      { timeout: 60_000, intervals: [1000] },
+    )
+    .toBe(true);
+  await page.goto("/");
+  await page.getByLabel("Message", { exact: true }).fill("Total the invoice");
+  await page.getByLabel("Message", { exact: true }).press("Enter");
+  await expect
+    .poll(
+      async () => {
+        const reply = await request.get("/api/sessions", { headers });
+        if (!reply.ok()) return false;
+        const rows = (
+          (await reply.json()) as {
+            sessions: { id: string; name?: string; parent_session_id?: string }[];
+          }
+        ).sessions;
+        const worker = rows.find(
+          (row) => row.name === "smoke-skill-worker" && row.parent_session_id === home.id,
+        );
+        if (!worker) return false;
+        const path = await request.get(`/api/sessions/${worker.id}/path`, { headers });
+        if (!path.ok()) return false;
+        const messages = ((await path.json()) as { messages: { role: string; content?: string }[] })
+          .messages;
+        return messages.some(
+          (message) =>
+            message.role === "assistant" &&
+            message.content?.includes("Acme: net 20.00, vat 3.80, total 23.80") &&
+            message.content.includes("GRAND TOTAL 23.80") &&
+            message.content.includes("skills-read-only") &&
+            message.content.includes("private-hidden"),
+        );
+      },
+      { timeout: 90_000, intervals: [1000] },
+    )
+    .toBe(true);
+
+  const before = (await (await request.get("/api/skills/invoice-totals", { headers })).json()) as {
+    enabled: boolean;
+    sha: string;
+    source: string;
+  };
+  expect(before.enabled).toBe(true);
+  execSync(`${process.env.EIKA_SMOKE_COMPOSE ?? "false"} restart eika`, {
+    cwd: "..",
+    stdio: "inherit",
+    timeout: 120_000,
+  });
+  await expect
+    .poll(
+      async () =>
+        (await request.get("/api/skills/invoice-totals", { headers }).catch(() => null))?.status(),
+      { timeout: 180_000, intervals: [2000] },
+    )
+    .toBe(200);
+  const after = (await (
+    await request.get("/api/skills/invoice-totals", { headers })
+  ).json()) as typeof before;
+  expect(after.enabled).toBe(true);
+  expect(after.sha).toBe(before.sha);
+  expect(after.source).toBe(before.source);
+
+  const ids = execSync(
+    "docker ps -aq --filter label=eika.computer --filter network=eika_smoke_sandbox; docker ps -aq --filter label=eika.computer --filter network=eika_smoke_sandbox_internal",
+    { encoding: "utf8" },
+  )
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  expect(ids.length).toBeGreaterThan(0);
+  const containers = JSON.parse(
+    execFileSync("docker", ["inspect", ...ids], { encoding: "utf8" }),
+  ) as {
+    Config: { Labels: Record<string, string> };
+    Mounts: { Destination: string; Source: string; RW: boolean }[];
+  }[];
+  const agents = containers.filter(
+    (container) => !["memory", "skills"].includes(container.Config.Labels["eika.role"] ?? ""),
+  );
+  expect(agents.length).toBeGreaterThan(0);
+  const memory = containers.find((container) => container.Config.Labels["eika.role"] === "memory");
+  expect(memory).toBeDefined();
+  const coreID = execSync(`${process.env.EIKA_SMOKE_COMPOSE ?? "false"} ps -q eika`, {
+    cwd: "..",
+    encoding: "utf8",
+  }).trim();
+  const core = JSON.parse(execFileSync("docker", ["inspect", coreID], { encoding: "utf8" })) as {
+    Mounts: { Destination: string; Source: string }[];
+  }[];
+  const data = core[0]?.Mounts.find((mount) => mount.Destination === "/var/lib/eika");
+  expect(data).toBeDefined();
+  const privateSources = [data?.Source, ...(memory?.Mounts.map((mount) => mount.Source) ?? [])];
+  for (const container of agents) {
+    expect(container.Mounts.some((mount) => privateSources.includes(mount.Source))).toBe(false);
+    expect(container.Mounts.find((mount) => mount.Destination === "/skills")?.RW).toBe(false);
+    expect(
+      container.Mounts.some(
+        (mount) =>
+          mount.Destination === "/var/lib/eika" || mount.Destination.startsWith("/var/lib/eika/"),
+      ),
+    ).toBe(false);
   }
 });

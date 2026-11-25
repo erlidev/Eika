@@ -106,6 +106,33 @@ function answer(req: ChatRequest): object[] {
   const last = req.messages?.at(-1);
   const content = typeof last?.content === "string" ? last.content : "";
   const hasTool = (name: string) => req.tools?.some((t) => t.function?.name === name) ?? false;
+  if (last?.role === "user" && hasTool("subagent_start") && content.includes("Total the invoice")) {
+    return toolCall("subagent_start", {
+      agent: "worker",
+      name: "smoke-skill-worker",
+      brief: "Total the invoice with the installed skill.",
+    });
+  }
+  if (last?.role === "user" && hasTool("skill_use") && content.includes("Total the invoice")) {
+    return toolCall("skill_use", { name: "invoice-totals" });
+  }
+  if (
+    last?.role === "tool" &&
+    hasTool("bash") &&
+    content.includes('<skill name="invoice-totals"')
+  ) {
+    return toolCall(
+      "bash",
+      {
+        command:
+          "printf 'customer,item,quantity,unit_price\\nAcme,part,2,10.00\\n' > /tmp/invoice.csv && python3 /skills/invoice-totals/scripts/totals.py /tmp/invoice.csv && if (echo x > /skills/smoke-write) 2>/dev/null; then echo skills-writable; else echo skills-read-only; fi && if [ -e /var/lib/eika/secret.key ] || [ -e /var/lib/eika/memory ]; then echo private-visible; else echo private-hidden; fi",
+      },
+      "bash_skill",
+    );
+  }
+  if (last?.role === "tool" && hasTool("bash") && content.includes("GRAND TOTAL")) {
+    return [chunk({ role: "assistant", content: content.trim() }), chunk({}, "stop")];
+  }
   if (last?.role === "user" && hasTool("subagent_start") && content.includes("Fetch the fixture")) {
     return toolCall("subagent_start", {
       agent: "researcher",

@@ -141,7 +141,8 @@ shot: web-install
 
 ## smoke: build the whole stack as `make local` does, with a scripted model
 ## (compose.smoke.yaml), and drive it from the guided setup to a shell
-## command run in a sandbox and a memory flow (web/e2e/smoke). It waits for the guard, which runs
+## command run in a sandbox, memory and skills flows (web/e2e/smoke). It waits
+## for the guard, which runs
 ## from its real image. It needs Docker and takes a few
 ## minutes on a first build. The stack is removed afterwards, pass or fail.
 smoke: web-install playwright-browser

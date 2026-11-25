@@ -728,7 +728,7 @@ its hits are marked in the text. Delete it. On a phone the same works.
       the memory volume is, into an empty target, never over existing data. Core runs
       `Reconcile` after restore. Extend the restore test with an installed enabled
       skill and a disabled one. Operator guide updated. No skill content in output.
-- [ ] **P6-13**: Extend `make smoke` and `web/e2e/smoke`: upload and enable the fixture
+- [x] **P6-13**: Extend `make smoke` and `web/e2e/smoke`: upload and enable the fixture
       in the UI, have the scripted model call `skill_use` and run the script on a
       worker's computer, check the answer, restart and check the skill survives, and
       check no agent computer can write `/skills` or read the key and memory. Run
@@ -1089,6 +1089,7 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
 - [x] (P6-09, P6-10) Skills UI: install with the full `SKILL.md` and file list shown, the
       screen's hits marked in the text, and warnings.
 - [x] (P6-11) Skills UI: enable, disable and delete.
+- [x] (P6-13) Skills smoke flow and computer isolation check.
 - [ ] (P6-14) `EXTENDING.md`: writing a skill for Eika (the spec fields only).
 
 **Exit** (P6-15 to P6-18): drop a skill zip into the UI and enable it, then ask Eika for something
