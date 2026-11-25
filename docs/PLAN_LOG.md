@@ -1,5 +1,7 @@
 # Plan log
 
+- 2026-11-25: P6-11 connects the skill detail to the existing enable, disable and delete API. The detail shows action errors, including catalog budget refusals; delete asks for confirmation. Reinstall uses the existing upload and refresh path.
+
 - 2026-11-22: P6-10 fills the skill detail (`SkillDetail.tsx`): state, the `broken` reason, an
   `unscanned` notice, warnings, the screen's hits as `Flagged in the description/body: ...`, the
   six spec fields, the file list with sizes, and the full stored `SKILL.md` source as source with `<mark>` over the span byte offsets. `segments` moved

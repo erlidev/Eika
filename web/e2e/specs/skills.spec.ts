@@ -127,3 +127,31 @@ test.describe("on a phone", () => {
     await expect(eika.page).toHaveURL(/\/skills$/);
   });
 });
+
+test("enable, changed reinstall, disable and delete a skill", async ({ open }) => {
+  const eika = await open({ scenario: "skills", path: "/skills/web-digest" });
+  const page = eika.page;
+  await expect(page.getByText("Flagged in the description:")).toBeVisible();
+  await page.getByRole("button", { name: "Enable", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Disable", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Disable", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Enable", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Enable", exact: true }).click();
+  await page.getByLabel("Skill zip").setInputFiles(zip("web-digest.zip"));
+  await expect(page.getByRole("button", { name: "Enable", exact: true })).toBeVisible();
+  await expect(page.getByText("Installed web-digest. It is disabled")).toBeVisible();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page).toHaveURL(/\/skills$/);
+  const list = page.getByRole("navigation", { name: "Skills" });
+  await expect(list.getByRole("link", { name: /web-digest/ })).toHaveCount(0);
+});
+
+test("a catalog budget refusal leaves the skill disabled", async ({ open }) => {
+  const eika = await open({ scenario: "skills", path: "/skills/web-digest" });
+  const stored = eika.mock.world.skills.find((s) => s.name === "web-digest");
+  if (stored) stored.description = "large ".repeat(1500);
+  await eika.page.getByRole("button", { name: "Enable", exact: true }).click();
+  await expect(eika.page.getByRole("alert")).toContainText("catalog exceeds the token budget");
+  await expect(eika.page.getByRole("button", { name: "Enable", exact: true })).toBeVisible();
+});

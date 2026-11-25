@@ -6,12 +6,13 @@ import { Link } from "react-router";
 
 import { ActionError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
-import { useInstallSkill } from "@/features/skills/queries";
+import { useInstallSkill, useSkills } from "@/features/skills/queries";
 import { summarize } from "@/features/skills/state";
 import { cn } from "@/lib/utils";
 
 export function Installer() {
   const install = useInstallSkill();
+  const skills = useSkills();
   const picker = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
 
@@ -67,7 +68,11 @@ export function Installer() {
         />
       </div>
       {install.isError && <ActionError action="install the skill" error={install.error} />}
-      {install.isSuccess && <Result result={install.data} />}
+      {install.isSuccess &&
+        (skills.data?.some((k) => k.name === install.data.skill.name) ?? true) && (
+          // A skill deleted since the install is gone: its result would link to nothing.
+          <Result result={install.data} />
+        )}
     </div>
   );
 }

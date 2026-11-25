@@ -15,7 +15,7 @@ and a phone finds it in the More sheet.
   warnings, an `unscanned` notice, the screen's hits (`Flagged in the description: ...`),
   the six spec fields, the file list with sizes and the full `SKILL.md` source with
   the screen's spans marked (`lib/segments.ts`, UTF-8 byte offsets, shared with the
-  Inbox). Older installs need a reinstall to supply the source. P6-11 adds enable, disable and delete.
+  Inbox). Older installs need a reinstall to supply the source. Enable and disable use one click; delete asks for confirmation. A refused action shows the server error, including the catalog budget.
 - `state.ts` words the counts and the install answer. `queries.ts` is the server state.
   `events.ts` invalidates every skills query on `skills.changed`, `bus.dropped` and
   reconnect.

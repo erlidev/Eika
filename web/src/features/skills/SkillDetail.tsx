@@ -1,12 +1,15 @@
 /** The open skill: what the user reads before enabling it, with the screen's hits marked. */
 
 import { ArrowLeft } from "lucide-react";
-import { Link } from "react-router";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router";
 
 import { ApiError } from "@/api/client";
 import type { Skill } from "@/api/types";
-import { LoadError, Notice } from "@/components/Notice";
-import { useSkill } from "@/features/skills/queries";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ActionError, LoadError, Notice } from "@/components/Notice";
+import { Button } from "@/components/ui/button";
+import { useDeleteSkill, useSetSkillEnabled, useSkill } from "@/features/skills/queries";
 import { fieldRows } from "@/features/skills/state";
 import { formatAgo, formatBytes } from "@/lib/format";
 import { segments } from "@/lib/segments";
@@ -77,6 +80,11 @@ function Marked({ skill, field }: { skill: Skill; field: "description" | "body" 
 
 function Body({ skill }: { skill: Skill }) {
   const spans = skill.screen?.spans ?? [];
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const navigate = useNavigate();
+  const setEnabled = useSetSkillEnabled(skill.name);
+  const remove = useDeleteSkill(skill.name);
+  const busy = setEnabled.isPending || remove.isPending;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <article className="mx-auto max-w-3xl space-y-3 p-4">
@@ -87,6 +95,46 @@ function Body({ skill }: { skill: Skill }) {
             {skill.enabled ? "Enabled" : "Disabled"} · installed {formatAgo(skill.installed_at)}
           </p>
         </header>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy || (!skill.enabled && skill.broken !== "")}
+            onClick={() => {
+              setEnabled.mutate(!skill.enabled);
+            }}
+          >
+            {setEnabled.isPending ? "Saving…" : skill.enabled ? "Disable" : "Enable"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setConfirmDelete(true);
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+        {setEnabled.isError && (
+          <ActionError
+            action={skill.enabled ? "disable the skill" : "enable the skill"}
+            error={setEnabled.error}
+          />
+        )}
+        {remove.isError && <ActionError action="delete the skill" error={remove.error} />}
+        <ConfirmDialog
+          open={confirmDelete}
+          onOpenChange={setConfirmDelete}
+          title="Delete skill?"
+          description={`Delete ${skill.name} and its files?`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            remove.mutate(undefined, { onSuccess: () => void navigate("/skills") });
+          }}
+        />
         {skill.broken !== "" && <Notice tone="error">Broken: {skill.broken}</Notice>}
         {skill.screen?.unscanned === true && (
           <Notice tone="warning">
@@ -136,6 +184,9 @@ function Body({ skill }: { skill: Skill }) {
         </section>
         <section aria-label="Files" className="space-y-1">
           <h3 className="text-sm font-medium">Files</h3>
+          {skill.files.length === 0 && (
+            <p className="text-muted-foreground text-xs">No files available.</p>
+          )}
           <ul className="text-xs">
             {skill.files.map((f) => (
               <li key={f.path} className="flex justify-between gap-3 py-0.5">
