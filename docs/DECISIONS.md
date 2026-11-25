@@ -2643,6 +2643,15 @@ expiry is an optional calendar date. The renderer uses a fixed field order and
 preserves the body. `source` is a citation, not a trust field. State is tracked
 as `active`, `pending` or `archived`, as decided in P5-00.
 
+## Residual pending rate for ordinary memory writes (P5-22)
+
+- Accepted: at `memory_screen_threshold` 0.99 roughly one ordinary write in 150
+  (under 1%) can still be held pending by the guard, and no threshold separates
+  it from the 0.9948 attack the poison cases use. A pending ordinary memory costs
+  one Inbox tap (approve) and loses no data; raising the threshold further would
+  let attacks through. The live suite requires 30 of 30 active, and it was 30 of
+  30 in the P5-22 run. Revisit only if the guard model changes.
+
 ## Memory computer (P5-02)
 
 The private memory computer is not a computer row. It exists as a container and

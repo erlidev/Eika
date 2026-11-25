@@ -34,12 +34,20 @@ import (
 // computer, its repository volume and the database are this test's alone and
 // are removed with it. A fake ntfy topic counts the pushes.
 func memoryCore(t *testing.T, target *live.Target, guard string, pushes *atomic.Int64) *liveCore {
+	return memoryCoreLogged(t, target, guard, pushes, nil)
+}
+
+// memoryCoreLogged is memoryCore that also hands each push body to pushLog.
+func memoryCoreLogged(t *testing.T, target *live.Target, guard string, pushes *atomic.Int64, pushLog func(string)) *liveCore {
 	t.Helper()
 	if guard == "" {
 		t.Fatal("the guard URL is required: memory writes are screened by the real guard")
 	}
 	sink := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+		if pushLog != nil {
+			pushLog(string(body))
+		}
 		pushes.Add(1)
 	}))
 	t.Cleanup(sink.Close)
