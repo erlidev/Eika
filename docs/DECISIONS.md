@@ -2716,6 +2716,17 @@ is reported and never adopted. `volume.List` names top-level entries other than 
 dot directories. The screen is `Installer.SetScreener` (P6-05); the default stores
 `unscanned`. `server.SkillInstaller()` is nil until the reconcile has run.
 
+## Skill screen limits (P6-17)
+
+The install screen helps a user review a skill; it is not a guarantee that a
+skill has no planted instructions. At the 0.99 memory threshold, the bench
+guard scored a polite exfiltration sentence 0.75 alone and 0.985 in a full-body
+window, so it marked neither. An overt variant scored 0.998696 and was marked.
+When enabled, the worker attempted the planted destination in the live scenario.
+The user chooses whether to enable the skill; `skill_use` does not screen it again.
+Do not lower the threshold or treat a clean result as proof of safety on this
+measurement alone.
+
 ## Skill install screen (P6-05)
 
 `sentry.SkillChecker` is the install screen, separate from `Gate` like

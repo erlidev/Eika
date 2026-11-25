@@ -7,7 +7,7 @@ vocabulary every item below uses.
 Agents work through this plan over many sessions. In phases 2 and 3, take the
 first unchecked package in "Schedule for phases 2 and 3". In phase 4, take the
 first unchecked package in "Schedule for phase 4". In phase 5, take the
-first unchecked package in "Schedule for phase 5", then in "Schedule for phase 6". After them, take the first
+first unchecked package in "Schedule for phase 5". After it, take the first
 unchecked item in the first open phase, in the order the phases appear in this
 file. Read the design section it cites, do it, tick it, and add an entry to
 `docs/PLAN_LOG.md`. A phase is closed when every item is ticked and its exit check
@@ -74,8 +74,6 @@ phase 4b, web fetch and compaction come last.
 - **Phase 5 packages run serially**, in "Schedule for phase 5" order. Each
   package is one branch, sized for one worker turn. Resolve the owner questions
   listed there before the packages that depend on them.
-- **Phase 6 packages run serially**, in "Schedule for phase 6" order, after phase 5
-  closes, with the same rules.
 - **A package builds what its stage needs.** Do not pull work forward from a later
   stage or phase to make a package complete. When a package turns out to need
   more than a few days, split it and put the part the stage's exit does not need
@@ -593,308 +591,9 @@ provenance, no approval and no pending push were already decided.
 
 ## Schedule for phase 6
 
-Phase 6 was pulled forward on 2026-11-22 at the owner's request (`PLAN_LOG.md`,
-P6-00): it now follows phase 5 and runs before phases 11, 7, 4b, 12 and 13. The
-items under "Phase 6" define the scope; this schedule defines the branch
-boundaries and exit checks, as "Schedule for phase 5" does. Tick a package here
-and under its parent item. Each package is one branch, sized for one worker turn,
-with its few tests and docs. Split it before work if that size is not possible.
-
-Phase 6's one dependency is phase 5's backup and restore (P5-16, P5-17), because
-the skills volume joins them (P6-12). It uses no plugin, approval, scheduler,
-checkpoint, web-fetch or compaction work from phases 11, 7, 4b, 12 or 13:
-
-- Skills are files and Core rows, not MCP servers. `internal/mcp`, the plugin pool
-  and the Plugins page are not touched, and the Skills page is a page of its own
-  that phase 11 may later group with Plugins.
-- Install is a user act in the UI with the screen's hits shown. It adds no
-  approval, tripwire or checkpoint, so nothing in "What asks" changes.
-- The catalog refreshes through `refreshSnapshot`, which phase 2 built and phase 5
-  uses; phase 13 only improves what the compaction summary says. Until it lands, a
-  skill body a worker loaded can be summarised away; the worker calls `skill_use`
-  again, and the catalog line says so. Re-attaching bodies stays deferred
-  (`DEFERRED.md`, "Phase 6").
-
-Start after P5-23 closes phase 5. Run P6-01 to P6-18 in order; each package depends
-on the one before it, and the extra dependencies below name shared boundaries.
-Owner defaults below are proposals, applied and recorded in `DECISIONS.md`
-("Phase 6 defaults (P6-00)"). Correct `design/skills-and-plugins.md` in the first
-package that changes it. Project scope, other install sources, `skill_file`,
-`allowed-tools` as grants and skill proposals stay deferred.
-
-### Stage A: first testable build, install and use
-
-- [x] **P6-01**: Add `internal/skill`: the lenient parser and validator for the six
-      spec fields (the rules in the design's table; a name/directory mismatch and
-      an unquoted colon are warnings; a missing description or unparseable YAML is
-      a skip with a reason) and the bounded zip reader (question 4): reject `..`,
-      absolute and symlink entries and any over-limit archive, accept a single
-      top-level directory or a flat zip, keep the executable bit under `scripts/`.
-      Add the fixtures of "Example skill fixture" below. One case per distinct real
-      input; no storage, no tools.
-- [x] **P6-02**: Add the skills volume and its private installer computer, the
-      pattern of P5-02: a container and volume only, no computer row, no egress,
-      generated per-install id recorded in a small table (migration after the last
-      merged one), fixed operations (stage a tree, replace a skill directory,
-      remove one, hash one) and no agent access (question 1). Core never writes the
-      volume itself. Wire the lifecycle in the stack; run `make smoke`.
-- [x] **P6-03**: Mount the volume read-only at `/skills` in every agent computer:
-      `computer.Spec` gains an optional read-only mount, and `host.go` adds it to
-      `HostConfig.Mounts`. Docker cannot add a mount to an existing container, so a
-      computer whose container lacks it (home and projects made before this
-      package) is recreated on its next start with its data volume kept (ordering
-      hazard). Test, with the Docker tag, that a computer reads `/skills`, cannot
-      write or remount it, and cannot see `eika-data`, the memory volume or the
-      installer. Run `make smoke`.
-- [x] **P6-04**: Add `core.skills` (`name`, `enabled`, `sha`, `installed_at`,
-      `warnings`, plus the parsed `description`, the `SKILL.md` body, the file list
-      with sizes, and the install screen's result), the store and the single
-      installer. Install stages a zip through P6-02's computer, validates, swaps the
-      directory and then writes the row, serialised; a row is created disabled.
-      Reinstall of a name follows question 6. Add `Reconcile` on start: a row whose
-      directory is missing or whose hash differs is marked broken and not loaded;
-      an unknown directory is reported, never adopted. Test a populated upgrade and
-      a failure between directory and row.
-- [x] **P6-05**: Screen at install (question 3), through `sentry` and the
-      `sentry/screen` client, as P5-05 does for memory and never through `Gate.Ingest`
-      (which removes and wraps). A credential pattern in any text file rejects the
-      install and names the pattern; the guard classifies the description and
-      `SKILL.md`, and spans map back to byte offsets in the stored `SKILL.md`
-      (the memory span fields, `field`, `start`, `end`, `score`, `text`). A hit never
-      blocks and never enables. Guard down stores `unscanned`. Audit without
-      content. Test with a fake screen, including the offset mapping when the body
-      holds invisible characters.
-- [x] **P6-06**: Add the authenticated API: install by `.zip` upload (multipart,
-      bounded, answers with the new disabled skill and its warnings and spans),
-      list, read (full body, file list, screen result), enable, disable and delete,
-      with the catalog budget check on enable (question 5). Register routes,
-      `routeWire`, wire types and `docs/api/http.md` together; run `make contract`.
-      Add event `skills_changed` and a topic `skills`, published after the durable
-      change, with reconnect refetch, as memory does. No agent endpoint exists.
-- [x] **P6-07**: Add the tool `skill_use` (`name`, or `query`; question 2), standalone,
-      registered in `internal/tool/builtin/registry.go`, with a `Skills` dependency
-      like `Memories`. It reads the stored row, never a file or a computer. `name`
-      returns the body without frontmatter inside `<skill name="..."
-      dir="/skills/<name>">`, then the resource file list without contents; `query`
-      lists up to 10 enabled matches by name and description. A disabled, broken or
-      unknown name returns an error naming nothing else. The tool takes no enum of
-      names. Add it to `eika` and the worker definitions (question 2); check tool
-      intersection with stored definitions. Test through the public API.
-- [x] **P6-08**: Add the catalog to `server.buildPreamble` for home and worker
-      sessions: enabled skills, sorted by name, one line each, under the heading of
-      the design, within the exact budget of question 5, no section when none is
-      enabled. It is part of the frozen prefix; a skill enabled, disabled or
-      installed mid-session reaches a session at its next compaction through
-      `refreshSnapshot`, and a new worker at its start. Extend the prefix-stability
-      and restart check and the context inspector if its shape changes; run
-      `make smoke`.
-
-**Exit A:** against the real stack, upload the fixture zip with `curl`: it arrives
-disabled with the full body and file list readable through the API. Enable it, compact
-home, ask for the task it covers. Eika delegates, the worker calls `skill_use` and
-runs `/skills/invoice-totals/scripts/totals.py` on its computer. The worker cannot
-write `/skills`. Restart Core: the skill is still enabled and loadable. A credential
-in a zip is rejected; a planted instruction is returned as a span, not a block.
-
-### Stage B: Skills in the browser
-
-- [x] **P6-09**: Add the Skills page: list with enabled state and warning counts, a
-      drop zone and file picker that upload a zip, and the install result. Use
-      `MasterDetail`, `App.tsx` and `pages.ts` routes, the feature README and P6-06
-      `World` routes in the mock harness; topic `skills` invalidates the list. No
-      second upload component if one exists. Inspect desktop and coarse-pointer phone
-      shots before accepting baselines.
-- [x] **P6-10**: Add skill detail: the full `SKILL.md` shown as source text with the
-      screen's spans marked in it (the `<mark>` pattern of `MemoryDetail`, driven by
-      byte offsets, with `Flagged in the description` text for the description), the
-      file list with sizes, the six fields, warnings and any `unscanned` notice. The
-      user reads this before enabling. Test the marking at span edges and over
-      multi-byte text.
-- [x] **P6-11**: Add enable, disable and delete, replace-by-reinstall (a changed skill
-      returns to disabled with its new hits shown), the catalog-budget refusal and
-      every empty and error state. Enabling is one explicit click with the hits
-      visible; it asks nothing more and sends no push. Verify two open clients and
-      reconnect; inspect phone shots and navigation baselines in both themes.
-
-**Exit B:** from a desktop browser, drop the fixture zip, read the whole `SKILL.md`
-and file list, enable it, and see it in the second client. Drop the poisoned fixture:
-its hits are marked in the text. Delete it. On a phone the same works.
-
-### Stage C: backup, stack checks, docs
-
-- [x] **P6-12**: Add the skills volume to `make backup` (`skills.tar`, its checksum in
-      the manifest, a manifest version bump that older sets still restore under) and
-      to `make restore` and `restore-test`, restoring the recorded id and volume as
-      the memory volume is, into an empty target, never over existing data. Core runs
-      `Reconcile` after restore. Extend the restore test with an installed enabled
-      skill and a disabled one. Operator guide updated. No skill content in output.
-- [x] **P6-13**: Extend `make smoke` and `web/e2e/smoke`: upload and enable the fixture
-      in the UI, have the scripted model call `skill_use` and run the script on a
-      worker's computer, check the answer, restart and check the skill survives, and
-      check no agent computer can write `/skills` or read the key and memory. Run
-      `make check` and `make smoke`.
-- [x] **P6-14**: Write `EXTENDING.md`, "Writing a skill for Eika" (the spec fields
-      only, the layout, limits, how it is installed and screened, how an agent uses
-      it, the fixture as the worked example), and bring `ARCHITECTURE.md`,
-      `DECISIONS.md` and `docs/api/` up to date for what stages A to C built.
-
-**Exit C:** back up a populated stack, restore into an empty one, and the enabled skill
-loads and runs as before. The scripted skills smoke flow passes. A contributor can write
-a skill from `EXTENDING.md` alone.
-
-### Stage D: live suite, measure, close
-
-- [x] **P6-15**: Extend `evals/live`'s server harness with a skills installer and
-      volume, and add the phase exit scenario: install and enable the fixture, ask
-      Eika for the task, and record delegation, `skill_use` before the script run,
-      the path executed, the answer against the script's own output, asks and pushes
-      (zero), and task completion. Fakes stay in `make check`; bounded fixtures and
-      cleanup.
-- [x] **P6-16**: Add the negative live cases: the benign fixtures produce no hits with
-      the real guard and the poisoned fixture's planted sentence is marked; a
-      disabled skill is not in the catalog and `skill_use` refuses it; a skill
-      enabled mid-session is absent from the prefix until compaction (prefix bytes
-      stable, as P5's check does); a worker told to rewrite `/skills` fails. If the
-      user enables the poisoned skill, report whether the worker follows the planted
-      instruction as a measurement, not an assertion: a skill is user-trusted
-      content, and `skill_use` output is not re-screened (question 3).
-- [ ] **P6-17**: Run the phase suite on the bench's chat model and guard. Resolve
-      failures, rerun affected scenarios, and log results, thresholds, model and guard
-      revisions, llama.cpp build and flags, the prefix-stability result with a
-      catalog, and the benign false-positive count. A skipped suite does not pass.
-- [ ] **P6-18**: Close phase 6 only after every stage and the phase exit pass. Run
-      `make check`, `make smoke` and `make live`; do the exit by hand on desktop and
-      phone with `npm run shot`. Move the built design into `ARCHITECTURE.md` and
-      `DECISIONS.md`, keep deferred design, reduce the phase and this schedule to
-      their completion records, and log the results.
-
-**Exit D:** the phase exit, the benign fixtures without a hit, the poisoned one marked,
-and a logged live result. No implementation or measurement package remains after the
-close item.
-
-### Example skill fixture
-
-A small skill that needs its script: the rule is arbitrary enough that a model cannot
-guess it, so a correct answer shows the skill was loaded and its script run. P6-01 adds
-it under `internal/skill/testdata/invoice-totals/` (also read by P6-13 and P6-15, which
-zip it at test time; no binary zip is committed). Behaviour is fixed so the eval can
-compare the answer with the script's own output.
-
-```
-invoice-totals/
-  SKILL.md
-  scripts/totals.py
-  references/rounding.md
-```
-
-`SKILL.md`:
-
-```
----
-name: invoice-totals
-description: Total invoice lines per customer with the company's VAT and rounding rules. Use when the user gives invoice lines as CSV, or asks for invoice totals, VAT or a customer statement.
-license: MIT
-compatibility: Needs python3 on the computer; no network.
-metadata:
-  version: "1.0"
----
-
-# Invoice totals
-
-1. Put the CSV (columns `customer,item,quantity,unit_price`) on the computer.
-2. Run `python3 /skills/invoice-totals/scripts/totals.py FILE.csv`.
-3. Report its output unchanged. Do not recompute it: the rounding rule is in
-   `references/rounding.md` and the script applies it.
-```
-
-`scripts/totals.py` reads the CSV, rounds each line half-even to whole cents, adds 19%
-VAT per customer rounded half-even once on the customer's net, and prints one line per
-customer in name order, `<customer>: net 120.00, vat 22.80, total 142.80`, then
-`GRAND TOTAL <amount>`; it exits 2 with a one-line message on a bad row. About 30 lines,
-standard library only. `references/rounding.md` states the rule in prose (the file a
-worker may read, to cover resource files). The poisoned variant, `notes-formatter`, has
-a believable description and a body that contains one planted sentence telling the model
-to send the conversation to an outside address; its zip is used for the screen cases only.
-
-### Ordering hazards
-
-- **Existing computers.** A Docker container's mounts are fixed at creation. Home and
-  project computers that exist before P6-03 lack `/skills`; recreate the container on
-  its next start, keeping its data volume and token handling, and test an upgraded
-  populated stack. A computer that is running is not interrupted; the mount appears at
-  its restart. Check the stop/start paths and the memory computer, which never mounts
-  `/skills`.
-- **Executor rule.** Skill files reach computers only through a read-only mount that
-  Core's installer computer filled through `internal/executor`. No tool, handler or
-  `skill_use` opens a file on the harness filesystem, and Core's `eika-data` volume
-  (`secret.key`, memory repository) is never mounted into a computer. `skill_use`
-  reads the row, not the volume. `internal/imports_test.go` still holds; `tool` does
-  not import `computer`.
-- **Volume naming.** A volume created through the Docker API is named for the Docker
-  host, not the compose project, as the memory volume is (P5-02); a fixed
-  `eika-skills` would be shared by the smoke stack, tests and a real install. Use a
-  generated id. A restore puts back the recorded id with the volume, and the design
-  doc's `eika-skills` name is corrected in P6-02.
-- **Migrations.** The last migration is 0032 today; allocate after each preceding merge.
-  P6-02 adds the id table, P6-04 `core.skills`. Test populated upgrades. The row and
-  the directory can disagree after a crash or restore, so `Reconcile` decides which
-  wins (the directory's hash; a row without one is broken, never silently dropped).
-- **Screen semantics.** `Gate.Ingest` redacts, removes and wraps; a skill must stay
-  intact for the user to read, so P6-05 reuses the client and scan rules with a
-  separate decision, as P5-05 does. Offsets must refer to the stored bytes the UI
-  shows, not the text the guard saw with invisible characters removed.
-- **Wire contract.** P6-06 updates `routes.go`, `routeWire`, event payload
-  registration, `docs/api/http.md` and `events.md`, runs `make contract`, and mirrors
-  the types in `web/src/api`. The UI packages add matching mock `World` behaviour.
-  The topic `skills` and its reconnect behaviour land with the API, not in the UI.
-- **Snapshots.** P6-08 uses the existing atomic snapshot append. Do not rebuild the
-  prefix per turn. A definition override or pinned tool list can hide `skill_use`
-  until compaction; include that in the manual check. The tool schema never lists
-  skill names, so installing never changes a tool list.
-- **Visual baselines.** P6-09 to P6-11 add a page to shell navigation. Run
-  `npm run shot`, inspect each changed baseline before `make visual-update`, and merge
-  baseline changes serially. Check coarse-pointer phone size and both themes.
-- **Backup consistency.** The row copy of the body lives in the database and the files
-  in the volume; P6-12 stops Core while taking both, as memory does, and the sha in each
-  row lets restore detect a mismatch.
-- **Live boundary.** A skill is user-installed content and is not re-screened at
-  `skill_use`; the screen runs at install. P6-16 reports the poisoned skill's effect
-  honestly and adds no production bypass or second screen.
-
-### Owner questions and applied defaults
-
-Defaults applied on 2026-11-22 while the owner was away (`DECISIONS.md`, "Phase 6
-defaults (P6-00)"); each can be revisited before its package. Decided already by the
-design: skills follow the open specification with no Eika fields, install only in the
-UI, no agent tool installs or edits one, and nothing asks the user.
-
-1. **Where do skill files live, and who writes them?** Applied: a volume of its own,
-   named from a generated per-install id and filled only by a private installer
-   computer through the executor, mounted read-only at `/skills` in agent computers,
-   never `eika-data`, never writable by an agent.
-2. **Who gets `skill_use` and the catalog?** Applied: `eika` and the worker
-   definitions, both catalog and tool; `skill_use` returns the row's body, so Eika can
-   read instructions that need no computer and a worker can run the scripts.
-3. **What does the install screen do?** Applied: the credential scan covers every
-   text file and rejects the install naming the kind; the guard classifies the
-   description and `SKILL.md` (not scripts or references: it is a prompt-injection
-   classifier, not a code reviewer). Hits are marked and never block; guard
-   failure shows `unscanned`; enabling is the user's click. `skill_use` output is not
-   re-screened.
-4. **Install limits?** Applied: zip at most 5 MiB, 20 MiB expanded, 200 files, 5
-   directory levels; `SKILL.md` at most 64 KiB (a warning above 500 lines); regular
-   files only, no symlinks, no `..` or absolute paths; the spec's six fields.
-5. **How large may the catalog grow?** Applied: at most 2,000 exact tokens counted with
-   the model counter, complete lines only; enabling a skill that would pass it is
-   refused with the count, never estimated. No names-only mode (deferred).
-6. **Reinstalling a name?** Applied: same name replaces the files and row, and a changed
-   sha returns it to disabled with the new hits shown; an identical zip is a no-op.
-   Running sessions keep their catalog until compaction and may see new files meanwhile.
-7. **Deleting a skill?** Applied: removes the directory and the row; sessions that
-   already loaded the body keep their text. `skill_use` on a deleted name returns an
-   unknown-name error.
-8. **Query matching in `skill_use`?** Applied: case-insensitive substring over name and
-   description of enabled skills, ten results; no new index at this size.
+- [x] **P6-17**: Run and record the skills live suite. See `PLAN_LOG.md`, P6-17.
+- [x] **P6-18**: Close the phase 6 documentation. The owner will do the
+  desktop and phone exit checks; see `PLAN_LOG.md`, P6-18.
 
 ## Phase 0: Groundwork
 
@@ -1072,32 +771,13 @@ item stays open until all its packages pass. Closure is P5-23 and the exit below
 
 ## Phase 6: Skills
 
-Pulled forward at the owner's request (`PLAN_LOG.md`, P6-00); the "only if a skill is
-worth installing" condition no longer applies. Design: `design/skills-and-plugins.md`
-"Skills". Packages: "Schedule for phase 6".
-
-- [x] Add `internal/skill` (P6-01, P6-04, P6-05):
-      - [x] lenient parsing and validation of the specification (P6-01)
-      - [x] the store and the `core.skills` rows (P6-04)
-      - [x] install from a `.zip` (P6-04)
-      - [x] the install screen (P6-05)
-- [x] (P6-02, P6-03, P6-12) Mount `/skills` read-only into computers from a volume of its own
-      (`eika-cx-<skills id>`), never from Core's `/var/lib/eika` volume, which holds
-      `secret.key` and the memory repository. `make backup` covers it.
-- [x] (P6-06 to P6-08) Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.
-      Resource files are read from `/skills/<name>/` on the computer.
-- [x] (P6-09, P6-10) Skills UI: install with the full `SKILL.md` and file list shown, the
-      screen's hits marked in the text, and warnings.
-- [x] (P6-11) Skills UI: enable, disable and delete.
-- [x] (P6-13) Skills smoke flow and computer isolation check.
-- [x] (P6-14) `EXTENDING.md`: writing a skill for Eika (the spec fields only).
-
-- [x] (P6-15, P6-16) Add the skills live scenarios, including screen, catalog,
-      isolation and poisoned-skill measurements.
-
-**Exit** (P6-15 to P6-18): drop a skill zip into the UI and enable it, then ask Eika for something
-that needs it. Eika delegates, the worker loads the skill with `skill_use`, and it
-runs the skill's script on the computer.
+The implementation and documentation are complete (P6-01 to P6-18). Eika
+installs user-selected skill archives, screens them, and offers enabled skills
+through a frozen catalog and `skill_use`. Agent computers read the skills volume
+without write access. Backup includes the volume. See [Architecture](ARCHITECTURE.md#skills),
+[Decisions](DECISIONS.md#skills-installer-computer-p6-02), and `PLAN_LOG.md`,
+P6-17 and P6-18. The owner will complete the desktop and phone exit checks.
+Deferred work is in [DEFERRED.md](DEFERRED.md#phase-6).
 
 ## Phase 11: Plugins
 

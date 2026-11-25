@@ -1164,6 +1164,37 @@ session starts with it. The class applies from the next run. Context and
 prediction previews show the snapshot. Model-call records include the agent
 name and requested class, including when the class falls back.
 
+## Skills
+
+Users install skills as zip archives on the Skills page. An archive contains a
+`SKILL.md` with Agent Skills frontmatter and can contain scripts, references and
+assets. The parser accepts the six specification fields and reports warnings for
+recoverable faults. Archives are bounded to 5 MiB compressed, 20 MiB expanded,
+200 entries and five directory levels. Paths must be safe, and symlinks are not
+accepted. `EXTENDING.md` describes the format and authoring flow.
+
+The installer stages files through the private skills computer and the executor.
+It verifies the tree hash before and after replacement, then records the parsed
+body, original source, file list, warnings and screen result in `core.skills`.
+An install starts disabled. An unchanged reinstall is a no-op; a changed one
+returns to disabled. Startup reconciliation marks a missing or changed tree
+broken and does not adopt unknown directories. Backups include the skills volume.
+The API returns 503 until reconciliation publishes the installer.
+
+At install, Sentry checks text files for credentials and screens the description
+and body at `memory_screen_threshold`. A credential rejects the install; screen
+hits mark source spans but do not block it. An unavailable guard marks the skill
+unscanned. The user reads the source, file list and findings, then chooses whether
+to enable the skill. Agents cannot install or edit skills. `allowed-tools` is
+shown but grants no permissions.
+
+Enabled, sound skills appear in a sorted catalog in Eika and worker preambles.
+The catalog is limited to 2,000 exact tokens and changes enter an existing
+session at compaction. `skill_use` loads a stored body and lists its resources,
+or searches names and descriptions. The body is user-trusted and is not screened
+again when loaded. Workers read resources and run scripts through the executor
+from the read-only `/skills` mount; the private installer is the only writer.
+
 ## Projects
 
 Migration 0012 adds `core.projects`. Each record has a stable ID and unique

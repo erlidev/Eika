@@ -16,7 +16,7 @@ Its design stays here, marked deferred, as the target if it returns: most of
 | `runtime.md` | Remaining runtime changes for later phases |
 | `sentry.md` | The permission authority: policy, what asks, ingest and the injection screen, approvals and grants, egress, halting; deferred: vault, surrogates, review, monitoring |
 | `memory.md` | Instructions, memories, the index, search, episodic recall, screened writes, dreaming |
-| `skills-and-plugins.md` | Agent Skills and MCP plugins |
+| `skills-and-plugins.md` | MCP plugins; skills are built |
 | `scheduler.md` | Routines and wakeups |
 | `browser.md` | The browser container, the browser agent, live view and takeover |
 | `web-fetch.md` | What `web_fetch` shows the model, reading further by line, section and search, conversion to Markdown, site readers, and the reader that answers a question about a page |
