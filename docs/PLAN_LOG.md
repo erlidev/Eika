@@ -1,5 +1,7 @@
 # Plan log
 
+- 2026-11-25: P6-12 adds format 2 backups with the skills volume and checksum. Restore accepts format 1 sets, restores format 2 skills beside a source with a separate ID, and reconciles on startup. The restore test covers two skills and damaged or missing archives. Docker checks remain for the orchestrator.
+
 - 2026-11-25: P6-11 connects the skill detail to the existing enable, disable and delete API. The detail shows action errors, including catalog budget refusals; delete asks for confirmation. Reinstall uses the existing upload and refresh path.
 
 - 2026-11-22: P6-10 fills the skill detail (`SkillDetail.tsx`): state, the `broken` reason, an

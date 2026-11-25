@@ -49,7 +49,7 @@ cleanup() {
 		fi
 		$(stackc "$p") down -v >/dev/null 2>&1
 	done
-	for v in "${memvol:-}" "${bvol:-}"; do [ -z "$v" ] || docker volume rm -f "$v" >/dev/null 2>&1; done
+	for v in "${memvol:-}" "${bvol:-}" "${skillvol:-}" "${bskillvol:-}"; do [ -z "$v" ] || docker volume rm -f "$v" >/dev/null 2>&1; done
 	rm -rf "$tmp"
 	[ "$status" = 0 ] && echo "restore-test: passed" || echo "restore-test: failed (stacks removed)" >&2
 	exit $status
@@ -96,6 +96,7 @@ d = json.load(sys.stdin)
 for p in (d["providers"] if isinstance(d, dict) else d): print("provider", p["id"], p["name"], p["api_key_set"], p["api_key_hint"])'
 	} >"$out"
 }
+skill_volume() { $1 exec -T postgres sh -c 'psql -At -U eika -d eika -c "SELECT id FROM core.skills_computer"' | tr -d '\r'; }
 mem_volume() { $1 exec -T postgres sh -c 'psql -At -U eika -d eika -c "SELECT id FROM core.memory_computer"' | tr -d '\r'; }
 git_log() { docker run --rm --network none -v "$1:/v:ro" -e GIT_CONFIG_GLOBAL=/dev/null --entrypoint git "${sandbox:-eika-sandbox:restoretest}" -c safe.directory=/v -C /v log --format='%H %s'; }
 keyvol_of() { docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/eika"}}{{.Name}}{{end}}{{end}}' "$($1 ps -aq eika)"; }
@@ -106,7 +107,8 @@ verify() { # verify "<compose>" LABEL
 	step "$label: checking the restored stack"
 	for i in $(seq 1 60); do [ "$(code "$c" /healthz)" = 200 ] && break; sleep 2; done
 	wait_memory "$c"
-	login="$($c exec -T eika curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"password":"restore-test-password-1"}' http://localhost:8080/api/auth/login)"
+ api "$c" GET /api/skills | python3 -I -c 'import json,sys; s={x["name"]: x for x in json.load(sys.stdin)["skills"]}; assert s["invoice-totals"]["enabled"] and not s["notes-formatter"]["enabled"]; assert not s["invoice-totals"]["broken"] and not s["notes-formatter"]["broken"]' || die "$label: skills did not reconcile"
+ login="$($c exec -T eika curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"password":"restore-test-password-1"}' http://localhost:8080/api/auth/login)"
 	[ "$login" = 200 ] || die "$label: the sign-in password did not come back (HTTP $login)"
 	snapshot "$c" "$tmp/after-$label.txt"
 	diff -u "$tmp/before.txt" "$tmp/after-$label.txt" >"$tmp/diff-$label.txt" || { cat "$tmp/diff-$label.txt" >&2; die "$label: sessions, memories or providers differ from the source"; }
@@ -128,6 +130,7 @@ wait_memory "$ca"
 memid="$(mem_volume "$ca")"
 [ -n "$memid" ] || die "no memory computer id recorded"
 memvol="eika-cx-$memid"
+skillvol="eika-cx-$(skill_volume "$ca")"
 
 step "populating it"
 api "$ca" POST /api/auth/setup -d '{"password":"restore-test-password-1"}' >/dev/null
@@ -163,6 +166,14 @@ api "$ca" PATCH /api/memories/prefers-metric-units -d "{\"content_sha\":\"$sha\"
 api "$ca" POST /api/memories/partner-name-sam/archive -d '{"reason":"restore test"}' >/dev/null
 states="$(api "$ca" GET '/api/memories?limit=50' | python3 -I -c 'import sys,json;print(sorted(m["state"] for m in json.load(sys.stdin)["memories"]))')"
 [ "$states" = "['active', 'archived', 'archived', 'pending', 'pending']" ] || die "the source memories are not in the expected states: $states"
+# Install both fixtures through the API. Set one enabled in the database because
+# this test stack has no exact model token counter for the enable endpoint.
+for name in invoice-totals notes-formatter; do
+ python3 -I -c 'import pathlib,sys,zipfile; p=pathlib.Path(sys.argv[1]); z=zipfile.ZipFile(sys.argv[2], "w"); [z.write(f, f.relative_to(p.parent)) for f in p.rglob("*") if f.is_file()]; z.close()' "internal/skill/testdata/$name" "$tmp/$name.zip"
+ status="$($ca exec -T eika curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" -F 'file=@-;filename=skill.zip' http://localhost:8080/api/skills <"$tmp/$name.zip")"
+ [ "$status" = 200 ] || [ "$status" = 201 ] || die "skill installation failed (HTTP $status)"
+done
+$ca exec -T postgres psql -q -v ON_ERROR_STOP=1 -U eika -d eika -c "UPDATE core.skills SET enabled=true WHERE name = 'invoice-totals'" >/dev/null
 snapshot "$ca" "$tmp/before.txt"
 git_log "$memvol" >"$tmp/gitlog.txt"
 keysum="$(docker run --rm --network none -v "$(keyvol_of "$ca"):/v:ro" "$image" sha256sum /v/secret.key | cut -d' ' -f1)"
@@ -189,10 +200,12 @@ diff -q "$tmp/before.txt" "$tmp/refused.txt" >/dev/null || die "a refused restor
 
 step "incomplete, damaged and too-new sets are rejected before anything is written"
 bad="$tmp/bad"
-for case in missing-tar checksum newer missing-manifest missing-key; do
+for case in missing-tar missing-skills checksum skills-checksum newer missing-manifest missing-key; do
 	rm -rf "$bad"; cp -r "$set_dir" "$bad"; chmod -R u+rw "$bad"
 	case "$case" in
 	missing-tar) rm "$bad/memory.tar"; want='incomplete backup' ;;
+	missing-skills) rm "$bad/skills.tar"; want='incomplete backup' ;;
+	skills-checksum) printf 'x' >>"$bad/skills.tar"; want='damaged' ;;
 	missing-key) rm "$bad/secret.key"; want='incomplete backup' ;;
 	missing-manifest) rm "$bad/manifest.json"; want='incomplete backup' ;;
 	checksum) printf 'x' >>"$bad/postgres.dump"; want='damaged' ;;
@@ -208,6 +221,8 @@ step "restoring into a new empty stack ($pb) while the source keeps running"
 COMPOSE="$cb" BACKUP="$set_dir" deploy/restore.sh >"$tmp/restore.log" 2>&1 || { sed 's/^/  /' "$tmp/restore.log" >&2; die "the restore failed"; }
 bvol="eika-cx-$(mem_volume "$cb")"
 [ "$bvol" != "eika-cx-" ] && [ "$bvol" != "$memvol" ] || die "the restored stack did not get a memory computer id of its own ($bvol)"
+bskillvol="eika-cx-$(skill_volume "$cb")"
+[ "$bskillvol" != "$skillvol" ] && [ "$bskillvol" != "eika-cx-" ] || die "the restored stack did not get its own skills volume"
 verify "$cb" restore
 
 step "FORCE=1 over the filled target"
@@ -216,6 +231,7 @@ out="$(COMPOSE="$cb" BACKUP="$set_dir" deploy/restore.sh 2>&1 || true)"
 echo "$out" | grep -q 'refusing' || die "the filled target was not refused without FORCE: $out"
 FORCE=1 COMPOSE="$cb" BACKUP="$set_dir" deploy/restore.sh >"$tmp/force.log" 2>&1 || { sed 's/^/  /' "$tmp/force.log" >&2; die "the FORCE restore failed"; }
 verify "$cb" force
+[ "$bskillvol" = "eika-cx-$(skill_volume "$cb")" ] || die "FORCE changed the target skills id"
 [ "$bvol" = "eika-cx-$(mem_volume "$cb")" ] || die "FORCE changed the target's memory computer id"
 
 step "the source stack is untouched"

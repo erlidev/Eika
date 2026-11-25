@@ -722,7 +722,7 @@ its hits are marked in the text. Delete it. On a phone the same works.
 
 ### Stage C: backup, stack checks, docs
 
-- [ ] **P6-12**: Add the skills volume to `make backup` (`skills.tar`, its checksum in
+- [x] **P6-12**: Add the skills volume to `make backup` (`skills.tar`, its checksum in
       the manifest, a manifest version bump that older sets still restore under) and
       to `make restore` and `restore-test`, restoring the recorded id and volume as
       the memory volume is, into an empty target, never over existing data. Core runs
@@ -1081,8 +1081,8 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
       - [x] the store and the `core.skills` rows (P6-04)
       - [x] install from a `.zip` (P6-04)
       - [x] the install screen (P6-05)
-- [ ] (P6-02, P6-03 done; P6-12) Mount `/skills` read-only into computers from a volume of its own
-      (`eika-skills`), never from Core's `/var/lib/eika` volume, which holds
+- [x] (P6-02, P6-03, P6-12) Mount `/skills` read-only into computers from a volume of its own
+      (`eika-cx-<skills id>`), never from Core's `/var/lib/eika` volume, which holds
       `secret.key` and the memory repository. `make backup` covers it.
 - [x] (P6-06 to P6-08) Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.
       Resource files are read from `/skills/<name>/` on the computer.

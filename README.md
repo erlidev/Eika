@@ -74,6 +74,8 @@ holds exactly:
 - `memory.tar`: the whole memory repository, git history included, read from
   the memory computer's volume `eika-cx-<id>`, where `<id>` is the id this
   install recorded in its database (`core.memory_computer`). `EIKA_MEMORY_VOLUME` names another volume.
+- `skills.tar`: the installed skills volume, `eika-cx-<id>`, named by
+  `core.skills_computer`. `EIKA_SKILLS_VOLUME` selects another volume for backup.
 - `secret.key`: the key that seals stored credentials. Without it the dump's
   sealed settings cannot be read, so the set is refused when it is missing.
 - `manifest.json`: format, UTC time, Eika commit (and whether the tree was
@@ -84,7 +86,7 @@ Not included: the files of other computers (their volumes), the sandbox images,
 the guard and search services, `.env`. Back those up separately if you need them.
 
 Eika is stopped while the set is taken, so the database, the memory repository
-and the key match each other, and started again afterwards, also when the backup
+the skills volume and the key match each other, and started again afterwards, also when the backup
 fails. Expect it to be unavailable for the length of the dump and copy, normally
 seconds. The postgres service must be running. Nothing secret is printed; the
 set itself is secret, so keep it somewhere only you can read. A set is built in a
@@ -101,7 +103,8 @@ make restore BACKUP=backups/eika-backup-<UTC time>
 Restore only into a stopped, empty target: a new stack, or one whose data you
 removed (`docker compose down -v` destroys it). Before it writes anything,
 `make restore` checks the whole set: `manifest.json`, `postgres.dump`,
-`memory.tar` and `secret.key` are all there, every size and SHA-256 matches the
+`memory.tar`, `skills.tar` and `secret.key` are all there (format 1 sets do not
+contain `skills.tar`), every size and SHA-256 matches the
 manifest, the dump and the archive can be read, and the set's migration is not
 newer than this build (upgrade Eika first if it is). It then refuses, writing
 nothing, when Eika is running, the database holds any table, `secret.key`
@@ -112,7 +115,9 @@ user) and the memory repository with its git history into the volume
 database, and starts the stack. Core's startup reconcile verifies the memory
 index against the restored files and rebuilds what is missing; look for the
 `memory reconciled` line in `docker compose logs eika`, which the command
-prints. Sign in with the backed-up password; sealed credentials open because
+prints. Skills are restored to their recorded volume and Core reconciles them at startup.
+If that volume belongs to another stack, restore selects a new ID, as for memory.
+Sign in with the backed-up password; sealed credentials open because
 the key came back with them.
 
 **Restoring beside the source.** The memory volume `eika-cx-<id>` is named per
@@ -127,7 +132,7 @@ computer's volume are not in a set; Eika makes the home container again.
 
 `FORCE=1 make restore BACKUP=...` is **destructive**: it drops the target
 database and replaces it, overwrites the key file and empties the target's own memory
-volume (the one its database records, never another stack's) first. Use it only when the target holds nothing you need. Eika must
+and skills volumes (the ones its database records, never another stack's) first. Use it only when the target holds nothing you need. Eika must
 still be stopped. If a restore fails part-way the target is partly written;
 fix the cause and rerun with `FORCE=1`. Nothing secret is printed.
 

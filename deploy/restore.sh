@@ -50,8 +50,12 @@ for f in manifest.json postgres.dump memory.tar secret.key; do
 	[ -f "$set_dir/$f" ] && [ ! -L "$set_dir/$f" ] || fail "incomplete backup: $f is missing from $set_dir"
 done
 manifest="$set_dir/manifest.json"
-grep -q '"format": 1[,[:space:]]*$' "$manifest" || fail "manifest.json is not a format 1 manifest"
-for f in postgres.dump memory.tar secret.key; do
+format="$(sed -n 's/.*"format": \([12]\)[,[:space:]]*$/\1/p' "$manifest")"
+[ -n "$format" ] || fail "manifest.json has an unsupported format"
+files="postgres.dump memory.tar secret.key"
+if [ "$format" = 2 ]; then files="$files skills.tar"; fi
+for f in $files; do
+ [ -f "$set_dir/$f" ] && [ ! -L "$set_dir/$f" ] || fail "incomplete backup: $f is missing from $set_dir"
 	line="$(sed -n "s/.*\"$f\": {\"sha256\": \"\\([0-9a-f]\\{64\\}\\)\", \"bytes\": \\([0-9][0-9]*\\)}.*/\\1 \\2/p" "$manifest")"
 	[ -n "$line" ] || fail "manifest.json has no checksum for $f"
 	want_sum="${line% *}"
@@ -70,6 +74,9 @@ newest="$(printf '%s\n%s\n' "$migration" "$supported" | LC_ALL=C sort | tail -1)
 # The files must also be readable, not only intact.
 docker run --rm -i --network none "$image" pg_restore -l <"$set_dir/postgres.dump" >/dev/null 2>&1 || fail "postgres.dump is not a readable pg_dump archive"
 docker run --rm -i --network none "$image" tar -tf - <"$set_dir/memory.tar" 2>/dev/null | grep -qx '\./\.git/HEAD' || fail "memory.tar holds no git repository (.git/HEAD missing)"
+if [ "$format" = 2 ]; then
+ docker run --rm -i --network none "$image" tar -tf - <"$set_dir/skills.tar" >/dev/null 2>&1 || fail "skills.tar is not a readable archive"
+fi
 tr -d '[:space:]' <"$set_dir/secret.key" | grep -Eq '^[0-9a-fA-F]+$' || fail "secret.key is not a key file"
 
 memvol="${EIKA_MEMORY_VOLUME:-}"
@@ -79,6 +86,13 @@ if [ -z "$memvol" ]; then
 		awk '/^COPY .*memory_computer/ {f=1; next} f && /^\\\.$/ {exit} f {print $2}')"
 	printf '%s' "$memid" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]*$' || fail "the dump records no memory computer id; it cannot name the memory volume (set EIKA_MEMORY_VOLUME)"
 	memvol="eika-cx-$memid"
+fi
+skillvol=""
+if [ "$format" = 2 ]; then
+ skillid="$(docker run --rm -i --network none "$image" pg_restore -a -n core -t skills_computer -f - <"$set_dir/postgres.dump" 2>/dev/null |
+  awk '/^COPY .*skills_computer/ {f=1; next} f && /^\\\.$/ {exit} f {print $2}')"
+ printf '%s' "$skillid" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]*$' || fail "the dump records no skills computer id"
+ skillvol="eika-cx-$skillid"
 fi
 echo "restore: the set is complete and intact (migration $migration)"
 
@@ -120,6 +134,18 @@ if [ -z "${EIKA_MEMORY_VOLUME:-}" ] && [ "$memvol" != "eika-cx-$rec" ] && nonemp
 	memvol="eika-cx-$newid"
 fi
 
+skillnewid=""
+if [ "$format" = 2 ]; then
+ skillrec=""
+ if [ "$tables" != 0 ]; then
+  skillrec="$($compose exec -T postgres sh -c 'psql -At -U "${POSTGRES_USER:-eika}" -d "${POSTGRES_DB:-eika}" -c "SELECT id FROM core.skills_computer"' 2>/dev/null | tr -d '\r' || true)"
+ fi
+ if [ "$skillvol" != "eika-cx-$skillrec" ] && nonempty "$skillvol"; then
+  if [ -n "$skillrec" ]; then skillnewid="$skillrec"; else skillnewid="$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 20)"; fi
+  printf '%s' "$skillnewid" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]*$' || fail "cannot generate a skills computer id"
+  skillvol="eika-cx-$skillnewid"
+ fi
+fi
 problems=""
 [ "$tables" = 0 ] || problems="$problems
   - the database already holds data ($tables tables)"
@@ -127,6 +153,8 @@ if have "$keyvol" secret.key; then problems="$problems
   - the key file already exists in volume $keyvol"; fi
 if nonempty "$memvol"; then problems="$problems
   - the memory volume $memvol is not empty"; fi
+if [ -n "$skillvol" ] && nonempty "$skillvol"; then problems="$problems
+  - the skills volume $skillvol is not empty"; fi
 if [ -n "$problems" ]; then
 	if [ "$force" != 1 ]; then
 		echo "restore: refusing, the target is not empty:$problems" >&2
@@ -160,6 +188,10 @@ if [ -n "$newid" ]; then
 		fail "cannot record the new memory computer id; the target is partly restored"
 fi
 
+if [ -n "$skillnewid" ]; then
+ $compose exec -T postgres sh -c "psql -v ON_ERROR_STOP=1 -q -U \"\${POSTGRES_USER:-eika}\" -d \"\${POSTGRES_DB:-eika}\" -c \"UPDATE core.skills_computer SET id = '$skillnewid'\"" >/dev/null || fail "cannot record the skills computer id; the target is partly restored"
+fi
+
 echo "restore: restoring the key"
 docker run --rm -i --network none -u 0 -v "$keyvol:/v" "$image" sh -c 'umask 077; cat >/v/secret.key; chown "$1" /v/secret.key; chmod 600 /v/secret.key' sh "$uidgid" <"$set_dir/secret.key" ||
 	fail "cannot write the key; the target is partly restored"
@@ -174,6 +206,17 @@ if [ "$force" = 1 ]; then
 fi
 docker run --rm -i --network none -u 0 -v "$memvol:/v" "$image" tar --numeric-owner -C /v -xpf - <"$set_dir/memory.tar" ||
 	fail "the memory restore failed; the target is partly restored"
+
+if [ "$format" = 2 ]; then
+ echo "restore: restoring the skills volume"
+ if ! docker volume inspect "$skillvol" >/dev/null 2>&1; then
+  docker volume create --label "eika.computer=${skillvol#eika-cx-}" "$skillvol" >/dev/null || fail "cannot create the skills volume"
+ fi
+ if [ "$force" = 1 ]; then
+  docker run --rm --network none -v "$skillvol:/v" "$image" find /v -mindepth 1 -delete || fail "cannot empty the skills volume"
+ fi
+ docker run --rm -i --network none -u 0 -v "$skillvol:/v" "$image" tar --numeric-owner -C /v -xpf - <"$set_dir/skills.tar" || fail "the skills restore failed; the target is partly restored"
+fi
 
 # What was written is what the set holds.
 want_key="$(sed -n 's/.*"secret.key": {"sha256": "\([0-9a-f]*\)".*/\1/p' "$manifest")"

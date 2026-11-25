@@ -27,6 +27,7 @@ umask 077
 compose="${COMPOSE:-docker compose}"
 root="${EIKA_BACKUP_DIR:-backups}"
 memvol="${EIKA_MEMORY_VOLUME:-}"
+skillvol="${EIKA_SKILLS_VOLUME:-}"
 image="${EIKA_BACKUP_IMAGE:-postgres:16-alpine}"
 here="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -51,6 +52,13 @@ if [ -z "$memvol" ]; then
 	memvol="eika-cx-$memid"
 fi
 docker volume inspect "$memvol" >/dev/null 2>&1 || fail "memory volume $memvol does not exist (set EIKA_MEMORY_VOLUME if it is named otherwise)"
+if [ -z "$skillvol" ]; then
+ skillid="$($compose exec -T postgres sh -c 'psql -At -U "${POSTGRES_USER:-eika}" -d "${POSTGRES_DB:-eika}" -c "SELECT id FROM core.skills_computer"' 2>/dev/null | tr -d '\r' || true)"
+ [ -n "$skillid" ] || fail "no skills computer is recorded in the database yet; start eika once"
+ skillvol="eika-cx-$skillid"
+fi
+docker volume inspect "$skillvol" >/dev/null 2>&1 || fail "skills volume $skillvol does not exist"
+
 
 # have VOLUME PATH: the path exists inside the volume.
 have() { docker run --rm --network none -v "$1:/v:ro" "$image" test -e "/v/$2"; }
@@ -95,6 +103,10 @@ echo "backup: copying the memory repository"
 docker run --rm --network none -v "$memvol:/v:ro" "$image" tar --numeric-owner -C /v -cf - . >"$tmp/memory.tar"
 [ -s "$tmp/memory.tar" ] || fail "the memory archive is empty"
 
+echo "backup: copying the skills volume"
+docker run --rm --network none -v "$skillvol:/v:ro" "$image" tar --numeric-owner -C /v -cf - . >"$tmp/skills.tar"
+[ -s "$tmp/skills.tar" ] || fail "the skills archive is empty"
+
 echo "backup: copying the seal key"
 docker run --rm --network none -v "$keyvol:/v:ro" "$image" cat /v/secret.key >"$tmp/secret.key"
 [ -s "$tmp/secret.key" ] || fail "the seal key is empty"
@@ -108,7 +120,7 @@ sum() { sha256sum "$tmp/$1" | cut -d' ' -f1; }
 size() { wc -c <"$tmp/$1" | tr -d ' '; }
 cat >"$tmp/manifest.json" <<JSON
 {
-  "format": 1,
+  "format": 2,
   "created": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "eika": {
     "commit": "$commit",
@@ -119,6 +131,7 @@ cat >"$tmp/manifest.json" <<JSON
   "files": {
     "postgres.dump": {"sha256": "$(sum postgres.dump)", "bytes": $(size postgres.dump)},
     "memory.tar": {"sha256": "$(sum memory.tar)", "bytes": $(size memory.tar)},
+    "skills.tar": {"sha256": "$(sum skills.tar)", "bytes": $(size skills.tar)},
     "secret.key": {"sha256": "$(sum secret.key)", "bytes": $(size secret.key)}
   }
 }
