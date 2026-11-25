@@ -164,6 +164,14 @@ func newLiveCoreWith(t *testing.T, target *live.Target, guard string, configure 
 		c.stop()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		// Home mounts the skills volume, so remove its container first.
+		if row, err := st.HomeComputer(ctx); err == nil {
+			for _, args := range [][]string{{"rm", "-f", computer.ContainerName(row.ID)}, {"volume", "rm", "-f", computer.VolumeName(row.ID)}} {
+				if out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput(); err != nil {
+					c.t.Errorf("remove home resource: %v: %s", err, out)
+				}
+			}
+		}
 		// The memory computer belongs to this Core's own database and is
 		// removed with it; the user's real stack has a different id.
 		if id, err := st.MemoryComputerID(ctx); err == nil {
@@ -178,15 +186,6 @@ func newLiveCoreWith(t *testing.T, target *live.Target, guard string, configure 
 				if out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput(); err != nil {
 					t.Errorf("remove skills resource: %v: %s", err, out)
 				}
-			}
-		}
-		row, err := st.HomeComputer(ctx)
-		if err != nil {
-			return
-		}
-		for _, args := range [][]string{{"rm", "-f", computer.ContainerName(row.ID)}, {"volume", "rm", "-f", computer.VolumeName(row.ID)}} {
-			if out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput(); err != nil {
-				t.Errorf("remove home resource: %v: %s", err, out)
 			}
 		}
 	})

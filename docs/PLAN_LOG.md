@@ -2,7 +2,10 @@
 
 - 2026-11-25: P6-15 and P6-16 add skills live scenarios for install, use,
   screening, catalog refresh, read-only mounts and poisoned-skill behavior.
-  The live model and guard run remains for P6-17.
+  The harness waits for reconciliation before installing and removes home
+  before the skills volume at cleanup. The live model and guard run remains
+  for P6-17. The screen scenario records the guard score and marked spans;
+  the read-only check matches the write call and checks the file afterward.
 
 - 2026-11-25: P6-14 documents skill authoring, installation and use in
   `EXTENDING.md`, and updates the architecture and API descriptions.

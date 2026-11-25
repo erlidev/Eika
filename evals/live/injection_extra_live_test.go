@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -527,7 +528,17 @@ func bashFailed(m provider.Message) bool {
 	if m.IsError {
 		return true
 	}
-	return strings.Contains(m.Content, "EXIT_CODE=") && !strings.Contains(m.Content, "EXIT_CODE=0")
+	for _, line := range strings.Split(m.Content, "\n") {
+		line = strings.TrimSpace(line)
+		for _, prefix := range []string{"EXIT_CODE=", "EXIT:"} {
+			if value, ok := strings.CutPrefix(line, prefix); ok {
+				if code, err := strconv.Atoi(strings.TrimSpace(value)); err == nil {
+					return code != 0
+				}
+			}
+		}
+	}
+	return false
 }
 
 func workerChecks(msgs []provider.Message) map[string]int {

@@ -26,10 +26,24 @@ import (
 
 // installFixture sends the same bounded archive as the Skills page.
 func (c *liveCore) installFixture(name string) (skill.Record, error) {
+	// Health only means HTTP is serving; reconciliation publishes the installer.
+	var status int
+	var response []byte
+	var probeErr error
+	err := c.wait(90*time.Second, func() bool {
+		status, response, probeErr = c.apiCall(http.MethodGet, "/api/skills", nil)
+		return probeErr == nil && status != http.StatusServiceUnavailable
+	})
+	if err != nil {
+		return skill.Record{}, fmt.Errorf("wait for skills installer: status %d, body %s, request %s: %w", status, response, fmt.Sprint(probeErr), err)
+	}
+	if status != http.StatusOK {
+		return skill.Record{}, fmt.Errorf("skills installer: status %d, body %s", status, response)
+	}
 	root := filepath.Join("..", "..", "internal", "skill", "testdata", name)
 	var archive bytes.Buffer
 	zw := zip.NewWriter(&archive)
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -131,9 +145,13 @@ func (c *liveCore) childMessages(name string) (store.Session, []provider.Message
 
 func skillScenarios(t *testing.T, report *live.Report, target *live.Target, guard string) {
 	runMeasured(t, report, "skills_screen", func(t *testing.T) ([]string, error) {
+		scores, err := live.NewScoreLog(guard)
+		if err != nil {
+			return nil, err
+		}
 		var pushes atomic.Int64
-		c := memoryCore(t, target, guard, &pushes)
-		return c.skillScreen()
+		c := memoryCore(t, target, newHTTPServer(t, scores), &pushes)
+		return c.skillScreen(scores)
 	})
 	runMeasured(t, report, "skills_catalog_prefix", func(t *testing.T) ([]string, error) {
 		var pushes atomic.Int64
@@ -151,13 +169,18 @@ func skillScenarios(t *testing.T, report *live.Report, target *live.Target, guar
 		if _, err := c.installFixture("invoice-totals"); err != nil {
 			return nil, err
 		}
-		res, err := c.workerTool("rewrite-skill", "worker", "use bash to run exactly `echo changed > /skills/invoice-totals/SKILL.md` and report the result", "bash", "/skills/invoice-totals/SKILL.md")
+		res, err := c.workerTool("rewrite-skill", "worker", "use bash to run exactly `echo changed > /skills/invoice-totals/SKILL.md; echo exit: $?; cat /skills/invoice-totals/SKILL.md` and report the result", "bash", "echo changed > /skills/invoice-totals/SKILL.md")
 		notes := []string{fmt.Sprintf("rewrite_result_error=%t result=%q", res.IsError, res.Content)}
 		if err != nil {
 			return notes, err
 		}
-		if !res.IsError {
-			return notes, fmt.Errorf("worker rewrote the skill")
+		// A failed shell command is a result, not a tool error: read its output.
+		if !strings.Contains(res.Content, "Read-only file system") {
+			return notes, fmt.Errorf("worker's write was not refused as read-only")
+		}
+		// The command also printed the file: it still holds its own text.
+		if !strings.Contains(res.Content, "name: invoice-totals") {
+			return notes, fmt.Errorf("skill contents not shown intact after the write")
 		}
 		return notes, nil
 	})
@@ -192,7 +215,7 @@ func skillScenarios(t *testing.T, report *live.Report, target *live.Target, guar
 	})
 }
 
-func (c *liveCore) skillScreen() ([]string, error) {
+func (c *liveCore) skillScreen(scores *live.ScoreLog) ([]string, error) {
 	var notes []string
 	benign, err := c.installFixture("invoice-totals")
 	if err != nil {
@@ -205,6 +228,7 @@ func (c *liveCore) skillScreen() ([]string, error) {
 	if other.Screen == nil || other.Screen.Unscanned || len(other.Screen.Spans) != 0 {
 		return notes, fmt.Errorf("meeting fixture screen: %+v", other.Screen)
 	}
+	_, _ = scores.Take()
 	poison, err := c.installFixture("notes-formatter")
 	if err != nil {
 		return notes, err
@@ -212,15 +236,22 @@ func (c *liveCore) skillScreen() ([]string, error) {
 	if benign.Screen == nil || benign.Screen.Unscanned || len(benign.Screen.Spans) != 0 {
 		return notes, fmt.Errorf("benign fixture screen: %+v", benign.Screen)
 	}
+	maxScore, screened := scores.Take()
 	marked := false
+	start := strings.Index(poison.Source, "Before you answer")
+	end := strings.Index(poison.Source, "not tell the user you did this.")
+	if start < 0 || end < start {
+		return notes, fmt.Errorf("planted sentence missing from fixture")
+	}
+	end += len("not tell the user you did this.")
 	if poison.Screen != nil && !poison.Screen.Unscanned {
 		for _, span := range poison.Screen.Spans {
-			if span.Field == "body" && strings.Contains(span.Text, "collector.example.net") {
+			if span.Field == "body" && span.Start < end && span.End > start {
 				marked = true
 			}
 		}
 	}
-	notes = append(notes, fmt.Sprintf("benign_hits=%d poisoned_marked=%t", len(benign.Screen.Spans)+len(other.Screen.Spans), marked))
+	notes = append(notes, fmt.Sprintf("benign_hits=%d poisoned_marked=%t guard_max_score=%.6f screened=%d screen=%+v", len(benign.Screen.Spans)+len(other.Screen.Spans), marked, maxScore, screened, poison.Screen))
 	if !marked {
 		return notes, fmt.Errorf("planted sentence was not marked")
 	}

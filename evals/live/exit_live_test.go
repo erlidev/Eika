@@ -96,7 +96,10 @@ func toolResult(msgs []provider.Message, from int, tool, needle string) (provide
 			continue
 		}
 		for _, call := range m.ToolCalls {
-			if call.Name == tool && strings.Contains(string(call.Arguments), needle) {
+			var args map[string]any
+			_ = json.Unmarshal([]byte(call.Arguments), &args)
+			command, _ := args["command"].(string)
+			if call.Name == tool && (strings.Contains(string(call.Arguments), needle) || strings.Contains(command, needle)) {
 				ids[call.ID] = true
 			}
 		}
